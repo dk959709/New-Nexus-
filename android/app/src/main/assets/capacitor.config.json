@@ -1,6 +1,6 @@
 {
 	"appId": "com.nexus.intelligence",
-	"appName": "NEXUS",
+	"appName": "Nexus DK",
 	"webDir": "dist",
 	"plugins": {
 		"SplashScreen": {
