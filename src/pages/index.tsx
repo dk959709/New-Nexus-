@@ -19,7 +19,7 @@ export function HomePage() {
   useEffect(() => { getLocation().then((position) => api.weather(`latitude=${position.latitude}&longitude=${position.longitude}`)).then(setWeather).catch(() => undefined); }, []);
   const search = (query: string) => { storage.saveSearch(query); navigate(`/search?q=${encodeURIComponent(query)}`); };
   return <>
-    <section className="hero"><span className="eyebrow">NEXUS INTELLIGENCE</span><h1>Search the web.<br /><span>Understand the world.</span></h1><p>One clear signal from billions of data points. Search, weather, and live context in one calm interface.</p></section>
+    <section className="hero"><span className="eyebrow">NEXUS dk959709@gmail.com INTELLIGENCE</span><h1>Search the web.<br /><span>Understand the world.</span></h1><p>One clear signal from billions of data points. Search, weather, and live context in one calm interface.</p></section>
     <SearchBox onSearch={search} recent={storage.getSearches()} />
     {weather ? <div className="home-dashboard"><div className="home-main"><WeatherCard data={weather.current} temperatureUnit={settings.temperature} windUnit={settings.wind} reduced={settings.animations === 'reduced'} /><HourlyForecast entries={weather.hourly} unit={settings.temperature} /></div><aside className="brief-card"><span className="eyebrow">LIVE SIGNALS</span><h2>World briefing</h2><p>Search the current web or open the live news desk for your next signal.</p><Link to="/news">Explore live news <ArrowUpRight size={15} /></Link></aside></div> : <div className="location-prompt"><Navigation size={25} /><h2>Weather intelligence is waiting</h2><p>Allow location access to see local conditions, or search for a city manually.</p><Link to="/weather">Open weather workspace</Link></div>}
   </>;
