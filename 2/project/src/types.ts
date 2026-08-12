@@ -1,0 +1,96 @@
+export type Condition = 'clear' | 'partly-cloudy' | 'cloudy' | 'rain' | 'storm' | 'snow' | 'fog';
+
+export interface SearchResult {
+  title: string;
+  url: string;
+  domain: string;
+  description: string;
+  date?: string;
+  type: 'web' | 'news' | 'images' | 'videos' | 'shopping';
+}
+
+export interface WeatherCurrent {
+  location: string;
+  temperature: number;
+  feelsLike: number;
+  condition: Condition;
+  conditionLabel: string;
+  humidity: number;
+  wind: number;
+  pressure: number;
+  visibility: number;
+  uvIndex: number;
+  sunrise: string;
+  sunset: string;
+  rainProbability: number;
+  updatedAt: string;
+  latitude: number;
+  longitude: number;
+  isDay: boolean;
+}
+
+export interface HourlyEntry {
+  time: string;
+  temperature: number;
+  condition: Condition;
+  rainProbability: number;
+  wind: number;
+}
+
+export interface DailyEntry {
+  day: string;
+  high: number;
+  low: number;
+  condition: Condition;
+  conditionLabel: string;
+  rainProbability: number;
+  wind: number;
+}
+
+export interface WeatherAlert {
+  title: string;
+  description: string;
+  severity: 'info' | 'warning' | 'severe';
+}
+
+export interface WeatherData {
+  current: WeatherCurrent;
+  hourly: HourlyEntry[];
+  daily: DailyEntry[];
+  alerts: WeatherAlert[];
+}
+
+export interface GeocodeResult {
+  name: string;
+  country: string;
+  latitude: number;
+  longitude: number;
+}
+
+export interface SavedItem {
+  id: string;
+  type: 'search' | 'news' | 'location';
+  title: string;
+  subtitle: string;
+  url?: string;
+  savedAt: string;
+}
+
+export type TemperatureUnit = 'celsius' | 'fahrenheit';
+export type WindUnit = 'kmh' | 'mph';
+export type ThemeMode = 'dark' | 'light' | 'system';
+export type AnimationLevel = 'full' | 'reduced';
+
+export interface Settings {
+  theme: ThemeMode;
+  temperature: TemperatureUnit;
+  wind: WindUnit;
+  animations: AnimationLevel;
+}
+
+export interface ConfigStatus {
+  search: boolean;
+  weather: boolean;
+  map: boolean;
+  ai: boolean;
+}
