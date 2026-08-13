@@ -74,7 +74,7 @@ export function SpacePage() {
   const [error, setError] = useState('');
   const [loading, setLoading] = useState(true);
   useEffect(() => {
-    fetch('/api/nasa/apod').then(async (res) => {
+    fetch('https://new-nexus.onrender.com/api/nasa/apod').then(async (res) => {
       const body = await res.json();
       if (!res.ok) throw new Error(body.error || 'NASA data is temporarily unavailable.');
       setApod(body.data);
