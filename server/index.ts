@@ -23,7 +23,7 @@ async function searchProvider(input: z.infer<typeof searchSchema>) {
   const key = process.env.SEARCH_API_KEY;
   const url = process.env.SEARCH_API_URL;
   if (!key || !url) throw Object.assign(new Error('Search provider is not configured.'), { status: 503 });
-  const response = await fetch(url, { method: 'POST', headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${key}`, 'X-API-Key': key }, body: JSON.stringify({ query: input.query, page: input.page ?? 1, category: input.category ?? 'ALL', region: input.region, language: input.language }) });
+  const response = await fetch(url, { method: 'POST', headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${key}`, 'X-API-Key': key }, body: JSON.stringify({ query: input.query, page: input.page ?? 1, category: input.category ?? 'ALL', region: input.region, language: input.language, max_results: 50 }) });
   if (!response.ok) throw Object.assign(new Error('Search provider is temporarily unavailable.'), { status: 502 });
   const payload = await response.json() as { results?: Array<Record<string, unknown>>; organic_results?: Array<Record<string, unknown>>; news?: Array<Record<string, unknown>> };
   const items = payload.results ?? payload.organic_results ?? payload.news ?? [];
