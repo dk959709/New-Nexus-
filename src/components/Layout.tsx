@@ -1,9 +1,9 @@
-import { Home, Map, Newspaper, Search, Settings, Bookmark, CloudSun, Radio } from 'lucide-react';
+import { Home, Map, Newspaper, Search, Settings, Bookmark, CloudSun, Radio, Rocket } from 'lucide-react';
 import { NavLink, Outlet } from 'react-router-dom';
 import { useEffect, useState } from 'react';
 import { AmbientBackdrop } from '@/components/WeatherIcon';
 
-const nav = [{ to: '/', label: 'Home', icon: Home }, { to: '/search', label: 'Search', icon: Search }, { to: '/weather', label: 'Weather', icon: CloudSun }, { to: '/weather/map', label: 'Weather Map', icon: Map }, { to: '/news', label: 'News', icon: Newspaper }, { to: '/saved', label: 'Saved', icon: Bookmark }];
+const nav = [{ to: '/', label: 'Home', icon: Home }, { to: '/search', label: 'Search', icon: Search }, { to: '/weather', label: 'Weather', icon: CloudSun }, { to: '/weather/map', label: 'Weather Map', icon: Map }, { to: '/news', label: 'News', icon: Newspaper }, { to: '/space', label: 'Space', icon: Rocket }, { to: '/saved', label: 'Saved', icon: Bookmark }];
 
 export function Layout() {
   const [online, setOnline] = useState(navigator.onLine);

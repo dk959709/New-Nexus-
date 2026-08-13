@@ -145,6 +145,20 @@ catch (error) {
     const err = error;
     return errorResponse(res, err.status ?? 502, err.message);
 } });
+app.get('/api/nasa/apod', async (req, res) => {
+    try {
+        const apiKey = process.env.NASA_API_KEY;
+        if (!apiKey)
+            return errorResponse(res, 503, 'NASA API is not configured.');
+        const response = await fetch(`https://api.nasa.gov/planetary/apod?api_key=${apiKey}`);
+        if (!response.ok)
+            return errorResponse(res, 502, 'NASA data is temporarily unavailable.');
+        return res.json({ data: await response.json() });
+    }
+    catch {
+        return errorResponse(res, 502, 'NASA data is temporarily unavailable.');
+    }
+});
 app.use((_req, res) => errorResponse(res, 404, 'Not found.'));
 app.use((error, _req, res, _next) => { void _next; console.error(error); return errorResponse(res, 500, 'Something went wrong.'); });
 app.listen(port, () => console.log(`NEXUS API listening on ${port}`));

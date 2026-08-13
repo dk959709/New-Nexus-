@@ -87,18 +87,6 @@ app.get('/api/weather', async (req, res) => { const parsed = weatherSchema.safeP
 app.get('/api/weather/forecast', (req, res) => res.redirect(307, `/api/weather?${new URLSearchParams(req.query as Record<string, string>).toString()}`));
 app.get('/api/weather/alerts', (_req, res) => res.json({ data: [] }));
 app.get('/api/news', async (_req, res) => { try { return res.json({ data: await searchProvider({ query: 'latest world news', category: 'NEWS' }) }); } catch (error) { const err = error as Error & { status?: number }; return errorResponse(res, err.status ?? 502, err.message); } });
-app.get('/api/nasa/apod', async (req, res) => {
-  try {
-    const apiKey = process.env.NASA_API_KEY;
-    if (!apiKey) return errorResponse(res, 503, 'NASA API is not configured.');
-    const response = await fetch(`https://api.nasa.gov/planetary/apod?api_key=${apiKey}`);
-    if (!response.ok) return errorResponse(res, 502, 'NASA data is temporarily unavailable.');
-    return res.json({ data: await response.json() });
-  } catch {
-    return errorResponse(res, 502, 'NASA data is temporarily unavailable.');
-  }
-});
-
 app.use((_req, res) => errorResponse(res, 404, 'Not found.'));
 app.use((error: Error, _req: Request, res: Response, _next: NextFunction) => { void _next; console.error(error); return errorResponse(res, 500, 'Something went wrong.'); });
 app.listen(port, () => console.log(`NEXUS API listening on ${port}`));
