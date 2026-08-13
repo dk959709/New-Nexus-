@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useState } from 'react';
 import { ArrowUpRight, Bookmark, ExternalLink, MapPin, Navigation, Search, Trash2 } from 'lucide-react';
 import { Link, useNavigate, useSearchParams } from 'react-router-dom';
-import { SearchBox, WeatherCard, HourlyForecast, DailyForecast, ErrorMessage, LoadingMessage, ResultCard } from '@/components';
+import { SearchBox, WeatherCard, HourlyForecast, DailyForecast, ErrorMessage, LoadingMessage, ResultCard, WeatherMap } from '@/components';
 import { api } from '@/services/api';
 import { getLocation } from '@/services/location';
 import { storage } from '@/lib/storage';
@@ -63,8 +63,10 @@ export function NewsPage() {
 
 export function MapPage() {
   const [status, setStatus] = useState<boolean | null>(null);
+  const [position, setPosition] = useState<{ latitude: number; longitude: number } | undefined>(undefined);
   useEffect(() => { api.configStatus().then((data) => setStatus(data.map)).catch(() => setStatus(false)); }, []);
-  return <><PageIntro eyebrow="WEATHER MAP" title="See the bigger picture." description="Explore live weather layers around the world." /><div className="map-panel">{status ? <><MapPin size={36} /><h2>Map provider connected</h2><p>Your configured map provider can be embedded here with live radar and temperature layers.</p></> : <><MapPin size={36} /><h2>Map provider not configured</h2><p>Add MAP_API_KEY to the server environment to enable a live weather map. NEXUS does not invent map tiles or weather layers.</p></>}</div></>;
+  useEffect(() => { getLocation().then((pos) => setPosition({ latitude: pos.latitude, longitude: pos.longitude })).catch(() => undefined); }, []);
+  return <><PageIntro eyebrow="WEATHER MAP" title="See the bigger picture." description="Explore live weather layers around the world." />{status ? <WeatherMap latitude={position?.latitude} longitude={position?.longitude} /> : <div className="map-panel"><MapPin size={36} /><h2>Map provider not configured</h2><p>Add MAP_API_KEY to the server environment to enable a live weather map. NEXUS does not invent map tiles or weather layers.</p></div>}</>;
 }
 
 export function SavedPage() {

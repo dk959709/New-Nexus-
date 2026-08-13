@@ -140,3 +140,4 @@ function ExternalArrow() { return <span className="external-arrow">↗</span>; }
 
 export function ErrorMessage({ message }: { message: string }) { return <div className="error-message" role="alert">{message}</div>; }
 export function LoadingMessage({ label = 'Loading live data...' }: { label?: string }) { return <div className="loading-message"><span className="loading-dot" />{label}</div>; }
+export { WeatherMap } from './WeatherMap';

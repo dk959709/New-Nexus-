@@ -61,6 +61,25 @@ async function weatherProvider(latitude: number, longitude: number, location: st
 
 app.get('/api/health', (_req, res) => res.json({ status: 'ok', service: 'nexus-api', time: new Date().toISOString() }));
 app.get('/api/config/status', (_req, res) => res.json({ data: { search: Boolean(process.env.SEARCH_API_KEY && process.env.SEARCH_API_URL), weather: true, map: Boolean(process.env.MAP_API_KEY), ai: Boolean(process.env.AI_API_KEY && process.env.AI_API_URL) } }));
+
+const mapTileSchema = z.object({ layer: z.enum(['temp_new', 'precipitation_new', 'clouds_new', 'wind_new', 'pressure_new']), z: z.coerce.number().int().min(0).max(18), x: z.coerce.number().int(), y: z.coerce.number().int() });
+app.get('/api/maptile/:layer/:z/:x/:y.png', async (req, res) => {
+  const parsed = mapTileSchema.safeParse(req.params);
+  if (!parsed.success) return errorResponse(res, 400, 'Invalid tile request.');
+  const key = process.env.MAP_API_KEY;
+  if (!key) return errorResponse(res, 503, 'Map provider is not configured.');
+  const { layer, z, x, y } = parsed.data;
+  try {
+    const upstream = await fetch(`https://tile.openweathermap.org/map/${layer}/${z}/${x}/${y}.png?appid=${key}`);
+    if (!upstream.ok) return errorResponse(res, 502, 'Map tile provider is temporarily unavailable.');
+    const buffer = Buffer.from(await upstream.arrayBuffer());
+    res.set('Content-Type', 'image/png');
+    res.set('Cache-Control', 'public, max-age=600');
+    return res.send(buffer);
+  } catch {
+    return errorResponse(res, 502, 'Map tile provider is temporarily unavailable.');
+  }
+});
 app.post('/api/search', async (req, res) => { const parsed = searchSchema.safeParse(req.body); if (!parsed.success) return errorResponse(res, 400, 'Enter a valid search query.'); try { return res.json({ data: await searchProvider(parsed.data) }); } catch (error) { const err = error as Error & { status?: number }; return errorResponse(res, err.status ?? 502, err.message); } });
 app.post('/api/search/summary', async (req, res) => { const parsed = z.object({ query: z.string().min(1), results: z.array(z.object({ title: z.string(), url: z.string(), description: z.string() })).max(20) }).safeParse(req.body); if (!parsed.success) return errorResponse(res, 400, 'A query and search results are required.'); const key = process.env.AI_API_KEY; const url = process.env.AI_API_URL; if (!key || !url) return errorResponse(res, 503, 'AI summary is not configured.'); try { const response = await fetch(url, { method: 'POST', headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${key}` }, body: JSON.stringify({ model: process.env.AI_MODEL, messages: [{ role: 'user', content: `Answer only from these sources. Query: ${parsed.data.query}\nSources: ${JSON.stringify(parsed.data.results)}` }] }) }); if (!response.ok) throw new Error(); return res.json({ data: await response.json() }); } catch { return errorResponse(res, 502, 'AI summary is temporarily unavailable.'); } });
 app.get('/api/weather/geocode', async (req, res) => { const parsed = z.string().trim().min(1).max(120).safeParse(req.query.city); if (!parsed.success) return errorResponse(res, 400, 'Enter a city.'); try { return res.json({ data: await geocode(parsed.data) }); } catch { return errorResponse(res, 502, 'Weather provider is temporarily unavailable.'); } });
