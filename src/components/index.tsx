@@ -15,6 +15,7 @@ import {
   Mic,
   Newspaper,
   Radio,
+  Rocket,
   Search,
   Settings,
   Sunrise,
@@ -50,6 +51,7 @@ const navItems = [
   { to: '/weather', label: 'Weather', icon: CloudSun },
   { to: '/weather/map', label: 'Weather Map', icon: Map },
   { to: '/news', label: 'Live News', icon: Newspaper },
+  { to: '/space', label: 'NASA Space', icon: Rocket },
   { to: '/saved', label: 'Saved', icon: Bookmark },
 ] as const;
 
