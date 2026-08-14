@@ -60,7 +60,7 @@ export function Layout() {
   return (
     <div className="app-shell">
       <aside className={menuOpen ? 'open' : ''}>
-        <div className="brand"><span><Radio size={17} /></span><b>dk959709@gmail.com</b></div>
+        <div className="brand"><span><Radio size={17} /></span><b>NEXUS</b></div>
         <small className="brand-subtitle">INTELLIGENCE OS</small>
         <nav className="side-nav">
           {navItems.map(({ to, label, icon: Icon }) => (
@@ -74,7 +74,7 @@ export function Layout() {
       </aside>
       <header className="mobile-header">
         <button className="icon-button" onClick={() => setMenuOpen((value) => !value)} aria-label="Open menu"><Menu size={21} /></button>
-        <div className="brand"><span><Radio size={15} /></span><b>dk959709@gmail.com</b></div>
+        <div className="brand"><span><Radio size={15} /></span><b>NEXUS</b></div>
         <NavLink to="/search" className="icon-button" aria-label="Search"><Search size={19} /></NavLink>
       </header>
       {menuOpen && <button className="menu-overlay" onClick={() => setMenuOpen(false)} aria-label="Close menu" />}
