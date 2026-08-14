@@ -101,7 +101,7 @@ app.get('/api/nasa/apod', async (req, res) => {
 });
 
 app.get('/{*splat}', (_req, res) => {
-  return res.sendFile(new URL('../dist/index.html', import.meta.url).pathname);
+  return res.sendFile(new URL('../../dist/index.html', import.meta.url).pathname);
 });
 
 app.use((_req, res) => errorResponse(res, 404, 'Not found.'));
