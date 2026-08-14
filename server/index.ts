@@ -15,7 +15,21 @@ app.use(cors());
 app.use(express.json({ limit: '1mb' }));
 app.use(morgan('tiny'));
 const pathToDist = new URL('../dist/', import.meta.url).pathname;
-app.use(express.static(pathToDist));
+app.use(express.static('dist', {
+  setHeaders: (res, filePath) => {
+    if (
+      filePath.endsWith('index.html') ||
+      filePath.endsWith('sw.js') ||
+      filePath.endsWith('manifest.json')
+    ) {
+      res.setHeader('Cache-Control', 'no-store, no-cache, must-revalidate, proxy-revalidate');
+      res.setHeader('Pragma', 'no-cache');
+      res.setHeader('Expires', '0');
+    } else if (filePath.includes('/assets/')) {
+      res.setHeader('Cache-Control', 'public, max-age=31536000, immutable');
+    }
+  }
+}));
 
 function errorResponse(res: Response, status: number, message: string) { return res.status(status).json({ error: message }); }
 function domainOf(url: string) { try { return new URL(url).hostname.replace(/^www\./, ''); } catch { return ''; } }
