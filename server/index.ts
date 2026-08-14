@@ -14,7 +14,8 @@ app.use(helmet({ crossOriginResourcePolicy: false }));
 app.use(cors());
 app.use(express.json({ limit: '1mb' }));
 app.use(morgan('tiny'));
-app.use(express.static('dist'));
+const pathToDist = new URL('../dist/', import.meta.url).pathname;
+app.use(express.static(pathToDist));
 
 function errorResponse(res: Response, status: number, message: string) { return res.status(status).json({ error: message }); }
 function domainOf(url: string) { try { return new URL(url).hostname.replace(/^www\./, ''); } catch { return ''; } }
@@ -97,6 +98,10 @@ app.get('/api/nasa/apod', async (req, res) => {
   } catch {
     return errorResponse(res, 502, 'NASA data is temporarily unavailable.');
   }
+});
+
+app.get('*', (_req, res) => {
+  return res.sendFile(new URL('../dist/index.html', import.meta.url).pathname);
 });
 
 app.use((_req, res) => errorResponse(res, 404, 'Not found.'));
