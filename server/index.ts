@@ -100,7 +100,7 @@ app.get('/api/nasa/apod', async (req, res) => {
   }
 });
 
-app.get('*', (_req, res) => {
+app.get('/{*splat}', (_req, res) => {
   return res.sendFile(new URL('../dist/index.html', import.meta.url).pathname);
 });
 
