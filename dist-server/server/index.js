@@ -12,7 +12,21 @@ app.use(helmet({ crossOriginResourcePolicy: false }));
 app.use(cors());
 app.use(express.json({ limit: '1mb' }));
 app.use(morgan('tiny'));
-app.use(express.static('dist'));
+const pathToDist = new URL('../dist/', import.meta.url).pathname;
+app.use(express.static('dist', {
+    setHeaders: (res, filePath) => {
+        if (filePath.endsWith('index.html') ||
+            filePath.endsWith('sw.js') ||
+            filePath.endsWith('manifest.json')) {
+            res.setHeader('Cache-Control', 'no-store, no-cache, must-revalidate, proxy-revalidate');
+            res.setHeader('Pragma', 'no-cache');
+            res.setHeader('Expires', '0');
+        }
+        else if (filePath.includes('/assets/')) {
+            res.setHeader('Cache-Control', 'public, max-age=31536000, immutable');
+        }
+    }
+}));
 function errorResponse(res, status, message) { return res.status(status).json({ error: message }); }
 function domainOf(url) { try {
     return new URL(url).hostname.replace(/^www\./, '');
@@ -67,7 +81,27 @@ async function weatherProvider(latitude, longitude, location) {
     return { current: { location, temperature: Number(data.current.temperature_2m), feelsLike: Number(data.current.apparent_temperature), condition: currentCondition[0], conditionLabel: currentCondition[1], humidity: Number(data.current.relative_humidity_2m), wind: Number(data.current.wind_speed_10m), pressure: Number(data.current.surface_pressure), visibility: 10, uvIndex: 0, sunrise: String(data.daily.sunrise[0]).split('T')[1], sunset: String(data.daily.sunset[0]).split('T')[1], rainProbability: Number(data.daily.precipitation_probability_max[0]), updatedAt: new Date().toISOString(), latitude, longitude, isDay: Boolean(data.current.is_day) }, hourly, daily, alerts: [] };
 }
 app.get('/api/health', (_req, res) => res.json({ status: 'ok', service: 'nexus-api', time: new Date().toISOString() }));
-app.get('/api/config/status', (_req, res) => res.json({ data: { search: Boolean(process.env.SEARCH_API_KEY && process.env.SEARCH_API_URL), weather: true, map: Boolean(process.env.MAP_API_KEY), ai: Boolean(process.env.AI_API_KEY && process.env.AI_API_URL) } }));
+app.get('/api/config/status', (_req, res) => res.json({ data: { search: Boolean(process.env.SEARCH_API_KEY && process.env.SEARCH_API_URL), weather: true, map: Boolean(process.env.MAP_API_KEY), ai: Boolean(process.env.AI_API_KEY && process.env.AI_API_URL), wallpapers: Boolean(process.env.PEXELS_API_KEY) } }));
+const wallpaperSchema = z.object({ query: z.string().trim().min(1).max(120), page: z.number().int().min(1).max(50).optional() });
+app.get('/api/wallpapers', async (req, res) => {
+    const parsed = wallpaperSchema.safeParse({ query: req.query.query, page: req.query.page });
+    if (!parsed.success)
+        return errorResponse(res, 400, 'Enter a wallpaper search term.');
+    const key = process.env.PEXELS_API_KEY;
+    if (!key)
+        return errorResponse(res, 503, 'Wallpaper provider is not configured.');
+    try {
+        const upstream = await fetch(`https://api.pexels.com/v1/search?query=${encodeURIComponent(parsed.data.query)}&per_page=12&page=${parsed.data.page ?? 1}&orientation=landscape`, { headers: { Authorization: key } });
+        if (!upstream.ok)
+            return errorResponse(res, 502, 'Wallpaper provider is temporarily unavailable.');
+        const payload = await upstream.json();
+        const photos = (payload.photos ?? []).map((photo) => ({ id: photo.id, photographer: photo.photographer, photographerUrl: photo.photographer_url, url: photo.url, landscape: photo.src.landscape, large2x: photo.src.large2x, original: photo.src.original }));
+        return res.json({ data: photos });
+    }
+    catch {
+        return errorResponse(res, 502, 'Wallpaper provider is temporarily unavailable.');
+    }
+});
 const mapTileSchema = z.object({ layer: z.enum(['temp_new', 'precipitation_new', 'clouds_new', 'wind_new', 'pressure_new']), z: z.coerce.number().int().min(0).max(18), x: z.coerce.number().int(), y: z.coerce.number().int() });
 app.get('/api/maptile/:layer/:z/:x/:y.png', async (req, res) => {
     const parsed = mapTileSchema.safeParse(req.params);
@@ -158,6 +192,9 @@ app.get('/api/nasa/apod', async (req, res) => {
     catch {
         return errorResponse(res, 502, 'NASA data is temporarily unavailable.');
     }
+});
+app.get('/{*splat}', (_req, res) => {
+    return res.sendFile(new URL('../../dist/index.html', import.meta.url).pathname);
 });
 app.use((_req, res) => errorResponse(res, 404, 'Not found.'));
 app.use((error, _req, res, _next) => { void _next; console.error(error); return errorResponse(res, 500, 'Something went wrong.'); });
