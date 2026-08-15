@@ -33,7 +33,7 @@
 .weather-map-legend-title{font-size:10px;font-weight:600;letter-spacing:.08em;text-transform:uppercase;color:var(--accent);margin-bottom:8px}
 .weather-map-legend-bar{height:8px;border-radius:4px;margin-bottom:4px;box-shadow:inset 0 0 4px rgba(0,0,0,.3)}
 .weather-map-legend-labels{display:flex;justify-content:space-between;font-size:9px;color:var(--muted);letter-spacing:.02em}
-.nexus-wallpaper{position:fixed;inset:0;z-index:-3;background-size:cover;background-position:center;background-repeat:no-repeat;opacity:0;transition:opacity .6s ease}
+.nexus-wallpaper{position:fixed;inset:0;z-index:0;pointer-events:none;background-size:cover;background-position:center;background-repeat:no-repeat;opacity:0;transition:opacity .6s ease}
 .nexus-wallpaper[data-active="true"]{opacity:1}
 .wallpaper-row{display:grid;gap:16px;align-items:start}
 .wallpaper-head{display:flex;justify-content:space-between;gap:16px;align-items:flex-start}
@@ -53,3 +53,5 @@
 .wallpaper-thumb:hover .wallpaper-credit,.wallpaper-thumb.selected .wallpaper-credit{opacity:1}
 @media(max-width:800px){.wallpaper-grid{grid-template-columns:repeat(3,1fr)}}
 @media(max-width:620px){.wallpaper-grid{grid-template-columns:repeat(2,1fr)}.wallpaper-search{flex-wrap:wrap}.wallpaper-search input{min-width:120px}.wallpaper-search .search-submit{flex:1}}
+
+#root{position:relative;z-index:1;min-height:100vh}
