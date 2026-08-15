@@ -75,7 +75,24 @@ async function weatherProvider(latitude: number, longitude: number, location: st
 }
 
 app.get('/api/health', (_req, res) => res.json({ status: 'ok', service: 'nexus-api', time: new Date().toISOString() }));
-app.get('/api/config/status', (_req, res) => res.json({ data: { search: Boolean(process.env.SEARCH_API_KEY && process.env.SEARCH_API_URL), weather: true, map: Boolean(process.env.MAP_API_KEY), ai: Boolean(process.env.AI_API_KEY && process.env.AI_API_URL) } }));
+app.get('/api/config/status', (_req, res) => res.json({ data: { search: Boolean(process.env.SEARCH_API_KEY && process.env.SEARCH_API_URL), weather: true, map: Boolean(process.env.MAP_API_KEY), ai: Boolean(process.env.AI_API_KEY && process.env.AI_API_URL), wallpapers: Boolean(process.env.PEXELS_API_KEY) } }));
+
+const wallpaperSchema = z.object({ query: z.string().trim().min(1).max(120), page: z.number().int().min(1).max(50).optional() });
+app.get('/api/wallpapers', async (req, res) => {
+  const parsed = wallpaperSchema.safeParse({ query: req.query.query, page: req.query.page });
+  if (!parsed.success) return errorResponse(res, 400, 'Enter a wallpaper search term.');
+  const key = process.env.PEXELS_API_KEY;
+  if (!key) return errorResponse(res, 503, 'Wallpaper provider is not configured.');
+  try {
+    const upstream = await fetch(`https://api.pexels.com/v1/search?query=${encodeURIComponent(parsed.data.query)}&per_page=12&page=${parsed.data.page ?? 1}&orientation=landscape`, { headers: { Authorization: key } });
+    if (!upstream.ok) return errorResponse(res, 502, 'Wallpaper provider is temporarily unavailable.');
+    const payload = await upstream.json() as { photos?: Array<{ id: number; photographer: string; photographer_url: string; url: string; src: { landscape: string; large2x: string; original: string } }> };
+    const photos = (payload.photos ?? []).map((photo) => ({ id: photo.id, photographer: photo.photographer, photographerUrl: photo.photographer_url, url: photo.url, landscape: photo.src.landscape, large2x: photo.src.large2x, original: photo.src.original }));
+    return res.json({ data: photos });
+  } catch {
+    return errorResponse(res, 502, 'Wallpaper provider is temporarily unavailable.');
+  }
+});
 
 const mapTileSchema = z.object({ layer: z.enum(['temp_new', 'precipitation_new', 'clouds_new', 'wind_new', 'pressure_new']), z: z.coerce.number().int().min(0).max(18), x: z.coerce.number().int(), y: z.coerce.number().int() });
 app.get('/api/maptile/:layer/:z/:x/:y.png', async (req, res) => {

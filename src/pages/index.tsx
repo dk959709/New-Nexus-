@@ -2,6 +2,7 @@ import { useCallback, useEffect, useState } from 'react';
 import { ArrowUpRight, Bookmark, ExternalLink, MapPin, Navigation, Search, Trash2 } from 'lucide-react';
 import { Link, useNavigate, useSearchParams } from 'react-router-dom';
 import { SearchBox, WeatherCard, HourlyForecast, DailyForecast, ErrorMessage, LoadingMessage, ResultCard, WeatherMap } from '@/components';
+import { WallpaperSelector } from '@/components/WallpaperSelector';
 import { api } from '@/services/api';
 import { getLocation } from '@/services/location';
 import { storage } from '@/lib/storage';
@@ -92,7 +93,9 @@ export function SavedPage() {
 export function SettingsPage() {
   const [settings, update] = useSettings();
   const choose = <K extends keyof Settings>(key: K, value: Settings[K]) => update({ [key]: value });
-  return <><PageIntro eyebrow="CONTROL CENTER" title="Make it yours." description="Tune the way NEXUS feels and reads across your devices." /><div className="settings-list"><SettingRow label="Theme" description="Choose the interface appearance." value={settings.theme} options={['dark', 'light', 'system']} onChange={(value) => choose('theme', value as Settings['theme'])} /><SettingRow label="Temperature" description="Choose Celsius or Fahrenheit." value={settings.temperature} options={['celsius', 'fahrenheit']} onChange={(value) => choose('temperature', value as Settings['temperature'])} /><SettingRow label="Wind speed" description="Choose kilometers or miles per hour." value={settings.wind} options={['kmh', 'mph']} onChange={(value) => choose('wind', value as Settings['wind'])} /><SettingRow label="Animations" description="Reduce motion for a calmer experience." value={settings.animations} options={['full', 'reduced']} onChange={(value) => choose('animations', value as Settings['animations'])} /><button className="danger-button" onClick={() => { storage.clearAll(); window.location.reload(); }}>Clear all local data</button></div></>;
+  return <><PageIntro eyebrow="CONTROL CENTER" title="Make it yours." description="Tune the way NEXUS feels and reads across your devices." /><div className="settings-list"><SettingRow label="Theme" description="Choose the interface appearance." value={settings.theme} options={['dark', 'light', 'system']} onChange={(value) => choose('theme', value as Settings['theme'])} /><SettingRow label="Temperature" description="Choose Celsius or Fahrenheit." value={settings.temperature} options={['celsius', 'fahrenheit']} onChange={(value) => choose('temperature', value as Settings['temperature'])} /><SettingRow label="Wind speed" description="Choose kilometers or miles per hour." value={settings.wind} options={['kmh', 'mph']} onChange={(value) => choose('wind', value as Settings['wind'])} /><SettingRow label="Animations" description="Reduce motion for a calmer experience." value={settings.animations} options={['full', 'reduced']} onChange={(value) => choose('animations', value as Settings['animations'])} /><WallpaperSelector value={settings.wallpaper} onSelect={(wallpaper) => choose('wallpaper', wallpaper)} /><button className="danger-button" onClick={() => { storage.clearAll(); window.location.reload(); }}>Clear all local data</button></div></>;
 }
 
 function SettingRow({ label, description, value, options, onChange }: { label: string; description: string; value: string; options: string[]; onChange: (value: string) => void }) { return <section className="setting-row"><div><h2>{label}</h2><p>{description}</p></div><div className="segmented-control">{options.map((option) => <button className={option === value ? 'selected' : ''} onClick={() => onChange(option)} key={option}>{option}</button>)}</div></section>; }
+
+}

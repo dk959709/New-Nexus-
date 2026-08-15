@@ -65,6 +65,7 @@ export const storage = {
       temperature: 'celsius',
       wind: 'kmh',
       animations: 'full',
+      wallpaper: null,
     });
   },
   saveSettings(settings: Settings): void {

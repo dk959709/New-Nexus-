@@ -86,6 +86,7 @@ export interface Settings {
   temperature: TemperatureUnit;
   wind: WindUnit;
   animations: AnimationLevel;
+  wallpaper: WallpaperSetting | null;
 }
 
 export interface ConfigStatus {
@@ -93,4 +94,21 @@ export interface ConfigStatus {
   weather: boolean;
   map: boolean;
   ai: boolean;
+  wallpapers: boolean;
+}
+
+export interface WallpaperPhoto {
+  id: number;
+  photographer: string;
+  photographerUrl: string;
+  url: string;
+  landscape: string;
+  large2x: string;
+  original: string;
+}
+
+export interface WallpaperSetting {
+  url: string;
+  photographer: string;
+  photographerUrl: string;
 }

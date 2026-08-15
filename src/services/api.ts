@@ -3,6 +3,7 @@ import type {
   WeatherData,
   GeocodeResult,
   ConfigStatus,
+  WallpaperPhoto,
 } from '@/types';
 
 const BASE = import.meta.env.VITE_API_URL ?? '';
@@ -49,5 +50,10 @@ export const api = {
 
   health(): Promise<{ status: string }> {
     return call<{ status: string }>('/api/health');
+  },
+
+  wallpapers(query: string, page?: number): Promise<WallpaperPhoto[]> {
+    const qs = `query=${encodeURIComponent(query)}${page ? `&page=${page}` : ''}`;
+    return call<WallpaperPhoto[]>(`/api/wallpapers?${qs}`);
   },
 };
