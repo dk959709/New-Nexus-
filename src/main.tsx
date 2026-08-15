@@ -5,4 +5,9 @@ import './index.css';
 
 if ('serviceWorker' in navigator) window.addEventListener('load', () => navigator.serviceWorker.register('/sw.js').catch(() => undefined));
 
-createRoot(document.getElementById('root')!).render(<StrictMode><App /></StrictMode>);
+createRoot(document.getElementById('root')!).render(
+  <StrictMode>
+    <div id="nexus-wallpaper" className="nexus-wallpaper" aria-hidden="true" />
+    <App />
+  </StrictMode>
+);
