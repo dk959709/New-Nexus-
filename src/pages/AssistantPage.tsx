@@ -3,9 +3,19 @@ import { Bot, Send, Sparkles, User, Trash2, Plus, Brain } from 'lucide-react';
 import { api } from '@/services/api';
 import { ErrorMessage } from '@/components';
 
+type Source = {
+  title: string;
+  url: string;
+  domain?: string;
+  description?: string;
+  date?: string;
+};
+
 type Message = {
   role: 'user' | 'assistant';
   content: string;
+  tool?: 'none' | 'search' | 'weather';
+  sources?: Source[];
 };
 
 const CHAT_KEY = 'nexus-ai-conversation-v2';
@@ -137,6 +147,8 @@ export function AssistantPage() {
       const assistantMessage: Message = {
         role: 'assistant',
         content: response.answer,
+        tool: response.tool,
+        sources: response.sources,
       };
 
       setMessages((current) => [...current, assistantMessage]);
@@ -497,10 +509,37 @@ export function AssistantPage() {
                   )}
                 </span>
 
-                <div
-                  style={{
-                    padding: '12px 14px',
-                    borderRadius: 15,
+                <div style={{ width: '100%' }}>
+                  {message.role === 'assistant' && message.tool === 'search' && (
+                    <div
+                      style={{
+                        fontSize: 12,
+                        opacity: 0.7,
+                        marginBottom: 6,
+                        color: '#61ddd2',
+                      }}
+                    >
+                      🔎 NEXUS Search
+                    </div>
+                  )}
+
+                  {message.role === 'assistant' && message.tool === 'weather' && (
+                    <div
+                      style={{
+                        fontSize: 12,
+                        opacity: 0.7,
+                        marginBottom: 6,
+                        color: '#61ddd2',
+                      }}
+                    >
+                      🌤️ Weather data
+                    </div>
+                  )}
+
+                  <div
+                    style={{
+                      padding: '12px 14px',
+                      borderRadius: 15,
                     lineHeight: 1.55,
                     whiteSpace: 'pre-wrap',
                     color: '#e8f0f2',
@@ -511,7 +550,73 @@ export function AssistantPage() {
                     border: '1px solid rgba(255,255,255,.07)',
                   }}
                 >
-                  {message.content}
+                    {message.content}
+                  </div>
+
+                  {message.role === 'assistant' &&
+                    message.tool === 'search' &&
+                    message.sources?.length ? (
+                    <div
+                      style={{
+                        display: 'grid',
+                        gap: 8,
+                        marginTop: 10,
+                      }}
+                    >
+                      {message.sources.slice(0, 5).map((source, sourceIndex) => (
+                        <a
+                          key={`${source.url}-${sourceIndex}`}
+                          href={source.url}
+                          target="_blank"
+                          rel="noreferrer"
+                          style={{
+                            display: 'block',
+                            padding: '10px 12px',
+                            borderRadius: 12,
+                            textDecoration: 'none',
+                            color: 'inherit',
+                            background: 'rgba(255,255,255,.035)',
+                            border: '1px solid rgba(255,255,255,.07)',
+                          }}
+                        >
+                          <strong
+                            style={{
+                              display: 'block',
+                              fontSize: 13,
+                              marginBottom: 3,
+                            }}
+                          >
+                            {source.title}
+                          </strong>
+
+                          <span
+                            style={{
+                              display: 'block',
+                              fontSize: 11,
+                              opacity: 0.55,
+                              marginBottom: source.description ? 4 : 0,
+                            }}
+                          >
+                            {source.domain || source.url}
+                            {source.date ? ` · ${source.date}` : ''}
+                          </span>
+
+                          {source.description && (
+                            <span
+                              style={{
+                                display: 'block',
+                                fontSize: 12,
+                                lineHeight: 1.4,
+                                opacity: 0.7,
+                              }}
+                            >
+                              {source.description}
+                            </span>
+                          )}
+                        </a>
+                      ))}
+                    </div>
+                  ) : null}
                 </div>
               </div>
             </div>

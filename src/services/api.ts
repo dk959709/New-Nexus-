@@ -56,8 +56,30 @@ export const api = {
     message: string,
     history: Array<{ role: 'user' | 'assistant'; content: string }> = [],
     memory = '',
-  ): Promise<{ answer: string; model: string }> {
-    return call<{ answer: string; model: string }>('/api/ai/chat', {
+  ): Promise<{
+    answer: string;
+    model: string;
+    tool?: 'none' | 'search' | 'weather';
+    sources?: Array<{
+      title: string;
+      url: string;
+      domain?: string;
+      description?: string;
+      date?: string;
+    }>;
+  }> {
+    return call<{
+      answer: string;
+      model: string;
+      tool?: 'none' | 'search' | 'weather';
+      sources?: Array<{
+        title: string;
+        url: string;
+        domain?: string;
+        description?: string;
+        date?: string;
+      }>;
+    }>('/api/ai/chat', {
       method: 'POST',
       body: JSON.stringify({
         message,

@@ -182,8 +182,11 @@ app.post('/api/ai/chat', async (req, res) => {
                 'You are NEXUS AI, the assistant inside the NEXUS Intelligence app.',
                 'Give clear, useful and concise answers.',
                 'Never pretend to have live information unless NEXUS tools provide it.',
-                'When NEXUS SEARCH results are provided, use them as the source for current information.',
-                'Clearly distinguish current search information from general knowledge.',
+                'When NEXUS SEARCH results are provided, you MUST answer the user using those results.',
+                'For current/news/search questions, summarize the actual returned results instead of telling the user to visit news websites.',
+                'Use the titles, descriptions, dates, and source names from the search results as evidence.',
+                'If the search results are insufficient, say that clearly instead of inventing information.',
+                'Do not replace search results with generic lists of websites or links.',
                 'Do not invent facts, URLs, dates, headlines, or sources.',
                 memoryContext
                     ? `Conversation memory:\n${memoryContext}`
