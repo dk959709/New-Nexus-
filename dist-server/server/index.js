@@ -89,6 +89,43 @@ async function weatherProvider(latitude, longitude, location) {
 }
 app.get('/api/health', (_req, res) => res.json({ status: 'ok', service: 'nexus-api', time: new Date().toISOString() }));
 app.get('/api/config/status', (_req, res) => res.json({ data: { search: Boolean(process.env.SEARCH_API_KEY && process.env.SEARCH_API_URL), weather: true, map: Boolean(process.env.MAP_API_KEY), ai: Boolean(process.env.AI_API_KEY && process.env.AI_API_URL), wallpapers: Boolean(process.env.PEXELS_API_KEY) } }));
+function detectAITool(message) {
+    const text = message.toLowerCase().trim();
+    const weatherPatterns = [
+        /\bweather\b/,
+        /\btemperature\b/,
+        /\bforecast\b/,
+        /\brain\b/,
+        /\bsnow\b/,
+        /\bhumidity\b/,
+        /\bwind\b/,
+        /\bclimate\b/,
+        /\bhot\b/,
+        /\bcold\b/,
+    ];
+    const searchPatterns = [
+        /\bnews\b/,
+        /\blatest\b/,
+        /\btoday\b/,
+        /\bcurrently\b/,
+        /\bcurrent\b/,
+        /\brecent\b/,
+        /\bupdate\b/,
+        /\bupdates\b/,
+        /\bwhat happened\b/,
+        /\bwho won\b/,
+        /\bwho is\b/,
+        /\bsearch\b/,
+        /\blook up\b/,
+    ];
+    if (weatherPatterns.some((pattern) => pattern.test(text))) {
+        return 'weather';
+    }
+    if (searchPatterns.some((pattern) => pattern.test(text))) {
+        return 'search';
+    }
+    return 'none';
+}
 const aiChatSchema = z.object({
     message: z.string().trim().min(1).max(4000),
     history: z.array(z.object({
@@ -104,31 +141,64 @@ app.post('/api/ai/chat', async (req, res) => {
     }
     const key = process.env.AI_API_KEY;
     const url = process.env.AI_API_URL;
-    const model = process.env.AI_MODEL ?? 'deepseek-chat';
+    const model = process.env.AI_MODEL ?? 'deepseek/deepseek-chat';
     if (!key || !url) {
         return errorResponse(res, 503, 'AI Assistant is not configured. Add AI_API_KEY and AI_API_URL to the server environment.');
     }
-    const memoryContext = parsed.data.memory?.trim();
-    const systemContent = [
-        'You are NEXUS AI, a helpful, concise assistant inside the NEXUS Intelligence app.',
-        'Give clear, useful, accurate answers.',
-        'Do not claim to have live information unless it is provided by NEXUS.',
-        'Use the memory below only as context about the ongoing conversation. Do not treat it as authoritative facts if it conflicts with the user’s current message.',
-        memoryContext
-            ? `Conversation memory:\n${memoryContext}`
-            : '',
-    ]
-        .filter(Boolean)
-        .join('\n\n');
+    const message = parsed.data.message;
+    const lower = message.toLowerCase();
+    const searchIntent = /\b(latest|today|current|recent|news|headlines|what happened|search for|search|look up|find information|what is happening)\b/i.test(lower);
+    let searchContext = '';
+    if (searchIntent) {
+        try {
+            const results = await searchProvider({
+                query: message,
+                page: 1,
+                category: 'ALL',
+            });
+            if (results.length) {
+                searchContext = [
+                    'LIVE NEXUS SEARCH RESULTS:',
+                    ...results.slice(0, 10).map((item, index) => `${index + 1}. ${item.title}\nURL: ${item.url}\nSource: ${item.domain}\nDescription: ${item.description}${item.date ? `\nDate: ${item.date}` : ''}`),
+                ].join('\n\n');
+            }
+            else {
+                searchContext =
+                    'NEXUS SEARCH returned no useful results for this request.';
+            }
+        }
+        catch {
+            searchContext =
+                'NEXUS SEARCH is currently unavailable. Do not invent current information.';
+        }
+    }
+    const memoryContext = parsed.data.memory?.trim()
+        ? parsed.data.memory.slice(-1200)
+        : '';
     const messages = [
         {
             role: 'system',
-            content: systemContent,
+            content: [
+                'You are NEXUS AI, the assistant inside the NEXUS Intelligence app.',
+                'Give clear, useful and concise answers.',
+                'Never pretend to have live information unless NEXUS tools provide it.',
+                'When NEXUS SEARCH results are provided, use them as the source for current information.',
+                'Clearly distinguish current search information from general knowledge.',
+                'Do not invent facts, URLs, dates, headlines, or sources.',
+                memoryContext
+                    ? `Conversation memory:\n${memoryContext}`
+                    : '',
+                searchContext
+                    ? `NEXUS SEARCH TOOL OUTPUT:\n${searchContext}`
+                    : '',
+            ]
+                .filter(Boolean)
+                .join('\n\n'),
         },
         ...(parsed.data.history ?? []),
         {
             role: 'user',
-            content: parsed.data.message,
+            content: message,
         },
     ];
     try {
@@ -157,6 +227,7 @@ app.post('/api/ai/chat', async (req, res) => {
             data: {
                 answer,
                 model,
+                tool: searchIntent ? 'search' : 'none',
             },
         });
     }
@@ -164,7 +235,10 @@ app.post('/api/ai/chat', async (req, res) => {
         return errorResponse(res, 502, 'AI provider is temporarily unavailable.');
     }
 });
-const wallpaperSchema = z.object({ query: z.string().trim().min(1).max(120), page: z.number().int().min(1).max(50).optional() });
+const wallpaperSchema = z.object({
+    query: z.string().trim().min(1).max(120),
+    page: z.coerce.number().int().min(1).max(50).optional(),
+});
 app.get('/api/wallpapers', async (req, res) => {
     const parsed = wallpaperSchema.safeParse({ query: req.query.query, page: req.query.page });
     if (!parsed.success)
