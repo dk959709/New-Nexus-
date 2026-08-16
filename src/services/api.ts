@@ -54,6 +54,14 @@ export const api = {
 
   wallpapers(query: string, page?: number): Promise<WallpaperPhoto[]> {
     const qs = `query=${encodeURIComponent(query)}${page ? `&page=${page}` : ''}`;
-    return call<WallpaperPhoto[]>(`/api/wallpapers?${qs}`);
+
+    return call<WallpaperPhoto[]>(`/api/wallpapers?${qs}`).then((photos) =>
+      photos.map((photo) => ({
+        ...photo,
+        landscape: new URL(photo.landscape, BASE || window.location.origin).toString(),
+        large2x: new URL(photo.large2x, BASE || window.location.origin).toString(),
+        original: new URL(photo.original, BASE || window.location.origin).toString(),
+      })),
+    );
   },
 };
