@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import { Bot, Send, Sparkles, User, Trash2 } from 'lucide-react';
 import { api } from '@/services/api';
 import { ErrorMessage } from '@/components';
@@ -15,17 +15,58 @@ const QUICK_PROMPTS = [
   'Summarize a topic',
 ];
 
+const MEMORY_KEY = 'nexus-ai-conversation-v1';
+const MAX_MEMORY_MESSAGES = 20;
+
+const welcomeMessage: Message = {
+  role: 'assistant',
+  content:
+    "Hi! I'm NEXUS AI. Ask me anything and I'll help with explanations, ideas, problem solving, summaries, and more.",
+};
+
+function loadMessages(): Message[] {
+  try {
+    const raw = localStorage.getItem(MEMORY_KEY);
+    if (!raw) return [welcomeMessage];
+
+    const parsed = JSON.parse(raw) as unknown;
+    if (!Array.isArray(parsed)) return [welcomeMessage];
+
+    const messages = parsed.filter(
+      (item): item is Message =>
+        typeof item === 'object' &&
+        item !== null &&
+        'role' in item &&
+        'content' in item &&
+        ((item as { role?: unknown }).role === 'user' ||
+          (item as { role?: unknown }).role === 'assistant') &&
+        typeof (item as { content?: unknown }).content === 'string',
+    );
+
+    return messages.length
+      ? messages.slice(-MAX_MEMORY_MESSAGES)
+      : [welcomeMessage];
+  } catch {
+    return [welcomeMessage];
+  }
+}
+
 export function AssistantPage() {
-  const [messages, setMessages] = useState<Message[]>([
-    {
-      role: 'assistant',
-      content:
-        "Hi! I'm NEXUS AI. Ask me anything and I'll help with explanations, ideas, problem solving, summaries, and more.",
-    },
-  ]);
+  const [messages, setMessages] = useState<Message[]>(loadMessages);
   const [input, setInput] = useState('');
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
+
+  useEffect(() => {
+    try {
+      localStorage.setItem(
+        MEMORY_KEY,
+        JSON.stringify(messages.slice(-MAX_MEMORY_MESSAGES)),
+      );
+    } catch {
+      // Storage can be unavailable in private/restricted browser modes.
+    }
+  }, [messages]);
 
   const sendMessage = async (value = input) => {
     const message = value.trim();
@@ -42,7 +83,8 @@ export function AssistantPage() {
     setLoading(true);
 
     try {
-      const response = await api.aiChat(message);
+      const history = messages.slice(-MAX_MEMORY_MESSAGES);
+      const response = await api.aiChat(message, history);
 
       setMessages((current) => [
         ...current,
@@ -71,6 +113,11 @@ export function AssistantPage() {
       },
     ]);
     setError('');
+    try {
+      localStorage.removeItem(MEMORY_KEY);
+    } catch {
+      // Ignore storage errors.
+    }
   };
 
   return (
@@ -131,7 +178,7 @@ export function AssistantPage() {
                   marginTop: 2,
                 }}
               >
-                DeepSeek · OpenRouter
+                DeepSeek · OpenRouter · Memory on
               </small>
             </div>
           </div>
@@ -139,8 +186,8 @@ export function AssistantPage() {
           <button
             className="icon-button"
             onClick={clearChat}
-            aria-label="Clear chat"
-            title="Clear chat"
+            aria-label="Clear chat and memory"
+            title="Clear chat and memory"
           >
             <Trash2 size={18} />
           </button>
@@ -338,7 +385,7 @@ export function AssistantPage() {
               marginTop: 8,
             }}
           >
-            Enter to send · Shift+Enter for a new line
+            Conversation memory is saved on this device · Enter to send · Shift+Enter for a new line
           </small>
         </div>
       </section>

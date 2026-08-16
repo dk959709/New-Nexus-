@@ -52,10 +52,13 @@ export const api = {
     return call<{ status: string }>('/api/health');
   },
 
-  aiChat(message: string): Promise<{ answer: string; model: string }> {
+  aiChat(
+    message: string,
+    history: Array<{ role: 'user' | 'assistant'; content: string }> = [],
+  ): Promise<{ answer: string; model: string }> {
     return call<{ answer: string; model: string }>('/api/ai/chat', {
       method: 'POST',
-      body: JSON.stringify({ message }),
+      body: JSON.stringify({ message, history: history.slice(-20) }),
     });
   },
 
