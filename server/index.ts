@@ -84,6 +84,100 @@ async function weatherProvider(latitude: number, longitude: number, location: st
 app.get('/api/health', (_req, res) => res.json({ status: 'ok', service: 'nexus-api', time: new Date().toISOString() }));
 app.get('/api/config/status', (_req, res) => res.json({ data: { search: Boolean(process.env.SEARCH_API_KEY && process.env.SEARCH_API_URL), weather: true, map: Boolean(process.env.MAP_API_KEY), ai: Boolean(process.env.AI_API_KEY && process.env.AI_API_URL), wallpapers: Boolean(process.env.PEXELS_API_KEY) } }));
 
+
+const aiChatSchema = z.object({
+  message: z.string().trim().min(1).max(4000),
+  history: z.array(
+    z.object({
+      role: z.enum(['user', 'assistant']),
+      content: z.string().max(8000),
+    }),
+  ).max(20).optional(),
+});
+
+app.post('/api/ai/chat', async (req, res) => {
+  const parsed = aiChatSchema.safeParse(req.body);
+
+  if (!parsed.success) {
+    return errorResponse(res, 400, 'Enter a valid message.');
+  }
+
+  const key = process.env.AI_API_KEY;
+  const url = process.env.AI_API_URL;
+  const model = process.env.AI_MODEL ?? 'deepseek-chat';
+
+  if (!key || !url) {
+    return errorResponse(
+      res,
+      503,
+      'AI Assistant is not configured. Add AI_API_KEY and AI_API_URL to the server environment.',
+    );
+  }
+
+  const messages = [
+    {
+      role: 'system',
+      content:
+        'You are NEXUS AI, a helpful, concise assistant inside the NEXUS Intelligence app. Give clear and useful answers. Do not claim to have live information unless it is provided by NEXUS.',
+    },
+    ...(parsed.data.history ?? []),
+    {
+      role: 'user',
+      content: parsed.data.message,
+    },
+  ];
+
+  try {
+    const upstream = await fetch(url, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        Authorization: `Bearer ${key}`,
+      },
+      body: JSON.stringify({
+        model,
+        messages,
+        temperature: 0.7,
+        max_tokens: 1200,
+      }),
+    });
+
+    const payload = await upstream.json().catch(() => ({})) as {
+      choices?: Array<{
+        message?: {
+          content?: string;
+        };
+      }>;
+      error?: {
+        message?: string;
+      };
+    };
+
+    if (!upstream.ok) {
+      return errorResponse(
+        res,
+        502,
+        payload.error?.message ?? 'AI provider is temporarily unavailable.',
+      );
+    }
+
+    const answer = payload.choices?.[0]?.message?.content?.trim();
+
+    if (!answer) {
+      return errorResponse(res, 502, 'AI provider returned an empty response.');
+    }
+
+    return res.json({
+      data: {
+        answer,
+        model,
+      },
+    });
+  } catch {
+    return errorResponse(res, 502, 'AI provider is temporarily unavailable.');
+  }
+});
+
 const wallpaperSchema = z.object({ query: z.string().trim().min(1).max(120), page: z.number().int().min(1).max(50).optional() });
 app.get('/api/wallpapers', async (req, res) => {
   const parsed = wallpaperSchema.safeParse({ query: req.query.query, page: req.query.page });
