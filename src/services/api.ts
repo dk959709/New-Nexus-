@@ -55,10 +55,15 @@ export const api = {
   aiChat(
     message: string,
     history: Array<{ role: 'user' | 'assistant'; content: string }> = [],
+    memory = '',
   ): Promise<{ answer: string; model: string }> {
     return call<{ answer: string; model: string }>('/api/ai/chat', {
       method: 'POST',
-      body: JSON.stringify({ message, history: history.slice(-20) }),
+      body: JSON.stringify({
+        message,
+        history: history.slice(-8),
+        memory: memory.slice(-1200),
+      }),
     });
   },
 

@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react';
-import { Bot, Send, Sparkles, User, Trash2 } from 'lucide-react';
+import { Bot, Send, Sparkles, User, Trash2, Plus, Brain } from 'lucide-react';
 import { api } from '@/services/api';
 import { ErrorMessage } from '@/components';
 
@@ -8,15 +8,18 @@ type Message = {
   content: string;
 };
 
+const CHAT_KEY = 'nexus-ai-conversation-v2';
+const MEMORY_KEY = 'nexus-ai-smart-memory-v1';
+
+const RECENT_MESSAGES = 8;
+const MAX_MEMORY_LENGTH = 1200;
+
 const QUICK_PROMPTS = [
   'Explain something simply',
   'Help me solve a problem',
   'Give me productivity tips',
   'Summarize a topic',
 ];
-
-const MEMORY_KEY = 'nexus-ai-conversation-v1';
-const MAX_MEMORY_MESSAGES = 20;
 
 const welcomeMessage: Message = {
   role: 'assistant',
@@ -26,10 +29,11 @@ const welcomeMessage: Message = {
 
 function loadMessages(): Message[] {
   try {
-    const raw = localStorage.getItem(MEMORY_KEY);
+    const raw = localStorage.getItem(CHAT_KEY);
     if (!raw) return [welcomeMessage];
 
     const parsed = JSON.parse(raw) as unknown;
+
     if (!Array.isArray(parsed)) return [welcomeMessage];
 
     const messages = parsed.filter(
@@ -43,56 +47,112 @@ function loadMessages(): Message[] {
         typeof (item as { content?: unknown }).content === 'string',
     );
 
-    return messages.length
-      ? messages.slice(-MAX_MEMORY_MESSAGES)
-      : [welcomeMessage];
+    return messages.length ? messages : [welcomeMessage];
   } catch {
     return [welcomeMessage];
   }
 }
 
+function loadSmartMemory(): string {
+  try {
+    return localStorage.getItem(MEMORY_KEY) ?? '';
+  } catch {
+    return '';
+  }
+}
+
+function buildLocalMemory(messages: Message[]): string {
+  const useful = messages
+    .filter((message) => message.content.trim())
+    .slice(-12);
+
+  if (!useful.length) return '';
+
+  const text = useful
+    .map((message) => {
+      const speaker = message.role === 'user' ? 'User' : 'NEXUS';
+      return `${speaker}: ${message.content}`;
+    })
+    .join('\n');
+
+  return text.slice(-MAX_MEMORY_LENGTH);
+}
+
 export function AssistantPage() {
   const [messages, setMessages] = useState<Message[]>(loadMessages);
+  const [smartMemory, setSmartMemory] = useState(loadSmartMemory);
   const [input, setInput] = useState('');
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
+  const [memoryEditorOpen, setMemoryEditorOpen] = useState(false);
+  const [memoryDraft, setMemoryDraft] = useState(smartMemory);
 
   useEffect(() => {
     try {
-      localStorage.setItem(
-        MEMORY_KEY,
-        JSON.stringify(messages.slice(-MAX_MEMORY_MESSAGES)),
-      );
+      localStorage.setItem(CHAT_KEY, JSON.stringify(messages));
     } catch {
-      // Storage can be unavailable in private/restricted browser modes.
+      // Storage may be unavailable.
     }
   }, [messages]);
 
+  useEffect(() => {
+    try {
+      if (smartMemory) {
+        localStorage.setItem(MEMORY_KEY, smartMemory);
+      } else {
+        localStorage.removeItem(MEMORY_KEY);
+      }
+    } catch {
+      // Ignore storage errors.
+    }
+  }, [smartMemory]);
+
   const sendMessage = async (value = input) => {
     const message = value.trim();
+
     if (!message || loading) return;
 
     setInput('');
     setError('');
 
-    setMessages((current) => [
-      ...current,
-      { role: 'user', content: message },
-    ]);
+    const userMessage: Message = {
+      role: 'user',
+      content: message,
+    };
 
+    const historyForRequest = messages
+      .slice(-RECENT_MESSAGES)
+      .filter((item) => item.content.trim());
+
+    setMessages((current) => [...current, userMessage]);
     setLoading(true);
 
     try {
-      const history = messages.slice(-MAX_MEMORY_MESSAGES);
-      const response = await api.aiChat(message, history);
+      const response = await api.aiChat(
+        message,
+        historyForRequest,
+        smartMemory,
+      );
 
-      setMessages((current) => [
-        ...current,
-        {
-          role: 'assistant',
-          content: response.answer,
-        },
-      ]);
+      const assistantMessage: Message = {
+        role: 'assistant',
+        content: response.answer,
+      };
+
+      setMessages((current) => [...current, assistantMessage]);
+
+      // Keep a compact local memory instead of sending the full conversation.
+      const updatedConversation = [
+        ...messages,
+        userMessage,
+        assistantMessage,
+      ];
+
+      const newMemory = buildLocalMemory(updatedConversation);
+
+      if (newMemory) {
+        setSmartMemory(newMemory);
+      }
     } catch (err) {
       setError(
         err instanceof Error
@@ -104,20 +164,36 @@ export function AssistantPage() {
     }
   };
 
-  const clearChat = () => {
-    setMessages([
-      {
-        role: 'assistant',
-        content:
-          "Chat cleared. I'm ready for your next question.",
-      },
-    ]);
+  const newChat = () => {
+    setMessages([welcomeMessage]);
     setError('');
+  };
+
+  const clearMemory = () => {
+    setSmartMemory('');
+    setMemoryDraft('');
+    setMemoryEditorOpen(false);
+    setMessages([welcomeMessage]);
+    setError('');
+
     try {
+      localStorage.removeItem(CHAT_KEY);
       localStorage.removeItem(MEMORY_KEY);
     } catch {
       // Ignore storage errors.
     }
+  };
+
+  const openMemoryEditor = () => {
+    setMemoryDraft(smartMemory);
+    setMemoryEditorOpen(true);
+  };
+
+  const saveMemory = () => {
+    const cleaned = memoryDraft.trim().slice(-MAX_MEMORY_LENGTH);
+    setSmartMemory(cleaned);
+    setMemoryDraft(cleaned);
+    setMemoryEditorOpen(false);
   };
 
   return (
@@ -171,6 +247,7 @@ export function AssistantPage() {
 
             <div>
               <strong>NEXUS AI</strong>
+
               <small
                 style={{
                   display: 'block',
@@ -178,20 +255,195 @@ export function AssistantPage() {
                   marginTop: 2,
                 }}
               >
-                DeepSeek · OpenRouter · Memory on
+                DeepSeek · OpenRouter · Smart Memory
               </small>
             </div>
           </div>
 
-          <button
-            className="icon-button"
-            onClick={clearChat}
-            aria-label="Clear chat and memory"
-            title="Clear chat and memory"
-          >
-            <Trash2 size={18} />
-          </button>
+          <div style={{ display: 'flex', gap: 8 }}>
+            <button
+              className="icon-button"
+              onClick={newChat}
+              aria-label="New chat"
+              title="New chat"
+              type="button"
+            >
+              <Plus size={18} />
+            </button>
+
+            <button
+              className="icon-button"
+              onClick={clearMemory}
+              aria-label="Clear memory"
+              title="Clear memory"
+              type="button"
+            >
+              <Trash2 size={18} />
+            </button>
+          </div>
         </header>
+
+        <div
+          style={{
+            padding: '10px 18px',
+            borderBottom: '1px solid rgba(255,255,255,.05)',
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'space-between',
+            gap: 12,
+            flexWrap: 'wrap',
+          }}
+        >
+          <div
+            style={{
+              display: 'flex',
+              alignItems: 'center',
+              gap: 7,
+              fontSize: 12,
+              opacity: 0.7,
+            }}
+          >
+            <Brain size={14} />
+            <span>
+              {smartMemory
+                ? 'Memory saved locally'
+                : 'No saved memories'}
+            </span>
+          </div>
+
+          <button
+            type="button"
+            className="icon-button"
+            onClick={openMemoryEditor}
+            title="Manage memory"
+            aria-label="Manage memory"
+            style={{
+              display: 'inline-flex',
+              alignItems: 'center',
+              gap: 6,
+              padding: '7px 10px',
+            }}
+          >
+            <Brain size={14} />
+            <span style={{ fontSize: 12 }}>Manage</span>
+          </button>
+        </div>
+
+        {memoryEditorOpen && (
+          <div
+            style={{
+              margin: '12px 18px',
+              padding: 14,
+              borderRadius: 14,
+              border: '1px solid rgba(97,221,210,.18)',
+              background: 'rgba(97,221,210,.045)',
+            }}
+          >
+            <div
+              style={{
+                display: 'flex',
+                justifyContent: 'space-between',
+                alignItems: 'center',
+                gap: 10,
+                marginBottom: 8,
+              }}
+            >
+              <strong style={{ display: 'flex', alignItems: 'center', gap: 7 }}>
+                <Brain size={16} />
+                AI Memory
+              </strong>
+
+              <small style={{ opacity: 0.5 }}>
+                Stored on this device
+              </small>
+            </div>
+
+            <p style={{ fontSize: 12, opacity: 0.6, margin: '0 0 10px' }}>
+              Edit what NEXUS AI should remember. Keep it short and useful.
+            </p>
+
+            <textarea
+              value={memoryDraft}
+              onChange={(event) => setMemoryDraft(event.target.value)}
+              maxLength={MAX_MEMORY_LENGTH}
+              placeholder="Example: My name is Alex. I like space photography."
+              rows={5}
+              style={{
+                width: '100%',
+                resize: 'vertical',
+                boxSizing: 'border-box',
+                padding: 12,
+                borderRadius: 12,
+                border: '1px solid rgba(255,255,255,.1)',
+                background: 'rgba(0,0,0,.2)',
+                color: '#e8f0f2',
+                outline: 'none',
+                font: 'inherit',
+              }}
+            />
+
+            <div
+              style={{
+                display: 'flex',
+                justifyContent: 'space-between',
+                alignItems: 'center',
+                gap: 10,
+                marginTop: 10,
+                flexWrap: 'wrap',
+              }}
+            >
+              <small style={{ opacity: 0.45 }}>
+                {memoryDraft.length}/{MAX_MEMORY_LENGTH}
+              </small>
+
+              <div style={{ display: 'flex', gap: 8 }}>
+                <button
+                  type="button"
+                  className="icon-button"
+                  onClick={() => setMemoryEditorOpen(false)}
+                >
+                  Cancel
+                </button>
+
+                <button
+                  type="button"
+                  className="icon-button"
+                  onClick={clearMemory}
+                  title="Delete all memory"
+                >
+                  <Trash2 size={14} />
+                  Clear
+                </button>
+
+                <button
+                  type="button"
+                  className="icon-button"
+                  onClick={saveMemory}
+                  title="Save memory"
+                >
+                  Save
+                </button>
+              </div>
+            </div>
+          </div>
+        )}
+
+        <div
+          style={{
+            padding: '8px 18px',
+            borderBottom: '1px solid rgba(255,255,255,.05)',
+            fontSize: 12,
+            opacity: 0.55,
+            display: 'flex',
+            alignItems: 'center',
+            gap: 6,
+          }}
+        >
+          <Brain size={14} />
+          {smartMemory
+            ? 'Smart memory active · recent context only'
+            : 'Smart memory ready'}
+        </div>
 
         <div
           style={{
@@ -256,8 +508,7 @@ export function AssistantPage() {
                       message.role === 'user'
                         ? 'rgba(97,221,210,.12)'
                         : 'rgba(255,255,255,.055)',
-                    border:
-                      '1px solid rgba(255,255,255,.07)',
+                    border: '1px solid rgba(255,255,255,.07)',
                   }}
                 >
                   {message.content}
@@ -333,10 +584,7 @@ export function AssistantPage() {
               value={input}
               onChange={(event) => setInput(event.target.value)}
               onKeyDown={(event) => {
-                if (
-                  event.key === 'Enter' &&
-                  !event.shiftKey
-                ) {
+                if (event.key === 'Enter' && !event.shiftKey) {
                   event.preventDefault();
                   sendMessage();
                 }
@@ -352,8 +600,7 @@ export function AssistantPage() {
                 maxHeight: 140,
                 padding: '13px 14px',
                 borderRadius: 13,
-                border:
-                  '1px solid rgba(97,221,210,.2)',
+                border: '1px solid rgba(97,221,210,.2)',
                 background: 'rgba(5,18,23,.8)',
                 color: 'inherit',
                 font: 'inherit',
@@ -385,7 +632,7 @@ export function AssistantPage() {
               marginTop: 8,
             }}
           >
-            Conversation memory is saved on this device · Enter to send · Shift+Enter for a new line
+            Recent context + compact memory · saved on this device
           </small>
         </div>
       </section>
