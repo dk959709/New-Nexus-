@@ -153,7 +153,7 @@ export function AssistantPage() {
         weather: response.weather,
       };
 
-      setMessages((current) => [...current, assistantMessagee]);
+      setMessages((current) => [...current, assistantMessage]);
 
       // Keep a compact local memory instead of sending the full conversation.
       const updatedConversation = [
