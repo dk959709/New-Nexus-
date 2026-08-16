@@ -93,6 +93,7 @@ const aiChatSchema = z.object({
       content: z.string().max(8000),
     }),
   ).max(20).optional(),
+  memory: z.string().max(1200).optional(),
 });
 
 app.post('/api/ai/chat', async (req, res) => {
@@ -114,11 +115,24 @@ app.post('/api/ai/chat', async (req, res) => {
     );
   }
 
+  const memoryContext = parsed.data.memory?.trim();
+
+  const systemContent = [
+    'You are NEXUS AI, a helpful, concise assistant inside the NEXUS Intelligence app.',
+    'Give clear, useful, accurate answers.',
+    'Do not claim to have live information unless it is provided by NEXUS.',
+    'Use the memory below only as context about the ongoing conversation. Do not treat it as authoritative facts if it conflicts with the user’s current message.',
+    memoryContext
+      ? `Conversation memory:\n${memoryContext}`
+      : '',
+  ]
+    .filter(Boolean)
+    .join('\n\n');
+
   const messages = [
     {
       role: 'system',
-      content:
-        'You are NEXUS AI, a helpful, concise assistant inside the NEXUS Intelligence app. Give clear and useful answers. Do not claim to have live information unless it is provided by NEXUS.',
+      content: systemContent,
     },
     ...(parsed.data.history ?? []),
     {
