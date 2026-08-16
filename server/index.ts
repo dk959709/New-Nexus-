@@ -94,7 +94,15 @@ app.get('/api/wallpapers', async (req, res) => {
     const upstream = await fetch(`https://api.pexels.com/v1/search?query=${encodeURIComponent(parsed.data.query)}&per_page=12&page=${parsed.data.page ?? 1}&orientation=landscape`, { headers: { Authorization: key } });
     if (!upstream.ok) return errorResponse(res, 502, 'Wallpaper provider is temporarily unavailable.');
     const payload = await upstream.json() as { photos?: Array<{ id: number; photographer: string; photographer_url: string; url: string; src: { landscape: string; large2x: string; original: string } }> };
-    const photos = (payload.photos ?? []).map((photo) => ({ id: photo.id, photographer: photo.photographer, photographerUrl: photo.photographer_url, url: photo.url, landscape: photo.src.landscape, large2x: photo.src.large2x, original: photo.src.original }));
+    const photos = (payload.photos ?? []).map((photo) => ({
+      id: photo.id,
+      photographer: photo.photographer,
+      photographerUrl: photo.photographer_url,
+      url: photo.url,
+      landscape: `/api/wallpaper-image/${photo.id}?size=landscape`,
+      large2x: `/api/wallpaper-image/${photo.id}?size=large2x`,
+      original: `/api/wallpaper-image/${photo.id}?size=original`,
+    }));
     return res.json({ data: photos });
   } catch {
     return errorResponse(res, 502, 'Wallpaper provider is temporarily unavailable.');
@@ -102,6 +110,61 @@ app.get('/api/wallpapers', async (req, res) => {
 });
 
 const mapTileSchema = z.object({ layer: z.enum(['temp_new', 'precipitation_new', 'clouds_new', 'wind_new', 'pressure_new']), z: z.coerce.number().int().min(0).max(18), x: z.coerce.number().int(), y: z.coerce.number().int() });
+app.get('/api/wallpaper-image/:id', async (req, res) => {
+  const id = Number(req.params.id);
+  const size = req.query.size === 'original'
+    ? 'original'
+    : req.query.size === 'large2x'
+      ? 'large2x'
+      : 'landscape';
+
+  if (!Number.isInteger(id) || id <= 0) {
+    return errorResponse(res, 400, 'Invalid wallpaper image.');
+  }
+
+  const key = process.env.PEXELS_API_KEY;
+  if (!key) return errorResponse(res, 503, 'Wallpaper provider is not configured.');
+
+  try {
+    const search = await fetch(`https://api.pexels.com/v1/photos/${id}`, {
+      headers: { Authorization: key },
+    });
+
+    if (!search.ok) {
+      return errorResponse(res, 502, 'Wallpaper provider is temporarily unavailable.');
+    }
+
+    const photo = await search.json() as {
+      src?: {
+        landscape?: string;
+        large2x?: string;
+        original?: string;
+      };
+    };
+
+    const imageUrl = photo.src?.[size];
+
+    if (!imageUrl) {
+      return errorResponse(res, 404, 'Wallpaper image not found.');
+    }
+
+    const image = await fetch(imageUrl);
+
+    if (!image.ok) {
+      return errorResponse(res, 502, 'Wallpaper image is temporarily unavailable.');
+    }
+
+    const contentType = image.headers.get('content-type') ?? 'image/jpeg';
+    const buffer = Buffer.from(await image.arrayBuffer());
+
+    res.set('Content-Type', contentType);
+    res.set('Cache-Control', 'public, max-age=86400');
+    return res.send(buffer);
+  } catch {
+    return errorResponse(res, 502, 'Wallpaper image is temporarily unavailable.');
+  }
+});
+
 app.get('/api/maptile/:layer/:z/:x/:y.png', async (req, res) => {
   const parsed = mapTileSchema.safeParse(req.params);
   if (!parsed.success) return errorResponse(res, 400, 'Invalid tile request.');
