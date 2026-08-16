@@ -146,10 +146,14 @@ app.post('/api/ai/chat', async (req, res) => {
         return errorResponse(res, 503, 'AI Assistant is not configured. Add AI_API_KEY and AI_API_URL to the server environment.');
     }
     const message = parsed.data.message;
-    const lower = message.toLowerCase();
-    const searchIntent = /\b(latest|today|current|recent|news|headlines|what happened|search for|search|look up|find information|what is happening)\b/i.test(lower);
+    const tool = detectAITool(message);
     let searchContext = '';
-    if (searchIntent) {
+    let weatherContext = '';
+    let weatherData = undefined;
+    /*
+     * NEXUS SEARCH TOOL
+     */
+    if (tool === 'search') {
         try {
             const results = await searchProvider({
                 query: message,
@@ -172,6 +176,46 @@ app.post('/api/ai/chat', async (req, res) => {
                 'NEXUS SEARCH is currently unavailable. Do not invent current information.';
         }
     }
+    /*
+     * NEXUS WEATHER TOOL
+     *
+     * Extract a city from common weather questions such as:
+     * "weather in Chennai"
+     * "temperature in Mumbai"
+     * "what is the weather like in Delhi?"
+     */
+    if (tool === 'weather') {
+        try {
+            const cityMatch = message.match(/\b(?:in|at|for|near)\s+([A-Za-z][A-Za-z .'-]{1,80}?)(?:\?|$| today| tomorrow| now| currently| right now)/i);
+            const city = cityMatch?.[1]?.trim();
+            if (city) {
+                const locations = await geocode(city);
+                const location = locations[0];
+                if (location) {
+                    weatherData = await weatherProvider(location.latitude, location.longitude, `${location.name}, ${location.country}`);
+                    weatherContext = [
+                        'LIVE NEXUS WEATHER DATA:',
+                        JSON.stringify(weatherData),
+                        '',
+                        'Use this weather data as authoritative current weather information.',
+                        'Do not invent weather values.',
+                    ].join('\n');
+                }
+                else {
+                    weatherContext =
+                        `NEXUS WEATHER could not find the location "${city}".`;
+                }
+            }
+            else {
+                weatherContext =
+                    'NEXUS WEATHER detected a weather question, but no city could be identified.';
+            }
+        }
+        catch {
+            weatherContext =
+                'NEXUS WEATHER is currently unavailable. Do not invent current weather information.';
+        }
+    }
     const memoryContext = parsed.data.memory?.trim()
         ? parsed.data.memory.slice(-1200)
         : '';
@@ -182,17 +226,20 @@ app.post('/api/ai/chat', async (req, res) => {
                 'You are NEXUS AI, the assistant inside the NEXUS Intelligence app.',
                 'Give clear, useful and concise answers.',
                 'Never pretend to have live information unless NEXUS tools provide it.',
-                'When NEXUS SEARCH results are provided, you MUST answer the user using those results.',
-                'For current/news/search questions, summarize the actual returned results instead of telling the user to visit news websites.',
-                'Use the titles, descriptions, dates, and source names from the search results as evidence.',
-                'If the search results are insufficient, say that clearly instead of inventing information.',
-                'Do not replace search results with generic lists of websites or links.',
-                'Do not invent facts, URLs, dates, headlines, or sources.',
+                'When NEXUS SEARCH results are provided, answer current-information questions using those results.',
+                'When NEXUS WEATHER data is provided, answer weather questions using that data.',
+                'For current/news/search questions, summarize the actual returned search results instead of telling the user to visit websites.',
+                'For weather questions, clearly state the location and relevant current weather values from the supplied weather data.',
+                'If a NEXUS tool fails or has insufficient data, say so clearly instead of inventing information.',
+                'Do not invent facts, URLs, dates, headlines, weather values, or sources.',
                 memoryContext
                     ? `Conversation memory:\n${memoryContext}`
                     : '',
                 searchContext
                     ? `NEXUS SEARCH TOOL OUTPUT:\n${searchContext}`
+                    : '',
+                weatherContext
+                    ? `NEXUS WEATHER TOOL OUTPUT:\n${weatherContext}`
                     : '',
             ]
                 .filter(Boolean)
@@ -230,7 +277,17 @@ app.post('/api/ai/chat', async (req, res) => {
             data: {
                 answer,
                 model,
-                tool: searchIntent ? 'search' : 'none',
+                tool,
+                ...(tool === 'search' && searchContext
+                    ? {
+                        sources: searchContext,
+                    }
+                    : {}),
+                ...(tool === 'weather' && weatherData
+                    ? {
+                        weather: weatherData,
+                    }
+                    : {}),
             },
         });
     }
