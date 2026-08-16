@@ -16,6 +16,7 @@ type Message = {
   content: string;
   tool?: 'none' | 'search' | 'weather';
   sources?: Source[];
+  weather?: unknown;
 };
 
 const CHAT_KEY = 'nexus-ai-conversation-v2';
@@ -151,7 +152,7 @@ export function AssistantPage() {
         sources: response.sources,
       };
 
-      setMessages((current) => [...current, assistantMessage]);
+      setMessages((current) => [...current, assistantMessagee]);
 
       // Keep a compact local memory instead of sending the full conversation.
       const updatedConversation = [
