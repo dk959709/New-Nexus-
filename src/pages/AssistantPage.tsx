@@ -150,6 +150,7 @@ export function AssistantPage() {
         content: response.answer,
         tool: response.tool,
         sources: response.sources,
+        weather: response.weather,
       };
 
       setMessages((current) => [...current, assistantMessagee]);
@@ -536,6 +537,89 @@ export function AssistantPage() {
                       🌤️ Weather data
                     </div>
                   )}
+
+                  {message.role === 'assistant' &&
+                    message.tool === 'weather' &&
+                    message.weather &&
+                    typeof message.weather === 'object' ? (() => {
+                    const weather = message.weather as {
+                      current?: {
+                        location?: string;
+                        temperature?: number;
+                        feelsLike?: number;
+                        conditionLabel?: string;
+                        humidity?: number;
+                        rainProbability?: number;
+                      };
+                    };
+
+                    const current = weather.current;
+
+                    if (!current) return null;
+
+                    return (
+                      <div
+                        style={{
+                          marginTop: 10,
+                          marginBottom: 10,
+                          padding: '12px 14px',
+                          borderRadius: 14,
+                          background: 'rgba(97,221,210,.055)',
+                          border: '1px solid rgba(97,221,210,.14)',
+                        }}
+                      >
+                        <div
+                          style={{
+                            fontSize: 12,
+                            fontWeight: 700,
+                            color: '#61ddd2',
+                            marginBottom: 8,
+                          }}
+                        >
+                          🌤️ Weather data
+                        </div>
+
+                        <div
+                          style={{
+                            fontSize: 13,
+                            fontWeight: 600,
+                            marginBottom: 8,
+                          }}
+                        >
+                          📍 {current.location ?? 'Selected location'}
+                        </div>
+
+                        <div
+                          style={{
+                            display: 'grid',
+                            gridTemplateColumns: '1fr 1fr',
+                            gap: 7,
+                            fontSize: 12,
+                            opacity: 0.85,
+                          }}
+                        >
+                          <div>
+                            🌡️ {current.temperature ?? '—'}°C
+                            {typeof current.feelsLike === 'number'
+                              ? ` · Feels like ${current.feelsLike}°C`
+                              : ''}
+                          </div>
+
+                          <div>
+                            ☁️ {current.conditionLabel ?? '—'}
+                          </div>
+
+                          <div>
+                            💧 Humidity {current.humidity ?? '—'}%
+                          </div>
+
+                          <div>
+                            🌧️ Rain {current.rainProbability ?? '—'}%
+                          </div>
+                        </div>
+                      </div>
+                    );
+                  })() : null}
 
                   <div
                     style={{
