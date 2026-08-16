@@ -52,6 +52,13 @@ export const api = {
     return call<{ status: string }>('/api/health');
   },
 
+  aiChat(message: string): Promise<{ answer: string; model: string }> {
+    return call<{ answer: string; model: string }>('/api/ai/chat', {
+      method: 'POST',
+      body: JSON.stringify({ message }),
+    });
+  },
+
   wallpapers(query: string, page?: number): Promise<WallpaperPhoto[]> {
     const qs = `query=${encodeURIComponent(query)}${page ? `&page=${page}` : ''}`;
 
