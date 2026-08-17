@@ -18,11 +18,17 @@ function getInitialWallpaper(): string | null {
 
 const initialWallpaper = getInitialWallpaper();
 
+function showErrorOnScreen(message: string) {
+  const el = document.getElementById('root');
+  if (el) {
+    el.innerHTML = '<div style="padding:20px;color:#fff;background:#300;font-family:monospace;white-space:pre-wrap;font-size:14px;">CRASH ERROR:\n\n' + message + '</div>';
+  }
+}
 window.addEventListener('error', (e) => {
-  document.title = 'ERROR: ' + e.message;
+  showErrorOnScreen(e.message + '\n\n' + (e.error?.stack || ''));
 });
 window.addEventListener('unhandledrejection', (e) => {
-  document.title = 'PROMISE ERROR: ' + e.reason;
+  showErrorOnScreen(String(e.reason));
 });
 
 createRoot(document.getElementById('root')!).render(
