@@ -26,6 +26,7 @@
     "@capacitor/share": "^7.0.2",
     "@capacitor/splash-screen": "^7.0.3",
     "@capacitor/status-bar": "^7.0.3",
+    "@emotion/is-prop-valid": "^1.4.0",
     "@supabase/supabase-js": "^2.57.4",
     "@types/leaflet": "^1.9.22",
     "better-sqlite3": "^12.4.1",

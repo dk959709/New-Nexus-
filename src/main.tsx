@@ -25,6 +25,8 @@ function showErrorOnScreen(message: string) {
   }
 }
 window.addEventListener('error', (e) => {
+  console.error('[NEXUS HARD RELOAD ERROR]', e.message, e.error?.stack || e.error || '');
+  
   showErrorOnScreen(e.message + '\n\n' + (e.error?.stack || ''));
 });
 window.addEventListener('unhandledrejection', (e) => {
