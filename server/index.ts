@@ -3,6 +3,7 @@ import express, { type NextFunction, type Request, type Response } from 'express
 import cors from 'cors';
 import helmet from 'helmet';
 import morgan from 'morgan';
+import { resolve } from 'node:path';
 import { z } from 'zod';
 
 const app = express();
@@ -21,8 +22,8 @@ app.use(helmet({
 app.use(cors());
 app.use(express.json({ limit: '1mb' }));
 app.use(morgan('tiny'));
-const pathToDist = new URL('../dist/', import.meta.url).pathname;
-app.use(express.static('dist', {
+const pathToDist = resolve(process.cwd(), 'dist');
+app.use(express.static(pathToDist, {
   setHeaders: (res, filePath) => {
     if (
       filePath.endsWith('index.html') ||
