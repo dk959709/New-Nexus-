@@ -104,8 +104,36 @@ app.get('/api/offline-model/:owner/:repo/*rest', async (req, res) => {
       return errorResponse(res, 403, 'Offline model not allowed.');
     }
 
+    // Transformers.js may request:
+    // resolve/main/file/config.json
+    // while Hugging Face expects:
+    // resolve/main/config.json
+    let normalizedRest = rest;
+
+    if (normalizedRest.startsWith("resolve/")) {
+      const parts = normalizedRest.split("/");
+      const revision = parts[1] || "main";
+      let file = parts.slice(2).join("/");
+
+      if (file.startsWith("file/")) {
+        file = file.slice(5);
+      }
+
+      normalizedRest = `resolve/${revision}/${file}`;
+    } else if (normalizedRest.startsWith("revision/")) {
+      const parts = normalizedRest.split("/");
+      const revision = parts[1] || "main";
+      let file = parts.slice(2).join("/");
+
+      if (file.startsWith("file/")) {
+        file = file.slice(5);
+      }
+
+      normalizedRest = `resolve/${revision}/${file}`;
+    }
+
     const upstreamUrl =
-      `https://huggingface.co/${owner}/${repo}/${rest}`;
+      `https://huggingface.co/${owner}/${repo}/${normalizedRest}`;
 
     const upstream = await fetch(upstreamUrl, {
       headers: {
