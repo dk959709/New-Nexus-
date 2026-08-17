@@ -250,6 +250,7 @@ export function MapPage() {
 }
 
 export function SpacePage() {
+  useSettings();
   const [apod, setApod] = useState<{ title: string; explanation: string; url: string; hdurl?: string; date: string; media_type: string } | null>(null);
   const [moon, setMoon] = useState<{ phaseName: string; illumination: number; ageDays: number } | null>(null);
   const [iss, setIss] = useState<{ latitude: number; longitude: number; timestamp: number } | null>(null);
