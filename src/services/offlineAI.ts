@@ -2,6 +2,14 @@ import { pipeline, TextStreamer } from "@huggingface/transformers";
 
 const MODEL_ID = "onnx-community/LFM2.5-350M-ONNX";
 
+// Use browser cache and avoid failing silently on HF fetch errors
+const MODEL_OPTIONS = {
+  dtype: "q4",
+  device: "wasm",
+  use_external_data_format: true,
+  progress_callback: undefined,
+};
+
 type Generator = Awaited<ReturnType<typeof pipeline>>;
 
 let generator: Generator | null = null;
@@ -44,7 +52,7 @@ export async function loadOfflineAI(
         "text-generation",
         MODEL_ID,
         {
-          dtype: "q4",
+          ...MODEL_OPTIONS,
           device,
           progress_callback: (data: { progress?: number }) => {
             if (typeof data.progress === "number") {
@@ -67,7 +75,7 @@ export async function loadOfflineAI(
           "text-generation",
           MODEL_ID,
           {
-            dtype: "q4",
+            ...MODEL_OPTIONS,
             device: "wasm",
             progress_callback: (data: { progress?: number }) => {
               if (typeof data.progress === "number") {
