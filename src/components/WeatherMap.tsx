@@ -94,122 +94,142 @@ export function WeatherMap({
 }) {
   const containerRef = useRef<HTMLDivElement>(null);
   const mapRef = useRef<L.Map | null>(null);
-  const baseRef = useRef<L.TileLayer | null>(null);
   const overlayRef = useRef<L.TileLayer | null>(null);
-  const readyRef = useRef(false);
+  const initializedRef = useRef(false);
 
   const [layer, setLayer] = useState<LayerId>('temp_new');
   const [loading, setLoading] = useState(true);
 
   /*
    * IMPORTANT:
-   * The map is created only after the container has a real size.
-   * This prevents the hard-reload/white-map Leaflet race.
+   * Map creation and overlay creation happen in the SAME initialization
+   * flow. This prevents the hard-reload race where the layer effect fires
+   * before mapRef.current exists.
    */
   useEffect(() => {
     const container = containerRef.current;
 
-    if (!container || mapRef.current) return;
+    if (!container || initializedRef.current) return;
 
     let cancelled = false;
-    let retryTimer: ReturnType<typeof setTimeout> | null = null;
-    let map: L.Map | null = null;
+    let retryTimer: ReturnType<typeof setTimeout> | undefined;
 
-    const createMap = () => {
-      if (cancelled || mapRef.current) return;
+    const initialize = () => {
+      if (cancelled || initializedRef.current) return;
 
       const rect = container.getBoundingClientRect();
 
-      if (rect.width < 10 || rect.height < 10) {
-        retryTimer = setTimeout(createMap, 100);
+      if (rect.width <= 0 || rect.height <= 0) {
+        retryTimer = setTimeout(initialize, 100);
         return;
       }
 
-      map = L.map(container, {
+      initializedRef.current = true;
+
+      const map = L.map(container, {
         zoomControl: true,
         preferCanvas: true,
-      });
-
-      map.setView(
+      }).setView(
         [latitude ?? 20, longitude ?? 0],
         latitude !== undefined && longitude !== undefined ? 6 : 2,
       );
 
+      mapRef.current = map;
+
       /*
-       * CARTO base map.
-       * This avoids the OpenStreetMap tile-server blocking problem.
+       * CARTO dark base map instead of OSM.
+       * This avoids the OSM tile-policy issue encountered in production.
        */
-      const base = L.tileLayer(
+      L.tileLayer(
         'https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}{r}.png',
         {
           attribution:
             '&copy; OpenStreetMap contributors &copy; CARTO',
-          maxZoom: 20,
           subdomains: 'abcd',
+          maxZoom: 20,
         },
-      );
-
-      base.addTo(map);
-      baseRef.current = base;
-
-      mapRef.current = map;
+      ).addTo(map);
 
       const refreshSize = () => {
-        if (!mapRef.current) return;
-
-        requestAnimationFrame(() => {
-          mapRef.current?.invalidateSize({
-            pan: false,
-            animate: false,
-          });
-        });
+        if (mapRef.current) {
+          mapRef.current.invalidateSize({ pan: false });
+        }
       };
 
-      const onMapReady = () => {
+      const addWeatherOverlay = () => {
         if (cancelled || !mapRef.current) return;
 
-        readyRef.current = true;
+        if (overlayRef.current) {
+          overlayRef.current.remove();
+          overlayRef.current = null;
+        }
 
-        refreshSize();
+        setLoading(true);
 
-        setTimeout(refreshSize, 50);
-        setTimeout(refreshSize, 200);
-        setTimeout(refreshSize, 500);
+        const overlay = L.tileLayer(
+          `/api/maptile/${layer}/{z}/{x}/{y}.png`,
+          {
+            opacity: 0.65,
+            maxZoom: 18,
+            crossOrigin: true,
+          },
+        );
 
-        setLoading(false);
+        overlayRef.current = overlay;
+
+        overlay.on('load', () => {
+          if (!cancelled) setLoading(false);
+          refreshSize();
+        });
+
+        overlay.on('tileerror', () => {
+          if (!cancelled) setLoading(false);
+        });
+
+        overlay.addTo(map);
+
+        /*
+         * Don't leave the loading screen forever if the provider
+         * doesn't return a tile event.
+         */
+        setTimeout(() => {
+          if (!cancelled) setLoading(false);
+        }, 5000);
       };
 
-      map.whenReady(onMapReady);
+      map.whenReady(() => {
+        if (cancelled) return;
+
+        refreshSize();
+        requestAnimationFrame(refreshSize);
+        setTimeout(refreshSize, 100);
+        setTimeout(refreshSize, 500);
+
+        /*
+         * This is the key fix:
+         * the first weather overlay is created only AFTER Leaflet
+         * has successfully created the map.
+         */
+        addWeatherOverlay();
+      });
 
       window.addEventListener('resize', refreshSize);
 
-      /*
-       * ResizeObserver handles the special case where the route
-       * becomes visible after React/BrowserRouter has already mounted.
-       */
-      const observer = new ResizeObserver(() => {
-        refreshSize();
-      });
-
-      observer.observe(container);
-
       return () => {
         window.removeEventListener('resize', refreshSize);
-        observer.disconnect();
 
-        readyRef.current = false;
-
-        if (mapRef.current) {
-          mapRef.current.remove();
-          mapRef.current = null;
+        if (overlayRef.current) {
+          overlayRef.current.remove();
+          overlayRef.current = null;
         }
 
-        baseRef.current = null;
-        overlayRef.current = null;
+        map.remove();
+        mapRef.current = null;
+        initializedRef.current = false;
       };
     };
 
-    const cleanup = createMap();
+    const cleanup = initialize();
 
     return () => {
       cancelled = true;
@@ -218,87 +238,73 @@ export function WeatherMap({
         clearTimeout(retryTimer);
       }
 
-      if (cleanup) {
+      if (typeof cleanup === 'function') {
         cleanup();
-      } else if (mapRef.current) {
-        mapRef.current.remove();
-        mapRef.current = null;
-      }
+      } else {
+        if (overlayRef.current) {
+          overlayRef.current.remove();
+          overlayRef.current = null;
+        }
 
-      baseRef.current = null;
-      overlayRef.current = null;
-      readyRef.current = false;
+        if (mapRef.current) {
+          mapRef.current.remove();
+          mapRef.current = null;
+        }
+
+        initializedRef.current = false;
+      }
     };
   }, [latitude, longitude]);
 
   /*
-   * Weather overlay.
-   *
-   * The crucial part is that it does NOT attempt to create the
-   * overlay until Leaflet has completed map initialization.
+   * Layer changes happen AFTER the map already exists.
+   * This effect is therefore safe for Temperature/Clouds/Wind/etc.
    */
   useEffect(() => {
-    let cancelled = false;
-    let timer: ReturnType<typeof setTimeout> | null = null;
+    const map = mapRef.current;
 
-    const addOverlay = () => {
-      if (cancelled) return;
+    if (!map) return;
 
-      const map = mapRef.current;
+    if (overlayRef.current) {
+      overlayRef.current.remove();
+      overlayRef.current = null;
+    }
 
-      if (!map || !readyRef.current) {
-        timer = setTimeout(addOverlay, 100);
-        return;
+    setLoading(true);
+
+    const overlay = L.tileLayer(
+      `/api/maptile/${layer}/{z}/{x}/{y}.png`,
+      {
+        opacity: 0.65,
+        maxZoom: 18,
+        crossOrigin: true,
+      },
+    );
+
+    overlayRef.current = overlay;
+
+    overlay.on('load', () => {
+      setLoading(false);
+
+      if (mapRef.current) {
+        mapRef.current.invalidateSize({ pan: false });
       }
+    });
 
-      if (overlayRef.current) {
-        map.removeLayer(overlayRef.current);
-        overlayRef.current = null;
-      }
+    overlay.on('tileerror', () => {
+      setLoading(false);
+    });
 
-      setLoading(true);
+    overlay.addTo(map);
 
-      const overlay = L.tileLayer(
-        `/api/maptile/${layer}/{z}/{x}/{y}.png`,
-        {
-          opacity: 0.65,
-          maxZoom: 18,
-          crossOrigin: true,
-        },
-      );
-
-      overlayRef.current = overlay;
-
-      let finished = false;
-
-      const finish = () => {
-        if (finished || cancelled) return;
-        finished = true;
-        setLoading(false);
-      };
-
-      overlay.on('load', finish);
-      overlay.on('tileerror', finish);
-
-      overlay.addTo(map);
-
-      timer = setTimeout(finish, 5000);
-
-      requestAnimationFrame(() => {
-        map.invalidateSize({
-          pan: false,
-          animate: false,
-        });
-      });
-    };
-
-    addOverlay();
+    const timer = setTimeout(() => setLoading(false), 5000);
 
     return () => {
-      cancelled = true;
+      clearTimeout(timer);
 
-      if (timer) {
-        clearTimeout(timer);
+      if (overlayRef.current === overlay) {
+        overlay.remove();
+        overlayRef.current = null;
       }
     };
   }, [layer]);
@@ -327,11 +333,7 @@ export function WeatherMap({
         })}
       </div>
 
-      <div
-        ref={containerRef}
-        className="weather-map-canvas"
-        aria-label="Interactive weather map"
-      />
+      <div ref={containerRef} className="weather-map-canvas" />
 
       {loading && (
         <div className="weather-map-loading">
@@ -346,9 +348,7 @@ export function WeatherMap({
 
         <div
           className="weather-map-legend-bar"
-          style={{
-            background: activeLayer.legend.gradient,
-          }}
+          style={{ background: activeLayer.legend.gradient }}
         />
 
         <div className="weather-map-legend-labels">
