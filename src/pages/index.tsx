@@ -47,7 +47,7 @@ export function HomePage() {
   };
 
   return <>
-    <section className="hero"><span className="eyebrow">NEXUS INTELLIGENT (dk959709@gmail.com)</span><h1>Search the web.<br /><span>Understand the world.</span></h1><p>One clear signal from billions of data points. Search, weather, and live context in one calm interface.</p></section>
+    <section className="hero"><span className="eyebrow">NEXUS INTELLIGENT (dk959709@gmail.com)</span><h1>Search the web.<br /><span>Understand the world.</span></h1><p>A unified view of live search, weather, and world signals — clear, fast, and precise.</p></section>
     <SearchBox onSearch={search} recent={storage.getSearches()} />
 
     <section
