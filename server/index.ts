@@ -501,7 +501,9 @@ app.get('/api/space/iss', async (req, res) => {
 });
 
 app.get('/{*splat}', (_req, res) => {
-  return res.sendFile(`${pathToDist}index.html`, {
+  const indexPath = resolve(pathToDist, 'index.html');
+
+  return res.sendFile(indexPath, {
     headers: {
       'Cache-Control': 'no-store, no-cache, must-revalidate, proxy-revalidate',
       'Pragma': 'no-cache',
