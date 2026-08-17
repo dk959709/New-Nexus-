@@ -93,8 +93,27 @@ export function WeatherMap({ latitude, longitude }: { latitude?: number; longitu
       maxZoom: 18,
     }).addTo(map);
     mapRef.current = map;
-    map.on('load', () => setLoading(false));
+
+    // Leaflet can initialize before the routed page has its final size.
+    // Recalculate the map dimensions after the page is painted.
+    const refreshMapSize = () => {
+      if (mapRef.current) {
+        mapRef.current.invalidateSize({ pan: false });
+      }
+    };
+
+    map.whenReady(() => {
+      refreshMapSize();
+      setLoading(false);
+      requestAnimationFrame(refreshMapSize);
+      setTimeout(refreshMapSize, 100);
+      setTimeout(refreshMapSize, 500);
+    });
+
+    window.addEventListener('resize', refreshMapSize);
+
     return () => {
+      window.removeEventListener('resize', refreshMapSize);
       map.remove();
       mapRef.current = null;
     };
