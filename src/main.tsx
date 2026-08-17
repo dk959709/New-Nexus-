@@ -18,6 +18,13 @@ function getInitialWallpaper(): string | null {
 
 const initialWallpaper = getInitialWallpaper();
 
+window.addEventListener('error', (e) => {
+  document.title = 'ERROR: ' + e.message;
+});
+window.addEventListener('unhandledrejection', (e) => {
+  document.title = 'PROMISE ERROR: ' + e.reason;
+});
+
 createRoot(document.getElementById('root')!).render(
   <StrictMode>
     <div
