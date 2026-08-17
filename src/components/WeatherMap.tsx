@@ -85,6 +85,11 @@ const LAYERS: LayerDef[] = [
   },
 ];
 
+// WEATHER_MAP_DIAGNOSTIC
+window.addEventListener('error', (event) => {
+  console.error('[WEATHER_MAP_DIAGNOSTIC]', event.error || event.message);
+});
+
 export function WeatherMap({
   latitude,
   longitude,
