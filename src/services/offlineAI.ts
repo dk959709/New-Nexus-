@@ -1,13 +1,18 @@
-import { pipeline, TextStreamer } from "@huggingface/transformers";
+import { env, pipeline, TextStreamer } from "@huggingface/transformers";
 
 const MODEL_ID = "onnx-community/LFM2.5-350M-ONNX";
 
 // Use browser cache and avoid failing silently on HF fetch errors
+// Transformers.js v4: keep the model in the browser cache so that
+// after the first successful download it can run without downloading again.
+env.allowRemoteModels = true;
+env.allowLocalModels = false;
+env.useBrowserCache = true;
+env.useWasmCache = true;
+
 const MODEL_OPTIONS = {
   dtype: "q4",
-  device: "wasm",
   use_external_data_format: true,
-  progress_callback: undefined,
 };
 
 type Generator = Awaited<ReturnType<typeof pipeline>>;
@@ -91,7 +96,11 @@ export async function loadOfflineAI(
         return model;
       }
 
-      throw error;
+      const detail =
+        error instanceof Error ? error.message : String(error);
+      throw new Error(
+        `Offline model could not load. WebGPU=${device === "webgpu"}. ${detail}`,
+      );
     }
   })();
 
