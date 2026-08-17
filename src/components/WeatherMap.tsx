@@ -92,21 +92,42 @@ export function WeatherMap({
   latitude?: number;
   longitude?: number;
 }) {
-  const containerRef = useRef<HTMLDivElement>(null);
+  const containerRef = useRef<HTMLDivElement | null>(null);
   const mapRef = useRef<L.Map | null>(null);
   const overlayRef = useRef<L.TileLayer | null>(null);
+  const initTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   const [layer, setLayer] = useState<LayerId>('temp_new');
   const [loading, setLoading] = useState(true);
+  const [mapError, setMapError] = useState('');
 
   useEffect(() => {
     const container = containerRef.current;
 
     if (!container) return;
+    if (mapRef.current) return;
 
     let cancelled = false;
-    let retryTimer: ReturnType<typeof setTimeout> | undefined;
-    let resizeObserver: ResizeObserver | undefined;
+
+    const clearInitTimer = () => {
+      if (initTimerRef.current) {
+        clearTimeout(initTimerRef.current);
+        initTimerRef.current = null;
+      }
+    };
+
+    const refreshSize = () => {
+      const map = mapRef.current;
+      if (!map) return;
+
+      requestAnimationFrame(() => {
+        try {
+          map.invalidateSize({ pan: false });
+        } catch {
+          // Ignore Leaflet size refresh errors during route transitions.
+        }
+      });
+    };
 
     const initialize = () => {
       if (cancelled || mapRef.current) return;
@@ -114,83 +135,99 @@ export function WeatherMap({
       const rect = container.getBoundingClientRect();
 
       if (rect.width <= 0 || rect.height <= 0) {
-        retryTimer = setTimeout(initialize, 100);
+        initTimerRef.current = setTimeout(initialize, 100);
         return;
       }
 
-      const map = L.map(container, {
-        zoomControl: true,
-        preferCanvas: false,
-      }).setView(
-        [latitude ?? 20, longitude ?? 0],
-        latitude !== undefined ? 6 : 2,
-      );
+      try {
+        setMapError('');
+        setLoading(true);
 
-      L.tileLayer(
-        'https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png',
-        {
-          attribution: '&copy; OpenStreetMap contributors',
-          maxZoom: 18,
-        },
-      ).addTo(map);
+        const map = L.map(container, {
+          zoomControl: true,
+          preferCanvas: true,
+        });
 
-      mapRef.current = map;
+        map.setView(
+          [latitude ?? 20, longitude ?? 0],
+          latitude !== undefined && longitude !== undefined ? 6 : 2,
+        );
 
-      const refresh = () => {
-        if (!cancelled && mapRef.current) {
-          mapRef.current.invalidateSize({ pan: false });
-        }
-      };
+        L.tileLayer(
+          'https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png',
+          {
+            attribution: '&copy; OpenStreetMap contributors',
+            maxZoom: 18,
+            crossOrigin: true,
+          },
+        ).addTo(map);
 
-      map.whenReady(() => {
-        refresh();
+        mapRef.current = map;
+
+        const handleResize = () => refreshSize();
+
+        window.addEventListener('resize', handleResize);
+
+        map.whenReady(() => {
+          if (cancelled) return;
+
+          setLoading(false);
+
+          refreshSize();
+          requestAnimationFrame(refreshSize);
+
+          setTimeout(refreshSize, 100);
+          setTimeout(refreshSize, 300);
+          setTimeout(refreshSize, 700);
+        });
+
+        // Leaflet's load event is not guaranteed to fire in every
+        // hard-reload/layout timing scenario, so also refresh after mount.
+        requestAnimationFrame(refreshSize);
+      } catch (error) {
+        console.error('WeatherMap initialization failed:', error);
+
         setLoading(false);
-
-        requestAnimationFrame(() => {
-          refresh();
-
-          requestAnimationFrame(() => {
-            refresh();
-          });
-        });
-
-        setTimeout(refresh, 100);
-        setTimeout(refresh, 300);
-        setTimeout(refresh, 700);
-      });
-
-      window.addEventListener('resize', refresh);
-
-      if (typeof ResizeObserver !== 'undefined') {
-        resizeObserver = new ResizeObserver(() => {
-          refresh();
-        });
-
-        resizeObserver.observe(container);
+        setMapError(
+          error instanceof Error
+            ? error.message
+            : 'Weather map failed to initialize.',
+        );
       }
     };
 
     initialize();
 
+    const observer =
+      typeof ResizeObserver !== 'undefined'
+        ? new ResizeObserver(() => {
+            if (!mapRef.current) {
+              clearInitTimer();
+              initialize();
+            } else {
+              refreshSize();
+            }
+          })
+        : null;
+
+    observer?.observe(container);
+
     return () => {
       cancelled = true;
+      clearInitTimer();
+      observer?.disconnect();
 
-      if (retryTimer) {
-        clearTimeout(retryTimer);
+      const map = mapRef.current;
+
+      if (map) {
+        try {
+          map.remove();
+        } catch {
+          // Ignore cleanup errors during navigation/reload.
+        }
       }
 
-      window.removeEventListener(
-        'resize',
-        () => undefined,
-      );
-
-      resizeObserver?.disconnect();
-
-      if (mapRef.current) {
-        mapRef.current.remove();
-        mapRef.current = null;
-      }
-
+      mapRef.current = null;
       overlayRef.current = null;
     };
   }, [latitude, longitude]);
@@ -200,10 +237,17 @@ export function WeatherMap({
 
     if (!map) return;
 
+    let cancelled = false;
+
     setLoading(true);
+    setMapError('');
 
     if (overlayRef.current) {
-      map.removeLayer(overlayRef.current);
+      try {
+        map.removeLayer(overlayRef.current);
+      } catch {
+        // Ignore stale Leaflet layer during navigation.
+      }
       overlayRef.current = null;
     }
 
@@ -215,28 +259,51 @@ export function WeatherMap({
       },
     );
 
-    overlay.addTo(map);
     overlayRef.current = overlay;
 
     overlay.on('load', () => {
-      setLoading(false);
-      map.invalidateSize({ pan: false });
+      if (!cancelled) {
+        setLoading(false);
+      }
     });
 
     overlay.on('tileerror', () => {
-      setLoading(false);
+      if (!cancelled) {
+        setLoading(false);
+        setMapError(
+          'Weather layer is temporarily unavailable. The base map is still available.',
+        );
+      }
     });
 
+    try {
+      overlay.addTo(map);
+      map.invalidateSize({ pan: false });
+    } catch (error) {
+      console.error('Weather overlay failed:', error);
+
+      if (!cancelled) {
+        setLoading(false);
+        setMapError('Weather layer failed to load.');
+      }
+    }
+
     const timer = setTimeout(() => {
-      setLoading(false);
+      if (!cancelled) {
+        setLoading(false);
+      }
     }, 5000);
 
     return () => {
+      cancelled = true;
       clearTimeout(timer);
 
-      if (overlayRef.current === overlay) {
-        map.removeLayer(overlay);
-        overlayRef.current = null;
+      try {
+        if (map.hasLayer(overlay)) {
+          map.removeLayer(overlay);
+        }
+      } catch {
+        // Ignore cleanup errors.
       }
     };
   }, [layer]);
@@ -252,6 +319,7 @@ export function WeatherMap({
           return (
             <button
               key={item.id}
+              type="button"
               className={`weather-map-layer-btn${
                 item.id === layer ? ' active' : ''
               }`}
@@ -267,6 +335,10 @@ export function WeatherMap({
       <div
         ref={containerRef}
         className="weather-map-canvas"
+        style={{
+          minHeight: '420px',
+          width: '100%',
+        }}
       />
 
       {loading && (
@@ -275,7 +347,27 @@ export function WeatherMap({
         </div>
       )}
 
-      <div className="weather-map-legend">
+      {mapError && (
+        <div
+          className="weather-map-error"
+          role="status"
+          style={{
+            position: 'absolute',
+            left: '16px',
+            right: '16px',
+            bottom: '16px',
+            zIndex: 1000,
+            padding: '10px 12px',
+            borderRadius: '10px',
+            background: 'rgba(7, 16, 22, 0.92)',
+            backdropFilter: 'blur(8px)',
+          }}
+        >
+          {mapError}
+        </div>
+      )}
+
+      <div className="weather-map-legend" key={layer}>
         <div className="weather-map-legend-title">
           {activeLayer.legend.title}
         </div>
