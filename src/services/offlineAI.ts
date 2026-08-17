@@ -14,6 +14,7 @@ env.useWasmCache = true;
 
 const MODEL_OPTIONS = {
   dtype: "q4",
+  use_external_data_format: true,
 };
 
 type Generator = Awaited<ReturnType<typeof pipeline>>;
@@ -84,6 +85,7 @@ export async function loadOfflineAI(
             MODEL_ID,
             {
               dtype: "q4",
+              use_external_data_format: true,
               device: "wasm",
               progress_callback: (data: { progress?: number }) => {
                 if (typeof data.progress === "number") {
