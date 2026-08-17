@@ -82,6 +82,84 @@ async function weatherProvider(latitude: number, longitude: number, location: st
   return { current: { location, temperature: Number(data.current.temperature_2m), feelsLike: Number(data.current.apparent_temperature), condition: currentCondition[0], conditionLabel: currentCondition[1], humidity: Number(data.current.relative_humidity_2m), wind: Number(data.current.wind_speed_10m), pressure: Number(data.current.surface_pressure), visibility: 10, uvIndex: 0, sunrise: String(data.daily.sunrise[0]).split('T')[1], sunset: String(data.daily.sunset[0]).split('T')[1], rainProbability: Number(data.daily.precipitation_probability_max[0]), updatedAt: new Date().toISOString(), latitude, longitude, isDay: Boolean(data.current.is_day) }, hourly, daily, alerts: [] };
 }
 
+
+// Same-origin proxy for the NEXUS Offline AI model.
+// This avoids browser/CORS/fetch failures when Hugging Face redirects
+// large ONNX files through its Xet storage layer.
+app.get('/api/offline-model/:owner/:repo/*', async (req, res) => {
+  try {
+    const owner = String(req.params.owner);
+    const repo = String(req.params.repo);
+    const rest = String((req.params as any)[0] ?? '');
+
+    if (!owner || !repo || !rest) {
+      return errorResponse(res, 400, 'Invalid offline model path.');
+    }
+
+    // Only allow the specific model used by NEXUS.
+    if (owner !== 'onnx-community' || repo !== 'LFM2.5-350M-ONNX') {
+      return errorResponse(res, 403, 'Offline model not allowed.');
+    }
+
+    const upstreamUrl =
+      `https://huggingface.co/${owner}/${repo}/${rest}`;
+
+    const upstream = await fetch(upstreamUrl, {
+      headers: {
+        ...(req.headers.range ? { Range: req.headers.range } : {}),
+        'User-Agent': 'NEXUS-Offline-AI/1.0',
+      },
+      redirect: 'follow',
+    });
+
+    if (!upstream.ok || !upstream.body) {
+      return errorResponse(
+        res,
+        upstream.status || 502,
+        `Offline model upstream returned ${upstream.status}.`,
+      );
+    }
+
+    res.status(upstream.status);
+
+    const contentType = upstream.headers.get('content-type');
+    const contentLength = upstream.headers.get('content-length');
+    const contentRange = upstream.headers.get('content-range');
+    const acceptRanges = upstream.headers.get('accept-ranges');
+
+    if (contentType) res.setHeader('Content-Type', contentType);
+    if (contentLength) res.setHeader('Content-Length', contentLength);
+    if (contentRange) res.setHeader('Content-Range', contentRange);
+    if (acceptRanges) res.setHeader('Accept-Ranges', acceptRanges);
+
+    res.setHeader(
+      'Cache-Control',
+      'public, max-age=31536000, immutable',
+    );
+    res.setHeader('Access-Control-Allow-Origin', '*');
+
+    const reader = upstream.body.getReader();
+
+    try {
+      while (true) {
+        const { done, value } = await reader.read();
+        if (done) break;
+        res.write(Buffer.from(value));
+      }
+    } finally {
+      reader.releaseLock();
+    }
+
+    res.end();
+  } catch (error) {
+    console.error('Offline model proxy error:', error);
+    if (!res.headersSent) {
+      return errorResponse(res, 502, 'Offline model download failed.');
+    }
+    res.end();
+  }
+});
+
 app.get('/api/health', (_req, res) => res.json({ status: 'ok', service: 'nexus-api', time: new Date().toISOString() }));
 app.get('/api/config/status', (_req, res) => res.json({ data: { search: Boolean(process.env.SEARCH_API_KEY && process.env.SEARCH_API_URL), weather: true, map: Boolean(process.env.MAP_API_KEY), ai: Boolean(process.env.AI_API_KEY && process.env.AI_API_URL), wallpapers: Boolean(process.env.PEXELS_API_KEY) } }));
 

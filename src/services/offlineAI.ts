@@ -12,6 +12,13 @@ env.allowLocalModels = false;
 env.useBrowserCache = true;
 env.useWasmCache = true;
 
+// Download model files through the NEXUS server.
+// This avoids browser fetch/CORS/Xet failures from Hugging Face.
+if (typeof window !== "undefined") {
+  env.remoteHost = window.location.origin + "/api/offline-model";
+  env.remotePathTemplate = "{model}/resolve/{revision}/{file}";
+}
+
 const MODEL_OPTIONS = {
   dtype: "q4",
   use_external_data_format: true,
