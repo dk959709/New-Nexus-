@@ -500,7 +500,13 @@ app.get('/api/space/iss', async (req, res) => {
 });
 
 app.get('/{*splat}', (_req, res) => {
-  return res.sendFile(new URL('../../dist/index.html', import.meta.url).pathname);
+  return res.sendFile(`${pathToDist}index.html`, {
+    headers: {
+      'Cache-Control': 'no-store, no-cache, must-revalidate, proxy-revalidate',
+      'Pragma': 'no-cache',
+      'Expires': '0',
+    },
+  });
 });
 
 app.use((_req, res) => errorResponse(res, 404, 'Not found.'));
