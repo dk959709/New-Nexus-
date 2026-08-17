@@ -3,7 +3,12 @@ import L from 'leaflet';
 import 'leaflet/dist/leaflet.css';
 import { Thermometer, CloudRain, Cloud, Wind, Gauge } from 'lucide-react';
 
-type LayerId = 'temp_new' | 'precipitation_new' | 'clouds_new' | 'wind_new' | 'pressure_new';
+type LayerId =
+  | 'temp_new'
+  | 'precipitation_new'
+  | 'clouds_new'
+  | 'wind_new'
+  | 'pressure_new';
 
 interface LayerDef {
   id: LayerId;
@@ -24,7 +29,8 @@ const LAYERS: LayerDef[] = [
     icon: Thermometer,
     legend: {
       title: 'Temperature',
-      gradient: 'linear-gradient(to right, #440154, #3b528b, #21918c, #5ec962, #fde725)',
+      gradient:
+        'linear-gradient(to right, #440154, #3b528b, #21918c, #5ec962, #fde725)',
       min: '-40°C',
       max: '+50°C',
     },
@@ -35,7 +41,8 @@ const LAYERS: LayerDef[] = [
     icon: CloudRain,
     legend: {
       title: 'Precipitation',
-      gradient: 'linear-gradient(to right, #ffffff, #a8d8f0, #4a90d9, #1a4a7a, #0a1a3a)',
+      gradient:
+        'linear-gradient(to right, #ffffff, #a8d8f0, #4a90d9, #1a4a7a, #0a1a3a)',
       min: '0 mm',
       max: '50+ mm',
     },
@@ -46,7 +53,8 @@ const LAYERS: LayerDef[] = [
     icon: Cloud,
     legend: {
       title: 'Cloud Cover',
-      gradient: 'linear-gradient(to right, #071016, #3a4a52, #81949e, #d4e4e8, #ffffff)',
+      gradient:
+        'linear-gradient(to right, #071016, #3a4a52, #81949e, #d4e4e8, #ffffff)',
       min: '0%',
       max: '100%',
     },
@@ -57,7 +65,8 @@ const LAYERS: LayerDef[] = [
     icon: Wind,
     legend: {
       title: 'Wind Speed',
-      gradient: 'linear-gradient(to right, #1a2a3a, #21918c, #5ec962, #fde725, #f97316)',
+      gradient:
+        'linear-gradient(to right, #1a2a3a, #21918c, #5ec962, #fde725, #f97316)',
       min: '0 m/s',
       max: '40+ m/s',
     },
@@ -68,111 +77,184 @@ const LAYERS: LayerDef[] = [
     icon: Gauge,
     legend: {
       title: 'Pressure',
-      gradient: 'linear-gradient(to right, #3b528b, #21918c, #5ec962, #fde725, #f97316)',
+      gradient:
+        'linear-gradient(to right, #3b528b, #21918c, #5ec962, #fde725, #f97316)',
       min: '950 hPa',
       max: '1050 hPa',
     },
   },
 ];
 
-export function WeatherMap({ latitude, longitude }: { latitude?: number; longitude?: number }) {
+export function WeatherMap({
+  latitude,
+  longitude,
+}: {
+  latitude?: number;
+  longitude?: number;
+}) {
   const containerRef = useRef<HTMLDivElement>(null);
   const mapRef = useRef<L.Map | null>(null);
   const overlayRef = useRef<L.TileLayer | null>(null);
+
   const [layer, setLayer] = useState<LayerId>('temp_new');
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
     const container = containerRef.current;
-    if (!container || mapRef.current) return;
+
+    if (!container) return;
 
     let cancelled = false;
     let retryTimer: ReturnType<typeof setTimeout> | undefined;
+    let resizeObserver: ResizeObserver | undefined;
 
-    const initializeMap = () => {
+    const initialize = () => {
       if (cancelled || mapRef.current) return;
 
       const rect = container.getBoundingClientRect();
 
-      // On a hard reload the routed page can briefly render with
-      // a zero-sized Leaflet container. Wait until it has dimensions.
-      if (rect.width === 0 || rect.height === 0) {
-        retryTimer = setTimeout(initializeMap, 100);
+      if (rect.width <= 0 || rect.height <= 0) {
+        retryTimer = setTimeout(initialize, 100);
         return;
       }
 
-      const map = L.map(container, { zoomControl: true }).setView(
+      const map = L.map(container, {
+        zoomControl: true,
+        preferCanvas: false,
+      }).setView(
         [latitude ?? 20, longitude ?? 0],
-        latitude ? 6 : 2,
+        latitude !== undefined ? 6 : 2,
       );
-    L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
-      attribution: '&copy; OpenStreetMap contributors',
-      maxZoom: 18,
-    }).addTo(map);
-    mapRef.current = map;
 
-    // Leaflet can initialize before the routed page has its final size.
-    // Recalculate the map dimensions after the page is painted.
-    const refreshMapSize = () => {
-      if (mapRef.current) {
-        mapRef.current.invalidateSize({ pan: false });
+      L.tileLayer(
+        'https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png',
+        {
+          attribution: '&copy; OpenStreetMap contributors',
+          maxZoom: 18,
+        },
+      ).addTo(map);
+
+      mapRef.current = map;
+
+      const refresh = () => {
+        if (!cancelled && mapRef.current) {
+          mapRef.current.invalidateSize({ pan: false });
+        }
+      };
+
+      map.whenReady(() => {
+        refresh();
+        setLoading(false);
+
+        requestAnimationFrame(() => {
+          refresh();
+
+          requestAnimationFrame(() => {
+            refresh();
+          });
+        });
+
+        setTimeout(refresh, 100);
+        setTimeout(refresh, 300);
+        setTimeout(refresh, 700);
+      });
+
+      window.addEventListener('resize', refresh);
+
+      if (typeof ResizeObserver !== 'undefined') {
+        resizeObserver = new ResizeObserver(() => {
+          refresh();
+        });
+
+        resizeObserver.observe(container);
       }
     };
 
-      map.whenReady(() => {
-        refreshMapSize();
-        setLoading(false);
-        requestAnimationFrame(refreshMapSize);
-        setTimeout(refreshMapSize, 100);
-        setTimeout(refreshMapSize, 500);
-      });
-
-      window.addEventListener('resize', refreshMapSize);
-
-      mapRef.current = map;
-    };
-
-    initializeMap();
+    initialize();
 
     return () => {
       cancelled = true;
-      if (retryTimer) clearTimeout(retryTimer);
-      window.removeEventListener('resize', refreshMapSize);
+
+      if (retryTimer) {
+        clearTimeout(retryTimer);
+      }
+
+      window.removeEventListener(
+        'resize',
+        () => undefined,
+      );
+
+      resizeObserver?.disconnect();
 
       if (mapRef.current) {
         mapRef.current.remove();
         mapRef.current = null;
       }
+
+      overlayRef.current = null;
     };
   }, [latitude, longitude]);
 
   useEffect(() => {
     const map = mapRef.current;
+
     if (!map) return;
+
     setLoading(true);
-    if (overlayRef.current) map.removeLayer(overlayRef.current);
-    const overlay = L.tileLayer(`/api/maptile/${layer}/{z}/{x}/{y}.png`, {
-      opacity: 0.65,
-      maxZoom: 18,
-    });
+
+    if (overlayRef.current) {
+      map.removeLayer(overlayRef.current);
+      overlayRef.current = null;
+    }
+
+    const overlay = L.tileLayer(
+      `/api/maptile/${layer}/{z}/{x}/{y}.png`,
+      {
+        opacity: 0.65,
+        maxZoom: 18,
+      },
+    );
+
     overlay.addTo(map);
     overlayRef.current = overlay;
-    overlay.on('load', () => setLoading(false));
-    const timer = setTimeout(() => setLoading(false), 4000);
-    return () => clearTimeout(timer);
+
+    overlay.on('load', () => {
+      setLoading(false);
+      map.invalidateSize({ pan: false });
+    });
+
+    overlay.on('tileerror', () => {
+      setLoading(false);
+    });
+
+    const timer = setTimeout(() => {
+      setLoading(false);
+    }, 5000);
+
+    return () => {
+      clearTimeout(timer);
+
+      if (overlayRef.current === overlay) {
+        map.removeLayer(overlay);
+        overlayRef.current = null;
+      }
+    };
   }, [layer]);
 
-  const activeLayer = LAYERS.find((l) => l.id === layer)!;
+  const activeLayer = LAYERS.find((item) => item.id === layer)!;
 
   return (
     <div className="weather-map">
       <div className="weather-map-layers">
         {LAYERS.map((item) => {
           const Icon = item.icon;
+
           return (
             <button
               key={item.id}
-              className={`weather-map-layer-btn${item.id === layer ? ' active' : ''}`}
+              className={`weather-map-layer-btn${
+                item.id === layer ? ' active' : ''
+              }`}
               onClick={() => setLayer(item.id)}
             >
               <Icon />
@@ -181,18 +263,30 @@ export function WeatherMap({ latitude, longitude }: { latitude?: number; longitu
           );
         })}
       </div>
-      <div ref={containerRef} className="weather-map-canvas" />
+
+      <div
+        ref={containerRef}
+        className="weather-map-canvas"
+      />
+
       {loading && (
         <div className="weather-map-loading">
           <div className="weather-map-spinner" />
         </div>
       )}
-      <div className="weather-map-legend" key={layer}>
-        <div className="weather-map-legend-title">{activeLayer.legend.title}</div>
+
+      <div className="weather-map-legend">
+        <div className="weather-map-legend-title">
+          {activeLayer.legend.title}
+        </div>
+
         <div
           className="weather-map-legend-bar"
-          style={{ background: activeLayer.legend.gradient }}
+          style={{
+            background: activeLayer.legend.gradient,
+          }}
         />
+
         <div className="weather-map-legend-labels">
           <span>{activeLayer.legend.min}</span>
           <span>{activeLayer.legend.max}</span>

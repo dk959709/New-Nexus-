@@ -3,6 +3,7 @@ import express from 'express';
 import cors from 'cors';
 import helmet from 'helmet';
 import morgan from 'morgan';
+import { resolve } from 'node:path';
 import { z } from 'zod';
 const app = express();
 const port = Number(process.env.PORT ?? 8787);
@@ -19,8 +20,8 @@ app.use(helmet({
 app.use(cors());
 app.use(express.json({ limit: '1mb' }));
 app.use(morgan('tiny'));
-const pathToDist = new URL('../dist/', import.meta.url).pathname;
-app.use(express.static('dist', {
+const pathToDist = resolve(process.cwd(), 'dist');
+app.use(express.static(pathToDist, {
     setHeaders: (res, filePath) => {
         if (filePath.endsWith('index.html') ||
             filePath.endsWith('sw.js') ||
@@ -502,7 +503,14 @@ app.get('/api/space/iss', async (req, res) => {
     }
 });
 app.get('/{*splat}', (_req, res) => {
-    return res.sendFile(new URL('../../dist/index.html', import.meta.url).pathname);
+    const indexPath = resolve(pathToDist, 'index.html');
+    return res.sendFile(indexPath, {
+        headers: {
+            'Cache-Control': 'no-store, no-cache, must-revalidate, proxy-revalidate',
+            'Pragma': 'no-cache',
+            'Expires': '0',
+        },
+    });
 });
 app.use((_req, res) => errorResponse(res, 404, 'Not found.'));
 app.use((error, _req, res, _next) => { void _next; console.error(error); return errorResponse(res, 500, 'Something went wrong.'); });
