@@ -20,22 +20,36 @@ export function OfflineAIPage() {
 
     setLoadingModel(true);
     setError('');
-    setProgress(0);
+    setProgress(1);
 
     try {
-      const { loadOfflineAI } = await import('@/services/offlineAI');
+      setProgress(5);
 
-      await loadOfflineAI((value) => {
-        setProgress(value);
+      const offline = await import('@/services/offlineAI');
+
+      setProgress(10);
+
+      if (!offline.isWebGPUAvailable()) {
+        throw new Error(
+          'WebGPU is not available in this browser. Please use a browser with WebGPU support.'
+        );
+      }
+
+      setProgress(15);
+
+      await offline.loadOfflineAI((value) => {
+        setProgress(Math.max(15, Math.min(99, value)));
       });
 
-      setModelReady(true);
       setProgress(100);
+      setModelReady(true);
     } catch (err) {
+      console.error('NEXUS Offline AI load error:', err);
+
       setError(
         err instanceof Error
-          ? err.message
-          : 'Unable to load the offline AI model.',
+          ? `Offline AI failed: ${err.message}`
+          : 'Offline AI failed to load. Check the browser console for details.'
       );
     } finally {
       setLoadingModel(false);
