@@ -85,11 +85,6 @@ const LAYERS: LayerDef[] = [
   },
 ];
 
-// WEATHER_MAP_DIAGNOSTIC
-window.addEventListener('error', (event) => {
-  console.error('[WEATHER_MAP_DIAGNOSTIC]', event.error || event.message);
-});
-
 export function WeatherMap({
   latitude,
   longitude,
@@ -97,218 +92,213 @@ export function WeatherMap({
   latitude?: number;
   longitude?: number;
 }) {
-  const containerRef = useRef<HTMLDivElement | null>(null);
+  const containerRef = useRef<HTMLDivElement>(null);
   const mapRef = useRef<L.Map | null>(null);
+  const baseRef = useRef<L.TileLayer | null>(null);
   const overlayRef = useRef<L.TileLayer | null>(null);
-  const initTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const readyRef = useRef(false);
 
   const [layer, setLayer] = useState<LayerId>('temp_new');
   const [loading, setLoading] = useState(true);
-  const [mapError, setMapError] = useState('');
 
+  /*
+   * IMPORTANT:
+   * The map is created only after the container has a real size.
+   * This prevents the hard-reload/white-map Leaflet race.
+   */
   useEffect(() => {
     const container = containerRef.current;
 
-    if (!container) return;
-    if (mapRef.current) return;
+    if (!container || mapRef.current) return;
 
     let cancelled = false;
+    let retryTimer: ReturnType<typeof setTimeout> | null = null;
+    let map: L.Map | null = null;
 
-    const clearInitTimer = () => {
-      if (initTimerRef.current) {
-        clearTimeout(initTimerRef.current);
-        initTimerRef.current = null;
-      }
-    };
-
-    const refreshSize = () => {
-      const map = mapRef.current;
-      if (!map) return;
-
-      requestAnimationFrame(() => {
-        try {
-          map.invalidateSize({ pan: false });
-        } catch {
-          // Ignore Leaflet size refresh errors during route transitions.
-        }
-      });
-    };
-
-    const initialize = () => {
+    const createMap = () => {
       if (cancelled || mapRef.current) return;
 
       const rect = container.getBoundingClientRect();
 
-      if (rect.width <= 0 || rect.height <= 0) {
-        initTimerRef.current = setTimeout(initialize, 100);
+      if (rect.width < 10 || rect.height < 10) {
+        retryTimer = setTimeout(createMap, 100);
         return;
       }
 
-      try {
-        setMapError('');
-        setLoading(true);
+      map = L.map(container, {
+        zoomControl: true,
+        preferCanvas: true,
+      });
 
-        const map = L.map(container, {
-          zoomControl: true,
-          preferCanvas: true,
+      map.setView(
+        [latitude ?? 20, longitude ?? 0],
+        latitude !== undefined && longitude !== undefined ? 6 : 2,
+      );
+
+      /*
+       * CARTO base map.
+       * This avoids the OpenStreetMap tile-server blocking problem.
+       */
+      const base = L.tileLayer(
+        'https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}{r}.png',
+        {
+          attribution:
+            '&copy; OpenStreetMap contributors &copy; CARTO',
+          maxZoom: 20,
+          subdomains: 'abcd',
+        },
+      );
+
+      base.addTo(map);
+      baseRef.current = base;
+
+      mapRef.current = map;
+
+      const refreshSize = () => {
+        if (!mapRef.current) return;
+
+        requestAnimationFrame(() => {
+          mapRef.current?.invalidateSize({
+            pan: false,
+            animate: false,
+          });
         });
+      };
 
-        map.setView(
-          [latitude ?? 20, longitude ?? 0],
-          latitude !== undefined && longitude !== undefined ? 6 : 2,
-        );
+      const onMapReady = () => {
+        if (cancelled || !mapRef.current) return;
 
-        L.tileLayer(
-          'https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png',
-          {
-            attribution: '&copy; OpenStreetMap contributors',
-            maxZoom: 18,
-            crossOrigin: true,
-          },
-        ).addTo(map);
+        readyRef.current = true;
 
-        mapRef.current = map;
+        refreshSize();
 
-        const handleResize = () => refreshSize();
-
-        window.addEventListener('resize', handleResize);
-
-        map.whenReady(() => {
-          if (cancelled) return;
-
-          setLoading(false);
-
-          refreshSize();
-          requestAnimationFrame(refreshSize);
-
-          setTimeout(refreshSize, 100);
-          setTimeout(refreshSize, 300);
-          setTimeout(refreshSize, 700);
-        });
-
-        // Leaflet's load event is not guaranteed to fire in every
-        // hard-reload/layout timing scenario, so also refresh after mount.
-        requestAnimationFrame(refreshSize);
-      } catch (error) {
-        console.error('WeatherMap initialization failed:', error);
+        setTimeout(refreshSize, 50);
+        setTimeout(refreshSize, 200);
+        setTimeout(refreshSize, 500);
 
         setLoading(false);
-        setMapError(
-          error instanceof Error
-            ? error.message
-            : 'Weather map failed to initialize.',
-        );
-      }
+      };
+
+      map.whenReady(onMapReady);
+
+      window.addEventListener('resize', refreshSize);
+
+      /*
+       * ResizeObserver handles the special case where the route
+       * becomes visible after React/BrowserRouter has already mounted.
+       */
+      const observer = new ResizeObserver(() => {
+        refreshSize();
+      });
+
+      observer.observe(container);
+
+      return () => {
+        window.removeEventListener('resize', refreshSize);
+        observer.disconnect();
+
+        readyRef.current = false;
+
+        if (mapRef.current) {
+          mapRef.current.remove();
+          mapRef.current = null;
+        }
+
+        baseRef.current = null;
+        overlayRef.current = null;
+      };
     };
 
-    initialize();
-
-    const observer =
-      typeof ResizeObserver !== 'undefined'
-        ? new ResizeObserver(() => {
-            if (!mapRef.current) {
-              clearInitTimer();
-              initialize();
-            } else {
-              refreshSize();
-            }
-          })
-        : null;
-
-    observer?.observe(container);
+    const cleanup = createMap();
 
     return () => {
       cancelled = true;
-      clearInitTimer();
-      observer?.disconnect();
 
-      const map = mapRef.current;
-
-      if (map) {
-        try {
-          map.remove();
-        } catch {
-          // Ignore cleanup errors during navigation/reload.
-        }
+      if (retryTimer) {
+        clearTimeout(retryTimer);
       }
 
-      mapRef.current = null;
+      if (cleanup) {
+        cleanup();
+      } else if (mapRef.current) {
+        mapRef.current.remove();
+        mapRef.current = null;
+      }
+
+      baseRef.current = null;
       overlayRef.current = null;
+      readyRef.current = false;
     };
   }, [latitude, longitude]);
 
+  /*
+   * Weather overlay.
+   *
+   * The crucial part is that it does NOT attempt to create the
+   * overlay until Leaflet has completed map initialization.
+   */
   useEffect(() => {
-    const map = mapRef.current;
-
-    if (!map) return;
-
     let cancelled = false;
+    let timer: ReturnType<typeof setTimeout> | null = null;
 
-    setLoading(true);
-    setMapError('');
+    const addOverlay = () => {
+      if (cancelled) return;
 
-    if (overlayRef.current) {
-      try {
+      const map = mapRef.current;
+
+      if (!map || !readyRef.current) {
+        timer = setTimeout(addOverlay, 100);
+        return;
+      }
+
+      if (overlayRef.current) {
         map.removeLayer(overlayRef.current);
-      } catch {
-        // Ignore stale Leaflet layer during navigation.
+        overlayRef.current = null;
       }
-      overlayRef.current = null;
-    }
 
-    const overlay = L.tileLayer(
-      `/api/maptile/${layer}/{z}/{x}/{y}.png`,
-      {
-        opacity: 0.65,
-        maxZoom: 18,
-      },
-    );
+      setLoading(true);
 
-    overlayRef.current = overlay;
+      const overlay = L.tileLayer(
+        `/api/maptile/${layer}/{z}/{x}/{y}.png`,
+        {
+          opacity: 0.65,
+          maxZoom: 18,
+          crossOrigin: true,
+        },
+      );
 
-    overlay.on('load', () => {
-      if (!cancelled) {
+      overlayRef.current = overlay;
+
+      let finished = false;
+
+      const finish = () => {
+        if (finished || cancelled) return;
+        finished = true;
         setLoading(false);
-      }
-    });
+      };
 
-    overlay.on('tileerror', () => {
-      if (!cancelled) {
-        setLoading(false);
-        setMapError(
-          'Weather layer is temporarily unavailable. The base map is still available.',
-        );
-      }
-    });
+      overlay.on('load', finish);
+      overlay.on('tileerror', finish);
 
-    try {
       overlay.addTo(map);
-      map.invalidateSize({ pan: false });
-    } catch (error) {
-      console.error('Weather overlay failed:', error);
 
-      if (!cancelled) {
-        setLoading(false);
-        setMapError('Weather layer failed to load.');
-      }
-    }
+      timer = setTimeout(finish, 5000);
 
-    const timer = setTimeout(() => {
-      if (!cancelled) {
-        setLoading(false);
-      }
-    }, 5000);
+      requestAnimationFrame(() => {
+        map.invalidateSize({
+          pan: false,
+          animate: false,
+        });
+      });
+    };
+
+    addOverlay();
 
     return () => {
       cancelled = true;
-      clearTimeout(timer);
 
-      try {
-        if (map.hasLayer(overlay)) {
-          map.removeLayer(overlay);
-        }
-      } catch {
-        // Ignore cleanup errors.
+      if (timer) {
+        clearTimeout(timer);
       }
     };
   }, [layer]);
@@ -324,11 +314,11 @@ export function WeatherMap({
           return (
             <button
               key={item.id}
-              type="button"
               className={`weather-map-layer-btn${
                 item.id === layer ? ' active' : ''
               }`}
               onClick={() => setLayer(item.id)}
+              type="button"
             >
               <Icon />
               {item.label}
@@ -340,35 +330,12 @@ export function WeatherMap({
       <div
         ref={containerRef}
         className="weather-map-canvas"
-        style={{
-          minHeight: '420px',
-          width: '100%',
-        }}
+        aria-label="Interactive weather map"
       />
 
       {loading && (
         <div className="weather-map-loading">
           <div className="weather-map-spinner" />
-        </div>
-      )}
-
-      {mapError && (
-        <div
-          className="weather-map-error"
-          role="status"
-          style={{
-            position: 'absolute',
-            left: '16px',
-            right: '16px',
-            bottom: '16px',
-            zIndex: 1000,
-            padding: '10px 12px',
-            borderRadius: '10px',
-            background: 'rgba(7, 16, 22, 0.92)',
-            backdropFilter: 'blur(8px)',
-          }}
-        >
-          {mapError}
         </div>
       )}
 
