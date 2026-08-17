@@ -83,11 +83,28 @@ export function WeatherMap({ latitude, longitude }: { latitude?: number; longitu
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
-    if (!containerRef.current || mapRef.current) return;
-    const map = L.map(containerRef.current, { zoomControl: true }).setView(
-      [latitude ?? 20, longitude ?? 0],
-      latitude ? 6 : 2,
-    );
+    const container = containerRef.current;
+    if (!container || mapRef.current) return;
+
+    let cancelled = false;
+    let retryTimer: ReturnType<typeof setTimeout> | undefined;
+
+    const initializeMap = () => {
+      if (cancelled || mapRef.current) return;
+
+      const rect = container.getBoundingClientRect();
+
+      // On a hard reload the routed page can briefly render with
+      // a zero-sized Leaflet container. Wait until it has dimensions.
+      if (rect.width === 0 || rect.height === 0) {
+        retryTimer = setTimeout(initializeMap, 100);
+        return;
+      }
+
+      const map = L.map(container, { zoomControl: true }).setView(
+        [latitude ?? 20, longitude ?? 0],
+        latitude ? 6 : 2,
+      );
     L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
       attribution: '&copy; OpenStreetMap contributors',
       maxZoom: 18,
@@ -102,20 +119,30 @@ export function WeatherMap({ latitude, longitude }: { latitude?: number; longitu
       }
     };
 
-    map.whenReady(() => {
-      refreshMapSize();
-      setLoading(false);
-      requestAnimationFrame(refreshMapSize);
-      setTimeout(refreshMapSize, 100);
-      setTimeout(refreshMapSize, 500);
-    });
+      map.whenReady(() => {
+        refreshMapSize();
+        setLoading(false);
+        requestAnimationFrame(refreshMapSize);
+        setTimeout(refreshMapSize, 100);
+        setTimeout(refreshMapSize, 500);
+      });
 
-    window.addEventListener('resize', refreshMapSize);
+      window.addEventListener('resize', refreshMapSize);
+
+      mapRef.current = map;
+    };
+
+    initializeMap();
 
     return () => {
+      cancelled = true;
+      if (retryTimer) clearTimeout(retryTimer);
       window.removeEventListener('resize', refreshMapSize);
-      map.remove();
-      mapRef.current = null;
+
+      if (mapRef.current) {
+        mapRef.current.remove();
+        mapRef.current = null;
+      }
     };
   }, [latitude, longitude]);
 
