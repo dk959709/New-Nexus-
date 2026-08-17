@@ -86,11 +86,14 @@ async function weatherProvider(latitude: number, longitude: number, location: st
 // Same-origin proxy for the NEXUS Offline AI model.
 // This avoids browser/CORS/fetch failures when Hugging Face redirects
 // large ONNX files through its Xet storage layer.
-app.get('/api/offline-model/:owner/:repo/*', async (req, res) => {
+app.get('/api/offline-model/:owner/:repo/*rest', async (req, res) => {
   try {
     const owner = String(req.params.owner);
     const repo = String(req.params.repo);
-    const rest = String((req.params as any)[0] ?? '');
+    const restParam = (req.params as any).rest;
+    const rest = Array.isArray(restParam)
+      ? restParam.join("/")
+      : String(restParam ?? "");
 
     if (!owner || !repo || !rest) {
       return errorResponse(res, 400, 'Invalid offline model path.');
