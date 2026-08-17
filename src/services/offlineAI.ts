@@ -12,7 +12,6 @@ env.useWasmCache = true;
 
 const MODEL_OPTIONS = {
   dtype: "q4",
-  use_external_data_format: true,
 };
 
 type Generator = Awaited<ReturnType<typeof pipeline>>;
@@ -71,35 +70,54 @@ export async function loadOfflineAI(
 
       onProgress?.(100);
       return model;
-    } catch (error) {
-      // If WebGPU fails, retry once using CPU/WASM.
+    } catch (firstError) {
+      // WebGPU is preferred for the quantized Q4 model.
+      // If WebGPU is unavailable or fails, retry with WASM.
       if (device === "webgpu") {
         onProgress?.(5);
 
-        const model = await pipeline(
-          "text-generation",
-          MODEL_ID,
-          {
-            ...MODEL_OPTIONS,
-            device: "wasm",
-            progress_callback: (data: { progress?: number }) => {
-              if (typeof data.progress === "number") {
-                onProgress?.(
-                  Math.max(5, Math.min(99, Math.round(data.progress))),
-                );
-              }
-            },
-          } as never,
-        );
+        try {
+          const model = await pipeline(
+            "text-generation",
+            MODEL_ID,
+            {
+              dtype: "q4",
+              device: "wasm",
+              progress_callback: (data: { progress?: number }) => {
+                if (typeof data.progress === "number") {
+                  onProgress?.(
+                    Math.max(5, Math.min(99, Math.round(data.progress))),
+                  );
+                }
+              },
+            } as never,
+          );
 
-        onProgress?.(100);
-        return model;
+          onProgress?.(100);
+          return model;
+        } catch (wasmError) {
+          const first =
+            firstError instanceof Error
+              ? firstError.message
+              : String(firstError);
+          const second =
+            wasmError instanceof Error
+              ? wasmError.message
+              : String(wasmError);
+
+          throw new Error(
+            `Offline AI failed on WebGPU and WASM. WebGPU: ${first} | WASM: ${second}`,
+          );
+        }
       }
 
       const detail =
-        error instanceof Error ? error.message : String(error);
+        firstError instanceof Error
+          ? firstError.message
+          : String(firstError);
+
       throw new Error(
-        `Offline model could not load. WebGPU=${device === "webgpu"}. ${detail}`,
+        `Offline AI WASM failed. ${detail}`,
       );
     }
   })();
