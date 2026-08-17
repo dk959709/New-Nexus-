@@ -1,11 +1,13 @@
 import { env, pipeline, TextStreamer } from "@huggingface/transformers";
 
 const MODEL_ID = "onnx-community/LFM2.5-350M-ONNX";
+const MODEL_REVISION = "main";
 
 // Use browser cache and avoid failing silently on HF fetch errors
 // Transformers.js v4: keep the model in the browser cache so that
 // after the first successful download it can run without downloading again.
 env.allowRemoteModels = true;
+env.backends.onnx.wasm.numThreads = 1;
 env.allowLocalModels = false;
 env.useBrowserCache = true;
 env.useWasmCache = true;
@@ -55,7 +57,7 @@ export async function loadOfflineAI(
       const model = await pipeline(
         "text-generation",
         MODEL_ID,
-        {
+        { revision: MODEL_REVISION,
           ...MODEL_OPTIONS,
           device,
           progress_callback: (data: { progress?: number }) => {
