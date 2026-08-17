@@ -251,16 +251,23 @@ export function MapPage() {
 
 export function SpacePage() {
   const [apod, setApod] = useState<{ title: string; explanation: string; url: string; hdurl?: string; date: string; media_type: string } | null>(null);
+  const [moon, setMoon] = useState<{ phaseName: string; illumination: number; ageDays: number } | null>(null);
+  const [iss, setIss] = useState<{ latitude: number; longitude: number; timestamp: number } | null>(null);
   const [error, setError] = useState('');
   const [loading, setLoading] = useState(true);
   useEffect(() => {
+    fetch('https://new-nexus.onrender.com/api/space/moon').then((res) => res.json()).then((json) => setMoon(json.data)).catch(() => {});
+    fetch('https://new-nexus.onrender.com/api/space/iss').then((res) => res.json()).then((json) => setIss(json.data)).catch(() => {});
     fetch('https://new-nexus.onrender.com/api/nasa/apod').then(async (res) => {
       const body = await res.json();
       if (!res.ok) throw new Error(body.error || 'NASA data is temporarily unavailable.');
       setApod(body.data);
     }).catch((err: Error) => setError(err.message)).finally(() => setLoading(false));
   }, []);
-  return <><PageIntro eyebrow="SPACE" title="Look up." description="Today's picture from NASA, with the story behind it." />{loading && <LoadingMessage label="Fetching today's space picture..." />}{error && <ErrorMessage message={error} />}{apod && <div className="news-card"><span className="eyebrow">{apod.date}</span><h2>{apod.title}</h2>{apod.media_type === 'image' ? <img src={apod.hdurl || apod.url} alt={apod.title} style={{ width: '100%', borderRadius: '12px', margin: '12px 0' }} /> : <a href={apod.url} target="_blank" rel="noreferrer">Watch video <ArrowUpRight size={15} /></a>}<p>{apod.explanation}</p></div>}</>;
+  return <><PageIntro eyebrow="SPACE" title="Look up." description="Today's picture from NASA, with the story behind it." />{loading && <LoadingMessage label="Fetching today's space picture..." />}{error && <ErrorMessage message={error} />}{apod && <div className="news-card"><span className="eyebrow">{apod.date}</span><h2>{apod.title}</h2>{apod.media_type === 'image' ? <img src={apod.hdurl || apod.url} alt={apod.title} style={{ width: '100%', borderRadius: '12px', margin: '12px 0' }} /> : <a href={apod.url} target="_blank" rel="noreferrer">Watch video <ArrowUpRight size={15} /></a>}<p>{apod.explanation}</p></div>}
+{moon && <div className="news-card weather-card"><span className="eyebrow">MOON PHASE</span><h2>{moon.phaseName}</h2><p>Illumination: {moon.illumination}% · Age: {moon.ageDays} days</p></div>}
+{iss && <div className="news-card weather-card"><span className="eyebrow">ISS LOCATION</span><h2>Live position</h2><p>Latitude: {iss.latitude.toFixed(2)}° · Longitude: {iss.longitude.toFixed(2)}°</p></div>}
+</>;
 }
 
 export function SavedPage() {

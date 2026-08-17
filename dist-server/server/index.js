@@ -456,6 +456,51 @@ app.get('/api/nasa/apod', async (req, res) => {
         return errorResponse(res, 502, 'NASA data is temporarily unavailable.');
     }
 });
+app.get('/api/space/moon', async (req, res) => {
+    try {
+        const now = new Date();
+        const knownNewMoon = new Date('2000-01-06T18:14:00Z').getTime();
+        const synodicMonth = 29.53058867;
+        const daysSince = (now.getTime() - knownNewMoon) / (1000 * 60 * 60 * 24);
+        const phaseIndex = ((daysSince % synodicMonth) + synodicMonth) % synodicMonth;
+        const illumination = Math.round((1 - Math.cos((phaseIndex / synodicMonth) * 2 * Math.PI)) / 2 * 100);
+        let phaseName = 'New Moon';
+        if (phaseIndex < 1.84566)
+            phaseName = 'New Moon';
+        else if (phaseIndex < 5.53699)
+            phaseName = 'Waxing Crescent';
+        else if (phaseIndex < 9.22831)
+            phaseName = 'First Quarter';
+        else if (phaseIndex < 12.91963)
+            phaseName = 'Waxing Gibbous';
+        else if (phaseIndex < 16.61096)
+            phaseName = 'Full Moon';
+        else if (phaseIndex < 20.30228)
+            phaseName = 'Waning Gibbous';
+        else if (phaseIndex < 23.99361)
+            phaseName = 'Last Quarter';
+        else if (phaseIndex < 27.68493)
+            phaseName = 'Waning Crescent';
+        else
+            phaseName = 'New Moon';
+        return res.json({ data: { phaseName, illumination, ageDays: Math.round(phaseIndex * 10) / 10 } });
+    }
+    catch {
+        return errorResponse(res, 502, 'Moon phase data is temporarily unavailable.');
+    }
+});
+app.get('/api/space/iss', async (req, res) => {
+    try {
+        const response = await fetch('http://api.open-notify.org/iss-now.json');
+        if (!response.ok)
+            return errorResponse(res, 502, 'ISS data is temporarily unavailable.');
+        const json = await response.json();
+        return res.json({ data: { latitude: parseFloat(json.iss_position.latitude), longitude: parseFloat(json.iss_position.longitude), timestamp: json.timestamp } });
+    }
+    catch {
+        return errorResponse(res, 502, 'ISS data is temporarily unavailable.');
+    }
+});
 app.get('/{*splat}', (_req, res) => {
     return res.sendFile(new URL('../../dist/index.html', import.meta.url).pathname);
 });
