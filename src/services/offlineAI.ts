@@ -11,31 +11,81 @@ export function isWebGPUAvailable(): boolean {
   return typeof navigator !== "undefined" && "gpu" in navigator;
 }
 
+async function getDevice(): Promise<"webgpu" | "wasm"> {
+  try {
+    if (
+      typeof navigator !== "undefined" &&
+      "gpu" in navigator &&
+      navigator.gpu
+    ) {
+      const adapter = await navigator.gpu.requestAdapter();
+      if (adapter) return "webgpu";
+    }
+  } catch {
+    // Fall through to WASM.
+  }
+
+  return "wasm";
+}
+
 export async function loadOfflineAI(
   onProgress?: (progress: number) => void,
 ): Promise<Generator> {
   if (generator) return generator;
   if (loadingPromise) return loadingPromise;
 
-  if (!isWebGPUAvailable()) {
-    throw new Error(
-      "WebGPU is not available on this device/browser. Offline AI requires WebGPU.",
-    );
-  }
+  loadingPromise = (async () => {
+    const device = await getDevice();
 
-  loadingPromise = pipeline(
-    "text-generation",
-    MODEL_ID,
-    {
-      dtype: "q4",
-      device: "webgpu",
-      progress_callback: (data: { progress?: number }) => {
-        if (typeof data.progress === "number") {
-          onProgress?.(Math.round(data.progress));
-        }
-      },
-    } as never,
-  ) as Promise<Generator>;
+    onProgress?.(2);
+
+    try {
+      const model = await pipeline(
+        "text-generation",
+        MODEL_ID,
+        {
+          dtype: "q4",
+          device,
+          progress_callback: (data: { progress?: number }) => {
+            if (typeof data.progress === "number") {
+              onProgress?.(
+                Math.max(2, Math.min(99, Math.round(data.progress))),
+              );
+            }
+          },
+        } as never,
+      );
+
+      onProgress?.(100);
+      return model;
+    } catch (error) {
+      // If WebGPU fails, retry once using CPU/WASM.
+      if (device === "webgpu") {
+        onProgress?.(5);
+
+        const model = await pipeline(
+          "text-generation",
+          MODEL_ID,
+          {
+            dtype: "q4",
+            device: "wasm",
+            progress_callback: (data: { progress?: number }) => {
+              if (typeof data.progress === "number") {
+                onProgress?.(
+                  Math.max(5, Math.min(99, Math.round(data.progress))),
+                );
+              }
+            },
+          } as never,
+        );
+
+        onProgress?.(100);
+        return model;
+      }
+
+      throw error;
+    }
+  })();
 
   try {
     generator = await loadingPromise;
@@ -72,7 +122,7 @@ export async function askOfflineAI(
     : undefined;
 
   const output = await (model as any)(messages, {
-    max_new_tokens: 512,
+    max_new_tokens: 256,
     do_sample: false,
     streamer,
   });
