@@ -55,3 +55,41 @@
 @media(max-width:620px){.wallpaper-grid{grid-template-columns:repeat(2,1fr)}.wallpaper-search{flex-wrap:wrap}.wallpaper-search input{min-width:120px}.wallpaper-search .search-submit{flex:1}}
 
 #root{position:relative;z-index:1;min-height:100vh}
+
+/* Weather card animations */
+@keyframes fadeSlideIn {
+  from { opacity: 0; transform: translateY(12px); }
+  to { opacity: 1; transform: translateY(0); }
+}
+
+@keyframes floatIcon {
+  0%, 100% { transform: translateY(0px); }
+  50% { transform: translateY(-6px); }
+}
+
+.hour-card, .hour-item {
+  animation: fadeSlideIn 0.5s ease-out backwards;
+}
+
+.hour-card:nth-child(1), .hour-item:nth-child(1) { animation-delay: 0.05s; }
+.hour-card:nth-child(2), .hour-item:nth-child(2) { animation-delay: 0.1s; }
+.hour-card:nth-child(3), .hour-item:nth-child(3) { animation-delay: 0.15s; }
+.hour-card:nth-child(4), .hour-item:nth-child(4) { animation-delay: 0.2s; }
+.hour-card:nth-child(5), .hour-item:nth-child(5) { animation-delay: 0.25s; }
+
+.hour-card svg, .hour-item svg {
+  animation: floatIcon 3s ease-in-out infinite;
+}
+
+.weather-card {
+  animation: fadeSlideIn 0.6s ease-out;
+}
+
+.weather-temp {
+  animation: fadeSlideIn 0.6s ease-out 0.15s backwards;
+}
+
+.weather-icon {
+  display: inline-block;
+  animation: floatIcon 3s ease-in-out infinite;
+}

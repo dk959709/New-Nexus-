@@ -110,11 +110,11 @@ export function SearchBox({ onSearch, recent = [], placeholder = 'What do you wa
 
 export function WeatherCard({ data, temperatureUnit, windUnit, reduced }: { data: WeatherCurrent; temperatureUnit: TemperatureUnit; windUnit: WindUnit; reduced: boolean }) {
   return (
-    <section className="weather-current card">
+    <section className="weather-current card weather-card">
       <WeatherBackground condition={data.condition} isDay={data.isDay} reduced={reduced} />
       <div className="weather-current-content">
-        <div className="weather-topline"><div><span className="eyebrow">LIVE CONDITIONS</span><h2>{data.location}</h2><p>{data.conditionLabel} · Updated {formatTime(data.updatedAt)}</p></div><WeatherIcon condition={data.condition} size={58} /></div>
-        <div className="temperature"><strong>{formatTemp(data.temperature, temperatureUnit)}</strong><span>Feels like {formatTemp(data.feelsLike, temperatureUnit)}</span></div>
+        <div className="weather-topline"><div><span className="eyebrow">LIVE CONDITIONS</span><h2>{data.location}</h2><p>{data.conditionLabel} · Updated {formatTime(data.updatedAt)}</p></div><span className="weather-icon"><WeatherIcon condition={data.condition} size={58} /></span></div>
+        <div className="temperature weather-temp"><strong>{formatTemp(data.temperature, temperatureUnit)}</strong><span>Feels like {formatTemp(data.feelsLike, temperatureUnit)}</span></div>
         <div className="weather-metrics">
           <Metric icon={Droplets} label="Humidity" value={`${data.humidity}%`} /><Metric icon={Wind} label="Wind" value={formatWind(data.wind, windUnit)} /><Metric icon={Gauge} label="Pressure" value={`${data.pressure} hPa`} /><Metric icon={Eye} label="Visibility" value={`${data.visibility} km`} />
         </div>
