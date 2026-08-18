@@ -12,6 +12,11 @@ env.allowLocalModels = false;
 env.useBrowserCache = true;
 env.useWasmCache = true;
 
+// Load the ONNX Runtime engine (WASM) from a CDN instead of bundling it in the app.
+// This keeps the APK small — the engine downloads once and caches in the browser.
+env.backends.onnx.wasm.wasmPaths =
+  "https://cdn.jsdelivr.net/npm/onnxruntime-web@1.27.0/dist/";
+
 // Download model files through the NEXUS server.
 // This avoids browser fetch/CORS/Xet failures from Hugging Face.
 if (typeof window !== "undefined") {
