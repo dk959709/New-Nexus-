@@ -14,6 +14,9 @@ app.use(helmet({
     contentSecurityPolicy: {
         directives: {
             imgSrc: ["'self'", "data:", "blob:", "https://images.pexels.com"],
+            scriptSrc: ["'self'", "'wasm-unsafe-eval'", "blob:", "https://cdn.jsdelivr.net"],
+            connectSrc: ["'self'", "https://cdn.jsdelivr.net", "https://huggingface.co"],
+            workerSrc: ["'self'", "blob:"],
         },
     },
 }));

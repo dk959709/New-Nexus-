@@ -1,6 +1,6 @@
 import { env, pipeline, TextStreamer } from "@huggingface/transformers";
 
-const MODEL_ID = "onnx-community/LFM2.5-350M-ONNX";
+const MODEL_ID = "onnx-community/SmolLM2-135M-Instruct";
 const MODEL_REVISION = "main";
 
 // Use browser cache and avoid failing silently on HF fetch errors
@@ -27,7 +27,7 @@ if (typeof window !== "undefined") {
 }
 
 const MODEL_OPTIONS = {
-  dtype: "q8",
+  dtype: "q4",
   use_external_data_format: true,
 };
 
@@ -98,7 +98,7 @@ export async function loadOfflineAI(
             "text-generation",
             MODEL_ID,
             {
-              dtype: "q8",
+              dtype: "q4",
               use_external_data_format: true,
               device: "wasm",
               progress_callback: (data: { progress?: number }) => {
