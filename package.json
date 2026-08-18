@@ -6,6 +6,7 @@
   "scripts": {
     "dev": "vite",
     "build": "vite build && npm run build:server",
+    "postbuild": "rm -f dist/assets/ort-wasm-simd-threaded*.wasm",
     "build:server": "tsc -p tsconfig.server.json",
     "start": "node dist-server/server/index.js",
     "start:server": "node dist-server/server/index.js",
