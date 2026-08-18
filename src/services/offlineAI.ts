@@ -27,7 +27,7 @@ if (typeof window !== "undefined") {
 }
 
 const MODEL_OPTIONS = {
-  dtype: "fp16",
+  dtype: "q8",
   use_external_data_format: true,
 };
 
@@ -98,7 +98,7 @@ export async function loadOfflineAI(
             "text-generation",
             MODEL_ID,
             {
-              dtype: "fp16",
+              dtype: "q8",
               use_external_data_format: true,
               device: "wasm",
               progress_callback: (data: { progress?: number }) => {
