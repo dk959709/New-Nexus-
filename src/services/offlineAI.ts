@@ -41,19 +41,7 @@ export function isWebGPUAvailable(): boolean {
 }
 
 async function getDevice(): Promise<"webgpu" | "wasm"> {
-  try {
-    if (
-      typeof navigator !== "undefined" &&
-      "gpu" in navigator &&
-      navigator.gpu
-    ) {
-      const adapter = await navigator.gpu.requestAdapter();
-      if (adapter) return "webgpu";
-    }
-  } catch {
-    // Fall through to WASM.
-  }
-
+  // Temporarily forcing WASM to test if WebGPU is the source of empty output.
   return "wasm";
 }
 
