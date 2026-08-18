@@ -2,7 +2,7 @@ import { Cloud, CloudFog, CloudLightning, CloudRain, CloudSnow, CloudSun, Sun } 
 import type { Condition } from '@/types';
 
 export function WeatherIcon({ condition, size = 28 }: { condition: Condition; size?: number }) {
-  const Icon = { clear: Sun, cloudy: Cloud, rain: CloudRain, storm: CloudLightning, snow: CloudSnow, fog: CloudFog, 'partly-cloudy': CloudSun }[condition];
+  const Icon = { clear: Sun, cloudy: Cloud, rain: CloudRain, storm: CloudLightning, snow: CloudSnow, fog: CloudFog, 'partly-cloudy': CloudSun }[condition ?? 'clear'];
   return <Icon size={size} strokeWidth={1.7} aria-hidden="true" />;
 }
 

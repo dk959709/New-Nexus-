@@ -44,7 +44,7 @@ export function WeatherIcon({ condition, size = 28 }: { condition: Condition; si
     snow: CloudSnow,
     fog: CloudFog,
   };
-  const Icon = icons[condition];
+  const Icon = icons[condition ?? 'clear'];
   return <Icon size={size} strokeWidth={1.6} />;
 }
 
