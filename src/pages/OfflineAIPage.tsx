@@ -126,7 +126,7 @@ export function OfflineAIPage() {
         <span className="eyebrow">OFFLINE AI</span>
         <h1>Private intelligence.</h1>
         <p>
-          Run LFM2.5 locally in your browser. Your conversation is not sent
+          Run SmolLM2 locally in your browser. Your conversation is not sent
           to the online NEXUS AI service.
         </p>
       </div>
@@ -172,7 +172,7 @@ export function OfflineAIPage() {
             <div>
               <strong>Offline AI</strong>
               <div style={{ fontSize: 12, opacity: 0.65 }}>
-                LFM2.5 350M · WebGPU · Local
+                SmolLM2 135M · WebGPU · Local
               </div>
             </div>
           </div>
@@ -206,7 +206,7 @@ export function OfflineAIPage() {
             <Brain size={38} style={{ marginBottom: 10 }} />
 
             <h2 style={{ margin: '0 0 8px' }}>
-              Load LFM2.5
+              Load SmolLM2
             </h2>
 
             <p style={{ opacity: 0.7, marginBottom: 16 }}>
@@ -260,7 +260,7 @@ export function OfflineAIPage() {
                 <Download size={18} />
               )}
 
-              {loadingModel ? 'Loading LFM2.5…' : 'Load Offline AI'}
+              {loadingModel ? 'Loading SmolLM2…' : 'Load Offline AI'}
             </button>
           </div>
         )}
@@ -286,7 +286,7 @@ export function OfflineAIPage() {
                 <Brain size={42} />
                 <h2>Offline AI is ready</h2>
                 <p>
-                  Ask LFM2.5 a question. Processing happens locally.
+                  Ask SmolLM2 a question. Processing happens locally.
                 </p>
               </div>
             </div>
