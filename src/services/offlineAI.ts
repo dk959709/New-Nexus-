@@ -97,8 +97,6 @@ export async function loadOfflineAI(
             "text-generation",
             MODEL_ID,
             {
-              dtype: "q4",
-              use_external_data_format: true,
               dtype: "q8",
               device: "wasm",
               progress_callback: (data: { progress?: number }) => {
