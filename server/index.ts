@@ -103,7 +103,7 @@ app.get('/api/offline-model/:owner/:repo/*rest', async (req, res) => {
     }
 
     // Only allow the specific model used by NEXUS.
-    if (owner !== 'onnx-community' || repo !== 'SmolLM2-135M-Instruct') {
+    if (owner !== 'HuggingFaceTB' || repo !== 'SmolLM2-135M-Instruct') {
       return errorResponse(res, 403, 'Offline model not allowed.');
     }
 
