@@ -27,7 +27,7 @@ if (typeof window !== "undefined") {
 }
 
 const MODEL_OPTIONS = {
-  dtype: "q4",
+  dtype: "fp32",
   use_external_data_format: true,
 };
 
@@ -41,7 +41,19 @@ export function isWebGPUAvailable(): boolean {
 }
 
 async function getDevice(): Promise<"webgpu" | "wasm"> {
-  // Temporarily forcing WASM to test if WebGPU is the source of empty output.
+  try {
+    if (
+      typeof navigator !== "undefined" &&
+      "gpu" in navigator &&
+      navigator.gpu
+    ) {
+      const adapter = await navigator.gpu.requestAdapter();
+      if (adapter) return "webgpu";
+    }
+  } catch {
+    // Fall through to WASM.
+  }
+
   return "wasm";
 }
 
@@ -86,7 +98,7 @@ export async function loadOfflineAI(
             "text-generation",
             MODEL_ID,
             {
-              dtype: "q4",
+              dtype: "fp32",
               use_external_data_format: true,
               device: "wasm",
               progress_callback: (data: { progress?: number }) => {
