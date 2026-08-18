@@ -48,7 +48,7 @@ export function WeatherIcon({ condition, size = 28 }: { condition: Condition; si
   return <Icon size={size} strokeWidth={1.6} />;
 }
 
-const allNavItems = [
+const navItems = [
   { to: '/', label: 'Overview', icon: Home },
   { to: '/search', label: 'Web Search', icon: Search },
   { to: '/assistant', label: 'AI Assistant', icon: Sparkles },
@@ -60,9 +60,6 @@ const allNavItems = [
   { to: '/saved', label: 'Saved', icon: Bookmark },
 ] as const;
 
-const navItems = Capacitor.isNativePlatform()
-  ? allNavItems.filter((item) => item.to !== '/offline-ai')
-  : allNavItems;
 
 export function Layout() {
   const [menuOpen, setMenuOpen] = useState(false);
