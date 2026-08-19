@@ -106,7 +106,7 @@ app.get('/api/offline-model/:owner/:repo/*rest', async (req, res) => {
             return errorResponse(res, 400, 'Invalid offline model path.');
         }
         // Only allow the specific model used by NEXUS.
-        if (owner !== 'HuggingFaceTB' || repo !== 'SmolLM2-135M-Instruct') {
+        if (owner !== 'onnx-community' || repo !== 'LFM2.5-350M-ONNX') {
             return errorResponse(res, 403, 'Offline model not allowed.');
         }
         // Transformers.js may request:
