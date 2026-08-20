@@ -1196,15 +1196,27 @@ async function startServer() {
     }
     try {
       console.log('[Server] Verifying bot token with Telegram getMe API...');
-      const tRes = await fetch(`https://api.telegram.org/bot${token.trim()}/getMe`);
+      let cleanToken = token.trim();
+      if (cleanToken.toLowerCase().startsWith('bot') && /^\d/.test(cleanToken.slice(3))) {
+        cleanToken = cleanToken.slice(3).trim();
+      }
+
+      const tRes = await fetch(`https://api.telegram.org/bot${cleanToken}/getMe`);
       const tData = (await tRes.json()) as {
         ok: boolean;
         result?: { id: number; username: string; first_name: string };
         description?: string;
+        error_code?: number;
       };
       if (!tRes.ok || !tData.ok || !tData.result) {
-        console.warn('[Server] Telegram getMe verification failed:', tData.description);
-        return errorResponse(res, 400, tData.description || 'Invalid Telegram bot token.');
+        console.warn('[Server] Telegram getMe verification failed:', tData.description || 'Unknown error');
+        let errorMsg = tData.description || 'Invalid Telegram bot token.';
+        if (tData.description === 'Not Found' || tData.error_code === 404) {
+          errorMsg = 'Telegram API returned "Not Found". This bot token does not exist on Telegram. Please verify the token copied from @BotFather.';
+        } else if (tData.description === 'Unauthorized' || tData.error_code === 401) {
+          errorMsg = 'Telegram API returned "Unauthorized". This bot token is invalid or has been revoked in @BotFather.';
+        }
+        return errorResponse(res, 400, errorMsg);
       }
       console.log(`[Server] Bot verified successfully: @${tData.result.username} (ID: ${tData.result.id})`);
 
@@ -1213,7 +1225,7 @@ async function startServer() {
         : [];
 
       telegramBotState = {
-        token: token.trim(),
+        token: cleanToken,
         chatId: chatId ? String(chatId).trim() : undefined,
         botInfo: tData.result,
         allowedUsers: initialAllowed,

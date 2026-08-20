@@ -209,7 +209,6 @@ export function TelegramPage() {
   };
 
   const handleConnect = async (e?: React.FormEvent | React.MouseEvent) => {
-    alert('Button clicked');
     if (e && typeof e.preventDefault === 'function') {
       e.preventDefault();
     }
