@@ -325,24 +325,31 @@ export function SpacePage() {
         <PageIntro eyebrow="SPACE" title="Look up." description="Today's picture from NASA, with the story behind it." />
         {loading && <LoadingMessage label="Fetching today's space picture..." />}
         {error && <ErrorMessage message={error} />}
-        {apod && (
-          <div className="news-card">
-            <span className="eyebrow">{apod.date}</span>
-            <h2>{apod.title}</h2>
-            {apod.media_type === 'image' ? (
-              <img
-                src={apod.hdurl || apod.url}
-                alt={apod.title}
-                style={{ width: '100%', borderRadius: '12px', margin: '12px 0' }}
-              />
-            ) : (
-              <a href={apod.url} target="_blank" rel="noreferrer">
-                Watch video <ArrowUpRight size={15} />
-              </a>
-            )}
-            <p>{apod.explanation}</p>
-          </div>
-        )}
+        {apod && (() => {
+          let explanation = apod.explanation || '';
+          if (apod.title && explanation.toLowerCase().startsWith(apod.title.toLowerCase())) {
+            explanation = explanation.slice(apod.title.length).trim();
+            explanation = explanation.replace(/^[\s\-–—:.]+/g, '').trim();
+          }
+          return (
+            <div className="news-card">
+              <span className="eyebrow">{apod.date}</span>
+              <h2>{apod.title}</h2>
+              {apod.media_type === 'image' ? (
+                <img
+                  src={apod.hdurl || apod.url}
+                  alt={apod.title}
+                  style={{ width: '100%', borderRadius: '12px', margin: '12px 0' }}
+                />
+              ) : (
+                <a href={apod.url} target="_blank" rel="noreferrer">
+                  Watch video <ArrowUpRight size={15} />
+                </a>
+              )}
+              <p>{explanation}</p>
+            </div>
+          );
+        })()}
         {moon && (
           <div className="news-card weather-card">
             <span className="eyebrow">MOON PHASE</span>
@@ -378,7 +385,10 @@ export function SettingsPage() {
       playTapSound();
     }
   };
-  return <><PageIntro eyebrow="PREFERENCES" title="Personalize your experience." description="Adjust appearance, units, and display settings to match how you work." /><div className="settings-list"><SettingRow label="Appearance" description="Switch between Dark, Light, or match your system settings." value={settings.theme} options={['dark', 'light', 'system']} onChange={(value) => choose('theme', value as Settings['theme'])} /><SettingRow label="Navigation Tap Sound" description="Play a subtle click sound when switching tabs." value={settings.sound !== false ? 'on' : 'off'} options={['on', 'off']} onChange={(value) => choose('sound', value === 'on')} /><SettingRow label="Temperature Units" description="Display weather in Celsius or Fahrenheit." value={settings.temperature} options={['celsius', 'fahrenheit']} onChange={(value) => choose('temperature', value as Settings['temperature'])} /><SettingRow label="Wind Speed Units" description="Choose kilometers per hour or miles per hour." value={settings.wind} options={['kmh', 'mph']} onChange={(value) => choose('wind', value as Settings['wind'])} /><SettingRow label="Motion & Animations" description="Reduce motion for a calmer, distraction-free experience." value={settings.animations} options={['full', 'reduced']} onChange={(value) => choose('animations', value as Settings['animations'])} /><WallpaperSelector value={settings.wallpaper} onSelect={(wallpaper) => choose('wallpaper', wallpaper)} /><button className="danger-button" onClick={() => { storage.clearAll(); window.location.reload(); }}>Reset Preferences</button></div></>;
+  return <><PageIntro eyebrow="PREFERENCES" title="Personalize your experience." description="Adjust appearance, units, and display settings to match how you work." /><div className="settings-list"><SettingRow label="Appearance" description="Switch between Dark, Light, or match your system settings." value={settings.theme} options={['dark', 'light', 'system']} onChange={(value) => choose('theme', value as Settings['theme'])} /><SettingRow label="Navigation Tap Sound" description="Play a subtle click sound when switching tabs." value={settings.sound !== false ? 'on' : 'off'} options={['on', 'off']} onChange={(value) => choose('sound', value === 'on')} /><SettingRow label="Temperature Units" description="Display weather in Celsius or Fahrenheit." value={settings.temperature} options={['celsius', 'fahrenheit']} onChange={(value) => choose('temperature', value as Settings['temperature'])} /><SettingRow label="Wind Speed Units" description="Choose kilometers per hour or miles per hour." value={settings.wind} options={['kmh', 'mph']} onChange={(value) => choose('wind', value as Settings['wind'])} /><SettingRow label="Motion & Animations" description="Reduce motion for a calmer, distraction-free experience." value={settings.animations} options={['full', 'reduced']} onChange={(value) => choose('animations', value as Settings['animations'])} /><WallpaperSelector value={settings.wallpaper} onSelect={(wallpaper) => choose('wallpaper', wallpaper)} /><section className="setting-row"><div><h2>Telegram Bot Integration</h2><p>Connect your Telegram bot to receive Nexus intelligence, weather, and search.</p></div><Link to="/telegram" className="secondary-button" style={{ display: 'inline-flex', alignItems: 'center', gap: '6px', padding: '9px 15px', borderRadius: '7px', textDecoration: 'none', fontWeight: 600, fontSize: '12px' }}><Send size={14} /> Configure Bot</Link></section><button className="danger-button" onClick={() => { storage.clearAll(); window.location.reload(); }}>Reset Preferences</button></div></>;
 }
 
 function SettingRow({ label, description, value, options, onChange }: { label: string; description: string; value: string; options: string[]; onChange: (value: string) => void }) { return <section className="setting-row"><div><h2>{label}</h2><p>{description}</p></div><div className="segmented-control">{options.map((option) => <button className={option === value ? 'selected' : ''} onClick={() => onChange(option)} key={option}>{option}</button>)}</div></section>; }
+
+export { TelegramPage } from './TelegramPage';
+

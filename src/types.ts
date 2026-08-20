@@ -115,3 +115,33 @@ export interface WallpaperSetting {
   photographer: string;
   photographerUrl: string;
 }
+
+export interface TelegramAutomations {
+  dailyWeatherEnabled: boolean;
+  dailyWeatherTime: string;
+  dailyWeatherCity: string;
+  rainAlertEnabled: boolean;
+  rainAlertCity: string;
+  issAlertEnabled: boolean;
+  issAlertLocationName: string;
+  issAlertLatitude: number;
+  issAlertLongitude: number;
+  quickRepliesEnabled: boolean;
+}
+
+export interface TelegramBotCommand {
+  command: string;
+  description: string;
+}
+
+export interface TelegramActivityItem {
+  id: string;
+  timestamp: number;
+  direction: 'incoming' | 'outgoing';
+  type: 'message' | 'command' | 'callback' | 'automation' | 'alert' | 'system';
+  sender: string;
+  chatId?: string | number;
+  text: string;
+  status: 'delivered' | 'processed' | 'blocked' | 'error';
+  command?: string;
+}

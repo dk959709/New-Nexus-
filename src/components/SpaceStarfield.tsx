@@ -30,9 +30,9 @@ export const SpaceStarfield: React.FC = () => {
       const seed3 = Math.sin(i * 93.243 + 45.321) * 87342.1245;
       const rand3 = seed3 - Math.floor(seed3);
 
-      const size = 1 + rand1 * 1.8; // 1px to 2.8px
-      const minOpacity = 0.15 + rand2 * 0.25; // 0.15 to 0.40
-      const maxOpacity = 0.65 + rand3 * 0.35; // 0.65 to 1.00
+      const size = 1 + rand1 * 1.5; // 1px to 2.5px
+      const minOpacity = 0.05 + rand2 * 0.15; // 0.05 to 0.20
+      const maxOpacity = 0.30 + rand3 * 0.30; // 0.30 to 0.60
       const duration = 2.5 + rand1 * 4.5; // 2.5s to 7.0s
       const delay = rand2 * 5.0; // 0s to 5.0s
       const tint = tints[i % tints.length];

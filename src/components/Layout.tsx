@@ -1,14 +1,123 @@
-import { Home, Map, Newspaper, Search, Settings, Bookmark, CloudSun, Radio, Rocket } from 'lucide-react';
+import {
+  Bookmark,
+  Brain,
+  CloudSun,
+  Home,
+  Map,
+  Menu,
+  Newspaper,
+  Radio,
+  Rocket,
+  Search,
+  Send,
+  Settings,
+  Sparkles,
+} from 'lucide-react';
 import { NavLink, Outlet } from 'react-router-dom';
-import { useEffect, useState } from 'react';
-import { AmbientBackdrop } from '@/components/WeatherIcon';
+import { useState } from 'react';
 import { useSettings } from '@/hooks/useSettings';
+import { playTapSound } from '@/lib/audio';
 
-const nav = [{ to: '/', label: 'Home', icon: Home }, { to: '/search', label: 'Search', icon: Search }, { to: '/weather', label: 'Weather', icon: CloudSun }, { to: '/weather/map', label: 'Weather Map', icon: Map }, { to: '/news', label: 'News', icon: Newspaper }, { to: '/space', label: 'Space', icon: Rocket }, { to: '/saved', label: 'Saved', icon: Bookmark }];
+const navItems = [
+  { to: '/', label: 'Overview', icon: Home },
+  { to: '/search', label: 'Web Search', icon: Search },
+  { to: '/assistant', label: 'AI Assistant', icon: Sparkles },
+  { to: '/offline-ai', label: 'Offline AI', icon: Brain },
+  { to: '/weather', label: 'Weather', icon: CloudSun },
+  { to: '/weather/map', label: 'Weather Map', icon: Map },
+  { to: '/news', label: 'Live News', icon: Newspaper },
+  { to: '/space', label: 'NASA Space', icon: Rocket },
+  { to: '/telegram', label: 'Telegram Bot', icon: Send },
+  { to: '/saved', label: 'Saved', icon: Bookmark },
+] as const;
 
 export function Layout() {
-  useSettings();
-  const [online, setOnline] = useState(navigator.onLine);
-  useEffect(() => { const on = () => setOnline(true); const off = () => setOnline(false); window.addEventListener('online', on); window.addEventListener('offline', off); return () => { window.removeEventListener('online', on); window.removeEventListener('offline', off); }; }, []);
-  return <div className="app-shell"><AmbientBackdrop condition="clear" /><aside className="sidebar"><div className="brand"><span className="brand-mark"><Radio size={18} /></span><span>NEXUS</span></div><span className="sidebar-label">INTELLIGENCE OS</span><nav>{nav.map(({ to, label, icon: Icon }) => <NavLink to={to} key={to} end={to === '/'}><Icon size={19} /><span>{label}</span></NavLink>)}</nav><NavLink className="settings-link" to="/settings"><Settings size={19} /><span>Settings</span></NavLink><div className="system-status"><span className={online ? 'status-dot' : 'status-dot offline'} />{online ? 'Systems online' : 'You’re offline'}</div></aside><main className="main-content"><header className="mobile-header"><div className="brand"><span className="brand-mark"><Radio size={16} /></span><span>NEXUS</span></div><span className={online ? 'status-dot' : 'status-dot offline'} /></header><div className="page-content"><Outlet /></div></main><nav className="bottom-nav">{nav.slice(0, 5).map(({ to, label, icon: Icon }) => <NavLink to={to} key={to} end={to === '/'}><Icon size={20} /><span>{label}</span></NavLink>)}</nav></div>;
+  const [menuOpen, setMenuOpen] = useState(false);
+  const [settings] = useSettings();
+
+  const handleNavClick = () => {
+    setMenuOpen(false);
+    if (settings.sound !== false) {
+      playTapSound();
+    }
+  };
+
+  const bottomNavItems = navItems.filter((item) =>
+    ['/', '/search', '/assistant', '/weather', '/space', '/telegram'].includes(item.to)
+  );
+
+  return (
+    <div className="app-shell">
+      <aside className={menuOpen ? 'open' : ''} style={{ overflowY: 'auto' }}>
+        <div className="brand">
+          <span><Radio size={17} /></span>
+          <b>NEXUS</b>
+        </div>
+        <small className="brand-subtitle">INTELLIGENCE OS</small>
+
+        <nav className="side-nav">
+          {navItems.map(({ to, label, icon: Icon }) => (
+            <NavLink to={to} end={to === '/'} key={to} onClick={handleNavClick}>
+              <Icon size={18} />
+              {label}
+            </NavLink>
+          ))}
+        </nav>
+
+        <NavLink className="settings-link" to="/settings" onClick={handleNavClick}>
+          <Settings size={18} />
+          Settings
+        </NavLink>
+
+        <p className="system-status">
+          <i /> Systems online
+        </p>
+      </aside>
+
+      <header className="mobile-header">
+        <button
+          className="icon-button"
+          onClick={() => setMenuOpen((value) => !value)}
+          aria-label="Open menu"
+        >
+          <Menu size={21} />
+        </button>
+        <div className="brand">
+          <span><Radio size={15} /></span>
+          <b>NEXUS</b>
+        </div>
+        <NavLink
+          to="/search"
+          className="icon-button"
+          aria-label="Search"
+          onClick={handleNavClick}
+        >
+          <Search size={19} />
+        </NavLink>
+      </header>
+
+      {menuOpen && (
+        <button
+          className="menu-overlay"
+          onClick={() => setMenuOpen(false)}
+          aria-label="Close menu"
+        />
+      )}
+
+      <main>
+        <div className="page-content">
+          <Outlet />
+        </div>
+      </main>
+
+      <nav className="bottom-nav">
+        {bottomNavItems.map(({ to, label, icon: Icon }) => (
+          <NavLink to={to} end={to === '/'} key={to} onClick={handleNavClick}>
+            <Icon size={18} />
+            <small>{label.replace('Web ', '').replace('NASA ', '').replace(' Bot', '')}</small>
+          </NavLink>
+        ))}
+      </nav>
+    </div>
+  );
 }
