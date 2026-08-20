@@ -110,13 +110,21 @@ export function Layout() {
         </div>
       </main>
 
-      <nav className="bottom-nav">
-        {bottomNavItems.map(({ to, label, icon: Icon }) => (
-          <NavLink to={to} end={to === '/'} key={to} onClick={handleNavClick}>
-            <Icon size={18} />
-            <small>{label.replace('Web ', '').replace('NASA ', '').replace(' Bot', '')}</small>
-          </NavLink>
-        ))}
+      <nav className="bottom-nav" aria-label="Mobile navigation">
+        {bottomNavItems.map(({ to, label, icon: Icon }) => {
+          const shortLabel =
+            to === '/'
+              ? 'Home'
+              : to === '/assistant'
+                ? 'AI'
+                : label.replace('Web ', '').replace('NASA ', '').replace(' Bot', '');
+          return (
+            <NavLink to={to} end={to === '/'} key={to} onClick={handleNavClick}>
+              <Icon size={18} />
+              <small>{shortLabel}</small>
+            </NavLink>
+          );
+        })}
       </nav>
     </div>
   );
