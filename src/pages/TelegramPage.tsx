@@ -208,21 +208,32 @@ export function TelegramPage() {
     }
   };
 
-  const handleConnect = async (e: React.FormEvent) => {
-    e.preventDefault();
+  const handleConnect = async (e?: React.FormEvent | React.MouseEvent) => {
+    if (e && typeof e.preventDefault === 'function') {
+      e.preventDefault();
+    }
+    console.log('[TelegramPage] Connect Bot triggered with token length:', token.trim().length, 'chatId:', chatId);
     if (!token.trim()) {
+      console.warn('[TelegramPage] Connect Bot aborted: Token is empty');
       setError('Please enter your Telegram Bot Token.');
       return;
     }
     setLoading(true);
     setError('');
     try {
+      console.log('[TelegramPage] Calling api.telegramConnect with params:', {
+        token: token.trim().slice(0, 8) + '...',
+        chatId: chatId.trim() || undefined,
+        allowedUsers,
+        automations,
+      });
       const res = await api.telegramConnect(
         token.trim(),
         chatId.trim() || undefined,
         allowedUsers,
         automations,
       );
+      console.log('[TelegramPage] Successfully connected to Telegram Bot:', res.botInfo);
       setConnected(true);
       setBotInfo(res.botInfo);
       if (res.allowedUsers) setAllowedUsers(res.allowedUsers);
@@ -237,6 +248,7 @@ export function TelegramPage() {
       ]);
       refreshStatusAndActivity();
     } catch (err: unknown) {
+      console.error('[TelegramPage] telegramConnect error caught:', err);
       setError(err instanceof Error ? err.message : 'Invalid bot token or connection failed.');
     } finally {
       setLoading(false);
@@ -1744,6 +1756,7 @@ export function TelegramPage() {
                 <button
                   id="connect-bot-submit"
                   type="submit"
+                  onClick={(e) => handleConnect(e)}
                   disabled={loading}
                   style={{
                     background: 'var(--accent)',

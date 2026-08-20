@@ -9,20 +9,50 @@ import type {
   TelegramActivityItem,
 } from '@/types';
 
-const BASE = import.meta.env.VITE_API_URL ?? '';
+function getBaseUrl(): string {
+  const envUrl = import.meta.env.VITE_API_URL;
+  if (!envUrl) return '';
+
+  // If envUrl points to legacy localhost/port 8787 or standard dev ports, always use relative path
+  if (
+    envUrl.includes('localhost') ||
+    envUrl.includes('127.0.0.1') ||
+    envUrl.includes('0.0.0.0') ||
+    envUrl.includes(':8787') ||
+    envUrl.includes(':3000') ||
+    envUrl.includes(':5173')
+  ) {
+    return '';
+  }
+
+  // Remove trailing slashes
+  return envUrl.replace(/\/+$/, '');
+}
+
+const BASE = getBaseUrl();
 
 async function call<T>(path: string, init?: RequestInit): Promise<T> {
-  const res = await fetch(BASE + path, {
-    headers: { 'Content-Type': 'application/json' },
-    ...init,
-  });
-  const body = await res.json().catch(() => ({}));
-  if (!res.ok) {
-    throw new Error(
-      (body as { error?: string }).error ?? 'Request failed. Please try again.',
-    );
+  const url = BASE + path;
+  console.log(`[API] Fetching ${init?.method ?? 'GET'} ${url}`, init?.body ? JSON.parse(init.body as string) : '');
+  try {
+    const res = await fetch(url, {
+      headers: { 'Content-Type': 'application/json' },
+      ...init,
+    });
+    console.log(`[API] Response status: ${res.status} for ${url}`);
+    const body = await res.json().catch(() => ({}));
+    if (!res.ok) {
+      console.warn(`[API] Error response:`, body);
+      throw new Error(
+        (body as { error?: string }).error ?? 'Request failed. Please try again.',
+      );
+    }
+    console.log(`[API] Success response for ${url}:`, body);
+    return (body as { data?: T }).data ?? (body as T);
+  } catch (err) {
+    console.error(`[API] Request failed for ${url}:`, err);
+    throw err;
   }
-  return (body as { data?: T }).data ?? (body as T);
 }
 
 export const api = {

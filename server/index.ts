@@ -1188,11 +1188,14 @@ async function startServer() {
 
   // Telegram Integration Endpoints
   app.post('/api/telegram/connect', async (req, res) => {
+    console.log('[Server] Received POST /api/telegram/connect request');
     const { token, chatId, allowedUsers, automations } = req.body;
     if (!token || typeof token !== 'string') {
+      console.warn('[Server] /api/telegram/connect rejected: missing or invalid token');
       return errorResponse(res, 400, 'Bot token is required.');
     }
     try {
+      console.log('[Server] Verifying bot token with Telegram getMe API...');
       const tRes = await fetch(`https://api.telegram.org/bot${token.trim()}/getMe`);
       const tData = (await tRes.json()) as {
         ok: boolean;
@@ -1200,8 +1203,10 @@ async function startServer() {
         description?: string;
       };
       if (!tRes.ok || !tData.ok || !tData.result) {
+        console.warn('[Server] Telegram getMe verification failed:', tData.description);
         return errorResponse(res, 400, tData.description || 'Invalid Telegram bot token.');
       }
+      console.log(`[Server] Bot verified successfully: @${tData.result.username} (ID: ${tData.result.id})`);
 
       const initialAllowed: string[] = Array.isArray(allowedUsers)
         ? allowedUsers.map((u) => String(u).trim()).filter(Boolean)
