@@ -6,7 +6,6 @@ import morgan from 'morgan';
 import { resolve } from 'node:path';
 import { z } from 'zod';
 import { GoogleGenAI } from '@google/genai';
-import { createServer as createViteServer } from 'vite';
 
 const searchSchema = z.object({
   query: z.string().trim().min(1).max(300),
@@ -1996,6 +1995,7 @@ async function startServer() {
 
   // Development vs Production serving
   if (process.env.NODE_ENV !== 'production') {
+    const { createServer: createViteServer } = await import('vite');
     const vite = await createViteServer({
       server: { middlewareMode: true },
       appType: 'spa',
