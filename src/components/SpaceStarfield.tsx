@@ -9,7 +9,7 @@ interface Star {
   maxOpacity: number;
   duration: number;
   delay: number;
-  tint: 'cyan' | 'warm' | 'blue' | 'white';
+  tint: 'cyan' | 'warm' | 'blue' | 'purple' | 'white';
 }
 
 export const SpaceStarfield: React.FC = () => {
@@ -17,7 +17,15 @@ export const SpaceStarfield: React.FC = () => {
   const stars: Star[] = useMemo(() => {
     const starList: Star[] = [];
     const count = 75; // Lightweight count
-    const tints: Array<'cyan' | 'warm' | 'blue' | 'white'> = ['white', 'white', 'cyan', 'blue', 'warm'];
+    const tints: Array<'cyan' | 'warm' | 'blue' | 'purple' | 'white'> = [
+      'cyan',
+      'white',
+      'blue',
+      'warm',
+      'purple',
+      'cyan',
+      'white',
+    ];
 
     for (let i = 0; i < count; i++) {
       // Deterministic pseudorandom based on index
@@ -30,10 +38,10 @@ export const SpaceStarfield: React.FC = () => {
       const seed3 = Math.sin(i * 93.243 + 45.321) * 87342.1245;
       const rand3 = seed3 - Math.floor(seed3);
 
-      const size = 1 + rand1 * 1.5; // 1px to 2.5px
-      const minOpacity = 0.05 + rand2 * 0.15; // 0.05 to 0.20
-      const maxOpacity = 0.30 + rand3 * 0.30; // 0.30 to 0.60
-      const duration = 2.5 + rand1 * 4.5; // 2.5s to 7.0s
+      const size = 1 + rand1 * 1.6; // 1px to 2.6px
+      const minOpacity = 0.08 + rand2 * 0.18; // 0.08 to 0.26
+      const maxOpacity = 0.45 + rand3 * 0.45; // 0.45 to 0.90
+      const duration = 2.5 + rand1 * 4.0; // 2.5s to 6.5s
       const delay = rand2 * 5.0; // 0s to 5.0s
       const tint = tints[i % tints.length];
 
@@ -63,7 +71,9 @@ export const SpaceStarfield: React.FC = () => {
               ? 'tint-warm'
               : star.tint === 'blue'
                 ? 'tint-blue'
-                : '';
+                : star.tint === 'purple'
+                  ? 'tint-purple'
+                  : '';
 
         return (
           <div

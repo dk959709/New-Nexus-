@@ -48,163 +48,206 @@ export function HomePage() {
     }
   };
 
-  return <>
-    <section className="hero"><span className="eyebrow">NEXUS INTELLIGENT (dk959709@gmail.com)</span><h1>Search the web.<br /><span>Understand the world.</span></h1><p>A unified view of live search, weather, and world signals — clear, fast, and precise.</p></section>
-    <SearchBox onSearch={search} recent={storage.getSearches()} />
-
-    <section
-      style={{
-        marginTop: 18,
-        padding: 16,
-        borderRadius: 18,
-        border: '1px solid rgba(97,221,210,.18)',
-        background: 'rgba(8,24,30,.72)',
-        backdropFilter: 'blur(14px)',
-      }}
-      aria-label="NEXUS AI Search"
-    >
-      <div
-        style={{
-          display: 'flex',
-          alignItems: 'center',
-          gap: 8,
-          marginBottom: 10,
-          color: '#61ddd2',
-          fontSize: 12,
-          fontWeight: 700,
-          letterSpacing: '.08em',
-          textTransform: 'uppercase',
-        }}
-      >
-        <Sparkles size={15} />
-        NEXUS AI Search
-      </div>
-
-      <div
-        style={{
-          display: 'flex',
-          gap: 10,
-          alignItems: 'center',
-        }}
-      >
-        <div
-          style={{
-            flex: 1,
-            display: 'flex',
-            alignItems: 'center',
-            gap: 10,
-            minWidth: 0,
-            padding: '0 14px',
-            minHeight: 52,
-            borderRadius: 14,
-            border: '1px solid rgba(255,255,255,.09)',
-            background: 'rgba(0,0,0,.28)',
-          }}
-        >
-          <Sparkles size={18} color="#61ddd2" />
-
-          <input
-            value={aiQuery}
-            onChange={(event) => setAiQuery(event.target.value)}
-            onKeyDown={(event) => {
-              if (event.key === 'Enter') askNexusAI();
-            }}
-            placeholder="Ask NEXUS AI anything..."
-            aria-label="Ask NEXUS AI anything"
-            style={{
-              flex: 1,
-              minWidth: 0,
-              border: 0,
-              outline: 0,
-              background: 'transparent',
-              color: '#e8f0f2',
-              fontSize: 15,
-            }}
-          />
+  return (
+    <>
+      <SpaceStarfield />
+      <div className="space-content-wrapper">
+        <div className="hero-wrap">
+          <div className="hero-aurora-glow" aria-hidden="true" />
+          <section className="hero">
+            <span className="eyebrow">NEXUS INTELLIGENT (dk959709@gmail.com)</span>
+            <h1>
+              <span className="hero-gradient-line">Search the web.</span>
+              <br />
+              <span className="hero-gradient-line hero-glow-text">Understand the world.</span>
+            </h1>
+            <p>A unified view of live search, weather, and world signals — clear, fast, and precise.</p>
+          </section>
         </div>
+        <SearchBox onSearch={search} recent={storage.getSearches()} />
 
-        <button
-          type="button"
-          onClick={askNexusAI}
-          disabled={!aiQuery.trim() || aiLoading}
-          aria-label="Ask NEXUS AI"
+        <section
           style={{
-            width: 52,
-            height: 52,
-            flexShrink: 0,
-            border: 0,
-            borderRadius: 14,
-            display: 'grid',
-            placeItems: 'center',
-            background: '#61ddd2',
-            color: '#061316',
-            cursor: aiQuery.trim() && !aiLoading ? 'pointer' : 'not-allowed',
-            opacity: aiQuery.trim() && !aiLoading ? 1 : 0.5,
+            marginTop: 18,
+            padding: 16,
+            borderRadius: 18,
+            border: '1px solid rgba(97,221,210,.18)',
+            background: 'rgba(8,24,30,.72)',
+            backdropFilter: 'blur(14px)',
           }}
-        >
-          <Send size={18} />
-        </button>
-      </div>
-
-      {aiLoading && (
-        <div
-          style={{
-            marginTop: 12,
-            fontSize: 13,
-            color: '#61ddd2',
-          }}
-        >
-          ✨ NEXUS AI is thinking...
-        </div>
-      )}
-
-      {aiError && (
-        <div
-          style={{
-            marginTop: 12,
-            padding: 12,
-            borderRadius: 12,
-            background: 'rgba(255,80,80,.08)',
-            border: '1px solid rgba(255,80,80,.18)',
-            color: '#ffb4b4',
-            fontSize: 13,
-          }}
-        >
-          {aiError}
-        </div>
-      )}
-
-      {aiAnswer && (
-        <div
-          style={{
-            marginTop: 12,
-            padding: 14,
-            borderRadius: 14,
-            background: 'rgba(97,221,210,.055)',
-            border: '1px solid rgba(97,221,210,.14)',
-            color: '#e8f0f2',
-            fontSize: 14,
-            lineHeight: 1.55,
-            whiteSpace: 'pre-wrap',
-          }}
+          aria-label="NEXUS AI Search"
         >
           <div
             style={{
-              marginBottom: 8,
+              display: 'flex',
+              alignItems: 'center',
+              gap: 8,
+              marginBottom: 10,
               color: '#61ddd2',
               fontSize: 12,
               fontWeight: 700,
+              letterSpacing: '.08em',
+              textTransform: 'uppercase',
             }}
           >
-            ✨ NEXUS AI
+            <Sparkles size={15} />
+            NEXUS AI Search
           </div>
-          {aiAnswer}
-        </div>
-      )}
-    </section>
 
-    {weather ? <div className="home-dashboard"><div className="home-main"><WeatherCard data={weather.current} temperatureUnit={settings.temperature} windUnit={settings.wind} reduced={settings.animations === 'reduced'} /><HourlyForecast entries={weather.hourly} unit={settings.temperature} /></div><aside className="brief-card"><span className="eyebrow">LIVE SIGNALS</span><h2>World briefing</h2><p>Search the current web or open the live news desk for your next signal.</p><Link to="/news">Explore live news <ArrowUpRight size={15} /></Link></aside></div> : <div className="location-prompt"><Navigation size={25} /><h2>Weather intelligence is waiting</h2><p>Allow location access to see local conditions, or search for a city manually.</p><Link to="/weather">Open weather workspace</Link></div>}
-  </>;
+          <div
+            style={{
+              display: 'flex',
+              gap: 10,
+              alignItems: 'center',
+            }}
+          >
+            <div
+              style={{
+                flex: 1,
+                display: 'flex',
+                alignItems: 'center',
+                gap: 10,
+                minWidth: 0,
+                padding: '0 14px',
+                minHeight: 52,
+                borderRadius: 14,
+                border: '1px solid rgba(255,255,255,.09)',
+                background: 'rgba(0,0,0,.28)',
+              }}
+            >
+              <Sparkles size={18} color="#61ddd2" />
+
+              <input
+                value={aiQuery}
+                onChange={(event) => setAiQuery(event.target.value)}
+                onKeyDown={(event) => {
+                  if (event.key === 'Enter') askNexusAI();
+                }}
+                placeholder="Ask NEXUS AI anything..."
+                aria-label="Ask NEXUS AI anything"
+                style={{
+                  flex: 1,
+                  minWidth: 0,
+                  border: 0,
+                  outline: 0,
+                  background: 'transparent',
+                  color: '#e8f0f2',
+                  fontSize: 15,
+                }}
+              />
+            </div>
+
+            <button
+              type="button"
+              onClick={askNexusAI}
+              disabled={!aiQuery.trim() || aiLoading}
+              aria-label="Ask NEXUS AI"
+              style={{
+                width: 52,
+                height: 52,
+                flexShrink: 0,
+                border: 0,
+                borderRadius: 14,
+                display: 'grid',
+                placeItems: 'center',
+                background: '#61ddd2',
+                color: '#061316',
+                cursor: aiQuery.trim() && !aiLoading ? 'pointer' : 'not-allowed',
+                opacity: aiQuery.trim() && !aiLoading ? 1 : 0.5,
+              }}
+            >
+              <Send size={18} />
+            </button>
+          </div>
+
+          {aiLoading && (
+            <div
+              style={{
+                marginTop: 12,
+                fontSize: 13,
+                color: '#61ddd2',
+              }}
+            >
+              ✨ NEXUS AI is thinking...
+            </div>
+          )}
+
+          {aiError && (
+            <div
+              style={{
+                marginTop: 12,
+                padding: 12,
+                borderRadius: 12,
+                background: 'rgba(255,80,80,.08)',
+                border: '1px solid rgba(255,80,80,.18)',
+                color: '#ffb4b4',
+                fontSize: 13,
+              }}
+            >
+              {aiError}
+            </div>
+          )}
+
+          {aiAnswer && (
+            <div
+              style={{
+                marginTop: 12,
+                padding: 14,
+                borderRadius: 14,
+                background: 'rgba(97,221,210,.055)',
+                border: '1px solid rgba(97,221,210,.14)',
+                color: '#e8f0f2',
+                fontSize: 14,
+                lineHeight: 1.55,
+                whiteSpace: 'pre-wrap',
+              }}
+            >
+              <div
+                style={{
+                  marginBottom: 8,
+                  color: '#61ddd2',
+                  fontSize: 12,
+                  fontWeight: 700,
+                }}
+              >
+                ✨ NEXUS AI
+              </div>
+              {aiAnswer}
+            </div>
+          )}
+        </section>
+
+        {weather ? (
+          <div className="home-dashboard">
+            <div className="home-main">
+              <WeatherCard
+                data={weather.current}
+                temperatureUnit={settings.temperature}
+                windUnit={settings.wind}
+                reduced={settings.animations === 'reduced'}
+              />
+              <HourlyForecast entries={weather.hourly} unit={settings.temperature} />
+            </div>
+            <aside className="brief-card">
+              <span className="eyebrow">LIVE SIGNALS</span>
+              <h2>World briefing</h2>
+              <p>Search the current web or open the live news desk for your next signal.</p>
+              <Link to="/news">
+                Explore live news <ArrowUpRight size={15} />
+              </Link>
+            </aside>
+          </div>
+        ) : (
+          <div className="location-prompt">
+            <Navigation size={25} />
+            <h2>Weather intelligence is waiting</h2>
+            <p>Allow location access to see local conditions, or search for a city manually.</p>
+            <Link to="/weather">Open weather workspace</Link>
+          </div>
+        )}
+      </div>
+    </>
+  );
 }
 
 export function SearchPage() {
