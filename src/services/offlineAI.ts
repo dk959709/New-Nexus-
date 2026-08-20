@@ -169,15 +169,22 @@ export async function askOfflineAI(
     },
   ];
 
+  type PipelineWithTokenizer = {
+    (texts: unknown, options?: Record<string, unknown>): Promise<Array<{ generated_text?: string | Array<{ content: string }> }>>;
+    tokenizer: unknown;
+  };
+
+  const modelRunner = model as unknown as PipelineWithTokenizer;
+
   const streamer = onToken
-    ? new TextStreamer((model as any).tokenizer, {
+    ? new TextStreamer(modelRunner.tokenizer as never, {
         skip_prompt: true,
         skip_special_tokens: true,
         callback_function: onToken,
       })
     : undefined;
 
-  const output = await (model as any)(messages, {
+  const output = await modelRunner(messages, {
     max_new_tokens: 256,
     do_sample: false,
     streamer,

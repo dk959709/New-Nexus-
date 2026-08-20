@@ -1,12 +1,14 @@
 import { useCallback, useEffect, useState } from 'react';
-import { ArrowUpRight, Bookmark, ExternalLink, MapPin, Navigation, Search, Send, Sparkles, Trash2 } from 'lucide-react';
+import { ArrowUpRight, Bookmark, ExternalLink, MapPin, Navigation, Newspaper, Search, Send, Sparkles, Trash2 } from 'lucide-react';
 import { Link, useNavigate, useSearchParams } from 'react-router-dom';
 import { SearchBox, WeatherCard, HourlyForecast, DailyForecast, ErrorMessage, LoadingMessage, ResultCard, WeatherMap } from '@/components';
 import { WallpaperSelector } from '@/components/WallpaperSelector';
+import { SpaceStarfield } from '@/components/SpaceStarfield';
 import { api } from '@/services/api';
 import { getLocation } from '@/services/location';
 import { storage } from '@/lib/storage';
 import { useSettings } from '@/hooks/useSettings';
+import { playTapSound } from '@/lib/audio';
 import type { SearchResult, WeatherData, Settings } from '@/types';
 
 function PageIntro({ eyebrow, title, description }: { eyebrow: string; title: string; description: string }) {
@@ -238,7 +240,58 @@ export function NewsPage() {
   const [error, setError] = useState('');
   const [loading, setLoading] = useState(true);
   useEffect(() => { api.news().then(setItems).catch((err: Error) => setError(err.message)).finally(() => setLoading(false)); }, []);
-  return <><PageIntro eyebrow="LIVE BRIEFING" title="What matters now." description="Current headlines from your configured news and search provider." />{loading && <LoadingMessage label="Fetching current headlines..." />}{error && <ErrorMessage message={error.includes('not configured') ? 'News is not configured yet. Add SEARCH_API_KEY and SEARCH_API_URL to the server environment.' : error} />}<div className="news-grid">{items.map((item) => <article className="news-card" key={item.url}><span className="eyebrow">{item.domain}</span><h2>{item.title}</h2><p>{item.description}</p><a href={item.url} target="_blank" rel="noreferrer">Read story <ArrowUpRight size={15} /></a></article>)}</div></>;
+  return (
+    <>
+      <PageIntro eyebrow="LIVE BRIEFING" title="What matters now." description="Current headlines from your configured news and search provider." />
+      {loading && <LoadingMessage label="Fetching current headlines..." />}
+      {error && <ErrorMessage message={error.includes('not configured') ? 'News is not configured yet. Add SEARCH_API_KEY and SEARCH_API_URL to the server environment.' : error} />}
+      <div className="news-grid">
+        {items.map((item) => (
+          <article className="news-card" key={item.url}>
+            <div className="news-thumb-wrap">
+              {item.image || item.thumbnail ? (
+                <img
+                  src={item.image || item.thumbnail}
+                  alt={item.title}
+                  className="news-thumb"
+                  onError={(e) => {
+                    (e.target as HTMLElement).style.display = 'none';
+                  }}
+                />
+              ) : (
+                <div className="news-thumb-placeholder">
+                  <Newspaper size={32} />
+                </div>
+              )}
+            </div>
+            <div className="news-card-body">
+              <div className="news-meta-row">
+                <span className="news-source-info">
+                  <img
+                    src={`https://www.google.com/s2/favicons?domain=${item.domain}&sz=32`}
+                    alt=""
+                    className="news-source-favicon"
+                    onError={(e) => {
+                      (e.target as HTMLElement).style.display = 'none';
+                    }}
+                  />
+                  {item.domain}
+                </span>
+                {item.date && <span>{item.date}</span>}
+              </div>
+              <h2>{item.title}</h2>
+              <p>{item.description}</p>
+              <div className="news-card-footer">
+                <a href={item.url} target="_blank" rel="noreferrer">
+                  Read story <ArrowUpRight size={15} />
+                </a>
+              </div>
+            </div>
+          </article>
+        ))}
+      </div>
+    </>
+  );
 }
 
 export function MapPage() {
@@ -257,18 +310,56 @@ export function SpacePage() {
   const [error, setError] = useState('');
   const [loading, setLoading] = useState(true);
   useEffect(() => {
-    fetch('https://new-nexus.onrender.com/api/space/moon').then((res) => res.json()).then((json) => setMoon(json.data)).catch(() => {});
-    fetch('https://new-nexus.onrender.com/api/space/iss').then((res) => res.json()).then((json) => setIss(json.data)).catch(() => {});
-    fetch('https://new-nexus.onrender.com/api/nasa/apod').then(async (res) => {
+    fetch('/api/space/moon').then((res) => res.json()).then((json) => setMoon(json.data)).catch(() => {});
+    fetch('/api/space/iss').then((res) => res.json()).then((json) => setIss(json.data)).catch(() => {});
+    fetch('/api/nasa/apod').then(async (res) => {
       const body = await res.json();
       if (!res.ok) throw new Error(body.error || 'NASA data is temporarily unavailable.');
       setApod(body.data);
     }).catch((err: Error) => setError(err.message)).finally(() => setLoading(false));
   }, []);
-  return <><PageIntro eyebrow="SPACE" title="Look up." description="Today's picture from NASA, with the story behind it." />{loading && <LoadingMessage label="Fetching today's space picture..." />}{error && <ErrorMessage message={error} />}{apod && <div className="news-card"><span className="eyebrow">{apod.date}</span><h2>{apod.title}</h2>{apod.media_type === 'image' ? <img src={apod.hdurl || apod.url} alt={apod.title} style={{ width: '100%', borderRadius: '12px', margin: '12px 0' }} /> : <a href={apod.url} target="_blank" rel="noreferrer">Watch video <ArrowUpRight size={15} /></a>}<p>{apod.explanation}</p></div>}
-{moon && <div className="news-card weather-card"><span className="eyebrow">MOON PHASE</span><h2>{moon.phaseName}</h2><p>Illumination: {moon.illumination}% · Age: {moon.ageDays} days</p></div>}
-{iss && <div className="news-card weather-card"><span className="eyebrow">ISS LOCATION</span><h2>Live position</h2><p>Latitude: {iss.latitude.toFixed(2)}° · Longitude: {iss.longitude.toFixed(2)}°</p></div>}
-</>;
+  return (
+    <>
+      <SpaceStarfield />
+      <div className="space-content-wrapper">
+        <PageIntro eyebrow="SPACE" title="Look up." description="Today's picture from NASA, with the story behind it." />
+        {loading && <LoadingMessage label="Fetching today's space picture..." />}
+        {error && <ErrorMessage message={error} />}
+        {apod && (
+          <div className="news-card">
+            <span className="eyebrow">{apod.date}</span>
+            <h2>{apod.title}</h2>
+            {apod.media_type === 'image' ? (
+              <img
+                src={apod.hdurl || apod.url}
+                alt={apod.title}
+                style={{ width: '100%', borderRadius: '12px', margin: '12px 0' }}
+              />
+            ) : (
+              <a href={apod.url} target="_blank" rel="noreferrer">
+                Watch video <ArrowUpRight size={15} />
+              </a>
+            )}
+            <p>{apod.explanation}</p>
+          </div>
+        )}
+        {moon && (
+          <div className="news-card weather-card">
+            <span className="eyebrow">MOON PHASE</span>
+            <h2>{moon.phaseName}</h2>
+            <p>Illumination: {moon.illumination}% · Age: {moon.ageDays} days</p>
+          </div>
+        )}
+        {iss && (
+          <div className="news-card weather-card">
+            <span className="eyebrow">ISS LOCATION</span>
+            <h2>Live position</h2>
+            <p>Latitude: {iss.latitude.toFixed(2)}° · Longitude: {iss.longitude.toFixed(2)}°</p>
+          </div>
+        )}
+      </div>
+    </>
+  );
 }
 
 export function SavedPage() {
@@ -279,8 +370,15 @@ export function SavedPage() {
 
 export function SettingsPage() {
   const [settings, update] = useSettings();
-  const choose = <K extends keyof Settings>(key: K, value: Settings[K]) => update({ [key]: value });
-  return <><PageIntro eyebrow="PREFERENCES" title="Personalize your experience." description="Adjust appearance, units, and display settings to match how you work." /><div className="settings-list"><SettingRow label="Appearance" description="Switch between Dark, Light, or match your system settings." value={settings.theme} options={['dark', 'light', 'system']} onChange={(value) => choose('theme', value as Settings['theme'])} /><SettingRow label="Temperature Units" description="Display weather in Celsius or Fahrenheit." value={settings.temperature} options={['celsius', 'fahrenheit']} onChange={(value) => choose('temperature', value as Settings['temperature'])} /><SettingRow label="Wind Speed Units" description="Choose kilometers per hour or miles per hour." value={settings.wind} options={['kmh', 'mph']} onChange={(value) => choose('wind', value as Settings['wind'])} /><SettingRow label="Motion & Animations" description="Reduce motion for a calmer, distraction-free experience." value={settings.animations} options={['full', 'reduced']} onChange={(value) => choose('animations', value as Settings['animations'])} /><WallpaperSelector value={settings.wallpaper} onSelect={(wallpaper) => choose('wallpaper', wallpaper)} /><button className="danger-button" onClick={() => { storage.clearAll(); window.location.reload(); }}>Reset Preferences</button></div></>;
+  const choose = <K extends keyof Settings>(key: K, value: Settings[K]) => {
+    update({ [key]: value });
+    if (settings.sound !== false && key === 'sound') {
+      if (value === true) playTapSound();
+    } else if (settings.sound !== false) {
+      playTapSound();
+    }
+  };
+  return <><PageIntro eyebrow="PREFERENCES" title="Personalize your experience." description="Adjust appearance, units, and display settings to match how you work." /><div className="settings-list"><SettingRow label="Appearance" description="Switch between Dark, Light, or match your system settings." value={settings.theme} options={['dark', 'light', 'system']} onChange={(value) => choose('theme', value as Settings['theme'])} /><SettingRow label="Navigation Tap Sound" description="Play a subtle click sound when switching tabs." value={settings.sound !== false ? 'on' : 'off'} options={['on', 'off']} onChange={(value) => choose('sound', value === 'on')} /><SettingRow label="Temperature Units" description="Display weather in Celsius or Fahrenheit." value={settings.temperature} options={['celsius', 'fahrenheit']} onChange={(value) => choose('temperature', value as Settings['temperature'])} /><SettingRow label="Wind Speed Units" description="Choose kilometers per hour or miles per hour." value={settings.wind} options={['kmh', 'mph']} onChange={(value) => choose('wind', value as Settings['wind'])} /><SettingRow label="Motion & Animations" description="Reduce motion for a calmer, distraction-free experience." value={settings.animations} options={['full', 'reduced']} onChange={(value) => choose('animations', value as Settings['animations'])} /><WallpaperSelector value={settings.wallpaper} onSelect={(wallpaper) => choose('wallpaper', wallpaper)} /><button className="danger-button" onClick={() => { storage.clearAll(); window.location.reload(); }}>Reset Preferences</button></div></>;
 }
 
 function SettingRow({ label, description, value, options, onChange }: { label: string; description: string; value: string; options: string[]; onChange: (value: string) => void }) { return <section className="setting-row"><div><h2>{label}</h2><p>{description}</p></div><div className="segmented-control">{options.map((option) => <button className={option === value ? 'selected' : ''} onClick={() => onChange(option)} key={option}>{option}</button>)}</div></section>; }

@@ -6,6 +6,8 @@ export interface SearchResult {
   domain: string;
   description: string;
   date?: string;
+  image?: string;
+  thumbnail?: string;
   type: 'web' | 'news' | 'images' | 'videos' | 'shopping';
 }
 
@@ -87,6 +89,7 @@ export interface Settings {
   wind: WindUnit;
   animations: AnimationLevel;
   wallpaper: WallpaperSetting | null;
+  sound: boolean;
 }
 
 export interface ConfigStatus {

@@ -4,7 +4,6 @@ import 'leaflet/dist/leaflet.css';
 import {
   CloudRain,
   CloudSun,
-  Droplets,
   Gauge,
   Thermometer,
   Wind,

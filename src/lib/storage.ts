@@ -66,6 +66,7 @@ export const storage = {
       wind: 'kmh',
       animations: 'full',
       wallpaper: null,
+      sound: true,
     });
   },
   saveSettings(settings: Settings): void {

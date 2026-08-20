@@ -1,4 +1,3 @@
-import { Capacitor } from '@capacitor/core';
 import {
   Bookmark,
   Brain,
@@ -33,6 +32,8 @@ import { formatTemp, formatTime, formatWind } from '@/lib/format';
 import { useSpeechSearch } from '@/hooks/useSpeechSearch';
 import { WeatherBackground } from '@/animations/WeatherBackground';
 import { Outlet } from 'react-router-dom';
+import { useSettings } from '@/hooks/useSettings';
+import { playTapSound } from '@/lib/audio';
 
 export function WeatherIcon({ condition, size = 28 }: { condition: Condition; size?: number }) {
   const icons: Record<Condition, typeof Cloud> = {
@@ -63,6 +64,19 @@ const navItems = [
 
 export function Layout() {
   const [menuOpen, setMenuOpen] = useState(false);
+  const [settings] = useSettings();
+
+  const handleNavClick = () => {
+    setMenuOpen(false);
+    if (settings.sound !== false) {
+      playTapSound();
+    }
+  };
+
+  const bottomNavItems = navItems.filter((item) =>
+    ['/', '/search', '/assistant', '/offline-ai', '/weather', '/space'].includes(item.to)
+  );
+
   return (
     <div className="app-shell">
       <aside className={menuOpen ? 'open' : ''}>
@@ -70,24 +84,27 @@ export function Layout() {
         <small className="brand-subtitle">INTELLIGENCE OS</small>
         <nav className="side-nav">
           {navItems.map(({ to, label, icon: Icon }) => (
-            <NavLink to={to} end={to === '/'} key={to} onClick={() => setMenuOpen(false)}>
+            <NavLink to={to} end={to === '/'} key={to} onClick={handleNavClick}>
               <Icon size={18} />{label}
             </NavLink>
           ))}
         </nav>
-        <NavLink className="settings-link" to="/settings" onClick={() => setMenuOpen(false)}><Settings size={18} />Settings</NavLink>
+        <NavLink className="settings-link" to="/settings" onClick={handleNavClick}><Settings size={18} />Settings</NavLink>
         <p className="system-status"><i /> Systems online</p>
       </aside>
       <header className="mobile-header">
         <button className="icon-button" onClick={() => setMenuOpen((value) => !value)} aria-label="Open menu"><Menu size={21} /></button>
         <div className="brand"><span><Radio size={15} /></span><b>NEXUS</b></div>
-        <NavLink to="/search" className="icon-button" aria-label="Search"><Search size={19} /></NavLink>
+        <NavLink to="/search" className="icon-button" aria-label="Search" onClick={handleNavClick}><Search size={19} /></NavLink>
       </header>
       {menuOpen && <button className="menu-overlay" onClick={() => setMenuOpen(false)} aria-label="Close menu" />}
       <main><div className="page-content"><Outlet /></div></main>
       <nav className="bottom-nav">
-        {navItems.slice(0, 5).map(({ to, label, icon: Icon }) => (
-          <NavLink to={to} end={to === '/'} key={to}><Icon size={18} /><small>{label.replace('Web ', '')}</small></NavLink>
+        {bottomNavItems.map(({ to, label, icon: Icon }) => (
+          <NavLink to={to} end={to === '/'} key={to} onClick={handleNavClick}>
+            <Icon size={18} />
+            <small>{label.replace('Web ', '').replace('NASA ', '')}</small>
+          </NavLink>
         ))}
       </nav>
     </div>
