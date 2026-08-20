@@ -333,6 +333,27 @@ let telegramBotState: {
 
 let telegramPollingController: AbortController | null = null;
 let telegramAutomationInterval: NodeJS.Timeout | null = null;
+let telegramPollingActive = false;
+let currentPollingToken = '';
+const processedUpdateIds = new Set<number>();
+const PROCESSED_IDS_MAX_SIZE = 10000;
+
+function markUpdateAsProcessed(updateId: number): boolean {
+  if (processedUpdateIds.has(updateId)) {
+    return false;
+  }
+  processedUpdateIds.add(updateId);
+  if (processedUpdateIds.size > PROCESSED_IDS_MAX_SIZE) {
+    // Evict oldest entries if Set grows too large over long uptime
+    const it = processedUpdateIds.values();
+    for (let i = 0; i < 2000; i++) {
+      const next = it.next();
+      if (next.done) break;
+      processedUpdateIds.delete(next.value);
+    }
+  }
+  return true;
+}
 
 function getDistanceFromLatLonInKm(lat1: number, lon1: number, lat2: number, lon2: number): number {
   const R = 6371;
@@ -553,15 +574,26 @@ function stopTelegramPolling() {
     telegramPollingController.abort();
     telegramPollingController = null;
   }
+  telegramPollingActive = false;
+  currentPollingToken = '';
 }
 
 function startTelegramPolling(token: string) {
+  // If already polling for the same token, do not start another loop
+  if (telegramPollingActive && currentPollingToken === token && telegramPollingController && !telegramPollingController.signal.aborted) {
+    console.log('[Telegram Polling] Polling loop already active for this bot token, skipping duplicate start.');
+    return;
+  }
+
   stopTelegramPolling();
   const controller = new AbortController();
   telegramPollingController = controller;
+  telegramPollingActive = true;
+  currentPollingToken = token;
   let offset = 0;
 
   (async () => {
+    console.log('[Telegram Polling] Starting single authoritative polling loop...');
     while (!controller.signal.aborted && telegramBotState && telegramBotState.token === token) {
       try {
         const url = `https://api.telegram.org/bot${token}/getUpdates?offset=${offset}&timeout=20`;
@@ -590,7 +622,14 @@ function startTelegramPolling(token: string) {
 
         if (data.ok && Array.isArray(data.result)) {
           for (const update of data.result) {
+            // Always advance offset to prevent Telegram from re-delivering
             offset = Math.max(offset, update.update_id + 1);
+
+            // Deduplication safeguard: Ensure each update_id is processed only once
+            if (!markUpdateAsProcessed(update.update_id)) {
+              console.log(`[Telegram Polling] Skipping duplicate update_id ${update.update_id}`);
+              continue;
+            }
 
             // Handle callback_query (inline button clicks)
             if (update.callback_query) {
@@ -743,6 +782,7 @@ function startTelegramPolling(token: string) {
         await new Promise((r) => setTimeout(r, 3000));
       }
     }
+    telegramPollingActive = false;
   })();
 }
 
