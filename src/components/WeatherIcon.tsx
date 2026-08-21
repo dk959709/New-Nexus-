@@ -3,7 +3,11 @@ import type { Condition } from '@/types';
 
 export function WeatherIcon({ condition, size = 28 }: { condition: Condition; size?: number }) {
   const Icon = { clear: Sun, cloudy: Cloud, rain: CloudRain, storm: CloudLightning, snow: CloudSnow, fog: CloudFog, 'partly-cloudy': CloudSun }[condition ?? 'clear'];
-  return <Icon size={size} strokeWidth={1.7} aria-hidden="true" />;
+  return (
+    <span className={`weather-icon-living weather-icon-${condition ?? 'clear'}`} aria-hidden="true">
+      <Icon size={size} strokeWidth={1.7} />
+    </span>
+  );
 }
 
 export function AmbientBackdrop({ condition, reduced = false }: { condition: Condition; reduced?: boolean }) {

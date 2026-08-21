@@ -1,158 +1,127 @@
-import { motion } from 'framer-motion';
 import type { Condition } from '@/types';
 
-interface AmbientProps {
+interface WeatherBackgroundProps {
   condition: Condition;
   isDay: boolean;
   reduced: boolean;
 }
 
-export function WeatherBackground({ condition, isDay, reduced }: AmbientProps) {
+export function WeatherBackground({ condition, isDay, reduced }: WeatherBackgroundProps) {
   if (reduced) return null;
 
-  const gradient = getGradient(condition, isDay);
-
   return (
-    <div className="weather-bg" style={{ background: gradient }} aria-hidden>
-      {(condition === 'clear' || condition === 'partly-cloudy') && <Stars />}
-      {(condition === 'cloudy' || condition === 'partly-cloudy' || condition === 'rain') && <Clouds />}
-      {condition === 'rain' && <Rain />}
-      {condition === 'storm' && <Rain />}
-      {condition === 'snow' && <Snow />}
-      {condition === 'fog' && <Fog />}
-    </div>
-  );
-}
+    <div className={`weather-bg weather-bg-${condition} ${isDay ? 'is-day' : 'is-night'}`} aria-hidden="true">
+      {/* Base ambient gradient layer */}
+      <div className="weather-bg-gradient" />
 
-function getGradient(condition: Condition, isDay: boolean): string {
-  if (!isDay) {
-    return 'linear-gradient(180deg, #0a0e1a 0%, #0d1424 50%, #0a0e1a 100%)';
-  }
-  switch (condition) {
-    case 'clear':
-      return 'linear-gradient(180deg, #0c1e2e 0%, #103048 50%, #0c1e2e 100%)';
-    case 'partly-cloudy':
-      return 'linear-gradient(180deg, #0e2230 0%, #163548 50%, #0e2230 100%)';
-    case 'cloudy':
-      return 'linear-gradient(180deg, #0c1a24 0%, #142838 50%, #0c1a24 100%)';
-    case 'rain':
-      return 'linear-gradient(180deg, #0a1620 0%, #102530 50%, #0a1620 100%)';
-    case 'storm':
-      return 'linear-gradient(180deg, #080d14 0%, #0e1820 50%, #080d14 100%)';
-    case 'snow':
-      return 'linear-gradient(180deg, #0c1820 0%, #163040 50%, #0c1820 100%)';
-    case 'fog':
-      return 'linear-gradient(180deg, #0c1418 0%, #182830 50%, #0c1418 100%)';
-    default:
-      return 'linear-gradient(180deg, #071016 0%, #0d1820 100%)';
-  }
-}
+      {/* Condition-specific particle and ambient effects */}
+      {condition === 'clear' && (
+        <>
+          {isDay ? (
+            <div className="weather-sun-layer">
+              <div className="sun-radiance-aura" />
+              <div className="sun-light-beam beam-1" />
+              <div className="sun-light-beam beam-2" />
+            </div>
+          ) : (
+            <div className="weather-stars-layer">
+              {Array.from({ length: 24 }).map((_, i) => (
+                <div
+                  key={i}
+                  className="weather-micro-star"
+                  style={{
+                    left: `${(i * 41 + 17) % 96}%`,
+                    top: `${(i * 37 + 11) % 85}%`,
+                    animationDelay: `${(i % 5) * 0.7}s`,
+                    animationDuration: `${2.2 + (i % 3) * 0.8}s`,
+                  }}
+                />
+              ))}
+            </div>
+          )}
+        </>
+      )}
 
-function Stars() {
-  const stars = Array.from({ length: 30 }, (_, i) => i);
-  return (
-    <div className="stars-layer">
-      {stars.map((i) => (
-        <motion.div
-          key={i}
-          className="star"
-          style={{
-            left: `${(i * 37) % 100}%`,
-            top: `${(i * 53) % 60}%`,
-          }}
-          animate={{ opacity: [0.2, 0.8, 0.2] }}
-          transition={{
-            duration: 2 + (i % 3),
-            repeat: Infinity,
-            delay: i * 0.1,
-          }}
-        />
-      ))}
-    </div>
-  );
-}
+      {condition === 'partly-cloudy' && (
+        <>
+          {isDay && <div className="sun-radiance-aura subtle" />}
+          <div className="weather-clouds-layer">
+            <div className="weather-cloud-puff puff-1" />
+            <div className="weather-cloud-puff puff-2" />
+            <div className="weather-cloud-puff puff-3" />
+          </div>
+        </>
+      )}
 
-function Clouds() {
-  return (
-    <div className="clouds-layer">
-      {[0, 1, 2].map((i) => (
-        <motion.div
-          key={i}
-          className="cloud"
-          style={{ top: `${10 + i * 20}%` }}
-          animate={{ x: ['-20%', '120%'] }}
-          transition={{
-            duration: 40 + i * 15,
-            repeat: Infinity,
-            ease: 'linear',
-            delay: i * 5,
-          }}
-        />
-      ))}
-    </div>
-  );
-}
+      {condition === 'cloudy' && (
+        <div className="weather-clouds-layer dense">
+          <div className="weather-cloud-puff puff-dense-1" />
+          <div className="weather-cloud-puff puff-dense-2" />
+          <div className="weather-cloud-puff puff-dense-3" />
+        </div>
+      )}
 
-function Rain() {
-  const drops = Array.from({ length: 40 }, (_, i) => i);
-  return (
-    <div className="rain-layer">
-      {drops.map((i) => (
-        <motion.div
-          key={i}
-          className="raindrop"
-          style={{ left: `${(i * 2.5) % 100}%` }}
-          animate={{ y: [-20, window.innerHeight + 20] }}
-          transition={{
-            duration: 0.5 + (i % 3) * 0.2,
-            repeat: Infinity,
-            ease: 'linear',
-            delay: (i % 10) * 0.1,
-          }}
-        />
-      ))}
-    </div>
-  );
-}
+      {condition === 'rain' && (
+        <div className="weather-rain-layer">
+          {Array.from({ length: 22 }).map((_, i) => (
+            <div
+              key={i}
+              className="weather-raindrop"
+              style={{
+                left: `${(i * 4.6 + 2) % 98}%`,
+                animationDelay: `${(i % 8) * 0.18}s`,
+                animationDuration: `${0.65 + (i % 4) * 0.12}s`,
+                opacity: 0.25 + (i % 5) * 0.1,
+              }}
+            />
+          ))}
+          <div className="weather-rain-mist" />
+        </div>
+      )}
 
-function Snow() {
-  const flakes = Array.from({ length: 25 }, (_, i) => i);
-  return (
-    <div className="snow-layer">
-      {flakes.map((i) => (
-        <motion.div
-          key={i}
-          className="snowflake"
-          style={{ left: `${(i * 4) % 100}%` }}
-          animate={{ y: [-20, window.innerHeight + 20], rotate: 360 }}
-          transition={{
-            duration: 4 + (i % 3),
-            repeat: Infinity,
-            ease: 'linear',
-            delay: (i % 8) * 0.5,
-          }}
-        />
-      ))}
-    </div>
-  );
-}
+      {condition === 'storm' && (
+        <div className="weather-storm-layer">
+          <div className="weather-lightning-flash" />
+          {Array.from({ length: 26 }).map((_, i) => (
+            <div
+              key={i}
+              className="weather-raindrop heavy"
+              style={{
+                left: `${(i * 3.9 + 1) % 98}%`,
+                animationDelay: `${(i % 7) * 0.14}s`,
+                animationDuration: `${0.55 + (i % 3) * 0.1}s`,
+                opacity: 0.35 + (i % 4) * 0.12,
+              }}
+            />
+          ))}
+        </div>
+      )}
 
-function Fog() {
-  return (
-    <div className="fog-layer">
-      {[0, 1].map((i) => (
-        <motion.div
-          key={i}
-          className="fog-band"
-          style={{ top: `${20 + i * 30}%` }}
-          animate={{ opacity: [0.1, 0.3, 0.1], x: ['-10%', '10%', '-10%'] }}
-          transition={{
-            duration: 8 + i * 4,
-            repeat: Infinity,
-            ease: 'easeInOut',
-          }}
-        />
-      ))}
+      {condition === 'snow' && (
+        <div className="weather-snow-layer">
+          {Array.from({ length: 20 }).map((_, i) => (
+            <div
+              key={i}
+              className="weather-snowflake-dot"
+              style={{
+                left: `${(i * 5.1 + 3) % 96}%`,
+                animationDelay: `${(i % 6) * 0.6}s`,
+                animationDuration: `${3.5 + (i % 4) * 0.8}s`,
+                width: `${3 + (i % 3) * 2}px`,
+                height: `${3 + (i % 3) * 2}px`,
+              }}
+            />
+          ))}
+        </div>
+      )}
+
+      {condition === 'fog' && (
+        <div className="weather-fog-layer">
+          <div className="weather-fog-band band-1" />
+          <div className="weather-fog-band band-2" />
+          <div className="weather-fog-band band-3" />
+        </div>
+      )}
     </div>
   );
 }

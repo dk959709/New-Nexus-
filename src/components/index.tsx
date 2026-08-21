@@ -10,6 +10,7 @@ import {
   Eye,
   Gauge,
   Mic,
+  Sun,
   Sunrise,
   Sunset,
   Wind,
@@ -26,7 +27,7 @@ export { Layout } from './Layout';
 
 export function WeatherIcon({ condition, size = 28 }: { condition: Condition; size?: number }) {
   const icons: Record<Condition, typeof Cloud> = {
-    clear: CloudSun,
+    clear: Sun,
     'partly-cloudy': CloudSun,
     cloudy: Cloud,
     rain: CloudRain,
@@ -35,7 +36,11 @@ export function WeatherIcon({ condition, size = 28 }: { condition: Condition; si
     fog: CloudFog,
   };
   const Icon = icons[condition ?? 'clear'];
-  return <Icon size={size} strokeWidth={1.6} />;
+  return (
+    <span className={`weather-icon-living weather-icon-${condition ?? 'clear'}`} aria-hidden="true">
+      <Icon size={size} strokeWidth={1.7} />
+    </span>
+  );
 }
 
 export function SearchBox({ onSearch, recent = [], placeholder = 'What do you want to know?' }: { onSearch: (value: string) => void; recent?: string[]; placeholder?: string }) {

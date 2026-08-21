@@ -8,7 +8,25 @@ export interface SearchResult {
   date?: string;
   image?: string;
   thumbnail?: string;
-  type: 'web' | 'news' | 'images' | 'videos' | 'shopping';
+  type: 'web' | 'news' | 'images' | 'videos' | 'shopping' | 'wikipedia';
+}
+
+export interface WikipediaSearchResult {
+  pageid: number;
+  title: string;
+  snippet: string;
+  description?: string;
+  thumbnail?: string;
+  url: string;
+}
+
+export interface WikipediaArticle {
+  pageid: number;
+  title: string;
+  extract: string;
+  description?: string;
+  thumbnail?: string;
+  url: string;
 }
 
 export interface WeatherCurrent {

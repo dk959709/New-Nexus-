@@ -67,55 +67,17 @@ export function HomePage() {
         <SearchBox onSearch={search} recent={storage.getSearches()} />
 
         <section
-          style={{
-            marginTop: 18,
-            padding: 16,
-            borderRadius: 18,
-            border: '1px solid rgba(97,221,210,.18)',
-            background: 'rgba(8,24,30,.72)',
-            backdropFilter: 'blur(14px)',
-          }}
+          className="nexus-ai-card"
           aria-label="NEXUS AI Search"
         >
-          <div
-            style={{
-              display: 'flex',
-              alignItems: 'center',
-              gap: 8,
-              marginBottom: 10,
-              color: '#61ddd2',
-              fontSize: 12,
-              fontWeight: 700,
-              letterSpacing: '.08em',
-              textTransform: 'uppercase',
-            }}
-          >
-            <Sparkles size={15} />
-            NEXUS AI Search
+          <div className="nexus-ai-label">
+            <Sparkles size={16} className="ai-sparkle-active" />
+            <span>NEXUS AI Search</span>
           </div>
 
-          <div
-            style={{
-              display: 'flex',
-              gap: 10,
-              alignItems: 'center',
-            }}
-          >
-            <div
-              style={{
-                flex: 1,
-                display: 'flex',
-                alignItems: 'center',
-                gap: 10,
-                minWidth: 0,
-                padding: '0 14px',
-                minHeight: 52,
-                borderRadius: 14,
-                border: '1px solid rgba(255,255,255,.09)',
-                background: 'rgba(0,0,0,.28)',
-              }}
-            >
-              <Sparkles size={18} color="#61ddd2" />
+          <div className="nexus-ai-form">
+            <div className="nexus-ai-input-wrap">
+              <Sparkles size={18} className="ai-sparkle-active" />
 
               <input
                 value={aiQuery}
@@ -125,15 +87,7 @@ export function HomePage() {
                 }}
                 placeholder="Ask NEXUS AI anything..."
                 aria-label="Ask NEXUS AI anything"
-                style={{
-                  flex: 1,
-                  minWidth: 0,
-                  border: 0,
-                  outline: 0,
-                  background: 'transparent',
-                  color: '#e8f0f2',
-                  fontSize: 15,
-                }}
+                className="nexus-ai-input"
               />
             </div>
 
@@ -142,75 +96,28 @@ export function HomePage() {
               onClick={askNexusAI}
               disabled={!aiQuery.trim() || aiLoading}
               aria-label="Ask NEXUS AI"
-              style={{
-                width: 52,
-                height: 52,
-                flexShrink: 0,
-                border: 0,
-                borderRadius: 14,
-                display: 'grid',
-                placeItems: 'center',
-                background: '#61ddd2',
-                color: '#061316',
-                cursor: aiQuery.trim() && !aiLoading ? 'pointer' : 'not-allowed',
-                opacity: aiQuery.trim() && !aiLoading ? 1 : 0.5,
-              }}
+              className="nexus-ai-submit"
             >
               <Send size={18} />
             </button>
           </div>
 
           {aiLoading && (
-            <div
-              style={{
-                marginTop: 12,
-                fontSize: 13,
-                color: '#61ddd2',
-              }}
-            >
-              ✨ NEXUS AI is thinking...
+            <div className="nexus-ai-loading">
+              <Sparkles size={14} className="ai-sparkle-active" /> NEXUS AI is thinking...
             </div>
           )}
 
           {aiError && (
-            <div
-              style={{
-                marginTop: 12,
-                padding: 12,
-                borderRadius: 12,
-                background: 'rgba(255,80,80,.08)',
-                border: '1px solid rgba(255,80,80,.18)',
-                color: '#ffb4b4',
-                fontSize: 13,
-              }}
-            >
+            <div className="nexus-ai-error">
               {aiError}
             </div>
           )}
 
           {aiAnswer && (
-            <div
-              style={{
-                marginTop: 12,
-                padding: 14,
-                borderRadius: 14,
-                background: 'rgba(97,221,210,.055)',
-                border: '1px solid rgba(97,221,210,.14)',
-                color: '#e8f0f2',
-                fontSize: 14,
-                lineHeight: 1.55,
-                whiteSpace: 'pre-wrap',
-              }}
-            >
-              <div
-                style={{
-                  marginBottom: 8,
-                  color: '#61ddd2',
-                  fontSize: 12,
-                  fontWeight: 700,
-                }}
-              >
-                ✨ NEXUS AI
+            <div className="nexus-ai-answer">
+              <div className="nexus-ai-answer-badge">
+                <Sparkles size={14} className="ai-sparkle-active" /> NEXUS AI
               </div>
               {aiAnswer}
             </div>
