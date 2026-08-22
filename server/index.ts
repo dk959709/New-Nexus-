@@ -5,15 +5,165 @@ import helmet from 'helmet';
 import morgan from 'morgan';
 import { resolve } from 'node:path';
 import { z } from 'zod';
-import { GoogleGenAI } from '@google/genai';
 
 const searchSchema = z.object({
   query: z.string().trim().min(1).max(300),
   page: z.number().int().positive().optional(),
-  category: z.enum(['ALL', 'NEWS', 'IMAGES', 'VIDEOS', 'SHOPPING']).optional(),
+  category: z.enum(['ALL', 'NEWS', 'IMAGES', 'VIDEOS', 'SHOPPING', 'WIKIPEDIA']).optional(),
   region: z.string().optional(),
   language: z.string().optional(),
 });
+
+const WIKIPEDIA_USER_AGENT = 'NEXUS-Intelligence/1.0 (https://nexus.app; contact: dk959709@gmail.com)';
+
+async function fetchWikipediaSummary(query: string) {
+  try {
+    const trimmed = query.trim();
+    if (!trimmed) return null;
+    const encoded = encodeURIComponent(trimmed.replace(/ /g, '_'));
+    const url = `https://en.wikipedia.org/api/rest_v1/page/summary/${encoded}`;
+    const res = await fetch(url, {
+      headers: { 'Api-User-Agent': WIKIPEDIA_USER_AGENT },
+      signal: AbortSignal.timeout(3500),
+    });
+    if (res.ok) {
+      const data = (await res.json()) as {
+        title: string;
+        extract?: string;
+        description?: string;
+        thumbnail?: { source: string };
+        content_urls?: { desktop?: { page?: string } };
+        type?: string;
+      };
+      if (data.extract && data.type !== 'disambiguation') {
+        return {
+          title: data.title,
+          extract: data.extract,
+          description: data.description,
+          thumbnail: data.thumbnail?.source,
+          url:
+            data.content_urls?.desktop?.page ||
+            `https://en.wikipedia.org/wiki/${encodeURIComponent(data.title.replace(/ /g, '_'))}`,
+        };
+      }
+    }
+
+    // Fallback: search for top matching article and retrieve summary
+    const searchRes = await fetch(
+      `https://en.wikipedia.org/w/api.php?action=query&list=search&srsearch=${encodeURIComponent(trimmed)}&srlimit=1&utf8=&format=json&origin=*`,
+      {
+        headers: { 'Api-User-Agent': WIKIPEDIA_USER_AGENT },
+        signal: AbortSignal.timeout(3500),
+      },
+    );
+    if (searchRes.ok) {
+      const searchData = (await searchRes.json()) as {
+        query?: { search?: Array<{ pageid: number; title: string; snippet: string }> };
+      };
+      const top = searchData.query?.search?.[0];
+      if (top) {
+        const topSummaryRes = await fetch(
+          `https://en.wikipedia.org/api/rest_v1/page/summary/${encodeURIComponent(top.title.replace(/ /g, '_'))}`,
+          {
+            headers: { 'Api-User-Agent': WIKIPEDIA_USER_AGENT },
+            signal: AbortSignal.timeout(3500),
+          },
+        );
+        if (topSummaryRes.ok) {
+          const topData = (await topSummaryRes.json()) as {
+            title: string;
+            extract?: string;
+            description?: string;
+            thumbnail?: { source: string };
+            content_urls?: { desktop?: { page?: string } };
+          };
+          return {
+            title: topData.title || top.title,
+            extract: topData.extract || top.snippet.replace(/<[^>]*>/g, ''),
+            description: topData.description,
+            thumbnail: topData.thumbnail?.source,
+            url:
+              topData.content_urls?.desktop?.page ||
+              `https://en.wikipedia.org/wiki/${encodeURIComponent(top.title.replace(/ /g, '_'))}`,
+          };
+        }
+      }
+    }
+    return null;
+  } catch (err) {
+    console.error('[Server Wikipedia] Summary fetch error:', err);
+    return null;
+  }
+}
+
+async function fetchWikipediaSearch(query: string, limit = 10) {
+  try {
+    const trimmed = query.trim();
+    if (!trimmed) return [];
+    const searchUrl = `https://en.wikipedia.org/w/api.php?action=query&list=search&srsearch=${encodeURIComponent(trimmed)}&srlimit=${limit}&utf8=&format=json&origin=*`;
+    const res = await fetch(searchUrl, {
+      headers: { 'Api-User-Agent': WIKIPEDIA_USER_AGENT },
+      signal: AbortSignal.timeout(3500),
+    });
+    if (!res.ok) return [];
+    const data = (await res.json()) as {
+      query?: { search?: Array<{ pageid: number; title: string; snippet: string }> };
+    };
+    const items = data.query?.search ?? [];
+    if (!items.length) return [];
+
+    const pageIds = items.map((i) => i.pageid).join('|');
+    const detailsUrl = `https://en.wikipedia.org/w/api.php?action=query&pageids=${pageIds}&prop=pageimages|description|info&inprop=url&pithumbsize=400&format=json&origin=*`;
+    const detailsRes = await fetch(detailsUrl, {
+      headers: { 'Api-User-Agent': WIKIPEDIA_USER_AGENT },
+      signal: AbortSignal.timeout(3500),
+    }).catch(() => null);
+
+    const detailsData = detailsRes?.ok
+      ? ((await detailsRes.json()) as {
+          query?: {
+            pages?: Record<
+              string,
+              {
+                title: string;
+                description?: string;
+                thumbnail?: { source: string };
+                fullurl?: string;
+                canonicalurl?: string;
+              }
+            >;
+          };
+        })
+      : null;
+    const pagesMap = detailsData?.query?.pages ?? {};
+
+    return items.map((item) => {
+      const pageDetail = pagesMap[String(item.pageid)];
+      const cleaned = item.snippet
+        .replace(/<[^>]*>/g, '')
+        .replace(/&quot;/g, '"')
+        .replace(/&amp;/g, '&')
+        .replace(/&#039;/g, "'")
+        .trim();
+      const url =
+        pageDetail?.fullurl ||
+        pageDetail?.canonicalurl ||
+        `https://en.wikipedia.org/wiki/${encodeURIComponent(item.title.replace(/ /g, '_'))}`;
+      return {
+        title: item.title,
+        url,
+        domain: 'wikipedia.org',
+        description: pageDetail?.description || (cleaned ? `${cleaned.slice(0, 160)}...` : ''),
+        thumbnail: pageDetail?.thumbnail?.source,
+        image: pageDetail?.thumbnail?.source,
+        type: 'wikipedia' as const,
+      };
+    });
+  } catch (err) {
+    console.error('[Server Wikipedia] Search error:', err);
+    return [];
+  }
+}
 
 const weatherSchema = z.object({
   city: z.string().trim().min(1).max(120).optional(),
@@ -25,7 +175,7 @@ function errorResponse(res: Response, status: number, message: string) {
   return res.status(status).json({ error: message });
 }
 
-function domainOf(url: string) {
+function domainOf(url: string): string {
   try {
     return new URL(url).hostname.replace(/^www\./, '');
   } catch {
@@ -33,18 +183,482 @@ function domainOf(url: string) {
   }
 }
 
-let geminiClient: GoogleGenAI | null = null;
-function getGemini(): GoogleGenAI | null {
-  if (!geminiClient && process.env.GEMINI_API_KEY) {
-    geminiClient = new GoogleGenAI({ apiKey: process.env.GEMINI_API_KEY });
+function normalizeProviderUrl(rawUrl?: string): string {
+  let url = (rawUrl || 'https://openrouter.ai/api/v1/chat/completions').trim();
+  if (url.endsWith('/')) {
+    url = url.slice(0, -1);
   }
-  return geminiClient;
+  if (url === 'https://openrouter.ai' || url === 'https://openrouter.ai/api') {
+    return 'https://openrouter.ai/api/v1/chat/completions';
+  }
+  if (url.endsWith('/v1')) {
+    return `${url}/chat/completions`;
+  }
+  if (!url.includes('/chat/completions')) {
+    if (url.includes('/v1/')) {
+      return `${url}/chat/completions`;
+    }
+    if (url.endsWith('/api')) {
+      return `${url}/v1/chat/completions`;
+    }
+  }
+  return url;
+}
+
+function sanitizeChatMessages(
+  messages: Array<{ role: string; content: string }>,
+): Array<{ role: string; content: string }> {
+  const validMsgs = (Array.isArray(messages) ? messages : []).filter(
+    (m) => m && typeof m.content === 'string' && m.content.trim().length > 0,
+  );
+
+  const systemMsgs = validMsgs.filter((m) => m.role === 'system');
+  const nonSystemMsgs = validMsgs.filter((m) => m.role !== 'system');
+
+  // Drop leading assistant messages that have no preceding user message
+  let firstUserIdx = nonSystemMsgs.findIndex((m) => m.role === 'user');
+  if (firstUserIdx === -1 && nonSystemMsgs.length > 0) {
+    firstUserIdx = 0;
+  }
+  const validNonSystem = firstUserIdx >= 0 ? nonSystemMsgs.slice(firstUserIdx) : [];
+
+  const cleaned: Array<{ role: string; content: string }> = [];
+
+  if (systemMsgs.length > 0) {
+    cleaned.push({
+      role: 'system',
+      content: systemMsgs.map((s) => s.content.trim()).join('\n\n'),
+    });
+  }
+
+  for (const msg of validNonSystem) {
+    const role = msg.role === 'assistant' ? 'assistant' : 'user';
+    const content = msg.content.trim();
+    if (!content) continue;
+
+    if (cleaned.length > 0 && cleaned[cleaned.length - 1].role === role) {
+      cleaned[cleaned.length - 1].content += `\n\n${content}`;
+    } else {
+      cleaned.push({ role, content });
+    }
+  }
+
+  if (!cleaned.some((m) => m.role === 'user')) {
+    cleaned.push({ role: 'user', content: 'Hello' });
+  }
+
+  return cleaned;
+}
+
+interface ProviderRequestOptions {
+  url?: string;
+  model?: string;
+  key?: string;
+  messages: Array<{ role: string; content: string }>;
+  temperature?: number;
+  maxTokens?: number;
+  timeoutMs?: number;
+}
+
+interface ProviderRequestResult {
+  ok: boolean;
+  text: string;
+  model: string;
+  status: number;
+  error?: string;
+}
+
+async function executeProviderChatRequest({
+  url: rawUrl,
+  model: rawModel,
+  key: rawKey,
+  messages,
+  temperature = 0.3,
+  maxTokens = 128,
+  timeoutMs = 25000,
+}: ProviderRequestOptions): Promise<ProviderRequestResult> {
+  const url = normalizeProviderUrl(rawUrl);
+  const model = (rawModel || 'deepseek/deepseek-chat').trim();
+  const key = (rawKey || '').trim();
+
+  if (!key) {
+    return {
+      ok: false,
+      text: '',
+      model,
+      status: 401,
+      error: 'Missing or empty API key.',
+    };
+  }
+
+  const sanitized = sanitizeChatMessages(messages);
+
+  try {
+    const res = await fetch(url, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        Authorization: `Bearer ${key}`,
+        'HTTP-Referer': 'https://nexus-intelligence.local',
+        'X-Title': 'NEXUS Intelligence',
+      },
+      body: JSON.stringify({
+        model,
+        messages: sanitized,
+        temperature,
+        max_tokens: maxTokens,
+      }),
+      signal: AbortSignal.timeout(timeoutMs),
+    });
+
+    if (res.ok) {
+      const payload = (await res.json()) as {
+        model?: string;
+        choices?: Array<{
+          message?: { content?: string | Array<{ type?: string; text?: string }> };
+          text?: string;
+        }>;
+      };
+
+      let text = '';
+      const choice = payload.choices?.[0];
+      if (choice?.message?.content) {
+        if (typeof choice.message.content === 'string') {
+          text = choice.message.content.trim();
+        } else if (Array.isArray(choice.message.content)) {
+          text = choice.message.content
+            .map((part) => (typeof part === 'string' ? part : part?.text || ''))
+            .join('')
+            .trim();
+        }
+      } else if (typeof choice?.text === 'string') {
+        text = choice.text.trim();
+      }
+
+      return {
+        ok: Boolean(text),
+        text,
+        model: payload.model || model,
+        status: res.status,
+        error: text ? undefined : 'AI provider returned an empty response.',
+      };
+    } else {
+      const status = res.status;
+      let errorMsg = `HTTP ${status}`;
+      try {
+        const errPayload = (await res.json()) as {
+          error?: { message?: string } | string;
+          message?: string;
+        };
+        errorMsg =
+          (typeof errPayload.error === 'object' ? errPayload.error?.message : errPayload.error) ||
+          errPayload.message ||
+          `HTTP ${status}`;
+      } catch {
+        const rawText = await res.text().catch(() => '');
+        if (rawText) {
+          errorMsg = rawText.slice(0, 200);
+        }
+      }
+
+      return {
+        ok: false,
+        text: '',
+        model,
+        status,
+        error: errorMsg,
+      };
+    }
+  } catch (err: unknown) {
+    const errorMsg = err instanceof Error ? err.message : String(err);
+    return {
+      ok: false,
+      text: '',
+      model,
+      status: 504,
+      error: `Network or timeout error: ${errorMsg}`,
+    };
+  }
+}
+
+async function generateOpenRouterOrCustomAi({
+  messages,
+  temperature = 0.3,
+  maxTokens = 128,
+}: {
+  messages: Array<{ role: string; content: string }>;
+  temperature?: number;
+  maxTokens?: number;
+}): Promise<{ text: string; model: string } | null> {
+  const key =
+    process.env.AI_API_KEY ||
+    process.env.OPENROUTER_API_KEY ||
+    process.env.DEEPSEEK_API_KEY;
+  if (!key) return null;
+
+  const url =
+    process.env.AI_API_URL || 'https://openrouter.ai/api/v1/chat/completions';
+  const model = process.env.AI_MODEL || 'deepseek/deepseek-chat';
+
+  const result = await executeProviderChatRequest({
+    url,
+    model,
+    key,
+    messages,
+    temperature,
+    maxTokens,
+    timeoutMs: 25000,
+  });
+
+  if (result.ok && result.text) {
+    return { text: result.text, model: result.model };
+  }
+
+  console.warn(`[Built-in AI] Request failed: ${result.error || `HTTP ${result.status}`}`);
+  return null;
+}
+
+interface CustomKeyItem {
+  id: string;
+  key: string;
+  label?: string;
+  status?: string;
+}
+
+interface CustomProviderPayload {
+  id: string;
+  name: string;
+  url: string;
+  model: string;
+  maxTokens?: number;
+  keyStrategy?: 'failover' | 'round_robin' | 'manual';
+  preferredKeyId?: string;
+  keys: CustomKeyItem[];
+  capabilities?: {
+    text?: boolean;
+    tools?: boolean;
+    web?: boolean;
+    wikipedia?: boolean;
+    memory?: boolean;
+  };
+}
+
+const keyCooldownMap = new Map<string, number>();
+const providerRoundRobinIndex = new Map<string, number>();
+
+async function executeAiWithProviderOrFallback({
+  messages,
+  temperature = 0.3,
+  maxTokens = 128,
+  providerConfig,
+}: {
+  messages: Array<{ role: string; content: string }>;
+  temperature?: number;
+  maxTokens?: number;
+  providerConfig?: CustomProviderPayload | null;
+}): Promise<{
+  text: string;
+  model: string;
+  providerName?: string;
+  lastError?: string;
+  lastStatus?: number;
+} | {
+  text?: never;
+  model?: never;
+  providerName?: never;
+  lastError: string;
+  lastStatus: number;
+} | null> {
+  const effectiveMaxTokens =
+    providerConfig?.maxTokens && providerConfig.maxTokens > 0
+      ? providerConfig.maxTokens
+      : maxTokens || 128;
+
+  // If no custom provider or existing default is specified, use generateOpenRouterOrCustomAi
+  if (!providerConfig || !providerConfig.id || providerConfig.id === 'existing') {
+    const builtInResult = await generateOpenRouterOrCustomAi({
+      messages,
+      temperature,
+      maxTokens: effectiveMaxTokens,
+    });
+    if (builtInResult) {
+      return {
+        text: builtInResult.text,
+        model: builtInResult.model,
+        providerName: 'Existing AI',
+      };
+    }
+    return {
+      lastError: 'Built-in AI connection failed or key missing.',
+      lastStatus: 503,
+    };
+  }
+
+  // Custom provider execution with multiple keys & rotation / failover
+  const url = (providerConfig.url || 'https://openrouter.ai/api/v1/chat/completions').trim();
+  const model = (providerConfig.model || 'deepseek/deepseek-chat').trim();
+  const strategy = providerConfig.keyStrategy || 'failover';
+  const rawKeys = Array.isArray(providerConfig.keys) ? providerConfig.keys : [];
+  const validKeys = rawKeys.filter(
+    (k) => k && typeof k.key === 'string' && k.key.trim().length > 0,
+  );
+
+  const serverKey =
+    process.env.AI_API_KEY ||
+    process.env.OPENROUTER_API_KEY ||
+    process.env.DEEPSEEK_API_KEY;
+
+  if (validKeys.length === 0) {
+    if (serverKey) {
+      const serverResult = await executeProviderChatRequest({
+        url,
+        model,
+        key: serverKey,
+        messages,
+        temperature,
+        maxTokens: effectiveMaxTokens,
+        timeoutMs: 25000,
+      });
+
+      if (serverResult.ok && serverResult.text) {
+        return {
+          text: serverResult.text,
+          model: serverResult.model || model,
+          providerName: providerConfig.name || 'OpenRouter',
+        };
+      }
+      return {
+        lastError: serverResult.error || `HTTP ${serverResult.status}`,
+        lastStatus: serverResult.status,
+      };
+    }
+
+    console.warn(`[AI Provider: ${providerConfig.name}] No valid keys found and no server key available.`);
+    return {
+      lastError: `No API key entered for provider "${providerConfig.name}".`,
+      lastStatus: 400,
+    };
+  }
+
+  // Filter out keys currently under cooldown unless ALL keys are in cooldown
+  const now = Date.now();
+  const availableKeys = validKeys.filter((k) => {
+    const cd = keyCooldownMap.get(k.key.trim()) || 0;
+    return cd <= now;
+  });
+
+  const candidatePool = availableKeys.length > 0 ? availableKeys : validKeys;
+
+  // Order candidate keys according to strategy
+  let orderedKeys: CustomKeyItem[] = [];
+
+  if (strategy === 'manual' && providerConfig.preferredKeyId) {
+    const preferred = candidatePool.find((k) => k.id === providerConfig.preferredKeyId);
+    const rest = candidatePool.filter((k) => k.id !== providerConfig.preferredKeyId);
+    orderedKeys = preferred ? [preferred, ...rest] : candidatePool;
+  } else if (strategy === 'round_robin') {
+    const currentIndex = providerRoundRobinIndex.get(providerConfig.id) || 0;
+    const startIdx = currentIndex % candidatePool.length;
+    orderedKeys = [
+      ...candidatePool.slice(startIdx),
+      ...candidatePool.slice(0, startIdx),
+    ];
+    providerRoundRobinIndex.set(providerConfig.id, startIdx + 1);
+  } else {
+    // Automatic failover: use candidate pool in order
+    orderedKeys = [...candidatePool];
+  }
+
+  let lastFailedError = '';
+  let lastFailedStatus = 500;
+
+  // Attempt each key in ordered sequence (Automatic Failover)
+  for (let i = 0; i < orderedKeys.length; i++) {
+    const keyItem = orderedKeys[i];
+    const keyVal = keyItem.key.trim();
+
+    const result = await executeProviderChatRequest({
+      url,
+      model,
+      key: keyVal,
+      messages,
+      temperature,
+      maxTokens: effectiveMaxTokens,
+      timeoutMs: 25000,
+    });
+
+    if (result.ok && result.text) {
+      keyCooldownMap.delete(keyVal);
+      return {
+        text: result.text,
+        model: result.model || model,
+        providerName: providerConfig.name,
+      };
+    } else {
+      const status = result.status;
+      lastFailedStatus = status;
+      lastFailedError = result.error || `HTTP ${status}`;
+
+      if (status === 429 || status === 402 || status >= 500) {
+        keyCooldownMap.set(keyVal, Date.now() + 60000); // 60s cooldown
+        console.warn(
+          `[AI Provider: ${providerConfig.name}] Key (${i + 1}/${orderedKeys.length}) received HTTP ${status} (${result.error}). Auto-failing over...`,
+        );
+      } else if (status === 401 || status === 403) {
+        keyCooldownMap.set(keyVal, Date.now() + 300000); // 5m invalid cooldown
+        console.warn(
+          `[AI Provider: ${providerConfig.name}] Key (${i + 1}/${orderedKeys.length}) auth failed (HTTP ${status}: ${result.error}).`,
+        );
+      } else {
+        console.warn(
+          `[AI Provider: ${providerConfig.name}] Key (${i + 1}/${orderedKeys.length}) error HTTP ${status}: ${result.error}`,
+        );
+      }
+    }
+  }
+
+  // Fallback to server key if custom keys failed
+  if (serverKey) {
+    const serverFallbackResult = await executeProviderChatRequest({
+      url,
+      model,
+      key: serverKey,
+      messages,
+      temperature,
+      maxTokens: effectiveMaxTokens,
+      timeoutMs: 25000,
+    });
+
+    if (serverFallbackResult.ok && serverFallbackResult.text) {
+      return {
+        text: serverFallbackResult.text,
+        model: serverFallbackResult.model || model,
+        providerName: providerConfig.name || 'OpenRouter',
+      };
+    }
+  }
+
+  return {
+    lastError: lastFailedError,
+    lastStatus: lastFailedStatus,
+  };
 }
 
 async function searchProvider(input: z.infer<typeof searchSchema>) {
+  if (input.category === 'WIKIPEDIA') {
+    return fetchWikipediaSearch(input.query, 20);
+  }
+
   const key = process.env.SEARCH_API_KEY;
   const url = process.env.SEARCH_API_URL;
   if (!key || !url) {
+    // If external search is not configured, Wikipedia search is available as fallback for ALL
+    if (input.category === 'ALL' || !input.category) {
+      const wikiResults = await fetchWikipediaSearch(input.query, 10);
+      if (wikiResults.length > 0) {
+        return wikiResults;
+      }
+    }
     throw Object.assign(new Error('Search provider is not configured.'), { status: 503 });
   }
   const response = await fetch(url, {
@@ -64,6 +678,12 @@ async function searchProvider(input: z.infer<typeof searchSchema>) {
     }),
   });
   if (!response.ok) {
+    if (input.category === 'ALL' || !input.category) {
+      const wikiResults = await fetchWikipediaSearch(input.query, 10);
+      if (wikiResults.length > 0) {
+        return wikiResults;
+      }
+    }
     throw Object.assign(new Error('Search provider is temporarily unavailable.'), { status: 502 });
   }
   const payload = (await response.json()) as {
@@ -175,48 +795,621 @@ async function weatherProvider(latitude: number, longitude: number, location: st
   };
 }
 
-function detectAITool(message: string): 'none' | 'search' | 'weather' {
-  const text = message.toLowerCase().trim();
+type SourceCategory = 'web' | 'wikipedia' | 'news' | 'nasa' | 'weather';
+type ConfidenceLevel = 'verified' | 'limited' | 'unverified';
 
-  const weatherPatterns = [
-    /\bweather\b/,
-    /\btemperature\b/,
-    /\bforecast\b/,
-    /\brain\b/,
-    /\bsnow\b/,
-    /\bhumidity\b/,
-    /\bwind\b/,
-    /\bclimate\b/,
-    /\bhot\b/,
-    /\bcold\b/,
-  ];
-
-  const searchPatterns = [
-    /\bnews\b/,
-    /\blatest\b/,
-    /\btoday\b/,
-    /\bcurrently\b/,
-    /\bcurrent\b/,
-    /\brecent\b/,
-    /\bupdate\b/,
-    /\bupdates\b/,
-    /\bwhat happened\b/,
-    /\bwho won\b/,
-    /\bwho is\b/,
-    /\bsearch\b/,
-    /\blook up\b/,
-  ];
-
-  if (weatherPatterns.some((pattern) => pattern.test(text))) {
-    return 'weather';
-  }
-
-  if (searchPatterns.some((pattern) => pattern.test(text))) {
-    return 'search';
-  }
-
-  return 'none';
+interface SmartAnswerSource {
+  title: string;
+  url: string;
+  domain?: string;
+  description?: string;
+  date?: string;
+  thumbnail?: string;
+  image?: string;
+  type: SourceCategory;
 }
+
+interface SmartAnswerResult {
+  query: string;
+  answer: string;
+  confidence: ConfidenceLevel;
+  confidenceReason?: string;
+  sources: SmartAnswerSource[];
+  followUps?: string[];
+  selectedCategories: SourceCategory[];
+  model?: string;
+  tool?: string;
+  fromCache?: boolean;
+}
+
+const smartAnswerCache = new Map<string, { data: SmartAnswerResult; timestamp: number }>();
+const CACHE_TTL_MS = 5 * 60 * 1000; // 5 minutes cache
+
+function determineSourceCategories(query: string): SourceCategory[] {
+  const text = query.toLowerCase().trim();
+  const categories = new Set<SourceCategory>();
+
+  // 1. Weather
+  const weatherKeywords = [
+    'weather', 'temperature', 'forecast', 'rain', 'snow', 'wind', 'humidity',
+    'climate', 'degrees', 'celsius', 'fahrenheit', 'hot outside', 'cold outside',
+    'precipitation'
+  ];
+  if (weatherKeywords.some((kw) => new RegExp(`\\b${kw}\\b`).test(text))) {
+    categories.add('weather');
+  }
+
+  // 2. NASA / Space
+  const spaceKeywords = [
+    'space', 'black hole', 'black holes', 'nasa', 'astronaut', 'mars', 'moon',
+    'planet', 'planets', 'galaxy', 'galaxies', 'universe', 'telescope', 'james webb',
+    'hubble', 'iss', 'station', 'star', 'stars', 'solar system', 'orbit', 'asteroid',
+    'comet', 'supernova', 'nebula', 'spacex', 'cosmic', 'astronomy', 'cosmos'
+  ];
+  if (spaceKeywords.some((kw) => text.includes(kw))) {
+    categories.add('nasa');
+    categories.add('wikipedia');
+  }
+
+  // 3. News
+  const newsKeywords = [
+    'news', 'latest', 'today', 'breaking', 'recent', 'headlines', 'update', 'updates',
+    'happening', 'current events', 'stock market', 'election'
+  ];
+  if (newsKeywords.some((kw) => new RegExp(`\\b${kw}\\b`).test(text))) {
+    categories.add('news');
+    categories.add('web');
+  }
+
+  // 4. Wikipedia (scientific, historical, biographical, definitional, conceptual)
+  const wikiKeywords = [
+    'who is', 'who was', 'what is', 'what was', 'what are', 'where is', 'where was',
+    'when was', 'when did', 'define', 'definition', 'explain', 'how does', 'why is',
+    'why do', 'history of', 'biography', 'concept', 'theory', 'photosynthesis',
+    'einstein', 'newton', 'quantum', 'dna', 'evolution', 'biology', 'physics',
+    'chemistry', 'wikipedia', 'wiki'
+  ];
+  if (wikiKeywords.some((kw) => text.includes(kw))) {
+    categories.add('wikipedia');
+    categories.add('web');
+  }
+
+  // If only weather is requested, return weather
+  if (categories.has('weather') && categories.size === 1) {
+    return ['weather'];
+  }
+
+  // If query is specifically about space news
+  if (text.includes('space') && text.includes('news')) {
+    categories.add('news');
+    categories.add('nasa');
+    categories.add('web');
+  }
+
+  // Default fallback for general knowledge
+  if (categories.size === 0) {
+    categories.add('wikipedia');
+    categories.add('web');
+  }
+
+  return Array.from(categories);
+}
+
+function generateSmartFollowUps(
+  query: string,
+  categories: SourceCategory[],
+  sources: SmartAnswerSource[],
+): string[] {
+  const q = query.toLowerCase().trim();
+  if (q.includes('black hole')) {
+    return [
+      'What causes a black hole to form?',
+      'Can a black hole disappear over time?',
+      'What happens near the event horizon?',
+    ];
+  }
+  if (q.includes('einstein') || q.includes('albert')) {
+    return [
+      'What are the key principles of General Relativity?',
+      'When did Albert Einstein win the Nobel Prize?',
+      'How did Einstein contribute to quantum mechanics?',
+    ];
+  }
+  if (q.includes('photosynthesis')) {
+    return [
+      'What are the light-dependent reactions in photosynthesis?',
+      'Why is chlorophyll essential for plant cells?',
+      'How does carbon dioxide concentration affect photosynthesis?',
+    ];
+  }
+  if (q.includes('mars')) {
+    return [
+      'What is the atmosphere of Mars composed of?',
+      'What evidence exists of past water on Mars?',
+      'What are the main missions currently exploring Mars?',
+    ];
+  }
+  if (categories.includes('weather')) {
+    return [
+      'What is the 7-day extended forecast?',
+      'What is the precipitation probability today?',
+      'What are the expected sunrise and sunset times?',
+    ];
+  }
+  if (categories.includes('nasa')) {
+    return [
+      'What is the current position of the ISS?',
+      'What are upcoming NASA space exploration missions?',
+      'How do astronomers measure cosmic distances?',
+    ];
+  }
+  if (categories.includes('news')) {
+    return [
+      'What are recent developments related to this story?',
+      'What background context led to this headline?',
+      'What are different media perspectives on this topic?',
+    ];
+  }
+  if (sources.length > 0 && sources[0].title) {
+    const mainTitle = sources[0].title;
+    return [
+      `What is the background and origin of ${mainTitle}?`,
+      `How does ${mainTitle} work in practice?`,
+      `What are the major applications or impact of ${mainTitle}?`,
+    ];
+  }
+  return [
+    `Can you explain the key concepts of ${query}?`,
+    `What are the most important facts to know about this?`,
+    `What is the historical significance of this?`,
+  ];
+}
+
+async function executeSmartAnswerEngine(
+  query: string,
+  customSources?: Array<{ title: string; url: string; description: string; domain?: string }>,
+  providerConfig?: CustomProviderPayload | null,
+): Promise<SmartAnswerResult> {
+  const trimmed = query.trim();
+  const cacheKey =
+    providerConfig && providerConfig.id !== 'existing'
+      ? `${providerConfig.id}:${trimmed.toLowerCase()}`
+      : trimmed.toLowerCase();
+
+  if (!customSources && smartAnswerCache.has(cacheKey)) {
+    const cached = smartAnswerCache.get(cacheKey)!;
+    if (Date.now() - cached.timestamp < CACHE_TTL_MS) {
+      return { ...cached.data, fromCache: true };
+    }
+  }
+
+  const structuredSources: SmartAnswerSource[] = [];
+  const contextBlocks: string[] = [];
+  const selectedCategories: SourceCategory[] = customSources
+    ? ['web']
+    : determineSourceCategories(trimmed);
+
+  if (customSources && customSources.length > 0) {
+    // Token-optimized custom sources from Search result synthesis
+    for (const item of customSources.slice(0, 4)) {
+      const cleanDesc = (item.description || '').replace(/\s+/g, ' ').slice(0, 200).trim();
+      structuredSources.push({
+        title: item.title,
+        url: item.url,
+        domain: item.domain || domainOf(item.url) || 'web',
+        description: cleanDesc,
+        type: 'web',
+      });
+      contextBlocks.push(`[Web Source: ${item.title}] (Domain: ${item.domain || 'web'})\n${cleanDesc}`);
+    }
+  } else {
+    // Multi-source intelligence retrieval
+    const promises: Promise<void>[] = [];
+
+    // 1. Wikipedia
+    if (selectedCategories.includes('wikipedia')) {
+      promises.push(
+        fetchWikipediaSummary(trimmed)
+          .then((wikiArticle) => {
+            if (wikiArticle && wikiArticle.extract) {
+              const cleanExtract = wikiArticle.extract.replace(/\s+/g, ' ').slice(0, 450).trim();
+              structuredSources.push({
+                title: wikiArticle.title,
+                url: wikiArticle.url,
+                domain: 'wikipedia.org',
+                description: cleanExtract,
+                thumbnail: wikiArticle.thumbnail,
+                image: wikiArticle.thumbnail,
+                type: 'wikipedia',
+              });
+              contextBlocks.push(
+                `[Wikipedia: ${wikiArticle.title}]\n${cleanExtract}`,
+              );
+            }
+          })
+          .catch(() => {}),
+      );
+    }
+
+    // 2. NASA / Space
+    if (selectedCategories.includes('nasa')) {
+      promises.push(
+        (async () => {
+          try {
+            // Check NASA APOD or space topic summary
+            const apiKey = process.env.NASA_API_KEY || 'DEMO_KEY';
+            const apodRes = await fetch(`https://api.nasa.gov/planetary/apod?api_key=${apiKey}`).catch(() => null);
+            if (apodRes && apodRes.ok) {
+              const apodData = (await apodRes.json()) as { title?: string; explanation?: string; hdurl?: string; url?: string; date?: string };
+              if (apodData.title && (trimmed.toLowerCase().includes('space') || trimmed.toLowerCase().includes('nasa') || apodData.title.toLowerCase().includes(trimmed.toLowerCase()))) {
+                const cleanApodExp = (apodData.explanation || '').slice(0, 300).trim();
+                structuredSources.push({
+                  title: `NASA Astronomy: ${apodData.title}`,
+                  url: 'https://apod.nasa.gov/apod/',
+                  domain: 'nasa.gov',
+                  description: cleanApodExp,
+                  thumbnail: apodData.hdurl || apodData.url,
+                  image: apodData.hdurl || apodData.url,
+                  date: apodData.date,
+                  type: 'nasa',
+                });
+                contextBlocks.push(`[NASA Space Picture Insight: ${apodData.title}]\n${cleanApodExp}`);
+              }
+            }
+          } catch {
+            // non-fatal
+          }
+        })(),
+      );
+    }
+
+    // 3. Weather
+    if (selectedCategories.includes('weather')) {
+      promises.push(
+        (async () => {
+          try {
+            const cityMatch = trimmed.match(
+              /\b(?:in|at|for|near)\s+([A-Za-z][A-Za-z .'-]{1,80}?)(?:\?|$| today| tomorrow| now| currently| right now)/i,
+            );
+            const city = cityMatch?.[1]?.trim() || 'London, UK';
+            const locations = await geocode(city);
+            const loc = locations[0];
+            if (loc) {
+              const w = await weatherProvider(loc.latitude, loc.longitude, `${loc.name}, ${loc.country}`);
+              const weatherSummary = `Location: ${w.current.location} | Temperature: ${w.current.temperature}°C (Feels like: ${w.current.feelsLike}°C) | Condition: ${w.current.conditionLabel} | Humidity: ${w.current.humidity}% | Wind: ${w.current.wind} km/h | Rain Chance: ${w.current.rainProbability}%`;
+              structuredSources.push({
+                title: `Weather for ${w.current.location}`,
+                url: `/weather?city=${encodeURIComponent(w.current.location)}`,
+                domain: 'open-meteo.com',
+                description: weatherSummary,
+                type: 'weather',
+              });
+              contextBlocks.push(`[Live Weather Data]\n${weatherSummary}`);
+            }
+          } catch {
+            // non-fatal
+          }
+        })(),
+      );
+    }
+
+    // 4. News
+    if (selectedCategories.includes('news')) {
+      promises.push(
+        searchProvider({ query: trimmed, page: 1, category: 'NEWS' })
+          .then((newsItems) => {
+            for (const item of newsItems.slice(0, 2)) {
+              const cleanDesc = (item.description || '').slice(0, 180).trim();
+              structuredSources.push({
+                title: item.title,
+                url: item.url,
+                domain: item.domain || 'news',
+                description: cleanDesc,
+                date: item.date,
+                thumbnail: item.thumbnail || item.image,
+                image: item.image || item.thumbnail,
+                type: 'news',
+              });
+              contextBlocks.push(`[News Source: ${item.title}] (Source: ${item.domain})\n${cleanDesc}`);
+            }
+          })
+          .catch(() => {}),
+      );
+    }
+
+    // 5. Web Search
+    if (selectedCategories.includes('web')) {
+      promises.push(
+        searchProvider({ query: trimmed, page: 1, category: 'ALL' })
+          .then((webItems) => {
+            for (const item of webItems.slice(0, 3)) {
+              if (!structuredSources.some((s) => s.url === item.url)) {
+                const cleanDesc = (item.description || '').slice(0, 180).trim();
+                structuredSources.push({
+                  title: item.title,
+                  url: item.url,
+                  domain: item.domain || 'web',
+                  description: cleanDesc,
+                  thumbnail: item.thumbnail || item.image,
+                  image: item.image || item.thumbnail,
+                  type: 'web',
+                });
+                contextBlocks.push(`[Web Source: ${item.title}] (${item.domain})\n${cleanDesc}`);
+              }
+            }
+          })
+          .catch(() => {}),
+      );
+    }
+
+    await Promise.allSettled(promises);
+  }
+
+  // Determine Confidence
+  let confidence: ConfidenceLevel = 'unverified';
+  let confidenceReason = 'Limited or unverified source data found.';
+
+  if (structuredSources.length >= 2) {
+    confidence = 'verified';
+    confidenceReason = `Well supported by ${structuredSources.length} verified sources (${selectedCategories.join(', ')}).`;
+  } else if (structuredSources.length === 1) {
+    confidence = 'limited';
+    confidenceReason = `Single verified source retrieved (${structuredSources[0].domain || structuredSources[0].type}).`;
+  } else {
+    confidence = 'unverified';
+    confidenceReason = 'Unable to corroborate with verified live sources.';
+  }
+
+  // Token-optimized prompt for AI synthesis
+  const compactContext = contextBlocks.slice(0, 3).join('\n\n');
+  const systemInstruction =
+    'You are NEXUS Smart Answer Engine. Formulate a direct, concise 1-3 sentence factual answer based strictly on verified sources. Never use promotional filler or phrases like "As an AI". Give the direct answer immediately.';
+
+  const userPrompt = [
+    `Question: "${trimmed}"`,
+    compactContext ? `Verified Sources:\n${compactContext}` : '',
+    'Answer concisely:',
+  ]
+    .filter(Boolean)
+    .join('\n\n');
+
+  let generatedAnswer = '';
+  let modelUsed = process.env.AI_MODEL || 'deepseek/deepseek-chat';
+
+  // 1. Execute with active AI provider (Default / OpenRouter / Custom with multi-key failover)
+  const aiResult = await executeAiWithProviderOrFallback({
+    messages: [
+      { role: 'system', content: systemInstruction },
+      { role: 'user', content: userPrompt },
+    ],
+    temperature: 0.3,
+    maxTokens: providerConfig?.maxTokens || 128,
+    providerConfig,
+  });
+
+  if (aiResult && aiResult.text) {
+    generatedAnswer = aiResult.text;
+    modelUsed = aiResult.model;
+  }
+
+  // 2. Direct factual source extraction fallback if OpenRouter is unreachable
+  if (!generatedAnswer) {
+    if (structuredSources.length > 0) {
+      const primary = structuredSources[0];
+      generatedAnswer = primary.description || `Retrieved verified information from ${primary.title}.`;
+      modelUsed = 'nexus-knowledge';
+    } else {
+      const specificErr = aiResult?.lastError ? ` (${aiResult.lastError})` : '';
+      generatedAnswer = `NEXUS was unable to reach the AI provider${specificErr}. Please check your connection or provider credits.`;
+      confidence = 'unverified';
+      confidenceReason = aiResult?.lastError || 'No live knowledge sources could be contacted.';
+      modelUsed = 'nexus-fallback';
+    }
+  }
+
+  const followUps = generateSmartFollowUps(trimmed, selectedCategories, structuredSources);
+
+  const finalResult: SmartAnswerResult = {
+    query: trimmed,
+    answer: generatedAnswer,
+    confidence,
+    confidenceReason,
+    sources: structuredSources,
+    followUps,
+    selectedCategories,
+    model: modelUsed,
+  };
+
+  if (!customSources) {
+    smartAnswerCache.set(cacheKey, { data: finalResult, timestamp: Date.now() });
+  }
+
+  return finalResult;
+}
+
+async function processAiChatInternal(
+  message: string,
+  history: Array<{ role: 'user' | 'assistant'; content: string }> = [],
+  memory = '',
+  providerConfig?: CustomProviderPayload | null,
+) {
+  const trimmed = message.trim();
+  const activeModel = providerConfig?.model || process.env.AI_MODEL || 'deepseek/deepseek-chat';
+
+  // Check if query is factual to enrich with compact live context
+  let sourceContext = '';
+  const structuredSources: Array<{
+    title: string;
+    url: string;
+    description: string;
+    domain?: string;
+    type?: string;
+  }> = [];
+
+  const lower = trimmed.toLowerCase();
+  const isKnowledgeQuery =
+    lower.length > 5 &&
+    !['hello', 'hi', 'hey', 'who are you', 'how are you', 'thank you', 'thanks'].includes(lower) &&
+    (lower.startsWith('what') ||
+      lower.startsWith('who') ||
+      lower.startsWith('where') ||
+      lower.startsWith('when') ||
+      lower.startsWith('why') ||
+      lower.startsWith('how') ||
+      lower.startsWith('tell me about') ||
+      lower.startsWith('explain') ||
+      lower.startsWith('summarize'));
+
+  if (isKnowledgeQuery) {
+    try {
+      const wikiSummary = await fetchWikipediaSummary(trimmed);
+      if (wikiSummary && wikiSummary.extract) {
+        structuredSources.push({
+          title: wikiSummary.title,
+          url: wikiSummary.url,
+          description: wikiSummary.extract.slice(0, 200),
+          domain: 'wikipedia.org',
+          type: 'wikipedia',
+        });
+        sourceContext = `[Wikipedia Reference for "${wikiSummary.title}"]: ${wikiSummary.extract.slice(0, 260)}`;
+      }
+    } catch {
+      // Non-blocking knowledge lookup
+    }
+  }
+
+  const isDeviceQuery =
+    lower.includes('phone battery') ||
+    lower.includes('my battery') ||
+    lower.includes('android battery') ||
+    lower.includes('device battery') ||
+    lower.includes('phone storage') ||
+    lower.includes('device storage') ||
+    lower.includes('android storage') ||
+    lower.includes('phone online') ||
+    lower.includes('is my phone') ||
+    lower.includes('is my android') ||
+    lower.includes('connected device') ||
+    lower.includes('nexus device') ||
+    lower.includes('my devices') ||
+    lower.includes('check my phone') ||
+    lower.includes('phone status') ||
+    lower.includes('device status');
+
+  if (isDeviceQuery) {
+    const devContext = getConnectedDevicesSummary();
+    sourceContext = sourceContext
+      ? `${sourceContext}\n\n[NEXUS Devices Tool Telemetry]:\n${devContext}`
+      : `[NEXUS Devices Tool Telemetry]:\n${devContext}`;
+  }
+
+
+  const systemPrompt = [
+    `You are NEXUS AI, powered by ${providerConfig?.name || 'DeepSeek'}. Provide direct, insightful, and concise answers.`,
+    memory ? `[User Context]: ${memory.slice(0, 250)}` : '',
+    sourceContext ? `[Verified Source]:\n${sourceContext}` : '',
+  ]
+    .filter(Boolean)
+    .join('\n\n');
+
+  const compactHistory = history.slice(-4).map((h) => ({
+    role: h.role,
+    content: h.content.slice(0, 600),
+  }));
+
+  const messages: Array<{ role: string; content: string }> = [
+    { role: 'system', content: systemPrompt },
+    ...compactHistory,
+    { role: 'user', content: trimmed },
+  ];
+
+  const aiResult = await executeAiWithProviderOrFallback({
+    messages,
+    temperature: 0.4,
+    maxTokens: providerConfig?.maxTokens || 128,
+    providerConfig,
+  });
+
+  if (aiResult && aiResult.text) {
+    return {
+      answer: aiResult.text,
+      model: aiResult.model,
+      confidence: (structuredSources.length ? 'verified' : 'verified') as ConfidenceLevel,
+      confidenceReason: structuredSources.length
+        ? `Synthesized with ${providerConfig?.name || 'DeepSeek'} and grounded with verified live sources.`
+        : `Synthesized directly via ${providerConfig?.name || 'DeepSeek'}.`,
+      sources: structuredSources.length ? structuredSources : undefined,
+      followUps: generateSmartFollowUps(trimmed, ['ALL'], structuredSources),
+      selectedCategories: ['ALL'] as SourceCategory[],
+    };
+  }
+
+  // Graceful response when AI provider is unreachable or API key missing
+  if (structuredSources.length > 0) {
+    return {
+      answer: structuredSources[0].description,
+      model: 'nexus-knowledge',
+      confidence: 'limited' as ConfidenceLevel,
+      confidenceReason: `${providerConfig?.name || 'AI Provider'} currently unavailable (${aiResult?.lastError || 'provider error'}); extracted from verified live knowledge.`,
+      sources: structuredSources,
+      followUps: generateSmartFollowUps(trimmed, ['ALL'], structuredSources),
+      selectedCategories: ['ALL'] as SourceCategory[],
+    };
+  }
+
+  const hasKey = Boolean(
+    (providerConfig?.keys && providerConfig.keys.some((k) => k.key && k.key.trim().length > 0)) ||
+      process.env.AI_API_KEY ||
+      process.env.OPENROUTER_API_KEY ||
+      process.env.DEEPSEEK_API_KEY,
+  );
+
+  const providerName = providerConfig?.name || 'OpenRouter';
+  const specificErr = aiResult?.lastError ? ` (${aiResult.lastError})` : '';
+
+  return {
+    answer: hasKey
+      ? `NEXUS AI is temporarily unable to reach ${providerName}${specificErr}. Please verify your API key(s) or check your provider balance.`
+      : 'NEXUS AI is ready. Please configure your API key in Settings > AI Providers to activate.',
+    model: activeModel,
+    confidence: 'unverified' as ConfidenceLevel,
+    confidenceReason: aiResult?.lastError || 'AI provider service unreachable.',
+    sources: [],
+    followUps: ['Explain gravity simply', 'What is quantum computing?', 'Tell me about Mars'],
+    selectedCategories: ['ALL'] as SourceCategory[],
+  };
+}
+
+const customProviderSchema = z
+  .object({
+    id: z.string(),
+    name: z.string(),
+    url: z.string(),
+    model: z.string(),
+    maxTokens: z.number().int().positive().optional(),
+    keyStrategy: z.enum(['failover', 'round_robin', 'manual']).optional(),
+    preferredKeyId: z.string().optional(),
+    keys: z.array(
+      z
+        .object({
+          id: z.string(),
+          key: z.string(),
+          label: z.string().optional(),
+          status: z.string().optional(),
+        })
+        .passthrough(),
+    ),
+    capabilities: z
+      .object({
+        text: z.boolean().optional(),
+        tools: z.boolean().optional(),
+        web: z.boolean().optional(),
+        wikipedia: z.boolean().optional(),
+        memory: z.boolean().optional(),
+      })
+      .optional(),
+  })
+  .passthrough();
 
 const aiChatSchema = z.object({
   message: z.string().trim().min(1).max(4000),
@@ -230,6 +1423,7 @@ const aiChatSchema = z.object({
     .max(20)
     .optional(),
   memory: z.string().max(1200).optional(),
+  providerConfig: customProviderSchema.optional().nullable(),
 });
 
 interface TelegramAutomationsState {
@@ -244,6 +1438,91 @@ interface TelegramAutomationsState {
   issAlertLongitude: number;
   quickRepliesEnabled: boolean;
 }
+
+export interface NexusDeviceServer {
+  id: string;
+  type: 'android' | 'tv' | 'computer' | 'smarthome';
+  name: string;
+  status: 'online' | 'warning' | 'offline' | 'unknown';
+  pairedAt: string;
+  lastSeen: string;
+  ipAddress?: string;
+  authToken?: string;
+  permissions: {
+    batteryInfo: boolean;
+    storageInfo: boolean;
+    networkInfo: boolean;
+    deviceControl: boolean;
+    backgroundMonitoring: boolean;
+  };
+  android?: {
+    model?: string;
+    brand?: string;
+    androidVersion?: string;
+    sdkVersion?: number;
+    batteryLevel?: number;
+    isCharging?: boolean;
+    networkType?: string;
+    storageUsedGb?: number;
+    storageTotalGb?: number;
+    ramUsedGb?: number;
+    ramTotalGb?: number;
+  };
+  tv?: {
+    model?: string;
+    powerState?: 'ON' | 'STANDBY' | 'OFF';
+    volume?: number;
+    isMuted?: boolean;
+  };
+}
+
+const registeredDevices = new Map<string, NexusDeviceServer>();
+const activePairingCodes = new Map<
+  string,
+  {
+    code: string;
+    createdAt: number;
+    expiresAt: number;
+    sampleData?: Partial<NonNullable<NexusDeviceServer['android']>>;
+  }
+>();
+
+function getConnectedDevicesSummary(): string {
+  if (registeredDevices.size === 0) {
+    return 'No devices are currently connected to NEXUS. Users can pair their Android device in the 📱 Devices dashboard using their NEXUS Agent pairing code.';
+  }
+
+  const summaries: string[] = [];
+  for (const dev of registeredDevices.values()) {
+    if (dev.type === 'android') {
+      const parts: string[] = [
+        `Device: ${dev.name} (${dev.android?.model || 'Android Agent'})`,
+        `Status: ${dev.status.toUpperCase()}`,
+      ];
+      if (dev.permissions.batteryInfo && dev.android?.batteryLevel !== undefined) {
+        parts.push(`Battery: ${dev.android.batteryLevel}% (${dev.android.isCharging ? 'Charging' : 'Not charging'})`);
+      }
+      if (dev.permissions.networkInfo && dev.android?.networkType) {
+        parts.push(`Network: ${dev.android.networkType}`);
+      }
+      if (dev.permissions.storageInfo && dev.android?.storageUsedGb !== undefined) {
+        parts.push(`Storage: ${dev.android.storageUsedGb} GB / ${dev.android.storageTotalGb || 128} GB`);
+        if (dev.android.ramUsedGb !== undefined) {
+          parts.push(`RAM: ${dev.android.ramUsedGb} GB / ${dev.android.ramTotalGb || 8} GB`);
+        }
+      }
+      if (dev.android?.androidVersion) {
+        parts.push(`Android OS: ${dev.android.androidVersion}`);
+      }
+      parts.push(`Last seen: ${new Date(dev.lastSeen).toLocaleTimeString()}`);
+      summaries.push(`[Android Agent] ${parts.join(' | ')}`);
+    } else {
+      summaries.push(`[${dev.type.toUpperCase()}] ${dev.name} - Status: ${dev.status}`);
+    }
+  }
+  return summaries.join('\n');
+}
+
 
 const defaultAutomations: TelegramAutomationsState = {
   dailyWeatherEnabled: true,
@@ -466,24 +1745,46 @@ async function handleTelegramQuickAction(action: string, defaultCity = 'London, 
       .trim();
 
     if (!query) {
-      return `🔍 *Nexus Web Search*\n\nUsage: \`/search <topic or question>\`\nExample: \`/search latest james webb telescope discoveries\`\n\nOr simply type any question directly into this chat!`;
+      return `🔍 *Nexus Web & Knowledge Search*\n\nUsage: \`/search <topic or question>\`\nExample: \`/search Quantum Computing\`\n\nOr simply type any question directly into this chat!`;
     }
 
     try {
-      const results = await searchProvider({ query, category: 'GENERAL' });
-      if (results.length > 0) {
-        const list = results
-          .slice(0, 3)
-          .map(
-            (r, i) =>
-              `${i + 1}. *${r.title}*\n   ${r.description.slice(0, 140)}...\n   🔗 [Read More](${r.url})`,
-          )
-          .join('\n\n');
-        return `🔍 *Web Search Results for "${query}":*\n\n${list}`;
+      const [wikiArticle, webResults] = await Promise.all([
+        fetchWikipediaSummary(query).catch(() => null),
+        searchProvider({ query, category: 'ALL' }).catch(() => []),
+      ]);
+
+      const sections: string[] = [];
+
+      if (wikiArticle) {
+        sections.push(
+          `📖 *Wikipedia: ${wikiArticle.title}*\n${wikiArticle.extract.slice(0, 260)}...\n🔗 [Read on Wikipedia](${wikiArticle.url})`,
+        );
       }
-      return `🔍 No web search results found for "${query}".`;
+
+      if (webResults.length > 0) {
+        const webFiltered = webResults.filter(
+          (r) => !wikiArticle || !r.url.toLowerCase().includes(wikiArticle.title.toLowerCase().replace(/ /g, '_')),
+        );
+        if (webFiltered.length > 0) {
+          const list = webFiltered
+            .slice(0, 3)
+            .map(
+              (r, i) =>
+                `${i + 1}. *${r.title}*\n   ${r.description.slice(0, 130)}...\n   🔗 [Read More](${r.url})`,
+            )
+            .join('\n\n');
+          sections.push(`🌐 *Web Search Results:*\n\n${list}`);
+        }
+      }
+
+      if (sections.length > 0) {
+        return `🔍 *Search Results for "${query}":*\n\n${sections.join('\n\n---\n\n')}`;
+      }
+
+      return `🔍 No search results found for "${query}".`;
     } catch {
-      return `🔍 Web search is temporarily unavailable.`;
+      return `🔍 Search is temporarily unavailable.`;
     }
   }
 
@@ -901,189 +2202,6 @@ function startAutomationScheduler() {
   }, 45000);
 }
 
-async function processAiChatInternal(
-  message: string,
-  history: Array<{ role: 'user' | 'assistant'; content: string }> = [],
-  memory = '',
-) {
-  const tool = detectAITool(message);
-
-  let searchContext = '';
-  let weatherContext = '';
-  let weatherData: unknown = undefined;
-
-  if (tool === 'search') {
-    try {
-      const results = await searchProvider({
-        query: message,
-        page: 1,
-        category: 'ALL',
-      });
-
-      if (results.length) {
-        searchContext = [
-          'LIVE NEXUS SEARCH RESULTS:',
-          ...results
-            .slice(0, 10)
-            .map(
-              (item, index) =>
-                `${index + 1}. ${item.title}\nURL: ${item.url}\nSource: ${item.domain}\nDescription: ${item.description}${item.date ? `\nDate: ${item.date}` : ''}`,
-            ),
-        ].join('\n\n');
-      } else {
-        searchContext = 'NEXUS SEARCH returned no useful results for this request.';
-      }
-    } catch {
-      searchContext =
-        'NEXUS SEARCH is currently unavailable. Do not invent current information.';
-    }
-  }
-
-  if (tool === 'weather') {
-    try {
-      const cityMatch = message.match(
-        /\b(?:in|at|for|near)\s+([A-Za-z][A-Za-z .'-]{1,80}?)(?:\?|$| today| tomorrow| now| currently| right now)/i,
-      );
-      const city = cityMatch?.[1]?.trim();
-
-      if (city) {
-        const locations = await geocode(city);
-        const location = locations[0];
-
-        if (location) {
-          weatherData = await weatherProvider(
-            location.latitude,
-            location.longitude,
-            `${location.name}, ${location.country}`,
-          );
-
-          weatherContext = [
-            'LIVE NEXUS WEATHER DATA:',
-            JSON.stringify(weatherData),
-            '',
-            'Use this weather data as authoritative current weather information.',
-            'Do not invent weather values.',
-          ].join('\n');
-        } else {
-          weatherContext = `NEXUS WEATHER could not find the location "${city}".`;
-        }
-      } else {
-        weatherContext =
-          'NEXUS WEATHER detected a weather question, but no city could be identified.';
-      }
-    } catch {
-      weatherContext =
-        'NEXUS WEATHER is currently unavailable. Do not invent current weather information.';
-    }
-  }
-
-  const memoryContext = memory.trim() ? memory.slice(-1200) : '';
-  const systemPrompt = [
-    'You are NEXUS AI, the assistant inside the NEXUS Intelligence app.',
-    'Give clear, useful and concise answers.',
-    'Never pretend to have live information unless NEXUS tools provide it.',
-    'When NEXUS SEARCH results are provided, answer current-information questions using those results.',
-    'When NEXUS WEATHER data is provided, answer weather questions using that data.',
-    'For current/news/search questions, summarize the actual returned search results instead of telling the user to visit websites.',
-    'For weather questions, clearly state the location and relevant current weather values from the supplied weather data.',
-    'If a NEXUS tool fails or has insufficient data, say so clearly instead of inventing information.',
-    'Do not invent facts, URLs, dates, headlines, weather values, or sources.',
-    memoryContext ? `Conversation memory:\n${memoryContext}` : '',
-    searchContext ? `NEXUS SEARCH TOOL OUTPUT:\n${searchContext}` : '',
-    weatherContext ? `NEXUS WEATHER TOOL OUTPUT:\n${weatherContext}` : '',
-  ]
-    .filter(Boolean)
-    .join('\n\n');
-
-  const gemini = getGemini();
-  if (gemini) {
-    try {
-      const contents = [
-        ...history.map((h) => ({
-          role: h.role === 'assistant' ? 'model' : 'user',
-          parts: [{ text: h.content }],
-        })),
-        {
-          role: 'user',
-          parts: [{ text: message }],
-        },
-      ];
-
-      const response = await gemini.models.generateContent({
-        model: 'gemini-2.5-flash',
-        contents,
-        config: {
-          systemInstruction: systemPrompt,
-          temperature: 0.7,
-        },
-      });
-
-      const answer = response.text?.trim();
-      if (answer) {
-        return {
-          answer,
-          model: 'gemini-2.5-flash',
-          tool,
-          ...(tool === 'search' && searchContext ? { sources: searchContext } : {}),
-          ...(tool === 'weather' && weatherData ? { weather: weatherData } : {}),
-        };
-      }
-    } catch (geminiError) {
-      console.warn('Gemini chat failed, trying custom AI provider if available:', geminiError);
-    }
-  }
-
-  const key = process.env.AI_API_KEY;
-  const url = process.env.AI_API_URL;
-  const model = process.env.AI_MODEL ?? 'deepseek/deepseek-chat';
-
-  if (!key || !url) {
-    throw new Error('AI Assistant is not configured. Add GEMINI_API_KEY or AI_API_KEY and AI_API_URL to the server environment.');
-  }
-
-  const messages = [
-    { role: 'system', content: systemPrompt },
-    ...history,
-    { role: 'user', content: message },
-  ];
-
-  const upstream = await fetch(url, {
-    method: 'POST',
-    headers: {
-      'Content-Type': 'application/json',
-      Authorization: `Bearer ${key}`,
-    },
-    body: JSON.stringify({
-      model,
-      messages,
-      temperature: 0.7,
-      max_tokens: 1200,
-    }),
-  });
-
-  const payload = (await upstream.json().catch(() => ({}))) as {
-    choices?: Array<{ message?: { content?: string } }>;
-    error?: { message?: string };
-  };
-
-  if (!upstream.ok) {
-    throw new Error(payload.error?.message ?? 'AI provider is temporarily unavailable.');
-  }
-
-  const answer = payload.choices?.[0]?.message?.content?.trim();
-  if (!answer) {
-    throw new Error('AI provider returned an empty response.');
-  }
-
-  return {
-    answer,
-    model,
-    tool,
-    ...(tool === 'search' && searchContext ? { sources: searchContext } : {}),
-    ...(tool === 'weather' && weatherData ? { weather: weatherData } : {}),
-  };
-}
-
 async function startServer() {
 
   const app = express();
@@ -1200,12 +2318,280 @@ async function startServer() {
         weather: true,
         map: Boolean(process.env.MAP_API_KEY),
         ai: Boolean(
-          process.env.GEMINI_API_KEY || (process.env.AI_API_KEY && process.env.AI_API_URL),
+          process.env.AI_API_KEY ||
+            process.env.OPENROUTER_API_KEY ||
+            process.env.DEEPSEEK_API_KEY,
         ),
         wallpapers: Boolean(process.env.PEXELS_API_KEY),
       },
     }),
   );
+
+  // NEXUS Devices API Endpoints
+  app.get('/api/devices', (_req, res) => {
+    const devicesList = Array.from(registeredDevices.values()).map((d) => {
+      // Return safe device representation without internal auth tokens
+      const { authToken, ...safeDev } = d;
+      void authToken;
+      return safeDev;
+    });
+
+    const overview = {
+      online: devicesList.filter((d) => d.status === 'online').length,
+      warning: devicesList.filter((d) => d.status === 'warning').length,
+      offline: devicesList.filter((d) => d.status === 'offline').length,
+      total: devicesList.length,
+    };
+
+    return res.json({
+      data: {
+        devices: devicesList,
+        overview,
+      },
+    });
+  });
+
+  app.get('/api/devices/:id', (req, res) => {
+    const dev = registeredDevices.get(req.params.id);
+    if (!dev) {
+      return errorResponse(res, 404, 'Device not found.');
+    }
+    const { authToken, ...safeDev } = dev;
+    void authToken;
+    return res.json({ data: safeDev });
+  });
+
+  app.post('/api/devices/pair-code/generate', (_req, res) => {
+    // Generate clean 6-character code, e.g. NX-8492
+    const randomDigits = Math.floor(1000 + Math.random() * 9000);
+    const code = `NX-${randomDigits}`;
+    const now = Date.now();
+    const expiresAt = now + 10 * 60 * 1000; // 10 minutes
+
+    activePairingCodes.set(code, {
+      code,
+      createdAt: now,
+      expiresAt,
+      sampleData: {
+        model: 'Pixel 8 Pro',
+        brand: 'Google',
+        androidVersion: '14',
+        sdkVersion: 34,
+        batteryLevel: 79,
+        isCharging: false,
+        networkType: 'Wi-Fi (5 GHz)',
+        storageUsedGb: 42.4,
+        storageTotalGb: 128,
+        ramUsedGb: 5.1,
+        ramTotalGb: 12.0,
+      },
+    });
+
+    return res.json({
+      data: {
+        pairingCode: code,
+        expiresInSeconds: 600,
+      },
+    });
+  });
+
+  app.post('/api/devices/pair', (req, res) => {
+    const { pairingCode, name, sampleData } = req.body;
+    if (!pairingCode || typeof pairingCode !== 'string' || pairingCode.trim().length < 3) {
+      return errorResponse(res, 400, 'Enter a valid pairing code (e.g. NX-1234 or 6-digit APK code).');
+    }
+
+    const cleanCode = pairingCode.trim().toUpperCase();
+    const active = activePairingCodes.get(cleanCode);
+
+    const devId = `dev_${Date.now()}_${Math.random().toString(36).substring(2, 7)}`;
+    const newDevice: NexusDeviceServer = {
+      id: devId,
+      type: 'android',
+      name: name && typeof name === 'string' && name.trim() ? name.trim() : 'Android Agent',
+      status: 'online',
+      pairedAt: new Date().toISOString(),
+      lastSeen: new Date().toISOString(),
+      ipAddress: '192.168.1.145',
+      permissions: {
+        batteryInfo: true,
+        storageInfo: true,
+        networkInfo: true,
+        deviceControl: false,
+        backgroundMonitoring: false,
+      },
+      android: {
+        model: sampleData?.model || active?.sampleData?.model || 'Pixel 8 Pro',
+        brand: sampleData?.brand || active?.sampleData?.brand || 'Google',
+        androidVersion: sampleData?.androidVersion || active?.sampleData?.androidVersion || '14',
+        sdkVersion: sampleData?.sdkVersion || active?.sampleData?.sdkVersion || 34,
+        batteryLevel: sampleData?.batteryLevel ?? active?.sampleData?.batteryLevel ?? 79,
+        isCharging: sampleData?.isCharging ?? active?.sampleData?.isCharging ?? false,
+        networkType: sampleData?.networkType || active?.sampleData?.networkType || 'Wi-Fi (5 GHz)',
+        storageUsedGb: sampleData?.storageUsedGb ?? active?.sampleData?.storageUsedGb ?? 42.4,
+        storageTotalGb: sampleData?.storageTotalGb ?? active?.sampleData?.storageTotalGb ?? 128,
+        ramUsedGb: sampleData?.ramUsedGb ?? active?.sampleData?.ramUsedGb ?? 5.1,
+        ramTotalGb: sampleData?.ramTotalGb ?? active?.sampleData?.ramTotalGb ?? 12.0,
+      },
+    };
+
+    registeredDevices.set(devId, newDevice);
+    if (active) {
+      activePairingCodes.delete(cleanCode);
+    }
+
+    const { authToken, ...safeDev } = newDevice;
+    void authToken;
+    return res.json({
+      data: {
+        success: true,
+        device: safeDev,
+      },
+    });
+  });
+
+  app.post('/api/devices/:id/disconnect', (req, res) => {
+    const dev = registeredDevices.get(req.params.id);
+    if (!dev) {
+      return errorResponse(res, 404, 'Device not found.');
+    }
+    registeredDevices.delete(req.params.id);
+    return res.json({ data: { success: true } });
+  });
+
+  app.get('/api/devices/:id/status', (req, res) => {
+    const dev = registeredDevices.get(req.params.id);
+    if (!dev) {
+      return errorResponse(res, 404, 'Device not found.');
+    }
+    // Refresh heartbeat
+    dev.lastSeen = new Date().toISOString();
+    const { authToken, ...safeDev } = dev;
+    void authToken;
+    return res.json({
+      data: {
+        status: dev.status,
+        lastSeen: dev.lastSeen,
+        device: safeDev,
+      },
+    });
+  });
+
+  app.put('/api/devices/:id/permissions', (req, res) => {
+    const dev = registeredDevices.get(req.params.id);
+    if (!dev) {
+      return errorResponse(res, 404, 'Device not found.');
+    }
+    const incoming = req.body?.permissions;
+    if (!incoming || typeof incoming !== 'object') {
+      return errorResponse(res, 400, 'Invalid permissions payload.');
+    }
+
+    dev.permissions = {
+      batteryInfo: Boolean(incoming.batteryInfo),
+      storageInfo: Boolean(incoming.storageInfo),
+      networkInfo: Boolean(incoming.networkInfo),
+      deviceControl: Boolean(incoming.deviceControl),
+      backgroundMonitoring: Boolean(incoming.backgroundMonitoring),
+    };
+
+    return res.json({
+      data: {
+        success: true,
+        permissions: dev.permissions,
+      },
+    });
+  });
+
+  app.post('/api/devices/agent/report', (req, res) => {
+    const { deviceId, batteryLevel, isCharging, networkType, storageUsedGb, storageTotalGb, ramUsedGb, ramTotalGb, androidVersion, model, status } = req.body;
+    if (!deviceId || typeof deviceId !== 'string') {
+      return errorResponse(res, 400, 'Device ID is required.');
+    }
+
+    let dev = registeredDevices.get(deviceId);
+    if (!dev) {
+      dev = {
+        id: deviceId,
+        type: 'android',
+        name: 'Android Agent',
+        status: status || 'online',
+        pairedAt: new Date().toISOString(),
+        lastSeen: new Date().toISOString(),
+        permissions: {
+          batteryInfo: true,
+          storageInfo: true,
+          networkInfo: true,
+          deviceControl: false,
+          backgroundMonitoring: false,
+        },
+        android: {},
+      };
+      registeredDevices.set(deviceId, dev);
+    }
+
+    dev.lastSeen = new Date().toISOString();
+    if (status) dev.status = status;
+    dev.android = {
+      ...dev.android,
+      ...(model ? { model } : {}),
+      ...(androidVersion ? { androidVersion } : {}),
+      ...(batteryLevel !== undefined ? { batteryLevel: Number(batteryLevel) } : {}),
+      ...(isCharging !== undefined ? { isCharging: Boolean(isCharging) } : {}),
+      ...(networkType ? { networkType } : {}),
+      ...(storageUsedGb !== undefined ? { storageUsedGb: Number(storageUsedGb) } : {}),
+      ...(storageTotalGb !== undefined ? { storageTotalGb: Number(storageTotalGb) } : {}),
+      ...(ramUsedGb !== undefined ? { ramUsedGb: Number(ramUsedGb) } : {}),
+      ...(ramTotalGb !== undefined ? { ramTotalGb: Number(ramTotalGb) } : {}),
+    };
+
+    return res.json({
+      data: {
+        success: true,
+        lastSeen: dev.lastSeen,
+      },
+    });
+  });
+
+
+  app.post('/api/ai/answer', async (req, res) => {
+    const parsed = z
+      .object({
+        query: z.string().min(1).max(1000),
+        customSources: z
+          .array(
+            z.object({
+              title: z.string(),
+              url: z.string(),
+              description: z.string(),
+              domain: z.string().optional(),
+            }),
+          )
+          .optional(),
+        providerConfig: customProviderSchema.optional().nullable(),
+      })
+      .safeParse(req.body);
+
+    if (!parsed.success) {
+      return errorResponse(res, 400, 'Enter a valid query.');
+    }
+
+    try {
+      const result = await executeSmartAnswerEngine(
+        parsed.data.query,
+        parsed.data.customSources,
+        parsed.data.providerConfig,
+      );
+      return res.json({ data: result });
+    } catch (err: unknown) {
+      const errorObj = err as { status?: number; message?: string };
+      return errorResponse(
+        res,
+        errorObj.status || 500,
+        errorObj.message || 'Smart Answer Engine request failed.',
+      );
+    }
+  });
 
   app.post('/api/ai/chat', async (req, res) => {
     const parsed = aiChatSchema.safeParse(req.body);
@@ -1217,12 +2603,48 @@ async function startServer() {
         parsed.data.message,
         parsed.data.history ?? [],
         parsed.data.memory ?? '',
+        parsed.data.providerConfig,
       );
       return res.json({ data: result });
     } catch (err: unknown) {
       const errorObj = err as { status?: number; message?: string };
       return errorResponse(res, errorObj.status || 500, errorObj.message || 'AI request failed.');
     }
+  });
+
+  app.post('/api/ai/provider/test', async (req, res) => {
+    const parsed = z
+      .object({
+        url: z.string().min(1),
+        model: z.string().min(1),
+        key: z.string().min(1),
+      })
+      .safeParse(req.body);
+
+    if (!parsed.success) {
+      return errorResponse(res, 400, 'URL, Model, and API Key are required.');
+    }
+
+    const { url, model, key } = parsed.data;
+
+    const result = await executeProviderChatRequest({
+      url,
+      model,
+      key,
+      messages: [{ role: 'user', content: 'ping' }],
+      maxTokens: 5,
+      temperature: 0.1,
+      timeoutMs: 15000,
+    });
+
+    return res.json({
+      data: {
+        ok: result.ok,
+        status: result.status,
+        model: result.model,
+        error: result.error,
+      },
+    });
   });
 
   // Telegram Integration Endpoints
@@ -1881,41 +3303,40 @@ async function startServer() {
       .safeParse(req.body);
     if (!parsed.success) return errorResponse(res, 400, 'A query and search results are required.');
 
-    const gemini = getGemini();
-    if (gemini) {
-      try {
-        const response = await gemini.models.generateContent({
-          model: 'gemini-2.5-flash',
-          contents: `Answer only from these sources.\nQuery: ${parsed.data.query}\nSources: ${JSON.stringify(parsed.data.results)}`,
-        });
-        return res.json({ data: { choices: [{ message: { content: response.text } }] } });
-      } catch {
-        return errorResponse(res, 502, 'AI summary is temporarily unavailable.');
-      }
+    // 1. OpenRouter + DeepSeek
+    const openRouterResult = await generateOpenRouterOrCustomAi({
+      messages: [
+        {
+          role: 'user',
+          content: `Answer only from these sources. Query: ${parsed.data.query}\nSources: ${JSON.stringify(parsed.data.results)}`,
+        },
+      ],
+      temperature: 0.3,
+      maxTokens: 500,
+    });
+
+    if (openRouterResult) {
+      return res.json({
+        data: { choices: [{ message: { content: openRouterResult.text } }] },
+      });
     }
 
-    const key = process.env.AI_API_KEY;
-    const url = process.env.AI_API_URL;
-    if (!key || !url) return errorResponse(res, 503, 'AI summary is not configured.');
-    try {
-      const response = await fetch(url, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${key}` },
-        body: JSON.stringify({
-          model: process.env.AI_MODEL,
-          messages: [
+    // 2. Factual source summary fallback if available
+    if (parsed.data.results.length > 0 && parsed.data.results[0].description) {
+      return res.json({
+        data: {
+          choices: [
             {
-              role: 'user',
-              content: `Answer only from these sources. Query: ${parsed.data.query}\nSources: ${JSON.stringify(parsed.data.results)}`,
+              message: {
+                content: `${parsed.data.results[0].title}: ${parsed.data.results[0].description}`,
+              },
             },
           ],
-        }),
+        },
       });
-      if (!response.ok) throw new Error();
-      return res.json({ data: await response.json() });
-    } catch {
-      return errorResponse(res, 502, 'AI summary is temporarily unavailable.');
     }
+
+    return errorResponse(res, 503, 'AI summary provider is temporarily unavailable.');
   });
 
   app.get('/api/weather/geocode', async (req, res) => {

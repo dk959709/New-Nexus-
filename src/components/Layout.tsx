@@ -11,6 +11,7 @@ import {
   Search,
   Send,
   Settings,
+  Smartphone,
   Sparkles,
 } from 'lucide-react';
 import { NavLink, Outlet } from 'react-router-dom';
@@ -22,6 +23,7 @@ const navItems = [
   { to: '/', label: 'Overview', icon: Home },
   { to: '/search', label: 'Web Search', icon: Search },
   { to: '/assistant', label: 'AI Assistant', icon: Sparkles },
+  { to: '/devices', label: 'Devices', icon: Smartphone },
   { to: '/offline-ai', label: 'Offline AI', icon: Brain },
   { to: '/weather', label: 'Weather', icon: CloudSun },
   { to: '/weather/map', label: 'Weather Map', icon: Map },
@@ -43,7 +45,7 @@ export function Layout() {
   };
 
   const bottomNavItems = navItems.filter((item) =>
-    ['/', '/search', '/assistant', '/weather', '/space', '/telegram'].includes(item.to)
+    ['/', '/search', '/assistant', '/devices', '/weather', '/space', '/telegram'].includes(item.to)
   );
 
   return (

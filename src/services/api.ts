@@ -7,7 +7,18 @@ import type {
   TelegramAutomations,
   TelegramBotCommand,
   TelegramActivityItem,
+  AISource,
+  AnswerEngineResult,
+  WikipediaSearchResult,
+  WikipediaArticle,
+  AIProviderConfig,
+  NexusDevice,
+  DevicePermissions,
+  DeviceStatus,
+  AndroidDeviceInfo,
 } from '@/types';
+import { storage } from '@/lib/storage';
+import { searchWikipedia, getWikipediaSummary, wikipediaToSearchResult } from './wikipedia';
 
 function getBaseUrl(): string {
   const envUrl = import.meta.env.VITE_API_URL;
@@ -85,41 +96,76 @@ export const api = {
     return call<{ status: string }>('/api/health');
   },
 
+  smartAnswer(
+    query: string,
+    customSources?: Array<{ title: string; url: string; description: string; domain?: string }>,
+    customProvider?: AIProviderConfig | null,
+  ): Promise<AnswerEngineResult> {
+    const provider = customProvider !== undefined ? customProvider : storage.getActiveAIProvider();
+    return call<AnswerEngineResult>('/api/ai/answer', {
+      method: 'POST',
+      body: JSON.stringify({
+        query,
+        customSources,
+        providerConfig: provider || undefined,
+      }),
+    });
+  },
+
   aiChat(
     message: string,
     history: Array<{ role: 'user' | 'assistant'; content: string }> = [],
     memory = '',
+    customProvider?: AIProviderConfig | null,
   ): Promise<{
     answer: string;
     model: string;
     tool?: 'none' | 'search' | 'weather';
-    sources?: Array<{
-      title: string;
-      url: string;
-      domain?: string;
-      description?: string;
-      date?: string;
-    }>;
+    sources?: AISource[];
+    weather?: unknown;
   }> {
+    const provider = customProvider !== undefined ? customProvider : storage.getActiveAIProvider();
     return call<{
       answer: string;
       model: string;
       tool?: 'none' | 'search' | 'weather';
-      sources?: Array<{
-        title: string;
-        url: string;
-        domain?: string;
-        description?: string;
-        date?: string;
-      }>;
+      sources?: AISource[];
+      weather?: unknown;
     }>('/api/ai/chat', {
       method: 'POST',
       body: JSON.stringify({
         message,
-        history: history.slice(-8),
-        memory: memory.slice(-1200),
+        history: history.slice(-4),
+        memory: memory.slice(-300),
+        providerConfig: provider || undefined,
       }),
     });
+  },
+
+  testAIProviderConnection(payload: {
+    url: string;
+    model: string;
+    key: string;
+  }): Promise<{ ok: boolean; model?: string; status?: number; error?: string }> {
+    return call<{ ok: boolean; model?: string; status?: number; error?: string }>(
+      '/api/ai/provider/test',
+      {
+        method: 'POST',
+        body: JSON.stringify(payload),
+      },
+    );
+  },
+
+  searchWikipedia(query: string, limit = 10): Promise<WikipediaSearchResult[]> {
+    return searchWikipedia(query, limit);
+  },
+
+  getWikipediaSummary(titleOrQuery: string): Promise<WikipediaArticle | null> {
+    return getWikipediaSummary(titleOrQuery);
+  },
+
+  wikipediaToSearchResult(item: WikipediaSearchResult | WikipediaArticle): SearchResult {
+    return wikipediaToSearchResult(item);
   },
 
   wallpapers(query: string, page?: number): Promise<WallpaperPhoto[]> {
@@ -238,6 +284,72 @@ export const api = {
       {
         method: 'POST',
         body: JSON.stringify({ message, senderId, senderUsername }),
+      },
+    );
+  },
+
+  // NEXUS Devices API
+  getDevices(): Promise<{
+    devices: NexusDevice[];
+    overview: { online: number; warning: number; offline: number; total: number };
+  }> {
+    return call<{
+      devices: NexusDevice[];
+      overview: { online: number; warning: number; offline: number; total: number };
+    }>('/api/devices');
+  },
+
+  getDevice(id: string): Promise<NexusDevice> {
+    return call<NexusDevice>(`/api/devices/${id}`);
+  },
+
+  pairDevice(
+    pairingCode: string,
+    name?: string,
+    sampleData?: Partial<AndroidDeviceInfo>,
+  ): Promise<{ success: boolean; device: NexusDevice }> {
+    return call<{ success: boolean; device: NexusDevice }>('/api/devices/pair', {
+      method: 'POST',
+      body: JSON.stringify({ pairingCode, name, sampleData }),
+    });
+  },
+
+  disconnectDevice(id: string): Promise<{ success: boolean }> {
+    return call<{ success: boolean }>(`/api/devices/${id}/disconnect`, {
+      method: 'POST',
+    });
+  },
+
+  getDeviceStatus(id: string): Promise<{
+    status: DeviceStatus;
+    lastSeen: string;
+    device: NexusDevice;
+  }> {
+    return call<{
+      status: DeviceStatus;
+      lastSeen: string;
+      device: NexusDevice;
+    }>(`/api/devices/${id}/status`);
+  },
+
+  updateDevicePermissions(
+    id: string,
+    permissions: DevicePermissions,
+  ): Promise<{ success: boolean; permissions: DevicePermissions }> {
+    return call<{ success: boolean; permissions: DevicePermissions }>(
+      `/api/devices/${id}/permissions`,
+      {
+        method: 'PUT',
+        body: JSON.stringify({ permissions }),
+      },
+    );
+  },
+
+  generatePairingCode(): Promise<{ pairingCode: string; expiresInSeconds: number }> {
+    return call<{ pairingCode: string; expiresInSeconds: number }>(
+      '/api/devices/pair-code/generate',
+      {
+        method: 'POST',
       },
     );
   },

@@ -1,5 +1,6 @@
 import {
   Bookmark,
+  BookOpen,
   Cloud,
   CloudFog,
   CloudLightning,
@@ -90,7 +91,58 @@ export function DailyForecast({ data, temperatureUnit, windUnit }: { data: Weath
 }
 
 export function ResultCard({ result, saved, onSave }: { result: SearchResult; saved: boolean; onSave: () => void }) {
-  return <article className="result-card"><div className="result-meta"><span>{result.domain}</span><button onClick={onSave} aria-label={saved ? 'Remove from saved' : 'Save result'}><Bookmark size={17} fill={saved ? 'currentColor' : 'none'} /></button></div><a href={result.url} target="_blank" rel="noreferrer"><h2>{result.title} <ExternalArrow /></h2></a><p>{result.description}</p><code>{result.url}</code></article>;
+  const domainStr = typeof result.domain === 'string' ? result.domain : '';
+  const isWiki = result.type === 'wikipedia' || domainStr.toLowerCase().includes('wikipedia');
+  const imageSrc = result.thumbnail || result.image;
+
+  return (
+    <article className={`result-card ${isWiki ? 'result-card-wikipedia' : ''}`}>
+      <div className="result-meta">
+        <span className={`result-domain-tag ${isWiki ? 'wiki-domain-tag' : ''}`}>
+          {isWiki ? (
+            <>
+              <BookOpen size={13} className="wiki-tag-icon" />
+              <span>Wikipedia</span>
+            </>
+          ) : (
+            <span>{domainStr || 'web'}</span>
+          )}
+        </span>
+        <button onClick={onSave} aria-label={saved ? 'Remove from saved' : 'Save result'}>
+          <Bookmark size={17} fill={saved ? 'currentColor' : 'none'} />
+        </button>
+      </div>
+
+      <div className="result-content-layout">
+        {imageSrc && (
+          <div className="result-thumb-container">
+            <img
+              src={imageSrc}
+              alt={result.title}
+              className="result-thumb-img"
+              referrerPolicy="no-referrer"
+              loading="lazy"
+            />
+          </div>
+        )}
+
+        <div className="result-text-block">
+          <a href={result.url} target="_blank" rel="noreferrer" className="result-title-link">
+            <h2>{result.title} <ExternalArrow /></h2>
+          </a>
+          <p>{result.description}</p>
+          <div className="result-url-row">
+            <code>{result.url}</code>
+            {isWiki && (
+              <a href={result.url} target="_blank" rel="noreferrer" className="result-wiki-action">
+                Read article <ExternalArrow />
+              </a>
+            )}
+          </div>
+        </div>
+      </div>
+    </article>
+  );
 }
 
 function ExternalArrow() { return <span className="external-arrow">↗</span>; }
@@ -98,3 +150,4 @@ function ExternalArrow() { return <span className="external-arrow">↗</span>; }
 export function ErrorMessage({ message }: { message: string }) { return <div className="error-message" role="alert">{message}</div>; }
 export function LoadingMessage({ label = 'Loading live data...' }: { label?: string }) { return <div className="loading-message"><span className="loading-dot" />{label}</div>; }
 export { WeatherMap } from './WeatherMap';
+export { AnswerCard } from './AnswerCard';

@@ -7,22 +7,14 @@ const MODEL_REVISION = "main";
 // Transformers.js v4: keep the model in the browser cache so that
 // after the first successful download it can run without downloading again.
 env.allowRemoteModels = true;
-env.backends.onnx.wasm.numThreads = 1;
+if (env.backends?.onnx?.wasm) {
+  env.backends.onnx.wasm.numThreads = 1;
+  env.backends.onnx.wasm.wasmPaths =
+    "https://cdn.jsdelivr.net/npm/onnxruntime-web@1.27.0/dist/";
+}
 env.allowLocalModels = false;
 env.useBrowserCache = true;
 env.useWasmCache = true;
-
-// Load the ONNX Runtime engine (WASM) from a CDN instead of bundling it in the app.
-// This keeps the APK small — the engine downloads once and caches in the browser.
-env.backends.onnx.wasm.wasmPaths =
-  "https://cdn.jsdelivr.net/npm/onnxruntime-web@1.27.0/dist/";
-
-// Download model files through the NEXUS server.
-// This avoids browser fetch/CORS/Xet failures from Hugging Face.
-if (typeof window !== "undefined") {
-  env.remoteHost = (import.meta.env.VITE_API_URL || window.location.origin) + "/api/offline-model";
-  env.remotePathTemplate = "{model}/resolve/{revision}/";
-}
 
 // Download model files through the NEXUS server.
 // This avoids browser fetch/CORS/Xet failures from Hugging Face.
@@ -46,13 +38,12 @@ export function isWebGPUAvailable(): boolean {
 
 async function getDevice(): Promise<"webgpu" | "wasm"> {
   try {
-    if (
-      typeof navigator !== "undefined" &&
-      "gpu" in navigator &&
-      navigator.gpu
-    ) {
-      const adapter = await navigator.gpu.requestAdapter();
-      if (adapter) return "webgpu";
+    if (typeof navigator !== "undefined" && "gpu" in navigator) {
+      const navGpu = (navigator as unknown as { gpu?: { requestAdapter?: () => Promise<unknown> } }).gpu;
+      if (navGpu && typeof navGpu.requestAdapter === "function") {
+        const adapter = await navGpu.requestAdapter();
+        if (adapter) return "webgpu";
+      }
     }
   } catch {
     // Fall through to WASM.
@@ -193,7 +184,7 @@ export async function askOfflineAI(
   const generated = output?.[0]?.generated_text;
 
   if (Array.isArray(generated)) {
-    return generated.at(-1)?.content ?? "";
+    return generated[generated.length - 1]?.content ?? "";
   }
 
   return String(generated ?? "");

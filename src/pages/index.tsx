@@ -1,47 +1,89 @@
 import { useCallback, useEffect, useState } from 'react';
-import { ArrowUpRight, Bookmark, ExternalLink, MapPin, Navigation, Newspaper, Search, Send, Sparkles, Trash2 } from 'lucide-react';
+import {
+  ArrowUpRight,
+  Bookmark,
+  BookOpen,
+  ExternalLink,
+  Globe,
+  MapPin,
+  Navigation,
+  Newspaper,
+  Search,
+  Send,
+  Sparkles,
+  Trash2,
+  User,
+  Palette,
+  Bell,
+  Bot,
+  Shield,
+  Info,
+  CheckCircle2,
+} from 'lucide-react';
 import { Link, useNavigate, useSearchParams } from 'react-router-dom';
-import { SearchBox, WeatherCard, HourlyForecast, DailyForecast, ErrorMessage, LoadingMessage, ResultCard, WeatherMap } from '@/components';
+import { SearchBox, WeatherCard, HourlyForecast, DailyForecast, ErrorMessage, LoadingMessage, ResultCard, WeatherMap, AnswerCard } from '@/components';
 import { WallpaperSelector } from '@/components/WallpaperSelector';
 import { SpaceStarfield } from '@/components/SpaceStarfield';
+import { AIProvidersSettings } from '@/components/AIProvidersSettings';
 import { api } from '@/services/api';
 import { getLocation } from '@/services/location';
 import { storage } from '@/lib/storage';
 import { useSettings } from '@/hooks/useSettings';
 import { playTapSound } from '@/lib/audio';
-import type { SearchResult, WeatherData, Settings } from '@/types';
+import { askSmartAnswerEngine } from '@/services/answerEngine';
+import type { SearchResult, WeatherData, Settings, AnswerEngineResult } from '@/types';
 
 function PageIntro({ eyebrow, title, description }: { eyebrow: string; title: string; description: string }) {
   return <div className="page-intro"><span className="eyebrow">{eyebrow}</span><h1>{title}</h1><p>{description}</p></div>;
 }
+
+const SMART_SUGGESTIONS = [
+  'What is a black hole?',
+  'Explain gravity simply',
+  'What is photosynthesis?',
+  'Latest space news',
+  'Search Wikipedia for Mars',
+];
 
 export function HomePage() {
   const navigate = useNavigate();
   const [weather, setWeather] = useState<WeatherData | null>(null);
   const [settings] = useSettings();
   const [aiQuery, setAiQuery] = useState('');
-  const [aiAnswer, setAiAnswer] = useState('');
+  const [smartResult, setSmartResult] = useState<AnswerEngineResult | null>(null);
   const [aiLoading, setAiLoading] = useState(false);
   const [aiError, setAiError] = useState('');
-  useEffect(() => { getLocation().then((position) => api.weather(`latitude=${position.latitude}&longitude=${position.longitude}`)).then(setWeather).catch(() => undefined); }, []);
-  const search = (query: string) => { storage.saveSearch(query); navigate(`/search?q=${encodeURIComponent(query)}`); };
 
-  const askNexusAI = async () => {
-    const query = aiQuery.trim();
-    if (!query || aiLoading) return;
+  useEffect(() => {
+    getLocation()
+      .then((position) => api.weather(`latitude=${position.latitude}&longitude=${position.longitude}`))
+      .then(setWeather)
+      .catch(() => undefined);
+  }, []);
 
+  const search = (query: string) => {
+    storage.saveSearch(query);
+    navigate(`/search?q=${encodeURIComponent(query)}`);
+  };
+
+  const askNexusAI = async (queryToAsk?: string) => {
+    const targetQuery = (queryToAsk || aiQuery).trim();
+    if (!targetQuery || aiLoading) return;
+
+    playTapSound();
+    setAiQuery(targetQuery);
     setAiLoading(true);
     setAiError('');
-    setAiAnswer('');
+    setSmartResult(null);
 
     try {
-      const response = await api.aiChat(query);
-      setAiAnswer(response.answer);
+      const response = await askSmartAnswerEngine(targetQuery);
+      setSmartResult(response);
     } catch (err) {
       setAiError(
         err instanceof Error
           ? err.message
-          : 'NEXUS AI is temporarily unavailable.',
+          : 'NEXUS Answer Engine is temporarily unavailable.',
       );
     } finally {
       setAiLoading(false);
@@ -55,7 +97,7 @@ export function HomePage() {
         <div className="hero-wrap">
           <div className="hero-aurora-glow" aria-hidden="true" />
           <section className="hero">
-            <span className="eyebrow">NEXUS INTELLIGENT (dk959709@gmail.com)</span>
+            <span className="eyebrow">NEXUS INTELLIGENT</span>
             <h1>
               <span className="hero-gradient-line">Search the web.</span>
               <br />
@@ -66,13 +108,17 @@ export function HomePage() {
         </div>
         <SearchBox onSearch={search} recent={storage.getSearches()} />
 
+        {/* Smart Answer Engine Section */}
         <section
           className="nexus-ai-card"
-          aria-label="NEXUS AI Search"
+          aria-label="NEXUS Smart Answer Engine"
         >
           <div className="nexus-ai-label">
-            <Sparkles size={16} className="ai-sparkle-active" />
-            <span>NEXUS AI Search</span>
+            <div className="flex items-center gap-1.5">
+              <Sparkles size={16} className="ai-sparkle-active" />
+              <span>NEXUS Smart Answer Engine</span>
+            </div>
+            <span className="text-xs opacity-60">Multi-Source Intelligence</span>
           </div>
 
           <div className="nexus-ai-form">
@@ -85,7 +131,7 @@ export function HomePage() {
                 onKeyDown={(event) => {
                   if (event.key === 'Enter') askNexusAI();
                 }}
-                placeholder="Ask NEXUS AI anything..."
+                placeholder="Ask NEXUS anything (e.g. What is a black hole? Explain gravity)..."
                 aria-label="Ask NEXUS AI anything"
                 className="nexus-ai-input"
               />
@@ -93,7 +139,7 @@ export function HomePage() {
 
             <button
               type="button"
-              onClick={askNexusAI}
+              onClick={() => askNexusAI()}
               disabled={!aiQuery.trim() || aiLoading}
               aria-label="Ask NEXUS AI"
               className="nexus-ai-submit"
@@ -102,9 +148,29 @@ export function HomePage() {
             </button>
           </div>
 
+          {/* Quick Suggestions Chips */}
+          {!smartResult && !aiLoading && (
+            <div className="smart-prompt-chips-row">
+              <span className="prompt-chips-label">Try asking:</span>
+              <div className="prompt-chips-list">
+                {SMART_SUGGESTIONS.map((suggestion) => (
+                  <button
+                    key={suggestion}
+                    type="button"
+                    className="smart-suggestion-chip"
+                    onClick={() => askNexusAI(suggestion)}
+                  >
+                    <span>{suggestion}</span>
+                  </button>
+                ))}
+              </div>
+            </div>
+          )}
+
           {aiLoading && (
             <div className="nexus-ai-loading">
-              <Sparkles size={14} className="ai-sparkle-active" /> NEXUS AI is thinking...
+              <Sparkles size={14} className="ai-sparkle-active animate-spin" />
+              <span>NEXUS Engine is retrieving and synthesizing verified sources...</span>
             </div>
           )}
 
@@ -114,13 +180,12 @@ export function HomePage() {
             </div>
           )}
 
-          {aiAnswer && (
-            <div className="nexus-ai-answer">
-              <div className="nexus-ai-answer-badge">
-                <Sparkles size={14} className="ai-sparkle-active" /> NEXUS AI
-              </div>
-              {aiAnswer}
-            </div>
+          {smartResult && (
+            <AnswerCard
+              result={smartResult}
+              onSelectFollowUp={(q) => askNexusAI(q)}
+              className="mt-4"
+            />
           )}
         </section>
 
@@ -161,14 +226,241 @@ export function SearchPage() {
   const [params] = useSearchParams();
   const navigate = useNavigate();
   const query = params.get('q') ?? '';
+  const [sourceTab, setSourceTab] = useState<'all' | 'web' | 'wikipedia'>('all');
   const [results, setResults] = useState<SearchResult[]>([]);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
   const [saved, setSaved] = useState(storage.getSaved());
-  const search = (value: string) => { storage.saveSearch(value); navigate(`/search?q=${encodeURIComponent(value)}`); };
-  useEffect(() => { if (!query) return; setLoading(true); setError(''); api.search(query).then(setResults).catch((err: Error) => setError(err.message)).finally(() => setLoading(false)); }, [query]);
-  const toggleSave = (result: SearchResult) => { const updated = storage.toggleSaved({ id: result.url, type: result.type === 'news' ? 'news' : 'search', title: result.title, subtitle: result.domain, url: result.url, savedAt: new Date().toISOString() }); setSaved(updated); };
-  return <><PageIntro eyebrow="WEB SEARCH" title="Find the signal." description="Real results from the open web, normalized into a clear, readable stream." /><SearchBox onSearch={search} recent={storage.getSearches()} />{loading && <LoadingMessage label="Searching the live web..." />}{error && <ErrorMessage message={error.includes('not configured') ? 'Search is not configured yet. Add SEARCH_API_KEY and SEARCH_API_URL to the server environment.' : error} />}{!loading && query && !error && results.length === 0 && <div className="empty-state"><Search size={30} /><h2>No live results returned</h2><p>Try a broader search phrase.</p></div>}<div className="results-list">{results.map((result) => <ResultCard key={result.url} result={result} saved={saved.some((item) => item.id === result.url)} onSave={() => toggleSave(result)} />)}</div></>;
+
+  // Synthesis on Search Page
+  const [synthesizedResult, setSynthesizedResult] = useState<AnswerEngineResult | null>(null);
+  const [synthesizing, setSynthesizing] = useState(false);
+  const [synthesisError, setSynthesisError] = useState('');
+
+  const search = (value: string) => {
+    storage.saveSearch(value);
+    setSynthesizedResult(null);
+    navigate(`/search?q=${encodeURIComponent(value)}`);
+  };
+
+  useEffect(() => {
+    if (!query) {
+      setResults([]);
+      setSynthesizedResult(null);
+      return;
+    }
+
+    let isMounted = true;
+    setLoading(true);
+    setError('');
+    setSynthesizedResult(null);
+
+    const fetchResults = async () => {
+      try {
+        if (sourceTab === 'wikipedia') {
+          const wikiItems = await api.searchWikipedia(query, 15);
+          if (!isMounted) return;
+          setResults(wikiItems.map(api.wikipediaToSearchResult));
+        } else if (sourceTab === 'web') {
+          const webItems = await api.search(query, 'ALL');
+          if (!isMounted) return;
+          setResults(webItems);
+        } else {
+          // 'all': fetch web results and Wikipedia results concurrently
+          const [webItems, wikiItems] = await Promise.all([
+            api.search(query, 'ALL').catch(() => [] as SearchResult[]),
+            api.searchWikipedia(query, 6).then((items) => items.map(api.wikipediaToSearchResult)).catch(() => [] as SearchResult[]),
+          ]);
+
+          if (!isMounted) return;
+
+          // Merge results cleanly
+          const combined: SearchResult[] = [];
+          if (wikiItems.length > 0) {
+            combined.push(...wikiItems.slice(0, 3));
+          }
+          for (const item of webItems) {
+            if (!combined.some((c) => c.url === item.url)) {
+              combined.push(item);
+            }
+          }
+          if (wikiItems.length > 3) {
+            for (const item of wikiItems.slice(3)) {
+              if (!combined.some((c) => c.url === item.url)) {
+                combined.push(item);
+              }
+            }
+          }
+
+          setResults(combined);
+        }
+      } catch (err) {
+        if (!isMounted) return;
+        setError(err instanceof Error ? err.message : 'Failed to fetch search results.');
+      } finally {
+        if (isMounted) setLoading(false);
+      }
+    };
+
+    fetchResults();
+
+    return () => {
+      isMounted = false;
+    };
+  }, [query, sourceTab]);
+
+  const handleSynthesizeResults = async () => {
+    if (!query || results.length === 0 || synthesizing) return;
+    playTapSound();
+    setSynthesizing(true);
+    setSynthesisError('');
+
+    try {
+      const response = await askSmartAnswerEngine(query, results);
+      setSynthesizedResult(response);
+    } catch (err) {
+      setSynthesisError(
+        err instanceof Error
+          ? err.message
+          : 'Failed to synthesize search results.',
+      );
+    } finally {
+      setSynthesizing(false);
+    }
+  };
+
+  const toggleSave = (result: SearchResult) => {
+    const updated = storage.toggleSaved({
+      id: result.url,
+      type: result.type === 'news' ? 'news' : 'search',
+      title: result.title,
+      subtitle: result.domain,
+      url: result.url,
+      savedAt: new Date().toISOString(),
+    });
+    setSaved(updated);
+  };
+
+  return (
+    <>
+      <PageIntro
+        eyebrow="KNOWLEDGE & WEB SEARCH"
+        title="Find the signal."
+        description="Real results from the open web and Wikipedia knowledge base, normalized into a clear, readable stream."
+      />
+      <SearchBox onSearch={search} recent={storage.getSearches()} />
+
+      <div className="search-filter-tabs-wrap">
+        <div className="search-filter-tabs">
+          <button
+            type="button"
+            className={`search-filter-tab ${sourceTab === 'all' ? 'active' : ''}`}
+            onClick={() => { playTapSound(); setSourceTab('all'); }}
+          >
+            <Sparkles size={14} />
+            <span>All Sources</span>
+          </button>
+
+          <button
+            type="button"
+            className={`search-filter-tab ${sourceTab === 'web' ? 'active' : ''}`}
+            onClick={() => { playTapSound(); setSourceTab('web'); }}
+          >
+            <Globe size={14} />
+            <span>Web</span>
+          </button>
+
+          <button
+            type="button"
+            className={`search-filter-tab ${sourceTab === 'wikipedia' ? 'active' : ''}`}
+            onClick={() => { playTapSound(); setSourceTab('wikipedia'); }}
+          >
+            <BookOpen size={14} />
+            <span>Wikipedia</span>
+          </button>
+        </div>
+      </div>
+
+      {loading && <LoadingMessage label={sourceTab === 'wikipedia' ? 'Searching Wikipedia knowledge base...' : 'Searching live sources...'} />}
+
+      {error && (
+        <ErrorMessage
+          message={
+            error.includes('not configured')
+              ? 'Search is not configured yet. Add SEARCH_API_KEY and SEARCH_API_URL to the server environment, or use Wikipedia search tab.'
+              : error
+          }
+        />
+      )}
+
+      {/* "Ask NEXUS to synthesize these results" Action Banner */}
+      {!loading && results.length > 0 && (
+        <div className="nexus-synthesize-banner">
+          <div className="synthesize-banner-content">
+            <div className="synthesize-banner-info">
+              <Sparkles size={16} className="text-cyan-400 animate-pulse" />
+              <div>
+                <h4>Synthesize with NEXUS AI</h4>
+                <p>Generate a concise, verified answer cited directly from these search results.</p>
+              </div>
+            </div>
+            <button
+              type="button"
+              className="synthesize-action-btn"
+              onClick={handleSynthesizeResults}
+              disabled={synthesizing}
+            >
+              {synthesizing ? (
+                <>
+                  <Sparkles size={14} className="animate-spin" />
+                  <span>Synthesizing...</span>
+                </>
+              ) : (
+                <>
+                  <Sparkles size={14} />
+                  <span>Ask NEXUS about these results</span>
+                </>
+              )}
+            </button>
+          </div>
+        </div>
+      )}
+
+      {synthesisError && (
+        <div className="nexus-ai-error mb-4">
+          {synthesisError}
+        </div>
+      )}
+
+      {synthesizedResult && (
+        <div className="mb-6">
+          <AnswerCard
+            result={synthesizedResult}
+            onSelectFollowUp={(q) => search(q)}
+          />
+        </div>
+      )}
+
+      {!loading && query && !error && results.length === 0 && (
+        <div className="empty-state">
+          <Search size={30} />
+          <h2>No live results returned</h2>
+          <p>Try a broader search phrase or check another source tab.</p>
+        </div>
+      )}
+
+      <div className="results-list">
+        {results.map((result) => (
+          <ResultCard
+            key={result.url}
+            result={result}
+            saved={saved.some((item) => item.id === result.url)}
+            onSave={() => toggleSave(result)}
+          />
+        ))}
+      </div>
+    </>
+  );
 }
 
 export function WeatherPage() {
@@ -218,14 +510,14 @@ export function NewsPage() {
               <div className="news-meta-row">
                 <span className="news-source-info">
                   <img
-                    src={`https://www.google.com/s2/favicons?domain=${item.domain}&sz=32`}
+                    src={`https://www.google.com/s2/favicons?domain=${typeof item.domain === 'string' ? item.domain : 'news'}&sz=32`}
                     alt=""
                     className="news-source-favicon"
                     onError={(e) => {
                       (e.target as HTMLElement).style.display = 'none';
                     }}
                   />
-                  {item.domain}
+                  {typeof item.domain === 'string' && item.domain ? item.domain : 'news'}
                 </span>
                 {item.date && <span>{item.date}</span>}
               </div>
@@ -325,8 +617,28 @@ export function SavedPage() {
   return <><PageIntro eyebrow="YOUR LIBRARY" title="Saved for later." description="Search results and stories you want to return to." />{!items.length ? <div className="empty-state"><Bookmark size={34} /><h2>Your library is empty</h2><p>Save search results and stories to see them here.</p></div> : <div className="saved-list">{items.map((item) => <div className="saved-item" key={item.id}><div><span className="eyebrow">{item.type}</span><h2>{item.title}</h2><p>{item.subtitle}</p>{item.url && <a href={item.url} target="_blank" rel="noreferrer">Open source <ExternalLink size={13} /></a>}</div><button onClick={() => remove(item.id)} aria-label="Remove saved item"><Trash2 size={17} /></button></div>)}</div>}</>;
 }
 
+type SettingsCategory =
+  | 'account'
+  | 'appearance'
+  | 'notifications'
+  | 'ai'
+  | 'privacy'
+  | 'about';
+
 export function SettingsPage() {
   const [settings, update] = useSettings();
+  const [searchParams, setSearchParams] = useSearchParams();
+  const activeTabParam = (searchParams.get('tab') as SettingsCategory) || 'ai';
+  const [activeCategory, setActiveCategory] = useState<SettingsCategory>(activeTabParam);
+
+  const switchCategory = (cat: SettingsCategory) => {
+    setActiveCategory(cat);
+    setSearchParams({ tab: cat });
+    if (settings.sound !== false) {
+      playTapSound();
+    }
+  };
+
   const choose = <K extends keyof Settings>(key: K, value: Settings[K]) => {
     update({ [key]: value });
     if (settings.sound !== false && key === 'sound') {
@@ -335,10 +647,506 @@ export function SettingsPage() {
       playTapSound();
     }
   };
-  return <><PageIntro eyebrow="PREFERENCES" title="Personalize your experience." description="Adjust appearance, units, and display settings to match how you work." /><div className="settings-list"><SettingRow label="Appearance" description="Switch between Dark, Light, or match your system settings." value={settings.theme} options={['dark', 'light', 'system']} onChange={(value) => choose('theme', value as Settings['theme'])} /><SettingRow label="Navigation Tap Sound" description="Play a subtle click sound when switching tabs." value={settings.sound !== false ? 'on' : 'off'} options={['on', 'off']} onChange={(value) => choose('sound', value === 'on')} /><SettingRow label="Temperature Units" description="Display weather in Celsius or Fahrenheit." value={settings.temperature} options={['celsius', 'fahrenheit']} onChange={(value) => choose('temperature', value as Settings['temperature'])} /><SettingRow label="Wind Speed Units" description="Choose kilometers per hour or miles per hour." value={settings.wind} options={['kmh', 'mph']} onChange={(value) => choose('wind', value as Settings['wind'])} /><SettingRow label="Motion & Animations" description="Reduce motion for a calmer, distraction-free experience." value={settings.animations} options={['full', 'reduced']} onChange={(value) => choose('animations', value as Settings['animations'])} /><WallpaperSelector value={settings.wallpaper} onSelect={(wallpaper) => choose('wallpaper', wallpaper)} /><section className="setting-row"><div><h2>Telegram Bot Integration</h2><p>Connect your Telegram bot to receive Nexus intelligence, weather, and search.</p></div><Link to="/telegram" className="secondary-button" style={{ display: 'inline-flex', alignItems: 'center', gap: '6px', padding: '9px 15px', borderRadius: '7px', textDecoration: 'none', fontWeight: 600, fontSize: '12px' }}><Send size={14} /> Configure Bot</Link></section><button className="danger-button" onClick={() => { storage.clearAll(); window.location.reload(); }}>Reset Preferences</button></div></>;
+
+  return (
+    <>
+      <PageIntro
+        eyebrow="SYSTEM CONFIGURATION"
+        title="Settings & Intelligence."
+        description="Manage AI providers, neural keys, workspace appearance, and system integrations."
+      />
+
+      {/* Category Navigation Bar */}
+      <div
+        style={{
+          display: 'flex',
+          gap: '8px',
+          overflowX: 'auto',
+          paddingBottom: '12px',
+          marginBottom: '24px',
+          borderBottom: '1px solid var(--line)',
+        }}
+      >
+        <button
+          onClick={() => switchCategory('ai')}
+          className={activeCategory === 'ai' ? 'selected' : ''}
+          style={{
+            display: 'inline-flex',
+            alignItems: 'center',
+            gap: '8px',
+            padding: '9px 16px',
+            borderRadius: '8px',
+            border: `1px solid ${
+              activeCategory === 'ai' ? 'var(--accent)' : 'rgba(165,207,214,0.18)'
+            }`,
+            background:
+              activeCategory === 'ai'
+                ? 'rgba(97,215,201,0.15)'
+                : 'rgba(14,31,39,0.6)',
+            color: activeCategory === 'ai' ? 'var(--accent)' : 'var(--muted)',
+            fontWeight: 600,
+            fontSize: '13px',
+            cursor: 'pointer',
+            whiteSpace: 'nowrap',
+            boxShadow:
+              activeCategory === 'ai' ? '0 0 12px rgba(97,215,201,0.2)' : 'none',
+          }}
+        >
+          <Bot size={16} /> 🤖 AI Providers
+        </button>
+
+        <button
+          onClick={() => switchCategory('appearance')}
+          className={activeCategory === 'appearance' ? 'selected' : ''}
+          style={{
+            display: 'inline-flex',
+            alignItems: 'center',
+            gap: '8px',
+            padding: '9px 16px',
+            borderRadius: '8px',
+            border: `1px solid ${
+              activeCategory === 'appearance'
+                ? 'var(--accent)'
+                : 'rgba(165,207,214,0.18)'
+            }`,
+            background:
+              activeCategory === 'appearance'
+                ? 'rgba(97,215,201,0.15)'
+                : 'rgba(14,31,39,0.6)',
+            color: activeCategory === 'appearance' ? 'var(--accent)' : 'var(--muted)',
+            fontWeight: 600,
+            fontSize: '13px',
+            cursor: 'pointer',
+            whiteSpace: 'nowrap',
+          }}
+        >
+          <Palette size={16} /> Appearance
+        </button>
+
+        <button
+          onClick={() => switchCategory('notifications')}
+          className={activeCategory === 'notifications' ? 'selected' : ''}
+          style={{
+            display: 'inline-flex',
+            alignItems: 'center',
+            gap: '8px',
+            padding: '9px 16px',
+            borderRadius: '8px',
+            border: `1px solid ${
+              activeCategory === 'notifications'
+                ? 'var(--accent)'
+                : 'rgba(165,207,214,0.18)'
+            }`,
+            background:
+              activeCategory === 'notifications'
+                ? 'rgba(97,215,201,0.15)'
+                : 'rgba(14,31,39,0.6)',
+            color:
+              activeCategory === 'notifications' ? 'var(--accent)' : 'var(--muted)',
+            fontWeight: 600,
+            fontSize: '13px',
+            cursor: 'pointer',
+            whiteSpace: 'nowrap',
+          }}
+        >
+          <Bell size={16} /> Notifications
+        </button>
+
+        <button
+          onClick={() => switchCategory('account')}
+          className={activeCategory === 'account' ? 'selected' : ''}
+          style={{
+            display: 'inline-flex',
+            alignItems: 'center',
+            gap: '8px',
+            padding: '9px 16px',
+            borderRadius: '8px',
+            border: `1px solid ${
+              activeCategory === 'account'
+                ? 'var(--accent)'
+                : 'rgba(165,207,214,0.18)'
+            }`,
+            background:
+              activeCategory === 'account'
+                ? 'rgba(97,215,201,0.15)'
+                : 'rgba(14,31,39,0.6)',
+            color: activeCategory === 'account' ? 'var(--accent)' : 'var(--muted)',
+            fontWeight: 600,
+            fontSize: '13px',
+            cursor: 'pointer',
+            whiteSpace: 'nowrap',
+          }}
+        >
+          <User size={16} /> Account
+        </button>
+
+        <button
+          onClick={() => switchCategory('privacy')}
+          className={activeCategory === 'privacy' ? 'selected' : ''}
+          style={{
+            display: 'inline-flex',
+            alignItems: 'center',
+            gap: '8px',
+            padding: '9px 16px',
+            borderRadius: '8px',
+            border: `1px solid ${
+              activeCategory === 'privacy'
+                ? 'var(--accent)'
+                : 'rgba(165,207,214,0.18)'
+            }`,
+            background:
+              activeCategory === 'privacy'
+                ? 'rgba(97,215,201,0.15)'
+                : 'rgba(14,31,39,0.6)',
+            color: activeCategory === 'privacy' ? 'var(--accent)' : 'var(--muted)',
+            fontWeight: 600,
+            fontSize: '13px',
+            cursor: 'pointer',
+            whiteSpace: 'nowrap',
+          }}
+        >
+          <Shield size={16} /> Privacy & Security
+        </button>
+
+        <button
+          onClick={() => switchCategory('about')}
+          className={activeCategory === 'about' ? 'selected' : ''}
+          style={{
+            display: 'inline-flex',
+            alignItems: 'center',
+            gap: '8px',
+            padding: '9px 16px',
+            borderRadius: '8px',
+            border: `1px solid ${
+              activeCategory === 'about'
+                ? 'var(--accent)'
+                : 'rgba(165,207,214,0.18)'
+            }`,
+            background:
+              activeCategory === 'about'
+                ? 'rgba(97,215,201,0.15)'
+                : 'rgba(14,31,39,0.6)',
+            color: activeCategory === 'about' ? 'var(--accent)' : 'var(--muted)',
+            fontWeight: 600,
+            fontSize: '13px',
+            cursor: 'pointer',
+            whiteSpace: 'nowrap',
+          }}
+        >
+          <Info size={16} /> About
+        </button>
+      </div>
+
+      {/* Category Views */}
+      <div className="settings-content-wrapper">
+        {/* 🤖 AI Providers Category */}
+        {activeCategory === 'ai' && <AIProvidersSettings />}
+
+        {/* 🎨 Appearance Category */}
+        {activeCategory === 'appearance' && (
+          <div className="settings-list">
+            <SettingRow
+              label="Theme Mode"
+              description="Switch between Dark, Light, or match your system settings."
+              value={settings.theme}
+              options={['dark', 'light', 'system']}
+              onChange={(value) => choose('theme', value as Settings['theme'])}
+            />
+            <SettingRow
+              label="Navigation Audio Feedback"
+              description="Play a subtle tactical sound when switching tabs and interacting with controls."
+              value={settings.sound !== false ? 'on' : 'off'}
+              options={['on', 'off']}
+              onChange={(value) => choose('sound', value === 'on')}
+            />
+            <SettingRow
+              label="Temperature Units"
+              description="Display atmospheric weather readings in Celsius or Fahrenheit."
+              value={settings.temperature}
+              options={['celsius', 'fahrenheit']}
+              onChange={(value) => choose('temperature', value as Settings['temperature'])}
+            />
+            <SettingRow
+              label="Wind Speed Units"
+              description="Display wind velocity in kilometers per hour or miles per hour."
+              value={settings.wind}
+              options={['kmh', 'mph']}
+              onChange={(value) => choose('wind', value as Settings['wind'])}
+            />
+            <SettingRow
+              label="Motion & Starfield Effects"
+              description="Toggle high-fidelity orbital animations or distraction-free static mode."
+              value={settings.animations}
+              options={['full', 'reduced']}
+              onChange={(value) => choose('animations', value as Settings['animations'])}
+            />
+            <WallpaperSelector
+              value={settings.wallpaper}
+              onSelect={(wallpaper) => choose('wallpaper', wallpaper)}
+            />
+          </div>
+        )}
+
+        {/* 🔔 Notifications Category */}
+        {activeCategory === 'notifications' && (
+          <div className="settings-list">
+            <section
+              className="setting-row"
+              style={{
+                background: 'linear-gradient(135deg, rgba(14,31,39,0.7) 0%, rgba(20,24,48,0.7) 100%)',
+                border: '1px solid var(--line)',
+                borderRadius: '10px',
+                padding: '20px',
+              }}
+            >
+              <div>
+                <h2 style={{ fontSize: '16px', margin: '0 0 4px' }}>Telegram Bot Integration</h2>
+                <p style={{ color: 'var(--muted)', fontSize: '13px', margin: 0 }}>
+                  Connect your personal Telegram bot for instant weather alerts, smart search, and scheduled briefings.
+                </p>
+              </div>
+              <Link
+                to="/telegram"
+                className="secondary-button"
+                style={{
+                  display: 'inline-flex',
+                  alignItems: 'center',
+                  gap: '6px',
+                  padding: '9px 16px',
+                  borderRadius: '8px',
+                  textDecoration: 'none',
+                  fontWeight: 600,
+                  fontSize: '13px',
+                }}
+              >
+                <Send size={15} /> Configure Telegram
+              </Link>
+            </section>
+
+            <section
+              className="setting-row"
+              style={{
+                background: 'rgba(14,31,39,0.5)',
+                border: '1px solid var(--line)',
+                borderRadius: '10px',
+                padding: '20px',
+              }}
+            >
+              <div>
+                <h2 style={{ fontSize: '15px', margin: '0 0 4px' }}>Severe Weather Alerts</h2>
+                <p style={{ color: 'var(--muted)', fontSize: '12px', margin: 0 }}>
+                  Display alert banners on dashboard when meteorological agencies issue warnings for your area.
+                </p>
+              </div>
+              <span style={{ fontSize: '12px', color: '#34d399', fontWeight: 600 }}>
+                Enabled (Active)
+              </span>
+            </section>
+          </div>
+        )}
+
+        {/* 👤 Account Category */}
+        {activeCategory === 'account' && (
+          <div className="settings-list">
+            <section
+              className="setting-row"
+              style={{
+                background: 'linear-gradient(135deg, rgba(14,31,39,0.7) 0%, rgba(20,24,48,0.7) 100%)',
+                border: '1px solid var(--line)',
+                borderRadius: '10px',
+                padding: '20px',
+              }}
+            >
+              <div style={{ display: 'flex', alignItems: 'center', gap: '14px' }}>
+                <div
+                  style={{
+                    width: '48px',
+                    height: '48px',
+                    borderRadius: '50%',
+                    background: 'rgba(97,215,201,0.15)',
+                    color: 'var(--accent)',
+                    display: 'grid',
+                    placeItems: 'center',
+                  }}
+                >
+                  <User size={24} />
+                </div>
+                <div>
+                  <h2 style={{ fontSize: '16px', margin: '0 0 4px' }}>NEXUS Local User</h2>
+                  <p style={{ color: 'var(--muted)', fontSize: '12px', margin: 0 }}>
+                    Workspace Session · Encrypted Client Storage
+                  </p>
+                </div>
+              </div>
+              <span
+                style={{
+                  fontSize: '11px',
+                  padding: '4px 10px',
+                  borderRadius: '12px',
+                  background: 'rgba(52,211,153,0.15)',
+                  color: '#34d399',
+                  fontWeight: 600,
+                }}
+              >
+                Local Synced
+              </span>
+            </section>
+
+            <section
+              className="setting-row"
+              style={{
+                background: 'rgba(14,31,39,0.5)',
+                border: '1px solid var(--line)',
+                borderRadius: '10px',
+                padding: '20px',
+              }}
+            >
+              <div>
+                <h2 style={{ fontSize: '15px', margin: '0 0 4px' }}>AI Provider Credentials</h2>
+                <p style={{ color: 'var(--muted)', fontSize: '12px', margin: 0 }}>
+                  Manage multiple API keys, rotation strategy, and models in the AI Providers section.
+                </p>
+              </div>
+              <button
+                onClick={() => switchCategory('ai')}
+                className="secondary-button"
+                style={{ padding: '8px 14px', borderRadius: '7px', fontSize: '12px' }}
+              >
+                Open AI Providers
+              </button>
+            </section>
+          </div>
+        )}
+
+        {/* 🔒 Privacy & Security Category */}
+        {activeCategory === 'privacy' && (
+          <div className="settings-list">
+            <section
+              className="setting-row"
+              style={{
+                background: 'linear-gradient(135deg, rgba(14,31,39,0.7) 0%, rgba(20,24,48,0.7) 100%)',
+                border: '1px solid var(--line)',
+                borderRadius: '10px',
+                padding: '20px',
+              }}
+            >
+              <div>
+                <h2 style={{ fontSize: '15px', margin: '0 0 4px' }}>Client-Side Zero Telemetry</h2>
+                <p style={{ color: 'var(--muted)', fontSize: '12px', margin: 0 }}>
+                  Your search history, saved articles, smart memory, and custom API keys are stored locally on your device.
+                </p>
+              </div>
+              <CheckCircle2 size={20} color="#34d399" />
+            </section>
+
+            <section
+              className="setting-row"
+              style={{
+                background: 'rgba(14,31,39,0.5)',
+                border: '1px solid var(--line)',
+                borderRadius: '10px',
+                padding: '20px',
+              }}
+            >
+              <div>
+                <h2 style={{ fontSize: '15px', margin: '0 0 4px' }}>Reset System Preferences & Data</h2>
+                <p style={{ color: 'var(--muted)', fontSize: '12px', margin: 0 }}>
+                  Erase local caches, preferences, search history, and reset all configured state.
+                </p>
+              </div>
+              <button
+                className="danger-button"
+                onClick={() => {
+                  if (confirm('Are you sure you want to reset all preferences and stored state?')) {
+                    storage.clearAll();
+                    window.location.reload();
+                  }
+                }}
+              >
+                Reset All Data
+              </button>
+            </section>
+          </div>
+        )}
+
+        {/* ℹ️ About Category */}
+        {activeCategory === 'about' && (
+          <div className="settings-list">
+            <section
+              style={{
+                background: 'linear-gradient(135deg, rgba(14,31,39,0.7) 0%, rgba(20,24,48,0.7) 100%)',
+                border: '1px solid var(--line)',
+                borderRadius: '12px',
+                padding: '24px',
+              }}
+            >
+              <div style={{ display: 'flex', alignItems: 'center', gap: '10px', marginBottom: '12px' }}>
+                <span
+                  style={{
+                    display: 'inline-flex',
+                    alignItems: 'center',
+                    justifyContent: 'center',
+                    width: '32px',
+                    height: '32px',
+                    borderRadius: '8px',
+                    background: 'rgba(97,215,201,0.15)',
+                    color: 'var(--accent)',
+                  }}
+                >
+                  <Bot size={20} />
+                </span>
+                <div>
+                  <h2 style={{ margin: 0, fontSize: '18px', letterSpacing: '-0.02em' }}>
+                    NEXUS Intelligence OS
+                  </h2>
+                  <p style={{ margin: 0, color: 'var(--muted)', fontSize: '12px' }}>
+                    Version 2.5.0 · Neural Search & Multi-Provider Architecture
+                  </p>
+                </div>
+              </div>
+
+              <p style={{ color: 'var(--muted)', fontSize: '13px', lineHeight: 1.6, margin: '14px 0' }}>
+                NEXUS provides unified intelligence, meteorological science, NASA astrophysics data, and real-time news retrieval. All AI providers share a centralized tool context layer supporting DeepSeek, OpenRouter, Google Gemini, Groq, and custom API endpoints with multi-key failover and rotation.
+              </p>
+
+              <div
+                style={{
+                  display: 'grid',
+                  gridTemplateColumns: 'repeat(auto-fit, minmax(180px, 1fr))',
+                  gap: '12px',
+                  borderTop: '1px solid var(--line)',
+                  paddingTop: '16px',
+                  marginTop: '16px',
+                  fontSize: '12px',
+                }}
+              >
+                <div>
+                  <span style={{ color: 'var(--muted)' }}>Neural Core:</span>
+                  <div style={{ fontWeight: 600, color: '#fff' }}>Multi-Provider Engine</div>
+                </div>
+                <div>
+                  <span style={{ color: 'var(--muted)' }}>Key Redundancy:</span>
+                  <div style={{ fontWeight: 600, color: '#34d399' }}>Automatic Failover / Round Robin</div>
+                </div>
+                <div>
+                  <span style={{ color: 'var(--muted)' }}>Shared Tools:</span>
+                  <div style={{ fontWeight: 600, color: '#93c5fd' }}>Web · Wiki · Weather · Space · News</div>
+                </div>
+                <div>
+                  <span style={{ color: 'var(--muted)' }}>Environment:</span>
+                  <div style={{ fontWeight: 600, color: '#fff' }}>TypeScript · Express · Vite</div>
+                </div>
+              </div>
+            </section>
+          </div>
+        )}
+      </div>
+    </>
+  );
 }
 
 function SettingRow({ label, description, value, options, onChange }: { label: string; description: string; value: string; options: string[]; onChange: (value: string) => void }) { return <section className="setting-row"><div><h2>{label}</h2><p>{description}</p></div><div className="segmented-control">{options.map((option) => <button className={option === value ? 'selected' : ''} onClick={() => onChange(option)} key={option}>{option}</button>)}</div></section>; }
 
 export { TelegramPage } from './TelegramPage';
+export { DevicesPage } from './DevicesPage';
 

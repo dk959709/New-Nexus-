@@ -101,6 +101,45 @@ export type WindUnit = 'kmh' | 'mph';
 export type ThemeMode = 'dark' | 'light' | 'system';
 export type AnimationLevel = 'full' | 'reduced';
 
+export type KeyHealthStatus = 'healthy' | 'cooldown' | 'invalid' | 'untested';
+export type KeyStrategy = 'failover' | 'round_robin' | 'manual';
+
+export interface AIKeyItem {
+  id: string;
+  key: string;
+  label?: string;
+  status: KeyHealthStatus;
+  lastTested?: number;
+  lastError?: string;
+  cooldownUntil?: number;
+}
+
+export interface AIProviderCapabilities {
+  text: boolean;
+  tools: boolean;
+  web: boolean;
+  wikipedia: boolean;
+  memory: boolean;
+}
+
+export interface AIProviderConfig {
+  id: string;
+  name: string;
+  url: string;
+  model: string;
+  maxTokens?: number;
+  keyStrategy: KeyStrategy;
+  preferredKeyId?: string;
+  keys: AIKeyItem[];
+  capabilities: AIProviderCapabilities;
+  isDefault?: boolean;
+}
+
+export interface AIProvidersState {
+  activeProviderId: string;
+  providers: AIProviderConfig[];
+}
+
 export interface Settings {
   theme: ThemeMode;
   temperature: TemperatureUnit;
@@ -108,6 +147,7 @@ export interface Settings {
   animations: AnimationLevel;
   wallpaper: WallpaperSetting | null;
   sound: boolean;
+  aiProviders?: AIProvidersState;
 }
 
 export interface ConfigStatus {
@@ -132,6 +172,33 @@ export interface WallpaperSetting {
   url: string;
   photographer: string;
   photographerUrl: string;
+}
+
+export type SourceCategory = 'web' | 'wikipedia' | 'news' | 'nasa' | 'weather';
+export type ConfidenceLevel = 'verified' | 'limited' | 'unverified';
+
+export interface AISource {
+  title: string;
+  url: string;
+  domain?: string;
+  description?: string;
+  date?: string;
+  thumbnail?: string;
+  image?: string;
+  type?: SourceCategory;
+}
+
+export interface AnswerEngineResult {
+  query: string;
+  answer: string;
+  confidence: ConfidenceLevel;
+  confidenceReason?: string;
+  sources: AISource[];
+  followUps?: string[];
+  selectedCategories: SourceCategory[];
+  model?: string;
+  tool?: string;
+  fromCache?: boolean;
 }
 
 export interface TelegramAutomations {
@@ -162,4 +229,57 @@ export interface TelegramActivityItem {
   text: string;
   status: 'delivered' | 'processed' | 'blocked' | 'error';
   command?: string;
+}
+
+export type DeviceType = 'android' | 'tv' | 'computer' | 'smarthome';
+export type DeviceStatus = 'online' | 'warning' | 'offline' | 'unknown';
+
+export interface DevicePermissions {
+  batteryInfo: boolean;
+  storageInfo: boolean;
+  networkInfo: boolean;
+  deviceControl: boolean;
+  backgroundMonitoring: boolean;
+}
+
+export interface AndroidDeviceInfo {
+  model?: string;
+  brand?: string;
+  androidVersion?: string;
+  sdkVersion?: number;
+  batteryLevel?: number;
+  isCharging?: boolean;
+  networkType?: string;
+  storageUsedGb?: number;
+  storageTotalGb?: number;
+  ramUsedGb?: number;
+  ramTotalGb?: number;
+}
+
+export interface SmartTVInfo {
+  model?: string;
+  powerState?: 'ON' | 'STANDBY' | 'OFF';
+  volume?: number;
+  isMuted?: boolean;
+}
+
+export interface NexusDevice {
+  id: string;
+  type: DeviceType;
+  name: string;
+  status: DeviceStatus;
+  pairedAt: string;
+  lastSeen: string;
+  ipAddress?: string;
+  permissions: DevicePermissions;
+  android?: AndroidDeviceInfo;
+  tv?: SmartTVInfo;
+}
+
+export interface DevicesOverview {
+  online: number;
+  warning: number;
+  offline: number;
+  total: number;
+  devices: NexusDevice[];
 }

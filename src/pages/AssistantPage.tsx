@@ -1,21 +1,16 @@
 import { useEffect, useState } from 'react';
-import { Bot, Send, Sparkles, User, Trash2, Plus, Brain } from 'lucide-react';
+import { Bot, Send, Sparkles, User, Trash2, Plus, Brain, BookOpen, Globe, ExternalLink, Cpu } from 'lucide-react';
+import { Link } from 'react-router-dom';
 import { api } from '@/services/api';
+import { storage } from '@/lib/storage';
 import { ErrorMessage } from '@/components';
-
-type Source = {
-  title: string;
-  url: string;
-  domain?: string;
-  description?: string;
-  date?: string;
-};
+import type { AISource } from '@/types';
 
 type Message = {
   role: 'user' | 'assistant';
   content: string;
   tool?: 'none' | 'search' | 'weather';
-  sources?: Source[];
+  sources?: AISource[];
   weather?: unknown;
 };
 
@@ -262,15 +257,29 @@ export function AssistantPage() {
             <div>
               <strong>NEXUS AI</strong>
 
-              <small
+              <Link
+                to="/settings?tab=ai"
                 style={{
-                  display: 'block',
-                  opacity: 0.55,
+                  display: 'flex',
+                  alignItems: 'center',
+                  gap: 4,
+                  opacity: 0.75,
                   marginTop: 2,
+                  fontSize: 11,
+                  color: '#61ddd2',
+                  textDecoration: 'none',
                 }}
+                title="Configure AI Providers & Keys in Settings"
               >
-                DeepSeek · OpenRouter · Smart Memory
-              </small>
+                <Cpu size={12} />
+                <span>
+                  {(() => {
+                    const prov = storage.getActiveAIProvider();
+                    if (!prov) return 'Existing AI (Default)';
+                    return `${prov.name} (${prov.keys.length} ${prov.keys.length === 1 ? 'key' : 'keys'})`;
+                  })()}
+                </span>
+              </Link>
             </div>
           </div>
 
@@ -639,67 +648,119 @@ export function AssistantPage() {
                   </div>
 
                   {message.role === 'assistant' &&
-                    message.tool === 'search' &&
                     message.sources?.length ? (
                     <div
                       style={{
                         display: 'grid',
                         gap: 8,
-                        marginTop: 10,
+                        marginTop: 12,
                       }}
                     >
-                      {message.sources.slice(0, 5).map((source, sourceIndex) => (
-                        <a
-                          key={`${source.url}-${sourceIndex}`}
-                          href={source.url}
-                          target="_blank"
-                          rel="noreferrer"
-                          style={{
-                            display: 'block',
-                            padding: '10px 12px',
-                            borderRadius: 12,
-                            textDecoration: 'none',
-                            color: 'inherit',
-                            background: 'rgba(255,255,255,.035)',
-                            border: '1px solid rgba(255,255,255,.07)',
-                          }}
-                        >
-                          <strong
+                      <div
+                        style={{
+                          fontSize: 11,
+                          fontWeight: 700,
+                          letterSpacing: '0.08em',
+                          textTransform: 'uppercase',
+                          color: '#61ddd2',
+                          display: 'flex',
+                          alignItems: 'center',
+                          gap: 6,
+                        }}
+                      >
+                        <Sparkles size={12} /> Verified Sources
+                      </div>
+                      {message.sources.slice(0, 5).map((source, sourceIndex) => {
+                        const isWiki =
+                          source.type === 'wikipedia' ||
+                          source.domain?.toLowerCase().includes('wikipedia');
+                        return (
+                          <a
+                            key={`${source.url}-${sourceIndex}`}
+                            href={source.url}
+                            target="_blank"
+                            rel="noreferrer"
                             style={{
                               display: 'block',
-                              fontSize: 13,
-                              marginBottom: 3,
+                              padding: '10px 14px',
+                              borderRadius: 12,
+                              textDecoration: 'none',
+                              color: 'inherit',
+                              background: isWiki
+                                ? 'rgba(97, 215, 201, 0.08)'
+                                : 'rgba(255,255,255,.035)',
+                              border: isWiki
+                                ? '1px solid rgba(97, 215, 201, 0.28)'
+                                : '1px solid rgba(255,255,255,.07)',
+                              transition: 'all 0.2s ease',
                             }}
                           >
-                            {source.title}
-                          </strong>
-
-                          <span
-                            style={{
-                              display: 'block',
-                              fontSize: 11,
-                              opacity: 0.55,
-                              marginBottom: source.description ? 4 : 0,
-                            }}
-                          >
-                            {source.domain || source.url}
-                            {source.date ? ` · ${source.date}` : ''}
-                          </span>
-
-                          {source.description && (
-                            <span
+                            <div
                               style={{
-                                display: 'block',
-                                fontSize: 12,
-                                lineHeight: 1.4,
-                                opacity: 0.7,
+                                display: 'flex',
+                                alignItems: 'center',
+                                justifyContent: 'space-between',
+                                gap: 8,
+                                marginBottom: 4,
                               }}
                             >
-                              {source.description}
-                            </span>
-                          )}
-                        </a>
-                      ))}
+                              <span
+                                style={{
+                                  display: 'inline-flex',
+                                  alignItems: 'center',
+                                  gap: 5,
+                                  fontSize: 10,
+                                  fontWeight: 700,
+                                  letterSpacing: '0.06em',
+                                  textTransform: 'uppercase',
+                                  color: isWiki ? '#61ddd2' : '#81949e',
+                                  background: isWiki
+                                    ? 'rgba(97, 215, 201, 0.15)'
+                                    : 'rgba(255,255,255,0.06)',
+                                  padding: '2px 7px',
+                                  borderRadius: 4,
+                                }}
+                              >
+                                {isWiki ? (
+                                  <>
+                                    <BookOpen size={11} /> Wikipedia
+                                  </>
+                                ) : (
+                                  <>
+                                    <Globe size={11} /> {source.domain || 'Web'}
+                                  </>
+                                )}
+                              </span>
+                              <ExternalLink size={12} style={{ opacity: 0.5 }} />
+                            </div>
+
+                            <strong
+                              style={{
+                                display: 'block',
+                                fontSize: 13,
+                                marginBottom: 3,
+                                color: '#e8f0f2',
+                              }}
+                            >
+                              {source.title}
+                            </strong>
+
+                            {source.description && (
+                              <span
+                                style={{
+                                  display: 'block',
+                                  fontSize: 12,
+                                  lineHeight: 1.4,
+                                  opacity: 0.75,
+                                  color: '#a5cfd6',
+                                }}
+                              >
+                                {source.description}
+                              </span>
+                            )}
+                          </a>
+                        );
+                      })}
                     </div>
                   ) : null}
                 </div>

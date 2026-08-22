@@ -1,10 +1,11 @@
-import type { SavedItem, Settings } from '@/types';
+import type { SavedItem, Settings, AIProvidersState, AIProviderConfig, KeyHealthStatus } from '@/types';
 
 const KEYS = {
   searches: 'nexus-searches',
   saved: 'nexus-saved',
   settings: 'nexus-settings',
   locations: 'nexus-locations',
+  aiProviders: 'nexus-ai-providers',
 } as const;
 
 function read<T>(key: string, fallback: T): T {
@@ -71,6 +72,49 @@ export const storage = {
   },
   saveSettings(settings: Settings): void {
     write(KEYS.settings, settings);
+  },
+
+  getAIProvidersState(): AIProvidersState {
+    const defaultState: AIProvidersState = {
+      activeProviderId: 'existing',
+      providers: [],
+    };
+    return read<AIProvidersState>(KEYS.aiProviders, defaultState);
+  },
+
+  saveAIProvidersState(state: AIProvidersState): void {
+    write(KEYS.aiProviders, state);
+  },
+
+  getActiveAIProvider(): AIProviderConfig | null {
+    const state = this.getAIProvidersState();
+    if (!state.activeProviderId || state.activeProviderId === 'existing') {
+      return null; // Signals to use server's existing default AI configuration
+    }
+    return state.providers.find((p) => p.id === state.activeProviderId) || null;
+  },
+
+  updateKeyHealth(providerId: string, keyId: string, status: KeyHealthStatus, errorMsg?: string): void {
+    const state = this.getAIProvidersState();
+    const providerIndex = state.providers.findIndex((p) => p.id === providerId);
+    if (providerIndex === -1) return;
+
+    const provider = state.providers[providerIndex];
+    const updatedKeys = provider.keys.map((k) => {
+      if (k.id === keyId) {
+        return {
+          ...k,
+          status,
+          lastTested: Date.now(),
+          lastError: errorMsg,
+          cooldownUntil: status === 'cooldown' ? Date.now() + 60000 : undefined,
+        };
+      }
+      return k;
+    });
+
+    state.providers[providerIndex] = { ...provider, keys: updatedKeys };
+    this.saveAIProvidersState(state);
   },
 
   getLocations(): SavedItem[] {
