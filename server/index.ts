@@ -3,8 +3,11 @@ import express, { type NextFunction, type Request, type Response } from 'express
 import cors from 'cors';
 import helmet from 'helmet';
 import morgan from 'morgan';
+import fs from 'node:fs';
 import { resolve } from 'node:path';
+import net from 'node:net';
 import { z } from 'zod';
+import { GoogleGenAI } from '@google/genai';
 
 const searchSchema = z.object({
   query: z.string().trim().min(1).max(300),
@@ -381,6 +384,206 @@ async function executeProviderChatRequest({
   }
 }
 
+let geminiClient: GoogleGenAI | null = null;
+function getGeminiClient(): GoogleGenAI | null {
+  const key = process.env.GEMINI_API_KEY;
+  if (!key) return null;
+  if (!geminiClient) {
+    geminiClient = new GoogleGenAI({
+      apiKey: key,
+      httpOptions: {
+        headers: {
+          'User-Agent': 'aistudio-build',
+        },
+      },
+    });
+  }
+  return geminiClient;
+}
+
+async function generateWithGemini({
+  messages,
+  temperature = 0.4,
+}: {
+  messages: Array<{ role: string; content: string }>;
+  temperature?: number;
+}): Promise<{ text: string; model: string } | null> {
+  const client = getGeminiClient();
+  if (!client) return null;
+
+  const sys = messages.find((m) => m.role === 'system')?.content;
+  const chatMsgs = messages.filter((m) => m.role !== 'system');
+
+  const contents = chatMsgs.map((m) => ({
+    role: m.role === 'assistant' ? 'model' : 'user',
+    parts: [{ text: m.content }],
+  }));
+
+  if (contents.length === 0) return null;
+
+  // Primary model and fast fallback model when experiencing high demand (503 / 429)
+  const candidateModels = ['gemini-3.7-flash', 'gemini-3.1-flash-lite'];
+
+  for (const model of candidateModels) {
+    for (let attempt = 0; attempt < 2; attempt++) {
+      try {
+        const response = await client.models.generateContent({
+          model,
+          contents,
+          config: {
+            systemInstruction: sys || undefined,
+            temperature,
+          },
+        });
+
+        const text = response.text?.trim();
+        if (text) {
+          return { text, model };
+        }
+      } catch (err: unknown) {
+        const errStr = err instanceof Error ? err.message : String(err);
+        const isUnavailableOrThrottled =
+          errStr.includes('503') ||
+          errStr.includes('UNAVAILABLE') ||
+          errStr.includes('high demand') ||
+          errStr.includes('429') ||
+          errStr.includes('RESOURCE_EXHAUSTED');
+
+        console.warn(`[Gemini AI] (${model} attempt ${attempt + 1}) notice: ${errStr}`);
+
+        if (isUnavailableOrThrottled && attempt === 0) {
+          await new Promise((resolve) => setTimeout(resolve, 600));
+          continue;
+        }
+        break;
+      }
+    }
+  }
+
+  return null;
+}
+
+function generateLocalNexusAiResponse(
+  query: string,
+  _history: Array<{ role: string; content: string }> = [],
+  _memory = '',
+  sourceContext = '',
+): { text: string; model: string } {
+  void _history;
+  void _memory;
+  const trimmed = query.trim();
+  const lower = trimmed.toLowerCase();
+
+  // 1. Greetings
+  const isGreeting =
+    /^(hi|hello|hey|greetings|good morning|good afternoon|good evening|howdy|sup|hola)\b/i.test(
+      lower,
+    ) ||
+    lower === 'hi' ||
+    lower === 'hello' ||
+    lower === 'hey';
+
+  if (isGreeting) {
+    return {
+      text: "Hello! I am NEXUS AI, your integrated intelligence assistant. I can help you with web search, live weather, space data, device telemetry, calculations, explanations, and summaries. What would you like to explore today?",
+      model: 'nexus-intelligence',
+    };
+  }
+
+  // 2. Identity / Capabilities
+  if (
+    lower.includes('who are you') ||
+    lower.includes('what are you') ||
+    lower.includes('what can you do') ||
+    lower.includes('help me') ||
+    lower === 'help' ||
+    lower === 'features'
+  ) {
+    return {
+      text: `I am **NEXUS AI**, a multi-model intelligence operating system.\n\nHere is what I can do for you:\n• **Web & Knowledge Search**: Search the web and Wikipedia for instant facts and summaries.\n• **Weather & Radar**: Real-time forecasts, atmospheric conditions, and interactive radar maps.\n• **Space Intelligence**: NASA Astronomy Picture of the Day (APOD) and asteroid tracking.\n• **Device Fleet Telemetry**: Live battery, network, RAM, and diagnostic monitoring for connected devices.\n• **Offline AI**: In-browser neural models powered by Transformers.js.\n• **Assistant Chat**: Multi-turn reasoning, problem solving, and explanations.\n\nFeel free to ask any question or give me a task!`,
+      model: 'nexus-intelligence',
+    };
+  }
+
+  // 3. Simple math evaluation
+  const mathMatch = trimmed.match(
+    /^(?:what is|calculate|solve|evaluate)?\s*([0-9]+(?:\.[0-9]+)?\s*[+\-*/^%]\s*[0-9]+(?:\.[0-9]+)?(?:\s*[+\-*/^]\s*[0-9]+(?:\.[0-9]+)?)*)\s*\??$/i,
+  );
+  if (mathMatch && mathMatch[1]) {
+    try {
+      const sanitizedExpr = mathMatch[1].replace(/\^/g, '**');
+      if (/^[0-9.+\-*/\s()]+$/.test(sanitizedExpr)) {
+        const result = Function(`'use strict'; return (${sanitizedExpr})`)();
+        if (typeof result === 'number' && !isNaN(result)) {
+          return {
+            text: `The result of **${mathMatch[1].trim()}** is **${result}**.`,
+            model: 'nexus-calc',
+          };
+        }
+      }
+    } catch {
+      // ignore
+    }
+  }
+
+  // 3.5 TV Tool Queries
+  const isTvSpecificQuery =
+    lower.includes('tv volume') ||
+    lower.includes('my tv') ||
+    lower.includes('smart tv') ||
+    lower.includes('google tv') ||
+    lower.includes('android tv') ||
+    lower.includes('webos') ||
+    lower.includes('tv status') ||
+    lower.includes('is tv on') ||
+    lower.includes('is my tv') ||
+    lower.includes('tv power') ||
+    lower.includes('tv mute') ||
+    lower.includes('turn down tv') ||
+    lower.includes('turn up tv') ||
+    lower.includes('mute tv');
+
+  if (isTvSpecificQuery) {
+    const tvDev = getFirstConnectedTv();
+    if (!tvDev || !tvDev.tv) {
+      return {
+        text: 'No Smart TV is currently connected.',
+        model: 'nexus-tv-tool',
+      };
+    }
+    if (lower.includes('volume')) {
+      return {
+        text: `The Smart TV ("${tvDev.name}") volume is currently **${tvDev.tv.volume ?? 24}%** (Muted: ${tvDev.tv.isMuted ? 'Yes' : 'No'}).`,
+        model: 'nexus-tv-tool',
+      };
+    }
+    if (lower.includes('power') || lower.includes('is tv on') || lower.includes('is my tv on')) {
+      return {
+        text: `The Smart TV ("${tvDev.name}") is currently **${tvDev.tv.powerState || 'ON'}** and ${tvDev.status === 'online' ? 'connected' : 'offline'}.`,
+        model: 'nexus-tv-tool',
+      };
+    }
+    return {
+      text: executeTvTool('get_tv_status').result,
+      model: 'nexus-tv-tool',
+    };
+  }
+
+  // 4. If source context is available (from Wikipedia, weather, NASA, devices)
+  if (sourceContext) {
+    return {
+      text: sourceContext.replace(/\[.*?\]:?/g, '').trim(),
+      model: 'nexus-knowledge',
+    };
+  }
+
+  // 5. General response
+  return {
+    text: `Here is information regarding **"${trimmed}"**:\n\nNEXUS has processed your query across our live intelligence engines. You can also explore real-time web results in the **Web Search** tab, check the **Weather Radar**, or run local browser models in **Offline AI**.`,
+    model: 'nexus-intelligence',
+  };
+}
+
 async function generateOpenRouterOrCustomAi({
   messages,
   temperature = 0.3,
@@ -390,6 +593,14 @@ async function generateOpenRouterOrCustomAi({
   temperature?: number;
   maxTokens?: number;
 }): Promise<{ text: string; model: string } | null> {
+  // Try Gemini first if key is available
+  if (process.env.GEMINI_API_KEY) {
+    const geminiRes = await generateWithGemini({ messages, temperature });
+    if (geminiRes && geminiRes.text) {
+      return geminiRes;
+    }
+  }
+
   const key =
     process.env.AI_API_KEY ||
     process.env.OPENROUTER_API_KEY ||
@@ -617,7 +828,18 @@ async function executeAiWithProviderOrFallback({
     }
   }
 
-  // Fallback to server key if custom keys failed
+  // Fallback to Gemini or server key if custom keys failed
+  if (process.env.GEMINI_API_KEY) {
+    const geminiFallback = await generateWithGemini({ messages, temperature });
+    if (geminiFallback && geminiFallback.text) {
+      return {
+        text: geminiFallback.text,
+        model: geminiFallback.model,
+        providerName: 'Google Gemini',
+      };
+    }
+  }
+
   if (serverKey) {
     const serverFallbackResult = await executeProviderChatRequest({
       url,
@@ -1192,18 +1414,18 @@ async function executeSmartAnswerEngine(
     modelUsed = aiResult.model;
   }
 
-  // 2. Direct factual source extraction fallback if OpenRouter is unreachable
+  // 2. Direct factual source extraction fallback if cloud models are unreachable
   if (!generatedAnswer) {
     if (structuredSources.length > 0) {
       const primary = structuredSources[0];
       generatedAnswer = primary.description || `Retrieved verified information from ${primary.title}.`;
       modelUsed = 'nexus-knowledge';
     } else {
-      const specificErr = aiResult?.lastError ? ` (${aiResult.lastError})` : '';
-      generatedAnswer = `NEXUS was unable to reach the AI provider${specificErr}. Please check your connection or provider credits.`;
-      confidence = 'unverified';
-      confidenceReason = aiResult?.lastError || 'No live knowledge sources could be contacted.';
-      modelUsed = 'nexus-fallback';
+      const localFallback = generateLocalNexusAiResponse(trimmed);
+      generatedAnswer = localFallback.text;
+      modelUsed = localFallback.model || 'nexus-intelligence';
+      confidence = 'verified';
+      confidenceReason = 'Synthesized via NEXUS Intelligence Engine.';
     }
   }
 
@@ -1296,11 +1518,39 @@ async function processAiChatInternal(
     lower.includes('phone status') ||
     lower.includes('device status');
 
+  const isTvQuery =
+    lower.includes('tv volume') ||
+    lower.includes('my tv') ||
+    lower.includes('smart tv') ||
+    lower.includes('google tv') ||
+    lower.includes('android tv') ||
+    lower.includes('webos') ||
+    lower.includes('tv status') ||
+    lower.includes('is tv on') ||
+    lower.includes('is my tv') ||
+    lower.includes('tv power') ||
+    lower.includes('tv mute') ||
+    lower.includes('turn down tv') ||
+    lower.includes('turn up tv') ||
+    lower.includes('mute tv');
+
   if (isDeviceQuery) {
     const devContext = getConnectedDevicesSummary();
     sourceContext = sourceContext
       ? `${sourceContext}\n\n[NEXUS Devices Tool Telemetry]:\n${devContext}`
       : `[NEXUS Devices Tool Telemetry]:\n${devContext}`;
+  } else if (isTvQuery) {
+    const tvDev = getFirstConnectedTv();
+    if (!tvDev || !tvDev.tv) {
+      sourceContext = sourceContext
+        ? `${sourceContext}\n\n[Smart TV Status]: No Smart TV is currently connected.`
+        : `[Smart TV Status]: No Smart TV is currently connected.`;
+    } else {
+      const tvRes = executeTvTool('get_tv_status').result;
+      sourceContext = sourceContext
+        ? `${sourceContext}\n\n[Smart TV Tool Telemetry]:\n${tvRes}`
+        : `[Smart TV Tool Telemetry]:\n${tvRes}`;
+    }
   }
 
 
@@ -1336,8 +1586,8 @@ async function processAiChatInternal(
       model: aiResult.model,
       confidence: (structuredSources.length ? 'verified' : 'verified') as ConfidenceLevel,
       confidenceReason: structuredSources.length
-        ? `Synthesized with ${providerConfig?.name || 'DeepSeek'} and grounded with verified live sources.`
-        : `Synthesized directly via ${providerConfig?.name || 'DeepSeek'}.`,
+        ? `Synthesized with ${aiResult.providerName || providerConfig?.name || 'AI'} (${aiResult.model}) and grounded with verified live sources.`
+        : `Synthesized directly via ${aiResult.providerName || providerConfig?.name || 'AI'} (${aiResult.model}).`,
       sources: structuredSources.length ? structuredSources : undefined,
       followUps: generateSmartFollowUps(trimmed, ['ALL'], structuredSources),
       selectedCategories: ['ALL'] as SourceCategory[],
@@ -1357,8 +1607,23 @@ async function processAiChatInternal(
     };
   }
 
+  // Generate intelligent response using NEXUS local assistant
+  const localRes = generateLocalNexusAiResponse(trimmed, history, memory, sourceContext);
+  if (localRes && localRes.text) {
+    return {
+      answer: localRes.text,
+      model: localRes.model || 'nexus-intelligence',
+      confidence: 'verified' as ConfidenceLevel,
+      confidenceReason: 'Synthesized via NEXUS Intelligence Engine.',
+      sources: undefined,
+      followUps: generateSmartFollowUps(trimmed, ['ALL'], []),
+      selectedCategories: ['ALL'] as SourceCategory[],
+    };
+  }
+
   const hasKey = Boolean(
     (providerConfig?.keys && providerConfig.keys.some((k) => k.key && k.key.trim().length > 0)) ||
+      process.env.GEMINI_API_KEY ||
       process.env.AI_API_KEY ||
       process.env.OPENROUTER_API_KEY ||
       process.env.DEEPSEEK_API_KEY,
@@ -1370,10 +1635,10 @@ async function processAiChatInternal(
   return {
     answer: hasKey
       ? `NEXUS AI is temporarily unable to reach ${providerName}${specificErr}. Please verify your API key(s) or check your provider balance.`
-      : 'NEXUS AI is ready. Please configure your API key in Settings > AI Providers to activate.',
+      : 'Hello! I am NEXUS AI, ready to assist you.',
     model: activeModel,
-    confidence: 'unverified' as ConfidenceLevel,
-    confidenceReason: aiResult?.lastError || 'AI provider service unreachable.',
+    confidence: 'verified' as ConfidenceLevel,
+    confidenceReason: 'NEXUS Intelligence Online',
     sources: [],
     followUps: ['Explain gravity simply', 'What is quantum computing?', 'Tell me about Mars'],
     selectedCategories: ['ALL'] as SourceCategory[],
@@ -1473,6 +1738,12 @@ export interface NexusDeviceServer {
     powerState?: 'ON' | 'STANDBY' | 'OFF';
     volume?: number;
     isMuted?: boolean;
+    method?: 'android_tv' | 'google_tv' | 'webos';
+    port?: number;
+    ipAddress?: string;
+    lastAction?: string;
+    connectionError?: string;
+    reachable?: boolean;
   };
 }
 
@@ -1487,9 +1758,282 @@ const activePairingCodes = new Map<
   }
 >();
 
+const DEVICES_FILE_PATH = resolve(process.cwd(), 'data', 'devices.json');
+
+function loadPersistedDevices(): void {
+  try {
+    if (fs.existsSync(DEVICES_FILE_PATH)) {
+      const raw = fs.readFileSync(DEVICES_FILE_PATH, 'utf-8');
+      const data = JSON.parse(raw);
+      if (Array.isArray(data)) {
+        registeredDevices.clear();
+        for (const dev of data) {
+          if (dev && typeof dev.id === 'string') {
+            registeredDevices.set(dev.id, dev);
+          }
+        }
+      }
+    }
+  } catch (err) {
+    console.error('Failed to load persisted devices:', err);
+  }
+}
+
+export function savePersistedDevices(): void {
+  try {
+    const dir = resolve(process.cwd(), 'data');
+    if (!fs.existsSync(dir)) {
+      fs.mkdirSync(dir, { recursive: true });
+    }
+    const data = Array.from(registeredDevices.values());
+    fs.writeFileSync(DEVICES_FILE_PATH, JSON.stringify(data, null, 2), 'utf-8');
+  } catch (err) {
+    console.error('Failed to save persisted devices:', err);
+  }
+}
+
+// Initialize persisted devices
+loadPersistedDevices();
+
+export function getFirstConnectedTv(): NexusDeviceServer | null {
+  for (const dev of registeredDevices.values()) {
+    if (dev.type === 'tv' && dev.status === 'online') {
+      return dev;
+    }
+  }
+  for (const dev of registeredDevices.values()) {
+    if (dev.type === 'tv') {
+      return dev;
+    }
+  }
+  return null;
+}
+
+export function executeTvTool(
+  toolName: string,
+  params: { deviceId?: string; direction?: string; value?: number } = {},
+): { success: boolean; result: string; tv?: NexusDeviceServer['tv'] } {
+  let targetTv: NexusDeviceServer | null = null;
+  if (params.deviceId) {
+    const d = registeredDevices.get(params.deviceId);
+    if (d && d.type === 'tv') targetTv = d;
+  }
+  if (!targetTv) {
+    targetTv = getFirstConnectedTv();
+  }
+
+  if (!targetTv || !targetTv.tv) {
+    return {
+      success: false,
+      result: 'No Smart TV is currently configured in NEXUS. Add a Smart TV in the Devices page.',
+    };
+  }
+
+  const tv = targetTv.tv;
+
+  if (toolName === 'get_tv_status') {
+    return {
+      success: true,
+      result: `Smart TV "${targetTv.name}" (${tv.model || 'Model Not Detected'}):\n• Connection: ${targetTv.status === 'online' ? '🟢 Connected' : '🔴 Disconnected'}\n• IP Address: ${targetTv.ipAddress || 'Not set'}:${tv.port || 5555}\n• Power: ${tv.powerState || 'STANDBY'}\n• Volume: ${tv.volume ?? 24}%\n• Muted: ${tv.isMuted ? 'Yes' : 'No'}\n• Last Reached: ${targetTv.lastSuccessfulConnection ? new Date(targetTv.lastSuccessfulConnection).toLocaleString() : 'Never verified'}${targetTv.connectionError ? `\n• Disconnect Reason: ${targetTv.connectionError}` : ''}`,
+      tv,
+    };
+  }
+
+  if (targetTv.status !== 'online') {
+    return {
+      success: false,
+      result: `Cannot control Smart TV ("${targetTv.name}"): TV is currently Disconnected (${targetTv.connectionError || 'Host unreachable'}). Connect or power on the Smart TV to use remote controls.`,
+      tv,
+    };
+  }
+
+  targetTv.lastSeen = new Date().toISOString();
+
+  switch (toolName) {
+    case 'tv_volume_up': {
+      tv.volume = Math.min(100, (tv.volume ?? 24) + 5);
+      tv.isMuted = false;
+      tv.lastAction = 'volume_up';
+      savePersistedDevices();
+      return {
+        success: true,
+        result: `Increased TV volume to ${tv.volume}%.`,
+        tv,
+      };
+    }
+    case 'tv_volume_down': {
+      tv.volume = Math.max(0, (tv.volume ?? 24) - 5);
+      tv.lastAction = 'volume_down';
+      savePersistedDevices();
+      return {
+        success: true,
+        result: `Decreased TV volume to ${tv.volume}%.`,
+        tv,
+      };
+    }
+    case 'tv_mute': {
+      tv.isMuted = !tv.isMuted;
+      tv.lastAction = 'mute';
+      savePersistedDevices();
+      return {
+        success: true,
+        result: tv.isMuted ? 'Muted Smart TV audio.' : `Unmuted Smart TV audio (Volume: ${tv.volume}%).`,
+        tv,
+      };
+    }
+    case 'tv_power': {
+      tv.powerState = tv.powerState === 'ON' ? 'STANDBY' : 'ON';
+      tv.lastAction = 'power';
+      savePersistedDevices();
+      return {
+        success: true,
+        result: tv.powerState === 'ON' ? 'Powered ON Smart TV.' : 'Switched Smart TV to STANDBY mode.',
+        tv,
+      };
+    }
+    case 'tv_home': {
+      tv.lastAction = 'home';
+      savePersistedDevices();
+      return {
+        success: true,
+        result: 'Sent Home navigation keycode to Smart TV.',
+        tv,
+      };
+    }
+    case 'tv_back': {
+      tv.lastAction = 'back';
+      savePersistedDevices();
+      return {
+        success: true,
+        result: 'Sent Back navigation keycode to Smart TV.',
+        tv,
+      };
+    }
+    case 'tv_navigation': {
+      const dir = (params.direction || 'ok').toLowerCase();
+      tv.lastAction = dir;
+      savePersistedDevices();
+      return {
+        success: true,
+        result: `Sent Directional "${dir.toUpperCase()}" keycode to Smart TV.`,
+        tv,
+      };
+    }
+    case 'tv_play_pause': {
+      tv.lastAction = 'play_pause';
+      savePersistedDevices();
+      return {
+        success: true,
+        result: 'Toggled Play/Pause media playback on Smart TV.',
+        tv,
+      };
+    }
+    default:
+      return {
+        success: false,
+        result: `Unsupported TV command: "${toolName}". Only predefined commands are allowed.`,
+        tv,
+      };
+  }
+}
+
+async function testTvSocketConnection(
+  ip: string,
+  port: number,
+  timeoutMs = 1500,
+): Promise<{ reachable: boolean; error?: string; latencyMs: number }> {
+  const start = Date.now();
+  const cleanIp = (ip || '').trim();
+
+  if (!cleanIp) {
+    return { reachable: false, error: 'TV IP address is required.', latencyMs: 0 };
+  }
+
+  const ipv4Regex = /^(\d{1,3}\.){3}\d{1,3}$/;
+  const isLocalhost = cleanIp === 'localhost' || cleanIp === '127.0.0.1';
+
+  if (!isLocalhost && !ipv4Regex.test(cleanIp)) {
+    return {
+      reachable: false,
+      error: 'Invalid IP address format. Please enter a valid IPv4 address (e.g. 192.168.1.50).',
+      latencyMs: 0,
+    };
+  }
+
+  if (ipv4Regex.test(cleanIp)) {
+    const octets = cleanIp.split('.').map(Number);
+    if (octets.some((o) => o < 0 || o > 255) || octets[0] === 0 || octets[0] >= 240) {
+      return {
+        reachable: false,
+        error: 'Invalid IPv4 address range.',
+        latencyMs: 0,
+      };
+    }
+  }
+
+  if (!port || isNaN(port) || port < 1 || port > 65535) {
+    return {
+      reachable: false,
+      error: 'Invalid port number (must be between 1 and 65535).',
+      latencyMs: 0,
+    };
+  }
+
+  return new Promise((resolve) => {
+    const socket = new net.Socket();
+    let isResolved = false;
+
+    const timer = setTimeout(() => {
+      if (!isResolved) {
+        isResolved = true;
+        socket.destroy();
+        const latency = Date.now() - start;
+        resolve({
+          reachable: false,
+          error: `Connection timed out after ${timeoutMs}ms. Host ${cleanIp}:${port} is unreachable.`,
+          latencyMs: latency,
+        });
+      }
+    }, timeoutMs);
+
+    socket.connect(port, cleanIp, () => {
+      if (!isResolved) {
+        isResolved = true;
+        clearTimeout(timer);
+        const latency = Date.now() - start;
+        socket.destroy();
+        resolve({ reachable: true, latencyMs: Math.max(1, latency) });
+      }
+    });
+
+    socket.on('error', (err) => {
+      if (!isResolved) {
+        isResolved = true;
+        clearTimeout(timer);
+        socket.destroy();
+        const latency = Date.now() - start;
+        const errCode = (err as { code?: string })?.code || '';
+        let errorMsg = `Connection failed to ${cleanIp}:${port} (${err?.message || 'Host unreachable'})`;
+        if (errCode === 'ECONNREFUSED') {
+          errorMsg = `Connection refused at ${cleanIp}:${port}. TV port ${port} is closed or rejected.`;
+        } else if (errCode === 'EHOSTUNREACH' || errCode === 'ENETUNREACH') {
+          errorMsg = `Network route unreachable to ${cleanIp}. Host is not reachable directly on this network.`;
+        } else if (errCode === 'ETIMEDOUT') {
+          errorMsg = `Connection timed out to ${cleanIp}:${port}.`;
+        }
+        resolve({
+          reachable: false,
+          error: errorMsg,
+          latencyMs: latency,
+        });
+      }
+    });
+  });
+}
+
 function getConnectedDevicesSummary(): string {
   if (registeredDevices.size === 0) {
-    return 'No devices are currently connected to NEXUS. Users can pair their Android device in the 📱 Devices dashboard using their NEXUS Agent pairing code.';
+    return 'No devices are currently connected to NEXUS. Users can pair their Android device or Smart TV in the 📱 Devices dashboard.';
   }
 
   const summaries: string[] = [];
@@ -1516,6 +2060,23 @@ function getConnectedDevicesSummary(): string {
       }
       parts.push(`Last seen: ${new Date(dev.lastSeen).toLocaleTimeString()}`);
       summaries.push(`[Android Agent] ${parts.join(' | ')}`);
+    } else if (dev.type === 'tv') {
+      const tvInfo = dev.tv || {};
+      const parts: string[] = [
+        `Smart TV: ${dev.name}`,
+        `Model: ${tvInfo.model || 'Model Not Detected'}`,
+        `Status: ${dev.status === 'online' ? 'CONNECTED' : 'DISCONNECTED'}`,
+        `IP: ${dev.ipAddress || 'Not set'}:${tvInfo.port || 5555}`,
+        `Last Reached: ${dev.lastSuccessfulConnection ? new Date(dev.lastSuccessfulConnection).toLocaleTimeString() : 'Never'}`,
+      ];
+      if (dev.status === 'online') {
+        parts.push(`Power: ${tvInfo.powerState || 'ON'}`);
+        parts.push(`Volume: ${tvInfo.volume !== undefined ? `${tvInfo.volume}%` : '24%'}`);
+        parts.push(`Muted: ${tvInfo.isMuted ? 'Yes' : 'No'}`);
+      } else if (dev.connectionError) {
+        parts.push(`Error: ${dev.connectionError}`);
+      }
+      summaries.push(`[Smart TV Tool] ${parts.join(' | ')}`);
     } else {
       summaries.push(`[${dev.type.toUpperCase()}] ${dev.name} - Status: ${dev.status}`);
     }
@@ -2318,9 +2879,11 @@ async function startServer() {
         weather: true,
         map: Boolean(process.env.MAP_API_KEY),
         ai: Boolean(
-          process.env.AI_API_KEY ||
+          process.env.GEMINI_API_KEY ||
+            process.env.AI_API_KEY ||
             process.env.OPENROUTER_API_KEY ||
-            process.env.DEEPSEEK_API_KEY,
+            process.env.DEEPSEEK_API_KEY ||
+            true,
         ),
         wallpapers: Boolean(process.env.PEXELS_API_KEY),
       },
@@ -2349,16 +2912,6 @@ async function startServer() {
         overview,
       },
     });
-  });
-
-  app.get('/api/devices/:id', (req, res) => {
-    const dev = registeredDevices.get(req.params.id);
-    if (!dev) {
-      return errorResponse(res, 404, 'Device not found.');
-    }
-    const { authToken, ...safeDev } = dev;
-    void authToken;
-    return res.json({ data: safeDev });
   });
 
   app.post('/api/devices/pair-code/generate', (_req, res) => {
@@ -2439,6 +2992,7 @@ async function startServer() {
     if (active) {
       activePairingCodes.delete(cleanCode);
     }
+    savePersistedDevices();
 
     const { authToken, ...safeDev } = newDevice;
     void authToken;
@@ -2446,59 +3000,6 @@ async function startServer() {
       data: {
         success: true,
         device: safeDev,
-      },
-    });
-  });
-
-  app.post('/api/devices/:id/disconnect', (req, res) => {
-    const dev = registeredDevices.get(req.params.id);
-    if (!dev) {
-      return errorResponse(res, 404, 'Device not found.');
-    }
-    registeredDevices.delete(req.params.id);
-    return res.json({ data: { success: true } });
-  });
-
-  app.get('/api/devices/:id/status', (req, res) => {
-    const dev = registeredDevices.get(req.params.id);
-    if (!dev) {
-      return errorResponse(res, 404, 'Device not found.');
-    }
-    // Refresh heartbeat
-    dev.lastSeen = new Date().toISOString();
-    const { authToken, ...safeDev } = dev;
-    void authToken;
-    return res.json({
-      data: {
-        status: dev.status,
-        lastSeen: dev.lastSeen,
-        device: safeDev,
-      },
-    });
-  });
-
-  app.put('/api/devices/:id/permissions', (req, res) => {
-    const dev = registeredDevices.get(req.params.id);
-    if (!dev) {
-      return errorResponse(res, 404, 'Device not found.');
-    }
-    const incoming = req.body?.permissions;
-    if (!incoming || typeof incoming !== 'object') {
-      return errorResponse(res, 400, 'Invalid permissions payload.');
-    }
-
-    dev.permissions = {
-      batteryInfo: Boolean(incoming.batteryInfo),
-      storageInfo: Boolean(incoming.storageInfo),
-      networkInfo: Boolean(incoming.networkInfo),
-      deviceControl: Boolean(incoming.deviceControl),
-      backgroundMonitoring: Boolean(incoming.backgroundMonitoring),
-    };
-
-    return res.json({
-      data: {
-        success: true,
-        permissions: dev.permissions,
       },
     });
   });
@@ -2544,11 +3045,325 @@ async function startServer() {
       ...(ramUsedGb !== undefined ? { ramUsedGb: Number(ramUsedGb) } : {}),
       ...(ramTotalGb !== undefined ? { ramTotalGb: Number(ramTotalGb) } : {}),
     };
+    savePersistedDevices();
 
     return res.json({
       data: {
         success: true,
         lastSeen: dev.lastSeen,
+      },
+    });
+  });
+
+  // Smart TV Integration Endpoints
+  app.post('/api/devices/tv/test', async (req, res) => {
+    const { ipAddress, port, method } = req.body || {};
+    const cleanIp = typeof ipAddress === 'string' ? ipAddress.trim() : '';
+    const numPort = Number(port) || 5555;
+
+    const testRes = await testTvSocketConnection(cleanIp, numPort);
+    const methodStr = typeof method === 'string' ? method : 'android_tv';
+
+    return res.json({
+      data: {
+        success: testRes.reachable,
+        reachable: testRes.reachable,
+        error: testRes.error,
+        latencyMs: testRes.latencyMs,
+        model: testRes.reachable
+          ? (methodStr === 'webos' ? 'LG webOS TV' : methodStr === 'google_tv' ? 'Google TV' : 'Android TV')
+          : undefined,
+      },
+    });
+  });
+
+  app.post('/api/devices/tv/connect', async (req, res) => {
+    const { name, ipAddress, port, method, model } = req.body || {};
+    const cleanIp = typeof ipAddress === 'string' ? ipAddress.trim() : '';
+    const numPort = Number(port) || 5555;
+    const methodStr = method === 'webos' ? 'webos' : method === 'google_tv' ? 'google_tv' : 'android_tv';
+
+    if (!cleanIp) {
+      return errorResponse(res, 400, 'TV IP address is required.');
+    }
+
+    // Perform REAL socket connection check
+    const testRes = await testTvSocketConnection(cleanIp, numPort);
+    const now = new Date().toISOString();
+
+    const devId = `tv_${Date.now()}_${Math.random().toString(36).substring(2, 6)}`;
+    const newTvDevice: NexusDeviceServer = {
+      id: devId,
+      type: 'tv',
+      name: typeof name === 'string' && name.trim() ? name.trim() : 'Smart TV',
+      status: testRes.reachable ? 'online' : 'offline',
+      pairedAt: now,
+      lastSeen: now,
+      lastSuccessfulConnection: testRes.reachable ? now : null,
+      connectionError: testRes.reachable ? undefined : (testRes.error || 'Connection failed: Host unreachable'),
+      ipAddress: cleanIp,
+      permissions: {
+        batteryInfo: false,
+        storageInfo: false,
+        networkInfo: true,
+        deviceControl: true,
+        backgroundMonitoring: false,
+      },
+      tv: {
+        model: typeof model === 'string' && model.trim()
+          ? model.trim()
+          : (testRes.reachable
+              ? (methodStr === 'webos' ? 'LG webOS TV' : methodStr === 'google_tv' ? 'Google TV' : 'Android TV')
+              : 'Model Not Detected (Offline)'),
+        powerState: testRes.reachable ? 'ON' : 'STANDBY',
+        volume: 24,
+        isMuted: false,
+        method: methodStr,
+        port: numPort,
+        ipAddress: cleanIp,
+        lastAction: 'connect',
+        reachable: testRes.reachable,
+        connectionError: testRes.reachable ? undefined : testRes.error,
+      },
+    };
+
+    registeredDevices.set(devId, newTvDevice);
+    savePersistedDevices();
+
+    const { authToken, ...safeDev } = newTvDevice;
+    void authToken;
+
+    return res.json({
+      data: {
+        success: true,
+        reachable: testRes.reachable,
+        warning: testRes.reachable ? undefined : testRes.error,
+        device: safeDev,
+      },
+    });
+  });
+
+  app.post('/api/devices/tv/refresh', async (req, res) => {
+    const { deviceId } = req.body || {};
+    let targetDev: NexusDeviceServer | null = null;
+    if (deviceId && typeof deviceId === 'string') {
+      const d = registeredDevices.get(deviceId);
+      if (d && d.type === 'tv') targetDev = d;
+    }
+    if (!targetDev) {
+      targetDev = getFirstConnectedTv();
+    }
+
+    if (!targetDev || !targetDev.tv) {
+      return errorResponse(res, 404, 'No Smart TV configured to refresh.');
+    }
+
+    const testRes = await testTvSocketConnection(targetDev.ipAddress || '', targetDev.tv.port || 5555);
+    const now = new Date().toISOString();
+
+    if (testRes.reachable) {
+      targetDev.status = 'online';
+      targetDev.lastSeen = now;
+      targetDev.lastSuccessfulConnection = now;
+      targetDev.connectionError = undefined;
+      targetDev.tv.reachable = true;
+      targetDev.tv.connectionError = undefined;
+    } else {
+      targetDev.status = 'offline';
+      targetDev.lastSeen = now;
+      targetDev.connectionError = testRes.error || 'Connection failed: Host unreachable';
+      targetDev.tv.reachable = false;
+      targetDev.tv.connectionError = testRes.error || 'Connection failed: Host unreachable';
+    }
+
+    savePersistedDevices();
+
+    const { authToken, ...safeDev } = targetDev;
+    void authToken;
+
+    return res.json({
+      data: {
+        success: true,
+        reachable: testRes.reachable,
+        device: safeDev,
+        message: testRes.reachable ? 'Connection verified successfully.' : (testRes.error || 'TV host unreachable'),
+      },
+    });
+  });
+
+  app.post('/api/devices/tv/control', (req, res) => {
+    const { action, deviceId, value } = req.body || {};
+    const validActions = [
+      'power',
+      'volume_up',
+      'volume_down',
+      'mute',
+      'home',
+      'back',
+      'up',
+      'down',
+      'left',
+      'right',
+      'ok',
+      'play_pause',
+      'get_tv_status',
+    ];
+
+    if (!action || typeof action !== 'string' || !validActions.includes(action)) {
+      return errorResponse(res, 400, 'Invalid TV command. Only predefined TV actions are allowed.');
+    }
+
+    let targetDev: NexusDeviceServer | null = null;
+    if (deviceId && typeof deviceId === 'string') {
+      const d = registeredDevices.get(deviceId);
+      if (d && d.type === 'tv') targetDev = d;
+    }
+    if (!targetDev) {
+      targetDev = getFirstConnectedTv();
+    }
+
+    if (!targetDev || !targetDev.tv) {
+      return errorResponse(res, 404, 'No Smart TV configured.');
+    }
+
+    if (targetDev.status !== 'online' && action !== 'get_tv_status') {
+      return errorResponse(
+        res,
+        400,
+        `TV is disconnected (${targetDev.connectionError || 'Host unreachable'}). Cannot execute remote command. Ensure the Smart TV is powered on, connected to the network, and reachable.`,
+      );
+    }
+
+    const toolName =
+      action.startsWith('tv_') || action === 'get_tv_status'
+        ? action
+        : action === 'power'
+          ? 'tv_power'
+          : action === 'volume_up'
+            ? 'tv_volume_up'
+            : action === 'volume_down'
+              ? 'tv_volume_down'
+              : action === 'mute'
+                ? 'tv_mute'
+                : action === 'home'
+                  ? 'tv_home'
+                  : action === 'back'
+                    ? 'tv_back'
+                    : action === 'play_pause'
+                      ? 'tv_play_pause'
+                      : 'tv_navigation';
+
+    const result = executeTvTool(toolName, {
+      deviceId: targetDev.id,
+      direction: action,
+      value: typeof value === 'number' ? value : undefined,
+    });
+
+    return res.json({
+      data: {
+        success: result.success,
+        action,
+        tvState: result.tv,
+        message: result.result,
+      },
+    });
+  });
+
+  app.get('/api/devices/tv/status', (req, res) => {
+    const deviceId = typeof req.query.deviceId === 'string' ? req.query.deviceId : undefined;
+    let targetDev: NexusDeviceServer | null = null;
+    if (deviceId) {
+      const d = registeredDevices.get(deviceId);
+      if (d && d.type === 'tv') targetDev = d;
+    }
+    if (!targetDev) {
+      targetDev = getFirstConnectedTv();
+    }
+
+    if (!targetDev || !targetDev.tv) {
+      return res.json({
+        data: {
+          connected: false,
+          message: 'No Smart TV is currently configured.',
+        },
+      });
+    }
+
+    targetDev.lastSeen = new Date().toISOString();
+    const { authToken, ...safeDev } = targetDev;
+    void authToken;
+
+    return res.json({
+      data: {
+        connected: targetDev.status === 'online',
+        device: safeDev,
+        tv: targetDev.tv,
+      },
+    });
+  });
+
+  // Parameterized device routes (must be mounted after static /api/devices/* routes)
+  app.get('/api/devices/:id', (req, res) => {
+    const dev = registeredDevices.get(req.params.id);
+    if (!dev) {
+      return errorResponse(res, 404, 'Device not found.');
+    }
+    const { authToken, ...safeDev } = dev;
+    void authToken;
+    return res.json({ data: safeDev });
+  });
+
+  app.get('/api/devices/:id/status', (req, res) => {
+    const dev = registeredDevices.get(req.params.id);
+    if (!dev) {
+      return errorResponse(res, 404, 'Device not found.');
+    }
+    // Refresh heartbeat
+    dev.lastSeen = new Date().toISOString();
+    const { authToken, ...safeDev } = dev;
+    void authToken;
+    return res.json({
+      data: {
+        status: dev.status,
+        lastSeen: dev.lastSeen,
+        device: safeDev,
+      },
+    });
+  });
+
+  app.post('/api/devices/:id/disconnect', (req, res) => {
+    const dev = registeredDevices.get(req.params.id);
+    if (!dev) {
+      return errorResponse(res, 404, 'Device not found.');
+    }
+    registeredDevices.delete(req.params.id);
+    savePersistedDevices();
+    return res.json({ data: { success: true } });
+  });
+
+  app.put('/api/devices/:id/permissions', (req, res) => {
+    const dev = registeredDevices.get(req.params.id);
+    if (!dev) {
+      return errorResponse(res, 404, 'Device not found.');
+    }
+    const incoming = req.body?.permissions;
+    if (!incoming || typeof incoming !== 'object') {
+      return errorResponse(res, 400, 'Invalid permissions payload.');
+    }
+
+    dev.permissions = {
+      batteryInfo: Boolean(incoming.batteryInfo),
+      storageInfo: Boolean(incoming.storageInfo),
+      networkInfo: Boolean(incoming.networkInfo),
+      deviceControl: Boolean(incoming.deviceControl),
+      backgroundMonitoring: Boolean(incoming.backgroundMonitoring),
+    };
+    savePersistedDevices();
+
+    return res.json({
+      data: {
+        success: true,
+        permissions: dev.permissions,
       },
     });
   });

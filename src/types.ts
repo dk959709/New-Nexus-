@@ -256,12 +256,34 @@ export interface AndroidDeviceInfo {
   ramTotalGb?: number;
 }
 
+export type TVConnectionMethod = 'android_tv' | 'google_tv' | 'webos';
+
 export interface SmartTVInfo {
   model?: string;
   powerState?: 'ON' | 'STANDBY' | 'OFF';
   volume?: number;
   isMuted?: boolean;
+  method?: TVConnectionMethod;
+  port?: number;
+  ipAddress?: string;
+  lastAction?: string;
+  connectionError?: string;
+  reachable?: boolean;
 }
+
+export type TVControlAction =
+  | 'power'
+  | 'volume_up'
+  | 'volume_down'
+  | 'mute'
+  | 'home'
+  | 'back'
+  | 'up'
+  | 'down'
+  | 'left'
+  | 'right'
+  | 'ok'
+  | 'play_pause';
 
 export interface NexusDevice {
   id: string;
@@ -269,7 +291,9 @@ export interface NexusDevice {
   name: string;
   status: DeviceStatus;
   pairedAt: string;
-  lastSeen: string;
+  lastSeen?: string;
+  lastSuccessfulConnection?: string | null;
+  connectionError?: string;
   ipAddress?: string;
   permissions: DevicePermissions;
   android?: AndroidDeviceInfo;

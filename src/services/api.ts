@@ -16,6 +16,8 @@ import type {
   DevicePermissions,
   DeviceStatus,
   AndroidDeviceInfo,
+  SmartTVInfo,
+  TVControlAction,
 } from '@/types';
 import { storage } from '@/lib/storage';
 import { searchWikipedia, getWikipediaSummary, wikipediaToSearchResult } from './wikipedia';
@@ -51,15 +53,22 @@ async function call<T>(path: string, init?: RequestInit): Promise<T> {
       ...init,
     });
     console.log(`[API] Response status: ${res.status} for ${url}`);
-    const body = await res.json().catch(() => ({}));
+    const body = (await res.json().catch(() => ({}))) as Record<string, unknown>;
     if (!res.ok) {
       console.warn(`[API] Error response:`, body);
-      throw new Error(
-        (body as { error?: string }).error ?? 'Request failed. Please try again.',
-      );
+      let errorMsg = 'Request failed. Please try again.';
+      if (typeof body.error === 'string') {
+        errorMsg = body.error;
+      } else if (typeof body.error === 'object' && body.error !== null) {
+        const nestedErr = body.error as { message?: string };
+        errorMsg = nestedErr.message || JSON.stringify(body.error);
+      } else if (typeof body.message === 'string') {
+        errorMsg = body.message;
+      }
+      throw new Error(errorMsg);
     }
     console.log(`[API] Success response for ${url}:`, body);
-    return (body as { data?: T }).data ?? (body as T);
+    return ((body as { data?: T }).data ?? (body as unknown as T)) as T;
   } catch (err) {
     console.error(`[API] Request failed for ${url}:`, err);
     throw err;
@@ -359,5 +368,66 @@ export const api = {
       method: 'POST',
       body: JSON.stringify(payload),
     });
+  },
+
+  // Smart TV Integration API
+  testTVConnection(
+    ipAddress: string,
+    port: number,
+    method: string,
+  ): Promise<{ success: boolean; reachable: boolean; error?: string; latencyMs?: number; model?: string }> {
+    return call<{ success: boolean; reachable: boolean; error?: string; latencyMs?: number; model?: string }>(
+      '/api/devices/tv/test',
+      {
+        method: 'POST',
+        body: JSON.stringify({ ipAddress, port, method }),
+      },
+    );
+  },
+
+  connectTV(data: {
+    name?: string;
+    ipAddress: string;
+    port: number;
+    method: string;
+    model?: string;
+  }): Promise<{ success: boolean; device: NexusDevice }> {
+    return call<{ success: boolean; device: NexusDevice }>('/api/devices/tv/connect', {
+      method: 'POST',
+      body: JSON.stringify(data),
+    });
+  },
+
+  controlTV(
+    action: TVControlAction,
+    deviceId?: string,
+    value?: unknown,
+  ): Promise<{ success: boolean; action: TVControlAction; tvState: SmartTVInfo; message?: string }> {
+    return call<{ success: boolean; action: TVControlAction; tvState: SmartTVInfo; message?: string }>(
+      '/api/devices/tv/control',
+      {
+        method: 'POST',
+        body: JSON.stringify({ action, deviceId, value }),
+      },
+    );
+  },
+
+  refreshTV(deviceId?: string): Promise<{ success: boolean; reachable: boolean; device: NexusDevice; message?: string }> {
+    return call<{ success: boolean; reachable: boolean; device: NexusDevice; message?: string }>(
+      '/api/devices/tv/refresh',
+      {
+        method: 'POST',
+        body: JSON.stringify({ deviceId }),
+      },
+    );
+  },
+
+  getTVStatus(
+    deviceId?: string,
+  ): Promise<{ connected: boolean; device?: NexusDevice; tv?: SmartTVInfo; message?: string }> {
+    const query = deviceId ? `?deviceId=${encodeURIComponent(deviceId)}` : '';
+    return call<{ connected: boolean; device?: NexusDevice; tv?: SmartTVInfo; message?: string }>(
+      `/api/devices/tv/status${query}`,
+    );
   },
 };

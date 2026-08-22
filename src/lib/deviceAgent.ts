@@ -27,22 +27,6 @@ async function reportOnce() {
       networkType = 'Offline';
     }
 
-    // Real storage usage/quota, in GB
-    let storageUsedGb: number | undefined;
-    let storageTotalGb: number | undefined;
-    try {
-      if (navigator.storage && navigator.storage.estimate) {
-        const est = await navigator.storage.estimate();
-        if (est.usage !== undefined) storageUsedGb = Math.round((est.usage / 1e9) * 10) / 10;
-        if (est.quota !== undefined) storageTotalGb = Math.round((est.quota / 1e9) * 10) / 10;
-      }
-    } catch {
-      // storage estimate not supported, skip
-    }
-
-    // Approximate total device RAM (Chrome-only, no "used" value available for privacy reasons)
-    const ramTotalGb = (navigator as unknown as { deviceMemory?: number }).deviceMemory;
-
     await api.reportAgentTelemetry({
       deviceId,
       model: info.model,
@@ -50,9 +34,6 @@ async function reportOnce() {
       batteryLevel: battery.batteryLevel !== undefined ? Math.round(battery.batteryLevel * 100) : undefined,
       isCharging: battery.isCharging,
       networkType,
-      storageUsedGb,
-      storageTotalGb,
-      ramTotalGb,
       status: 'online',
     });
   } catch (err) {
