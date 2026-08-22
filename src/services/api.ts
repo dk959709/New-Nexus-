@@ -353,4 +353,11 @@ export const api = {
       },
     );
   },
+
+  reportAgentTelemetry(payload: Record<string, unknown>): Promise<{ success: boolean }> {
+    return call<{ success: boolean }>('/api/devices/agent/report', {
+      method: 'POST',
+      body: JSON.stringify(payload),
+    });
+  },
 };

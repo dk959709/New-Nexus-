@@ -16,6 +16,7 @@
     "@capacitor/app": "^7.1.0",
     "@capacitor/browser": "^7.0.2",
     "@capacitor/core": "^7.4.3",
+    "@capacitor/device": "^7.0.5",
     "@capacitor/geolocation": "^7.1.5",
     "@capacitor/haptics": "^7.0.2",
     "@capacitor/network": "^7.0.2",

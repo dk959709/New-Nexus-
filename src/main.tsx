@@ -2,6 +2,7 @@ import { StrictMode } from 'react';
 import { createRoot } from 'react-dom/client';
 import App from './App.tsx';
 import './index.css';
+import { startDeviceAgent } from './lib/deviceAgent';
 
 if ('serviceWorker' in navigator) {
   window.addEventListener('load', () => {
@@ -21,6 +22,7 @@ function getInitialWallpaper(): string | null {
 }
 
 const initialWallpaper = getInitialWallpaper();
+startDeviceAgent();
 
 createRoot(document.getElementById('root')!).render(
   <StrictMode>
