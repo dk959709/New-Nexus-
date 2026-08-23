@@ -27,6 +27,7 @@ import java.security.PrivateKey;
 import java.security.PublicKey;
 import java.security.SecureRandom;
 import java.security.Signature;
+import javax.crypto.Cipher;
 import java.security.cert.Certificate;
 import java.security.cert.CertificateFactory;
 import java.security.cert.X509Certificate;
@@ -652,10 +653,10 @@ public class AndroidTvRemotePlugin extends Plugin {
     }
 
     private byte[] signAdbToken(PrivateKey privKey, byte[] token) throws Exception {
-        Signature sig = Signature.getInstance("SHA1withRSA");
-        sig.initSign(privKey);
-        sig.update(token);
-        return sig.sign();
+        // ADB auth needs raw PKCS1v1.5 RSA sign of the token - no SHA1 hash, no DigestInfo wrapper
+        Cipher cipher = Cipher.getInstance("RSA/ECB/PKCS1Padding");
+        cipher.init(Cipher.ENCRYPT_MODE, privKey);
+        return cipher.doFinal(token);
     }
 
     private byte[] getAdbPublicKeyPayload(PublicKey pubKey) throws Exception {
