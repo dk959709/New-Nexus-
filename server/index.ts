@@ -4640,6 +4640,7 @@ async function startServer() {
       }
       return res.json({ data: await weatherProvider(latitude, longitude, location) });
     } catch (error) {
+      console.error('[Weather] Failed:', error);
       return errorResponse(
         res,
         502,
