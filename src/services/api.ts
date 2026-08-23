@@ -45,7 +45,7 @@ function getBaseUrl(): string {
   return envUrl.replace(/\/+$/, '');
 }
 
-const BASE = getBaseUrl();
+export const BASE = getBaseUrl();
 
 async function call<T>(path: string, init?: RequestInit): Promise<T> {
   const url = BASE + path;

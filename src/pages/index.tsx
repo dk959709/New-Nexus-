@@ -25,7 +25,7 @@ import { SearchBox, WeatherCard, HourlyForecast, DailyForecast, ErrorMessage, Lo
 import { WallpaperSelector } from '@/components/WallpaperSelector';
 import { SpaceStarfield } from '@/components/SpaceStarfield';
 import { AIProvidersSettings } from '@/components/AIProvidersSettings';
-import { api } from '@/services/api';
+import { api, BASE } from '@/services/api';
 import { getLocation } from '@/services/location';
 import { storage } from '@/lib/storage';
 import { useSettings } from '@/hooks/useSettings';
@@ -552,9 +552,9 @@ export function SpacePage() {
   const [error, setError] = useState('');
   const [loading, setLoading] = useState(true);
   useEffect(() => {
-    fetch('/api/space/moon').then((res) => res.json()).then((json) => setMoon(json.data)).catch(() => {});
-    fetch('/api/space/iss').then((res) => res.json()).then((json) => setIss(json.data)).catch(() => {});
-    fetch('/api/nasa/apod').then(async (res) => {
+    fetch(BASE + '/api/space/moon').then((res) => res.json()).then((json) => setMoon(json.data)).catch(() => {});
+    fetch(BASE + '/api/space/iss').then((res) => res.json()).then((json) => setIss(json.data)).catch(() => {});
+    fetch(BASE + '/api/nasa/apod').then(async (res) => {
       const body = await res.json();
       if (!res.ok) throw new Error(body.error || 'NASA data is temporarily unavailable.');
       setApod(body.data);
