@@ -322,6 +322,7 @@ public class AndroidTvRemotePlugin extends Plugin {
         }
 
         int keyCode = (keyCodeVal != null && keyCodeVal > 0) ? keyCodeVal : mapActionToKeyCode(action);
+        final String finalTargetIp = targetIp;
 
         new Thread(() -> {
             try {
@@ -339,8 +340,8 @@ public class AndroidTvRemotePlugin extends Plugin {
                 }
 
                 // 2. If socket not connected, try re-connecting to 6466
-                if (targetIp != null && !targetIp.isEmpty()) {
-                    boolean reconnected = connectControlSocketInternal(targetIp, connectedTvPort > 0 ? connectedTvPort : 6466);
+                if (finalTargetIp != null && !finalTargetIp.isEmpty()) {
+                    boolean reconnected = connectControlSocketInternal(finalTargetIp, connectedTvPort > 0 ? connectedTvPort : 6466);
                     if (reconnected && isRemoteSocketAlive()) {
                         boolean sent = sendRemoteKeyInject(keyCode);
                         if (sent) {
@@ -355,8 +356,8 @@ public class AndroidTvRemotePlugin extends Plugin {
                 }
 
                 // 3. Fallback to ADB Socket on 5555 if configured
-                if (targetIp != null && !targetIp.isEmpty()) {
-                    boolean adbSent = sendAdbKey(targetIp, 5555, keyCode);
+                if (finalTargetIp != null && !finalTargetIp.isEmpty()) {
+                    boolean adbSent = sendAdbKey(finalTargetIp, 5555, keyCode);
                     if (adbSent) {
                         JSObject res = new JSObject();
                         res.put("success", true);
