@@ -41,6 +41,13 @@ import {
 import { api } from '@/services/api';
 import { useSettings } from '@/hooks/useSettings';
 import { playTapSound } from '@/lib/audio';
+import {
+  isNativeAndroid,
+  testTvConnectionNative,
+  sendTvCommandNative,
+  scanLocalSubnetNative,
+  getNativeNetworkInfo,
+} from '@/lib/nativeTvManager';
 import type {
   NexusDevice,
   DevicePermissions,
@@ -126,19 +133,8 @@ export function DevicesPage() {
 
   const fetchNetworkInfo = useCallback(async () => {
     try {
-      // Check native Capacitor plugin first if running inside Android APK
-      const capWindow = window as unknown as {
-        Capacitor?: {
-          Plugins?: {
-            NetworkScannerPlugin?: {
-              getNetworkInfo: () => Promise<NetworkInfo>;
-            };
-          };
-        };
-      };
-
-      if (capWindow.Capacitor?.Plugins?.NetworkScannerPlugin?.getNetworkInfo) {
-        const nativeInfo = await capWindow.Capacitor.Plugins.NetworkScannerPlugin.getNetworkInfo();
+      if (isNativeAndroid()) {
+        const nativeInfo = await getNativeNetworkInfo();
         if (nativeInfo) {
           setNetworkInfo(nativeInfo);
           return;
@@ -169,7 +165,51 @@ export function DevicesPage() {
     setError(null);
     try {
       const res = await api.getDevices();
-      setDevices(res.devices || []);
+      let fetchedDevices = res.devices || [];
+
+      // If running on Android phone, directly probe registered TV over local Wi-Fi
+      if (isNativeAndroid()) {
+        const tvDevice = fetchedDevices.find((d) => d.type === 'tv');
+        if (tvDevice && tvDevice.ipAddress) {
+          try {
+            const probe = await testTvConnectionNative(tvDevice.ipAddress, tvDevice.tv?.port || 5555);
+            if (probe.reachable) {
+              fetchedDevices = fetchedDevices.map((d) =>
+                d.id === tvDevice.id
+                  ? {
+                      ...d,
+                      status: 'online' as DeviceStatus,
+                      lastSuccessfulConnection: new Date().toISOString(),
+                      connectionError: undefined,
+                      tv: {
+                        ...d.tv,
+                        reachable: true,
+                      },
+                    }
+                  : d,
+              );
+            } else {
+              fetchedDevices = fetchedDevices.map((d) =>
+                d.id === tvDevice.id
+                  ? {
+                      ...d,
+                      status: 'offline' as DeviceStatus,
+                      connectionError: probe.error || 'Host unreachable on local Wi-Fi',
+                      tv: {
+                        ...d.tv,
+                        reachable: false,
+                      },
+                    }
+                  : d,
+              );
+            }
+          } catch {
+            // Keep fetched state
+          }
+        }
+      }
+
+      setDevices(fetchedDevices);
       setOverview(res.overview || { online: 0, warning: 0, offline: 0, total: 0 });
     } catch (err: unknown) {
       const msg = err instanceof Error ? err.message : 'Failed to fetch connected devices.';
@@ -196,63 +236,46 @@ export function DevicesPage() {
     if (settings.sound !== false) playTapSound();
     setIsScanning(true);
     setScanProgressText('Scanning local network...');
-    setScanProgressPercent(15);
+    setScanProgressPercent(10);
     setScanError(null);
 
-    const progressTimer = setInterval(() => {
-      setScanProgressPercent((prev) => {
-        if (prev < 90) return prev + Math.floor(Math.random() * 15 + 5);
-        return prev;
-      });
-    }, 400);
-
     try {
-      const capWindow = window as unknown as {
-        Capacitor?: {
-          Plugins?: {
-            NetworkScannerPlugin?: {
-              scanNetwork: (options?: { subnet?: string }) => Promise<{
-                devices: DiscoveredNetworkDevice[];
-                count: number;
-                scannedSubnet?: string;
-                durationMs?: number;
-                networkInfo?: NetworkInfo;
-              }>;
-            };
-          };
-        };
-      };
-
       const overrideSubnet = customSubnetInput.trim() || undefined;
 
-      // If running inside Android APK with native NetworkScannerPlugin
-      if (capWindow.Capacitor?.Plugins?.NetworkScannerPlugin?.scanNetwork) {
-        setScanProgressText('Probing Wi-Fi subnet with Android native socket engine...');
-        const nativeResult = await capWindow.Capacitor.Plugins.NetworkScannerPlugin.scanNetwork({
-          subnet: overrideSubnet,
+      if (isNativeAndroid()) {
+        setScanProgressText('Probing local Wi-Fi subnet directly from phone...');
+        const currentTv = devices.find((d) => d.type === 'tv');
+        const knownIp = tvIpInput.trim() || currentTv?.ipAddress;
+
+        const scanRes = await scanLocalSubnetNative({
+          subnetPrefix: overrideSubnet,
+          knownIp,
+          onProgress: (pct, statusText, foundDevices) => {
+            setScanProgressPercent(pct);
+            setScanProgressText(statusText);
+            setDiscoveredDevices([...foundDevices]);
+          },
         });
 
-        if (nativeResult) {
-          setDiscoveredDevices(nativeResult.devices || []);
-          setScannedSubnetDisplay(nativeResult.scannedSubnet || null);
-          setScanDurationMs(nativeResult.durationMs || 1200);
-          if (nativeResult.networkInfo) {
-            setNetworkInfo(nativeResult.networkInfo);
-          }
+        setDiscoveredDevices(scanRes.devices);
+        setScannedSubnetDisplay(scanRes.scannedSubnet || null);
+        setScanDurationMs(scanRes.durationMs || null);
+        if (scanRes.networkInfo) {
+          setNetworkInfo(scanRes.networkInfo);
+        }
 
-          // Report scan results to NEXUS server so they are visible across the system
-          try {
-            await api.reportScanResults({
-              devices: nativeResult.devices || [],
-              scannedSubnet: nativeResult.scannedSubnet,
-            });
-          } catch {
-            // Ignore background sync errors
-          }
+        // Report scan results to NEXUS server so they are visible across the system
+        try {
+          await api.reportScanResults({
+            devices: scanRes.devices,
+            scannedSubnet: scanRes.scannedSubnet,
+          });
+        } catch {
+          // Ignore background sync errors
         }
       } else {
-        // Run real server-side scan & socket probing
-        setScanProgressText('Probing local subnet hosts and services...');
+        // Run server-side scan & socket probing (for cloud/browser environment)
+        setScanProgressText('Probing subnet hosts and services...');
         const res = await api.scanNetwork({
           subnet: overrideSubnet,
           localIp: networkInfo?.localIp || undefined,
@@ -273,7 +296,6 @@ export function DevicesPage() {
       const msg = err instanceof Error ? err.message : 'Network scan encountered an error.';
       setScanError(msg);
     } finally {
-      clearInterval(progressTimer);
       setTimeout(() => {
         setIsScanning(false);
         setScanProgressPercent(0);
@@ -286,27 +308,8 @@ export function DevicesPage() {
     setPingLoadingMap((prev) => ({ ...prev, [ip]: true }));
 
     try {
-      const capWindow = window as unknown as {
-        Capacitor?: {
-          Plugins?: {
-            NetworkScannerPlugin?: {
-              pingDevice: (options: { ip: string; port?: number }) => Promise<{
-                ip: string;
-                port: number;
-                reachable: boolean;
-                latencyMs: number;
-                error?: string;
-              }>;
-            };
-          };
-        };
-      };
-
-      if (capWindow.Capacitor?.Plugins?.NetworkScannerPlugin?.pingDevice) {
-        const pingRes = await capWindow.Capacitor.Plugins.NetworkScannerPlugin.pingDevice({
-          ip,
-          port: port || 80,
-        });
+      if (isNativeAndroid()) {
+        const pingRes = await testTvConnectionNative(ip, port || 80);
         setPingResultMap((prev) => ({
           ...prev,
           [ip]: {
@@ -430,14 +433,29 @@ export function DevicesPage() {
     setTvTesting(true);
     setTvTestStatus('testing');
     setTvTestError(null);
+
+    const ip = tvIpInput.trim();
+    const port = Number(tvPortInput) || 5555;
+
     try {
-      const res = await api.testTVConnection(tvIpInput.trim(), Number(tvPortInput) || 5555, tvMethodInput);
-      if (res.reachable) {
-        setTvTestStatus('connected');
-        setTvTestLatency(res.latencyMs || 12);
+      if (isNativeAndroid()) {
+        const res = await testTvConnectionNative(ip, port, tvMethodInput);
+        if (res.reachable) {
+          setTvTestStatus('connected');
+          setTvTestLatency(res.latencyMs || 12);
+        } else {
+          setTvTestStatus('failed');
+          setTvTestError(res.error || `Could not connect to ${ip}:${port} on local Wi-Fi.`);
+        }
       } else {
-        setTvTestStatus('failed');
-        setTvTestError(res.error || 'Connection failed: Host unreachable');
+        const res = await api.testTVConnection(ip, port, tvMethodInput);
+        if (res.reachable) {
+          setTvTestStatus('connected');
+          setTvTestLatency(res.latencyMs || 12);
+        } else {
+          setTvTestStatus('failed');
+          setTvTestError(res.error || 'Connection failed: Host unreachable from cloud backend. Note: Direct Wi-Fi connection requires the Android APK.');
+        }
       }
     } catch (err: unknown) {
       setTvTestStatus('failed');
@@ -451,7 +469,10 @@ export function DevicesPage() {
   const handleConnectTv = async (e: React.FormEvent) => {
     e.preventDefault();
     if (settings.sound !== false) playTapSound();
-    if (!tvIpInput.trim()) {
+    const ip = tvIpInput.trim();
+    const port = Number(tvPortInput) || 5555;
+
+    if (!ip) {
       setTvTestStatus('failed');
       setTvTestError('Please enter a TV IP address.');
       return;
@@ -462,14 +483,52 @@ export function DevicesPage() {
     setTvTestError(null);
 
     try {
+      let isReachableLocally = false;
+      let latencyMs = 15;
+
+      if (isNativeAndroid()) {
+        const nativeProbe = await testTvConnectionNative(ip, port, tvMethodInput);
+        if (!nativeProbe.reachable) {
+          setTvTestStatus('failed');
+          setTvTestError(
+            nativeProbe.error ||
+              `Could not establish direct TCP connection to TV at ${ip}:${port}. Ensure TV is turned on and connected to the same Wi-Fi network.`,
+          );
+          setIsTvConnecting(false);
+          return;
+        }
+        isReachableLocally = true;
+        latencyMs = nativeProbe.latencyMs || 15;
+      }
+
       const res = await api.connectTV({
         name: tvNameInput.trim() || undefined,
-        ipAddress: tvIpInput.trim(),
-        port: Number(tvPortInput) || 5555,
+        ipAddress: ip,
+        port,
         method: tvMethodInput,
       });
-      if (res.success) {
+
+      if (res.success || isReachableLocally) {
         setTvTestStatus('connected');
+        setTvTestLatency(latencyMs);
+
+        if (isReachableLocally && res.device) {
+          const verifiedDevice: NexusDevice = {
+            ...res.device,
+            status: 'online',
+            lastSuccessfulConnection: new Date().toISOString(),
+            connectionError: undefined,
+            tv: {
+              ...res.device.tv,
+              reachable: true,
+            },
+          };
+          setDevices((prev) => {
+            const filtered = prev.filter((d) => d.type !== 'tv');
+            return [...filtered, verifiedDevice];
+          });
+        }
+
         setTimeout(() => {
           setTvModalOpen(false);
           setAddModalOpen(false);
@@ -490,8 +549,10 @@ export function DevicesPage() {
     const currentTv = devices.find((d) => d.type === 'tv');
     if (!currentTv) return;
 
-    if (currentTv.status !== 'online') {
-      setError(`Cannot send "${action}" command: TV is Disconnected (${currentTv.connectionError || 'Host unreachable'}). Ensure the TV is powered on, connected to the local network, and reachable.`);
+    if (currentTv.status !== 'online' && !isNativeAndroid()) {
+      setError(
+        `Cannot send "${action}" command: TV is Disconnected (${currentTv.connectionError || 'Host unreachable'}). Ensure the TV is powered on, connected to the local network, and reachable.`,
+      );
       return;
     }
 
@@ -499,22 +560,60 @@ export function DevicesPage() {
     setTvActionLoading(true);
 
     try {
-      const res = await api.controlTV(action, currentTv.id, value);
-      if (res.success && res.tvState) {
-        setDevices((prev) =>
-          prev.map((d) =>
-            d.id === currentTv.id
-              ? {
-                  ...d,
-                  lastSeen: new Date().toISOString(),
-                  tv: {
-                    ...d.tv,
-                    ...res.tvState,
-                  },
-                }
-              : d,
-          ),
+      if (isNativeAndroid()) {
+        const nativeRes = await sendTvCommandNative(
+          action,
+          currentTv.ipAddress,
+          currentTv.tv?.port || 5555,
+          currentTv.tv,
         );
+
+        if (nativeRes.success) {
+          setDevices((prev) =>
+            prev.map((d) =>
+              d.id === currentTv.id
+                ? {
+                    ...d,
+                    status: 'online' as DeviceStatus,
+                    lastSeen: new Date().toISOString(),
+                    lastSuccessfulConnection: new Date().toISOString(),
+                    tv: {
+                      ...d.tv,
+                      ...nativeRes.tvState,
+                      reachable: true,
+                    },
+                  }
+                : d,
+            ),
+          );
+
+          // Best-effort report to backend for activity logging
+          try {
+            await api.controlTV(action, currentTv.id, value);
+          } catch {
+            // Background sync ignore
+          }
+        } else {
+          setError(nativeRes.error || `Failed to send "${action}" command to TV over TCP.`);
+        }
+      } else {
+        const res = await api.controlTV(action, currentTv.id, value);
+        if (res.success && res.tvState) {
+          setDevices((prev) =>
+            prev.map((d) =>
+              d.id === currentTv.id
+                ? {
+                    ...d,
+                    lastSeen: new Date().toISOString(),
+                    tv: {
+                      ...d.tv,
+                      ...res.tvState,
+                    },
+                  }
+                : d,
+            ),
+          );
+        }
       }
     } catch (err: unknown) {
       const msg = err instanceof Error ? err.message : 'Failed to send TV command.';
@@ -534,13 +633,52 @@ export function DevicesPage() {
 
     setTvRefreshing(true);
     try {
-      const res = await api.refreshTV(currentTv.id);
-      if (res.success && res.device) {
-        setDevices((prev) =>
-          prev.map((d) => (d.id === currentTv.id ? { ...res.device } : d)),
-        );
+      if (isNativeAndroid()) {
+        const probe = await testTvConnectionNative(currentTv.ipAddress, currentTv.tv?.port || 5555);
+        if (probe.reachable) {
+          setDevices((prev) =>
+            prev.map((d) =>
+              d.id === currentTv.id
+                ? {
+                    ...d,
+                    status: 'online' as DeviceStatus,
+                    lastSeen: new Date().toISOString(),
+                    lastSuccessfulConnection: new Date().toISOString(),
+                    connectionError: undefined,
+                    tv: {
+                      ...d.tv,
+                      reachable: true,
+                    },
+                  }
+                : d,
+            ),
+          );
+        } else {
+          setDevices((prev) =>
+            prev.map((d) =>
+              d.id === currentTv.id
+                ? {
+                    ...d,
+                    status: 'offline' as DeviceStatus,
+                    connectionError: probe.error || 'Host unreachable on local Wi-Fi',
+                    tv: {
+                      ...d.tv,
+                      reachable: false,
+                    },
+                  }
+                : d,
+            ),
+          );
+        }
       } else {
-        await fetchDevices(true);
+        const res = await api.refreshTV(currentTv.id);
+        if (res.success && res.device) {
+          setDevices((prev) =>
+            prev.map((d) => (d.id === currentTv.id ? { ...res.device } : d)),
+          );
+        } else {
+          await fetchDevices(true);
+        }
       }
     } catch {
       await fetchDevices(true);

@@ -21,6 +21,7 @@
         "@huggingface/transformers": "^4.2.0",
         "@supabase/supabase-js": "^2.57.4",
         "@types/leaflet": "^1.9.22",
+        "capacitor-tcp-socket": "^7.1.1",
         "cors": "^2.8.5",
         "dotenv": "^17.4.2",
         "esbuild": "^0.28.2",
@@ -761,6 +762,8 @@
     "camelcase-css": ["camelcase-css@2.0.1", "", {}, "sha512-QOSvevhslijgYwRx6Rv7zKdMF8lbRmx+uQGx2+vDc+KI/eBnsy9kit5aj23AgGu3pa4t9AgwbnXWqS+iOY+2aA=="],
 
     "caniuse-lite": ["caniuse-lite@1.0.30001809", "", {}, "sha512-xxWVywk6a6Arlk+hymeycyn/VgqEfLDxupvhH/xiY5SJ/18kmi9o6MiO320DCUzypORHLtvh0I4i04tUhCNHNQ=="],
+
+    "capacitor-tcp-socket": ["capacitor-tcp-socket@7.1.1", "", { "peerDependencies": { "@capacitor/core": ">=7.0.0" } }, "sha512-52p7NhG2f9GHcI8bq/nvvlc8uw3Qa4gXBfsOHc8aHfZUU/3/bWK/zSV+R3YGJDSERTEp95H0XMCrN8FgVyc8Mw=="],
 
     "chalk": ["chalk@4.1.2", "", { "dependencies": { "ansi-styles": "^4.1.0", "supports-color": "^7.1.0" } }, "sha512-oKnbhFyRIXpUuez8iBMmyEa4nbj4IOQyuhc/wy9kY7/WVPcwIO9VA668Pu8RkO7+0G76SLROeyw9CpQ061i4mA=="],
 
