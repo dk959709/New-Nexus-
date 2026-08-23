@@ -307,3 +307,49 @@ export interface DevicesOverview {
   total: number;
   devices: NexusDevice[];
 }
+
+export type NetworkDeviceType = 'tv' | 'android' | 'computer' | 'server' | 'router' | 'printer' | 'gaming' | 'unknown';
+export type NetworkDeviceStatus = 'reachable' | 'paired' | 'unreachable' | 'unknown';
+
+export interface DetectedService {
+  port: number;
+  service: string;
+  name?: string;
+}
+
+export interface DiscoveredNetworkDevice {
+  id: string;
+  ip: string;
+  name: string;
+  macAddress: string | null;
+  type: NetworkDeviceType;
+  subType?: string;
+  manufacturer?: string;
+  status: NetworkDeviceStatus;
+  detectedServices?: DetectedService[];
+  latencyMs?: number;
+  lastDiscovered: string | number;
+  isPaired?: boolean;
+  pairedDeviceId?: string;
+  error?: string;
+}
+
+export interface NetworkInfo {
+  connected: boolean;
+  connectionType: 'wifi' | 'cellular' | 'ethernet' | 'none' | 'unknown';
+  ssid?: string | null;
+  localIp?: string | null;
+  subnet?: string | null;
+  gateway?: string | null;
+  scanningSupported: boolean;
+  scanMode: 'native_android' | 'agent_gateway' | 'local_server' | 'browser_agent_needed';
+  notice?: string;
+}
+
+export interface NetworkScanResult {
+  devices: DiscoveredNetworkDevice[];
+  count: number;
+  scannedSubnet?: string;
+  timestamp: number;
+  cancelled?: boolean;
+}

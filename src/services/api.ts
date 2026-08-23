@@ -18,6 +18,9 @@ import type {
   AndroidDeviceInfo,
   SmartTVInfo,
   TVControlAction,
+  DiscoveredNetworkDevice,
+  NetworkInfo,
+  NetworkScanResult,
 } from '@/types';
 import { storage } from '@/lib/storage';
 import { searchWikipedia, getWikipediaSummary, wikipediaToSearchResult } from './wikipedia';
@@ -430,4 +433,47 @@ export const api = {
       `/api/devices/tv/status${query}`,
     );
   },
+
+  // Real Network Scanner API
+  getNetworkInfo(): Promise<NetworkInfo> {
+    return call<NetworkInfo>('/api/devices/network/info');
+  },
+
+  getDiscoveredDevices(): Promise<{ devices: DiscoveredNetworkDevice[]; count: number }> {
+    return call<{ devices: DiscoveredNetworkDevice[]; count: number }>('/api/devices/network/discovered');
+  },
+
+  scanNetwork(params?: { subnet?: string; localIp?: string }): Promise<NetworkScanResult> {
+    return call<NetworkScanResult>('/api/devices/network/scan', {
+      method: 'POST',
+      body: JSON.stringify(params || {}),
+    });
+  },
+
+  reportScanResults(data: {
+    devices: DiscoveredNetworkDevice[];
+    scannedSubnet?: string;
+  }): Promise<{ success: boolean; count: number; devices: DiscoveredNetworkDevice[] }> {
+    return call<{ success: boolean; count: number; devices: DiscoveredNetworkDevice[] }>(
+      '/api/devices/network/report-scan',
+      {
+        method: 'POST',
+        body: JSON.stringify(data),
+      },
+    );
+  },
+
+  pingNetworkDevice(
+    ip: string,
+    port?: number,
+  ): Promise<{ ip: string; port: number; reachable: boolean; latencyMs: number; error?: string }> {
+    return call<{ ip: string; port: number; reachable: boolean; latencyMs: number; error?: string }>(
+      '/api/devices/network/ping',
+      {
+        method: 'POST',
+        body: JSON.stringify({ ip, port }),
+      },
+    );
+  },
 };
+

@@ -6,6 +6,8 @@ import morgan from 'morgan';
 import fs from 'node:fs';
 import { resolve } from 'node:path';
 import net from 'node:net';
+import os from 'node:os';
+import dns from 'node:dns';
 import { z } from 'zod';
 import { GoogleGenAI } from '@google/genai';
 
@@ -2031,6 +2033,270 @@ async function testTvSocketConnection(
   });
 }
 
+export interface DiscoveredNetworkDeviceServer {
+  id: string;
+  ip: string;
+  name: string;
+  macAddress: string | null;
+  type: 'tv' | 'android' | 'computer' | 'server' | 'router' | 'printer' | 'gaming' | 'unknown';
+  subType?: string;
+  manufacturer?: string;
+  status: 'reachable' | 'paired' | 'unreachable' | 'unknown';
+  detectedServices?: Array<{ port: number; service: string; name?: string }>;
+  latencyMs?: number;
+  lastDiscovered: string | number;
+  isPaired?: boolean;
+  pairedDeviceId?: string;
+  error?: string;
+}
+
+const discoveredNetworkDevices = new Map<string, DiscoveredNetworkDeviceServer>();
+
+function getServiceNameForPort(port: number): string {
+  switch (port) {
+    case 5555: return 'ADB / Android TV Control';
+    case 8008:
+    case 8009: return 'Google Cast';
+    case 6466:
+    case 6467: return 'Android TV Remote';
+    case 80: return 'HTTP Web Server';
+    case 443: return 'HTTPS Web Server';
+    case 9100: return 'JetDirect RAW Printer';
+    case 22: return 'SSH Remote Terminal';
+    case 445: return 'SMB File Share';
+    case 8080: return 'HTTP Alternate';
+    default: return `Port ${port}`;
+  }
+}
+
+function getLocalNetworkInfo(): {
+  connected: boolean;
+  connectionType: 'wifi' | 'cellular' | 'ethernet' | 'none' | 'unknown';
+  ssid: string | null;
+  localIp: string | null;
+  subnet: string | null;
+  gateway: string | null;
+  scanningSupported: boolean;
+  scanMode: 'native_android' | 'agent_gateway' | 'local_server' | 'browser_agent_needed';
+  notice?: string;
+} {
+  const interfaces = os.networkInterfaces();
+  let foundIp: string | null = null;
+  let foundType: 'wifi' | 'cellular' | 'ethernet' | 'unknown' = 'unknown';
+
+  for (const [name, addrs] of Object.entries(interfaces)) {
+    if (!addrs) continue;
+    for (const addr of addrs) {
+      if (addr.family === 'IPv4' && !addr.internal && addr.address !== '127.0.0.1') {
+        foundIp = addr.address;
+        const lowerName = name.toLowerCase();
+        if (lowerName.includes('wl') || lowerName.includes('wi-fi') || lowerName.includes('wifi')) {
+          foundType = 'wifi';
+        } else if (lowerName.includes('eth') || lowerName.includes('en') || lowerName.includes('lan')) {
+          foundType = 'ethernet';
+        }
+        break;
+      }
+    }
+    if (foundIp) break;
+  }
+
+  if (foundIp && foundIp.includes('.')) {
+    const lastDot = foundIp.lastIndexOf('.');
+    const subnetPrefix = foundIp.substring(0, lastDot);
+    return {
+      connected: true,
+      connectionType: foundType,
+      ssid: null,
+      localIp: foundIp,
+      subnet: `${subnetPrefix}.0/24`,
+      gateway: `${subnetPrefix}.1`,
+      scanningSupported: true,
+      scanMode: 'local_server',
+      notice: 'Server-side LAN scanner ready.',
+    };
+  }
+
+  return {
+    connected: false,
+    connectionType: 'none',
+    ssid: null,
+    localIp: null,
+    subnet: null,
+    gateway: null,
+    scanningSupported: false,
+    scanMode: 'browser_agent_needed',
+    notice: 'No direct local IPv4 interface detected. Use NEXUS Android APK to scan your Wi-Fi network.',
+  };
+}
+
+async function probePort(ip: string, port: number, timeoutMs = 250): Promise<boolean> {
+  return new Promise((resolve) => {
+    const socket = new net.Socket();
+    let resolved = false;
+    const timer = setTimeout(() => {
+      if (!resolved) {
+        resolved = true;
+        socket.destroy();
+        resolve(false);
+      }
+    }, timeoutMs);
+
+    socket.connect(port, ip, () => {
+      if (!resolved) {
+        resolved = true;
+        clearTimeout(timer);
+        socket.destroy();
+        resolve(true);
+      }
+    });
+
+    socket.on('error', () => {
+      if (!resolved) {
+        resolved = true;
+        clearTimeout(timer);
+        socket.destroy();
+        resolve(false);
+      }
+    });
+  });
+}
+
+async function probeAndIdentifyHost(ip: string): Promise<DiscoveredNetworkDeviceServer | null> {
+  const start = Date.now();
+  const PROBE_PORTS = [5555, 8008, 6466, 80, 443, 9100, 22, 445];
+  const openPorts: number[] = [];
+
+  const portChecks = await Promise.all(
+    PROBE_PORTS.map(async (port) => {
+      const open = await probePort(ip, port, 280);
+      return { port, open };
+    }),
+  );
+
+  for (const pc of portChecks) {
+    if (pc.open) {
+      openPorts.push(pc.port);
+    }
+  }
+
+  if (openPorts.length === 0) {
+    return null;
+  }
+
+  const latency = Math.max(1, Date.now() - start);
+
+  // Try reverse DNS lookup
+  let resolvedHostname: string | null = null;
+  try {
+    const hostnames = await dns.promises.reverse(ip);
+    if (hostnames && hostnames.length > 0 && hostnames[0]) {
+      resolvedHostname = hostnames[0];
+    }
+  } catch {
+    // Reverse DNS resolution is optional
+  }
+
+  // Device classification
+  const hasTvPort = openPorts.includes(5555) || openPorts.includes(8008) || openPorts.includes(6466);
+  const hasPrinterPort = openPorts.includes(9100);
+  const isGateway = ip.endsWith('.1');
+  const lowerName = (resolvedHostname || '').toLowerCase();
+
+  let devType: DiscoveredNetworkDeviceServer['type'] = 'unknown';
+  let subType = 'Network Device';
+  let manufacturer: string | undefined = undefined;
+  let deviceName = resolvedHostname || `Device (${ip})`;
+
+  if (hasTvPort || lowerName.includes('tv') || lowerName.includes('bravia') || lowerName.includes('tcl') || lowerName.includes('chromecast') || lowerName.includes('google-tv')) {
+    devType = 'tv';
+    if (lowerName.includes('tcl')) {
+      manufacturer = 'TCL';
+      subType = 'TCL Google TV';
+      deviceName = resolvedHostname || 'TCL Google TV';
+    } else if (openPorts.includes(5555) || openPorts.includes(6466)) {
+      subType = 'Google TV / Android TV';
+      deviceName = resolvedHostname || 'Smart TV';
+    } else if (openPorts.includes(8008)) {
+      subType = 'Google Cast TV';
+      deviceName = resolvedHostname || 'Cast TV';
+    } else {
+      subType = 'Smart TV';
+      deviceName = resolvedHostname || 'Smart TV';
+    }
+  } else if (hasPrinterPort || lowerName.includes('printer') || lowerName.includes('canon') || lowerName.includes('epson') || lowerName.includes('hp')) {
+    devType = 'printer';
+    subType = 'Network Printer';
+    deviceName = resolvedHostname || 'Network Printer';
+  } else if (isGateway && (openPorts.includes(80) || openPorts.includes(443))) {
+    devType = 'router';
+    subType = 'Router Gateway';
+    deviceName = resolvedHostname || 'Wi-Fi Router Gateway';
+  } else if (openPorts.includes(22) || openPorts.includes(445)) {
+    devType = 'computer';
+    subType = 'Workstation / Server';
+    deviceName = resolvedHostname || 'Host Workstation';
+  }
+
+  // Check if paired with an existing registered device
+  let isPaired = false;
+  let pairedDeviceId: string | undefined = undefined;
+
+  for (const regDev of registeredDevices.values()) {
+    if (regDev.ipAddress && regDev.ipAddress.trim() === ip.trim()) {
+      isPaired = true;
+      pairedDeviceId = regDev.id;
+      deviceName = regDev.name;
+      break;
+    }
+  }
+
+  const detectedServices = openPorts.map((p) => ({
+    port: p,
+    service: getServiceNameForPort(p),
+  }));
+
+  const discDev: DiscoveredNetworkDeviceServer = {
+    id: `disc_${ip.replace(/\./g, '_')}`,
+    ip,
+    name: deviceName,
+    macAddress: 'Unavailable on this platform',
+    type: devType,
+    subType,
+    manufacturer,
+    status: isPaired ? 'paired' : 'reachable',
+    detectedServices,
+    latencyMs: latency,
+    lastDiscovered: new Date().toISOString(),
+    isPaired,
+    pairedDeviceId,
+  };
+
+  discoveredNetworkDevices.set(discDev.id, discDev);
+  return discDev;
+}
+
+function syncPairedStatusToDiscovered(): void {
+  for (const disc of discoveredNetworkDevices.values()) {
+    let foundPaired = false;
+    for (const reg of registeredDevices.values()) {
+      if (reg.ipAddress && reg.ipAddress.trim() === disc.ip.trim()) {
+        disc.isPaired = true;
+        disc.pairedDeviceId = reg.id;
+        disc.status = reg.status === 'online' ? 'paired' : 'unreachable';
+        foundPaired = true;
+        break;
+      }
+    }
+    if (!foundPaired && disc.isPaired) {
+      disc.isPaired = false;
+      disc.pairedDeviceId = undefined;
+      disc.status = 'reachable';
+    }
+  }
+}
+
+
 function getConnectedDevicesSummary(): string {
   if (registeredDevices.size === 0) {
     return 'No devices are currently connected to NEXUS. Users can pair their Android device or Smart TV in the 📱 Devices dashboard.';
@@ -3051,6 +3317,190 @@ async function startServer() {
       data: {
         success: true,
         lastSeen: dev.lastSeen,
+      },
+    });
+  });
+
+  // =========================================================================
+  // REAL NETWORK SCANNER ENDPOINTS
+  // =========================================================================
+  app.get('/api/devices/network/info', (_req, res) => {
+    const netInfo = getLocalNetworkInfo();
+    return res.json({ data: netInfo });
+  });
+
+  app.get('/api/devices/network/discovered', (_req, res) => {
+    syncPairedStatusToDiscovered();
+    const list = Array.from(discoveredNetworkDevices.values()).sort((a, b) => {
+      if (a.isPaired && !b.isPaired) return -1;
+      if (!a.isPaired && b.isPaired) return 1;
+      return a.ip.localeCompare(b.ip, undefined, { numeric: true });
+    });
+    return res.json({
+      data: {
+        devices: list,
+        count: list.length,
+      },
+    });
+  });
+
+  app.post('/api/devices/network/ping', async (req, res) => {
+    const { ip, port } = req.body || {};
+    const cleanIp = typeof ip === 'string' ? ip.trim() : '';
+    const numPort = Number(port) || 80;
+
+    if (!cleanIp) {
+      return errorResponse(res, 400, 'IP address is required for ping.');
+    }
+
+    const testRes = await testTvSocketConnection(cleanIp, numPort, 1200);
+    return res.json({
+      data: {
+        ip: cleanIp,
+        port: numPort,
+        reachable: testRes.reachable,
+        latencyMs: testRes.latencyMs,
+        error: testRes.error,
+      },
+    });
+  });
+
+  app.post('/api/devices/network/scan', async (req, res) => {
+    const { subnet, localIp } = req.body || {};
+    let targetPrefix: string | null = null;
+
+    if (typeof subnet === 'string' && subnet.includes('.')) {
+      const parts = subnet.trim().split('/')[0].split('.');
+      if (parts.length >= 3) {
+        targetPrefix = `${parts[0]}.${parts[1]}.${parts[2]}`;
+      }
+    } else if (typeof localIp === 'string' && localIp.includes('.')) {
+      const lastDot = localIp.trim().lastIndexOf('.');
+      if (lastDot > 0) {
+        targetPrefix = localIp.trim().substring(0, lastDot);
+      }
+    }
+
+    if (!targetPrefix) {
+      const netInfo = getLocalNetworkInfo();
+      if (netInfo.localIp && netInfo.localIp.includes('.')) {
+        const lastDot = netInfo.localIp.lastIndexOf('.');
+        targetPrefix = netInfo.localIp.substring(0, lastDot);
+      }
+    }
+
+    if (!targetPrefix) {
+      return res.json({
+        data: {
+          devices: Array.from(discoveredNetworkDevices.values()),
+          count: discoveredNetworkDevices.size,
+          message: 'No direct local IPv4 subnet found on host container. Discovered devices from Android Agent or previous scans are shown.',
+          scannedSubnet: null,
+          timestamp: Date.now(),
+        },
+      });
+    }
+
+    const startScanTime = Date.now();
+    const discoveredThisScan: DiscoveredNetworkDeviceServer[] = [];
+    const BATCH_SIZE = 25;
+
+    // Scan hosts 1 to 254 in safe concurrent batches
+    for (let batchStart = 1; batchStart <= 254; batchStart += BATCH_SIZE) {
+      const batchEnd = Math.min(254, batchStart + BATCH_SIZE - 1);
+      const batchIps: string[] = [];
+      for (let i = batchStart; i <= batchEnd; i++) {
+        batchIps.push(`${targetPrefix}.${i}`);
+      }
+
+      const batchResults = await Promise.all(
+        batchIps.map(async (ip) => {
+          try {
+            return await probeAndIdentifyHost(ip);
+          } catch {
+            return null;
+          }
+        }),
+      );
+
+      for (const dev of batchResults) {
+        if (dev) {
+          discoveredThisScan.push(dev);
+        }
+      }
+    }
+
+    syncPairedStatusToDiscovered();
+    const allDiscovered = Array.from(discoveredNetworkDevices.values()).sort((a, b) => {
+      if (a.isPaired && !b.isPaired) return -1;
+      if (!a.isPaired && b.isPaired) return 1;
+      return a.ip.localeCompare(b.ip, undefined, { numeric: true });
+    });
+
+    return res.json({
+      data: {
+        devices: allDiscovered,
+        count: allDiscovered.length,
+        newlyDiscoveredCount: discoveredThisScan.length,
+        scannedSubnet: `${targetPrefix}.0/24`,
+        durationMs: Date.now() - startScanTime,
+        timestamp: Date.now(),
+      },
+    });
+  });
+
+  app.post('/api/devices/network/report-scan', (req, res) => {
+    const { devices, scannedSubnet } = req.body || {};
+    if (!Array.isArray(devices)) {
+      return errorResponse(res, 400, 'devices array is required.');
+    }
+
+    for (const rawDev of devices) {
+      if (!rawDev || typeof rawDev.ip !== 'string') continue;
+      const ip = rawDev.ip.trim();
+      const id = rawDev.id || `disc_${ip.replace(/\./g, '_')}`;
+
+      let isPaired = false;
+      let pairedDeviceId: string | undefined = undefined;
+      let devName = rawDev.name || `Device (${ip})`;
+
+      for (const regDev of registeredDevices.values()) {
+        if (regDev.ipAddress && regDev.ipAddress.trim() === ip) {
+          isPaired = true;
+          pairedDeviceId = regDev.id;
+          devName = regDev.name;
+          break;
+        }
+      }
+
+      const discDev: DiscoveredNetworkDeviceServer = {
+        id,
+        ip,
+        name: devName,
+        macAddress: rawDev.macAddress || 'Unavailable on this Android version',
+        type: rawDev.type || 'unknown',
+        subType: rawDev.subType || 'Network Device',
+        manufacturer: rawDev.manufacturer,
+        status: isPaired ? 'paired' : (rawDev.status || 'reachable'),
+        detectedServices: Array.isArray(rawDev.detectedServices) ? rawDev.detectedServices : [],
+        latencyMs: typeof rawDev.latencyMs === 'number' ? rawDev.latencyMs : undefined,
+        lastDiscovered: rawDev.lastDiscovered || new Date().toISOString(),
+        isPaired,
+        pairedDeviceId,
+      };
+
+      discoveredNetworkDevices.set(id, discDev);
+    }
+
+    syncPairedStatusToDiscovered();
+    const allDiscovered = Array.from(discoveredNetworkDevices.values());
+
+    return res.json({
+      data: {
+        success: true,
+        count: allDiscovered.length,
+        scannedSubnet: scannedSubnet || null,
+        devices: allDiscovered,
       },
     });
   });

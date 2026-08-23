@@ -30,11 +30,27 @@ import {
   Sparkles,
   Info,
   X,
+  Radio,
+  Search,
+  Zap,
+  Globe,
+  Activity,
+  Printer,
+  Router,
 } from 'lucide-react';
 import { api } from '@/services/api';
 import { useSettings } from '@/hooks/useSettings';
 import { playTapSound } from '@/lib/audio';
-import type { NexusDevice, DevicePermissions, DeviceStatus, TVConnectionMethod, TVControlAction } from '@/types';
+import type {
+  NexusDevice,
+  DevicePermissions,
+  DeviceStatus,
+  TVConnectionMethod,
+  TVControlAction,
+  DiscoveredNetworkDevice,
+  NetworkInfo,
+  NetworkDeviceType,
+} from '@/types';
 
 export function DevicesPage() {
   const [settings] = useSettings();
@@ -89,6 +105,65 @@ export function DevicesPage() {
   const [deviceToDisconnect, setDeviceToDisconnect] = useState<NexusDevice | null>(null);
   const [isDisconnecting, setIsDisconnecting] = useState(false);
 
+  // =========================================================================
+  // Network Scanner State
+  // =========================================================================
+  const [networkInfo, setNetworkInfo] = useState<NetworkInfo | null>(null);
+  const [discoveredDevices, setDiscoveredDevices] = useState<DiscoveredNetworkDevice[]>([]);
+  const [isScanning, setIsScanning] = useState(false);
+  const [scanProgressText, setScanProgressText] = useState<string>('Scanning local network...');
+  const [scanProgressPercent, setScanProgressPercent] = useState<number>(0);
+  const [scanError, setScanError] = useState<string | null>(null);
+  const [scanFilter, setScanFilter] = useState<'all' | 'tv' | 'android' | 'computer' | 'router' | 'printer'>('all');
+  const [scanDurationMs, setScanDurationMs] = useState<number | null>(null);
+  const [scannedSubnetDisplay, setScannedSubnetDisplay] = useState<string | null>(null);
+  const [pingLoadingMap, setPingLoadingMap] = useState<Record<string, boolean>>({});
+  const [pingResultMap, setPingResultMap] = useState<
+    Record<string, { reachable: boolean; latencyMs: number; error?: string; timestamp: number }>
+  >({});
+  const [showSubnetOverride, setShowSubnetOverride] = useState(false);
+  const [customSubnetInput, setCustomSubnetInput] = useState('');
+
+  const fetchNetworkInfo = useCallback(async () => {
+    try {
+      // Check native Capacitor plugin first if running inside Android APK
+      const capWindow = window as unknown as {
+        Capacitor?: {
+          Plugins?: {
+            NetworkScannerPlugin?: {
+              getNetworkInfo: () => Promise<NetworkInfo>;
+            };
+          };
+        };
+      };
+
+      if (capWindow.Capacitor?.Plugins?.NetworkScannerPlugin?.getNetworkInfo) {
+        const nativeInfo = await capWindow.Capacitor.Plugins.NetworkScannerPlugin.getNetworkInfo();
+        if (nativeInfo) {
+          setNetworkInfo(nativeInfo);
+          return;
+        }
+      }
+
+      // Fallback to server network detection
+      const info = await api.getNetworkInfo();
+      setNetworkInfo(info);
+    } catch {
+      // Network info is best-effort
+    }
+  }, []);
+
+  const fetchDiscoveredDevices = useCallback(async () => {
+    try {
+      const res = await api.getDiscoveredDevices();
+      if (res?.devices) {
+        setDiscoveredDevices(res.devices);
+      }
+    } catch {
+      // Discovered devices is best-effort
+    }
+  }, []);
+
   const fetchDevices = useCallback(async (isSilent = false) => {
     if (!isSilent) setLoading(true);
     setError(null);
@@ -107,12 +182,205 @@ export function DevicesPage() {
 
   useEffect(() => {
     fetchDevices();
+    fetchNetworkInfo();
+    fetchDiscoveredDevices();
     // Poll status every 30 seconds
     const interval = setInterval(() => {
       fetchDevices(true);
+      fetchDiscoveredDevices();
     }, 30000);
     return () => clearInterval(interval);
-  }, [fetchDevices]);
+  }, [fetchDevices, fetchNetworkInfo, fetchDiscoveredDevices]);
+
+  const handleScanNetwork = async () => {
+    if (settings.sound !== false) playTapSound();
+    setIsScanning(true);
+    setScanProgressText('Scanning local network...');
+    setScanProgressPercent(15);
+    setScanError(null);
+
+    const progressTimer = setInterval(() => {
+      setScanProgressPercent((prev) => {
+        if (prev < 90) return prev + Math.floor(Math.random() * 15 + 5);
+        return prev;
+      });
+    }, 400);
+
+    try {
+      const capWindow = window as unknown as {
+        Capacitor?: {
+          Plugins?: {
+            NetworkScannerPlugin?: {
+              scanNetwork: (options?: { subnet?: string }) => Promise<{
+                devices: DiscoveredNetworkDevice[];
+                count: number;
+                scannedSubnet?: string;
+                durationMs?: number;
+                networkInfo?: NetworkInfo;
+              }>;
+            };
+          };
+        };
+      };
+
+      const overrideSubnet = customSubnetInput.trim() || undefined;
+
+      // If running inside Android APK with native NetworkScannerPlugin
+      if (capWindow.Capacitor?.Plugins?.NetworkScannerPlugin?.scanNetwork) {
+        setScanProgressText('Probing Wi-Fi subnet with Android native socket engine...');
+        const nativeResult = await capWindow.Capacitor.Plugins.NetworkScannerPlugin.scanNetwork({
+          subnet: overrideSubnet,
+        });
+
+        if (nativeResult) {
+          setDiscoveredDevices(nativeResult.devices || []);
+          setScannedSubnetDisplay(nativeResult.scannedSubnet || null);
+          setScanDurationMs(nativeResult.durationMs || 1200);
+          if (nativeResult.networkInfo) {
+            setNetworkInfo(nativeResult.networkInfo);
+          }
+
+          // Report scan results to NEXUS server so they are visible across the system
+          try {
+            await api.reportScanResults({
+              devices: nativeResult.devices || [],
+              scannedSubnet: nativeResult.scannedSubnet,
+            });
+          } catch {
+            // Ignore background sync errors
+          }
+        }
+      } else {
+        // Run real server-side scan & socket probing
+        setScanProgressText('Probing local subnet hosts and services...');
+        const res = await api.scanNetwork({
+          subnet: overrideSubnet,
+          localIp: networkInfo?.localIp || undefined,
+        });
+
+        if (res) {
+          setDiscoveredDevices(res.devices || []);
+          setScannedSubnetDisplay(res.scannedSubnet || null);
+          setScanDurationMs(res.durationMs || null);
+          if (res.count === 0 && res.message) {
+            setScanError(res.message);
+          }
+        }
+      }
+
+      setScanProgressPercent(100);
+    } catch (err: unknown) {
+      const msg = err instanceof Error ? err.message : 'Network scan encountered an error.';
+      setScanError(msg);
+    } finally {
+      clearInterval(progressTimer);
+      setTimeout(() => {
+        setIsScanning(false);
+        setScanProgressPercent(0);
+      }, 500);
+    }
+  };
+
+  const handlePingHost = async (ip: string, port?: number) => {
+    if (settings.sound !== false) playTapSound();
+    setPingLoadingMap((prev) => ({ ...prev, [ip]: true }));
+
+    try {
+      const capWindow = window as unknown as {
+        Capacitor?: {
+          Plugins?: {
+            NetworkScannerPlugin?: {
+              pingDevice: (options: { ip: string; port?: number }) => Promise<{
+                ip: string;
+                port: number;
+                reachable: boolean;
+                latencyMs: number;
+                error?: string;
+              }>;
+            };
+          };
+        };
+      };
+
+      if (capWindow.Capacitor?.Plugins?.NetworkScannerPlugin?.pingDevice) {
+        const pingRes = await capWindow.Capacitor.Plugins.NetworkScannerPlugin.pingDevice({
+          ip,
+          port: port || 80,
+        });
+        setPingResultMap((prev) => ({
+          ...prev,
+          [ip]: {
+            reachable: pingRes.reachable,
+            latencyMs: pingRes.latencyMs,
+            error: pingRes.error,
+            timestamp: Date.now(),
+          },
+        }));
+      } else {
+        const pingRes = await api.pingNetworkDevice(ip, port || 80);
+        setPingResultMap((prev) => ({
+          ...prev,
+          [ip]: {
+            reachable: pingRes.reachable,
+            latencyMs: pingRes.latencyMs,
+            error: pingRes.error,
+            timestamp: Date.now(),
+          },
+        }));
+      }
+    } catch (err: unknown) {
+      const msg = err instanceof Error ? err.message : 'Ping probe failed.';
+      setPingResultMap((prev) => ({
+        ...prev,
+        [ip]: {
+          reachable: false,
+          latencyMs: 0,
+          error: msg,
+          timestamp: Date.now(),
+        },
+      }));
+    } finally {
+      setPingLoadingMap((prev) => ({ ...prev, [ip]: false }));
+    }
+  };
+
+  const handlePairDiscoveredTv = (device: DiscoveredNetworkDevice) => {
+    if (settings.sound !== false) playTapSound();
+    setTvIpInput(device.ip);
+    // Determine suggested port from open services
+    const adbPort = device.detectedServices?.find((s) => s.port === 5555);
+    const remotePort = device.detectedServices?.find((s) => s.port === 6466);
+    const castPort = device.detectedServices?.find((s) => s.port === 8008);
+
+    if (adbPort) {
+      setTvPortInput('5555');
+      setTvMethodInput('android_tv');
+    } else if (remotePort) {
+      setTvPortInput('6466');
+      setTvMethodInput('google_tv');
+    } else if (castPort) {
+      setTvPortInput('8008');
+      setTvMethodInput('google_tv');
+    } else {
+      setTvPortInput('5555');
+    }
+
+    setTvNameInput(device.name || 'Smart TV');
+    setTvTestStatus('idle');
+    setTvTestError(null);
+    setTvTestLatency(null);
+    setTvModalOpen(true);
+  };
+
+  const handlePairDiscoveredAndroid = (_device: DiscoveredNetworkDevice) => {
+    if (settings.sound !== false) playTapSound();
+    setAddStep('android-pair');
+    setDeviceNameInput(_device.name !== `Device (${_device.ip})` ? _device.name : 'Android Agent');
+    setPairingCodeInput('');
+    setPairError(null);
+    setPairSuccess(false);
+    setAddModalOpen(true);
+  };
 
   const handleRefresh = () => {
     if (settings.sound !== false) playTapSound();
@@ -422,6 +690,37 @@ export function DevicesPage() {
     }
   };
 
+  const getDiscoveredDeviceIcon = (type: NetworkDeviceType) => {
+    switch (type) {
+      case 'tv':
+        return <Tv size={18} className="text-purple-400" />;
+      case 'android':
+        return <Smartphone size={18} className="text-cyan-400" />;
+      case 'computer':
+      case 'server':
+        return <Monitor size={18} className="text-blue-400" />;
+      case 'router':
+        return <Router size={18} className="text-emerald-400" />;
+      case 'printer':
+        return <Printer size={18} className="text-amber-400" />;
+      default:
+        return <Radio size={18} className="text-slate-400" />;
+    }
+  };
+
+  const getDiscoveredTypeLabel = (type: NetworkDeviceType, subType?: string) => {
+    if (subType) return subType;
+    switch (type) {
+      case 'tv': return 'Smart TV';
+      case 'android': return 'Android Agent';
+      case 'computer': return 'Computer';
+      case 'server': return 'Server / Host';
+      case 'router': return 'Router / Gateway';
+      case 'printer': return 'Network Printer';
+      default: return 'Network Host';
+    }
+  };
+
   return (
     <div className="space-y-6 pb-12 max-w-6xl mx-auto">
       {/* Header */}
@@ -661,6 +960,354 @@ export function DevicesPage() {
                             <ChevronRight size={13} />
                           </button>
                         </div>
+                      </div>
+                    </div>
+                  );
+                })}
+            </div>
+          )}
+        </div>
+
+        {/* ========================================================================= */}
+        {/* Section: 📡 Network Scanner */}
+        {/* ========================================================================= */}
+        <div className="p-6 rounded-2xl bg-gradient-to-b from-white/[0.04] to-white/[0.01] border border-cyan-500/20 backdrop-blur-md shadow-xl">
+          {/* Header & Network Info Bar */}
+          <div className="flex flex-col lg:flex-row lg:items-center justify-between gap-5 pb-5 border-b border-white/10">
+            <div className="space-y-1.5">
+              <div className="flex items-center gap-2.5">
+                <div className="w-10 h-10 rounded-xl bg-cyan-500/15 border border-cyan-500/30 flex items-center justify-center text-cyan-400 shadow-inner">
+                  <Radio size={20} className={isScanning ? 'animate-pulse text-cyan-300' : ''} />
+                </div>
+                <div>
+                  <div className="flex items-center gap-2">
+                    <h3 className="font-bold text-white text-lg">📡 Network Scanner</h3>
+                    <span className="text-[11px] font-mono px-2 py-0.5 rounded-full bg-cyan-500/10 text-cyan-300 border border-cyan-500/30">
+                      LAN Discovery
+                    </span>
+                  </div>
+                  <p className="text-xs text-slate-400">
+                    Scan local Wi-Fi / LAN to discover Smart TVs, Android Agents, and network hosts.
+                  </p>
+                </div>
+              </div>
+
+              {/* Connected Wi-Fi & Local IP info line */}
+              <div className="flex flex-wrap items-center gap-x-4 gap-y-2 pt-2 text-xs">
+                <div className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-white/[0.03] border border-white/5 text-slate-300">
+                  <Wifi size={13} className="text-cyan-400" />
+                  <span className="text-slate-400">Connected Wi-Fi:</span>
+                  <strong className="text-white font-medium">
+                    {networkInfo?.ssid || (networkInfo?.connected ? (networkInfo.connectionType === 'wifi' ? 'Wi-Fi Network' : 'Local Area Network') : 'Wi-Fi / LAN')}
+                  </strong>
+                </div>
+
+                <div className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-white/[0.03] border border-white/5 text-slate-300">
+                  <Globe size={13} className="text-cyan-400" />
+                  <span className="text-slate-400">Local IP:</span>
+                  <strong className="text-cyan-300 font-mono">
+                    {networkInfo?.localIp || 'Available on scan'}
+                  </strong>
+                </div>
+
+                {networkInfo?.subnet && (
+                  <div className="hidden sm:flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-white/[0.03] border border-white/5 text-slate-300">
+                    <Activity size={13} className="text-purple-400" />
+                    <span className="text-slate-400">Subnet:</span>
+                    <strong className="text-purple-300 font-mono">{networkInfo.subnet}</strong>
+                  </div>
+                )}
+
+                <button
+                  onClick={() => setShowSubnetOverride((prev) => !prev)}
+                  className="text-[11px] text-slate-400 hover:text-cyan-300 underline underline-offset-2 transition-colors ml-auto"
+                >
+                  {showSubnetOverride ? 'Hide Subnet Config' : 'Custom Subnet...'}
+                </button>
+              </div>
+            </div>
+
+            {/* Scan Action Button */}
+            <div className="flex flex-col sm:flex-row items-stretch sm:items-center gap-3">
+              <button
+                onClick={handleScanNetwork}
+                disabled={isScanning}
+                className="inline-flex items-center justify-center gap-2.5 px-5 py-3 rounded-xl font-semibold text-sm bg-gradient-to-r from-cyan-500 to-blue-600 hover:from-cyan-400 hover:to-blue-500 text-white shadow-lg shadow-cyan-500/25 border border-cyan-400/30 transition-all hover:scale-[1.02] active:scale-95 disabled:opacity-60 disabled:pointer-events-none"
+              >
+                {isScanning ? (
+                  <>
+                    <RefreshCw size={16} className="animate-spin text-white" />
+                    <span>Scanning local network...</span>
+                  </>
+                ) : (
+                  <>
+                    <Search size={16} />
+                    <span>🔍 Scan Network</span>
+                  </>
+                )}
+              </button>
+            </div>
+          </div>
+
+          {/* Optional Subnet Override Input */}
+          {showSubnetOverride && (
+            <div className="my-4 p-3.5 rounded-xl bg-black/40 border border-white/10 text-xs flex flex-wrap items-center justify-between gap-3 animate-in fade-in">
+              <div className="flex items-center gap-2">
+                <Sliders size={14} className="text-cyan-400" />
+                <span className="text-slate-300">Target Subnet / Prefix:</span>
+                <input
+                  type="text"
+                  value={customSubnetInput}
+                  onChange={(e) => setCustomSubnetInput(e.target.value)}
+                  placeholder="e.g. 192.168.1.0/24 or 192.168.0"
+                  className="px-3 py-1.5 rounded-lg bg-white/5 border border-white/10 text-white font-mono text-xs focus:outline-none focus:border-cyan-400"
+                />
+              </div>
+              <span className="text-[11px] text-slate-400">
+                Leave blank to automatically scan the local network interface.
+              </span>
+            </div>
+          )}
+
+          {/* Scanning Progress Indicator */}
+          {isScanning && (
+            <div className="mt-5 p-4 rounded-xl bg-cyan-500/10 border border-cyan-500/20 text-cyan-200 animate-in fade-in">
+              <div className="flex items-center justify-between text-xs font-semibold mb-2">
+                <div className="flex items-center gap-2">
+                  <RefreshCw size={14} className="animate-spin text-cyan-400" />
+                  <span>{scanProgressText}</span>
+                </div>
+                <span>{scanProgressPercent}%</span>
+              </div>
+              <div className="w-full h-1.5 rounded-full bg-white/10 overflow-hidden">
+                <div
+                  className="h-full bg-gradient-to-r from-cyan-400 to-purple-500 transition-all duration-300"
+                  style={{ width: `${scanProgressPercent}%` }}
+                />
+              </div>
+            </div>
+          )}
+
+          {/* Scan Error Notice */}
+          {scanError && !isScanning && (
+            <div className="mt-4 p-3.5 rounded-xl bg-amber-500/10 border border-amber-500/20 text-amber-200 text-xs flex items-center justify-between gap-2 animate-in fade-in">
+              <div className="flex items-center gap-2">
+                <AlertTriangle size={15} className="text-amber-400 flex-shrink-0" />
+                <span>{scanError}</span>
+              </div>
+              <button onClick={() => setScanError(null)} className="text-amber-300 hover:text-white">
+                <X size={14} />
+              </button>
+            </div>
+          )}
+
+          {/* Results Summary Bar */}
+          <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 mt-5 pt-1">
+            <div className="flex items-center gap-2">
+              <span className="text-sm font-semibold text-white">
+                {discoveredDevices.length} device{discoveredDevices.length === 1 ? '' : 's'} found
+              </span>
+              {scannedSubnetDisplay && (
+                <span className="text-xs text-slate-400 font-mono">
+                  on {scannedSubnetDisplay}
+                </span>
+              )}
+              {scanDurationMs && (
+                <span className="text-[11px] text-slate-500">
+                  ({(scanDurationMs / 1000).toFixed(1)}s)
+                </span>
+              )}
+            </div>
+
+            {/* Filter Tabs */}
+            {discoveredDevices.length > 0 && (
+              <div className="flex flex-wrap items-center gap-1.5 text-xs">
+                {(['all', 'tv', 'android', 'computer', 'router', 'printer'] as const).map((filterKey) => {
+                  const count = filterKey === 'all'
+                    ? discoveredDevices.length
+                    : discoveredDevices.filter((d) => d.type === filterKey || (filterKey === 'computer' && d.type === 'server')).length;
+                  if (count === 0 && filterKey !== 'all') return null;
+
+                  const label = filterKey === 'all' ? 'All' : filterKey === 'tv' ? 'Smart TVs' : filterKey === 'android' ? 'Android' : filterKey === 'computer' ? 'Computers' : filterKey === 'router' ? 'Routers' : 'Printers';
+                  const active = scanFilter === filterKey;
+
+                  return (
+                    <button
+                      key={filterKey}
+                      onClick={() => setScanFilter(filterKey)}
+                      className={`px-2.5 py-1 rounded-lg font-medium transition-all ${
+                        active
+                          ? 'bg-cyan-500/20 text-cyan-300 border border-cyan-500/40 shadow-sm'
+                          : 'bg-white/5 hover:bg-white/10 text-slate-400 hover:text-slate-200 border border-transparent'
+                      }`}
+                    >
+                      <span>{label}</span>
+                      <span className="ml-1.5 opacity-60 font-mono text-[10px]">({count})</span>
+                    </button>
+                  );
+                })}
+              </div>
+            )}
+          </div>
+
+          {/* Discovered Device Cards Grid */}
+          {discoveredDevices.length === 0 ? (
+            <div className="mt-4 p-8 text-center rounded-xl bg-white/[0.02] border border-white/5">
+              <div className="w-12 h-12 rounded-xl bg-white/5 border border-white/10 flex items-center justify-center mx-auto mb-3 text-slate-400">
+                <Search size={22} />
+              </div>
+              <h4 className="text-sm font-semibold text-slate-300 mb-1">No devices scanned yet</h4>
+              <p className="text-xs text-slate-400 max-w-md mx-auto mb-4">
+                Click <strong>Scan Network</strong> to probe reachable hosts, open Smart TV ports, and discover devices on your local Wi-Fi subnet.
+              </p>
+              <button
+                onClick={handleScanNetwork}
+                disabled={isScanning}
+                className="px-4 py-2 rounded-xl text-xs font-semibold bg-cyan-500/15 hover:bg-cyan-500/25 text-cyan-300 border border-cyan-500/30 transition-colors"
+              >
+                Scan Now
+              </button>
+            </div>
+          ) : (
+            <div className="mt-4 grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-3.5">
+              {discoveredDevices
+                .filter((d) => {
+                  if (scanFilter === 'all') return true;
+                  if (scanFilter === 'computer') return d.type === 'computer' || d.type === 'server';
+                  return d.type === scanFilter;
+                })
+                .map((device) => {
+                  const pingInfo = pingResultMap[device.ip];
+                  const isPinging = pingLoadingMap[device.ip];
+                  const isPaired = device.isPaired || devices.some((reg) => reg.ipAddress === device.ip);
+
+                  return (
+                    <div
+                      key={device.id || device.ip}
+                      className={`p-4 rounded-xl border backdrop-blur-md flex flex-col justify-between gap-3.5 transition-all shadow-md ${
+                        isPaired
+                          ? 'bg-gradient-to-b from-purple-950/20 to-white/[0.02] border-purple-500/30'
+                          : 'bg-gradient-to-b from-white/[0.04] to-white/[0.01] border-white/10 hover:border-cyan-500/30'
+                      }`}
+                    >
+                      {/* Card Top: Icon, Name, Type, Status Badge */}
+                      <div>
+                        <div className="flex items-start justify-between gap-2 mb-2">
+                          <div className="flex items-center gap-2.5">
+                            <div className="w-9 h-9 rounded-lg bg-white/5 border border-white/10 flex items-center justify-center flex-shrink-0">
+                              {getDiscoveredDeviceIcon(device.type)}
+                            </div>
+                            <div className="min-w-0">
+                              <h5 className="font-bold text-white text-sm truncate" title={device.name}>
+                                {device.name}
+                              </h5>
+                              <div className="text-[11px] text-slate-400 flex items-center gap-1.5">
+                                <span>{getDiscoveredTypeLabel(device.type, device.subType)}</span>
+                                {device.manufacturer && <span>• {device.manufacturer}</span>}
+                              </div>
+                            </div>
+                          </div>
+
+                          {/* Status Badge: Reachable (🟢) vs Connected/Paired (🟣) */}
+                          <div className="flex-shrink-0">
+                            {isPaired ? (
+                              <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-semibold bg-purple-500/20 text-purple-300 border border-purple-500/40">
+                                <span className="w-1.5 h-1.5 rounded-full bg-purple-400 animate-pulse" />
+                                Connected
+                              </span>
+                            ) : (
+                              <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-semibold bg-emerald-500/15 text-emerald-300 border border-emerald-500/30">
+                                <span className="w-1.5 h-1.5 rounded-full bg-emerald-400" />
+                                Reachable
+                              </span>
+                            )}
+                          </div>
+                        </div>
+
+                        {/* Network Details Grid */}
+                        <div className="space-y-1.5 text-[11px] pt-2 border-t border-white/5">
+                          <div className="flex items-center justify-between">
+                            <span className="text-slate-400">IP Address:</span>
+                            <span className="font-mono text-cyan-300 font-medium">{device.ip}</span>
+                          </div>
+
+                          {/* Latency if available */}
+                          {(pingInfo?.latencyMs !== undefined || device.latencyMs !== undefined) && (
+                            <div className="flex items-center justify-between">
+                              <span className="text-slate-400">Latency:</span>
+                              <span className="text-slate-300 font-mono">
+                                {pingInfo?.latencyMs !== undefined ? `${pingInfo.latencyMs} ms` : `${device.latencyMs} ms`}
+                              </span>
+                            </div>
+                          )}
+
+                          {/* Detected Services / Ports */}
+                          {device.detectedServices && device.detectedServices.length > 0 && (
+                            <div className="pt-1">
+                              <div className="text-[10px] uppercase text-slate-400 tracking-wider mb-1">
+                                Open Services:
+                              </div>
+                              <div className="flex flex-wrap gap-1">
+                                {device.detectedServices.map((svc) => (
+                                  <span
+                                    key={svc.port}
+                                    className="px-1.5 py-0.5 rounded bg-white/5 border border-white/10 text-[10px] font-mono text-slate-300"
+                                    title={svc.service}
+                                  >
+                                    Port {svc.port}
+                                    {svc.service.includes('TV') ? ' (TV)' : svc.service.includes('Cast') ? ' (Cast)' : ''}
+                                  </span>
+                                ))}
+                              </div>
+                            </div>
+                          )}
+                        </div>
+                      </div>
+
+                      {/* Card Actions: Pair or Ping */}
+                      <div className="flex items-center justify-between pt-2 border-t border-white/5 gap-2">
+                        {/* Ping Button */}
+                        <button
+                          onClick={() => handlePingHost(device.ip, device.detectedServices?.[0]?.port)}
+                          disabled={isPinging}
+                          className="flex items-center gap-1 px-2.5 py-1.5 rounded-lg text-xs font-medium bg-white/5 hover:bg-white/10 text-slate-300 border border-white/10 transition-colors disabled:opacity-50"
+                          title="Ping device socket"
+                        >
+                          <Zap size={13} className={isPinging ? 'animate-spin text-amber-400' : 'text-amber-400'} />
+                          <span>{isPinging ? 'Pinging...' : 'Ping'}</span>
+                        </button>
+
+                        {/* Pair Actions */}
+                        {isPaired ? (
+                          <span className="text-[11px] text-purple-300 flex items-center gap-1 font-medium">
+                            <CheckCircle2 size={13} className="text-purple-400" />
+                            <span>Paired with NEXUS</span>
+                          </span>
+                        ) : device.type === 'tv' || device.detectedServices?.some((s) => s.port === 5555 || s.port === 6466 || s.port === 8008) ? (
+                          <button
+                            onClick={() => handlePairDiscoveredTv(device)}
+                            className="flex items-center gap-1 px-3 py-1.5 rounded-lg text-xs font-semibold bg-purple-500/20 hover:bg-purple-500/30 text-purple-200 border border-purple-500/40 transition-all hover:scale-105"
+                          >
+                            <Plus size={13} />
+                            <span>+ Pair TV</span>
+                          </button>
+                        ) : device.type === 'android' ? (
+                          <button
+                            onClick={() => handlePairDiscoveredAndroid(device)}
+                            className="flex items-center gap-1 px-3 py-1.5 rounded-lg text-xs font-semibold bg-cyan-500/20 hover:bg-cyan-500/30 text-cyan-200 border border-cyan-500/40 transition-all hover:scale-105"
+                          >
+                            <Plus size={13} />
+                            <span>+ Pair Agent</span>
+                          </button>
+                        ) : (
+                          <button
+                            onClick={() => handlePairDiscoveredTv(device)}
+                            className="flex items-center gap-1 px-2.5 py-1.5 rounded-lg text-xs font-medium bg-white/5 hover:bg-white/10 text-slate-300 border border-white/10 transition-colors"
+                          >
+                            <Plus size={13} />
+                            <span>Connect</span>
+                          </button>
+                        )}
                       </div>
                     </div>
                   );
