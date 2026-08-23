@@ -507,7 +507,7 @@ export function DevicesPage() {
 
       if (isNativeAndroid()) {
         // If Google TV / Android TV TLS remote mode
-        if (tvMethodInput === 'google_tv' || port === 6466 || port === 6467) {
+        if (tvMethodInput === 'google_tv' && port !== 5555) {
           // 1. Try connecting with existing saved certificates
           const connRes = await connectTvNative(ip, 6466, 'google_tv');
           if (connRes.success && connRes.isConnected) {
@@ -537,19 +537,20 @@ export function DevicesPage() {
             }
           }
         } else {
-          // ADB or webOS probe
-          const nativeProbe = await testTvConnectionNative(ip, port, tvMethodInput);
-          if (!nativeProbe.reachable) {
+          // ADB (port 5555) or webOS probe
+          const adbRes = await connectTvNative(ip, port, tvMethodInput);
+          if (!adbRes.success && !adbRes.isConnected) {
             setTvTestStatus('failed');
             setTvTestError(
-              nativeProbe.error ||
-                `Could not establish direct TCP connection to TV at ${ip}:${port}. Ensure TV is turned on and connected to the same Wi-Fi network.`,
+              adbRes.error ||
+                `Could not connect to ADB on ${ip}:${port}. Check your TV screen — you may need to approve a debugging prompt on the TV.`,
             );
             setIsTvConnecting(false);
             return;
           }
+          modelName = adbRes.model || adbRes.deviceName || 'Android TV';
           isReachableLocally = true;
-          latencyMs = nativeProbe.latencyMs || 15;
+          latencyMs = 15;
         }
       }
 
@@ -2620,7 +2621,14 @@ export function DevicesPage() {
                       <button
                         key={method.id}
                         type="button"
-                        onClick={() => setTvMethodInput(method.id as TVConnectionMethod)}
+                        onClick={() => {
+                          setTvMethodInput(method.id as TVConnectionMethod);
+                          if (method.id === 'android_tv') {
+                            setTvPortInput('5555');
+                          } else if (method.id === 'google_tv') {
+                            setTvPortInput('6466');
+                          }
+                        }}
                         className={`p-2.5 rounded-xl border text-xs font-semibold flex flex-col items-center gap-1 transition-all ${
                           tvMethodInput === method.id
                             ? 'bg-purple-500/25 border-purple-400/60 text-purple-200 shadow-md shadow-purple-500/20'
@@ -2633,6 +2641,18 @@ export function DevicesPage() {
                     ))}
                   </div>
                 </div>
+
+                {(tvMethodInput === 'android_tv' || tvPortInput === '5555') && (
+                  <div className="p-3.5 rounded-xl bg-purple-500/15 border border-purple-500/30 text-purple-200 text-xs flex items-start gap-3">
+                    <AlertTriangle size={16} className="text-purple-300 flex-shrink-0 mt-0.5" />
+                    <div>
+                      <div className="font-semibold text-white">ADB Port 5555 Notice</div>
+                      <p className="text-purple-200/80 text-xs mt-0.5">
+                        Check your TV screen — you may need to approve a debugging prompt on the TV when connecting for the first time.
+                      </p>
+                    </div>
+                  </div>
+                )}
 
                 {/* Socket Test Banner & Feedback */}
                 {tvTestStatus === 'testing' && (

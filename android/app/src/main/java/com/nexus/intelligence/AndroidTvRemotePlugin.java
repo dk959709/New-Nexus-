@@ -24,6 +24,7 @@ import java.security.KeyPairGenerator;
 import java.security.KeyStore;
 import java.security.MessageDigest;
 import java.security.PrivateKey;
+import java.security.PublicKey;
 import java.security.SecureRandom;
 import java.security.Signature;
 import java.security.cert.Certificate;
@@ -32,6 +33,7 @@ import java.security.cert.X509Certificate;
 import java.security.spec.PKCS8EncodedKeySpec;
 import java.security.spec.X509EncodedKeySpec;
 import java.text.SimpleDateFormat;
+import java.util.Arrays;
 import java.util.Date;
 import java.util.Locale;
 import java.util.TimeZone;
@@ -49,6 +51,8 @@ public class AndroidTvRemotePlugin extends Plugin {
     private static final String PREFS_NAME = "nexus_tv_remote_prefs";
     private static final String KEY_CLIENT_CERT = "tv_client_cert_der_b64";
     private static final String KEY_PRIVATE_KEY = "tv_client_privkey_pkcs8_b64";
+    private static final String KEY_ADB_PUB_KEY = "tv_adb_pub_key_b64";
+    private static final String KEY_ADB_PRIV_KEY = "tv_adb_priv_key_pkcs8_b64";
     private static final String KEY_LAST_PAIRED_IP = "tv_last_paired_ip";
     private static final String KEY_LAST_TV_MODEL = "tv_last_tv_model";
 
@@ -85,8 +89,8 @@ public class AndroidTvRemotePlugin extends Plugin {
 
     @PluginMethod
     public void checkStatus(PluginCall call) {
-        JSObject res = new JSObject();
-        boolean socketAlive = isRemoteSocketAlive();
+        final JSObject res = new JSObject();
+        final boolean socketAlive = isRemoteSocketAlive();
         res.put("isConnected", socketAlive);
         res.put("isPaired", getSavedPairedIp() != null);
         res.put("ip", connectedTvIp != null ? connectedTvIp : getSavedPairedIp());
@@ -98,8 +102,8 @@ public class AndroidTvRemotePlugin extends Plugin {
 
     @PluginMethod
     public void startPairing(PluginCall call) {
-        String ip = call.getString("ipAddress");
-        Integer portVal = call.getInt("port", 6467);
+        final String ip = call.getString("ipAddress");
+        final Integer portVal = call.getInt("port", 6467);
         final String targetIp = (ip != null && !ip.trim().isEmpty()) ? ip.trim() : getSavedPairedIp();
         final int targetPort = (portVal != null && portVal > 0) ? portVal : 6467;
 
@@ -108,73 +112,69 @@ public class AndroidTvRemotePlugin extends Plugin {
             return;
         }
 
-        new Thread(() -> {
-            try {
-                Log.d(TAG, "Starting TLS pairing with TV at " + targetIp + ":" + targetPort);
-                closePairingSession();
+        final PluginCall savedCall = call;
 
-                // 1. Ensure Client Certificate and RSA Key exist
-                ensureClientCertificate();
+        new Thread(new Runnable() {
+            @Override
+            public void run() {
+                try {
+                    Log.d(TAG, "Starting TLS pairing with TV at " + targetIp + ":" + targetPort);
+                    closePairingSession();
 
-                // 2. Open TLS Socket to Pairing Port (6467)
-                SSLContext sslContext = createSSLContext();
-                SSLSocketFactory factory = sslContext.getSocketFactory();
-                
-                Socket plainSocket = new Socket();
-                plainSocket.connect(new InetSocketAddress(targetIp, targetPort), 4000);
-                
-                pairingSocket = (SSLSocket) factory.createSocket(plainSocket, targetIp, targetPort, true);
-                pairingSocket.setUseClientMode(true);
-                pairingSocket.setNeedClientAuth(true);
-                pairingSocket.setSoTimeout(10000);
-                pairingSocket.startHandshake();
+                    ensureClientCertificate();
 
-                Certificate[] serverCerts = pairingSocket.getSession().getPeerCertificates();
-                if (serverCerts != null && serverCerts.length > 0 && serverCerts[0] instanceof X509Certificate) {
-                    serverCertificate = (X509Certificate) serverCerts[0];
+                    SSLContext sslContext = createSSLContext();
+                    SSLSocketFactory factory = sslContext.getSocketFactory();
+                    
+                    Socket plainSocket = new Socket();
+                    plainSocket.connect(new InetSocketAddress(targetIp, targetPort), 4000);
+                    
+                    pairingSocket = (SSLSocket) factory.createSocket(plainSocket, targetIp, targetPort, true);
+                    pairingSocket.setUseClientMode(true);
+                    pairingSocket.setNeedClientAuth(true);
+                    pairingSocket.setSoTimeout(10000);
+                    pairingSocket.startHandshake();
+
+                    Certificate[] serverCerts = pairingSocket.getSession().getPeerCertificates();
+                    if (serverCerts != null && serverCerts.length > 0 && serverCerts[0] instanceof X509Certificate) {
+                        serverCertificate = (X509Certificate) serverCerts[0];
+                    }
+
+                    pairingOut = pairingSocket.getOutputStream();
+                    pairingIn = pairingSocket.getInputStream();
+                    pendingPairingIp = targetIp;
+                    pendingPairingPort = targetPort;
+
+                    byte[] pairingReqMsg = buildPairingRequestMessage("nexus.remote", "Nexus Remote");
+                    writeDelimitedMessage(pairingOut, pairingReqMsg);
+
+                    byte[] ack1 = readDelimitedMessage(pairingIn);
+                    Log.d(TAG, "Received PairingRequestAck (" + (ack1 != null ? ack1.length : 0) + " bytes)");
+
+                    byte[] optionMsg = buildPairingOptionMessage();
+                    writeDelimitedMessage(pairingOut, optionMsg);
+
+                    byte[] ack2 = readDelimitedMessage(pairingIn);
+                    Log.d(TAG, "Received PairingOptionAck. TV is now displaying PIN!");
+
+                    byte[] configMsg = buildPairingConfigurationMessage();
+                    writeDelimitedMessage(pairingOut, configMsg);
+
+                    byte[] ack3 = readDelimitedMessage(pairingIn);
+                    Log.d(TAG, "Received PairingConfigurationAck");
+
+                    JSObject res = new JSObject();
+                    res.put("status", "NEED_PIN");
+                    res.put("ip", targetIp);
+                    res.put("port", targetPort);
+                    res.put("message", "Enter the 6-character code displayed on your TV screen");
+                    savedCall.resolve(res);
+
+                } catch (Exception e) {
+                    Log.e(TAG, "Pairing handshake failed", e);
+                    closePairingSession();
+                    savedCall.reject("Failed to initiate TV pairing: " + e.getMessage(), e);
                 }
-
-                pairingOut = pairingSocket.getOutputStream();
-                pairingIn = pairingSocket.getInputStream();
-                pendingPairingIp = targetIp;
-                pendingPairingPort = targetPort;
-
-                // Step 1: Send PairingRequest
-                // PairingMessage: protocol_version=2, status=STATUS_OK(200), pairing_request { service_name="nexus.remote", client_name="Nexus Remote" }
-                byte[] pairingReqMsg = buildPairingRequestMessage("nexus.remote", "Nexus Remote");
-                writeDelimitedMessage(pairingOut, pairingReqMsg);
-
-                // Step 2: Read PairingRequestAck
-                byte[] ack1 = readDelimitedMessage(pairingIn);
-                Log.d(TAG, "Received PairingRequestAck (" + (ack1 != null ? ack1.length : 0) + " bytes)");
-
-                // Step 3: Send PairingOption (preferred_role=1, input_encodings=[HEXADECIMAL, len=6])
-                byte[] optionMsg = buildPairingOptionMessage();
-                writeDelimitedMessage(pairingOut, optionMsg);
-
-                // Step 4: Read PairingOptionAck -> TV displays the PIN!
-                byte[] ack2 = readDelimitedMessage(pairingIn);
-                Log.d(TAG, "Received PairingOptionAck. TV is now displaying PIN!");
-
-                // Step 5: Send PairingConfiguration
-                byte[] configMsg = buildPairingConfigurationMessage();
-                writeDelimitedMessage(pairingOut, configMsg);
-
-                // Step 6: Read PairingConfigurationAck
-                byte[] ack3 = readDelimitedMessage(pairingIn);
-                Log.d(TAG, "Received PairingConfigurationAck");
-
-                JSObject res = new JSObject();
-                res.put("status", "NEED_PIN");
-                res.put("ip", targetIp);
-                res.put("port", targetPort);
-                res.put("message", "Enter the 6-character code displayed on your TV screen");
-                call.resolve(res);
-
-            } catch (Exception e) {
-                Log.e(TAG, "Pairing handshake failed", e);
-                closePairingSession();
-                call.reject("Failed to initiate TV pairing: " + e.getMessage(), e);
             }
         }).start();
     }
@@ -188,191 +188,199 @@ public class AndroidTvRemotePlugin extends Plugin {
         }
 
         final String pin = pinRaw.trim().toUpperCase(Locale.US);
+        final PluginCall savedCall = call;
 
-        new Thread(() -> {
-            try {
-                if (pairingSocket == null || pairingOut == null || pairingIn == null) {
-                    call.reject("No active pairing session. Please click Connect to start pairing first.");
-                    return;
+        new Thread(new Runnable() {
+            @Override
+            public void run() {
+                try {
+                    if (pairingSocket == null || pairingOut == null || pairingIn == null) {
+                        savedCall.reject("No active pairing session. Please click Connect to start pairing first.");
+                        return;
+                    }
+
+                    X509Certificate clientCert = getClientCertificate();
+                    if (clientCert == null || serverCertificate == null) {
+                        savedCall.reject("Certificate exchange incomplete during pairing.");
+                        return;
+                    }
+
+                    byte[] clientCertBytes = clientCert.getEncoded();
+                    byte[] serverCertBytes = serverCertificate.getEncoded();
+
+                    byte[] pinBytes;
+                    if (pin.length() % 2 == 0 && pin.matches("^[0-9A-F]+$")) {
+                        pinBytes = hexStringToByteArray(pin);
+                    } else {
+                        pinBytes = pin.getBytes("UTF-8");
+                    }
+
+                    MessageDigest md = MessageDigest.getInstance("SHA-256");
+                    md.update(clientCertBytes);
+                    md.update(serverCertBytes);
+                    md.update(pinBytes);
+                    byte[] secretHash = md.digest();
+
+                    byte[] secretMsg = buildPairingSecretMessage(secretHash);
+                    writeDelimitedMessage(pairingOut, secretMsg);
+
+                    byte[] secretAck = readDelimitedMessage(pairingIn);
+                    Log.d(TAG, "Received PairingSecretAck (" + (secretAck != null ? secretAck.length : 0) + " bytes)");
+
+                    savePairedIp(pendingPairingIp);
+                    closePairingSession();
+
+                    boolean controlConnected = connectControlSocketInternal(pendingPairingIp, 6466);
+
+                    JSObject res = new JSObject();
+                    res.put("success", true);
+                    res.put("status", "PAIRED");
+                    res.put("isConnected", controlConnected);
+                    res.put("ip", pendingPairingIp);
+                    res.put("deviceName", connectedTvModel);
+                    res.put("model", connectedTvModel);
+                    res.put("message", "Smart TV paired and connected successfully!");
+                    savedCall.resolve(res);
+
+                } catch (Exception e) {
+                    Log.e(TAG, "Failed to complete PIN verification", e);
+                    closePairingSession();
+                    savedCall.reject("PIN verification failed: " + e.getMessage(), e);
                 }
-
-                X509Certificate clientCert = getClientCertificate();
-                if (clientCert == null || serverCertificate == null) {
-                    call.reject("Certificate exchange incomplete during pairing.");
-                    return;
-                }
-
-                // Compute Secret Hash: SHA-256(client_cert_der + server_cert_der + pin_bytes)
-                byte[] clientCertBytes = clientCert.getEncoded();
-                byte[] serverCertBytes = serverCertificate.getEncoded();
-
-                // Compute PIN bytes (try hex decode if 6 hex chars, or ASCII bytes)
-                byte[] pinBytes;
-                if (pin.length() % 2 == 0 && pin.matches("^[0-9A-F]+$")) {
-                    pinBytes = hexStringToByteArray(pin);
-                } else {
-                    pinBytes = pin.getBytes("UTF-8");
-                }
-
-                MessageDigest md = MessageDigest.getInstance("SHA-256");
-                md.update(clientCertBytes);
-                md.update(serverCertBytes);
-                md.update(pinBytes);
-                byte[] secretHash = md.digest();
-
-                // Send PairingSecret
-                byte[] secretMsg = buildPairingSecretMessage(secretHash);
-                writeDelimitedMessage(pairingOut, secretMsg);
-
-                // Read PairingSecretAck
-                byte[] secretAck = readDelimitedMessage(pairingIn);
-                Log.d(TAG, "Received PairingSecretAck (" + (secretAck != null ? secretAck.length : 0) + " bytes)");
-
-                // Save paired IP
-                savePairedIp(pendingPairingIp);
-                closePairingSession();
-
-                // Connect to Remote Control Port (6466) immediately
-                boolean controlConnected = connectControlSocketInternal(pendingPairingIp, 6466);
-
-                JSObject res = new JSObject();
-                res.put("success", true);
-                res.put("status", "PAIRED");
-                res.put("isConnected", controlConnected);
-                res.put("ip", pendingPairingIp);
-                res.put("deviceName", connectedTvModel);
-                res.put("model", connectedTvModel);
-                res.put("message", "Smart TV paired and connected successfully!");
-                call.resolve(res);
-
-            } catch (Exception e) {
-                Log.e(TAG, "Failed to complete PIN verification", e);
-                closePairingSession();
-                call.reject("PIN verification failed: " + e.getMessage(), e);
             }
         }).start();
     }
 
     @PluginMethod
     public void connectTv(PluginCall call) {
-        String ip = call.getString("ipAddress");
-        Integer portVal = call.getInt("port", 6466);
+        final String ip = call.getString("ipAddress");
+        final Integer portVal = call.getInt("port", 6466);
+        final String method = call.getString("method", "google_tv");
         final String targetIp = (ip != null && !ip.trim().isEmpty()) ? ip.trim() : getSavedPairedIp();
-        final int targetPort = (portVal != null && portVal > 0) ? portVal : 6466;
+        final int targetPort = (portVal != null && portVal > 0) ? portVal : (method != null && method.equals("android_tv") ? 5555 : 6466);
 
         if (targetIp == null || targetIp.isEmpty()) {
             call.reject("TV IP address is required");
             return;
         }
 
-        new Thread(() -> {
-            try {
-                // If targeting ADB port (5555), test ADB socket
-                if (targetPort == 5555) {
-                    boolean adbOk = testAdbSocket(targetIp, 5555);
-                    JSObject res = new JSObject();
-                    res.put("success", adbOk);
-                    res.put("isConnected", adbOk);
-                    res.put("isPaired", true);
-                    res.put("ip", targetIp);
-                    res.put("port", 5555);
-                    res.put("deviceName", "Android TV (ADB)");
-                    res.put("model", "Android TV");
-                    call.resolve(res);
-                    return;
-                }
+        final PluginCall savedCall = call;
 
-                // Connect over TLS to Port 6466
-                boolean connected = connectControlSocketInternal(targetIp, targetPort);
-                if (connected) {
-                    JSObject res = new JSObject();
-                    res.put("success", true);
-                    res.put("isConnected", true);
-                    res.put("isPaired", true);
-                    res.put("ip", targetIp);
-                    res.put("port", targetPort);
-                    res.put("deviceName", connectedTvModel);
-                    res.put("model", connectedTvModel);
-                    call.resolve(res);
-                } else {
+        new Thread(new Runnable() {
+            @Override
+            public void run() {
+                try {
+                    // If targetPort is 5555 or method is android_tv, perform real authenticated ADB handshake!
+                    if (targetPort == 5555 || (method != null && method.equals("android_tv"))) {
+                        boolean adbConnected = connectAndAuthenticateAdb(targetIp, 5555);
+                        JSObject res = new JSObject();
+                        res.put("success", adbConnected);
+                        res.put("isConnected", adbConnected);
+                        res.put("isPaired", true);
+                        res.put("ip", targetIp);
+                        res.put("port", 5555);
+                        res.put("deviceName", "Android TV (ADB)");
+                        res.put("model", "Android TV");
+                        if (!adbConnected) {
+                            res.put("error", "ADB authentication failed or TV debugging prompt not accepted. Check TV screen.");
+                        }
+                        savedCall.resolve(res);
+                        return;
+                    }
+
+                    // Otherwise connect over TLS to Port 6466
+                    boolean connected = connectControlSocketInternal(targetIp, targetPort);
+                    if (connected) {
+                        JSObject res = new JSObject();
+                        res.put("success", true);
+                        res.put("isConnected", true);
+                        res.put("isPaired", true);
+                        res.put("ip", targetIp);
+                        res.put("port", targetPort);
+                        res.put("deviceName", connectedTvModel);
+                        res.put("model", connectedTvModel);
+                        savedCall.resolve(res);
+                    } else {
+                        JSObject res = new JSObject();
+                        res.put("success", false);
+                        res.put("needPairing", true);
+                        res.put("error", "Pairing required with TV");
+                        savedCall.resolve(res);
+                    }
+                } catch (Exception e) {
+                    Log.e(TAG, "Connection to TV failed", e);
                     JSObject res = new JSObject();
                     res.put("success", false);
                     res.put("needPairing", true);
-                    res.put("error", "Pairing required with TV");
-                    call.resolve(res);
+                    res.put("error", e.getMessage());
+                    savedCall.resolve(res);
                 }
-            } catch (Exception e) {
-                Log.e(TAG, "Connection to TV failed", e);
-                JSObject res = new JSObject();
-                res.put("success", false);
-                res.put("needPairing", true);
-                res.put("error", e.getMessage());
-                call.resolve(res);
             }
         }).start();
     }
 
     @PluginMethod
     public void sendKey(PluginCall call) {
-        String action = call.getString("action");
-        Integer keyCodeVal = call.getInt("keyCode", 0);
-        String targetIp = call.getString("ipAddress");
-        if (targetIp == null || targetIp.isEmpty()) {
-            targetIp = connectedTvIp != null ? connectedTvIp : getSavedPairedIp();
-        }
+        final String action = call.getString("action");
+        final Integer keyCodeVal = call.getInt("keyCode", 0);
+        String ip = call.getString("ipAddress");
+        final String targetIp = (ip != null && !ip.trim().isEmpty()) ? ip.trim() : (connectedTvIp != null ? connectedTvIp : getSavedPairedIp());
+        final int keyCode = (keyCodeVal != null && keyCodeVal > 0) ? keyCodeVal : mapActionToKeyCode(action);
 
-        int keyCode = (keyCodeVal != null && keyCodeVal > 0) ? keyCodeVal : mapActionToKeyCode(action);
-        final String finalTargetIp = targetIp;
+        final PluginCall savedCall = call;
 
-        new Thread(() -> {
-            try {
-                // 1. Try TLS Remote Control Socket (Port 6466)
-                if (isRemoteSocketAlive()) {
-                    boolean sent = sendRemoteKeyInject(keyCode);
-                    if (sent) {
-                        JSObject res = new JSObject();
-                        res.put("success", true);
-                        res.put("action", action);
-                        res.put("keyCode", keyCode);
-                        call.resolve(res);
-                        return;
-                    }
-                }
-
-                // 2. If socket not connected, try re-connecting to 6466
-                if (finalTargetIp != null && !finalTargetIp.isEmpty()) {
-                    boolean reconnected = connectControlSocketInternal(finalTargetIp, connectedTvPort > 0 ? connectedTvPort : 6466);
-                    if (reconnected && isRemoteSocketAlive()) {
+        new Thread(new Runnable() {
+            @Override
+            public void run() {
+                try {
+                    // 1. Try TLS Remote Control Socket (Port 6466)
+                    if (isRemoteSocketAlive()) {
                         boolean sent = sendRemoteKeyInject(keyCode);
                         if (sent) {
                             JSObject res = new JSObject();
                             res.put("success", true);
                             res.put("action", action);
                             res.put("keyCode", keyCode);
-                            call.resolve(res);
+                            savedCall.resolve(res);
                             return;
                         }
                     }
-                }
 
-                // 3. Fallback to ADB Socket on 5555 if configured
-                if (finalTargetIp != null && !finalTargetIp.isEmpty()) {
-                    boolean adbSent = sendAdbKey(finalTargetIp, 5555, keyCode);
-                    if (adbSent) {
-                        JSObject res = new JSObject();
-                        res.put("success", true);
-                        res.put("action", action);
-                        res.put("keyCode", keyCode);
-                        call.resolve(res);
-                        return;
+                    // 2. If socket not connected, try re-connecting to 6466
+                    if (targetIp != null && !targetIp.isEmpty()) {
+                        boolean reconnected = connectControlSocketInternal(targetIp, connectedTvPort > 0 ? connectedTvPort : 6466);
+                        if (reconnected && isRemoteSocketAlive()) {
+                            boolean sent = sendRemoteKeyInject(keyCode);
+                            if (sent) {
+                                JSObject res = new JSObject();
+                                res.put("success", true);
+                                res.put("action", action);
+                                res.put("keyCode", keyCode);
+                                savedCall.resolve(res);
+                                return;
+                            }
+                        }
                     }
+
+                    // 3. Fallback to Real Authenticated ADB Socket on Port 5555
+                    if (targetIp != null && !targetIp.isEmpty()) {
+                        boolean adbSent = sendAdbKeyAuthenticated(targetIp, 5555, keyCode);
+                        if (adbSent) {
+                            JSObject res = new JSObject();
+                            res.put("success", true);
+                            res.put("action", action);
+                            res.put("keyCode", keyCode);
+                            savedCall.resolve(res);
+                            return;
+                        }
+                    }
+
+                    savedCall.reject("Cannot send key: TV is not connected. Check TV screen for debugging prompt or pair your TV.");
+
+                } catch (Exception e) {
+                    Log.e(TAG, "Error sending key command", e);
+                    savedCall.reject("Failed to send key to TV: " + e.getMessage(), e);
                 }
-
-                call.reject("Cannot send key: TV is not connected. Please pair or connect to your Smart TV.");
-
-            } catch (Exception e) {
-                Log.e(TAG, "Error sending key command", e);
-                call.reject("Failed to send key to TV: " + e.getMessage(), e);
             }
         }).start();
     }
@@ -383,6 +391,278 @@ public class AndroidTvRemotePlugin extends Plugin {
         JSObject res = new JSObject();
         res.put("success", true);
         call.resolve(res);
+    }
+
+    // =========================================================================
+    // REAL ADB AUTHENTICATION & SOCKET COMMUNICATION (PORT 5555)
+    // =========================================================================
+    private synchronized KeyPair ensureAdbRsaKey() throws Exception {
+        SharedPreferences prefs = getContext().getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE);
+        String privB64 = prefs.getString(KEY_ADB_PRIV_KEY, null);
+
+        if (privB64 != null) {
+            byte[] privBytes = Base64.decode(privB64, Base64.DEFAULT);
+            PKCS8EncodedKeySpec spec = new PKCS8EncodedKeySpec(privBytes);
+            KeyFactory kf = KeyFactory.getInstance("RSA");
+            PrivateKey privKey = kf.generatePrivate(spec);
+
+            // Re-derive public key from private key spec or generate if needed
+            KeyPairGenerator kpg = KeyPairGenerator.getInstance("RSA");
+            kpg.initialize(2048, new SecureRandom());
+            // To ensure public key matches, we can also store public key b64
+            String pubB64 = prefs.getString(KEY_ADB_PUB_KEY, null);
+            PublicKey pubKey;
+            if (pubB64 != null) {
+                byte[] pubBytes = Base64.decode(pubB64, Base64.DEFAULT);
+                X509EncodedKeySpec pubSpec = new X509EncodedKeySpec(pubBytes);
+                pubKey = kf.generatePublic(pubSpec);
+            } else {
+                KeyPair kp = kpg.generateKeyPair();
+                pubKey = kp.getPublic();
+                prefs.edit().putString(KEY_ADB_PUB_KEY, Base64.encodeToString(pubKey.getEncoded(), Base64.NO_WRAP)).apply();
+            }
+            return new KeyPair(pubKey, privKey);
+        }
+
+        Log.d(TAG, "Generating new persistent 2048-bit RSA KeyPair for ADB authentication...");
+        KeyPairGenerator kpg = KeyPairGenerator.getInstance("RSA");
+        kpg.initialize(2048, new SecureRandom());
+        KeyPair keyPair = kpg.generateKeyPair();
+
+        prefs.edit()
+            .putString(KEY_ADB_PRIV_KEY, Base64.encodeToString(keyPair.getPrivate().getEncoded(), Base64.NO_WRAP))
+            .putString(KEY_ADB_PUB_KEY, Base64.encodeToString(keyPair.getPublic().getEncoded(), Base64.NO_WRAP))
+            .apply();
+
+        Log.d(TAG, "Persistent ADB RSA KeyPair generated and saved successfully.");
+        return keyPair;
+    }
+
+    private boolean connectAndAuthenticateAdb(String ip, int port) {
+        Socket socket = null;
+        try {
+            ensureAdbRsaKey();
+            socket = new Socket();
+            socket.connect(new InetSocketAddress(ip, port), 3000);
+            socket.setSoTimeout(5000);
+
+            OutputStream out = socket.getOutputStream();
+            InputStream in = socket.getInputStream();
+
+            // 1. Send A_CNXN packet
+            // command = 0x4e584e43 ("CNXN"), arg0 = 0x01000000 (version), arg1 = 0x00100000 (max data)
+            byte[] cnxnPayload = "host::nexus-remote\0".getBytes("UTF-8");
+            writeAdbPacket(out, 0x4e584e43, 0x01000000, 0x00100000, cnxnPayload);
+
+            // 2. Read response loop for authentication challenge or CNXN confirmation
+            while (true) {
+                AdbHeader header = readAdbHeader(in);
+                if (header == null) break;
+                byte[] data = readAdbPayload(in, header);
+
+                if (header.command == 0x4e584e43) {
+                    // CNXN received! Successfully authenticated. TV has accepted us.
+                    Log.d(TAG, "ADB Connection accepted (CNXN received)");
+                    socket.close();
+                    return true;
+                } else if (header.command == 0x48545541) {
+                    // AUTH received (A_AUTH)
+                    // arg0 == 1 means AUTH_TOKEN (TV sends a 20-byte random challenge token)
+                    if (header.arg0 == 1) {
+                        Log.d(TAG, "Received ADB AUTH token challenge. Signing with persistent RSA private key...");
+                        KeyPair kp = ensureAdbRsaKey();
+                        byte[] signature = signAdbToken(kp.getPrivate(), data);
+
+                        // Send signed token back: A_AUTH with arg0 = 1 (AUTH_SIGNATURE)
+                        writeAdbPacket(out, 0x48545541, 1, 0, signature);
+                    } else if (header.arg0 == 2) {
+                        // TV requested RSA public key (AUTH_RSAPUBLICKEY)
+                        Log.d(TAG, "TV requested RSA Public Key (AUTH_RSAPUBLICKEY). Sending public key...");
+                        KeyPair kp = ensureAdbRsaKey();
+                        byte[] pubKeyPacket = getAdbPublicKeyPayload(kp.getPublic());
+                        writeAdbPacket(out, 0x48545541, 2, 0, pubKeyPacket);
+                    }
+                } else {
+                    Log.w(TAG, "Received unexpected ADB packet command: 0x" + Integer.toHexString(header.command));
+                }
+            }
+
+            socket.close();
+            return false;
+        } catch (Exception e) {
+            Log.e(TAG, "ADB authentication failed with " + ip + ":" + port, e);
+            if (socket != null) {
+                try { socket.close(); } catch (Exception ignored) {}
+            }
+            return false;
+        }
+    }
+
+    private boolean sendAdbKeyAuthenticated(String ip, int port, int keyCode) {
+        Socket socket = null;
+        try {
+            ensureAdbRsaKey();
+            socket = new Socket();
+            socket.connect(new InetSocketAddress(ip, port), 3000);
+            socket.setSoTimeout(5000);
+
+            OutputStream out = socket.getOutputStream();
+            InputStream in = socket.getInputStream();
+
+            // 1. CNXN
+            byte[] cnxnPayload = "host::nexus-remote\0".getBytes("UTF-8");
+            writeAdbPacket(out, 0x4e584e43, 0x01000000, 0x00100000, cnxnPayload);
+
+            boolean authenticated = false;
+
+            // 2. Auth loop
+            while (!authenticated) {
+                AdbHeader header = readAdbHeader(in);
+                if (header == null) break;
+                byte[] data = readAdbPayload(in, header);
+
+                if (header.command == 0x4e584e43) {
+                    authenticated = true;
+                } else if (header.command == 0x48545541) {
+                    if (header.arg0 == 1) {
+                        KeyPair kp = ensureAdbRsaKey();
+                        byte[] signature = signAdbToken(kp.getPrivate(), data);
+                        writeAdbPacket(out, 0x48545541, 1, 0, signature);
+                    } else if (header.arg0 == 2) {
+                        KeyPair kp = ensureAdbRsaKey();
+                        byte[] pubKeyPacket = getAdbPublicKeyPayload(kp.getPublic());
+                        writeAdbPacket(out, 0x48545541, 2, 0, pubKeyPacket);
+                    }
+                }
+            }
+
+            if (!authenticated) {
+                socket.close();
+                return false;
+            }
+
+            // 3. Open shell stream: A_OPEN ("OPEN")
+            // local_id = 1, remote_id = 0, payload = "shell:input keyevent <keyCode>\0"
+            String shellCmd = "shell:input keyevent " + keyCode + "\0";
+            byte[] openPayload = shellCmd.getBytes("UTF-8");
+            writeAdbPacket(out, 0x4e45504f, 1, 0, openPayload);
+
+            // Read ACK / OKAY / WRTE until complete
+            long start = System.currentTimeMillis();
+            while (System.currentTimeMillis() - start < 3000) {
+                AdbHeader header = readAdbHeader(in);
+                if (header == null) break;
+                readAdbPayload(in, header);
+                if (header.command == 0x45534c43) { // A_CLSE
+                    break;
+                }
+            }
+
+            socket.close();
+            return true;
+
+        } catch (Exception e) {
+            Log.e(TAG, "Failed to send ADB key command", e);
+            if (socket != null) {
+                try { socket.close(); } catch (Exception ignored) {}
+            }
+            return false;
+        }
+    }
+
+    private static class AdbHeader {
+        int command;
+        int arg0;
+        int arg1;
+        int dataLength;
+        int dataChecksum;
+        int magic;
+    }
+
+    private AdbHeader readAdbHeader(InputStream in) throws IOException {
+        byte[] buf = new byte[24];
+        int read = 0;
+        while (read < 24) {
+            int r = in.read(buf, read, 24 - read);
+            if (r < 0) return null;
+            read += r;
+        }
+
+        AdbHeader h = new AdbHeader();
+        h.command = readInt32LE(buf, 0);
+        h.arg0 = readInt32LE(buf, 4);
+        h.arg1 = readInt32LE(buf, 8);
+        h.dataLength = readInt32LE(buf, 12);
+        h.dataChecksum = readInt32LE(buf, 16);
+        h.magic = readInt32LE(buf, 20);
+        return h;
+    }
+
+    private byte[] readAdbPayload(InputStream in, AdbHeader h) throws IOException {
+        if (h.dataLength <= 0 || h.dataLength > 1048576) {
+            return new byte[0];
+        }
+        byte[] data = new byte[h.dataLength];
+        int total = 0;
+        while (total < h.dataLength) {
+            int r = in.read(data, total, h.dataLength - total);
+            if (r < 0) break;
+            total += r;
+        }
+        return data;
+    }
+
+    private void writeAdbPacket(OutputStream out, int command, int arg0, int arg1, byte[] payload) throws IOException {
+        int len = payload != null ? payload.length : 0;
+        int checksum = 0;
+        if (payload != null) {
+            for (byte b : payload) {
+                checksum += (b & 0xFF);
+            }
+        }
+        int magic = command ^ 0xFFFFFFFF;
+
+        byte[] header = new byte[24];
+        writeInt32LE(header, 0, command);
+        writeInt32LE(header, 4, arg0);
+        writeInt32LE(header, 8, arg1);
+        writeInt32LE(header, 12, len);
+        writeInt32LE(header, 16, checksum);
+        writeInt32LE(header, 20, magic);
+
+        out.write(header);
+        if (len > 0) {
+            out.write(payload);
+        }
+        out.flush();
+    }
+
+    private int readInt32LE(byte[] b, int offset) {
+        return (b[offset] & 0xFF) |
+               ((b[offset + 1] & 0xFF) << 8) |
+               ((b[offset + 2] & 0xFF) << 16) |
+               ((b[offset + 3] & 0xFF) << 24);
+    }
+
+    private void writeInt32LE(byte[] b, int offset, int val) {
+        b[offset] = (byte) (val & 0xFF);
+        b[offset + 1] = (byte) ((val >> 8) & 0xFF);
+        b[offset + 2] = (byte) ((val >> 16) & 0xFF);
+        b[offset + 3] = (byte) ((val >> 24) & 0xFF);
+    }
+
+    private byte[] signAdbToken(PrivateKey privKey, byte[] token) throws Exception {
+        Signature sig = Signature.getInstance("SHA1withRSA");
+        sig.initSign(privKey);
+        sig.update(token);
+        return sig.sign();
+    }
+
+    private byte[] getAdbPublicKeyPayload(PublicKey pubKey) throws Exception {
+        // Format for ADB public key: base64(X.509 or public key bytes) + " nexus@android\n"
+        String pubB64 = Base64.encodeToString(pubKey.getEncoded(), Base64.NO_WRAP);
+        String fullKeyStr = pubB64 + " nexus@android-remote\0";
+        return fullKeyStr.getBytes("UTF-8");
     }
 
     // =========================================================================
@@ -411,12 +691,9 @@ public class AndroidTvRemotePlugin extends Plugin {
             connectedTvPort = port;
             isTvConnected = true;
 
-            // Step 1: Send RemoteConfigure
-            // RemoteMessage { remote_configure { code1: 622, device_info { model: "Nexus Phone", vendor: "Nexus", unknown: 1, app_version: "1.0.0" } } }
             byte[] configMsg = buildRemoteConfigureMessage(622, "Nexus Remote", "Nexus", "1.0.0");
             writeDelimitedMessage(remoteControlOut, configMsg);
 
-            // Step 2: Read TV's RemoteConfigure response to get the TV's model name!
             try {
                 byte[] tvConfig = readDelimitedMessage(remoteControlIn);
                 String extractedModel = parseTvModelFromRemoteConfigure(tvConfig);
@@ -429,11 +706,9 @@ public class AndroidTvRemotePlugin extends Plugin {
                 Log.w(TAG, "Non-fatal: could not parse TV model response", e);
             }
 
-            // Step 3: Send RemoteSetActive
             byte[] activeMsg = buildRemoteSetActiveMessage(622);
             writeDelimitedMessage(remoteControlOut, activeMsg);
 
-            // Set normal timeout for ongoing keys
             remoteControlSocket.setSoTimeout(0);
             return true;
 
@@ -449,7 +724,6 @@ public class AndroidTvRemotePlugin extends Plugin {
             return false;
         }
         try {
-            // Direction 1 = SHORT_PRESS (Press and release)
             byte[] keyMsg = buildRemoteKeyInjectMessage(keyCode, 1);
             writeDelimitedMessage(remoteControlOut, keyMsg);
             return true;
@@ -467,10 +741,7 @@ public class AndroidTvRemotePlugin extends Plugin {
     private synchronized void closeRemoteControlSession() {
         isTvConnected = false;
         if (remoteControlSocket != null) {
-            try {
-                remoteControlSocket.close();
-            } catch (Exception ignored) {
-            }
+            try { remoteControlSocket.close(); } catch (Exception ignored) {}
             remoteControlSocket = null;
         }
         remoteControlOut = null;
@@ -479,51 +750,11 @@ public class AndroidTvRemotePlugin extends Plugin {
 
     private synchronized void closePairingSession() {
         if (pairingSocket != null) {
-            try {
-                pairingSocket.close();
-            } catch (Exception ignored) {
-            }
+            try { pairingSocket.close(); } catch (Exception ignored) {}
             pairingSocket = null;
         }
         pairingOut = null;
         pairingIn = null;
-    }
-
-    // =========================================================================
-    // ADB FALLBACK (PORT 5555)
-    // =========================================================================
-    private boolean testAdbSocket(String ip, int port) {
-        try {
-            Socket s = new Socket();
-            s.connect(new InetSocketAddress(ip, port), 2000);
-            s.close();
-            return true;
-        } catch (Exception e) {
-            return false;
-        }
-    }
-
-    private boolean sendAdbKey(String ip, int port, int keyCode) {
-        Socket s = null;
-        try {
-            s = new Socket();
-            s.connect(new InetSocketAddress(ip, port), 2500);
-            OutputStream out = s.getOutputStream();
-            // Send standard shell input keyevent
-            String cmd = "input keyevent " + keyCode + "\n";
-            out.write(cmd.getBytes("UTF-8"));
-            out.flush();
-            Thread.sleep(50);
-            s.close();
-            return true;
-        } catch (Exception e) {
-            if (s != null) {
-                try {
-                    s.close();
-                } catch (Exception ignored) {}
-            }
-            return false;
-        }
     }
 
     private int mapActionToKeyCode(String action) {
@@ -571,8 +802,6 @@ public class AndroidTvRemotePlugin extends Plugin {
             .putString(KEY_CLIENT_CERT, Base64.encodeToString(certDer, Base64.NO_WRAP))
             .putString(KEY_PRIVATE_KEY, Base64.encodeToString(keyPkcs8, Base64.NO_WRAP))
             .apply();
-
-        Log.d(TAG, "Client certificate generated and persisted successfully.");
     }
 
     private X509Certificate getClientCertificate() throws Exception {
@@ -618,74 +847,56 @@ public class AndroidTvRemotePlugin extends Plugin {
         return sslContext;
     }
 
-    /**
-     * Pure Java DER-encoded X.509 v3 Certificate Generator (No external dependencies)
-     */
     private X509Certificate generateSelfSignedCertificate(KeyPair keyPair) throws Exception {
         long now = System.currentTimeMillis();
-        Date notBefore = new Date(now - 86400000L); // 1 day ago
-        Date notAfter = new Date(now + 10L * 365 * 24 * 3600 * 1000L); // 10 years
+        Date notBefore = new Date(now - 86400000L);
+        Date notAfter = new Date(now + 10L * 365 * 24 * 3600 * 1000L);
 
         SimpleDateFormat sdf = new SimpleDateFormat("yyMMddHHmmss'Z'", Locale.US);
         sdf.setTimeZone(TimeZone.getTimeZone("UTC"));
         byte[] notBeforeBytes = sdf.format(notBefore).getBytes("US-ASCII");
         byte[] notAfterBytes = sdf.format(notAfter).getBytes("US-ASCII");
 
-        // 1. Validity
         ByteArrayOutputStream validityBaos = new ByteArrayOutputStream();
-        validityBaos.write(derEncode(0x17, notBeforeBytes)); // UTCTime
-        validityBaos.write(derEncode(0x17, notAfterBytes)); // UTCTime
+        validityBaos.write(derEncode(0x17, notBeforeBytes));
+        validityBaos.write(derEncode(0x17, notAfterBytes));
         byte[] validity = derEncode(0x30, validityBaos.toByteArray());
 
-        // 2. Subject / Issuer: CN=NexusRemote
-        byte[] cnValue = derEncode(0x0C, "NexusRemote".getBytes("UTF-8")); // UTF8String
-        byte[] cnOid = new byte[]{ 0x06, 0x03, 0x55, 0x04, 0x03 }; // OID: 2.5.4.3 (commonName)
+        byte[] cnValue = derEncode(0x0C, "NexusRemote".getBytes("UTF-8"));
+        byte[] cnOid = new byte[]{ 0x06, 0x03, 0x55, 0x04, 0x03 };
         ByteArrayOutputStream atvBaos = new ByteArrayOutputStream();
         atvBaos.write(cnOid);
         atvBaos.write(cnValue);
-        byte[] rdn = derEncode(0x31, derEncode(0x30, atvBaos.toByteArray())); // SET of SEQUENCE
-        byte[] name = derEncode(0x30, rdn); // SEQUENCE of SET
+        byte[] rdn = derEncode(0x31, derEncode(0x30, atvBaos.toByteArray()));
+        byte[] name = derEncode(0x30, rdn);
 
-        // 3. Signature Algorithm: sha256WithRSAEncryption (1.2.840.113549.1.1.11)
         byte[] sigAlg = new byte[]{
             0x30, 0x0D,
             0x06, 0x09, 0x2A, (byte)0x86, 0x48, (byte)0x86, (byte)0xF7, 0x0D, 0x01, 0x01, 0x0B,
             0x05, 0x00
         };
 
-        // 4. SubjectPublicKeyInfo (from RSA public key)
         byte[] pubKeyInfo = keyPair.getPublic().getEncoded();
 
-        // 5. Build TBSCertificate
         ByteArrayOutputStream tbsBaos = new ByteArrayOutputStream();
-        // Version: [0] EXPLICIT INTEGER (version 2 = v3)
         tbsBaos.write(new byte[]{ (byte)0xA0, 0x03, 0x02, 0x01, 0x02 });
-        // Serial Number: INTEGER 1
         tbsBaos.write(new byte[]{ 0x02, 0x01, 0x01 });
-        // Signature Algorithm
         tbsBaos.write(sigAlg);
-        // Issuer
         tbsBaos.write(name);
-        // Validity
         tbsBaos.write(validity);
-        // Subject
         tbsBaos.write(name);
-        // SubjectPublicKeyInfo
         tbsBaos.write(pubKeyInfo);
 
         byte[] tbsBytes = derEncode(0x30, tbsBaos.toByteArray());
 
-        // 6. Sign TBSCertificate with RSA Private Key
         Signature sig = Signature.getInstance("SHA256withRSA");
         sig.initSign(keyPair.getPrivate());
         sig.update(tbsBytes);
         byte[] signatureBytes = sig.sign();
 
-        // 7. Assemble Full X.509 Certificate
         ByteArrayOutputStream certBaos = new ByteArrayOutputStream();
         certBaos.write(tbsBytes);
         certBaos.write(sigAlg);
-        // Signature BIT STRING (0 unused bits prefix)
         byte[] bitString = new byte[signatureBytes.length + 1];
         bitString[0] = 0x00;
         System.arraycopy(signatureBytes, 0, bitString, 1, signatureBytes.length);
@@ -728,44 +939,41 @@ public class AndroidTvRemotePlugin extends Plugin {
         writeString(reqBaos, 2, clientName);
 
         ByteArrayOutputStream msgBaos = new ByteArrayOutputStream();
-        writeInt32(msgBaos, 1, 2); // protocol_version = 2
-        writeInt32(msgBaos, 2, 200); // status = 200 (STATUS_OK)
-        writeMessage(msgBaos, 3, reqBaos.toByteArray()); // pairing_request
-
+        writeInt32(msgBaos, 1, 2);
+        writeInt32(msgBaos, 2, 200);
+        writeMessage(msgBaos, 3, reqBaos.toByteArray());
         return msgBaos.toByteArray();
     }
 
     private byte[] buildPairingOptionMessage() throws IOException {
         ByteArrayOutputStream encBaos = new ByteArrayOutputStream();
-        writeInt32(encBaos, 1, 1); // type = ENCODING_HEXADECIMAL (1)
-        writeInt32(encBaos, 2, 6); // symbol_length = 6
+        writeInt32(encBaos, 1, 1);
+        writeInt32(encBaos, 2, 6);
 
         ByteArrayOutputStream optBaos = new ByteArrayOutputStream();
-        writeInt32(optBaos, 1, 1); // preferred_role = ROLE_INPUT (1)
-        writeMessage(optBaos, 2, encBaos.toByteArray()); // input_encodings
+        writeInt32(optBaos, 1, 1);
+        writeMessage(optBaos, 2, encBaos.toByteArray());
 
         ByteArrayOutputStream msgBaos = new ByteArrayOutputStream();
-        writeInt32(msgBaos, 1, 2); // protocol_version = 2
-        writeInt32(msgBaos, 2, 200); // status = 200
-        writeMessage(msgBaos, 5, optBaos.toByteArray()); // pairing_option
-
+        writeInt32(msgBaos, 1, 2);
+        writeInt32(msgBaos, 2, 200);
+        writeMessage(msgBaos, 5, optBaos.toByteArray());
         return msgBaos.toByteArray();
     }
 
     private byte[] buildPairingConfigurationMessage() throws IOException {
         ByteArrayOutputStream encBaos = new ByteArrayOutputStream();
-        writeInt32(encBaos, 1, 1); // type = ENCODING_HEXADECIMAL (1)
-        writeInt32(encBaos, 2, 6); // symbol_length = 6
+        writeInt32(encBaos, 1, 1);
+        writeInt32(encBaos, 2, 6);
 
         ByteArrayOutputStream cfgBaos = new ByteArrayOutputStream();
-        writeInt32(cfgBaos, 1, 1); // client_role = ROLE_INPUT (1)
-        writeMessage(cfgBaos, 2, encBaos.toByteArray()); // encoding
+        writeInt32(cfgBaos, 1, 1);
+        writeMessage(cfgBaos, 2, encBaos.toByteArray());
 
         ByteArrayOutputStream msgBaos = new ByteArrayOutputStream();
-        writeInt32(msgBaos, 1, 2); // protocol_version = 2
-        writeInt32(msgBaos, 2, 200); // status = 200
-        writeMessage(msgBaos, 7, cfgBaos.toByteArray()); // pairing_configuration
-
+        writeInt32(msgBaos, 1, 2);
+        writeInt32(msgBaos, 2, 200);
+        writeMessage(msgBaos, 7, cfgBaos.toByteArray());
         return msgBaos.toByteArray();
     }
 
@@ -774,10 +982,9 @@ public class AndroidTvRemotePlugin extends Plugin {
         writeBytes(secBaos, 1, secretHash);
 
         ByteArrayOutputStream msgBaos = new ByteArrayOutputStream();
-        writeInt32(msgBaos, 1, 2); // protocol_version = 2
-        writeInt32(msgBaos, 2, 200); // status = 200
-        writeMessage(msgBaos, 9, secBaos.toByteArray()); // pairing_secret
-
+        writeInt32(msgBaos, 1, 2);
+        writeInt32(msgBaos, 2, 200);
+        writeMessage(msgBaos, 9, secBaos.toByteArray());
         return msgBaos.toByteArray();
     }
 
@@ -793,8 +1000,7 @@ public class AndroidTvRemotePlugin extends Plugin {
         writeMessage(cfgBaos, 2, devBaos.toByteArray());
 
         ByteArrayOutputStream msgBaos = new ByteArrayOutputStream();
-        writeMessage(msgBaos, 1, cfgBaos.toByteArray()); // remote_configure
-
+        writeMessage(msgBaos, 1, cfgBaos.toByteArray());
         return msgBaos.toByteArray();
     }
 
@@ -803,8 +1009,7 @@ public class AndroidTvRemotePlugin extends Plugin {
         writeInt32(actBaos, 1, activeCode);
 
         ByteArrayOutputStream msgBaos = new ByteArrayOutputStream();
-        writeMessage(msgBaos, 2, actBaos.toByteArray()); // remote_set_active
-
+        writeMessage(msgBaos, 2, actBaos.toByteArray());
         return msgBaos.toByteArray();
     }
 
@@ -814,15 +1019,13 @@ public class AndroidTvRemotePlugin extends Plugin {
         writeInt32(keyBaos, 2, direction);
 
         ByteArrayOutputStream msgBaos = new ByteArrayOutputStream();
-        writeMessage(msgBaos, 3, keyBaos.toByteArray()); // remote_key_inject
-
+        writeMessage(msgBaos, 3, keyBaos.toByteArray());
         return msgBaos.toByteArray();
     }
 
     private String parseTvModelFromRemoteConfigure(byte[] data) {
         if (data == null || data.length == 0) return null;
         try {
-            // Scan for readable string in payload
             String raw = new String(data, "UTF-8");
             if (raw.contains("BRAVIA")) return "Sony BRAVIA TV";
             if (raw.contains("Chromecast")) return "Chromecast with Google TV";
@@ -832,8 +1035,7 @@ public class AndroidTvRemotePlugin extends Plugin {
             if (raw.contains("Mi TV") || raw.contains("Xiaomi")) return "Xiaomi Smart TV";
             if (raw.contains("Hisense")) return "Hisense Google TV";
             if (raw.contains("Philips")) return "Philips Android TV";
-        } catch (Exception ignored) {
-        }
+        } catch (Exception ignored) {}
         return "Google TV";
     }
 
@@ -842,25 +1044,25 @@ public class AndroidTvRemotePlugin extends Plugin {
     }
 
     private void writeInt32(OutputStream os, int fieldNumber, int value) throws IOException {
-        writeTag(os, fieldNumber, 0); // varint
+        writeTag(os, fieldNumber, 0);
         writeVarint(os, value);
     }
 
     private void writeString(OutputStream os, int fieldNumber, String str) throws IOException {
         byte[] bytes = str.getBytes("UTF-8");
-        writeTag(os, fieldNumber, 2); // length-delimited
+        writeTag(os, fieldNumber, 2);
         writeVarint(os, bytes.length);
         os.write(bytes);
     }
 
     private void writeBytes(OutputStream os, int fieldNumber, byte[] bytes) throws IOException {
-        writeTag(os, fieldNumber, 2); // length-delimited
+        writeTag(os, fieldNumber, 2);
         writeVarint(os, bytes.length);
         os.write(bytes);
     }
 
     private void writeMessage(OutputStream os, int fieldNumber, byte[] msgBytes) throws IOException {
-        writeTag(os, fieldNumber, 2); // length-delimited
+        writeTag(os, fieldNumber, 2);
         writeVarint(os, msgBytes.length);
         os.write(msgBytes);
     }
