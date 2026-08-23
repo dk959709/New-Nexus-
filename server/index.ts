@@ -971,7 +971,7 @@ function condition(
   return ['cloudy', 'Cloudy'];
 }
 
-async function weatherProvider(latitude: number, longitude: number, location: string) {
+async function fetchOpenMeteo(latitude: number, longitude: number, location: string) {
   const url = `https://api.open-meteo.com/v1/forecast?latitude=${latitude}&longitude=${longitude}&current=temperature_2m,relative_humidity_2m,apparent_temperature,is_day,precipitation,weather_code,surface_pressure,wind_speed_10m&hourly=temperature_2m,precipitation_probability,weather_code,wind_speed_10m&daily=weather_code,temperature_2m_max,temperature_2m_min,precipitation_probability_max,wind_speed_10m_max,sunrise,sunset&timezone=auto&forecast_days=7`;
   const response = await fetch(url);
   if (!response.ok) {
@@ -1025,6 +1025,71 @@ async function weatherProvider(latitude: number, longitude: number, location: st
     daily,
     alerts: [],
   };
+}
+
+async function fetchWttrInFallback(latitude: number, longitude: number, location: string) {
+  const url = `https://wttr.in/${latitude},${longitude}?format=j1`;
+  const response = await fetch(url, { headers: { 'User-Agent': 'curl' } });
+  if (!response.ok) throw new Error('wttr.in fallback returned status ' + response.status);
+  const data = (await response.json()) as any;
+  const cur = data.current_condition[0];
+  const conditionText = String(cur.weatherDesc?.[0]?.value || 'Cloudy');
+  const todayHourly = (data.weather[0]?.hourly || []).map((h: any) => ({
+    time: String(h.time).padStart(4, '0'),
+    temperature: Number(h.tempC),
+    condition: conditionText.toLowerCase(),
+    rainProbability: Number(h.chanceofrain),
+    wind: Number(h.windspeedKmph),
+  }));
+  const daily = (data.weather || []).map((d: any) => ({
+    day: new Intl.DateTimeFormat('en', { weekday: 'short' }).format(new Date(String(d.date))),
+    high: Number(d.maxtempC),
+    low: Number(d.mintempC),
+    condition: conditionText.toLowerCase(),
+    conditionLabel: conditionText,
+    rainProbability: Number(d.hourly?.[4]?.chanceofrain || 0),
+    wind: Number(d.hourly?.[4]?.windspeedKmph || 0),
+  }));
+  return {
+    current: {
+      location,
+      temperature: Number(cur.temp_C),
+      feelsLike: Number(cur.FeelsLikeC),
+      condition: conditionText.toLowerCase(),
+      conditionLabel: conditionText,
+      humidity: Number(cur.humidity),
+      wind: Number(cur.windspeedKmph),
+      pressure: Number(cur.pressure),
+      visibility: Number(cur.visibility) || 10,
+      uvIndex: Number(cur.uvIndex) || 0,
+      sunrise: String(data.weather[0]?.astronomy?.[0]?.sunrise || ''),
+      sunset: String(data.weather[0]?.astronomy?.[0]?.sunset || ''),
+      rainProbability: Number(data.weather[0]?.hourly?.[4]?.chanceofrain || 0),
+      updatedAt: new Date().toISOString(),
+      latitude,
+      longitude,
+      isDay: true,
+    },
+    hourly: todayHourly,
+    daily,
+    alerts: [],
+  };
+}
+
+async function weatherProvider(latitude: number, longitude: number, location: string) {
+  try {
+    return await fetchOpenMeteo(latitude, longitude, location);
+  } catch (primaryError) {
+    console.error('[Weather] Open-Meteo failed, trying wttr.in fallback:', primaryError);
+    try {
+      const fallback = await fetchWttrInFallback(latitude, longitude, location);
+      console.log('[Weather] wttr.in fallback succeeded');
+      return fallback;
+    } catch (fallbackError) {
+      console.error('[Weather] wttr.in fallback also failed:', fallbackError);
+      throw primaryError;
+    }
+  }
 }
 
 type SourceCategory = 'web' | 'wikipedia' | 'news' | 'nasa' | 'weather';
