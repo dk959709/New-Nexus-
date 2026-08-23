@@ -635,6 +635,7 @@ export function AssistantPage() {
                       padding: '12px 14px',
                       borderRadius: 15,
                     lineHeight: 1.55,
+                    fontSize: 14,
                     whiteSpace: 'pre-wrap',
                     color: '#e8f0f2',
                     background:
@@ -880,6 +881,7 @@ export function AssistantPage() {
               display: 'block',
               textAlign: 'center',
               opacity: 0.42,
+              fontSize: 11,
               marginTop: 8,
             }}
           >
