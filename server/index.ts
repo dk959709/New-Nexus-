@@ -3541,11 +3541,18 @@ async function startServer() {
     const testRes = await testTvSocketConnection(cleanIp, numPort);
     const now = new Date().toISOString();
 
+    // Remove previous TV entries so single TV remains active
+    for (const [key, dev] of registeredDevices.entries()) {
+      if (dev.type === 'tv') {
+        registeredDevices.delete(key);
+      }
+    }
+
     const devId = `tv_${Date.now()}_${Math.random().toString(36).substring(2, 6)}`;
     const newTvDevice: NexusDeviceServer = {
       id: devId,
       type: 'tv',
-      name: typeof name === 'string' && name.trim() ? name.trim() : 'Smart TV',
+      name: typeof name === 'string' && name.trim() ? name.trim() : (typeof model === 'string' && model.trim() ? model.trim() : 'Smart TV'),
       status: testRes.reachable ? 'online' : 'offline',
       pairedAt: now,
       lastSeen: now,

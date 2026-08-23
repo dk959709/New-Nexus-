@@ -1,4 +1,4 @@
-import { Capacitor } from '@capacitor/core';
+import { Capacitor, registerPlugin } from '@capacitor/core';
 import { Network } from '@capacitor/network';
 import { TcpSocket, DataEncoding } from 'capacitor-tcp-socket';
 import type {
@@ -8,6 +8,64 @@ import type {
   SmartTVInfo,
   TVControlAction,
 } from '@/types';
+
+export interface AndroidTvRemotePluginInterface {
+  checkStatus(): Promise<{
+    isConnected: boolean;
+    isPaired: boolean;
+    ip?: string;
+    port?: number;
+    model?: string;
+    deviceName?: string;
+  }>;
+  startPairing(options: {
+    ipAddress: string;
+    port?: number;
+  }): Promise<{
+    status: 'NEED_PIN' | 'PAIRED';
+    ip: string;
+    port: number;
+    message?: string;
+  }>;
+  sendPin(options: {
+    pin: string;
+  }): Promise<{
+    success: boolean;
+    status: string;
+    isConnected: boolean;
+    ip: string;
+    deviceName?: string;
+    model?: string;
+    message?: string;
+  }>;
+  connectTv(options: {
+    ipAddress: string;
+    port?: number;
+    method?: string;
+  }): Promise<{
+    success: boolean;
+    isConnected: boolean;
+    isPaired?: boolean;
+    needPairing?: boolean;
+    ip?: string;
+    port?: number;
+    deviceName?: string;
+    model?: string;
+    error?: string;
+  }>;
+  sendKey(options: {
+    action: string;
+    keyCode?: number;
+    ipAddress?: string;
+  }): Promise<{
+    success: boolean;
+    action?: string;
+    keyCode?: number;
+  }>;
+  disconnect(): Promise<{ success: boolean }>;
+}
+
+export const AndroidTvRemote = registerPlugin<AndroidTvRemotePluginInterface>('AndroidTvRemote');
 
 // Android TV / ADB key codes
 export const ADB_KEY_MAP: Record<TVControlAction, number> = {
@@ -30,40 +88,94 @@ export function isNativeAndroid(): boolean {
 }
 
 /**
- * Builds an authentic 24-byte ADB header + payload packet in HEX string format
+ * Initiates native TLS pairing with Google TV / Android TV on port 6467
  */
-function buildAdbHexPacket(commandCode: number, arg0: number, arg1: number, payloadStr: string): string {
-  const payloadBytes: number[] = [];
-  for (let i = 0; i < payloadStr.length; i++) {
-    payloadBytes.push(payloadStr.charCodeAt(i) & 0xff);
+export async function pairTvNative(
+  ipAddress: string,
+  port = 6467,
+): Promise<{
+  status: 'NEED_PIN' | 'PAIRED';
+  ip: string;
+  port: number;
+  message?: string;
+}> {
+  if (!isNativeAndroid()) {
+    throw new Error('Native TV pairing is available on the Android app on local Wi-Fi.');
   }
+  return await AndroidTvRemote.startPairing({
+    ipAddress: ipAddress.trim(),
+    port: Number(port) || 6467,
+  });
+}
 
-  let crc32 = 0;
-  for (const b of payloadBytes) {
-    crc32 = (crc32 + b) & 0xffffffff;
+/**
+ * Sends the user-entered PIN to complete TV pairing
+ */
+export async function sendPinTvNative(
+  pin: string,
+): Promise<{
+  success: boolean;
+  status: string;
+  isConnected: boolean;
+  ip: string;
+  deviceName?: string;
+  model?: string;
+  message?: string;
+}> {
+  if (!isNativeAndroid()) {
+    throw new Error('Native TV pairing is available on the Android app.');
   }
+  return await AndroidTvRemote.sendPin({ pin: pin.trim() });
+}
 
-  const magic = (commandCode ^ 0xffffffff) >>> 0;
-
-  const header = new ArrayBuffer(24);
-  const dv = new DataView(header);
-  dv.setUint32(0, commandCode, true);
-  dv.setUint32(4, arg0, true);
-  dv.setUint32(8, arg1, true);
-  dv.setUint32(12, payloadBytes.length, true);
-  dv.setUint32(16, crc32, true);
-  dv.setUint32(20, magic, true);
-
-  const headerBytes = new Uint8Array(header);
-  const total = new Uint8Array(24 + payloadBytes.length);
-  total.set(headerBytes, 0);
-  total.set(new Uint8Array(payloadBytes), 24);
-
-  let hex = '';
-  for (let i = 0; i < total.length; i++) {
-    hex += total[i].toString(16).padStart(2, '0');
+/**
+ * Connects directly to Smart TV over TLS on port 6466 or ADB on 5555
+ */
+export async function connectTvNative(
+  ipAddress: string,
+  port = 6466,
+  method = 'google_tv',
+): Promise<{
+  success: boolean;
+  isConnected: boolean;
+  isPaired?: boolean;
+  needPairing?: boolean;
+  ip?: string;
+  port?: number;
+  deviceName?: string;
+  model?: string;
+  error?: string;
+}> {
+  if (!isNativeAndroid()) {
+    return {
+      success: false,
+      isConnected: false,
+      error: 'Direct connection available on Android app.',
+    };
   }
-  return hex;
+  return await AndroidTvRemote.connectTv({
+    ipAddress: ipAddress.trim(),
+    port: Number(port) || 6466,
+    method,
+  });
+}
+
+/**
+ * Checks active TV connection status from native plugin
+ */
+export async function checkTvStatusNative() {
+  if (!isNativeAndroid()) {
+    return { isConnected: false, isPaired: false };
+  }
+  return await AndroidTvRemote.checkStatus();
+}
+
+/**
+ * Disconnects active TV session
+ */
+export async function disconnectTvNative() {
+  if (!isNativeAndroid()) return { success: true };
+  return await AndroidTvRemote.disconnect();
 }
 
 /**
@@ -71,8 +183,9 @@ function buildAdbHexPacket(commandCode: number, arg0: number, arg1: number, payl
  */
 export async function testTvConnectionNative(
   ipAddress: string,
-  port = 5555,
-): Promise<{ reachable: boolean; latencyMs: number; error?: string }> {
+  port = 6466,
+  method = 'google_tv',
+): Promise<{ reachable: boolean; latencyMs: number; error?: string; model?: string }> {
   if (!isNativeAndroid()) {
     return {
       reachable: false,
@@ -82,12 +195,33 @@ export async function testTvConnectionNative(
   }
 
   const startTime = Date.now();
-  let client: number | null = null;
+  const cleanIp = ipAddress.trim();
+  const numPort = Number(port) || (method === 'android_tv' ? 5555 : 6466);
+
+  try {
+    const connRes = await AndroidTvRemote.connectTv({
+      ipAddress: cleanIp,
+      port: numPort,
+      method,
+    });
+
+    const latencyMs = Math.max(1, Date.now() - startTime);
+
+    if (connRes.success || connRes.needPairing || connRes.isConnected) {
+      return {
+        reachable: true,
+        latencyMs,
+        model: connRes.model || (method === 'google_tv' ? 'Google TV' : 'Android TV'),
+      };
+    }
+  } catch {
+    // Fallback to TCP socket probe
+  }
 
   try {
     const connectPromise = TcpSocket.connect({
-      ipAddress: ipAddress.trim(),
-      port: Number(port) || 5555,
+      ipAddress: cleanIp,
+      port: numPort,
     });
 
     const timeoutPromise = new Promise<never>((_, reject) =>
@@ -95,10 +229,9 @@ export async function testTvConnectionNative(
     );
 
     const res = await Promise.race([connectPromise, timeoutPromise]);
-    client = res.client;
+    const client = res.client;
     const latencyMs = Math.max(1, Date.now() - startTime);
 
-    // Cleanly close socket
     try {
       await TcpSocket.disconnect({ client });
     } catch {
@@ -108,15 +241,9 @@ export async function testTvConnectionNative(
     return {
       reachable: true,
       latencyMs,
+      model: method === 'google_tv' ? 'Google TV' : 'Android TV',
     };
   } catch (err: unknown) {
-    if (client !== null) {
-      try {
-        await TcpSocket.disconnect({ client });
-      } catch {
-        // Ignored
-      }
-    }
     const msg = err instanceof Error ? err.message : 'Host unreachable on local Wi-Fi.';
     return {
       reachable: false,
@@ -127,77 +254,96 @@ export async function testTvConnectionNative(
 }
 
 /**
- * Sends a TV control command (ADB keyevent) directly over TCP from the phone
+ * Sends a TV control command using Native TLS Protobuf key injection (Port 6466) or ADB fallback
  */
 export async function sendTvCommandNative(
   action: TVControlAction,
   ipAddress: string,
-  port = 5555,
+  port = 6466,
   currentTvState?: SmartTVInfo,
 ): Promise<{ success: boolean; tvState: SmartTVInfo; error?: string }> {
   if (!isNativeAndroid()) {
     return {
       success: false,
       tvState: currentTvState || {},
-      error: 'Direct TCP remote commands are available in the Android app only.',
+      error: 'Direct TV remote commands are available in the Android app only.',
     };
   }
 
   const keyCode = ADB_KEY_MAP[action] ?? 23;
-  let client: number | null = null;
+  const cleanIp = ipAddress.trim();
 
   try {
-    // 1. Connect TCP socket directly to TV
+    // 1. Send via Native AndroidTvRemote Plugin (Protobuf over TLS on port 6466 or ADB on 5555)
+    const nativeRes = await AndroidTvRemote.sendKey({
+      action,
+      keyCode,
+      ipAddress: cleanIp,
+    });
+
+    if (nativeRes.success) {
+      const currentVol = currentTvState?.volume ?? 24;
+      const isMuted = currentTvState?.isMuted ?? false;
+      let newVol = currentVol;
+      let newMute = isMuted;
+      let newPower = currentTvState?.powerState ?? 'ON';
+
+      if (action === 'volume_up') {
+        newVol = Math.min(100, currentVol + 2);
+        newMute = false;
+      } else if (action === 'volume_down') {
+        newVol = Math.max(0, currentVol - 2);
+      } else if (action === 'mute') {
+        newMute = !isMuted;
+      } else if (action === 'power') {
+        newPower = currentTvState?.powerState === 'ON' ? 'STANDBY' : 'ON';
+      }
+
+      const updatedState: SmartTVInfo = {
+        ...currentTvState,
+        powerState: newPower,
+        volume: newVol,
+        isMuted: newMute,
+        lastAction: action,
+        reachable: true,
+        connectionError: undefined,
+      };
+
+      return {
+        success: true,
+        tvState: updatedState,
+      };
+    }
+  } catch {
+    // If native plugin failed, fallback to TCP ADB socket
+  }
+
+  // Fallback to TCP Socket
+  let client: number | null = null;
+  try {
     const conn = await Promise.race([
       TcpSocket.connect({
-        ipAddress: ipAddress.trim(),
+        ipAddress: cleanIp,
         port: Number(port) || 5555,
       }),
       new Promise<never>((_, reject) =>
-        setTimeout(() => reject(new Error(`Could not connect to TV at ${ipAddress}:${port}`)), 3000),
+        setTimeout(() => reject(new Error(`Could not connect to TV at ${cleanIp}:${port}`)), 3000),
       ),
     ]);
 
     client = conn.client;
 
-    // 2. Format ADB protocol packets:
-    // A_CNXN = 0x4e584e43 ("CNXN")
-    // A_OPEN = 0x4e45504f ("OPEN")
-    const cnxnHex = buildAdbHexPacket(0x4e584e43, 0x01000000, 0x00010000, 'host::nexus-remote\0');
-    const openHex = buildAdbHexPacket(0x4e45504f, 1, 0, `shell:input keyevent ${keyCode}\0`);
-
     try {
-      // Send ADB CNXN handshake
       await TcpSocket.send({
         client,
-        data: cnxnHex,
-        encoding: DataEncoding.HEX,
-      });
-
-      // Small delay for socket handshake
-      await new Promise((r) => setTimeout(r, 40));
-
-      // Send ADB OPEN shell keyevent
-      await TcpSocket.send({
-        client,
-        data: openHex,
-        encoding: DataEncoding.HEX,
+        data: `input keyevent ${keyCode}\n`,
+        encoding: DataEncoding.UTF8,
       });
     } catch {
-      // Fallback: send plain text command over socket
-      try {
-        await TcpSocket.send({
-          client,
-          data: `input keyevent ${keyCode}\n`,
-          encoding: DataEncoding.UTF8,
-        });
-      } catch {
-        // Ignored
-      }
+      // Ignored
     }
 
-    // Small delay to ensure flush before disconnect
-    await new Promise((r) => setTimeout(r, 60));
+    await new Promise((r) => setTimeout(r, 40));
 
     try {
       await TcpSocket.disconnect({ client });
@@ -205,7 +351,6 @@ export async function sendTvCommandNative(
       // Ignored
     }
 
-    // Update simulated state
     const currentVol = currentTvState?.volume ?? 24;
     const isMuted = currentTvState?.isMuted ?? false;
     let newVol = currentVol;
@@ -245,7 +390,7 @@ export async function sendTvCommandNative(
         // Ignored
       }
     }
-    const msg = err instanceof Error ? err.message : 'Failed to send command to TV over TCP socket.';
+    const msg = err instanceof Error ? err.message : 'Failed to send command to TV over socket.';
     return {
       success: false,
       tvState: currentTvState || {},

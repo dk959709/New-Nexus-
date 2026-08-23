@@ -47,6 +47,9 @@ import {
   sendTvCommandNative,
   scanLocalSubnetNative,
   getNativeNetworkInfo,
+  pairTvNative,
+  sendPinTvNative,
+  connectTvNative,
 } from '@/lib/nativeTvManager';
 import type {
   NexusDevice,
@@ -75,7 +78,7 @@ export function DevicesPage() {
   // Smart TV state & modal
   const [tvModalOpen, setTvModalOpen] = useState(false);
   const [tvIpInput, setTvIpInput] = useState('');
-  const [tvPortInput, setTvPortInput] = useState('5555');
+  const [tvPortInput, setTvPortInput] = useState('6466');
   const [tvMethodInput, setTvMethodInput] = useState<TVConnectionMethod>('google_tv');
   const [tvNameInput, setTvNameInput] = useState('');
   const [tvTesting, setTvTesting] = useState(false);
@@ -87,6 +90,13 @@ export function DevicesPage() {
   const [activeTvAction, setActiveTvAction] = useState<string | null>(null);
   const [tvActionLoading, setTvActionLoading] = useState(false);
   const [tvRefreshing, setTvRefreshing] = useState(false);
+
+  // Smart TV PIN Pairing Step
+  const [tvPairingStep, setTvPairingStep] = useState<'form' | 'pin'>('form');
+  const [tvPinInput, setTvPinInput] = useState('');
+  const [tvPinError, setTvPinError] = useState<string | null>(null);
+  const [isSubmittingPin, setIsSubmittingPin] = useState(false);
+  const [tvPairingNotice, setTvPairingNotice] = useState<string | null>(null);
 
   // Add Device wizard state
   const [addStep, setAddStep] = useState<'select' | 'android-pair'>('select');
@@ -361,16 +371,21 @@ export function DevicesPage() {
       setTvPortInput('6466');
       setTvMethodInput('google_tv');
     } else if (castPort) {
-      setTvPortInput('8008');
+      setTvPortInput('6466');
       setTvMethodInput('google_tv');
     } else {
-      setTvPortInput('5555');
+      setTvPortInput('6466');
+      setTvMethodInput('google_tv');
     }
 
-    setTvNameInput(device.name || 'Smart TV');
+    setTvNameInput(device.name && !device.name.includes('Router') ? device.name : 'Smart TV');
     setTvTestStatus('idle');
     setTvTestError(null);
     setTvTestLatency(null);
+    setTvPairingStep('form');
+    setTvPinInput('');
+    setTvPinError(null);
+    setTvPairingNotice(null);
     setTvModalOpen(true);
   };
 
@@ -393,12 +408,16 @@ export function DevicesPage() {
   const openTvPairingModal = () => {
     if (settings.sound !== false) playTapSound();
     setTvIpInput('');
-    setTvPortInput('5555');
+    setTvPortInput('6466');
     setTvMethodInput('google_tv');
     setTvNameInput('');
     setTvTestStatus('idle');
     setTvTestError(null);
     setTvTestLatency(null);
+    setTvPairingStep('form');
+    setTvPinInput('');
+    setTvPinError(null);
+    setTvPairingNotice(null);
     setTvModalOpen(true);
   };
 
@@ -434,7 +453,7 @@ export function DevicesPage() {
     setTvTestError(null);
 
     const ip = tvIpInput.trim();
-    const port = Number(tvPortInput) || 5555;
+    const port = Number(tvPortInput) || 6466;
 
     try {
       if (isNativeAndroid()) {
@@ -469,7 +488,7 @@ export function DevicesPage() {
     e.preventDefault();
     if (settings.sound !== false) playTapSound();
     const ip = tvIpInput.trim();
-    const port = Number(tvPortInput) || 5555;
+    const port = Number(tvPortInput) || (tvMethodInput === 'android_tv' ? 5555 : 6466);
 
     if (!ip) {
       setTvTestStatus('failed');
@@ -484,27 +503,62 @@ export function DevicesPage() {
     try {
       let isReachableLocally = false;
       let latencyMs = 15;
+      let modelName = 'Smart TV';
 
       if (isNativeAndroid()) {
-        const nativeProbe = await testTvConnectionNative(ip, port, tvMethodInput);
-        if (!nativeProbe.reachable) {
-          setTvTestStatus('failed');
-          setTvTestError(
-            nativeProbe.error ||
-              `Could not establish direct TCP connection to TV at ${ip}:${port}. Ensure TV is turned on and connected to the same Wi-Fi network.`,
-          );
-          setIsTvConnecting(false);
-          return;
+        // If Google TV / Android TV TLS remote mode
+        if (tvMethodInput === 'google_tv' || port === 6466 || port === 6467) {
+          // 1. Try connecting with existing saved certificates
+          const connRes = await connectTvNative(ip, 6466, 'google_tv');
+          if (connRes.success && connRes.isConnected) {
+            modelName = connRes.model || connRes.deviceName || 'Google TV';
+            isReachableLocally = true;
+          } else {
+            // 2. Needs TLS pairing — initiate pairing on port 6467
+            try {
+              const pairRes = await pairTvNative(ip, 6467);
+              if (pairRes.status === 'NEED_PIN') {
+                setTvPairingStep('pin');
+                setTvPairingNotice(
+                  pairRes.message || 'A pairing code has appeared on your TV screen. Enter the 6-character PIN below.',
+                );
+                setTvPinInput('');
+                setTvPinError(null);
+                setTvTestStatus('idle');
+                setIsTvConnecting(false);
+                return;
+              }
+            } catch (pairErr) {
+              const pairMsg = pairErr instanceof Error ? pairErr.message : 'Pairing initiation failed';
+              setTvTestStatus('failed');
+              setTvTestError(pairMsg);
+              setIsTvConnecting(false);
+              return;
+            }
+          }
+        } else {
+          // ADB or webOS probe
+          const nativeProbe = await testTvConnectionNative(ip, port, tvMethodInput);
+          if (!nativeProbe.reachable) {
+            setTvTestStatus('failed');
+            setTvTestError(
+              nativeProbe.error ||
+                `Could not establish direct TCP connection to TV at ${ip}:${port}. Ensure TV is turned on and connected to the same Wi-Fi network.`,
+            );
+            setIsTvConnecting(false);
+            return;
+          }
+          isReachableLocally = true;
+          latencyMs = nativeProbe.latencyMs || 15;
         }
-        isReachableLocally = true;
-        latencyMs = nativeProbe.latencyMs || 15;
       }
 
       const res = await api.connectTV({
-        name: tvNameInput.trim() || undefined,
+        name: tvNameInput.trim() || modelName,
         ipAddress: ip,
         port,
         method: tvMethodInput,
+        model: modelName,
       });
 
       if (res.success || isReachableLocally) {
@@ -514,11 +568,13 @@ export function DevicesPage() {
         if (isReachableLocally && res.device) {
           const verifiedDevice: NexusDevice = {
             ...res.device,
+            name: tvNameInput.trim() || modelName,
             status: 'online',
             lastSuccessfulConnection: new Date().toISOString(),
             connectionError: undefined,
             tv: {
               ...res.device.tv,
+              model: modelName,
               reachable: true,
             },
           };
@@ -540,6 +596,50 @@ export function DevicesPage() {
       setTvTestError(msg);
     } finally {
       setIsTvConnecting(false);
+    }
+  };
+
+  const handleVerifyTvPin = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (settings.sound !== false) playTapSound();
+    const pin = tvPinInput.trim();
+    if (!pin) {
+      setTvPinError('Please enter the 6-character PIN shown on your TV screen.');
+      return;
+    }
+
+    setIsSubmittingPin(true);
+    setTvPinError(null);
+
+    try {
+      const res = await sendPinTvNative(pin);
+      if (res.success) {
+        const modelName = res.model || res.deviceName || 'Google TV';
+        const finalName = tvNameInput.trim() || modelName;
+        const ip = tvIpInput.trim();
+
+        await api.connectTV({
+          name: finalName,
+          ipAddress: ip,
+          port: 6466,
+          method: 'google_tv',
+          model: modelName,
+        });
+
+        setTvTestStatus('connected');
+        setTimeout(() => {
+          setTvModalOpen(false);
+          setAddModalOpen(false);
+          fetchDevices(true);
+        }, 900);
+      } else {
+        setTvPinError(res.message || 'Invalid PIN code. Please check your TV screen and try again.');
+      }
+    } catch (err: unknown) {
+      const msg = err instanceof Error ? err.message : 'PIN verification failed. Please check the code.';
+      setTvPinError(msg);
+    } finally {
+      setIsSubmittingPin(false);
     }
   };
 
@@ -1577,9 +1677,9 @@ export function DevicesPage() {
                       )}
                     </div>
                     <div className="text-xs text-slate-300 mt-1 flex flex-wrap items-center gap-x-3 gap-y-1">
-                      <span><span className="text-slate-400">Device name:</span> <strong className="text-white">{connectedTv.name}</strong></span>
+                      <span><span className="text-slate-400">Device name:</span> <strong className="text-white">{connectedTv.name && !connectedTv.name.includes('Router') ? connectedTv.name : (connectedTv.tv?.model || 'Android Smart TV')}</strong></span>
                       <span>•</span>
-                      <span><span className="text-slate-400">Model:</span> <strong className={isOnline ? 'text-purple-300' : 'text-slate-400'}>{connectedTv.tv?.model || 'Model Not Detected'}</strong></span>
+                      <span><span className="text-slate-400">Model:</span> <strong className={isOnline ? 'text-purple-300' : 'text-slate-400'}>{connectedTv.tv?.model || 'Google TV / Android TV'}</strong></span>
                     </div>
                   </div>
                 </div>
@@ -2396,140 +2496,206 @@ export function DevicesPage() {
               </button>
             </div>
 
-            <form onSubmit={handleConnectTv} className="space-y-4">
-              {/* Device Label */}
-              <div>
-                <label className="block text-xs font-semibold text-slate-300 mb-1.5">
-                  Device Name
-                </label>
-                <input
-                  type="text"
-                  value={tvNameInput}
-                  onChange={(e) => setTvNameInput(e.target.value)}
-                  placeholder="e.g. Living Room TV"
-                  className="w-full px-3.5 py-2.5 rounded-xl bg-black/40 border border-white/10 text-white placeholder-slate-500 text-sm focus:outline-none focus:border-purple-400/50"
-                />
-              </div>
-
-              {/* IP Address & Port Grid */}
-              <div className="grid grid-cols-3 gap-3">
-                <div className="col-span-2">
-                  <label className="block text-xs font-semibold text-slate-300 mb-1.5">
-                    TV IP address <span className="text-purple-400">*</span>
-                  </label>
-                  <input
-                    type="text"
-                    required
-                    value={tvIpInput}
-                    onChange={(e) => setTvIpInput(e.target.value)}
-                    placeholder="e.g. 192.168.1.50"
-                    className="w-full px-3.5 py-2.5 rounded-xl bg-black/40 border border-white/10 text-white placeholder-slate-500 text-sm font-mono focus:outline-none focus:border-purple-400/50"
-                  />
+            {tvPairingStep === 'pin' ? (
+              <form onSubmit={handleVerifyTvPin} className="space-y-4 animate-in fade-in">
+                <div className="p-4 rounded-xl bg-purple-500/15 border border-purple-500/30 text-purple-200 text-xs flex items-start gap-3">
+                  <Tv size={20} className="text-purple-300 flex-shrink-0 mt-0.5" />
+                  <div>
+                    <div className="font-semibold text-white text-sm">Pairing Code Displayed on TV</div>
+                    <p className="text-purple-200/80 text-xs mt-0.5">
+                      {tvPairingNotice || 'A 6-character PIN code is now displayed on your TV screen. Enter it below to complete secure TLS pairing.'}
+                    </p>
+                  </div>
                 </div>
 
                 <div>
                   <label className="block text-xs font-semibold text-slate-300 mb-1.5">
-                    Port
+                    Enter TV PIN Code <span className="text-purple-400">*</span>
                   </label>
                   <input
-                    type="number"
-                    value={tvPortInput}
-                    onChange={(e) => setTvPortInput(e.target.value)}
-                    placeholder="5555"
-                    className="w-full px-3.5 py-2.5 rounded-xl bg-black/40 border border-white/10 text-white placeholder-slate-500 text-sm font-mono focus:outline-none focus:border-purple-400/50"
+                    type="text"
+                    required
+                    maxLength={8}
+                    autoFocus
+                    value={tvPinInput}
+                    onChange={(e) => setTvPinInput(e.target.value.toUpperCase())}
+                    placeholder="e.g. A1B2C3"
+                    className="w-full px-4 py-3 rounded-xl bg-black/50 border border-purple-400/40 text-center text-white placeholder-slate-500 text-xl font-mono tracking-widest uppercase focus:outline-none focus:border-purple-400 focus:ring-2 focus:ring-purple-400/30"
                   />
                 </div>
-              </div>
 
-              {/* Connection Method Select */}
-              <div>
-                <label className="block text-xs font-semibold text-slate-300 mb-1.5">
-                  Connection method
-                </label>
-                <div className="grid grid-cols-3 gap-2">
-                  {[
-                    { id: 'google_tv', label: 'Google TV', icon: '📺' },
-                    { id: 'android_tv', label: 'Android TV', icon: '📱' },
-                    { id: 'webos', label: 'webOS TV', icon: '🖥️' },
-                  ].map((method) => (
-                    <button
-                      key={method.id}
-                      type="button"
-                      onClick={() => setTvMethodInput(method.id as TVConnectionMethod)}
-                      className={`p-2.5 rounded-xl border text-xs font-semibold flex flex-col items-center gap-1 transition-all ${
-                        tvMethodInput === method.id
-                          ? 'bg-purple-500/25 border-purple-400/60 text-purple-200 shadow-md shadow-purple-500/20'
-                          : 'bg-white/[0.03] border-white/10 text-slate-300 hover:bg-white/[0.06]'
-                      }`}
-                    >
-                      <span className="text-sm">{method.icon}</span>
-                      <span>{method.label}</span>
-                    </button>
-                  ))}
-                </div>
-              </div>
-
-              {/* Socket Test Banner & Feedback */}
-              {tvTestStatus === 'testing' && (
-                <div className="p-3 rounded-xl bg-purple-500/10 border border-purple-500/30 text-purple-200 text-xs flex items-center gap-2">
-                  <RefreshCw size={14} className="animate-spin text-purple-400 flex-shrink-0" />
-                  <span>Probing socket on {tvIpInput}:{tvPortInput}...</span>
-                </div>
-              )}
-
-              {tvTestStatus === 'connected' && (
-                <div className="p-3 rounded-xl bg-emerald-500/15 border border-emerald-500/30 text-emerald-200 text-xs flex items-center justify-between gap-2">
-                  <div className="flex items-center gap-2">
-                    <CheckCircle2 size={15} className="text-emerald-400 flex-shrink-0" />
-                    <span>Socket verified &amp; reachable</span>
+                {tvPinError && (
+                  <div className="p-3 rounded-xl bg-rose-500/15 border border-rose-500/30 text-rose-200 text-xs flex items-center gap-2">
+                    <AlertTriangle size={15} className="text-rose-400 flex-shrink-0" />
+                    <span>{tvPinError}</span>
                   </div>
-                  {tvTestLatency && (
-                    <span className="font-mono text-[11px] text-emerald-300">
-                      {tvTestLatency}ms latency
-                    </span>
-                  )}
-                </div>
-              )}
+                )}
 
-              {tvTestStatus === 'failed' && (
-                <div className="p-3 rounded-xl bg-rose-500/15 border border-rose-500/30 text-rose-200 text-xs flex items-start gap-2">
-                  <AlertTriangle size={15} className="text-rose-400 flex-shrink-0 mt-0.5" />
-                  <span>{tvTestError || 'Could not reach TV. Ensure TV is powered on and reachable on your local LAN.'}</span>
-                </div>
-              )}
-
-              {/* Modal Action Buttons */}
-              <div className="flex items-center justify-between pt-3 border-t border-white/10">
-                <button
-                  type="button"
-                  onClick={handleTestTvConnection}
-                  disabled={tvTesting || isTvConnecting || !tvIpInput.trim()}
-                  className="px-3.5 py-2.5 rounded-xl text-xs font-semibold bg-white/5 hover:bg-white/10 text-slate-300 border border-white/10 transition-colors flex items-center gap-1.5 disabled:opacity-50"
-                >
-                  <RefreshCw size={13} className={tvTesting ? 'animate-spin' : ''} />
-                  <span>{tvTesting ? 'Testing...' : 'Test Connection'}</span>
-                </button>
-
-                <div className="flex items-center gap-2">
+                <div className="flex items-center justify-between pt-3 border-t border-white/10">
                   <button
                     type="button"
-                    onClick={() => setTvModalOpen(false)}
-                    className="px-4 py-2.5 rounded-xl text-xs font-medium text-slate-300 hover:bg-white/5 transition-colors"
+                    onClick={() => setTvPairingStep('form')}
+                    disabled={isSubmittingPin}
+                    className="px-4 py-2.5 rounded-xl text-xs font-medium text-slate-300 hover:bg-white/5 transition-colors disabled:opacity-50"
                   >
-                    Cancel
+                    Back
                   </button>
 
                   <button
                     type="submit"
-                    disabled={isTvConnecting || !tvIpInput.trim()}
-                    className="px-5 py-2.5 rounded-xl text-xs font-semibold bg-gradient-to-r from-purple-500 to-indigo-600 hover:from-purple-400 hover:to-indigo-500 text-white shadow-lg shadow-purple-500/25 border border-purple-400/40 transition-all hover:scale-[1.02] disabled:opacity-50 flex items-center gap-1.5"
+                    disabled={isSubmittingPin || !tvPinInput.trim()}
+                    className="px-6 py-2.5 rounded-xl text-xs font-semibold bg-gradient-to-r from-purple-500 to-indigo-600 hover:from-purple-400 hover:to-indigo-500 text-white shadow-lg shadow-purple-500/25 border border-purple-400/40 transition-all disabled:opacity-50 flex items-center gap-2"
                   >
-                    <Tv size={14} />
-                    <span>{isTvConnecting ? 'Connecting...' : 'Connect'}</span>
+                    {isSubmittingPin ? (
+                      <>
+                        <RefreshCw size={14} className="animate-spin" />
+                        <span>Verifying PIN...</span>
+                      </>
+                    ) : (
+                      <>
+                        <CheckCircle2 size={14} />
+                        <span>Verify &amp; Pair TV</span>
+                      </>
+                    )}
                   </button>
                 </div>
-              </div>
-            </form>
+              </form>
+            ) : (
+              <form onSubmit={handleConnectTv} className="space-y-4">
+                {/* Device Label */}
+                <div>
+                  <label className="block text-xs font-semibold text-slate-300 mb-1.5">
+                    Device Name
+                  </label>
+                  <input
+                    type="text"
+                    value={tvNameInput}
+                    onChange={(e) => setTvNameInput(e.target.value)}
+                    placeholder="e.g. Living Room TV"
+                    className="w-full px-3.5 py-2.5 rounded-xl bg-black/40 border border-white/10 text-white placeholder-slate-500 text-sm focus:outline-none focus:border-purple-400/50"
+                  />
+                </div>
+
+                {/* IP Address & Port Grid */}
+                <div className="grid grid-cols-3 gap-3">
+                  <div className="col-span-2">
+                    <label className="block text-xs font-semibold text-slate-300 mb-1.5">
+                      TV IP address <span className="text-purple-400">*</span>
+                    </label>
+                    <input
+                      type="text"
+                      required
+                      value={tvIpInput}
+                      onChange={(e) => setTvIpInput(e.target.value)}
+                      placeholder="e.g. 192.168.1.50"
+                      className="w-full px-3.5 py-2.5 rounded-xl bg-black/40 border border-white/10 text-white placeholder-slate-500 text-sm font-mono focus:outline-none focus:border-purple-400/50"
+                    />
+                  </div>
+
+                  <div>
+                    <label className="block text-xs font-semibold text-slate-300 mb-1.5">
+                      Port
+                    </label>
+                    <input
+                      type="number"
+                      value={tvPortInput}
+                      onChange={(e) => setTvPortInput(e.target.value)}
+                      placeholder="6466"
+                      className="w-full px-3.5 py-2.5 rounded-xl bg-black/40 border border-white/10 text-white placeholder-slate-500 text-sm font-mono focus:outline-none focus:border-purple-400/50"
+                    />
+                  </div>
+                </div>
+
+                {/* Connection Method Select */}
+                <div>
+                  <label className="block text-xs font-semibold text-slate-300 mb-1.5">
+                    Connection method
+                  </label>
+                  <div className="grid grid-cols-3 gap-2">
+                    {[
+                      { id: 'google_tv', label: 'Google TV', icon: '📺' },
+                      { id: 'android_tv', label: 'Android TV', icon: '📱' },
+                      { id: 'webos', label: 'webOS TV', icon: '🖥️' },
+                    ].map((method) => (
+                      <button
+                        key={method.id}
+                        type="button"
+                        onClick={() => setTvMethodInput(method.id as TVConnectionMethod)}
+                        className={`p-2.5 rounded-xl border text-xs font-semibold flex flex-col items-center gap-1 transition-all ${
+                          tvMethodInput === method.id
+                            ? 'bg-purple-500/25 border-purple-400/60 text-purple-200 shadow-md shadow-purple-500/20'
+                            : 'bg-white/[0.03] border-white/10 text-slate-300 hover:bg-white/[0.06]'
+                        }`}
+                      >
+                        <span className="text-sm">{method.icon}</span>
+                        <span>{method.label}</span>
+                      </button>
+                    ))}
+                  </div>
+                </div>
+
+                {/* Socket Test Banner & Feedback */}
+                {tvTestStatus === 'testing' && (
+                  <div className="p-3 rounded-xl bg-purple-500/10 border border-purple-500/30 text-purple-200 text-xs flex items-center gap-2">
+                    <RefreshCw size={14} className="animate-spin text-purple-400 flex-shrink-0" />
+                    <span>Probing socket on {tvIpInput}:{tvPortInput}...</span>
+                  </div>
+                )}
+
+                {tvTestStatus === 'connected' && (
+                  <div className="p-3 rounded-xl bg-emerald-500/15 border border-emerald-500/30 text-emerald-200 text-xs flex items-center justify-between gap-2">
+                    <div className="flex items-center gap-2">
+                      <CheckCircle2 size={15} className="text-emerald-400 flex-shrink-0" />
+                      <span>Socket verified &amp; reachable</span>
+                    </div>
+                    {tvTestLatency && (
+                      <span className="font-mono text-[11px] text-emerald-300">
+                        {tvTestLatency}ms latency
+                      </span>
+                    )}
+                  </div>
+                )}
+
+                {tvTestStatus === 'failed' && (
+                  <div className="p-3 rounded-xl bg-rose-500/15 border border-rose-500/30 text-rose-200 text-xs flex items-start gap-2">
+                    <AlertTriangle size={15} className="text-rose-400 flex-shrink-0 mt-0.5" />
+                    <span>{tvTestError || 'Could not reach TV. Ensure TV is powered on and reachable on your local LAN.'}</span>
+                  </div>
+                )}
+
+                {/* Modal Action Buttons */}
+                <div className="flex items-center justify-between pt-3 border-t border-white/10">
+                  <button
+                    type="button"
+                    onClick={handleTestTvConnection}
+                    disabled={tvTesting || isTvConnecting || !tvIpInput.trim()}
+                    className="px-3.5 py-2.5 rounded-xl text-xs font-semibold bg-white/5 hover:bg-white/10 text-slate-300 border border-white/10 transition-colors flex items-center gap-1.5 disabled:opacity-50"
+                  >
+                    <RefreshCw size={13} className={tvTesting ? 'animate-spin' : ''} />
+                    <span>{tvTesting ? 'Testing...' : 'Test Connection'}</span>
+                  </button>
+
+                  <div className="flex items-center gap-2">
+                    <button
+                      type="button"
+                      onClick={() => setTvModalOpen(false)}
+                      className="px-4 py-2.5 rounded-xl text-xs font-medium text-slate-300 hover:bg-white/5 transition-colors"
+                    >
+                      Cancel
+                    </button>
+
+                    <button
+                      type="submit"
+                      disabled={isTvConnecting || !tvIpInput.trim()}
+                      className="px-5 py-2.5 rounded-xl text-xs font-semibold bg-gradient-to-r from-purple-500 to-indigo-600 hover:from-purple-400 hover:to-indigo-500 text-white shadow-lg shadow-purple-500/25 border border-purple-400/40 transition-all hover:scale-[1.02] disabled:opacity-50 flex items-center gap-1.5"
+                    >
+                      <Tv size={14} />
+                      <span>{isTvConnecting ? 'Connecting...' : 'Connect'}</span>
+                    </button>
+                  </div>
+                </div>
+              </form>
+            )}
           </div>
         </div>
       )}
