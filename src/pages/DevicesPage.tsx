@@ -265,14 +265,13 @@ export function DevicesPage() {
         }
 
         // Report scan results to NEXUS server so they are visible across the system
-        try {
-          await api.reportScanResults({
-            devices: scanRes.devices,
-            scannedSubnet: scanRes.scannedSubnet,
-          });
-        } catch {
+        // (fire-and-forget - don't block the UI if Render is cold-starting/slow)
+        api.reportScanResults({
+          devices: scanRes.devices,
+          scannedSubnet: scanRes.scannedSubnet,
+        }).catch(() => {
           // Ignore background sync errors
-        }
+        });
       } else {
         // Run server-side scan & socket probing (for cloud/browser environment)
         setScanProgressText('Probing subnet hosts and services...');
