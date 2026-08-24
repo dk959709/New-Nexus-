@@ -1,9 +1,9 @@
 import React, { useState, useEffect } from 'react';
 import { X, ExternalLink, Image as ImageIcon, Film, ShieldAlert, Loader2 } from 'lucide-react';
-import type { MediaItem } from '@/types';
+import type { MediaItem, UnifiedSearchResult } from '@/types';
 
 interface MediaViewerProps {
-  item: MediaItem | null;
+  item: MediaItem | UnifiedSearchResult | null;
   onClose: () => void;
 }
 
@@ -37,24 +37,45 @@ export const MediaViewer: React.FC<MediaViewerProps> = ({ item, onClose }) => {
   const [selectedQuality, setSelectedQuality] = useState<string>('auto');
   const [hasStartedPlayback, setHasStartedPlayback] = useState(false);
 
+  // Normalize item fields whether coming from MediaItem or UnifiedSearchResult
+  const normalizedItem = item ? {
+    id: item.id,
+    title: item.title,
+    description: item.description,
+    thumbnailUrl: ('thumbnailUrl' in item && item.thumbnailUrl) ? item.thumbnailUrl : (item.thumbnail || ''),
+    mediaUrl: ('mediaUrl' in item && item.mediaUrl) ? item.mediaUrl : (('playableUrl' in item && item.playableUrl) ? item.playableUrl : item.url || ''),
+    sourceUrl: ('sourceUrl' in item && item.sourceUrl) ? item.sourceUrl : (item.url || ''),
+    domain: item.domain || '',
+    type: item.type === 'image' ? ('image' as const) : ('video' as const),
+    author: ('author' in item && item.author) ? item.author : (('creator' in item && item.creator) ? item.creator : undefined),
+    license: item.license,
+    duration: item.duration,
+    videoId: item.videoId,
+    channel: item.channel,
+    embedUrl: item.embedUrl,
+    source: item.source,
+  } : null;
+
   const isWikimedia = Boolean(
-    item && (
-      item.domain === 'commons.wikimedia.org' ||
-      item.source === 'Wikimedia Commons' ||
-      item.mediaUrl?.includes('wikimedia.org') ||
-      item.sourceUrl?.includes('wikimedia.org') ||
-      item.id?.startsWith('wiki_comm_')
+    normalizedItem && (
+      normalizedItem.domain === 'commons.wikimedia.org' ||
+      normalizedItem.source === 'Wikimedia Commons' ||
+      normalizedItem.source === 'wikimedia' ||
+      normalizedItem.mediaUrl?.includes('wikimedia.org') ||
+      normalizedItem.sourceUrl?.includes('wikimedia.org') ||
+      normalizedItem.id?.startsWith('wiki_comm_')
     )
   );
 
   const isYouTube = Boolean(
-    item && (
-      item.source === 'YouTube' ||
-      item.domain?.includes('youtube') ||
-      Boolean(item.videoId) ||
-      item.mediaUrl?.includes('youtube.com/embed') ||
-      item.sourceUrl?.includes('youtube.com') ||
-      item.sourceUrl?.includes('youtu.be')
+    normalizedItem && (
+      normalizedItem.source === 'YouTube' ||
+      normalizedItem.source === 'youtube' ||
+      normalizedItem.domain?.includes('youtube') ||
+      Boolean(normalizedItem.videoId) ||
+      normalizedItem.mediaUrl?.includes('youtube.com/embed') ||
+      normalizedItem.sourceUrl?.includes('youtube.com') ||
+      normalizedItem.sourceUrl?.includes('youtu.be')
     )
   );
 
@@ -65,31 +86,18 @@ export const MediaViewer: React.FC<MediaViewerProps> = ({ item, onClose }) => {
     setExtractionError(null);
     setSelectedQuality('auto');
     setHasStartedPlayback(false);
+  }, [item]);
 
-    if (item && item.type === 'video') {
-      if (isYouTube) {
-        // Do not block playback on yt-dlp extraction; YouTube embed iframe is instant and reliable.
-        setExtracting(false);
-      } else if (isWikimedia) {
-        // Wikimedia: Do NOT run yt-dlp. Use direct resolved URL from Wikimedia Commons API.
-        setExtracting(false);
-      } else {
-        // Other web video sources: direct play without yt-dlp
-        setExtracting(false);
-      }
-    }
-  }, [item, isYouTube, isWikimedia]);
+  if (!normalizedItem) return null;
 
-  if (!item) return null;
-
-  const isVideo = item.type === 'video';
-  const videoId = item.videoId || (item.mediaUrl.match(/\/embed\/([a-zA-Z0-9_-]{11})/)?.[1]) || (item.sourceUrl?.match(/(?:v=|shorts\/|youtu\.be\/)([a-zA-Z0-9_-]{11})/)?.[1]);
+  const isVideo = normalizedItem.type === 'video';
+  const videoId = normalizedItem.videoId || (normalizedItem.mediaUrl.match(/\/embed\/([a-zA-Z0-9_-]{11})/)?.[1]) || (normalizedItem.sourceUrl?.match(/(?:v=|shorts\/|youtu\.be\/)([a-zA-Z0-9_-]{11})/)?.[1]);
   const safeEmbedUrl = videoId 
     ? `https://www.youtube-nocookie.com/embed/${videoId}?autoplay=1&enablejsapi=1&modestbranding=1&rel=0`
-    : item.embedUrl || item.mediaUrl;
+    : normalizedItem.embedUrl || normalizedItem.mediaUrl;
   const watchUrl = isWikimedia
-    ? (item.sourceUrl || item.mediaUrl)
-    : (videoId ? `https://www.youtube.com/watch?v=${videoId}` : (item.sourceUrl || item.mediaUrl));
+    ? (normalizedItem.sourceUrl || normalizedItem.mediaUrl)
+    : (videoId ? `https://www.youtube.com/watch?v=${videoId}` : (normalizedItem.sourceUrl || normalizedItem.mediaUrl));
 
   const formats = extractionResult?.formats || [];
   const selectedFormat = (() => {
@@ -113,8 +121,9 @@ export const MediaViewer: React.FC<MediaViewerProps> = ({ item, onClose }) => {
   })();
 
   const playableStreamUrl = isWikimedia
-    ? item.mediaUrl
-    : (selectedFormat?.playableUrl || item.mediaUrl);
+    ? (normalizedItem.mediaUrl || normalizedItem.sourceUrl)
+    : (selectedFormat?.playableUrl || normalizedItem.mediaUrl);
+
 
   return (
     <div
@@ -225,7 +234,7 @@ export const MediaViewer: React.FC<MediaViewerProps> = ({ item, onClose }) => {
             ) : isYouTube && !videoError ? (
               <iframe
                 src={safeEmbedUrl}
-                title={item.title}
+                title={normalizedItem.title}
                 className="w-full h-full aspect-video border-0 min-h-[360px]"
                 allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share"
                 allowFullScreen
@@ -255,7 +264,7 @@ export const MediaViewer: React.FC<MediaViewerProps> = ({ item, onClose }) => {
               </div>
             ) : (
               <video
-                src={item.mediaUrl}
+                src={normalizedItem.mediaUrl}
                 controls
                 autoPlay
                 className="w-full h-full max-h-[60vh] object-contain"
@@ -267,12 +276,12 @@ export const MediaViewer: React.FC<MediaViewerProps> = ({ item, onClose }) => {
             )
           ) : (
             <img
-              src={item.mediaUrl}
-              alt={item.title}
+              src={normalizedItem.mediaUrl}
+              alt={normalizedItem.title}
               className="w-full h-full max-h-[60vh] object-contain select-none"
               referrerPolicy="no-referrer"
               onError={(e) => {
-                (e.target as HTMLImageElement).src = item.thumbnailUrl;
+                (e.target as HTMLImageElement).src = normalizedItem.thumbnailUrl;
               }}
             />
           )}
@@ -281,16 +290,16 @@ export const MediaViewer: React.FC<MediaViewerProps> = ({ item, onClose }) => {
         {/* Footer Details */}
         <div className="p-5 border-t border-slate-800 bg-slate-950/70 flex flex-col sm:flex-row sm:items-center justify-between gap-4">
           <div className="space-y-1 min-w-0">
-            {item.description && (
-              <p className="text-sm text-slate-300 line-clamp-2">{item.description}</p>
+            {normalizedItem.description && (
+              <p className="text-sm text-slate-300 line-clamp-2">{normalizedItem.description}</p>
             )}
             <div className="flex flex-wrap items-center gap-3 text-xs text-slate-400">
-              {item.author && <span className="text-slate-300">Author: {item.author}</span>}
-              {item.channel && <span className="text-cyan-400 font-medium">Channel: {item.channel}</span>}
+              {normalizedItem.author && <span className="text-slate-300">Author: {normalizedItem.author}</span>}
+              {normalizedItem.channel && <span className="text-cyan-400 font-medium">Channel: {normalizedItem.channel}</span>}
               {hasStartedPlayback && <span className="text-emerald-400 font-medium">Status: Playing</span>}
-              {item.license && (
+              {normalizedItem.license && (
                 <span className="px-2 py-0.5 rounded-full bg-cyan-950/60 text-cyan-300 border border-cyan-800/40">
-                  {item.license}
+                  {normalizedItem.license}
                 </span>
               )}
             </div>

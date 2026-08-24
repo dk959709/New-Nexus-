@@ -171,6 +171,220 @@ async function fetchWikipediaSearch(query: string, limit = 10) {
   }
 }
 
+interface YouTubeSearchVideo {
+  id: string;
+  videoId?: string;
+  title: string;
+  description: string;
+  thumbnailUrl: string;
+  mediaUrl: string;
+  sourceUrl: string;
+  domain: string;
+  type: 'video';
+  duration?: string;
+  views?: string;
+  channel?: string;
+  embedUrl?: string;
+  source: 'YouTube' | 'Wikimedia Commons';
+  license?: string;
+}
+
+const ytVideoCache = new Map<string, { timestamp: number; items: YouTubeSearchVideo[] }>();
+const wikiVideoCache = new Map<string, { timestamp: number; items: YouTubeSearchVideo[] }>();
+const YT_CACHE_TTL = 15 * 60 * 1000; // 15 mins
+
+async function fetchWikimediaVideoResults(query: string, limit = 8, offset = 0): Promise<YouTubeSearchVideo[]> {
+  const trimmed = query.trim();
+  if (!trimmed) return [];
+
+  const cacheKey = `${trimmed.toLowerCase()}_lim${limit}_off${offset}`;
+  const cached = wikiVideoCache.get(cacheKey);
+  if (cached && Date.now() - cached.timestamp < YT_CACHE_TTL) {
+    return cached.items;
+  }
+
+  try {
+    const commonsUrl = `https://commons.wikimedia.org/w/api.php?action=query&generator=search&gsrsearch=${encodeURIComponent(
+      'filetype:video ' + trimmed
+    )}&gsrlimit=${limit}&gsroffset=${offset}&gsrnamespace=6&prop=imageinfo&iiprop=url|size|mime|extmetadata&iiurlwidth=500&format=json&origin=*`;
+
+    const res = await fetch(commonsUrl, {
+      headers: {
+        'User-Agent': 'NexusIntelligence/1.0 (contact: info@nexus.app)',
+        'Api-User-Agent': 'NexusIntelligence/1.0 (contact: info@nexus.app)',
+      },
+      signal: AbortSignal.timeout(5000),
+    });
+
+    if (res.ok) {
+      const data = (await res.json()) as {
+        query?: {
+          pages?: Record<
+            string,
+            {
+              pageid: number;
+              title: string;
+              imageinfo?: Array<{
+                url?: string;
+                thumburl?: string;
+                mime?: string;
+                extmetadata?: {
+                  ImageDescription?: { value?: string };
+                  Artist?: { value?: string };
+                  LicenseShortName?: { value?: string };
+                };
+              }>;
+            }
+          >;
+        };
+      };
+
+      const pages = data.query?.pages ?? {};
+      const items: YouTubeSearchVideo[] = [];
+
+      for (const pageId of Object.keys(pages)) {
+        const page = pages[pageId];
+        const info = page.imageinfo?.[0];
+        if (!info || !info.url) continue;
+
+        const title = page.title.replace(/^File:/i, '').replace(/\.[^/.]+$/, '');
+        const thumbUrl = info.thumburl || info.url;
+        const mediaUrl = info.url;
+        const extMeta = info.extmetadata;
+
+        let rawDesc = extMeta?.ImageDescription?.value || '';
+        rawDesc = rawDesc.replace(/<[^>]*>/g, '').trim();
+
+        const author = extMeta?.Artist?.value ? extMeta.Artist.value.replace(/<[^>]*>/g, '').trim() : 'Wikipedia Contributor';
+        const license = extMeta?.LicenseShortName?.value || 'Wikimedia Commons';
+
+        items.push({
+          id: `wiki_vid_${page.pageid}`,
+          title,
+          description: rawDesc || `Wikipedia educational video file: ${title}`,
+          thumbnailUrl: thumbUrl,
+          mediaUrl,
+          sourceUrl: `https://commons.wikimedia.org/wiki/${encodeURIComponent(page.title)}`,
+          domain: 'commons.wikimedia.org',
+          type: 'video',
+          duration: 'Wikipedia Video',
+          channel: author,
+          source: 'Wikimedia Commons',
+          license,
+        });
+      }
+
+      if (items.length > 0) {
+        wikiVideoCache.set(cacheKey, { timestamp: Date.now(), items });
+        return items;
+      }
+    }
+  } catch {
+    // Graceful fallback
+  }
+
+  return [];
+}
+
+async function fetchYouTubeSearchResults(query: string, page = 1): Promise<YouTubeSearchVideo[]> {
+  const trimmed = query.trim();
+  if (!trimmed) return [];
+
+  const cacheKey = `${trimmed.toLowerCase()}_p${page}`;
+  const cached = ytVideoCache.get(cacheKey);
+  if (cached && Date.now() - cached.timestamp < YT_CACHE_TTL) {
+    return cached.items;
+  }
+
+  try {
+    const searchUrl = `https://www.youtube.com/results?search_query=${encodeURIComponent(trimmed)}`;
+    const res = await fetch(searchUrl, {
+      headers: {
+        'User-Agent':
+          'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36',
+        'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,*/*;q=0.8',
+        'Accept-Language': 'en-US,en;q=0.9',
+        'Cookie': 'SOCS=CAESEwgDEgk2MTQ1MjQ4OTUaAmVuIAEaBgiA_LyaBg; CONSENT=PENDING+999; PREF=tz=UTC&hl=en',
+        'Sec-Fetch-Dest': 'document',
+        'Sec-Fetch-Mode': 'navigate',
+      },
+      redirect: 'follow',
+      signal: AbortSignal.timeout(6000),
+    });
+
+    if (res.ok) {
+      const html = await res.text();
+      const match =
+        html.match(/var ytInitialData = ({.+?});<\/script>/s) ||
+        html.match(/ytInitialData\s*=\s*({.+?});/s);
+
+      if (match) {
+        const data = JSON.parse(match[1]);
+        const contents =
+          data.contents?.twoColumnSearchResultsRenderer?.primaryContents?.sectionListRenderer?.contents || [];
+
+        const items: YouTubeSearchVideo[] = [];
+        const seenIds = new Set<string>();
+
+        for (const section of contents) {
+          const itemSection = section.itemSectionRenderer?.contents || [];
+          for (const item of itemSection) {
+            const v = item.videoRenderer;
+            if (v && v.videoId && !seenIds.has(v.videoId)) {
+              seenIds.add(v.videoId);
+              const title =
+                v.title?.runs?.map((r: { text?: string }) => r.text).join('') ||
+                v.title?.simpleText ||
+                'YouTube Video';
+              const description =
+                v.detailedMetadataSnippets?.[0]?.snippetText?.runs?.map((r: { text?: string }) => r.text).join('') ||
+                v.descriptionSnippet?.runs?.map((r: { text?: string }) => r.text).join('') ||
+                '';
+              const channel =
+                v.ownerText?.runs?.[0]?.text ||
+                v.longBylineText?.runs?.[0]?.text ||
+                'YouTube Creator';
+              const duration = v.lengthText?.simpleText || 'Video';
+              const views = v.viewCountText?.simpleText || v.shortViewCountText?.simpleText || '';
+              const thumb =
+                v.thumbnail?.thumbnails?.[v.thumbnail.thumbnails.length - 1]?.url ||
+                `https://img.youtube.com/vi/${v.videoId}/hqdefault.jpg`;
+
+              items.push({
+                id: `yt_${v.videoId}`,
+                videoId: v.videoId,
+                title,
+                description,
+                thumbnailUrl: thumb,
+                mediaUrl: `https://www.youtube.com/embed/${v.videoId}`,
+                sourceUrl: `https://www.youtube.com/watch?v=${v.videoId}`,
+                domain: 'youtube.com',
+                type: 'video',
+                duration,
+                views,
+                channel,
+                embedUrl: `https://www.youtube.com/embed/${v.videoId}`,
+                source: 'YouTube',
+              });
+            }
+          }
+        }
+
+        if (items.length > 0) {
+          const pagedItems = page === 1 ? items : items.slice((page - 1) * 8);
+          const finalItems = pagedItems.length > 0 ? pagedItems : items;
+          ytVideoCache.set(cacheKey, { timestamp: Date.now(), items: finalItems });
+          return finalItems;
+        }
+      }
+    }
+  } catch {
+    // Network or scraping transient fallback
+  }
+
+  return [];
+}
+
 const weatherSchema = z.object({
   city: z.string().trim().min(1).max(120).optional(),
   latitude: z.coerce.number().min(-90).max(90).optional(),
@@ -424,8 +638,8 @@ async function generateWithGemini({
 
   if (contents.length === 0) return null;
 
-  // Primary model and fast fallback model when experiencing high demand (503 / 429)
-  const candidateModels = ['gemini-3.7-flash', 'gemini-3.1-flash-lite'];
+  // Primary model and fast fallback models when experiencing high demand (503 / 429)
+  const candidateModels = ['gemini-3.7-flash', 'gemini-2.5-flash', 'gemini-3.1-flash-lite', 'gemini-2.5-flash-lite'];
 
   for (const model of candidateModels) {
     for (let attempt = 0; attempt < 2; attempt++) {
@@ -455,7 +669,7 @@ async function generateWithGemini({
         console.warn(`[Gemini AI] (${model} attempt ${attempt + 1}) notice: ${errStr}`);
 
         if (isUnavailableOrThrottled && attempt === 0) {
-          await new Promise((resolve) => setTimeout(resolve, 600));
+          await new Promise((resolve) => setTimeout(resolve, 800));
           continue;
         }
         break;
@@ -872,6 +1086,56 @@ async function executeAiWithProviderOrFallback({
 async function searchProvider(input: z.infer<typeof searchSchema>) {
   if (input.category === 'WIKIPEDIA') {
     return fetchWikipediaSearch(input.query, 20);
+  }
+
+  if (input.category === 'VIDEOS') {
+    const page = input.page ?? 1;
+    const [ytVideos, wikiVideos] = await Promise.all([
+      fetchYouTubeSearchResults(input.query, page),
+      fetchWikimediaVideoResults(input.query, 6, (page - 1) * 6),
+    ]);
+
+    const combined: SearchResult[] = [];
+    const seenUrls = new Set<string>();
+
+    for (const v of ytVideos) {
+      if (!seenUrls.has(v.sourceUrl)) {
+        seenUrls.add(v.sourceUrl);
+        combined.push({
+          title: v.title,
+          url: v.sourceUrl,
+          domain: 'youtube.com',
+          description: v.description || `YouTube video by ${v.channel || 'Creator'} (${v.duration || 'Watch'})`,
+          thumbnail: v.thumbnailUrl,
+          image: v.thumbnailUrl,
+          type: 'videos' as const,
+          videoId: v.videoId,
+          channel: v.channel,
+          duration: v.duration,
+        });
+      }
+    }
+
+    for (const w of wikiVideos) {
+      if (!seenUrls.has(w.sourceUrl)) {
+        seenUrls.add(w.sourceUrl);
+        combined.push({
+          title: `[Wikipedia Media] ${w.title}`,
+          url: w.sourceUrl,
+          domain: 'commons.wikimedia.org',
+          description: w.description || `Wikipedia Commons educational video file: ${w.title}`,
+          thumbnail: w.thumbnailUrl,
+          image: w.thumbnailUrl,
+          type: 'videos' as const,
+          channel: w.channel || 'Wikimedia Commons',
+          duration: 'Wikipedia Video',
+        });
+      }
+    }
+
+    if (combined.length > 0) {
+      return combined;
+    }
   }
 
   const key = process.env.SEARCH_API_KEY;
@@ -1572,7 +1836,7 @@ async function executeSmartAnswerEngine(
       { role: 'user', content: userPrompt },
     ],
     temperature: 0.3,
-    maxTokens: providerConfig?.maxTokens || 128,
+    maxTokens: providerConfig?.maxTokens || 512,
     providerConfig,
   });
 
@@ -1743,7 +2007,7 @@ async function processAiChatInternal(
   const aiResult = await executeAiWithProviderOrFallback({
     messages,
     temperature: 0.4,
-    maxTokens: providerConfig?.maxTokens || 128,
+    maxTokens: providerConfig?.maxTokens || 512,
     providerConfig,
   });
 
@@ -1814,23 +2078,25 @@ async function processAiChatInternal(
 
 const customProviderSchema = z
   .object({
-    id: z.string(),
-    name: z.string(),
-    url: z.string(),
-    model: z.string(),
+    id: z.string().optional(),
+    name: z.string().optional(),
+    url: z.string().optional(),
+    model: z.string().optional(),
     maxTokens: z.number().int().positive().optional(),
     keyStrategy: z.enum(['failover', 'round_robin', 'manual']).optional(),
     preferredKeyId: z.string().optional(),
-    keys: z.array(
-      z
-        .object({
-          id: z.string(),
-          key: z.string(),
-          label: z.string().optional(),
-          status: z.string().optional(),
-        })
-        .passthrough(),
-    ),
+    keys: z
+      .array(
+        z
+          .object({
+            id: z.string().optional(),
+            key: z.string().optional(),
+            label: z.string().optional(),
+            status: z.string().optional(),
+          })
+          .passthrough(),
+      )
+      .optional(),
     capabilities: z
       .object({
         text: z.boolean().optional(),
@@ -4747,6 +5013,41 @@ async function startServer() {
     } catch (error) {
       const err = error as Error & { status?: number };
       return errorResponse(res, err.status ?? 502, err.message);
+    }
+  });
+
+  app.get('/api/videos/search', async (req, res) => {
+    const query = typeof req.query.query === 'string' ? req.query.query : '';
+    const page = typeof req.query.page === 'string' ? parseInt(req.query.page, 10) || 1 : 1;
+    if (!query.trim()) {
+      return errorResponse(res, 400, 'Enter a valid video search query.');
+    }
+    try {
+      const [ytVideos, wikiVideos] = await Promise.all([
+        fetchYouTubeSearchResults(query, page),
+        fetchWikimediaVideoResults(query, 6, (page - 1) * 6),
+      ]);
+
+      const merged: YouTubeSearchVideo[] = [];
+      const seenUrls = new Set<string>();
+
+      // Interleave/combine YouTube and Wikipedia videos
+      const maxLen = Math.max(ytVideos.length, wikiVideos.length);
+      for (let i = 0; i < maxLen; i++) {
+        if (i < ytVideos.length && !seenUrls.has(ytVideos[i].sourceUrl)) {
+          seenUrls.add(ytVideos[i].sourceUrl);
+          merged.push(ytVideos[i]);
+        }
+        if (i < wikiVideos.length && !seenUrls.has(wikiVideos[i].sourceUrl)) {
+          seenUrls.add(wikiVideos[i].sourceUrl);
+          merged.push(wikiVideos[i]);
+        }
+      }
+
+      return res.json({ data: merged.length > 0 ? merged : ytVideos });
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : 'Failed to search videos.';
+      return errorResponse(res, 500, msg);
     }
   });
 

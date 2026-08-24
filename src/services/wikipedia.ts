@@ -29,21 +29,22 @@ function cleanSnippet(html: string): string {
 export async function searchWikipedia(
   query: string,
   limit = 10,
+  offset = 0,
 ): Promise<WikipediaSearchResult[]> {
   const trimmed = query.trim();
   if (!trimmed) return [];
 
-  const cacheKey = `${trimmed.toLowerCase()}_${limit}`;
+  const cacheKey = `${trimmed.toLowerCase()}_${limit}_${offset}`;
   const cached = searchCache.get(cacheKey);
   if (cached && Date.now() - cached.timestamp < CACHE_TTL_MS) {
     return cached.results;
   }
 
   try {
-    // 1. Search for matching articles
+    // 1. Search for matching articles with pagination support
     const searchUrl = `https://en.wikipedia.org/w/api.php?action=query&list=search&srsearch=${encodeURIComponent(
       trimmed,
-    )}&srlimit=${limit}&utf8=&format=json&origin=*`;
+    )}&srlimit=${limit}&sroffset=${offset}&utf8=&format=json&origin=*`;
 
     const res = await fetch(searchUrl, {
       headers: {

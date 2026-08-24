@@ -1,5 +1,6 @@
 import type {
   SearchResult,
+  MediaItem,
   WeatherData,
   GeocodeResult,
   ConfigStatus,
@@ -84,6 +85,10 @@ export const api = {
       method: 'POST',
       body: JSON.stringify({ query, category, page }),
     });
+  },
+
+  searchVideos(query: string, page = 1): Promise<MediaItem[]> {
+    return call<MediaItem[]>(`/api/videos/search?query=${encodeURIComponent(query)}&page=${page}`);
   },
 
   weather(queryString: string): Promise<WeatherData> {

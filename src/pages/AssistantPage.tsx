@@ -206,65 +206,82 @@ export function AssistantPage() {
   };
 
   return (
-    <div className="assistant-page">
-      <div className="page-intro">
-        <span className="eyebrow">NEXUS AI</span>
+    <div className="assistant-page max-w-5xl mx-auto px-4 py-8 relative">
+      <div className="page-intro relative mb-8">
+        <div className="absolute -top-12 left-1/3 w-96 h-96 bg-cyan-500/10 rounded-full blur-[120px] pointer-events-none animate-pulse" />
+        <div className="absolute top-0 right-10 w-80 h-80 bg-purple-500/10 rounded-full blur-[100px] pointer-events-none animate-pulse" style={{ animationDuration: '7s' }} />
+
+        <div className="flex items-center gap-2 mb-2">
+          <span className="w-2.5 h-2.5 rounded-full bg-cyan-400 animate-ping" />
+          <span className="eyebrow">NEXUS AI</span>
+        </div>
         <h1>Ask the intelligence.</h1>
-        <p>
+        <p className="text-slate-300 font-medium sm:text-base">
           Chat with NEXUS AI for answers, explanations, ideas,
           summaries, and problem solving.
         </p>
       </div>
 
       <section
-        className="assistant-shell"
+        className="assistant-shell relative overflow-hidden shadow-2xl"
         style={{
           display: 'flex',
           flexDirection: 'column',
-          minHeight: '65vh',
-          border: '1px solid rgba(100,220,210,.18)',
-          borderRadius: 20,
+          minHeight: '68vh',
+          border: '1px solid rgba(97,221,210,0.25)',
+          borderRadius: 24,
           overflow: 'hidden',
-          background: 'rgba(8,24,30,.72)',
-          backdropFilter: 'blur(18px)',
+          background: 'rgba(5,18,24,0.85)',
+          backdropFilter: 'blur(24px)',
         }}
       >
+        {/* Ambient neural grid glow */}
+        <div className="absolute top-0 right-0 w-96 h-96 bg-gradient-to-br from-cyan-500/15 via-purple-500/10 to-transparent rounded-full blur-3xl pointer-events-none" />
+
         <header
           style={{
             display: 'flex',
             alignItems: 'center',
             justifyContent: 'space-between',
             gap: 12,
-            padding: '16px 18px',
+            padding: '18px 22px',
             borderBottom: '1px solid rgba(255,255,255,.08)',
+            background: 'rgba(255,255,255,0.02)',
           }}
         >
-          <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
-            <span
+          <div style={{ display: 'flex', alignItems: 'center', gap: 14 }}>
+            <div
               style={{
-                width: 40,
-                height: 40,
+                width: 44,
+                height: 44,
                 display: 'grid',
                 placeItems: 'center',
-                borderRadius: 12,
+                borderRadius: 14,
                 color: '#61ddd2',
-                background: 'rgba(97,221,210,.1)',
+                background: 'rgba(97,221,210,.12)',
+                border: '1px solid rgba(97,221,210,.3)',
+                boxShadow: '0 0 20px rgba(97,221,210,0.2)',
               }}
             >
-              <Bot size={21} />
-            </span>
+              <Bot size={22} className="animate-pulse" />
+            </div>
 
             <div>
-              <strong>NEXUS AI</strong>
+              <div className="flex items-center gap-2">
+                <strong className="text-white tracking-wide text-base">NEXUS AI</strong>
+                <span className="px-2 py-0.5 rounded-full bg-cyan-500/15 border border-cyan-500/30 text-[10px] font-mono text-cyan-300">
+                  Neural Active
+                </span>
+              </div>
 
               <Link
                 to="/settings?tab=ai"
                 style={{
                   display: 'flex',
                   alignItems: 'center',
-                  gap: 4,
-                  opacity: 0.75,
-                  marginTop: 2,
+                  gap: 5,
+                  opacity: 0.85,
+                  marginTop: 3,
                   fontSize: 11,
                   color: '#61ddd2',
                   textDecoration: 'none',
@@ -285,7 +302,7 @@ export function AssistantPage() {
 
           <div style={{ display: 'flex', gap: 8 }}>
             <button
-              className="icon-button"
+              className="icon-button hover:border-cyan-500/40 transition-all"
               onClick={newChat}
               aria-label="New chat"
               title="New chat"
@@ -295,7 +312,7 @@ export function AssistantPage() {
             </button>
 
             <button
-              className="icon-button"
+              className="icon-button hover:border-red-500/40 transition-all"
               onClick={clearMemory}
               aria-label="Clear memory"
               title="Clear memory"
@@ -308,29 +325,30 @@ export function AssistantPage() {
 
         <div
           style={{
-            padding: '10px 18px',
+            padding: '12px 22px',
             borderBottom: '1px solid rgba(255,255,255,.05)',
             display: 'flex',
             alignItems: 'center',
             justifyContent: 'space-between',
             gap: 12,
             flexWrap: 'wrap',
+            background: 'rgba(0,0,0,0.2)',
           }}
         >
           <div
             style={{
               display: 'flex',
               alignItems: 'center',
-              gap: 7,
+              gap: 8,
               fontSize: 12,
-              opacity: 0.7,
+              opacity: 0.8,
             }}
           >
-            <Brain size={14} />
-            <span>
+            <Brain size={15} className="text-cyan-400" />
+            <span className="text-slate-300">
               {smartMemory
-                ? 'Memory saved locally'
-                : 'No saved memories'}
+                ? '🧠 Memory saved locally & active'
+                : '✨ No saved memories yet'}
             </span>
           </div>
 
@@ -344,11 +362,15 @@ export function AssistantPage() {
               display: 'inline-flex',
               alignItems: 'center',
               gap: 6,
-              padding: '7px 10px',
+              padding: '7px 12px',
+              borderRadius: 10,
+              background: 'rgba(97,221,210,0.1)',
+              borderColor: 'rgba(97,221,210,0.3)',
+              color: '#61ddd2',
             }}
           >
             <Brain size={14} />
-            <span style={{ fontSize: 12 }}>Manage</span>
+            <span style={{ fontSize: 12, fontWeight: 600 }}>Manage Memory</span>
           </button>
         </div>
 

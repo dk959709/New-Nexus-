@@ -359,6 +359,31 @@ export interface NetworkScanResult {
 
 export type MediaType = 'image' | 'video' | 'audio';
 
+export type UnifiedSearchSource = 'web' | 'wikipedia' | 'wikimedia' | 'youtube';
+export type UnifiedResultType = 'web' | 'article' | 'image' | 'video';
+
+export interface UnifiedSearchResult {
+  id: string;
+  title: string;
+  source: UnifiedSearchSource;
+  type: UnifiedResultType;
+  url: string;
+  thumbnail?: string;
+  description?: string;
+  duration?: string;
+  playableUrl?: string;
+  creator?: string;
+  author?: string;
+  license?: string;
+  publishedAt?: string;
+  domain?: string;
+  videoId?: string;
+  channel?: string;
+  embedUrl?: string;
+  width?: number;
+  height?: number;
+}
+
 export interface MediaItem {
   id: string;
   title: string;
