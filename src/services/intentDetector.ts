@@ -11,6 +11,9 @@ export interface QueryIntent {
   imageIntent: boolean;
   knowledgeIntent: boolean;
   webIntent: boolean;
+  isVideo?: boolean;
+  isImage?: boolean;
+  isKnowledge?: boolean;
   primaryCategory: 'video' | 'image' | 'knowledge' | 'web';
   cleanTopic: string;
 }
@@ -57,6 +60,9 @@ export function detectQueryIntent(query: string): QueryIntent {
     imageIntent: hasImage,
     knowledgeIntent: hasKnowledge,
     webIntent: true,
+    isVideo: hasVideo,
+    isImage: hasImage,
+    isKnowledge: hasKnowledge,
     primaryCategory,
     cleanTopic,
   };

@@ -89,7 +89,7 @@ export interface GeocodeResult {
 
 export interface SavedItem {
   id: string;
-  type: 'search' | 'news' | 'location';
+  type: 'search' | 'news' | 'location' | 'space';
   title: string;
   subtitle: string;
   url?: string;
@@ -402,5 +402,8 @@ export interface MediaItem {
   channel?: string;
   embedUrl?: string;
   source?: 'YouTube' | 'Wikimedia' | 'Web' | 'Wikipedia';
+  thumbnail?: string;
+  url?: string;
+  playableUrl?: string;
 }
 

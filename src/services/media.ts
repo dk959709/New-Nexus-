@@ -483,7 +483,7 @@ export async function searchWikimediaVideos(query: string, limit = 12, offset = 
         duration: 'Wikimedia Video',
         author,
         license,
-        source: 'Wikimedia Commons',
+        source: 'Wikimedia',
       });
     }
 

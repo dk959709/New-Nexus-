@@ -404,8 +404,8 @@ export function SearchPage() {
       const searchResultsForAI: SearchResult[] = currentTabResults.slice(0, 8).map((r) => ({
         title: r.title,
         url: r.url,
-        domain: r.domain,
-        description: r.description,
+        domain: r.domain || '',
+        description: r.description || '',
         type: 'web',
       }));
 
@@ -427,7 +427,7 @@ export function SearchPage() {
       id: result.url,
       type: result.type === 'video' ? 'search' : 'search',
       title: result.title,
-      subtitle: result.domain,
+      subtitle: result.domain || '',
       url: result.url,
       savedAt: new Date().toISOString(),
     });
@@ -890,6 +890,7 @@ export function SpacePage() {
       subtitle: `NASA APOD · ${apod.date}`,
       url: apod.hdurl || apod.url,
       type: 'space',
+      savedAt: new Date().toISOString(),
     });
     setSavedStatus(true);
     setTimeout(() => setSavedStatus(false), 2500);

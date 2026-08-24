@@ -42,9 +42,9 @@ export const MediaViewer: React.FC<MediaViewerProps> = ({ item, onClose }) => {
     id: item.id,
     title: item.title,
     description: item.description,
-    thumbnailUrl: ('thumbnailUrl' in item && item.thumbnailUrl) ? item.thumbnailUrl : (item.thumbnail || ''),
-    mediaUrl: ('mediaUrl' in item && item.mediaUrl) ? item.mediaUrl : (('playableUrl' in item && item.playableUrl) ? item.playableUrl : item.url || ''),
-    sourceUrl: ('sourceUrl' in item && item.sourceUrl) ? item.sourceUrl : (item.url || ''),
+    thumbnailUrl: 'thumbnailUrl' in item && item.thumbnailUrl ? item.thumbnailUrl : (('thumbnail' in item && item.thumbnail) ? item.thumbnail : ''),
+    mediaUrl: 'mediaUrl' in item && item.mediaUrl ? item.mediaUrl : (('playableUrl' in item && item.playableUrl) ? item.playableUrl : (('url' in item && item.url) ? item.url : '')),
+    sourceUrl: 'sourceUrl' in item && item.sourceUrl ? item.sourceUrl : (('url' in item && item.url) ? item.url : ''),
     domain: item.domain || '',
     type: item.type === 'image' ? ('image' as const) : ('video' as const),
     author: ('author' in item && item.author) ? item.author : (('creator' in item && item.creator) ? item.creator : undefined),
@@ -59,11 +59,12 @@ export const MediaViewer: React.FC<MediaViewerProps> = ({ item, onClose }) => {
   const isWikimedia = Boolean(
     normalizedItem && (
       normalizedItem.domain === 'commons.wikimedia.org' ||
-      normalizedItem.source === 'Wikimedia Commons' ||
+      normalizedItem.source === 'Wikimedia' ||
       normalizedItem.source === 'wikimedia' ||
       normalizedItem.mediaUrl?.includes('wikimedia.org') ||
       normalizedItem.sourceUrl?.includes('wikimedia.org') ||
-      normalizedItem.id?.startsWith('wiki_comm_')
+      normalizedItem.id?.startsWith('wiki_comm_') ||
+      normalizedItem.id?.startsWith('wiki_vid_')
     )
   );
 
@@ -144,10 +145,10 @@ export const MediaViewer: React.FC<MediaViewerProps> = ({ item, onClose }) => {
               {isVideo ? <Film size={18} /> : <ImageIcon size={18} />}
             </span>
             <div className="min-w-0">
-              <h3 className="font-semibold text-slate-100 text-base truncate">{extractionResult?.title || item.title}</h3>
+              <h3 className="font-semibold text-slate-100 text-base truncate">{extractionResult?.title || normalizedItem.title}</h3>
               <p className="text-xs text-slate-400 truncate">
-                Source: {isWikimedia ? 'Wikimedia Commons' : (extractionResult?.source || item.domain)}
-                {item.channel ? ` · ${item.channel}` : ''}
+                Source: {isWikimedia ? 'Wikimedia Commons' : (extractionResult?.source || normalizedItem.domain)}
+                {normalizedItem.channel ? ` · ${normalizedItem.channel}` : ''}
               </p>
             </div>
           </div>
