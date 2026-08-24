@@ -475,5 +475,61 @@ export const api = {
       },
     );
   },
+
+  getMediaStatus(): Promise<{ available: boolean; version?: string; message?: string }> {
+    return call<{ available: boolean; version?: string; message?: string }>('/api/media/status');
+  },
+
+  extractMedia(url: string): Promise<{
+    success: boolean;
+    title?: string;
+    thumbnail?: string;
+    duration?: number;
+    source?: string;
+    originalUrl?: string;
+    formats?: Array<{
+      formatId: string;
+      ext: string;
+      height?: number;
+      width?: number;
+      fps?: number;
+      hasVideo: boolean;
+      hasAudio: boolean;
+      playableUrl: string;
+    }>;
+    error?: string;
+  }> {
+    return call('/api/media/extract', {
+      method: 'POST',
+      body: JSON.stringify({ url }),
+    });
+  },
+
+  testMediaBackend(url: string): Promise<{
+    available: boolean;
+    version?: string;
+    success: boolean;
+    title?: string;
+    thumbnail?: string;
+    duration?: number;
+    source?: string;
+    originalUrl?: string;
+    formats?: Array<{
+      formatId: string;
+      ext: string;
+      height?: number;
+      width?: number;
+      fps?: number;
+      hasVideo: boolean;
+      hasAudio: boolean;
+      playableUrl: string;
+    }>;
+    error?: string;
+  }> {
+    return call('/api/media/test', {
+      method: 'POST',
+      body: JSON.stringify({ url }),
+    });
+  },
 };
 

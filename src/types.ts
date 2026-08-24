@@ -356,3 +356,26 @@ export interface NetworkScanResult {
   message?: string;
   networkInfo?: NetworkInfo;
 }
+
+export type MediaType = 'image' | 'video' | 'audio';
+
+export interface MediaItem {
+  id: string;
+  title: string;
+  description?: string;
+  thumbnailUrl: string;
+  mediaUrl: string;
+  sourceUrl: string;
+  domain: string;
+  type: MediaType;
+  duration?: string;
+  author?: string;
+  license?: string;
+  width?: number;
+  height?: number;
+  videoId?: string;
+  channel?: string;
+  embedUrl?: string;
+  source?: 'YouTube' | 'Wikimedia' | 'Web' | 'Wikipedia';
+}
+

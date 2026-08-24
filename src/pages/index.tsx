@@ -19,20 +19,24 @@ import {
   Shield,
   Info,
   CheckCircle2,
+  Image as ImageIcon,
+  Film,
 } from 'lucide-react';
 import { Link, useNavigate, useSearchParams } from 'react-router-dom';
-import { SearchBox, WeatherCard, HourlyForecast, DailyForecast, ErrorMessage, LoadingMessage, ResultCard, WeatherMap, AnswerCard } from '@/components';
+import { SearchBox, WeatherCard, HourlyForecast, DailyForecast, ErrorMessage, LoadingMessage, ResultCard, WeatherMap, AnswerCard, MediaResultCard, MediaViewer } from '@/components';
 import { WallpaperSelector } from '@/components/WallpaperSelector';
 import { SpaceStarfield } from '@/components/SpaceStarfield';
 import { MeteorShower } from '@/animations/MeteorShower';
 import { AIProvidersSettings } from '@/components/AIProvidersSettings';
 import { api, BASE } from '@/services/api';
+import { searchWikimediaCommons, extractMediaFromResults, searchYouTubeVideos, searchMoreVideos } from '@/services/media';
 import { getLocation } from '@/services/location';
 import { storage } from '@/lib/storage';
 import { useSettings } from '@/hooks/useSettings';
 import { playTapSound } from '@/lib/audio';
 import { askSmartAnswerEngine } from '@/services/answerEngine';
-import type { SearchResult, WeatherData, Settings, AnswerEngineResult } from '@/types';
+import type { SearchResult, WeatherData, Settings, AnswerEngineResult, MediaItem } from '@/types';
+
 
 function PageIntro({ eyebrow, title, description }: { eyebrow: string; title: string; description: string }) {
   return <div className="page-intro"><span className="eyebrow">{eyebrow}</span><h1>{title}</h1><p>{description}</p></div>;
@@ -228,16 +232,66 @@ export function SearchPage() {
   const [params] = useSearchParams();
   const navigate = useNavigate();
   const query = params.get('q') ?? '';
-  const [sourceTab, setSourceTab] = useState<'all' | 'web' | 'wikipedia'>('all');
+  const [sourceTab, setSourceTab] = useState<'all' | 'web' | 'wikipedia' | 'media'>('all');
   const [results, setResults] = useState<SearchResult[]>([]);
+  const [mediaResults, setMediaResults] = useState<MediaItem[]>([]);
+  const [selectedMedia, setSelectedMedia] = useState<MediaItem | null>(null);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
   const [saved, setSaved] = useState(storage.getSaved());
+  const [mediaOffset, setMediaOffset] = useState(16);
+  const [loadingMore, setLoadingMore] = useState(false);
 
   // Synthesis on Search Page
   const [synthesizedResult, setSynthesizedResult] = useState<AnswerEngineResult | null>(null);
   const [synthesizing, setSynthesizing] = useState(false);
   const [synthesisError, setSynthesisError] = useState('');
+
+  const loadMoreVideos = useCallback(async () => {
+    if (!query || loadingMore) return;
+    setLoadingMore(true);
+    try {
+      const pageNum = Math.floor(mediaOffset / 16) + 1;
+      const moreCommons = await searchWikimediaCommons(query, 16, mediaOffset).catch(() => [] as MediaItem[]);
+      const moreYouTube = searchMoreVideos(query, pageNum);
+      const combinedNew = [...moreCommons, ...moreYouTube];
+
+      if (combinedNew.length > 0) {
+        setMediaResults((prev) => {
+          const existingIds = new Set(prev.map((m) => m.id));
+          const newItems = combinedNew.filter((m) => !existingIds.has(m.id));
+          return [...prev, ...newItems];
+        });
+        setMediaOffset((prev) => prev + 16);
+      } else {
+        const fallbackMore = searchMoreVideos(query, pageNum + 1);
+        if (fallbackMore.length > 0) {
+          setMediaResults((prev) => {
+            const existingIds = new Set(prev.map((m) => m.id));
+            const newItems = fallbackMore.filter((m) => !existingIds.has(m.id));
+            return [...prev, ...newItems];
+          });
+        }
+        setMediaOffset((prev) => prev + 16);
+      }
+    } catch (err) {
+      console.error('Failed to load more videos:', err);
+    } finally {
+      setLoadingMore(false);
+    }
+  }, [query, loadingMore, mediaOffset]);
+
+  useEffect(() => {
+    const handleScroll = () => {
+      if (window.innerHeight + window.scrollY >= document.documentElement.scrollHeight - 600) {
+        if (!loadingMore && query) {
+          loadMoreVideos();
+        }
+      }
+    };
+    window.addEventListener('scroll', handleScroll);
+    return () => window.removeEventListener('scroll', handleScroll);
+  }, [loadingMore, query, mediaOffset, loadMoreVideos]);
 
   const search = (value: string) => {
     storage.saveSearch(value);
@@ -248,9 +302,12 @@ export function SearchPage() {
   useEffect(() => {
     if (!query) {
       setResults([]);
+      setMediaResults([]);
       setSynthesizedResult(null);
       return;
     }
+
+    setMediaOffset(16);
 
     let isMounted = true;
     setLoading(true);
@@ -259,24 +316,51 @@ export function SearchPage() {
 
     const fetchResults = async () => {
       try {
-        if (sourceTab === 'wikipedia') {
+        const youtubeItems = searchYouTubeVideos(query);
+
+        if (sourceTab === 'media') {
+          const [commonsItems, webItems] = await Promise.all([
+            searchWikimediaCommons(query, 16).catch(() => [] as MediaItem[]),
+            api.search(query, 'ALL').catch(() => [] as SearchResult[]),
+          ]);
+          if (!isMounted) return;
+          const extractedWebMedia = extractMediaFromResults(webItems);
+          const combinedMedia: MediaItem[] = [...youtubeItems, ...commonsItems];
+          for (const item of extractedWebMedia) {
+            if (!combinedMedia.some((m) => m.mediaUrl === item.mediaUrl)) {
+              combinedMedia.push(item);
+            }
+          }
+          setMediaResults(combinedMedia);
+          setResults([]);
+        } else if (sourceTab === 'wikipedia') {
           const wikiItems = await api.searchWikipedia(query, 15);
           if (!isMounted) return;
-          setResults(wikiItems.map(api.wikipediaToSearchResult));
+          const searchRes = wikiItems.map(api.wikipediaToSearchResult);
+          setResults(searchRes);
+          setMediaResults(extractMediaFromResults(searchRes));
         } else if (sourceTab === 'web') {
           const webItems = await api.search(query, 'ALL');
           if (!isMounted) return;
           setResults(webItems);
+          const webMedia = extractMediaFromResults(webItems);
+          const combinedMedia: MediaItem[] = [...youtubeItems];
+          for (const item of webMedia) {
+            if (!combinedMedia.some((m) => m.mediaUrl === item.mediaUrl)) {
+              combinedMedia.push(item);
+            }
+          }
+          setMediaResults(combinedMedia);
         } else {
-          // 'all': fetch web results and Wikipedia results concurrently
-          const [webItems, wikiItems] = await Promise.all([
+          // 'all': fetch web results, Wikipedia results, Wikimedia media, and YouTube videos concurrently
+          const [webItems, wikiItems, commonsItems] = await Promise.all([
             api.search(query, 'ALL').catch(() => [] as SearchResult[]),
             api.searchWikipedia(query, 6).then((items) => items.map(api.wikipediaToSearchResult)).catch(() => [] as SearchResult[]),
+            searchWikimediaCommons(query, 8).catch(() => [] as MediaItem[]),
           ]);
 
           if (!isMounted) return;
 
-          // Merge results cleanly
           const combined: SearchResult[] = [];
           if (wikiItems.length > 0) {
             combined.push(...wikiItems.slice(0, 3));
@@ -295,6 +379,15 @@ export function SearchPage() {
           }
 
           setResults(combined);
+
+          const webMedia = extractMediaFromResults(combined);
+          const combinedMedia: MediaItem[] = [...youtubeItems, ...commonsItems];
+          for (const item of webMedia) {
+            if (!combinedMedia.some((m) => m.mediaUrl === item.mediaUrl)) {
+              combinedMedia.push(item);
+            }
+          }
+          setMediaResults(combinedMedia);
         }
       } catch (err) {
         if (!isMounted) return;
@@ -348,7 +441,7 @@ export function SearchPage() {
       <PageIntro
         eyebrow="KNOWLEDGE & WEB SEARCH"
         title="Find the signal."
-        description="Real results from the open web and Wikipedia knowledge base, normalized into a clear, readable stream."
+        description="Real results from the open web, Wikipedia knowledge base, and Wikimedia media stream, normalized into a clear, readable display."
       />
       <SearchBox onSearch={search} recent={storage.getSearches()} />
 
@@ -380,23 +473,42 @@ export function SearchPage() {
             <BookOpen size={14} />
             <span>Wikipedia</span>
           </button>
+
+          <button
+            type="button"
+            className={`search-filter-tab ${sourceTab === 'media' ? 'active' : ''}`}
+            onClick={() => { playTapSound(); setSourceTab('media'); }}
+          >
+            <ImageIcon size={14} />
+            <span>🖼️ Media</span>
+          </button>
         </div>
       </div>
 
-      {loading && <LoadingMessage label={sourceTab === 'wikipedia' ? 'Searching Wikipedia knowledge base...' : 'Searching live sources...'} />}
+      {loading && (
+        <LoadingMessage
+          label={
+            sourceTab === 'wikipedia'
+              ? 'Searching Wikipedia knowledge base...'
+              : sourceTab === 'media'
+              ? 'Retrieving Wikimedia Commons and media stream...'
+              : 'Searching live sources...'
+          }
+        />
+      )}
 
       {error && (
         <ErrorMessage
           message={
             error.includes('not configured')
-              ? 'Search is not configured yet. Add SEARCH_API_KEY and SEARCH_API_URL to the server environment, or use Wikipedia search tab.'
+              ? 'Search is not configured yet. Add SEARCH_API_KEY and SEARCH_API_URL to the server environment, or use Wikipedia or Media search tabs.'
               : error
           }
         />
       )}
 
       {/* "Ask NEXUS to synthesize these results" Action Banner */}
-      {!loading && results.length > 0 && (
+      {!loading && results.length > 0 && sourceTab !== 'media' && (
         <div className="nexus-synthesize-banner">
           <div className="synthesize-banner-content">
             <div className="synthesize-banner-info">
@@ -443,7 +555,15 @@ export function SearchPage() {
         </div>
       )}
 
-      {!loading && query && !error && results.length === 0 && (
+      {!loading && query && !error && sourceTab === 'media' && mediaResults.length === 0 && (
+        <div className="empty-state">
+          <ImageIcon size={30} />
+          <h2>No playable media found for this search.</h2>
+          <p>Try a different search term or check Web and Wikipedia tabs.</p>
+        </div>
+      )}
+
+      {!loading && query && !error && sourceTab !== 'media' && results.length === 0 && (
         <div className="empty-state">
           <Search size={30} />
           <h2>No live results returned</h2>
@@ -451,19 +571,55 @@ export function SearchPage() {
         </div>
       )}
 
-      <div className="results-list">
-        {results.map((result) => (
-          <ResultCard
-            key={result.url}
-            result={result}
-            saved={saved.some((item) => item.id === result.url)}
-            onSave={() => toggleSave(result)}
-          />
-        ))}
-      </div>
+      {sourceTab === 'media' ? (
+        <div className="space-y-6">
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+            {mediaResults.map((item) => (
+              <MediaResultCard
+                key={item.id}
+                item={item}
+                onSelect={(m) => setSelectedMedia(m)}
+              />
+            ))}
+          </div>
+          {mediaResults.length > 0 && (
+            <div className="text-center pt-4 pb-8">
+              <button
+                type="button"
+                onClick={loadMoreVideos}
+                disabled={loadingMore}
+                className="secondary-button px-6 py-2.5 text-sm inline-flex items-center gap-2"
+              >
+                {loadingMore ? (
+                  <>
+                    <span className="w-4 h-4 rounded-full border-2 border-cyan-400 border-t-transparent animate-spin" />
+                    Loading more videos...
+                  </>
+                ) : (
+                  '↓ Load More Videos'
+                )}
+              </button>
+            </div>
+          )}
+        </div>
+      ) : (
+        <div className="results-list">
+          {results.map((result) => (
+            <ResultCard
+              key={result.url}
+              result={result}
+              saved={saved.some((item) => item.id === result.url)}
+              onSave={() => toggleSave(result)}
+            />
+          ))}
+        </div>
+      )}
+
+      <MediaViewer item={selectedMedia} onClose={() => setSelectedMedia(null)} />
     </>
   );
 }
+
 
 export function WeatherPage() {
   const [settings] = useSettings();
@@ -625,8 +781,167 @@ type SettingsCategory =
   | 'appearance'
   | 'notifications'
   | 'ai'
+  | 'media-backend'
   | 'privacy'
   | 'about';
+
+interface TestResultData {
+  available: boolean;
+  version?: string;
+  success: boolean;
+  title?: string;
+  thumbnail?: string;
+  duration?: number;
+  source?: string;
+  originalUrl?: string;
+  formats?: Array<{
+    formatId: string;
+    ext: string;
+    height?: number;
+    width?: number;
+    fps?: number;
+    hasVideo: boolean;
+    hasAudio: boolean;
+    playableUrl: string;
+  }>;
+  error?: string;
+}
+
+function MediaBackendSettings() {
+  const [status, setStatus] = useState<{ available: boolean; version?: string; message?: string } | null>(null);
+  const [loadingStatus, setLoadingStatus] = useState(true);
+  const [testUrl, setTestUrl] = useState('https://www.youtube.com/watch?v=dQw4w9WgXcQ');
+  const [testing, setTesting] = useState(false);
+  const [testResult, setTestResult] = useState<TestResultData | null>(null);
+
+  const checkStatus = () => {
+    setLoadingStatus(true);
+    api.getMediaStatus()
+      .then((res) => {
+        setStatus(res);
+        setLoadingStatus(false);
+      })
+      .catch((err: unknown) => {
+        const msg = err instanceof Error ? err.message : 'Failed to check status';
+        setStatus({ available: false, message: msg });
+        setLoadingStatus(false);
+      });
+  };
+
+  useEffect(() => {
+    checkStatus();
+  }, []);
+
+  const handleTest = () => {
+    if (!testUrl.trim()) return;
+    setTesting(true);
+    setTestResult(null);
+    api.testMediaBackend(testUrl.trim())
+      .then((res) => {
+        setTesting(false);
+        setTestResult(res);
+      })
+      .catch((err: unknown) => {
+        setTesting(false);
+        const msg = err instanceof Error ? err.message : 'Test failed';
+        setTestResult({ available: false, success: false, error: msg });
+      });
+  };
+
+  return (
+    <div className="settings-list space-y-6">
+      <section
+        style={{
+          background: 'rgba(14,31,39,0.6)',
+          border: '1px solid var(--line)',
+          borderRadius: '12px',
+          padding: '24px',
+        }}
+      >
+        <div className="flex items-center justify-between mb-4">
+          <div>
+            <h2 style={{ fontSize: '16px', margin: '0 0 4px', display: 'flex', alignItems: 'center', gap: '8px' }}>
+              <span>🎬</span> yt-dlp Backend Integration
+            </h2>
+            <p style={{ color: 'var(--muted)', fontSize: '12px', margin: 0 }}>
+              Server-side media stream extraction for YouTube, Vimeo, and public video sources.
+            </p>
+          </div>
+          <button
+            onClick={checkStatus}
+            className="secondary-button text-xs px-3 py-1.5"
+            disabled={loadingStatus}
+          >
+            Refresh Status
+          </button>
+        </div>
+
+        <div className="flex items-center gap-3 p-3.5 rounded-lg bg-slate-950/60 border border-slate-800 mb-6">
+          <div className="flex-1">
+            <span className="text-xs text-slate-400 block mb-1">Backend Status</span>
+            {loadingStatus ? (
+              <span className="text-xs text-slate-400">Checking status...</span>
+            ) : status?.available ? (
+              <div className="flex items-center gap-2">
+                <span className="w-2.5 h-2.5 rounded-full bg-emerald-400 animate-pulse" />
+                <span className="text-sm font-semibold text-emerald-400">Available ({status.version || 'Active'})</span>
+              </div>
+            ) : (
+              <div className="flex items-center gap-2">
+                <span className="w-2.5 h-2.5 rounded-full bg-rose-500" />
+                <span className="text-sm font-semibold text-rose-400">Unavailable ({status?.message || 'Not found'})</span>
+              </div>
+            )}
+          </div>
+        </div>
+
+        <div className="space-y-3">
+          <h3 className="text-sm font-semibold text-slate-200">Test Media Backend Extraction</h3>
+          <p className="text-xs text-slate-400">
+            Enter a public video URL to test metadata extraction and stream resolution.
+          </p>
+          <div className="flex gap-2">
+            <input
+              type="text"
+              value={testUrl}
+              onChange={(e) => setTestUrl(e.target.value)}
+              placeholder="https://www.youtube.com/watch?v=..."
+              className="flex-1 bg-slate-950 border border-slate-700 rounded-lg px-3.5 py-2 text-xs text-slate-200 focus:outline-none focus:border-cyan-500"
+            />
+            <button
+              onClick={handleTest}
+              disabled={testing || !testUrl.trim()}
+              className="search-submit text-xs px-4 py-2 whitespace-nowrap flex items-center gap-1.5"
+            >
+              {testing ? 'Extracting...' : 'Test Backend'}
+            </button>
+          </div>
+
+          {testResult && (
+            <div className="mt-4 p-4 rounded-lg bg-slate-950/80 border border-slate-800 text-xs space-y-2 font-mono">
+              <div className="flex items-center justify-between border-b border-slate-800 pb-2">
+                <span className="text-slate-400">Test Result</span>
+                <span className={testResult.success ? 'text-emerald-400 font-bold' : 'text-rose-400 font-bold'}>
+                  {testResult.success ? 'SUCCESS ✓' : 'FAILED ✕'}
+                </span>
+              </div>
+              {testResult.success ? (
+                <>
+                  <p><strong className="text-cyan-400">Title:</strong> {testResult.title}</p>
+                  <p><strong className="text-cyan-400">Source:</strong> {testResult.source}</p>
+                  <p><strong className="text-cyan-400">Formats Found:</strong> {testResult.formats?.length || 0}</p>
+                  <p><strong className="text-cyan-400">Playable Stream URL:</strong> <a href={testResult.formats?.[0]?.playableUrl} target="_blank" rel="noreferrer" className="text-cyan-300 underline truncate block">{testResult.formats?.[0]?.playableUrl}</a></p>
+                </>
+              ) : (
+                <p className="text-rose-400"><strong className="text-slate-300">Error:</strong> {testResult.error}</p>
+              )}
+            </div>
+          )}
+        </div>
+      </section>
+    </div>
+  );
+}
 
 export function SettingsPage() {
   const [settings, update] = useSettings();
@@ -784,6 +1099,34 @@ export function SettingsPage() {
         </button>
 
         <button
+          onClick={() => switchCategory('media-backend')}
+          className={activeCategory === 'media-backend' ? 'selected' : ''}
+          style={{
+            display: 'inline-flex',
+            alignItems: 'center',
+            gap: '8px',
+            padding: '9px 16px',
+            borderRadius: '8px',
+            border: `1px solid ${
+              activeCategory === 'media-backend'
+                ? 'var(--accent)'
+                : 'rgba(165,207,214,0.18)'
+            }`,
+            background:
+              activeCategory === 'media-backend'
+                ? 'rgba(97,215,201,0.15)'
+                : 'rgba(14,31,39,0.6)',
+            color: activeCategory === 'media-backend' ? 'var(--accent)' : 'var(--muted)',
+            fontWeight: 600,
+            fontSize: '13px',
+            cursor: 'pointer',
+            whiteSpace: 'nowrap',
+          }}
+        >
+          <Film size={16} /> Media Backends
+        </button>
+
+        <button
           onClick={() => switchCategory('privacy')}
           className={activeCategory === 'privacy' ? 'selected' : ''}
           style={{
@@ -844,6 +1187,9 @@ export function SettingsPage() {
       <div className="settings-content-wrapper">
         {/* 🤖 AI Providers Category */}
         {activeCategory === 'ai' && <AIProvidersSettings />}
+
+        {/* 🎬 Media Backends Category */}
+        {activeCategory === 'media-backend' && <MediaBackendSettings />}
 
         {/* 🎨 Appearance Category */}
         {activeCategory === 'appearance' && (

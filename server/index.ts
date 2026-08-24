@@ -10,6 +10,7 @@ import os from 'node:os';
 import dns from 'node:dns';
 import { z } from 'zod';
 import { GoogleGenAI } from '@google/genai';
+import { checkYtDlpStatus, extractMediaWithYtDlp } from './ytdlp.js';
 
 const searchSchema = z.object({
   query: z.string().trim().min(1).max(300),
@@ -3301,6 +3302,33 @@ async function startServer() {
   app.get('/api/health', (_req, res) =>
     res.json({ status: 'ok', service: 'nexus-api', time: new Date().toISOString() }),
   );
+
+  app.get('/api/media/status', async (_req, res) => {
+    const status = await checkYtDlpStatus();
+    res.json(status);
+  });
+
+  app.post('/api/media/extract', async (req, res) => {
+    const { url } = req.body;
+    if (!url || typeof url !== 'string') {
+      return res.status(400).json({ success: false, error: 'URL is required' });
+    }
+    const result = await extractMediaWithYtDlp(url);
+    if (!result.success) {
+      return res.status(400).json(result);
+    }
+    res.json(result);
+  });
+
+  app.post('/api/media/test', async (req, res) => {
+    const { url } = req.body;
+    const status = await checkYtDlpStatus();
+    if (!url) {
+      return res.json({ available: status.available, version: status.version, success: false, error: 'URL is required for test extraction' });
+    }
+    const result = await extractMediaWithYtDlp(url);
+    res.json({ available: status.available, version: status.version, ...result });
+  });
 
   app.get('/api/config/status', (_req, res) =>
     res.json({

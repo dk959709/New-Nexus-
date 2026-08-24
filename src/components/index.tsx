@@ -152,3 +152,5 @@ export function ErrorMessage({ message }: { message: string }) { return <div cla
 export function LoadingMessage({ label = 'Loading live data...' }: { label?: string }) { return <div className="loading-message"><span className="loading-dot" />{label}</div>; }
 export { WeatherMap } from './WeatherMap';
 export { AnswerCard } from './AnswerCard';
+export { MediaResultCard } from './MediaResultCard';
+export { MediaViewer } from './MediaViewer';
