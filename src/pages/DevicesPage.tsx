@@ -663,7 +663,7 @@ export function DevicesPage() {
       if (isNativeAndroid()) {
         const nativeRes = await sendTvCommandNative(
           action,
-          currentTv.ipAddress,
+          currentTv.ipAddress || '',
           currentTv.tv?.port || 5555,
           currentTv.tv,
         );
@@ -734,7 +734,7 @@ export function DevicesPage() {
     setTvRefreshing(true);
     try {
       if (isNativeAndroid()) {
-        const probe = await testTvConnectionNative(currentTv.ipAddress, currentTv.tv?.port || 5555);
+        const probe = await testTvConnectionNative(currentTv.ipAddress || '', currentTv.tv?.port || 5555);
         if (probe.reachable) {
           setDevices((prev) =>
             prev.map((d) =>

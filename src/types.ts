@@ -352,4 +352,7 @@ export interface NetworkScanResult {
   scannedSubnet?: string;
   timestamp: number;
   cancelled?: boolean;
+  durationMs?: number;
+  message?: string;
+  networkInfo?: NetworkInfo;
 }
