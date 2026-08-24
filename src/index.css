@@ -397,6 +397,73 @@
   }
 }
 
+/* Meteor Shower Animations */
+.meteor-shower-container {
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+  overflow: hidden;
+  z-index: 0;
+}
+
+.meteor-streak-wrapper {
+  position: absolute;
+  top: 0;
+  left: 0;
+  display: flex;
+  align-items: center;
+  transform-origin: left center;
+  animation-name: meteorGlideDiagonal;
+  animation-timing-function: cubic-bezier(0.25, 1, 0.5, 1);
+  animation-iteration-count: infinite;
+  will-change: transform, opacity;
+}
+
+.meteor-head {
+  position: relative;
+  border-radius: 50%;
+  background: #ffffff;
+  box-shadow: 0 0 10px 3px #ffffff, 0 0 20px 8px #ffaa33, 0 0 35px 12px rgba(255, 80, 20, 0.6);
+  z-index: 2;
+  flex-shrink: 0;
+}
+
+.meteor-tail {
+  position: relative;
+  transform-origin: right center;
+  background: linear-gradient(90deg, rgba(255, 255, 255, 0.95) 0%, rgba(255, 190, 70, 0.85) 18%, rgba(255, 95, 30, 0.45) 55%, transparent 100%);
+  filter: drop-shadow(0 0 6px rgba(255, 130, 40, 0.5));
+  border-top-left-radius: 50%;
+  border-bottom-left-radius: 50%;
+  z-index: 1;
+}
+
+.meteor-hero .meteor-head {
+  box-shadow: 0 0 14px 4px #ffffff, 0 0 28px 10px #ffcc44, 0 0 45px 16px rgba(255, 70, 10, 0.8);
+}
+
+.meteor-hero .meteor-tail {
+  background: linear-gradient(90deg, rgba(255, 255, 255, 1) 0%, rgba(255, 210, 80, 0.9) 22%, rgba(255, 110, 40, 0.6) 60%, transparent 100%);
+  filter: drop-shadow(0 0 10px rgba(255, 150, 50, 0.8));
+}
+
+@keyframes meteorGlideDiagonal {
+  0% {
+    transform: translate(0, 0) scale(0.85);
+    opacity: 0;
+  }
+  10% {
+    opacity: 1;
+  }
+  80% {
+    opacity: 0.9;
+  }
+  100% {
+    transform: translate(-110vw, 110vh) scale(1.05);
+    opacity: 0;
+  }
+}
+
 .space-content-wrapper {
   position: relative;
   z-index: 1;

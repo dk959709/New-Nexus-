@@ -24,6 +24,7 @@ import { Link, useNavigate, useSearchParams } from 'react-router-dom';
 import { SearchBox, WeatherCard, HourlyForecast, DailyForecast, ErrorMessage, LoadingMessage, ResultCard, WeatherMap, AnswerCard } from '@/components';
 import { WallpaperSelector } from '@/components/WallpaperSelector';
 import { SpaceStarfield } from '@/components/SpaceStarfield';
+import { MeteorShower } from '@/animations/MeteorShower';
 import { AIProvidersSettings } from '@/components/AIProvidersSettings';
 import { api, BASE } from '@/services/api';
 import { getLocation } from '@/services/location';
@@ -93,6 +94,7 @@ export function HomePage() {
   return (
     <>
       <SpaceStarfield />
+      <MeteorShower reduced={settings.animations === 'reduced'} />
       <div className="space-content-wrapper">
         <div className="hero-wrap">
           <div className="hero-aurora-glow" aria-hidden="true" />
@@ -545,7 +547,7 @@ export function MapPage() {
 }
 
 export function SpacePage() {
-  useSettings();
+  const [settings] = useSettings();
   const [apod, setApod] = useState<{ title: string; explanation: string; url: string; hdurl?: string; date: string; media_type: string } | null>(null);
   const [moon, setMoon] = useState<{ phaseName: string; illumination: number; ageDays: number } | null>(null);
   const [iss, setIss] = useState<{ latitude: number; longitude: number; timestamp: number } | null>(null);
@@ -563,6 +565,7 @@ export function SpacePage() {
   return (
     <>
       <SpaceStarfield />
+      <MeteorShower reduced={settings.animations === 'reduced'} />
       <div className="space-content-wrapper">
         <PageIntro eyebrow="SPACE" title="Look up." description="Today's picture from NASA, with the story behind it." />
         {loading && <LoadingMessage label="Fetching today's space picture..." />}
