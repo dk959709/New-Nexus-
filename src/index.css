@@ -80,6 +80,74 @@
 .weather-bg-snow .weather-bg-gradient{background:radial-gradient(circle at 50% 20%,rgba(200,228,255,.14) 0%,transparent 65%),linear-gradient(135deg,rgba(8,24,38,.8) 0%,rgba(18,24,52,.84) 100%)}
 .weather-bg-fog .weather-bg-gradient{background:radial-gradient(circle at 50% 50%,rgba(165,207,214,.12) 0%,transparent 70%),linear-gradient(135deg,rgba(8,20,30,.82) 0%,rgba(14,18,38,.86) 100%)}
 
+/* Condition-based Weather Card Shifting Gradient Borders */
+.weather-card-clear{border-color:rgba(241,182,111,.45);animation:cardBorderClear 10s ease-in-out infinite}
+@keyframes cardBorderClear{0%,100%{border-color:rgba(241,182,111,.45);box-shadow:0 10px 36px rgba(0,0,0,.45),0 0 24px rgba(241,182,111,.22),inset 0 1px 0 rgba(255,255,255,.12)}50%{border-color:rgba(245,158,11,.65);box-shadow:0 12px 42px rgba(0,0,0,.5),0 0 35px rgba(245,158,11,.35),inset 0 1px 0 rgba(255,255,255,.18)}}
+
+.weather-card-partly-cloudy{border-color:rgba(56,189,248,.45);animation:cardBorderPartlyCloudy 10s ease-in-out infinite}
+@keyframes cardBorderPartlyCloudy{0%,100%{border-color:rgba(56,189,248,.45);box-shadow:0 10px 36px rgba(0,0,0,.45),0 0 24px rgba(56,189,248,.2),inset 0 1px 0 rgba(255,255,255,.1)}50%{border-color:rgba(97,215,201,.6);box-shadow:0 12px 42px rgba(0,0,0,.5),0 0 32px rgba(97,215,201,.3),inset 0 1px 0 rgba(255,255,255,.15)}}
+
+.weather-card-cloudy{border-color:rgba(168,85,247,.4);animation:cardBorderCloudy 12s ease-in-out infinite}
+@keyframes cardBorderCloudy{0%,100%{border-color:rgba(168,85,247,.4);box-shadow:0 10px 36px rgba(0,0,0,.45),0 0 22px rgba(168,85,247,.18),inset 0 1px 0 rgba(255,255,255,.08)}50%{border-color:rgba(165,207,214,.55);box-shadow:0 12px 42px rgba(0,0,0,.5),0 0 30px rgba(165,207,214,.25),inset 0 1px 0 rgba(255,255,255,.12)}}
+
+.weather-card-rain{border-color:rgba(97,215,201,.48);animation:cardBorderRain 9s ease-in-out infinite}
+@keyframes cardBorderRain{0%,100%{border-color:rgba(97,215,201,.48);box-shadow:0 10px 36px rgba(0,0,0,.45),0 0 26px rgba(97,215,201,.24),inset 0 1px 0 rgba(255,255,255,.1)}50%{border-color:rgba(56,189,248,.68);box-shadow:0 12px 42px rgba(0,0,0,.5),0 0 36px rgba(56,189,248,.35),inset 0 1px 0 rgba(255,255,255,.16)}}
+
+.weather-card-storm{border-color:rgba(168,85,247,.55);animation:cardBorderStorm 8s ease-in-out infinite}
+@keyframes cardBorderStorm{0%,100%{border-color:rgba(168,85,247,.55);box-shadow:0 10px 36px rgba(0,0,0,.5),0 0 28px rgba(168,85,247,.3),inset 0 1px 0 rgba(255,255,255,.1)}50%{border-color:rgba(97,215,201,.7);box-shadow:0 12px 45px rgba(0,0,0,.55),0 0 40px rgba(97,215,201,.4),inset 0 1px 0 rgba(255,255,255,.2)}}
+
+.weather-card-snow{border-color:rgba(200,228,255,.5);animation:cardBorderSnow 10s ease-in-out infinite}
+@keyframes cardBorderSnow{0%,100%{border-color:rgba(200,228,255,.5);box-shadow:0 10px 36px rgba(0,0,0,.45),0 0 26px rgba(200,228,255,.25),inset 0 1px 0 rgba(255,255,255,.15)}50%{border-color:rgba(56,189,248,.65);box-shadow:0 12px 42px rgba(0,0,0,.5),0 0 34px rgba(56,189,248,.35),inset 0 1px 0 rgba(255,255,255,.2)}}
+
+.weather-card-fog{border-color:rgba(165,207,214,.42);animation:cardBorderFog 14s ease-in-out infinite}
+@keyframes cardBorderFog{0%,100%{border-color:rgba(165,207,214,.42);box-shadow:0 10px 36px rgba(0,0,0,.45),0 0 20px rgba(165,207,214,.16),inset 0 1px 0 rgba(255,255,255,.08)}50%{border-color:rgba(200,220,230,.6);box-shadow:0 12px 42px rgba(0,0,0,.5),0 0 28px rgba(200,220,230,.24),inset 0 1px 0 rgba(255,255,255,.12)}}
+
+/* Temperature Heartbeat Glow Animations */
+.weather-temp strong{display:inline-block;will-change:filter,transform}
+.weather-temp-clear strong{animation:tempHeartbeatClear 4s ease-in-out infinite alternate}
+@keyframes tempHeartbeatClear{0%{filter:drop-shadow(0 0 8px rgba(241,182,111,.45));transform:scale(1)}100%{filter:drop-shadow(0 0 22px rgba(241,182,111,.85)) drop-shadow(0 0 36px rgba(245,158,11,.4));transform:scale(1.02)}}
+
+.weather-temp-partly-cloudy strong{animation:tempHeartbeatPartlyCloudy 4s ease-in-out infinite alternate}
+@keyframes tempHeartbeatPartlyCloudy{0%{filter:drop-shadow(0 0 8px rgba(56,189,248,.45));transform:scale(1)}100%{filter:drop-shadow(0 0 22px rgba(56,189,248,.85)) drop-shadow(0 0 34px rgba(97,215,201,.4));transform:scale(1.02)}}
+
+.weather-temp-cloudy strong{animation:tempHeartbeatCloudy 4s ease-in-out infinite alternate}
+@keyframes tempHeartbeatCloudy{0%{filter:drop-shadow(0 0 8px rgba(168,85,247,.4));transform:scale(1)}100%{filter:drop-shadow(0 0 20px rgba(168,85,247,.8)) drop-shadow(0 0 32px rgba(165,207,214,.35));transform:scale(1.02)}}
+
+.weather-temp-rain strong{animation:tempHeartbeatRain 4s ease-in-out infinite alternate}
+@keyframes tempHeartbeatRain{0%{filter:drop-shadow(0 0 8px rgba(97,215,201,.5));transform:scale(1)}100%{filter:drop-shadow(0 0 22px rgba(97,215,201,.9)) drop-shadow(0 0 36px rgba(56,189,248,.45));transform:scale(1.02)}}
+
+.weather-temp-storm strong{animation:tempHeartbeatStorm 3.5s ease-in-out infinite alternate}
+@keyframes tempHeartbeatStorm{0%{filter:drop-shadow(0 0 10px rgba(168,85,247,.6));transform:scale(1)}100%{filter:drop-shadow(0 0 26px rgba(168,85,247,.95)) drop-shadow(0 0 40px rgba(97,215,201,.5));transform:scale(1.025)}}
+
+.weather-temp-snow strong{animation:tempHeartbeatSnow 4s ease-in-out infinite alternate}
+@keyframes tempHeartbeatSnow{0%{filter:drop-shadow(0 0 8px rgba(200,228,255,.5));transform:scale(1)}100%{filter:drop-shadow(0 0 22px rgba(200,228,255,.9)) drop-shadow(0 0 34px rgba(56,189,248,.45));transform:scale(1.02)}}
+
+.weather-temp-fog strong{animation:tempHeartbeatFog 4s ease-in-out infinite alternate}
+@keyframes tempHeartbeatFog{0%{filter:drop-shadow(0 0 8px rgba(165,207,214,.45));transform:scale(1)}100%{filter:drop-shadow(0 0 20px rgba(165,207,214,.85));transform:scale(1.02)}}
+
+/* Weather Icon Floating / Bounce Animations */
+.weather-icon-clear{color:#f1b66f;animation:iconSunFloat 5s ease-in-out infinite alternate}
+@keyframes iconSunFloat{0%{transform:translateY(0) rotate(0deg) scale(1)}50%{transform:translateY(-4px) rotate(8deg) scale(1.06)}100%{transform:translateY(-2px) rotate(-4deg) scale(1.03)}}
+
+.weather-icon-partly-cloudy{color:#f1b66f;animation:iconCloudFloat 6s ease-in-out infinite alternate}
+@keyframes iconCloudFloat{0%{transform:translateX(0) translateY(0)}50%{transform:translateX(4px) translateY(-3px)}100%{transform:translateX(-3px) translateY(-1px)}}
+
+.weather-icon-cloudy{color:#a5cfd6;animation:iconCloudDrift 7s ease-in-out infinite alternate}
+@keyframes iconCloudDrift{0%{transform:translateX(-3px) translateY(0)}50%{transform:translateX(4px) translateY(-2px)}100%{transform:translateX(0) translateY(1px)}}
+
+.weather-icon-rain{color:#61d7c9;animation:iconRainBounce 3.5s ease-in-out infinite alternate}
+@keyframes iconRainBounce{0%{transform:translateY(0) scale(1)}50%{transform:translateY(-4px) scale(1.05)}100%{transform:translateY(1px) scale(0.98)}}
+
+.weather-icon-storm{color:#61d7c9;animation:iconStormPulse 3s ease-in-out infinite alternate}
+@keyframes iconStormPulse{0%{transform:translateY(0) scale(1) rotate(0deg);filter:drop-shadow(0 0 6px rgba(168,85,247,.5))}50%{transform:translateY(-3px) scale(1.08) rotate(-3deg);filter:drop-shadow(0 0 16px rgba(168,85,247,.9))}100%{transform:translateY(0) scale(1.02) rotate(2deg);filter:drop-shadow(0 0 10px rgba(97,215,201,.7))}}
+
+.weather-icon-snow{color:#c8e4ff;animation:iconSnowSway 5s ease-in-out infinite alternate}
+@keyframes iconSnowSway{0%{transform:translateY(0) rotate(-4deg)}50%{transform:translateY(-4px) rotate(4deg)}100%{transform:translateY(-1px) rotate(-2deg)}}
+
+.weather-icon-fog{color:#a5cfd6;animation:iconFogDrift 8s ease-in-out infinite alternate}
+@keyframes iconFogDrift{0%{transform:translateX(-4px);opacity:.85}50%{transform:translateX(4px);opacity:1}100%{transform:translateX(-1px);opacity:.9}}
+
+
 .sun-radiance-aura{position:absolute;top:-30px;right:-30px;width:170px;height:170px;border-radius:50%;background:radial-gradient(circle,rgba(241,182,111,.3) 0%,rgba(241,182,111,.1) 45%,transparent 70%);filter:blur(14px);animation:sunAuraPulse 6s ease-in-out infinite alternate;will-change:transform,opacity}
 .sun-radiance-aura.subtle{opacity:.7;width:140px;height:140px}
 @keyframes sunAuraPulse{0%{transform:scale(1);opacity:.7}100%{transform:scale(1.15);opacity:.95}}
