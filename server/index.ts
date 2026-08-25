@@ -636,9 +636,11 @@ function getGeminiClient(): GoogleGenAI | null {
 async function generateWithGemini({
   messages,
   temperature = 0.4,
+  maxTokens = 2400,
 }: {
   messages: Array<{ role: string; content: string }>;
   temperature?: number;
+  maxTokens?: number;
 }): Promise<{ text: string; model: string } | null> {
   const client = getGeminiClient();
   if (!client) return null;
@@ -665,6 +667,7 @@ async function generateWithGemini({
           config: {
             systemInstruction: sys || undefined,
             temperature,
+            maxOutputTokens: maxTokens || 2400,
           },
         });
 
@@ -820,14 +823,16 @@ async function generateOpenRouterOrCustomAi({
   messages,
   temperature = 0.3,
   maxTokens = 128,
+  timeoutMs = 35000,
 }: {
   messages: Array<{ role: string; content: string }>;
   temperature?: number;
   maxTokens?: number;
+  timeoutMs?: number;
 }): Promise<{ text: string; model: string } | null> {
   // Try Gemini first if key is available
   if (process.env.GEMINI_API_KEY) {
-    const geminiRes = await generateWithGemini({ messages, temperature });
+    const geminiRes = await generateWithGemini({ messages, temperature, maxTokens });
     if (geminiRes && geminiRes.text) {
       return geminiRes;
     }
@@ -850,7 +855,7 @@ async function generateOpenRouterOrCustomAi({
     messages,
     temperature,
     maxTokens,
-    timeoutMs: 25000,
+    timeoutMs: timeoutMs || 35000,
   });
 
   if (result.ok && result.text) {
@@ -894,11 +899,13 @@ async function executeAiWithProviderOrFallback({
   temperature = 0.3,
   maxTokens = 128,
   providerConfig,
+  timeoutMs = 35000,
 }: {
   messages: Array<{ role: string; content: string }>;
   temperature?: number;
   maxTokens?: number;
   providerConfig?: CustomProviderPayload | null;
+  timeoutMs?: number;
 }): Promise<{
   text: string;
   model: string;
@@ -916,6 +923,7 @@ async function executeAiWithProviderOrFallback({
     providerConfig?.maxTokens && providerConfig.maxTokens > 0
       ? providerConfig.maxTokens
       : maxTokens || 128;
+  const effectiveTimeout = timeoutMs || 35000;
 
   // If no custom provider or existing default is specified, use generateOpenRouterOrCustomAi
   if (!providerConfig || !providerConfig.id || providerConfig.id === 'existing') {
@@ -923,16 +931,17 @@ async function executeAiWithProviderOrFallback({
       messages,
       temperature,
       maxTokens: effectiveMaxTokens,
+      timeoutMs: effectiveTimeout,
     });
     if (builtInResult) {
       return {
         text: builtInResult.text,
         model: builtInResult.model,
-        providerName: 'Existing AI',
+        providerName: 'Built-in AI',
       };
     }
     return {
-      lastError: 'Built-in AI connection failed or key missing.',
+      lastError: 'Built-in AI connection timed out or returned no content.',
       lastStatus: 503,
     };
   }
@@ -960,7 +969,7 @@ async function executeAiWithProviderOrFallback({
         messages,
         temperature,
         maxTokens: effectiveMaxTokens,
-        timeoutMs: 25000,
+        timeoutMs: effectiveTimeout,
       });
 
       if (serverResult.ok && serverResult.text) {
@@ -1027,7 +1036,7 @@ async function executeAiWithProviderOrFallback({
       messages,
       temperature,
       maxTokens: effectiveMaxTokens,
-      timeoutMs: 25000,
+      timeoutMs: effectiveTimeout,
     });
 
     if (result.ok && result.text) {
@@ -4411,6 +4420,7 @@ async function startServer() {
         enableFailover: z.boolean().optional(),
         temperature: z.number().min(0).max(2).optional(),
         maxTokens: z.number().int().positive().optional(),
+        timeoutMs: z.number().int().positive().optional(),
       })
       .safeParse(req.body);
 
@@ -4418,8 +4428,20 @@ async function startServer() {
       return errorResponse(res, 400, 'Invalid agent execution parameters.');
     }
 
-    const { messages, providerConfig, fallbackConfig, enableFailover, temperature = 0.2, maxTokens } =
-      parsed.data;
+    const {
+      agentId,
+      messages,
+      providerConfig,
+      fallbackConfig,
+      enableFailover,
+      temperature = 0.2,
+      maxTokens,
+      timeoutMs,
+    } = parsed.data;
+
+    // For intensive diagram/code generation (Architect) or deep synthesis, allow extended execution window
+    const defaultTimeout = agentId === 'architect' ? 65000 : 35000;
+    const effectiveTimeout = timeoutMs || defaultTimeout;
 
     try {
       const primaryResult = await executeAiWithProviderOrFallback({
@@ -4427,6 +4449,7 @@ async function startServer() {
         messages,
         temperature,
         maxTokens,
+        timeoutMs: effectiveTimeout,
       });
 
       if (primaryResult && primaryResult.text) {
@@ -4452,6 +4475,7 @@ async function startServer() {
           messages,
           temperature,
           maxTokens,
+          timeoutMs: effectiveTimeout,
         });
 
         if (fallbackResult && fallbackResult.text) {

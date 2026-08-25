@@ -119,23 +119,27 @@ Guidelines:
 - If the available information is incomplete or uncertain, say so honestly rather than filling gaps with confident-sounding guesses.
 - End with a natural conclusion - do not pad the response just to reach a target length.`,
 
-  architect: `You are the ARCHITECT agent of JARVIS, specializing in visual system design and structural concept diagrams.
+  architect: `You are the ARCHITECT agent of JARVIS, specialized in vector diagram visualization and concept architecture blueprints.
 
 Task: "{task}"
-Synthesized Solution / Core Context:
+Core Context / Synthesized Intelligence:
 {answer}
 
 Instructions:
-- Generate a clean, modern, dark-themed SVG diagram (viewBox="0 0 800 450") illustrating the core architecture, process workflow, hierarchy, structural comparison, or spatial concept.
-- Design with a futuristic, clean JARVIS theme:
-  * Background: Dark navy/slate (#070d19 or #0a1124 with a subtle rounded <rect width="100%" height="100%" rx="16" fill="#070d19"/>)
-  * Nodes/Cards: Sleek rounded rects (<rect rx="8" ...>) with dark translucent fills (#0e1f36, #161b33) and vivid borders (#00f0ff, #38bdf8, #a855f7, #34d399, #f59e0b)
-  * Text: Clear sans-serif font (<text font-family="system-ui, -apple-system, sans-serif">), bold titles (#ffffff, #e2e8f0) and concise subtitles/labels (#94a3b8, #67e8f9)
-  * Flow/Arrows: Smooth connector lines/paths (<path d="..." stroke="#38bdf8" marker-end="url(#arrow)">)
-  * Include <defs> with linear gradients, glows, and arrowhead markers for visual polish
-- Ensure all text elements are readable with proper font-size (12px-16px) and x/y positioning.
-- Keep the layout well-balanced, centered, uncluttered, and easy to understand at a glance.
-- Output ONLY the raw <svg xmlns="http://www.w3.org/2000/svg" ...>...</svg> markup. No markdown code fences, no explanations, no text before or after the svg tag.`,
+1. Generate a self-contained, beautifully styled SVG diagram (viewBox="0 0 800 480" width="100%" height="100%").
+2. Styling Guidelines (Dark JARVIS Cyber Theme):
+   - Background: <rect width="100%" height="100%" rx="16" fill="#070d19"/>
+   - Cards/Nodes: Rectangles (<rect rx="10" ...>) with dark fill (#0f172a or #111e38), subtle stroke (#38bdf8, #00f0ff, #a855f7, or #34d399) and stroke-width="1.5".
+   - Headers/Titles: <text font-family="system-ui, -apple-system, sans-serif" font-size="14" font-weight="bold" fill="#f8fafc" text-anchor="middle">
+   - Labels/Descriptions: <text font-family="system-ui, -apple-system, sans-serif" font-size="11" fill="#94a3b8" text-anchor="middle">
+   - Connectors/Flow: <path d="..." stroke="#38bdf8" stroke-width="2" marker-end="url(#arrow)"/>
+   - Defs: Include <defs><marker id="arrow" viewBox="0 0 10 10" refX="6" refY="5" markerWidth="6" markerHeight="6" orient="auto"><path d="M 0 1 L 10 5 L 0 9 z" fill="#38bdf8"/></marker></defs>
+3. Structure:
+   - Provide 3 to 6 key stages, components, or conceptual blocks arranged logically with clear flow arrows.
+   - Keep all element coordinates strictly within 0-800 x and 0-480 y.
+4. Output Requirement:
+   - Output ONLY the raw <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 800 480">...</svg> markup.
+   - Do NOT wrap in conversational text or markdown.`,
 };
 
 export const DEFAULT_JARVIS_CONFIG: JarvisSystemConfig = {
@@ -217,7 +221,7 @@ export const DEFAULT_JARVIS_CONFIG: JarvisSystemConfig = {
       providerId: 'existing',
       modelId: 'deepseek/deepseek-chat',
       enabled: true,
-      maxTokens: 800,
+      maxTokens: 2400,
       enableFailover: false,
       systemPrompt: DEFAULT_AGENT_SYSTEM_PROMPTS.architect,
     },
@@ -418,10 +422,11 @@ export const storage = {
         architect: {
           ...DEFAULT_JARVIS_CONFIG.agents.architect,
           ...(stored.agents.architect || {}),
-          maxTokens: Math.max(600, stored.agents.architect?.maxTokens || 800),
+          maxTokens: Math.max(1800, stored.agents.architect?.maxTokens || 2400),
           systemPrompt:
             !stored.agents.architect?.systemPrompt ||
-            !stored.agents.architect.systemPrompt.includes('viewBox="0 0 800 450"')
+            stored.agents.architect.systemPrompt.includes('viewBox="0 0 800 450"') ||
+            !stored.agents.architect.systemPrompt.includes('viewBox="0 0 800 480"')
               ? DEFAULT_AGENT_SYSTEM_PROMPTS.architect
               : stored.agents.architect.systemPrompt,
         },

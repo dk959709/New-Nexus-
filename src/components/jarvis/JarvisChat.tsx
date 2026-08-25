@@ -676,7 +676,7 @@ export function JarvisChat({ config, onOpenSettings }: JarvisChatProps) {
             </span>
           </div>
 
-          <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-5 gap-2.5">
+          <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-6 gap-2.5">
             {activeSteps.map((step) => {
               const colorInfo = getAgentColor(step.agentId);
               const isRunningStep = step.status === 'running';
@@ -698,9 +698,9 @@ export function JarvisChat({ config, onOpenSettings }: JarvisChatProps) {
                       : isCompleted
                         ? `1px solid ${colorInfo.border}`
                         : isFailed
-                          ? '1px solid #f43f5e'
+                          ? '1.5px solid #f43f5e'
                           : '1px solid rgba(255,255,255,0.08)',
-                    boxShadow: isRunningStep ? `0 0 16px ${colorInfo.glow}` : 'none',
+                    boxShadow: isRunningStep ? `0 0 16px ${colorInfo.glow}` : isFailed ? '0 0 12px rgba(244,63,94,0.3)' : 'none',
                   }}
                 >
                   <div
@@ -911,8 +911,13 @@ export function JarvisChat({ config, onOpenSettings }: JarvisChatProps) {
                         <div className="flex items-center gap-2">
                           <Layers size={14} className="text-cyan-400" />
                           <span>
-                            5-Agent Pipeline: {msg.steps.filter((s) => s.status === 'completed').length} executed,{' '}
+                            {msg.steps.length}-Agent Pipeline: {msg.steps.filter((s) => s.status === 'completed').length} executed,{' '}
                             {msg.steps.filter((s) => s.status === 'skipped').length} skipped
+                            {msg.steps.some((s) => s.status === 'failed') && (
+                              <span className="ml-2 text-rose-400">
+                                ({msg.steps.filter((s) => s.status === 'failed').length} notices)
+                              </span>
+                            )}
                           </span>
                         </div>
                         {expandedStepsMap[msg.id] ? <ChevronUp size={15} /> : <ChevronDown size={15} />}
@@ -928,7 +933,7 @@ export function JarvisChat({ config, onOpenSettings }: JarvisChatProps) {
                                 className="p-2.5 rounded-xl flex items-center justify-between flex-wrap gap-2 text-xs"
                                 style={{
                                   background: colorInfo.bg,
-                                  border: `1px solid ${colorInfo.border}`,
+                                  border: `1px solid ${s.status === 'failed' ? '#f43f5e' : colorInfo.border}`,
                                 }}
                               >
                                 <div className="flex items-center gap-2">
@@ -953,8 +958,8 @@ export function JarvisChat({ config, onOpenSettings }: JarvisChatProps) {
                                   <span
                                     className="px-2 py-0.5 rounded-full text-[10px] font-mono font-bold uppercase"
                                     style={{
-                                      background: s.status === 'completed' ? 'rgba(52,211,153,0.2)' : 'rgba(244,63,94,0.2)',
-                                      color: s.status === 'completed' ? '#34d399' : '#fb7185',
+                                      background: s.status === 'completed' ? 'rgba(52,211,153,0.2)' : s.status === 'failed' ? 'rgba(244,63,94,0.2)' : 'rgba(148,163,184,0.2)',
+                                      color: s.status === 'completed' ? '#34d399' : s.status === 'failed' ? '#fb7185' : '#94a3b8',
                                     }}
                                   >
                                     {s.status}
@@ -964,6 +969,13 @@ export function JarvisChat({ config, onOpenSettings }: JarvisChatProps) {
                                 {s.summary && (
                                   <div className="w-full text-slate-300 text-[11px] pl-6">
                                     {s.summary}
+                                  </div>
+                                )}
+
+                                {s.error && (
+                                  <div className="w-full text-rose-300 text-[11px] pl-6 flex items-center gap-1.5 font-mono">
+                                    <AlertCircle size={12} className="text-rose-400 shrink-0" />
+                                    <span>{s.error}</span>
                                   </div>
                                 )}
                               </div>

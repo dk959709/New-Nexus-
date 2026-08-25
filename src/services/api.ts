@@ -181,6 +181,7 @@ export const api = {
     enableFailover?: boolean;
     temperature?: number;
     maxTokens?: number;
+    timeoutMs?: number;
   }): Promise<{
     ok: boolean;
     text?: string;
