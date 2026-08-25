@@ -1,5 +1,5 @@
 import { api } from '@/services/api';
-import { storage } from '@/lib/storage';
+import { storage, DEFAULT_AGENT_SYSTEM_PROMPTS } from '@/lib/storage';
 import type {
   AIProviderConfig,
   AISource,
@@ -69,10 +69,8 @@ function resolveProviderConfig(
 function safeJsonParse<T>(text: string, fallback: T): T {
   if (!text) return fallback;
   try {
-    // Attempt direct parse
     return JSON.parse(text) as T;
   } catch {
-    // Attempt to extract JSON from markdown code blocks or text
     const jsonMatch = text.match(/```(?:json)?\s*([\s\S]*?)\s*```/);
     if (jsonMatch && jsonMatch[1]) {
       try {
@@ -81,7 +79,6 @@ function safeJsonParse<T>(text: string, fallback: T): T {
         // Continue
       }
     }
-    // Attempt to find first { and last }
     const firstBrace = text.indexOf('{');
     const lastBrace = text.lastIndexOf('}');
     if (firstBrace >= 0 && lastBrace > firstBrace) {
@@ -103,6 +100,7 @@ export async function runJarvisPipeline(
 ): Promise<JarvisExecutionResult> {
   const steps: JarvisExecutionStep[] = [];
   const sourcesCollected: AISource[] = [];
+  const customAgentOutputs: Array<{ id: string; name: string; output: string }> = [];
 
   const updateStep = (step: JarvisExecutionStep) => {
     const existingIdx = steps.findIndex((s) => s.agentId === step.agentId);
@@ -115,9 +113,18 @@ export async function runJarvisPipeline(
   };
 
   const agentConfigs = config.agents;
+  const customAgents = (config.customAgents || []).filter((ca) => ca && ca.id);
 
-  // Initialize step statuses
-  const agentOrder: JarvisAgentId[] = [
+  const getAgentConfig = (agentId: string): JarvisAgentConfig | null => {
+    if (agentConfigs[agentId as keyof typeof agentConfigs]) {
+      return agentConfigs[agentId as keyof typeof agentConfigs];
+    }
+    const custom = customAgents.find((c) => c.id === agentId);
+    return custom || null;
+  };
+
+  // Initialize step statuses for default 5 agents
+  const defaultAgentOrder: JarvisAgentId[] = [
     'planner',
     'researcher',
     'factChecker',
@@ -125,22 +132,37 @@ export async function runJarvisPipeline(
     'finalSynthesizer',
   ];
 
-  agentOrder.forEach((agentId) => {
-    const cfg = agentConfigs[agentId];
-    const provInfo = resolveProviderConfig(cfg);
+  defaultAgentOrder.forEach((agentId) => {
+    const cfg = agentConfigs[agentId as keyof typeof agentConfigs];
+    if (cfg) {
+      const provInfo = resolveProviderConfig(cfg);
+      steps.push({
+        agentId,
+        name: cfg.name,
+        icon: cfg.icon,
+        status: cfg.enabled ? 'pending' : 'skipped',
+        providerName: provInfo.provider?.name || 'Unconfigured',
+        model: provInfo.model || cfg.modelId,
+      });
+    }
+  });
+
+  // Initialize step statuses for custom agents
+  customAgents.forEach((cAgent) => {
+    const provInfo = resolveProviderConfig(cAgent);
     steps.push({
-      agentId,
-      name: cfg.name,
-      icon: cfg.icon,
-      status: cfg.enabled ? 'pending' : 'skipped',
+      agentId: cAgent.id,
+      name: cAgent.name,
+      icon: cAgent.icon || '🤖',
+      status: cAgent.enabled ? 'pending' : 'skipped',
       providerName: provInfo.provider?.name || 'Unconfigured',
-      model: provInfo.model || cfg.modelId,
+      model: provInfo.model || cAgent.modelId,
     });
   });
 
-  // Helper to execute single agent
+  // Helper to execute single agent (default or custom)
   const callAgent = async (
-    agentId: JarvisAgentId,
+    agentId: string,
     messages: Array<{ role: 'system' | 'user' | 'assistant'; content: string }>,
   ): Promise<{
     ok: boolean;
@@ -150,7 +172,10 @@ export async function runJarvisPipeline(
     model: string;
     usedFallback?: boolean;
   }> => {
-    const cfg = agentConfigs[agentId];
+    const cfg = getAgentConfig(agentId);
+    if (!cfg) {
+      return { ok: false, text: '', error: `Agent ${agentId} not found in configuration`, providerName: '', model: '' };
+    }
     if (!cfg.enabled) {
       return { ok: false, text: '', error: 'Agent disabled in configuration', providerName: '', model: '' };
     }
@@ -194,6 +219,74 @@ export async function runJarvisPipeline(
     };
   };
 
+  // Helper to execute custom agent
+  const executeCustomAgent = async (cAgent: typeof customAgents[0]) => {
+    if (!cAgent.enabled) return;
+
+    const provInfo = resolveProviderConfig(cAgent);
+    const start = Date.now();
+
+    updateStep({
+      agentId: cAgent.id,
+      name: cAgent.name,
+      icon: cAgent.icon || '🤖',
+      status: 'running',
+      providerName: provInfo.provider?.name || 'Primary',
+      model: provInfo.model,
+    });
+
+    const sysPrompt =
+      cAgent.systemPrompt && cAgent.systemPrompt.trim()
+        ? cAgent.systemPrompt.trim()
+        : `You are the ${cAgent.name} agent (${cAgent.role || 'Specialized Agent'}). ${cAgent.description || ''}`;
+
+    const contextPayload = `User Query: "${query}"
+Task Context: "${plannerOutput.task || query}"
+${researcherOutput.facts.length > 0 ? `Collected Research Facts:\n${researcherOutput.facts.map((f, i) => `${i + 1}. ${f}`).join('\n')}` : ''}
+${factCheckOutput.verified.length > 0 ? `Verified Claims:\n${factCheckOutput.verified.map((c) => `- ${c}`).join('\n')}` : ''}
+
+Please perform your specialized processing for this inquiry. Provide clear, concise insights or outputs.`;
+
+    const res = await callAgent(cAgent.id, [
+      { role: 'system', content: sysPrompt },
+      { role: 'user', content: contextPayload },
+    ]);
+
+    const duration = Date.now() - start;
+
+    if (res.ok && res.text) {
+      customAgentOutputs.push({
+        id: cAgent.id,
+        name: cAgent.name,
+        output: res.text,
+      });
+
+      updateStep({
+        agentId: cAgent.id,
+        name: cAgent.name,
+        icon: cAgent.icon || '🤖',
+        status: 'completed',
+        providerName: res.providerName,
+        model: res.model,
+        durationMs: duration,
+        summary: `${cAgent.name} completed successfully.`,
+        outputPreview: res.text.slice(0, 180) + (res.text.length > 180 ? '...' : ''),
+        usedFallback: res.usedFallback,
+      });
+    } else {
+      updateStep({
+        agentId: cAgent.id,
+        name: cAgent.name,
+        icon: cAgent.icon || '🤖',
+        status: 'failed',
+        providerName: res.providerName,
+        model: res.model,
+        durationMs: duration,
+        error: res.error || `${cAgent.name} execution failed.`,
+      });
+    }
+  };
+
   // ==========================================
   // STEP 1: 🧭 PLANNER
   // ==========================================
@@ -219,26 +312,12 @@ export async function runJarvisPipeline(
       model: provInfo.model,
     });
 
-    const plannerPrompt = `You are the PLANNER agent of JARVIS, a 5-agent multi-AI intelligence system.
-Analyze the user's inquiry: "${query}".
-
-Decide execution strategy:
-- needsResearch: true if the query requires external factual data, current events, technical documentation, citations, or domain facts. False for simple casual greetings or trivial one-liners.
-- needsFactCheck: true if claims, statistics, historical dates, or verifiable technical details need validation.
-- needsReview: true for complex, multi-part, analytical, coding, architecture, design, policy, comparative, or reasoning-heavy questions that benefit from quality evaluation, nuance verification, or structural critique. Set false only for trivial greetings (e.g. "hi", "how are you") or simple single-fact lookups.
-
-Output ONLY a JSON object with this exact structure:
-{
-  "task": "concise goal statement",
-  "plan": ["step 1", "step 2"],
-  "needsResearch": true,
-  "needsFactCheck": true,
-  "needsReview": true
-}`;
+    const defaultPromptTemplate = DEFAULT_AGENT_SYSTEM_PROMPTS.planner;
+    const activePrompt = (pCfg.systemPrompt || defaultPromptTemplate).replace('{query}', query);
 
     const planRes = await callAgent('planner', [
       { role: 'system', content: 'You are the JARVIS Planner. Output only valid JSON.' },
-      { role: 'user', content: plannerPrompt },
+      { role: 'user', content: activePrompt },
     ]);
 
     const duration = Date.now() - start;
@@ -271,11 +350,11 @@ Output ONLY a JSON object with this exact structure:
     }
   }
 
-  // Heuristic detection for complex queries (multi-clause, comparisons, code/technical, detailed explanations)
+  // Heuristic detection for complex queries
   const isComplexQuery =
     query.length > 50 ||
     /\b(how|why|compare|versus|vs|explain|difference|implement|create|design|code|analyze|architecture|review|best practices|pros and cons|guide|steps|tutorial)\b/i.test(query) ||
-    query.includes('?') && query.split(' ').length > 7;
+    (query.includes('?') && query.split(' ').length > 7);
 
   // Determine which downstream agents are required
   const shouldResearch =
@@ -312,7 +391,6 @@ Output ONLY a JSON object with this exact structure:
       model: provInfo.model,
     });
 
-    // Reuse existing NEXUS search tools (Wikipedia + Web Search)
     let searchSnippets = '';
     try {
       const [wikiResults, searchResults] = await Promise.all([
@@ -349,28 +427,23 @@ Output ONLY a JSON object with this exact structure:
       // Search failed gracefully
     }
 
-    const researchPrompt = `You are the RESEARCHER agent of JARVIS.
-Task: "${plannerOutput.task || query}"
-Live Context / Search Data:
-${searchSnippets || 'No external snippets available. Rely on internal high-confidence knowledge.'}
-
-Extract verified facts and source references.
-Output ONLY a JSON object:
-{
-  "facts": ["Concise fact 1", "Concise fact 2"],
-  "sources": [{"title": "Source name", "url": "https://...", "domain": "domain.com"}]
-}`;
+    const defaultPromptTemplate = DEFAULT_AGENT_SYSTEM_PROMPTS.researcher;
+    const activePrompt = (rCfg.systemPrompt || defaultPromptTemplate)
+      .replace('{task}', plannerOutput.task || query)
+      .replace(
+        '{searchSnippets}',
+        searchSnippets || 'No external snippets available. Rely on internal high-confidence knowledge.',
+      );
 
     const researchRes = await callAgent('researcher', [
       { role: 'system', content: 'You are the JARVIS Researcher. Output strictly valid JSON with facts and sources.' },
-      { role: 'user', content: researchPrompt },
+      { role: 'user', content: activePrompt },
     ]);
 
     const duration = Date.now() - start;
 
     if (researchRes.ok) {
       researcherOutput = safeJsonParse(researchRes.text, researcherOutput);
-      // Merge any new sources
       if (Array.isArray(researcherOutput.sources)) {
         researcherOutput.sources.forEach((s) => {
           if (s.title && s.url && !sourcesCollected.some((existing) => existing.url === s.url)) {
@@ -420,6 +493,14 @@ Output ONLY a JSON object:
     });
   }
 
+  // Execute Parallel Research Custom Agents
+  const parallelResearchAgents = customAgents.filter(
+    (ca) => ca.enabled && ca.pipelinePosition === 'parallel_research',
+  );
+  for (const cAgent of parallelResearchAgents) {
+    await executeCustomAgent(cAgent);
+  }
+
   // ==========================================
   // STEP 3: 🛡️ FACT CHECKER
   // ==========================================
@@ -442,21 +523,19 @@ Output ONLY a JSON object:
       model: provInfo.model,
     });
 
-    const factCheckPrompt = `You are the FACT CHECKER agent of JARVIS.
-Original Task: "${plannerOutput.task || query}"
-Collected Claims & Facts:
-${researcherOutput.facts.length > 0 ? researcherOutput.facts.map((f, i) => `${i + 1}. ${f}`).join('\n') : 'Evaluate general knowledge truthfulness for: ' + query}
+    const defaultPromptTemplate = DEFAULT_AGENT_SYSTEM_PROMPTS.factChecker;
+    const claimsText =
+      researcherOutput.facts.length > 0
+        ? researcherOutput.facts.map((f, i) => `${i + 1}. ${f}`).join('\n')
+        : 'Evaluate general knowledge truthfulness for: ' + query;
 
-Verify claims, identify discrepancies, and isolate corrections.
-Output ONLY a JSON object:
-{
-  "verified": ["Confirmed claim 1"],
-  "issues": ["Identified contradiction or note 1"]
-}`;
+    const activePrompt = (fCfg.systemPrompt || defaultPromptTemplate)
+      .replace('{task}', plannerOutput.task || query)
+      .replace('{claims}', claimsText);
 
     const factRes = await callAgent('factChecker', [
       { role: 'system', content: 'You are the JARVIS Fact Checker. Output strictly valid JSON.' },
-      { role: 'user', content: factCheckPrompt },
+      { role: 'user', content: activePrompt },
     ]);
 
     const duration = Date.now() - start;
@@ -522,22 +601,15 @@ Output ONLY a JSON object:
       model: provInfo.model,
     });
 
-    const reviewerPrompt = `You are the REVIEWER agent of JARVIS.
-Task: "${plannerOutput.task || query}"
-Facts: ${JSON.stringify(researcherOutput.facts.slice(0, 5))}
-Fact Check Issues: ${JSON.stringify(factCheckOutput.issues)}
-
-Evaluate completeness and logical structure.
-Output ONLY a JSON object:
-{
-  "missing": ["Missing nuance or perspective"],
-  "issues": ["Logical weak point"],
-  "recommendation": "Key advice for final response"
-}`;
+    const defaultPromptTemplate = DEFAULT_AGENT_SYSTEM_PROMPTS.reviewer;
+    const activePrompt = (revCfg.systemPrompt || defaultPromptTemplate)
+      .replace('{task}', plannerOutput.task || query)
+      .replace('{facts}', JSON.stringify(researcherOutput.facts.slice(0, 5)))
+      .replace('{issues}', JSON.stringify(factCheckOutput.issues));
 
     const reviewRes = await callAgent('reviewer', [
       { role: 'system', content: 'You are the JARVIS Reviewer. Output strictly valid JSON.' },
-      { role: 'user', content: reviewerPrompt },
+      { role: 'user', content: activePrompt },
     ]);
 
     const duration = Date.now() - start;
@@ -581,6 +653,20 @@ Output ONLY a JSON object:
   }
 
   // ==========================================
+  // STEP 4.5: 🤖 CUSTOM AGENTS (before_synthesizer / extra_step)
+  // ==========================================
+  const preSynthCustomAgents = customAgents.filter(
+    (ca) =>
+      ca.enabled &&
+      (ca.pipelinePosition === 'before_synthesizer' ||
+        ca.pipelinePosition === 'extra_step' ||
+        !ca.pipelinePosition),
+  );
+  for (const cAgent of preSynthCustomAgents) {
+    await executeCustomAgent(cAgent);
+  }
+
+  // ==========================================
   // STEP 5: ✨ FINAL SYNTHESIZER
   // ==========================================
   let finalAnswer = '';
@@ -599,24 +685,26 @@ Output ONLY a JSON object:
       model: provInfo.model,
     });
 
+    const customInsightsBlock =
+      customAgentOutputs.length > 0
+        ? `\n\nCustom Agent Insights & Analysis:\n${customAgentOutputs.map((co) => `--- [Agent: ${co.name}] ---\n${co.output}`).join('\n\n')}`
+        : '';
+
     const synthesizerContext = `User Query: "${query}"
 
 Planner Guidance: ${plannerOutput.plan.join(' ')}
 ${researcherOutput.facts.length > 0 ? `Key Verified Facts:\n${researcherOutput.facts.map((f) => `- ${f}`).join('\n')}` : ''}
 ${factCheckOutput.verified.length > 0 ? `Verified Claims:\n${factCheckOutput.verified.map((c) => `- ${c}`).join('\n')}` : ''}
 ${factCheckOutput.issues.length > 0 ? `Important Caveats/Corrections:\n${factCheckOutput.issues.map((i) => `- ${i}`).join('\n')}` : ''}
-${reviewerOutput.recommendation ? `Reviewer Advice: ${reviewerOutput.recommendation}` : ''}`;
+${reviewerOutput.recommendation ? `Reviewer Advice: ${reviewerOutput.recommendation}` : ''}${customInsightsBlock}`;
+
+    const defaultSysPrompt = DEFAULT_AGENT_SYSTEM_PROMPTS.finalSynthesizer;
+    const activeSysPrompt = sCfg.systemPrompt && sCfg.systemPrompt.trim() ? sCfg.systemPrompt.trim() : defaultSysPrompt;
 
     const synthRes = await callAgent('finalSynthesizer', [
       {
         role: 'system',
-        content: `You are the FINAL SYNTHESIZER agent of JARVIS, a multi-agent intelligence platform.
-Your task is to combine the provided research, verified claims, and review notes into a clean, accurate, and definitive response for the user.
-Guidelines:
-- Deliver a direct, elegant, and informative answer in clean Markdown.
-- Keep the tone professional, objective, and clear.
-- Do NOT mention intermediate agent names, JSON formats, or internal reasoning steps.
-- If relevant sources are present, cite them clearly.`,
+        content: activeSysPrompt,
       },
       {
         role: 'user',
@@ -656,6 +744,14 @@ Guidelines:
           ? `### Summary Findings\n\n${researcherOutput.facts.map((f) => `- ${f}`).join('\n')}`
           : "Sorry, I couldn't generate a complete response right now.";
     }
+  }
+
+  // Execute post-synthesizer custom agents if any (e.g. after_synthesizer)
+  const postSynthCustomAgents = customAgents.filter(
+    (ca) => ca.enabled && ca.pipelinePosition === 'after_synthesizer',
+  );
+  for (const cAgent of postSynthCustomAgents) {
+    await executeCustomAgent(cAgent);
   }
 
   return {

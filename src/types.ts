@@ -145,7 +145,14 @@ export type JarvisAgentId =
   | 'researcher'
   | 'factChecker'
   | 'reviewer'
-  | 'finalSynthesizer';
+  | 'finalSynthesizer'
+  | string;
+
+export type CustomAgentPipelinePosition =
+  | 'before_synthesizer'
+  | 'parallel_research'
+  | 'extra_step'
+  | 'after_synthesizer';
 
 export interface JarvisAgentConfig {
   id: JarvisAgentId;
@@ -160,11 +167,18 @@ export interface JarvisAgentConfig {
   enableFailover: boolean;
   fallbackProviderId?: string;
   fallbackModelId?: string;
+  systemPrompt?: string;
+}
+
+export interface CustomJarvisAgentConfig extends JarvisAgentConfig {
+  pipelinePosition: CustomAgentPipelinePosition;
+  createdAt?: number;
 }
 
 export interface JarvisSystemConfig {
   deepResearchDefault: boolean;
-  agents: Record<JarvisAgentId, JarvisAgentConfig>;
+  agents: Record<'planner' | 'researcher' | 'factChecker' | 'reviewer' | 'finalSynthesizer', JarvisAgentConfig>;
+  customAgents?: CustomJarvisAgentConfig[];
 }
 
 export type JarvisStepStatus = 'pending' | 'running' | 'completed' | 'skipped' | 'failed';
