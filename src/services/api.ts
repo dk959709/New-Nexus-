@@ -173,6 +173,35 @@ export const api = {
     );
   },
 
+  jarvisAgentCall(payload: {
+    agentId: string;
+    messages: Array<{ role: 'system' | 'user' | 'assistant'; content: string }>;
+    providerConfig?: AIProviderConfig | null;
+    fallbackConfig?: AIProviderConfig | null;
+    enableFailover?: boolean;
+    temperature?: number;
+    maxTokens?: number;
+  }): Promise<{
+    ok: boolean;
+    text?: string;
+    model: string;
+    providerName: string;
+    usedFallback?: boolean;
+    error?: string;
+  }> {
+    return call<{
+      ok: boolean;
+      text?: string;
+      model: string;
+      providerName: string;
+      usedFallback?: boolean;
+      error?: string;
+    }>('/api/jarvis/agent-call', {
+      method: 'POST',
+      body: JSON.stringify(payload),
+    });
+  },
+
   searchWikipedia(query: string, limit = 10): Promise<WikipediaSearchResult[]> {
     return searchWikipedia(query, limit);
   },

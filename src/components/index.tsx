@@ -155,3 +155,5 @@ export { AnswerCard } from './AnswerCard';
 export { MediaResultCard } from './MediaResultCard';
 export { MediaViewer } from './MediaViewer';
 export { UnifiedResultCard } from './UnifiedResultCard';
+export { JarvisSearchCore, JarvisAnimatedCore } from './jarvis';
+

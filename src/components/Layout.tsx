@@ -1,5 +1,6 @@
 import {
   Bookmark,
+  Bot,
   Brain,
   CloudSun,
   Home,
@@ -21,6 +22,7 @@ import { playTapSound } from '@/lib/audio';
 
 const navItems = [
   { to: '/', label: 'Overview', icon: Home },
+  { to: '/jarvis', label: '🤖 JARVIS', icon: Bot },
   { to: '/search', label: 'Web Search', icon: Search },
   { to: '/assistant', label: 'AI Assistant', icon: Sparkles },
   { to: '/devices', label: 'Devices', icon: Smartphone },
@@ -45,7 +47,7 @@ export function Layout() {
   };
 
   const bottomNavItems = navItems.filter((item) =>
-    ['/', '/search', '/assistant', '/devices', '/weather', '/space', '/telegram'].includes(item.to)
+    ['/', '/jarvis', '/search', '/assistant', '/weather', '/space'].includes(item.to)
   );
 
   return (

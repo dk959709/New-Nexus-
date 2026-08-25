@@ -1810,4 +1810,225 @@
   cursor: not-allowed;
 }
 
+/* =========================================================
+   JARVIS 5-AGENT ADVANCED HUD GRAPHICS & ANIMATIONS
+   ========================================================= */
+
+@keyframes jarvisSpinCw {
+  0% { transform: rotate(0deg); }
+  100% { transform: rotate(360deg); }
+}
+
+@keyframes jarvisSpinCcw {
+  0% { transform: rotate(360deg); }
+  100% { transform: rotate(0deg); }
+}
+
+@keyframes jarvisCorePulse {
+  0%, 100% {
+    transform: scale(1);
+    filter: drop-shadow(0 0 15px rgba(97, 215, 201, 0.7)) drop-shadow(0 0 30px rgba(56, 189, 248, 0.4));
+    opacity: 0.9;
+  }
+  50% {
+    transform: scale(1.08);
+    filter: drop-shadow(0 0 25px rgba(97, 215, 201, 0.95)) drop-shadow(0 0 50px rgba(56, 189, 248, 0.7)) drop-shadow(0 0 70px rgba(168, 85, 247, 0.4));
+    opacity: 1;
+  }
+}
+
+@keyframes jarvisLaserFlow {
+  0% {
+    stroke-dashoffset: 60;
+  }
+  100% {
+    stroke-dashoffset: 0;
+  }
+}
+
+@keyframes jarvisRadarSweep {
+  0% {
+    transform: rotate(0deg);
+  }
+  100% {
+    transform: rotate(360deg);
+  }
+}
+
+@keyframes jarvisAudioBarPulse {
+  0%, 100% { height: 18%; opacity: 0.6; }
+  50% { height: 95%; opacity: 1; filter: drop-shadow(0 0 8px #61d7c9); }
+}
+
+@keyframes jarvisScanlineMove {
+  0% { transform: translateY(-100%); }
+  100% { transform: translateY(1000%); }
+}
+
+@keyframes jarvisBorderGlowCycle {
+  0%, 100% {
+    border-color: rgba(97, 215, 201, 0.35);
+    box-shadow: 0 8px 32px rgba(0, 0, 0, 0.5), 0 0 20px rgba(97, 215, 201, 0.12), inset 0 1px 0 rgba(255, 255, 255, 0.08);
+  }
+  50% {
+    border-color: rgba(56, 189, 248, 0.55);
+    box-shadow: 0 10px 38px rgba(0, 0, 0, 0.55), 0 0 30px rgba(56, 189, 248, 0.25), inset 0 1px 0 rgba(255, 255, 255, 0.14);
+  }
+}
+
+.jarvis-reactor-spin-cw {
+  animation: jarvisSpinCw 24s linear infinite;
+  transform-origin: center center;
+}
+
+.jarvis-reactor-spin-ccw {
+  animation: jarvisSpinCcw 18s linear infinite;
+  transform-origin: center center;
+}
+
+.jarvis-reactor-spin-fast {
+  animation: jarvisSpinCw 8s linear infinite;
+  transform-origin: center center;
+}
+
+.jarvis-core-pulse {
+  animation: jarvisCorePulse 3.5s ease-in-out infinite;
+  transform-origin: center center;
+}
+
+.jarvis-laser-path {
+  stroke-dasharray: 6 4;
+  animation: jarvisLaserFlow 1.2s linear infinite;
+}
+
+.jarvis-laser-path-active {
+  stroke-dasharray: 8 3;
+  animation: jarvisLaserFlow 0.6s linear infinite;
+}
+
+.jarvis-hud-card {
+  position: relative;
+  border-radius: 16px;
+  background: linear-gradient(135deg, rgba(8, 20, 30, 0.88) 0%, rgba(14, 24, 44, 0.9) 55%, rgba(10, 26, 36, 0.85) 100%);
+  border: 1px solid rgba(97, 215, 201, 0.28);
+  backdrop-filter: blur(20px);
+  -webkit-backdrop-filter: blur(20px);
+  box-shadow: 0 8px 32px rgba(0, 0, 0, 0.45), 0 0 18px rgba(97, 215, 201, 0.08);
+  overflow: hidden;
+  transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+}
+
+.jarvis-hud-card:hover {
+  border-color: rgba(97, 215, 201, 0.55);
+  box-shadow: 0 12px 40px rgba(0, 0, 0, 0.55), 0 0 28px rgba(97, 215, 201, 0.22);
+}
+
+.jarvis-category-card {
+  position: relative;
+  border-radius: 14px;
+  background: linear-gradient(135deg, rgba(10, 22, 34, 0.75) 0%, rgba(18, 24, 46, 0.78) 100%);
+  border: 1px solid rgba(165, 207, 214, 0.16);
+  padding: 16px;
+  cursor: pointer;
+  transition: all 0.25s cubic-bezier(0.4, 0, 0.2, 1);
+  overflow: hidden;
+}
+
+.jarvis-category-card:hover {
+  transform: translateY(-2px);
+  background: linear-gradient(135deg, rgba(14, 30, 46, 0.9) 0%, rgba(26, 32, 60, 0.92) 100%);
+  border-color: rgba(97, 215, 201, 0.6);
+  box-shadow: 0 10px 28px rgba(0, 0, 0, 0.45), 0 0 22px rgba(97, 215, 201, 0.25);
+}
+
+.jarvis-corner-brackets::before,
+.jarvis-corner-brackets::after {
+  content: "";
+  position: absolute;
+  width: 10px;
+  height: 10px;
+  pointer-events: none;
+  border-color: var(--accent);
+  opacity: 0.6;
+}
+
+.jarvis-corner-brackets::before {
+  top: 6px;
+  left: 6px;
+  border-top: 1.5px solid;
+  border-left: 1.5px solid;
+}
+
+.jarvis-corner-brackets::after {
+  bottom: 6px;
+  right: 6px;
+  border-bottom: 1.5px solid;
+  border-right: 1.5px solid;
+}
+
+.jarvis-audio-bar-col {
+  width: 3px;
+  border-radius: 2px;
+  background: linear-gradient(180deg, #38bdf8 0%, #61d7c9 100%);
+}
+
+.jarvis-radar-line {
+  position: absolute;
+  inset: 0;
+  border-radius: 50%;
+  background: conic-gradient(from 0deg at 50% 50%, rgba(97, 215, 201, 0.35) 0deg, transparent 60deg, transparent 360deg);
+  animation: jarvisRadarSweep 4s linear infinite;
+  pointer-events: none;
+}
+
+@keyframes jarvisSpinCW {
+  from {
+    transform: rotate(0deg);
+  }
+  to {
+    transform: rotate(360deg);
+  }
+}
+
+@keyframes jarvisSpinCCW {
+  from {
+    transform: rotate(0deg);
+  }
+  to {
+    transform: rotate(-360deg);
+  }
+}
+
+@keyframes jarvisCorePulse {
+  0%, 100% {
+    transform: scale(1);
+    opacity: 0.75;
+  }
+  50% {
+    transform: scale(1.1);
+    opacity: 0.95;
+  }
+}
+
+@keyframes jarvisCorePulseFast {
+  0%, 100% {
+    transform: scale(1);
+    opacity: 0.85;
+  }
+  50% {
+    transform: scale(1.18);
+    opacity: 1;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .jarvis-animated-core-container * {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+  }
+}
+
+
+
 

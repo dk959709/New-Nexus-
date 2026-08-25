@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react';
-import { Bot, Send, Sparkles, User, Trash2, Plus, Brain, BookOpen, Globe, ExternalLink, Cpu } from 'lucide-react';
+import { Bot, Send, Sparkles, User, Trash2, Plus, Brain, BookOpen, Globe, ExternalLink, Cpu, AlertTriangle, Check } from 'lucide-react';
 import { Link } from 'react-router-dom';
 import { api } from '@/services/api';
 import { storage } from '@/lib/storage';
@@ -92,6 +92,8 @@ export function AssistantPage() {
   const [error, setError] = useState('');
   const [memoryEditorOpen, setMemoryEditorOpen] = useState(false);
   const [memoryDraft, setMemoryDraft] = useState(smartMemory);
+  const [showClearConfirm, setShowClearConfirm] = useState(false);
+  const [clearedToast, setClearedToast] = useState(false);
 
   useEffect(() => {
     try {
@@ -176,14 +178,18 @@ export function AssistantPage() {
   const newChat = () => {
     setMessages([welcomeMessage]);
     setError('');
+    setShowClearConfirm(false);
   };
 
-  const clearMemory = () => {
+  const handleConfirmClearChat = () => {
     setSmartMemory('');
     setMemoryDraft('');
     setMemoryEditorOpen(false);
     setMessages([welcomeMessage]);
     setError('');
+    setShowClearConfirm(false);
+    setClearedToast(true);
+    setTimeout(() => setClearedToast(false), 3000);
 
     try {
       localStorage.removeItem(CHAT_KEY);
@@ -300,28 +306,68 @@ export function AssistantPage() {
             </div>
           </div>
 
-          <div style={{ display: 'flex', gap: 8 }}>
+          <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
             <button
-              className="icon-button hover:border-cyan-500/40 transition-all"
+              className="hover:border-cyan-500/40 transition-all text-xs font-semibold px-3 py-1.5 rounded-lg border border-slate-700 bg-slate-800/60 text-slate-200 flex items-center gap-1.5"
               onClick={newChat}
               aria-label="New chat"
-              title="New chat"
+              title="Start a new chat session"
               type="button"
             >
-              <Plus size={18} />
+              <Plus size={15} className="text-cyan-400" />
+              <span>New Chat</span>
             </button>
 
             <button
-              className="icon-button hover:border-red-500/40 transition-all"
-              onClick={clearMemory}
-              aria-label="Clear memory"
-              title="Clear memory"
+              className="hover:border-red-500/40 transition-all text-xs font-semibold px-3 py-1.5 rounded-lg border border-red-500/30 bg-red-500/10 text-red-300 flex items-center gap-1.5"
+              onClick={() => setShowClearConfirm(true)}
+              aria-label="Clear chat"
+              title="Clear conversation and memory"
               type="button"
             >
-              <Trash2 size={18} />
+              <Trash2 size={15} />
+              <span>Clear Chat</span>
             </button>
           </div>
         </header>
+
+        {/* Cleared Toast */}
+        {clearedToast && (
+          <div className="bg-cyan-500/15 border-b border-cyan-500/30 px-6 py-2.5 flex items-center gap-2 text-cyan-300 text-xs font-medium">
+            <Check size={15} />
+            <span>Chat history and memory have been cleared successfully.</span>
+          </div>
+        )}
+
+        {/* Clear Confirmation Prompt */}
+        {showClearConfirm && (
+          <div className="bg-red-950/90 border-b border-red-500/40 px-6 py-3 flex items-center justify-between gap-4 flex-wrap">
+            <div className="flex items-center gap-2.5">
+              <AlertTriangle size={17} className="text-red-400 shrink-0" />
+              <div>
+                <div className="text-white text-xs font-bold">Clear entire conversation and memory?</div>
+                <div className="text-red-200/70 text-[11px]">All chat messages and local AI context will be removed.</div>
+              </div>
+            </div>
+            <div className="flex items-center gap-2">
+              <button
+                type="button"
+                onClick={() => setShowClearConfirm(false)}
+                className="px-3 py-1 rounded-md text-xs font-medium bg-slate-800 text-slate-200 border border-slate-700 hover:bg-slate-700"
+              >
+                Cancel
+              </button>
+              <button
+                type="button"
+                onClick={handleConfirmClearChat}
+                className="px-3 py-1 rounded-md text-xs font-bold bg-red-600 text-white hover:bg-red-500 flex items-center gap-1"
+              >
+                <Trash2 size={12} />
+                Yes, Clear All
+              </button>
+            </div>
+          </div>
+        )}
 
         <div
           style={{

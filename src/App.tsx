@@ -4,6 +4,7 @@ import { ErrorBoundary } from '@/components/ErrorBoundary';
 import { HomePage, SearchPage, WeatherPage, NewsPage, MapPage, SavedPage, SettingsPage, SpacePage, TelegramPage, DevicesPage } from '@/pages';
 import { AssistantPage } from '@/pages/AssistantPage';
 import { OfflineAIPage } from '@/pages/OfflineAIPage';
+import { JarvisPage } from '@/pages/JarvisPage';
 
 export default function App() {
   return (
@@ -12,6 +13,7 @@ export default function App() {
         <Routes>
           <Route element={<Layout />}>
             <Route path="/" element={<HomePage />} />
+            <Route path="/jarvis" element={<JarvisPage />} />
             <Route path="/search" element={<SearchPage />} />
             <Route path="/assistant" element={<AssistantPage />} />
             <Route path="/devices" element={<DevicesPage />} />

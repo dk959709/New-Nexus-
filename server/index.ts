@@ -4392,6 +4392,106 @@ async function startServer() {
     });
   });
 
+  // JARVIS Multi-Agent Execution Endpoint
+  app.post('/api/jarvis/agent-call', async (req, res) => {
+    const parsed = z
+      .object({
+        agentId: z.string().min(1),
+        messages: z
+          .array(
+            z.object({
+              role: z.enum(['system', 'user', 'assistant']),
+              content: z.string().max(16000),
+            }),
+          )
+          .min(1)
+          .max(20),
+        providerConfig: customProviderSchema.optional().nullable(),
+        fallbackConfig: customProviderSchema.optional().nullable(),
+        enableFailover: z.boolean().optional(),
+        temperature: z.number().min(0).max(2).optional(),
+        maxTokens: z.number().int().positive().optional(),
+      })
+      .safeParse(req.body);
+
+    if (!parsed.success) {
+      return errorResponse(res, 400, 'Invalid agent execution parameters.');
+    }
+
+    const { messages, providerConfig, fallbackConfig, enableFailover, temperature = 0.2, maxTokens } =
+      parsed.data;
+
+    try {
+      const primaryResult = await executeCustomProviderChat({
+        providerConfig,
+        messages,
+        temperature,
+        maxTokens,
+      });
+
+      if (primaryResult && primaryResult.text) {
+        return res.json({
+          data: {
+            ok: true,
+            text: primaryResult.text,
+            model: primaryResult.model || providerConfig?.model || 'deepseek/deepseek-chat',
+            providerName: primaryResult.providerName || providerConfig?.name || 'Configured AI',
+            usedFallback: false,
+          },
+        });
+      }
+
+      // If primary failed and failover is explicitly enabled with a fallback provider
+      if (enableFailover && fallbackConfig) {
+        console.warn(
+          `[JARVIS] Agent "${parsed.data.agentId}" primary provider failed (${primaryResult?.lastError || 'Empty output'}). Triggering configured failover...`,
+        );
+
+        const fallbackResult = await executeCustomProviderChat({
+          providerConfig: fallbackConfig,
+          messages,
+          temperature,
+          maxTokens,
+        });
+
+        if (fallbackResult && fallbackResult.text) {
+          return res.json({
+            data: {
+              ok: true,
+              text: fallbackResult.text,
+              model: fallbackResult.model || fallbackConfig.model || 'fallback-model',
+              providerName: fallbackResult.providerName || fallbackConfig.name || 'Fallback AI',
+              usedFallback: true,
+            },
+          });
+        }
+
+        return res.json({
+          data: {
+            ok: false,
+            error: `Primary and fallback providers both failed: ${fallbackResult?.lastError || 'No response'}`,
+            model: fallbackConfig.model || 'unknown',
+            providerName: fallbackConfig.name || 'Fallback',
+            usedFallback: true,
+          },
+        });
+      }
+
+      return res.json({
+        data: {
+          ok: false,
+          error: primaryResult?.lastError || 'Agent provider unavailable or returned no output.',
+          model: providerConfig?.model || 'unknown',
+          providerName: providerConfig?.name || 'Primary',
+          usedFallback: false,
+        },
+      });
+    } catch (err: unknown) {
+      const msg = err instanceof Error ? err.message : 'Agent execution failed.';
+      return errorResponse(res, 500, msg);
+    }
+  });
+
   // Telegram Integration Endpoints
   app.post('/api/telegram/connect', async (req, res) => {
     console.log('[Server] Received POST /api/telegram/connect request');

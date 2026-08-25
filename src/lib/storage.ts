@@ -1,4 +1,12 @@
-import type { SavedItem, Settings, AIProvidersState, AIProviderConfig, KeyHealthStatus } from '@/types';
+import type {
+  SavedItem,
+  Settings,
+  AIProvidersState,
+  AIProviderConfig,
+  KeyHealthStatus,
+  JarvisSystemConfig,
+  JarvisMessage,
+} from '@/types';
 
 const KEYS = {
   searches: 'nexus-searches',
@@ -6,7 +14,75 @@ const KEYS = {
   settings: 'nexus-settings',
   locations: 'nexus-locations',
   aiProviders: 'nexus-ai-providers',
+  jarvisConfig: 'nexus-jarvis-config-v1',
+  jarvisMessages: 'nexus-jarvis-messages-v1',
 } as const;
+
+export const DEFAULT_JARVIS_CONFIG: JarvisSystemConfig = {
+  deepResearchDefault: false,
+  agents: {
+    planner: {
+      id: 'planner',
+      name: 'Planner',
+      role: 'Task Planning & Routing',
+      description: 'Understands the task, generates a concise plan, and determines necessary agent execution steps.',
+      icon: '🧭',
+      providerId: 'existing',
+      modelId: 'deepseek/deepseek-chat',
+      enabled: true,
+      maxTokens: 200,
+      enableFailover: false,
+    },
+    researcher: {
+      id: 'researcher',
+      name: 'Researcher',
+      role: 'Live Web & Wikipedia Investigation',
+      description: 'Gathers verified facts, sources, and data using NEXUS search capabilities.',
+      icon: '🔎',
+      providerId: 'existing',
+      modelId: 'deepseek/deepseek-chat',
+      enabled: true,
+      maxTokens: 500,
+      enableFailover: false,
+    },
+    factChecker: {
+      id: 'factChecker',
+      name: 'Fact Checker',
+      role: 'Claims & Contradiction Verification',
+      description: 'Evaluates critical claims, detects unsupported data or conflicts, and isolates corrections.',
+      icon: '🛡️',
+      providerId: 'existing',
+      modelId: 'deepseek/deepseek-chat',
+      enabled: true,
+      maxTokens: 300,
+      enableFailover: false,
+    },
+    reviewer: {
+      id: 'reviewer',
+      name: 'Reviewer',
+      role: 'Critique & Quality Assurance',
+      description: 'Analyzes logical coherence, finds missing details or weak arguments before synthesis.',
+      icon: '🔬',
+      providerId: 'existing',
+      modelId: 'deepseek/deepseek-chat',
+      enabled: true,
+      maxTokens: 300,
+      enableFailover: false,
+    },
+    finalSynthesizer: {
+      id: 'finalSynthesizer',
+      name: 'Final Synthesizer',
+      role: 'Definitive Response Synthesis',
+      description: 'Blends all findings into a clear, accurate, polished response with sources.',
+      icon: '✨',
+      providerId: 'existing',
+      modelId: 'deepseek/deepseek-chat',
+      enabled: true,
+      maxTokens: 650,
+      enableFailover: false,
+    },
+  },
+};
 
 function read<T>(key: string, fallback: T): T {
   try {
@@ -136,6 +212,39 @@ export const storage = {
     const updated = this.getLocations().filter((s) => s.id !== id);
     write(KEYS.locations, updated);
     return updated;
+  },
+
+  getJarvisConfig(): JarvisSystemConfig {
+    const stored = read<Partial<JarvisSystemConfig> | null>(KEYS.jarvisConfig, null);
+    if (!stored || !stored.agents) {
+      return DEFAULT_JARVIS_CONFIG;
+    }
+    return {
+      deepResearchDefault: stored.deepResearchDefault ?? DEFAULT_JARVIS_CONFIG.deepResearchDefault,
+      agents: {
+        planner: { ...DEFAULT_JARVIS_CONFIG.agents.planner, ...(stored.agents.planner || {}) },
+        researcher: { ...DEFAULT_JARVIS_CONFIG.agents.researcher, ...(stored.agents.researcher || {}) },
+        factChecker: { ...DEFAULT_JARVIS_CONFIG.agents.factChecker, ...(stored.agents.factChecker || {}) },
+        reviewer: { ...DEFAULT_JARVIS_CONFIG.agents.reviewer, ...(stored.agents.reviewer || {}) },
+        finalSynthesizer: { ...DEFAULT_JARVIS_CONFIG.agents.finalSynthesizer, ...(stored.agents.finalSynthesizer || {}) },
+      },
+    };
+  },
+
+  saveJarvisConfig(config: JarvisSystemConfig): void {
+    write(KEYS.jarvisConfig, config);
+  },
+
+  getJarvisMessages(): JarvisMessage[] {
+    return read<JarvisMessage[]>(KEYS.jarvisMessages, []);
+  },
+
+  saveJarvisMessages(messages: JarvisMessage[]): void {
+    write(KEYS.jarvisMessages, messages.slice(-30));
+  },
+
+  clearJarvisMessages(): void {
+    write(KEYS.jarvisMessages, []);
   },
 
   clearAll(): void {

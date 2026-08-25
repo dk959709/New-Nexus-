@@ -140,6 +140,60 @@ export interface AIProvidersState {
   providers: AIProviderConfig[];
 }
 
+export type JarvisAgentId =
+  | 'planner'
+  | 'researcher'
+  | 'factChecker'
+  | 'reviewer'
+  | 'finalSynthesizer';
+
+export interface JarvisAgentConfig {
+  id: JarvisAgentId;
+  name: string;
+  role: string;
+  description: string;
+  icon: string;
+  providerId: string;
+  modelId: string;
+  enabled: boolean;
+  maxTokens: number;
+  enableFailover: boolean;
+  fallbackProviderId?: string;
+  fallbackModelId?: string;
+}
+
+export interface JarvisSystemConfig {
+  deepResearchDefault: boolean;
+  agents: Record<JarvisAgentId, JarvisAgentConfig>;
+}
+
+export type JarvisStepStatus = 'pending' | 'running' | 'completed' | 'skipped' | 'failed';
+
+export interface JarvisExecutionStep {
+  agentId: JarvisAgentId;
+  name: string;
+  icon: string;
+  status: JarvisStepStatus;
+  providerName: string;
+  model: string;
+  durationMs?: number;
+  error?: string;
+  summary?: string;
+  outputPreview?: string;
+  usedFallback?: boolean;
+}
+
+export interface JarvisMessage {
+  id: string;
+  query: string;
+  answer: string;
+  timestamp: number;
+  deepResearch: boolean;
+  steps: JarvisExecutionStep[];
+  sources?: AISource[];
+  error?: string;
+}
+
 export interface Settings {
   theme: ThemeMode;
   temperature: TemperatureUnit;

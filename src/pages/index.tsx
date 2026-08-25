@@ -29,7 +29,7 @@ import {
   Moon as MoonIcon,
 } from 'lucide-react';
 import { Link, useNavigate, useSearchParams } from 'react-router-dom';
-import { SearchBox, WeatherCard, HourlyForecast, DailyForecast, ErrorMessage, LoadingMessage, WeatherMap, AnswerCard, MediaViewer, UnifiedResultCard } from '@/components';
+import { SearchBox, WeatherCard, HourlyForecast, DailyForecast, ErrorMessage, LoadingMessage, WeatherMap, AnswerCard, MediaViewer, UnifiedResultCard, JarvisSearchCore } from '@/components';
 import { WallpaperSelector } from '@/components/WallpaperSelector';
 import { SpaceStarfield } from '@/components/SpaceStarfield';
 import { MeteorShower } from '@/animations/MeteorShower';
@@ -110,23 +110,32 @@ export function HomePage() {
         <div className="absolute top-10 left-1/4 w-96 h-96 bg-cyan-500/10 rounded-full blur-[120px] pointer-events-none animate-pulse" />
         <div className="absolute top-40 right-10 w-80 h-80 bg-purple-500/10 rounded-full blur-[100px] pointer-events-none animate-pulse" style={{ animationDuration: '7s' }} />
 
-        <div className="hero-wrap relative z-10">
+        {/* ================================================== */}
+        {/* TOP OF WEBSITE: NEXUS INTELLIGENT HERO            */}
+        {/* ================================================== */}
+        <div className="hero-wrap relative z-10 mb-6 sm:mb-8">
           <div className="hero-aurora-glow" aria-hidden="true" />
           <section className="hero">
             <div className="flex items-center gap-2 mb-2">
-              <span className="w-2 h-2 rounded-full bg-cyan-400 animate-ping" />
-              <span className="eyebrow">NEXUS INTELLIGENT</span>
+              <span className="w-2.5 h-2.5 rounded-full bg-cyan-400 animate-ping" />
+              <span className="eyebrow font-mono tracking-widest text-cyan-300 font-bold">NEXUS INTELLIGENT</span>
             </div>
             <h1>
               <span className="hero-gradient-line">Search the web.</span>
               <br />
               <span className="hero-gradient-line hero-glow-text">Understand the world.</span>
             </h1>
-            <p className="text-slate-300 font-medium sm:text-base">A unified view of live search, weather, and world signals — clear, fast, and precise.</p>
+            <p className="text-slate-300 font-medium sm:text-base max-w-2xl">
+              A unified view of live search, weather, and world signals — clear, fast, and precise.
+            </p>
           </section>
         </div>
-        <div className="relative z-10">
-          <SearchBox onSearch={search} recent={storage.getSearches()} />
+
+        {/* ================================================== */}
+        {/* JARVIS INTELLIGENT SEARCH CORE                    */}
+        {/* ================================================== */}
+        <div className="relative z-10 mb-8">
+          <JarvisSearchCore settings={settings} onSearchNexus={search} />
         </div>
 
         {/* Smart Answer Engine Section */}
@@ -262,6 +271,20 @@ export function HomePage() {
             </Link>
           </div>
         )}
+
+        {/* ================================================== */}
+        {/* BOTTOM SEARCH BAR                                  */}
+        {/* ================================================== */}
+        <div className="bottom-search-wrap relative z-10 mt-10 pt-8 border-t border-white/10">
+          <div className="flex items-center justify-between gap-2 mb-4">
+            <div className="flex items-center gap-2">
+              <span className="w-2 h-2 rounded-full bg-cyan-400" />
+              <span className="text-xs font-mono tracking-widest text-cyan-300 uppercase font-bold">Quick Bottom Search</span>
+            </div>
+            <span className="text-xs text-slate-400 font-mono hidden sm:inline">Search again without scrolling up</span>
+          </div>
+          <SearchBox onSearch={search} recent={storage.getSearches()} />
+        </div>
       </div>
     </>
   );
@@ -271,7 +294,20 @@ export function SearchPage() {
   const [params] = useSearchParams();
   const navigate = useNavigate();
   const query = params.get('q') ?? '';
-  const [activeTab, setActiveTab] = useState<'all' | 'videos' | 'images' | 'wikipedia' | 'web'>('all');
+  const tabParam = params.get('tab');
+  const [activeTab, setActiveTab] = useState<'all' | 'videos' | 'images' | 'wikipedia' | 'web'>(() => {
+    if (tabParam === 'videos' || tabParam === 'images' || tabParam === 'wikipedia' || tabParam === 'web') {
+      return tabParam;
+    }
+    return 'all';
+  });
+
+  useEffect(() => {
+    const t = params.get('tab');
+    if (t === 'videos' || t === 'images' || t === 'wikipedia' || t === 'web' || t === 'all') {
+      setActiveTab(t);
+    }
+  }, [params]);
   const [searchOutput, setSearchOutput] = useState<UnifiedSearchOutput | null>(null);
   const [selectedMedia, setSelectedMedia] = useState<UnifiedSearchResult | null>(null);
   const [loading, setLoading] = useState(false);
@@ -747,6 +783,17 @@ export function SearchPage() {
               <span>You have reached the end of results ({currentTabResults.length} total items)</span>
             </div>
           )}
+
+          {/* Bottom Search Bar on Results Page */}
+          <div className="w-full max-w-[920px] mt-8 pt-6 border-t border-slate-800">
+            <div className="flex items-center justify-between gap-2 mb-3">
+              <span className="text-xs font-mono tracking-wider text-cyan-300 uppercase font-bold flex items-center gap-1.5">
+                <Search size={13} className="text-cyan-400" />
+                Search Another Query
+              </span>
+            </div>
+            <SearchBox initialValue="" onSearch={search} recent={storage.getSearches()} />
+          </div>
         </div>
       )}
 
