@@ -87,12 +87,20 @@ export interface GeocodeResult {
   longitude: number;
 }
 
+export interface SavedItemSource {
+  title: string;
+  url: string;
+  domain?: string;
+}
+
 export interface SavedItem {
   id: string;
-  type: 'search' | 'news' | 'location' | 'space';
+  type: 'search' | 'news' | 'location' | 'space' | 'jarvis' | string;
   title: string;
   subtitle: string;
   url?: string;
+  content?: string;
+  sources?: SavedItemSource[];
   savedAt: string;
 }
 

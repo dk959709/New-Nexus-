@@ -21,6 +21,8 @@ import {
   Zap,
   Search,
   CheckCircle2,
+  Bookmark,
+  BookmarkCheck,
 } from 'lucide-react';
 import { storage } from '@/lib/storage';
 import { runJarvisPipeline } from '@/services/jarvisOrchestrator';
@@ -33,6 +35,7 @@ import type {
   JarvisExecutionStep,
   JarvisMessage,
   JarvisSystemConfig,
+  SavedItem,
 } from '@/types';
 
 interface JarvisChatProps {
@@ -250,6 +253,11 @@ export function JarvisChat({ config, onOpenSettings }: JarvisChatProps) {
   const [activeSteps, setActiveSteps] = useState<JarvisExecutionStep[]>([]);
   const [expandedStepsMap, setExpandedStepsMap] = useState<Record<string, boolean>>({});
   const [copiedId, setCopiedId] = useState<string | null>(null);
+  const [savedIds, setSavedIds] = useState<Set<string>>(() => {
+    const saved = storage.getSaved();
+    return new Set(saved.map((s) => s.id));
+  });
+  const [recentlySavedId, setRecentlySavedId] = useState<string | null>(null);
   const [speakingId, setSpeakingId] = useState<string | null>(null);
   const [showClearConfirm, setShowClearConfirm] = useState(false);
   const [clearedBanner, setClearedBanner] = useState(false);
@@ -506,6 +514,30 @@ export function JarvisChat({ config, onOpenSettings }: JarvisChatProps) {
     navigator.clipboard.writeText(text);
     setCopiedId(id);
     setTimeout(() => setCopiedId(null), 2000);
+  };
+
+  const handleSave = (msg: JarvisMessage) => {
+    const savedId = `jarvis-${msg.id}`;
+    const jarvisSavedItem: SavedItem = {
+      id: savedId,
+      type: 'jarvis',
+      title: msg.query || 'JARVIS Synthesis',
+      subtitle: msg.answer.length > 180 ? `${msg.answer.slice(0, 180)}...` : msg.answer,
+      content: msg.answer,
+      sources: msg.sources?.map((s) => ({
+        title: s.title,
+        url: s.url,
+        domain: s.domain,
+      })),
+      savedAt: new Date(msg.timestamp || Date.now()).toISOString(),
+    };
+
+    const updated = storage.saveItem(jarvisSavedItem);
+    setSavedIds(new Set(updated.map((s) => s.id)));
+    setRecentlySavedId(msg.id);
+    setTimeout(() => {
+      setRecentlySavedId((prev) => (prev === msg.id ? null : prev));
+    }, 2500);
   };
 
   const handleConfirmClearChat = () => {
@@ -778,7 +810,7 @@ export function JarvisChat({ config, onOpenSettings }: JarvisChatProps) {
                       </span>
                     </div>
 
-                    {/* Action Buttons: Speak, Copy, Delete */}
+                    {/* Action Buttons: Speak, Copy, Save, Delete */}
                     <div className="flex items-center gap-1.5">
                       <button
                         type="button"
@@ -800,6 +832,36 @@ export function JarvisChat({ config, onOpenSettings }: JarvisChatProps) {
                         title="Copy synthesis"
                       >
                         {copiedId === msg.id ? <Check size={15} className="text-cyan-400" /> : <Copy size={15} />}
+                      </button>
+
+                      <button
+                        type="button"
+                        onClick={() => handleSave(msg)}
+                        className={`px-2.5 py-1.5 rounded-full text-xs font-semibold flex items-center gap-1.5 transition-all duration-200 ${
+                          recentlySavedId === msg.id
+                            ? 'bg-emerald-500/25 border border-emerald-400/50 text-emerald-300 shadow-[0_0_14px_rgba(16,185,129,0.4)]'
+                            : savedIds.has(`jarvis-${msg.id}`)
+                            ? 'bg-cyan-500/20 border border-cyan-400/40 text-cyan-300 hover:bg-cyan-500/30'
+                            : 'text-slate-300 hover:text-cyan-300 hover:bg-cyan-500/15'
+                        }`}
+                        title={savedIds.has(`jarvis-${msg.id}`) ? 'Saved in NEXUS Library' : 'Save to NEXUS Library'}
+                      >
+                        {recentlySavedId === msg.id ? (
+                          <>
+                            <Check size={14} className="text-emerald-400" />
+                            <span className="text-[11px] font-bold text-emerald-300">Saved ✓</span>
+                          </>
+                        ) : savedIds.has(`jarvis-${msg.id}`) ? (
+                          <>
+                            <BookmarkCheck size={14} className="text-cyan-300" />
+                            <span className="text-[11px] text-cyan-300 hidden sm:inline">Saved</span>
+                          </>
+                        ) : (
+                          <>
+                            <Bookmark size={14} />
+                            <span className="text-[11px] hidden sm:inline">Save</span>
+                          </>
+                        )}
                       </button>
 
                       <button

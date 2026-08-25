@@ -27,6 +27,8 @@ import {
   Maximize2,
   Rocket,
   Moon as MoonIcon,
+  Copy,
+  Check,
 } from 'lucide-react';
 import { Link, useNavigate, useSearchParams } from 'react-router-dom';
 import { SearchBox, WeatherCard, HourlyForecast, DailyForecast, ErrorMessage, LoadingMessage, WeatherMap, AnswerCard, MediaViewer, UnifiedResultCard, JarvisSearchCore } from '@/components';
@@ -1199,8 +1201,219 @@ export function SpacePage() {
 
 export function SavedPage() {
   const [items, setItems] = useState(storage.getSaved());
-  const remove = (id: string) => setItems(storage.removeSaved(id));
-  return <><PageIntro eyebrow="YOUR LIBRARY" title="Saved for later." description="Search results and stories you want to return to." />{!items.length ? <div className="empty-state"><Bookmark size={34} /><h2>Your library is empty</h2><p>Save search results and stories to see them here.</p></div> : <div className="saved-list">{items.map((item) => <div className="saved-item" key={item.id}><div><span className="eyebrow">{item.type}</span><h2>{item.title}</h2><p>{item.subtitle}</p>{item.url && <a href={item.url} target="_blank" rel="noreferrer">Open source <ExternalLink size={13} /></a>}</div><button onClick={() => remove(item.id)} aria-label="Remove saved item"><Trash2 size={17} /></button></div>)}</div>}</>;
+  const [filter, setFilter] = useState<'all' | 'jarvis' | 'other'>('all');
+  const [copiedId, setCopiedId] = useState<string | null>(null);
+
+  const remove = (id: string) => {
+    playTapSound();
+    setItems(storage.removeSaved(id));
+  };
+
+  const handleCopy = (text: string, id: string) => {
+    playTapSound();
+    navigator.clipboard.writeText(text);
+    setCopiedId(id);
+    setTimeout(() => setCopiedId(null), 2000);
+  };
+
+  const jarvisItems = items.filter((i) => i.type === 'jarvis');
+  const otherItems = items.filter((i) => i.type !== 'jarvis');
+
+  const filteredItems = items.filter((item) => {
+    if (filter === 'jarvis') return item.type === 'jarvis';
+    if (filter === 'other') return item.type !== 'jarvis';
+    return true;
+  });
+
+  return (
+    <>
+      <PageIntro
+        eyebrow="YOUR LIBRARY"
+        title="Saved for later."
+        description="Search results, stories, and JARVIS multi-agent syntheses you want to return to."
+      />
+
+      {items.length > 0 && (
+        <div className="flex items-center gap-2 mb-6 flex-wrap">
+          <button
+            type="button"
+            onClick={() => setFilter('all')}
+            className={`px-3 py-1.5 rounded-full text-xs font-semibold transition-all ${
+              filter === 'all'
+                ? 'bg-gradient-to-r from-cyan-400 to-sky-400 text-slate-950 shadow-[0_0_12px_rgba(97,215,201,0.35)]'
+                : 'bg-white/5 hover:bg-white/10 text-slate-300 border border-white/10'
+            }`}
+          >
+            All ({items.length})
+          </button>
+
+          {jarvisItems.length > 0 && (
+            <button
+              type="button"
+              onClick={() => setFilter('jarvis')}
+              className={`px-3 py-1.5 rounded-full text-xs font-semibold flex items-center gap-1.5 transition-all ${
+                filter === 'jarvis'
+                  ? 'bg-cyan-400 text-slate-950 shadow-[0_0_12px_rgba(97,215,201,0.35)]'
+                  : 'bg-cyan-500/10 hover:bg-cyan-500/20 text-cyan-300 border border-cyan-500/30'
+              }`}
+            >
+              <Sparkles size={13} />
+              <span>JARVIS Syntheses ({jarvisItems.length})</span>
+            </button>
+          )}
+
+          {otherItems.length > 0 && (
+            <button
+              type="button"
+              onClick={() => setFilter('other')}
+              className={`px-3 py-1.5 rounded-full text-xs font-semibold transition-all ${
+                filter === 'other'
+                  ? 'bg-gradient-to-r from-cyan-400 to-sky-400 text-slate-950 shadow-[0_0_12px_rgba(97,215,201,0.35)]'
+                  : 'bg-white/5 hover:bg-white/10 text-slate-300 border border-white/10'
+              }`}
+            >
+              Web & Stories ({otherItems.length})
+            </button>
+          )}
+        </div>
+      )}
+
+      {!filteredItems.length ? (
+        <div className="empty-state">
+          <Bookmark size={34} />
+          <h2>Your library is empty</h2>
+          <p>Save search results, stories, and JARVIS multi-agent answers to see them here.</p>
+        </div>
+      ) : (
+        <div className="saved-list">
+          {filteredItems.map((item) => {
+            const isJarvis = item.type === 'jarvis';
+            const answerText = item.content || item.subtitle;
+
+            if (isJarvis) {
+              return (
+                <div
+                  key={item.id}
+                  className="w-full rounded-2xl p-5 sm:p-6 mb-4 bg-gradient-to-b from-[#0c1a26]/90 via-[#07131d]/95 to-[#040a10]/95 border border-cyan-500/30 shadow-[0_4px_24px_rgba(0,0,0,0.4)] backdrop-blur-xl transition-all"
+                >
+                  {/* Top Bar */}
+                  <div className="flex items-center justify-between flex-wrap gap-2 pb-3 mb-3 border-b border-cyan-500/20">
+                    <div className="flex items-center gap-2">
+                      <div className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full bg-cyan-500/15 border border-cyan-500/35 text-[10px] font-mono tracking-widest text-cyan-300 font-bold uppercase">
+                        <Sparkles size={12} className="text-cyan-400" />
+                        <span>JARVIS SYNTHESIS</span>
+                      </div>
+                      <span className="text-[11px] text-slate-400 font-mono">
+                        {new Date(item.savedAt).toLocaleDateString(undefined, {
+                          month: 'short',
+                          day: 'numeric',
+                          year: 'numeric',
+                        })}{' '}
+                        ·{' '}
+                        {new Date(item.savedAt).toLocaleTimeString([], {
+                          hour: '2-digit',
+                          minute: '2-digit',
+                        })}
+                      </span>
+                    </div>
+
+                    <div className="flex items-center gap-2">
+                      <button
+                        type="button"
+                        onClick={() => handleCopy(answerText, item.id)}
+                        className="px-2.5 py-1 rounded-lg bg-white/5 hover:bg-white/10 border border-white/10 text-xs text-slate-300 hover:text-white flex items-center gap-1.5 transition-all"
+                        title="Copy synthesis text"
+                      >
+                        {copiedId === item.id ? (
+                          <>
+                            <Check size={13} className="text-emerald-400" />
+                            <span className="text-emerald-300">Copied</span>
+                          </>
+                        ) : (
+                          <>
+                            <Copy size={13} />
+                            <span>Copy</span>
+                          </>
+                        )}
+                      </button>
+
+                      <Link
+                        to={`/jarvis?q=${encodeURIComponent(item.title)}`}
+                        className="px-2.5 py-1 rounded-lg bg-cyan-500/15 hover:bg-cyan-500/25 border border-cyan-500/35 text-xs text-cyan-300 flex items-center gap-1 transition-all"
+                        title="Open in JARVIS Workspace"
+                      >
+                        <span>Open in JARVIS</span>
+                        <ExternalLink size={12} />
+                      </Link>
+
+                      <button
+                        type="button"
+                        onClick={() => remove(item.id)}
+                        className="p-1.5 rounded-lg text-slate-400 hover:text-rose-400 hover:bg-rose-500/15 transition-colors"
+                        aria-label="Remove saved item"
+                        title="Remove from saved library"
+                      >
+                        <Trash2 size={16} />
+                      </button>
+                    </div>
+                  </div>
+
+                  {/* Question / Title */}
+                  <h2 className="text-base sm:text-lg font-bold text-white mb-2 leading-snug">
+                    {item.title}
+                  </h2>
+
+                  {/* Synthesized Answer Content */}
+                  <div className="text-slate-200 text-sm sm:text-base leading-relaxed whitespace-pre-wrap font-sans">
+                    {answerText}
+                  </div>
+
+                  {/* Grounded Sources */}
+                  {item.sources && item.sources.length > 0 && (
+                    <div className="mt-4 pt-3 border-t border-cyan-500/20 flex flex-wrap items-center gap-2">
+                      <span className="text-[11px] font-mono text-cyan-300/80 font-bold uppercase tracking-wider">
+                        Grounded Sources ({item.sources.length}):
+                      </span>
+                      {item.sources.map((src, i) => (
+                        <a
+                          key={i}
+                          href={src.url}
+                          target="_blank"
+                          rel="noreferrer"
+                          className="inline-flex items-center gap-1 px-2.5 py-1 rounded-lg bg-cyan-950/40 hover:bg-cyan-900/50 border border-cyan-500/30 text-xs text-cyan-200 hover:text-cyan-100 transition-colors"
+                        >
+                          <span className="max-w-[220px] truncate">{src.title || src.domain || 'Source'}</span>
+                          <ExternalLink size={11} className="text-cyan-400" />
+                        </a>
+                      ))}
+                    </div>
+                  )}
+                </div>
+              );
+            }
+
+            return (
+              <div className="saved-item" key={item.id}>
+                <div>
+                  <span className="eyebrow">{item.type}</span>
+                  <h2>{item.title}</h2>
+                  <p>{item.subtitle}</p>
+                  {item.url && (
+                    <a href={item.url} target="_blank" rel="noreferrer">
+                      Open source <ExternalLink size={13} />
+                    </a>
+                  )}
+                </div>
+                <button onClick={() => remove(item.id)} aria-label="Remove saved item">
+                  <Trash2 size={17} />
+                </button>
+              </div>
+            );
+          })}
+        </div>
+      )}
+    </>
+  );
 }
 
 type SettingsCategory =

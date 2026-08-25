@@ -225,6 +225,9 @@ export const storage = {
   getSaved(): SavedItem[] {
     return read<SavedItem[]>(KEYS.saved, []);
   },
+  isSaved(id: string): boolean {
+    return this.getSaved().some((s) => s.id === id);
+  },
   saveItem(item: SavedItem): SavedItem[] {
     const existing = this.getSaved().filter((s) => s.id !== item.id);
     const updated = [item, ...existing];

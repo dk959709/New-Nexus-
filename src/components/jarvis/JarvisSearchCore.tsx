@@ -19,13 +19,15 @@ import {
   ExternalLink,
   ChevronRight,
   ShieldCheck,
+  Bookmark,
+  BookmarkCheck,
 } from 'lucide-react';
 import { JarvisAnimatedCore } from './JarvisAnimatedCore';
 import { useSpeechSearch } from '@/hooks/useSpeechSearch';
 import { askSmartAnswerEngine } from '@/services/answerEngine';
 import { storage } from '@/lib/storage';
 import { playTapSound } from '@/lib/audio';
-import type { AnswerEngineResult, Settings } from '@/types';
+import type { AnswerEngineResult, Settings, SavedItem } from '@/types';
 
 export type JarvisQuickMode = 'ai' | 'web' | 'wiki' | 'videos' | 'media' | 'news';
 
@@ -134,6 +136,8 @@ export function JarvisSearchCore({ settings, onSearchNexus }: JarvisSearchCorePr
   const [result, setResult] = useState<AnswerEngineResult | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [copied, setCopied] = useState(false);
+  const [isSaved, setIsSaved] = useState(false);
+  const [recentlySaved, setRecentlySaved] = useState(false);
   const inputRef = useRef<HTMLInputElement | null>(null);
 
   const reducedMotion = settings?.animations === 'reduced';
@@ -237,6 +241,29 @@ export function JarvisSearchCore({ settings, onSearchNexus }: JarvisSearchCorePr
     navigator.clipboard.writeText(result.text);
     setCopied(true);
     setTimeout(() => setCopied(false), 2000);
+  };
+
+  const handleSave = () => {
+    if (!result?.text) return;
+    playTapSound();
+    const savedId = `jarvis-search-${Date.now()}`;
+    const jarvisSavedItem: SavedItem = {
+      id: savedId,
+      type: 'jarvis',
+      title: query.trim() || 'JARVIS Synthesis',
+      subtitle: result.text.length > 180 ? `${result.text.slice(0, 180)}...` : result.text,
+      content: result.text,
+      sources: result.sources?.map((s) => ({
+        title: s.title,
+        url: s.url,
+        domain: s.domain,
+      })),
+      savedAt: new Date().toISOString(),
+    };
+    storage.saveItem(jarvisSavedItem);
+    setIsSaved(true);
+    setRecentlySaved(true);
+    setTimeout(() => setRecentlySaved(false), 2500);
   };
 
   const handleLaunchDeepResearch = () => {
@@ -491,6 +518,36 @@ export function JarvisSearchCore({ settings, onSearchNexus }: JarvisSearchCorePr
 
               {/* Action Buttons */}
               <div className="flex items-center gap-2">
+                <button
+                  type="button"
+                  onClick={handleSave}
+                  className={`px-3 py-1.5 rounded-xl border text-xs font-medium flex items-center gap-1.5 transition-all ${
+                    recentlySaved
+                      ? 'bg-emerald-500/20 border-emerald-400/50 text-emerald-300 shadow-[0_0_12px_rgba(16,185,129,0.35)]'
+                      : isSaved
+                      ? 'bg-cyan-500/20 border-cyan-400/40 text-cyan-300'
+                      : 'bg-white/5 hover:bg-white/10 border-white/10 text-slate-300 hover:text-white'
+                  }`}
+                  title={isSaved ? 'Saved in NEXUS Library' : 'Save to NEXUS Library'}
+                >
+                  {recentlySaved ? (
+                    <>
+                      <Check size={14} className="text-emerald-400" />
+                      <span className="font-semibold text-emerald-300">Saved ✓</span>
+                    </>
+                  ) : isSaved ? (
+                    <>
+                      <BookmarkCheck size={14} className="text-cyan-300" />
+                      <span>Saved</span>
+                    </>
+                  ) : (
+                    <>
+                      <Bookmark size={14} />
+                      <span>Save</span>
+                    </>
+                  )}
+                </button>
+
                 <button
                   type="button"
                   onClick={handleCopy}
