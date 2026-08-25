@@ -535,7 +535,10 @@ async function executeProviderChatRequest({
       const payload = (await res.json()) as {
         model?: string;
         choices?: Array<{
-          message?: { content?: string | Array<{ type?: string; text?: string }> };
+          message?: {
+            content?: string | Array<{ type?: string; text?: string }>;
+            reasoning?: string;
+          };
           text?: string;
         }>;
       };
@@ -551,8 +554,20 @@ async function executeProviderChatRequest({
             .join('')
             .trim();
         }
-      } else if (typeof choice?.text === 'string') {
+      }
+
+      if (!text && choice?.message?.reasoning) {
+        if (typeof choice.message.reasoning === 'string') {
+          text = choice.message.reasoning.trim();
+        }
+      }
+
+      if (!text && typeof choice?.text === 'string') {
         text = choice.text.trim();
+      }
+
+      if (!text) {
+        text = "Sorry, I couldn't generate a response right now.";
       }
 
       return {
