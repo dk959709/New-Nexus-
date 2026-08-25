@@ -242,7 +242,10 @@ export function JarvisChat({ config, onOpenSettings }: JarvisChatProps) {
     if (deepParam === 'false') return false;
     return config.deepResearchDefault;
   });
-  const [messages, setMessages] = useState<JarvisMessage[]>(() => storage.getJarvisMessages());
+  const [messages, setMessages] = useState<JarvisMessage[]>(() => {
+    const stored = storage.getJarvisMessages();
+    return [...stored].sort((a, b) => a.timestamp - b.timestamp);
+  });
   const [currentRunningMessageId, setCurrentRunningMessageId] = useState<string | null>(null);
   const [activeSteps, setActiveSteps] = useState<JarvisExecutionStep[]>([]);
   const [expandedStepsMap, setExpandedStepsMap] = useState<Record<string, boolean>>({});
@@ -254,8 +257,20 @@ export function JarvisChat({ config, onOpenSettings }: JarvisChatProps) {
   const [voiceListening, setVoiceListening] = useState(false);
   const initialHandledRef = useRef(false);
   const inputRef = useRef<HTMLInputElement>(null);
+  const messagesEndRef = useRef<HTMLDivElement>(null);
+  const utteranceRef = useRef<SpeechSynthesisUtterance | null>(null);
 
   const isRunning = Boolean(currentRunningMessageId);
+
+  const scrollToBottom = useCallback((behavior: ScrollBehavior = 'smooth') => {
+    if (messagesEndRef.current) {
+      messagesEndRef.current.scrollIntoView({ behavior, block: 'end' });
+    }
+  }, []);
+
+  useEffect(() => {
+    scrollToBottom('smooth');
+  }, [messages, activeSteps, isRunning, scrollToBottom]);
 
   const toggleStepDetails = (id: string) => {
     setExpandedStepsMap((prev) => ({
@@ -285,7 +300,8 @@ export function JarvisChat({ config, onOpenSettings }: JarvisChatProps) {
         steps: [],
       };
 
-      setMessages((prev) => [initialMessage, ...prev]);
+      // Append new messages to the bottom (WhatsApp-style chronological order)
+      setMessages((prev) => [...prev, initialMessage]);
       setQuery('');
       setCurrentRunningMessageId(messageId);
       setActiveSteps([]);
@@ -353,26 +369,100 @@ export function JarvisChat({ config, onOpenSettings }: JarvisChatProps) {
     }
   }, [searchParams, handleSend]);
 
-  // Text-To-Speech Synthesis
-  const toggleSpeak = (text: string, id: string) => {
-    if (!('speechSynthesis' in window)) return;
-
-    if (speakingId === id) {
-      window.speechSynthesis.cancel();
-      setSpeakingId(null);
-      return;
+  // Clean stop for text-to-speech
+  const stopSpeak = useCallback(() => {
+    if (typeof window !== 'undefined' && 'speechSynthesis' in window) {
+      try {
+        window.speechSynthesis.cancel();
+      } catch {
+        // Safe fallback
+      }
     }
+    utteranceRef.current = null;
+    setSpeakingId(null);
+  }, []);
 
-    window.speechSynthesis.cancel();
-    const cleanText = text.replace(/[*#`_-]/g, '').slice(0, 500);
-    const utterance = new SpeechSynthesisUtterance(cleanText);
-    utterance.rate = 1.05;
-    utterance.pitch = 1.0;
-    utterance.onend = () => setSpeakingId(null);
-    utterance.onerror = () => setSpeakingId(null);
-    setSpeakingId(id);
-    window.speechSynthesis.speak(utterance);
-  };
+  // Text-To-Speech Synthesis with persistent ref and replay fix
+  const toggleSpeak = useCallback(
+    (text: string, id: string) => {
+      if (typeof window === 'undefined' || !('speechSynthesis' in window)) return;
+
+      // If user taps the active message, stop playback
+      if (speakingId === id) {
+        stopSpeak();
+        return;
+      }
+
+      // Stop any existing speech and wake engine up from idle/paused state
+      try {
+        window.speechSynthesis.cancel();
+        if (window.speechSynthesis.paused) {
+          window.speechSynthesis.resume();
+        }
+      } catch {
+        // Safe fallback
+      }
+
+      // Clean markdown tags for natural speech
+      const cleanText = text
+        .replace(/```[\s\S]*?```/g, ' Code snippet omitted. ')
+        .replace(/[*#`_~>[\]()]/g, '')
+        .replace(/\s+/g, ' ')
+        .trim();
+
+      if (!cleanText) return;
+
+      const utterance = new SpeechSynthesisUtterance(cleanText.slice(0, 1000));
+      utteranceRef.current = utterance; // Prevent garbage-collection bug
+
+      utterance.rate = 1.0;
+      utterance.pitch = 1.0;
+      utterance.lang = 'en-US';
+
+      utterance.onstart = () => {
+        setSpeakingId(id);
+      };
+
+      utterance.onend = () => {
+        utteranceRef.current = null;
+        setSpeakingId((cur) => (cur === id ? null : cur));
+      };
+
+      utterance.onerror = () => {
+        utteranceRef.current = null;
+        setSpeakingId((cur) => (cur === id ? null : cur));
+      };
+
+      setSpeakingId(id);
+
+      // Timeout allows engine state to settle cleanly before initiating speak
+      setTimeout(() => {
+        try {
+          if (window.speechSynthesis.paused) {
+            window.speechSynthesis.resume();
+          }
+          window.speechSynthesis.speak(utterance);
+        } catch {
+          utteranceRef.current = null;
+          setSpeakingId(null);
+        }
+      }, 40);
+    },
+    [speakingId, stopSpeak],
+  );
+
+  // Clean up speech synthesis on component unmount
+  useEffect(() => {
+    return () => {
+      if (typeof window !== 'undefined' && 'speechSynthesis' in window) {
+        try {
+          window.speechSynthesis.cancel();
+        } catch {
+          // Safe fallback
+        }
+      }
+    };
+  }, []);
 
   // Voice Input (Speech Recognition)
   const toggleVoiceInput = () => {
@@ -419,10 +509,7 @@ export function JarvisChat({ config, onOpenSettings }: JarvisChatProps) {
   };
 
   const handleConfirmClearChat = () => {
-    if (speakingId) {
-      window.speechSynthesis?.cancel();
-      setSpeakingId(null);
-    }
+    stopSpeak();
     storage.clearJarvisMessages();
     setMessages([]);
     setShowClearConfirm(false);
@@ -432,8 +519,7 @@ export function JarvisChat({ config, onOpenSettings }: JarvisChatProps) {
 
   const handleDeleteMessage = (messageId: string) => {
     if (speakingId === messageId) {
-      window.speechSynthesis?.cancel();
-      setSpeakingId(null);
+      stopSpeak();
     }
     setMessages((prev) => {
       const filtered = prev.filter((m) => m.id !== messageId);
@@ -1085,6 +1171,8 @@ export function JarvisChat({ config, onOpenSettings }: JarvisChatProps) {
             </div>
           );
         })}
+        {/* Auto-scroll bottom target anchor */}
+        <div ref={messagesEndRef} className="h-6 w-full pointer-events-none" />
       </div>
     </div>
   );

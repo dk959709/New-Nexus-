@@ -221,10 +221,11 @@ export async function runJarvisPipeline(
 
     const plannerPrompt = `You are the PLANNER agent of JARVIS, a 5-agent multi-AI intelligence system.
 Analyze the user's inquiry: "${query}".
+
 Decide execution strategy:
-- needsResearch: true if the query requires external factual data, news, historical background, documentation, or entity info. False for basic greetings, logical puzzles, code snippets, or generic queries.
-- needsFactCheck: true if claims, statistics, or dates require validation.
-- needsReview: true if complex reasoning, critique, or multi-faceted analysis is needed.
+- needsResearch: true if the query requires external factual data, current events, technical documentation, citations, or domain facts. False for simple casual greetings or trivial one-liners.
+- needsFactCheck: true if claims, statistics, historical dates, or verifiable technical details need validation.
+- needsReview: true for complex, multi-part, analytical, coding, architecture, design, policy, comparative, or reasoning-heavy questions that benefit from quality evaluation, nuance verification, or structural critique. Set false only for trivial greetings (e.g. "hi", "how are you") or simple single-fact lookups.
 
 Output ONLY a JSON object with this exact structure:
 {
@@ -232,7 +233,7 @@ Output ONLY a JSON object with this exact structure:
   "plan": ["step 1", "step 2"],
   "needsResearch": true,
   "needsFactCheck": true,
-  "needsReview": false
+  "needsReview": true
 }`;
 
     const planRes = await callAgent('planner', [
@@ -270,6 +271,12 @@ Output ONLY a JSON object with this exact structure:
     }
   }
 
+  // Heuristic detection for complex queries (multi-clause, comparisons, code/technical, detailed explanations)
+  const isComplexQuery =
+    query.length > 50 ||
+    /\b(how|why|compare|versus|vs|explain|difference|implement|create|design|code|analyze|architecture|review|best practices|pros and cons|guide|steps|tutorial)\b/i.test(query) ||
+    query.includes('?') && query.split(' ').length > 7;
+
   // Determine which downstream agents are required
   const shouldResearch =
     agentConfigs.researcher.enabled &&
@@ -277,11 +284,11 @@ Output ONLY a JSON object with this exact structure:
 
   const shouldFactCheck =
     agentConfigs.factChecker.enabled &&
-    (deepResearch || (shouldResearch && plannerOutput.needsFactCheck));
+    (deepResearch || (shouldResearch && plannerOutput.needsFactCheck) || isComplexQuery);
 
   const shouldReview =
     agentConfigs.reviewer.enabled &&
-    (deepResearch || plannerOutput.needsReview);
+    (deepResearch || plannerOutput.needsReview || isComplexQuery);
 
   // ==========================================
   // STEP 2: 🔎 RESEARCHER

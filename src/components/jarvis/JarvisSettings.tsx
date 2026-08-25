@@ -80,6 +80,7 @@ export function JarvisSettings({ onSaved }: JarvisSettingsProps) {
   const [config, setConfig] = useState<JarvisSystemConfig>(() => storage.getJarvisConfig());
   const [providersState] = useState(() => storage.getAIProvidersState());
   const [saveStatus, setSaveStatus] = useState<string | null>(null);
+  const [isSavedRecently, setIsSavedRecently] = useState(false);
   const [validationErrors, setValidationErrors] = useState<Record<string, string>>({});
 
   const availableProviders: Array<{ id: string; name: string; model: string; keyCount: number }> = [
@@ -128,9 +129,10 @@ export function JarvisSettings({ onSaved }: JarvisSettingsProps) {
   const handleSave = () => {
     const errors: Record<string, string> = {};
 
+    // Validate active agents
     AGENT_ORDER.forEach((agentId) => {
       const agent = config.agents[agentId];
-      if (agent.enabled) {
+      if (agent && agent.enabled) {
         if (!agent.providerId) {
           errors[agentId] = `${agent.name} requires a selected AI Provider.`;
         } else if (!agent.modelId || !agent.modelId.trim()) {
@@ -138,14 +140,14 @@ export function JarvisSettings({ onSaved }: JarvisSettingsProps) {
         } else if (agent.providerId !== 'existing') {
           const found = providersState.providers.find((p) => p.id === agent.providerId);
           if (!found) {
-            errors[agentId] = `Selected provider "${agent.providerId}" no longer exists in AI Providers.`;
+            errors[agentId] = `Selected provider for ${agent.name} no longer exists. Please reselect a provider.`;
           }
         }
 
         if (agent.enableFailover && agent.fallbackProviderId && agent.fallbackProviderId !== 'existing') {
           const foundFallback = providersState.providers.find((p) => p.id === agent.fallbackProviderId);
           if (!foundFallback) {
-            errors[`${agentId}_fallback`] = `Fallback provider no longer exists.`;
+            errors[`${agentId}_fallback`] = `Fallback provider for ${agent.name} no longer exists.`;
           }
         }
       }
@@ -153,16 +155,19 @@ export function JarvisSettings({ onSaved }: JarvisSettingsProps) {
 
     if (Object.keys(errors).length > 0) {
       setValidationErrors(errors);
+      window.scrollTo({ top: 0, behavior: 'smooth' });
       return;
     }
 
     setValidationErrors({});
     storage.saveJarvisConfig(config);
-    setSaveStatus('JARVIS Configuration saved successfully!');
+    setIsSavedRecently(true);
+    setSaveStatus('JARVIS configuration saved and applied successfully!');
     onSaved?.(config);
 
     setTimeout(() => {
       setSaveStatus(null);
+      setIsSavedRecently(false);
     }, 3500);
   };
 
@@ -170,9 +175,13 @@ export function JarvisSettings({ onSaved }: JarvisSettingsProps) {
     if (window.confirm('Reset all 5 JARVIS agents to optimal default configurations?')) {
       setConfig(DEFAULT_JARVIS_CONFIG);
       storage.saveJarvisConfig(DEFAULT_JARVIS_CONFIG);
+      setIsSavedRecently(true);
       setSaveStatus('Reset to default JARVIS configuration.');
       onSaved?.(DEFAULT_JARVIS_CONFIG);
-      setTimeout(() => setSaveStatus(null), 3000);
+      setTimeout(() => {
+        setSaveStatus(null);
+        setIsSavedRecently(false);
+      }, 3000);
     }
   };
 
@@ -202,7 +211,7 @@ export function JarvisSettings({ onSaved }: JarvisSettingsProps) {
             </p>
           </div>
 
-          <div style={{ display: 'flex', gap: '10px', alignItems: 'center' }}>
+          <div style={{ display: 'flex', gap: '10px', alignItems: 'center', flexWrap: 'wrap' }}>
             <Link
               to="/settings"
               className="secondary-button"
@@ -238,6 +247,31 @@ export function JarvisSettings({ onSaved }: JarvisSettingsProps) {
             >
               <RotateCcw size={13} />
               Reset Defaults
+            </button>
+
+            <button
+              type="button"
+              onClick={handleSave}
+              style={{
+                display: 'inline-flex',
+                alignItems: 'center',
+                gap: '6px',
+                padding: '8px 16px',
+                fontSize: '12px',
+                borderRadius: '8px',
+                fontWeight: 700,
+                border: 'none',
+                cursor: 'pointer',
+                background: isSavedRecently
+                  ? 'linear-gradient(135deg, #10b981 0%, #059669 100%)'
+                  : 'linear-gradient(135deg, #61d7c9 0%, #38bdf8 100%)',
+                color: '#051218',
+                boxShadow: isSavedRecently ? '0 0 16px rgba(16,185,129,0.45)' : '0 0 12px rgba(97,215,201,0.25)',
+                transition: 'all 0.25s ease',
+              }}
+            >
+              {isSavedRecently ? <CheckCircle2 size={13} /> : <Save size={13} />}
+              <span>{isSavedRecently ? 'Saved ✓' : 'Save Config'}</span>
             </button>
           </div>
         </div>
@@ -665,16 +699,39 @@ export function JarvisSettings({ onSaved }: JarvisSettingsProps) {
         })}
       </div>
 
-      {/* Save Button */}
+      {/* Save Button Action Bar */}
       <div
         style={{
           display: 'flex',
-          justifyContent: 'flex-end',
+          justifyContent: 'space-between',
           alignItems: 'center',
+          flexWrap: 'wrap',
           gap: '14px',
-          padding: '18px 0',
+          padding: '20px 24px',
+          borderRadius: '16px',
+          background: 'linear-gradient(135deg, rgba(8,20,34,0.95) 0%, rgba(14,26,48,0.95) 100%)',
+          border: '1px solid rgba(97,215,201,0.35)',
+          boxShadow: '0 8px 32px rgba(0,0,0,0.4)',
         }}
       >
+        <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
+          {saveStatus ? (
+            <div style={{ display: 'flex', alignItems: 'center', gap: '8px', color: '#34d399', fontWeight: 700, fontSize: '13px' }}>
+              <CheckCircle2 size={17} />
+              <span>{saveStatus}</span>
+            </div>
+          ) : Object.keys(validationErrors).length > 0 ? (
+            <div style={{ display: 'flex', alignItems: 'center', gap: '8px', color: '#fb7185', fontSize: '13px', fontWeight: 600 }}>
+              <ShieldAlert size={16} />
+              <span>{Object.keys(validationErrors).length} error(s) found above. Please review your settings.</span>
+            </div>
+          ) : (
+            <span style={{ fontSize: '13px', color: 'var(--muted)' }}>
+              Configuration updates are stored in local runtime persistence and take effect immediately.
+            </span>
+          )}
+        </div>
+
         <button
           type="button"
           onClick={handleSave}
@@ -683,14 +740,24 @@ export function JarvisSettings({ onSaved }: JarvisSettingsProps) {
             display: 'inline-flex',
             alignItems: 'center',
             gap: '8px',
-            padding: '14px 28px',
+            padding: '13px 28px',
             fontSize: '14px',
             borderRadius: '10px',
             fontWeight: 700,
+            background: isSavedRecently
+              ? 'linear-gradient(135deg, #10b981 0%, #059669 100%)'
+              : 'linear-gradient(135deg, #61d7c9 0%, #38bdf8 100%)',
+            color: '#051218',
+            border: 'none',
+            cursor: 'pointer',
+            boxShadow: isSavedRecently
+              ? '0 0 20px rgba(16,185,129,0.5)'
+              : '0 0 16px rgba(97,215,201,0.4)',
+            transition: 'all 0.25s ease',
           }}
         >
-          <Save size={17} />
-          Save JARVIS Configuration
+          {isSavedRecently ? <CheckCircle2 size={17} /> : <Save size={17} />}
+          <span>{isSavedRecently ? 'Configuration Saved ✓' : 'Save JARVIS Configuration'}</span>
         </button>
       </div>
     </div>
