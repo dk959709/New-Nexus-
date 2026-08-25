@@ -1,104 +1,120 @@
 import { Component, type ErrorInfo, type ReactNode } from 'react';
-import { AlertTriangle, RefreshCw } from 'lucide-react';
+import { AlertTriangle, RefreshCw, RotateCcw, ChevronDown, ChevronUp } from 'lucide-react';
 
 interface Props {
   children: ReactNode;
+  fallback?: ReactNode;
 }
 
 interface State {
   hasError: boolean;
   error: Error | null;
+  errorInfo: ErrorInfo | null;
+  showDetails: boolean;
 }
 
 export class ErrorBoundary extends Component<Props, State> {
   public state: State = {
     hasError: false,
     error: null,
+    errorInfo: null,
+    showDetails: false,
   };
 
-  public static getDerivedStateFromError(error: Error): State {
+  public static getDerivedStateFromError(error: Error): Partial<State> {
     return { hasError: true, error };
   }
 
   public componentDidCatch(error: Error, errorInfo: ErrorInfo) {
     console.error('[NEXUS Uncaught Error]', error, errorInfo);
+    this.setState({ errorInfo });
   }
 
-  private handleReset = () => {
-    this.setState({ hasError: false, error: null });
+  private handleTryAgain = () => {
+    this.setState({ hasError: false, error: null, errorInfo: null });
+  };
+
+  private handleReload = () => {
+    this.setState({ hasError: false, error: null, errorInfo: null });
     window.location.reload();
+  };
+
+  private toggleDetails = () => {
+    this.setState((prev) => ({ showDetails: !prev.showDetails }));
   };
 
   public render() {
     if (this.state.hasError) {
+      if (this.props.fallback) {
+        return this.props.fallback;
+      }
+
       return (
         <div
-          style={{
-            minHeight: '100vh',
-            display: 'flex',
-            alignItems: 'center',
-            justifyContent: 'center',
-            padding: '24px',
-            background: 'var(--bg, #060e12)',
-            color: 'var(--text, #d7eef2)',
-            fontFamily: 'system-ui, sans-serif',
-          }}
+          id="error-boundary-screen"
+          className="min-h-screen flex items-center justify-center p-6 bg-slate-950 text-slate-100 font-sans"
         >
           <div
+            className="w-full max-w-lg p-6 sm:p-8 rounded-3xl backdrop-blur-xl border border-rose-500/30 text-center shadow-2xl"
             style={{
-              maxWidth: '480px',
-              width: '100%',
-              background: 'rgba(10, 22, 28, 0.9)',
-              border: '1px solid rgba(239, 68, 68, 0.3)',
-              borderRadius: '12px',
-              padding: '28px',
-              textAlign: 'center',
-              boxShadow: '0 12px 30px rgba(0, 0, 0, 0.5)',
+              background: 'linear-gradient(145deg, rgba(15, 23, 42, 0.95) 0%, rgba(30, 10, 20, 0.95) 100%)',
+              boxShadow: '0 20px 50px rgba(0,0,0,0.6), 0 0 30px rgba(244,63,94,0.15)',
             }}
           >
-            <div
-              style={{
-                width: '48px',
-                height: '48px',
-                borderRadius: '50%',
-                background: 'rgba(239, 68, 68, 0.15)',
-                color: '#ef4444',
-                display: 'flex',
-                alignItems: 'center',
-                justifyContent: 'center',
-                margin: '0 auto 16px',
-              }}
-            >
-              <AlertTriangle size={24} />
+            <div className="w-14 h-14 rounded-full bg-rose-500/20 text-rose-400 border border-rose-500/40 flex items-center justify-center mx-auto mb-4 shadow-[0_0_20px_rgba(244,63,94,0.3)]">
+              <AlertTriangle size={28} />
             </div>
 
-            <h2 style={{ fontSize: '18px', fontWeight: 600, marginBottom: '8px', color: '#fff' }}>
-              Something went wrong
+            <h2 className="text-xl font-bold text-white mb-2 tracking-tight">
+              Application Encountered an Issue
             </h2>
 
-            <p style={{ fontSize: '14px', color: 'var(--muted, #86a8b0)', marginBottom: '20px', lineHeight: 1.5 }}>
-              {this.state.error?.message || 'An unexpected rendering error occurred.'}
+            <p className="text-sm text-slate-300 mb-6 leading-relaxed">
+              {this.state.error?.message || 'An unexpected rendering error occurred in this view.'}
             </p>
 
-            <button
-              onClick={this.handleReset}
-              style={{
-                display: 'inline-flex',
-                alignItems: 'center',
-                gap: '8px',
-                background: 'var(--accent, #00d2ff)',
-                color: '#041014',
-                fontWeight: 600,
-                fontSize: '13px',
-                padding: '10px 20px',
-                borderRadius: '8px',
-                border: 'none',
-                cursor: 'pointer',
-              }}
-            >
-              <RefreshCw size={14} />
-              Reload Page
-            </button>
+            <div className="flex items-center justify-center gap-3 flex-wrap mb-4">
+              <button
+                type="button"
+                onClick={this.handleTryAgain}
+                className="px-5 py-2.5 rounded-full font-bold text-xs sm:text-sm bg-cyan-500 hover:bg-cyan-400 text-slate-950 transition-all duration-200 flex items-center gap-2 shadow-lg hover:shadow-cyan-500/25"
+              >
+                <RotateCcw size={14} />
+                Try Again
+              </button>
+
+              <button
+                type="button"
+                onClick={this.handleReload}
+                className="px-5 py-2.5 rounded-full font-bold text-xs sm:text-sm bg-white/10 hover:bg-white/20 text-white border border-white/15 transition-all duration-200 flex items-center gap-2 shadow-sm"
+              >
+                <RefreshCw size={14} />
+                Reload Page
+              </button>
+            </div>
+
+            {/* Diagnostic Details Toggle */}
+            {this.state.error && (
+              <div className="mt-4 pt-4 border-t border-white/10 text-left">
+                <button
+                  type="button"
+                  onClick={this.toggleDetails}
+                  className="w-full flex items-center justify-between text-xs text-slate-400 hover:text-slate-200 py-1"
+                >
+                  <span className="font-mono font-medium">Diagnostic Details</span>
+                  {this.state.showDetails ? <ChevronUp size={14} /> : <ChevronDown size={14} />}
+                </button>
+
+                {this.state.showDetails && (
+                  <div className="mt-2 p-3 rounded-xl bg-slate-900/90 border border-slate-800 text-[11px] font-mono text-rose-300 overflow-x-auto max-h-40 leading-relaxed">
+                    <p className="font-bold text-white mb-1">{this.state.error.name}: {this.state.error.message}</p>
+                    {this.state.error.stack && (
+                      <pre className="text-slate-400 text-[10px] whitespace-pre-wrap">{this.state.error.stack}</pre>
+                    )}
+                  </div>
+                )}
+              </div>
+            )}
           </div>
         </div>
       );
@@ -107,3 +123,4 @@ export class ErrorBoundary extends Component<Props, State> {
     return this.props.children;
   }
 }
+
