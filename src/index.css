@@ -2029,43 +2029,6 @@
   }
 }
 
-/* JARVIS Fixed Bottom Console Container */
-.jarvis-fixed-bottom-container {
-  position: fixed;
-  bottom: 0;
-  left: 240px;
-  right: 0;
-  z-index: 50;
-  padding: 8px 24px 18px;
-  background: linear-gradient(to top, rgba(7, 16, 22, 0.98) 75%, rgba(7, 16, 22, 0.85) 90%, transparent 100%);
-  backdrop-filter: blur(16px);
-  -webkit-backdrop-filter: blur(16px);
-  pointer-events: none;
-  box-sizing: border-box;
-}
-
-@media (max-width: 800px) {
-  .jarvis-fixed-bottom-container {
-    left: 205px;
-    padding: 8px 16px 14px;
-  }
-}
-
-@media (max-width: 620px) {
-  .jarvis-fixed-bottom-container {
-    left: 0;
-    bottom: calc(56px + env(safe-area-inset-bottom, 0px));
-    padding: 6px 10px 10px;
-  }
-}
-
-.jarvis-fixed-bottom-inner {
-  pointer-events: auto;
-  max-width: 1020px;
-  margin: 0 auto;
-  width: 100%;
-}
-
 
 
 
