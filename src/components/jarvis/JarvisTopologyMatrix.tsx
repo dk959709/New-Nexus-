@@ -5,6 +5,7 @@ import {
   ShieldCheck,
   Microscope,
   Sparkles,
+  Layers,
   Cpu,
   ArrowRight,
   Zap,
@@ -80,6 +81,16 @@ const AGENTS_META: Array<{
     detailedPurpose: 'Transforms verified findings into a beautifully structured, comprehensive response for the user with zero internal reasoning leaks.',
     sampleQuery: 'Synthesize a definitive executive briefing on commercial fusion reactor timelines.',
   },
+  {
+    role: 'architect',
+    name: 'ARCHITECT',
+    emoji: '🏗️',
+    icon: Layers,
+    color: '#f59e0b',
+    description: 'Generates precision vector SVG blueprints & diagrams',
+    detailedPurpose: 'Engaged in Diagram Mode for structural or process concepts to produce sleek, dark-themed SVG architecture diagrams and workflow charts.',
+    sampleQuery: 'Explain the event-driven microservices architecture with a visual diagram.',
+  },
 ];
 
 export function JarvisTopologyMatrix({
@@ -116,7 +127,7 @@ export function JarvisTopologyMatrix({
           <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
             <Cpu size={18} className="text-accent" />
             <h3 style={{ margin: 0, fontSize: '18px', fontWeight: 800, color: '#fff' }}>
-              5-Agent Neural Pipeline Topology
+              6-Agent Neural Pipeline Topology
             </h3>
             <span
               style={{

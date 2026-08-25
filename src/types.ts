@@ -154,6 +154,7 @@ export type JarvisAgentId =
   | 'factChecker'
   | 'reviewer'
   | 'finalSynthesizer'
+  | 'architect'
   | string;
 
 export type CustomAgentPipelinePosition =
@@ -185,7 +186,11 @@ export interface CustomJarvisAgentConfig extends JarvisAgentConfig {
 
 export interface JarvisSystemConfig {
   deepResearchDefault: boolean;
-  agents: Record<'planner' | 'researcher' | 'factChecker' | 'reviewer' | 'finalSynthesizer', JarvisAgentConfig>;
+  diagramModeDefault?: boolean;
+  agents: Record<
+    'planner' | 'researcher' | 'factChecker' | 'reviewer' | 'finalSynthesizer' | 'architect',
+    JarvisAgentConfig
+  >;
   customAgents?: CustomJarvisAgentConfig[];
 }
 
@@ -211,6 +216,8 @@ export interface JarvisMessage {
   answer: string;
   timestamp: number;
   deepResearch: boolean;
+  diagramMode?: boolean;
+  diagramSvg?: string;
   steps: JarvisExecutionStep[];
   sources?: AISource[];
   error?: string;

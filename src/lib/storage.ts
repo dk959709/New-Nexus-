@@ -49,15 +49,16 @@ Live Context / Search Data:
 
 Instructions:
 - Extract 3-7 concise, verified facts directly relevant to the task.
-- Each fact must be specific (include numbers, dates, names when available) - avoid vague statements.
-- Only use facts supported by the provided search data. Do not add outside knowledge or assumptions.
-- If search data is empty or insufficient, return an empty facts array and note this in a "notes" field.
-- List only sources actually used to support the facts above.
-- Keep total output concise - this is a research summary, not a full article.
+- Each fact must be specific (include numbers, dates, names, or key technical/factual details when available).
+- Synthesize facts from the provided search data and high-confidence domain knowledge.
+- If search snippets are available, ground your facts in them and list the corresponding sources.
+- If search snippets are brief, supplement with verified factual knowledge to fully address the inquiry.
+- Always output a non-empty list of core facts.
+- Keep total output concise - this is a research briefing, not a full article.
 
 Output ONLY a valid JSON object in this exact format, no extra text:
 {
-  "facts": ["Concise fact 1", "Concise fact 2"],
+  "facts": ["Concise fact 1", "Concise fact 2", "Concise fact 3"],
   "sources": [{"title": "Source name", "url": "https://...", "domain": "domain.com"}],
   "notes": ""
 }`,
@@ -117,10 +118,29 @@ Guidelines:
 - If sources are present, cite them clearly and only cite sources actually used.
 - If the available information is incomplete or uncertain, say so honestly rather than filling gaps with confident-sounding guesses.
 - End with a natural conclusion - do not pad the response just to reach a target length.`,
+
+  architect: `You are the ARCHITECT agent of JARVIS, specializing in visual system design and structural concept diagrams.
+
+Task: "{task}"
+Synthesized Solution / Core Context:
+{answer}
+
+Instructions:
+- Generate a clean, modern, dark-themed SVG diagram (viewBox="0 0 800 450") illustrating the core architecture, process workflow, hierarchy, structural comparison, or spatial concept.
+- Design with a futuristic, clean JARVIS theme:
+  * Background: Dark navy/slate (#070d19 or #0a1124 with a subtle rounded <rect width="100%" height="100%" rx="16" fill="#070d19"/>)
+  * Nodes/Cards: Sleek rounded rects (<rect rx="8" ...>) with dark translucent fills (#0e1f36, #161b33) and vivid borders (#00f0ff, #38bdf8, #a855f7, #34d399, #f59e0b)
+  * Text: Clear sans-serif font (<text font-family="system-ui, -apple-system, sans-serif">), bold titles (#ffffff, #e2e8f0) and concise subtitles/labels (#94a3b8, #67e8f9)
+  * Flow/Arrows: Smooth connector lines/paths (<path d="..." stroke="#38bdf8" marker-end="url(#arrow)">)
+  * Include <defs> with linear gradients, glows, and arrowhead markers for visual polish
+- Ensure all text elements are readable with proper font-size (12px-16px) and x/y positioning.
+- Keep the layout well-balanced, centered, uncluttered, and easy to understand at a glance.
+- Output ONLY the raw <svg xmlns="http://www.w3.org/2000/svg" ...>...</svg> markup. No markdown code fences, no explanations, no text before or after the svg tag.`,
 };
 
 export const DEFAULT_JARVIS_CONFIG: JarvisSystemConfig = {
   deepResearchDefault: false,
+  diagramModeDefault: false,
   customAgents: [],
   agents: {
     planner: {
@@ -145,7 +165,7 @@ export const DEFAULT_JARVIS_CONFIG: JarvisSystemConfig = {
       providerId: 'existing',
       modelId: 'deepseek/deepseek-chat',
       enabled: true,
-      maxTokens: 500,
+      maxTokens: 1200,
       enableFailover: false,
       systemPrompt: DEFAULT_AGENT_SYSTEM_PROMPTS.researcher,
     },
@@ -187,6 +207,19 @@ export const DEFAULT_JARVIS_CONFIG: JarvisSystemConfig = {
       maxTokens: 650,
       enableFailover: false,
       systemPrompt: DEFAULT_AGENT_SYSTEM_PROMPTS.finalSynthesizer,
+    },
+    architect: {
+      id: 'architect',
+      name: 'Architect',
+      role: 'SVG Architecture & Diagram Generation',
+      description: 'Generates precision, dark-themed SVG diagrams illustrating structural concepts, workflows, and hierarchies.',
+      icon: '🏗️',
+      providerId: 'existing',
+      modelId: 'deepseek/deepseek-chat',
+      enabled: true,
+      maxTokens: 800,
+      enableFailover: false,
+      systemPrompt: DEFAULT_AGENT_SYSTEM_PROMPTS.architect,
     },
   },
 };
@@ -345,9 +378,12 @@ export const storage = {
         researcher: {
           ...DEFAULT_JARVIS_CONFIG.agents.researcher,
           ...(stored.agents.researcher || {}),
+          maxTokens: Math.max(800, stored.agents.researcher?.maxTokens || 1200),
           systemPrompt:
             !stored.agents.researcher?.systemPrompt ||
-            stored.agents.researcher?.systemPrompt?.includes('Extract verified facts and source references.\nOutput ONLY a JSON object:')
+            stored.agents.researcher?.systemPrompt?.includes('Extract verified facts and source references.\nOutput ONLY a JSON object:') ||
+            stored.agents.researcher?.systemPrompt?.includes('If search data is empty or insufficient, return an empty facts array') ||
+            !stored.agents.researcher?.systemPrompt?.includes('Synthesize facts from the provided search data')
               ? DEFAULT_AGENT_SYSTEM_PROMPTS.researcher
               : stored.agents.researcher.systemPrompt,
         },
@@ -378,6 +414,16 @@ export const storage = {
             !stored.agents.finalSynthesizer?.systemPrompt?.includes('Aim for a complete but focused answer (roughly 400-550 words).')
               ? DEFAULT_AGENT_SYSTEM_PROMPTS.finalSynthesizer
               : stored.agents.finalSynthesizer.systemPrompt,
+        },
+        architect: {
+          ...DEFAULT_JARVIS_CONFIG.agents.architect,
+          ...(stored.agents.architect || {}),
+          maxTokens: Math.max(600, stored.agents.architect?.maxTokens || 800),
+          systemPrompt:
+            !stored.agents.architect?.systemPrompt ||
+            !stored.agents.architect.systemPrompt.includes('viewBox="0 0 800 450"')
+              ? DEFAULT_AGENT_SYSTEM_PROMPTS.architect
+              : stored.agents.architect.systemPrompt,
         },
       },
     };

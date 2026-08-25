@@ -273,20 +273,6 @@ export function HomePage() {
             </Link>
           </div>
         )}
-
-        {/* ================================================== */}
-        {/* BOTTOM SEARCH BAR                                  */}
-        {/* ================================================== */}
-        <div className="bottom-search-wrap relative z-10 mt-10 pt-8 border-t border-white/10">
-          <div className="flex items-center justify-between gap-2 mb-4">
-            <div className="flex items-center gap-2">
-              <span className="w-2 h-2 rounded-full bg-cyan-400" />
-              <span className="text-xs font-mono tracking-widest text-cyan-300 uppercase font-bold">Quick Bottom Search</span>
-            </div>
-            <span className="text-xs text-slate-400 font-mono hidden sm:inline">Search again without scrolling up</span>
-          </div>
-          <SearchBox onSearch={search} recent={storage.getSearches()} />
-        </div>
       </div>
     </>
   );

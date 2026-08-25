@@ -31,6 +31,7 @@ import { JarvisCoreVisualizer } from './JarvisCoreVisualizer';
 import { JarvisTopologyMatrix } from './JarvisTopologyMatrix';
 import { JarvisCategoryDeck } from './JarvisCategoryDeck';
 import { JarvisQuantumOrb } from './JarvisQuantumOrb';
+import { JarvisSvgDiagram } from './JarvisSvgDiagram';
 import type {
   JarvisExecutionStep,
   JarvisMessage,
@@ -79,6 +80,13 @@ const AGENT_COLORS: Record<string, { bg: string; border: string; text: string; g
     text: '#fb7185',
     glow: 'rgba(244, 63, 94, 0.3)',
     gradient: 'linear-gradient(135deg, rgba(244,63,94,0.3) 0%, rgba(225,29,72,0.15) 100%)',
+  },
+  architect: {
+    bg: 'rgba(245, 158, 11, 0.15)',
+    border: 'rgba(245, 158, 11, 0.45)',
+    text: '#fbbf24',
+    glow: 'rgba(245, 158, 11, 0.35)',
+    gradient: 'linear-gradient(135deg, rgba(245,158,11,0.3) 0%, rgba(217,119,6,0.15) 100%)',
   },
 };
 
@@ -245,6 +253,12 @@ export function JarvisChat({ config, onOpenSettings }: JarvisChatProps) {
     if (deepParam === 'false') return false;
     return config.deepResearchDefault;
   });
+  const [diagramMode, setDiagramMode] = useState(() => {
+    const diagParam = searchParams.get('diagram');
+    if (diagParam === 'true') return true;
+    if (diagParam === 'false') return false;
+    return config.diagramModeDefault ?? false;
+  });
   const [messages, setMessages] = useState<JarvisMessage[]>(() => {
     const stored = storage.getJarvisMessages();
     return [...stored].sort((a, b) => a.timestamp - b.timestamp);
@@ -305,6 +319,7 @@ export function JarvisChat({ config, onOpenSettings }: JarvisChatProps) {
         answer: '',
         timestamp: Date.now(),
         deepResearch,
+        diagramMode,
         steps: [],
       };
 
@@ -315,7 +330,7 @@ export function JarvisChat({ config, onOpenSettings }: JarvisChatProps) {
       setActiveSteps([]);
 
       try {
-        const result = await runJarvisPipeline(prompt, config, deepResearch, (updatedStep) => {
+        const result = await runJarvisPipeline(prompt, config, deepResearch, diagramMode, (updatedStep) => {
           setActiveSteps((prev) => {
             const idx = prev.findIndex((s) => s.agentId === updatedStep.agentId);
             if (idx >= 0) {
@@ -333,8 +348,10 @@ export function JarvisChat({ config, onOpenSettings }: JarvisChatProps) {
           answer: result.answer,
           timestamp: Date.now(),
           deepResearch,
+          diagramMode,
           steps: result.steps,
           sources: result.sources,
+          diagramSvg: result.diagramSvg,
           error: result.error,
         };
 
@@ -351,6 +368,7 @@ export function JarvisChat({ config, onOpenSettings }: JarvisChatProps) {
           answer: 'Sorry, I encountered an issue during multi-agent execution.',
           timestamp: Date.now(),
           deepResearch,
+          diagramMode,
           steps: activeSteps,
           error: errMsg,
         };
@@ -364,7 +382,7 @@ export function JarvisChat({ config, onOpenSettings }: JarvisChatProps) {
         setCurrentRunningMessageId(null);
       }
     },
-    [query, isRunning, deepResearch, config, activeSteps],
+    [query, isRunning, deepResearch, diagramMode, config, activeSteps],
   );
 
   useEffect(() => {
@@ -749,11 +767,18 @@ export function JarvisChat({ config, onOpenSettings }: JarvisChatProps) {
                     <span className="text-[10px] font-mono tracking-widest text-indigo-200 uppercase font-bold">
                       INQUIRY
                     </span>
-                    {msg.deepResearch && (
-                      <span className="px-2.5 py-0.5 rounded-full bg-cyan-500/20 border border-cyan-400/40 text-cyan-300 text-[10px] font-mono font-bold">
-                        ⚡ DEEP RESEARCH
-                      </span>
-                    )}
+                    <div className="flex items-center gap-1.5 flex-wrap">
+                      {msg.deepResearch && (
+                        <span className="px-2.5 py-0.5 rounded-full bg-cyan-500/20 border border-cyan-400/40 text-cyan-300 text-[10px] font-mono font-bold">
+                          ⚡ DEEP RESEARCH
+                        </span>
+                      )}
+                      {msg.diagramMode && (
+                        <span className="px-2.5 py-0.5 rounded-full bg-amber-500/20 border border-amber-400/40 text-amber-300 text-[10px] font-mono font-bold">
+                          🏗️ DIAGRAM MODE
+                        </span>
+                      )}
+                    </div>
                   </div>
                   <h3 className="text-base sm:text-lg font-bold text-white m-0 leading-relaxed">
                     {msg.query}
@@ -962,6 +987,11 @@ export function JarvisChat({ config, onOpenSettings }: JarvisChatProps) {
                     <FormattedText content={msg.answer} />
                   </div>
 
+                  {/* SVG Architectural Blueprint Diagram */}
+                  {msg.diagramSvg && (
+                    <JarvisSvgDiagram svgMarkup={msg.diagramSvg} title={msg.query} />
+                  )}
+
                   {/* Cited Sources (Rounded Colorful Tags) */}
                   {msg.sources && msg.sources.length > 0 && (
                     <div className="mt-6 pt-4 border-t border-white/10 flex flex-col gap-2">
@@ -1102,44 +1132,84 @@ export function JarvisChat({ config, onOpenSettings }: JarvisChatProps) {
             </button>
           </div>
 
-          {/* Controls Hub: Deep Research Switch & Round Action Chips */}
+          {/* Controls Hub: Deep Research & Diagram Mode Switches + Action Chips */}
           <div className="flex items-center justify-between flex-wrap gap-3 pt-1">
-            {/* Deep Research Colorful Pill Switch */}
-            <label
-              className="inline-flex items-center gap-2.5 px-3.5 py-1.5 rounded-full cursor-pointer transition-all duration-200 border"
-              style={{
-                background: deepResearch
-                  ? 'linear-gradient(135deg, rgba(97,215,201,0.2) 0%, rgba(56,189,248,0.15) 100%)'
-                  : 'rgba(255,255,255,0.03)',
-                borderColor: deepResearch ? 'rgba(97,215,201,0.5)' : 'rgba(255,255,255,0.1)',
-                boxShadow: deepResearch ? '0 0 14px rgba(97,215,201,0.25)' : 'none',
-              }}
-            >
-              <input
-                type="checkbox"
-                checked={deepResearch}
-                onChange={(e) => setDeepResearch(e.target.checked)}
-                className="hidden"
-              />
-              <div
-                className={`w-8 h-4 rounded-full transition-colors relative flex items-center p-0.5 ${
-                  deepResearch ? 'bg-cyan-400' : 'bg-slate-700'
-                }`}
+            <div className="flex items-center gap-2.5 flex-wrap">
+              {/* Deep Research Colorful Pill Switch */}
+              <label
+                className="inline-flex items-center gap-2 px-3 py-1.5 rounded-full cursor-pointer transition-all duration-200 border"
+                style={{
+                  background: deepResearch
+                    ? 'linear-gradient(135deg, rgba(97,215,201,0.2) 0%, rgba(56,189,248,0.15) 100%)'
+                    : 'rgba(255,255,255,0.03)',
+                  borderColor: deepResearch ? 'rgba(97,215,201,0.5)' : 'rgba(255,255,255,0.1)',
+                  boxShadow: deepResearch ? '0 0 14px rgba(97,215,201,0.25)' : 'none',
+                }}
               >
-                <div
-                  className={`w-3 h-3 rounded-full bg-slate-950 transition-transform duration-200 ${
-                    deepResearch ? 'translate-x-4' : 'translate-x-0'
-                  }`}
+                <input
+                  type="checkbox"
+                  checked={deepResearch}
+                  onChange={(e) => setDeepResearch(e.target.checked)}
+                  className="hidden"
                 />
-              </div>
-              <span
-                className={`text-xs font-bold font-mono tracking-wide ${
-                  deepResearch ? 'text-cyan-300' : 'text-slate-400'
-                }`}
+                <div
+                  className={`w-7 h-3.5 rounded-full transition-colors relative flex items-center p-0.5 ${
+                    deepResearch ? 'bg-cyan-400' : 'bg-slate-700'
+                  }`}
+                >
+                  <div
+                    className={`w-2.5 h-2.5 rounded-full bg-slate-950 transition-transform duration-200 ${
+                      deepResearch ? 'translate-x-3.5' : 'translate-x-0'
+                    }`}
+                  />
+                </div>
+                <span
+                  className={`text-[11px] font-bold font-mono tracking-wide ${
+                    deepResearch ? 'text-cyan-300' : 'text-slate-400'
+                  }`}
+                >
+                  ⚡ DEEP RESEARCH (5-AGENT MESH)
+                </span>
+              </label>
+
+              {/* Diagram Mode Colorful Pill Switch */}
+              <label
+                className="inline-flex items-center gap-2 px-3 py-1.5 rounded-full cursor-pointer transition-all duration-200 border"
+                style={{
+                  background: diagramMode
+                    ? 'linear-gradient(135deg, rgba(245,158,11,0.22) 0%, rgba(217,119,6,0.18) 100%)'
+                    : 'rgba(255,255,255,0.03)',
+                  borderColor: diagramMode ? 'rgba(245,158,11,0.55)' : 'rgba(255,255,255,0.1)',
+                  boxShadow: diagramMode ? '0 0 14px rgba(245,158,11,0.3)' : 'none',
+                }}
               >
-                ⚡ DEEP RESEARCH (5-AGENT MESH)
-              </span>
-            </label>
+                <input
+                  type="checkbox"
+                  checked={diagramMode}
+                  onChange={(e) => setDiagramMode(e.target.checked)}
+                  className="hidden"
+                />
+                <div
+                  className={`w-7 h-3.5 rounded-full transition-colors relative flex items-center p-0.5 ${
+                    diagramMode ? 'bg-amber-400' : 'bg-slate-700'
+                  }`}
+                >
+                  <div
+                    className={`w-2.5 h-2.5 rounded-full bg-slate-950 transition-transform duration-200 ${
+                      diagramMode ? 'translate-x-3.5' : 'translate-x-0'
+                    }`}
+                  />
+                </div>
+                <span
+                  className={`text-[11px] font-bold font-mono tracking-wide flex items-center gap-1.5 ${
+                    diagramMode ? 'text-amber-300' : 'text-slate-400'
+                  }`}
+                >
+                  <span>🏗️</span>
+                  <span>DIAGRAM MODE</span>
+                </span>
+              </label>
+            </div>
 
             {/* Round Auxiliary Action Chips */}
             <div className="flex items-center gap-2 flex-wrap">

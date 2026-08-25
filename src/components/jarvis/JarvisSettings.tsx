@@ -41,6 +41,7 @@ const AGENT_ORDER: JarvisAgentId[] = [
   'factChecker',
   'reviewer',
   'finalSynthesizer',
+  'architect',
 ];
 
 const PROMPT_HELP_TAGS: Record<string, { vars: string[]; purpose: string }> = {
@@ -63,6 +64,10 @@ const PROMPT_HELP_TAGS: Record<string, { vars: string[]; purpose: string }> = {
   finalSynthesizer: {
     vars: ['System Prompt Only (Receives rich compiled context in user message)'],
     purpose: 'Synthesizes all verified intelligence and custom agent insights into the final response.',
+  },
+  architect: {
+    vars: ['{task}', '{answer}'],
+    purpose: 'Generates clean, dark-themed SVG diagrams illustrating structural concepts and workflows.',
   },
 };
 
@@ -149,6 +154,7 @@ export function JarvisSettings({ onSaved }: JarvisSettingsProps) {
     factChecker: false,
     reviewer: false,
     finalSynthesizer: false,
+    architect: false,
   });
 
   // Modal / drawer state for "Add New Custom Agent"
@@ -365,7 +371,7 @@ export function JarvisSettings({ onSaved }: JarvisSettingsProps) {
     storage.saveJarvisConfig(DEFAULT_JARVIS_CONFIG);
     setShowResetConfirmModal(false);
     setIsSavedRecently(true);
-    setSaveStatus('All 5 agents and custom agents have been reset to original factory defaults.');
+    setSaveStatus('All 6 agents and custom agents have been reset to original factory defaults.');
     onSaved?.(DEFAULT_JARVIS_CONFIG);
     setTimeout(() => {
       setSaveStatus(null);
@@ -509,7 +515,7 @@ export function JarvisSettings({ onSaved }: JarvisSettingsProps) {
           <div style={{ display: 'flex', alignItems: 'center', gap: '8px', color: 'var(--accent)' }}>
             <Sliders size={15} />
             <span>
-              <strong>5 Core Agents</strong> + <strong>{customAgentsList.length} Custom Agent(s)</strong> active in JARVIS Pipeline.
+              <strong>6 Core Agents</strong> + <strong>{customAgentsList.length} Custom Agent(s)</strong> active in JARVIS Pipeline.
             </span>
           </div>
           <span style={{ color: 'var(--muted)' }}>
@@ -565,13 +571,13 @@ export function JarvisSettings({ onSaved }: JarvisSettingsProps) {
         </div>
       )}
 
-      {/* SECTION 1: CORE 5 AGENTS */}
+      {/* SECTION 1: CORE 6 AGENTS */}
       <div style={{ display: 'grid', gap: '18px' }}>
         <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '0 4px' }}>
           <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
             <Bot size={18} className="text-cyan-400" />
             <h3 style={{ margin: 0, fontSize: '16px', fontWeight: 700, color: '#fff', letterSpacing: '-0.01em' }}>
-              Core 5-Agent Pipeline
+              Core 6-Agent Pipeline
             </h3>
           </div>
           <span style={{ fontSize: '12px', color: 'var(--muted)', fontFamily: 'DM Mono' }}>
