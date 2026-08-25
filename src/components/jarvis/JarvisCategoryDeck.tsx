@@ -8,7 +8,10 @@ import {
   Zap,
   ArrowRight,
   Sparkles,
+  Send,
+  Search,
 } from 'lucide-react';
+import { JarvisQuantumOrb } from './JarvisQuantumOrb';
 
 interface JarvisCategoryDeckProps {
   onSelectPrompt: (prompt: string) => void;
@@ -114,6 +117,23 @@ const CATEGORIES: CategoryCard[] = [
 
 export function JarvisCategoryDeck({ onSelectPrompt }: JarvisCategoryDeckProps) {
   const [activeCategory, setActiveCategory] = useState<string>('quantum-science');
+  const [searchTerm, setSearchTerm] = useState<string>('');
+
+  const handleLaunchSearch = (e: React.FormEvent) => {
+    e.preventDefault();
+    if (searchTerm.trim()) {
+      onSelectPrompt(searchTerm.trim());
+    }
+  };
+
+  // Filtered prompts across all categories when searching
+  const matchingPrompts = searchTerm.trim()
+    ? CATEGORIES.flatMap((c) =>
+        c.prompts
+          .filter((p) => p.toLowerCase().includes(searchTerm.toLowerCase()))
+          .map((p) => ({ prompt: p, category: c }))
+      )
+    : [];
 
   return (
     <div
@@ -145,6 +165,96 @@ export function JarvisCategoryDeck({ onSelectPrompt }: JarvisCategoryDeckProps) 
           </div>
         </div>
       </div>
+
+      {/* ========================================================= */}
+      {/* SEARCH INPUT BAR WITH ATTACHED JARVIS ROUND BALL           */}
+      {/* ========================================================= */}
+      <form onSubmit={handleLaunchSearch} className="mb-6">
+        <div
+          className="group relative flex items-center gap-2 p-2 sm:p-2.5 rounded-full backdrop-blur-md transition-all duration-300"
+          style={{
+            background: 'rgba(5, 15, 28, 0.85)',
+            border: searchTerm
+              ? '1.5px solid #38bdf8'
+              : '1.5px solid rgba(97, 215, 201, 0.45)',
+            boxShadow: searchTerm
+              ? '0 0 24px rgba(56,189,248,0.35), inset 0 0 12px rgba(56,189,248,0.12)'
+              : '0 8px 28px rgba(0,0,0,0.4), 0 0 16px rgba(97,215,201,0.15)',
+          }}
+        >
+          {/* Glowing Leading Node - JARVIS Round Ball Attached directly seamlessly merged */}
+          <div className="pl-2 sm:pl-3 flex items-center justify-center shrink-0">
+            <div
+              className="w-10 h-10 rounded-full flex items-center justify-center transition-all duration-300 relative cursor-pointer group-hover:scale-105"
+              title="JARVIS Neural Core"
+              style={{
+                background: 'transparent',
+                border: 'none',
+                boxShadow: 'none',
+              }}
+            >
+              <JarvisQuantumOrb
+                size="xs"
+                showBadge={false}
+                query={searchTerm}
+                status={searchTerm ? 'thinking' : 'idle'}
+              />
+            </div>
+          </div>
+
+          {/* Search / Inquiry Input */}
+          <input
+            type="text"
+            value={searchTerm}
+            onChange={(e) => setSearchTerm(e.target.value)}
+            placeholder="Search category matrix prompts or type any custom research query..."
+            className="flex-1 min-w-0 bg-transparent border-0 outline-none text-white text-sm sm:text-base placeholder:text-slate-400 font-medium px-2 py-1.5"
+          />
+
+          {/* Submit / Launch in JARVIS Button */}
+          <button
+            type="submit"
+            disabled={!searchTerm.trim()}
+            className="px-4 sm:px-5 py-2 sm:py-2.5 rounded-full font-bold text-xs sm:text-sm tracking-wide transition-all duration-300 flex items-center gap-1.5 shadow-lg active:scale-95 disabled:opacity-40 disabled:cursor-not-allowed shrink-0"
+            style={{
+              background: 'linear-gradient(135deg, #61d7c9 0%, #38bdf8 100%)',
+              color: '#051218',
+              boxShadow: '0 0 16px rgba(97,215,201,0.4)',
+            }}
+          >
+            <Send size={14} className="text-slate-950" />
+            <span className="font-extrabold">Launch Prompt</span>
+          </button>
+        </div>
+      </form>
+
+      {/* Filtered Search Results (if user is actively typing a search term) */}
+      {searchTerm.trim() && matchingPrompts.length > 0 && (
+        <div className="mb-6 p-4 rounded-2xl bg-cyan-950/40 border border-cyan-500/40 backdrop-blur-md">
+          <div className="flex items-center gap-2 mb-3 text-cyan-300 text-xs font-bold font-mono">
+            <Search size={14} />
+            <span>MATCHING PROMPTS ({matchingPrompts.length})</span>
+          </div>
+          <div className="flex flex-col gap-2">
+            {matchingPrompts.map((item, idx) => (
+              <button
+                key={idx}
+                type="button"
+                onClick={() => onSelectPrompt(item.prompt)}
+                className="w-full text-left p-3 rounded-xl transition-all duration-200 flex items-center justify-between gap-3 text-xs sm:text-sm font-medium leading-relaxed group bg-white/5 hover:bg-cyan-500/20 border border-white/10 hover:border-cyan-400/60 text-slate-200 hover:text-white"
+              >
+                <div className="flex items-center gap-2 flex-1 min-w-0">
+                  <span className="text-xs">{item.category.emoji}</span>
+                  <span className="truncate">{item.prompt}</span>
+                </div>
+                <div className="w-6 h-6 rounded-full bg-cyan-500/20 border border-cyan-400/40 flex items-center justify-center shrink-0 group-hover:translate-x-1 transition-transform">
+                  <ArrowRight size={12} className="text-cyan-300" />
+                </div>
+              </button>
+            ))}
+          </div>
+        </div>
+      )}
 
       {/* Category Selection Cards Grid (Rounded & Colorful) */}
       <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 gap-3 mb-5">

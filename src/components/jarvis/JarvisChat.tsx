@@ -967,17 +967,26 @@ export function JarvisChat({ config, onOpenSettings }: JarvisChatProps) {
                 : '0 8px 28px rgba(0,0,0,0.4), 0 0 16px rgba(97,215,201,0.15), inset 0 1px 0 rgba(255,255,255,0.1)',
             }}
           >
-            {/* Glowing Leading Node */}
-            <div className="pl-3 sm:pl-4 flex items-center justify-center">
+            {/* Glowing Leading Node - JARVIS Round Ball Orb attached seamlessly merged */}
+            <div className="pl-2 sm:pl-3 flex items-center justify-center shrink-0">
               <div
-                className="w-8 h-8 rounded-full flex items-center justify-center transition-all duration-300"
+                className="w-10 h-10 rounded-full flex items-center justify-center transition-all duration-300 relative cursor-pointer group-hover:scale-105"
+                onClick={() => inputRef.current?.focus()}
+                title="JARVIS Quantum Neural Core Active"
                 style={{
-                  background: 'linear-gradient(135deg, rgba(97,215,201,0.3) 0%, rgba(56,189,248,0.3) 100%)',
-                  border: '1px solid rgba(97,215,201,0.5)',
-                  boxShadow: '0 0 12px rgba(97,215,201,0.35)',
+                  background: 'transparent',
+                  border: 'none',
+                  boxShadow: 'none',
                 }}
               >
-                <Zap size={16} className="text-cyan-300 animate-pulse" />
+                <JarvisQuantumOrb
+                  size="xs"
+                  showBadge={false}
+                  isRunning={isRunning}
+                  isListening={voiceListening}
+                  query={query}
+                  status={isRunning ? 'thinking' : voiceListening ? 'listening' : query ? 'synthesizing' : 'idle'}
+                />
               </div>
             </div>
 
