@@ -1,4 +1,4 @@
-import { useState, useRef } from 'react';
+import { useState, useRef, useEffect } from 'react';
 import {
   Layers,
   Maximize2,
@@ -11,27 +11,71 @@ import {
   ZoomIn,
   ZoomOut,
   RotateCcw,
+  Bookmark,
+  BookmarkCheck,
 } from 'lucide-react';
+import { storage } from '@/lib/storage';
+import { playTapSound } from '@/lib/audio';
 
 interface JarvisSvgDiagramProps {
+  id?: string;
   svgMarkup: string;
   title?: string;
+  onSaveChange?: (isSaved: boolean) => void;
 }
 
-export function JarvisSvgDiagram({ svgMarkup, title = 'Architectural Vector Blueprint' }: JarvisSvgDiagramProps) {
+export function JarvisSvgDiagram({
+  id,
+  svgMarkup,
+  title = 'Architectural Vector Blueprint',
+  onSaveChange,
+}: JarvisSvgDiagramProps) {
   const [viewMode, setViewMode] = useState<'preview' | 'code'>('preview');
   const [isFullscreen, setIsFullscreen] = useState(false);
   const [copied, setCopied] = useState(false);
   const [zoomLevel, setZoomLevel] = useState(1);
+  const [saved, setSaved] = useState(false);
+  const [recentlySaved, setRecentlySaved] = useState(false);
   const containerRef = useRef<HTMLDivElement>(null);
 
+  const diagramId = id || `diagram-${title.toLowerCase().replace(/[^a-z0-9]+/g, '-').slice(0, 40)}`;
+
+  useEffect(() => {
+    setSaved(storage.isSaved(diagramId));
+  }, [diagramId]);
+
+  const handleToggleSave = () => {
+    playTapSound();
+    const isNowSaved = !saved;
+    if (isNowSaved) {
+      storage.saveItem({
+        id: diagramId,
+        type: 'diagram',
+        title: title || 'Architectural Vector Blueprint',
+        subtitle: 'JARVIS Architect Vector Blueprint',
+        diagramSvg: svgMarkup,
+        savedAt: new Date().toISOString(),
+      });
+      setSaved(true);
+      setRecentlySaved(true);
+      setTimeout(() => setRecentlySaved(false), 2000);
+    } else {
+      storage.removeSaved(diagramId);
+      setSaved(false);
+      setRecentlySaved(false);
+    }
+    onSaveChange?.(isNowSaved);
+  };
+
   const handleCopySvg = () => {
+    playTapSound();
     navigator.clipboard.writeText(svgMarkup);
     setCopied(true);
     setTimeout(() => setCopied(false), 2000);
   };
 
   const handleDownloadSvg = () => {
+    playTapSound();
     const blob = new Blob([svgMarkup], { type: 'image/svg+xml;charset=utf-8' });
     const url = URL.createObjectURL(blob);
     const link = document.createElement('a');
@@ -140,6 +184,37 @@ export function JarvisSvgDiagram({ svgMarkup, title = 'Architectural Vector Blue
               <span>SVG Code</span>
             </button>
           </div>
+
+          {/* Save / Bookmark Blueprint */}
+          <button
+            type="button"
+            onClick={handleToggleSave}
+            className={`px-2 py-1 rounded-lg text-[11px] font-semibold flex items-center gap-1.5 transition-all ${
+              recentlySaved
+                ? 'bg-emerald-500/30 text-emerald-300 border border-emerald-400/50 shadow-[0_0_12px_rgba(16,185,129,0.4)]'
+                : saved
+                ? 'bg-amber-500/25 text-amber-300 border border-amber-400/40'
+                : 'text-slate-300 hover:text-amber-300 hover:bg-amber-500/15 border border-transparent hover:border-amber-500/30'
+            }`}
+            title={saved ? 'Saved in Library (Click to Remove)' : 'Save Blueprint to Library'}
+          >
+            {recentlySaved ? (
+              <>
+                <Check size={13} className="text-emerald-400" />
+                <span className="text-emerald-300 font-bold">Saved ✓</span>
+              </>
+            ) : saved ? (
+              <>
+                <BookmarkCheck size={13} className="text-amber-400" />
+                <span className="text-amber-300">Saved</span>
+              </>
+            ) : (
+              <>
+                <Bookmark size={13} />
+                <span className="hidden sm:inline">Save</span>
+              </>
+            )}
+          </button>
 
           {/* Download */}
           <button

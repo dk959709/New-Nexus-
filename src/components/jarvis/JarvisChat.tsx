@@ -548,6 +548,7 @@ export function JarvisChat({ config, onOpenSettings }: JarvisChatProps) {
         domain: s.domain,
       })),
       savedAt: new Date(msg.timestamp || Date.now()).toISOString(),
+      diagramSvg: msg.diagramSvg,
     };
 
     const updated = storage.saveItem(jarvisSavedItem);
@@ -1001,7 +1002,20 @@ export function JarvisChat({ config, onOpenSettings }: JarvisChatProps) {
 
                   {/* SVG Architectural Blueprint Diagram */}
                   {msg.diagramSvg && (
-                    <JarvisSvgDiagram svgMarkup={msg.diagramSvg} title={msg.query} />
+                    <JarvisSvgDiagram
+                      id={`diagram-${msg.id}`}
+                      svgMarkup={msg.diagramSvg}
+                      title={msg.query}
+                      onSaveChange={(isSaved) => {
+                        const sId = `diagram-${msg.id}`;
+                        setSavedIds((prev) => {
+                          const next = new Set(prev);
+                          if (isSaved) next.add(sId);
+                          else next.delete(sId);
+                          return next;
+                        });
+                      }}
+                    />
                   )}
 
                   {/* Cited Sources (Rounded Colorful Tags) */}

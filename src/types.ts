@@ -95,13 +95,14 @@ export interface SavedItemSource {
 
 export interface SavedItem {
   id: string;
-  type: 'search' | 'news' | 'location' | 'space' | 'jarvis' | string;
+  type: 'search' | 'news' | 'location' | 'space' | 'jarvis' | 'diagram' | string;
   title: string;
   subtitle: string;
   url?: string;
   content?: string;
   sources?: SavedItemSource[];
   savedAt: string;
+  diagramSvg?: string;
 }
 
 export type TemperatureUnit = 'celsius' | 'fahrenheit';

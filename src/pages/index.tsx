@@ -29,9 +29,11 @@ import {
   Moon as MoonIcon,
   Copy,
   Check,
+  Layers,
 } from 'lucide-react';
 import { Link, useNavigate, useSearchParams } from 'react-router-dom';
 import { SearchBox, WeatherCard, HourlyForecast, DailyForecast, ErrorMessage, LoadingMessage, WeatherMap, AnswerCard, MediaViewer, UnifiedResultCard, JarvisSearchCore } from '@/components';
+import { JarvisSvgDiagram } from '@/components/jarvis';
 import { WallpaperSelector } from '@/components/WallpaperSelector';
 import { SpaceStarfield } from '@/components/SpaceStarfield';
 import { MeteorShower } from '@/animations/MeteorShower';
@@ -115,22 +117,23 @@ export function HomePage() {
         {/* ================================================== */}
         {/* TOP OF WEBSITE: NEXUS INTELLIGENT HERO            */}
         {/* ================================================== */}
-        <div className="hero-wrap relative z-10 mb-6 sm:mb-8">
+        <div className="hero-wrap relative z-10 mb-6 sm:mb-8 w-full max-w-5xl">
           <div className="hero-aurora-glow" aria-hidden="true" />
-          <section className="hero">
+          
+          <div className="relative py-2">
             <div className="flex items-center gap-2 mb-2">
               <span className="w-2.5 h-2.5 rounded-full bg-cyan-400 animate-ping" />
               <span className="eyebrow font-mono tracking-widest text-cyan-300 font-bold">NEXUS INTELLIGENT</span>
             </div>
-            <h1>
+            <h1 className="text-3xl sm:text-5xl lg:text-6xl font-extrabold tracking-tight leading-[1.08] my-3">
               <span className="hero-gradient-line">Search the web.</span>
               <br />
               <span className="hero-gradient-line hero-glow-text">Understand the world.</span>
             </h1>
-            <p className="text-slate-300 font-medium sm:text-base max-w-2xl">
+            <p className="text-slate-300 text-sm sm:text-base md:text-lg font-normal leading-relaxed max-w-2xl mt-2">
               A unified view of live search, weather, and world signals — clear, fast, and precise.
             </p>
-          </section>
+          </div>
         </div>
 
         {/* ================================================== */}
@@ -1187,7 +1190,7 @@ export function SpacePage() {
 
 export function SavedPage() {
   const [items, setItems] = useState(storage.getSaved());
-  const [filter, setFilter] = useState<'all' | 'jarvis' | 'other'>('all');
+  const [filter, setFilter] = useState<'all' | 'jarvis' | 'diagram' | 'other'>('all');
   const [copiedId, setCopiedId] = useState<string | null>(null);
 
   const remove = (id: string) => {
@@ -1203,11 +1206,13 @@ export function SavedPage() {
   };
 
   const jarvisItems = items.filter((i) => i.type === 'jarvis');
-  const otherItems = items.filter((i) => i.type !== 'jarvis');
+  const diagramItems = items.filter((i) => i.type === 'diagram' || !!i.diagramSvg);
+  const otherItems = items.filter((i) => i.type !== 'jarvis' && i.type !== 'diagram' && !i.diagramSvg);
 
   const filteredItems = items.filter((item) => {
     if (filter === 'jarvis') return item.type === 'jarvis';
-    if (filter === 'other') return item.type !== 'jarvis';
+    if (filter === 'diagram') return item.type === 'diagram' || !!item.diagramSvg;
+    if (filter === 'other') return item.type !== 'jarvis' && item.type !== 'diagram' && !item.diagramSvg;
     return true;
   });
 
@@ -1248,6 +1253,21 @@ export function SavedPage() {
             </button>
           )}
 
+          {diagramItems.length > 0 && (
+            <button
+              type="button"
+              onClick={() => setFilter('diagram')}
+              className={`px-3 py-1.5 rounded-full text-xs font-semibold flex items-center gap-1.5 transition-all ${
+                filter === 'diagram'
+                  ? 'bg-amber-400 text-slate-950 shadow-[0_0_12px_rgba(245,158,11,0.35)]'
+                  : 'bg-amber-500/10 hover:bg-amber-500/20 text-amber-300 border border-amber-500/30'
+              }`}
+            >
+              <Layers size={13} />
+              <span>Architect Blueprints ({diagramItems.length})</span>
+            </button>
+          )}
+
           {otherItems.length > 0 && (
             <button
               type="button"
@@ -1274,7 +1294,77 @@ export function SavedPage() {
         <div className="saved-list">
           {filteredItems.map((item) => {
             const isJarvis = item.type === 'jarvis';
+            const isDiagram = item.type === 'diagram';
             const answerText = item.content || item.subtitle;
+
+            if (isDiagram && item.diagramSvg) {
+              return (
+                <div
+                  key={item.id}
+                  className="w-full rounded-2xl p-5 sm:p-6 mb-4 bg-gradient-to-b from-[#181104]/90 via-[#0e0c06]/95 to-[#050402]/95 border border-amber-500/35 shadow-[0_4px_24px_rgba(0,0,0,0.5)] backdrop-blur-xl transition-all"
+                >
+                  {/* Top Bar */}
+                  <div className="flex items-center justify-between flex-wrap gap-2 pb-3 mb-3 border-b border-amber-500/20">
+                    <div className="flex items-center gap-2">
+                      <div className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full bg-amber-500/15 border border-amber-500/35 text-[10px] font-mono tracking-widest text-amber-300 font-bold uppercase">
+                        <Layers size={12} className="text-amber-400" />
+                        <span>ARCHITECT BLUEPRINT</span>
+                      </div>
+                      <span className="text-[11px] text-slate-400 font-mono">
+                        {new Date(item.savedAt).toLocaleDateString(undefined, {
+                          month: 'short',
+                          day: 'numeric',
+                          year: 'numeric',
+                        })}{' '}
+                        ·{' '}
+                        {new Date(item.savedAt).toLocaleTimeString([], {
+                          hour: '2-digit',
+                          minute: '2-digit',
+                        })}
+                      </span>
+                    </div>
+
+                    <div className="flex items-center gap-2">
+                      <Link
+                        to={`/jarvis?q=${encodeURIComponent(item.title)}`}
+                        className="px-2.5 py-1 rounded-lg bg-amber-500/15 hover:bg-amber-500/25 border border-amber-500/35 text-xs text-amber-300 flex items-center gap-1 transition-all"
+                        title="Open in JARVIS Workspace"
+                      >
+                        <span>Open in JARVIS</span>
+                        <ExternalLink size={12} />
+                      </Link>
+
+                      <button
+                        type="button"
+                        onClick={() => remove(item.id)}
+                        className="p-1.5 rounded-lg text-slate-400 hover:text-rose-400 hover:bg-rose-500/15 transition-colors"
+                        aria-label="Remove saved item"
+                        title="Remove from saved library"
+                      >
+                        <Trash2 size={16} />
+                      </button>
+                    </div>
+                  </div>
+
+                  {/* Title */}
+                  <h2 className="text-base sm:text-lg font-bold text-white mb-2 leading-snug">
+                    {item.title}
+                  </h2>
+
+                  {/* Full Interactive SVG Diagram */}
+                  <JarvisSvgDiagram
+                    id={item.id}
+                    svgMarkup={item.diagramSvg}
+                    title={item.title}
+                    onSaveChange={(isStillSaved) => {
+                      if (!isStillSaved) {
+                        setItems(storage.getSaved());
+                      }
+                    }}
+                  />
+                </div>
+              );
+            }
 
             if (isJarvis) {
               return (
@@ -1353,6 +1443,15 @@ export function SavedPage() {
                   <div className="text-slate-200 text-sm sm:text-base leading-relaxed whitespace-pre-wrap font-sans">
                     {answerText}
                   </div>
+
+                  {/* Embedded SVG Architectural Blueprint if present */}
+                  {item.diagramSvg && (
+                    <JarvisSvgDiagram
+                      id={`diagram-${item.id}`}
+                      svgMarkup={item.diagramSvg}
+                      title={item.title}
+                    />
+                  )}
 
                   {/* Grounded Sources */}
                   {item.sources && item.sources.length > 0 && (
