@@ -756,11 +756,15 @@ Please perform your specialized processing for this inquiry. Provide clear, conc
     const defaultPromptTemplate = DEFAULT_AGENT_SYSTEM_PROMPTS.planner;
     let activePrompt = (pCfg.systemPrompt || defaultPromptTemplate).replace('{query}', query);
 
-    if (diagramMode) {
-      activePrompt += `\n\nDiagram Mode is ACTIVE:
-- needsDiagram: set to true ONLY if the concept or question genuinely benefits from a visual architectural or structural diagram (e.g. process flows, architectures, system interactions, structural comparisons, physical phenomena, spatial relationships, or hierarchies). Set false for simple factual questions, text explanations, opinions, or greetings.
-Include "needsDiagram": true or false in your JSON output.`;
-    }
+    // Explicitly inject current Diagram Mode state so Planner's decision is context-aware
+    const diagramModeNotice = diagramMode
+      ? `\n\n[SYSTEM CONTEXT: Diagram Mode is currently ENABLED (ON).]
+- The user has enabled Diagram Mode for this session.
+- Evaluate if the inquiry has clear visual structure, processes, spatial flows, architecture, or comparisons. If yes, set "needsDiagram": true. Otherwise, set "needsDiagram": false.`
+      : `\n\n[SYSTEM CONTEXT: Diagram Mode is currently DISABLED (OFF).]
+- Diagram Mode is OFF for this request. Always output "needsDiagram": false.`;
+
+    activePrompt += diagramModeNotice;
 
     const planRes = await callAgent('planner', [
       { role: 'system', content: 'You are the JARVIS Planner. Output only valid JSON.' },

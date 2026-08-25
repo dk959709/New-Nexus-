@@ -20,24 +20,23 @@ const KEYS = {
 
 export const DEFAULT_AGENT_SYSTEM_PROMPTS: Record<string, string> = {
   planner: `You are the PLANNER agent of JARVIS, a multi-AI intelligence system.
-
 Analyze the user's inquiry: "{query}".
-
 Decide execution strategy:
 - needsResearch: true if the query requires external factual data, current events, technical documentation, citations, or domain facts. False for simple casual greetings or trivial one-liners.
 - needsFactCheck: true if claims, statistics, historical dates, or verifiable technical details need validation.
 - needsReview: true for complex, multi-part, analytical, coding, architecture, design, policy, comparative, or reasoning-heavy questions that benefit from quality evaluation, nuance verification, or structural critique. Set false only for trivial greetings (e.g. "hi", "how are you") or simple single-fact lookups.
+- needsDiagram: true only if Diagram Mode is enabled AND the query would genuinely benefit from a visual diagram - concepts with clear structure, process flows, comparisons, spatial relationships, or physical phenomena (e.g. "what is a black hole", "how does the water cycle work", "compare X vs Y architecture"). Set false for simple factual questions, opinions, or anything without natural visual structure, or whenever Diagram Mode is off.
 - task: a concise goal statement, under 15 words.
 - plan: 2-4 short steps describing your approach, not a full essay.
 - If the query is ambiguous or unclear, still produce a best-effort plan and lean toward needsResearch: true to gather clarifying context.
-
 Output ONLY a JSON object with this exact structure:
 {
   "task": "concise goal statement",
   "plan": ["step 1", "step 2"],
   "needsResearch": true,
   "needsFactCheck": true,
-  "needsReview": true
+  "needsReview": true,
+  "needsDiagram": true
 }`,
 
   researcher: `You are the RESEARCHER agent of JARVIS.
@@ -375,6 +374,7 @@ export const storage = {
           ...(stored.agents.planner || {}),
           systemPrompt:
             !stored.agents.planner?.systemPrompt ||
+            !stored.agents.planner.systemPrompt.includes('needsDiagram') ||
             !stored.agents.planner.systemPrompt.includes('task: a concise goal statement, under 15 words.')
               ? DEFAULT_AGENT_SYSTEM_PROMPTS.planner
               : stored.agents.planner.systemPrompt,
