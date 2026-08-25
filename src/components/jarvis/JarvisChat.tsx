@@ -535,7 +535,7 @@ export function JarvisChat({ config, onOpenSettings }: JarvisChatProps) {
   };
 
   return (
-    <div className="jarvis-chat-console-wrapper flex flex-col gap-6 w-full max-w-5xl mx-auto">
+    <div className="jarvis-chat-console-wrapper flex flex-col gap-6 w-full max-w-5xl mx-auto pb-64 sm:pb-60">
       {/* Top Futuristic HUD Header */}
       <JarvisHudHeader
         config={config}
@@ -568,7 +568,7 @@ export function JarvisChat({ config, onOpenSettings }: JarvisChatProps) {
       )}
 
       {/* ========================================================= */}
-      {/* ROUNDED & COLORFUL CHAT CONSOLE INPUT HUB WITH QUANTUM ORB */}
+      {/* TOP JARVIS HEADER & QUANTUM CORE (ONLINE STANDBY)          */}
       {/* ========================================================= */}
       <div
         className="relative overflow-hidden rounded-3xl p-5 sm:p-7 backdrop-blur-xl transition-all duration-300"
@@ -584,7 +584,7 @@ export function JarvisChat({ config, onOpenSettings }: JarvisChatProps) {
         <div className="absolute -bottom-12 left-1/3 w-64 h-32 rounded-full bg-sky-500/15 blur-3xl pointer-events-none" />
 
         {/* Central JARVIS Animated 3D Quantum Orb Ball with Color Graphics */}
-        <div className="relative z-10 flex flex-col items-center justify-center mb-4">
+        <div className="relative z-10 flex flex-col items-center justify-center">
           <JarvisQuantumOrb
             size={isRunning ? 'lg' : 'md'}
             isRunning={isRunning}
@@ -593,244 +593,6 @@ export function JarvisChat({ config, onOpenSettings }: JarvisChatProps) {
             onClick={() => inputRef.current?.focus()}
           />
         </div>
-
-        <form
-          onSubmit={(e) => {
-            e.preventDefault();
-            handleSend();
-          }}
-          className="relative z-10 flex flex-col gap-4"
-        >
-          {/* Main Round Pill Search Input Bar */}
-          <div
-            className="group relative flex items-center gap-2 p-2 sm:p-2.5 rounded-full backdrop-blur-md transition-all duration-300"
-            style={{
-              background: 'rgba(5, 15, 28, 0.85)',
-              border: isRunning
-                ? '1.5px solid #38bdf8'
-                : '1.5px solid rgba(97, 215, 201, 0.45)',
-              boxShadow: isRunning
-                ? '0 0 24px rgba(56,189,248,0.4), inset 0 0 12px rgba(56,189,248,0.15)'
-                : '0 8px 28px rgba(0,0,0,0.4), 0 0 16px rgba(97,215,201,0.15), inset 0 1px 0 rgba(255,255,255,0.1)',
-            }}
-          >
-            {/* Glowing Leading Node */}
-            <div className="pl-3 sm:pl-4 flex items-center justify-center">
-              <div
-                className="w-8 h-8 rounded-full flex items-center justify-center transition-all duration-300"
-                style={{
-                  background: 'linear-gradient(135deg, rgba(97,215,201,0.3) 0%, rgba(56,189,248,0.3) 100%)',
-                  border: '1px solid rgba(97,215,201,0.5)',
-                  boxShadow: '0 0 12px rgba(97,215,201,0.35)',
-                }}
-              >
-                <Zap size={16} className="text-cyan-300 animate-pulse" />
-              </div>
-            </div>
-
-            {/* Input Element */}
-            <input
-              ref={inputRef}
-              type="text"
-              value={query}
-              onChange={(e) => setQuery(e.target.value)}
-              placeholder="Ask JARVIS anything (multi-agent research, fact check, scientific audit)..."
-              disabled={isRunning}
-              className="flex-1 min-w-0 bg-transparent border-0 outline-none text-white text-sm sm:text-base placeholder:text-slate-400 font-medium px-2 py-2"
-            />
-
-            {/* Mic / Voice Button */}
-            <button
-              type="button"
-              onClick={toggleVoiceInput}
-              aria-label="Voice input"
-              title={voiceListening ? 'Stop Listening' : 'Speak Prompt'}
-              className={`w-9 h-9 sm:w-10 sm:h-10 rounded-full flex items-center justify-center transition-all duration-200 ${
-                voiceListening
-                  ? 'bg-rose-500 text-white shadow-[0_0_16px_#f43f5e] animate-pulse'
-                  : 'bg-white/5 hover:bg-cyan-500/20 text-slate-300 hover:text-cyan-300 border border-white/10 hover:border-cyan-400/40'
-              }`}
-            >
-              <Mic size={17} className={voiceListening ? 'animate-bounce' : ''} />
-            </button>
-
-            {/* Submit Pill Button */}
-            <button
-              type="submit"
-              disabled={!query.trim() || isRunning}
-              className="px-5 sm:px-6 py-2.5 sm:py-3 rounded-full font-bold text-xs sm:text-sm tracking-wide transition-all duration-300 flex items-center gap-2 shadow-lg active:scale-95 disabled:opacity-40 disabled:cursor-not-allowed"
-              style={{
-                background: isRunning
-                  ? 'linear-gradient(135deg, #38bdf8 0%, #a855f7 100%)'
-                  : 'linear-gradient(135deg, #61d7c9 0%, #38bdf8 100%)',
-                color: '#051218',
-                boxShadow: isRunning
-                  ? '0 0 20px rgba(56,189,248,0.5)'
-                  : '0 0 16px rgba(97,215,201,0.4)',
-              }}
-            >
-              {isRunning ? (
-                <Loader2 size={16} className="animate-spin text-slate-950" />
-              ) : (
-                <Send size={15} className="text-slate-950" />
-              )}
-              <span className="font-extrabold">{isRunning ? 'Orchestrating...' : 'Ask JARVIS'}</span>
-            </button>
-          </div>
-
-          {/* Controls Hub: Deep Research Switch & Round Action Chips */}
-          <div className="flex items-center justify-between flex-wrap gap-3 pt-1">
-            {/* Deep Research Colorful Pill Switch */}
-            <label
-              className="inline-flex items-center gap-2.5 px-3.5 py-1.5 rounded-full cursor-pointer transition-all duration-200 border"
-              style={{
-                background: deepResearch
-                  ? 'linear-gradient(135deg, rgba(97,215,201,0.2) 0%, rgba(56,189,248,0.15) 100%)'
-                  : 'rgba(255,255,255,0.03)',
-                borderColor: deepResearch ? 'rgba(97,215,201,0.5)' : 'rgba(255,255,255,0.1)',
-                boxShadow: deepResearch ? '0 0 14px rgba(97,215,201,0.25)' : 'none',
-              }}
-            >
-              <input
-                type="checkbox"
-                checked={deepResearch}
-                onChange={(e) => setDeepResearch(e.target.checked)}
-                className="hidden"
-              />
-              <div
-                className={`w-8 h-4 rounded-full transition-colors relative flex items-center p-0.5 ${
-                  deepResearch ? 'bg-cyan-400' : 'bg-slate-700'
-                }`}
-              >
-                <div
-                  className={`w-3 h-3 rounded-full bg-slate-950 transition-transform duration-200 ${
-                    deepResearch ? 'translate-x-4' : 'translate-x-0'
-                  }`}
-                />
-              </div>
-              <span
-                className={`text-xs font-bold font-mono tracking-wide ${
-                  deepResearch ? 'text-cyan-300' : 'text-slate-400'
-                }`}
-              >
-                ⚡ DEEP RESEARCH (5-AGENT MESH)
-              </span>
-            </label>
-
-            {/* Round Auxiliary Action Chips */}
-            <div className="flex items-center gap-2 flex-wrap">
-              <button
-                type="button"
-                onClick={onOpenSettings}
-                className="inline-flex items-center gap-1.5 px-3.5 py-1.5 rounded-full text-xs font-bold text-cyan-300 bg-cyan-500/10 hover:bg-cyan-500/20 border border-cyan-500/30 hover:border-cyan-400/60 shadow-sm transition-all duration-200"
-                title="Configure Agent parameters, providers and models"
-              >
-                <Cpu size={13} className="text-cyan-400" />
-                <span>Configure Agents</span>
-              </button>
-
-              {messages.length > 0 && (
-                <button
-                  type="button"
-                  onClick={handleNewChat}
-                  className="inline-flex items-center gap-1.5 px-3.5 py-1.5 rounded-full text-xs font-bold text-sky-200 bg-sky-500/10 hover:bg-sky-500/20 border border-sky-400/30 hover:border-sky-300/60 shadow-sm transition-all duration-200"
-                  title="Start a fresh chat"
-                >
-                  <Plus size={13} className="text-sky-300" />
-                  <span>New Inquiry</span>
-                </button>
-              )}
-
-              {messages.length > 0 && (
-                <button
-                  type="button"
-                  onClick={() => setShowClearConfirm(true)}
-                  className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-full text-xs font-bold text-rose-300 bg-rose-500/10 hover:bg-rose-500/20 border border-rose-500/30 hover:border-rose-400/60 shadow-sm transition-all duration-200"
-                  title="Clear conversation history"
-                >
-                  <Trash2 size={13} className="text-rose-400" />
-                  <span>Clear</span>
-                  <span className="px-1.5 py-0.2 rounded-full bg-rose-500/30 text-[10px] font-mono">
-                    {messages.length}
-                  </span>
-                </button>
-              )}
-            </div>
-          </div>
-
-          {/* Quick Colorful Prompt Pills Carousel */}
-          {messages.length === 0 && !isRunning && (
-            <div className="pt-2 border-t border-white/10 flex flex-col gap-2">
-              <span className="text-[11px] font-mono tracking-wider text-slate-400 uppercase font-semibold flex items-center gap-1.5">
-                <Sparkles size={12} className="text-cyan-400" />
-                Suggested Research Tracks:
-              </span>
-              <div className="flex flex-wrap gap-2">
-                {QUICK_PROMPT_PILLS.map((p, idx) => (
-                  <button
-                    key={idx}
-                    type="button"
-                    onClick={() => handleSend(p.label)}
-                    className={`inline-flex items-center gap-1.5 px-3.5 py-1.5 rounded-full text-xs font-semibold bg-gradient-to-r ${p.color} border ${p.border} ${p.text} hover:scale-105 hover:shadow-[0_0_14px_rgba(97,215,201,0.25)] transition-all duration-200`}
-                  >
-                    <span>{p.emoji}</span>
-                    <span>{p.label}</span>
-                  </button>
-                ))}
-              </div>
-            </div>
-          )}
-
-          {/* Cleared Success Feedback Banner */}
-          {clearedBanner && (
-            <div className="flex items-center gap-2 p-3 rounded-2xl bg-cyan-500/15 border border-cyan-400/40 text-cyan-300 text-xs font-bold shadow-md">
-              <CheckCircle2 size={16} className="text-cyan-400" />
-              <span>Conversation history cleared. Ready for your next deep inquiry!</span>
-            </div>
-          )}
-
-          {/* Clear Confirmation Rounded Modal */}
-          {showClearConfirm && (
-            <div
-              className="p-4 rounded-2xl backdrop-blur-xl flex items-center justify-between flex-wrap gap-3 mt-1"
-              style={{
-                background: 'linear-gradient(135deg, rgba(40, 15, 20, 0.95) 0%, rgba(30, 10, 15, 0.95) 100%)',
-                border: '1px solid rgba(244, 63, 94, 0.45)',
-                boxShadow: '0 8px 30px rgba(0,0,0,0.5), 0 0 16px rgba(244,63,94,0.2)',
-              }}
-            >
-              <div className="flex items-center gap-2.5">
-                <AlertTriangle size={18} className="text-rose-400 shrink-0" />
-                <div>
-                  <div className="text-white text-xs font-bold">
-                    Clear all {messages.length} {messages.length === 1 ? 'message' : 'messages'} from JARVIS history?
-                  </div>
-                  <div className="text-rose-200/70 text-[11px]">
-                    This will reset the current multi-agent session.
-                  </div>
-                </div>
-              </div>
-
-              <div className="flex items-center gap-2">
-                <button
-                  type="button"
-                  onClick={() => setShowClearConfirm(false)}
-                  className="px-3.5 py-1.5 rounded-full bg-white/10 hover:bg-white/20 text-white text-xs font-bold transition-colors"
-                >
-                  Cancel
-                </button>
-                <button
-                  type="button"
-                  onClick={handleConfirmClearChat}
-                  className="px-4 py-1.5 rounded-full bg-rose-600 hover:bg-rose-500 text-white text-xs font-bold flex items-center gap-1.5 shadow-lg transition-colors"
-                >
-                  <Trash2 size={12} />
-                  Yes, Clear All
-                </button>
-              </div>
-            </div>
-          )}
-        </form>
       </div>
 
       {/* When in chat mode and no messages yet, display the full Category Matrix Deck */}
@@ -935,7 +697,7 @@ export function JarvisChat({ config, onOpenSettings }: JarvisChatProps) {
       )}
 
       {/* ========================================================= */}
-      {/* MESSAGES LIST (ROUNDED CHAT BUBBLES & COLORFUL GRAPHICS) */}
+      {/* MESSAGES LIST (CHRONOLOGICAL: OLDEST TOP -> NEWEST BOTTOM) */}
       {/* ========================================================= */}
       <div className="flex flex-col gap-6 w-full">
         {messages.map((msg) => {
@@ -1171,10 +933,269 @@ export function JarvisChat({ config, onOpenSettings }: JarvisChatProps) {
             </div>
           );
         })}
-        {/* Auto-scroll bottom target anchor */}
-        <div ref={messagesEndRef} className="h-6 w-full pointer-events-none" />
+        {/* Auto-scroll bottom target anchor with ample spacing */}
+        <div ref={messagesEndRef} className="h-10 w-full pointer-events-none" />
+      </div>
+
+      {/* ========================================================= */}
+      {/* FIXED POSITIONED BOTTOM "ASK JARVIS" CONSOLE INPUT BAR    */}
+      {/* ========================================================= */}
+      <div className="jarvis-fixed-bottom-container">
+        <div className="jarvis-fixed-bottom-inner">
+          <div
+            className="relative overflow-hidden rounded-3xl p-3 sm:p-4 backdrop-blur-xl transition-all duration-300"
+            style={{
+              background: 'linear-gradient(145deg, rgba(8, 20, 36, 0.94) 0%, rgba(14, 18, 48, 0.96) 50%, rgba(6, 26, 38, 0.94) 100%)',
+              border: '1px solid rgba(97, 215, 201, 0.4)',
+              boxShadow: '0 16px 48px rgba(0,0,0,0.65), 0 0 32px rgba(97,215,201,0.18), inset 0 1px 0 rgba(255,255,255,0.15)',
+            }}
+          >
+            {/* Ambient Bottom Glow Orbs */}
+            <div className="absolute -top-12 -left-12 w-48 h-48 rounded-full bg-cyan-500/20 blur-3xl pointer-events-none" />
+            <div className="absolute -top-12 -right-12 w-48 h-48 rounded-full bg-purple-500/20 blur-3xl pointer-events-none" />
+
+            <form
+              onSubmit={(e) => {
+                e.preventDefault();
+                handleSend();
+              }}
+              className="relative z-10 flex flex-col gap-2.5 sm:gap-3"
+            >
+              {/* Main Round Pill Search Input Bar */}
+              <div
+                className="group relative flex items-center gap-2 p-1.5 sm:p-2.5 rounded-full backdrop-blur-md transition-all duration-300"
+                style={{
+                  background: 'rgba(5, 15, 28, 0.88)',
+                  border: isRunning
+                    ? '1.5px solid #38bdf8'
+                    : '1.5px solid rgba(97, 215, 201, 0.45)',
+                  boxShadow: isRunning
+                    ? '0 0 24px rgba(56,189,248,0.4), inset 0 0 12px rgba(56,189,248,0.15)'
+                    : '0 8px 28px rgba(0,0,0,0.4), 0 0 16px rgba(97,215,201,0.15), inset 0 1px 0 rgba(255,255,255,0.1)',
+                }}
+              >
+                {/* Glowing Leading Node */}
+                <div className="pl-2 sm:pl-3 flex items-center justify-center">
+                  <div
+                    className="w-7 h-7 sm:w-8 sm:h-8 rounded-full flex items-center justify-center transition-all duration-300"
+                    style={{
+                      background: 'linear-gradient(135deg, rgba(97,215,201,0.3) 0%, rgba(56,189,248,0.3) 100%)',
+                      border: '1px solid rgba(97,215,201,0.5)',
+                      boxShadow: '0 0 12px rgba(97,215,201,0.35)',
+                    }}
+                  >
+                    <Zap size={15} className="text-cyan-300 animate-pulse" />
+                  </div>
+                </div>
+
+                {/* Input Element */}
+                <input
+                  ref={inputRef}
+                  type="text"
+                  value={query}
+                  onChange={(e) => setQuery(e.target.value)}
+                  placeholder="Ask JARVIS anything (multi-agent research, fact check, scientific audit)..."
+                  disabled={isRunning}
+                  className="flex-1 min-w-0 bg-transparent border-0 outline-none text-white text-xs sm:text-base placeholder:text-slate-400 font-medium px-2 py-1.5"
+                />
+
+                {/* Mic / Voice Button */}
+                <button
+                  type="button"
+                  onClick={toggleVoiceInput}
+                  aria-label="Voice input"
+                  title={voiceListening ? 'Stop Listening' : 'Speak Prompt'}
+                  className={`w-8 h-8 sm:w-10 sm:h-10 rounded-full flex items-center justify-center transition-all duration-200 shrink-0 ${
+                    voiceListening
+                      ? 'bg-rose-500 text-white shadow-[0_0_16px_#f43f5e] animate-pulse'
+                      : 'bg-white/5 hover:bg-cyan-500/20 text-slate-300 hover:text-cyan-300 border border-white/10 hover:border-cyan-400/40'
+                  }`}
+                >
+                  <Mic size={16} className={voiceListening ? 'animate-bounce' : ''} />
+                </button>
+
+                {/* Submit Pill Button */}
+                <button
+                  type="submit"
+                  disabled={!query.trim() || isRunning}
+                  className="px-4 sm:px-6 py-2 sm:py-2.5 rounded-full font-bold text-xs sm:text-sm tracking-wide transition-all duration-300 flex items-center gap-1.5 sm:gap-2 shadow-lg active:scale-95 disabled:opacity-40 disabled:cursor-not-allowed shrink-0"
+                  style={{
+                    background: isRunning
+                      ? 'linear-gradient(135deg, #38bdf8 0%, #a855f7 100%)'
+                      : 'linear-gradient(135deg, #61d7c9 0%, #38bdf8 100%)',
+                    color: '#051218',
+                    boxShadow: isRunning
+                      ? '0 0 20px rgba(56,189,248,0.5)'
+                      : '0 0 16px rgba(97,215,201,0.4)',
+                  }}
+                >
+                  {isRunning ? (
+                    <Loader2 size={15} className="animate-spin text-slate-950" />
+                  ) : (
+                    <Send size={14} className="text-slate-950" />
+                  )}
+                  <span className="font-extrabold hidden xs:inline sm:inline">{isRunning ? 'Orchestrating...' : 'Ask JARVIS'}</span>
+                </button>
+              </div>
+
+              {/* Controls Hub: Deep Research Switch & Round Action Chips */}
+              <div className="flex items-center justify-between flex-wrap gap-2 pt-0.5">
+                {/* Deep Research Colorful Pill Switch */}
+                <label
+                  className="inline-flex items-center gap-2 px-3 py-1 rounded-full cursor-pointer transition-all duration-200 border"
+                  style={{
+                    background: deepResearch
+                      ? 'linear-gradient(135deg, rgba(97,215,201,0.2) 0%, rgba(56,189,248,0.15) 100%)'
+                      : 'rgba(255,255,255,0.03)',
+                    borderColor: deepResearch ? 'rgba(97,215,201,0.5)' : 'rgba(255,255,255,0.1)',
+                    boxShadow: deepResearch ? '0 0 14px rgba(97,215,201,0.25)' : 'none',
+                  }}
+                >
+                  <input
+                    type="checkbox"
+                    checked={deepResearch}
+                    onChange={(e) => setDeepResearch(e.target.checked)}
+                    className="hidden"
+                  />
+                  <div
+                    className={`w-7 h-3.5 rounded-full transition-colors relative flex items-center p-0.5 ${
+                      deepResearch ? 'bg-cyan-400' : 'bg-slate-700'
+                    }`}
+                  >
+                    <div
+                      className={`w-2.5 h-2.5 rounded-full bg-slate-950 transition-transform duration-200 ${
+                        deepResearch ? 'translate-x-3.5' : 'translate-x-0'
+                      }`}
+                    />
+                  </div>
+                  <span
+                    className={`text-[11px] sm:text-xs font-bold font-mono tracking-wide ${
+                      deepResearch ? 'text-cyan-300' : 'text-slate-400'
+                    }`}
+                  >
+                    ⚡ DEEP RESEARCH (5-AGENT MESH)
+                  </span>
+                </label>
+
+                {/* Round Auxiliary Action Chips */}
+                <div className="flex items-center gap-1.5 sm:gap-2 flex-wrap">
+                  <button
+                    type="button"
+                    onClick={onOpenSettings}
+                    className="inline-flex items-center gap-1 px-3 py-1 rounded-full text-[11px] sm:text-xs font-bold text-cyan-300 bg-cyan-500/10 hover:bg-cyan-500/20 border border-cyan-500/30 hover:border-cyan-400/60 shadow-sm transition-all duration-200"
+                    title="Configure Agent parameters, providers and models"
+                  >
+                    <Cpu size={12} className="text-cyan-400" />
+                    <span>Configure Agents</span>
+                  </button>
+
+                  {messages.length > 0 && (
+                    <button
+                      type="button"
+                      onClick={handleNewChat}
+                      className="inline-flex items-center gap-1 px-3 py-1 rounded-full text-[11px] sm:text-xs font-bold text-sky-200 bg-sky-500/10 hover:bg-sky-500/20 border border-sky-400/30 hover:border-sky-300/60 shadow-sm transition-all duration-200"
+                      title="Start a fresh chat"
+                    >
+                      <Plus size={12} className="text-sky-300" />
+                      <span>New Inquiry</span>
+                    </button>
+                  )}
+
+                  {messages.length > 0 && (
+                    <button
+                      type="button"
+                      onClick={() => setShowClearConfirm(true)}
+                      className="inline-flex items-center gap-1 px-2.5 py-1 rounded-full text-[11px] sm:text-xs font-bold text-rose-300 bg-rose-500/10 hover:bg-rose-500/20 border border-rose-500/30 hover:border-rose-400/60 shadow-sm transition-all duration-200"
+                      title="Clear conversation history"
+                    >
+                      <Trash2 size={12} className="text-rose-400" />
+                      <span>Clear</span>
+                      <span className="px-1.5 py-0.2 rounded-full bg-rose-500/30 text-[10px] font-mono">
+                        {messages.length}
+                      </span>
+                    </button>
+                  )}
+                </div>
+              </div>
+
+              {/* Quick Colorful Prompt Pills Carousel */}
+              {messages.length === 0 && !isRunning && (
+                <div className="pt-1.5 border-t border-white/10 flex flex-col gap-1.5">
+                  <span className="text-[10px] font-mono tracking-wider text-slate-400 uppercase font-semibold flex items-center gap-1">
+                    <Sparkles size={11} className="text-cyan-400" />
+                    Suggested Research Tracks:
+                  </span>
+                  <div className="flex flex-wrap gap-1.5 max-h-20 overflow-y-auto">
+                    {QUICK_PROMPT_PILLS.map((p, idx) => (
+                      <button
+                        key={idx}
+                        type="button"
+                        onClick={() => handleSend(p.label)}
+                        className={`inline-flex items-center gap-1 px-2.5 py-1 rounded-full text-[11px] font-semibold bg-gradient-to-r ${p.color} border ${p.border} ${p.text} hover:scale-105 hover:shadow-[0_0_14px_rgba(97,215,201,0.25)] transition-all duration-200`}
+                      >
+                        <span>{p.emoji}</span>
+                        <span>{p.label}</span>
+                      </button>
+                    ))}
+                  </div>
+                </div>
+              )}
+
+              {/* Cleared Success Feedback Banner */}
+              {clearedBanner && (
+                <div className="flex items-center gap-2 p-2 rounded-xl bg-cyan-500/15 border border-cyan-400/40 text-cyan-300 text-xs font-bold shadow-md">
+                  <CheckCircle2 size={15} className="text-cyan-400" />
+                  <span>Conversation history cleared. Ready for your next deep inquiry!</span>
+                </div>
+              )}
+
+              {/* Clear Confirmation Rounded Modal */}
+              {showClearConfirm && (
+                <div
+                  className="p-3.5 rounded-2xl backdrop-blur-xl flex items-center justify-between flex-wrap gap-2.5 mt-1"
+                  style={{
+                    background: 'linear-gradient(135deg, rgba(40, 15, 20, 0.95) 0%, rgba(30, 10, 15, 0.95) 100%)',
+                    border: '1px solid rgba(244, 63, 94, 0.45)',
+                    boxShadow: '0 8px 30px rgba(0,0,0,0.5), 0 0 16px rgba(244,63,94,0.2)',
+                  }}
+                >
+                  <div className="flex items-center gap-2">
+                    <AlertTriangle size={16} className="text-rose-400 shrink-0" />
+                    <div>
+                      <div className="text-white text-xs font-bold">
+                        Clear all {messages.length} {messages.length === 1 ? 'message' : 'messages'} from JARVIS history?
+                      </div>
+                      <div className="text-rose-200/70 text-[10px]">
+                        This will reset the current multi-agent session.
+                      </div>
+                    </div>
+                  </div>
+
+                  <div className="flex items-center gap-2">
+                    <button
+                      type="button"
+                      onClick={() => setShowClearConfirm(false)}
+                      className="px-3 py-1 rounded-full bg-white/10 hover:bg-white/20 text-white text-xs font-bold transition-colors"
+                    >
+                      Cancel
+                    </button>
+                    <button
+                      type="button"
+                      onClick={handleConfirmClearChat}
+                      className="px-3.5 py-1 rounded-full bg-rose-600 hover:bg-rose-500 text-white text-xs font-bold flex items-center gap-1 shadow-lg transition-colors"
+                    >
+                      <Trash2 size={11} />
+                      Yes, Clear All
+                    </button>
+                  </div>
+                </div>
+              )}
+            </form>
+          </div>
+        </div>
       </div>
     </div>
   );
 }
+
 
