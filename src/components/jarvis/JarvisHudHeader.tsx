@@ -174,7 +174,7 @@ export function JarvisHudHeader({
                   fontWeight: 700,
                 }}
               >
-                MULTI-AI
+                MULTI
               </span>
             </div>
             <p style={{ margin: '2px 0 0', fontSize: '12px', color: 'var(--muted)' }}>
@@ -259,7 +259,7 @@ export function JarvisHudHeader({
             }}
           >
             <Shield size={13} />
-            <span>Graphic Categories</span>
+            <span>Category Matrix</span>
           </button>
 
           <button
