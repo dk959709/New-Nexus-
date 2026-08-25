@@ -4422,7 +4422,7 @@ async function startServer() {
       parsed.data;
 
     try {
-      const primaryResult = await executeCustomProviderChat({
+      const primaryResult = await executeAiWithProviderOrFallback({
         providerConfig,
         messages,
         temperature,
@@ -4447,7 +4447,7 @@ async function startServer() {
           `[JARVIS] Agent "${parsed.data.agentId}" primary provider failed (${primaryResult?.lastError || 'Empty output'}). Triggering configured failover...`,
         );
 
-        const fallbackResult = await executeCustomProviderChat({
+        const fallbackResult = await executeAiWithProviderOrFallback({
           providerConfig: fallbackConfig,
           messages,
           temperature,
