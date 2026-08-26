@@ -826,11 +826,10 @@ export function JarvisChat({ config, onOpenSettings }: JarvisChatProps) {
 
   // Voice Input (Speech Recognition)
   const toggleVoiceInput = () => {
-    const SpeechRecognition =
-      (window as unknown as { SpeechRecognition?: typeof window.webkitSpeechRecognition }).SpeechRecognition ||
-      (window as unknown as { webkitSpeechRecognition?: typeof window.webkitSpeechRecognition }).webkitSpeechRecognition;
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const SpeechRecognitionClass = (window as any).SpeechRecognition || (window as any).webkitSpeechRecognition;
 
-    if (!SpeechRecognition) {
+    if (!SpeechRecognitionClass) {
       alert('Speech recognition is not supported in this browser.');
       return;
     }
@@ -841,7 +840,7 @@ export function JarvisChat({ config, onOpenSettings }: JarvisChatProps) {
     }
 
     try {
-      const recognition = new SpeechRecognition();
+      const recognition = new SpeechRecognitionClass();
       recognition.lang = 'en-US';
       recognition.interimResults = false;
       recognition.maxAlternatives = 1;
@@ -849,8 +848,9 @@ export function JarvisChat({ config, onOpenSettings }: JarvisChatProps) {
       recognition.onstart = () => setVoiceListening(true);
       recognition.onend = () => setVoiceListening(false);
       recognition.onerror = () => setVoiceListening(false);
-      recognition.onresult = (event: SpeechRecognitionEvent) => {
-        const transcript = event.results[0][0].transcript;
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      recognition.onresult = (event: any) => {
+        const transcript = event?.results?.[0]?.[0]?.transcript;
         if (transcript) {
           setQuery((prev) => (prev ? `${prev} ${transcript}` : transcript));
         }

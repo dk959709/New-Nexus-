@@ -204,6 +204,17 @@ export function AssistantPage() {
     setMemoryEditorOpen(true);
   };
 
+  const clearMemory = () => {
+    setSmartMemory('');
+    setMemoryDraft('');
+    setMemoryEditorOpen(false);
+    try {
+      localStorage.removeItem(MEMORY_KEY);
+    } catch {
+      // Ignore
+    }
+  };
+
   const saveMemory = () => {
     const cleaned = memoryDraft.trim().slice(-MAX_MEMORY_LENGTH);
     setSmartMemory(cleaned);

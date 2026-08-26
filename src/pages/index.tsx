@@ -1266,7 +1266,7 @@ export function SpacePage() {
 
 export function SavedPage() {
   const [items, setItems] = useState(storage.getSaved());
-  const [filter, setFilter] = useState<'all' | 'jarvis' | 'diagram' | 'other'>('all');
+  const [filter, setFilter] = useState<'all' | 'jarvis' | 'diagram' | 'chart' | 'other'>('all');
   const [copiedId, setCopiedId] = useState<string | null>(null);
 
   const remove = (id: string) => {

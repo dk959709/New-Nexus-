@@ -236,23 +236,25 @@ export function JarvisSearchCore({ settings, onSearchNexus }: JarvisSearchCorePr
   };
 
   const handleCopy = () => {
-    if (!result?.text) return;
+    const textToCopy = result?.answer || result?.text;
+    if (!textToCopy) return;
     playTapSound();
-    navigator.clipboard.writeText(result.text);
+    navigator.clipboard.writeText(textToCopy);
     setCopied(true);
     setTimeout(() => setCopied(false), 2000);
   };
 
   const handleSave = () => {
-    if (!result?.text) return;
+    const textToSave = result?.answer || result?.text;
+    if (!textToSave) return;
     playTapSound();
     const savedId = `jarvis-search-${Date.now()}`;
     const jarvisSavedItem: SavedItem = {
       id: savedId,
       type: 'jarvis',
       title: query.trim() || 'JARVIS Synthesis',
-      subtitle: result.text.length > 180 ? `${result.text.slice(0, 180)}...` : result.text,
-      content: result.text,
+      subtitle: textToSave.length > 180 ? `${textToSave.slice(0, 180)}...` : textToSave,
+      content: textToSave,
       sources: result.sources?.map((s) => ({
         title: s.title,
         url: s.url,
@@ -268,7 +270,8 @@ export function JarvisSearchCore({ settings, onSearchNexus }: JarvisSearchCorePr
 
   const handleLaunchDeepResearch = () => {
     playTapSound();
-    const targetQ = query.trim() || result?.text?.slice(0, 50) || '';
+    const textSnippet = result?.answer || result?.text;
+    const targetQ = query.trim() || textSnippet?.slice(0, 50) || '';
     navigate(`/jarvis?q=${encodeURIComponent(targetQ)}&deep=true`);
   };
 
@@ -525,7 +528,7 @@ export function JarvisSearchCore({ settings, onSearchNexus }: JarvisSearchCorePr
                     JARVIS Verified Synthesis
                   </h3>
                   <span className="text-[10px] font-mono text-cyan-400/90">
-                    {result.provider ? `Model: ${result.provider.toUpperCase()}` : 'Neural Mesh'} · Verified Multi-Source
+                    {(result.provider || result.model) ? `Model: ${(result.provider || result.model)?.toUpperCase()}` : 'Neural Mesh'} · Verified Multi-Source
                   </span>
                 </div>
               </div>
@@ -584,7 +587,7 @@ export function JarvisSearchCore({ settings, onSearchNexus }: JarvisSearchCorePr
 
             {/* Answer Content */}
             <div className="text-slate-100 text-sm sm:text-base leading-relaxed whitespace-pre-wrap font-sans">
-              {result.text}
+              {result.answer || result.text}
             </div>
 
             {/* Key Bullet Points (If present) */}
@@ -594,7 +597,7 @@ export function JarvisSearchCore({ settings, onSearchNexus }: JarvisSearchCorePr
                   Key Insights:
                 </span>
                 <ul className="space-y-1.5 pl-4 list-disc text-xs sm:text-sm text-slate-200 marker:text-cyan-400">
-                  {result.keyPoints.map((point, idx) => (
+                  {result.keyPoints.map((point: string, idx: number) => (
                     <li key={idx}>{point}</li>
                   ))}
                 </ul>

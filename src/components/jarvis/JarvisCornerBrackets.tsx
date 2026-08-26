@@ -3,6 +3,8 @@ import React from 'react';
 interface JarvisCornerBracketsProps {
   color?: string;
   size?: number;
+  thickness?: number;
+  offset?: number;
   className?: string;
   glow?: boolean;
 }

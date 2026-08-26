@@ -44,8 +44,8 @@ export function WeatherIcon({ condition, size = 28 }: { condition: Condition; si
   );
 }
 
-export function SearchBox({ onSearch, recent = [], placeholder = 'What do you want to know?' }: { onSearch: (value: string) => void; recent?: string[]; placeholder?: string }) {
-  const [value, setValue] = useState('');
+export function SearchBox({ initialValue = '', onSearch, recent = [], placeholder = 'What do you want to know?' }: { initialValue?: string; onSearch: (value: string) => void; recent?: string[]; placeholder?: string }) {
+  const [value, setValue] = useState(initialValue);
   const { supported, listening, start } = useSpeechSearch(setValue);
   const submit = (candidate: string) => { if (candidate.trim()) onSearch(candidate.trim()); };
   return (

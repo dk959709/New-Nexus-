@@ -9,6 +9,9 @@ export interface SearchResult {
   image?: string;
   thumbnail?: string;
   type: 'web' | 'news' | 'images' | 'videos' | 'shopping' | 'wikipedia';
+  videoId?: string;
+  channel?: string;
+  duration?: string;
 }
 
 export interface WikipediaSearchResult {
@@ -187,6 +190,8 @@ export interface JarvisImageResult {
   author?: string;
   license?: string;
   thumbnailUrl?: string;
+  source?: string;
+  description?: string;
 }
 
 export interface JarvisAgentConfig {
@@ -215,17 +220,7 @@ export interface JarvisSystemConfig {
   diagramModeDefault?: boolean;
   chartModeDefault?: boolean;
   imageModeDefault?: boolean;
-  agents: Record<
-    | 'planner'
-    | 'researcher'
-    | 'factChecker'
-    | 'reviewer'
-    | 'finalSynthesizer'
-    | 'architect'
-    | 'dataAnalyst'
-    | 'imageFinder',
-    JarvisAgentConfig
-  >;
+  agents: Record<string, JarvisAgentConfig>;
   customAgents?: CustomJarvisAgentConfig[];
 }
 
@@ -313,6 +308,9 @@ export interface AISource {
 export interface AnswerEngineResult {
   query: string;
   answer: string;
+  text?: string;
+  provider?: string;
+  keyPoints?: string[];
   confidence: ConfidenceLevel;
   confidenceReason?: string;
   sources: AISource[];

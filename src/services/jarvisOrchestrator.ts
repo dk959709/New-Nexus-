@@ -219,8 +219,210 @@ export async function fetchJarvisRealImages(
   return results;
 }
 
-export function extractChartDataFromText(text: string): JarvisChartData | null {
+function parseCellNumber(val: unknown): number | null {
+  if (val === null || val === undefined) return null;
+  if (typeof val === 'number') return isNaN(val) ? null : val;
+  const clean = String(val).replace(/[*_`~]/g, '').trim();
+  if (!clean) return null;
+  // Match numbers with commas, decimals, units (e.g. "3,349 mAh", "$799", "128 GB", "50 MP", "120 Hz", "25 W")
+  const match = clean.match(/([+-]?\d{1,3}(?:,\d{3})*(?:\.\d+)?|[+-]?\d+(?:\.\d+)?)/);
+  if (match && match[1]) {
+    const num = parseFloat(match[1].replace(/,/g, ''));
+    return isNaN(num) ? null : num;
+  }
+  return null;
+}
+
+export function extractChartDataFromMarkdownTable(
+  text: string,
+  titleHint?: string,
+): JarvisChartData | null {
   if (!text || typeof text !== 'string') return null;
+
+  const lines = text.split(/\r?\n/);
+  let tableLines: string[] = [];
+  const tables: string[][] = [];
+
+  for (const line of lines) {
+    const trimmed = line.trim();
+    if (trimmed.startsWith('|') && trimmed.endsWith('|') && trimmed.includes('|')) {
+      tableLines.push(trimmed);
+    } else {
+      if (tableLines.length >= 3) {
+        tables.push([...tableLines]);
+      }
+      tableLines = [];
+    }
+  }
+  if (tableLines.length >= 3) {
+    tables.push([...tableLines]);
+  }
+
+  for (const table of tables) {
+    if (table.length < 3) continue;
+
+    // Line 0: Header
+    const rawHeaderCells = table[0]
+      .split('|')
+      .map((c) => c.trim().replace(/[*_`]/g, ''))
+      .filter((_, idx, arr) => idx > 0 && idx < arr.length - 1);
+
+    // Filter out delimiter line (usually index 1)
+    const dataRows = table
+      .slice(1)
+      .filter((row) => {
+        const withoutPipes = row.replace(/[|\s]/g, '');
+        return !/^[-:]+$/.test(withoutPipes);
+      })
+      .map((row) =>
+        row
+          .split('|')
+          .map((c) => c.trim())
+          .filter((_, idx, arr) => idx > 0 && idx < arr.length - 1),
+      )
+      .filter((row) => row.length >= 2 && !row.every((c) => /^[-:]+$/.test(c.replace(/[*_`]/g, ''))));
+
+    if (rawHeaderCells.length < 2 || dataRows.length < 1) continue;
+
+    const col0Values = dataRows.map((r) => r[0].replace(/[*_`]/g, '').trim());
+    const entityCandidatesInHeader = rawHeaderCells.slice(1);
+
+    // Case 1: Header contains entities (e.g. ['iPhone 15', 'Galaxy S24', 'Pixel 8']), rows contain specs/metrics
+    let numericRowHits = 0;
+    const rowSeriesList: Array<{ name: string; values: number[] }> = [];
+
+    dataRows.forEach((row) => {
+      const rowName = row[0].replace(/[*_`]/g, '').trim();
+      const cells = row.slice(1);
+      const nums = cells.map(parseCellNumber);
+      const validNumsCount = nums.filter((n): n is number => n !== null).length;
+
+      if (validNumsCount >= 1) {
+        numericRowHits++;
+        rowSeriesList.push({
+          name: rowName,
+          values: nums.map((n) => (n !== null ? n : 0)),
+        });
+      }
+    });
+
+    // Case 2: Header contains metrics/specs (e.g. ['Battery (mAh)', 'RAM (GB)']), col 0 contains entities
+    let numericColHits = 0;
+    const colSeriesList: Array<{ name: string; values: number[] }> = [];
+
+    for (let cIdx = 1; cIdx < rawHeaderCells.length; cIdx++) {
+      const colName = rawHeaderCells[cIdx];
+      const colVals = dataRows.map((r) => parseCellNumber(r[cIdx]));
+      const validCount = colVals.filter((n): n is number => n !== null).length;
+      if (validCount >= 1) {
+        numericColHits++;
+        colSeriesList.push({
+          name: colName,
+          values: colVals.map((n) => (n !== null ? n : 0)),
+        });
+      }
+    }
+
+    // Determine best structure:
+    if (numericRowHits >= 1 && entityCandidatesInHeader.length >= 2) {
+      return {
+        chartType: 'bar',
+        title: titleHint ? `${titleHint.replace(/^compare\s+/i, '').trim()} Specifications` : 'Comparative Specifications',
+        labels: entityCandidatesInHeader,
+        series: rowSeriesList,
+      };
+    } else if (numericColHits >= 1 && col0Values.length >= 2) {
+      const isTimeSeries = col0Values.some((v) =>
+        /\b(19\d\d|20\d\d|jan|feb|mar|apr|may|jun|jul|aug|sep|oct|nov|dec|q[1-4]|20[2-3]\d)\b/i.test(v),
+      );
+      return {
+        chartType: isTimeSeries ? 'line' : 'bar',
+        title: titleHint ? `${titleHint.replace(/^compare\s+/i, '').trim()} Specifications` : 'Comparative Specifications',
+        labels: col0Values,
+        series: colSeriesList,
+      };
+    }
+  }
+
+  return null;
+}
+
+export function extractChartDataFromBulletPoints(
+  text: string,
+  titleHint?: string,
+): JarvisChartData | null {
+  if (!text || typeof text !== 'string') return null;
+
+  const lines = text.split(/\r?\n/);
+  const itemEntries: Array<{ entity: string; specs: Record<string, number> }> = [];
+
+  for (const line of lines) {
+    const trimmed = line.trim();
+    if (!trimmed.startsWith('-') && !trimmed.startsWith('*') && !/^\d+\./.test(trimmed)) continue;
+
+    // Pattern: - **Entity Name**: spec 1 (val), spec 2 (val)
+    const colonIdx = trimmed.indexOf(':');
+    if (colonIdx === -1) continue;
+
+    const rawEntity = trimmed.slice(0, colonIdx).replace(/^[-*\d.]+\s*/, '').replace(/[*_`]/g, '').trim();
+    const rawContent = trimmed.slice(colonIdx + 1);
+
+    if (!rawEntity) continue;
+
+    // Look for spec key-values e.g. "Battery: 3,349 mAh", "48 MP camera", "6 GB RAM"
+    const specs: Record<string, number> = {};
+    const clauses = rawContent.split(/[,;]/);
+
+    for (const clause of clauses) {
+      const num = parseCellNumber(clause);
+      if (num !== null) {
+        let metricName = clause.replace(/([+-]?\d{1,3}(?:,\d{3})*(?:\.\d+)?|[+-]?\d+(?:\.\d+)?)/g, '').replace(/[*_`]/g, '').trim();
+        metricName = metricName.replace(/^[-:\s]+/, '').replace(/[-:\s]+$/, '');
+        if (!metricName) metricName = 'Value';
+        specs[metricName] = num;
+      }
+    }
+
+    if (Object.keys(specs).length > 0) {
+      itemEntries.push({ entity: rawEntity, specs });
+    }
+  }
+
+  if (itemEntries.length >= 2) {
+    const allMetrics = Array.from(new Set(itemEntries.flatMap((e) => Object.keys(e.specs))));
+    if (allMetrics.length > 0) {
+      const labels = itemEntries.map((e) => e.entity);
+      const series = allMetrics.map((metric) => ({
+        name: metric,
+        values: itemEntries.map((e) => e.specs[metric] ?? 0),
+      }));
+
+      return {
+        chartType: 'bar',
+        title: titleHint ? `${titleHint.replace(/^compare\s+/i, '').trim()} Comparison` : 'Comparative Data Analysis',
+        labels,
+        series,
+      };
+    }
+  }
+
+  return null;
+}
+
+export function extractChartDataFromText(
+  text: string,
+  fallbackContextText?: string,
+  titleHint?: string,
+): JarvisChartData | null {
+  if (!text || typeof text !== 'string') {
+    if (fallbackContextText) {
+      return (
+        extractChartDataFromMarkdownTable(fallbackContextText, titleHint) ||
+        extractChartDataFromBulletPoints(fallbackContextText, titleHint)
+      );
+    }
+    return null;
+  }
 
   // 1. Strip markdown code fences if present: ```json ... ```
   let raw = text.trim();
@@ -250,7 +452,7 @@ export function extractChartDataFromText(text: string): JarvisChartData | null {
       const obj = parsed as Record<string, unknown>;
       const rawChartType = String(obj.chartType || obj.type || '').toLowerCase();
       const chartType: 'bar' | 'line' = rawChartType === 'line' ? 'line' : 'bar';
-      const title = String(obj.title || obj.name || obj.heading || 'Data Comparison');
+      const title = String(obj.title || obj.name || obj.heading || (titleHint ? `${titleHint} Comparison` : 'Data Comparison'));
 
       // Extract labels / categories
       const rawLabels =
@@ -280,9 +482,8 @@ export function extractChartDataFromText(text: string): JarvisChartData | null {
               ? s.points
               : [];
             const values = vals.map((v: unknown) => {
-              if (typeof v === 'number' && !isNaN(v)) return v;
-              const num = parseFloat(String(v ?? '').replace(/[^0-9.-]+/g, ''));
-              return isNaN(num) ? 0 : num;
+              const num = parseCellNumber(v);
+              return num !== null ? num : 0;
             });
             return { name, values };
           })
@@ -309,32 +510,46 @@ export function extractChartDataFromText(text: string): JarvisChartData | null {
     if (Array.isArray(parsed) && parsed.length > 0 && typeof parsed[0] === 'object' && parsed[0] !== null) {
       const rows = parsed as Array<Record<string, unknown>>;
       const keys = Object.keys(rows[0]);
-      // First string/id key is candidate for label
       const labelKey = keys.find((k) => typeof rows[0][k] === 'string') || keys[0];
-      const numericKeys = keys.filter((k) => k !== labelKey && rows.some((r) => typeof r[k] === 'number' || !isNaN(parseFloat(String(r[k])))));
+      const numericKeys = keys.filter((k) => k !== labelKey && rows.some((r) => parseCellNumber(r[k]) !== null));
 
       if (numericKeys.length > 0) {
         const labels = rows.map((r, i) => String(r[labelKey] ?? `Point ${i + 1}`));
         const series = numericKeys.map((k) => ({
           name: k.charAt(0).toUpperCase() + k.slice(1).replace(/_/g, ' '),
           values: rows.map((r) => {
-            const val = r[k];
-            if (typeof val === 'number' && !isNaN(val)) return val;
-            const num = parseFloat(String(val ?? '').replace(/[^0-9.-]+/g, ''));
-            return isNaN(num) ? 0 : num;
+            const num = parseCellNumber(r[k]);
+            return num !== null ? num : 0;
           }),
         }));
 
         return {
           chartType: 'bar',
-          title: 'Comparative Data Analysis',
+          title: titleHint ? `${titleHint} Comparison` : 'Comparative Data Analysis',
           series,
           labels,
         };
       }
     }
-  } catch (err) {
-    console.warn('[JARVIS Data Analyst] Failed to parse chart JSON:', err);
+  } catch {
+    // If JSON parsing fails, fall through to table extraction
+  }
+
+  // 3. Fallback to Markdown Table extraction on the model output itself
+  const tableData = extractChartDataFromMarkdownTable(text, titleHint);
+  if (tableData) return tableData;
+
+  // 4. Fallback to Bullet Points extraction on the model output itself
+  const bulletData = extractChartDataFromBulletPoints(text, titleHint);
+  if (bulletData) return bulletData;
+
+  // 5. Fallback to Markdown Table extraction on fallbackContextText (e.g. finalAnswer or facts)
+  if (fallbackContextText) {
+    const fallbackTableData = extractChartDataFromMarkdownTable(fallbackContextText, titleHint);
+    if (fallbackTableData) return fallbackTableData;
+
+    const fallbackBulletData = extractChartDataFromBulletPoints(fallbackContextText, titleHint);
+    if (fallbackBulletData) return fallbackBulletData;
   }
 
   return null;
@@ -1095,7 +1310,7 @@ Please perform your specialized processing for this inquiry. Provide clear, conc
     const diagramModeNotice = diagramMode
       ? `\n\n[SYSTEM CONTEXT: Diagram Mode is currently ENABLED (ON).]
 - The user has enabled Diagram Mode for this session.
-- Evaluate if the inquiry has clear visual structure, processes, spatial flows, architecture, or comparisons. If yes, set "needsDiagram": true. Otherwise, set "needsDiagram": false.`
+- Evaluate if the inquiry involves technical systems, hardware/device architecture, system workflows, comparisons (e.g. phone/hardware specs, camera sensor mechanisms, software architecture), processes, or concepts that benefit from a visual blueprint. If yes, set "needsDiagram": true. Otherwise, set "needsDiagram": false.`
       : `\n\n[SYSTEM CONTEXT: Diagram Mode is currently DISABLED (OFF).]
 - Diagram Mode is OFF for this request. Always output "needsDiagram": false.`;
 
@@ -1105,7 +1320,7 @@ Please perform your specialized processing for this inquiry. Provide clear, conc
     const chartModeNotice = chartMode
       ? `\n\n[SYSTEM CONTEXT: Chart Mode is currently ENABLED (ON).]
 - The user has enabled Chart Mode for this session.
-- Evaluate if the inquiry involves comparable numbers, statistics, metrics across categories, time series, or items worth charting. If yes, set "needsChart": true. Otherwise, set "needsChart": false.`
+- Evaluate if the inquiry involves comparative numbers, specs, battery mAh, RAM, storage, camera megapixels, prices, dimensions, statistics, timelines, or quantitative metrics across products, categories, or items. If yes, set "needsChart": true. Otherwise, set "needsChart": false.`
       : `\n\n[SYSTEM CONTEXT: Chart Mode is currently DISABLED (OFF).]
 - Chart Mode is OFF for this request. Always output "needsChart": false.`;
 
@@ -1115,7 +1330,7 @@ Please perform your specialized processing for this inquiry. Provide clear, conc
     const imageModeNotice = imageMode
       ? `\n\n[SYSTEM CONTEXT: Image Mode is currently ENABLED (ON).]
 - The user has enabled Image Mode for this session.
-- Evaluate if the inquiry is about something visual/physical that a real photo would help illustrate (e.g. "what does a black hole look like", "show me examples of gothic architecture", "what is the Andromeda galaxy"). If yes, set "needsImage": true. Otherwise, set "needsImage": false.`
+- Evaluate if the inquiry mentions physical products (e.g. smartphones, laptops, cars, hardware), real-world objects, places, landmarks, animals, space imagery, or tangible subjects. If yes, set "needsImage": true. Otherwise, set "needsImage": false.`
       : `\n\n[SYSTEM CONTEXT: Image Mode is currently DISABLED (OFF).]
 - Image Mode is OFF for this request. Always output "needsImage": false.`;
 
@@ -1663,9 +1878,16 @@ ${reviewerOutput?.recommendation ? `Reviewer Advice: ${reviewerOutput.recommenda
   // ==========================================
   let diagramSvg: string | undefined = undefined;
 
+  const hasDiagramIntent =
+    Boolean(plannerOutput.needsDiagram) ||
+    /\b(how|why|compare|versus|vs|architecture|system|process|flow|work|works|mechanism|sensor|circuit|pipeline|cycle|lifecycle|structure|component|hardware|engine|model|design|spec|specs|difference)\b/i.test(
+      query,
+    ) ||
+    query.length > 20;
+
   const shouldArchitect =
     diagramMode &&
-    Boolean(plannerOutput.needsDiagram) &&
+    hasDiagramIntent &&
     agentConfigs.architect &&
     agentConfigs.architect.enabled !== false;
 
@@ -1768,9 +1990,16 @@ ${reviewerOutput?.recommendation ? `Reviewer Advice: ${reviewerOutput.recommenda
   // ==========================================
   let chartData: JarvisChartData | null = null;
 
+  const hasNumericIntent =
+    Boolean(plannerOutput.needsChart) ||
+    /\b(compare|versus|vs|spec|specs|specification|battery|mah|ram|gb|tb|storage|camera|mp|megapixels?|price|cost|\$|dollar|euro|weight|dimension|speed|ghz|mhz|hz|fps|benchmark|score|sales|revenue|growth|gdp|rate|percent|%|capacity|numbers?|statistics?|metrics?|trends?|table)\b/i.test(
+      query,
+    ) ||
+    query.length > 20;
+
   const shouldDataAnalyst =
     chartMode &&
-    Boolean(plannerOutput.needsChart) &&
+    hasNumericIntent &&
     agentConfigs.dataAnalyst &&
     agentConfigs.dataAnalyst.enabled !== false;
 
@@ -1790,9 +2019,10 @@ ${reviewerOutput?.recommendation ? `Reviewer Advice: ${reviewerOutput.recommenda
 
     const defaultPromptTemplate = DEFAULT_AGENT_SYSTEM_PROMPTS.dataAnalyst;
     const factsList = Array.isArray(researcherOutput?.facts) ? researcherOutput.facts : [];
+    const fallbackContext = finalAnswer || factsList.slice(0, 8).join('\n');
     const activePrompt = (daCfg.systemPrompt || defaultPromptTemplate)
       .replace('{task}', plannerOutput.task || query)
-      .replace('{content}', finalAnswer || factsList.slice(0, 8).join('\n'));
+      .replace('{content}', fallbackContext);
 
     console.group(`[JARVIS Data Analyst] Extracting Chart Data for: "${query}"`);
     console.log(`[JARVIS Data Analyst] Active Prompt:`, activePrompt);
@@ -1801,7 +2031,7 @@ ${reviewerOutput?.recommendation ? `Reviewer Advice: ${reviewerOutput.recommenda
       {
         role: 'system',
         content:
-          'You are the JARVIS Data Analyst agent. Extract quantitative comparative statistics and metrics into valid chart JSON with chartType ("bar" or "line"), title, series (array of {name, values}), and labels (array of string category/time names). Output ONLY valid, parseable JSON. Do not include extra text.',
+          'You are the JARVIS Data Analyst agent. Inspect markdown tables, specifications, and bullet comparisons. Extract quantitative comparative statistics and metrics into valid chart JSON with chartType ("bar" or "line"), title, series (array of {name, values}), and labels (array of string category/item names). Output ONLY valid, parseable JSON. Do not include extra text.',
       },
       { role: 'user', content: activePrompt },
     ]);
@@ -1809,9 +2039,11 @@ ${reviewerOutput?.recommendation ? `Reviewer Advice: ${reviewerOutput.recommenda
     const duration = Date.now() - start;
     console.log(`[JARVIS Data Analyst] Raw Output (${daRes.model || 'AI'}):`, daRes.text || daRes.error);
 
+    const contextForTableFallback = finalAnswer || factsList.join('\n');
+
     if (daRes.ok && daRes.text) {
-      const extracted = extractChartDataFromText(daRes.text);
-      if (extracted) {
+      const extracted = extractChartDataFromText(daRes.text, contextForTableFallback, plannerOutput.task || query);
+      if (extracted && Array.isArray(extracted.series) && extracted.series.length > 0 && Array.isArray(extracted.labels) && extracted.labels.length > 0) {
         chartData = extracted;
         console.log(`[JARVIS Data Analyst] Successfully extracted chart data:`, chartData);
         console.groupEnd();
@@ -1824,12 +2056,70 @@ ${reviewerOutput?.recommendation ? `Reviewer Advice: ${reviewerOutput.recommenda
           providerName: daRes.providerName,
           model: daRes.model,
           durationMs: duration,
-          summary: `Quantitative chart extracted: "${chartData.title || 'Data Analysis'}" (${chartData.chartType?.toUpperCase()} chart).`,
+          summary: `Quantitative chart extracted: "${chartData.title || 'Data Analysis'}" (${chartData.series?.length || 0} series, ${chartData.labels?.length || 0} points).`,
           outputPreview: JSON.stringify(chartData, null, 2),
           usedFallback: daRes.usedFallback,
         });
       } else {
-        console.warn(`[JARVIS Data Analyst] Could not parse chart JSON from model output.`);
+        // Direct markdown table parsing fallback
+        const tableFallback = extractChartDataFromMarkdownTable(contextForTableFallback, plannerOutput.task || query) ||
+                              extractChartDataFromBulletPoints(contextForTableFallback, plannerOutput.task || query);
+        if (tableFallback && Array.isArray(tableFallback.series) && tableFallback.series.length > 0) {
+          chartData = tableFallback;
+          console.log(`[JARVIS Data Analyst] Extracted chart from markdown table fallback:`, chartData);
+          console.groupEnd();
+
+          updateStep({
+            agentId: 'dataAnalyst',
+            name: daCfg.name || 'Data Analyst',
+            icon: daCfg.icon || '📊',
+            status: 'completed',
+            providerName: daRes.providerName || 'Local Table Parser',
+            model: daRes.model || 'markdown-table-engine',
+            durationMs: duration,
+            summary: `Comparative chart parsed from specifications table: "${chartData.title || 'Data Analysis'}" (${chartData.series?.length || 0} series, ${chartData.labels?.length || 0} points).`,
+            outputPreview: JSON.stringify(chartData, null, 2),
+            usedFallback: true,
+          });
+        } else {
+          console.warn(`[JARVIS Data Analyst] No numeric series detected.`);
+          console.groupEnd();
+
+          updateStep({
+            agentId: 'dataAnalyst',
+            name: daCfg.name || 'Data Analyst',
+            icon: daCfg.icon || '📊',
+            status: 'skipped',
+            providerName: daRes.providerName,
+            model: daRes.model,
+            durationMs: duration,
+            summary: 'No distinct comparative numeric series detected in synthesized content.',
+          });
+        }
+      }
+    } else {
+      // If provider call failed, attempt resilient markdown table fallback
+      const tableFallback = extractChartDataFromMarkdownTable(contextForTableFallback, plannerOutput.task || query) ||
+                            extractChartDataFromBulletPoints(contextForTableFallback, plannerOutput.task || query);
+      if (tableFallback && Array.isArray(tableFallback.series) && tableFallback.series.length > 0) {
+        chartData = tableFallback;
+        console.log(`[JARVIS Data Analyst] Extracted chart from markdown table fallback after provider notice:`, chartData);
+        console.groupEnd();
+
+        updateStep({
+          agentId: 'dataAnalyst',
+          name: daCfg.name || 'Data Analyst',
+          icon: daCfg.icon || '📊',
+          status: 'completed',
+          providerName: daRes.providerName || 'Local Table Parser',
+          model: daRes.model || 'markdown-table-engine',
+          durationMs: duration,
+          summary: `Comparative chart parsed from specifications: "${chartData.title || 'Data Analysis'}" (${chartData.series?.length || 0} series, ${chartData.labels?.length || 0} points).`,
+          outputPreview: JSON.stringify(chartData, null, 2),
+          usedFallback: true,
+        });
+      } else {
+        console.warn(`[JARVIS Data Analyst] Provider call notice: ${daRes.error}`);
         console.groupEnd();
 
         updateStep({
@@ -1840,23 +2130,9 @@ ${reviewerOutput?.recommendation ? `Reviewer Advice: ${reviewerOutput.recommenda
           providerName: daRes.providerName,
           model: daRes.model,
           durationMs: duration,
-          summary: 'No distinct comparative numeric series detected in synthesized content.',
+          summary: `Data analysis skipped (${daRes.error || 'Provider unavailable'}).`,
         });
       }
-    } else {
-      console.warn(`[JARVIS Data Analyst] Provider call notice: ${daRes.error}`);
-      console.groupEnd();
-
-      updateStep({
-        agentId: 'dataAnalyst',
-        name: daCfg.name || 'Data Analyst',
-        icon: daCfg.icon || '📊',
-        status: 'skipped',
-        providerName: daRes.providerName,
-        model: daRes.model,
-        durationMs: duration,
-        summary: `Data analysis skipped (${daRes.error || 'Provider unavailable'}).`,
-      });
     }
   }
 
@@ -1865,9 +2141,16 @@ ${reviewerOutput?.recommendation ? `Reviewer Advice: ${reviewerOutput.recommenda
   // ==========================================
   let retrievedImages: JarvisImageResult[] = [];
 
+  const hasImageIntent =
+    Boolean(plannerOutput.needsImage) ||
+    /\b(iphone|galaxy|samsung|pixel|apple|google|phone|smartphone|laptop|macbook|gpu|cpu|camera|sensor|car|ev|tesla|vehicle|telescope|building|architecture|animal|space|galaxy|nebula|planet|star|device|hardware|product|look|photo|image|picture|what does|show me)\b/i.test(
+      query,
+    ) ||
+    query.length > 20;
+
   const shouldImageFinder =
     imageMode &&
-    Boolean(plannerOutput.needsImage) &&
+    hasImageIntent &&
     agentConfigs.imageFinder &&
     agentConfigs.imageFinder.enabled !== false;
 
@@ -1911,8 +2194,8 @@ ${reviewerOutput?.recommendation ? `Reviewer Advice: ${reviewerOutput.recommenda
     if (!searchQuery) {
       // Fallback: clean the query of question/command phrases
       searchQuery = (plannerOutput.task || query)
-        .replace(/^(what is|what does|show me|photos of|pictures of|images of|a photo of|an image of)\s+/i, '')
-        .replace(/\b(look like|look)\b/i, '')
+        .replace(/^(what is|what does|show me|photos of|pictures of|images of|a photo of|an image of|compare)\s+/i, '')
+        .replace(/\b(look like|look|specs|specifications)\b/i, '')
         .trim();
     }
 

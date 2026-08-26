@@ -25,9 +25,9 @@ Decide execution strategy:
 - needsResearch: true if the query requires external factual data, current events, technical documentation, citations, or domain facts. False for simple casual greetings or trivial one-liners.
 - needsFactCheck: true if claims, statistics, historical dates, or verifiable technical details need validation.
 - needsReview: true for complex, multi-part, analytical, coding, architecture, design, policy, comparative, or reasoning-heavy questions that benefit from quality evaluation, nuance verification, or structural critique. Set false only for trivial greetings (e.g. "hi", "how are you") or simple single-fact lookups.
-- needsDiagram: true only if Diagram Mode is enabled AND the query would genuinely benefit from a visual diagram - concepts with clear structure, process flows, comparisons, spatial relationships, or physical phenomena (e.g. "what is a black hole", "how does the water cycle work", "compare X vs Y architecture"). Set false for simple factual questions, opinions, or anything without natural visual structure, or whenever Diagram Mode is off.
-- needsChart: true only if Chart Mode is enabled AND the query involves comparable numeric data across categories, time/years, or items (e.g. "compare GDP growth of 3 countries", "show EV sales trends over the years", "compare battery capacity of these phones"). Set false for questions without meaningful numeric comparison, or whenever Chart Mode is off.
-- needsImage: true only if Image Mode is enabled AND the query is about something visual/physical that a real photo would help illustrate (e.g. "what does a black hole look like", "show me examples of gothic architecture", "what is the Andromeda galaxy"). Set false for abstract, conceptual, numeric, or process-based questions where a photo wouldn't add value, or whenever Image Mode is off.
+- needsDiagram: true whenever Diagram Mode is enabled AND the query involves technical systems, hardware/device architecture, system workflows, comparisons (e.g. phone/hardware specs, camera sensor mechanisms, software architecture), processes, or concepts that benefit from a visual blueprint. Set false only if Diagram Mode is off or query has no structure.
+- needsChart: true whenever Chart Mode is enabled AND the query involves comparative numbers, specs, battery mAh, RAM, storage, camera megapixels, prices, dimensions, statistics, timelines, or quantitative metrics across products, categories, or items. Set false only if Chart Mode is off or query has no numbers.
+- needsImage: true whenever Image Mode is enabled AND the query mentions physical products (e.g. smartphones, laptops, cars, hardware), real-world objects, places, landmarks, animals, space imagery, or tangible subjects. Set false only if Image Mode is off or topic is purely abstract.
 - task: a concise goal statement, under 15 words.
 - plan: 2-4 short steps describing your approach, not a full essay.
 - If the query is ambiguous or unclear, still produce a best-effort plan and lean toward needsResearch: true to gather clarifying context.
@@ -39,8 +39,8 @@ Output ONLY a JSON object with this exact structure:
   "needsFactCheck": true,
   "needsReview": true,
   "needsDiagram": true,
-  "needsChart": false,
-  "needsImage": false
+  "needsChart": true,
+  "needsImage": true
 }`,
 
   researcher: `You are the RESEARCHER agent of JARVIS.
@@ -113,7 +113,8 @@ Output ONLY a valid JSON object in this exact format, no extra text:
 Your task is to combine the provided research, verified claims, custom agent insights, and review notes into a clean, accurate, and definitive response for the user.
 
 Guidelines:
-- Deliver a direct, elegant, and informative answer in clean Markdown, using headers or bullet points only where they genuinely improve readability - not for every response.
+- Deliver a direct, elegant, and informative answer in clean Markdown, using headers, comparison tables, or bullet points where they improve readability.
+- When comparing specifications or products, markdown tables (| Feature | Product A | Product B |) are encouraged for clarity.
 - Keep the tone professional, objective, and clear. Aim for a complete but focused answer (roughly 400-550 words).
 - Do NOT use LaTeX math syntax or delimiters (e.g. do NOT use \\[ \\], \\( \\), $$ or $). Always use clean plain-text mathematical notation and standard unicode symbols instead (for example: "Thrust = mass flow rate × exhaust velocity" or "F = m · a" or "E = mc²").
 - Do NOT mention intermediate agent names, JSON formats, or internal reasoning steps.
@@ -131,18 +132,19 @@ Core Context / Synthesized Intelligence:
 
 Instructions:
 1. Generate a self-contained, beautifully styled SVG diagram (viewBox="0 0 800 480" width="100%" height="100%").
-2. Styling Guidelines (Dark JARVIS Cyber Theme):
+2. Focus on visual process flows, technical mechanisms (e.g., optical camera sensor pipelines, hardware architecture, photon-to-ISP stages), comparative blocks, or system hierarchies.
+3. Styling Guidelines (Dark JARVIS Cyber Theme):
    - Background: <rect width="100%" height="100%" rx="16" fill="#070d19"/>
    - Cards/Nodes: Rectangles (<rect rx="10" ...>) with dark fill (#0f172a or #111e38), subtle stroke (#38bdf8, #00f0ff, #a855f7, or #34d399) and stroke-width="1.5".
    - Headers/Titles: <text font-family="system-ui, -apple-system, sans-serif" font-size="14" font-weight="bold" fill="#f8fafc" text-anchor="middle">
    - Labels/Descriptions: <text font-family="system-ui, -apple-system, sans-serif" font-size="11" fill="#94a3b8" text-anchor="middle">
    - Connectors/Flow: <path d="..." stroke="#38bdf8" stroke-width="2" marker-end="url(#arrow)"/>
    - Defs: Include <defs><marker id="arrow" viewBox="0 0 10 10" refX="6" refY="5" markerWidth="6" markerHeight="6" orient="auto"><path d="M 0 1 L 10 5 L 0 9 z" fill="#38bdf8"/></marker></defs>
-3. Structure:
+4. Structure:
    - Provide 3 to 6 key stages, components, or conceptual blocks arranged logically with clear flow arrows.
    - Keep all element coordinates strictly within 0-800 x and 0-480 y.
-4. Output Requirement:
-   - You MUST finish the diagram completely, including a proper closing </svg> tag, within your token budget. If running low on space, immediately simplify remaining elements (fewer decorative details, shorter labels) rather than leaving any section unfinished or cut off. An unfinished diagram is a failure - always prioritize completing all planned sections over adding visual detail to early sections.
+5. Output Requirement:
+   - You MUST finish the diagram completely, including a proper closing </svg> tag, within your token budget. If running low on space, immediately simplify remaining elements rather than leaving any section cut off.
    - Output ONLY the raw <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 800 480">...</svg> markup.
    - Do NOT wrap in conversational text or markdown.`,
 
@@ -153,7 +155,32 @@ Synthesized Intelligence Content / Facts:
 {content}
 
 Instructions:
-- Extract numeric data points suitable for a chart comparing categories, entities, or time series.
+- Carefully inspect all markdown tables (| Feature | Item 1 | Item 2 |), bullet points, and comparative specifications in the content.
+- For metrics with units (e.g. "3,349 mAh", "4,000 mAh", "6 GB", "8 GB", "48 MP", "50 MP", "$799", "120 Hz", "25 W"), strip the units to extract pure numeric numbers (e.g. 3349, 4000, 6, 8, 48, 50, 799, 120, 25) and place the unit in the series or label name.
+- Structure the chart:
+  - For product/entity comparisons across features (e.g. iPhone 15 vs Galaxy S24 vs Pixel 8):
+    - Option 1 (Preferred): "labels" are the products/entities (e.g. ["iPhone 15", "Galaxy S24", "Pixel 8"]), and each metric is an item in "series":
+      {
+        "chartType": "bar",
+        "title": "Smartphone Specifications Comparison",
+        "labels": ["iPhone 15", "Galaxy S24", "Pixel 8"],
+        "series": [
+          {"name": "Battery (mAh)", "values": [3349, 4000, 4575]},
+          {"name": "RAM (GB)", "values": [6, 8, 8]},
+          {"name": "Main Camera (MP)", "values": [48, 50, 50]},
+          {"name": "Charging Speed (W)", "values": [20, 25, 27]}
+        ]
+      }
+    - Option 2: "labels" are the features (e.g. ["Battery (mAh)", "RAM (GB)", "Main Camera (MP)"]), and each product is in "series":
+      {
+        "chartType": "bar",
+        "title": "Comparative Hardware Specifications",
+        "labels": ["Battery (mAh)", "RAM (GB)", "Main Camera (MP)"],
+        "series": [
+          {"name": "iPhone 15", "values": [3349, 6, 48]},
+          {"name": "Galaxy S24", "values": [4000, 8, 50]}
+        ]
+      }
 - Output ONLY a valid JSON object in this exact format, with no markdown fences, no conversational prose, and no extra text:
 {
   "chartType": "bar" or "line",
@@ -162,10 +189,8 @@ Instructions:
   "labels": ["Label1", "Label2", ...]
 }
 - Use "line" for sequential / time-series data (e.g. years, dates, timelines) and "bar" for categorical or entity comparisons.
-- Every series object in "series" must contain a "name" string and a "values" array of numbers. All series arrays must have the exact same length as "labels".
-- "labels" must be an array of short descriptive strings.
-- If no genuinely chartable numeric data exists in the content, return exactly:
-{"chartType": null}`,
+- If truly no chartable numeric comparisons exist, return: {"chartType": null}`,
+
   imageFinder: `You are the JARVIS IMAGE FINDER agent.
 Your mission is to formulate ONE concise, highly targeted search query (5-10 words) that will retrieve genuine, high-quality, relevant real photos for the user's inquiry.
 
@@ -173,7 +198,7 @@ User Task / Topic:
 {task}
 
 Instructions:
-- Write ONE short, specific image search query (5-10 words) optimized for finding real photos of the subject (e.g., "high resolution photo of sagrada familia interior", "james webb telescope southern ring nebula photo").
+- Write ONE short, specific image search query (5-10 words) optimized for finding real photos of the physical subject (e.g. "iPhone 15 and Samsung Galaxy S24 comparison photo", "Sony IMX optical camera sensor macro photo", "James Webb telescope southern ring nebula photo").
 - Focus strictly on tangible, visual subjects.
 - Output ONLY a valid JSON object with NO markdown fences, no conversational prose, and no explanation in this exact format:
 {
@@ -197,7 +222,7 @@ export const DEFAULT_JARVIS_CONFIG: JarvisSystemConfig = {
       providerId: 'existing',
       modelId: 'deepseek/deepseek-chat',
       enabled: true,
-      maxTokens: 200,
+      maxTokens: 500,
       enableFailover: false,
       systemPrompt: DEFAULT_AGENT_SYSTEM_PROMPTS.planner,
     },
@@ -275,7 +300,7 @@ export const DEFAULT_JARVIS_CONFIG: JarvisSystemConfig = {
       providerId: 'existing',
       modelId: 'deepseek/deepseek-chat',
       enabled: true,
-      maxTokens: 350,
+      maxTokens: 800,
       enableFailover: false,
       systemPrompt: DEFAULT_AGENT_SYSTEM_PROMPTS.dataAnalyst,
     },
@@ -288,7 +313,7 @@ export const DEFAULT_JARVIS_CONFIG: JarvisSystemConfig = {
       providerId: 'existing',
       modelId: 'deepseek/deepseek-chat',
       enabled: true,
-      maxTokens: 80,
+      maxTokens: 150,
       enableFailover: false,
       systemPrompt: DEFAULT_AGENT_SYSTEM_PROMPTS.imageFinder,
     },
@@ -443,11 +468,13 @@ export const storage = {
         planner: {
           ...DEFAULT_JARVIS_CONFIG.agents.planner,
           ...(stored.agents.planner || {}),
+          maxTokens: Math.max(400, stored.agents.planner?.maxTokens || 500),
           systemPrompt:
             !stored.agents.planner?.systemPrompt ||
             !stored.agents.planner.systemPrompt.includes('needsDiagram') ||
             !stored.agents.planner.systemPrompt.includes('needsChart') ||
             !stored.agents.planner.systemPrompt.includes('needsImage') ||
+            stored.agents.planner.systemPrompt.includes('"needsChart": false') ||
             !stored.agents.planner.systemPrompt.includes('task: a concise goal statement, under 15 words.')
               ? DEFAULT_AGENT_SYSTEM_PROMPTS.planner
               : stored.agents.planner.systemPrompt,
@@ -506,20 +533,22 @@ export const storage = {
         dataAnalyst: {
           ...DEFAULT_JARVIS_CONFIG.agents.dataAnalyst,
           ...(stored.agents?.dataAnalyst || {}),
-          maxTokens: Math.min(600, Math.max(150, stored.agents?.dataAnalyst?.maxTokens || 350)),
+          maxTokens: Math.max(600, stored.agents?.dataAnalyst?.maxTokens || 800),
           systemPrompt:
             !stored.agents?.dataAnalyst?.systemPrompt ||
-            !stored.agents?.dataAnalyst?.systemPrompt?.includes('DATA ANALYST')
+            !stored.agents?.dataAnalyst?.systemPrompt?.includes('DATA ANALYST') ||
+            !stored.agents?.dataAnalyst?.systemPrompt?.includes('strip the units')
               ? DEFAULT_AGENT_SYSTEM_PROMPTS.dataAnalyst
               : stored.agents.dataAnalyst.systemPrompt,
         },
         imageFinder: {
           ...DEFAULT_JARVIS_CONFIG.agents.imageFinder,
           ...(stored.agents?.imageFinder || {}),
-          maxTokens: Math.min(200, Math.max(40, stored.agents?.imageFinder?.maxTokens || 80)),
+          maxTokens: Math.max(120, stored.agents?.imageFinder?.maxTokens || 150),
           systemPrompt:
             !stored.agents?.imageFinder?.systemPrompt ||
-            !stored.agents?.imageFinder?.systemPrompt?.includes('IMAGE FINDER')
+            !stored.agents?.imageFinder?.systemPrompt?.includes('IMAGE FINDER') ||
+            !stored.agents?.imageFinder?.systemPrompt?.includes('physical subject')
               ? DEFAULT_AGENT_SYSTEM_PROMPTS.imageFinder
               : stored.agents.imageFinder.systemPrompt,
         },
