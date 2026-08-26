@@ -132,6 +132,7 @@ export function JarvisSearchCore({ settings, onSearchNexus }: JarvisSearchCorePr
   const navigate = useNavigate();
   const [query, setQuery] = useState('');
   const [activeMode, setActiveMode] = useState<JarvisQuickMode>('ai');
+  const [isFocused, setIsFocused] = useState(false);
   const [status, setStatus] = useState<'idle' | 'searching' | 'thinking' | 'synthesizing' | 'success'>('idle');
   const [result, setResult] = useState<AnswerEngineResult | null>(null);
   const [error, setError] = useState<string | null>(null);
@@ -146,7 +147,6 @@ export function JarvisSearchCore({ settings, onSearchNexus }: JarvisSearchCorePr
   const handleVoiceInput = (text: string) => {
     setQuery(text);
     if (text.trim()) {
-      // Small delay to allow user to see transcript then submit
       setTimeout(() => {
         executeSearch(text.trim(), activeMode);
       }, 400);
@@ -284,36 +284,40 @@ export function JarvisSearchCore({ settings, onSearchNexus }: JarvisSearchCorePr
 
   return (
     <section
-      className="jarvis-search-core-wrapper relative w-full max-w-4xl mx-auto my-4 px-2 sm:px-4 select-none"
+      className="jarvis-search-core-wrapper relative w-full max-w-4xl mx-auto my-6 px-2 sm:px-4 select-none"
       aria-label="JARVIS Intelligent Search Core"
     >
       {/* Seamless Ambient Light Flare */}
       <div
-        className="absolute -top-12 left-1/2 -translate-x-1/2 w-3/4 max-w-lg h-28 pointer-events-none rounded-full blur-3xl opacity-60"
+        className="absolute -top-16 left-1/2 -translate-x-1/2 w-4/5 max-w-xl h-36 pointer-events-none rounded-full blur-3xl transition-opacity duration-700"
         style={{
-          background: 'radial-gradient(ellipse at center, rgba(97, 215, 201, 0.25) 0%, rgba(56, 189, 248, 0.12) 50%, transparent 80%)',
+          background: isFocused
+            ? 'radial-gradient(ellipse at center, rgba(97, 215, 201, 0.35) 0%, rgba(56, 189, 248, 0.2) 50%, transparent 80%)'
+            : 'radial-gradient(ellipse at center, rgba(97, 215, 201, 0.22) 0%, rgba(56, 189, 248, 0.12) 50%, transparent 80%)',
+          opacity: isFocused ? 0.9 : 0.65,
         }}
       />
 
-      {/* Main Transparent Content - Seamlessly Merged into Wallpaper */}
+      {/* Main Transparent Content */}
       <div className="relative z-10 w-full flex flex-col items-center">
-        {/* Animated AI Core Node */}
-        <div className="relative z-10 flex flex-col items-center justify-center mb-4">
+        {/* Animated AI Core Node with Focus Acceleration */}
+        <div className="relative z-10 flex flex-col items-center justify-center mb-3">
           <JarvisAnimatedCore
             status={status}
             reducedMotion={reducedMotion}
             size="md"
             interactive
+            isFocused={isFocused}
             onClick={() => inputRef.current?.focus()}
           />
 
           {/* JARVIS Header & Subtitle */}
-          <div className="text-center mt-2.5">
-            <div className="inline-flex items-center gap-1.5 px-3 py-0.5 rounded-full bg-cyan-500/10 border border-cyan-500/25 text-[10px] font-mono tracking-widest text-cyan-300 uppercase font-bold mb-1 backdrop-blur-sm">
+          <div className="text-center mt-3">
+            <div className="inline-flex items-center gap-1.5 px-3 py-0.5 rounded-full bg-cyan-500/10 border border-cyan-500/30 text-[10px] font-mono tracking-widest text-cyan-300 uppercase font-bold mb-1 backdrop-blur-sm shadow-[0_0_12px_rgba(97,215,201,0.15)]">
               <Zap size={11} className="text-cyan-400" />
               <span>INTELLIGENT SEARCH CORE</span>
             </div>
-            <h2 className="text-2xl sm:text-3xl font-black tracking-tight text-white m-0 drop-shadow-md">
+            <h2 className="text-2xl sm:text-3xl font-black tracking-tight text-white m-0 drop-shadow-[0_2px_12px_rgba(0,0,0,0.8)]">
               JARVIS
             </h2>
             <p className="text-slate-300 text-xs sm:text-sm font-medium mt-1 max-w-md mx-auto drop-shadow-sm">
@@ -322,23 +326,31 @@ export function JarvisSearchCore({ settings, onSearchNexus }: JarvisSearchCorePr
           </div>
         </div>
 
-        {/* Floating Glassmorphic Search Input - Merged into Wallpaper */}
+        {/* Floating Glassmorphic Search Input */}
         <form
           onSubmit={handleSubmit}
           className="relative z-10 w-full max-w-2xl mx-auto"
           role="search"
         >
           <div
-            className="group relative flex items-center gap-2 sm:gap-3 p-2 sm:p-2.5 rounded-2xl sm:rounded-full backdrop-blur-md transition-all duration-300"
+            className={`group relative flex items-center gap-2 sm:gap-3 p-2 sm:p-2.5 rounded-2xl sm:rounded-full backdrop-blur-xl transition-all duration-300 ${
+              isFocused
+                ? 'ring-2 ring-cyan-400/50 shadow-[0_0_30px_rgba(97,215,201,0.35),inset_0_1px_0_rgba(255,255,255,0.2)]'
+                : 'shadow-[0_8px_32px_rgba(0,0,0,0.5),0_0_20px_rgba(97,215,201,0.15),inset_0_1px_0_rgba(255,255,255,0.1)]'
+            }`}
             style={{
-              background: 'rgba(5, 15, 25, 0.45)',
-              border: '1px solid rgba(97, 215, 201, 0.35)',
-              boxShadow: '0 8px 32px rgba(0, 0, 0, 0.4), 0 0 20px rgba(97, 215, 201, 0.15), inset 0 1px 0 rgba(255, 255, 255, 0.1)',
+              background: isFocused ? 'rgba(6, 18, 32, 0.75)' : 'rgba(5, 15, 26, 0.55)',
+              border: isFocused ? '1px solid rgba(97, 215, 201, 0.7)' : '1px solid rgba(97, 215, 201, 0.35)',
             }}
           >
             {/* Search Icon */}
             <div className="pl-3 text-cyan-400 flex items-center justify-center">
-              <Search size={20} className="drop-shadow-[0_0_8px_rgba(97,215,201,0.5)]" />
+              <Search
+                size={20}
+                className={`transition-transform duration-300 ${
+                  isFocused ? 'scale-110 drop-shadow-[0_0_10px_rgba(97,215,201,0.8)]' : 'drop-shadow-[0_0_6px_rgba(97,215,201,0.4)]'
+                }`}
+              />
             </div>
 
             {/* Input Element */}
@@ -347,6 +359,8 @@ export function JarvisSearchCore({ settings, onSearchNexus }: JarvisSearchCorePr
               type="text"
               value={query}
               onChange={(e) => setQuery(e.target.value)}
+              onFocus={() => setIsFocused(true)}
+              onBlur={() => setIsFocused(false)}
               placeholder={activeModeConfig.placeholder}
               aria-label="Ask JARVIS anything"
               className="flex-1 min-w-0 bg-transparent border-0 outline-none text-white text-sm sm:text-base placeholder:text-slate-400/80 font-medium px-1 py-1"
@@ -363,7 +377,7 @@ export function JarvisSearchCore({ settings, onSearchNexus }: JarvisSearchCorePr
                   inputRef.current?.focus();
                 }}
                 aria-label="Clear query"
-                className="p-1.5 rounded-full text-slate-400 hover:text-white hover:bg-white/10 transition-colors"
+                className="p-2 rounded-full text-slate-400 hover:text-white hover:bg-white/10 transition-colors"
               >
                 <X size={16} />
               </button>
@@ -376,7 +390,7 @@ export function JarvisSearchCore({ settings, onSearchNexus }: JarvisSearchCorePr
                 onClick={listening ? stopVoice : startVoice}
                 aria-label="Voice search"
                 title={listening ? 'Stop voice recording' : 'Speak to JARVIS'}
-                className={`p-2 rounded-full transition-all duration-300 flex items-center justify-center ${
+                className={`min-w-[40px] min-h-[40px] p-2 rounded-full transition-all duration-300 flex items-center justify-center ${
                   listening
                     ? 'bg-cyan-500 text-slate-950 shadow-[0_0_18px_#61d7c9] animate-pulse'
                     : 'text-slate-300 hover:text-cyan-300 hover:bg-cyan-500/15'
@@ -391,11 +405,11 @@ export function JarvisSearchCore({ settings, onSearchNexus }: JarvisSearchCorePr
               type="submit"
               disabled={!query.trim() || status === 'thinking' || status === 'synthesizing'}
               aria-label="Submit search"
-              className="px-4 py-2 rounded-xl sm:rounded-full font-bold text-xs sm:text-sm tracking-wide transition-all duration-300 flex items-center gap-1.5 shadow-md active:scale-95 disabled:opacity-40 disabled:cursor-not-allowed"
+              className="min-h-[40px] px-5 py-2 rounded-xl sm:rounded-full font-bold text-xs sm:text-sm tracking-wide transition-all duration-300 flex items-center gap-1.5 shadow-md active:scale-95 disabled:opacity-40 disabled:cursor-not-allowed"
               style={{
                 background: 'linear-gradient(135deg, #61d7c9 0%, #38bdf8 100%)',
                 color: '#051218',
-                boxShadow: '0 0 14px rgba(97, 215, 201, 0.35)',
+                boxShadow: isFocused ? '0 0 20px rgba(97, 215, 201, 0.55)' : '0 0 14px rgba(97, 215, 201, 0.35)',
               }}
             >
               <span>Search</span>
@@ -417,7 +431,7 @@ export function JarvisSearchCore({ settings, onSearchNexus }: JarvisSearchCorePr
           </div>
 
           {/* Mode Pill Buttons */}
-          <div className="grid grid-cols-3 sm:grid-cols-6 gap-1.5">
+          <div className="grid grid-cols-3 sm:grid-cols-6 gap-2">
             {QUICK_MODES.map((mode) => {
               const Icon = mode.icon;
               const isActive = activeMode === mode.id;
@@ -428,13 +442,13 @@ export function JarvisSearchCore({ settings, onSearchNexus }: JarvisSearchCorePr
                   type="button"
                   onClick={() => handleModeClick(mode.id)}
                   aria-pressed={isActive}
-                  className={`flex items-center justify-center gap-1.5 py-1.5 px-2 rounded-xl text-xs font-bold transition-all duration-200 backdrop-blur-sm border ${
+                  className={`min-h-[44px] flex items-center justify-center gap-1.5 py-2 px-2.5 rounded-xl text-xs font-bold transition-all duration-200 backdrop-blur-md border ${
                     isActive
-                      ? 'bg-cyan-500/25 border-cyan-400 text-white shadow-[0_0_12px_rgba(97,215,201,0.3)]'
-                      : 'bg-black/30 hover:bg-cyan-500/15 border-white/10 hover:border-cyan-500/40 text-slate-300 hover:text-white'
+                      ? 'bg-cyan-500/25 border-cyan-400 text-white shadow-[0_0_14px_rgba(97,215,201,0.35)]'
+                      : 'bg-slate-950/40 hover:bg-cyan-500/15 border-white/10 hover:border-cyan-500/40 text-slate-300 hover:text-white'
                   }`}
                 >
-                  <Icon size={13} className={isActive ? 'text-cyan-300' : 'text-slate-400'} />
+                  <Icon size={14} className={isActive ? 'text-cyan-300' : 'text-slate-400'} />
                   <span>{mode.label}</span>
                 </button>
               );
@@ -444,7 +458,7 @@ export function JarvisSearchCore({ settings, onSearchNexus }: JarvisSearchCorePr
 
         {/* Mode Suggestions Floating (When No Result Yet) */}
         {!result && status === 'idle' && (
-          <div className="relative z-10 w-full max-w-2xl mt-3 flex flex-wrap items-center justify-center sm:justify-start gap-1.5 px-1">
+          <div className="relative z-10 w-full max-w-2xl mt-3.5 flex flex-wrap items-center justify-center sm:justify-start gap-2 px-1">
             <span className="text-[10px] font-mono text-slate-400 uppercase tracking-wider mr-1">
               Suggested:
             </span>
@@ -453,7 +467,7 @@ export function JarvisSearchCore({ settings, onSearchNexus }: JarvisSearchCorePr
                 key={sug}
                 type="button"
                 onClick={() => handleSuggestionClick(sug)}
-                className="px-2.5 py-1 rounded-lg bg-black/30 hover:bg-cyan-500/20 backdrop-blur-sm border border-white/10 hover:border-cyan-400/40 text-[11px] text-slate-300 hover:text-cyan-200 transition-all"
+                className="px-3 py-1.5 rounded-lg bg-slate-950/40 hover:bg-cyan-500/20 backdrop-blur-sm border border-white/10 hover:border-cyan-400/40 text-[11px] text-slate-300 hover:text-cyan-200 transition-all active:scale-95"
               >
                 {sug}
               </button>
@@ -464,10 +478,10 @@ export function JarvisSearchCore({ settings, onSearchNexus }: JarvisSearchCorePr
         {/* Active Processing Indicator */}
         {(status === 'thinking' || status === 'synthesizing') && (
           <div
-            className="relative z-10 w-full max-w-2xl mt-4 p-3.5 rounded-2xl flex items-center justify-center gap-3 backdrop-blur-md animate-pulse"
+            className="relative z-10 w-full max-w-2xl mt-4 p-4 rounded-2xl flex items-center justify-center gap-3 backdrop-blur-md animate-pulse shadow-lg"
             style={{
-              background: 'rgba(5, 20, 30, 0.65)',
-              border: '1px solid rgba(97, 215, 201, 0.4)',
+              background: 'rgba(5, 20, 32, 0.75)',
+              border: '1px solid rgba(97, 215, 201, 0.45)',
             }}
           >
             <div className="w-4 h-4 rounded-full border-2 border-cyan-400 border-t-transparent animate-spin" />
@@ -495,9 +509,9 @@ export function JarvisSearchCore({ settings, onSearchNexus }: JarvisSearchCorePr
           <div
             className="relative z-10 w-full max-w-3xl mt-5 p-5 sm:p-6 rounded-2xl backdrop-blur-xl transition-all duration-300"
             style={{
-              background: 'linear-gradient(135deg, rgba(8, 20, 32, 0.85) 0%, rgba(12, 22, 44, 0.88) 100%)',
-              border: '1px solid rgba(97, 215, 201, 0.4)',
-              boxShadow: '0 12px 40px rgba(0, 0, 0, 0.6), 0 0 24px rgba(97, 215, 201, 0.15)',
+              background: 'linear-gradient(135deg, rgba(8, 20, 34, 0.88) 0%, rgba(12, 22, 46, 0.9) 100%)',
+              border: '1px solid rgba(97, 215, 201, 0.45)',
+              boxShadow: '0 12px 40px rgba(0, 0, 0, 0.6), 0 0 28px rgba(97, 215, 201, 0.18)',
             }}
           >
             {/* Top Result Banner */}

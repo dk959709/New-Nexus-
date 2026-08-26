@@ -1,6 +1,7 @@
 import { api } from '@/services/api';
 import { storage, DEFAULT_AGENT_SYSTEM_PROMPTS } from '@/lib/storage';
 import { searchWikipedia } from '@/services/wikipedia';
+import { stripConversationalMetaText } from '@/lib/format';
 import type {
   AIProviderConfig,
   AISource,
@@ -1848,8 +1849,10 @@ ${reviewerOutput.recommendation ? `Reviewer Advice: ${reviewerOutput.recommendat
     }
   }
 
+  const cleanedFinalAnswer = stripConversationalMetaText(finalAnswer);
+
   return {
-    answer: finalAnswer,
+    answer: cleanedFinalAnswer,
     steps,
     sources: sourcesCollected,
     diagramSvg,

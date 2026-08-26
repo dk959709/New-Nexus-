@@ -9,7 +9,6 @@ import {
   Globe,
   Loader2,
   MapPin,
-  Navigation,
   Newspaper,
   Search,
   Send,
@@ -63,8 +62,8 @@ const SMART_SUGGESTIONS = [
 
 export function HomePage() {
   const navigate = useNavigate();
-  const [weather, setWeather] = useState<WeatherData | null>(null);
   const [settings] = useSettings();
+  const [weather, setWeather] = useState<WeatherData | null>(null);
   const [aiQuery, setAiQuery] = useState('');
   const [smartResult, setSmartResult] = useState<AnswerEngineResult | null>(null);
   const [aiLoading, setAiLoading] = useState(false);
@@ -74,7 +73,9 @@ export function HomePage() {
     getLocation()
       .then((position) => api.weather(`latitude=${position.latitude}&longitude=${position.longitude}`))
       .then(setWeather)
-      .catch(() => undefined);
+      .catch(() => {
+        api.weather('city=New York').then(setWeather).catch(() => undefined);
+      });
   }, []);
 
   const search = (query: string) => {
@@ -235,46 +236,31 @@ export function HomePage() {
           )}
         </section>
 
-        {weather ? (
-          <div className="home-dashboard relative z-10">
-            <div className="home-main space-y-6">
-              <WeatherCard
-                data={weather.current}
-                temperatureUnit={settings.temperature}
-                windUnit={settings.wind}
-                reduced={settings.animations === 'reduced'}
-              />
-              <HourlyForecast entries={weather.hourly} unit={settings.temperature} />
-            </div>
-            <aside className="brief-card relative overflow-hidden group">
-              <div className="absolute top-0 right-0 w-32 h-32 bg-cyan-500/10 rounded-full blur-2xl group-hover:bg-cyan-500/20 transition-all pointer-events-none" />
-              <div className="flex items-center gap-2 mb-2">
-                <span className="w-2 h-2 rounded-full bg-cyan-400 animate-ping" />
-                <span className="eyebrow">LIVE SIGNALS</span>
-              </div>
-              <h2 className="text-xl font-bold text-white mb-2">World briefing</h2>
-              <p className="text-slate-300 text-xs sm:text-sm mb-4 leading-relaxed">Search the current web or open the live news desk for your next signal.</p>
-              <Link
-                to="/news"
-                className="inline-flex items-center gap-2 px-4 py-2 rounded-xl bg-cyan-500/20 hover:bg-cyan-500/30 border border-cyan-500/40 text-cyan-300 font-semibold text-xs transition-all shadow-md group-hover:translate-x-1"
-              >
-                Explore live news <ArrowUpRight size={15} />
-              </Link>
-            </aside>
+        {/* Live Signals & World Briefing Card */}
+        <aside className="brief-card relative overflow-hidden group z-10 my-4">
+          <div className="absolute top-0 right-0 w-32 h-32 bg-cyan-500/10 rounded-full blur-2xl group-hover:bg-cyan-500/20 transition-all pointer-events-none" />
+          <div className="flex items-center gap-2 mb-2">
+            <span className="w-2 h-2 rounded-full bg-cyan-400 animate-ping" />
+            <span className="eyebrow">LIVE SIGNALS</span>
           </div>
-        ) : (
-          <div className="location-prompt relative z-10 p-8 rounded-2xl bg-slate-900/80 border border-cyan-500/20 backdrop-blur-xl text-center shadow-2xl">
-            <div className="w-14 h-14 mx-auto rounded-2xl bg-cyan-500/20 border border-cyan-500/40 flex items-center justify-center text-cyan-300 mb-4 shadow-lg shadow-cyan-500/20 animate-pulse">
-              <Navigation size={28} />
-            </div>
-            <h2 className="text-xl font-bold text-white mb-2">Weather intelligence is waiting</h2>
-            <p className="text-slate-300 text-xs sm:text-sm max-w-md mx-auto mb-6">Allow location access to see local conditions, or search for a city manually.</p>
-            <Link
-              to="/weather"
-              className="inline-flex items-center gap-2 px-6 py-3 rounded-xl bg-gradient-to-r from-cyan-400 to-sky-500 text-slate-950 font-bold text-xs shadow-lg hover:brightness-110 transition-all"
-            >
-              Open weather workspace <ArrowUpRight size={16} />
-            </Link>
+          <h2 className="text-xl font-bold text-white mb-2">World briefing</h2>
+          <p className="text-slate-300 text-xs sm:text-sm mb-4 leading-relaxed">Search the current web or open the live news desk for your next signal.</p>
+          <Link
+            to="/news"
+            className="inline-flex items-center gap-2 px-4 py-2 rounded-xl bg-cyan-500/20 hover:bg-cyan-500/30 border border-cyan-500/40 text-cyan-300 font-semibold text-xs transition-all shadow-md group-hover:translate-x-1"
+          >
+            Explore live news <ArrowUpRight size={15} />
+          </Link>
+        </aside>
+
+        {/* 7-Day Extended Forecast at the bottom of the home screen */}
+        {weather?.daily && (
+          <div className="relative z-10 my-6">
+            <DailyForecast
+              data={weather.daily}
+              temperatureUnit={settings.temperature}
+              windUnit={settings.wind}
+            />
           </div>
         )}
       </div>
@@ -813,10 +799,99 @@ export function WeatherPage() {
   const [weather, setWeather] = useState<WeatherData | null>(null);
   const [error, setError] = useState('');
   const [loading, setLoading] = useState(false);
-  const load = useCallback((query: string) => { setLoading(true); setError(''); api.weather(query).then(setWeather).catch((err: Error) => setError(err.message)).finally(() => setLoading(false)); }, []);
-  const searchCity = () => { if (city.trim()) load(`city=${encodeURIComponent(city.trim())}`); };
-  const useMyLocation = () => { setLoading(true); setError(''); getLocation().then((position) => load(`latitude=${position.latitude}&longitude=${position.longitude}`)).catch((err: Error) => { setLoading(false); setError(err.message); }); };
-  return <><PageIntro eyebrow="WEATHER INTELLIGENCE" title="Read the atmosphere." description="Live conditions, hourly detail, and a 7-day forecast from real weather data." /><div className="location-search"><MapPin size={17} /><input value={city} onChange={(event) => setCity(event.target.value)} onKeyDown={(event) => { if (event.key === 'Enter') searchCity(); }} placeholder="Search a city" aria-label="Search a city" /><button onClick={searchCity}>Update</button><button className="secondary-button" onClick={useMyLocation}>Use my location</button></div>{loading && <LoadingMessage label="Reading live atmosphere data..." />}{error && <ErrorMessage message={error.includes('permission') ? error : error.includes('configured') ? 'Weather is unavailable. The server weather provider is not configured.' : error} />}{weather && <div className="weather-dashboard"><div className="weather-main"><WeatherCard data={weather.current} temperatureUnit={settings.temperature} windUnit={settings.wind} reduced={settings.animations === 'reduced'} /><HourlyForecast entries={weather.hourly} unit={settings.temperature} /><DailyForecast data={weather.daily} temperatureUnit={settings.temperature} windUnit={settings.wind} /></div><WeatherAlerts alerts={weather.alerts} /></div>}</>;
+
+  const load = useCallback((query: string) => {
+    setLoading(true);
+    setError('');
+    api.weather(query)
+      .then(setWeather)
+      .catch((err: Error) => setError(err.message))
+      .finally(() => setLoading(false));
+  }, []);
+
+  useEffect(() => {
+    getLocation()
+      .then((position) => load(`latitude=${position.latitude}&longitude=${position.longitude}`))
+      .catch(() => {
+        // Fallback default city if location is not granted
+        load('city=New York');
+      });
+  }, [load]);
+
+  const searchCity = () => {
+    if (city.trim()) load(`city=${encodeURIComponent(city.trim())}`);
+  };
+
+  const useMyLocation = () => {
+    setLoading(true);
+    setError('');
+    getLocation()
+      .then((position) => load(`latitude=${position.latitude}&longitude=${position.longitude}`))
+      .catch((err: Error) => {
+        setLoading(false);
+        setError(err.message);
+      });
+  };
+
+  return (
+    <>
+      <PageIntro
+        eyebrow="WEATHER INTELLIGENCE"
+        title="Read the atmosphere."
+        description="Live conditions, hourly detail, and a 7-day forecast from real weather data."
+      />
+      <div className="location-search">
+        <MapPin size={17} />
+        <input
+          value={city}
+          onChange={(event) => setCity(event.target.value)}
+          onKeyDown={(event) => {
+            if (event.key === 'Enter') searchCity();
+          }}
+          placeholder="Search a city"
+          aria-label="Search a city"
+        />
+        <button onClick={searchCity}>Update</button>
+        <button className="secondary-button" onClick={useMyLocation}>
+          Use my location
+        </button>
+      </div>
+
+      {loading && <LoadingMessage label="Reading live atmosphere data..." />}
+      
+      {error && (
+        <ErrorMessage
+          message={
+            error.includes('permission')
+              ? error
+              : error.includes('configured')
+              ? 'Weather is unavailable. The server weather provider is not configured.'
+              : error
+          }
+        />
+      )}
+
+      {weather && (
+        <div className="weather-dashboard">
+          <div className="weather-main">
+            <WeatherCard
+              data={weather.current}
+              temperatureUnit={settings.temperature}
+              windUnit={settings.wind}
+              reduced={settings.animations === 'reduced'}
+            />
+            <HourlyForecast entries={weather.hourly} unit={settings.temperature} />
+            <DailyForecast
+              data={weather.daily}
+              temperatureUnit={settings.temperature}
+              windUnit={settings.wind}
+            />
+          </div>
+          <WeatherAlerts alerts={weather.alerts} />
+        </div>
+      )}
+    </>
+  );
 }
 
 function WeatherAlerts({ alerts }: { alerts: WeatherData['alerts'] }) { return <aside className="alerts-card"><span className="eyebrow">WEATHER ALERTS</span>{alerts.length ? alerts.map((alert) => <div className={`alert ${alert.severity}`} key={alert.title}><b>{alert.title}</b><p>{alert.description}</p></div>) : <div className="no-alerts"><span>✓</span><p>No active alerts returned for this location.</p></div>}</aside>; }

@@ -4,14 +4,11 @@ import {
   Send,
   Loader2,
   Sparkles,
-  ChevronDown,
-  ChevronUp,
   ExternalLink,
   Copy,
   Check,
   Trash2,
   Cpu,
-  Layers,
   AlertCircle,
   Plus,
   AlertTriangle,
@@ -25,6 +22,7 @@ import {
   BookmarkCheck,
 } from 'lucide-react';
 import { storage } from '@/lib/storage';
+import { stripConversationalMetaText } from '@/lib/format';
 import { runJarvisPipeline } from '@/services/jarvisOrchestrator';
 import { JarvisHudHeader } from './JarvisHudHeader';
 import { JarvisCoreVisualizer } from './JarvisCoreVisualizer';
@@ -34,6 +32,9 @@ import { JarvisQuantumOrb } from './JarvisQuantumOrb';
 import { JarvisSvgDiagram } from './JarvisSvgDiagram';
 import { JarvisChartCard } from './JarvisChartCard';
 import { JarvisImageGallery } from './JarvisImageGallery';
+import { JarvisPipelineHudTracker } from './JarvisPipelineHudTracker';
+import { JarvisTerminalDiagnosticLog } from './JarvisTerminalDiagnosticLog';
+import { JarvisCornerBrackets } from './JarvisCornerBrackets';
 import type {
   JarvisExecutionStep,
   JarvisMessage,
@@ -953,31 +954,16 @@ export function JarvisChat({ config, onOpenSettings }: JarvisChatProps) {
       )}
 
       {/* ========================================================= */}
-      {/* TOP JARVIS HEADER & QUANTUM CORE (ONLINE STANDBY)          */}
+      {/* JARVIS QUANTUM CORE (ONLINE STANDBY - NO BOX CONTAINER)   */}
       {/* ========================================================= */}
-      <div
-        className="relative overflow-hidden rounded-3xl p-5 sm:p-7 backdrop-blur-xl transition-all duration-300"
-        style={{
-          background: 'linear-gradient(145deg, rgba(8, 20, 36, 0.88) 0%, rgba(14, 18, 48, 0.92) 50%, rgba(6, 26, 38, 0.88) 100%)',
-          border: '1px solid rgba(97, 215, 201, 0.35)',
-          boxShadow: '0 16px 48px rgba(0,0,0,0.5), 0 0 32px rgba(97,215,201,0.12), inset 0 1px 0 rgba(255,255,255,0.15)',
-        }}
-      >
-        {/* Ambient Top Glow Orbs */}
-        <div className="absolute -top-12 -left-12 w-48 h-48 rounded-full bg-cyan-500/20 blur-3xl pointer-events-none" />
-        <div className="absolute -top-12 -right-12 w-48 h-48 rounded-full bg-purple-500/20 blur-3xl pointer-events-none" />
-        <div className="absolute -bottom-12 left-1/3 w-64 h-32 rounded-full bg-sky-500/15 blur-3xl pointer-events-none" />
-
-        {/* Central JARVIS Animated 3D Quantum Orb Ball with Color Graphics */}
-        <div className="relative z-10 flex flex-col items-center justify-center">
-          <JarvisQuantumOrb
-            size={isRunning ? 'lg' : 'md'}
-            isRunning={isRunning}
-            isListening={voiceListening}
-            query={query}
-            onClick={() => inputRef.current?.focus()}
-          />
-        </div>
+      <div className="relative z-10 flex flex-col items-center justify-center my-2 select-none">
+        <JarvisQuantumOrb
+          size={isRunning ? 'lg' : 'md'}
+          isRunning={isRunning}
+          isListening={voiceListening}
+          query={query}
+          onClick={() => inputRef.current?.focus()}
+        />
       </div>
 
       {/* ========================================================= */}
@@ -992,6 +978,7 @@ export function JarvisChat({ config, onOpenSettings }: JarvisChatProps) {
             boxShadow: '0 12px 40px rgba(0,0,0,0.5), 0 0 28px rgba(97,215,201,0.25)',
           }}
         >
+          <JarvisCornerBrackets color="cyan" size={14} thickness={1.5} offset={4} />
           <div className="flex items-center justify-between flex-wrap gap-2 mb-4">
             <div className="flex items-center gap-2.5">
               <div className="w-8 h-8 rounded-full bg-cyan-400/20 border border-cyan-400/50 flex items-center justify-center shadow-[0_0_12px_#61d7c9]">
@@ -1084,6 +1071,8 @@ export function JarvisChat({ config, onOpenSettings }: JarvisChatProps) {
           const isMsgRunning = msg.id === currentRunningMessageId;
           if (isMsgRunning) return null; // Handled above in live visualizer
 
+          const cleanedAnswer = stripConversationalMetaText(msg.answer);
+
           return (
             <div key={msg.id} className="flex flex-col gap-3 w-full">
               {/* ---------------------------------------------------- */}
@@ -1091,13 +1080,14 @@ export function JarvisChat({ config, onOpenSettings }: JarvisChatProps) {
               {/* ---------------------------------------------------- */}
               <div className="flex items-start justify-end gap-3 self-end max-w-3xl w-full">
                 <div
-                  className="relative p-4 sm:p-5 rounded-3xl rounded-tr-md backdrop-blur-md transition-all shadow-xl"
+                  className="relative p-4 sm:p-5 rounded-3xl rounded-tr-md backdrop-blur-md transition-all shadow-xl overflow-hidden"
                   style={{
                     background: 'linear-gradient(135deg, rgba(30, 58, 138, 0.6) 0%, rgba(88, 28, 135, 0.5) 100%)',
                     border: '1.5px solid rgba(147, 197, 253, 0.35)',
                     boxShadow: '0 8px 32px rgba(0, 0, 0, 0.4), 0 0 20px rgba(99, 102, 241, 0.2)',
                   }}
                 >
+                  <JarvisCornerBrackets color="indigo" size={10} thickness={1.5} offset={3} />
                   <div className="flex items-center justify-between gap-4 mb-1">
                     <span className="text-[10px] font-mono tracking-widest text-indigo-200 uppercase font-bold">
                       INQUIRY
@@ -1161,13 +1151,15 @@ export function JarvisChat({ config, onOpenSettings }: JarvisChatProps) {
 
                 {/* Response Container */}
                 <div
-                  className="flex-1 min-w-0 p-5 sm:p-7 rounded-3xl rounded-tl-md backdrop-blur-xl shadow-2xl transition-all duration-300"
+                  className="relative flex-1 min-w-0 p-5 sm:p-7 rounded-3xl rounded-tl-md backdrop-blur-xl shadow-2xl transition-all duration-300 overflow-hidden"
                   style={{
-                    background: 'linear-gradient(145deg, rgba(8, 22, 38, 0.9) 0%, rgba(12, 18, 48, 0.94) 100%)',
+                    background: 'linear-gradient(145deg, rgba(8, 22, 38, 0.92) 0%, rgba(12, 18, 48, 0.96) 100%)',
                     border: '1.5px solid rgba(97, 215, 201, 0.35)',
                     boxShadow: '0 16px 48px rgba(0, 0, 0, 0.55), 0 0 28px rgba(97, 215, 201, 0.12)',
                   }}
                 >
+                  {/* Subtle Sci-Fi Corner Brackets */}
+                  <JarvisCornerBrackets color="cyan" size={16} thickness={2} offset={4} />
                   {/* Response Header & Utilities Bar */}
                   <div className="flex items-center justify-between flex-wrap gap-2 pb-3 mb-4 border-b border-white/10">
                     <div className="flex items-center gap-2">
@@ -1184,7 +1176,7 @@ export function JarvisChat({ config, onOpenSettings }: JarvisChatProps) {
                     <div className="flex items-center gap-1.5">
                       <button
                         type="button"
-                        onClick={() => toggleSpeak(msg.answer, msg.id)}
+                        onClick={() => toggleSpeak(cleanedAnswer || msg.answer, msg.id)}
                         className={`p-2 rounded-full transition-all duration-200 flex items-center justify-center ${
                           speakingId === msg.id
                             ? 'bg-cyan-400 text-slate-950 shadow-[0_0_12px_#61d7c9]'
@@ -1197,7 +1189,7 @@ export function JarvisChat({ config, onOpenSettings }: JarvisChatProps) {
 
                       <button
                         type="button"
-                        onClick={() => handleCopy(msg.answer, msg.id)}
+                        onClick={() => handleCopy(cleanedAnswer || msg.answer, msg.id)}
                         className="p-2 rounded-full text-slate-300 hover:text-cyan-300 hover:bg-cyan-500/15 transition-colors flex items-center justify-center"
                         title="Copy synthesis"
                       >
@@ -1245,88 +1237,21 @@ export function JarvisChat({ config, onOpenSettings }: JarvisChatProps) {
                     </div>
                   </div>
 
-                  {/* Multi-Agent Execution Breakdown Accordion (Rounded & Colorful) */}
+                  {/* ---------------------------------------------------- */}
+                  {/* TACTICAL PIPELINE HUD TRACKER & UNIFIED LOG CARDS    */}
+                  {/* ---------------------------------------------------- */}
                   {msg.steps && msg.steps.length > 0 && (
-                    <div className="mb-5 rounded-2xl overflow-hidden border border-cyan-500/25 bg-black/40 shadow-md">
-                      <button
-                        type="button"
-                        onClick={() => toggleStepDetails(msg.id)}
-                        className="w-full px-4 py-2.5 bg-cyan-950/40 hover:bg-cyan-900/40 flex items-center justify-between text-xs font-bold text-cyan-200 transition-colors"
-                      >
-                        <div className="flex items-center gap-2">
-                          <Layers size={14} className="text-cyan-400" />
-                          <span>
-                            {msg.steps.length}-Agent Pipeline: {msg.steps.filter((s) => s.status === 'completed').length} executed,{' '}
-                            {msg.steps.filter((s) => s.status === 'skipped').length} skipped
-                            {msg.steps.some((s) => s.status === 'failed') && (
-                              <span className="ml-2 text-rose-400">
-                                ({msg.steps.filter((s) => s.status === 'failed').length} notices)
-                              </span>
-                            )}
-                          </span>
-                        </div>
-                        {expandedStepsMap[msg.id] ? <ChevronUp size={15} /> : <ChevronDown size={15} />}
-                      </button>
+                    <div className="mb-5 flex flex-col gap-2">
+                      {/* Horizontal Visual HUD Tracker */}
+                      <JarvisPipelineHudTracker
+                        message={msg}
+                        isExpanded={Boolean(expandedStepsMap[msg.id])}
+                        onToggleExpand={() => toggleStepDetails(msg.id)}
+                      />
 
+                      {/* Unified Terminal Diagnostic Read-out Log */}
                       {expandedStepsMap[msg.id] && (
-                        <div className="p-3 flex flex-col gap-2 border-t border-cyan-500/20">
-                          {msg.steps.map((s) => {
-                            const colorInfo = getAgentColor(s.agentId);
-                            return (
-                              <div
-                                key={s.agentId}
-                                className="p-2.5 rounded-xl flex items-center justify-between flex-wrap gap-2 text-xs"
-                                style={{
-                                  background: colorInfo.bg,
-                                  border: `1px solid ${s.status === 'failed' ? '#f43f5e' : colorInfo.border}`,
-                                }}
-                              >
-                                <div className="flex items-center gap-2">
-                                  <span>{s.icon}</span>
-                                  <strong style={{ color: colorInfo.text }}>{s.name}</strong>
-                                  <span className="text-[11px] font-mono text-slate-300">
-                                    [{s.providerName} / {s.model}]
-                                  </span>
-                                  {s.usedFallback && (
-                                    <span className="px-1.5 py-0.5 rounded-full bg-amber-500/20 text-amber-300 text-[10px]">
-                                      Failover
-                                    </span>
-                                  )}
-                                </div>
-
-                                <div className="flex items-center gap-2">
-                                  {s.durationMs && (
-                                    <span className="text-[10px] font-mono text-slate-400">
-                                      {s.durationMs}ms
-                                    </span>
-                                  )}
-                                  <span
-                                    className="px-2 py-0.5 rounded-full text-[10px] font-mono font-bold uppercase"
-                                    style={{
-                                      background: s.status === 'completed' ? 'rgba(52,211,153,0.2)' : s.status === 'failed' ? 'rgba(244,63,94,0.2)' : 'rgba(148,163,184,0.2)',
-                                      color: s.status === 'completed' ? '#34d399' : s.status === 'failed' ? '#fb7185' : '#94a3b8',
-                                    }}
-                                  >
-                                    {s.status}
-                                  </span>
-                                </div>
-
-                                {s.summary && (
-                                  <div className="w-full text-slate-300 text-[11px] pl-6">
-                                    {s.summary}
-                                  </div>
-                                )}
-
-                                {s.error && (
-                                  <div className="w-full text-rose-300 text-[11px] pl-6 flex items-center gap-1.5 font-mono">
-                                    <AlertCircle size={12} className="text-rose-400 shrink-0" />
-                                    <span>{s.error}</span>
-                                  </div>
-                                )}
-                              </div>
-                            );
-                          })}
-                        </div>
+                        <JarvisTerminalDiagnosticLog message={msg} />
                       )}
                     </div>
                   )}
@@ -1341,7 +1266,7 @@ export function JarvisChat({ config, onOpenSettings }: JarvisChatProps) {
 
                   {/* Synthesized Output Body */}
                   <div className="prose prose-invert max-w-none text-slate-100 leading-relaxed text-sm sm:text-base">
-                    <FormattedText content={msg.answer} />
+                    <FormattedText content={cleanedAnswer || msg.answer} />
                   </div>
 
                   {/* Interactive Quantitative Chart Card */}
