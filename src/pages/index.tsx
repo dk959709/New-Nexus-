@@ -30,10 +30,11 @@ import {
   Copy,
   Check,
   Layers,
+  BarChart3,
 } from 'lucide-react';
 import { Link, useNavigate, useSearchParams } from 'react-router-dom';
 import { SearchBox, WeatherCard, HourlyForecast, DailyForecast, ErrorMessage, LoadingMessage, WeatherMap, AnswerCard, MediaViewer, UnifiedResultCard, JarvisSearchCore } from '@/components';
-import { JarvisSvgDiagram } from '@/components/jarvis';
+import { JarvisSvgDiagram, JarvisChartCard } from '@/components/jarvis';
 import { WallpaperSelector } from '@/components/WallpaperSelector';
 import { SpaceStarfield } from '@/components/SpaceStarfield';
 import { MeteorShower } from '@/animations/MeteorShower';
@@ -1206,13 +1207,17 @@ export function SavedPage() {
   };
 
   const jarvisItems = items.filter((i) => i.type === 'jarvis');
-  const diagramItems = items.filter((i) => i.type === 'diagram' || !!i.diagramSvg);
-  const otherItems = items.filter((i) => i.type !== 'jarvis' && i.type !== 'diagram' && !i.diagramSvg);
+  const diagramItems = items.filter((i) => i.type === 'diagram' || (i.type !== 'jarvis' && !!i.diagramSvg));
+  const chartItems = items.filter((i) => i.type === 'chart' || (i.type !== 'jarvis' && !!i.chartData));
+  const otherItems = items.filter(
+    (i) => i.type !== 'jarvis' && i.type !== 'diagram' && i.type !== 'chart' && !i.diagramSvg && !i.chartData
+  );
 
   const filteredItems = items.filter((item) => {
     if (filter === 'jarvis') return item.type === 'jarvis';
-    if (filter === 'diagram') return item.type === 'diagram' || !!item.diagramSvg;
-    if (filter === 'other') return item.type !== 'jarvis' && item.type !== 'diagram' && !item.diagramSvg;
+    if (filter === 'diagram') return item.type === 'diagram' || (item.type !== 'jarvis' && !!item.diagramSvg);
+    if (filter === 'chart') return item.type === 'chart' || (item.type !== 'jarvis' && !!item.chartData);
+    if (filter === 'other') return item.type !== 'jarvis' && item.type !== 'diagram' && item.type !== 'chart' && !item.diagramSvg && !item.chartData;
     return true;
   });
 
@@ -1250,6 +1255,21 @@ export function SavedPage() {
             >
               <Sparkles size={13} />
               <span>JARVIS Syntheses ({jarvisItems.length})</span>
+            </button>
+          )}
+
+          {chartItems.length > 0 && (
+            <button
+              type="button"
+              onClick={() => setFilter('chart')}
+              className={`px-3 py-1.5 rounded-full text-xs font-semibold flex items-center gap-1.5 transition-all ${
+                filter === 'chart'
+                  ? 'bg-sky-400 text-slate-950 shadow-[0_0_12px_rgba(56,189,248,0.35)]'
+                  : 'bg-sky-500/10 hover:bg-sky-500/20 text-sky-300 border border-sky-500/30'
+              }`}
+            >
+              <BarChart3 size={13} />
+              <span>Data Analyst Charts ({chartItems.length})</span>
             </button>
           )}
 
@@ -1295,6 +1315,7 @@ export function SavedPage() {
           {filteredItems.map((item) => {
             const isJarvis = item.type === 'jarvis';
             const isDiagram = item.type === 'diagram';
+            const isChart = item.type === 'chart';
             const answerText = item.content || item.subtitle;
 
             if (isDiagram && item.diagramSvg) {
@@ -1355,6 +1376,75 @@ export function SavedPage() {
                   <JarvisSvgDiagram
                     id={item.id}
                     svgMarkup={item.diagramSvg}
+                    title={item.title}
+                    onSaveChange={(isStillSaved) => {
+                      if (!isStillSaved) {
+                        setItems(storage.getSaved());
+                      }
+                    }}
+                  />
+                </div>
+              );
+            }
+
+            if ((isChart || item.type === 'chart') && item.chartData) {
+              return (
+                <div
+                  key={item.id}
+                  className="w-full rounded-2xl p-5 sm:p-6 mb-4 bg-gradient-to-b from-[#081828]/90 via-[#0a122e]/95 to-[#040814]/95 border border-sky-500/35 shadow-[0_4px_24px_rgba(0,0,0,0.5)] backdrop-blur-xl transition-all"
+                >
+                  {/* Top Bar */}
+                  <div className="flex items-center justify-between flex-wrap gap-2 pb-3 mb-3 border-b border-sky-500/20">
+                    <div className="flex items-center gap-2">
+                      <div className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full bg-sky-500/15 border border-sky-500/35 text-[10px] font-mono tracking-widest text-sky-300 font-bold uppercase">
+                        <BarChart3 size={12} className="text-sky-400" />
+                        <span>DATA ANALYST CHART</span>
+                      </div>
+                      <span className="text-[11px] text-slate-400 font-mono">
+                        {new Date(item.savedAt).toLocaleDateString(undefined, {
+                          month: 'short',
+                          day: 'numeric',
+                          year: 'numeric',
+                        })}{' '}
+                        ·{' '}
+                        {new Date(item.savedAt).toLocaleTimeString([], {
+                          hour: '2-digit',
+                          minute: '2-digit',
+                        })}
+                      </span>
+                    </div>
+
+                    <div className="flex items-center gap-2">
+                      <Link
+                        to={`/jarvis?q=${encodeURIComponent(item.title)}`}
+                        className="px-2.5 py-1 rounded-lg bg-sky-500/15 hover:bg-sky-500/25 border border-sky-500/35 text-xs text-sky-300 flex items-center gap-1 transition-all"
+                        title="Open in JARVIS Workspace"
+                      >
+                        <span>Open in JARVIS</span>
+                        <ExternalLink size={12} />
+                      </Link>
+
+                      <button
+                        type="button"
+                        onClick={() => remove(item.id)}
+                        className="p-1.5 rounded-lg text-slate-400 hover:text-rose-400 hover:bg-rose-500/15 transition-colors"
+                        aria-label="Remove saved item"
+                        title="Remove from saved library"
+                      >
+                        <Trash2 size={16} />
+                      </button>
+                    </div>
+                  </div>
+
+                  {/* Title */}
+                  <h2 className="text-base sm:text-lg font-bold text-white mb-2 leading-snug">
+                    {item.title}
+                  </h2>
+
+                  {/* Full Interactive Chart Card */}
+                  <JarvisChartCard
+                    id={item.id}
+                    chartData={item.chartData}
                     title={item.title}
                     onSaveChange={(isStillSaved) => {
                       if (!isStillSaved) {
@@ -1443,6 +1533,15 @@ export function SavedPage() {
                   <div className="text-slate-200 text-sm sm:text-base leading-relaxed whitespace-pre-wrap font-sans">
                     {answerText}
                   </div>
+
+                  {/* Embedded Data Analyst Quantitative Chart if present */}
+                  {item.chartData && (
+                    <JarvisChartCard
+                      id={`chart-${item.id}`}
+                      chartData={item.chartData}
+                      title={item.title}
+                    />
+                  )}
 
                   {/* Embedded SVG Architectural Blueprint if present */}
                   {item.diagramSvg && (

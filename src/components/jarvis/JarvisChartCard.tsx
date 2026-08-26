@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import {
   ResponsiveContainer,
   BarChart,
@@ -11,12 +11,16 @@ import {
   Tooltip,
   Legend,
 } from 'recharts';
-import { BarChart3, LineChart as LineChartIcon, Copy, Check, Sparkles } from 'lucide-react';
+import { BarChart3, LineChart as LineChartIcon, Copy, Check, Sparkles, Bookmark, BookmarkCheck } from 'lucide-react';
 import type { JarvisChartData } from '@/types';
+import { storage } from '@/lib/storage';
+import { playTapSound } from '@/lib/audio';
 
 interface JarvisChartCardProps {
+  id?: string;
   chartData: JarvisChartData;
   title?: string;
+  onSaveChange?: (isSaved: boolean) => void;
 }
 
 const SERIES_COLORS = [
@@ -30,11 +34,43 @@ const SERIES_COLORS = [
   '#06b6d4', // cyan
 ];
 
-export function JarvisChartCard({ chartData, title }: JarvisChartCardProps) {
+export function JarvisChartCard({ id, chartData, title, onSaveChange }: JarvisChartCardProps) {
   const [chartType, setChartType] = useState<'bar' | 'line'>(() => {
     return chartData.chartType === 'line' ? 'line' : 'bar';
   });
   const [copied, setCopied] = useState(false);
+  const [saved, setSaved] = useState(false);
+  const [recentlySaved, setRecentlySaved] = useState(false);
+
+  const chartTitle = chartData.title || title || 'Comparative Data Analysis';
+  const chartId = id || `chart-${chartTitle.toLowerCase().replace(/[^a-z0-9]+/g, '-').slice(0, 40)}`;
+
+  useEffect(() => {
+    setSaved(storage.isSaved(chartId));
+  }, [chartId]);
+
+  const handleToggleSave = () => {
+    playTapSound();
+    const isNowSaved = !saved;
+    if (isNowSaved) {
+      storage.saveItem({
+        id: chartId,
+        type: 'chart',
+        title: chartTitle,
+        subtitle: `JARVIS Data Analyst Chart (${chartData.series?.length || 0} series, ${chartData.labels?.length || 0} points)`,
+        chartData,
+        savedAt: new Date().toISOString(),
+      });
+      setSaved(true);
+      setRecentlySaved(true);
+      setTimeout(() => setRecentlySaved(false), 2000);
+    } else {
+      storage.removeSaved(chartId);
+      setSaved(false);
+      setRecentlySaved(false);
+    }
+    onSaveChange?.(isNowSaved);
+  };
 
   if (!chartData || !chartData.labels || chartData.labels.length === 0 || !chartData.series || chartData.series.length === 0) {
     return null;
@@ -50,12 +86,11 @@ export function JarvisChartCard({ chartData, title }: JarvisChartCardProps) {
   });
 
   const handleCopyJson = () => {
+    playTapSound();
     navigator.clipboard.writeText(JSON.stringify(chartData, null, 2));
     setCopied(true);
     setTimeout(() => setCopied(false), 2000);
   };
-
-  const chartTitle = chartData.title || title || 'Comparative Data Analysis';
 
   return (
     <div
@@ -132,6 +167,37 @@ export function JarvisChartCard({ chartData, title }: JarvisChartCardProps) {
           >
             {copied ? <Check size={13} className="text-sky-300" /> : <Copy size={13} />}
             <span className="text-[11px]">{copied ? 'Copied' : 'JSON'}</span>
+          </button>
+
+          {/* Bookmark / Save to Library */}
+          <button
+            type="button"
+            onClick={handleToggleSave}
+            className={`inline-flex items-center gap-1.5 px-2.5 py-1.5 rounded-xl text-xs font-semibold transition-all ${
+              recentlySaved
+                ? 'bg-emerald-500/25 border border-emerald-400/50 text-emerald-300 shadow-[0_0_12px_rgba(16,185,129,0.3)]'
+                : saved
+                ? 'bg-sky-500/25 border border-sky-400/50 text-sky-300 shadow-[0_0_12px_rgba(56,189,248,0.3)]'
+                : 'text-slate-300 hover:text-sky-300 bg-white/5 hover:bg-sky-500/15 border border-white/10 hover:border-sky-400/40'
+            }`}
+            title={saved ? 'Remove from Saved Library' : 'Save Chart to Library'}
+          >
+            {recentlySaved ? (
+              <>
+                <Check size={13} className="text-emerald-400" />
+                <span className="text-[11px] font-bold text-emerald-300">Saved ✓</span>
+              </>
+            ) : saved ? (
+              <>
+                <BookmarkCheck size={13} className="text-sky-300" />
+                <span className="text-[11px] text-sky-300">Saved</span>
+              </>
+            ) : (
+              <>
+                <Bookmark size={13} />
+                <span className="text-[11px]">Save</span>
+              </>
+            )}
           </button>
         </div>
       </div>
