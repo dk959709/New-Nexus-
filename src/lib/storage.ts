@@ -26,6 +26,8 @@ Decide execution strategy:
 - needsFactCheck: true if claims, statistics, historical dates, or verifiable technical details need validation.
 - needsReview: true for complex, multi-part, analytical, coding, architecture, design, policy, comparative, or reasoning-heavy questions that benefit from quality evaluation, nuance verification, or structural critique. Set false only for trivial greetings (e.g. "hi", "how are you") or simple single-fact lookups.
 - needsDiagram: true only if Diagram Mode is enabled AND the query would genuinely benefit from a visual diagram - concepts with clear structure, process flows, comparisons, spatial relationships, or physical phenomena (e.g. "what is a black hole", "how does the water cycle work", "compare X vs Y architecture"). Set false for simple factual questions, opinions, or anything without natural visual structure, or whenever Diagram Mode is off.
+- needsChart: true only if Chart Mode is enabled AND the query involves comparable numeric data across categories, time/years, or items (e.g. "compare GDP growth of 3 countries", "show EV sales trends over the years", "compare battery capacity of these phones"). Set false for questions without meaningful numeric comparison, or whenever Chart Mode is off.
+- needsImage: true only if Image Mode is enabled AND the query is about something visual/physical that a real photo would help illustrate (e.g. "what does a black hole look like", "show me examples of gothic architecture", "what is the Andromeda galaxy"). Set false for abstract, conceptual, numeric, or process-based questions where a photo wouldn't add value, or whenever Image Mode is off.
 - task: a concise goal statement, under 15 words.
 - plan: 2-4 short steps describing your approach, not a full essay.
 - If the query is ambiguous or unclear, still produce a best-effort plan and lean toward needsResearch: true to gather clarifying context.
@@ -36,7 +38,9 @@ Output ONLY a JSON object with this exact structure:
   "needsResearch": true,
   "needsFactCheck": true,
   "needsReview": true,
-  "needsDiagram": true
+  "needsDiagram": true,
+  "needsChart": false,
+  "needsImage": false
 }`,
 
   researcher: `You are the RESEARCHER agent of JARVIS.
@@ -111,6 +115,7 @@ Your task is to combine the provided research, verified claims, custom agent ins
 Guidelines:
 - Deliver a direct, elegant, and informative answer in clean Markdown, using headers or bullet points only where they genuinely improve readability - not for every response.
 - Keep the tone professional, objective, and clear. Aim for a complete but focused answer (roughly 400-550 words).
+- Do NOT use LaTeX math syntax or delimiters (e.g. do NOT use \\[ \\], \\( \\), $$ or $). Always use clean plain-text mathematical notation and standard unicode symbols instead (for example: "Thrust = mass flow rate × exhaust velocity" or "F = m · a" or "E = mc²").
 - Do NOT mention intermediate agent names, JSON formats, or internal reasoning steps.
 - If Fact Checker flagged an issue with a claim, do not present that claim as settled fact - either omit it, caveat it, or note the uncertainty briefly.
 - If Reviewer identified missing context or perspectives, incorporate them where relevant instead of ignoring them.
@@ -137,13 +142,50 @@ Instructions:
    - Provide 3 to 6 key stages, components, or conceptual blocks arranged logically with clear flow arrows.
    - Keep all element coordinates strictly within 0-800 x and 0-480 y.
 4. Output Requirement:
+   - You MUST finish the diagram completely, including a proper closing </svg> tag, within your token budget. If running low on space, immediately simplify remaining elements (fewer decorative details, shorter labels) rather than leaving any section unfinished or cut off. An unfinished diagram is a failure - always prioritize completing all planned sections over adding visual detail to early sections.
    - Output ONLY the raw <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 800 480">...</svg> markup.
    - Do NOT wrap in conversational text or markdown.`,
+
+  dataAnalyst: `You are the DATA ANALYST agent of JARVIS, specialized in extracting and structuring quantitative data points for visual chart generation.
+
+Task: "{task}"
+Synthesized Intelligence Content / Facts:
+{content}
+
+Instructions:
+- Extract numeric data points suitable for a chart comparing categories, entities, or time series.
+- Output ONLY a valid JSON object in this exact format, with no markdown fences, no conversational prose, and no extra text:
+{
+  "chartType": "bar" or "line",
+  "title": "Short descriptive chart title",
+  "series": [{"name": "Series name", "values": [num1, num2, ...]}],
+  "labels": ["Label1", "Label2", ...]
+}
+- Use "line" for sequential / time-series data (e.g. years, dates, timelines) and "bar" for categorical or entity comparisons.
+- Every series object in "series" must contain a "name" string and a "values" array of numbers. All series arrays must have the exact same length as "labels".
+- "labels" must be an array of short descriptive strings.
+- If no genuinely chartable numeric data exists in the content, return exactly:
+{"chartType": null}`,
+  imageFinder: `You are the JARVIS IMAGE FINDER agent.
+Your mission is to formulate ONE concise, highly targeted search query (5-10 words) that will retrieve genuine, high-quality, relevant real photos for the user's inquiry.
+
+User Task / Topic:
+{task}
+
+Instructions:
+- Write ONE short, specific image search query (5-10 words) optimized for finding real photos of the subject (e.g., "high resolution photo of sagrada familia interior", "james webb telescope southern ring nebula photo").
+- Focus strictly on tangible, visual subjects.
+- Output ONLY a valid JSON object with NO markdown fences, no conversational prose, and no explanation in this exact format:
+{
+  "searchQuery": "short specific search query"
+}`,
 };
 
 export const DEFAULT_JARVIS_CONFIG: JarvisSystemConfig = {
   deepResearchDefault: false,
   diagramModeDefault: false,
+  chartModeDefault: false,
+  imageModeDefault: false,
   customAgents: [],
   agents: {
     planner: {
@@ -220,9 +262,35 @@ export const DEFAULT_JARVIS_CONFIG: JarvisSystemConfig = {
       providerId: 'existing',
       modelId: 'deepseek/deepseek-chat',
       enabled: true,
-      maxTokens: 2400,
+      maxTokens: 4500,
       enableFailover: false,
       systemPrompt: DEFAULT_AGENT_SYSTEM_PROMPTS.architect,
+    },
+    dataAnalyst: {
+      id: 'dataAnalyst',
+      name: 'Data Analyst',
+      role: 'Numeric Data & Chart Analytics',
+      description: 'Extracts structured comparative metrics and time-series statistics into visual bar or line charts.',
+      icon: '📊',
+      providerId: 'existing',
+      modelId: 'deepseek/deepseek-chat',
+      enabled: true,
+      maxTokens: 350,
+      enableFailover: false,
+      systemPrompt: DEFAULT_AGENT_SYSTEM_PROMPTS.dataAnalyst,
+    },
+    imageFinder: {
+      id: 'imageFinder',
+      name: 'Image Finder',
+      role: 'Visual Photo Sourcing & Image Querying',
+      description: 'Identifies visual photo requirements and generates targeted photographic search queries to retrieve real images.',
+      icon: '🖼️',
+      providerId: 'existing',
+      modelId: 'deepseek/deepseek-chat',
+      enabled: true,
+      maxTokens: 80,
+      enableFailover: false,
+      systemPrompt: DEFAULT_AGENT_SYSTEM_PROMPTS.imageFinder,
     },
   },
 };
@@ -367,6 +435,9 @@ export const storage = {
     }
     return {
       deepResearchDefault: stored.deepResearchDefault ?? DEFAULT_JARVIS_CONFIG.deepResearchDefault,
+      diagramModeDefault: stored.diagramModeDefault ?? DEFAULT_JARVIS_CONFIG.diagramModeDefault,
+      chartModeDefault: stored.chartModeDefault ?? DEFAULT_JARVIS_CONFIG.chartModeDefault,
+      imageModeDefault: stored.imageModeDefault ?? DEFAULT_JARVIS_CONFIG.imageModeDefault,
       customAgents: Array.isArray(stored.customAgents) ? stored.customAgents : [],
       agents: {
         planner: {
@@ -375,6 +446,8 @@ export const storage = {
           systemPrompt:
             !stored.agents.planner?.systemPrompt ||
             !stored.agents.planner.systemPrompt.includes('needsDiagram') ||
+            !stored.agents.planner.systemPrompt.includes('needsChart') ||
+            !stored.agents.planner.systemPrompt.includes('needsImage') ||
             !stored.agents.planner.systemPrompt.includes('task: a concise goal statement, under 15 words.')
               ? DEFAULT_AGENT_SYSTEM_PROMPTS.planner
               : stored.agents.planner.systemPrompt,
@@ -415,20 +488,40 @@ export const storage = {
           systemPrompt:
             !stored.agents.finalSynthesizer?.systemPrompt ||
             stored.agents.finalSynthesizer?.systemPrompt?.includes('Deliver a direct, elegant, and informative answer in clean Markdown.') ||
-            !stored.agents.finalSynthesizer?.systemPrompt?.includes('Aim for a complete but focused answer (roughly 400-550 words).')
+            !stored.agents.finalSynthesizer?.systemPrompt?.includes('Do NOT use LaTeX math syntax')
               ? DEFAULT_AGENT_SYSTEM_PROMPTS.finalSynthesizer
               : stored.agents.finalSynthesizer.systemPrompt,
         },
         architect: {
           ...DEFAULT_JARVIS_CONFIG.agents.architect,
           ...(stored.agents.architect || {}),
-          maxTokens: Math.max(1800, stored.agents.architect?.maxTokens || 2400),
+          maxTokens: Math.max(4500, stored.agents.architect?.maxTokens || 4500),
           systemPrompt:
             !stored.agents.architect?.systemPrompt ||
             stored.agents.architect.systemPrompt.includes('viewBox="0 0 800 450"') ||
-            !stored.agents.architect.systemPrompt.includes('viewBox="0 0 800 480"')
+            !stored.agents.architect.systemPrompt.includes('An unfinished diagram is a failure')
               ? DEFAULT_AGENT_SYSTEM_PROMPTS.architect
               : stored.agents.architect.systemPrompt,
+        },
+        dataAnalyst: {
+          ...DEFAULT_JARVIS_CONFIG.agents.dataAnalyst,
+          ...(stored.agents?.dataAnalyst || {}),
+          maxTokens: Math.min(600, Math.max(150, stored.agents?.dataAnalyst?.maxTokens || 350)),
+          systemPrompt:
+            !stored.agents?.dataAnalyst?.systemPrompt ||
+            !stored.agents?.dataAnalyst?.systemPrompt?.includes('DATA ANALYST')
+              ? DEFAULT_AGENT_SYSTEM_PROMPTS.dataAnalyst
+              : stored.agents.dataAnalyst.systemPrompt,
+        },
+        imageFinder: {
+          ...DEFAULT_JARVIS_CONFIG.agents.imageFinder,
+          ...(stored.agents?.imageFinder || {}),
+          maxTokens: Math.min(200, Math.max(40, stored.agents?.imageFinder?.maxTokens || 80)),
+          systemPrompt:
+            !stored.agents?.imageFinder?.systemPrompt ||
+            !stored.agents?.imageFinder?.systemPrompt?.includes('IMAGE FINDER')
+              ? DEFAULT_AGENT_SYSTEM_PROMPTS.imageFinder
+              : stored.agents.imageFinder.systemPrompt,
         },
       },
     };

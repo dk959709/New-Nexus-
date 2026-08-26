@@ -32,6 +32,8 @@ import { JarvisTopologyMatrix } from './JarvisTopologyMatrix';
 import { JarvisCategoryDeck } from './JarvisCategoryDeck';
 import { JarvisQuantumOrb } from './JarvisQuantumOrb';
 import { JarvisSvgDiagram } from './JarvisSvgDiagram';
+import { JarvisChartCard } from './JarvisChartCard';
+import { JarvisImageGallery } from './JarvisImageGallery';
 import type {
   JarvisExecutionStep,
   JarvisMessage,
@@ -88,6 +90,20 @@ const AGENT_COLORS: Record<string, { bg: string; border: string; text: string; g
     glow: 'rgba(245, 158, 11, 0.35)',
     gradient: 'linear-gradient(135deg, rgba(245,158,11,0.3) 0%, rgba(217,119,6,0.15) 100%)',
   },
+  dataAnalyst: {
+    bg: 'rgba(56, 189, 248, 0.15)',
+    border: 'rgba(56, 189, 248, 0.45)',
+    text: '#38bdf8',
+    glow: 'rgba(56, 189, 248, 0.3)',
+    gradient: 'linear-gradient(135deg, rgba(56,189,248,0.3) 0%, rgba(14,165,233,0.15) 100%)',
+  },
+  imageFinder: {
+    bg: 'rgba(236, 72, 153, 0.15)',
+    border: 'rgba(236, 72, 153, 0.45)',
+    text: '#f472b6',
+    glow: 'rgba(236, 72, 153, 0.3)',
+    gradient: 'linear-gradient(135deg, rgba(236,72,153,0.3) 0%, rgba(219,39,119,0.15) 100%)',
+  },
 };
 
 function getAgentColor(agentId: string) {
@@ -102,8 +118,57 @@ function getAgentColor(agentId: string) {
   );
 }
 
+function cleanFormula(math: string): string {
+  let f = math.trim();
+  f = f
+    .replace(/\\cdot/g, ' · ')
+    .replace(/\\times/g, ' × ')
+    .replace(/\\approx/g, ' ≈ ')
+    .replace(/\\pm/g, ' ± ')
+    .replace(/\\Delta/g, 'Δ')
+    .replace(/\\delta/g, 'δ')
+    .replace(/\\pi/g, 'π')
+    .replace(/\\sigma/g, 'σ')
+    .replace(/\\lambda/g, 'λ')
+    .replace(/\\theta/g, 'θ')
+    .replace(/\\alpha/g, 'α')
+    .replace(/\\beta/g, 'β')
+    .replace(/\\gamma/g, 'γ')
+    .replace(/\\omega/g, 'ω')
+    .replace(/\\mu/g, 'μ')
+    .replace(/\\le(?:q)?/g, ' ≤ ')
+    .replace(/\\ge(?:q)?/g, ' ≥ ')
+    .replace(/\\neq/g, ' ≠ ')
+    .replace(/\\infty/g, '∞')
+    .replace(/\\sqrt\{([^}]+)\}/g, '√($1)')
+    .replace(/\\sqrt/g, '√')
+    .replace(/\\frac\{([^}]+)\}\{([^}]+)\}/g, '($1 / $2)')
+    .replace(/\\dot\{([a-zA-Z])\}/g, 'ṁ')
+    .replace(/\\mathbf\{([^}]+)\}/g, '$1')
+    .replace(/\\text(?:rm)?\{([^}]+)\}/g, '$1')
+    .replace(/\\(?:quad|qquad)/g, '  ')
+    .replace(/\\,/g, ' ')
+    .replace(/\\;/g, ' ')
+    .replace(/\\!/g, '')
+    .replace(/\\/g, '')
+    .trim();
+  return f;
+}
+
+function cleanLatexMath(raw: string): string {
+  if (!raw) return '';
+  let text = raw;
+  // Replace block math delimiters \[ ... \] or $$ ... $$
+  text = text.replace(/\\\[([\s\S]*?)\\\]/g, (_match, math) => cleanFormula(math));
+  text = text.replace(/\$\$([\s\S]*?)\$\$/g, (_match, math) => cleanFormula(math));
+  // Replace inline math delimiters \( ... \) or $...$
+  text = text.replace(/\\\(([\s\S]*?)\\\)/g, (_match, math) => cleanFormula(math));
+  return text;
+}
+
 function renderInline(text: string): React.ReactNode {
-  const parts = text.split(/(\*\*.*?\*\*|`.*?`)/g);
+  const sanitized = cleanLatexMath(text);
+  const parts = sanitized.split(/(\*\*.*?\*\*|`.*?`)/g);
   return parts.map((part, i) => {
     if (part.startsWith('**') && part.endsWith('**')) {
       return (
@@ -259,6 +324,18 @@ export function JarvisChat({ config, onOpenSettings }: JarvisChatProps) {
     if (diagParam === 'false') return false;
     return config.diagramModeDefault ?? false;
   });
+  const [chartMode, setChartMode] = useState(() => {
+    const chartParam = searchParams.get('chart');
+    if (chartParam === 'true') return true;
+    if (chartParam === 'false') return false;
+    return config.chartModeDefault ?? false;
+  });
+  const [imageMode, setImageMode] = useState(() => {
+    const imgParam = searchParams.get('image');
+    if (imgParam === 'true') return true;
+    if (imgParam === 'false') return false;
+    return config.imageModeDefault ?? false;
+  });
   const [messages, setMessages] = useState<JarvisMessage[]>(() => {
     const stored = storage.getJarvisMessages();
     return [...stored].sort((a, b) => a.timestamp - b.timestamp);
@@ -320,6 +397,8 @@ export function JarvisChat({ config, onOpenSettings }: JarvisChatProps) {
         timestamp: Date.now(),
         deepResearch,
         diagramMode,
+        chartMode,
+        imageMode,
         steps: [],
       };
 
@@ -330,17 +409,25 @@ export function JarvisChat({ config, onOpenSettings }: JarvisChatProps) {
       setActiveSteps([]);
 
       try {
-        const result = await runJarvisPipeline(prompt, config, deepResearch, diagramMode, (updatedStep) => {
-          setActiveSteps((prev) => {
-            const idx = prev.findIndex((s) => s.agentId === updatedStep.agentId);
-            if (idx >= 0) {
-              const next = [...prev];
-              next[idx] = updatedStep;
-              return next;
-            }
-            return [...prev, updatedStep];
-          });
-        });
+        const result = await runJarvisPipeline(
+          prompt,
+          config,
+          deepResearch,
+          diagramMode,
+          chartMode,
+          imageMode,
+          (updatedStep) => {
+            setActiveSteps((prev) => {
+              const idx = prev.findIndex((s) => s.agentId === updatedStep.agentId);
+              if (idx >= 0) {
+                const next = [...prev];
+                next[idx] = updatedStep;
+                return next;
+              }
+              return [...prev, updatedStep];
+            });
+          },
+        );
 
         const completedMessage: JarvisMessage = {
           id: messageId,
@@ -349,9 +436,13 @@ export function JarvisChat({ config, onOpenSettings }: JarvisChatProps) {
           timestamp: Date.now(),
           deepResearch,
           diagramMode,
+          chartMode,
+          imageMode,
           steps: result.steps,
           sources: result.sources,
           diagramSvg: result.diagramSvg,
+          chartData: result.chartData,
+          images: result.images,
           error: result.error,
         };
 
@@ -369,6 +460,8 @@ export function JarvisChat({ config, onOpenSettings }: JarvisChatProps) {
           timestamp: Date.now(),
           deepResearch,
           diagramMode,
+          chartMode,
+          imageMode,
           steps: activeSteps,
           error: errMsg,
         };
@@ -382,7 +475,7 @@ export function JarvisChat({ config, onOpenSettings }: JarvisChatProps) {
         setCurrentRunningMessageId(null);
       }
     },
-    [query, isRunning, deepResearch, diagramMode, config, activeSteps],
+    [query, isRunning, deepResearch, diagramMode, chartMode, imageMode, config, activeSteps],
   );
 
   useEffect(() => {
@@ -549,6 +642,7 @@ export function JarvisChat({ config, onOpenSettings }: JarvisChatProps) {
       })),
       savedAt: new Date(msg.timestamp || Date.now()).toISOString(),
       diagramSvg: msg.diagramSvg,
+      chartData: msg.chartData,
     };
 
     const updated = storage.saveItem(jarvisSavedItem);
@@ -779,6 +873,16 @@ export function JarvisChat({ config, onOpenSettings }: JarvisChatProps) {
                           🏗️ DIAGRAM MODE
                         </span>
                       )}
+                      {msg.chartMode && (
+                        <span className="px-2.5 py-0.5 rounded-full bg-sky-500/20 border border-sky-400/40 text-sky-300 text-[10px] font-mono font-bold">
+                          📊 CHART MODE
+                        </span>
+                      )}
+                      {msg.imageMode && (
+                        <span className="px-2.5 py-0.5 rounded-full bg-pink-500/20 border border-pink-400/40 text-pink-300 text-[10px] font-mono font-bold">
+                          🖼️ IMAGE MODE
+                        </span>
+                      )}
                     </div>
                   </div>
                   <h3 className="text-base sm:text-lg font-bold text-white m-0 leading-relaxed">
@@ -999,6 +1103,22 @@ export function JarvisChat({ config, onOpenSettings }: JarvisChatProps) {
                   <div className="prose prose-invert max-w-none text-slate-100 leading-relaxed text-sm sm:text-base">
                     <FormattedText content={msg.answer} />
                   </div>
+
+                  {/* Interactive Quantitative Chart Card */}
+                  {msg.chartData && (
+                    <JarvisChartCard
+                      chartData={msg.chartData}
+                      title={msg.query}
+                    />
+                  )}
+
+                  {/* Retrieved Real Photographic Media */}
+                  {msg.images && msg.images.length > 0 && (
+                    <JarvisImageGallery
+                      images={msg.images}
+                      title={msg.query}
+                    />
+                  )}
 
                   {/* SVG Architectural Blueprint Diagram */}
                   {msg.diagramSvg && (
@@ -1233,6 +1353,82 @@ export function JarvisChat({ config, onOpenSettings }: JarvisChatProps) {
                 >
                   <span>🏗️</span>
                   <span>DIAGRAM MODE</span>
+                </span>
+              </label>
+
+              {/* Chart Mode Colorful Pill Switch */}
+              <label
+                className="inline-flex items-center gap-2 px-3 py-1.5 rounded-full cursor-pointer transition-all duration-200 border"
+                style={{
+                  background: chartMode
+                    ? 'linear-gradient(135deg, rgba(56,189,248,0.22) 0%, rgba(14,165,233,0.18) 100%)'
+                    : 'rgba(255,255,255,0.03)',
+                  borderColor: chartMode ? 'rgba(56,189,248,0.55)' : 'rgba(255,255,255,0.1)',
+                  boxShadow: chartMode ? '0 0 14px rgba(56,189,248,0.3)' : 'none',
+                }}
+              >
+                <input
+                  type="checkbox"
+                  checked={chartMode}
+                  onChange={(e) => setChartMode(e.target.checked)}
+                  className="hidden"
+                />
+                <div
+                  className={`w-7 h-3.5 rounded-full transition-colors relative flex items-center p-0.5 ${
+                    chartMode ? 'bg-sky-400' : 'bg-slate-700'
+                  }`}
+                >
+                  <div
+                    className={`w-2.5 h-2.5 rounded-full bg-slate-950 transition-transform duration-200 ${
+                      chartMode ? 'translate-x-3.5' : 'translate-x-0'
+                    }`}
+                  />
+                </div>
+                <span
+                  className={`text-[11px] font-bold font-mono tracking-wide flex items-center gap-1.5 ${
+                    chartMode ? 'text-sky-300' : 'text-slate-400'
+                  }`}
+                >
+                  <span>📊</span>
+                  <span>CHART MODE</span>
+                </span>
+              </label>
+
+              {/* Image Mode Colorful Pill Switch */}
+              <label
+                className="inline-flex items-center gap-2 px-3 py-1.5 rounded-full cursor-pointer transition-all duration-200 border"
+                style={{
+                  background: imageMode
+                    ? 'linear-gradient(135deg, rgba(236,72,153,0.22) 0%, rgba(219,39,119,0.18) 100%)'
+                    : 'rgba(255,255,255,0.03)',
+                  borderColor: imageMode ? 'rgba(236,72,153,0.55)' : 'rgba(255,255,255,0.1)',
+                  boxShadow: imageMode ? '0 0 14px rgba(236,72,153,0.3)' : 'none',
+                }}
+              >
+                <input
+                  type="checkbox"
+                  checked={imageMode}
+                  onChange={(e) => setImageMode(e.target.checked)}
+                  className="hidden"
+                />
+                <div
+                  className={`w-7 h-3.5 rounded-full transition-colors relative flex items-center p-0.5 ${
+                    imageMode ? 'bg-pink-400' : 'bg-slate-700'
+                  }`}
+                >
+                  <div
+                    className={`w-2.5 h-2.5 rounded-full bg-slate-950 transition-transform duration-200 ${
+                      imageMode ? 'translate-x-3.5' : 'translate-x-0'
+                    }`}
+                  />
+                </div>
+                <span
+                  className={`text-[11px] font-bold font-mono tracking-wide flex items-center gap-1.5 ${
+                    imageMode ? 'text-pink-300' : 'text-slate-400'
+                  }`}
+                >
+                  <span>🖼️</span>
+                  <span>IMAGE MODE</span>
                 </span>
               </label>
             </div>

@@ -8,3 +8,5 @@ export { JarvisAnimatedCore } from './JarvisAnimatedCore';
 export { JarvisQuantumOrb } from './JarvisQuantumOrb';
 export { JarvisSearchCore } from './JarvisSearchCore';
 export { JarvisSvgDiagram } from './JarvisSvgDiagram';
+export { JarvisChartCard } from './JarvisChartCard';
+export { JarvisImageGallery } from './JarvisImageGallery';

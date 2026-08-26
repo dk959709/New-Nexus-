@@ -1,11 +1,14 @@
 import { api } from '@/services/api';
 import { storage, DEFAULT_AGENT_SYSTEM_PROMPTS } from '@/lib/storage';
+import { searchWikipedia } from '@/services/wikipedia';
 import type {
   AIProviderConfig,
   AISource,
   JarvisAgentConfig,
   JarvisAgentId,
+  JarvisChartData,
   JarvisExecutionStep,
+  JarvisImageResult,
   JarvisSystemConfig,
 } from '@/types';
 
@@ -14,11 +17,265 @@ export interface JarvisExecutionResult {
   steps: JarvisExecutionStep[];
   sources: AISource[];
   diagramSvg?: string;
+  chartData?: JarvisChartData | null;
+  images?: JarvisImageResult[];
   error?: string;
 }
 
 export interface StepUpdateCallback {
   (step: JarvisExecutionStep): void;
+}
+
+export function extractImageQueryFromText(text: string): string | null {
+  if (!text || typeof text !== 'string') return null;
+
+  let raw = text.trim();
+  const fenceMatch = raw.match(/```(?:json)?\s*([\s\S]*?)\s*```/i);
+  if (fenceMatch && fenceMatch[1]) {
+    raw = fenceMatch[1].trim();
+  }
+
+  const startIdx = raw.indexOf('{');
+  const endIdx = raw.lastIndexOf('}');
+  if (startIdx >= 0 && endIdx > startIdx) {
+    raw = raw.slice(startIdx, endIdx + 1);
+  }
+
+  try {
+    const parsed = JSON.parse(raw);
+    if (parsed && typeof parsed === 'object') {
+      const q = parsed.searchQuery || parsed.query || parsed.imageQuery || parsed.search_query;
+      if (q && typeof q === 'string' && q.trim().length > 0) {
+        return q.trim();
+      }
+    }
+  } catch {
+    // If JSON parsing fails, continue to string match
+  }
+
+  // Fallback: Check if regex finds "searchQuery": "..."
+  const regexMatch = text.match(/"searchQuery"\s*:\s*"([^"]+)"/i);
+  if (regexMatch && regexMatch[1]) {
+    return regexMatch[1].trim();
+  }
+
+  // Fallback: If returned a short single line query without JSON braces
+  if (raw.length > 0 && raw.length < 120 && !raw.includes('{') && !raw.includes('}') && !raw.includes('\n')) {
+    return raw.replace(/^["']|["']$/g, '').trim();
+  }
+
+  return null;
+}
+
+/**
+ * Executes a real image search using NEXUS's existing search infrastructure
+ * and official educational media APIs (Wikimedia Commons & Wikipedia) to retrieve
+ * actual photos with real source URLs and attribution - NEVER fabricated.
+ */
+export async function fetchJarvisRealImages(
+  searchQuery: string,
+  limit = 4,
+): Promise<JarvisImageResult[]> {
+  const trimmed = searchQuery.trim();
+  if (!trimmed) return [];
+
+  const results: JarvisImageResult[] = [];
+  const seenUrls = new Set<string>();
+
+  // 1. First attempt: NEXUS search API with category "IMAGES"
+  try {
+    const apiResults = await api.search(trimmed, 'IMAGES');
+    if (Array.isArray(apiResults) && apiResults.length > 0) {
+      for (const item of apiResults) {
+        const imgUrl = item.image || item.thumbnail;
+        if (imgUrl && !seenUrls.has(imgUrl) && !imgUrl.endsWith('.svg') && !imgUrl.endsWith('.ico')) {
+          seenUrls.add(imgUrl);
+          results.push({
+            title: item.title || trimmed,
+            url: imgUrl,
+            sourceUrl: item.url,
+            domain: item.domain || 'web',
+            thumbnailUrl: item.thumbnail || imgUrl,
+            author: item.channel,
+          });
+        }
+        if (results.length >= limit) break;
+      }
+    }
+  } catch (err) {
+    console.warn('[JARVIS Image Finder] Backend image search unavailable, falling back to Wikimedia/Wikipedia:', err);
+  }
+
+  // 2. Second attempt / supplement: Wikimedia Commons Search API for real photographic media
+  if (results.length < limit) {
+    try {
+      const wikiCommonsUrl = `https://commons.wikimedia.org/w/api.php?action=query&generator=search&gsrsearch=${encodeURIComponent(
+        trimmed,
+      )}&gsrnamespace=6&gsrlimit=${limit * 2}&prop=imageinfo&iiprop=url|size|mime|extmetadata&iiurlwidth=800&format=json&origin=*`;
+
+      const response = await fetch(wikiCommonsUrl, {
+        headers: {
+          'Api-User-Agent': 'NEXUS-Intelligence/1.0 (https://nexus.app; contact: support@nexus.app)',
+        },
+      });
+
+      if (response.ok) {
+        const data = (await response.json()) as {
+          query?: {
+            pages?: Record<
+              string,
+              {
+                title?: string;
+                imageinfo?: Array<{
+                  url?: string;
+                  thumburl?: string;
+                  descriptionshorturl?: string;
+                  descriptionurl?: string;
+                  mime?: string;
+                  extmetadata?: {
+                    ObjectName?: { value?: string };
+                    ImageDescription?: { value?: string };
+                    Artist?: { value?: string };
+                    LicenseShortName?: { value?: string };
+                  };
+                }>;
+              }
+            >;
+          };
+        };
+
+        const pages = data.query?.pages ? Object.values(data.query.pages) : [];
+        for (const page of pages) {
+          const info = page.imageinfo?.[0];
+          const imgUrl = info?.thumburl || info?.url;
+          const mime = info?.mime || '';
+
+          // Only accept standard photographic bitmap mime types (jpeg, png, webp)
+          if (
+            imgUrl &&
+            !seenUrls.has(imgUrl) &&
+            !mime.includes('svg') &&
+            !mime.includes('pdf') &&
+            !mime.includes('ogg') &&
+            !mime.includes('audio') &&
+            !mime.includes('video')
+          ) {
+            seenUrls.add(imgUrl);
+
+            // Clean title: remove "File:" prefix and file extensions
+            const cleanTitle = (page.title || trimmed)
+              .replace(/^File:/i, '')
+              .replace(/\.(jpg|jpeg|png|webp|tiff|gif)$/i, '')
+              .replace(/_/g, ' ')
+              .trim();
+
+            const artistRaw = info.extmetadata?.Artist?.value;
+            const cleanArtist = artistRaw ? artistRaw.replace(/<[^>]*>/g, '').trim() : undefined;
+            const license = info.extmetadata?.LicenseShortName?.value;
+
+            results.push({
+              title: cleanTitle || trimmed,
+              url: imgUrl,
+              sourceUrl: info.descriptionshorturl || info.descriptionurl || `https://commons.wikimedia.org/wiki/${encodeURIComponent(page.title || '')}`,
+              domain: 'commons.wikimedia.org',
+              thumbnailUrl: imgUrl,
+              author: cleanArtist,
+              license: license || 'Wikimedia Commons',
+            });
+
+            if (results.length >= limit) break;
+          }
+        }
+      }
+    } catch (wikiErr) {
+      console.warn('[JARVIS Image Finder] Wikimedia Commons image fetch failed:', wikiErr);
+    }
+  }
+
+  // 3. Third attempt / supplement: Wikipedia article thumbnail search
+  if (results.length < limit) {
+    try {
+      const wikiArticles = await searchWikipedia(trimmed, limit);
+      for (const article of wikiArticles) {
+        if (article.thumbnail && !seenUrls.has(article.thumbnail)) {
+          seenUrls.add(article.thumbnail);
+          results.push({
+            title: article.title,
+            url: article.thumbnail,
+            sourceUrl: article.url,
+            domain: 'wikipedia.org',
+            thumbnailUrl: article.thumbnail,
+            license: 'Wikipedia',
+          });
+          if (results.length >= limit) break;
+        }
+      }
+    } catch (artErr) {
+      console.warn('[JARVIS Image Finder] Wikipedia article image fetch failed:', artErr);
+    }
+  }
+
+  return results;
+}
+
+export function extractChartDataFromText(text: string): JarvisChartData | null {
+  if (!text || typeof text !== 'string') return null;
+
+  // 1. Strip markdown code fences if present: ```json ... ```
+  let raw = text.trim();
+  const fenceMatch = raw.match(/```(?:json)?\s*([\s\S]*?)\s*```/i);
+  if (fenceMatch && fenceMatch[1]) {
+    raw = fenceMatch[1].trim();
+  }
+
+  // 2. Find outermost JSON object { ... }
+  const startIdx = raw.indexOf('{');
+  const endIdx = raw.lastIndexOf('}');
+  if (startIdx >= 0 && endIdx > startIdx) {
+    raw = raw.slice(startIdx, endIdx + 1);
+  }
+
+  try {
+    const parsed = JSON.parse(raw);
+    if (parsed && typeof parsed === 'object') {
+      const chartType =
+        parsed.chartType === 'bar' || parsed.chartType === 'line'
+          ? parsed.chartType
+          : parsed.series && parsed.series.length > 0
+          ? 'bar'
+          : null;
+      if (!chartType) return null;
+
+      const labels = Array.isArray(parsed.labels) ? parsed.labels.map((l: unknown) => String(l)) : [];
+      const series = Array.isArray(parsed.series)
+        ? parsed.series
+            .filter(
+              (s: unknown): s is { name: string; values: unknown[] } =>
+                Boolean(s && typeof s === 'object' && 'name' in s && 'values' in s && Array.isArray((s as { values: unknown[] }).values)),
+            )
+            .map((s) => ({
+              name: String(s.name),
+              values: s.values.map((v) => {
+                const num = typeof v === 'number' ? v : parseFloat(String(v).replace(/[^0-9.-]+/g, ''));
+                return isNaN(num) ? 0 : num;
+              }),
+            }))
+        : [];
+
+      if (series.length > 0 && labels.length > 0) {
+        return {
+          chartType,
+          title: parsed.title ? String(parsed.title) : 'Data Comparison',
+          series,
+          labels,
+        };
+      }
+    }
+  } catch (err) {
+    console.warn('[JARVIS Data Analyst] Failed to parse chart JSON:', err);
+  }
+
+  return null;
 }
 
 export function extractSvgFromText(text: string): string | undefined {
@@ -529,6 +786,8 @@ export async function runJarvisPipeline(
   config: JarvisSystemConfig,
   deepResearch = false,
   diagramMode = false,
+  chartMode = false,
+  imageMode = false,
   onStepUpdate?: StepUpdateCallback,
 ): Promise<JarvisExecutionResult> {
   const steps: JarvisExecutionStep[] = [];
@@ -634,9 +893,9 @@ export async function runJarvisPipeline(
 
     const effectiveMaxTokens =
       agentId === 'architect'
-        ? Math.max(cfg.maxTokens || 2400, 2048)
+        ? Math.max(cfg.maxTokens || 4500, 4500)
         : cfg.maxTokens;
-    const effectiveTimeoutMs = agentId === 'architect' ? 65000 : 35000;
+    const effectiveTimeoutMs = agentId === 'architect' ? 75000 : 35000;
 
     const res = await api.jarvisAgentCall({
       agentId,
@@ -730,13 +989,24 @@ Please perform your specialized processing for this inquiry. Provide clear, conc
   // ==========================================
   // STEP 1: 🧭 PLANNER
   // ==========================================
-  let plannerOutput = {
+  let plannerOutput: {
+    task: string;
+    plan: string[];
+    needsResearch: boolean;
+    needsFactCheck: boolean;
+    needsReview: boolean;
+    needsDiagram: boolean;
+    needsChart?: boolean;
+    needsImage?: boolean;
+  } = {
     task: query,
     plan: ['Synthesize accurate response directly.'],
     needsResearch: false,
     needsFactCheck: false,
     needsReview: false,
     needsDiagram: false,
+    needsChart: false,
+    needsImage: false,
   };
 
   if (agentConfigs.planner.enabled) {
@@ -766,6 +1036,26 @@ Please perform your specialized processing for this inquiry. Provide clear, conc
 
     activePrompt += diagramModeNotice;
 
+    // Explicitly inject current Chart Mode state so Planner's decision is context-aware
+    const chartModeNotice = chartMode
+      ? `\n\n[SYSTEM CONTEXT: Chart Mode is currently ENABLED (ON).]
+- The user has enabled Chart Mode for this session.
+- Evaluate if the inquiry involves comparable numbers, statistics, metrics across categories, time series, or items worth charting. If yes, set "needsChart": true. Otherwise, set "needsChart": false.`
+      : `\n\n[SYSTEM CONTEXT: Chart Mode is currently DISABLED (OFF).]
+- Chart Mode is OFF for this request. Always output "needsChart": false.`;
+
+    activePrompt += chartModeNotice;
+
+    // Explicitly inject current Image Mode state so Planner's decision is context-aware
+    const imageModeNotice = imageMode
+      ? `\n\n[SYSTEM CONTEXT: Image Mode is currently ENABLED (ON).]
+- The user has enabled Image Mode for this session.
+- Evaluate if the inquiry is about something visual/physical that a real photo would help illustrate (e.g. "what does a black hole look like", "show me examples of gothic architecture", "what is the Andromeda galaxy"). If yes, set "needsImage": true. Otherwise, set "needsImage": false.`
+      : `\n\n[SYSTEM CONTEXT: Image Mode is currently DISABLED (OFF).]
+- Image Mode is OFF for this request. Always output "needsImage": false.`;
+
+    activePrompt += imageModeNotice;
+
     const planRes = await callAgent('planner', [
       { role: 'system', content: 'You are the JARVIS Planner. Output only valid JSON.' },
       { role: 'user', content: activePrompt },
@@ -777,6 +1067,12 @@ Please perform your specialized processing for this inquiry. Provide clear, conc
       plannerOutput = safeJsonParse(planRes.text, plannerOutput);
       if (!diagramMode) {
         plannerOutput.needsDiagram = false;
+      }
+      if (!chartMode) {
+        plannerOutput.needsChart = false;
+      }
+      if (!imageMode) {
+        plannerOutput.needsImage = false;
       }
       updateStep({
         agentId: 'planner',
@@ -1287,7 +1583,7 @@ ${reviewerOutput.recommendation ? `Reviewer Advice: ${reviewerOutput.recommendat
       {
         role: 'system',
         content:
-          'You are the JARVIS Architect agent. Output ONLY valid, raw, clean SVG markup (starting with <svg and ending with </svg>) illustrating the concept. Do not include markdown code blocks, backticks, or extra text.',
+          'You are the JARVIS Architect agent. You MUST finish the diagram completely, including a proper closing </svg> tag, within your token budget. If running low on space, immediately simplify remaining elements (fewer decorative details, shorter labels) rather than leaving any section unfinished or cut off. An unfinished diagram is a failure - always prioritize completing all planned sections over adding visual detail to early sections. Output ONLY valid, raw, clean SVG markup (starting with <svg and ending with </svg>) illustrating the concept. Do not include markdown code blocks, backticks, or extra text.',
       },
       { role: 'user', content: activePrompt },
     ]);
@@ -1354,10 +1650,210 @@ ${reviewerOutput.recommendation ? `Reviewer Advice: ${reviewerOutput.recommendat
     }
   }
 
+  // ==========================================
+  // STEP 7: 📊 DATA ANALYST (Chart & Statistical Extraction)
+  // ==========================================
+  let chartData: JarvisChartData | null = null;
+
+  const shouldDataAnalyst =
+    chartMode &&
+    Boolean(plannerOutput.needsChart) &&
+    agentConfigs.dataAnalyst &&
+    agentConfigs.dataAnalyst.enabled !== false;
+
+  if (shouldDataAnalyst) {
+    const daCfg = agentConfigs.dataAnalyst;
+    const provInfo = resolveProviderConfig(daCfg);
+    const start = Date.now();
+
+    updateStep({
+      agentId: 'dataAnalyst',
+      name: daCfg.name || 'Data Analyst',
+      icon: daCfg.icon || '📊',
+      status: 'running',
+      providerName: provInfo.provider?.name || 'Primary',
+      model: provInfo.model,
+    });
+
+    const defaultPromptTemplate = DEFAULT_AGENT_SYSTEM_PROMPTS.dataAnalyst;
+    const activePrompt = (daCfg.systemPrompt || defaultPromptTemplate)
+      .replace('{task}', plannerOutput.task || query)
+      .replace('{content}', finalAnswer || researcherOutput.facts.slice(0, 8).join('\n'));
+
+    console.group(`[JARVIS Data Analyst] Extracting Chart Data for: "${query}"`);
+    console.log(`[JARVIS Data Analyst] Active Prompt:`, activePrompt);
+
+    const daRes = await callAgent('dataAnalyst', [
+      {
+        role: 'system',
+        content:
+          'You are the JARVIS Data Analyst agent. Extract quantitative comparative statistics and metrics into valid chart JSON with chartType ("bar" or "line"), title, series (array of {name, values}), and labels (array of string category/time names). Output ONLY valid, parseable JSON. Do not include extra text.',
+      },
+      { role: 'user', content: activePrompt },
+    ]);
+
+    const duration = Date.now() - start;
+    console.log(`[JARVIS Data Analyst] Raw Output (${daRes.model || 'AI'}):`, daRes.text || daRes.error);
+
+    if (daRes.ok && daRes.text) {
+      const extracted = extractChartDataFromText(daRes.text);
+      if (extracted) {
+        chartData = extracted;
+        console.log(`[JARVIS Data Analyst] Successfully extracted chart data:`, chartData);
+        console.groupEnd();
+
+        updateStep({
+          agentId: 'dataAnalyst',
+          name: daCfg.name || 'Data Analyst',
+          icon: daCfg.icon || '📊',
+          status: 'completed',
+          providerName: daRes.providerName,
+          model: daRes.model,
+          durationMs: duration,
+          summary: `Quantitative chart extracted: "${chartData.title || 'Data Analysis'}" (${chartData.chartType?.toUpperCase()} chart).`,
+          outputPreview: JSON.stringify(chartData, null, 2),
+          usedFallback: daRes.usedFallback,
+        });
+      } else {
+        console.warn(`[JARVIS Data Analyst] Could not parse chart JSON from model output.`);
+        console.groupEnd();
+
+        updateStep({
+          agentId: 'dataAnalyst',
+          name: daCfg.name || 'Data Analyst',
+          icon: daCfg.icon || '📊',
+          status: 'skipped',
+          providerName: daRes.providerName,
+          model: daRes.model,
+          durationMs: duration,
+          summary: 'No distinct comparative numeric series detected in synthesized content.',
+        });
+      }
+    } else {
+      console.warn(`[JARVIS Data Analyst] Provider call notice: ${daRes.error}`);
+      console.groupEnd();
+
+      updateStep({
+        agentId: 'dataAnalyst',
+        name: daCfg.name || 'Data Analyst',
+        icon: daCfg.icon || '📊',
+        status: 'skipped',
+        providerName: daRes.providerName,
+        model: daRes.model,
+        durationMs: duration,
+        summary: `Data analysis skipped (${daRes.error || 'Provider unavailable'}).`,
+      });
+    }
+  }
+
+  // ==========================================
+  // STEP 8: 🖼️ IMAGE FINDER (Real Photo Sourcing)
+  // ==========================================
+  let retrievedImages: JarvisImageResult[] = [];
+
+  const shouldImageFinder =
+    imageMode &&
+    Boolean(plannerOutput.needsImage) &&
+    agentConfigs.imageFinder &&
+    agentConfigs.imageFinder.enabled !== false;
+
+  if (shouldImageFinder) {
+    const ifCfg = agentConfigs.imageFinder;
+    const provInfo = resolveProviderConfig(ifCfg);
+    const start = Date.now();
+
+    updateStep({
+      agentId: 'imageFinder',
+      name: ifCfg.name || 'Image Finder',
+      icon: ifCfg.icon || '🖼️',
+      status: 'running',
+      providerName: provInfo.provider?.name || 'Primary',
+      model: provInfo.model,
+    });
+
+    const defaultPromptTemplate = DEFAULT_AGENT_SYSTEM_PROMPTS.imageFinder;
+    const activePrompt = (ifCfg.systemPrompt || defaultPromptTemplate)
+      .replace('{task}', plannerOutput.task || query);
+
+    console.group(`[JARVIS Image Finder] Formulating Image Search Query for: "${query}"`);
+    console.log(`[JARVIS Image Finder] Active Prompt:`, activePrompt);
+
+    const ifRes = await callAgent('imageFinder', [
+      {
+        role: 'system',
+        content:
+          'You are the JARVIS Image Finder agent. Output ONLY a valid JSON object with {"searchQuery": "short specific search query"}. Do not include markdown or explanations.',
+      },
+      { role: 'user', content: activePrompt },
+    ]);
+
+    const duration = Date.now() - start;
+    console.log(`[JARVIS Image Finder] Raw Output (${ifRes.model || 'AI'}):`, ifRes.text || ifRes.error);
+
+    let searchQuery = '';
+    if (ifRes.ok && ifRes.text) {
+      searchQuery = extractImageQueryFromText(ifRes.text) || '';
+    }
+    if (!searchQuery) {
+      // Fallback: clean the query of question/command phrases
+      searchQuery = (plannerOutput.task || query)
+        .replace(/^(what is|what does|show me|photos of|pictures of|images of|a photo of|an image of)\s+/i, '')
+        .replace(/\b(look like|look)\b/i, '')
+        .trim();
+    }
+
+    console.log(`[JARVIS Image Finder] Executing NEXUS image search for: "${searchQuery}"`);
+    try {
+      retrievedImages = await fetchJarvisRealImages(searchQuery);
+    } catch (fetchErr) {
+      console.warn('[JARVIS Image Finder] Image retrieval failed:', fetchErr);
+    }
+
+    console.log(`[JARVIS Image Finder] Retrieved ${retrievedImages.length} real photo(s).`);
+    console.groupEnd();
+
+    if (retrievedImages.length > 0) {
+      updateStep({
+        agentId: 'imageFinder',
+        name: ifCfg.name || 'Image Finder',
+        icon: ifCfg.icon || '🖼️',
+        status: 'completed',
+        providerName: ifRes.providerName,
+        model: ifRes.model,
+        durationMs: duration,
+        summary: `Retrieved ${retrievedImages.length} real photo${retrievedImages.length > 1 ? 's' : ''} for "${searchQuery}".`,
+        outputPreview: JSON.stringify(
+          retrievedImages.map((img) => ({
+            title: img.title,
+            domain: img.domain,
+            url: img.url,
+            author: img.author,
+          })),
+          null,
+          2,
+        ),
+        usedFallback: ifRes.usedFallback,
+      });
+    } else {
+      updateStep({
+        agentId: 'imageFinder',
+        name: ifCfg.name || 'Image Finder',
+        icon: ifCfg.icon || '🖼️',
+        status: 'skipped',
+        providerName: ifRes.providerName,
+        model: ifRes.model,
+        durationMs: duration,
+        summary: `No high-confidence real photos found for "${searchQuery}".`,
+      });
+    }
+  }
+
   return {
     answer: finalAnswer,
     steps,
     sources: sourcesCollected,
     diagramSvg,
+    chartData,
+    images: retrievedImages,
   };
 }

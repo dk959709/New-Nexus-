@@ -42,6 +42,8 @@ const AGENT_ORDER: JarvisAgentId[] = [
   'reviewer',
   'finalSynthesizer',
   'architect',
+  'dataAnalyst',
+  'imageFinder',
 ];
 
 const PROMPT_HELP_TAGS: Record<string, { vars: string[]; purpose: string }> = {
@@ -68,6 +70,14 @@ const PROMPT_HELP_TAGS: Record<string, { vars: string[]; purpose: string }> = {
   architect: {
     vars: ['{task}', '{answer}'],
     purpose: 'Generates clean, dark-themed SVG diagrams illustrating structural concepts and workflows.',
+  },
+  dataAnalyst: {
+    vars: ['{task}', '{content}'],
+    purpose: 'Extracts quantitative comparative metrics and statistics into chart-ready JSON.',
+  },
+  imageFinder: {
+    vars: ['{task}'],
+    purpose: 'Formulates a precise, specific image search query to retrieve real photographs via NEXUS Search & Wikimedia.',
   },
 };
 
@@ -155,6 +165,8 @@ export function JarvisSettings({ onSaved }: JarvisSettingsProps) {
     reviewer: false,
     finalSynthesizer: false,
     architect: false,
+    dataAnalyst: false,
+    imageFinder: false,
   });
 
   // Modal / drawer state for "Add New Custom Agent"
@@ -371,7 +383,7 @@ export function JarvisSettings({ onSaved }: JarvisSettingsProps) {
     storage.saveJarvisConfig(DEFAULT_JARVIS_CONFIG);
     setShowResetConfirmModal(false);
     setIsSavedRecently(true);
-    setSaveStatus('All 6 agents and custom agents have been reset to original factory defaults.');
+    setSaveStatus('All 8 agents and custom agents have been reset to original factory defaults.');
     onSaved?.(DEFAULT_JARVIS_CONFIG);
     setTimeout(() => {
       setSaveStatus(null);
@@ -515,7 +527,7 @@ export function JarvisSettings({ onSaved }: JarvisSettingsProps) {
           <div style={{ display: 'flex', alignItems: 'center', gap: '8px', color: 'var(--accent)' }}>
             <Sliders size={15} />
             <span>
-              <strong>6 Core Agents</strong> + <strong>{customAgentsList.length} Custom Agent(s)</strong> active in JARVIS Pipeline.
+              <strong>8 Core Agents</strong> + <strong>{customAgentsList.length} Custom Agent(s)</strong> active in JARVIS Pipeline.
             </span>
           </div>
           <span style={{ color: 'var(--muted)' }}>
@@ -571,13 +583,13 @@ export function JarvisSettings({ onSaved }: JarvisSettingsProps) {
         </div>
       )}
 
-      {/* SECTION 1: CORE 6 AGENTS */}
+      {/* SECTION 1: CORE 8 AGENTS */}
       <div style={{ display: 'grid', gap: '18px' }}>
         <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '0 4px' }}>
           <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
             <Bot size={18} className="text-cyan-400" />
             <h3 style={{ margin: 0, fontSize: '16px', fontWeight: 700, color: '#fff', letterSpacing: '-0.01em' }}>
-              Core 6-Agent Pipeline
+              Core 8-Agent Pipeline
             </h3>
           </div>
           <span style={{ fontSize: '12px', color: 'var(--muted)', fontFamily: 'DM Mono' }}>
@@ -825,7 +837,7 @@ export function JarvisSettings({ onSaved }: JarvisSettingsProps) {
                         <input
                           type="range"
                           min={64}
-                          max={1500}
+                          max={agentId === 'architect' ? 6000 : 2500}
                           step={32}
                           value={agent.maxTokens}
                           onChange={(e) =>
@@ -836,7 +848,7 @@ export function JarvisSettings({ onSaved }: JarvisSettingsProps) {
                         <input
                           type="number"
                           min={32}
-                          max={4096}
+                          max={8000}
                           value={agent.maxTokens}
                           onChange={(e) =>
                             handleAgentChange(agentId, {

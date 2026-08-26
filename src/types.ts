@@ -95,7 +95,7 @@ export interface SavedItemSource {
 
 export interface SavedItem {
   id: string;
-  type: 'search' | 'news' | 'location' | 'space' | 'jarvis' | 'diagram' | string;
+  type: 'search' | 'news' | 'location' | 'space' | 'jarvis' | 'diagram' | 'chart' | string;
   title: string;
   subtitle: string;
   url?: string;
@@ -103,6 +103,7 @@ export interface SavedItem {
   sources?: SavedItemSource[];
   savedAt: string;
   diagramSvg?: string;
+  chartData?: JarvisChartData | null;
 }
 
 export type TemperatureUnit = 'celsius' | 'fahrenheit';
@@ -156,6 +157,8 @@ export type JarvisAgentId =
   | 'reviewer'
   | 'finalSynthesizer'
   | 'architect'
+  | 'dataAnalyst'
+  | 'imageFinder'
   | string;
 
 export type CustomAgentPipelinePosition =
@@ -163,6 +166,28 @@ export type CustomAgentPipelinePosition =
   | 'parallel_research'
   | 'extra_step'
   | 'after_synthesizer';
+
+export interface JarvisChartSeries {
+  name: string;
+  values: number[];
+}
+
+export interface JarvisChartData {
+  chartType: 'bar' | 'line' | null;
+  title?: string;
+  series?: JarvisChartSeries[];
+  labels?: string[];
+}
+
+export interface JarvisImageResult {
+  title: string;
+  url: string;
+  sourceUrl?: string;
+  domain?: string;
+  author?: string;
+  license?: string;
+  thumbnailUrl?: string;
+}
 
 export interface JarvisAgentConfig {
   id: JarvisAgentId;
@@ -188,8 +213,17 @@ export interface CustomJarvisAgentConfig extends JarvisAgentConfig {
 export interface JarvisSystemConfig {
   deepResearchDefault: boolean;
   diagramModeDefault?: boolean;
+  chartModeDefault?: boolean;
+  imageModeDefault?: boolean;
   agents: Record<
-    'planner' | 'researcher' | 'factChecker' | 'reviewer' | 'finalSynthesizer' | 'architect',
+    | 'planner'
+    | 'researcher'
+    | 'factChecker'
+    | 'reviewer'
+    | 'finalSynthesizer'
+    | 'architect'
+    | 'dataAnalyst'
+    | 'imageFinder',
     JarvisAgentConfig
   >;
   customAgents?: CustomJarvisAgentConfig[];
@@ -219,6 +253,10 @@ export interface JarvisMessage {
   deepResearch: boolean;
   diagramMode?: boolean;
   diagramSvg?: string;
+  chartMode?: boolean;
+  chartData?: JarvisChartData | null;
+  imageMode?: boolean;
+  images?: JarvisImageResult[];
   steps: JarvisExecutionStep[];
   sources?: AISource[];
   error?: string;

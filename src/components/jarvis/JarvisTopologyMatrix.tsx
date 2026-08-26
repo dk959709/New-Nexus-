@@ -6,6 +6,7 @@ import {
   Microscope,
   Sparkles,
   Layers,
+  BarChart3,
   Cpu,
   ArrowRight,
   Zap,
@@ -90,6 +91,16 @@ const AGENTS_META: Array<{
     description: 'Generates precision vector SVG blueprints & diagrams',
     detailedPurpose: 'Engaged in Diagram Mode for structural or process concepts to produce sleek, dark-themed SVG architecture diagrams and workflow charts.',
     sampleQuery: 'Explain the event-driven microservices architecture with a visual diagram.',
+  },
+  {
+    role: 'dataAnalyst',
+    name: 'DATA ANALYST',
+    emoji: '📊',
+    icon: BarChart3,
+    color: '#38bdf8',
+    description: 'Extracts comparative statistics & renders responsive charts',
+    detailedPurpose: 'Engaged in Chart Mode for queries involving numerical datasets, statistics, or trend comparisons to extract metrics and render interactive charts.',
+    sampleQuery: 'Compare the orbital payload capacities and launch costs of Falcon 9, Starship, and New Glenn.',
   },
 ];
 
