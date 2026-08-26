@@ -72,15 +72,32 @@ export function JarvisChartCard({ id, chartData, title, onSaveChange }: JarvisCh
     onSaveChange?.(isNowSaved);
   };
 
-  if (!chartData || !chartData.labels || chartData.labels.length === 0 || !chartData.series || chartData.series.length === 0) {
+  if (
+    !chartData ||
+    !Array.isArray(chartData.labels) ||
+    chartData.labels.length === 0 ||
+    !Array.isArray(chartData.series) ||
+    chartData.series.length === 0
+  ) {
+    return null;
+  }
+
+  // Filter valid series items
+  const validSeries = (chartData.series || []).filter(
+    (s): s is { name: string; values: number[] } =>
+      Boolean(s && typeof s === 'object' && typeof s.name === 'string' && Array.isArray(s.values)),
+  );
+
+  if (validSeries.length === 0) {
     return null;
   }
 
   // Transform labels and series into Recharts row-based data structure
   const formattedData = chartData.labels.map((label, idx) => {
-    const row: Record<string, string | number> = { label };
-    chartData.series?.forEach((s) => {
-      row[s.name] = s.values[idx] ?? 0;
+    const row: Record<string, string | number> = { label: String(label ?? '') };
+    validSeries.forEach((s) => {
+      const val = s.values && s.values[idx] !== undefined ? s.values[idx] : 0;
+      row[s.name] = typeof val === 'number' && !isNaN(val) ? val : 0;
     });
     return row;
   });
@@ -91,6 +108,8 @@ export function JarvisChartCard({ id, chartData, title, onSaveChange }: JarvisCh
     setCopied(true);
     setTimeout(() => setCopied(false), 2000);
   };
+
+  const labelsCount = chartData.labels?.length || 0;
 
   return (
     <div
@@ -117,7 +136,7 @@ export function JarvisChartCard({ id, chartData, title, onSaveChange }: JarvisCh
                 DATA ANALYST VISUALIZATION
               </span>
               <span className="px-2 py-0.2 rounded-full bg-sky-500/20 border border-sky-400/30 text-sky-200 text-[10px] font-mono">
-                {chartData.series.length} {chartData.series.length === 1 ? 'Series' : 'Series'} • {chartData.labels.length} Points
+                {validSeries.length} {validSeries.length === 1 ? 'Series' : 'Series'} • {labelsCount} Points
               </span>
             </div>
             <h4 className="text-sm sm:text-base font-extrabold text-white m-0 tracking-tight">
@@ -208,7 +227,7 @@ export function JarvisChartCard({ id, chartData, title, onSaveChange }: JarvisCh
           {chartType === 'bar' ? (
             <BarChart
               data={formattedData}
-              margin={{ top: 12, right: 16, left: -8, bottom: chartData.labels.length > 5 ? 24 : 8 }}
+              margin={{ top: 12, right: 16, left: -8, bottom: labelsCount > 5 ? 24 : 8 }}
             >
               <CartesianGrid strokeDasharray="3 3" stroke="rgba(255, 255, 255, 0.08)" vertical={false} />
               <XAxis
@@ -217,8 +236,8 @@ export function JarvisChartCard({ id, chartData, title, onSaveChange }: JarvisCh
                 axisLine={{ stroke: 'rgba(255, 255, 255, 0.15)' }}
                 tickLine={{ stroke: 'rgba(255, 255, 255, 0.15)' }}
                 interval={0}
-                angle={chartData.labels.length > 5 ? -25 : 0}
-                textAnchor={chartData.labels.length > 5 ? 'end' : 'middle'}
+                angle={labelsCount > 5 ? -25 : 0}
+                textAnchor={labelsCount > 5 ? 'end' : 'middle'}
               />
               <YAxis
                 tick={{ fill: '#94a3b8', fontSize: 11, fontFamily: 'DM Sans, sans-serif' }}
@@ -238,12 +257,12 @@ export function JarvisChartCard({ id, chartData, title, onSaveChange }: JarvisCh
                 itemStyle={{ color: '#e2e8f0', fontSize: '12px' }}
                 labelStyle={{ color: '#38bdf8', fontWeight: 'bold', marginBottom: '4px' }}
               />
-              {chartData.series.length > 1 && (
+              {validSeries.length > 1 && (
                 <Legend
                   wrapperStyle={{ paddingTop: '12px', fontSize: '12px', color: '#cbd5e1' }}
                 />
               )}
-              {chartData.series.map((s, idx) => (
+              {validSeries.map((s, idx) => (
                 <Bar
                   key={s.name}
                   dataKey={s.name}
@@ -256,7 +275,7 @@ export function JarvisChartCard({ id, chartData, title, onSaveChange }: JarvisCh
           ) : (
             <LineChart
               data={formattedData}
-              margin={{ top: 12, right: 16, left: -8, bottom: chartData.labels.length > 5 ? 24 : 8 }}
+              margin={{ top: 12, right: 16, left: -8, bottom: labelsCount > 5 ? 24 : 8 }}
             >
               <CartesianGrid strokeDasharray="3 3" stroke="rgba(255, 255, 255, 0.08)" vertical={false} />
               <XAxis
@@ -265,8 +284,8 @@ export function JarvisChartCard({ id, chartData, title, onSaveChange }: JarvisCh
                 axisLine={{ stroke: 'rgba(255, 255, 255, 0.15)' }}
                 tickLine={{ stroke: 'rgba(255, 255, 255, 0.15)' }}
                 interval={0}
-                angle={chartData.labels.length > 5 ? -25 : 0}
-                textAnchor={chartData.labels.length > 5 ? 'end' : 'middle'}
+                angle={labelsCount > 5 ? -25 : 0}
+                textAnchor={labelsCount > 5 ? 'end' : 'middle'}
               />
               <YAxis
                 tick={{ fill: '#94a3b8', fontSize: 11, fontFamily: 'DM Sans, sans-serif' }}
@@ -286,12 +305,12 @@ export function JarvisChartCard({ id, chartData, title, onSaveChange }: JarvisCh
                 itemStyle={{ color: '#e2e8f0', fontSize: '12px' }}
                 labelStyle={{ color: '#38bdf8', fontWeight: 'bold', marginBottom: '4px' }}
               />
-              {chartData.series.length > 1 && (
+              {validSeries.length > 1 && (
                 <Legend
                   wrapperStyle={{ paddingTop: '12px', fontSize: '12px', color: '#cbd5e1' }}
                 />
               )}
-              {chartData.series.map((s, idx) => (
+              {validSeries.map((s, idx) => (
                 <Line
                   key={s.name}
                   type="monotone"

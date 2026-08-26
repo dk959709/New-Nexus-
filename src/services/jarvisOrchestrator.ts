@@ -229,44 +229,105 @@ export function extractChartDataFromText(text: string): JarvisChartData | null {
     raw = fenceMatch[1].trim();
   }
 
-  // 2. Find outermost JSON object { ... }
-  const startIdx = raw.indexOf('{');
-  const endIdx = raw.lastIndexOf('}');
-  if (startIdx >= 0 && endIdx > startIdx) {
-    raw = raw.slice(startIdx, endIdx + 1);
+  // 2. Find outermost JSON boundary ({ ... } or [ ... ])
+  const firstBrace = raw.indexOf('{');
+  const lastBrace = raw.lastIndexOf('}');
+  const firstBracket = raw.indexOf('[');
+  const lastBracket = raw.lastIndexOf(']');
+
+  let toParse = raw;
+  if (firstBrace >= 0 && lastBrace > firstBrace && (firstBracket < 0 || firstBrace < firstBracket)) {
+    toParse = raw.slice(firstBrace, lastBrace + 1);
+  } else if (firstBracket >= 0 && lastBracket > firstBracket) {
+    toParse = raw.slice(firstBracket, lastBracket + 1);
   }
 
   try {
-    const parsed = JSON.parse(raw);
-    if (parsed && typeof parsed === 'object') {
-      const chartType =
-        parsed.chartType === 'bar' || parsed.chartType === 'line'
-          ? parsed.chartType
-          : parsed.series && parsed.series.length > 0
-          ? 'bar'
-          : null;
-      if (!chartType) return null;
+    const parsed = JSON.parse(toParse);
 
-      const labels = Array.isArray(parsed.labels) ? parsed.labels.map((l: unknown) => String(l)) : [];
-      const series = Array.isArray(parsed.series)
-        ? parsed.series
-            .filter(
-              (s: unknown): s is { name: string; values: unknown[] } =>
-                Boolean(s && typeof s === 'object' && 'name' in s && 'values' in s && Array.isArray((s as { values: unknown[] }).values)),
-            )
-            .map((s) => ({
-              name: String(s.name),
-              values: s.values.map((v) => {
-                const num = typeof v === 'number' ? v : parseFloat(String(v).replace(/[^0-9.-]+/g, ''));
-                return isNaN(num) ? 0 : num;
-              }),
-            }))
-        : [];
+    // Format A: Object with series & labels
+    if (parsed && typeof parsed === 'object' && !Array.isArray(parsed)) {
+      const obj = parsed as Record<string, unknown>;
+      const rawChartType = String(obj.chartType || obj.type || '').toLowerCase();
+      const chartType: 'bar' | 'line' = rawChartType === 'line' ? 'line' : 'bar';
+      const title = String(obj.title || obj.name || obj.heading || 'Data Comparison');
+
+      // Extract labels / categories
+      const rawLabels =
+        obj.labels ||
+        obj.categories ||
+        obj.xAxis ||
+        obj.x_axis ||
+        obj.columns ||
+        obj.keys ||
+        [];
+      const labels: string[] = Array.isArray(rawLabels) ? rawLabels.map((l: unknown) => String(l ?? '')) : [];
+
+      // Extract series / datasets
+      const rawSeries = obj.series || obj.datasets || obj.data || obj.metrics;
+      let series: Array<{ name: string; values: number[] }> = [];
+
+      if (Array.isArray(rawSeries)) {
+        series = rawSeries
+          .filter((s: unknown): s is Record<string, unknown> => Boolean(s && typeof s === 'object'))
+          .map((s) => {
+            const name = String(s.name || s.label || s.title || 'Series');
+            const vals = Array.isArray(s.values)
+              ? s.values
+              : Array.isArray(s.data)
+              ? s.data
+              : Array.isArray(s.points)
+              ? s.points
+              : [];
+            const values = vals.map((v: unknown) => {
+              if (typeof v === 'number' && !isNaN(v)) return v;
+              const num = parseFloat(String(v ?? '').replace(/[^0-9.-]+/g, ''));
+              return isNaN(num) ? 0 : num;
+            });
+            return { name, values };
+          })
+          .filter((s) => s.values.length > 0);
+      }
 
       if (series.length > 0 && labels.length > 0) {
+        // Equalize series values length with labels length if needed
+        const normalizedSeries = series.map((s) => {
+          const values = [...s.values];
+          while (values.length < labels.length) values.push(0);
+          return { name: s.name, values: values.slice(0, labels.length) };
+        });
         return {
           chartType,
-          title: parsed.title ? String(parsed.title) : 'Data Comparison',
+          title,
+          series: normalizedSeries,
+          labels,
+        };
+      }
+    }
+
+    // Format B: Array of row objects e.g. [{ year: '2020', itemA: 10, itemB: 20 }, ...]
+    if (Array.isArray(parsed) && parsed.length > 0 && typeof parsed[0] === 'object' && parsed[0] !== null) {
+      const rows = parsed as Array<Record<string, unknown>>;
+      const keys = Object.keys(rows[0]);
+      // First string/id key is candidate for label
+      const labelKey = keys.find((k) => typeof rows[0][k] === 'string') || keys[0];
+      const numericKeys = keys.filter((k) => k !== labelKey && rows.some((r) => typeof r[k] === 'number' || !isNaN(parseFloat(String(r[k])))));
+
+      if (numericKeys.length > 0) {
+        const labels = rows.map((r, i) => String(r[labelKey] ?? `Point ${i + 1}`));
+        const series = numericKeys.map((k) => ({
+          name: k.charAt(0).toUpperCase() + k.slice(1).replace(/_/g, ' '),
+          values: rows.map((r) => {
+            const val = r[k];
+            if (typeof val === 'number' && !isNaN(val)) return val;
+            const num = parseFloat(String(val ?? '').replace(/[^0-9.-]+/g, ''));
+            return isNaN(num) ? 0 : num;
+          }),
+        }));
+
+        return {
+          chartType: 'bar',
+          title: 'Comparative Data Analysis',
           series,
           labels,
         };
@@ -940,10 +1001,13 @@ export async function runJarvisPipeline(
         ? cAgent.systemPrompt.trim()
         : `You are the ${cAgent.name} agent (${cAgent.role || 'Specialized Agent'}). ${cAgent.description || ''}`;
 
+    const factsList = Array.isArray(researcherOutput?.facts) ? researcherOutput.facts : [];
+    const verifiedList = Array.isArray(factCheckOutput?.verified) ? factCheckOutput.verified : [];
+
     const contextPayload = `User Query: "${query}"
 Task Context: "${plannerOutput.task || query}"
-${researcherOutput.facts.length > 0 ? `Collected Research Facts:\n${researcherOutput.facts.map((f, i) => `${i + 1}. ${f}`).join('\n')}` : ''}
-${factCheckOutput.verified.length > 0 ? `Verified Claims:\n${factCheckOutput.verified.map((c) => `- ${c}`).join('\n')}` : ''}
+${factsList.length > 0 ? `Collected Research Facts:\n${factsList.map((f, i) => `${i + 1}. ${f}`).join('\n')}` : ''}
+${verifiedList.length > 0 ? `Verified Claims:\n${verifiedList.map((c) => `- ${c}`).join('\n')}` : ''}
 
 Please perform your specialized processing for this inquiry. Provide clear, concise insights or outputs.`;
 
@@ -1066,6 +1130,23 @@ Please perform your specialized processing for this inquiry. Provide clear, conc
 
     if (planRes.ok) {
       plannerOutput = safeJsonParse(planRes.text, plannerOutput);
+      if (!plannerOutput || typeof plannerOutput !== 'object') {
+        plannerOutput = {
+          task: query,
+          plan: ['Analyze and route inquiry.'],
+          needsResearch: false,
+          needsFactCheck: false,
+          needsReview: false,
+          needsDiagram: false,
+          needsChart: false,
+          needsImage: false,
+        };
+      }
+      if (!Array.isArray(plannerOutput.plan)) {
+        const rawPlan = (plannerOutput as Record<string, unknown>).plan || (plannerOutput as Record<string, unknown>).steps || (plannerOutput as Record<string, unknown>).tasks;
+        plannerOutput.plan = Array.isArray(rawPlan) ? rawPlan.map(String) : typeof rawPlan === 'string' ? [rawPlan] : ['Task analyzed and routed.'];
+      }
+      plannerOutput.task = String(plannerOutput.task || query);
       if (!diagramMode) {
         plannerOutput.needsDiagram = false;
       }
@@ -1083,7 +1164,7 @@ Please perform your specialized processing for this inquiry. Provide clear, conc
         providerName: planRes.providerName,
         model: planRes.model,
         durationMs: duration,
-        summary: plannerOutput.plan?.slice(0, 2).join(' • ') || 'Task analyzed and routed.',
+        summary: Array.isArray(plannerOutput.plan) && plannerOutput.plan.length > 0 ? plannerOutput.plan.slice(0, 2).join(' • ') : 'Task analyzed and routed.',
         outputPreview: JSON.stringify(plannerOutput, null, 2),
         usedFallback: planRes.usedFallback,
       });
@@ -1335,6 +1416,15 @@ Please perform your specialized processing for this inquiry. Provide clear, conc
 
     if (factRes.ok) {
       factCheckOutput = safeJsonParse(factRes.text, factCheckOutput);
+      if (!factCheckOutput || typeof factCheckOutput !== 'object') {
+        factCheckOutput = { verified: [], issues: [] };
+      }
+      if (!Array.isArray(factCheckOutput.verified)) {
+        factCheckOutput.verified = [];
+      }
+      if (!Array.isArray(factCheckOutput.issues)) {
+        factCheckOutput.issues = [];
+      }
       updateStep({
         agentId: 'factChecker',
         name: fCfg.name,
@@ -1395,10 +1485,13 @@ Please perform your specialized processing for this inquiry. Provide clear, conc
     });
 
     const defaultPromptTemplate = DEFAULT_AGENT_SYSTEM_PROMPTS.reviewer;
+    const factsSubset = Array.isArray(researcherOutput?.facts) ? researcherOutput.facts.slice(0, 5) : [];
+    const issuesSubset = Array.isArray(factCheckOutput?.issues) ? factCheckOutput.issues : [];
+
     const activePrompt = (revCfg.systemPrompt || defaultPromptTemplate)
       .replace('{task}', plannerOutput.task || query)
-      .replace('{facts}', JSON.stringify(researcherOutput.facts.slice(0, 5)))
-      .replace('{issues}', JSON.stringify(factCheckOutput.issues));
+      .replace('{facts}', JSON.stringify(factsSubset))
+      .replace('{issues}', JSON.stringify(issuesSubset));
 
     const reviewRes = await callAgent('reviewer', [
       { role: 'system', content: 'You are the JARVIS Reviewer. Output strictly valid JSON.' },
@@ -1409,6 +1502,17 @@ Please perform your specialized processing for this inquiry. Provide clear, conc
 
     if (reviewRes.ok) {
       reviewerOutput = safeJsonParse(reviewRes.text, reviewerOutput);
+      if (!reviewerOutput || typeof reviewerOutput !== 'object') {
+        reviewerOutput = {
+          missing: [],
+          issues: [],
+          recommendation: 'Present concise, well-structured synthesis.',
+        };
+      }
+      if (!Array.isArray(reviewerOutput.missing)) reviewerOutput.missing = [];
+      if (!Array.isArray(reviewerOutput.issues)) reviewerOutput.issues = [];
+      reviewerOutput.recommendation = String(reviewerOutput.recommendation || 'Quality review complete.');
+
       updateStep({
         agentId: 'reviewer',
         name: revCfg.name,
@@ -1483,13 +1587,20 @@ Please perform your specialized processing for this inquiry. Provide clear, conc
         ? `\n\nCustom Agent Insights & Analysis:\n${customAgentOutputs.map((co) => `--- [Agent: ${co.name}] ---\n${co.output}`).join('\n\n')}`
         : '';
 
+    const plannerPlanText = Array.isArray(plannerOutput?.plan)
+      ? plannerOutput.plan.join(' ')
+      : String(plannerOutput?.plan || '');
+    const factsList = Array.isArray(researcherOutput?.facts) ? researcherOutput.facts : [];
+    const verifiedList = Array.isArray(factCheckOutput?.verified) ? factCheckOutput.verified : [];
+    const issuesList = Array.isArray(factCheckOutput?.issues) ? factCheckOutput.issues : [];
+
     const synthesizerContext = `User Query: "${query}"
 
-Planner Guidance: ${plannerOutput.plan.join(' ')}
-${researcherOutput.facts.length > 0 ? `Key Verified Facts:\n${researcherOutput.facts.map((f) => `- ${f}`).join('\n')}` : ''}
-${factCheckOutput.verified.length > 0 ? `Verified Claims:\n${factCheckOutput.verified.map((c) => `- ${c}`).join('\n')}` : ''}
-${factCheckOutput.issues.length > 0 ? `Important Caveats/Corrections:\n${factCheckOutput.issues.map((i) => `- ${i}`).join('\n')}` : ''}
-${reviewerOutput.recommendation ? `Reviewer Advice: ${reviewerOutput.recommendation}` : ''}${customInsightsBlock}`;
+Planner Guidance: ${plannerPlanText}
+${factsList.length > 0 ? `Key Verified Facts:\n${factsList.map((f) => `- ${f}`).join('\n')}` : ''}
+${verifiedList.length > 0 ? `Verified Claims:\n${verifiedList.map((c) => `- ${c}`).join('\n')}` : ''}
+${issuesList.length > 0 ? `Important Caveats/Corrections:\n${issuesList.map((i) => `- ${i}`).join('\n')}` : ''}
+${reviewerOutput?.recommendation ? `Reviewer Advice: ${reviewerOutput.recommendation}` : ''}${customInsightsBlock}`;
 
     const defaultSysPrompt = DEFAULT_AGENT_SYSTEM_PROMPTS.finalSynthesizer;
     const activeSysPrompt = sCfg.systemPrompt && sCfg.systemPrompt.trim() ? sCfg.systemPrompt.trim() : defaultSysPrompt;
@@ -1573,9 +1684,10 @@ ${reviewerOutput.recommendation ? `Reviewer Advice: ${reviewerOutput.recommendat
     });
 
     const defaultPromptTemplate = DEFAULT_AGENT_SYSTEM_PROMPTS.architect;
+    const factsList = Array.isArray(researcherOutput?.facts) ? researcherOutput.facts : [];
     const activePrompt = (aCfg.systemPrompt || defaultPromptTemplate)
       .replace('{task}', plannerOutput.task || query)
-      .replace('{answer}', finalAnswer || researcherOutput.facts.slice(0, 5).join('\n'));
+      .replace('{answer}', finalAnswer || factsList.slice(0, 5).join('\n'));
 
     console.group(`[JARVIS Architect] Generating SVG Blueprint for: "${query}"`);
     console.log(`[JARVIS Architect] Active Prompt:`, activePrompt);
@@ -1677,9 +1789,10 @@ ${reviewerOutput.recommendation ? `Reviewer Advice: ${reviewerOutput.recommendat
     });
 
     const defaultPromptTemplate = DEFAULT_AGENT_SYSTEM_PROMPTS.dataAnalyst;
+    const factsList = Array.isArray(researcherOutput?.facts) ? researcherOutput.facts : [];
     const activePrompt = (daCfg.systemPrompt || defaultPromptTemplate)
       .replace('{task}', plannerOutput.task || query)
-      .replace('{content}', finalAnswer || researcherOutput.facts.slice(0, 8).join('\n'));
+      .replace('{content}', finalAnswer || factsList.slice(0, 8).join('\n'));
 
     console.group(`[JARVIS Data Analyst] Extracting Chart Data for: "${query}"`);
     console.log(`[JARVIS Data Analyst] Active Prompt:`, activePrompt);

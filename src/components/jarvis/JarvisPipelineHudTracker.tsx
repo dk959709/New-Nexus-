@@ -119,15 +119,16 @@ export const JarvisPipelineHudTracker: React.FC<JarvisPipelineHudTrackerProps> =
   isExpanded,
   onToggleExpand,
 }) => {
-  const steps = message.steps || [];
+  const steps = Array.isArray(message?.steps) ? message.steps : [];
 
   // Match step helper by agent ID
   const findStep = (agentId: string): JarvisExecutionStep | undefined => {
     return steps.find(
       (s) =>
-        s.agentId === agentId ||
-        (agentId === 'finalSynthesizer' && s.agentId === 'synthesizer') ||
-        (agentId === 'synthesizer' && s.agentId === 'finalSynthesizer'),
+        s &&
+        (s.agentId === agentId ||
+          (agentId === 'finalSynthesizer' && s.agentId === 'synthesizer') ||
+          (agentId === 'synthesizer' && s.agentId === 'finalSynthesizer')),
     );
   };
 
@@ -136,21 +137,21 @@ export const JarvisPipelineHudTracker: React.FC<JarvisPipelineHudTrackerProps> =
   const activeNodes: AgentNodeDef[] = [...CORE_AGENTS];
 
   // 2. Optional agents only added if their respective mode was ON or executed
-  if (message.diagramMode || steps.some((s) => s.agentId === 'architect')) {
+  if (message?.diagramMode || steps.some((s) => s?.agentId === 'architect')) {
     activeNodes.push(OPTIONAL_AGENTS.architect);
   }
-  if (message.chartMode || steps.some((s) => s.agentId === 'dataAnalyst')) {
+  if (message?.chartMode || steps.some((s) => s?.agentId === 'dataAnalyst')) {
     activeNodes.push(OPTIONAL_AGENTS.dataAnalyst);
   }
-  if (message.imageMode || steps.some((s) => s.agentId === 'imageFinder')) {
+  if (message?.imageMode || steps.some((s) => s?.agentId === 'imageFinder')) {
     activeNodes.push(OPTIONAL_AGENTS.imageFinder);
   }
 
-  // Calculate statistics
-  const totalDuration = steps.reduce((sum, s) => sum + (s.durationMs || 0), 0);
-  const executedCount = steps.filter((s) => s.status === 'completed').length;
-  const skippedCount = steps.filter((s) => s.status === 'skipped').length;
-  const hasFailed = steps.some((s) => s.status === 'failed');
+  // Calculate statistics safely
+  const totalDuration = steps.reduce((sum, s) => sum + (s?.durationMs || 0), 0);
+  const executedCount = steps.filter((s) => s?.status === 'completed').length;
+  const skippedCount = steps.filter((s) => s?.status === 'skipped').length;
+  const hasFailed = steps.some((s) => s?.status === 'failed');
 
   return (
     <div className="w-full mb-4 group select-none">

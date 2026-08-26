@@ -138,7 +138,7 @@ function getAgentTheme(agentId: string) {
 export const JarvisTerminalDiagnosticLog: React.FC<JarvisTerminalDiagnosticLogProps> = ({
   message,
 }) => {
-  const steps = message.steps || [];
+  const steps = Array.isArray(message?.steps) ? message.steps : [];
 
   return (
     <div
