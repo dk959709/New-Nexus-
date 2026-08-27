@@ -37,6 +37,7 @@ import { JarvisTerminalDiagnosticLog } from './JarvisTerminalDiagnosticLog';
 import { JarvisCornerBrackets } from './JarvisCornerBrackets';
 import { FormattedText } from './FormattedText';
 import { JarvisDeepResearchMeshAnswers } from './JarvisDeepResearchMeshAnswers';
+import { formatFullPipelineExport } from './formatJarvisPipelineExport';
 import type {
   JarvisExecutionStep,
   JarvisMessage,
@@ -774,9 +775,9 @@ export function JarvisChat({ config, onOpenSettings }: JarvisChatProps) {
 
                       <button
                         type="button"
-                        onClick={() => handleCopy(cleanedAnswer || msg.answer, msg.id)}
+                        onClick={() => handleCopy(formatFullPipelineExport(msg), msg.id)}
                         className="p-2 rounded-full text-slate-300 hover:text-cyan-300 hover:bg-cyan-500/15 transition-colors flex items-center justify-center"
-                        title="Copy synthesis"
+                        title="Copy complete pipeline report"
                       >
                         {copiedId === msg.id ? <Check size={15} className="text-cyan-400" /> : <Copy size={15} />}
                       </button>
