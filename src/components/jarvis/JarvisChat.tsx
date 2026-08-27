@@ -1,4 +1,4 @@
-import { useState, useEffect, useRef, useCallback } from 'react';
+import { useState, useEffect, useRef, useCallback, lazy, Suspense } from 'react';
 import { useSearchParams } from 'react-router-dom';
 import {
   Send,
@@ -29,9 +29,6 @@ import { JarvisCoreVisualizer } from './JarvisCoreVisualizer';
 import { JarvisTopologyMatrix } from './JarvisTopologyMatrix';
 import { JarvisCategoryDeck } from './JarvisCategoryDeck';
 import { JarvisQuantumOrb } from './JarvisQuantumOrb';
-import { JarvisSvgDiagram } from './JarvisSvgDiagram';
-import { JarvisChartCard } from './JarvisChartCard';
-import { JarvisImageGallery } from './JarvisImageGallery';
 import { JarvisPipelineHudTracker } from './JarvisPipelineHudTracker';
 import { JarvisTerminalDiagnosticLog } from './JarvisTerminalDiagnosticLog';
 import { JarvisCornerBrackets } from './JarvisCornerBrackets';
@@ -44,6 +41,16 @@ import type {
   JarvisSystemConfig,
   SavedItem,
 } from '@/types';
+
+const JarvisSvgDiagram = lazy(() =>
+  import('./JarvisSvgDiagram').then((m) => ({ default: m.JarvisSvgDiagram }))
+);
+const JarvisChartCard = lazy(() =>
+  import('./JarvisChartCard').then((m) => ({ default: m.JarvisChartCard }))
+);
+const JarvisImageGallery = lazy(() =>
+  import('./JarvisImageGallery').then((m) => ({ default: m.JarvisImageGallery }))
+);
 
 interface JarvisChatProps {
   config: JarvisSystemConfig;
@@ -870,46 +877,73 @@ export function JarvisChat({ config, onOpenSettings }: JarvisChatProps) {
 
                   {/* Interactive Quantitative Chart Card */}
                   {msg.chartData && (
-                    <JarvisChartCard
-                      id={`chart-${msg.id}`}
-                      chartData={msg.chartData}
-                      title={msg.query}
-                      onSaveChange={(isSaved) => {
-                        const sId = `chart-${msg.id}`;
-                        setSavedIds((prev) => {
-                          const next = new Set(prev);
-                          if (isSaved) next.add(sId);
-                          else next.delete(sId);
-                          return next;
-                        });
-                      }}
-                    />
+                    <Suspense
+                      fallback={
+                        <div className="my-4 p-4 rounded-xl bg-slate-950/60 border border-sky-500/20 flex items-center justify-center gap-2.5 text-xs text-sky-400 font-mono">
+                          <Loader2 size={15} className="animate-spin text-sky-400" />
+                          <span>Rendering quantitative chart...</span>
+                        </div>
+                      }
+                    >
+                      <JarvisChartCard
+                        id={`chart-${msg.id}`}
+                        chartData={msg.chartData}
+                        title={msg.query}
+                        onSaveChange={(isSaved) => {
+                          const sId = `chart-${msg.id}`;
+                          setSavedIds((prev) => {
+                            const next = new Set(prev);
+                            if (isSaved) next.add(sId);
+                            else next.delete(sId);
+                            return next;
+                          });
+                        }}
+                      />
+                    </Suspense>
                   )}
 
                   {/* Retrieved Real Photographic Media */}
                   {msg.images && msg.images.length > 0 && (
-                    <JarvisImageGallery
-                      images={msg.images}
-                      title={msg.query}
-                    />
+                    <Suspense
+                      fallback={
+                        <div className="my-4 p-4 rounded-xl bg-slate-950/60 border border-emerald-500/20 flex items-center justify-center gap-2.5 text-xs text-emerald-400 font-mono">
+                          <Loader2 size={15} className="animate-spin text-emerald-400" />
+                          <span>Loading image gallery...</span>
+                        </div>
+                      }
+                    >
+                      <JarvisImageGallery
+                        images={msg.images}
+                        title={msg.query}
+                      />
+                    </Suspense>
                   )}
 
                   {/* SVG Architectural Blueprint Diagram */}
                   {msg.diagramSvg && (
-                    <JarvisSvgDiagram
-                      id={`diagram-${msg.id}`}
-                      svgMarkup={msg.diagramSvg}
-                      title={msg.query}
-                      onSaveChange={(isSaved) => {
-                        const sId = `diagram-${msg.id}`;
-                        setSavedIds((prev) => {
-                          const next = new Set(prev);
-                          if (isSaved) next.add(sId);
-                          else next.delete(sId);
-                          return next;
-                        });
-                      }}
-                    />
+                    <Suspense
+                      fallback={
+                        <div className="my-4 p-4 rounded-xl bg-slate-950/60 border border-amber-500/20 flex items-center justify-center gap-2.5 text-xs text-amber-400 font-mono">
+                          <Loader2 size={15} className="animate-spin text-amber-400" />
+                          <span>Rendering architectural blueprint...</span>
+                        </div>
+                      }
+                    >
+                      <JarvisSvgDiagram
+                        id={`diagram-${msg.id}`}
+                        svgMarkup={msg.diagramSvg}
+                        title={msg.query}
+                        onSaveChange={(isSaved) => {
+                          const sId = `diagram-${msg.id}`;
+                          setSavedIds((prev) => {
+                            const next = new Set(prev);
+                            if (isSaved) next.add(sId);
+                            else next.delete(sId);
+                            return next;
+                          });
+                        }}
+                      />
+                    </Suspense>
                   )}
 
                   {/* Cited Sources (Rounded Colorful Tags) */}

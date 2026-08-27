@@ -18,4 +18,17 @@ export default defineConfig({
   optimizeDeps: {
     exclude: ['lucide-react'],
   },
+  build: {
+    rollupOptions: {
+      output: {
+        manualChunks: {
+          'vendor-react': ['react', 'react-dom', 'react-router-dom'],
+          'vendor-recharts': ['recharts'],
+          'vendor-katex': ['katex'],
+          'vendor-leaflet': ['leaflet'],
+          'vendor-motion': ['framer-motion'],
+        },
+      },
+    },
+  },
 });
