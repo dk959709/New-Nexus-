@@ -512,113 +512,139 @@ async function executeProviderChatRequest({
   }
 
   const sanitized = sanitizeChatMessages(messages);
+  const maxAttempts = 3; // Initial attempt + up to 2 retries for transient 503/502/504/429
 
-  try {
-    const res = await fetch(url, {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-        Authorization: `Bearer ${key}`,
-        'HTTP-Referer': 'https://nexus-intelligence.local',
-        'X-Title': 'NEXUS Intelligence',
-      },
-      body: JSON.stringify({
-        model,
-        messages: sanitized,
-        temperature,
-        max_tokens: maxTokens,
-      }),
-      signal: AbortSignal.timeout(timeoutMs),
-    });
+  for (let attempt = 1; attempt <= maxAttempts; attempt++) {
+    try {
+      const res = await fetch(url, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          Authorization: `Bearer ${key}`,
+          'HTTP-Referer': 'https://nexus-intelligence.local',
+          'X-Title': 'NEXUS Intelligence',
+        },
+        body: JSON.stringify({
+          model,
+          messages: sanitized,
+          temperature,
+          max_tokens: maxTokens,
+        }),
+        signal: AbortSignal.timeout(timeoutMs),
+      });
 
-    if (res.ok) {
-      const payload = (await res.json()) as {
-        model?: string;
-        choices?: Array<{
-          message?: {
-            content?: string | Array<{ type?: string; text?: string }>;
-            reasoning?: string;
+      if (res.ok) {
+        const payload = (await res.json()) as {
+          model?: string;
+          choices?: Array<{
+            message?: {
+              content?: string | Array<{ type?: string; text?: string }>;
+              reasoning?: string;
+            };
+            text?: string;
+          }>;
+        };
+
+        let text = '';
+        const choice = payload.choices?.[0];
+        if (choice?.message?.content) {
+          if (typeof choice.message.content === 'string') {
+            text = choice.message.content.trim();
+          } else if (Array.isArray(choice.message.content)) {
+            text = choice.message.content
+              .map((part) => (typeof part === 'string' ? part : part?.text || ''))
+              .join('')
+              .trim();
+          }
+        }
+
+        if (!text && choice?.message?.reasoning) {
+          if (typeof choice.message.reasoning === 'string') {
+            text = choice.message.reasoning.trim();
+          }
+        }
+
+        if (!text && typeof choice?.text === 'string') {
+          text = choice.text.trim();
+        }
+
+        if (!text) {
+          return {
+            ok: false,
+            text: '',
+            model: payload.model || model,
+            status: 502,
+            error: 'AI provider returned an empty response.',
           };
-          text?: string;
-        }>;
-      };
-
-      let text = '';
-      const choice = payload.choices?.[0];
-      if (choice?.message?.content) {
-        if (typeof choice.message.content === 'string') {
-          text = choice.message.content.trim();
-        } else if (Array.isArray(choice.message.content)) {
-          text = choice.message.content
-            .map((part) => (typeof part === 'string' ? part : part?.text || ''))
-            .join('')
-            .trim();
         }
-      }
 
-      if (!text && choice?.message?.reasoning) {
-        if (typeof choice.message.reasoning === 'string') {
-          text = choice.message.reasoning.trim();
+        return {
+          ok: true,
+          text,
+          model: payload.model || model,
+          status: res.status,
+        };
+      } else {
+        const status = res.status;
+        let errorMsg = `HTTP ${status}`;
+        try {
+          const errPayload = (await res.json()) as {
+            error?: { message?: string } | string;
+            message?: string;
+          };
+          errorMsg =
+            (typeof errPayload.error === 'object' ? errPayload.error?.message : errPayload.error) ||
+            errPayload.message ||
+            `HTTP ${status}`;
+        } catch {
+          const rawText = await res.text().catch(() => '');
+          if (rawText) {
+            errorMsg = rawText.slice(0, 200);
+          }
         }
-      }
 
-      if (!text && typeof choice?.text === 'string') {
-        text = choice.text.trim();
-      }
+        const isTransient = status === 503 || status === 502 || status === 504 || status === 429;
+        if (isTransient && attempt < maxAttempts) {
+          const backoff = attempt * 750; // 750ms, then 1500ms
+          console.warn(`[AI Provider Request] ${url} (${model}) returned HTTP ${status} (${errorMsg}). Retrying in ${backoff}ms (attempt ${attempt}/${maxAttempts})...`);
+          await new Promise((resolve) => setTimeout(resolve, backoff));
+          continue;
+        }
 
-      if (!text) {
         return {
           ok: false,
           text: '',
-          model: payload.model || model,
-          status: 502,
-          error: 'AI provider returned an empty response.',
+          model,
+          status,
+          error: errorMsg,
         };
       }
-
-      return {
-        ok: true,
-        text,
-        model: payload.model || model,
-        status: res.status,
-      };
-    } else {
-      const status = res.status;
-      let errorMsg = `HTTP ${status}`;
-      try {
-        const errPayload = (await res.json()) as {
-          error?: { message?: string } | string;
-          message?: string;
-        };
-        errorMsg =
-          (typeof errPayload.error === 'object' ? errPayload.error?.message : errPayload.error) ||
-          errPayload.message ||
-          `HTTP ${status}`;
-      } catch {
-        const rawText = await res.text().catch(() => '');
-        if (rawText) {
-          errorMsg = rawText.slice(0, 200);
-        }
+    } catch (err: unknown) {
+      const errorMsg = err instanceof Error ? err.message : String(err);
+      const isTransientNetwork = attempt < maxAttempts;
+      if (isTransientNetwork) {
+        const backoff = attempt * 750;
+        console.warn(`[AI Provider Request] Network error on attempt ${attempt}/${maxAttempts}: ${errorMsg}. Retrying in ${backoff}ms...`);
+        await new Promise((resolve) => setTimeout(resolve, backoff));
+        continue;
       }
-
       return {
         ok: false,
         text: '',
         model,
-        status,
-        error: errorMsg,
+        status: 504,
+        error: `Network or timeout error: ${errorMsg}`,
       };
     }
-  } catch (err: unknown) {
-    const errorMsg = err instanceof Error ? err.message : String(err);
-    return {
-      ok: false,
-      text: '',
-      model,
-      status: 504,
-      error: `Network or timeout error: ${errorMsg}`,
-    };
   }
+
+  return {
+    ok: false,
+    text: '',
+    model,
+    status: 503,
+    error: 'AI Provider request exhausted all retries.',
+  };
 }
 
 let geminiClient: GoogleGenAI | null = null;
@@ -1073,10 +1099,10 @@ async function executeAiWithProviderOrFallback({
       lastFailedStatus = status;
       lastFailedError = result.error || `HTTP ${status}`;
 
-      if (status === 429 || status === 402 || status >= 500) {
-        keyCooldownMap.set(keyVal, Date.now() + 60000); // 60s cooldown
+      if (status === 503 || status === 502 || status === 504 || status === 429) {
+        keyCooldownMap.set(keyVal, Date.now() + 2000); // 2s brief pause for transient spikes
         console.warn(
-          `[AI Provider: ${providerConfig.name}] Key "${keyLabel}" (${i + 1}/${executionKeyList.length}) received HTTP ${status} (${result.error}). Auto-failing over to next key...`,
+          `[AI Provider: ${providerConfig.name}] Key "${keyLabel}" (${i + 1}/${executionKeyList.length}) received transient HTTP ${status} (${result.error}). Auto-failing over to next key...`,
         );
       } else if (status === 401 || status === 403 || status === 400 || status === 422) {
         keyCooldownMap.set(keyVal, Date.now() + 300000); // 5m invalid cooldown
@@ -1084,7 +1110,7 @@ async function executeAiWithProviderOrFallback({
           `[AI Provider: ${providerConfig.name}] Key "${keyLabel}" (${i + 1}/${executionKeyList.length}) auth/param failed (HTTP ${status}: ${result.error}). Auto-failing over to next key...`,
         );
       } else {
-        keyCooldownMap.set(keyVal, Date.now() + 60000);
+        keyCooldownMap.set(keyVal, Date.now() + 2000);
         console.warn(
           `[AI Provider: ${providerConfig.name}] Key "${keyLabel}" (${i + 1}/${executionKeyList.length}) error HTTP ${status}: ${result.error}. Auto-failing over to next key...`,
         );
@@ -1094,7 +1120,11 @@ async function executeAiWithProviderOrFallback({
 
   // Fallback to Gemini or server key if custom keys failed
   if (process.env.GEMINI_API_KEY) {
-    const geminiFallback = await generateWithGemini({ messages, temperature });
+    const geminiFallback = await generateWithGemini({
+      messages,
+      temperature,
+      maxTokens: effectiveMaxTokens,
+    });
     if (geminiFallback && geminiFallback.text) {
       return {
         text: geminiFallback.text,

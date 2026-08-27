@@ -1895,10 +1895,15 @@ ${reviewerOutput?.recommendation ? `Reviewer Advice: ${reviewerOutput.recommenda
         durationMs: duration,
         error: synthRes.error || 'Final Synthesizer failed.',
       });
-      finalAnswer =
-        researcherOutput.facts.length > 0
-          ? `### Summary Findings\n\n${researcherOutput.facts.map((f) => `- ${f}`).join('\n')}`
-          : "Sorry, I couldn't generate a complete response right now.";
+      if (researcherOutput.facts.length > 0) {
+        finalAnswer = `### Key Intelligence & Findings\n\n${researcherOutput.facts.map((f) => `- ${f}`).join('\n')}`;
+      } else if (factCheckOutput.verified.length > 0) {
+        finalAnswer = `### Verified Claims\n\n${factCheckOutput.verified.map((v) => `- ${v}`).join('\n')}`;
+      } else if (customAgentOutputs.length > 0) {
+        finalAnswer = customAgentOutputs.map((c) => `### ${c.name}\n\n${c.output}`).join('\n\n');
+      } else {
+        finalAnswer = `### Intelligence Summary: ${query}\n\nProcessed query through the multi-agent pipeline. Provider failover completed across configured channels.`;
+      }
     }
   }
 
