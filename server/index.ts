@@ -997,48 +997,48 @@ async function executeAiWithProviderOrFallback({
     };
   }
 
-  // Filter out keys currently under cooldown unless ALL keys are in cooldown
+  // Determine initial key ordering based on strategy
+  let orderedKeys: CustomKeyItem[] = [];
+
+  if (strategy === 'manual' && providerConfig.preferredKeyId) {
+    const preferred = validKeys.find((k) => k.id === providerConfig.preferredKeyId);
+    const rest = validKeys.filter((k) => k.id !== providerConfig.preferredKeyId);
+    orderedKeys = preferred ? [preferred, ...rest] : [...validKeys];
+  } else if (strategy === 'round_robin') {
+    const currentIndex = providerRoundRobinIndex.get(providerConfig.id) || 0;
+    const startIdx = currentIndex % validKeys.length;
+    orderedKeys = [
+      ...validKeys.slice(startIdx),
+      ...validKeys.slice(0, startIdx),
+    ];
+    providerRoundRobinIndex.set(providerConfig.id, startIdx + 1);
+  } else {
+    // Automatic failover: use configured order
+    orderedKeys = [...validKeys];
+  }
+
+  // Prioritize keys that are not currently marked in cooldown/invalid,
+  // but ALWAYS keep all valid keys in the sequence as fallbacks
   const now = Date.now();
-  const availableKeys = validKeys.filter((k) => {
+  const isKeyActive = (k: CustomKeyItem) => {
     const serverCooldown = keyCooldownMap.get(k.key.trim()) || 0;
     const clientCooldown = typeof (k as { cooldownUntil?: number }).cooldownUntil === 'number' ? (k as { cooldownUntil?: number }).cooldownUntil! : 0;
     const isClientInvalid = (k as { status?: string }).status === 'invalid';
     return !isClientInvalid && serverCooldown <= now && clientCooldown <= now;
-  });
+  };
 
-  const candidatePool =
-    availableKeys.length > 0
-      ? availableKeys
-      : validKeys.filter((k) => (k as { status?: string }).status !== 'invalid').length > 0
-        ? validKeys.filter((k) => (k as { status?: string }).status !== 'invalid')
-        : validKeys;
+  const activeKeys = orderedKeys.filter(isKeyActive);
+  const inactiveKeys = orderedKeys.filter((k) => !isKeyActive(k));
+  const finalKeySequence = activeKeys.length > 0 ? [...activeKeys, ...inactiveKeys] : orderedKeys;
 
-  // Order candidate keys according to strategy
-  let orderedKeys: CustomKeyItem[] = [];
-
-  if (strategy === 'manual' && providerConfig.preferredKeyId) {
-    const preferred = candidatePool.find((k) => k.id === providerConfig.preferredKeyId);
-    const rest = candidatePool.filter((k) => k.id !== providerConfig.preferredKeyId);
-    orderedKeys = preferred ? [preferred, ...rest] : candidatePool;
-  } else if (strategy === 'round_robin') {
-    const currentIndex = providerRoundRobinIndex.get(providerConfig.id) || 0;
-    const startIdx = currentIndex % candidatePool.length;
-    orderedKeys = [
-      ...candidatePool.slice(startIdx),
-      ...candidatePool.slice(0, startIdx),
-    ];
-    providerRoundRobinIndex.set(providerConfig.id, startIdx + 1);
-  } else {
-    // Automatic failover: use candidate pool in order
-    orderedKeys = [...candidatePool];
-  }
-
-  // Ensure any other valid keys are appended as secondary fallbacks
-  const seenKeyStrings = new Set(orderedKeys.map((k) => k.key.trim()));
-  for (const k of validKeys) {
-    if (!seenKeyStrings.has(k.key.trim())) {
-      orderedKeys.push(k);
-      seenKeyStrings.add(k.key.trim());
+  // Deduplicate keys by key string
+  const seenKeyStrings = new Set<string>();
+  const executionKeyList: CustomKeyItem[] = [];
+  for (const k of finalKeySequence) {
+    const trimmedKey = k.key.trim();
+    if (!seenKeyStrings.has(trimmedKey)) {
+      seenKeyStrings.add(trimmedKey);
+      executionKeyList.push(k);
     }
   }
 
@@ -1046,8 +1046,8 @@ async function executeAiWithProviderOrFallback({
   let lastFailedStatus = 500;
 
   // Attempt each key in ordered sequence (Automatic Multi-Key Failover)
-  for (let i = 0; i < orderedKeys.length; i++) {
-    const keyItem = orderedKeys[i];
+  for (let i = 0; i < executionKeyList.length; i++) {
+    const keyItem = executionKeyList[i];
     const keyVal = keyItem.key.trim();
     const keyLabel = keyItem.label || `Key #${i + 1}`;
 
@@ -1076,16 +1076,17 @@ async function executeAiWithProviderOrFallback({
       if (status === 429 || status === 402 || status >= 500) {
         keyCooldownMap.set(keyVal, Date.now() + 60000); // 60s cooldown
         console.warn(
-          `[AI Provider: ${providerConfig.name}] Key "${keyLabel}" (${i + 1}/${orderedKeys.length}) received HTTP ${status} (${result.error}). Auto-failing over to next key...`,
+          `[AI Provider: ${providerConfig.name}] Key "${keyLabel}" (${i + 1}/${executionKeyList.length}) received HTTP ${status} (${result.error}). Auto-failing over to next key...`,
         );
-      } else if (status === 401 || status === 403) {
+      } else if (status === 401 || status === 403 || status === 400 || status === 422) {
         keyCooldownMap.set(keyVal, Date.now() + 300000); // 5m invalid cooldown
         console.warn(
-          `[AI Provider: ${providerConfig.name}] Key "${keyLabel}" (${i + 1}/${orderedKeys.length}) auth failed (HTTP ${status}: ${result.error}). Auto-failing over to next key...`,
+          `[AI Provider: ${providerConfig.name}] Key "${keyLabel}" (${i + 1}/${executionKeyList.length}) auth/param failed (HTTP ${status}: ${result.error}). Auto-failing over to next key...`,
         );
       } else {
+        keyCooldownMap.set(keyVal, Date.now() + 60000);
         console.warn(
-          `[AI Provider: ${providerConfig.name}] Key "${keyLabel}" (${i + 1}/${orderedKeys.length}) error HTTP ${status}: ${result.error}. Auto-failing over to next key...`,
+          `[AI Provider: ${providerConfig.name}] Key "${keyLabel}" (${i + 1}/${executionKeyList.length}) error HTTP ${status}: ${result.error}. Auto-failing over to next key...`,
         );
       }
     }
@@ -2128,7 +2129,7 @@ const customProviderSchema = z
     name: z.string().optional(),
     url: z.string().optional(),
     model: z.string().optional(),
-    maxTokens: z.number().int().positive().optional(),
+    maxTokens: z.number().optional().nullable(),
     keyStrategy: z.enum(['failover', 'round_robin', 'manual']).optional(),
     preferredKeyId: z.string().optional(),
     keys: z
@@ -4432,21 +4433,22 @@ async function startServer() {
           .array(
             z.object({
               role: z.enum(['system', 'user', 'assistant']),
-              content: z.string().max(16000),
+              content: z.string().max(65000),
             }),
           )
           .min(1)
-          .max(20),
+          .max(30),
         providerConfig: customProviderSchema.optional().nullable(),
         fallbackConfig: customProviderSchema.optional().nullable(),
         enableFailover: z.boolean().optional(),
         temperature: z.number().min(0).max(2).optional(),
-        maxTokens: z.number().int().positive().optional(),
-        timeoutMs: z.number().int().positive().optional(),
+        maxTokens: z.number().optional().nullable(),
+        timeoutMs: z.number().optional().nullable(),
       })
       .safeParse(req.body);
 
     if (!parsed.success) {
+      console.warn('[JARVIS] Invalid agent execution parameters:', parsed.error.format());
       return errorResponse(res, 400, 'Invalid agent execution parameters.');
     }
 

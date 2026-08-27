@@ -1200,25 +1200,36 @@ export async function runJarvisPipeline(
         : cfg.maxTokens;
     const effectiveTimeoutMs = agentId === 'architect' ? 75000 : 35000;
 
-    const res = await api.jarvisAgentCall({
-      agentId,
-      messages,
-      providerConfig: primary.provider,
-      fallbackConfig,
-      enableFailover: cfg.enableFailover,
-      temperature: agentId === 'architect' ? 0.1 : 0.2,
-      maxTokens: effectiveMaxTokens,
-      timeoutMs: effectiveTimeoutMs,
-    });
+    try {
+      const res = await api.jarvisAgentCall({
+        agentId,
+        messages,
+        providerConfig: primary.provider,
+        fallbackConfig,
+        enableFailover: cfg.enableFailover,
+        temperature: agentId === 'architect' ? 0.1 : 0.2,
+        maxTokens: effectiveMaxTokens,
+        timeoutMs: effectiveTimeoutMs,
+      });
 
-    return {
-      ok: res.ok,
-      text: res.text || '',
-      error: res.error,
-      providerName: res.providerName || primary.provider?.name || 'Configured AI',
-      model: res.model || primary.model,
-      usedFallback: res.usedFallback,
-    };
+      return {
+        ok: res.ok,
+        text: res.text || '',
+        error: res.error,
+        providerName: res.providerName || primary.provider?.name || 'Configured AI',
+        model: res.model || primary.model,
+        usedFallback: res.usedFallback,
+      };
+    } catch (err: unknown) {
+      const errorMsg = err instanceof Error ? err.message : String(err);
+      return {
+        ok: false,
+        text: '',
+        error: errorMsg,
+        providerName: primary.provider?.name || 'Configured AI',
+        model: primary.model,
+      };
+    }
   };
 
   // Helper to execute custom agent
