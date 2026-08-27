@@ -199,7 +199,6 @@ export const JarvisTerminalDiagnosticLog: React.FC<JarvisTerminalDiagnosticLogPr
           const isCompleted = step.status === 'completed';
           const isSkipped = step.status === 'skipped';
           const isFailed = step.status === 'failed';
-          const fullOutput = step.rawOutput || step.outputPreview || '';
 
           return (
             <div
@@ -311,7 +310,7 @@ export const JarvisTerminalDiagnosticLog: React.FC<JarvisTerminalDiagnosticLogPr
               </div>
 
               {/* Subtly Indented Sub-Lines (Tree Branches: ├── and └──) */}
-              <div className="mt-2.5 pt-2 border-t border-white/5 flex flex-col gap-1.5 font-mono text-[11px] pl-1 sm:pl-2">
+              <div className="mt-2.5 pt-2 border-t border-white/5 flex flex-col gap-1 font-mono text-[11px] pl-1 sm:pl-2">
                 {/* Role Goal Line */}
                 <div className="flex items-start gap-1.5 text-slate-400 leading-relaxed">
                   <span className="text-slate-600 font-bold shrink-0">├──</span>
@@ -323,46 +322,25 @@ export const JarvisTerminalDiagnosticLog: React.FC<JarvisTerminalDiagnosticLogPr
                 {step.summary && (
                   <div className="flex items-start gap-1.5 text-slate-300 leading-relaxed">
                     <span className="text-cyan-600/80 font-bold shrink-0">
-                      {step.error || fullOutput ? '├──' : '└──'}
+                      {step.error || step.outputPreview ? '├──' : '└──'}
                     </span>
                     <span className="text-cyan-400/80 shrink-0">DIAGNOSTIC:</span>
                     <span className="text-slate-200 font-sans text-xs">{step.summary}</span>
                   </div>
                 )}
 
-                {/* Output Display: Full Raw Output Stream when Deep Research is ON, Truncated preview when OFF */}
-                {isDeepResearch ? (
-                  fullOutput ? (
-                    <div className="mt-2 flex flex-col gap-1.5 font-mono">
-                      <div className="flex items-center gap-1.5 text-cyan-400 text-[10px] font-bold tracking-wider">
-                        <span className="text-slate-600 font-bold shrink-0">
-                          {step.error ? '├──' : '└──'}
-                        </span>
-                        <span className="text-cyan-400/90 shrink-0">COMPLETE AGENT OUTPUT:</span>
-                        <span className="text-slate-400 font-normal text-[9px] px-1.5 py-0.5 rounded bg-cyan-950/80 border border-cyan-500/30">
-                          FULL DATA
-                        </span>
-                      </div>
-                      <div className="relative rounded-lg bg-black/80 border border-cyan-500/25 p-3 overflow-x-auto max-h-[500px] overflow-y-auto shadow-inner">
-                        <pre className="font-mono text-[11px] text-slate-200 leading-relaxed whitespace-pre-wrap break-words selection:bg-cyan-500/30">
-                          {fullOutput}
-                        </pre>
-                      </div>
-                    </div>
-                  ) : null
-                ) : (
-                  fullOutput ? (
-                    <div className="flex items-start gap-1.5 text-slate-400 leading-relaxed">
-                      <span className="text-slate-600 font-bold shrink-0">
-                        {step.error ? '├──' : '└──'}
-                      </span>
-                      <span className="text-slate-500 shrink-0">DATA:</span>
-                      <span className="text-slate-400 font-mono text-[10px] truncate max-w-2xl bg-black/40 px-1.5 py-0.5 rounded">
-                        {fullOutput.replace(/\n+/g, ' ').slice(0, 140)}
-                        {fullOutput.length > 140 ? '...' : ''}
-                      </span>
-                    </div>
-                  ) : null
+                {/* Optional Output Preview Line */}
+                {step.outputPreview && (
+                  <div className="flex items-start gap-1.5 text-slate-400 leading-relaxed">
+                    <span className="text-slate-600 font-bold shrink-0">
+                      {step.error ? '├──' : '└──'}
+                    </span>
+                    <span className="text-slate-500 shrink-0">DATA:</span>
+                    <span className="text-slate-400 font-mono text-[10px] truncate max-w-2xl bg-black/40 px-1.5 py-0.5 rounded">
+                      {step.outputPreview.replace(/\n+/g, ' ').slice(0, 140)}
+                      {step.outputPreview.length > 140 ? '...' : ''}
+                    </span>
+                  </div>
                 )}
 
                 {/* Error Diagnostic Line */}
