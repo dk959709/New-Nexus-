@@ -750,7 +750,22 @@ function resolveProviderConfig(
   const providerId = isFallback ? agentConfig.fallbackProviderId : agentConfig.providerId;
   const modelId = isFallback ? agentConfig.fallbackModelId : agentConfig.modelId;
 
+  const state = storage.getAIProvidersState();
+  const activeCustom = storage.getActiveAIProvider();
+
   if (!providerId || providerId === 'existing') {
+    if (activeCustom) {
+      const customConfig: AIProviderConfig = {
+        ...activeCustom,
+        model: modelId || activeCustom.model || 'deepseek/deepseek-chat',
+        maxTokens: agentConfig.maxTokens,
+      };
+      return {
+        provider: customConfig,
+        model: customConfig.model,
+      };
+    }
+
     return {
       provider: {
         id: 'existing',
@@ -766,10 +781,21 @@ function resolveProviderConfig(
     };
   }
 
-  const state = storage.getAIProvidersState();
   const matched = state.providers.find((p) => p.id === providerId);
 
   if (!matched) {
+    if (activeCustom) {
+      const customConfig: AIProviderConfig = {
+        ...activeCustom,
+        model: modelId || activeCustom.model,
+        maxTokens: agentConfig.maxTokens,
+      };
+      return {
+        provider: customConfig,
+        model: customConfig.model,
+      };
+    }
+
     return {
       provider: null,
       model: modelId || '',

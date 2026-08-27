@@ -567,15 +567,20 @@ async function executeProviderChatRequest({
       }
 
       if (!text) {
-        text = "Sorry, I couldn't generate a response right now.";
+        return {
+          ok: false,
+          text: '',
+          model: payload.model || model,
+          status: 502,
+          error: 'AI provider returned an empty response.',
+        };
       }
 
       return {
-        ok: Boolean(text),
+        ok: true,
         text,
         model: payload.model || model,
         status: res.status,
-        error: text ? undefined : 'AI provider returned an empty response.',
       };
     } else {
       const status = res.status;
@@ -995,11 +1000,18 @@ async function executeAiWithProviderOrFallback({
   // Filter out keys currently under cooldown unless ALL keys are in cooldown
   const now = Date.now();
   const availableKeys = validKeys.filter((k) => {
-    const cd = keyCooldownMap.get(k.key.trim()) || 0;
-    return cd <= now;
+    const serverCooldown = keyCooldownMap.get(k.key.trim()) || 0;
+    const clientCooldown = typeof (k as { cooldownUntil?: number }).cooldownUntil === 'number' ? (k as { cooldownUntil?: number }).cooldownUntil! : 0;
+    const isClientInvalid = (k as { status?: string }).status === 'invalid';
+    return !isClientInvalid && serverCooldown <= now && clientCooldown <= now;
   });
 
-  const candidatePool = availableKeys.length > 0 ? availableKeys : validKeys;
+  const candidatePool =
+    availableKeys.length > 0
+      ? availableKeys
+      : validKeys.filter((k) => (k as { status?: string }).status !== 'invalid').length > 0
+        ? validKeys.filter((k) => (k as { status?: string }).status !== 'invalid')
+        : validKeys;
 
   // Order candidate keys according to strategy
   let orderedKeys: CustomKeyItem[] = [];
@@ -1021,13 +1033,23 @@ async function executeAiWithProviderOrFallback({
     orderedKeys = [...candidatePool];
   }
 
+  // Ensure any other valid keys are appended as secondary fallbacks
+  const seenKeyStrings = new Set(orderedKeys.map((k) => k.key.trim()));
+  for (const k of validKeys) {
+    if (!seenKeyStrings.has(k.key.trim())) {
+      orderedKeys.push(k);
+      seenKeyStrings.add(k.key.trim());
+    }
+  }
+
   let lastFailedError = '';
   let lastFailedStatus = 500;
 
-  // Attempt each key in ordered sequence (Automatic Failover)
+  // Attempt each key in ordered sequence (Automatic Multi-Key Failover)
   for (let i = 0; i < orderedKeys.length; i++) {
     const keyItem = orderedKeys[i];
     const keyVal = keyItem.key.trim();
+    const keyLabel = keyItem.label || `Key #${i + 1}`;
 
     const result = await executeProviderChatRequest({
       url,
@@ -1039,7 +1061,7 @@ async function executeAiWithProviderOrFallback({
       timeoutMs: effectiveTimeout,
     });
 
-    if (result.ok && result.text) {
+    if (result.ok && result.text && result.text.trim().length > 0) {
       keyCooldownMap.delete(keyVal);
       return {
         text: result.text,
@@ -1054,16 +1076,16 @@ async function executeAiWithProviderOrFallback({
       if (status === 429 || status === 402 || status >= 500) {
         keyCooldownMap.set(keyVal, Date.now() + 60000); // 60s cooldown
         console.warn(
-          `[AI Provider: ${providerConfig.name}] Key (${i + 1}/${orderedKeys.length}) received HTTP ${status} (${result.error}). Auto-failing over...`,
+          `[AI Provider: ${providerConfig.name}] Key "${keyLabel}" (${i + 1}/${orderedKeys.length}) received HTTP ${status} (${result.error}). Auto-failing over to next key...`,
         );
       } else if (status === 401 || status === 403) {
         keyCooldownMap.set(keyVal, Date.now() + 300000); // 5m invalid cooldown
         console.warn(
-          `[AI Provider: ${providerConfig.name}] Key (${i + 1}/${orderedKeys.length}) auth failed (HTTP ${status}: ${result.error}).`,
+          `[AI Provider: ${providerConfig.name}] Key "${keyLabel}" (${i + 1}/${orderedKeys.length}) auth failed (HTTP ${status}: ${result.error}). Auto-failing over to next key...`,
         );
       } else {
         console.warn(
-          `[AI Provider: ${providerConfig.name}] Key (${i + 1}/${orderedKeys.length}) error HTTP ${status}: ${result.error}`,
+          `[AI Provider: ${providerConfig.name}] Key "${keyLabel}" (${i + 1}/${orderedKeys.length}) error HTTP ${status}: ${result.error}. Auto-failing over to next key...`,
         );
       }
     }
