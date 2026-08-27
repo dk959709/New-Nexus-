@@ -755,14 +755,18 @@ function resolveProviderConfig(
 
   if (!providerId || providerId === 'existing') {
     if (activeCustom) {
+      const liveModel =
+        activeCustom.model && activeCustom.model.trim()
+          ? activeCustom.model.trim()
+          : modelId || 'deepseek/deepseek-chat';
       const customConfig: AIProviderConfig = {
         ...activeCustom,
-        model: modelId || activeCustom.model || 'deepseek/deepseek-chat',
+        model: liveModel,
         maxTokens: agentConfig.maxTokens,
       };
       return {
         provider: customConfig,
-        model: customConfig.model,
+        model: liveModel,
       };
     }
 
@@ -785,14 +789,18 @@ function resolveProviderConfig(
 
   if (!matched) {
     if (activeCustom) {
+      const liveModel =
+        activeCustom.model && activeCustom.model.trim()
+          ? activeCustom.model.trim()
+          : modelId || 'deepseek/deepseek-chat';
       const customConfig: AIProviderConfig = {
         ...activeCustom,
-        model: modelId || activeCustom.model,
+        model: liveModel,
         maxTokens: agentConfig.maxTokens,
       };
       return {
         provider: customConfig,
-        model: customConfig.model,
+        model: liveModel,
       };
     }
 
@@ -803,15 +811,21 @@ function resolveProviderConfig(
     };
   }
 
+  // When a custom provider is matched, prioritize the provider's live configured model ID
+  const liveModel =
+    matched.model && matched.model.trim()
+      ? matched.model.trim()
+      : modelId || 'deepseek/deepseek-chat';
+
   const customConfig: AIProviderConfig = {
     ...matched,
-    model: modelId || matched.model,
+    model: liveModel,
     maxTokens: agentConfig.maxTokens,
   };
 
   return {
     provider: customConfig,
-    model: customConfig.model,
+    model: liveModel,
   };
 }
 
@@ -1107,14 +1121,32 @@ export async function runJarvisPipeline(
     onStepUpdate?.(step);
   };
 
-  const agentConfigs = config.agents;
-  const customAgents = (config.customAgents || []).filter((ca) => ca && ca.id);
+  // Always load the live stored configuration at the moment of execution to prevent stale React state/closure snapshots
+  const liveStoredConfig = storage.getJarvisConfig();
+  const effectiveConfig: JarvisSystemConfig = {
+    ...liveStoredConfig,
+    ...(config || {}),
+    agents: {
+      ...liveStoredConfig.agents,
+    },
+    customAgents:
+      Array.isArray(liveStoredConfig.customAgents) && liveStoredConfig.customAgents.length > 0
+        ? liveStoredConfig.customAgents
+        : config?.customAgents || [],
+  };
+
+  const agentConfigs = effectiveConfig.agents;
+  const customAgents = (effectiveConfig.customAgents || []).filter((ca) => ca && ca.id);
 
   const getAgentConfig = (agentId: string): JarvisAgentConfig | null => {
+    const liveFresh = storage.getJarvisConfig();
+    if (liveFresh.agents && liveFresh.agents[agentId as keyof typeof liveFresh.agents]) {
+      return liveFresh.agents[agentId as keyof typeof liveFresh.agents];
+    }
     if (agentConfigs[agentId as keyof typeof agentConfigs]) {
       return agentConfigs[agentId as keyof typeof agentConfigs];
     }
-    const custom = customAgents.find((c) => c.id === agentId);
+    const custom = (liveFresh.customAgents || customAgents).find((c) => c.id === agentId);
     return custom || null;
   };
 

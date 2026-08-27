@@ -152,10 +152,26 @@ function getModelSuggestions(provider?: AIProviderConfig | null): string[] {
 
 export function JarvisSettings({ onSaved }: JarvisSettingsProps) {
   const [config, setConfig] = useState<JarvisSystemConfig>(() => storage.getJarvisConfig());
-  const [providersState] = useState(() => storage.getAIProvidersState());
+  const [providersState, setProvidersState] = useState(() => storage.getAIProvidersState());
   const [saveStatus, setSaveStatus] = useState<string | null>(null);
   const [isSavedRecently, setIsSavedRecently] = useState(false);
   const [validationErrors, setValidationErrors] = useState<Record<string, string>>({});
+
+  useEffect(() => {
+    setProvidersState(storage.getAIProvidersState());
+    setConfig(storage.getJarvisConfig());
+
+    const handleStorage = () => {
+      setProvidersState(storage.getAIProvidersState());
+      setConfig(storage.getJarvisConfig());
+    };
+    window.addEventListener('storage', handleStorage);
+    window.addEventListener('focus', handleStorage);
+    return () => {
+      window.removeEventListener('storage', handleStorage);
+      window.removeEventListener('focus', handleStorage);
+    };
+  }, []);
 
   // Collapsible prompt views per agent
   const [expandedPrompts, setExpandedPrompts] = useState<Record<string, boolean>>({

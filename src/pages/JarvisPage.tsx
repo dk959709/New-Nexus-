@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import { MessageSquare, Sliders, Zap } from 'lucide-react';
 import { storage } from '@/lib/storage';
 import { JarvisChat } from '@/components/jarvis/JarvisChat';
@@ -8,6 +8,23 @@ import type { JarvisSystemConfig } from '@/types';
 export function JarvisPage() {
   const [activeTab, setActiveTab] = useState<'chat' | 'settings'>('chat');
   const [config, setConfig] = useState<JarvisSystemConfig>(() => storage.getJarvisConfig());
+
+  // Keep state synchronized with storage whenever switching views or when storage updates
+  useEffect(() => {
+    setConfig(storage.getJarvisConfig());
+  }, [activeTab]);
+
+  useEffect(() => {
+    const handleStorageChange = () => {
+      setConfig(storage.getJarvisConfig());
+    };
+    window.addEventListener('storage', handleStorageChange);
+    window.addEventListener('focus', handleStorageChange);
+    return () => {
+      window.removeEventListener('storage', handleStorageChange);
+      window.removeEventListener('focus', handleStorageChange);
+    };
+  }, []);
 
   const handleConfigSaved = (updated: JarvisSystemConfig) => {
     setConfig(updated);
