@@ -182,10 +182,14 @@ export const JarvisTerminalDiagnosticLog: React.FC<JarvisTerminalDiagnosticLogPr
         {steps.map((step, idx) => {
           const theme = getAgentTheme(step.agentId);
           const icon = AGENT_ICONS[step.agentId] || (
-            <Activity size={14} style={{ color: theme.text }} />
+            step.icon ? (
+              <span className="text-xs">{step.icon}</span>
+            ) : (
+              <Activity size={14} style={{ color: theme.text }} />
+            )
           );
           const roleDesc =
-            AGENT_ROLE_DESCRIPTIONS[step.agentId] || 'Autonomous execution agent';
+            step.summary || AGENT_ROLE_DESCRIPTIONS[step.agentId] || 'Autonomous execution agent';
           const isCompleted = step.status === 'completed';
           const isSkipped = step.status === 'skipped';
           const isFailed = step.status === 'failed';

@@ -1311,6 +1311,58 @@ export async function runJarvisPipeline(
     }
   };
 
+  // Helper to extract JSON data fields from agent text
+  const extractDataFieldsFromAgentOutput = (output: string): Record<string, string> => {
+    const fields: Record<string, string> = {};
+    if (!output || typeof output !== 'string') return fields;
+
+    try {
+      const jsonMatch = output.match(/```(?:json)?\s*([\s\S]*?)```/) || [null, output];
+      const rawCandidate = (jsonMatch[1] || output).trim();
+
+      let parsed: Record<string, unknown> | unknown[] | null = null;
+      try {
+        parsed = JSON.parse(rawCandidate);
+      } catch {
+        const objMatch = rawCandidate.match(/(\{[\s\S]*\}|\[[\s\S]*\])/);
+        if (objMatch) {
+          try {
+            parsed = JSON.parse(objMatch[1]);
+          } catch {
+            parsed = null;
+          }
+        }
+      }
+
+      if (parsed && typeof parsed === 'object') {
+        if (Array.isArray(parsed)) {
+          fields['data'] = JSON.stringify(parsed, null, 2);
+        } else {
+          for (const [key, val] of Object.entries(parsed)) {
+            const valFormatted = typeof val === 'string' ? val : JSON.stringify(val, null, 2);
+            fields[key] = valFormatted;
+          }
+        }
+      }
+    } catch {
+      // Ignore JSON parse errors
+    }
+    return fields;
+  };
+
+  // Helper to apply dynamic template variables to system and user prompts
+  const applyTemplateVariables = (template: string, mapping: Record<string, string>): string => {
+    if (!template || typeof template !== 'string') return '';
+    let result = template;
+    for (const [key, value] of Object.entries(mapping)) {
+      if (!value) continue;
+      const escapedKey = key.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+      const regex = new RegExp(`\\{\\s*${escapedKey}\\s*\\}`, 'gi');
+      result = result.replace(regex, value);
+    }
+    return result;
+  };
+
   // Helper to execute custom agent
   const executeCustomAgent = async (cAgent: typeof customAgents[0]) => {
     if (!cAgent.enabled) return;
@@ -1327,13 +1379,26 @@ export async function runJarvisPipeline(
       model: provInfo.model,
     });
 
-    const sysPrompt =
+    const rawSysPrompt =
       cAgent.systemPrompt && cAgent.systemPrompt.trim()
         ? cAgent.systemPrompt.trim()
         : `You are the ${cAgent.name} agent (${cAgent.role || 'Specialized Agent'}). ${cAgent.description || ''}`;
 
     const factsList = Array.isArray(researcherOutput?.facts) ? researcherOutput.facts : [];
     const verifiedList = Array.isArray(factCheckOutput?.verified) ? factCheckOutput.verified : [];
+    const issuesList = Array.isArray(factCheckOutput?.issues) ? factCheckOutput.issues : [];
+
+    const promptContextMapping: Record<string, string> = {
+      task: plannerOutput.task || query,
+      query: query,
+      facts: factsList.map((f, i) => `${i + 1}. ${f}`).join('\n'),
+      research: factsList.map((f, i) => `${i + 1}. ${f}`).join('\n'),
+      claims: factsList.map((f, i) => `${i + 1}. ${f}`).join('\n'),
+      verified: verifiedList.map((c) => `- ${c}`).join('\n'),
+      issues: issuesList.map((i) => `- ${i}`).join('\n'),
+    };
+
+    const sysPrompt = `Current date and time: ${currentDateTime}\n\n${applyTemplateVariables(rawSysPrompt, promptContextMapping)}`;
 
     const contextPayload = `User Query: "${query}"
 Task Context: "${plannerOutput.task || query}"
@@ -1916,11 +1981,6 @@ Please perform your specialized processing for this inquiry. Provide clear, conc
       model: provInfo.model,
     });
 
-    const customInsightsBlock =
-      customAgentOutputs.length > 0
-        ? `\n\nCustom Agent Insights & Analysis:\n${customAgentOutputs.map((co) => `--- [Agent: ${co.name}] ---\n${co.output}`).join('\n\n')}`
-        : '';
-
     const plannerPlanText = Array.isArray(plannerOutput?.plan)
       ? plannerOutput.plan.join(' ')
       : String(plannerOutput?.plan || '');
@@ -1928,7 +1988,108 @@ Please perform your specialized processing for this inquiry. Provide clear, conc
     const verifiedList = Array.isArray(factCheckOutput?.verified) ? factCheckOutput.verified : [];
     const issuesList = Array.isArray(factCheckOutput?.issues) ? factCheckOutput.issues : [];
 
-    const synthesizerContext = `Current date and time: ${currentDateTime}
+    // Build rich variable substitution dictionary for Synthesizer prompts
+    const synthReplacements: Record<string, string> = {
+      task: plannerOutput.task || query,
+      query: query,
+      plan: plannerPlanText,
+      facts: factsList.map((f, i) => `${i + 1}. ${f}`).join('\n'),
+      research: factsList.map((f, i) => `${i + 1}. ${f}`).join('\n'),
+      claims: factsList.map((f, i) => `${i + 1}. ${f}`).join('\n'),
+      verified: verifiedList.map((c) => `- ${c}`).join('\n'),
+      issues: issuesList.map((i) => `- ${i}`).join('\n'),
+      reviewer: reviewerOutput?.recommendation || '',
+      recommendation: reviewerOutput?.recommendation || '',
+    };
+
+    let allCustomInsightsText = '';
+    const visualDescList: string[] = [];
+
+    customAgentOutputs.forEach((co) => {
+      allCustomInsightsText += `--- [Agent: ${co.name}] ---\n${co.output}\n\n`;
+
+      // Map raw agent ID and name
+      synthReplacements[co.id] = co.output;
+      synthReplacements[co.name] = co.output;
+
+      // Normalized name variations
+      const camelName = co.name
+        .replace(/[^a-zA-Z0-9]+(.)/g, (_, chr) => chr.toUpperCase())
+        .replace(/^[A-Z]/, (c) => c.toLowerCase());
+      const snakeName = co.name.toLowerCase().replace(/[^a-zA-Z0-9]+/g, '_');
+      const pascalName = co.name
+        .replace(/(?:^\w|[A-Z]|\b\w)/g, (word) => word.toUpperCase())
+        .replace(/\s+/g, '');
+
+      synthReplacements[camelName] = co.output;
+      synthReplacements[snakeName] = co.output;
+      synthReplacements[pascalName] = co.output;
+      synthReplacements[`${camelName}s`] = co.output;
+      synthReplacements[`${snakeName}s`] = co.output;
+
+      // If this agent is related to visual descriptions / alt text
+      const lowerName = co.name.toLowerCase();
+      const lowerId = co.id.toLowerCase();
+      if (
+        lowerName.includes('visual') ||
+        lowerName.includes('describer') ||
+        lowerName.includes('image') ||
+        lowerName.includes('alt') ||
+        lowerId.includes('visual') ||
+        lowerId.includes('describer')
+      ) {
+        visualDescList.push(co.output);
+      }
+
+      // Extract and map any structured JSON fields from the agent's output
+      const jsonFields = extractDataFieldsFromAgentOutput(co.output);
+      for (const [fKey, fVal] of Object.entries(jsonFields)) {
+        synthReplacements[fKey] = fVal;
+        synthReplacements[fKey.toLowerCase()] = fVal;
+        const fSnake = fKey.replace(/[A-Z]/g, (letter) => `_${letter.toLowerCase()}`);
+        const fCamel = fKey.replace(/_([a-z])/g, (_, letter) => letter.toUpperCase());
+        synthReplacements[fSnake] = fVal;
+        synthReplacements[fCamel] = fVal;
+
+        if (
+          fKey.toLowerCase().includes('visual') ||
+          fKey.toLowerCase().includes('descrip') ||
+          fKey.toLowerCase().includes('alt')
+        ) {
+          visualDescList.push(fVal);
+        }
+      }
+    });
+
+    // Provide robust bindings for {visualDescriptions}, {visual_descriptions}, and alt text
+    if (visualDescList.length > 0) {
+      const combinedVisual = visualDescList.join('\n\n');
+      synthReplacements['visualDescriptions'] = combinedVisual;
+      synthReplacements['visual_descriptions'] = combinedVisual;
+      synthReplacements['visualDescription'] = combinedVisual;
+      synthReplacements['visual_description'] = combinedVisual;
+      synthReplacements['visualDescriber'] = combinedVisual;
+      synthReplacements['visual_describer'] = combinedVisual;
+      synthReplacements['VisualDescriber'] = combinedVisual;
+      synthReplacements['altText'] = combinedVisual;
+      synthReplacements['alt_text'] = combinedVisual;
+    }
+
+    synthReplacements['customAgents'] = allCustomInsightsText.trim();
+    synthReplacements['customAgentOutputs'] = allCustomInsightsText.trim();
+    synthReplacements['customInsights'] = allCustomInsightsText.trim();
+
+    let customInsightsBlock = '';
+    if (customAgentOutputs.length > 0) {
+      customInsightsBlock = `\n\nCustom Agent Insights & Specialized Outputs:\n${customAgentOutputs
+        .map((co) => `--- [Agent: ${co.name}] ---\n${co.output}`)
+        .join('\n\n')}`;
+    }
+    if (visualDescList.length > 0) {
+      customInsightsBlock += `\n\n[Visual Descriptions / Alt-Text for Images]:\n${visualDescList.join('\n\n')}`;
+    }
+
+    const rawSynthesizerContext = `Current date and time: ${currentDateTime}
 User Query: "${query}"
 
 Planner Guidance: ${plannerPlanText}
@@ -1938,8 +2099,28 @@ ${issuesList.length > 0 ? `Important Caveats/Corrections:\n${issuesList.map((i) 
 ${reviewerOutput?.recommendation ? `Reviewer Advice: ${reviewerOutput.recommendation}` : ''}${customInsightsBlock}`;
 
     const defaultSysPrompt = DEFAULT_AGENT_SYSTEM_PROMPTS.finalSynthesizer;
-    const activeSysPrompt = sCfg.systemPrompt && sCfg.systemPrompt.trim() ? sCfg.systemPrompt.trim() : defaultSysPrompt;
+    let activeSysPrompt =
+      sCfg.systemPrompt && sCfg.systemPrompt.trim()
+        ? sCfg.systemPrompt.trim()
+        : defaultSysPrompt;
+
+    // Apply template variable substitution to system prompt & user context
+    activeSysPrompt = applyTemplateVariables(activeSysPrompt, synthReplacements);
+
+    // Clean up any remaining unreplaced {visualDescriptions} or similar placeholders cleanly
+    activeSysPrompt = activeSysPrompt
+      .replace(/\{\s*visualDescriptions\s*\}/gi, '')
+      .replace(/\{\s*visual_descriptions\s*\}/gi, '')
+      .replace(/\{\s*visualDescriber\s*\}/gi, '')
+      .replace(/\{\s*visual_describer\s*\}/gi, '')
+      .replace(/\{\s*customAgents\s*\}/gi, '')
+      .replace(/\{\s*customAgentOutputs\s*\}/gi, '');
+
     const fullSynthesizerSysPrompt = `Current date and time: ${currentDateTime}\n\n${activeSysPrompt}`;
+    const finalizedSynthesizerContext = applyTemplateVariables(
+      rawSynthesizerContext,
+      synthReplacements,
+    );
 
     const synthRes = await callAgent('finalSynthesizer', [
       {
@@ -1948,7 +2129,7 @@ ${reviewerOutput?.recommendation ? `Reviewer Advice: ${reviewerOutput.recommenda
       },
       {
         role: 'user',
-        content: `Please synthesize the definitive answer based on the following verified intelligence:\n\n${synthesizerContext}`,
+        content: `Please synthesize the definitive answer based on the following verified intelligence and agent outputs (including any visual descriptions, custom agent findings, or alt-texts):\n\n${finalizedSynthesizerContext}`,
       },
     ]);
 

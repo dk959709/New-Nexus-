@@ -147,6 +147,37 @@ export const JarvisPipelineHudTracker: React.FC<JarvisPipelineHudTrackerProps> =
     activeNodes.push(OPTIONAL_AGENTS.imageFinder);
   }
 
+  // 3. Custom agents from pipeline execution steps
+  steps.forEach((s) => {
+    if (
+      s &&
+      !activeNodes.some(
+        (n) =>
+          n.id === s.agentId ||
+          (n.id === 'finalSynthesizer' && s.agentId === 'synthesizer') ||
+          (n.id === 'synthesizer' && s.agentId === 'finalSynthesizer') ||
+          (n.id === 'architect' && s.agentId === 'architect') ||
+          (n.id === 'dataAnalyst' && s.agentId === 'dataAnalyst') ||
+          (n.id === 'imageFinder' && s.agentId === 'imageFinder'),
+      )
+    ) {
+      const customNode: AgentNodeDef = {
+        id: s.agentId,
+        name: s.name || 'Custom Agent',
+        shortLabel: (s.name || s.agentId).replace(/^custom[_\s-]*/i, '').slice(0, 8) || 'CUSTOM',
+        icon: s.icon || '🤖',
+        color: '#c084fc',
+        glowColor: 'rgba(192, 132, 252, 0.4)',
+      };
+      const synthIdx = activeNodes.findIndex((n) => n.id === 'finalSynthesizer');
+      if (synthIdx >= 0) {
+        activeNodes.splice(synthIdx, 0, customNode);
+      } else {
+        activeNodes.push(customNode);
+      }
+    }
+  });
+
   // Calculate statistics safely
   const totalDuration = steps.reduce((sum, s) => sum + (s?.durationMs || 0), 0);
   const executedCount = steps.filter((s) => s?.status === 'completed').length;
