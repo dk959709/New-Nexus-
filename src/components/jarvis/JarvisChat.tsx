@@ -650,6 +650,11 @@ export function JarvisChat({ config, onOpenSettings }: JarvisChatProps) {
       setActiveSteps([]);
 
       try {
+        const userTimeZone =
+          typeof Intl !== 'undefined' && Intl.DateTimeFormat
+            ? Intl.DateTimeFormat().resolvedOptions().timeZone
+            : 'Europe/London';
+
         const result = await runJarvisPipeline(
           prompt,
           config,
@@ -668,6 +673,7 @@ export function JarvisChat({ config, onOpenSettings }: JarvisChatProps) {
               return [...prev, updatedStep];
             });
           },
+          userTimeZone,
         );
 
         const completedMessage: JarvisMessage = {

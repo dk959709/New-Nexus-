@@ -1106,13 +1106,53 @@ export async function runJarvisPipeline(
   chartMode = false,
   imageMode = false,
   onStepUpdate?: StepUpdateCallback,
+  userTimeZone?: string,
 ): Promise<JarvisExecutionResult> {
-  // Generate real-time date and time fresh on every single request
-  const currentDateTime = new Date().toLocaleString('en-US', {
-    timeZone: 'Europe/London',
-    dateStyle: 'full',
-    timeStyle: 'long',
-  });
+  // Safely resolve and validate user's local timezone with fallback to Europe/London
+  let effectiveTimeZone = 'Europe/London';
+  const candidateTz =
+    userTimeZone && typeof userTimeZone === 'string' && userTimeZone.trim()
+      ? userTimeZone.trim()
+      : undefined;
+
+  if (candidateTz) {
+    try {
+      Intl.DateTimeFormat(undefined, { timeZone: candidateTz });
+      effectiveTimeZone = candidateTz;
+    } catch {
+      effectiveTimeZone = 'Europe/London';
+    }
+  } else {
+    try {
+      const resolved = Intl.DateTimeFormat().resolvedOptions().timeZone;
+      if (resolved) {
+        Intl.DateTimeFormat(undefined, { timeZone: resolved });
+        effectiveTimeZone = resolved;
+      }
+    } catch {
+      effectiveTimeZone = 'Europe/London';
+    }
+  }
+
+  // Generate real-time date and time fresh on every single request using user's timezone
+  let currentDateTime: string;
+  try {
+    currentDateTime = new Date().toLocaleString('en-US', {
+      timeZone: effectiveTimeZone,
+      dateStyle: 'full',
+      timeStyle: 'long',
+    });
+  } catch {
+    try {
+      currentDateTime = new Date().toLocaleString('en-US', {
+        timeZone: 'Europe/London',
+        dateStyle: 'full',
+        timeStyle: 'long',
+      });
+    } catch {
+      currentDateTime = new Date().toLocaleString();
+    }
+  }
 
   const steps: JarvisExecutionStep[] = [];
   const sourcesCollected: AISource[] = [];
