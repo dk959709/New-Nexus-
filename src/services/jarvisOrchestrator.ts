@@ -1430,7 +1430,8 @@ Please perform your specialized processing for this inquiry. Provide clear, conc
         model: res.model,
         durationMs: duration,
         summary: `${cAgent.name} completed successfully.`,
-        outputPreview: res.text.slice(0, 180) + (res.text.length > 180 ? '...' : ''),
+        outputPreview: res.text,
+        rawOutput: res.text,
         usedFallback: res.usedFallback,
       });
     } else {
@@ -1565,6 +1566,7 @@ Please perform your specialized processing for this inquiry. Provide clear, conc
         durationMs: duration,
         summary: Array.isArray(plannerOutput.plan) && plannerOutput.plan.length > 0 ? plannerOutput.plan.slice(0, 2).join(' • ') : 'Task analyzed and routed.',
         outputPreview: JSON.stringify(plannerOutput, null, 2),
+        rawOutput: planRes.text || JSON.stringify(plannerOutput, null, 2),
         usedFallback: planRes.usedFallback,
       });
     } else {
@@ -1723,6 +1725,7 @@ Please perform your specialized processing for this inquiry. Provide clear, conc
         durationMs: duration,
         summary: `Gathered ${researcherOutput.facts.length} core facts and ${sourcesCollected.length} references.`,
         outputPreview: JSON.stringify(researcherOutput, null, 2),
+        rawOutput: researchRes.text || JSON.stringify(researcherOutput, null, 2),
         usedFallback: researchRes.usedFallback,
       });
     } else {
@@ -1834,6 +1837,7 @@ Please perform your specialized processing for this inquiry. Provide clear, conc
         durationMs: duration,
         summary: `Validated ${factCheckOutput.verified?.length || 0} claims (${factCheckOutput.issues?.length || 0} corrections).`,
         outputPreview: JSON.stringify(factCheckOutput, null, 2),
+        rawOutput: factRes.text || JSON.stringify(factCheckOutput, null, 2),
         usedFallback: factRes.usedFallback,
       });
     } else {
@@ -1922,6 +1926,7 @@ Please perform your specialized processing for this inquiry. Provide clear, conc
         durationMs: duration,
         summary: reviewerOutput.recommendation || 'Quality review complete.',
         outputPreview: JSON.stringify(reviewerOutput, null, 2),
+        rawOutput: reviewRes.text || JSON.stringify(reviewerOutput, null, 2),
         usedFallback: reviewRes.usedFallback,
       });
     } else {
@@ -2146,7 +2151,8 @@ ${reviewerOutput?.recommendation ? `Reviewer Advice: ${reviewerOutput.recommenda
         model: synthRes.model,
         durationMs: duration,
         summary: 'Final synthesis compiled and formatted.',
-        outputPreview: finalAnswer.slice(0, 150) + (finalAnswer.length > 150 ? '...' : ''),
+        outputPreview: finalAnswer,
+        rawOutput: finalAnswer,
         usedFallback: synthRes.usedFallback,
       });
     } else {
@@ -2249,7 +2255,8 @@ ${reviewerOutput?.recommendation ? `Reviewer Advice: ${reviewerOutput.recommenda
           model: archRes.model,
           durationMs: duration,
           summary: 'Custom SVG architectural blueprint generated.',
-          outputPreview: diagramSvg.slice(0, 180) + '...',
+          outputPreview: diagramSvg,
+          rawOutput: diagramSvg,
           usedFallback: archRes.usedFallback,
         });
       } else {
@@ -2266,7 +2273,8 @@ ${reviewerOutput?.recommendation ? `Reviewer Advice: ${reviewerOutput.recommenda
           model: archRes.model,
           durationMs: duration,
           summary: 'Architectural blueprint synthesized via concept generator.',
-          outputPreview: diagramSvg.slice(0, 180) + '...',
+          outputPreview: diagramSvg,
+          rawOutput: diagramSvg,
           usedFallback: true,
         });
       }
@@ -2286,7 +2294,8 @@ ${reviewerOutput?.recommendation ? `Reviewer Advice: ${reviewerOutput.recommenda
         model: archRes.model || 'blueprint-engine',
         durationMs: duration,
         summary: `Architectural blueprint synthesized (${archRes.error ? `Provider notice: ${archRes.error}` : 'Synthesizer fallback'}).`,
-        outputPreview: diagramSvg.slice(0, 180) + '...',
+        outputPreview: diagramSvg,
+        rawOutput: diagramSvg,
         usedFallback: true,
       });
     }
@@ -2365,6 +2374,7 @@ ${reviewerOutput?.recommendation ? `Reviewer Advice: ${reviewerOutput.recommenda
           durationMs: duration,
           summary: `Quantitative chart extracted: "${chartData.title || 'Data Analysis'}" (${chartData.series?.length || 0} series, ${chartData.labels?.length || 0} points).`,
           outputPreview: JSON.stringify(chartData, null, 2),
+          rawOutput: daRes.text || JSON.stringify(chartData, null, 2),
           usedFallback: daRes.usedFallback,
         });
       } else {
@@ -2386,6 +2396,7 @@ ${reviewerOutput?.recommendation ? `Reviewer Advice: ${reviewerOutput.recommenda
             durationMs: duration,
             summary: `Comparative chart parsed from specifications table: "${chartData.title || 'Data Analysis'}" (${chartData.series?.length || 0} series, ${chartData.labels?.length || 0} points).`,
             outputPreview: JSON.stringify(chartData, null, 2),
+            rawOutput: JSON.stringify(chartData, null, 2),
             usedFallback: true,
           });
         } else {
@@ -2423,6 +2434,7 @@ ${reviewerOutput?.recommendation ? `Reviewer Advice: ${reviewerOutput.recommenda
           durationMs: duration,
           summary: `Comparative chart parsed from specifications: "${chartData.title || 'Data Analysis'}" (${chartData.series?.length || 0} series, ${chartData.labels?.length || 0} points).`,
           outputPreview: JSON.stringify(chartData, null, 2),
+          rawOutput: JSON.stringify(chartData, null, 2),
           usedFallback: true,
         });
       } else {
@@ -2527,6 +2539,16 @@ ${reviewerOutput?.recommendation ? `Reviewer Advice: ${reviewerOutput.recommenda
         durationMs: duration,
         summary: `Retrieved ${retrievedImages.length} real photo${retrievedImages.length > 1 ? 's' : ''} for "${searchQuery}".`,
         outputPreview: JSON.stringify(
+          retrievedImages.map((img) => ({
+            title: img.title,
+            domain: img.domain,
+            url: img.url,
+            author: img.author,
+          })),
+          null,
+          2,
+        ),
+        rawOutput: JSON.stringify(
           retrievedImages.map((img) => ({
             title: img.title,
             domain: img.domain,

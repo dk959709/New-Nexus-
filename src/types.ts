@@ -237,6 +237,7 @@ export interface JarvisExecutionStep {
   error?: string;
   summary?: string;
   outputPreview?: string;
+  rawOutput?: string;
   usedFallback?: boolean;
 }
 
