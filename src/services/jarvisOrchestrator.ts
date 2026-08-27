@@ -1107,6 +1107,13 @@ export async function runJarvisPipeline(
   imageMode = false,
   onStepUpdate?: StepUpdateCallback,
 ): Promise<JarvisExecutionResult> {
+  // Generate real-time date and time fresh on every single request
+  const currentDateTime = new Date().toLocaleString('en-US', {
+    timeZone: 'Europe/London',
+    dateStyle: 'full',
+    timeStyle: 'long',
+  });
+
   const steps: JarvisExecutionStep[] = [];
   const sourcesCollected: AISource[] = [];
   const customAgentOutputs: Array<{ id: string; name: string; output: string }> = [];
@@ -1375,6 +1382,9 @@ Please perform your specialized processing for this inquiry. Provide clear, conc
     const defaultPromptTemplate = DEFAULT_AGENT_SYSTEM_PROMPTS.planner;
     let activePrompt = (pCfg.systemPrompt || defaultPromptTemplate).replace('{query}', query);
 
+    // Prepend real-time current date and time
+    activePrompt = `Current date and time: ${currentDateTime}\n\n${activePrompt}`;
+
     // Explicitly inject current Diagram Mode state so Planner's decision is context-aware
     const diagramModeNotice = diagramMode
       ? `\n\n[SYSTEM CONTEXT: Diagram Mode is currently ENABLED (ON).]
@@ -1406,7 +1416,7 @@ Please perform your specialized processing for this inquiry. Provide clear, conc
     activePrompt += imageModeNotice;
 
     const planRes = await callAgent('planner', [
-      { role: 'system', content: 'You are the JARVIS Planner. Output only valid JSON.' },
+      { role: 'system', content: `Current date and time: ${currentDateTime}\nYou are the JARVIS Planner. Output only valid JSON.` },
       { role: 'user', content: activePrompt },
     ]);
 
@@ -1878,7 +1888,8 @@ Please perform your specialized processing for this inquiry. Provide clear, conc
     const verifiedList = Array.isArray(factCheckOutput?.verified) ? factCheckOutput.verified : [];
     const issuesList = Array.isArray(factCheckOutput?.issues) ? factCheckOutput.issues : [];
 
-    const synthesizerContext = `User Query: "${query}"
+    const synthesizerContext = `Current date and time: ${currentDateTime}
+User Query: "${query}"
 
 Planner Guidance: ${plannerPlanText}
 ${factsList.length > 0 ? `Key Verified Facts:\n${factsList.map((f) => `- ${f}`).join('\n')}` : ''}
@@ -1888,11 +1899,12 @@ ${reviewerOutput?.recommendation ? `Reviewer Advice: ${reviewerOutput.recommenda
 
     const defaultSysPrompt = DEFAULT_AGENT_SYSTEM_PROMPTS.finalSynthesizer;
     const activeSysPrompt = sCfg.systemPrompt && sCfg.systemPrompt.trim() ? sCfg.systemPrompt.trim() : defaultSysPrompt;
+    const fullSynthesizerSysPrompt = `Current date and time: ${currentDateTime}\n\n${activeSysPrompt}`;
 
     const synthRes = await callAgent('finalSynthesizer', [
       {
         role: 'system',
-        content: activeSysPrompt,
+        content: fullSynthesizerSysPrompt,
       },
       {
         role: 'user',

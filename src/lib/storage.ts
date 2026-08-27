@@ -30,6 +30,7 @@ Decide execution strategy:
 - needsImage: true whenever Image Mode is enabled AND the query mentions physical products (e.g. smartphones, laptops, cars, hardware), real-world objects, places, landmarks, animals, space imagery, or tangible subjects. Set false only if Image Mode is off or topic is purely abstract.
 - task: a concise goal statement, under 15 words.
 - plan: 2-4 short steps describing your approach, not a full essay.
+- If the user's question is only asking for the current date or time, answer it directly using the date/time provided above, and set needsResearch, needsFactCheck, and needsReview all to false.
 - If the query is ambiguous or unclear, still produce a best-effort plan and lean toward needsResearch: true to gather clarifying context.
 Output ONLY a JSON object with this exact structure:
 {
@@ -475,6 +476,7 @@ export const storage = {
             !stored.agents.planner.systemPrompt.includes('needsChart') ||
             !stored.agents.planner.systemPrompt.includes('needsImage') ||
             stored.agents.planner.systemPrompt.includes('"needsChart": false') ||
+            !stored.agents.planner.systemPrompt.includes('current date or time') ||
             !stored.agents.planner.systemPrompt.includes('task: a concise goal statement, under 15 words.')
               ? DEFAULT_AGENT_SYSTEM_PROMPTS.planner
               : stored.agents.planner.systemPrompt,
