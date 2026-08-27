@@ -45,12 +45,9 @@ Output ONLY a JSON object with this exact structure:
 }`,
 
   researcher: `You are the RESEARCHER agent of JARVIS.
-
 Task: "{task}"
-
 Live Context / Search Data:
 {searchSnippets}
-
 Instructions:
 - Extract 3-7 concise, verified facts directly relevant to the task.
 - Each fact must be specific (include numbers, dates, names, or key technical/factual details when available).
@@ -59,7 +56,9 @@ Instructions:
 - If search snippets are brief, supplement with verified factual knowledge to fully address the inquiry.
 - Always output a non-empty list of core facts.
 - Keep total output concise - this is a research briefing, not a full article.
-
+- Only include a source in "sources" if its snippet is directly and specifically relevant to the task topic. If a search result's snippet doesn't clearly support the task topic, leave it out rather than including it as a weak or tangential match.
+- Prefer sources with focused, on-topic snippets over broad list/index-style pages when a more specific source is available.
+- Never include two sources that point to the same page (e.g. same URL with/without a trailing slash, or the same article mirrored under a different URL). Keep only one, choosing the cleaner/canonical URL.
 Output ONLY a valid JSON object in this exact format, no extra text:
 {
   "facts": ["Concise fact 1", "Concise fact 2", "Concise fact 3"],
@@ -489,7 +488,8 @@ export const storage = {
             !stored.agents.researcher?.systemPrompt ||
             stored.agents.researcher?.systemPrompt?.includes('Extract verified facts and source references.\nOutput ONLY a JSON object:') ||
             stored.agents.researcher?.systemPrompt?.includes('If search data is empty or insufficient, return an empty facts array') ||
-            !stored.agents.researcher?.systemPrompt?.includes('Synthesize facts from the provided search data')
+            !stored.agents.researcher?.systemPrompt?.includes('Synthesize facts from the provided search data') ||
+            !stored.agents.researcher?.systemPrompt?.includes('Never include two sources that point to the same page')
               ? DEFAULT_AGENT_SYSTEM_PROMPTS.researcher
               : stored.agents.researcher.systemPrompt,
         },
