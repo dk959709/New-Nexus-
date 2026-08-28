@@ -32,6 +32,7 @@ export function AIProvidersSettings() {
   const [providersState, setProvidersState] = useState<AIProvidersState>(() =>
     storage.getAIProvidersState()
   );
+  const [voxSettings, setVoxSettings] = useState(() => storage.getVoxSettings());
   const [isEditing, setIsEditing] = useState(false);
   const [editingProvider, setEditingProvider] = useState<AIProviderConfig | null>(null);
   const [showKeySecretMap, setShowKeySecretMap] = useState<Record<string, boolean>>({});
@@ -51,6 +52,16 @@ export function AIProvidersSettings() {
   const updateProvidersState = (newState: AIProvidersState) => {
     setProvidersState(newState);
     storage.saveAIProvidersState(newState);
+  };
+
+  const handleSelectVoxProvider = (providerId: string) => {
+    const updated = { ...voxSettings, providerId };
+    setVoxSettings(updated);
+    storage.saveVoxSettings(updated);
+    setNotificationMessage(`Vox TTS provider updated to ${providerId}.`);
+    setTimeout(() => {
+      setNotificationMessage(null);
+    }, 3000);
   };
 
   // Open modal/editor for a new provider
@@ -468,6 +479,76 @@ export function AIProvidersSettings() {
             }}
           >
             <option value="existing">🧠 Existing AI (Built-in / Protected)</option>
+            {providersState.providers
+              .filter((p) => !(p.id === 'huggingface' || p.url?.includes('huggingface') || p.name?.toLowerCase().includes('vox')))
+              .map((p) => (
+              <option key={p.id} value={p.id}>
+                🔵 {p.name} ({p.model})
+              </option>
+            ))}
+          </select>
+        </div>
+      </section>
+
+      {/* Vox Neural Speech (TTS) Provider Selection */}
+      <section
+        style={{
+          background: 'linear-gradient(135deg, rgba(14,31,39,0.8) 0%, rgba(18,22,40,0.85) 100%)',
+          border: '1px solid rgba(97,215,201,0.25)',
+          borderRadius: '16px',
+          padding: '24px',
+          display: 'flex',
+          justifyContent: 'space-between',
+          alignItems: 'center',
+          flexWrap: 'wrap',
+          gap: '20px',
+          boxShadow: '0 8px 32px rgba(0,0,0,0.4)',
+        }}
+      >
+        <div style={{ maxWidth: '600px' }}>
+          <div style={{ display: 'flex', alignItems: 'center', gap: '10px', marginBottom: '8px' }}>
+            <span
+              style={{
+                display: 'inline-flex',
+                alignItems: 'center',
+                justifyContent: 'center',
+                width: '26px',
+                height: '26px',
+                borderRadius: '6px',
+                background: 'rgba(97,215,201,0.15)',
+                color: 'var(--accent)',
+              }}
+            >
+              🎙️
+            </span>
+            <h2 style={{ margin: 0, fontSize: '17px', letterSpacing: '-0.02em' }}>
+              Vox Neural Speech (TTS) Provider
+            </h2>
+          </div>
+          <p style={{ margin: 0, color: 'var(--muted)', fontSize: '13px' }}>
+            Independent provider used exclusively for voice synthesis, audio generation, and voice calls. Does not affect assistant chat.
+          </p>
+        </div>
+
+        <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
+          <select
+            value={voxSettings.providerId || 'huggingface'}
+            onChange={(e) => handleSelectVoxProvider(e.target.value)}
+            aria-label="Vox TTS Provider"
+            style={{
+              background: 'rgba(10,22,28,0.85)',
+              color: '#fff',
+              border: '1px solid var(--accent)',
+              padding: '9px 14px',
+              borderRadius: '8px',
+              fontSize: '13px',
+              fontWeight: 600,
+              outline: 'none',
+              cursor: 'pointer',
+              boxShadow: '0 0 12px rgba(97,215,201,0.2)',
+            }}
+          >
+            <option value="huggingface">🎙️ Hugging Face (Default Vox TTS)</option>
             {providersState.providers.map((p) => (
               <option key={p.id} value={p.id}>
                 🔵 {p.name} ({p.model})
@@ -640,7 +721,8 @@ export function AIProvidersSettings() {
 
           {/* User Custom Provider Cards */}
           {providersState.providers.map((p) => {
-            const isActive = providersState.activeProviderId === p.id;
+            const isTtsProvider = p.id === 'huggingface' || p.url?.includes('huggingface') || p.name?.toLowerCase().includes('vox');
+            const isActive = !isTtsProvider && providersState.activeProviderId === p.id;
             const healthyKeys = p.keys.filter((k) => k.status === 'healthy').length;
             const cooldownKeys = p.keys.filter((k) => k.status === 'cooldown').length;
             const invalidKeys = p.keys.filter((k) => k.status === 'invalid').length;
@@ -653,12 +735,12 @@ export function AIProvidersSettings() {
                   padding: '20px',
                   borderRadius: '12px',
                   border: `1px solid ${
-                    isActive ? 'var(--accent)' : 'rgba(165,207,214,0.18)'
+                    isActive || isTtsProvider ? 'var(--accent)' : 'rgba(165,207,214,0.18)'
                   }`,
-                  background: isActive
+                  background: isActive || isTtsProvider
                     ? 'linear-gradient(135deg, rgba(14,38,48,0.7) 0%, rgba(20,28,56,0.7) 100%)'
                     : 'linear-gradient(135deg, rgba(14,31,39,0.55) 0%, rgba(18,22,40,0.55) 100%)',
-                  boxShadow: isActive ? '0 0 16px rgba(97,215,201,0.15)' : 'none',
+                  boxShadow: isActive || isTtsProvider ? '0 0 16px rgba(97,215,201,0.15)' : 'none',
                   display: 'flex',
                   justifyContent: 'space-between',
                   alignItems: 'center',
@@ -668,7 +750,7 @@ export function AIProvidersSettings() {
               >
                 <div>
                   <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
-                    <span style={{ fontSize: '18px' }}>🔵</span>
+                    <span style={{ fontSize: '18px' }}>{isTtsProvider ? '🎙️' : '🔵'}</span>
                     <h4 style={{ margin: 0, fontSize: '16px', fontWeight: 600 }}>{p.name}</h4>
                     <span
                       style={{
@@ -706,7 +788,21 @@ export function AIProvidersSettings() {
                           fontWeight: 600,
                         }}
                       >
-                        Active
+                        Active Chat Provider
+                      </span>
+                    )}
+                    {isTtsProvider && (
+                      <span
+                        style={{
+                          fontSize: '10px',
+                          padding: '2px 8px',
+                          borderRadius: '12px',
+                          background: 'rgba(97,215,201,0.2)',
+                          color: 'var(--accent)',
+                          fontWeight: 600,
+                        }}
+                      >
+                        Independent Vox TTS
                       </span>
                     )}
                   </div>
@@ -770,7 +866,21 @@ export function AIProvidersSettings() {
                 </div>
 
                 <div style={{ display: 'flex', alignItems: 'center', gap: '8px', flexWrap: 'wrap' }}>
-                  {isActive ? (
+                  {isTtsProvider ? (
+                    <span
+                      style={{
+                        padding: '6px 12px',
+                        borderRadius: '7px',
+                        background: 'rgba(97,215,201,0.1)',
+                        color: 'var(--accent)',
+                        border: '1px solid rgba(97,215,201,0.3)',
+                        fontSize: '11px',
+                        fontWeight: 600,
+                      }}
+                    >
+                      🎙️ Dedicated Vox TTS Engine
+                    </span>
+                  ) : isActive ? (
                     <button
                       disabled
                       style={{
@@ -965,6 +1075,21 @@ export function AIProvidersSettings() {
                 style={{ fontSize: '10px', padding: '4px 8px', borderRadius: '5px' }}
               >
                 Groq Preset
+              </button>
+              <button
+                type="button"
+                onClick={() => {
+                  setEditingProvider({
+                    ...editingProvider,
+                    name: 'Hugging Face (Vox TTS)',
+                    url: 'https://api-inference.huggingface.co/models/facebook/mms-tts-eng',
+                    model: 'facebook/mms-tts-eng',
+                  });
+                }}
+                className="secondary-button"
+                style={{ fontSize: '10px', padding: '4px 8px', borderRadius: '5px', borderColor: 'rgba(97,215,201,0.4)', color: 'var(--accent)' }}
+              >
+                🎙️ Hugging Face (Vox)
               </button>
             </div>
           </div>

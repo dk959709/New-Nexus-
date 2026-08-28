@@ -4454,6 +4454,232 @@ async function startServer() {
     });
   });
 
+  // ----------------------------------------------------
+  // VOX // HUGGING FACE NEURAL TEXT-TO-SPEECH (TTS)
+  // ----------------------------------------------------
+  async function executeHuggingFaceTts({
+    text,
+    model = 'facebook/mms-tts-eng',
+    apiKey,
+    timeoutMs = 35000,
+  }: {
+    text: string;
+    model?: string;
+    apiKey?: string;
+    timeoutMs?: number;
+  }): Promise<{
+    ok: boolean;
+    audioUrl?: string;
+    mimeType?: string;
+    model?: string;
+    status?: number;
+    error?: string;
+    estimatedTime?: number;
+  }> {
+    const token = apiKey?.trim() || process.env.HUGGINGFACE_API_KEY?.trim() || process.env.HF_TOKEN?.trim();
+    if (!token) {
+      return {
+        ok: false,
+        status: 401,
+        error: 'Hugging Face API key is required. Please add your Hugging Face API key in Settings > AI Providers to enable Vox.',
+      };
+    }
+
+    // Clean and sanitize input text (strip code blocks, links, and heavy markup)
+    const cleanText = text
+      .replace(/```[\s\S]*?```/g, ' ')
+      .replace(/[*#`_~>[\]()]/g, ' ')
+      .replace(/https?:\/\/\S+/g, ' ')
+      .replace(/\s+/g, ' ')
+      .trim();
+
+    if (!cleanText) {
+      return {
+        ok: false,
+        status: 400,
+        error: 'Text input for Vox TTS cannot be empty.',
+      };
+    }
+
+    const trimmedText = cleanText.slice(0, 1500);
+    const targetModel = model.trim() || 'facebook/mms-tts-eng';
+
+    const urls = [
+      `https://api-inference.huggingface.co/models/${encodeURIComponent(targetModel)}`,
+      `https://router.huggingface.co/hf-inference/models/${encodeURIComponent(targetModel)}`,
+    ];
+
+    let lastError = 'Failed to connect to Hugging Face Inference API';
+    let lastStatus = 500;
+
+    for (const url of urls) {
+      try {
+        const controller = new AbortController();
+        const timeoutId = setTimeout(() => controller.abort(), timeoutMs);
+
+        const response = await fetch(url, {
+          method: 'POST',
+          headers: {
+            Authorization: `Bearer ${token}`,
+            'Content-Type': 'application/json',
+            'User-Agent': 'NEXUS-Intelligence-Vox/1.0',
+          },
+          body: JSON.stringify({ inputs: trimmedText }),
+          signal: controller.signal,
+        });
+
+        clearTimeout(timeoutId);
+
+        if (response.ok) {
+          const mimeType = response.headers.get('content-type') || 'audio/wav';
+          const arrayBuffer = await response.arrayBuffer();
+          const base64Audio = Buffer.from(arrayBuffer).toString('base64');
+          const audioUrl = `data:${mimeType};base64,${base64Audio}`;
+
+          return {
+            ok: true,
+            status: 200,
+            audioUrl,
+            mimeType,
+            model: targetModel,
+          };
+        }
+
+        lastStatus = response.status;
+        const errorText = await response.text();
+        let errorJson: { error?: string | string[]; estimated_time?: number; message?: string } | null = null;
+        try {
+          errorJson = JSON.parse(errorText);
+        } catch {
+          // text format
+        }
+
+        if (response.status === 503 && errorJson?.estimated_time) {
+          return {
+            ok: false,
+            status: 503,
+            estimatedTime: Math.round(errorJson.estimated_time),
+            error: `Hugging Face model "${targetModel}" is warming up (estimated ${Math.round(errorJson.estimated_time)}s). Please try again in a few moments.`,
+            model: targetModel,
+          };
+        }
+
+        if (response.status === 401 || response.status === 403) {
+          return {
+            ok: false,
+            status: response.status,
+            error: 'Invalid Hugging Face API key. Please check your token in Settings > AI Providers.',
+          };
+        }
+
+        if (response.status === 404) {
+          return {
+            ok: false,
+            status: 404,
+            error: `Hugging Face TTS model "${targetModel}" was not found or is not supported by the Inference API.`,
+          };
+        }
+
+        const errMsg =
+          typeof errorJson?.error === 'string'
+            ? errorJson.error
+            : Array.isArray(errorJson?.error)
+            ? errorJson.error.join(', ')
+            : errorJson?.message || errorText || `HTTP ${response.status}`;
+
+        lastError = errMsg;
+      } catch (err: unknown) {
+        if (err instanceof Error && err.name === 'AbortError') {
+          lastError = `Hugging Face TTS request timed out (${Math.round(timeoutMs / 1000)}s)`;
+          lastStatus = 504;
+        } else {
+          lastError = err instanceof Error ? err.message : String(err);
+        }
+      }
+    }
+
+    return {
+      ok: false,
+      status: lastStatus,
+      error: lastError,
+      model: targetModel,
+    };
+  }
+
+  // Generate TTS Audio via Hugging Face Inference API
+  app.post('/api/tts/generate', async (req, res) => {
+    const parsed = z
+      .object({
+        text: z.string().min(1).max(8000),
+        model: z.string().optional(),
+        apiKey: z.string().optional(),
+        timeoutMs: z.number().optional(),
+      })
+      .safeParse(req.body);
+
+    if (!parsed.success) {
+      return errorResponse(res, 400, 'Valid text is required for TTS synthesis.');
+    }
+
+    const { text, model, apiKey, timeoutMs } = parsed.data;
+
+    try {
+      const result = await executeHuggingFaceTts({
+        text,
+        model,
+        apiKey,
+        timeoutMs,
+      });
+
+      if (!result.ok) {
+        return errorResponse(res, result.status || 500, result.error || 'TTS synthesis failed.');
+      }
+
+      return res.json({
+        data: {
+          ok: true,
+          audioUrl: result.audioUrl,
+          mimeType: result.mimeType,
+          model: result.model,
+        },
+      });
+    } catch (err: unknown) {
+      console.error('[Vox Server] TTS error:', err);
+      const msg = err instanceof Error ? err.message : 'Internal TTS server error';
+      return errorResponse(res, 500, msg);
+    }
+  });
+
+  // Test Hugging Face Connection for Vox TTS
+  app.post('/api/tts/test', async (req, res) => {
+    const parsed = z
+      .object({
+        apiKey: z.string().optional(),
+        model: z.string().optional(),
+      })
+      .safeParse(req.body);
+
+    const apiKey = parsed.success ? parsed.data.apiKey : undefined;
+    const model = parsed.success ? parsed.data.model : undefined;
+
+    const result = await executeHuggingFaceTts({
+      text: 'NEXUS Vox neural speech synthesis online.',
+      model: model || 'facebook/mms-tts-eng',
+      apiKey,
+      timeoutMs: 20000,
+    });
+
+    return res.json({
+      data: {
+        ok: result.ok,
+        status: result.status,
+        model: result.model,
+        error: result.error,
+        audioUrl: result.ok ? result.audioUrl : undefined,
+      },
+    });
+  });
+
   // JARVIS Multi-Agent Execution Endpoint
   app.post('/api/jarvis/agent-call', async (req, res) => {
     const parsed = z

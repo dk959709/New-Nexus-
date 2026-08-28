@@ -20,10 +20,14 @@ import {
   CheckCircle2,
   Bookmark,
   BookmarkCheck,
+  Headphones,
+  PhoneCall,
 } from 'lucide-react';
 import { storage } from '@/lib/storage';
 import { stripConversationalMetaText } from '@/lib/format';
 import { runJarvisPipeline } from '@/services/jarvisOrchestrator';
+import { vox } from '@/services/vox';
+import { VoiceCallModal } from '@/components/vox/VoiceCallModal';
 import { JarvisHudHeader } from './JarvisHudHeader';
 import { JarvisCoreVisualizer } from './JarvisCoreVisualizer';
 import { JarvisTopologyMatrix } from './JarvisTopologyMatrix';
@@ -179,6 +183,10 @@ export function JarvisChat({ config, onOpenSettings }: JarvisChatProps) {
   });
   const [recentlySavedId, setRecentlySavedId] = useState<string | null>(null);
   const [speakingId, setSpeakingId] = useState<string | null>(null);
+  const [voxSpeakingId, setVoxSpeakingId] = useState<string | null>(null);
+  const [voxLoadingId, setVoxLoadingId] = useState<string | null>(null);
+  const [voxToastError, setVoxToastError] = useState<string | null>(null);
+  const [isVoiceCallOpen, setIsVoiceCallOpen] = useState(false);
   const [showClearConfirm, setShowClearConfirm] = useState(false);
   const [clearedBanner, setClearedBanner] = useState(false);
   const [activeView, setActiveView] = useState<'chat' | 'topology' | 'categories' | 'reactor' | 'terminal'>('chat');
@@ -405,6 +413,78 @@ export function JarvisChat({ config, onOpenSettings }: JarvisChatProps) {
     [speakingId, stopSpeak],
   );
 
+  // Vox Neural Text-To-Speech (Hugging Face)
+  const toggleVoxSpeak = useCallback(
+    async (text: string, id: string) => {
+      // If user taps the active Vox message, stop playback
+      if (voxSpeakingId === id) {
+        vox.stop();
+        setVoxSpeakingId(null);
+        return;
+      }
+
+      // Stop native browser speech if running
+      stopSpeak();
+      vox.stop();
+      setVoxSpeakingId(null);
+
+      // Check if Hugging Face API key is configured
+      if (!vox.isConfigured()) {
+        setVoxToastError(
+          'Add a Hugging Face API key in Settings > AI Providers to enable Vox neural speech synthesis.',
+        );
+        setTimeout(() => setVoxToastError(null), 6000);
+        return;
+      }
+
+      const cleanText = text
+        .replace(/```[\s\S]*?```/g, ' Code snippet omitted. ')
+        .replace(/[*#`_~>[\]()]/g, ' ')
+        .replace(/https?:\/\/\S+/g, ' ')
+        .replace(/\s+/g, ' ')
+        .trim();
+
+      if (!cleanText) return;
+
+      setVoxLoadingId(id);
+      setVoxToastError(null);
+
+      try {
+        await vox.speak(cleanText.slice(0, 1500), {
+          onStart: () => {
+            setVoxLoadingId(null);
+            setVoxSpeakingId(id);
+          },
+          onEnd: () => {
+            setVoxSpeakingId((cur) => (cur === id ? null : cur));
+          },
+          onError: (err) => {
+            setVoxLoadingId(null);
+            setVoxSpeakingId(null);
+            const msg = err.message || 'Vox speech generation failed';
+            setVoxToastError(
+              msg.includes('401')
+                ? 'Invalid Hugging Face API token. Please check Settings > AI Providers.'
+                : `Vox error: ${msg}`,
+            );
+            setTimeout(() => setVoxToastError(null), 6000);
+          },
+        });
+      } catch (err: unknown) {
+        setVoxLoadingId(null);
+        setVoxSpeakingId(null);
+        const msg = err instanceof Error ? err.message : 'Vox TTS request failed';
+        setVoxToastError(
+          msg.includes('401')
+            ? 'Invalid Hugging Face API token. Please check Settings > AI Providers.'
+            : `Vox error: ${msg}`,
+        );
+        setTimeout(() => setVoxToastError(null), 6000);
+      }
+    },
+    [voxSpeakingId, stopSpeak],
+  );
+
   // Clean up speech synthesis on component unmount
   useEffect(() => {
     return () => {
@@ -415,6 +495,7 @@ export function JarvisChat({ config, onOpenSettings }: JarvisChatProps) {
           // Safe fallback
         }
       }
+      vox.stop();
     };
   }, []);
 
@@ -782,8 +863,9 @@ export function JarvisChat({ config, onOpenSettings }: JarvisChatProps) {
                       </span>
                     </div>
 
-                    {/* Action Buttons: Speak, Copy, Save, Delete */}
+                    {/* Action Buttons: Native Speak, Vox Neural TTS Speak, Copy, Save, Delete */}
                     <div className="flex items-center gap-1.5">
+                      {/* Native Browser Speech Button */}
                       <button
                         type="button"
                         onClick={() => toggleSpeak(cleanedAnswer || msg.answer, msg.id)}
@@ -792,9 +874,38 @@ export function JarvisChat({ config, onOpenSettings }: JarvisChatProps) {
                             ? 'bg-cyan-400 text-slate-950 shadow-[0_0_12px_#61d7c9]'
                             : 'text-slate-300 hover:text-cyan-300 hover:bg-cyan-500/15'
                         }`}
-                        title={speakingId === msg.id ? 'Stop Voice' : 'Read Aloud'}
+                        title={speakingId === msg.id ? 'Stop Voice' : 'Read Aloud (Browser Voice)'}
                       >
                         {speakingId === msg.id ? <VolumeX size={15} /> : <Volume2 size={15} />}
+                      </button>
+
+                      {/* Vox Neural TTS Speech Button (Hugging Face) */}
+                      <button
+                        type="button"
+                        onClick={() => toggleVoxSpeak(cleanedAnswer || msg.answer, msg.id)}
+                        disabled={voxLoadingId === msg.id}
+                        className={`p-2 rounded-full transition-all duration-200 flex items-center justify-center ${
+                          voxSpeakingId === msg.id
+                            ? 'bg-emerald-400 text-slate-950 shadow-[0_0_14px_#34d399] animate-pulse'
+                            : voxLoadingId === msg.id
+                            ? 'bg-cyan-500/20 text-cyan-300 border border-cyan-400/40'
+                            : 'text-slate-300 hover:text-emerald-300 hover:bg-emerald-500/15'
+                        }`}
+                        title={
+                          voxSpeakingId === msg.id
+                            ? 'Stop Vox Neural Voice'
+                            : voxLoadingId === msg.id
+                            ? 'Generating Vox Neural Voice...'
+                            : 'Read Aloud with Vox (Hugging Face Neural TTS)'
+                        }
+                      >
+                        {voxLoadingId === msg.id ? (
+                          <Loader2 size={15} className="animate-spin text-cyan-300" />
+                        ) : voxSpeakingId === msg.id ? (
+                          <VolumeX size={15} />
+                        ) : (
+                          <Headphones size={15} />
+                        )}
                       </button>
 
                       <button
@@ -1083,6 +1194,17 @@ export function JarvisChat({ config, onOpenSettings }: JarvisChatProps) {
               <Mic size={17} className={voiceListening ? 'animate-bounce' : ''} />
             </button>
 
+            {/* Voice Call Launcher Button */}
+            <button
+              type="button"
+              onClick={() => setIsVoiceCallOpen(true)}
+              aria-label="Start Voice Call"
+              title="Start Continuous Voice Call with JARVIS (Vox Duplex)"
+              className="w-9 h-9 sm:w-10 sm:h-10 rounded-full flex items-center justify-center transition-all duration-200 shrink-0 bg-emerald-500/15 hover:bg-emerald-500/25 text-emerald-300 border border-emerald-500/40 shadow-[0_0_12px_rgba(16,185,129,0.2)]"
+            >
+              <PhoneCall size={16} />
+            </button>
+
             {/* Submit Pill Button */}
             <button
               type="submit"
@@ -1326,6 +1448,25 @@ export function JarvisChat({ config, onOpenSettings }: JarvisChatProps) {
             </div>
           )}
 
+          {/* Vox Error Notification Banner */}
+          {voxToastError && (
+            <div className="flex items-center justify-between gap-2 p-3.5 rounded-2xl bg-amber-950/80 border border-amber-500/40 text-amber-300 text-xs font-mono shadow-lg animate-in fade-in">
+              <div className="flex items-center gap-2">
+                <AlertCircle size={16} className="text-amber-400 shrink-0" />
+                <span>{voxToastError}</span>
+              </div>
+              {onOpenSettings && (
+                <button
+                  type="button"
+                  onClick={onOpenSettings}
+                  className="px-2.5 py-1 rounded-xl bg-amber-500/20 hover:bg-amber-500/30 border border-amber-500/40 text-[11px] font-bold text-amber-200 uppercase tracking-wider shrink-0 transition-colors"
+                >
+                  Configure Key
+                </button>
+              )}
+            </div>
+          )}
+
           {/* Cleared Success Feedback Banner */}
           {clearedBanner && (
             <div className="flex items-center gap-2 p-3 rounded-2xl bg-cyan-500/15 border border-cyan-400/40 text-cyan-300 text-xs font-bold shadow-md">
@@ -1377,6 +1518,13 @@ export function JarvisChat({ config, onOpenSettings }: JarvisChatProps) {
           )}
         </form>
       </div>
+
+      {/* Full-Screen Continuous Voice Call Modal */}
+      <VoiceCallModal
+        isOpen={isVoiceCallOpen}
+        onClose={() => setIsVoiceCallOpen(false)}
+        onOpenSettings={onOpenSettings}
+      />
     </div>
   );
 }

@@ -14,6 +14,7 @@ const TelegramPage = lazy(() => import('@/pages/TelegramPage').then((m) => ({ de
 const NewsPage = lazy(() => import('@/pages/NewsPage').then((m) => ({ default: m.NewsPage })));
 const OfflineAIPage = lazy(() => import('@/pages/OfflineAIPage').then((m) => ({ default: m.OfflineAIPage })));
 const SavedPage = lazy(() => import('@/pages/SavedPage').then((m) => ({ default: m.SavedPage })));
+const VoxPage = lazy(() => import('@/pages/VoxPage').then((m) => ({ default: m.VoxPage })));
 
 function PageLoadingFallback() {
   return (
@@ -34,6 +35,14 @@ export default function App() {
             <Route path="/jarvis" element={<JarvisPage />} />
             <Route path="/search" element={<SearchPage />} />
             <Route path="/assistant" element={<AssistantPage />} />
+            <Route
+              path="/vox"
+              element={
+                <Suspense fallback={<PageLoadingFallback />}>
+                  <VoxPage />
+                </Suspense>
+              }
+            />
             <Route
               path="/devices"
               element={

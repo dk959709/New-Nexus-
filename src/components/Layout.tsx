@@ -14,6 +14,7 @@ import {
   Settings,
   Smartphone,
   Sparkles,
+  Headphones,
 } from 'lucide-react';
 import { NavLink, Outlet } from 'react-router-dom';
 import { useState } from 'react';
@@ -25,6 +26,7 @@ const navItems = [
   { to: '/jarvis', label: '🤖 JARVIS', icon: Bot },
   { to: '/search', label: 'Web Search', icon: Search },
   { to: '/assistant', label: 'AI Assistant', icon: Sparkles },
+  { to: '/vox', label: '🎙️ Vox TTS', icon: Headphones },
   { to: '/devices', label: 'Devices', icon: Smartphone },
   { to: '/offline-ai', label: 'Offline AI', icon: Brain },
   { to: '/weather', label: 'Weather', icon: CloudSun },

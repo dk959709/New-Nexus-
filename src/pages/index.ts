@@ -11,3 +11,4 @@ export { DevicesPage } from './DevicesPage';
 export { JarvisPage } from './JarvisPage';
 export { OfflineAIPage } from './OfflineAIPage';
 export { TelegramPage } from './TelegramPage';
+export { VoxPage } from './VoxPage';

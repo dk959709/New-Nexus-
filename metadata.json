@@ -1,6 +1,6 @@
 {
   "name": "NEXUS Intelligence",
-  "description": "A unified platform for web search, weather intelligence, AI chat, space data, and offline AI models.",
-  "requestFramePermissions": ["geolocation"],
+  "description": "A unified platform for web search, weather intelligence, AI chat, Vox neural speech synthesis, space data, and offline AI models.",
+  "requestFramePermissions": ["geolocation", "microphone"],
   "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
 }

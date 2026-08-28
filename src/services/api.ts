@@ -566,5 +566,38 @@ export const api = {
       body: JSON.stringify({ url }),
     });
   },
+
+  generateTts(params: {
+    text: string;
+    model?: string;
+    apiKey?: string;
+    timeoutMs?: number;
+  }): Promise<{
+    ok: boolean;
+    audioUrl: string;
+    mimeType?: string;
+    model?: string;
+  }> {
+    return call('/api/tts/generate', {
+      method: 'POST',
+      body: JSON.stringify(params),
+    });
+  },
+
+  testTts(params?: {
+    apiKey?: string;
+    model?: string;
+  }): Promise<{
+    ok: boolean;
+    status?: number;
+    model?: string;
+    error?: string;
+    audioUrl?: string;
+  }> {
+    return call('/api/tts/test', {
+      method: 'POST',
+      body: JSON.stringify(params || {}),
+    });
+  },
 };
 
