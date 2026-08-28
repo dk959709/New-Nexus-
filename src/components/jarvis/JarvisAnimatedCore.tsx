@@ -1,4 +1,4 @@
-import { useState, useEffect, useId, useCallback } from 'react';
+import { useState, useEffect, useId, useMemo } from 'react';
 import { Sparkles, Cpu } from 'lucide-react';
 
 interface JarvisAnimatedCoreProps {
@@ -28,97 +28,28 @@ export function JarvisAnimatedCore({
   const radius = dim / 2;
   const coreRadius = radius * 0.36;
 
-  const [rotation, setRotation] = useState(0);
-  const [pulse, setPulse] = useState(1);
-  const [floatOffset, setFloatOffset] = useState(0);
-  const [corePulse, setCorePulse] = useState(1);
-  const [electricArcs, setElectricArcs] = useState<{ d: string; color: string; width: number; opacity: number }[]>([]);
-  const [telemetryValues, setTelemetryValues] = useState({ flux: '99.4%', freq: '438.2 THz', temp: '2.41 K', volt: '1.21 GV' });
+  const [telemetryValues, setTelemetryValues] = useState({
+    flux: '99.4%',
+    freq: '438.2 THz',
+    temp: '2.41 K',
+    volt: '1.21 GV',
+  });
   const uid = useId().replace(/:/g, '');
 
-  // Generate procedural electric lightning energy arcs inside the glass matrix
-  const generateArcs = useCallback((time: number, cR: number, cx: number, cy: number) => {
-    const arcCount = isBusy ? 6 : 4;
-    const arcs = [];
-    const colors = ['#00f5ff', '#38bdf8', '#a855f7', '#ff007f', '#ffffff'];
-
-    for (let i = 0; i < arcCount; i++) {
-      const angleStart = (time * 0.002 + i * ((Math.PI * 2) / arcCount)) % (Math.PI * 2);
-      const angleEnd = angleStart + (Math.PI * 0.6 + Math.sin(time * 0.005 + i) * 0.4);
-      
-      const r1 = cR * (0.2 + Math.sin(time * 0.004 + i * 2) * 0.15);
-      const r2 = cR * (0.75 + Math.cos(time * 0.003 + i) * 0.18);
-
-      const x1 = cx + Math.cos(angleStart) * r1;
-      const y1 = cy + Math.sin(angleStart) * r1;
-      const x2 = cx + Math.cos(angleEnd) * r2;
-      const y2 = cy + Math.sin(angleEnd) * r2;
-
-      // Jagged zig-zag lightning midpoint
-      const midAngle = (angleStart + angleEnd) / 2;
-      const midR = (r1 + r2) / 2 + (Math.sin(time * 0.015 + i * 5) * 12);
-      const mx = cx + Math.cos(midAngle) * midR;
-      const my = cy + Math.sin(midAngle) * midR;
-
-      const d = `M ${x1.toFixed(1)} ${y1.toFixed(1)} Q ${mx.toFixed(1)} ${my.toFixed(1)} ${x2.toFixed(1)} ${y2.toFixed(1)}`;
-      arcs.push({
-        d,
-        color: colors[i % colors.length],
-        width: i === 0 ? 2.2 : 1.4,
-        opacity: 0.65 + Math.sin(time * 0.01 + i) * 0.35,
-      });
-    }
-    return arcs;
-  }, [isBusy]);
-
-  // Continuous Zero-G Floating, Orbital Rotation, and Reactor Dynamics
+  // Lightweight, low-frequency telemetry text jitter (every 2.5s, no high-frequency re-renders)
   useEffect(() => {
     if (reducedMotion) return;
-
-    let animationFrameId: number;
-    let lastTime = performance.now();
-    let lastTelemetryUpdate = 0;
-
-    const animate = (time: number) => {
-      const delta = (time - lastTime) / 1000;
-      lastTime = time;
-
-      // Zero-G zero-gravity floating elevation
-      const floatY = Math.sin(time * 0.0016) * 6.5;
-      setFloatOffset(floatY);
-
-      // Orbital speed
-      const speed = isBusy ? 140 : isFocused ? 65 : 32;
-      setRotation((prev) => (prev + speed * delta) % 360);
-
-      // Breathing and resonance
-      const breatheRate = isBusy ? 4.2 : isFocused ? 2.8 : 1.6;
-      const mainBreathe = 1 + (isBusy ? 0.06 : 0.035) * Math.sin(time * 0.002 * breatheRate);
-      setPulse(mainBreathe);
-
-      const coreRes = 1 + 0.045 * Math.sin(time * 0.004 * breatheRate + Math.PI / 3);
-      setCorePulse(coreRes);
-
-      // Electric arcs trapped inside the glass sphere
-      setElectricArcs(generateArcs(time, coreRadius, radius, radius));
-
-      // Telemetry jitter every 350ms
-      if (time - lastTelemetryUpdate > 350) {
-        lastTelemetryUpdate = time;
-        setTelemetryValues({
-          flux: `${(98.8 + Math.sin(time * 0.001) * 1.1).toFixed(1)}%`,
-          freq: `${(438.0 + Math.sin(time * 0.002) * 4.2).toFixed(1)} THz`,
-          temp: `${(2.40 + Math.cos(time * 0.001) * 0.08).toFixed(2)} K`,
-          volt: '1.21 GV',
-        });
-      }
-
-      animationFrameId = requestAnimationFrame(animate);
-    };
-
-    animationFrameId = requestAnimationFrame(animate);
-    return () => cancelAnimationFrame(animationFrameId);
-  }, [isBusy, isFocused, reducedMotion, coreRadius, radius, generateArcs]);
+    const interval = setInterval(() => {
+      const now = Date.now();
+      setTelemetryValues({
+        flux: `${(98.8 + Math.sin(now * 0.001) * 1.1).toFixed(1)}%`,
+        freq: `${(438.0 + Math.sin(now * 0.002) * 4.2).toFixed(1)} THz`,
+        temp: `${(2.40 + Math.cos(now * 0.001) * 0.08).toFixed(2)} K`,
+        volt: '1.21 GV',
+      });
+    }, 2500);
+    return () => clearInterval(interval);
+  }, [reducedMotion]);
 
   // Derive status label
   const displayLabel =
@@ -153,42 +84,162 @@ export function JarvisAnimatedCore({
   const rRingTelemetry = radius * 0.68;
   const rRingInnerCode = radius * 0.54;
 
+  // Animation timing variables for pure GPU-accelerated CSS animations
+  const floatDuration = isBusy ? '2.4s' : '4.2s';
+  const pulseDuration = isBusy ? '1.8s' : '3.2s';
+  const ring1Speed = isBusy ? '5.1s' : isFocused ? '11s' : '22.5s';
+  const ring2Speed = isBusy ? '2.5s' : isFocused ? '5.5s' : '11.2s';
+  const ring3Speed = isBusy ? '1.9s' : isFocused ? '4.2s' : '8.6s';
+  const ring4Speed = isBusy ? '3.0s' : isFocused ? '6.5s' : '13.2s';
+  const lattice1Speed = isBusy ? '4.2s' : '18.7s';
+  const lattice2Speed = isBusy ? '2.8s' : '12.5s';
+
+  // Static high-fidelity electric arcs (rendered with CSS opacity/dash pulsing for zero JS recalculation)
+  const electricArcs = useMemo(() => {
+    const cR = coreRadius;
+    const cx = radius;
+    const cy = radius;
+    return [
+      {
+        d: `M ${(cx - cR * 0.4).toFixed(1)} ${(cy - cR * 0.5).toFixed(1)} Q ${(cx + cR * 0.1).toFixed(1)} ${(cy - cR * 0.1).toFixed(1)} ${(cx + cR * 0.5).toFixed(1)} ${(cy + cR * 0.4).toFixed(1)}`,
+        color: '#00f5ff',
+        width: 1.8,
+        delay: '0s',
+        duration: '1.2s',
+      },
+      {
+        d: `M ${(cx + cR * 0.4).toFixed(1)} ${(cy - cR * 0.45).toFixed(1)} Q ${(cx - cR * 0.15).toFixed(1)} ${(cy + cR * 0.1).toFixed(1)} ${(cx - cR * 0.45).toFixed(1)} ${(cy + cR * 0.45).toFixed(1)}`,
+        color: '#38bdf8',
+        width: 1.4,
+        delay: '0.4s',
+        duration: '1.6s',
+      },
+      {
+        d: `M ${(cx - cR * 0.5).toFixed(1)} ${(cy + cR * 0.1).toFixed(1)} Q ${(cx + cR * 0.2).toFixed(1)} ${(cy + cR * 0.3).toFixed(1)} ${(cx + cR * 0.45).toFixed(1)} ${(cy - cR * 0.2).toFixed(1)}`,
+        color: '#a855f7',
+        width: 1.5,
+        delay: '0.8s',
+        duration: '1.4s',
+      },
+      {
+        d: `M ${(cx - cR * 0.1).toFixed(1)} ${(cy - cR * 0.6).toFixed(1)} Q ${(cx + cR * 0.35).toFixed(1)} ${(cy).toFixed(1)} ${(cx - cR * 0.25).toFixed(1)} ${(cy + cR * 0.55).toFixed(1)}`,
+        color: '#ffffff',
+        width: 1.6,
+        delay: '0.2s',
+        duration: '1.8s',
+      },
+    ];
+  }, [coreRadius, radius]);
+
   return (
     <div
       className={`jarvis-sci-fi-reactor-container relative flex flex-col items-center justify-center select-none group ${
         interactive ? 'cursor-pointer' : ''
       }`}
       onClick={onClick}
-      style={{ minHeight: `${dim + 44}px` }}
+      style={{
+        minHeight: `${dim + 44}px`,
+        contain: 'layout style',
+        transform: 'translateZ(0)',
+      }}
       aria-label={`JARVIS AI Core Reactor: ${displayLabel}`}
       title="JARVIS Quantum Core Reactor - Zero-G Confinement Matrix"
     >
+      {/* Scoped CSS Keyframe Animations for 100% GPU-composited Smooth Transformations */}
+      <style>{`
+        @keyframes jarvisZeroGFloat_${uid} {
+          0%, 100% {
+            transform: translateY(-3.5px) translateZ(0);
+          }
+          50% {
+            transform: translateY(3.5px) translateZ(0);
+          }
+        }
+
+        @keyframes jarvisAtmospherePulse_${uid} {
+          0%, 100% {
+            transform: scale(0.96) translateZ(0);
+            opacity: 0.85;
+          }
+          50% {
+            transform: scale(1.04) translateZ(0);
+            opacity: 1;
+          }
+        }
+
+        @keyframes jarvisCoreResonance_${uid} {
+          0%, 100% {
+            transform: scale(0.96) translateZ(0);
+          }
+          50% {
+            transform: scale(1.04) translateZ(0);
+          }
+        }
+
+        @keyframes jarvisSpinCw_${uid} {
+          from {
+            transform: rotate(0deg);
+          }
+          to {
+            transform: rotate(360deg);
+          }
+        }
+
+        @keyframes jarvisSpinCcw_${uid} {
+          from {
+            transform: rotate(0deg);
+          }
+          to {
+            transform: rotate(-360deg);
+          }
+        }
+
+        @keyframes jarvisArcFlicker_${uid} {
+          0%, 100% {
+            opacity: 0.35;
+          }
+          25% {
+            opacity: 0.95;
+          }
+          50% {
+            opacity: 0.5;
+          }
+          75% {
+            opacity: 1;
+          }
+        }
+      `}</style>
+
       {/* ========================================================= */}
       {/* 1. CINEMATIC BACKGROUND ATMOSPHERE: NEON BLUE & DEEP VIOLET */}
       {/* ========================================================= */}
       <div
-        className="absolute rounded-full pointer-events-none transition-all duration-700"
+        className="absolute rounded-full pointer-events-none"
         style={{
-          width: `${dim * 1.5}px`,
-          height: `${dim * 1.5}px`,
+          width: `${dim * 1.4}px`,
+          height: `${dim * 1.4}px`,
           background: isBusy
-            ? 'radial-gradient(circle, rgba(0,245,255,0.4) 0%, rgba(124,58,237,0.35) 35%, rgba(76,29,149,0.3) 65%, rgba(6,4,23,0.1) 85%, transparent 100%)'
-            : 'radial-gradient(circle, rgba(0,245,255,0.28) 0%, rgba(124,58,237,0.22) 40%, rgba(76,29,149,0.18) 70%, transparent 100%)',
-          filter: `blur(${dim * 0.22}px)`,
-          opacity: 0.95,
-          transform: `translateY(${floatOffset * 0.6}px) scale(${pulse})`,
+            ? 'radial-gradient(circle, rgba(0,245,255,0.38) 0%, rgba(124,58,237,0.3) 35%, rgba(76,29,149,0.2) 65%, transparent 85%)'
+            : 'radial-gradient(circle, rgba(0,245,255,0.26) 0%, rgba(124,58,237,0.2) 40%, rgba(76,29,149,0.14) 70%, transparent 100%)',
+          filter: `blur(${Math.min(dim * 0.16, 40)}px)`,
+          opacity: 0.9,
+          willChange: 'transform, opacity',
+          transform: 'translateZ(0)',
+          animation: reducedMotion ? 'none' : `jarvisAtmospherePulse_${uid} ${pulseDuration} ease-in-out infinite`,
         }}
       />
 
       {/* Deep Violet Secondary Plasma Core Flare */}
       <div
-        className="absolute rounded-full pointer-events-none transition-all duration-500"
+        className="absolute rounded-full pointer-events-none"
         style={{
-          width: `${dim * 1.15}px`,
-          height: `${dim * 1.15}px`,
-          background: 'radial-gradient(circle, rgba(147,51,234,0.35) 0%, rgba(0,245,255,0.2) 50%, rgba(6,4,23,0) 80%)',
-          filter: `blur(${dim * 0.12}px)`,
-          transform: `translateY(${floatOffset * 0.8}px) scale(${corePulse})`,
+          width: `${dim * 1.1}px`,
+          height: `${dim * 1.1}px`,
+          background: 'radial-gradient(circle, rgba(147,51,234,0.32) 0%, rgba(0,245,255,0.18) 50%, rgba(6,4,23,0) 80%)',
+          filter: `blur(${Math.min(dim * 0.1, 24)}px)`,
+          willChange: 'transform',
+          transform: 'translateZ(0)',
+          animation: reducedMotion ? 'none' : `jarvisCoreResonance_${uid} ${pulseDuration} ease-in-out infinite`,
         }}
       />
 
@@ -200,7 +251,9 @@ export function JarvisAnimatedCore({
         style={{
           width: `${dim}px`,
           height: `${dim}px`,
-          transform: `translateY(${floatOffset}px) scale(${isFocused ? 1.03 : 1})`,
+          willChange: 'transform',
+          transform: `translateZ(0) scale(${isFocused ? 1.03 : 1})`,
+          animation: reducedMotion ? 'none' : `jarvisZeroGFloat_${uid} ${floatDuration} ease-in-out infinite`,
         }}
       >
         <svg
@@ -208,9 +261,10 @@ export function JarvisAnimatedCore({
           height={dim}
           viewBox={`0 0 ${dim} ${dim}`}
           className="overflow-visible"
+          style={{ willChange: 'transform', transform: 'translateZ(0)' }}
         >
           <defs>
-            {/* Core Reactor Plasma Radial Gradient: Stark Neon Blue -> Electric Cyan -> Deep Violet -> Cosmic Black */}
+            {/* Core Reactor Plasma Radial Gradient */}
             <radialGradient id={coreGradId} cx="36%" cy="32%" r="68%">
               <stop offset="0%" stopColor="#ffffff" stopOpacity="1" />
               <stop offset="12%" stopColor="#00f5ff" stopOpacity="1" />
@@ -260,20 +314,15 @@ export function JarvisAnimatedCore({
               <stop offset="100%" stopColor="#00f5ff" />
             </linearGradient>
 
-            {/* SVG Glow & Bloom Filters */}
-            <filter id={glowBloomId} x="-50%" y="-50%" width="200%" height="200%">
-              <feGaussianBlur in="SourceGraphic" stdDeviation="3.5" result="blur" />
+            {/* Optimized High-Performance SVG Bloom Filters (Tight Bounding Box & Single Pass) */}
+            <filter id={glowBloomId} x="-20%" y="-20%" width="140%" height="140%">
+              <feGaussianBlur in="SourceGraphic" stdDeviation="2.5" result="blur" />
               <feComposite in="SourceGraphic" in2="blur" operator="over" />
             </filter>
 
-            <filter id={intenseLaserBloomId} x="-60%" y="-60%" width="220%" height="220%">
-              <feGaussianBlur in="SourceGraphic" stdDeviation="7" result="blur1" />
-              <feGaussianBlur in="SourceGraphic" stdDeviation="2.5" result="blur2" />
-              <feMerge>
-                <feMergeNode in="blur1" />
-                <feMergeNode in="blur2" />
-                <feMergeNode in="SourceGraphic" />
-              </feMerge>
+            <filter id={intenseLaserBloomId} x="-20%" y="-20%" width="140%" height="140%">
+              <feGaussianBlur in="SourceGraphic" stdDeviation="3" result="blur" />
+              <feComposite in="SourceGraphic" in2="blur" operator="over" />
             </filter>
 
             {/* Circular TextPaths for Orbiting Digital Code */}
@@ -290,7 +339,6 @@ export function JarvisAnimatedCore({
           {/* ======================================================= */}
           {/* TECHNICAL BLUEPRINT OVERLAY & TELEMETRY RETICLES        */}
           {/* ======================================================= */}
-          {/* Blueprint Precision Crosshairs & Alignment Calipers */}
           <g opacity="0.45" stroke="#00f5ff" strokeWidth="0.8">
             {/* Center cross-axes */}
             <line x1={radius} y1="8" x2={radius} y2={dim - 8} strokeDasharray="3 6" />
@@ -336,7 +384,8 @@ export function JarvisAnimatedCore({
           <g
             style={{
               transformOrigin: `${radius}px ${radius}px`,
-              transform: `rotate(${rotation * 0.5}deg)`,
+              willChange: 'transform',
+              animation: reducedMotion ? 'none' : `jarvisSpinCw_${uid} ${ring1Speed} linear infinite`,
             }}
           >
             <circle
@@ -377,7 +426,8 @@ export function JarvisAnimatedCore({
           <g
             style={{
               transformOrigin: `${radius}px ${radius}px`,
-              transform: `rotate(${rotation}deg)`,
+              willChange: 'transform',
+              animation: reducedMotion ? 'none' : `jarvisSpinCw_${uid} ${ring2Speed} linear infinite`,
             }}
           >
             <circle
@@ -410,7 +460,8 @@ export function JarvisAnimatedCore({
           <g
             style={{
               transformOrigin: `${radius}px ${radius}px`,
-              transform: `rotate(-${rotation * 1.3}deg)`,
+              willChange: 'transform',
+              animation: reducedMotion ? 'none' : `jarvisSpinCcw_${uid} ${ring3Speed} linear infinite`,
             }}
           >
             <ellipse
@@ -448,7 +499,8 @@ export function JarvisAnimatedCore({
           <g
             style={{
               transformOrigin: `${radius}px ${radius}px`,
-              transform: `rotate(-${rotation * 0.85 + 40}deg)`,
+              willChange: 'transform',
+              animation: reducedMotion ? 'none' : `jarvisSpinCcw_${uid} ${ring4Speed} linear infinite`,
             }}
           >
             <ellipse
@@ -479,7 +531,13 @@ export function JarvisAnimatedCore({
           {/* ======================================================= */}
           {/* 3. SCI-FI AI REACTOR CORE SPHERE WITH GLASS MATRIX     */}
           {/* ======================================================= */}
-          <g style={{ transformOrigin: `${radius}px ${radius}px`, transform: `scale(${corePulse})` }}>
+          <g
+            style={{
+              transformOrigin: `${radius}px ${radius}px`,
+              willChange: 'transform',
+              animation: reducedMotion ? 'none' : `jarvisCoreResonance_${uid} ${pulseDuration} ease-in-out infinite`,
+            }}
+          >
             {/* Deep Violet / Electric Cyan Reactor Outer Core Confinement Aura */}
             <circle
               cx={radius}
@@ -511,7 +569,8 @@ export function JarvisAnimatedCore({
               opacity="0.85"
               style={{
                 transformOrigin: `${radius}px ${radius}px`,
-                transform: `rotate(${rotation * 0.6}deg)`,
+                willChange: 'transform',
+                animation: reducedMotion ? 'none' : `jarvisSpinCw_${uid} ${lattice1Speed} linear infinite`,
               }}
             />
 
@@ -526,7 +585,8 @@ export function JarvisAnimatedCore({
               opacity="0.8"
               style={{
                 transformOrigin: `${radius}px ${radius}px`,
-                transform: `rotate(-${rotation * 0.9}deg)`,
+                willChange: 'transform',
+                animation: reducedMotion ? 'none' : `jarvisSpinCcw_${uid} ${lattice2Speed} linear infinite`,
               }}
             />
 
@@ -542,8 +602,14 @@ export function JarvisAnimatedCore({
                 strokeWidth={arc.width}
                 strokeLinecap="round"
                 strokeLinejoin="round"
-                opacity={arc.opacity}
                 filter={`url(#${intenseLaserBloomId})`}
+                style={{
+                  willChange: 'opacity',
+                  animation: reducedMotion
+                    ? 'none'
+                    : `jarvisArcFlicker_${uid} ${arc.duration} ease-in-out infinite`,
+                  animationDelay: arc.delay,
+                }}
               />
             ))}
 

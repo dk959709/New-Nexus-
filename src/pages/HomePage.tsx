@@ -189,14 +189,20 @@ export function HomePage() {
                     interactive
                     onClick={() => {
                       playTapSound();
-                      executeSearch('Explain quantum computing');
+                      navigate('/jarvis');
                     }}
                   />
                 </div>
 
                 {/* Orbital Core Captions */}
-                <div className="text-center mt-2 space-y-1">
-                  <div className="text-xs font-bold tracking-widest text-cyan-300 uppercase">
+                <div
+                  className="text-center mt-2 space-y-1 cursor-pointer select-none"
+                  onClick={() => {
+                    playTapSound();
+                    navigate('/jarvis');
+                  }}
+                >
+                  <div className="text-xs font-bold tracking-widest text-cyan-300 uppercase hover:text-cyan-200 transition-colors">
                     JARVIS ORBITAL CORE
                   </div>
                   <div className="text-[11px] font-semibold text-emerald-400 flex items-center justify-center gap-1.5 tracking-wider">
