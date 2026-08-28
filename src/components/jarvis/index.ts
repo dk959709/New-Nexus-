@@ -13,3 +13,4 @@ export { JarvisImageGallery } from './JarvisImageGallery';
 export { JarvisPipelineHudTracker } from './JarvisPipelineHudTracker';
 export { JarvisTerminalDiagnosticLog } from './JarvisTerminalDiagnosticLog';
 export { JarvisCornerBrackets } from './JarvisCornerBrackets';
+export { JarvisDeepResearchMeshAnswers } from './JarvisDeepResearchMeshAnswers';

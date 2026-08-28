@@ -8,9 +8,15 @@ import {
   Layers,
   Sparkles,
   Trash2,
+  Zap,
 } from 'lucide-react';
 import { Link } from 'react-router-dom';
-import { JarvisSvgDiagram, JarvisChartCard } from '@/components/jarvis';
+import {
+  JarvisSvgDiagram,
+  JarvisChartCard,
+  JarvisDeepResearchMeshAnswers,
+  JarvisImageGallery,
+} from '@/components/jarvis';
 import { storage } from '@/lib/storage';
 import { playTapSound } from '@/lib/audio';
 
@@ -354,14 +360,36 @@ export function SavedPage() {
                   </div>
 
                   {/* Question / Title */}
-                  <h2 className="text-base sm:text-lg font-bold text-white mb-2 leading-snug">
+                  <h2 className="text-base sm:text-lg font-bold text-white mb-3 leading-snug">
                     {item.title}
                   </h2>
 
+                  {/* Multi-Agent Breakdown (Full individual agent answers in saved library) */}
+                  {item.steps && item.steps.length > 0 && (
+                    <JarvisDeepResearchMeshAnswers
+                      steps={item.steps}
+                      query={item.title}
+                      isDeepResearch={item.deepResearch}
+                    />
+                  )}
+
                   {/* Synthesized Answer Content */}
                   <div className="text-slate-200 text-sm sm:text-base leading-relaxed whitespace-pre-wrap font-sans">
+                    {(item.deepResearch || (item.steps && item.steps.some((s) => s.status === 'completed' && s.agentId !== 'finalSynthesizer'))) && (
+                      <div className="flex items-center gap-2 mb-3 pt-3 border-t border-purple-500/30">
+                        <div className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full bg-purple-500/20 border border-purple-400/40 text-xs font-mono font-bold text-purple-300 shadow-[0_0_10px_rgba(192,132,252,0.2)]">
+                          <Zap size={13} className="text-purple-400" />
+                          <span>JARVIS // UNIFIED FINAL SYNTHESIS</span>
+                        </div>
+                      </div>
+                    )}
                     {answerText}
                   </div>
+
+                  {/* Retrieved Real Photographic Media if present */}
+                  {item.images && item.images.length > 0 && (
+                    <JarvisImageGallery images={item.images} title={item.title} />
+                  )}
 
                   {/* Embedded Data Analyst Quantitative Chart if present */}
                   {item.chartData && (

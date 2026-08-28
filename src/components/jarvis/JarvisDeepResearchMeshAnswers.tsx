@@ -24,6 +24,7 @@ import { FormattedText } from './FormattedText';
 interface JarvisDeepResearchMeshAnswersProps {
   steps: JarvisExecutionStep[];
   query: string;
+  isDeepResearch?: boolean;
 }
 
 const AGENT_THEMES: Record<
@@ -276,6 +277,7 @@ function formatAgentContentToMarkdown(step: JarvisExecutionStep): {
 
 export const JarvisDeepResearchMeshAnswers: React.FC<JarvisDeepResearchMeshAnswersProps> = ({
   steps,
+  isDeepResearch = false,
 }) => {
   const [copiedStepIndex, setCopiedStepIndex] = useState<number | null>(null);
   const [rawViewMap, setRawViewMap] = useState<Record<number, boolean>>({});
@@ -303,7 +305,7 @@ export const JarvisDeepResearchMeshAnswers: React.FC<JarvisDeepResearchMeshAnswe
 
   return (
     <div className="mb-6 flex flex-col gap-4">
-      {/* Deep Research Section Banner */}
+      {/* Individual Agent Answers Section Banner */}
       <div className="relative p-3 sm:p-4 rounded-2xl bg-slate-950/80 border border-cyan-500/30 flex items-center justify-between flex-wrap gap-2 shadow-lg backdrop-blur-md">
         <div className="flex items-center gap-2.5">
           <div className="w-8 h-8 rounded-xl bg-cyan-500/20 border border-cyan-400/40 flex items-center justify-center text-cyan-300 shadow-[0_0_12px_rgba(97,215,201,0.3)]">
@@ -312,14 +314,18 @@ export const JarvisDeepResearchMeshAnswers: React.FC<JarvisDeepResearchMeshAnswe
           <div>
             <div className="flex items-center gap-2">
               <span className="text-xs font-mono font-bold tracking-wider text-cyan-300 uppercase">
-                DEEP RESEARCH // AGENT MESH FULL ANSWERS
+                {isDeepResearch
+                  ? 'DEEP RESEARCH // AGENT MESH FULL ANSWERS'
+                  : 'MULTI-AGENT INTELLIGENCE // INDIVIDUAL AGENT ANSWERS'}
               </span>
               <span className="px-2 py-0.5 rounded-full text-[10px] font-mono font-black bg-cyan-500/20 border border-cyan-400/40 text-cyan-300">
                 {agentSteps.length} AGENTS COMPLETED
               </span>
             </div>
             <p className="text-[11px] text-slate-400 m-0">
-              Unfiltered individual agent answers across the autonomous intelligence pipeline
+              {isDeepResearch
+                ? 'Unfiltered individual agent answers across the autonomous intelligence pipeline'
+                : 'Unfiltered individual agent answers from each pipeline specialist'}
             </p>
           </div>
         </div>

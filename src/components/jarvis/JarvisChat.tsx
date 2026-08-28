@@ -477,6 +477,9 @@ export function JarvisChat({ config, onOpenSettings }: JarvisChatProps) {
       savedAt: new Date(msg.timestamp || Date.now()).toISOString(),
       diagramSvg: msg.diagramSvg,
       chartData: msg.chartData,
+      steps: msg.steps,
+      deepResearch: msg.deepResearch,
+      images: msg.images,
     };
 
     const updated = storage.saveItem(jarvisSavedItem);
@@ -857,14 +860,18 @@ export function JarvisChat({ config, onOpenSettings }: JarvisChatProps) {
                     </div>
                   )}
 
-                  {/* Deep Research Multi-Agent Breakdown (Full individual agent answers in chat) */}
-                  {msg.deepResearch && msg.steps && msg.steps.length > 0 && (
-                    <JarvisDeepResearchMeshAnswers steps={msg.steps} query={msg.query} />
+                  {/* Multi-Agent Breakdown (Full individual agent answers in chat) */}
+                  {msg.steps && msg.steps.length > 0 && (
+                    <JarvisDeepResearchMeshAnswers
+                      steps={msg.steps}
+                      query={msg.query}
+                      isDeepResearch={msg.deepResearch}
+                    />
                   )}
 
                   {/* Synthesized Output Body */}
                   <div className="prose prose-invert max-w-none text-slate-100 leading-relaxed text-sm sm:text-base">
-                    {msg.deepResearch && (
+                    {(msg.deepResearch || (msg.steps && msg.steps.some((s) => s.status === 'completed' && s.agentId !== 'finalSynthesizer'))) && (
                       <div className="flex items-center gap-2 mb-3 pt-3 border-t border-purple-500/30">
                         <div className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full bg-purple-500/20 border border-purple-400/40 text-xs font-mono font-bold text-purple-300 shadow-[0_0_10px_rgba(192,132,252,0.2)]">
                           <Zap size={13} className="text-purple-400" />

@@ -107,6 +107,9 @@ export interface SavedItem {
   savedAt: string;
   diagramSvg?: string;
   chartData?: JarvisChartData | null;
+  steps?: JarvisExecutionStep[];
+  deepResearch?: boolean;
+  images?: JarvisImageResult[];
 }
 
 export type TemperatureUnit = 'celsius' | 'fahrenheit';
