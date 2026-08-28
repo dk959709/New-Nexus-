@@ -159,18 +159,28 @@ export const vox = {
 
   async synthesize(
     text: string,
-    options?: { model?: string; apiKey?: string; voice?: string },
+    options?: { model?: string; apiKey?: string; voice?: string; speed?: number },
   ): Promise<{ ok: boolean; audioUrl: string; mimeType?: string; model?: string }> {
     const settings = this.getSettings();
     const model = options?.model || settings.model || 'edge-tts';
-    const voice = options?.apiKey && options.apiKey.includes('Neural') ? options.apiKey : (settings.voice || 'en-US-AriaNeural');
-    const apiKey = model === 'edge-tts' ? undefined : (options?.apiKey || this.getApiKey() || undefined);
+    const speed = options?.speed ?? settings.speed ?? 1.0;
+    const rateVal = Math.round((speed - 1) * 100);
+    const rateStr = rateVal >= 0 ? `+${rateVal}%` : `${rateVal}%`;
+    const voice = options?.voice || (options?.apiKey && options.apiKey.includes('Neural') ? options.apiKey : (settings.voice || 'en-US-AriaNeural'));
 
+    if (model === 'edge-tts' || model.includes('Neural') || model.startsWith('en-')) {
+      return api.generateEdgeTts({
+        text,
+        voice: model === 'edge-tts' ? voice : model,
+        rate: rateStr,
+      });
+    }
+
+    const apiKey = options?.apiKey || this.getApiKey() || undefined;
     const res = await api.generateTts({
       text,
       model,
       apiKey,
-      voice: model === 'edge-tts' ? voice : undefined,
     });
 
     return res;
@@ -185,18 +195,14 @@ export const vox = {
 
     // 2. Synthesize audio via Edge TTS or Hugging Face
     const settings = this.getSettings();
-    const model = options?.model || settings.model || 'edge-tts';
     const speed = options?.speed ?? settings.speed ?? 1.0;
-    const voice = settings.voice || 'en-US-AriaNeural';
-    const apiKey = model === 'edge-tts' ? undefined : (options?.apiKey || this.getApiKey() || undefined);
 
     let res: { ok: boolean; audioUrl: string; mimeType?: string; model?: string };
     try {
-      res = await api.generateTts({
-        text,
-        model,
-        apiKey,
-        voice: model === 'edge-tts' ? voice : undefined,
+      res = await this.synthesize(text, {
+        model: options?.model,
+        apiKey: options?.apiKey,
+        speed,
       });
     } catch (err) {
       const error = err instanceof Error ? err : new Error(String(err));

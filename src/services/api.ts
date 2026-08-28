@@ -567,6 +567,24 @@ export const api = {
     });
   },
 
+  generateEdgeTts(params: {
+    text: string;
+    voice?: string;
+    rate?: string;
+    pitch?: string;
+    timeoutMs?: number;
+  }): Promise<{
+    ok: boolean;
+    audioUrl: string;
+    mimeType?: string;
+    model?: string;
+  }> {
+    return call('/api/tts/edge', {
+      method: 'POST',
+      body: JSON.stringify(params),
+    });
+  },
+
   generateTts(params: {
     text: string;
     model?: string;

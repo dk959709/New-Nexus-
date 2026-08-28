@@ -10,7 +10,6 @@ import os from 'node:os';
 import dns from 'node:dns';
 import { z } from 'zod';
 import { GoogleGenAI } from '@google/genai';
-import WebSocket from 'ws';
 import { checkYtDlpStatus, extractMediaWithYtDlp } from './ytdlp.js';
 
 const searchSchema = z.object({
@@ -4607,19 +4606,6 @@ async function startServer() {
     };
   }
 
-  function generateSecMsGec(): string {
-    try {
-      const TRUSTED_CLIENT_TOKEN = '6A5AA1D4EAFF4E9fb37e23d68491d6f4';
-      const WINDOWS_FILE_TIME_EPOCH = 116444736000000000n;
-      const nowTicks = BigInt(Math.floor(Date.now() / 1000)) * 10000000n + WINDOWS_FILE_TIME_EPOCH;
-      const roundedTicks = (nowTicks / 3000000000n) * 3000000000n;
-      const strToHash = roundedTicks.toString() + TRUSTED_CLIENT_TOKEN;
-      return crypto.createHash('sha256').update(strToHash).digest('hex').toUpperCase();
-    } catch {
-      return '';
-    }
-  }
-
   async function executeEdgeTts({
     text,
     voice = 'en-US-AriaNeural',
@@ -4651,119 +4637,117 @@ async function startServer() {
       return {
         ok: false,
         status: 400,
-        error: 'Text input for Edge TTS cannot be empty.',
+        error: 'Invalid TTS request: Text input cannot be empty.',
       };
     }
 
     const trimmedText = cleanText.slice(0, 3000);
     const targetVoice = voice.trim() || 'en-US-AriaNeural';
 
-    return new Promise((resolve) => {
-      const requestId = crypto.randomUUID().replace(/-/g, '');
-      const secMsGec = generateSecMsGec();
-      const wsUrl = `wss://speech.platform.bing.com/consumer/speech/synthesize/readaloud/edge/v1?TrustedClientToken=6A5AA1D4EAFF4E9fb37e23d68491d6f4${secMsGec ? `&Sec-MS-GEC=${secMsGec}&Sec-MS-GEC-Version=1` : ''}&ConnectionId=${requestId}`;
+    console.log('[EDGE-TTS] REST request received');
+    console.log(`[EDGE-TTS] voice: ${targetVoice}`);
+    console.log('[EDGE-TTS] generating audio');
 
-      let ws: WebSocket;
-      const audioChunks: Buffer[] = [];
+    const azureKey = process.env.AZURE_SPEECH_KEY || process.env.AZURE_API_KEY || process.env.MS_SPEECH_KEY;
+    const region = process.env.AZURE_SPEECH_REGION || 'eastus';
 
+    if (azureKey) {
       try {
-        ws = new WebSocket(wsUrl, {
-          headers: {
-            'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/130.0.0.0 Safari/537.36 Edg/130.0.0.0',
-            'Origin': 'chrome-extension://jdiccldimpdaikepblhoggempkgibbfl',
-            'Accept-Encoding': 'gzip, deflate, br',
-            'Accept-Language': 'en-US,en;q=0.9',
-          }
-        } as unknown as ConstructorParameters<typeof WebSocket>[1]);
-      } catch (err: unknown) {
-        return resolve({
-          ok: false,
-          status: 500,
-          error: `Edge TTS WebSocket connection error: ${err instanceof Error ? err.message : String(err)}`,
-        });
-      }
-
-      const timeoutId = setTimeout(() => {
-        try {
-          ws.close();
-        } catch {
-          // ignore close error
-        }
-        resolve({
-          ok: false,
-          status: 504,
-          error: 'Edge TTS synthesis timed out.',
-        });
-      }, timeoutMs);
-
-      ws.onopen = () => {
-        const timestamp = new Date().toISOString();
-        const configMessage = `X-Timestamp:${timestamp}\r\nContent-Type:application/json; charset=utf-8\r\nPath:speech.config\r\n\r\n{"context":{"synthesis":{"audio":{"metadataoptions":{"sentenceBoundaryEnabled":"false","wordBoundaryEnabled":"false"},"outputFormat":"audio-24khz-48kbitrate-mono-mp3"}}}}`;
-        ws.send(configMessage);
-
         const escapedText = escapeXml(trimmedText);
         const ssml = `<speak version='1.0' xmlns='http://www.w3.org/2001/10/synthesis' xml:lang='en-US'><voice name='${targetVoice}'><prosody rate='${rate}' pitch='${pitch}'>${escapedText}</prosody></voice></speak>`;
-        const ssmlMessage = `X-RequestId:${requestId}\r\nX-Timestamp:${timestamp}\r\nPath:ssml\r\nContent-Type:application/ssml+xml\r\n\r\n${ssml}`;
-        ws.send(ssmlMessage);
-      };
 
-      ws.onmessage = async (event: MessageEvent) => {
-        if (typeof event.data === 'string') {
-          if (event.data.includes('Path:turn.end')) {
-            clearTimeout(timeoutId);
-            try {
-              ws.close();
-            } catch {
-              // ignore close error
-            }
+        const controller = new AbortController();
+        const timeoutId = setTimeout(() => controller.abort(), timeoutMs);
+        const endpoint = `https://${region}.tts.speech.microsoft.com/cognitiveservices/v1`;
 
-            if (audioChunks.length === 0) {
-              return resolve({
-                ok: false,
-                status: 500,
-                error: 'Edge TTS returned empty audio stream.',
-              });
-            }
-
-            const completeBuffer = Buffer.concat(audioChunks);
-            const base64Audio = completeBuffer.toString('base64');
-            const audioUrl = `data:audio/mp3;base64,${base64Audio}`;
-
-            return resolve({
-              ok: true,
-              status: 200,
-              audioUrl,
-              mimeType: 'audio/mp3',
-              model: targetVoice,
-            });
-          }
-        } else if (event.data instanceof ArrayBuffer || Buffer.isBuffer(event.data)) {
-          const buf = Buffer.isBuffer(event.data) ? event.data : Buffer.from(event.data);
-          if (buf.length > 2) {
-            const headerLength = buf.readUInt16BE(0);
-            const audioData = buf.subarray(2 + headerLength);
-            if (audioData.length > 0) {
-              audioChunks.push(audioData);
-            }
-          }
-        }
-      };
-
-      ws.onerror = (err: unknown) => {
-        clearTimeout(timeoutId);
-        try {
-          ws.close();
-        } catch {
-          // ignore close error
-        }
-        const errObj = err as { message?: string };
-        resolve({
-          ok: false,
-          status: 500,
-          error: `Edge TTS WebSocket error: ${errObj?.message || 'Connection failed'}`,
+        const response = await fetch(endpoint, {
+          method: 'POST',
+          headers: {
+            'Ocp-Apim-Subscription-Key': azureKey,
+            'Content-Type': 'application/ssml+xml',
+            'X-Microsoft-OutputFormat': 'audio-24khz-48kbitrate-mono-mp3',
+            'User-Agent': 'NexusIntelligence-SpeechREST',
+          },
+          body: ssml,
+          signal: controller.signal,
         });
+        clearTimeout(timeoutId);
+
+        if (response.ok) {
+          const arrayBuffer = await response.arrayBuffer();
+          const base64Audio = Buffer.from(arrayBuffer).toString('base64');
+          console.log('[EDGE-TTS] success');
+          return {
+            ok: true,
+            status: 200,
+            audioUrl: `data:audio/mp3;base64,${base64Audio}`,
+            mimeType: 'audio/mp3',
+            model: targetVoice,
+          };
+        }
+
+        const st = response.status;
+        if (st === 401 || st === 403) {
+          return {
+            ok: false,
+            status: st,
+            error: 'Microsoft TTS authentication/configuration error',
+          };
+        }
+        if (st === 429) {
+          return {
+            ok: false,
+            status: 429,
+            error: 'TTS rate limit reached',
+          };
+        }
+        if (st >= 500) {
+          return {
+            ok: false,
+            status: st,
+            error: 'TTS service temporarily unavailable',
+          };
+        }
+        return {
+          ok: false,
+          status: st,
+          error: 'Invalid TTS request',
+        };
+      } catch (err: unknown) {
+        console.warn('[EDGE-TTS] Azure REST error, falling back to Hugging Face:', err);
+      }
+    }
+
+    // Fallback to Hugging Face TTS if Azure credentials are missing or REST call failed
+    console.log('[EDGE-TTS] Azure credentials (AZURE_SPEECH_KEY) not found or request failed. Falling back to Hugging Face TTS.');
+    try {
+      const hfRes = await executeHuggingFaceTts({
+        text: trimmedText,
+        model: 'facebook/mms-tts-eng',
+        timeoutMs,
+      });
+      if (hfRes.ok) {
+        console.log('[EDGE-TTS] success');
+        return {
+          ok: true,
+          status: 200,
+          audioUrl: hfRes.audioUrl,
+          mimeType: hfRes.mimeType || 'audio/wav',
+          model: 'facebook/mms-tts-eng (Fallback)',
+        };
+      }
+      return {
+        ok: false,
+        status: hfRes.status || 500,
+        error: hfRes.error || 'TTS service temporarily unavailable',
       };
-    });
+    } catch {
+      return {
+        ok: false,
+        status: 500,
+        error: 'TTS service temporarily unavailable',
+      };
+    }
   }
 
   function escapeXml(str: string): string {
@@ -4779,6 +4763,51 @@ async function startServer() {
     });
   }
 
+  // POST /api/tts/edge
+  app.post('/api/tts/edge', async (req, res) => {
+    const parsed = z
+      .object({
+        text: z.string().min(1).max(8000),
+        voice: z.string().optional(),
+        rate: z.string().optional(),
+        pitch: z.string().optional(),
+        timeoutMs: z.number().optional(),
+      })
+      .safeParse(req.body);
+
+    if (!parsed.success) {
+      return errorResponse(res, 400, 'Invalid TTS request');
+    }
+
+    const { text, voice, rate, pitch, timeoutMs } = parsed.data;
+
+    try {
+      const result = await executeEdgeTts({
+        text,
+        voice,
+        rate,
+        pitch,
+        timeoutMs,
+      });
+
+      if (!result.ok) {
+        return errorResponse(res, result.status || 500, result.error || 'TTS service temporarily unavailable');
+      }
+
+      return res.json({
+        data: {
+          ok: true,
+          audioUrl: result.audioUrl,
+          mimeType: result.mimeType,
+          model: result.model,
+        },
+      });
+    } catch (err: unknown) {
+      console.error('[EDGE-TTS] error:', err);
+      return errorResponse(res, 500, 'TTS service temporarily unavailable');
+    }
+  });
+
   // Generate TTS Audio via Hugging Face or Edge TTS
   app.post('/api/tts/generate', async (req, res) => {
     const parsed = z
@@ -4787,25 +4816,29 @@ async function startServer() {
         model: z.string().optional(),
         apiKey: z.string().optional(),
         voice: z.string().optional(),
+        rate: z.string().optional(),
+        pitch: z.string().optional(),
         timeoutMs: z.number().optional(),
       })
       .safeParse(req.body);
 
     if (!parsed.success) {
-      return errorResponse(res, 400, 'Valid text is required for TTS synthesis.');
+      return errorResponse(res, 400, 'Invalid TTS request');
     }
 
-    const { text, model, apiKey, voice, timeoutMs } = parsed.data;
+    const { text, model, apiKey, voice, rate, pitch, timeoutMs } = parsed.data;
 
     try {
       let result;
-      const isEdge = model === 'edge-tts' || (model && model.includes('Neural')) || (model && model.startsWith('en-'));
+      const isEdge = !model || model === 'edge-tts' || model.includes('Neural') || model.startsWith('en-');
       if (isEdge) {
-        const targetVoice = model === 'edge-tts' ? (voice || apiKey || 'en-US-AriaNeural') : model;
+        const targetVoice = model && model !== 'edge-tts' ? model : (voice || apiKey || 'en-US-AriaNeural');
         result = await executeEdgeTts({
           text,
           voice: targetVoice,
-          timeoutMs: timeoutMs || 25000,
+          rate,
+          pitch,
+          timeoutMs,
         });
       } else {
         result = await executeHuggingFaceTts({
@@ -4817,7 +4850,7 @@ async function startServer() {
       }
 
       if (!result.ok) {
-        return errorResponse(res, result.status || 500, result.error || 'TTS synthesis failed.');
+        return errorResponse(res, result.status || 500, result.error || 'TTS service temporarily unavailable');
       }
 
       return res.json({
@@ -4830,7 +4863,7 @@ async function startServer() {
       });
     } catch (err: unknown) {
       console.error('[Vox Server] TTS error:', err);
-      const msg = err instanceof Error ? err.message : 'Internal TTS server error';
+      const msg = err instanceof Error ? err.message : 'TTS service temporarily unavailable';
       return errorResponse(res, 500, msg);
     }
   });

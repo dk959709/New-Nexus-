@@ -32,7 +32,6 @@ export function AIProvidersSettings() {
   const [providersState, setProvidersState] = useState<AIProvidersState>(() =>
     storage.getAIProvidersState()
   );
-  const [voxSettings, setVoxSettings] = useState(() => storage.getVoxSettings());
   const [isEditing, setIsEditing] = useState(false);
   const [editingProvider, setEditingProvider] = useState<AIProviderConfig | null>(null);
   const [showKeySecretMap, setShowKeySecretMap] = useState<Record<string, boolean>>({});
@@ -54,15 +53,7 @@ export function AIProvidersSettings() {
     storage.saveAIProvidersState(newState);
   };
 
-  const handleSelectVoxProvider = (providerId: string) => {
-    const updated = { ...voxSettings, providerId };
-    setVoxSettings(updated);
-    storage.saveVoxSettings(updated);
-    setNotificationMessage(`Vox TTS provider updated to ${providerId}.`);
-    setTimeout(() => {
-      setNotificationMessage(null);
-    }, 3000);
-  };
+
 
   // Open modal/editor for a new provider
   const handleAddNew = () => {
@@ -490,73 +481,7 @@ export function AIProvidersSettings() {
         </div>
       </section>
 
-      {/* Vox Neural Speech (TTS) Provider Selection */}
-      <section
-        style={{
-          background: 'linear-gradient(135deg, rgba(14,31,39,0.8) 0%, rgba(18,22,40,0.85) 100%)',
-          border: '1px solid rgba(97,215,201,0.25)',
-          borderRadius: '16px',
-          padding: '24px',
-          display: 'flex',
-          justifyContent: 'space-between',
-          alignItems: 'center',
-          flexWrap: 'wrap',
-          gap: '20px',
-          boxShadow: '0 8px 32px rgba(0,0,0,0.4)',
-        }}
-      >
-        <div style={{ maxWidth: '600px' }}>
-          <div style={{ display: 'flex', alignItems: 'center', gap: '10px', marginBottom: '8px' }}>
-            <span
-              style={{
-                display: 'inline-flex',
-                alignItems: 'center',
-                justifyContent: 'center',
-                width: '26px',
-                height: '26px',
-                borderRadius: '6px',
-                background: 'rgba(97,215,201,0.15)',
-                color: 'var(--accent)',
-              }}
-            >
-              🎙️
-            </span>
-            <h2 style={{ margin: 0, fontSize: '17px', letterSpacing: '-0.02em' }}>
-              Vox Neural Speech (TTS) Provider
-            </h2>
-          </div>
-          <p style={{ margin: 0, color: 'var(--muted)', fontSize: '13px' }}>
-            Independent provider used exclusively for voice synthesis, audio generation, and voice calls. Does not affect assistant chat.
-          </p>
-        </div>
 
-        <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
-          <select
-            value={voxSettings.providerId || 'huggingface'}
-            onChange={(e) => handleSelectVoxProvider(e.target.value)}
-            aria-label="Vox TTS Provider"
-            style={{
-              background: 'rgba(10,22,28,0.85)',
-              color: '#fff',
-              border: '1px solid var(--accent)',
-              padding: '9px 14px',
-              borderRadius: '8px',
-              fontSize: '13px',
-              fontWeight: 600,
-              outline: 'none',
-              cursor: 'pointer',
-              boxShadow: '0 0 12px rgba(97,215,201,0.2)',
-            }}
-          >
-            <option value="huggingface">🎙️ Hugging Face (Default Vox TTS)</option>
-            {providersState.providers.map((p) => (
-              <option key={p.id} value={p.id}>
-                🔵 {p.name} ({p.model})
-              </option>
-            ))}
-          </select>
-        </div>
-      </section>
 
       {/* Provider Cards List */}
       <div>
@@ -1076,21 +1001,7 @@ export function AIProvidersSettings() {
               >
                 Groq Preset
               </button>
-              <button
-                type="button"
-                onClick={() => {
-                  setEditingProvider({
-                    ...editingProvider,
-                    name: 'Hugging Face (Vox TTS)',
-                    url: 'https://api-inference.huggingface.co/models/facebook/mms-tts-eng',
-                    model: 'facebook/mms-tts-eng',
-                  });
-                }}
-                className="secondary-button"
-                style={{ fontSize: '10px', padding: '4px 8px', borderRadius: '5px', borderColor: 'rgba(97,215,201,0.4)', color: 'var(--accent)' }}
-              >
-                🎙️ Hugging Face (Vox)
-              </button>
+
             </div>
           </div>
 
