@@ -19,7 +19,25 @@ function notifyPlaybackState(isPlaying: boolean, textSnippet?: string) {
   });
 }
 
+export const EDGE_TTS_VOICES = [
+  { id: 'en-US-AriaNeural', name: 'Aria (US - Female, Warm)', gender: 'Female' },
+  { id: 'en-US-AndrewNeural', name: 'Andrew (US - Male, Professional)', gender: 'Male' },
+  { id: 'en-US-JennyNeural', name: 'Jenny (US - Female, Friendly)', gender: 'Female' },
+  { id: 'en-US-GuyNeural', name: 'Guy (US - Male, Conversational)', gender: 'Male' },
+  { id: 'en-US-SteffanNeural', name: 'Steffan (US - Male)', gender: 'Male' },
+  { id: 'en-GB-SoniaNeural', name: 'Sonia (UK - Female)', gender: 'Female' },
+  { id: 'en-GB-RyanNeural', name: 'Ryan (UK - Male)', gender: 'Male' },
+  { id: 'en-AU-NatashaNeural', name: 'Natasha (Australia - Female)', gender: 'Female' },
+] as const;
+
 export const POPULAR_VOX_MODELS = [
+  {
+    id: 'edge-tts',
+    name: 'Microsoft Edge TTS (Zero-Key Neural)',
+    desc: 'Ultra-realistic Microsoft neural voices streaming instantly without API keys',
+    lang: 'English / Multilingual',
+    badge: 'Zero-Key & Fast',
+  },
   {
     id: 'facebook/mms-tts-eng',
     name: 'Meta MMS English (Recommended)',
@@ -93,6 +111,10 @@ export const vox = {
   },
 
   isConfigured(providerId?: string): boolean {
+    const settings = this.getSettings();
+    if (settings.model === 'edge-tts' || settings.model?.includes('Neural') || settings.model?.startsWith('en-') || providerId === 'edgetts') {
+      return true;
+    }
     const key = this.getApiKey(providerId);
     return Boolean(key && key.trim().length > 0);
   },
@@ -137,16 +159,18 @@ export const vox = {
 
   async synthesize(
     text: string,
-    options?: { model?: string; apiKey?: string },
+    options?: { model?: string; apiKey?: string; voice?: string },
   ): Promise<{ ok: boolean; audioUrl: string; mimeType?: string; model?: string }> {
     const settings = this.getSettings();
-    const model = options?.model || settings.model || 'facebook/mms-tts-eng';
-    const apiKey = options?.apiKey || this.getApiKey() || undefined;
+    const model = options?.model || settings.model || 'edge-tts';
+    const voice = options?.apiKey && options.apiKey.includes('Neural') ? options.apiKey : (settings.voice || 'en-US-AriaNeural');
+    const apiKey = model === 'edge-tts' ? undefined : (options?.apiKey || this.getApiKey() || undefined);
 
     const res = await api.generateTts({
       text,
       model,
       apiKey,
+      voice: model === 'edge-tts' ? voice : undefined,
     });
 
     return res;
@@ -159,11 +183,12 @@ export const vox = {
     // 1. Stop any currently active speech
     this.stop();
 
-    // 2. Synthesize audio via Hugging Face Inference API
+    // 2. Synthesize audio via Edge TTS or Hugging Face
     const settings = this.getSettings();
-    const model = options?.model || settings.model || 'facebook/mms-tts-eng';
+    const model = options?.model || settings.model || 'edge-tts';
     const speed = options?.speed ?? settings.speed ?? 1.0;
-    const apiKey = options?.apiKey || this.getApiKey() || undefined;
+    const voice = settings.voice || 'en-US-AriaNeural';
+    const apiKey = model === 'edge-tts' ? undefined : (options?.apiKey || this.getApiKey() || undefined);
 
     let res: { ok: boolean; audioUrl: string; mimeType?: string; model?: string };
     try {
@@ -171,6 +196,7 @@ export const vox = {
         text,
         model,
         apiKey,
+        voice: model === 'edge-tts' ? voice : undefined,
       });
     } catch (err) {
       const error = err instanceof Error ? err : new Error(String(err));

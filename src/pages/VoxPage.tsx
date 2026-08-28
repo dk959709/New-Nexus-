@@ -13,7 +13,7 @@ import {
   Download,
 } from 'lucide-react';
 import { useNavigate } from 'react-router-dom';
-import { vox, POPULAR_VOX_MODELS } from '@/services/vox';
+import { vox, POPULAR_VOX_MODELS, EDGE_TTS_VOICES } from '@/services/vox';
 import { VoiceCallModal } from '@/components/vox/VoiceCallModal';
 import { playTapSound } from '@/lib/audio';
 import { storage } from '@/lib/storage';
@@ -322,6 +322,32 @@ export function VoxPage() {
                 })}
               </div>
             </div>
+
+            {/* Edge TTS Voice Selector (shown when Edge TTS is active) */}
+            {settings.model === 'edge-tts' && (
+              <div className="space-y-2 pt-2 border-t border-cyan-500/20">
+                <label className="text-xs font-mono text-cyan-300 uppercase tracking-wider flex items-center justify-between">
+                  <span>Microsoft Neural Voice:</span>
+                  <span className="text-[10px] text-slate-400">Zero-Key Edge Stream</span>
+                </label>
+                <select
+                  value={settings.voice || 'en-US-AriaNeural'}
+                  onChange={(e) => {
+                    playTapSound();
+                    const updated = { ...settings, voice: e.target.value };
+                    setSettings(updated);
+                    vox.saveSettings(updated);
+                  }}
+                  className="w-full p-3 rounded-xl bg-slate-950/90 border border-cyan-500/45 focus:border-cyan-400 text-cyan-200 text-xs font-mono focus:outline-none transition-all cursor-pointer"
+                >
+                  {EDGE_TTS_VOICES.map((v) => (
+                    <option key={v.id} value={v.id} className="bg-slate-950 text-white">
+                      {v.name} ({v.gender})
+                    </option>
+                  ))}
+                </select>
+              </div>
+            )}
 
             {/* Custom Model ID Input */}
             <div className="space-y-1.5 pt-2 border-t border-white/5">

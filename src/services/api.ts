@@ -571,6 +571,7 @@ export const api = {
     text: string;
     model?: string;
     apiKey?: string;
+    voice?: string;
     timeoutMs?: number;
   }): Promise<{
     ok: boolean;
@@ -587,6 +588,7 @@ export const api = {
   testTts(params?: {
     apiKey?: string;
     model?: string;
+    voice?: string;
   }): Promise<{
     ok: boolean;
     status?: number;

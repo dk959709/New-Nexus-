@@ -10,6 +10,7 @@ import os from 'node:os';
 import dns from 'node:dns';
 import { z } from 'zod';
 import { GoogleGenAI } from '@google/genai';
+import WebSocket from 'ws';
 import { checkYtDlpStatus, extractMediaWithYtDlp } from './ytdlp.js';
 
 const searchSchema = z.object({
@@ -4606,13 +4607,186 @@ async function startServer() {
     };
   }
 
-  // Generate TTS Audio via Hugging Face Inference API
+  function generateSecMsGec(): string {
+    try {
+      const TRUSTED_CLIENT_TOKEN = '6A5AA1D4EAFF4E9fb37e23d68491d6f4';
+      const WINDOWS_FILE_TIME_EPOCH = 116444736000000000n;
+      const nowTicks = BigInt(Math.floor(Date.now() / 1000)) * 10000000n + WINDOWS_FILE_TIME_EPOCH;
+      const roundedTicks = (nowTicks / 3000000000n) * 3000000000n;
+      const strToHash = roundedTicks.toString() + TRUSTED_CLIENT_TOKEN;
+      return crypto.createHash('sha256').update(strToHash).digest('hex').toUpperCase();
+    } catch {
+      return '';
+    }
+  }
+
+  async function executeEdgeTts({
+    text,
+    voice = 'en-US-AriaNeural',
+    rate = '+0%',
+    pitch = '+0%',
+    timeoutMs = 25000,
+  }: {
+    text: string;
+    voice?: string;
+    rate?: string;
+    pitch?: string;
+    timeoutMs?: number;
+  }): Promise<{
+    ok: boolean;
+    audioUrl?: string;
+    mimeType?: string;
+    model?: string;
+    status?: number;
+    error?: string;
+  }> {
+    const cleanText = text
+      .replace(/```[\s\S]*?```/g, ' ')
+      .replace(/[*#`_~>[\]()]/g, ' ')
+      .replace(/https?:\/\/\S+/g, ' ')
+      .replace(/\s+/g, ' ')
+      .trim();
+
+    if (!cleanText) {
+      return {
+        ok: false,
+        status: 400,
+        error: 'Text input for Edge TTS cannot be empty.',
+      };
+    }
+
+    const trimmedText = cleanText.slice(0, 3000);
+    const targetVoice = voice.trim() || 'en-US-AriaNeural';
+
+    return new Promise((resolve) => {
+      const requestId = crypto.randomUUID().replace(/-/g, '');
+      const secMsGec = generateSecMsGec();
+      const wsUrl = `wss://speech.platform.bing.com/consumer/speech/synthesize/readaloud/edge/v1?TrustedClientToken=6A5AA1D4EAFF4E9fb37e23d68491d6f4${secMsGec ? `&Sec-MS-GEC=${secMsGec}&Sec-MS-GEC-Version=1` : ''}&ConnectionId=${requestId}`;
+
+      let ws: WebSocket;
+      const audioChunks: Buffer[] = [];
+
+      try {
+        ws = new WebSocket(wsUrl, {
+          headers: {
+            'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/130.0.0.0 Safari/537.36 Edg/130.0.0.0',
+            'Origin': 'chrome-extension://jdiccldimpdaikepblhoggempkgibbfl',
+            'Accept-Encoding': 'gzip, deflate, br',
+            'Accept-Language': 'en-US,en;q=0.9',
+          }
+        } as unknown as ConstructorParameters<typeof WebSocket>[1]);
+      } catch (err: unknown) {
+        return resolve({
+          ok: false,
+          status: 500,
+          error: `Edge TTS WebSocket connection error: ${err instanceof Error ? err.message : String(err)}`,
+        });
+      }
+
+      const timeoutId = setTimeout(() => {
+        try {
+          ws.close();
+        } catch {
+          // ignore close error
+        }
+        resolve({
+          ok: false,
+          status: 504,
+          error: 'Edge TTS synthesis timed out.',
+        });
+      }, timeoutMs);
+
+      ws.onopen = () => {
+        const timestamp = new Date().toISOString();
+        const configMessage = `X-Timestamp:${timestamp}\r\nContent-Type:application/json; charset=utf-8\r\nPath:speech.config\r\n\r\n{"context":{"synthesis":{"audio":{"metadataoptions":{"sentenceBoundaryEnabled":"false","wordBoundaryEnabled":"false"},"outputFormat":"audio-24khz-48kbitrate-mono-mp3"}}}}`;
+        ws.send(configMessage);
+
+        const escapedText = escapeXml(trimmedText);
+        const ssml = `<speak version='1.0' xmlns='http://www.w3.org/2001/10/synthesis' xml:lang='en-US'><voice name='${targetVoice}'><prosody rate='${rate}' pitch='${pitch}'>${escapedText}</prosody></voice></speak>`;
+        const ssmlMessage = `X-RequestId:${requestId}\r\nX-Timestamp:${timestamp}\r\nPath:ssml\r\nContent-Type:application/ssml+xml\r\n\r\n${ssml}`;
+        ws.send(ssmlMessage);
+      };
+
+      ws.onmessage = async (event: MessageEvent) => {
+        if (typeof event.data === 'string') {
+          if (event.data.includes('Path:turn.end')) {
+            clearTimeout(timeoutId);
+            try {
+              ws.close();
+            } catch {
+              // ignore close error
+            }
+
+            if (audioChunks.length === 0) {
+              return resolve({
+                ok: false,
+                status: 500,
+                error: 'Edge TTS returned empty audio stream.',
+              });
+            }
+
+            const completeBuffer = Buffer.concat(audioChunks);
+            const base64Audio = completeBuffer.toString('base64');
+            const audioUrl = `data:audio/mp3;base64,${base64Audio}`;
+
+            return resolve({
+              ok: true,
+              status: 200,
+              audioUrl,
+              mimeType: 'audio/mp3',
+              model: targetVoice,
+            });
+          }
+        } else if (event.data instanceof ArrayBuffer || Buffer.isBuffer(event.data)) {
+          const buf = Buffer.isBuffer(event.data) ? event.data : Buffer.from(event.data);
+          if (buf.length > 2) {
+            const headerLength = buf.readUInt16BE(0);
+            const audioData = buf.subarray(2 + headerLength);
+            if (audioData.length > 0) {
+              audioChunks.push(audioData);
+            }
+          }
+        }
+      };
+
+      ws.onerror = (err: unknown) => {
+        clearTimeout(timeoutId);
+        try {
+          ws.close();
+        } catch {
+          // ignore close error
+        }
+        const errObj = err as { message?: string };
+        resolve({
+          ok: false,
+          status: 500,
+          error: `Edge TTS WebSocket error: ${errObj?.message || 'Connection failed'}`,
+        });
+      };
+    });
+  }
+
+  function escapeXml(str: string): string {
+    return str.replace(/[<>&'"]/g, (c) => {
+      switch (c) {
+        case '<': return '&lt;';
+        case '>': return '&gt;';
+        case '&': return '&amp;';
+        case '\'': return '&apos;';
+        case '"': return '&quot;';
+        default: return c;
+      }
+    });
+  }
+
+  // Generate TTS Audio via Hugging Face or Edge TTS
   app.post('/api/tts/generate', async (req, res) => {
     const parsed = z
       .object({
         text: z.string().min(1).max(8000),
         model: z.string().optional(),
         apiKey: z.string().optional(),
+        voice: z.string().optional(),
         timeoutMs: z.number().optional(),
       })
       .safeParse(req.body);
@@ -4621,15 +4795,26 @@ async function startServer() {
       return errorResponse(res, 400, 'Valid text is required for TTS synthesis.');
     }
 
-    const { text, model, apiKey, timeoutMs } = parsed.data;
+    const { text, model, apiKey, voice, timeoutMs } = parsed.data;
 
     try {
-      const result = await executeHuggingFaceTts({
-        text,
-        model,
-        apiKey,
-        timeoutMs,
-      });
+      let result;
+      const isEdge = model === 'edge-tts' || (model && model.includes('Neural')) || (model && model.startsWith('en-'));
+      if (isEdge) {
+        const targetVoice = model === 'edge-tts' ? (voice || apiKey || 'en-US-AriaNeural') : model;
+        result = await executeEdgeTts({
+          text,
+          voice: targetVoice,
+          timeoutMs: timeoutMs || 25000,
+        });
+      } else {
+        result = await executeHuggingFaceTts({
+          text,
+          model,
+          apiKey,
+          timeoutMs,
+        });
+      }
 
       if (!result.ok) {
         return errorResponse(res, result.status || 500, result.error || 'TTS synthesis failed.');
@@ -4650,24 +4835,33 @@ async function startServer() {
     }
   });
 
-  // Test Hugging Face Connection for Vox TTS
+  // Test TTS Connection for Vox
   app.post('/api/tts/test', async (req, res) => {
     const parsed = z
       .object({
         apiKey: z.string().optional(),
         model: z.string().optional(),
+        voice: z.string().optional(),
       })
       .safeParse(req.body);
 
     const apiKey = parsed.success ? parsed.data.apiKey : undefined;
     const model = parsed.success ? parsed.data.model : undefined;
+    const voice = parsed.success ? parsed.data.voice : undefined;
 
-    const result = await executeHuggingFaceTts({
-      text: 'NEXUS Vox neural speech synthesis online.',
-      model: model || 'facebook/mms-tts-eng',
-      apiKey,
-      timeoutMs: 20000,
-    });
+    const isEdge = model === 'edge-tts' || (model && model.includes('Neural')) || (model && model.startsWith('en-'));
+    const result = isEdge
+      ? await executeEdgeTts({
+          text: 'NEXUS Vox Edge TTS neural speech online.',
+          voice: model === 'edge-tts' ? (voice || 'en-US-AriaNeural') : model,
+          timeoutMs: 20000,
+        })
+      : await executeHuggingFaceTts({
+          text: 'NEXUS Vox neural speech synthesis online.',
+          model: model || 'facebook/mms-tts-eng',
+          apiKey,
+          timeoutMs: 20000,
+        });
 
     return res.json({
       data: {
