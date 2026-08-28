@@ -4,6 +4,8 @@ import {
   RefreshCw,
   Thermometer,
   Zap,
+  Trash2,
+  Check,
 } from 'lucide-react';
 import { NexusWorldMapTelemetry } from './NexusWorldMapTelemetry';
 import { formatTemp } from '@/lib/format';
@@ -27,6 +29,9 @@ interface LogLine {
   type: 'system' | 'telemetry' | 'network' | 'warning' | 'user' | 'assistant';
 }
 
+const CHAT_STORAGE_KEY = 'nexus-terminal-inline-chat-v1';
+const MAX_STORED_MESSAGES = 30;
+
 function getWeatherEmoji(condition?: string, isDay: boolean = true): string {
   if (!condition) return '☀️';
   const c = condition.toLowerCase();
@@ -46,6 +51,82 @@ function getCurrentTimestamp(): string {
   return `${pad(now.getHours())}:${pad(now.getMinutes())}:${pad(now.getSeconds())}`;
 }
 
+function getStaticBootLogs(): LogLine[] {
+  const now = new Date();
+  const pad = (n: number) => String(n).padStart(2, '0');
+  const timeAt = (offsetSecondsAgo: number) => {
+    const d = new Date(now.getTime() - offsetSecondsAgo * 1000);
+    return `${pad(d.getHours())}:${pad(d.getMinutes())}:${pad(d.getSeconds())}`;
+  };
+
+  return [
+    {
+      id: 'log-sys-1',
+      timestamp: timeAt(180),
+      text: 'neural index online • AI core calibrated',
+      type: 'system',
+    },
+    {
+      id: 'log-sys-2',
+      timestamp: timeAt(145),
+      text: 'quantum satellite telemetry array synchronized',
+      type: 'telemetry',
+    },
+    {
+      id: 'log-sys-3',
+      timestamp: timeAt(110),
+      text: 'global mesh data links: 128 nodes active [latency: 14ms]',
+      type: 'network',
+    },
+    {
+      id: 'log-sys-4',
+      timestamp: timeAt(75),
+      text: 'sources verified: wiki • web • live news wire • media',
+      type: 'telemetry',
+    },
+    {
+      id: 'log-sys-5',
+      timestamp: timeAt(30),
+      text: 'cognitive reasoning assistant ready for inline interaction',
+      type: 'system',
+    },
+  ];
+}
+
+function loadStoredChat(): LogLine[] {
+  try {
+    const raw = localStorage.getItem(CHAT_STORAGE_KEY);
+    if (!raw) return [];
+    const parsed = JSON.parse(raw);
+    if (Array.isArray(parsed)) {
+      return parsed
+        .slice(-MAX_STORED_MESSAGES)
+        .filter((l): l is LogLine =>
+          Boolean(
+            l &&
+              typeof l.id === 'string' &&
+              typeof l.text === 'string' &&
+              (l.type === 'user' || l.type === 'assistant' || l.type === 'warning')
+          )
+        );
+    }
+  } catch (err) {
+    console.warn('Failed to parse terminal chat history from localStorage', err);
+  }
+  return [];
+}
+
+function saveStoredChat(logsToSave: LogLine[]) {
+  try {
+    const chatOnly = logsToSave
+      .filter((l) => l.type === 'user' || l.type === 'assistant' || l.type === 'warning')
+      .slice(-MAX_STORED_MESSAGES);
+    localStorage.setItem(CHAT_STORAGE_KEY, JSON.stringify(chatOnly));
+  } catch (err) {
+    console.warn('Failed to save terminal chat history to localStorage', err);
+  }
+}
+
 export function NexusTerminalOutput({
   weather,
   settings,
@@ -55,49 +136,24 @@ export function NexusTerminalOutput({
 }: NexusTerminalOutputProps) {
   const [showWeatherDetail, setShowWeatherDetail] = useState(false);
   const [isAiResponding, setIsAiResponding] = useState(false);
-  const [chatHistory, setChatHistory] = useState<Array<{ role: 'user' | 'assistant'; content: string }>>([]);
+  const [showClearToast, setShowClearToast] = useState(false);
 
-  // Terminal log lines (boot diagnostics + live inline conversation)
+  // Initialize chat history context for multi-turn inline dialogue
+  const [chatHistory, setChatHistory] = useState<Array<{ role: 'user' | 'assistant'; content: string }>>(() => {
+    const saved = loadStoredChat();
+    return saved
+      .filter((l) => l.type === 'user' || l.type === 'assistant')
+      .map((l) => ({
+        role: l.type === 'user' ? ('user' as const) : ('assistant' as const),
+        content: l.text,
+      }));
+  });
+
+  // Terminal log lines (boot diagnostics + loaded persisted chat conversation)
   const [logs, setLogs] = useState<LogLine[]>(() => {
-    const now = new Date();
-    const pad = (n: number) => String(n).padStart(2, '0');
-    const timeAt = (offsetSecondsAgo: number) => {
-      const d = new Date(now.getTime() - offsetSecondsAgo * 1000);
-      return `${pad(d.getHours())}:${pad(d.getMinutes())}:${pad(d.getSeconds())}`;
-    };
-
-    return [
-      {
-        id: 'log-sys-1',
-        timestamp: timeAt(180),
-        text: 'neural index online • AI core calibrated',
-        type: 'system',
-      },
-      {
-        id: 'log-sys-2',
-        timestamp: timeAt(145),
-        text: 'quantum satellite telemetry array synchronized',
-        type: 'telemetry',
-      },
-      {
-        id: 'log-sys-3',
-        timestamp: timeAt(110),
-        text: 'global mesh data links: 128 nodes active [latency: 14ms]',
-        type: 'network',
-      },
-      {
-        id: 'log-sys-4',
-        timestamp: timeAt(75),
-        text: 'sources verified: wiki • web • live news wire • media',
-        type: 'telemetry',
-      },
-      {
-        id: 'log-sys-5',
-        timestamp: timeAt(30),
-        text: 'cognitive reasoning assistant ready for inline interaction',
-        type: 'system',
-      },
-    ];
+    const bootLogs = getStaticBootLogs();
+    const savedChatLogs = loadStoredChat();
+    return [...bootLogs, ...savedChatLogs];
   });
 
   const logContainerRef = useRef<HTMLDivElement>(null);
@@ -126,11 +182,15 @@ export function NexusTerminalOutput({
       type: 'user',
     };
 
-    setLogs((prev) => [...prev, userLog]);
+    setLogs((prev) => {
+      const updated = [...prev, userLog];
+      saveStoredChat(updated);
+      return updated;
+    });
     setIsAiResponding(true);
 
     try {
-      // Send message to the single AI Assistant (fast model response)
+      // Send message to the single AI Assistant (fast model response) with recent context
       const res = await api.aiChat(
         cleanPrompt,
         chatHistory.slice(-6),
@@ -148,9 +208,14 @@ export function NexusTerminalOutput({
         type: 'assistant',
       };
 
-      setLogs((prev) => [...prev, assistantLog]);
+      setLogs((prev) => {
+        const updated = [...prev, assistantLog];
+        saveStoredChat(updated);
+        return updated;
+      });
+
       setChatHistory((prev) => [
-        ...prev,
+        ...prev.slice(-MAX_STORED_MESSAGES + 2),
         { role: 'user', content: cleanPrompt },
         { role: 'assistant', content: replyText },
       ]);
@@ -166,10 +231,31 @@ export function NexusTerminalOutput({
         type: 'warning',
       };
 
-      setLogs((prev) => [...prev, errorLog]);
+      setLogs((prev) => {
+        const updated = [...prev, errorLog];
+        saveStoredChat(updated);
+        return updated;
+      });
     } finally {
       setIsAiResponding(false);
     }
+  };
+
+  // Clear only the user/AI chat messages while preserving static system diagnostics
+  const handleClearChat = () => {
+    try {
+      localStorage.removeItem(CHAT_STORAGE_KEY);
+    } catch (err) {
+      console.warn('Failed to clear terminal chat storage', err);
+    }
+
+    setChatHistory([]);
+    setLogs((prev) => prev.filter((l) => l.type !== 'user' && l.type !== 'assistant' && l.type !== 'warning'));
+
+    setShowClearToast(true);
+    setTimeout(() => {
+      setShowClearToast(false);
+    }, 2200);
   };
 
   // Weather variables
@@ -180,6 +266,8 @@ export function NexusTerminalOutput({
   const tempUnit = settings?.temperature || 'celsius';
   const formattedTemp = tempVal != null ? formatTemp(tempVal, tempUnit) : '22°C';
   const locName = weather?.location?.name || 'Station Nexus';
+
+  const hasChatMessages = logs.some((l) => l.type === 'user' || l.type === 'assistant' || l.type === 'warning');
 
   return (
     <section
@@ -204,8 +292,32 @@ export function NexusTerminalOutput({
           </span>
         </div>
 
-        {/* Right Controls: Tiny Weather Popup Widget + Terminal Traffic Dots */}
-        <div className="flex items-center gap-3">
+        {/* Right Controls: Clear Chat + Weather Popup Widget + Terminal Traffic Dots */}
+        <div className="flex items-center gap-2.5 sm:gap-3">
+          {/* Quick Clear Chat Confirmation Toast Badge */}
+          {showClearToast && (
+            <div className="flex items-center gap-1 px-2 py-1 rounded-lg bg-emerald-950/80 border border-emerald-500/50 text-[10px] font-mono text-emerald-300 shadow-[0_0_12px_rgba(16,185,129,0.3)] animate-in fade-in zoom-in-95 duration-150">
+              <Check size={11} className="text-emerald-400" />
+              <span>CHAT CLEARED</span>
+            </div>
+          )}
+
+          {/* Clear Chat Button */}
+          {hasChatMessages && !showClearToast && (
+            <button
+              type="button"
+              onClick={handleClearChat}
+              title="Clear inline chat history"
+              aria-label="Clear inline chat history"
+              className="flex items-center gap-1.5 px-2.5 py-1 rounded-lg bg-slate-950/90 border border-slate-700/60 hover:border-rose-500/50 text-slate-400 hover:text-rose-300 hover:bg-rose-500/10 hover:shadow-[0_0_12px_rgba(244,63,94,0.25)] text-[11px] font-mono transition-all select-none active:scale-95 cursor-pointer"
+            >
+              <Trash2 size={12} />
+              <span className="hidden sm:inline text-[10px] font-semibold uppercase tracking-wider">
+                CLEAR CHAT
+              </span>
+            </button>
+          )}
+
           {/* Tiny Weather Popup / Widget */}
           <div
             className="relative cursor-pointer select-none group"
@@ -397,3 +509,4 @@ export function NexusTerminalOutput({
     </section>
   );
 }
+
