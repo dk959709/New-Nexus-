@@ -77,13 +77,14 @@ export function HomePage() {
       <MeteorShower reduced={settings.animations === 'reduced'} />
       <div className="space-content-wrapper relative">
         {/* Floating colorful ambient live aurora background orbs */}
-        <div className="absolute top-10 left-1/4 w-96 h-96 bg-cyan-500/10 rounded-full blur-[120px] pointer-events-none animate-pulse" />
-        <div className="absolute top-40 right-10 w-80 h-80 bg-purple-500/10 rounded-full blur-[100px] pointer-events-none animate-pulse" style={{ animationDuration: '7s' }} />
+        <div className="absolute top-10 left-1/4 w-96 h-96 bg-cyan-500/15 rounded-full blur-[120px] pointer-events-none animate-pulse" />
+        <div className="absolute top-40 right-10 w-80 h-80 bg-purple-500/15 rounded-full blur-[100px] pointer-events-none animate-pulse" style={{ animationDuration: '7s' }} />
+        <div className="absolute top-96 left-10 w-72 h-72 bg-emerald-500/10 rounded-full blur-[110px] pointer-events-none animate-pulse" style={{ animationDuration: '9s' }} />
 
         {/* ================================================== */}
         {/* TOP OF WEBSITE: NEXUS INTELLIGENT HERO            */}
         {/* ================================================== */}
-        <div className="hero-wrap relative z-10 mb-6 sm:mb-8 w-full max-w-5xl">
+        <div className="hero-wrap relative z-10 mb-4 sm:mb-6 w-full max-w-5xl">
           <div className="hero-aurora-glow" aria-hidden="true" />
           
           <div className="relative py-2">
@@ -103,7 +104,7 @@ export function HomePage() {
         </div>
 
         {/* ================================================== */}
-        {/* JARVIS INTELLIGENT SEARCH CORE                    */}
+        {/* JARVIS ORBITAL CORE & MULTI-ENGINE SEARCH         */}
         {/* ================================================== */}
         <div className="relative z-10 mb-8">
           <JarvisSearchCore settings={settings} onSearchNexus={search} />
@@ -111,7 +112,7 @@ export function HomePage() {
 
         {/* Smart Answer Engine Section */}
         <section
-          className="nexus-ai-card relative z-10 overflow-hidden"
+          className="nexus-ai-card relative z-10 overflow-hidden my-6"
           aria-label="NEXUS Smart Answer Engine"
         >
           <div className="absolute top-0 right-0 w-64 h-64 bg-gradient-to-br from-cyan-500/15 via-purple-500/10 to-transparent rounded-full blur-3xl pointer-events-none" />
@@ -231,3 +232,4 @@ export function HomePage() {
     </>
   );
 }
+
