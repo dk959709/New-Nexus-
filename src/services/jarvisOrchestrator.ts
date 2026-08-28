@@ -11,6 +11,8 @@ import type {
   JarvisExecutionStep,
   JarvisImageResult,
   JarvisSystemConfig,
+  SearchResult,
+  WikipediaSearchResult,
 } from '@/types';
 
 export interface JarvisExecutionResult {
@@ -878,6 +880,180 @@ export interface ResearcherParsedOutput {
   notes?: string;
 }
 
+export interface RawSearchResultCandidate {
+  title: string;
+  url: string;
+  domain?: string;
+  description: string;
+  type: 'wikipedia' | 'web';
+}
+
+/**
+ * Extracts essential topic terms and phrases from a user query / task.
+ * Strips generic question words, command prefixes, and common stop words.
+ */
+export function extractTopicKeywords(query: string, task?: string): {
+  coreTerms: string[];
+  keyPhrases: string[];
+  cleanedSearchQuery: string;
+} {
+  const combined = `${query} ${task || ''}`;
+
+  // 1. Identify specific numbers, percentages, acronyms, or quoted phrases
+  const keyPhrases: string[] = [];
+  const percentMatches = combined.match(/\b\d+%\b/g);
+  if (percentMatches) {
+    percentMatches.forEach((m) => {
+      const lower = m.toLowerCase();
+      if (!keyPhrases.includes(lower)) keyPhrases.push(lower);
+    });
+  }
+  const percentWordMatches = combined.match(/\b\d+\s+(?:percent|pct)\b/gi);
+  if (percentWordMatches) {
+    percentWordMatches.forEach((m) => {
+      const lower = m.toLowerCase();
+      if (!keyPhrases.includes(lower)) keyPhrases.push(lower);
+    });
+  }
+
+  // 2. Remove command & question prefix filler
+  const cleanedSearchQuery = query
+    .replace(
+      /^(?:fact-?check|investigate|debunk|verify|research|analyze|tell me about|explain|what is|how does|why is|why does|who was|who is)\s+/i,
+      '',
+    )
+    .trim();
+
+  // 3. Stop words list
+  const STOP_WORDS = new Set([
+    'the', 'a', 'an', 'is', 'are', 'was', 'were', 'be', 'been', 'being',
+    'in', 'on', 'at', 'to', 'for', 'of', 'with', 'by', 'from', 'about',
+    'into', 'through', 'during', 'before', 'after', 'above', 'below',
+    'and', 'or', 'not', 'but', 'nor', 'so', 'yet', 'as', 'if', 'then',
+    'this', 'that', 'these', 'those', 'it', 'its', 'they', 'them', 'their',
+    'what', 'which', 'who', 'whom', 'whose', 'when', 'where', 'why', 'how',
+    'can', 'could', 'should', 'would', 'will', 'shall', 'may', 'might', 'must',
+    'do', 'does', 'did', 'have', 'has', 'had', 'having',
+    'fact', 'check', 'factcheck', 'fact-check', 'debunk', 'verify',
+    'please', 'tell', 'explain', 'show', 'give', 'overview', 'summary',
+  ]);
+
+  const rawTokens = combined
+    .toLowerCase()
+    .replace(/[^\w\s%]/g, ' ')
+    .split(/\s+/)
+    .filter(Boolean);
+
+  const coreTerms: string[] = [];
+  rawTokens.forEach((t) => {
+    if (t.length >= 2 && !STOP_WORDS.has(t) && !coreTerms.includes(t)) {
+      coreTerms.push(t);
+    }
+  });
+
+  if (/\bmyths?\b/i.test(combined) && !coreTerms.includes('myth')) {
+    coreTerms.push('myth');
+  }
+
+  return { coreTerms, keyPhrases, cleanedSearchQuery: cleanedSearchQuery || query };
+}
+
+/**
+ * Scores and filters search results to ensure only high-relevance, on-topic sources reach the Researcher agent.
+ * Eliminates broad list pages with unrelated snippets, false matches, and duplicates.
+ */
+export function scoreAndFilterSearchResults(
+  candidates: RawSearchResultCandidate[],
+  query: string,
+  task?: string,
+): RawSearchResultCandidate[] {
+  if (!candidates || candidates.length === 0) return [];
+
+  const { coreTerms, keyPhrases } = extractTopicKeywords(query, task);
+  const normalizedSeenUrls = new Set<string>();
+
+  const scoredList: Array<{ candidate: RawSearchResultCandidate; score: number }> = [];
+
+  for (const c of candidates) {
+    if (!c.url || !c.title) continue;
+
+    // Normalize URL to prevent duplicates
+    const normUrl = c.url
+      .toLowerCase()
+      .replace(/[?#].*$/, '')
+      .replace(/\/+$/, '');
+
+    if (normalizedSeenUrls.has(normUrl)) continue;
+    normalizedSeenUrls.add(normUrl);
+
+    const titleLower = c.title.toLowerCase();
+    const snippetLower = (c.description || '').toLowerCase();
+    const fullContent = `${titleLower} ${snippetLower}`;
+
+    let score = 0;
+    let snippetTermMatches = 0;
+    let titleTermMatches = 0;
+
+    // Check key phrases (e.g. "10%", "10 percent")
+    for (const kp of keyPhrases) {
+      if (titleLower.includes(kp)) score += 35;
+      if (snippetLower.includes(kp)) {
+        score += 30;
+        snippetTermMatches += 2;
+      }
+    }
+
+    // Check core terms
+    for (const term of coreTerms) {
+      if (titleLower.includes(term)) {
+        score += 15;
+        titleTermMatches++;
+      }
+      if (snippetLower.includes(term)) {
+        score += 10;
+        snippetTermMatches++;
+      }
+    }
+
+    // Term coverage ratio
+    if (coreTerms.length > 0) {
+      const matchedCount = coreTerms.filter((t) => fullContent.includes(t)).length;
+      const coverageRatio = matchedCount / coreTerms.length;
+      score += Math.round(coverageRatio * 25);
+    }
+
+    // Penalize generic broad index / list pages if their snippet doesn't strongly hit the query terms
+    const isBroadListPage = /^(?:list of|index of|outline of|glossary of|category:)/i.test(titleLower);
+    if (isBroadListPage) {
+      if (snippetTermMatches < 2) {
+        // Snippet discusses elephants, etc. on a giant list page -> heavily penalize and discard
+        score = -100;
+      } else {
+        // Demote list pages in favor of dedicated topic articles
+        score -= 20;
+      }
+    }
+
+    // Penalize completely unrelated snippet contents where snippet has 0 core topic matches
+    if (snippetTermMatches === 0 && coreTerms.length >= 2) {
+      score -= 30;
+    }
+
+    // Strict Relevance Threshold
+    const hasKeyPhraseMatch = keyPhrases.length > 0 && keyPhrases.some((kp) => fullContent.includes(kp));
+    const hasSufficientTermMatches = snippetTermMatches >= 1 || titleTermMatches >= 1;
+
+    if (score >= 20 && (hasKeyPhraseMatch || hasSufficientTermMatches)) {
+      scoredList.push({ candidate: c, score });
+    }
+  }
+
+  // Sort descending by score
+  scoredList.sort((a, b) => b.score - a.score);
+
+  return scoredList.map((item) => item.candidate);
+}
+
 /**
  * Resiliently extracts facts and sources from any LLM output (JSON, malformed JSON, lists, or markdown)
  */
@@ -1628,36 +1804,70 @@ Please perform your specialized processing for this inquiry. Provide clear, conc
     const gatheredSnippets: string[] = [];
 
     try {
-      const [wikiResults, searchResults] = await Promise.all([
-        api.searchWikipedia(query, 3).catch(() => []),
-        api.search(query).catch(() => []),
-      ]);
+      const { cleanedSearchQuery } = extractTopicKeywords(query, plannerOutput.task);
+      const searchTasks: [
+        Promise<WikipediaSearchResult[]>,
+        Promise<SearchResult[]>,
+        Promise<WikipediaSearchResult[]>,
+      ] = [
+        api.searchWikipedia(query, 6).catch(() => [] as WikipediaSearchResult[]),
+        api.search(query).catch(() => [] as SearchResult[]),
+        cleanedSearchQuery && cleanedSearchQuery.toLowerCase() !== query.toLowerCase()
+          ? api.searchWikipedia(cleanedSearchQuery, 6).catch(() => [] as WikipediaSearchResult[])
+          : Promise.resolve([] as WikipediaSearchResult[]),
+      ];
 
-      wikiResults.slice(0, 2).forEach((w) => {
-        const cleaned = w.snippet.replace(/<[^>]+>/g, '').trim();
-        gatheredSnippets.push(`[Wikipedia: ${w.title}] ${cleaned}`);
+      const [wikiResults1, searchResults, wikiResults2] = await Promise.all(searchTasks);
+
+      const rawCandidates: RawSearchResultCandidate[] = [];
+
+      // Combine Wikipedia articles
+      [...wikiResults1, ...wikiResults2].forEach((w) => {
+        if (w && w.title && w.url) {
+          const cleaned = (w.snippet || '').replace(/<[^>]+>/g, '').trim();
+          rawCandidates.push({
+            title: w.title,
+            url: w.url,
+            domain: 'wikipedia.org',
+            description: cleaned,
+            type: 'wikipedia',
+          });
+        }
+      });
+
+      // Combine Web Search results
+      (searchResults || []).forEach((s) => {
+        if (s && s.title && s.url) {
+          const desc = s.description ? s.description.trim() : '';
+          rawCandidates.push({
+            title: s.title,
+            url: s.url,
+            domain: s.domain || (s.url.startsWith('http') ? new URL(s.url).hostname.replace(/^www\./, '') : 'web'),
+            description: desc,
+            type: 'web',
+          });
+        }
+      });
+
+      // Score and strictly filter candidates before passing them to the Researcher AI agent
+      const filteredSources = scoreAndFilterSearchResults(rawCandidates, query, plannerOutput.task);
+
+      console.log(
+        `[JARVIS Researcher] Relevance filter evaluated ${rawCandidates.length} raw search results -> kept ${filteredSources.length} on-topic sources.`,
+      );
+
+      filteredSources.slice(0, 5).forEach((src) => {
+        gatheredSnippets.push(`[${src.domain || 'Source'}: ${src.title}] ${src.description}`);
         sourcesCollected.push({
-          title: w.title,
-          url: w.url,
-          domain: 'wikipedia.org',
-          description: cleaned,
-          type: 'wikipedia',
+          title: src.title,
+          url: src.url,
+          domain: src.domain,
+          description: src.description,
+          type: src.type,
         });
       });
 
-      searchResults.slice(0, 4).forEach((s) => {
-        const desc = s.description ? s.description.trim() : '';
-        gatheredSnippets.push(`[${s.domain || 'Web'}: ${s.title}] ${desc}`);
-        sourcesCollected.push({
-          title: s.title,
-          url: s.url,
-          domain: s.domain,
-          description: desc,
-          type: 'web',
-        });
-      });
-
-      searchSnippets = gatheredSnippets.slice(0, 5).join('\n\n');
+      searchSnippets = gatheredSnippets.join('\n\n');
     } catch (err) {
       console.warn('[JARVIS Researcher] Live search retrieval error:', err);
     }
@@ -1703,7 +1913,15 @@ Please perform your specialized processing for this inquiry. Provide clear, conc
       console.groupEnd();
 
       if (Array.isArray(researcherOutput.sources)) {
-        researcherOutput.sources.forEach((s) => {
+        const candidateModelSources: RawSearchResultCandidate[] = researcherOutput.sources.map((s) => ({
+          title: s.title || '',
+          url: s.url || '',
+          domain: s.domain,
+          description: s.title || '',
+          type: 'web' as const,
+        }));
+        const validatedModelSources = scoreAndFilterSearchResults(candidateModelSources, query, plannerOutput.task);
+        validatedModelSources.forEach((s) => {
           if (s.title && s.url && !sourcesCollected.some((existing) => existing.url === s.url)) {
             sourcesCollected.push({
               title: s.title,
