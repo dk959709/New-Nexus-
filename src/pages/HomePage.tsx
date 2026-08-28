@@ -1,13 +1,18 @@
 import { useEffect, useState } from 'react';
 import {
-  ArrowUpRight,
-  Send,
   Sparkles,
+  Globe,
+  BookOpen,
+  Newspaper,
+  Film,
+  Send,
 } from 'lucide-react';
-import { Link, useNavigate } from 'react-router-dom';
-import { DailyForecast, AnswerCard, JarvisSearchCore } from '@/components';
+import { useNavigate } from 'react-router-dom';
+import { AnswerCard } from '@/components';
 import { SpaceStarfield } from '@/components/SpaceStarfield';
 import { MeteorShower } from '@/animations/MeteorShower';
+import { JarvisAnimatedCore } from '@/components/jarvis/JarvisAnimatedCore';
+import { NexusTerminalOutput } from '@/components/home/NexusTerminalOutput';
 import { api } from '@/services/api';
 import { getLocation } from '@/services/location';
 import { storage } from '@/lib/storage';
@@ -16,58 +21,117 @@ import { playTapSound } from '@/lib/audio';
 import { askSmartAnswerEngine } from '@/services/answerEngine';
 import type { WeatherData, AnswerEngineResult } from '@/types';
 
-const SMART_SUGGESTIONS = [
-  'What is a black hole?',
-  'Explain gravity simply',
-  'What is photosynthesis?',
-  'Latest space news',
-  'Search Wikipedia for Mars',
+type SearchMode = 'ai' | 'web' | 'wiki' | 'news' | 'media';
+
+interface ModeChip {
+  id: SearchMode;
+  label: string;
+  icon: typeof Sparkles;
+  activeClass: string;
+  inactiveClass: string;
+}
+
+const MODE_CHIPS: ModeChip[] = [
+  {
+    id: 'ai',
+    label: 'AI',
+    icon: Sparkles,
+    activeClass:
+      'bg-emerald-500/25 border-emerald-400 text-emerald-300 shadow-[0_0_18px_rgba(52,211,153,0.45)]',
+    inactiveClass:
+      'border-emerald-500/50 text-emerald-400 hover:border-emerald-400 hover:bg-emerald-500/10',
+  },
+  {
+    id: 'web',
+    label: 'WEB',
+    icon: Globe,
+    activeClass:
+      'bg-cyan-500/25 border-cyan-400 text-cyan-300 shadow-[0_0_18px_rgba(34,211,238,0.45)]',
+    inactiveClass:
+      'border-cyan-500/50 text-cyan-400 hover:border-cyan-400 hover:bg-cyan-500/10',
+  },
+  {
+    id: 'wiki',
+    label: 'WIKI',
+    icon: BookOpen,
+    activeClass:
+      'bg-blue-500/25 border-blue-400 text-blue-300 shadow-[0_0_18px_rgba(96,165,250,0.45)]',
+    inactiveClass:
+      'border-blue-500/50 text-blue-400 hover:border-blue-400 hover:bg-blue-500/10',
+  },
+  {
+    id: 'news',
+    label: 'NEWS',
+    icon: Newspaper,
+    activeClass:
+      'bg-amber-500/25 border-amber-400 text-amber-300 shadow-[0_0_18px_rgba(251,191,36,0.45)]',
+    inactiveClass:
+      'border-amber-500/50 text-amber-400 hover:border-amber-400 hover:bg-amber-500/10',
+  },
+  {
+    id: 'media',
+    label: 'MEDIA',
+    icon: Film,
+    activeClass:
+      'bg-fuchsia-500/25 border-fuchsia-400 text-fuchsia-300 shadow-[0_0_18px_rgba(232,121,249,0.45)]',
+    inactiveClass:
+      'border-fuchsia-500/50 text-fuchsia-400 hover:border-fuchsia-400 hover:bg-fuchsia-500/10',
+  },
 ];
 
 export function HomePage() {
   const navigate = useNavigate();
   const [settings] = useSettings();
   const [weather, setWeather] = useState<WeatherData | null>(null);
-  const [aiQuery, setAiQuery] = useState('');
+  const [query, setQuery] = useState('');
+  const [selectedMode, setSelectedMode] = useState<SearchMode>('web');
   const [smartResult, setSmartResult] = useState<AnswerEngineResult | null>(null);
-  const [aiLoading, setAiLoading] = useState(false);
-  const [aiError, setAiError] = useState('');
+  const [isSearching, setIsSearching] = useState(false);
+  const [searchError, setSearchError] = useState('');
 
   useEffect(() => {
+    // 1. Fetch Local Weather for Terminal Output Telemetry
     getLocation()
-      .then((position) => api.weather(`latitude=${position.latitude}&longitude=${position.longitude}`))
+      .then((position) =>
+        api.weather(`latitude=${position.latitude}&longitude=${position.longitude}`)
+      )
       .then(setWeather)
       .catch(() => {
         api.weather('city=New York').then(setWeather).catch(() => undefined);
       });
   }, []);
 
-  const search = (query: string) => {
-    storage.saveSearch(query);
-    navigate(`/search?q=${encodeURIComponent(query)}`);
-  };
-
-  const askNexusAI = async (queryToAsk?: string) => {
-    const targetQuery = (queryToAsk || aiQuery).trim();
-    if (!targetQuery || aiLoading) return;
+  const executeSearch = async (targetQuery?: string) => {
+    const rawQuery = (targetQuery || query).trim();
+    if (!rawQuery || isSearching) return;
 
     playTapSound();
-    setAiQuery(targetQuery);
-    setAiLoading(true);
-    setAiError('');
-    setSmartResult(null);
+    storage.saveSearch(rawQuery);
+    storage.addJarvisQueryLog(rawQuery, selectedMode === 'ai' ? 'ai' : 'query');
 
-    try {
-      const response = await askSmartAnswerEngine(targetQuery);
-      setSmartResult(response);
-    } catch (err) {
-      setAiError(
-        err instanceof Error
-          ? err.message
-          : 'NEXUS Answer Engine is temporarily unavailable.',
-      );
-    } finally {
-      setAiLoading(false);
+    if (selectedMode === 'ai') {
+      setIsSearching(true);
+      setSearchError('');
+      setSmartResult(null);
+
+      try {
+        const response = await askSmartAnswerEngine(rawQuery);
+        setSmartResult(response);
+      } catch (err) {
+        setSearchError(
+          err instanceof Error
+            ? err.message
+            : 'JARVIS Intelligence Engine is temporarily busy.'
+        );
+      } finally {
+        setIsSearching(false);
+      }
+    } else {
+      let url = `/search?q=${encodeURIComponent(rawQuery)}`;
+      if (selectedMode === 'wiki') url += '&type=wikipedia';
+      else if (selectedMode === 'news') url += '&type=news';
+      else if (selectedMode === 'media') url += '&type=media';
+      navigate(url);
     }
   };
 
@@ -75,156 +139,202 @@ export function HomePage() {
     <>
       <SpaceStarfield />
       <MeteorShower reduced={settings.animations === 'reduced'} />
-      <div className="space-content-wrapper relative">
-        {/* Floating colorful ambient live aurora background orbs */}
-        <div className="absolute top-10 left-1/4 w-96 h-96 bg-cyan-500/15 rounded-full blur-[120px] pointer-events-none animate-pulse" />
-        <div className="absolute top-40 right-10 w-80 h-80 bg-purple-500/15 rounded-full blur-[100px] pointer-events-none animate-pulse" style={{ animationDuration: '7s' }} />
-        <div className="absolute top-96 left-10 w-72 h-72 bg-emerald-500/10 rounded-full blur-[110px] pointer-events-none animate-pulse" style={{ animationDuration: '9s' }} />
+
+      <div className="space-content-wrapper relative select-none font-mono text-slate-100 min-h-screen pb-16">
+        {/* Subtle Ambient Background Energy Flares */}
+        <div className="absolute top-10 left-1/4 w-96 h-96 bg-cyan-500/10 rounded-full blur-[140px] pointer-events-none" />
+        <div
+          className="absolute top-40 right-10 w-96 h-96 bg-purple-500/10 rounded-full blur-[130px] pointer-events-none"
+          style={{ animationDuration: '8s' }}
+        />
 
         {/* ================================================== */}
-        {/* TOP OF WEBSITE: NEXUS INTELLIGENT HERO            */}
+        {/* 1. HEADER ROW: CYAN LABEL + HUGE TITLE + ORBITAL CORE */}
         {/* ================================================== */}
-        <div className="hero-wrap relative z-10 mb-4 sm:mb-6 w-full max-w-5xl">
-          <div className="hero-aurora-glow" aria-hidden="true" />
-          
-          <div className="relative py-2">
-            <div className="flex items-center gap-2 mb-2">
-              <span className="w-2.5 h-2.5 rounded-full bg-cyan-400 animate-ping" />
-              <span className="eyebrow font-mono tracking-widest text-cyan-300 font-bold">NEXUS INTELLIGENT</span>
-            </div>
-            <h1 className="text-3xl sm:text-5xl lg:text-6xl font-extrabold tracking-tight leading-[1.08] my-3">
-              <span className="hero-gradient-line">Search the web.</span>
-              <br />
-              <span className="hero-gradient-line hero-glow-text">Understand the world.</span>
-            </h1>
-            <p className="text-slate-300 text-sm sm:text-base md:text-lg font-normal leading-relaxed max-w-2xl mt-2">
-              A unified view of live search, weather, and world signals — clear, fast, and precise.
-            </p>
-          </div>
-        </div>
-
-        {/* ================================================== */}
-        {/* JARVIS ORBITAL CORE & MULTI-ENGINE SEARCH         */}
-        {/* ================================================== */}
-        <div className="relative z-10 mb-8">
-          <JarvisSearchCore settings={settings} onSearchNexus={search} />
-        </div>
-
-        {/* Smart Answer Engine Section */}
-        <section
-          className="nexus-ai-card relative z-10 overflow-hidden my-6"
-          aria-label="NEXUS Smart Answer Engine"
-        >
-          <div className="absolute top-0 right-0 w-64 h-64 bg-gradient-to-br from-cyan-500/15 via-purple-500/10 to-transparent rounded-full blur-3xl pointer-events-none" />
-          <div className="nexus-ai-label flex items-center justify-between mb-4">
-            <div className="flex items-center gap-2">
-              <div className="p-2 rounded-xl bg-cyan-500/20 border border-cyan-500/40 text-cyan-300 shadow-md shadow-cyan-500/20">
-                <Sparkles size={18} className="ai-sparkle-active" />
+        <div className="relative z-10 pt-2 sm:pt-4 mb-6">
+          <div className="grid grid-cols-1 lg:grid-cols-12 gap-6 items-center">
+            {/* Left Column: Title & Subtitle */}
+            <div className="lg:col-span-8 flex flex-col justify-center">
+              {/* Small cyan label */}
+              <div className="flex items-center gap-2 mb-2">
+                <span className="w-2 h-2 rounded-full bg-cyan-400 animate-ping" />
+                <span className="text-xs sm:text-sm font-bold tracking-[0.25em] text-cyan-400 uppercase">
+                  NEXUS INTELLIGENCE
+                </span>
               </div>
-              <span className="font-bold text-sm tracking-wider text-white">NEXUS Smart Answer Engine</span>
-            </div>
-            <span className="px-3 py-1 rounded-full bg-white/5 border border-white/10 text-[11px] font-mono text-cyan-300 flex items-center gap-1.5">
-              <span className="w-1.5 h-1.5 rounded-full bg-cyan-400 animate-ping" />
-              Multi-Source Intelligence
-            </span>
-          </div>
 
-          <div className="nexus-ai-form">
-            <div className="nexus-ai-input-wrap shadow-xl">
-              <Sparkles size={20} className="ai-sparkle-active text-cyan-400" />
+              {/* Huge two-line title */}
+              <h1 className="text-4xl sm:text-6xl md:text-7xl font-extrabold tracking-tight leading-[1.05] my-2 select-text">
+                <span className="text-cyan-400">&gt; SEARCH</span>
+                <br />
+                <span className="bg-gradient-to-r from-fuchsia-400 via-purple-400 to-pink-500 bg-clip-text text-transparent">
+                  THE WEB
+                </span>
+                <span className="text-fuchsia-400 animate-pulse ml-0.5">_</span>
+              </h1>
 
-              <input
-                value={aiQuery}
-                onChange={(event) => setAiQuery(event.target.value)}
-                onKeyDown={(event) => {
-                  if (event.key === 'Enter') askNexusAI();
-                }}
-                placeholder="Ask NEXUS anything (e.g. What is a black hole? Explain gravity)..."
-                aria-label="Ask NEXUS AI anything"
-                className="nexus-ai-input placeholder:text-slate-500"
-              />
+              {/* Subtitle text in gray monospace */}
+              <p className="text-slate-400 text-xs sm:text-sm tracking-wider uppercase leading-relaxed max-w-2xl mt-2 select-text">
+                A UNIFIED VIEW OF LIVE SEARCH, WEATHER, NEWS &amp; WORLD SIGNALS
+              </p>
             </div>
 
-            <button
-              type="button"
-              onClick={() => askNexusAI()}
-              disabled={!aiQuery.trim() || aiLoading}
-              aria-label="Ask NEXUS AI"
-              className="nexus-ai-submit group relative overflow-hidden"
-            >
-              <div className="absolute inset-0 bg-gradient-to-r from-cyan-400 via-sky-400 to-purple-500 opacity-0 group-hover:opacity-100 transition-opacity" />
-              <Send size={18} className="relative z-10" />
-            </button>
-          </div>
+            {/* Right Column: Orbital Core Graphic + Telemetry Captions */}
+            <div className="lg:col-span-4 flex flex-col items-center justify-center">
+              <div className="relative flex flex-col items-center justify-center">
+                <div className="transform scale-95 sm:scale-100">
+                  <JarvisAnimatedCore
+                    size="sm"
+                    status={isSearching ? 'synthesizing' : 'idle'}
+                    interactive
+                    onClick={() => {
+                      playTapSound();
+                      executeSearch('Explain quantum computing');
+                    }}
+                  />
+                </div>
 
-          {/* Quick Suggestions Chips */}
-          {!smartResult && !aiLoading && (
-            <div className="mt-4 pt-4 border-t border-white/10 flex flex-col sm:flex-row items-start sm:items-center gap-3">
-              <span className="text-xs font-mono text-cyan-300 uppercase tracking-wider flex items-center gap-1.5">
-                <Sparkles size={12} /> Try asking:
+                {/* Orbital Core Captions */}
+                <div className="text-center mt-2 space-y-1">
+                  <div className="text-xs font-bold tracking-widest text-cyan-300 uppercase">
+                    JARVIS ORBITAL CORE
+                  </div>
+                  <div className="text-[11px] font-semibold text-emerald-400 flex items-center justify-center gap-1.5 tracking-wider">
+                    <span className="w-1.5 h-1.5 rounded-full bg-emerald-400 animate-ping inline-block" />
+                    <span>SYSTEMS OPERATIONAL</span>
+                  </div>
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        {/* ================================================== */}
+        {/* 2. SEARCH BAR: NEON GRADIENT BORDER PILL INPUT     */}
+        {/* ================================================== */}
+        <div className="relative z-10 max-w-4xl mx-auto my-4 sm:my-6">
+          <form
+            onSubmit={(e) => {
+              e.preventDefault();
+              const terminalInput = document.getElementById('terminal-chat-input') as HTMLInputElement | null;
+              if (terminalInput) {
+                terminalInput.scrollIntoView({ behavior: 'smooth', block: 'center' });
+                terminalInput.focus();
+              }
+            }}
+            onClick={() => {
+              const terminalInput = document.getElementById('terminal-chat-input') as HTMLInputElement | null;
+              if (terminalInput) {
+                terminalInput.scrollIntoView({ behavior: 'smooth', block: 'center' });
+                terminalInput.focus();
+              }
+            }}
+            className="relative group rounded-full p-[2px] bg-gradient-to-r from-emerald-500 via-cyan-500 to-fuchsia-500 shadow-[0_0_30px_rgba(45,212,191,0.25)] hover:shadow-[0_0_40px_rgba(168,85,247,0.35)] transition-all duration-300 cursor-pointer"
+          >
+            <div className="flex items-center gap-3 bg-[#030712] rounded-full px-5 py-3 sm:py-4">
+              {/* Green "$" prompt symbol */}
+              <span className="text-emerald-400 font-bold text-lg sm:text-xl select-none">
+                $
               </span>
-              <div className="flex flex-wrap gap-2">
-                {SMART_SUGGESTIONS.map((suggestion) => (
-                  <button
-                    key={suggestion}
-                    type="button"
-                    className="px-3.5 py-1.5 rounded-xl bg-white/[0.04] hover:bg-cyan-500/15 border border-white/10 hover:border-cyan-500/40 text-xs text-slate-300 hover:text-white transition-all flex items-center gap-1.5 shadow-sm group"
-                    onClick={() => askNexusAI(suggestion)}
-                  >
-                    <span className="w-1.5 h-1.5 rounded-full bg-cyan-400/60 group-hover:bg-cyan-400 transition-colors" />
-                    <span>{suggestion}</span>
-                  </button>
-                ))}
-              </div>
-            </div>
-          )}
 
-          {aiLoading && (
-            <div className="nexus-ai-loading mt-4 p-4 rounded-xl bg-cyan-500/10 border border-cyan-500/20 text-cyan-300 flex items-center gap-3">
-              <Sparkles size={18} className="ai-sparkle-active animate-spin text-cyan-400" />
-              <span className="text-xs sm:text-sm font-medium">NEXUS Engine is retrieving and synthesizing verified sources...</span>
-            </div>
-          )}
+              {/* Monospace Input restricted/redirected to terminal output search input */}
+              <input
+                type="text"
+                readOnly
+                onFocus={(e) => {
+                  e.target.blur();
+                  const terminalInput = document.getElementById('terminal-chat-input') as HTMLInputElement | null;
+                  if (terminalInput) {
+                    terminalInput.scrollIntoView({ behavior: 'smooth', block: 'center' });
+                    terminalInput.focus();
+                  }
+                }}
+                onClick={(e) => {
+                  e.stopPropagation();
+                  const terminalInput = document.getElementById('terminal-chat-input') as HTMLInputElement | null;
+                  if (terminalInput) {
+                    terminalInput.scrollIntoView({ behavior: 'smooth', block: 'center' });
+                    terminalInput.focus();
+                  }
+                }}
+                placeholder="ask jarvis anything..."
+                aria-label="Search input"
+                className="w-full bg-transparent text-slate-100 placeholder:text-slate-500 font-mono text-sm sm:text-base outline-none tracking-wide cursor-pointer"
+              />
 
-          {aiError && (
-            <div className="nexus-ai-error">
-              {aiError}
+              {/* Cyan Send Arrow Button */}
+              <button
+                type="submit"
+                aria-label="Submit search"
+                className="p-2 sm:p-2.5 rounded-full text-cyan-400 hover:text-cyan-200 hover:bg-cyan-500/20 active:scale-95 transition-all"
+              >
+                <Send size={18} className="transform -rotate-12" />
+              </button>
             </div>
-          )}
+          </form>
+        </div>
 
-          {smartResult && (
+        {/* ================================================== */}
+        {/* 3. MODE FILTER CHIPS ROW: 5 NEON OUTLINE PILLS    */}
+        {/* ================================================== */}
+        <div className="relative z-10 max-w-4xl mx-auto mb-6">
+          <div className="flex items-center justify-center sm:justify-start gap-2.5 sm:gap-3 flex-wrap">
+            {MODE_CHIPS.map((chip) => {
+              const Icon = chip.icon;
+              const isSelected = selectedMode === chip.id;
+
+              return (
+                <button
+                  key={chip.id}
+                  type="button"
+                  onClick={() => {
+                    playTapSound();
+                    setSelectedMode(chip.id);
+                  }}
+                  className={`flex items-center gap-2 px-4 py-2 rounded-full border text-xs font-bold tracking-wider transition-all duration-200 uppercase ${
+                    isSelected ? chip.activeClass : chip.inactiveClass
+                  }`}
+                >
+                  <Icon size={14} className={isSelected ? 'animate-pulse' : ''} />
+                  <span>{chip.label}</span>
+                </button>
+              );
+            })}
+          </div>
+        </div>
+
+        {/* ================================================== */}
+        {/* 4. TERMINAL OUTPUT PANEL & WORLD MAP HUD           */}
+        {/* ================================================== */}
+        <div className="relative z-10">
+          <NexusTerminalOutput
+            weather={weather}
+            settings={settings}
+            activeQuery={query}
+            isSearching={isSearching}
+            onExecuteSearch={(q) => {
+              setQuery(q);
+              executeSearch(q);
+            }}
+          />
+        </div>
+
+        {/* Smart Answer Card Display (if AI synthesis executed) */}
+        {searchError && (
+          <div className="relative z-10 my-4 p-4 rounded-xl bg-red-950/40 border border-red-500/40 text-red-300 text-xs sm:text-sm font-mono">
+            {searchError}
+          </div>
+        )}
+
+        {smartResult && (
+          <div className="relative z-10 my-6">
             <AnswerCard
               result={smartResult}
-              onSelectFollowUp={(q) => askNexusAI(q)}
-              className="mt-4 animate-in fade-in duration-300"
-            />
-          )}
-        </section>
-
-        {/* Live Signals & World Briefing Card */}
-        <aside className="brief-card relative overflow-hidden group z-10 my-4">
-          <div className="absolute top-0 right-0 w-32 h-32 bg-cyan-500/10 rounded-full blur-2xl group-hover:bg-cyan-500/20 transition-all pointer-events-none" />
-          <div className="flex items-center gap-2 mb-2">
-            <span className="w-2 h-2 rounded-full bg-cyan-400 animate-ping" />
-            <span className="eyebrow">LIVE SIGNALS</span>
-          </div>
-          <h2 className="text-xl font-bold text-white mb-2">World briefing</h2>
-          <p className="text-slate-300 text-xs sm:text-sm mb-4 leading-relaxed">Search the current web or open the live news desk for your next signal.</p>
-          <Link
-            to="/news"
-            className="inline-flex items-center gap-2 px-4 py-2 rounded-xl bg-cyan-500/20 hover:bg-cyan-500/30 border border-cyan-500/40 text-cyan-300 font-semibold text-xs transition-all shadow-md group-hover:translate-x-1"
-          >
-            Explore live news <ArrowUpRight size={15} />
-          </Link>
-        </aside>
-
-        {/* 7-Day Extended Forecast at the bottom of the home screen */}
-        {weather?.daily && (
-          <div className="relative z-10 my-6">
-            <DailyForecast
-              data={weather.daily}
-              temperatureUnit={settings.temperature}
-              windUnit={settings.wind}
+              onSelectFollowUp={(q) => {
+                setQuery(q);
+                executeSearch(q);
+              }}
+              className="border border-cyan-500/40 shadow-[0_0_30px_rgba(6,182,212,0.2)] bg-[#030712]/95 rounded-2xl"
             />
           </div>
         )}
@@ -232,4 +342,3 @@ export function HomePage() {
     </>
   );
 }
-

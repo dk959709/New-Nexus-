@@ -35,6 +35,7 @@ import { JarvisCornerBrackets } from './JarvisCornerBrackets';
 import { FormattedText } from './FormattedText';
 import { JarvisDeepResearchMeshAnswers } from './JarvisDeepResearchMeshAnswers';
 import { formatFullPipelineExport } from './formatJarvisPipelineExport';
+import { NexusTerminalOutput } from '@/components/home/NexusTerminalOutput';
 import type {
   JarvisExecutionStep,
   JarvisMessage,
@@ -180,7 +181,7 @@ export function JarvisChat({ config, onOpenSettings }: JarvisChatProps) {
   const [speakingId, setSpeakingId] = useState<string | null>(null);
   const [showClearConfirm, setShowClearConfirm] = useState(false);
   const [clearedBanner, setClearedBanner] = useState(false);
-  const [activeView, setActiveView] = useState<'chat' | 'topology' | 'categories' | 'reactor'>('chat');
+  const [activeView, setActiveView] = useState<'chat' | 'topology' | 'categories' | 'reactor' | 'terminal'>('chat');
   const [voiceListening, setVoiceListening] = useState(false);
   const initialHandledRef = useRef(false);
   const inputRef = useRef<HTMLInputElement>(null);
@@ -547,6 +548,19 @@ export function JarvisChat({ config, onOpenSettings }: JarvisChatProps) {
           isRunning={isRunning}
           onLaunchPrompt={handleSelectPromptFromDeck}
         />
+      )}
+
+      {activeView === 'terminal' && (
+        <div className="animate-in fade-in zoom-in-95 duration-200">
+          <NexusTerminalOutput
+            title="JARVIS ASSISTANT TERMINAL OUTPUT"
+            activeQuery={query}
+            isSearching={isRunning}
+            onExecuteSearch={(prompt) => {
+              handleSend(prompt);
+            }}
+          />
+        </div>
       )}
 
       {/* ========================================================= */}

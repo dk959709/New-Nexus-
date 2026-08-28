@@ -351,6 +351,26 @@ export const storage = {
     write(KEYS.searches, []);
   },
 
+  getJarvisQueryLog(): Array<{ id: string; query: string; timestamp: string; type: 'query' | 'ai' | 'system' | 'weather' | 'news' | 'warning' }> {
+    return read<Array<{ id: string; query: string; timestamp: string; type: 'query' | 'ai' | 'system' | 'weather' | 'news' | 'warning' }>>('nexus-jarvis-query-log-v1', []);
+  },
+  addJarvisQueryLog(query: string, type: 'query' | 'ai' | 'system' | 'weather' | 'news' | 'warning' = 'query') {
+    const now = new Date();
+    const pad = (n: number) => String(n).padStart(2, '0');
+    const timestamp = `${pad(now.getHours())}:${pad(now.getMinutes())}:${pad(now.getSeconds())}`;
+    const newItem = {
+      id: `log-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`,
+      query,
+      timestamp,
+      type,
+    };
+    const current = this.getJarvisQueryLog();
+    const filtered = current.filter((item) => item.query.toLowerCase() !== query.toLowerCase());
+    const updated = [...filtered, newItem].slice(-15);
+    write('nexus-jarvis-query-log-v1', updated);
+    return updated;
+  },
+
   getSaved(): SavedItem[] {
     return read<SavedItem[]>(KEYS.saved, []);
   },
