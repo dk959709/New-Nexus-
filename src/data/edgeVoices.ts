@@ -78,9 +78,6 @@ export const EDGE_VOICES: EdgeVoice[] = [
   { id: 'hi-IN-SwaraNeural', name: 'Swara', gender: 'Female', language: 'Hindi (India)', accent: 'hi-IN' },
   { id: 'hi-IN-MadhurNeural', name: 'Madhur', gender: 'Male', language: 'Hindi (India)', accent: 'hi-IN' },
   { id: 'hi-IN-AaravNeural', name: 'Aarav', gender: 'Male', language: 'Hindi (India)', accent: 'hi-IN' },
-  { id: 'hi-IN-AnanyaNeural', name: 'Ananya', gender: 'Female', language: 'Hindi (India)', accent: 'hi-IN' },
-  { id: 'hi-IN-KavyaNeural', name: 'Kavya', gender: 'Female', language: 'Hindi (India)', accent: 'hi-IN' },
-  { id: 'hi-IN-KunalNeural', name: 'Kunal', gender: 'Male', language: 'Hindi (India)', accent: 'hi-IN' },
 
   // Spanish (Spain)
   { id: 'es-ES-ElviraNeural', name: 'Elvira', gender: 'Female', language: 'Spanish (Spain)', accent: 'es-ES' },
@@ -157,7 +154,6 @@ export const EDGE_VOICES: EdgeVoice[] = [
   { id: 'ja-JP-DaichiNeural', name: 'Daichi', gender: 'Male', language: 'Japanese (Japan)', accent: 'ja-JP' },
   { id: 'ja-JP-MayuNeural', name: 'Mayu', gender: 'Female', language: 'Japanese (Japan)', accent: 'ja-JP' },
   { id: 'ja-JP-NaokiNeural', name: 'Naoki', gender: 'Male', language: 'Japanese (Japan)', accent: 'ja-JP' },
-  { id: 'ja-JP-ShioriNeural', name: 'Shiori', gender: 'Female', language: 'Japanese (Japan)', accent: 'ja-JP' },
 
   // Chinese (Mandarin, Simplified)
   { id: 'zh-CN-XiaoxiaoNeural', name: 'Xiaoxiao', gender: 'Female', language: 'Chinese (Mandarin)', accent: 'zh-CN' },
@@ -200,21 +196,15 @@ export const EDGE_VOICES: EdgeVoice[] = [
   { id: 'it-IT-FilippoNeural', name: 'Filippo', gender: 'Male', language: 'Italian (Italy)', accent: 'it-IT' },
   { id: 'it-IT-DiegoNeural', name: 'Diego', gender: 'Male', language: 'Italian (Italy)', accent: 'it-IT' },
   { id: 'it-IT-BenignoNeural', name: 'Benigno', gender: 'Male', language: 'Italian (Italy)', accent: 'it-IT' },
-  { id: 'it-IT-CalimeroNeural', name: 'Calimero', gender: 'Male', language: 'Italian (Italy)', accent: 'it-IT' },
-  { id: 'it-IT-CataldoNeural', name: 'Cataldo', gender: 'Male', language: 'Italian (Italy)', accent: 'it-IT' },
-  { id: 'it-IT-DomenicaNeural', name: 'Domenica', gender: 'Female', language: 'Italian (Italy)', accent: 'it-IT' },
   { id: 'it-IT-GiacomoNeural', name: 'Giacomo', gender: 'Male', language: 'Italian (Italy)', accent: 'it-IT' },
   { id: 'it-IT-GianniNeural', name: 'Gianni', gender: 'Male', language: 'Italian (Italy)', accent: 'it-IT' },
-  { id: 'it-IT-ImmacolataNeural', name: 'Immacolata', gender: 'Female', language: 'Italian (Italy)', accent: 'it-IT' },
   { id: 'it-IT-LuciaNeural', name: 'Lucia', gender: 'Female', language: 'Italian (Italy)', accent: 'it-IT' },
   { id: 'it-IT-PaoloNeural', name: 'Paolo', gender: 'Male', language: 'Italian (Italy)', accent: 'it-IT' },
-  { id: 'it-IT-PiaNeural', name: 'Pia', gender: 'Female', language: 'Italian (Italy)', accent: 'it-IT' },
   { id: 'it-IT-VittorioNeural', name: 'Vittorio', gender: 'Male', language: 'Italian (Italy)', accent: 'it-IT' },
 
   // Russian (Russia)
   { id: 'ru-RU-SvetlanaNeural', name: 'Svetlana', gender: 'Female', language: 'Russian (Russia)', accent: 'ru-RU' },
   { id: 'ru-RU-DmitryNeural', name: 'Dmitry', gender: 'Male', language: 'Russian (Russia)', accent: 'ru-RU' },
-  { id: 'ru-RU-ImmanuelNeural', name: 'Immanuel', gender: 'Male', language: 'Russian (Russia)', accent: 'ru-RU' },
 
   // Korean (South Korea)
   { id: 'ko-KR-SunHiNeural', name: 'SunHi', gender: 'Female', language: 'Korean (South Korea)', accent: 'ko-KR' },
@@ -230,6 +220,14 @@ export const EDGE_VOICES: EdgeVoice[] = [
   { id: 'nl-NL-FennaNeural', name: 'Fenna', gender: 'Female', language: 'Dutch (Netherlands)', accent: 'nl-NL' },
   { id: 'nl-NL-MaartenNeural', name: 'Maarten', gender: 'Male', language: 'Dutch (Netherlands)', accent: 'nl-NL' },
   { id: 'nl-NL-ColetteNeural', name: 'Colette', gender: 'Female', language: 'Dutch (Netherlands)', accent: 'nl-NL' },
+
+  // Tamil (India)
+  { id: 'ta-IN-PallaviNeural', name: 'Pallavi', gender: 'Female', language: 'Tamil (India)', accent: 'ta-IN' },
+  { id: 'ta-IN-ValluvarNeural', name: 'Valluvar', gender: 'Male', language: 'Tamil (India)', accent: 'ta-IN' },
+
+  // Malayalam (India)
+  { id: 'ml-IN-SobhanaNeural', name: 'Sobhana', gender: 'Female', language: 'Malayalam (India)', accent: 'ml-IN' },
+  { id: 'ml-IN-MidhunNeural', name: 'Midhun', gender: 'Male', language: 'Malayalam (India)', accent: 'ml-IN' },
 
   // Turkish, Polish, Vietnamese, Thai, Indonesian
   { id: 'tr-TR-EmelNeural', name: 'Emel', gender: 'Female', language: 'Turkish (Turkey)', accent: 'tr-TR' },
