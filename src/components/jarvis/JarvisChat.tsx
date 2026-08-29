@@ -444,7 +444,7 @@ export function JarvisChat({ config, onOpenSettings }: JarvisChatProps) {
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({
             text: cleanText.slice(0, 1500),
-            voice: 'en-US-AriaNeural',
+            voice: storage.getEdgeVoice(),
           }),
         });
 

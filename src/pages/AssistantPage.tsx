@@ -1,5 +1,5 @@
-import { useEffect, useState } from 'react';
-import { Bot, Send, Sparkles, User, Trash2, Plus, Brain, BookOpen, Globe, ExternalLink, Cpu, AlertTriangle, Check } from 'lucide-react';
+import { useEffect, useState, useRef, useCallback } from 'react';
+import { Bot, Send, Sparkles, User, Trash2, Plus, Brain, BookOpen, Globe, ExternalLink, Cpu, AlertTriangle, Check, Volume2, VolumeX, Radio, Loader2, Copy } from 'lucide-react';
 import { Link } from 'react-router-dom';
 import { api } from '@/services/api';
 import { storage } from '@/lib/storage';
@@ -94,6 +94,160 @@ export function AssistantPage() {
   const [memoryDraft, setMemoryDraft] = useState(smartMemory);
   const [showClearConfirm, setShowClearConfirm] = useState(false);
   const [clearedToast, setClearedToast] = useState(false);
+  const [speakingIndex, setSpeakingIndex] = useState<number | null>(null);
+  const [edgeTtsLoadingIndex, setEdgeTtsLoadingIndex] = useState<number | null>(null);
+  const [edgeTtsPlayingIndex, setEdgeTtsPlayingIndex] = useState<number | null>(null);
+  const [copiedIndex, setCopiedIndex] = useState<number | null>(null);
+  const utteranceRef = useRef<SpeechSynthesisUtterance | null>(null);
+  const edgeTtsAudioRef = useRef<HTMLAudioElement | null>(null);
+
+  const stopSpeak = useCallback(() => {
+    if (typeof window !== 'undefined' && 'speechSynthesis' in window) {
+      try {
+        window.speechSynthesis.cancel();
+      } catch {
+        // Safe fallback
+      }
+    }
+    utteranceRef.current = null;
+    setSpeakingIndex(null);
+  }, []);
+
+  const toggleBrowserSpeak = useCallback(
+    (text: string, index: number) => {
+      if (typeof window === 'undefined' || !('speechSynthesis' in window)) return;
+      if (speakingIndex === index) {
+        stopSpeak();
+        return;
+      }
+      try {
+        window.speechSynthesis.cancel();
+        if (window.speechSynthesis.paused) {
+          window.speechSynthesis.resume();
+        }
+      } catch {
+        // Safe fallback
+      }
+      const cleanText = text
+        .replace(/```[\s\S]*?```/g, ' Code snippet omitted. ')
+        .replace(/[*#`_~>[\]()]/g, '')
+        .replace(/\s+/g, ' ')
+        .trim();
+
+      if (!cleanText) return;
+
+      const utterance = new SpeechSynthesisUtterance(cleanText);
+      utteranceRef.current = utterance;
+      utterance.onend = () => {
+        setSpeakingIndex(null);
+        utteranceRef.current = null;
+      };
+      utterance.onerror = () => {
+        setSpeakingIndex(null);
+        utteranceRef.current = null;
+      };
+      setSpeakingIndex(index);
+      window.speechSynthesis.speak(utterance);
+    },
+    [speakingIndex, stopSpeak],
+  );
+
+  const handleEdgeTtsSpeak = useCallback(
+    async (text: string, index: number) => {
+      if (edgeTtsPlayingIndex === index) {
+        if (edgeTtsAudioRef.current) {
+          edgeTtsAudioRef.current.pause();
+          edgeTtsAudioRef.current.currentTime = 0;
+        }
+        setEdgeTtsPlayingIndex(null);
+        return;
+      }
+
+      stopSpeak();
+      if (edgeTtsAudioRef.current) {
+        edgeTtsAudioRef.current.pause();
+        edgeTtsAudioRef.current = null;
+      }
+
+      const cleanText = text
+        .replace(/```[\s\S]*?```/g, ' Code snippet omitted. ')
+        .replace(/[*#`_~>[\]()]/g, '')
+        .replace(/\s+/g, ' ')
+        .trim();
+
+      if (!cleanText) return;
+
+      setEdgeTtsLoadingIndex(index);
+      try {
+        const response = await fetch('/api/edge-tts', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            text: cleanText.slice(0, 1500),
+            voice: storage.getEdgeVoice(),
+          }),
+        });
+
+        if (!response.ok) {
+          const data = await response.json().catch(() => ({}));
+          throw new Error(data.error || `Server responded with status ${response.status}`);
+        }
+
+        const blob = await response.blob();
+        const url = URL.createObjectURL(blob);
+
+        const audio = new Audio(url);
+        edgeTtsAudioRef.current = audio;
+
+        audio.onplay = () => {
+          setEdgeTtsPlayingIndex(index);
+        };
+
+        audio.onended = () => {
+          setEdgeTtsPlayingIndex(null);
+          edgeTtsAudioRef.current = null;
+          URL.revokeObjectURL(url);
+        };
+
+        audio.onerror = () => {
+          setEdgeTtsPlayingIndex(null);
+          edgeTtsAudioRef.current = null;
+          URL.revokeObjectURL(url);
+        };
+
+        await audio.play();
+        setEdgeTtsPlayingIndex(index);
+      } catch (err) {
+        console.error('[Assistant] Edge TTS error:', err);
+        setEdgeTtsPlayingIndex(null);
+      } finally {
+        setEdgeTtsLoadingIndex(null);
+      }
+    },
+    [edgeTtsPlayingIndex, stopSpeak],
+  );
+
+  const handleCopyText = useCallback((text: string, index: number) => {
+    navigator.clipboard.writeText(text);
+    setCopiedIndex(index);
+    setTimeout(() => setCopiedIndex(null), 2000);
+  }, []);
+
+  useEffect(() => {
+    return () => {
+      if (typeof window !== 'undefined' && 'speechSynthesis' in window) {
+        try {
+          window.speechSynthesis.cancel();
+        } catch {
+          // Safe fallback
+        }
+      }
+      if (edgeTtsAudioRef.current) {
+        edgeTtsAudioRef.current.pause();
+        edgeTtsAudioRef.current = null;
+      }
+    };
+  }, []);
 
   useEffect(() => {
     try {
@@ -726,6 +880,58 @@ export function AssistantPage() {
                 >
                     {message.content}
                   </div>
+
+                  {message.role === 'assistant' && (
+                    <div className="flex items-center gap-1.5 mt-2.5">
+                      <button
+                        type="button"
+                        onClick={() => toggleBrowserSpeak(message.content, index)}
+                        className={`p-1.5 rounded-full transition-all duration-200 flex items-center justify-center ${
+                          speakingIndex === index
+                            ? 'bg-cyan-400 text-slate-950 shadow-[0_0_12px_#61d7c9]'
+                            : 'text-slate-300 hover:text-cyan-300 hover:bg-cyan-500/15'
+                        }`}
+                        title={speakingIndex === index ? 'Stop Voice' : 'Read Aloud (Browser Voice)'}
+                      >
+                        {speakingIndex === index ? <VolumeX size={14} /> : <Volume2 size={14} />}
+                      </button>
+
+                      <button
+                        type="button"
+                        onClick={() => handleEdgeTtsSpeak(message.content, index)}
+                        disabled={edgeTtsLoadingIndex === index}
+                        className={`p-1.5 rounded-full transition-all duration-200 flex items-center justify-center ${
+                          edgeTtsPlayingIndex === index
+                            ? 'bg-purple-400 text-slate-950 shadow-[0_0_12px_#c084fc]'
+                            : 'text-slate-300 hover:text-purple-300 hover:bg-purple-500/15'
+                        }`}
+                        title={
+                          edgeTtsLoadingIndex === index
+                            ? 'Generating Neural Audio...'
+                            : edgeTtsPlayingIndex === index
+                            ? 'Stop Edge TTS Audio'
+                            : 'Play Edge TTS Neural Voice'
+                        }
+                      >
+                        {edgeTtsLoadingIndex === index ? (
+                          <Loader2 size={14} className="animate-spin text-purple-400" />
+                        ) : edgeTtsPlayingIndex === index ? (
+                          <Radio size={14} className="animate-pulse" />
+                        ) : (
+                          <Radio size={14} />
+                        )}
+                      </button>
+
+                      <button
+                        type="button"
+                        onClick={() => handleCopyText(message.content, index)}
+                        className="p-1.5 rounded-full text-slate-300 hover:text-cyan-300 hover:bg-cyan-500/15 transition-colors flex items-center justify-center"
+                        title="Copy message"
+                      >
+                        {copiedIndex === index ? <Check size={14} className="text-cyan-400" /> : <Copy size={14} />}
+                      </button>
+                    </div>
+                  )}
 
                   {message.role === 'assistant' &&
                     message.sources?.length ? (

@@ -1,13 +1,8 @@
 import { useState, useRef } from 'react';
 import { Mic, Play, Pause, Download, Sparkles, RefreshCw, AlertCircle, CheckCircle2 } from 'lucide-react';
 import { playTapSound } from '@/lib/audio';
-
-const VOICES = [
-  { id: 'en-US-AriaNeural', label: 'Aria (US Female)', accent: 'US' },
-  { id: 'en-US-ChristopherNeural', label: 'Christopher (US Male)', accent: 'US' },
-  { id: 'en-GB-SoniaNeural', label: 'Sonia (UK Female)', accent: 'UK' },
-  { id: 'en-GB-RyanNeural', label: 'Ryan (UK Male)', accent: 'UK' },
-];
+import { storage } from '@/lib/storage';
+import { EdgeVoicePicker } from '@/components/voice/EdgeVoicePicker';
 
 const SAMPLE_TEXTS = [
   "Welcome to NEXUS Intelligence OS. Microsoft Edge TTS neural speech synthesis is online and ready.",
@@ -18,7 +13,7 @@ const SAMPLE_TEXTS = [
 
 export function VoiceAI() {
   const [text, setText] = useState('');
-  const [selectedVoice, setSelectedVoice] = useState('en-US-AriaNeural');
+  const [selectedVoice, setSelectedVoice] = useState(() => storage.getEdgeVoice());
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [audioUrl, setAudioUrl] = useState<string | null>(null);
@@ -123,23 +118,13 @@ export function VoiceAI() {
           {/* Voice Selector & Presets */}
           <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
             <div>
-              <label className="block text-xs font-mono font-semibold text-slate-300 uppercase tracking-wider mb-2">
-                Neural Voice Model
-              </label>
-              <select
-                value={selectedVoice}
-                onChange={(e) => {
-                  playTapSound();
-                  setSelectedVoice(e.target.value);
+              <EdgeVoicePicker
+                selectedVoice={selectedVoice}
+                onSelectVoice={(v) => {
+                  setSelectedVoice(v);
+                  storage.saveEdgeVoice(v);
                 }}
-                className="w-full bg-slate-950 border border-slate-700/80 rounded-xl px-4 py-3 text-slate-100 text-sm focus:outline-none focus:border-cyan-500 transition shadow-inner"
-              >
-                {VOICES.map((v) => (
-                  <option key={v.id} value={v.id}>
-                    {v.label} ({v.accent})
-                  </option>
-                ))}
-              </select>
+              />
             </div>
 
             <div>

@@ -16,6 +16,7 @@ const KEYS = {
   aiProviders: 'nexus-ai-providers',
   jarvisConfig: 'nexus-jarvis-config-v1',
   jarvisMessages: 'nexus-jarvis-messages-v1',
+  edgeVoice: 'nexus-edge-voice-v1',
 } as const;
 
 export const DEFAULT_AGENT_SYSTEM_PROMPTS: Record<string, string> = {
@@ -600,5 +601,13 @@ export const storage = {
     localStorage.removeItem(KEYS.searches);
     localStorage.removeItem(KEYS.saved);
     localStorage.removeItem(KEYS.locations);
+  },
+
+  getEdgeVoice(): string {
+    return read<string>(KEYS.edgeVoice, 'en-US-AriaNeural');
+  },
+
+  saveEdgeVoice(voice: string): void {
+    write(KEYS.edgeVoice, voice);
   },
 };
