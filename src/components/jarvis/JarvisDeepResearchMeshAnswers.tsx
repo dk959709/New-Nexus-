@@ -131,6 +131,52 @@ const AGENT_THEMES: Record<
   },
 };
 
+function parseAgentJson(rawOutput: string): { parsed: unknown; isJson: boolean } {
+  if (!rawOutput) return { parsed: null, isJson: false };
+  let cleaned = rawOutput.trim();
+
+  // Strip markdown code fences if present
+  if (cleaned.startsWith('```')) {
+    cleaned = cleaned.replace(/^```(?:json)?\s*/i, '').replace(/\s*```$/, '').trim();
+  }
+
+  // Try direct parse
+  try {
+    const parsed = JSON.parse(cleaned);
+    if (parsed && (typeof parsed === 'object' || Array.isArray(parsed))) {
+      return { parsed, isJson: true };
+    }
+  } catch {
+    // continue
+  }
+
+  // Try extracting substring between first { and last }
+  const firstBrace = cleaned.indexOf('{');
+  const lastBrace = cleaned.lastIndexOf('}');
+  if (firstBrace !== -1 && lastBrace !== -1 && lastBrace > firstBrace) {
+    try {
+      const parsed = JSON.parse(cleaned.substring(firstBrace, lastBrace + 1));
+      return { parsed, isJson: true };
+    } catch {
+      // continue
+    }
+  }
+
+  // Try extracting substring between first [ and last ]
+  const firstBracket = cleaned.indexOf('[');
+  const lastBracket = cleaned.lastIndexOf(']');
+  if (firstBracket !== -1 && lastBracket !== -1 && lastBracket > firstBracket) {
+    try {
+      const parsed = JSON.parse(cleaned.substring(firstBracket, lastBracket + 1));
+      return { parsed, isJson: true };
+    } catch {
+      // continue
+    }
+  }
+
+  return { parsed: null, isJson: false };
+}
+
 function formatAgentContentToMarkdown(step: JarvisExecutionStep): {
   formatted: string;
   isStructuredJson: boolean;
@@ -141,138 +187,158 @@ function formatAgentContentToMarkdown(step: JarvisExecutionStep): {
     return { formatted: 'No output data recorded for this step.', isStructuredJson: false, raw: '' };
   }
 
-  // Try parsing JSON if raw starts with { or [
-  const trimmed = raw.trim();
-  if ((trimmed.startsWith('{') && trimmed.endsWith('}')) || (trimmed.startsWith('[') && trimmed.endsWith(']'))) {
-    try {
-      const parsed = JSON.parse(trimmed);
+  const { parsed, isJson } = parseAgentJson(raw);
 
-      // Handle Planner JSON
-      if (step.agentId === 'planner' && typeof parsed === 'object' && parsed !== null) {
-        const pObj = parsed as Record<string, unknown>;
-        const task = String(pObj.task || 'Autonomous query execution');
-        const plan = Array.isArray(pObj.plan) ? pObj.plan : [];
-        const needsDiagram = Boolean(pObj.needsDiagram);
-        const needsChart = Boolean(pObj.needsChart);
-        const needsImage = Boolean(pObj.needsImage);
-        const needsResearch = Boolean(pObj.needsResearch ?? true);
-        const needsFactCheck = Boolean(pObj.needsFactCheck ?? true);
-        const needsReview = Boolean(pObj.needsReview ?? true);
+  if (isJson && parsed !== null) {
+    // 1. Planner Agent
+    if (step.agentId === 'planner' && typeof parsed === 'object' && !Array.isArray(parsed)) {
+      const pObj = parsed as Record<string, unknown>;
+      const task = String(pObj.task || pObj.objective || 'Autonomous query execution');
+      const plan = Array.isArray(pObj.plan) ? pObj.plan : Array.isArray(pObj.steps) ? pObj.steps : [];
+      const needsDiagram = Boolean(pObj.needsDiagram);
+      const needsChart = Boolean(pObj.needsChart);
+      const needsImage = Boolean(pObj.needsImage);
+      const needsResearch = Boolean(pObj.needsResearch ?? true);
+      const needsFactCheck = Boolean(pObj.needsFactCheck ?? true);
+      const needsReview = Boolean(pObj.needsReview ?? true);
 
-        let md = `### 🎯 Targeted Objective\n**Task Scope:** ${task}\n\n### 📋 Strategic Execution Plan\n`;
-        if (plan.length > 0) {
-          plan.forEach((item, idx) => {
-            md += `${idx + 1}. **Phase ${idx + 1}:** ${String(item)}\n`;
-          });
-        } else {
-          md += `1. Multi-phase analysis and factual synthesis\n`;
-        }
+      let md = `### 🎯 Targeted Objective\n**Task Scope:** ${task}\n\n### 📋 Strategic Execution Plan\n`;
+      if (plan.length > 0) {
+        plan.forEach((item, idx) => {
+          md += `${idx + 1}. **Phase ${idx + 1}:** ${String(item)}\n`;
+        });
+      } else {
+        md += `1. Multi-phase analysis and factual synthesis\n`;
+      }
 
-        md += `\n### 🧭 Neural Pipeline Directives\n`;
-        md += `- **Deep Research Mesh:** ${needsResearch ? '✅ Active (Empirical Fact Retrieval)' : '⚪ Bypassed'}\n`;
-        md += `- **Fact Verification Audit:** ${needsFactCheck ? '✅ Active (Claim Scrutiny Enabled)' : '⚪ Bypassed'}\n`;
-        md += `- **Quality Assurance Peer Review:** ${needsReview ? '✅ Active (Multi-Point Review)' : '⚪ Bypassed'}\n`;
-        md += `- **Architectural Diagram:** ${needsDiagram ? '✅ Active (SVG Blueprint Generation)' : '⚪ Standby'}\n`;
-        md += `- **Quantitative Chart:** ${needsChart ? '✅ Active (Numerical Spec Extraction)' : '⚪ Standby'}\n`;
-        md += `- **Visual Image Lookup:** ${needsImage ? '✅ Active (Photographic Retrieval)' : '⚪ Standby'}\n`;
+      md += `\n### 🧭 Neural Pipeline Directives\n`;
+      md += `- **Deep Research Mesh:** ${needsResearch ? '✅ Active (Empirical Fact Retrieval)' : '⚪ Bypassed'}\n`;
+      md += `- **Fact Verification Audit:** ${needsFactCheck ? '✅ Active (Claim Scrutiny Enabled)' : '⚪ Bypassed'}\n`;
+      md += `- **Quality Assurance Peer Review:** ${needsReview ? '✅ Active (Multi-Point Review)' : '⚪ Bypassed'}\n`;
+      md += `- **Architectural Diagram:** ${needsDiagram ? '✅ Active (SVG Blueprint Generation)' : '⚪ Standby'}\n`;
+      md += `- **Quantitative Chart:** ${needsChart ? '✅ Active (Numerical Spec Extraction)' : '⚪ Standby'}\n`;
+      md += `- **Visual Image Lookup:** ${needsImage ? '✅ Active (Photographic Retrieval)' : '⚪ Standby'}\n`;
 
+      return { formatted: md, isStructuredJson: true, raw };
+    }
+
+    // 2. Researcher Agent
+    if (step.agentId === 'researcher' && typeof parsed === 'object' && !Array.isArray(parsed)) {
+      const rObj = parsed as Record<string, unknown>;
+      const facts = Array.isArray(rObj.facts) ? rObj.facts : Array.isArray(rObj.findings) ? rObj.findings : [];
+      const context = typeof rObj.context === 'string' ? rObj.context : typeof rObj.summary === 'string' ? rObj.summary : '';
+      const keyInsights = Array.isArray(rObj.keyInsights) ? rObj.keyInsights : Array.isArray(rObj.insights) ? rObj.insights : [];
+
+      let md = `### 🔎 Core Fact Intelligence & Verified Findings\n`;
+      if (facts.length > 0) {
+        facts.forEach((fact) => {
+          md += `- ${String(fact)}\n`;
+        });
+      } else {
+        md += `- Fact gathering completed successfully.\n`;
+      }
+
+      if (keyInsights.length > 0) {
+        md += `\n### 💡 Key Empirical Insights\n`;
+        keyInsights.forEach((insight) => {
+          md += `- ${String(insight)}\n`;
+        });
+      }
+
+      if (context) {
+        md += `\n### 📖 Deep Contextual Background\n${context}\n`;
+      }
+
+      return { formatted: md, isStructuredJson: true, raw };
+    }
+
+    // 3. Fact Checker Agent
+    if (step.agentId === 'factChecker' && typeof parsed === 'object' && !Array.isArray(parsed)) {
+      const fObj = parsed as Record<string, unknown>;
+      const summary = typeof fObj.summary === 'string' ? fObj.summary : 'All claims verified.';
+      const verified = Array.isArray(fObj.verified) ? fObj.verified : [];
+      const issues = Array.isArray(fObj.issues) ? fObj.issues : Array.isArray(fObj.corrections) ? fObj.corrections : [];
+
+      let md = `### ⚖️ Fact-Check Audit Summary\n**Verification Status:** ${summary}\n\n`;
+
+      if (verified.length > 0) {
+        md += `#### ✅ Verified Claims & Accuracy Points:\n`;
+        verified.forEach((v) => {
+          md += `- **Verified:** ${String(v)}\n`;
+        });
+      }
+
+      if (issues.length > 0) {
+        md += `\n#### ⚠️ Discrepancy & Correction Notes:\n`;
+        issues.forEach((issue) => {
+          md += `- **Correction:** ${String(issue)}\n`;
+        });
+      } else {
+        md += `\n#### 🛡️ Cross-Verification Audit Result:\n- No factual contradictions or ungrounded hallucinations detected.\n`;
+      }
+
+      return { formatted: md, isStructuredJson: true, raw };
+    }
+
+    // 4. Reviewer Agent
+    if (step.agentId === 'reviewer' && typeof parsed === 'object' && !Array.isArray(parsed)) {
+      const rvObj = parsed as Record<string, unknown>;
+      const recommendation =
+        typeof rvObj.recommendation === 'string'
+          ? rvObj.recommendation
+          : typeof rvObj.verdict === 'string'
+          ? rvObj.verdict
+          : 'Proceed with comprehensive synthesis.';
+      const critique = typeof rvObj.critique === 'string' ? rvObj.critique : typeof rvObj.feedback === 'string' ? rvObj.feedback : '';
+      const score = typeof rvObj.score === 'number' ? rvObj.score : null;
+
+      let md = `### 🛡️ Peer Review & Quality Assurance\n`;
+      if (score !== null) {
+        md += `**Quality Score:** \`${score}/100\` • **Verdict:** ${recommendation}\n\n`;
+      } else {
+        md += `**Verdict & Recommendation:** ${recommendation}\n\n`;
+      }
+
+      if (critique) {
+        md += `### 🔍 Refinements & Editorial Critique\n${critique}\n`;
+      }
+
+      return { formatted: md, isStructuredJson: true, raw };
+    }
+
+    // 5. Generic or Custom Agent JSON formatting (Never raw JSON block as default!)
+    if (typeof parsed === 'object' && parsed !== null) {
+      if (Array.isArray(parsed)) {
+        let md = `### 📊 ${step.name ? step.name.toUpperCase() : step.agentId.toUpperCase()} // STRUCTURED RECORDS\n\n`;
+        parsed.forEach((item, i) => {
+          md += `${i + 1}. ${typeof item === 'object' ? JSON.stringify(item) : String(item)}\n`;
+        });
         return { formatted: md, isStructuredJson: true, raw };
       }
 
-      // Handle Researcher JSON
-      if (step.agentId === 'researcher' && typeof parsed === 'object' && parsed !== null) {
-        const rObj = parsed as Record<string, unknown>;
-        const facts = Array.isArray(rObj.facts) ? rObj.facts : [];
-        const context = typeof rObj.context === 'string' ? rObj.context : '';
-        const keyInsights = Array.isArray(rObj.keyInsights) ? rObj.keyInsights : [];
-
-        let md = `### 🔎 Core Fact Intelligence & Verified Findings\n`;
-        if (facts.length > 0) {
-          facts.forEach((fact) => {
-            md += `- ${String(fact)}\n`;
+      const pObj = parsed as Record<string, unknown>;
+      let md = `### ⚡ ${step.name ? step.name.toUpperCase() : step.agentId.toUpperCase()} // EXECUTION OUTPUT\n\n`;
+      
+      for (const [key, val] of Object.entries(pObj)) {
+        const titleKey = key.replace(/([A-Z])/g, ' $1').toUpperCase();
+        if (Array.isArray(val)) {
+          md += `**${titleKey}:**\n`;
+          val.forEach((item) => {
+            md += `- ${typeof item === 'object' ? JSON.stringify(item) : String(item)}\n`;
           });
-        } else {
-          md += `- Fact gathering completed successfully.\n`;
+          md += `\n`;
+        } else if (val && typeof val === 'object') {
+          md += `**${titleKey}:**\n\`\`\`json\n${JSON.stringify(val, null, 2)}\n\`\`\`\n\n`;
+        } else if (val !== undefined && val !== null && val !== '') {
+          md += `**${titleKey}:** ${String(val)}\n\n`;
         }
-
-        if (keyInsights.length > 0) {
-          md += `\n### 💡 Key Empirical Insights\n`;
-          keyInsights.forEach((insight) => {
-            md += `- ${String(insight)}\n`;
-          });
-        }
-
-        if (context) {
-          md += `\n### 📖 Deep Contextual Background\n${context}\n`;
-        }
-
-        return { formatted: md, isStructuredJson: true, raw };
       }
-
-      // Handle Fact Checker JSON
-      if (step.agentId === 'factChecker' && typeof parsed === 'object' && parsed !== null) {
-        const fObj = parsed as Record<string, unknown>;
-        const summary = typeof fObj.summary === 'string' ? fObj.summary : 'All claims verified.';
-        const verified = Array.isArray(fObj.verified) ? fObj.verified : [];
-        const issues = Array.isArray(fObj.issues) ? fObj.issues : [];
-
-        let md = `### ⚖️ Fact-Check Audit Summary\n**Verification Status:** ${summary}\n\n`;
-
-        if (verified.length > 0) {
-          md += `#### ✅ Verified Claims & Accuracy Points:\n`;
-          verified.forEach((v) => {
-            md += `- **Verified:** ${String(v)}\n`;
-          });
-        }
-
-        if (issues.length > 0) {
-          md += `\n#### ⚠️ Discrepancy & Correction Notes:\n`;
-          issues.forEach((issue) => {
-            md += `- **Correction:** ${String(issue)}\n`;
-          });
-        } else {
-          md += `\n#### 🛡️ Cross-Verification Audit Result:\n- No factual contradictions or ungrounded hallucinations detected.\n`;
-        }
-
-        return { formatted: md, isStructuredJson: true, raw };
-      }
-
-      // Handle Reviewer JSON
-      if (step.agentId === 'reviewer' && typeof parsed === 'object' && parsed !== null) {
-        const rvObj = parsed as Record<string, unknown>;
-        const recommendation =
-          typeof rvObj.recommendation === 'string'
-            ? rvObj.recommendation
-            : 'Proceed with comprehensive synthesis.';
-        const critique = typeof rvObj.critique === 'string' ? rvObj.critique : '';
-        const score = typeof rvObj.score === 'number' ? rvObj.score : null;
-
-        let md = `### 🛡️ Peer Review & Quality Assurance\n`;
-        if (score !== null) {
-          md += `**Quality Score:** \`${score}/100\` • **Verdict:** ${recommendation}\n\n`;
-        } else {
-          md += `**Verdict & Recommendation:** ${recommendation}\n\n`;
-        }
-
-        if (critique) {
-          md += `### 🔍 Refinements & Editorial Critique\n${critique}\n`;
-        }
-
-        return { formatted: md, isStructuredJson: true, raw };
-      }
-
-      // Fallback formatted JSON block
-      return {
-        formatted: `\`\`\`json\n${JSON.stringify(parsed, null, 2)}\n\`\`\``,
-        isStructuredJson: true,
-        raw,
-      };
-    } catch {
-      // JSON parse failed, proceed as markdown/plain text
+      return { formatted: md, isStructuredJson: true, raw };
     }
   }
 
-  return { formatted: raw, isStructuredJson: false, raw };
+  // Fallback for non-JSON or plain text (e.g. terminal logs, pasted text, markdown)
+  return { formatted: raw, isStructuredJson: true, raw };
 }
 
 export const JarvisDeepResearchMeshAnswers: React.FC<JarvisDeepResearchMeshAnswersProps> = ({
