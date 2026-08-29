@@ -726,18 +726,40 @@ export function JarvisSettings({ onSaved }: JarvisSettingsProps) {
                 <div style={{ display: 'grid', gap: '18px' }}>
                   {agentId === 'planner' && (
                     <div style={{ background: 'rgba(97,215,201,0.05)', padding: '16px', borderRadius: '12px', border: '1px solid rgba(97,215,201,0.2)' }}>
-                      <label
-                        style={{
-                          display: 'block',
-                          fontSize: '11px',
-                          fontFamily: 'DM Mono',
-                          color: 'var(--accent)',
-                          marginBottom: '6px',
-                          letterSpacing: '0.05em',
-                        }}
-                      >
-                        RESPONSE LANGUAGE
-                      </label>
+                      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '6px' }}>
+                        <label
+                          style={{
+                            display: 'block',
+                            fontSize: '11px',
+                            fontFamily: 'DM Mono',
+                            color: 'var(--accent)',
+                            letterSpacing: '0.05em',
+                          }}
+                        >
+                          RESPONSE LANGUAGE
+                        </label>
+                        <button
+                          type="button"
+                          onClick={() => handleAgentChange('planner', { responseLanguage: 'English' })}
+                          style={{
+                            padding: '4px 10px',
+                            fontSize: '11px',
+                            fontFamily: 'DM Mono',
+                            borderRadius: '6px',
+                            background: 'rgba(255,255,255,0.06)',
+                            border: '1px solid rgba(255,255,255,0.18)',
+                            color: '#cbd5e1',
+                            cursor: 'pointer',
+                            display: 'inline-flex',
+                            alignItems: 'center',
+                            gap: '4px',
+                          }}
+                          title="Reset Response Language to English"
+                        >
+                          <RotateCcw size={11} />
+                          Reset to English
+                        </button>
+                      </div>
                       <input
                         type="text"
                         value={agent.responseLanguage !== undefined ? agent.responseLanguage : 'English'}
