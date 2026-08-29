@@ -3,7 +3,7 @@ import { BrowserRouter, Route, Routes } from 'react-router-dom';
 import { Loader2 } from 'lucide-react';
 import { Layout } from '@/components';
 import { ErrorBoundary } from '@/components/ErrorBoundary';
-import { HomePage, SearchPage, WeatherPage, SettingsPage } from '@/pages';
+import { HomePage, SearchPage, WeatherPage, SettingsPage, VoiceAI } from '@/pages';
 import { AssistantPage } from '@/pages/AssistantPage';
 import { JarvisPage } from '@/pages/JarvisPage';
 
@@ -33,6 +33,7 @@ export default function App() {
             <Route path="/jarvis" element={<JarvisPage />} />
             <Route path="/search" element={<SearchPage />} />
             <Route path="/assistant" element={<AssistantPage />} />
+            <Route path="/voice-ai" element={<VoiceAI />} />
             <Route
               path="/devices"
               element={

@@ -21,13 +21,12 @@ import {
   Bookmark,
   BookmarkCheck,
   Headphones,
-  PhoneCall,
 } from 'lucide-react';
 import { storage } from '@/lib/storage';
 import { stripConversationalMetaText } from '@/lib/format';
 import { runJarvisPipeline } from '@/services/jarvisOrchestrator';
 import { vox } from '@/services/vox';
-import { VoiceCallModal } from '@/components/vox/VoiceCallModal';
+
 import { JarvisHudHeader } from './JarvisHudHeader';
 import { JarvisCoreVisualizer } from './JarvisCoreVisualizer';
 import { JarvisTopologyMatrix } from './JarvisTopologyMatrix';
@@ -186,7 +185,7 @@ export function JarvisChat({ config, onOpenSettings }: JarvisChatProps) {
   const [voxSpeakingId, setVoxSpeakingId] = useState<string | null>(null);
   const [voxLoadingId, setVoxLoadingId] = useState<string | null>(null);
   const [voxToastError, setVoxToastError] = useState<string | null>(null);
-  const [isVoiceCallOpen, setIsVoiceCallOpen] = useState(false);
+
   const [showClearConfirm, setShowClearConfirm] = useState(false);
   const [clearedBanner, setClearedBanner] = useState(false);
   const [activeView, setActiveView] = useState<'chat' | 'topology' | 'categories' | 'reactor' | 'terminal'>('chat');
@@ -1194,16 +1193,7 @@ export function JarvisChat({ config, onOpenSettings }: JarvisChatProps) {
               <Mic size={17} className={voiceListening ? 'animate-bounce' : ''} />
             </button>
 
-            {/* Voice Call Launcher Button */}
-            <button
-              type="button"
-              onClick={() => setIsVoiceCallOpen(true)}
-              aria-label="Start Voice Call"
-              title="Start Continuous Voice Call with JARVIS (Vox Duplex)"
-              className="w-9 h-9 sm:w-10 sm:h-10 rounded-full flex items-center justify-center transition-all duration-200 shrink-0 bg-emerald-500/15 hover:bg-emerald-500/25 text-emerald-300 border border-emerald-500/40 shadow-[0_0_12px_rgba(16,185,129,0.2)]"
-            >
-              <PhoneCall size={16} />
-            </button>
+
 
             {/* Submit Pill Button */}
             <button
@@ -1519,12 +1509,7 @@ export function JarvisChat({ config, onOpenSettings }: JarvisChatProps) {
         </form>
       </div>
 
-      {/* Full-Screen Continuous Voice Call Modal */}
-      <VoiceCallModal
-        isOpen={isVoiceCallOpen}
-        onClose={() => setIsVoiceCallOpen(false)}
-        onOpenSettings={onOpenSettings}
-      />
+
     </div>
   );
 }

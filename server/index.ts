@@ -4,6 +4,8 @@ import cors from 'cors';
 import helmet from 'helmet';
 import morgan from 'morgan';
 import fs from 'node:fs';
+import { execFile } from 'node:child_process';
+import { promisify } from 'node:util';
 import { resolve } from 'node:path';
 import net from 'node:net';
 import os from 'node:os';
@@ -4762,6 +4764,82 @@ async function startServer() {
       }
     });
   }
+
+  // POST /api/edge-tts (Microsoft Edge TTS Python CLI wrapper)
+  app.post('/api/edge-tts', async (req, res) => {
+    try {
+      const { text, voice } = req.body || {};
+      if (!text || typeof text !== 'string' || !text.trim()) {
+        return res.status(400).json({ error: 'Missing or invalid text parameter' });
+      }
+
+      const selectedVoice = (typeof voice === 'string' && voice.trim()) ? voice.trim() : 'en-US-AriaNeural';
+      const tmpDir = os.tmpdir();
+      const tmpFilePath = resolve(tmpDir, `edge_tts_${Date.now()}_${Math.random().toString(36).substring(2, 8)}.mp3`);
+
+      const execFileAsync = promisify(execFile);
+      let success = false;
+      let errorMsg = '';
+
+      try {
+        await execFileAsync('edge-tts', [
+          '--text', text.trim(),
+          '--voice', selectedVoice,
+          '--write-media', tmpFilePath
+        ], { timeout: 35000 });
+        success = true;
+      } catch (e1: unknown) {
+        try {
+          await execFileAsync('python3', [
+            '-m', 'edge_tts',
+            '--text', text.trim(),
+            '--voice', selectedVoice,
+            '--write-media', tmpFilePath
+          ], { timeout: 35000 });
+          success = true;
+        } catch (e2: unknown) {
+          const m2 = e2 instanceof Error ? e2.message : String(e2);
+          const m1 = e1 instanceof Error ? e1.message : String(e1);
+          errorMsg = m2 || m1 || 'Failed to execute edge-tts python tool';
+        }
+      }
+
+      if (!success || !fs.existsSync(tmpFilePath)) {
+        console.error('[API /api/edge-tts] Error:', errorMsg);
+        return res.status(500).json({ error: `TTS generation failed: ${errorMsg || 'edge-tts tool error'}` });
+      }
+
+      res.setHeader('Content-Type', 'audio/mpeg');
+      res.setHeader('Content-Disposition', 'inline; filename="speech.mp3"');
+
+      const stream = fs.createReadStream(tmpFilePath);
+      stream.on('error', (err) => {
+        console.error('[API /api/edge-tts] Stream error:', err);
+        if (!res.headersSent) {
+          res.status(500).json({ error: 'Failed to stream audio file' });
+        }
+        try {
+          if (fs.existsSync(tmpFilePath)) fs.unlinkSync(tmpFilePath);
+        } catch {
+          // ignore cleanup error
+        }
+      });
+
+      stream.on('end', () => {
+        try {
+          if (fs.existsSync(tmpFilePath)) fs.unlinkSync(tmpFilePath);
+        } catch {
+          // ignore cleanup error
+        }
+      });
+
+      stream.pipe(res);
+    } catch (err: unknown) {
+      console.error('[POST /api/edge-tts] Exception:', err);
+      const errMsg = err instanceof Error ? err.message : String(err);
+      return res.status(500).json({ error: errMsg || 'Internal server error' });
+    }
+  });
 
   // POST /api/tts/edge
   app.post('/api/tts/edge', async (req, res) => {
