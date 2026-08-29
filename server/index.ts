@@ -768,7 +768,7 @@ function generateLocalNexusAiResponse(
     lower === 'features'
   ) {
     return {
-      text: `I am **NEXUS AI**, a multi-model intelligence operating system.\n\nHere is what I can do for you:\n• **Web & Knowledge Search**: Search the web and Wikipedia for instant facts and summaries.\n• **Weather & Radar**: Real-time forecasts, atmospheric conditions, and interactive radar maps.\n• **Space Intelligence**: NASA Astronomy Picture of the Day (APOD) and asteroid tracking.\n• **Device Fleet Telemetry**: Live battery, network, RAM, and diagnostic monitoring for connected devices.\n• **Offline AI**: In-browser neural models powered by Transformers.js.\n• **Assistant Chat**: Multi-turn reasoning, problem solving, and explanations.\n\nFeel free to ask any question or give me a task!`,
+      text: `I am **NEXUS AI**, a multi-model intelligence operating system.\n\nHere is what I can do for you:\n• **Web & Knowledge Search**: Search the web and Wikipedia for instant facts and summaries.\n• **Weather & Radar**: Real-time forecasts, atmospheric conditions, and interactive radar maps.\n• **Space Intelligence**: NASA Astronomy Picture of the Day (APOD) and asteroid tracking.\n• **Device Fleet Telemetry**: Live battery, network, RAM, and diagnostic monitoring for connected devices.\n• **Assistant Chat**: Multi-turn reasoning, problem solving, and explanations.\n\nFeel free to ask any question or give me a task!`,
       model: 'nexus-intelligence',
     };
   }
@@ -847,7 +847,7 @@ function generateLocalNexusAiResponse(
 
   // 5. General response
   return {
-    text: `Here is information regarding **"${trimmed}"**:\n\nNEXUS has processed your query across our live intelligence engines. You can also explore real-time web results in the **Web Search** tab, check the **Weather Radar**, or run local browser models in **Offline AI**.`,
+    text: `Here is information regarding **"${trimmed}"**:\n\nNEXUS has processed your query across our live intelligence engines. You can also explore real-time web results in the **Web Search** tab or check the **Weather Radar**.`,
     model: 'nexus-intelligence',
   };
 }
@@ -3557,93 +3557,7 @@ async function startServer() {
   app.use(express.json({ limit: '1mb' }));
   app.use(morgan('tiny'));
 
-  // Offline model proxy
-  app.get('/api/offline-model/:owner/:repo/*rest', async (req, res) => {
-    try {
-      const owner = String(req.params.owner);
-      const repo = String(req.params.repo);
-      const restParam = (req.params as Record<string, unknown>).rest;
-      const rest = Array.isArray(restParam) ? restParam.join('/') : String(restParam ?? '');
-
-      if (!owner || !repo || !rest) {
-        return errorResponse(res, 400, 'Invalid offline model path.');
-      }
-
-      if (owner !== 'HuggingFaceTB' || repo !== 'SmolLM2-135M-Instruct') {
-        return errorResponse(res, 403, 'Offline model not allowed.');
-      }
-
-      let normalizedRest = rest;
-      if (normalizedRest.startsWith('resolve/')) {
-        const parts = normalizedRest.split('/');
-        const revision = parts[1] || 'main';
-        let file = parts.slice(2).join('/');
-        if (file.startsWith('file/')) {
-          file = file.slice(5);
-        }
-        normalizedRest = `resolve/${revision}/${file}`;
-      } else if (normalizedRest.startsWith('revision/')) {
-        const parts = normalizedRest.split('/');
-        const revision = parts[1] || 'main';
-        let file = parts.slice(2).join('/');
-        if (file.startsWith('file/')) {
-          file = file.slice(5);
-        }
-        normalizedRest = `resolve/${revision}/${file}`;
-      }
-
-      const upstreamUrl = `https://huggingface.co/${owner}/${repo}/${normalizedRest}`;
-      const upstream = await fetch(upstreamUrl, {
-        headers: {
-          ...(req.headers.range ? { Range: req.headers.range } : {}),
-          'User-Agent': 'NEXUS-Offline-AI/1.0',
-        },
-        redirect: 'follow',
-      });
-
-      if (!upstream.ok || !upstream.body) {
-        return errorResponse(
-          res,
-          upstream.status || 502,
-          `Offline model upstream returned ${upstream.status}.`,
-        );
-      }
-
-      res.status(upstream.status);
-      const contentType = upstream.headers.get('content-type');
-      const contentLength = upstream.headers.get('content-length');
-      const contentRange = upstream.headers.get('content-range');
-      const acceptRanges = upstream.headers.get('accept-ranges');
-
-      if (contentType) res.setHeader('Content-Type', contentType);
-      if (contentLength) res.setHeader('Content-Length', contentLength);
-      if (contentRange) res.setHeader('Content-Range', contentRange);
-      if (acceptRanges) res.setHeader('Accept-Ranges', acceptRanges);
-
-      res.setHeader('Cache-Control', 'public, max-age=31536000, immutable');
-      res.setHeader('Access-Control-Allow-Origin', '*');
-
-      const reader = upstream.body.getReader();
-      try {
-        while (true) {
-          const { done, value } = await reader.read();
-          if (done) break;
-          res.write(Buffer.from(value));
-        }
-      } finally {
-        reader.releaseLock();
-      }
-
-      res.end();
-    } catch (error) {
-      console.error('Offline model proxy error:', error);
-      if (!res.headersSent) {
-        return errorResponse(res, 502, 'Offline model download failed.');
-      }
-      res.end();
-    }
-  });
-
+  // Offline model proxy removed
   app.get('/api/health', (_req, res) =>
     res.json({ status: 'ok', service: 'nexus-api', time: new Date().toISOString() }),
   );
@@ -4456,157 +4370,7 @@ async function startServer() {
     });
   });
 
-  // ----------------------------------------------------
-  // VOX // HUGGING FACE NEURAL TEXT-TO-SPEECH (TTS)
-  // ----------------------------------------------------
-  async function executeHuggingFaceTts({
-    text,
-    model = 'facebook/mms-tts-eng',
-    apiKey,
-    timeoutMs = 35000,
-  }: {
-    text: string;
-    model?: string;
-    apiKey?: string;
-    timeoutMs?: number;
-  }): Promise<{
-    ok: boolean;
-    audioUrl?: string;
-    mimeType?: string;
-    model?: string;
-    status?: number;
-    error?: string;
-    estimatedTime?: number;
-  }> {
-    const token = apiKey?.trim() || process.env.HUGGINGFACE_API_KEY?.trim() || process.env.HF_TOKEN?.trim();
-    if (!token) {
-      return {
-        ok: false,
-        status: 401,
-        error: 'Hugging Face API key is required. Please add your Hugging Face API key in Settings > AI Providers to enable Vox.',
-      };
-    }
 
-    // Clean and sanitize input text (strip code blocks, links, and heavy markup)
-    const cleanText = text
-      .replace(/```[\s\S]*?```/g, ' ')
-      .replace(/[*#`_~>[\]()]/g, ' ')
-      .replace(/https?:\/\/\S+/g, ' ')
-      .replace(/\s+/g, ' ')
-      .trim();
-
-    if (!cleanText) {
-      return {
-        ok: false,
-        status: 400,
-        error: 'Text input for Vox TTS cannot be empty.',
-      };
-    }
-
-    const trimmedText = cleanText.slice(0, 1500);
-    const targetModel = model.trim() || 'facebook/mms-tts-eng';
-
-    const urls = [
-      `https://api-inference.huggingface.co/models/${encodeURIComponent(targetModel)}`,
-      `https://router.huggingface.co/hf-inference/models/${encodeURIComponent(targetModel)}`,
-    ];
-
-    let lastError = 'Failed to connect to Hugging Face Inference API';
-    let lastStatus = 500;
-
-    for (const url of urls) {
-      try {
-        const controller = new AbortController();
-        const timeoutId = setTimeout(() => controller.abort(), timeoutMs);
-
-        const response = await fetch(url, {
-          method: 'POST',
-          headers: {
-            Authorization: `Bearer ${token}`,
-            'Content-Type': 'application/json',
-            'User-Agent': 'NEXUS-Intelligence-Vox/1.0',
-          },
-          body: JSON.stringify({ inputs: trimmedText }),
-          signal: controller.signal,
-        });
-
-        clearTimeout(timeoutId);
-
-        if (response.ok) {
-          const mimeType = response.headers.get('content-type') || 'audio/wav';
-          const arrayBuffer = await response.arrayBuffer();
-          const base64Audio = Buffer.from(arrayBuffer).toString('base64');
-          const audioUrl = `data:${mimeType};base64,${base64Audio}`;
-
-          return {
-            ok: true,
-            status: 200,
-            audioUrl,
-            mimeType,
-            model: targetModel,
-          };
-        }
-
-        lastStatus = response.status;
-        const errorText = await response.text();
-        let errorJson: { error?: string | string[]; estimated_time?: number; message?: string } | null = null;
-        try {
-          errorJson = JSON.parse(errorText);
-        } catch {
-          // text format
-        }
-
-        if (response.status === 503 && errorJson?.estimated_time) {
-          return {
-            ok: false,
-            status: 503,
-            estimatedTime: Math.round(errorJson.estimated_time),
-            error: `Hugging Face model "${targetModel}" is warming up (estimated ${Math.round(errorJson.estimated_time)}s). Please try again in a few moments.`,
-            model: targetModel,
-          };
-        }
-
-        if (response.status === 401 || response.status === 403) {
-          return {
-            ok: false,
-            status: response.status,
-            error: 'Invalid Hugging Face API key. Please check your token in Settings > AI Providers.',
-          };
-        }
-
-        if (response.status === 404) {
-          return {
-            ok: false,
-            status: 404,
-            error: `Hugging Face TTS model "${targetModel}" was not found or is not supported by the Inference API.`,
-          };
-        }
-
-        const errMsg =
-          typeof errorJson?.error === 'string'
-            ? errorJson.error
-            : Array.isArray(errorJson?.error)
-            ? errorJson.error.join(', ')
-            : errorJson?.message || errorText || `HTTP ${response.status}`;
-
-        lastError = errMsg;
-      } catch (err: unknown) {
-        if (err instanceof Error && err.name === 'AbortError') {
-          lastError = `Hugging Face TTS request timed out (${Math.round(timeoutMs / 1000)}s)`;
-          lastStatus = 504;
-        } else {
-          lastError = err instanceof Error ? err.message : String(err);
-        }
-      }
-    }
-
-    return {
-      ok: false,
-      status: lastStatus,
-      error: lastError,
-      model: targetModel,
-    };
-  }
 
   async function executeEdgeTts({
     text,
@@ -4720,36 +4484,60 @@ async function startServer() {
       }
     }
 
-    // Fallback to Hugging Face TTS if Azure credentials are missing or REST call failed
-    console.log('[EDGE-TTS] Azure credentials (AZURE_SPEECH_KEY) not found or request failed. Falling back to Hugging Face TTS.');
+    // Fallback to python edge-tts CLI tool if Azure credentials are missing or REST call failed
+    console.log('[EDGE-TTS] Azure credentials not found or request failed. Falling back to python edge-tts.');
     try {
-      const hfRes = await executeHuggingFaceTts({
-        text: trimmedText,
-        model: 'facebook/mms-tts-eng',
-        timeoutMs,
-      });
-      if (hfRes.ok) {
-        console.log('[EDGE-TTS] success');
+      const tmpDir = os.tmpdir();
+      const tmpFilePath = resolve(tmpDir, `edge_tts_${Date.now()}_${Math.random().toString(36).substring(2, 8)}.mp3`);
+      const execFileAsync = promisify(execFile);
+      let success = false;
+      try {
+        await execFileAsync('edge-tts', [
+          '--text', trimmedText,
+          '--voice', targetVoice,
+          '--write-media', tmpFilePath
+        ], { timeout: timeoutMs });
+        success = true;
+      } catch {
+        try {
+          await execFileAsync('python3', [
+            '-m', 'edge_tts',
+            '--text', trimmedText,
+            '--voice', targetVoice,
+            '--write-media', tmpFilePath
+          ], { timeout: timeoutMs });
+          success = true;
+        } catch {
+          // failed
+        }
+      }
+
+      if (success && fs.existsSync(tmpFilePath)) {
+        const arrayBuffer = fs.readFileSync(tmpFilePath);
+        try {
+          fs.unlinkSync(tmpFilePath);
+        } catch {
+          // ignore cleanup error
+        }
+        const base64Audio = Buffer.from(arrayBuffer).toString('base64');
+        console.log('[EDGE-TTS] success via CLI fallback');
         return {
           ok: true,
           status: 200,
-          audioUrl: hfRes.audioUrl,
-          mimeType: hfRes.mimeType || 'audio/wav',
-          model: 'facebook/mms-tts-eng (Fallback)',
+          audioUrl: `data:audio/mp3;base64,${base64Audio}`,
+          mimeType: 'audio/mp3',
+          model: targetVoice,
         };
       }
-      return {
-        ok: false,
-        status: hfRes.status || 500,
-        error: hfRes.error || 'TTS service temporarily unavailable',
-      };
-    } catch {
-      return {
-        ok: false,
-        status: 500,
-        error: 'TTS service temporarily unavailable',
-      };
+    } catch (err: unknown) {
+      console.warn('[EDGE-TTS] fallback error:', err);
     }
+
+    return {
+      ok: false,
+      status: 500,
+      error: 'TTS service temporarily unavailable',
+    };
   }
 
   function escapeXml(str: string): string {
@@ -4886,13 +4674,12 @@ async function startServer() {
     }
   });
 
-  // Generate TTS Audio via Hugging Face or Edge TTS
+  // Generate TTS Audio via Edge TTS
   app.post('/api/tts/generate', async (req, res) => {
     const parsed = z
       .object({
         text: z.string().min(1).max(8000),
         model: z.string().optional(),
-        apiKey: z.string().optional(),
         voice: z.string().optional(),
         rate: z.string().optional(),
         pitch: z.string().optional(),
@@ -4904,28 +4691,17 @@ async function startServer() {
       return errorResponse(res, 400, 'Invalid TTS request');
     }
 
-    const { text, model, apiKey, voice, rate, pitch, timeoutMs } = parsed.data;
+    const { text, model, voice, rate, pitch, timeoutMs } = parsed.data;
 
     try {
-      let result;
-      const isEdge = !model || model === 'edge-tts' || model.includes('Neural') || model.startsWith('en-');
-      if (isEdge) {
-        const targetVoice = model && model !== 'edge-tts' ? model : (voice || apiKey || 'en-US-AriaNeural');
-        result = await executeEdgeTts({
-          text,
-          voice: targetVoice,
-          rate,
-          pitch,
-          timeoutMs,
-        });
-      } else {
-        result = await executeHuggingFaceTts({
-          text,
-          model,
-          apiKey,
-          timeoutMs,
-        });
-      }
+      const targetVoice = model && model !== 'edge-tts' ? model : (voice || 'en-US-AriaNeural');
+      const result = await executeEdgeTts({
+        text,
+        voice: targetVoice,
+        rate,
+        pitch,
+        timeoutMs,
+      });
 
       if (!result.ok) {
         return errorResponse(res, result.status || 500, result.error || 'TTS service temporarily unavailable');
@@ -4940,39 +4716,30 @@ async function startServer() {
         },
       });
     } catch (err: unknown) {
-      console.error('[Vox Server] TTS error:', err);
+      console.error('[TTS Server] TTS error:', err);
       const msg = err instanceof Error ? err.message : 'TTS service temporarily unavailable';
       return errorResponse(res, 500, msg);
     }
   });
 
-  // Test TTS Connection for Vox
+  // Test TTS Connection
   app.post('/api/tts/test', async (req, res) => {
     const parsed = z
       .object({
-        apiKey: z.string().optional(),
         model: z.string().optional(),
         voice: z.string().optional(),
       })
       .safeParse(req.body);
 
-    const apiKey = parsed.success ? parsed.data.apiKey : undefined;
     const model = parsed.success ? parsed.data.model : undefined;
     const voice = parsed.success ? parsed.data.voice : undefined;
 
-    const isEdge = model === 'edge-tts' || (model && model.includes('Neural')) || (model && model.startsWith('en-'));
-    const result = isEdge
-      ? await executeEdgeTts({
-          text: 'NEXUS Vox Edge TTS neural speech online.',
-          voice: model === 'edge-tts' ? (voice || 'en-US-AriaNeural') : model,
-          timeoutMs: 20000,
-        })
-      : await executeHuggingFaceTts({
-          text: 'NEXUS Vox neural speech synthesis online.',
-          model: model || 'facebook/mms-tts-eng',
-          apiKey,
-          timeoutMs: 20000,
-        });
+    const targetVoice = model && model !== 'edge-tts' ? (model.includes('Neural') ? model : (voice || 'en-US-AriaNeural')) : (voice || 'en-US-AriaNeural');
+    const result = await executeEdgeTts({
+      text: 'NEXUS Voice AI neural speech online.',
+      voice: targetVoice,
+      timeoutMs: 20000,
+    });
 
     return res.json({
       data: {

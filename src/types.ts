@@ -531,19 +531,5 @@ export interface MediaItem {
   playableUrl?: string;
 }
 
-export interface VoxSettings {
-  providerId?: string;
-  model: string;
-  speed: number;
-  pitch: number;
-  autoPlay: boolean;
-}
-
-export interface TtsResponse {
-  ok: boolean;
-  audioUrl: string;
-  mimeType?: string;
-  model?: string;
-}
 
 

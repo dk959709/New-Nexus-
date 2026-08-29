@@ -6,7 +6,6 @@ import type {
   KeyHealthStatus,
   JarvisSystemConfig,
   JarvisMessage,
-  VoxSettings,
 } from '@/types';
 
 const KEYS = {
@@ -17,8 +16,6 @@ const KEYS = {
   aiProviders: 'nexus-ai-providers',
   jarvisConfig: 'nexus-jarvis-config-v1',
   jarvisMessages: 'nexus-jarvis-messages-v1',
-  voxSettings: 'nexus-vox-settings-v1',
-  huggingFaceKey: 'nexus-hf-api-key-v1',
 } as const;
 
 export const DEFAULT_AGENT_SYSTEM_PROMPTS: Record<string, string> = {
@@ -432,20 +429,10 @@ export const storage = {
 
   getActiveAIProvider(): AIProviderConfig | null {
     const state = this.getAIProvidersState();
-    if (!state.activeProviderId || state.activeProviderId === 'existing' || state.activeProviderId === 'huggingface') {
-      if (state.activeProviderId === 'huggingface') {
-        state.activeProviderId = 'existing';
-        this.saveAIProvidersState(state);
-      }
+    if (!state.activeProviderId || state.activeProviderId === 'existing') {
       return null; // Signals to use server's existing default AI configuration (Existing AI / DeepSeek)
     }
-    const provider = state.providers.find((p) => p.id === state.activeProviderId) || null;
-    if (provider && (provider.id === 'huggingface' || provider.url?.includes('huggingface') || provider.name?.toLowerCase().includes('vox'))) {
-      state.activeProviderId = 'existing';
-      this.saveAIProvidersState(state);
-      return null;
-    }
-    return provider;
+    return state.providers.find((p) => p.id === state.activeProviderId) || null;
   },
 
   updateKeyHealth(providerId: string, keyId: string, status: KeyHealthStatus, errorMsg?: string): void {
@@ -471,97 +458,7 @@ export const storage = {
     this.saveAIProvidersState(state);
   },
 
-  getHuggingFaceKey(): string | null {
-    // 1. Check AI Provider configs
-    const state = this.getAIProvidersState();
-    const hfProvider = state.providers.find(
-      (p) =>
-        p.id === 'huggingface' ||
-        p.name.toLowerCase().includes('hugging') ||
-        p.url.toLowerCase().includes('huggingface'),
-    );
-    if (hfProvider) {
-      const activeKey = hfProvider.keys.find((k) => k.key && k.key.trim().length > 0 && k.status !== 'dead');
-      if (activeKey) return activeKey.key.trim();
-    }
 
-    // 2. Fallback to direct key storage
-    const directKey = read<string | null>(KEYS.huggingFaceKey, null);
-    if (directKey && directKey.trim()) return directKey.trim();
-
-    return null;
-  },
-
-  saveHuggingFaceKey(key: string): void {
-    const trimmed = key.trim();
-    write(KEYS.huggingFaceKey, trimmed);
-
-    // Sync into AIProvidersState so it shows up in AI Providers list as well
-    const state = this.getAIProvidersState();
-    const existingIndex = state.providers.findIndex(
-      (p) =>
-        p.id === 'huggingface' ||
-        p.name.toLowerCase().includes('hugging') ||
-        p.url.toLowerCase().includes('huggingface'),
-    );
-
-    if (existingIndex >= 0) {
-      const current = state.providers[existingIndex];
-      state.providers[existingIndex] = {
-        ...current,
-        keys: [
-          {
-            id: current.keys[0]?.id || 'hf-key-1',
-            key: trimmed,
-            label: 'Hugging Face User Access Token',
-            status: trimmed ? 'healthy' : 'dead',
-            lastTested: Date.now(),
-          },
-        ],
-      };
-    } else if (trimmed) {
-      state.providers.push({
-        id: 'huggingface',
-        name: 'Hugging Face (Vox TTS)',
-        url: 'https://api-inference.huggingface.co/models/facebook/mms-tts-eng',
-        model: 'facebook/mms-tts-eng',
-        maxTokens: 128,
-        keyStrategy: 'failover',
-        keys: [
-          {
-            id: 'hf-key-1',
-            key: trimmed,
-            label: 'Hugging Face User Access Token',
-            status: 'healthy',
-            lastTested: Date.now(),
-          },
-        ],
-        capabilities: {
-          text: true,
-          tools: false,
-          web: false,
-          wikipedia: false,
-          memory: false,
-        },
-      });
-    }
-
-    this.saveAIProvidersState(state);
-  },
-
-  getVoxSettings(): VoxSettings {
-    return read<VoxSettings>(KEYS.voxSettings, {
-      providerId: 'huggingface',
-      model: 'facebook/mms-tts-eng',
-      speed: 1.0,
-      pitch: 1.0,
-      autoPlay: true,
-    });
-  },
-
-  saveVoxSettings(settings: VoxSettings): void {
-    write(KEYS.voxSettings, settings);
-  },
 
   getLocations(): SavedItem[] {
     return read<SavedItem[]>(KEYS.locations, []);

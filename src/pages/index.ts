@@ -9,8 +9,6 @@ export { SettingsPage } from './SettingsPage';
 export { AssistantPage } from './AssistantPage';
 export { DevicesPage } from './DevicesPage';
 export { JarvisPage } from './JarvisPage';
-export { OfflineAIPage } from './OfflineAIPage';
 export { TelegramPage } from './TelegramPage';
-export { VoxPage } from './VoxPage';
 export { VoiceAI } from './VoiceAI';
 

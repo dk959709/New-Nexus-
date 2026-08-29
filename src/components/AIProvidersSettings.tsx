@@ -470,9 +470,7 @@ export function AIProvidersSettings() {
             }}
           >
             <option value="existing">🧠 Existing AI (Built-in / Protected)</option>
-            {providersState.providers
-              .filter((p) => !(p.id === 'huggingface' || p.url?.includes('huggingface') || p.name?.toLowerCase().includes('vox')))
-              .map((p) => (
+            {providersState.providers.map((p) => (
               <option key={p.id} value={p.id}>
                 🔵 {p.name} ({p.model})
               </option>
@@ -644,10 +642,8 @@ export function AIProvidersSettings() {
             </div>
           </div>
 
-          {/* User Custom Provider Cards */}
           {providersState.providers.map((p) => {
-            const isTtsProvider = p.id === 'huggingface' || p.url?.includes('huggingface') || p.name?.toLowerCase().includes('vox');
-            const isActive = !isTtsProvider && providersState.activeProviderId === p.id;
+            const isActive = providersState.activeProviderId === p.id;
             const healthyKeys = p.keys.filter((k) => k.status === 'healthy').length;
             const cooldownKeys = p.keys.filter((k) => k.status === 'cooldown').length;
             const invalidKeys = p.keys.filter((k) => k.status === 'invalid').length;
@@ -660,12 +656,12 @@ export function AIProvidersSettings() {
                   padding: '20px',
                   borderRadius: '12px',
                   border: `1px solid ${
-                    isActive || isTtsProvider ? 'var(--accent)' : 'rgba(165,207,214,0.18)'
+                    isActive ? 'var(--accent)' : 'rgba(165,207,214,0.18)'
                   }`,
-                  background: isActive || isTtsProvider
+                  background: isActive
                     ? 'linear-gradient(135deg, rgba(14,38,48,0.7) 0%, rgba(20,28,56,0.7) 100%)'
                     : 'linear-gradient(135deg, rgba(14,31,39,0.55) 0%, rgba(18,22,40,0.55) 100%)',
-                  boxShadow: isActive || isTtsProvider ? '0 0 16px rgba(97,215,201,0.15)' : 'none',
+                  boxShadow: isActive ? '0 0 16px rgba(97,215,201,0.15)' : 'none',
                   display: 'flex',
                   justifyContent: 'space-between',
                   alignItems: 'center',
@@ -675,7 +671,7 @@ export function AIProvidersSettings() {
               >
                 <div>
                   <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
-                    <span style={{ fontSize: '18px' }}>{isTtsProvider ? '🎙️' : '🔵'}</span>
+                    <span style={{ fontSize: '18px' }}>🔵</span>
                     <h4 style={{ margin: 0, fontSize: '16px', fontWeight: 600 }}>{p.name}</h4>
                     <span
                       style={{
@@ -714,20 +710,6 @@ export function AIProvidersSettings() {
                         }}
                       >
                         Active Chat Provider
-                      </span>
-                    )}
-                    {isTtsProvider && (
-                      <span
-                        style={{
-                          fontSize: '10px',
-                          padding: '2px 8px',
-                          borderRadius: '12px',
-                          background: 'rgba(97,215,201,0.2)',
-                          color: 'var(--accent)',
-                          fontWeight: 600,
-                        }}
-                      >
-                        Independent Vox TTS
                       </span>
                     )}
                   </div>
@@ -791,21 +773,7 @@ export function AIProvidersSettings() {
                 </div>
 
                 <div style={{ display: 'flex', alignItems: 'center', gap: '8px', flexWrap: 'wrap' }}>
-                  {isTtsProvider ? (
-                    <span
-                      style={{
-                        padding: '6px 12px',
-                        borderRadius: '7px',
-                        background: 'rgba(97,215,201,0.1)',
-                        color: 'var(--accent)',
-                        border: '1px solid rgba(97,215,201,0.3)',
-                        fontSize: '11px',
-                        fontWeight: 600,
-                      }}
-                    >
-                      🎙️ Dedicated Vox TTS Engine
-                    </span>
-                  ) : isActive ? (
+                  {isActive ? (
                     <button
                       disabled
                       style={{
