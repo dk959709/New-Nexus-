@@ -114,8 +114,13 @@ export const api = {
     );
   },
 
-  news(): Promise<SearchResult[]> {
-    return call<SearchResult[]>('/api/news');
+  async news(): Promise<SearchResult[]> {
+    const raw = await call<unknown>('/api/news');
+    if (Array.isArray(raw)) return raw as SearchResult[];
+    if (raw && typeof raw === 'object' && 'results' in raw && Array.isArray((raw as { results: unknown }).results)) {
+      return (raw as { results: SearchResult[] }).results;
+    }
+    return [];
   },
 
   configStatus(): Promise<ConfigStatus> {

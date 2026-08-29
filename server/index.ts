@@ -1212,10 +1212,68 @@ async function fetchDuckDuckGoSearch(query: string): Promise<SearchResult[]> {
   }
 }
 
+async function fetchGoogleNewsRSS(query?: string): Promise<SearchResult[]> {
+  try {
+    const q = query && query.trim() && query !== 'latest world news' ? query : 'world news breaking headlines';
+    const rssUrl = `https://news.google.com/rss/search?q=${encodeURIComponent(q)}&hl=en-US&gl=US&ceid=US:en`;
+    const res = await fetch(rssUrl, {
+      headers: {
+        'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
+      },
+    });
+    if (!res.ok) return [];
+    const xml = await res.text();
+    const results: SearchResult[] = [];
+    const items = xml.split('<item>').slice(1);
+    for (const itemXml of items) {
+      const titleMatch = itemXml.match(/<title>([\s\S]*?)<\/title>/i);
+      const linkMatch = itemXml.match(/<link>([\s\S]*?)<\/link>/i);
+      const pubDateMatch = itemXml.match(/<pubDate>([\s\S]*?)<\/pubDate>/i);
+      const sourceMatch = itemXml.match(/<source[^>]*>([\s\S]*?)<\/source>/i);
+      const descMatch = itemXml.match(/<description>([\s\S]*?)<\/description>/i);
+
+      if (titleMatch && linkMatch) {
+        let title = titleMatch[1].replace(/<!\[CDATA\[([\s\S]*?)\]\]>/g, '$1').replace(/<[^>]+>/g, '').trim();
+        const link = linkMatch[1].replace(/<!\[CDATA\[([\s\S]*?)\]\]>/g, '').trim();
+        const date = pubDateMatch ? pubDateMatch[1].replace(/<!\[CDATA\[([\s\S]*?)\]\]>/g, '').trim() : undefined;
+        const sourceName = sourceMatch ? sourceMatch[1].replace(/<!\[CDATA\[([\s\S]*?)\]\]>/g, '').trim() : '';
+        const description = descMatch ? descMatch[1].replace(/<!\[CDATA\[([\s\S]*?)\]\]>/g, '').replace(/<[^>]+>/g, '').trim() : title;
+
+        if (sourceName && !title.includes(sourceName)) {
+          title = `${title} — ${sourceName}`;
+        }
+
+        if (title && link) {
+          results.push({
+            title,
+            url: link,
+            domain: domainOf(link),
+            description: description || title,
+            date,
+            type: 'news',
+          });
+        }
+      }
+      if (results.length >= 25) break;
+    }
+    return results;
+  } catch (err) {
+    console.warn('[Google News RSS Error]:', err);
+    return [];
+  }
+}
+
 async function searchProvider(input: z.infer<typeof searchSchema>): Promise<{ results: SearchResult[]; searchSource: string }> {
   if (input.category === 'WIKIPEDIA') {
     const wiki = await fetchWikipediaSearch(input.query, 20);
     return { results: wiki, searchSource: 'Wikipedia' };
+  }
+
+  if (input.category === 'NEWS') {
+    const newsResults = await fetchGoogleNewsRSS(input.query);
+    if (newsResults.length > 0) {
+      return { results: newsResults, searchSource: 'Google News RSS' };
+    }
   }
 
   if (input.category === 'VIDEOS') {
@@ -5717,8 +5775,9 @@ async function startServer() {
 
   app.get('/api/news', async (_req, res) => {
     try {
+      const sp = await searchProvider({ query: 'latest world news', category: 'NEWS' });
       return res.json({
-        data: await searchProvider({ query: 'latest world news', category: 'NEWS' }),
+        data: sp.results,
       });
     } catch (error) {
       const err = error as Error & { status?: number };
