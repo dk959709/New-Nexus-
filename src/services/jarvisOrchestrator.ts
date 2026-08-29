@@ -1814,26 +1814,49 @@ Please perform your specialized processing for this inquiry. Provide clear, conc
     try {
       const { cleanedSearchQuery } = extractTopicKeywords(query, plannerOutput.task);
       const isNewsQuery = /\b(news|today|latest|recent|headlines|update|what happened|current events|breaking|today's)\b/i.test(`${query} ${plannerOutput.task || ''}`);
-      const currentDateStr = new Date().toLocaleDateString('en-US', { month: 'long', day: 'numeric', year: 'numeric' });
-      
-      const effectiveSearchQuery = isNewsQuery
-        ? `world news today ${currentDateStr} ${cleanedSearchQuery || query}`
-        : query;
 
-      const searchTasks: [
-        Promise<WikipediaSearchResult[]>,
-        Promise<SearchResult[]>,
-        Promise<WikipediaSearchResult[]>,
-      ] = [
-        isNewsQuery ? Promise.resolve([]) : api.searchWikipedia(query, 6).catch(() => [] as WikipediaSearchResult[]),
-        api.search(effectiveSearchQuery).catch(() => [] as SearchResult[]),
-        !isNewsQuery && cleanedSearchQuery && cleanedSearchQuery.toLowerCase() !== query.toLowerCase()
-          ? api.searchWikipedia(cleanedSearchQuery, 6).catch(() => [] as WikipediaSearchResult[])
-          : Promise.resolve([] as WikipediaSearchResult[]),
-      ];
+      let searchResults: SearchResult[] = [];
+      let wikiResults1: WikipediaSearchResult[] = [];
+      let wikiResults2: WikipediaSearchResult[] = [];
 
-      const [wikiResults1, searchResults, wikiResults2] = await Promise.all(searchTasks);
-      searchSource = (searchResults as SearchResult[] & { searchSource?: string }).searchSource || 'Live News API';
+      // 1. When Planner detects a news/current-events query, Researcher calls api.news() (the exact same Live News API function used by the Live News page)
+      if (isNewsQuery) {
+        try {
+          const liveNewsRes = await api.news();
+          if (Array.isArray(liveNewsRes) && liveNewsRes.length > 0) {
+            searchResults = liveNewsRes;
+            searchSource = 'Live News API';
+          }
+        } catch (err) {
+          console.warn('[JARVIS Researcher] Live News API api.news() failed, falling back to general search:', err);
+        }
+      }
+
+      // 2. Only fall back to DuckDuckGo/Wikipedia if Live News API fails or returns zero results
+      if (searchResults.length === 0) {
+        const currentDateStr = new Date().toLocaleDateString('en-US', { month: 'long', day: 'numeric', year: 'numeric' });
+        const effectiveSearchQuery = isNewsQuery
+          ? `world news today ${currentDateStr} ${cleanedSearchQuery || query}`
+          : query;
+
+        const searchTasks: [
+          Promise<WikipediaSearchResult[]>,
+          Promise<SearchResult[]>,
+          Promise<WikipediaSearchResult[]>,
+        ] = [
+          isNewsQuery ? Promise.resolve([]) : api.searchWikipedia(query, 6).catch(() => [] as WikipediaSearchResult[]),
+          api.search(effectiveSearchQuery).catch(() => [] as SearchResult[]),
+          !isNewsQuery && cleanedSearchQuery && cleanedSearchQuery.toLowerCase() !== query.toLowerCase()
+            ? api.searchWikipedia(cleanedSearchQuery, 6).catch(() => [] as WikipediaSearchResult[])
+            : Promise.resolve([] as WikipediaSearchResult[]),
+        ];
+
+        const [w1, sRes, w2] = await Promise.all(searchTasks);
+        wikiResults1 = w1;
+        searchResults = sRes;
+        searchSource = (searchResults as SearchResult[] & { searchSource?: string }).searchSource || 'DuckDuckGo (fallback)';
+        wikiResults2 = w2;
+      }
 
       const rawCandidates: RawSearchResultCandidate[] = [];
 
