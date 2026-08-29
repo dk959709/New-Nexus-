@@ -203,15 +203,34 @@ export function formatFullPipelineExport(msg: JarvisMessage): string {
   if (msg.sources && msg.sources.length > 0) {
     sections.push(``);
     sections.push(`=== GROUNDED SOURCES ===`);
+    const cleanHtml = (str: string): string => {
+      if (!str) return '';
+      let cleaned = str.replace(/<!\[CDATA\[([\s\S]*?)\]\]>/g, '$1');
+      cleaned = cleaned.replace(/<[^>]+>/g, '');
+      cleaned = cleaned
+        .replace(/&amp;/g, '&')
+        .replace(/&lt;/g, '<')
+        .replace(/&gt;/g, '>')
+        .replace(/&quot;/g, '"')
+        .replace(/&#39;/g, "'")
+        .replace(/&apos;/g, "'")
+        .replace(/&nbsp;/g, ' ');
+      return cleaned.trim();
+    };
+
     msg.sources.forEach((s, idx) => {
-      let sourceLine = `[${idx + 1}] ${s.title || 'Source'}`;
+      const cleanTitle = cleanHtml(s.title || 'Source');
+      let sourceLine = `[${idx + 1}] ${cleanTitle}`;
       if (s.url) {
         sourceLine += ` (${s.url})`;
       } else if (s.domain) {
         sourceLine += ` [${s.domain}]`;
       }
       if (s.description) {
-        sourceLine += `\n    - ${s.description}`;
+        const cleanDesc = cleanHtml(s.description);
+        if (cleanDesc) {
+          sourceLine += `\n    - ${cleanDesc}`;
+        }
       }
       sections.push(sourceLine);
     });

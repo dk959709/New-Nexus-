@@ -1214,7 +1214,8 @@ async function fetchDuckDuckGoSearch(query: string): Promise<SearchResult[]> {
 
 async function fetchGoogleNewsRSS(query?: string): Promise<SearchResult[]> {
   try {
-    const q = query && query.trim() && query !== 'latest world news' ? query : 'world news breaking headlines';
+    const rawQ = query && query.trim() && query !== 'latest world news' ? query : 'world news breaking headlines';
+    const q = rawQ.includes('when:') ? rawQ : `${rawQ} when:7d`;
     const rssUrl = `https://news.google.com/rss/search?q=${encodeURIComponent(q)}&hl=en-US&gl=US&ceid=US:en`;
     const res = await fetch(rssUrl, {
       headers: {
@@ -1273,11 +1274,13 @@ async function fetchGoogleNewsRSS(query?: string): Promise<SearchResult[]> {
       if (results.length >= 50) break;
     }
 
-    // Sort results by date descending (most recent first)
+    // Sort results by date descending (most recent first) with robust NaN handling
     results.sort((a, b) => {
       const timeA = a.date ? new Date(a.date).getTime() : 0;
       const timeB = b.date ? new Date(b.date).getTime() : 0;
-      return timeB - timeA;
+      const validA = isNaN(timeA) ? 0 : timeA;
+      const validB = isNaN(timeB) ? 0 : timeB;
+      return validB - validA;
     });
 
     return results.slice(0, 25);
