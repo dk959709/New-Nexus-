@@ -211,6 +211,7 @@ export interface JarvisAgentConfig {
   fallbackProviderId?: string;
   fallbackModelId?: string;
   systemPrompt?: string;
+  responseLanguage?: string;
 }
 
 export interface CustomJarvisAgentConfig extends JarvisAgentConfig {

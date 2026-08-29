@@ -724,6 +724,42 @@ export function JarvisSettings({ onSaved }: JarvisSettingsProps) {
               {/* Agent Settings Grid */}
               {agent.enabled && (
                 <div style={{ display: 'grid', gap: '18px' }}>
+                  {agentId === 'planner' && (
+                    <div style={{ background: 'rgba(97,215,201,0.05)', padding: '16px', borderRadius: '12px', border: '1px solid rgba(97,215,201,0.2)' }}>
+                      <label
+                        style={{
+                          display: 'block',
+                          fontSize: '11px',
+                          fontFamily: 'DM Mono',
+                          color: 'var(--accent)',
+                          marginBottom: '6px',
+                          letterSpacing: '0.05em',
+                        }}
+                      >
+                        RESPONSE LANGUAGE
+                      </label>
+                      <input
+                        type="text"
+                        value={agent.responseLanguage !== undefined ? agent.responseLanguage : 'English'}
+                        onChange={(e) => handleAgentChange('planner', { responseLanguage: e.target.value })}
+                        placeholder="e.g. English, Japanese, French, Hindi"
+                        style={{
+                          width: '100%',
+                          padding: '10px 12px',
+                          borderRadius: '8px',
+                          background: 'rgba(6,16,24,0.85)',
+                          border: '1px solid rgba(165,207,214,0.25)',
+                          color: '#e7eef2',
+                          fontSize: '13px',
+                          outline: 'none',
+                          fontFamily: 'system-ui, sans-serif',
+                        }}
+                      />
+                      <p style={{ margin: '6px 0 0', color: 'var(--muted)', fontSize: '11px' }}>
+                        Type any language (e.g. "Japanese", "French", "Hindi", "Formal English"). JARVIS Planner will instruct all downstream pipeline agents and Synthesizer to respond in this language. Default is English.
+                      </p>
+                    </div>
+                  )}
                   <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(280px, 1fr))', gap: '16px' }}>
                     {/* Primary Provider Selector */}
                     <div>

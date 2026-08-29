@@ -226,6 +226,7 @@ export const DEFAULT_JARVIS_CONFIG: JarvisSystemConfig = {
       maxTokens: 500,
       enableFailover: false,
       systemPrompt: DEFAULT_AGENT_SYSTEM_PROMPTS.planner,
+      responseLanguage: 'English',
     },
     researcher: {
       id: 'researcher',

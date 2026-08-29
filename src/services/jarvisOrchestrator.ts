@@ -1697,6 +1697,13 @@ Please perform your specialized processing for this inquiry. Provide clear, conc
 
     activePrompt += imageModeNotice;
 
+    const rawLang = pCfg.responseLanguage;
+    const responseLang = (typeof rawLang === 'string' && rawLang.trim()) ? rawLang.trim() : 'English';
+    const responseLangDirective = `\n\n[SYSTEM RESPONSE LANGUAGE DIRECTIVE: RESPONSE LANGUAGE = "${responseLang}"]
+- You must instruct all downstream execution agents (Researcher, Fact Checker, Reviewer, Final Synthesizer, and any custom agents) in your plan and task description to perform their work and generate their output entirely in **${responseLang}**.
+- The final synthesized answer returned to the user must be written in **${responseLang}**.`;
+    activePrompt += responseLangDirective;
+
     const planRes = await callAgent('planner', [
       { role: 'system', content: `Current date and time: ${currentDateTime}\nYou are the JARVIS Planner. Output only valid JSON.` },
       { role: 'user', content: activePrompt },
@@ -2339,7 +2346,14 @@ ${reviewerOutput?.recommendation ? `Reviewer Advice: ${reviewerOutput.recommenda
       .replace(/\{\s*customAgents\s*\}/gi, '')
       .replace(/\{\s*customAgentOutputs\s*\}/gi, '');
 
-    const fullSynthesizerSysPrompt = `Current date and time: ${currentDateTime}\n\n${activeSysPrompt}`;
+    const synthResponseLang = (typeof agentConfigs.planner?.responseLanguage === 'string' && agentConfigs.planner.responseLanguage.trim())
+      ? agentConfigs.planner.responseLanguage.trim()
+      : 'English';
+    const synthLanguageInstruction = synthResponseLang.toLowerCase() !== 'english'
+      ? `\n\nCRITICAL LANGUAGE REQUIREMENT: You MUST write and deliver your ENTIRE final response to the user in **${synthResponseLang}**. Do not reply in English unless ${synthResponseLang} is English.`
+      : '';
+
+    const fullSynthesizerSysPrompt = `Current date and time: ${currentDateTime}\n\n${activeSysPrompt}${synthLanguageInstruction}`;
     const finalizedSynthesizerContext = applyTemplateVariables(
       rawSynthesizerContext,
       synthReplacements,
