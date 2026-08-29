@@ -56,8 +56,8 @@ const PROMPT_HELP_TAGS: Record<string, { vars: string[]; purpose: string }> = {
     purpose: 'Investigates live web and Wikipedia contexts, extracting core facts.',
   },
   factChecker: {
-    vars: ['{task}', '{claims}'],
-    purpose: 'Verifies collected claims, checks for contradictions and accuracy.',
+    vars: ['{task}', '{claims}', '{sources}'],
+    purpose: 'Verifies collected claims, checks source relevance, and audits accuracy.',
   },
   reviewer: {
     vars: ['{task}', '{facts}', '{issues}'],

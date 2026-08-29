@@ -75,19 +75,22 @@ Original Task: "{task}"
 Collected Claims & Facts:
 {claims}
 
+Collected Sources & Snippets:
+{sources}
+
 Instructions:
-- Review each claim against general knowledge and internal consistency.
-- verified: list claims that are accurate and well-supported (max 5, keep each short).
-- issues: list any claim that is incorrect, outdated, unsupported, exaggerated, or contradicts another claim - explain briefly why (max 5, keep each short).
-- If any claims look like fabricated current news headlines, unsupported assertions, or unbacked speculative facts without backing research data, flag them immediately in issues as unverified or fabricated.
-- If a claim's accuracy is uncertain (not clearly true or false), note it in issues as "needs verification" rather than guessing.
-- If all claims check out, return an empty issues array - do not invent problems.
-- If no claims were provided, return both arrays empty.
+1. Factual Accuracy: Review each claim against general knowledge and internal consistency.
+2. Source Relevance Verification (CRITICAL): For each claim, inspect the associated sources and snippets. Does the cited source's title, domain, or snippet actually relate to the claim's topic and the task topic? If a source is clearly irrelevant or unrelated to the claim it's attached to (e.g. a country's Wikipedia page cited for a movie fact, or an unrelated news topic), you MUST flag it explicitly as a "Source Mismatch: [Explanation of why the source is unrelated]" in the "issues" array.
+3. Issues Reporting: List any claim that is incorrect, outdated, unsupported, exaggerated, contradicts another claim, OR suffers from a "Source Mismatch" in the "issues" array with a brief explanation (max 5, keep each short).
+4. If any claims look like fabricated current news headlines, unsupported assertions, or unbacked speculative facts without backing research data, flag them immediately in issues as unverified or fabricated.
+5. If a claim's accuracy is uncertain, note it in issues as "needs verification".
+6. If all claims check out and have relevant sources, return an empty issues array - do not invent problems.
+7. If no claims were provided, return both arrays empty.
 
 Output ONLY a valid JSON object in this exact format, no extra text:
 {
   "verified": ["Confirmed claim 1"],
-  "issues": ["Identified contradiction or note 1"]
+  "issues": ["Source Mismatch: [Explanation]", "Identified factual error or note 1"]
 }`,
 
   reviewer: `You are the REVIEWER agent of JARVIS.
@@ -122,6 +125,7 @@ Guidelines:
 - Do NOT use LaTeX math syntax or delimiters (e.g. do NOT use \\[ \\], \\( \\), $$ or $). Always use clean plain-text mathematical notation and standard unicode symbols instead (for example: "Thrust = mass flow rate × exhaust velocity" or "F = m · a" or "E = mc²").
 - Do NOT mention intermediate agent names, JSON formats, or internal reasoning steps.
 - ABSOLUTE FACT-CHECKER EXCLUSION RULE: If the Fact Checker or Issues list has explicitly flagged any claim, event, or headline as incorrect, unverified, inaccurate, or unsupported, you MUST completely omit and exclude it from the final synthesis. Never present a flagged-false or unverified claim as a real fact or headline.
+- CURRENT-YEAR SOURCE PRIORITY RULE: When search results/sources include content dated with the current year (2026) or explicitly discussing "current year" topics (e.g. "Best movies of 2026", "2026 releases"), you MUST prioritize and heavily favor this current-year source data over your own training knowledge. Do not dilute a "current year" list with older, pre-existing well-known titles from memory unless the current-year source itself mentions them. If a current-year source (like "The 10 Best Sci-Fi Movies of 2026") is available, its actual content should be the PRIMARY basis for the answer, not a minor addition to an AI-recalled list.
 - If Reviewer identified missing context or perspectives, incorporate them where relevant instead of ignoring them.
 - STRICT ANTI-FABRICATION RULE: NEVER fabricate specific events, headlines, dates, quotes, statistics, or facts not present in the actual research data. If the research data does not contain real current news or verified facts on this topic, you MUST state clearly: "I don't have access to verified current news on this topic" rather than inventing plausible-sounding but fake headlines, events, or facts.
 - GROUNDED SOURCES RULE: Only cite sources that are explicitly present in the retrieved ground-truth sources list provided in the context. Never cite, invent, or hallucinate a source or URL not present in that list. If no sources were retrieved or if sources are irrelevant, do not cite external news sources.
@@ -525,7 +529,9 @@ export const storage = {
           ...(stored.agents.factChecker || {}),
           systemPrompt:
             !stored.agents.factChecker?.systemPrompt ||
-            stored.agents.factChecker?.systemPrompt?.includes('Verify claims, identify discrepancies, and isolate corrections.')
+            stored.agents.factChecker?.systemPrompt?.includes('Verify claims, identify discrepancies, and isolate corrections.') ||
+            !stored.agents.factChecker?.systemPrompt?.includes('{sources}') ||
+            !stored.agents.factChecker?.systemPrompt?.includes('Source Relevance Verification')
               ? DEFAULT_AGENT_SYSTEM_PROMPTS.factChecker
               : stored.agents.factChecker.systemPrompt,
         },
@@ -544,7 +550,8 @@ export const storage = {
           systemPrompt:
             !stored.agents.finalSynthesizer?.systemPrompt ||
             stored.agents.finalSynthesizer?.systemPrompt?.includes('Deliver a direct, elegant, and informative answer in clean Markdown.') ||
-            !stored.agents.finalSynthesizer?.systemPrompt?.includes('Do NOT use LaTeX math syntax')
+            !stored.agents.finalSynthesizer?.systemPrompt?.includes('Do NOT use LaTeX math syntax') ||
+            !stored.agents.finalSynthesizer?.systemPrompt?.includes('CURRENT-YEAR SOURCE PRIORITY RULE')
               ? DEFAULT_AGENT_SYSTEM_PROMPTS.finalSynthesizer
               : stored.agents.finalSynthesizer.systemPrompt,
         },

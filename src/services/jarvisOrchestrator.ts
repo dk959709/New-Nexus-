@@ -2094,9 +2094,15 @@ Please perform your specialized processing for this inquiry. Provide clear, conc
         ? researcherOutput.facts.map((f, i) => `${i + 1}. ${f}`).join('\n')
         : 'Evaluate general knowledge truthfulness for: ' + query;
 
+    const sourcesText =
+      sourcesCollected.length > 0
+        ? sourcesCollected.map((s, i) => `Source [${i + 1}]: Title: "${s.title}", Domain: "${s.domain || 'N/A'}", URL: "${s.url || 'N/A'}", Snippet: "${s.description || 'N/A'}"`).join('\n')
+        : 'No sources collected.';
+
     const activePrompt = (fCfg.systemPrompt || defaultPromptTemplate)
       .replace('{task}', plannerOutput.task || query)
-      .replace('{claims}', claimsText);
+      .replace('{claims}', claimsText)
+      .replace('{sources}', sourcesText);
 
     const factRes = await callAgent('factChecker', [
       { role: 'system', content: 'You are the JARVIS Fact Checker. Output strictly valid JSON.' },
