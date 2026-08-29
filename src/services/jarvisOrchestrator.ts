@@ -1772,14 +1772,17 @@ Please perform your specialized processing for this inquiry. Provide clear, conc
     /\b(how|why|compare|versus|vs|explain|difference|implement|create|design|code|analyze|architecture|review|best practices|pros and cons|guide|steps|tutorial)\b/i.test(query) ||
     (query.includes('?') && query.split(' ').length > 7);
 
+  const isNewsQuery = /\b(news|today|latest|recent|headlines|update|what happened|current events|breaking|today's)\b/i.test(`${query} ${plannerOutput.task || ''}`);
+  const isWeatherQuery = /\b(weather|temperature|forecast|rain|snow|wind|humidity|degrees)\b/i.test(`${query} ${plannerOutput.task || ''}`);
+
   // Determine which downstream agents are required
   const shouldResearch =
     agentConfigs.researcher.enabled &&
-    (deepResearch || plannerOutput.needsResearch || query.length > 30);
+    (deepResearch || isNewsQuery || isWeatherQuery || plannerOutput.needsResearch || query.length > 30);
 
   const shouldFactCheck =
     agentConfigs.factChecker.enabled &&
-    (deepResearch || (shouldResearch && plannerOutput.needsFactCheck) || isComplexQuery);
+    (deepResearch || isNewsQuery || isWeatherQuery || (shouldResearch && plannerOutput.needsFactCheck) || isComplexQuery);
 
   const shouldReview =
     agentConfigs.reviewer.enabled &&
@@ -1813,18 +1816,40 @@ Please perform your specialized processing for this inquiry. Provide clear, conc
 
     try {
       const { cleanedSearchQuery } = extractTopicKeywords(query, plannerOutput.task);
-      const isNewsQuery = /\b(news|today|latest|recent|headlines|update|what happened|current events|breaking|today's)\b/i.test(`${query} ${plannerOutput.task || ''}`);
 
       let searchResults: SearchResult[] = [];
       let wikiResults1: WikipediaSearchResult[] = [];
       let wikiResults2: WikipediaSearchResult[] = [];
 
-      // 1. When Planner detects a news/current-events query, Researcher calls api.news() (the exact same Live News API function used by the Live News page)
-      if (isNewsQuery) {
+      // 1. Weather Query handling using api.weather()
+      if (isWeatherQuery) {
+        try {
+          const matchCity = query.match(/(?:in|for|at)\s+([a-zA-Z\s]+)(?:\?|$)/i);
+          const cityName = matchCity ? matchCity[1].trim() : 'London';
+          console.log('[JARVIS Researcher] Calling api.weather() for weather query, city:', cityName);
+          const weatherRes = await api.weather(`city=${encodeURIComponent(cityName)}`);
+          console.log('[JARVIS Researcher] RAW DATA USED (DEBUG) - Weather API Response:', JSON.stringify(weatherRes, null, 2));
+          if (weatherRes && weatherRes.current) {
+            const wSummary = `Location: ${weatherRes.current.location} | Temperature: ${weatherRes.current.temperature}°C (Feels like: ${weatherRes.current.feelsLike}°C) | Condition: ${weatherRes.current.conditionLabel} | Humidity: ${weatherRes.current.humidity}% | Wind: ${weatherRes.current.wind} km/h`;
+            searchResults = [{
+              title: `Live Weather for ${weatherRes.current.location}: ${weatherRes.current.temperature}°C, ${weatherRes.current.conditionLabel}`,
+              url: `/weather?city=${encodeURIComponent(weatherRes.current.location)}`,
+              description: wSummary,
+              domain: 'open-meteo.com',
+            }];
+            searchSource = 'Live Weather API';
+          }
+        } catch (err) {
+          console.warn('[JARVIS Researcher] api.weather() failed, falling back to general search:', err);
+        }
+      }
+
+      // 2. When Planner detects a news/current-events query, Researcher calls api.news()
+      else if (isNewsQuery) {
         try {
           console.log('[JARVIS Researcher] Calling api.news() for news query:', query);
           const liveNewsRes = await api.news();
-          console.log('[JARVIS Researcher] api.news() successfully returned results:', liveNewsRes);
+          console.log('[JARVIS Researcher] RAW DATA USED (DEBUG) - News API Response:', JSON.stringify(liveNewsRes, null, 2));
           if (Array.isArray(liveNewsRes) && liveNewsRes.length > 0) {
             searchResults = liveNewsRes;
             searchSource = 'Live News API';
@@ -1834,7 +1859,7 @@ Please perform your specialized processing for this inquiry. Provide clear, conc
         }
       }
 
-      // 2. Only fall back to DuckDuckGo/Wikipedia if Live News API fails or returns zero results
+      // 3. Only fall back to DuckDuckGo/Wikipedia if real-time APIs return zero results
       if (searchResults.length === 0) {
         const currentDateStr = new Date().toLocaleDateString('en-US', { month: 'long', day: 'numeric', year: 'numeric' });
         const effectiveSearchQuery = isNewsQuery
@@ -1846,9 +1871,9 @@ Please perform your specialized processing for this inquiry. Provide clear, conc
           Promise<SearchResult[]>,
           Promise<WikipediaSearchResult[]>,
         ] = [
-          isNewsQuery ? Promise.resolve([]) : api.searchWikipedia(query, 6).catch(() => [] as WikipediaSearchResult[]),
+          isNewsQuery || isWeatherQuery ? Promise.resolve([]) : api.searchWikipedia(query, 6).catch(() => [] as WikipediaSearchResult[]),
           api.search(effectiveSearchQuery).catch(() => [] as SearchResult[]),
-          !isNewsQuery && cleanedSearchQuery && cleanedSearchQuery.toLowerCase() !== query.toLowerCase()
+          !isNewsQuery && !isWeatherQuery && cleanedSearchQuery && cleanedSearchQuery.toLowerCase() !== query.toLowerCase()
             ? api.searchWikipedia(cleanedSearchQuery, 6).catch(() => [] as WikipediaSearchResult[])
             : Promise.resolve([] as WikipediaSearchResult[]),
         ];
@@ -1858,6 +1883,7 @@ Please perform your specialized processing for this inquiry. Provide clear, conc
         searchResults = sRes;
         searchSource = (searchResults as SearchResult[] & { searchSource?: string }).searchSource || 'DuckDuckGo (fallback)';
         wikiResults2 = w2;
+        console.log('[JARVIS Researcher] RAW DATA USED (DEBUG) - Fallback Search Results:', JSON.stringify(searchResults, null, 2));
       }
 
       const rawCandidates: RawSearchResultCandidate[] = [];
@@ -1890,8 +1916,10 @@ Please perform your specialized processing for this inquiry. Provide clear, conc
         }
       });
 
-      // Score and strictly filter candidates before passing them to the Researcher AI agent
-      const filteredSources = scoreAndFilterSearchResults(rawCandidates, query, plannerOutput.task);
+      // Score and strictly filter candidates before passing them to the Researcher AI agent (bypass for live weather/news APIs)
+      const filteredSources = (searchSource === 'Live News API' || searchSource === 'Live Weather API')
+        ? rawCandidates
+        : scoreAndFilterSearchResults(rawCandidates, query, plannerOutput.task);
 
       console.log(
         `[JARVIS Researcher] Relevance filter evaluated ${rawCandidates.length} raw search results -> kept ${filteredSources.length} on-topic sources.`,
