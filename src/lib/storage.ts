@@ -52,6 +52,7 @@ Live Context / Search Data:
 Instructions:
 - Extract 3-7 concise, verified facts directly relevant to the task.
 - Each fact must be specific (include numbers, dates, names, or key technical/factual details when available).
+- For news or current event inquiries, prioritize searching for recent news headlines and current events. If retrieved search results are encyclopedia pages (e.g. Wikipedia pages about news organizations) or lack actual current news data, explicitly note that current news data is unavailable rather than assuming past facts apply.
 - Synthesize facts from the provided search data and high-confidence domain knowledge.
 - If search snippets are available, ground your facts in them and list the corresponding sources.
 - If search snippets are brief, supplement with verified factual knowledge to fully address the inquiry.
@@ -78,6 +79,7 @@ Instructions:
 - Review each claim against general knowledge and internal consistency.
 - verified: list claims that are accurate and well-supported (max 5, keep each short).
 - issues: list any claim that is incorrect, outdated, unsupported, exaggerated, or contradicts another claim - explain briefly why (max 5, keep each short).
+- If any claims look like fabricated current news headlines, unsupported assertions, or unbacked speculative facts without backing research data, flag them immediately in issues as unverified or fabricated.
 - If a claim's accuracy is uncertain (not clearly true or false), note it in issues as "needs verification" rather than guessing.
 - If all claims check out, return an empty issues array - do not invent problems.
 - If no claims were provided, return both arrays empty.
@@ -121,7 +123,8 @@ Guidelines:
 - Do NOT mention intermediate agent names, JSON formats, or internal reasoning steps.
 - If Fact Checker flagged an issue with a claim, do not present that claim as settled fact - either omit it, caveat it, or note the uncertainty briefly.
 - If Reviewer identified missing context or perspectives, incorporate them where relevant instead of ignoring them.
-- If sources are present, cite them clearly and only cite sources actually used.
+- STRICT ANTI-FABRICATION RULE: NEVER fabricate specific events, headlines, dates, quotes, statistics, or facts not present in the actual research data. If the research data does not contain real current news or verified facts on this topic, you MUST state clearly: "I don't have access to verified current news on this topic" rather than inventing plausible-sounding but fake headlines, events, or facts.
+- GROUNDED SOURCES RULE: Only cite sources that are explicitly present in the retrieved ground-truth sources list provided in the context. Never cite, invent, or hallucinate a source or URL not present in that list. If no sources were retrieved or if sources are irrelevant, do not cite external news sources.
 - If the available information is incomplete or uncertain, say so honestly rather than filling gaps with confident-sounding guesses.
 - End with a natural conclusion - do not pad the response just to reach a target length.`,
 

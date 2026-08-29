@@ -1813,14 +1813,21 @@ Please perform your specialized processing for this inquiry. Provide clear, conc
 
     try {
       const { cleanedSearchQuery } = extractTopicKeywords(query, plannerOutput.task);
+      const isNewsQuery = /\b(news|today|latest|recent|headlines|update|what happened|current events|breaking|today's)\b/i.test(`${query} ${plannerOutput.task || ''}`);
+      const currentDateStr = new Date().toLocaleDateString('en-US', { month: 'long', day: 'numeric', year: 'numeric' });
+      
+      const effectiveSearchQuery = isNewsQuery
+        ? `world news today ${currentDateStr} ${cleanedSearchQuery || query}`
+        : query;
+
       const searchTasks: [
         Promise<WikipediaSearchResult[]>,
         Promise<SearchResult[]>,
         Promise<WikipediaSearchResult[]>,
       ] = [
-        api.searchWikipedia(query, 6).catch(() => [] as WikipediaSearchResult[]),
-        api.search(query).catch(() => [] as SearchResult[]),
-        cleanedSearchQuery && cleanedSearchQuery.toLowerCase() !== query.toLowerCase()
+        isNewsQuery ? Promise.resolve([]) : api.searchWikipedia(query, 6).catch(() => [] as WikipediaSearchResult[]),
+        api.search(effectiveSearchQuery).catch(() => [] as SearchResult[]),
+        !isNewsQuery && cleanedSearchQuery && cleanedSearchQuery.toLowerCase() !== query.toLowerCase()
           ? api.searchWikipedia(cleanedSearchQuery, 6).catch(() => [] as WikipediaSearchResult[])
           : Promise.resolve([] as WikipediaSearchResult[]),
       ];
@@ -2322,6 +2329,10 @@ Please perform your specialized processing for this inquiry. Provide clear, conc
       customInsightsBlock += `\n\n[Visual Descriptions / Alt-Text for Images]:\n${visualDescList.join('\n\n')}`;
     }
 
+    const sourcesListText = Array.isArray(researcherOutput?.sources) && researcherOutput.sources.length > 0
+      ? researcherOutput.sources.map((s) => `- [${s.title}](${s.url}) (${s.domain || 'web'})`).join('\n')
+      : 'No external sources retrieved.';
+
     const rawSynthesizerContext = `Current date and time: ${currentDateTime}
 User Query: "${query}"
 
@@ -2329,7 +2340,9 @@ Planner Guidance: ${plannerPlanText}
 ${factsList.length > 0 ? `Key Verified Facts:\n${factsList.map((f) => `- ${f}`).join('\n')}` : ''}
 ${verifiedList.length > 0 ? `Verified Claims:\n${verifiedList.map((c) => `- ${c}`).join('\n')}` : ''}
 ${issuesList.length > 0 ? `Important Caveats/Corrections:\n${issuesList.map((i) => `- ${i}`).join('\n')}` : ''}
-${reviewerOutput?.recommendation ? `Reviewer Advice: ${reviewerOutput.recommendation}` : ''}${customInsightsBlock}`;
+${reviewerOutput?.recommendation ? `Reviewer Advice: ${reviewerOutput.recommendation}` : ''}
+Retrieved Ground-Truth Sources (CRITICAL RULE: Only cite sources from this exact list. Never invent or cite any other sources):
+${sourcesListText}${customInsightsBlock}`;
 
     const defaultSysPrompt = DEFAULT_AGENT_SYSTEM_PROMPTS.finalSynthesizer;
     let activeSysPrompt =
