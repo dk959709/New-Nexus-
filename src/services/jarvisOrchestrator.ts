@@ -1822,7 +1822,9 @@ Please perform your specialized processing for this inquiry. Provide clear, conc
       // 1. When Planner detects a news/current-events query, Researcher calls api.news() (the exact same Live News API function used by the Live News page)
       if (isNewsQuery) {
         try {
+          console.log('[JARVIS Researcher] Calling api.news() for news query:', query);
           const liveNewsRes = await api.news();
+          console.log('[JARVIS Researcher] api.news() successfully returned results:', liveNewsRes);
           if (Array.isArray(liveNewsRes) && liveNewsRes.length > 0) {
             searchResults = liveNewsRes;
             searchSource = 'Live News API';
@@ -2362,7 +2364,7 @@ User Query: "${query}"
 Planner Guidance: ${plannerPlanText}
 ${factsList.length > 0 ? `Key Verified Facts:\n${factsList.map((f) => `- ${f}`).join('\n')}` : ''}
 ${verifiedList.length > 0 ? `Verified Claims:\n${verifiedList.map((c) => `- ${c}`).join('\n')}` : ''}
-${issuesList.length > 0 ? `Important Caveats/Corrections:\n${issuesList.map((i) => `- ${i}`).join('\n')}` : ''}
+${issuesList.length > 0 ? `CRITICAL FACT-CHECKER CORRECTIONS / FLAGGED ISSUES (YOU MUST EXCLUDE AND REMOVE ANY CLAIM MENTIONED HERE FROM THE FINAL SYNTHESIS):\n${issuesList.map((i) => `- ${i}`).join('\n')}` : ''}
 ${reviewerOutput?.recommendation ? `Reviewer Advice: ${reviewerOutput.recommendation}` : ''}
 Retrieved Ground-Truth Sources (CRITICAL RULE: Only cite sources from this exact list. Never invent or cite any other sources):
 ${sourcesListText}${customInsightsBlock}`;
