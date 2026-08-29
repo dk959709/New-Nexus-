@@ -20,6 +20,7 @@ import {
   CheckCircle2,
   Bookmark,
   BookmarkCheck,
+  Radio,
 } from 'lucide-react';
 import { storage } from '@/lib/storage';
 import { stripConversationalMetaText } from '@/lib/format';
@@ -180,6 +181,9 @@ export function JarvisChat({ config, onOpenSettings }: JarvisChatProps) {
   });
   const [recentlySavedId, setRecentlySavedId] = useState<string | null>(null);
   const [speakingId, setSpeakingId] = useState<string | null>(null);
+  const [edgeTtsLoadingId, setEdgeTtsLoadingId] = useState<string | null>(null);
+  const [edgeTtsPlayingId, setEdgeTtsPlayingId] = useState<string | null>(null);
+  const edgeTtsAudioRef = useRef<HTMLAudioElement | null>(null);
 
 
   const [showClearConfirm, setShowClearConfirm] = useState(false);
@@ -408,6 +412,81 @@ export function JarvisChat({ config, onOpenSettings }: JarvisChatProps) {
     [speakingId, stopSpeak],
   );
 
+  const handleEdgeTtsSpeak = useCallback(
+    async (text: string, id: string) => {
+      if (edgeTtsPlayingId === id) {
+        if (edgeTtsAudioRef.current) {
+          edgeTtsAudioRef.current.pause();
+          edgeTtsAudioRef.current.currentTime = 0;
+        }
+        setEdgeTtsPlayingId(null);
+        return;
+      }
+
+      stopSpeak();
+      if (edgeTtsAudioRef.current) {
+        edgeTtsAudioRef.current.pause();
+        edgeTtsAudioRef.current = null;
+      }
+
+      const cleanText = text
+        .replace(/```[\s\S]*?```/g, ' Code snippet omitted. ')
+        .replace(/[*#`_~>[\]()]/g, '')
+        .replace(/\s+/g, ' ')
+        .trim();
+
+      if (!cleanText) return;
+
+      setEdgeTtsLoadingId(id);
+      try {
+        const response = await fetch('/api/edge-tts', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            text: cleanText.slice(0, 1500),
+            voice: 'en-US-AriaNeural',
+          }),
+        });
+
+        if (!response.ok) {
+          const data = await response.json().catch(() => ({}));
+          throw new Error(data.error || `Server responded with status ${response.status}`);
+        }
+
+        const blob = await response.blob();
+        const url = URL.createObjectURL(blob);
+
+        const audio = new Audio(url);
+        edgeTtsAudioRef.current = audio;
+
+        audio.onplay = () => {
+          setEdgeTtsPlayingId(id);
+        };
+
+        audio.onended = () => {
+          setEdgeTtsPlayingId(null);
+          edgeTtsAudioRef.current = null;
+          URL.revokeObjectURL(url);
+        };
+
+        audio.onerror = () => {
+          setEdgeTtsPlayingId(null);
+          edgeTtsAudioRef.current = null;
+          URL.revokeObjectURL(url);
+        };
+
+        await audio.play();
+        setEdgeTtsPlayingId(id);
+      } catch (err) {
+        console.error('[JARVIS] Edge TTS generation error:', err);
+        setEdgeTtsPlayingId(null);
+      } finally {
+        setEdgeTtsLoadingId(null);
+      }
+    },
+    [edgeTtsPlayingId, stopSpeak],
+  );
+
 
 
   // Clean up speech synthesis on component unmount
@@ -419,6 +498,10 @@ export function JarvisChat({ config, onOpenSettings }: JarvisChatProps) {
         } catch {
           // Safe fallback
         }
+      }
+      if (edgeTtsAudioRef.current) {
+        edgeTtsAudioRef.current.pause();
+        edgeTtsAudioRef.current = null;
       }
     };
   }, []);
@@ -801,6 +884,33 @@ export function JarvisChat({ config, onOpenSettings }: JarvisChatProps) {
                         title={speakingId === msg.id ? 'Stop Voice' : 'Read Aloud (Browser Voice)'}
                       >
                         {speakingId === msg.id ? <VolumeX size={15} /> : <Volume2 size={15} />}
+                      </button>
+
+                      {/* Edge TTS Neural Audio Button */}
+                      <button
+                        type="button"
+                        onClick={() => handleEdgeTtsSpeak(cleanedAnswer || msg.answer, msg.id)}
+                        disabled={edgeTtsLoadingId === msg.id}
+                        className={`p-2 rounded-full transition-all duration-200 flex items-center justify-center ${
+                          edgeTtsPlayingId === msg.id
+                            ? 'bg-purple-400 text-slate-950 shadow-[0_0_12px_#c084fc]'
+                            : 'text-slate-300 hover:text-purple-300 hover:bg-purple-500/15'
+                        }`}
+                        title={
+                          edgeTtsLoadingId === msg.id
+                            ? 'Generating Neural Audio...'
+                            : edgeTtsPlayingId === msg.id
+                            ? 'Stop Edge TTS Audio'
+                            : 'Play Edge TTS Neural Voice'
+                        }
+                      >
+                        {edgeTtsLoadingId === msg.id ? (
+                          <Loader2 size={15} className="animate-spin text-purple-400" />
+                        ) : edgeTtsPlayingId === msg.id ? (
+                          <Radio size={15} className="animate-pulse" />
+                        ) : (
+                          <Radio size={15} />
+                        )}
                       </button>
 
                       <button
