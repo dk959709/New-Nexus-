@@ -1797,6 +1797,7 @@ Please perform your specialized processing for this inquiry. Provide clear, conc
   };
 
   if (shouldResearch) {
+    console.log('[JARVIS Researcher] QUERY TYPE DEBUG - Query:', query, '| isNewsQuery:', isNewsQuery, '| isWeatherQuery:', isWeatherQuery);
     const rCfg = agentConfigs.researcher;
     const provInfo = resolveProviderConfig(rCfg);
     const start = Date.now();
