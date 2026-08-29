@@ -604,10 +604,26 @@ export const storage = {
   },
 
   getEdgeVoice(): string {
-    return read<string>(KEYS.edgeVoice, 'en-US-AriaNeural');
+    try {
+      const raw = localStorage.getItem(KEYS.edgeVoice);
+      if (!raw) return 'en-US-AriaNeural';
+      try {
+        const parsed = JSON.parse(raw);
+        if (typeof parsed === 'string' && parsed.trim()) return parsed.trim();
+      } catch {
+        if (raw.trim()) return raw.trim();
+      }
+      return 'en-US-AriaNeural';
+    } catch {
+      return 'en-US-AriaNeural';
+    }
   },
 
   saveEdgeVoice(voice: string): void {
-    write(KEYS.edgeVoice, voice);
+    try {
+      localStorage.setItem(KEYS.edgeVoice, voice);
+    } catch {
+      // ignore
+    }
   },
 };
