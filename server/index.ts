@@ -1225,6 +1225,22 @@ async function fetchGoogleNewsRSS(query?: string): Promise<SearchResult[]> {
     const xml = await res.text();
     const results: SearchResult[] = [];
     const items = xml.split('<item>').slice(1);
+
+    const cleanHtml = (str: string): string => {
+      if (!str) return '';
+      let cleaned = str.replace(/<!\[CDATA\[([\s\S]*?)\]\]>/g, '$1');
+      cleaned = cleaned.replace(/<[^>]+>/g, '');
+      cleaned = cleaned
+        .replace(/&amp;/g, '&')
+        .replace(/&lt;/g, '<')
+        .replace(/&gt;/g, '>')
+        .replace(/&quot;/g, '"')
+        .replace(/&#39;/g, "'")
+        .replace(/&apos;/g, "'")
+        .replace(/&nbsp;/g, ' ');
+      return cleaned.trim();
+    };
+
     for (const itemXml of items) {
       const titleMatch = itemXml.match(/<title>([\s\S]*?)<\/title>/i);
       const linkMatch = itemXml.match(/<link>([\s\S]*?)<\/link>/i);
@@ -1233,11 +1249,11 @@ async function fetchGoogleNewsRSS(query?: string): Promise<SearchResult[]> {
       const descMatch = itemXml.match(/<description>([\s\S]*?)<\/description>/i);
 
       if (titleMatch && linkMatch) {
-        let title = titleMatch[1].replace(/<!\[CDATA\[([\s\S]*?)\]\]>/g, '$1').replace(/<[^>]+>/g, '').trim();
-        const link = linkMatch[1].replace(/<!\[CDATA\[([\s\S]*?)\]\]>/g, '').trim();
-        const date = pubDateMatch ? pubDateMatch[1].replace(/<!\[CDATA\[([\s\S]*?)\]\]>/g, '').trim() : undefined;
-        const sourceName = sourceMatch ? sourceMatch[1].replace(/<!\[CDATA\[([\s\S]*?)\]\]>/g, '').trim() : '';
-        const description = descMatch ? descMatch[1].replace(/<!\[CDATA\[([\s\S]*?)\]\]>/g, '').replace(/<[^>]+>/g, '').trim() : title;
+        let title = cleanHtml(titleMatch[1]);
+        const link = cleanHtml(linkMatch[1]);
+        const date = pubDateMatch ? cleanHtml(pubDateMatch[1]) : undefined;
+        const sourceName = sourceMatch ? cleanHtml(sourceMatch[1]) : '';
+        const description = descMatch ? cleanHtml(descMatch[1]) : title;
 
         if (sourceName && !title.includes(sourceName)) {
           title = `${title} — ${sourceName}`;
@@ -1254,9 +1270,17 @@ async function fetchGoogleNewsRSS(query?: string): Promise<SearchResult[]> {
           });
         }
       }
-      if (results.length >= 25) break;
+      if (results.length >= 50) break;
     }
-    return results;
+
+    // Sort results by date descending (most recent first)
+    results.sort((a, b) => {
+      const timeA = a.date ? new Date(a.date).getTime() : 0;
+      const timeB = b.date ? new Date(b.date).getTime() : 0;
+      return timeB - timeA;
+    });
+
+    return results.slice(0, 25);
   } catch (err) {
     console.warn('[Google News RSS Error]:', err);
     return [];
