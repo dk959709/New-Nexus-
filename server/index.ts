@@ -1162,9 +1162,60 @@ async function executeAiWithProviderOrFallback({
   };
 }
 
-async function searchProvider(input: z.infer<typeof searchSchema>) {
+async function fetchDuckDuckGoSearch(query: string): Promise<SearchResult[]> {
+  try {
+    const res = await fetch(`https://html.duckduckgo.com/html/?q=${encodeURIComponent(query)}`, {
+      headers: {
+        'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
+      },
+    });
+    if (!res.ok) return [];
+    const html = await res.text();
+    const results: SearchResult[] = [];
+    const resultBlocks = html.split('class="result">').slice(1);
+    for (const block of resultBlocks) {
+      const titleMatch = block.match(/class="result__title"[^>]*>[\s\S]*?<a[^>]*href="([^"]+)"[^>]*>([\s\S]*?)<\/a>/i);
+      const snippetMatch = block.match(/class="result__snippet"[^>]*>([\s\S]*?)<\/a>/i) ||
+                           block.match(/class="result__snippet"[^>]*>([\s\S]*?)<\/div>/i);
+      const urlMatch = block.match(/class="result__url"[^>]*href="([^"]+)"/i) || block.match(/href="([^"]+)"/i);
+
+      if (titleMatch || urlMatch) {
+        let rawUrl = urlMatch ? urlMatch[1] : (titleMatch ? titleMatch[1] : '');
+        if (rawUrl.includes('uddg=')) {
+          try {
+            const parsedUrl = new URL(rawUrl.startsWith('http') ? rawUrl : `https://duckduckgo.com${rawUrl}`);
+            const uddg = parsedUrl.searchParams.get('uddg');
+            if (uddg) rawUrl = decodeURIComponent(uddg);
+          } catch {
+            // ignore URL parse error
+          }
+        }
+        const titleClean = titleMatch ? titleMatch[2].replace(/<[^>]+>/g, '').trim() : (rawUrl ? new URL(rawUrl.startsWith('http') ? rawUrl : `https://${rawUrl}`).hostname : 'Result');
+        const descClean = snippetMatch ? snippetMatch[1].replace(/<[^>]+>/g, '').trim() : '';
+
+        if (rawUrl && !rawUrl.startsWith('/')) {
+          results.push({
+            title: titleClean || 'DuckDuckGo Result',
+            url: rawUrl,
+            domain: domainOf(rawUrl),
+            description: descClean || titleClean,
+            type: 'web',
+          });
+        }
+      }
+      if (results.length >= 10) break;
+    }
+    return results;
+  } catch (err) {
+    console.warn('[DuckDuckGo Fallback Search Error]:', err);
+    return [];
+  }
+}
+
+async function searchProvider(input: z.infer<typeof searchSchema>): Promise<{ results: SearchResult[]; searchSource: string }> {
   if (input.category === 'WIKIPEDIA') {
-    return fetchWikipediaSearch(input.query, 20);
+    const wiki = await fetchWikipediaSearch(input.query, 20);
+    return { results: wiki, searchSource: 'Wikipedia' };
   }
 
   if (input.category === 'VIDEOS') {
@@ -1213,79 +1264,101 @@ async function searchProvider(input: z.infer<typeof searchSchema>) {
     }
 
     if (combined.length > 0) {
-      return combined;
+      return { results: combined, searchSource: 'YouTube & Wikimedia' };
     }
   }
 
   const key = process.env.SEARCH_API_KEY;
   const url = process.env.SEARCH_API_URL;
-  if (!key || !url) {
-    // If external search is not configured, Wikipedia search is available as fallback for ALL
-    if (input.category === 'ALL' || !input.category) {
-      const wikiResults = await fetchWikipediaSearch(input.query, 10);
-      if (wikiResults.length > 0) {
-        return wikiResults;
+  let primaryResults: SearchResult[] = [];
+  let primaryFailed = false;
+
+  if (key && url) {
+    try {
+      const response = await fetch(url, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          Authorization: `Bearer ${key}`,
+          'X-API-Key': key,
+        },
+        body: JSON.stringify({
+          query: input.query,
+          page: input.page ?? 1,
+          category: input.category ?? 'ALL',
+          region: input.region,
+          language: input.language,
+          max_results: 20,
+        }),
+      });
+      if (!response.ok) {
+        primaryFailed = true;
+      } else {
+        const payload = (await response.json()) as {
+          results?: Array<Record<string, unknown>>;
+          organic_results?: Array<Record<string, unknown>>;
+          news?: Array<Record<string, unknown>>;
+        };
+        const items = payload.results ?? payload.organic_results ?? payload.news ?? [];
+        const type =
+          input.category === 'NEWS'
+            ? 'news'
+            : input.category === 'IMAGES'
+              ? 'images'
+              : input.category === 'VIDEOS'
+                ? 'videos'
+                : input.category === 'SHOPPING'
+                  ? 'shopping'
+                  : 'web';
+
+        primaryResults = items
+          .map((item) => {
+            const urlValue = String(item.url ?? item.link ?? '');
+            return {
+              title: String(item.title ?? ''),
+              url: urlValue,
+              domain: domainOf(urlValue),
+              description: String(item.description ?? item.snippet ?? ''),
+              date: item.date ? String(item.date) : undefined,
+              image: item.image ? String(item.image) : (item.thumbnail ? String(item.thumbnail) : undefined),
+              thumbnail: item.thumbnail ? String(item.thumbnail) : undefined,
+              type,
+            };
+          })
+          .filter((item) => item.title && item.url);
       }
+    } catch {
+      primaryFailed = true;
     }
+  } else {
+    primaryFailed = true;
+  }
+
+  if (!primaryFailed && primaryResults.length > 0) {
+    return { results: primaryResults, searchSource: 'Live News API' };
+  }
+
+  // Fallback 1: DuckDuckGo free search API / HTML fallback
+  const ddgResults = await fetchDuckDuckGoSearch(input.query);
+  if (ddgResults.length > 0) {
+    return { results: ddgResults, searchSource: 'DuckDuckGo (fallback)' };
+  }
+
+  // Fallback 2: Wikipedia search
+  if (input.category === 'ALL' || !input.category) {
+    const wikiResults = await fetchWikipediaSearch(input.query, 10);
+    if (wikiResults.length > 0) {
+      return { results: wikiResults, searchSource: 'Wikipedia (fallback)' };
+    }
+  }
+
+  if (!key || !url) {
     throw Object.assign(new Error('Search provider is not configured.'), { status: 503 });
   }
-  const response = await fetch(url, {
-    method: 'POST',
-    headers: {
-      'Content-Type': 'application/json',
-      Authorization: `Bearer ${key}`,
-      'X-API-Key': key,
-    },
-    body: JSON.stringify({
-      query: input.query,
-      page: input.page ?? 1,
-      category: input.category ?? 'ALL',
-      region: input.region,
-      language: input.language,
-      max_results: 20,
-    }),
-  });
-  if (!response.ok) {
-    if (input.category === 'ALL' || !input.category) {
-      const wikiResults = await fetchWikipediaSearch(input.query, 10);
-      if (wikiResults.length > 0) {
-        return wikiResults;
-      }
-    }
+  if (primaryFailed) {
     throw Object.assign(new Error('Search provider is temporarily unavailable.'), { status: 502 });
   }
-  const payload = (await response.json()) as {
-    results?: Array<Record<string, unknown>>;
-    organic_results?: Array<Record<string, unknown>>;
-    news?: Array<Record<string, unknown>>;
-  };
-  const items = payload.results ?? payload.organic_results ?? payload.news ?? [];
-  const type =
-    input.category === 'NEWS'
-      ? 'news'
-      : input.category === 'IMAGES'
-        ? 'images'
-        : input.category === 'VIDEOS'
-          ? 'videos'
-          : input.category === 'SHOPPING'
-            ? 'shopping'
-            : 'web';
-
-  return items
-    .map((item) => {
-      const urlValue = String(item.url ?? item.link ?? '');
-      return {
-        title: String(item.title ?? ''),
-        url: urlValue,
-        domain: domainOf(urlValue),
-        description: String(item.description ?? item.snippet ?? ''),
-        date: item.date ? String(item.date) : undefined,
-        image: item.image ? String(item.image) : (item.thumbnail ? String(item.thumbnail) : undefined),
-        thumbnail: item.thumbnail ? String(item.thumbnail) : undefined,
-        type,
-      };
-    })
-    .filter((item) => item.title && item.url);
+  return { results: [], searchSource: 'Live News API (No Results)' };
 }
 
 async function geocode(city: string) {
@@ -5500,7 +5573,8 @@ async function startServer() {
     const parsed = searchSchema.safeParse(req.body);
     if (!parsed.success) return errorResponse(res, 400, 'Enter a valid search query.');
     try {
-      return res.json({ data: await searchProvider(parsed.data) });
+      const searchRes = await searchProvider(parsed.data);
+      return res.json({ data: searchRes.results, searchSource: searchRes.searchSource });
     } catch (error) {
       const err = error as Error & { status?: number };
       return errorResponse(res, err.status ?? 502, err.message);

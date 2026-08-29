@@ -401,6 +401,11 @@ export const JarvisDeepResearchMeshAnswers: React.FC<JarvisDeepResearchMeshAnswe
                           <span>FAILOVER</span>
                         </span>
                       )}
+                      {step.agentId === 'researcher' && step.searchSource && (
+                        <span className="px-2 py-0.5 rounded text-[10px] font-mono bg-cyan-500/15 border border-cyan-400/30 text-cyan-300">
+                          via {step.searchSource}
+                        </span>
+                      )}
                     </div>
                     <p className="text-[11px] text-slate-400 m-0 hidden sm:block">
                       {theme.subtitle}

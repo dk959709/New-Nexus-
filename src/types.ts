@@ -243,6 +243,7 @@ export interface JarvisExecutionStep {
   outputPreview?: string;
   rawOutput?: string;
   usedFallback?: boolean;
+  searchSource?: string;
 }
 
 export interface JarvisMessage {

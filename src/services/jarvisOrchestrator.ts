@@ -1809,6 +1809,7 @@ Please perform your specialized processing for this inquiry. Provide clear, conc
 
     let searchSnippets = '';
     const gatheredSnippets: string[] = [];
+    let searchSource = 'Live News API';
 
     try {
       const { cleanedSearchQuery } = extractTopicKeywords(query, plannerOutput.task);
@@ -1825,6 +1826,7 @@ Please perform your specialized processing for this inquiry. Provide clear, conc
       ];
 
       const [wikiResults1, searchResults, wikiResults2] = await Promise.all(searchTasks);
+      searchSource = (searchResults as SearchResult[] & { searchSource?: string }).searchSource || 'Live News API';
 
       const rawCandidates: RawSearchResultCandidate[] = [];
 
@@ -1952,6 +1954,7 @@ Please perform your specialized processing for this inquiry. Provide clear, conc
         outputPreview: JSON.stringify(researcherOutput, null, 2),
         rawOutput: researchRes.text || JSON.stringify(researcherOutput, null, 2),
         usedFallback: researchRes.usedFallback,
+        searchSource,
       });
     } else {
       console.error(`[JARVIS Researcher] Agent execution failed:`, researchRes.error);
