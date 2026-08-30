@@ -137,7 +137,9 @@ Guidelines:
 - Do NOT mention intermediate agent names, JSON formats, or internal reasoning steps.
 - ABSOLUTE FACT-CHECKER EXCLUSION RULE: If the Fact Checker or Issues list has explicitly flagged any claim, event, or headline as incorrect, unverified, inaccurate, or unsupported, you MUST completely omit and exclude it from the final synthesis. Never present a flagged-false or unverified claim as a real fact or headline.
 - CURRENT-YEAR SOURCE PRIORITY RULE: When search results/sources include content dated with the current year (2026) or explicitly discussing "current year" topics (e.g. "Best movies of 2026", "2026 releases"), you MUST prioritize and heavily favor this current-year source data over your own training knowledge. Do not dilute a "current year" list with older, pre-existing well-known titles from memory unless the current-year source itself mentions them. If a current-year source (like "The 10 Best Sci-Fi Movies of 2026") is available, its actual content should be the PRIMARY basis for the answer, not a minor addition to an AI-recalled list.
-- If Reviewer identified missing context or perspectives, incorporate them where relevant instead of ignoring them.
+- REVIEWER RECOMMENDATIONS & CONTENT SELECTION / SCOPE ENFORCEMENT: Actively incorporate and honor the Reviewer's specific critique, missing context observations, and actionable recommendations.
+  - If the Reviewer explicitly recommends removing, excluding, or replacing a specific story, fact, claim, or item because it does not fit the query's scope, geographic level, category, or criteria (for example, a domestic or state-level story flagged as not belonging in a "world news" list), you MUST honor that critique by excluding or replacing that item.
+  - Never blindly include every raw fact from the Researcher if the Reviewer has flagged an item as out of scope, irrelevant, or inappropriate for the request. Filter, select, and structure your final content strictly according to the Reviewer's guidance.
 - STRICT ANTI-FABRICATION RULE: NEVER fabricate specific events, headlines, dates, quotes, statistics, or facts not present in the actual research data. If the research data does not contain real current news or verified facts on this topic, you MUST state clearly: "I don't have access to verified current news on this topic" rather than inventing plausible-sounding but fake headlines, events, or facts.
 - GROUNDED SOURCES RULE: Only cite sources that are explicitly present in the retrieved ground-truth sources list provided in the context. Never cite, invent, or hallucinate a source or URL not present in that list. If no sources were retrieved or if sources are irrelevant, do not cite external news sources.
 - If the available information is incomplete or uncertain, say so honestly rather than filling gaps with confident-sounding guesses.
@@ -567,7 +569,8 @@ export const storage = {
             stored.agents.finalSynthesizer?.systemPrompt?.includes('Deliver a direct, elegant, and informative answer in clean Markdown.') ||
             !stored.agents.finalSynthesizer?.systemPrompt?.includes('Do NOT use LaTeX math syntax') ||
             !stored.agents.finalSynthesizer?.systemPrompt?.includes('CURRENT-YEAR SOURCE PRIORITY RULE') ||
-            !stored.agents.finalSynthesizer?.systemPrompt?.includes('RELEVANCE & TOPIC MISMATCH SAFETY CHECK')
+            !stored.agents.finalSynthesizer?.systemPrompt?.includes('RELEVANCE & TOPIC MISMATCH SAFETY CHECK') ||
+            !stored.agents.finalSynthesizer?.systemPrompt?.includes('REVIEWER RECOMMENDATIONS & CONTENT SELECTION')
               ? DEFAULT_AGENT_SYSTEM_PROMPTS.finalSynthesizer
               : stored.agents.finalSynthesizer.systemPrompt,
         },

@@ -2418,8 +2418,17 @@ Please perform your specialized processing for this inquiry. Provide clear, conc
       claims: factsList.map((f, i) => `${i + 1}. ${f}`).join('\n'),
       verified: verifiedList.map((c) => `- ${c}`).join('\n'),
       issues: issuesList.map((i) => `- ${i}`).join('\n'),
-      reviewer: reviewerOutput?.recommendation || '',
+      reviewer: [
+        reviewerOutput?.recommendation || '',
+        ...(Array.isArray(reviewerOutput?.issues) ? reviewerOutput.issues.map((iss) => `Scope/Issue: ${iss}`) : []),
+        ...(Array.isArray(reviewerOutput?.missing) ? reviewerOutput.missing.map((m) => `Missing Context: ${m}`) : []),
+      ]
+        .filter(Boolean)
+        .join('\n'),
       recommendation: reviewerOutput?.recommendation || '',
+      reviewerRecommendation: reviewerOutput?.recommendation || '',
+      reviewerIssues: Array.isArray(reviewerOutput?.issues) ? reviewerOutput.issues.join('\n') : '',
+      reviewerMissing: Array.isArray(reviewerOutput?.missing) ? reviewerOutput.missing.join('\n') : '',
     };
 
     let allCustomInsightsText = '';
@@ -2513,6 +2522,10 @@ Please perform your specialized processing for this inquiry. Provide clear, conc
       ? researcherOutput.sources.map((s) => `- [${s.title}](${s.url}) (${s.domain || 'web'})`).join('\n')
       : 'No external sources retrieved.';
 
+    const reviewerMissingList = Array.isArray(reviewerOutput?.missing) ? reviewerOutput.missing : [];
+    const reviewerIssuesList = Array.isArray(reviewerOutput?.issues) ? reviewerOutput.issues : [];
+    const reviewerRecommendation = reviewerOutput?.recommendation ? reviewerOutput.recommendation.trim() : '';
+
     const rawSynthesizerContext = `Current date and time: ${currentDateTime}
 User Query: "${query}"
 
@@ -2520,7 +2533,9 @@ Planner Guidance: ${plannerPlanText}
 ${factsList.length > 0 ? `Key Verified Facts:\n${factsList.map((f) => `- ${f}`).join('\n')}` : ''}
 ${verifiedList.length > 0 ? `Verified Claims:\n${verifiedList.map((c) => `- ${c}`).join('\n')}` : ''}
 ${issuesList.length > 0 ? `CRITICAL FACT-CHECKER CORRECTIONS / FLAGGED ISSUES (YOU MUST EXCLUDE AND REMOVE ANY CLAIM MENTIONED HERE FROM THE FINAL SYNTHESIS):\n${issuesList.map((i) => `- ${i}`).join('\n')}` : ''}
-${reviewerOutput?.recommendation ? `Reviewer Advice: ${reviewerOutput.recommendation}` : ''}
+${reviewerMissingList.length > 0 ? `Reviewer Missing Context Suggestions:\n${reviewerMissingList.map((m) => `- ${m}`).join('\n')}` : ''}
+${reviewerIssuesList.length > 0 ? `Reviewer Flagged Content/Scope Issues (EXCLUDE OR REPLACE ITEMS FLAGGED HERE):\n${reviewerIssuesList.map((iss) => `- ${iss}`).join('\n')}` : ''}
+${reviewerRecommendation ? `Reviewer Actionable Guidance & Content Selection (HONOR THESE SELECTION & EXCLUSION INSTRUCTIONS):\n${reviewerRecommendation}` : ''}
 Retrieved Ground-Truth Sources (CRITICAL RULE: Only cite sources from this exact list. Never invent or cite any other sources):
 ${sourcesListText}${customInsightsBlock}`;
 
