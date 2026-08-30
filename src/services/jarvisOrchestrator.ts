@@ -1101,7 +1101,12 @@ export function parseResearcherOutput(
         obj.title ||
         obj.value;
       if (typeof candidate === 'string' && candidate.trim()) {
-        return candidate.trim();
+        const factText = candidate.trim();
+        const sourceIdx = obj.sourceIndex !== undefined ? obj.sourceIndex : obj.source;
+        if (sourceIdx !== undefined && sourceIdx !== null && String(sourceIdx).trim() !== '') {
+          return `${factText} [Source #${sourceIdx}]`;
+        }
+        return factText;
       }
       return JSON.stringify(item);
     }

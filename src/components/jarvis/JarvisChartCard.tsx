@@ -15,6 +15,7 @@ import { BarChart3, LineChart as LineChartIcon, Copy, Check, Sparkles, Bookmark,
 import type { JarvisChartData } from '@/types';
 import { storage } from '@/lib/storage';
 import { playTapSound } from '@/lib/audio';
+import { copyToClipboard } from '@/lib/clipboard';
 
 interface JarvisChartCardProps {
   id?: string;
@@ -102,11 +103,13 @@ export function JarvisChartCard({ id, chartData, title, onSaveChange }: JarvisCh
     return row;
   });
 
-  const handleCopyJson = () => {
+  const handleCopyJson = async () => {
     playTapSound();
-    navigator.clipboard.writeText(JSON.stringify(chartData, null, 2));
-    setCopied(true);
-    setTimeout(() => setCopied(false), 2000);
+    const success = await copyToClipboard(JSON.stringify(chartData, null, 2));
+    if (success) {
+      setCopied(true);
+      setTimeout(() => setCopied(false), 2000);
+    }
   };
 
   const labelsCount = chartData.labels?.length || 0;

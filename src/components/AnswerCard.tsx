@@ -18,6 +18,7 @@ import {
 } from 'lucide-react';
 import type { AnswerEngineResult, SourceCategory, ConfidenceLevel } from '@/types';
 import { playTapSound } from '@/lib/audio';
+import { copyToClipboard } from '@/lib/clipboard';
 
 interface AnswerCardProps {
   result: AnswerEngineResult;
@@ -29,11 +30,13 @@ export function AnswerCard({ result, onSelectFollowUp, className = '' }: AnswerC
   const [copied, setCopied] = useState(false);
   const [sourcesExpanded, setSourcesExpanded] = useState(true);
 
-  const handleCopy = () => {
+  const handleCopy = async () => {
     playTapSound();
-    navigator.clipboard.writeText(result.answer);
-    setCopied(true);
-    setTimeout(() => setCopied(false), 2000);
+    const success = await copyToClipboard(result.answer);
+    if (success) {
+      setCopied(true);
+      setTimeout(() => setCopied(false), 2000);
+    }
   };
 
   const getConfidenceBadge = (confidence: ConfidenceLevel, reason?: string) => {

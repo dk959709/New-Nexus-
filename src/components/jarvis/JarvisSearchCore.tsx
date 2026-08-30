@@ -27,6 +27,7 @@ import { useSpeechSearch } from '@/hooks/useSpeechSearch';
 import { askSmartAnswerEngine } from '@/services/answerEngine';
 import { storage } from '@/lib/storage';
 import { playTapSound } from '@/lib/audio';
+import { copyToClipboard } from '@/lib/clipboard';
 import type { AnswerEngineResult, Settings, SavedItem } from '@/types';
 
 export type JarvisQuickMode = 'ai' | 'web' | 'wiki' | 'videos' | 'media' | 'news';
@@ -235,13 +236,15 @@ export function JarvisSearchCore({ settings, onSearchNexus }: JarvisSearchCorePr
     executeSearch(suggestion, activeMode);
   };
 
-  const handleCopy = () => {
+  const handleCopy = async () => {
     const textToCopy = result?.answer || result?.text;
     if (!textToCopy) return;
     playTapSound();
-    navigator.clipboard.writeText(textToCopy);
-    setCopied(true);
-    setTimeout(() => setCopied(false), 2000);
+    const success = await copyToClipboard(textToCopy);
+    if (success) {
+      setCopied(true);
+      setTimeout(() => setCopied(false), 2000);
+    }
   };
 
   const handleSave = () => {

@@ -32,7 +32,7 @@ interface LogLine {
 }
 
 const DEFAULT_CHAT_STORAGE_KEY = 'nexus-terminal-inline-chat-v1';
-const MAX_STORED_MESSAGES = 30;
+const MAX_STORED_MESSAGES = 60;
 
 function getWeatherEmoji(condition?: string, isDay: boolean = true): string {
   if (!condition) return '☀️';
@@ -171,7 +171,9 @@ export function NexusTerminalOutput({
       setLogs((prev) => {
         // Prevent duplicate IDs
         if (prev.some((l) => l.id === customEvt.detail.id)) return prev;
-        return [...prev, customEvt.detail];
+        const updated = [...prev, customEvt.detail];
+        saveStoredChat(effectiveStorageKey, updated);
+        return updated;
       });
     };
 
@@ -290,7 +292,9 @@ export function NexusTerminalOutput({
   const formattedTemp = tempVal != null ? formatTemp(tempVal, tempUnit) : '22°C';
   const locName = weather?.location?.name || 'Station Nexus';
 
-  const hasChatMessages = logs.some((l) => l.type === 'user' || l.type === 'assistant' || l.type === 'warning');
+  const hasChatMessages = logs.some(
+    (l) => l.type === 'user' || l.type === 'assistant' || l.type === 'warning' || l.sender === 'search',
+  );
 
   return (
     <section

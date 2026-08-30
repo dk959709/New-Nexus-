@@ -16,6 +16,7 @@ import {
 } from 'lucide-react';
 import { storage } from '@/lib/storage';
 import { playTapSound } from '@/lib/audio';
+import { copyToClipboard } from '@/lib/clipboard';
 
 interface JarvisSvgDiagramProps {
   id?: string;
@@ -67,11 +68,13 @@ export function JarvisSvgDiagram({
     onSaveChange?.(isNowSaved);
   };
 
-  const handleCopySvg = () => {
+  const handleCopySvg = async () => {
     playTapSound();
-    navigator.clipboard.writeText(svgMarkup);
-    setCopied(true);
-    setTimeout(() => setCopied(false), 2000);
+    const success = await copyToClipboard(svgMarkup);
+    if (success) {
+      setCopied(true);
+      setTimeout(() => setCopied(false), 2000);
+    }
   };
 
   const handleDownloadSvg = () => {

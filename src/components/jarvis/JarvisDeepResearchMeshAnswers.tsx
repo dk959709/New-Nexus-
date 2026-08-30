@@ -17,6 +17,7 @@ import {
 } from 'lucide-react';
 import { JarvisExecutionStep } from '../../types';
 import { FormattedText } from './FormattedText';
+import { copyToClipboard } from '@/lib/clipboard';
 
 interface JarvisDeepResearchMeshAnswersProps {
   steps: JarvisExecutionStep[];
@@ -277,7 +278,16 @@ function formatFactCheckerOutput(step: JarvisExecutionStep, parsed: unknown, raw
       fObj.trueClaims;
 
     if (Array.isArray(rawVerified)) {
-      verified = rawVerified.map((v) => (typeof v === 'object' && v !== null ? JSON.stringify(v) : String(v))).filter(Boolean);
+      verified = rawVerified
+        .map((v) => {
+          if (typeof v === 'object' && v !== null) {
+            const vObj = v as Record<string, unknown>;
+            const text = (vObj.claim || vObj.fact || vObj.statement || vObj.text || vObj.point || vObj.finding || '') as string;
+            return text || JSON.stringify(v);
+          }
+          return String(v);
+        })
+        .filter(Boolean);
     }
 
     const rawIssues =
@@ -291,7 +301,16 @@ function formatFactCheckerOutput(step: JarvisExecutionStep, parsed: unknown, raw
       fObj.unverified;
 
     if (Array.isArray(rawIssues)) {
-      issues = rawIssues.map((i) => (typeof i === 'object' && i !== null ? JSON.stringify(i) : String(i))).filter(Boolean);
+      issues = rawIssues
+        .map((i) => {
+          if (typeof i === 'object' && i !== null) {
+            const iObj = i as Record<string, unknown>;
+            const text = (iObj.issue || iObj.correction || iObj.error || iObj.discrepancy || iObj.note || iObj.message || iObj.text || '') as string;
+            return text || JSON.stringify(i);
+          }
+          return String(i);
+        })
+        .filter(Boolean);
     }
   }
 
@@ -306,10 +325,10 @@ function formatFactCheckerOutput(step: JarvisExecutionStep, parsed: unknown, raw
         }
       } else if (typeof item === 'object' && item !== null) {
         const iObj = item as Record<string, unknown>;
-        const claimText = String(iObj.claim || iObj.fact || iObj.text || iObj.statement || '');
+        const claimText = String(iObj.claim || iObj.fact || iObj.text || iObj.statement || iObj.point || '');
         const isIssue = Boolean(iObj.issue || iObj.correction || iObj.error || iObj.invalid || iObj.flagged);
         if (isIssue) {
-          issues.push(String(iObj.issue || iObj.correction || claimText));
+          issues.push(String(iObj.issue || iObj.correction || iObj.error || iObj.message || claimText));
         } else if (claimText) {
           verified.push(claimText);
         }
@@ -454,15 +473,15 @@ function formatAgentContentToMarkdown(step: JarvisExecutionStep): {
 
   // 3. RESEARCHER AGENT
   if (step.agentId === 'researcher') {
-    let facts: string[] = [];
+    let facts: unknown[] = [];
     let context = '';
-    let keyInsights: string[] = [];
+    let keyInsights: unknown[] = [];
 
     if (parsed && typeof parsed === 'object' && !Array.isArray(parsed)) {
       const rObj = parsed as Record<string, unknown>;
-      facts = Array.isArray(rObj.facts) ? (rObj.facts as string[]) : Array.isArray(rObj.findings) ? (rObj.findings as string[]) : [];
+      facts = Array.isArray(rObj.facts) ? (rObj.facts as unknown[]) : Array.isArray(rObj.findings) ? (rObj.findings as unknown[]) : [];
       context = typeof rObj.context === 'string' ? rObj.context : typeof rObj.summary === 'string' ? rObj.summary : '';
-      keyInsights = Array.isArray(rObj.keyInsights) ? (rObj.keyInsights as string[]) : Array.isArray(rObj.insights) ? (rObj.insights as string[]) : [];
+      keyInsights = Array.isArray(rObj.keyInsights) ? (rObj.keyInsights as unknown[]) : Array.isArray(rObj.insights) ? (rObj.insights as unknown[]) : [];
     } else {
       facts = extractArrayFromDirtyJson(raw, ['facts', 'findings']);
       keyInsights = extractArrayFromDirtyJson(raw, ['keyInsights', 'insights']);
@@ -472,7 +491,30 @@ function formatAgentContentToMarkdown(step: JarvisExecutionStep): {
     let md = `### 🔎 Core Fact Intelligence & Verified Findings\n`;
     if (facts.length > 0) {
       facts.forEach((fact) => {
-        md += `- ${String(fact)}\n`;
+        if (typeof fact === 'string') {
+          md += `- ${fact}\n`;
+        } else if (typeof fact === 'object' && fact !== null) {
+          const fObj = fact as Record<string, unknown>;
+          const text = String(
+            fObj.fact ||
+            fObj.text ||
+            fObj.statement ||
+            fObj.claim ||
+            fObj.finding ||
+            fObj.point ||
+            fObj.description ||
+            fObj.value ||
+            JSON.stringify(fact)
+          );
+          const sourceIdx = fObj.sourceIndex !== undefined ? fObj.sourceIndex : fObj.source;
+          if (sourceIdx !== undefined && sourceIdx !== null && String(sourceIdx).trim() !== '') {
+            md += `- ${text} \`[Source #${sourceIdx}]\`\n`;
+          } else {
+            md += `- ${text}\n`;
+          }
+        } else {
+          md += `- ${String(fact)}\n`;
+        }
       });
     } else {
       md += `- Empirical research gathering completed successfully.\n`;
@@ -481,7 +523,23 @@ function formatAgentContentToMarkdown(step: JarvisExecutionStep): {
     if (keyInsights.length > 0) {
       md += `\n### 💡 Key Empirical Insights\n`;
       keyInsights.forEach((insight) => {
-        md += `- ${String(insight)}\n`;
+        if (typeof insight === 'string') {
+          md += `- ${insight}\n`;
+        } else if (typeof insight === 'object' && insight !== null) {
+          const iObj = insight as Record<string, unknown>;
+          const text = String(
+            iObj.insight ||
+            iObj.text ||
+            iObj.statement ||
+            iObj.point ||
+            iObj.fact ||
+            iObj.description ||
+            JSON.stringify(insight)
+          );
+          md += `- ${text}\n`;
+        } else {
+          md += `- ${String(insight)}\n`;
+        }
       });
     }
 
@@ -533,7 +591,18 @@ function formatAgentContentToMarkdown(step: JarvisExecutionStep): {
     if (Array.isArray(parsed)) {
       let md = `### 📊 ${step.name ? step.name.toUpperCase() : step.agentId.toUpperCase()} // STRUCTURED RECORDS\n\n`;
       parsed.forEach((item, i) => {
-        md += `${i + 1}. ${typeof item === 'object' ? JSON.stringify(item) : String(item)}\n`;
+        if (typeof item === 'object' && item !== null) {
+          const iObj = item as Record<string, unknown>;
+          const text = iObj.fact || iObj.claim || iObj.point || iObj.name || iObj.title || iObj.text || iObj.description;
+          if (typeof text === 'string' && text.trim()) {
+            const src = iObj.sourceIndex !== undefined ? iObj.sourceIndex : iObj.source;
+            md += `${i + 1}. ${text.trim()}${src !== undefined && src !== null && String(src).trim() !== '' ? ` \`[Source #${src}]\`` : ''}\n`;
+          } else {
+            md += `${i + 1}. ${JSON.stringify(item)}\n`;
+          }
+        } else {
+          md += `${i + 1}. ${String(item)}\n`;
+        }
       });
       return { formatted: md, isStructuredJson: true, raw };
     }
@@ -546,7 +615,18 @@ function formatAgentContentToMarkdown(step: JarvisExecutionStep): {
       if (Array.isArray(val)) {
         md += `**${titleKey}:**\n`;
         val.forEach((item) => {
-          md += `- ${typeof item === 'object' ? JSON.stringify(item) : String(item)}\n`;
+          if (typeof item === 'object' && item !== null) {
+            const iObj = item as Record<string, unknown>;
+            const text = iObj.fact || iObj.claim || iObj.point || iObj.name || iObj.title || iObj.text || iObj.description;
+            if (typeof text === 'string' && text.trim()) {
+              const src = iObj.sourceIndex !== undefined ? iObj.sourceIndex : iObj.source;
+              md += `- ${text.trim()}${src !== undefined && src !== null && String(src).trim() !== '' ? ` \`[Source #${src}]\`` : ''}\n`;
+            } else {
+              md += `- ${JSON.stringify(item)}\n`;
+            }
+          } else {
+            md += `- ${String(item)}\n`;
+          }
         });
         md += `\n`;
       } else if (val && typeof val === 'object') {
@@ -588,10 +668,16 @@ export const JarvisDeepResearchMeshAnswers: React.FC<JarvisDeepResearchMeshAnswe
 
   if (agentSteps.length === 0) return null;
 
-  const handleCopy = (text: string, idx: number) => {
-    navigator.clipboard.writeText(text);
-    setCopiedStepIndex(idx);
-    setTimeout(() => setCopiedStepIndex(null), 2000);
+  const handleCopy = async (text: string, idx: number, e?: React.MouseEvent) => {
+    if (e) {
+      e.stopPropagation();
+      e.preventDefault();
+    }
+    const success = await copyToClipboard(text);
+    if (success) {
+      setCopiedStepIndex(idx);
+      setTimeout(() => setCopiedStepIndex(null), 2000);
+    }
   };
 
   const toggleRawView = (idx: number) => {
@@ -743,8 +829,8 @@ export const JarvisDeepResearchMeshAnswers: React.FC<JarvisDeepResearchMeshAnswe
 
                   <button
                     type="button"
-                    onClick={() => handleCopy(isShowingRaw ? raw : formatted, idx)}
-                    className="p-1.5 rounded-lg text-slate-300 hover:text-white hover:bg-white/10 transition-colors flex items-center gap-1 text-xs font-mono bg-black/40 border border-white/10"
+                    onClick={(e) => handleCopy(isShowingRaw ? raw : formatted, idx, e)}
+                    className="p-1.5 rounded-lg text-slate-300 hover:text-white hover:bg-white/10 active:scale-95 transition-all flex items-center gap-1 text-xs font-mono bg-black/40 border border-white/10"
                     title="Copy full agent answer"
                   >
                     {copiedStepIndex === idx ? (

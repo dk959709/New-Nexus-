@@ -180,15 +180,15 @@ function formatAgentStep(step: JarvisExecutionStep): string {
 
   // 2. Researcher Agent
   if (step.agentId === 'researcher') {
-    let facts: string[] = [];
+    let facts: unknown[] = [];
     let context = '';
-    let keyInsights: string[] = [];
+    let keyInsights: unknown[] = [];
 
     if (parsed && typeof parsed === 'object' && !Array.isArray(parsed)) {
       const rObj = parsed as Record<string, unknown>;
-      facts = Array.isArray(rObj.facts) ? (rObj.facts as string[]) : Array.isArray(rObj.findings) ? (rObj.findings as string[]) : [];
+      facts = Array.isArray(rObj.facts) ? (rObj.facts as unknown[]) : Array.isArray(rObj.findings) ? (rObj.findings as unknown[]) : [];
       context = typeof rObj.context === 'string' ? rObj.context : typeof rObj.summary === 'string' ? rObj.summary : '';
-      keyInsights = Array.isArray(rObj.keyInsights) ? (rObj.keyInsights as string[]) : Array.isArray(rObj.insights) ? (rObj.insights as string[]) : [];
+      keyInsights = Array.isArray(rObj.keyInsights) ? (rObj.keyInsights as unknown[]) : Array.isArray(rObj.insights) ? (rObj.insights as unknown[]) : [];
     } else {
       facts = extractArrayFromDirtyJson(raw, ['facts', 'findings']);
       keyInsights = extractArrayFromDirtyJson(raw, ['keyInsights', 'insights']);
@@ -200,7 +200,30 @@ function formatAgentStep(step: JarvisExecutionStep): string {
     if (facts.length > 0) {
       lines.push(`Core Facts & Intelligence:`);
       facts.forEach((fact) => {
-        lines.push(`- ${String(fact)}`);
+        if (typeof fact === 'string') {
+          lines.push(`- ${fact}`);
+        } else if (typeof fact === 'object' && fact !== null) {
+          const fObj = fact as Record<string, unknown>;
+          const text = String(
+            fObj.fact ||
+            fObj.text ||
+            fObj.statement ||
+            fObj.claim ||
+            fObj.finding ||
+            fObj.point ||
+            fObj.description ||
+            fObj.value ||
+            JSON.stringify(fact)
+          );
+          const sourceIdx = fObj.sourceIndex !== undefined ? fObj.sourceIndex : fObj.source;
+          if (sourceIdx !== undefined && sourceIdx !== null && String(sourceIdx).trim() !== '') {
+            lines.push(`- ${text} [Source #${sourceIdx}]`);
+          } else {
+            lines.push(`- ${text}`);
+          }
+        } else {
+          lines.push(`- ${String(fact)}`);
+        }
       });
       lines.push(``);
     }
@@ -208,7 +231,23 @@ function formatAgentStep(step: JarvisExecutionStep): string {
     if (keyInsights.length > 0) {
       lines.push(`Key Empirical Insights:`);
       keyInsights.forEach((insight) => {
-        lines.push(`- ${String(insight)}`);
+        if (typeof insight === 'string') {
+          lines.push(`- ${insight}`);
+        } else if (typeof insight === 'object' && insight !== null) {
+          const iObj = insight as Record<string, unknown>;
+          const text = String(
+            iObj.insight ||
+            iObj.text ||
+            iObj.statement ||
+            iObj.point ||
+            iObj.fact ||
+            iObj.description ||
+            JSON.stringify(insight)
+          );
+          lines.push(`- ${text}`);
+        } else {
+          lines.push(`- ${String(insight)}`);
+        }
       });
       lines.push(``);
     }
@@ -246,7 +285,16 @@ function formatAgentStep(step: JarvisExecutionStep): string {
         fObj.facts;
 
       if (Array.isArray(rawVerified)) {
-        verified = rawVerified.map((v) => (typeof v === 'object' && v !== null ? JSON.stringify(v) : String(v))).filter(Boolean);
+        verified = rawVerified
+          .map((v) => {
+            if (typeof v === 'object' && v !== null) {
+              const vObj = v as Record<string, unknown>;
+              const text = (vObj.claim || vObj.fact || vObj.statement || vObj.text || vObj.point || vObj.finding || '') as string;
+              return text || JSON.stringify(v);
+            }
+            return String(v);
+          })
+          .filter(Boolean);
       }
 
       const rawIssues =
@@ -257,7 +305,16 @@ function formatAgentStep(step: JarvisExecutionStep): string {
         fObj.notes;
 
       if (Array.isArray(rawIssues)) {
-        issues = rawIssues.map((i) => (typeof i === 'object' && i !== null ? JSON.stringify(i) : String(i))).filter(Boolean);
+        issues = rawIssues
+          .map((i) => {
+            if (typeof i === 'object' && i !== null) {
+              const iObj = i as Record<string, unknown>;
+              const text = (iObj.issue || iObj.correction || iObj.error || iObj.discrepancy || iObj.note || iObj.message || iObj.text || '') as string;
+              return text || JSON.stringify(i);
+            }
+            return String(i);
+          })
+          .filter(Boolean);
       }
     } else {
       verified = extractArrayFromDirtyJson(raw, ['verified', 'verifiedClaims', 'claims', 'facts']);
@@ -331,7 +388,18 @@ function formatAgentStep(step: JarvisExecutionStep): string {
     if (Array.isArray(parsed)) {
       const lines: string[] = [`=== ${agentTitle} ===`];
       parsed.forEach((item, i) => {
-        lines.push(`${i + 1}. ${typeof item === 'object' ? JSON.stringify(item) : String(item)}`);
+        if (typeof item === 'object' && item !== null) {
+          const iObj = item as Record<string, unknown>;
+          const text = iObj.fact || iObj.claim || iObj.point || iObj.name || iObj.title || iObj.text || iObj.description;
+          if (typeof text === 'string' && text.trim()) {
+            const src = iObj.sourceIndex !== undefined ? iObj.sourceIndex : iObj.source;
+            lines.push(`${i + 1}. ${text.trim()}${src !== undefined && src !== null && String(src).trim() !== '' ? ` [Source #${src}]` : ''}`);
+          } else {
+            lines.push(`${i + 1}. ${JSON.stringify(item)}`);
+          }
+        } else {
+          lines.push(`${i + 1}. ${String(item)}`);
+        }
       });
       return lines.join('\n');
     }
@@ -343,7 +411,18 @@ function formatAgentStep(step: JarvisExecutionStep): string {
       if (Array.isArray(val)) {
         lines.push(`${titleKey}:`);
         val.forEach((item) => {
-          lines.push(`- ${typeof item === 'object' ? JSON.stringify(item) : String(item)}`);
+          if (typeof item === 'object' && item !== null) {
+            const iObj = item as Record<string, unknown>;
+            const text = iObj.fact || iObj.claim || iObj.point || iObj.name || iObj.title || iObj.text || iObj.description;
+            if (typeof text === 'string' && text.trim()) {
+              const src = iObj.sourceIndex !== undefined ? iObj.sourceIndex : iObj.source;
+              lines.push(`- ${text.trim()}${src !== undefined && src !== null && String(src).trim() !== '' ? ` [Source #${src}]` : ''}`);
+            } else {
+              lines.push(`- ${JSON.stringify(item)}`);
+            }
+          } else {
+            lines.push(`- ${String(item)}`);
+          }
         });
         lines.push(``);
       } else if (val && typeof val === 'object') {

@@ -7,15 +7,14 @@ import {
   Shield,
   Clock,
   Sparkles,
-  Terminal,
 } from 'lucide-react';
 import type { JarvisSystemConfig } from '@/types';
 
 interface JarvisHudHeaderProps {
   config: JarvisSystemConfig;
   isRunning: boolean;
-  activeView: 'chat' | 'topology' | 'categories' | 'reactor' | 'terminal';
-  onSelectView: (view: 'chat' | 'topology' | 'categories' | 'reactor' | 'terminal') => void;
+  activeView: 'chat' | 'topology' | 'categories' | 'reactor';
+  onSelectView: (view: 'chat' | 'topology' | 'categories' | 'reactor') => void;
   messageCount: number;
 }
 
@@ -283,28 +282,6 @@ export function JarvisHudHeader({
           >
             <Zap size={13} />
             <span>Neural Core</span>
-          </button>
-
-          <button
-            type="button"
-            onClick={() => onSelectView('terminal')}
-            style={{
-              padding: '6px 12px',
-              borderRadius: '6px',
-              border: 'none',
-              fontSize: '12px',
-              fontWeight: 600,
-              cursor: 'pointer',
-              display: 'flex',
-              alignItems: 'center',
-              gap: '6px',
-              background: activeView === 'terminal' ? 'var(--accent)' : 'transparent',
-              color: activeView === 'terminal' ? '#04121a' : 'var(--muted)',
-              transition: 'all 0.2s ease',
-            }}
-          >
-            <Terminal size={13} />
-            <span>Terminal Output</span>
           </button>
         </div>
       </div>

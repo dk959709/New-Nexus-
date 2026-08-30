@@ -1,5 +1,5 @@
-export const JARVIS_TERMINAL_STORAGE_KEY = 'jarvis-terminal-inline-chat-v1';
-export const JARVIS_TERMINAL_EVENT = 'jarvis-terminal-log';
+export const JARVIS_TERMINAL_STORAGE_KEY = 'nexus-terminal-inline-chat-v1';
+export const JARVIS_TERMINAL_EVENT = 'nexus-terminal-log';
 
 export interface JarvisTerminalLogItem {
   id: string;
