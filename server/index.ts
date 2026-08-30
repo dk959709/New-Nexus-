@@ -1406,7 +1406,9 @@ async function searchProvider(input: z.infer<typeof searchSchema>): Promise<{ re
       if (gnews.articles.length > 0) {
         return { results: gnews.articles, searchSource: 'GNews API' };
       }
-    } catch {
+      console.log('[searchProvider] GNews API error: Zero articles returned');
+    } catch (err) {
+      console.log(`[searchProvider] GNews API error: ${(err as Error).message}`);
       // Automatic fallback to Google News RSS
     }
     const newsResults = await fetchGoogleNewsRSS(input.query);

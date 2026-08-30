@@ -856,10 +856,12 @@ function safeJsonParse<T>(text: string, fallback: T): T {
       toParse = candidate.slice(firstBracket, lastBracket + 1);
     }
 
-    // Pass C: Strip trailing commas and normalize smart quotes
+    // Pass C: Strip comments, trailing commas and normalize smart quotes
     const sanitized = toParse
+      .replace(/\/\/.*$/gm, '')
+      .replace(/\/\*[\s\S]*?\*\//g, '')
       .replace(/,\s*([}\]])/g, '$1')
-      .replace(/[\u201C\u201D]/g, '"')
+      .replace(/[\u201C\u201D\u201E\u201F]/g, '"')
       .replace(/[\u2018\u2019]/g, "'");
 
     try {
@@ -1864,8 +1866,16 @@ Please perform your specialized processing for this inquiry. Provide clear, conc
             searchSource = 'GNews API';
             gnewsSucceeded = true;
             console.log('[JARVIS Researcher] News source used: GNews');
+          } else {
+            const specificError =
+              gnewsRes?.error ||
+              (gnewsRes?.isFallback ? 'GNews fallback triggered (missing key or API limit)' : '') ||
+              (!gnewsRes?.data || gnewsRes.data.length === 0 ? 'Zero articles returned by GNews' : 'GNews request failed');
+            console.log(`[JARVIS Researcher] GNews API error: ${specificError}`);
           }
         } catch (err) {
+          const errMsg = err instanceof Error ? err.message : String(err);
+          console.log(`[JARVIS Researcher] GNews API error: ${errMsg}`);
           console.warn('[JARVIS Researcher] GNews API attempt encountered an error:', err);
         }
 
