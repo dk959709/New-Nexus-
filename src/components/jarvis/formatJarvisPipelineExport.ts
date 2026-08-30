@@ -1,5 +1,6 @@
 import { JarvisExecutionStep, JarvisMessage } from '../../types';
 import { stripConversationalMetaText } from '../../lib/format';
+import { cleanAndFormatFact, cleanAndFormatInsight } from '../../lib/factFormatter';
 
 /**
  * Multi-pass ultra-resilient JSON parser with repair strategies
@@ -200,29 +201,9 @@ function formatAgentStep(step: JarvisExecutionStep): string {
     if (facts.length > 0) {
       lines.push(`Core Facts & Intelligence:`);
       facts.forEach((fact) => {
-        if (typeof fact === 'string') {
-          lines.push(`- ${fact}`);
-        } else if (typeof fact === 'object' && fact !== null) {
-          const fObj = fact as Record<string, unknown>;
-          const text = String(
-            fObj.fact ||
-            fObj.text ||
-            fObj.statement ||
-            fObj.claim ||
-            fObj.finding ||
-            fObj.point ||
-            fObj.description ||
-            fObj.value ||
-            JSON.stringify(fact)
-          );
-          const sourceIdx = fObj.sourceIndex !== undefined ? fObj.sourceIndex : fObj.source;
-          if (sourceIdx !== undefined && sourceIdx !== null && String(sourceIdx).trim() !== '') {
-            lines.push(`- ${text} [Source #${sourceIdx}]`);
-          } else {
-            lines.push(`- ${text}`);
-          }
-        } else {
-          lines.push(`- ${String(fact)}`);
+        const formatted = cleanAndFormatFact(fact, { markdownSource: false });
+        if (formatted) {
+          lines.push(`- ${formatted}`);
         }
       });
       lines.push(``);
@@ -231,22 +212,9 @@ function formatAgentStep(step: JarvisExecutionStep): string {
     if (keyInsights.length > 0) {
       lines.push(`Key Empirical Insights:`);
       keyInsights.forEach((insight) => {
-        if (typeof insight === 'string') {
-          lines.push(`- ${insight}`);
-        } else if (typeof insight === 'object' && insight !== null) {
-          const iObj = insight as Record<string, unknown>;
-          const text = String(
-            iObj.insight ||
-            iObj.text ||
-            iObj.statement ||
-            iObj.point ||
-            iObj.fact ||
-            iObj.description ||
-            JSON.stringify(insight)
-          );
-          lines.push(`- ${text}`);
-        } else {
-          lines.push(`- ${String(insight)}`);
+        const formatted = cleanAndFormatInsight(insight);
+        if (formatted) {
+          lines.push(`- ${formatted}`);
         }
       });
       lines.push(``);
@@ -388,15 +356,9 @@ function formatAgentStep(step: JarvisExecutionStep): string {
     if (Array.isArray(parsed)) {
       const lines: string[] = [`=== ${agentTitle} ===`];
       parsed.forEach((item, i) => {
-        if (typeof item === 'object' && item !== null) {
-          const iObj = item as Record<string, unknown>;
-          const text = iObj.fact || iObj.claim || iObj.point || iObj.name || iObj.title || iObj.text || iObj.description;
-          if (typeof text === 'string' && text.trim()) {
-            const src = iObj.sourceIndex !== undefined ? iObj.sourceIndex : iObj.source;
-            lines.push(`${i + 1}. ${text.trim()}${src !== undefined && src !== null && String(src).trim() !== '' ? ` [Source #${src}]` : ''}`);
-          } else {
-            lines.push(`${i + 1}. ${JSON.stringify(item)}`);
-          }
+        const formatted = cleanAndFormatFact(item, { markdownSource: false });
+        if (formatted) {
+          lines.push(`${i + 1}. ${formatted}`);
         } else {
           lines.push(`${i + 1}. ${String(item)}`);
         }
@@ -411,15 +373,9 @@ function formatAgentStep(step: JarvisExecutionStep): string {
       if (Array.isArray(val)) {
         lines.push(`${titleKey}:`);
         val.forEach((item) => {
-          if (typeof item === 'object' && item !== null) {
-            const iObj = item as Record<string, unknown>;
-            const text = iObj.fact || iObj.claim || iObj.point || iObj.name || iObj.title || iObj.text || iObj.description;
-            if (typeof text === 'string' && text.trim()) {
-              const src = iObj.sourceIndex !== undefined ? iObj.sourceIndex : iObj.source;
-              lines.push(`- ${text.trim()}${src !== undefined && src !== null && String(src).trim() !== '' ? ` [Source #${src}]` : ''}`);
-            } else {
-              lines.push(`- ${JSON.stringify(item)}`);
-            }
+          const formatted = cleanAndFormatFact(item, { markdownSource: false });
+          if (formatted) {
+            lines.push(`- ${formatted}`);
           } else {
             lines.push(`- ${String(item)}`);
           }
@@ -438,6 +394,20 @@ function formatAgentStep(step: JarvisExecutionStep): string {
 
   // Plain text / logs
   return `=== ${agentTitle} ===\n${raw}`;
+}
+
+export function formatModelsUsedFooter(steps?: JarvisExecutionStep[]): string {
+  if (!steps || steps.length === 0) return '';
+  const completedSteps = steps.filter((s) => s && s.status === 'completed');
+  if (completedSteps.length === 0) return '';
+
+  const lines = ['---', 'Models Used:'];
+  completedSteps.forEach((s) => {
+    const name = s.name || s.agentId || 'Agent';
+    const model = s.model || s.providerName || 'unknown';
+    lines.push(`${name}: ${model}`);
+  });
+  return lines.join('\n');
 }
 
 export function formatFullPipelineExport(
@@ -517,6 +487,13 @@ export function formatFullPipelineExport(
     finalMessage.sources.forEach((src, idx) => {
       exportParts.push(`[${idx + 1}] ${src.title} - ${src.url}`);
     });
+  }
+
+  // Models Used section: include all agents that actually ran for that query
+  // (skip any agents that were bypassed, like Fact Checker/Reviewer being skipped for casual questions)
+  const modelsUsedBlock = formatModelsUsedFooter(steps);
+  if (modelsUsedBlock) {
+    exportParts.push(`\n\n${modelsUsedBlock}`);
   }
 
   exportParts.push(`\n================================================================================`);

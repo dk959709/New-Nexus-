@@ -17,6 +17,7 @@ import {
   JarvisDeepResearchMeshAnswers,
   JarvisImageGallery,
 } from '@/components/jarvis';
+import { formatModelsUsedFooter } from '@/components/jarvis/formatJarvisPipelineExport';
 import { storage } from '@/lib/storage';
 import { playTapSound } from '@/lib/audio';
 import { copyToClipboard } from '@/lib/clipboard';
@@ -35,9 +36,16 @@ export function SavedPage() {
     setItems(storage.removeSaved(id));
   };
 
-  const handleCopy = async (text: string, id: string) => {
+  const handleCopy = async (text: string, id: string, item?: typeof items[0]) => {
     playTapSound();
-    const success = await copyToClipboard(text);
+    let textToCopy = text;
+    if (item && item.type === 'jarvis' && item.steps && item.steps.length > 0) {
+      const modelsFooter = formatModelsUsedFooter(item.steps);
+      if (modelsFooter) {
+        textToCopy = `${text.trim()}\n\n${modelsFooter}`;
+      }
+    }
+    const success = await copyToClipboard(textToCopy);
     if (success) {
       setCopiedId(id);
       setTimeout(() => setCopiedId(null), 2000);
@@ -324,7 +332,7 @@ export function SavedPage() {
                     <div className="flex items-center gap-2">
                       <button
                         type="button"
-                        onClick={() => handleCopy(answerText, item.id)}
+                        onClick={() => handleCopy(answerText, item.id, item)}
                         className="px-2.5 py-1 rounded-lg bg-white/5 hover:bg-white/10 border border-white/10 text-xs text-slate-300 hover:text-white flex items-center gap-1.5 transition-all"
                         title="Copy synthesis text"
                       >

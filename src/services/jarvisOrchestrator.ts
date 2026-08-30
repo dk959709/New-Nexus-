@@ -3,6 +3,7 @@ import { storage, DEFAULT_AGENT_SYSTEM_PROMPTS } from '@/lib/storage';
 import { searchWikipedia, getWikipediaSummary } from '@/services/wikipedia';
 import { stripConversationalMetaText } from '@/lib/format';
 import { logToJarvisTerminal } from '@/lib/jarvisTerminalLogger';
+import { cleanAndFormatFact } from '@/lib/factFormatter';
 import type {
   AIProviderConfig,
   AISource,
@@ -1085,35 +1086,7 @@ export function parseResearcherOutput(
 
   // Helper to extract clean string from fact item (handles strings, objects, numbers)
   const cleanFactItem = (item: unknown): string => {
-    if (typeof item === 'string') {
-      return item.trim().replace(/^["']|["']$/g, '');
-    }
-    if (typeof item === 'object' && item !== null) {
-      const obj = item as Record<string, unknown>;
-      const candidate =
-        obj.fact ||
-        obj.text ||
-        obj.statement ||
-        obj.claim ||
-        obj.content ||
-        obj.point ||
-        obj.description ||
-        obj.title ||
-        obj.value;
-      if (typeof candidate === 'string' && candidate.trim()) {
-        const factText = candidate.trim();
-        const sourceIdx = obj.sourceIndex !== undefined ? obj.sourceIndex : obj.source;
-        if (sourceIdx !== undefined && sourceIdx !== null && String(sourceIdx).trim() !== '') {
-          return `${factText} [Source #${sourceIdx}]`;
-        }
-        return factText;
-      }
-      return JSON.stringify(item);
-    }
-    if (typeof item === 'number' || typeof item === 'boolean') {
-      return String(item);
-    }
-    return '';
+    return cleanAndFormatFact(item, { markdownSource: false });
   };
 
   // Helper to populate facts from array
@@ -1240,7 +1213,10 @@ export function parseResearcherOutput(
           candidate.length > 8 &&
           !/^(sources?|references?|notes?|summary|context|tasks?|guidance)\b/i.test(candidate)
         ) {
-          result.facts.push(candidate);
+          const cleaned = cleanFactItem(candidate);
+          if (cleaned && !result.facts.includes(cleaned)) {
+            result.facts.push(cleaned);
+          }
         }
       }
     }
@@ -1254,7 +1230,7 @@ export function parseResearcherOutput(
         .replace(/sources?:[\s\S]*$/gi, '');
       const sentences = stripped
         .split(/(?<=[.!?])\s+/)
-        .map((s) => s.trim())
+        .map((s) => cleanFactItem(s))
         .filter(
           (s) =>
             s.length > 15 &&
@@ -1271,8 +1247,9 @@ export function parseResearcherOutput(
     fallbackSources.forEach((s) => {
       if (s.description && s.description.trim().length > 15) {
         const snippetFact = `${s.title ? `[${s.title}] ` : ''}${s.description.trim()}`;
-        if (!result.facts.includes(snippetFact)) {
-          result.facts.push(snippetFact);
+        const cleaned = cleanFactItem(snippetFact);
+        if (cleaned && !result.facts.includes(cleaned)) {
+          result.facts.push(cleaned);
         }
       }
     });
@@ -1790,11 +1767,24 @@ Please perform your specialized processing for this inquiry. Provide clear, conc
       return false;
     }
     // Match standalone whole words only
-    return /\b(news|today|current|latest|breaking)\b/i.test(lower);
+    return /\b(news|today|current|latest|breaking|headlines)\b/i.test(lower);
   };
 
-  const isNewsQuery = isNewsInquiry(`${query} ${plannerOutput.task || ''}`);
-  const isWeatherQuery = /\b(weather|temperature|forecast|rain|snow|wind|humidity|degrees)\b/i.test(`${query} ${plannerOutput.task || ''}`);
+  const isWorldNewsInquiry = (text: string): boolean => {
+    const lower = text.toLowerCase();
+    return (
+      /\b(world|global|international)\b.*\b(news|headlines|breaking|stories)\b/i.test(lower) ||
+      /\b(news|headlines|breaking)\b.*\b(world|global|international)\b/i.test(lower) ||
+      /\btop\s*\d*\s*news\b/i.test(lower) ||
+      /\btop\s*\d*\s*world\s*news\b/i.test(lower) ||
+      /^(what are the )?(top \d+ |latest |breaking )?(world|global|international) news/i.test(lower.trim())
+    );
+  };
+
+  const combinedQueryText = `${query} ${plannerOutput.task || ''}`;
+  const isNewsQuery = isNewsInquiry(combinedQueryText);
+  const isWorldNews = isWorldNewsInquiry(combinedQueryText);
+  const isWeatherQuery = /\b(weather|temperature|forecast|rain|snow|wind|humidity|degrees)\b/i.test(combinedQueryText);
 
   // Determine which downstream agents are required
   const shouldResearch =
@@ -1818,7 +1808,7 @@ Please perform your specialized processing for this inquiry. Provide clear, conc
   };
 
   if (shouldResearch) {
-    console.log('[JARVIS Researcher] QUERY TYPE DEBUG - Query:', query, '| isNewsQuery:', isNewsQuery, '| isWeatherQuery:', isWeatherQuery, '| needsWikipedia:', plannerOutput.needsWikipedia);
+    console.log('[JARVIS Researcher] QUERY TYPE DEBUG - Query:', query, '| isNewsQuery:', isNewsQuery, '| isWorldNews:', isWorldNews, '| isWeatherQuery:', isWeatherQuery, '| needsWikipedia:', plannerOutput.needsWikipedia);
     const rCfg = agentConfigs.researcher;
     const provInfo = resolveProviderConfig(rCfg);
     const start = Date.now();
@@ -1871,8 +1861,11 @@ Please perform your specialized processing for this inquiry. Provide clear, conc
       else if (isNewsQuery) {
         let gnewsSucceeded = false;
         try {
-          console.log('[JARVIS Researcher] Attempting primary GNews API for news query:', query);
-          const gnewsRes = await api.news({ query });
+          console.log('[JARVIS Researcher] Attempting primary GNews API for news query:', query, 'isWorldNews:', isWorldNews);
+          const gnewsRes = await api.news({
+            query: isWorldNews ? undefined : (cleanedSearchQuery || query),
+            category: isWorldNews ? 'world' : 'general',
+          });
           console.log('[JARVIS Researcher] RAW DATA USED (DEBUG) - GNews Response:', JSON.stringify(gnewsRes, null, 2));
 
           if (
@@ -1904,8 +1897,9 @@ Please perform your specialized processing for this inquiry. Provide clear, conc
         if (!gnewsSucceeded) {
           logToJarvisTerminal('GNews failed, falling back to Google News RSS', 'warning');
           try {
-            console.log('[JARVIS Researcher] Falling back to Google News RSS for news query:', query);
-            const liveNewsRes = await api.newsRss(query);
+            const rssQuery = isWorldNews ? 'latest world news' : (cleanedSearchQuery || query);
+            console.log('[JARVIS Researcher] Falling back to Google News RSS for news query:', rssQuery);
+            const liveNewsRes = await api.newsRss(rssQuery);
             console.log('[JARVIS Researcher] RAW DATA USED (DEBUG) - News RSS Response:', JSON.stringify(liveNewsRes, null, 2));
             if (Array.isArray(liveNewsRes) && liveNewsRes.length > 0) {
               searchResults = liveNewsRes;
@@ -1926,7 +1920,7 @@ Please perform your specialized processing for this inquiry. Provide clear, conc
       if (searchResults.length === 0) {
         const currentDateStr = new Date().toLocaleDateString('en-US', { month: 'long', day: 'numeric', year: 'numeric' });
         const effectiveSearchQuery = isNewsQuery
-          ? `world news today ${currentDateStr} ${cleanedSearchQuery || query}`
+          ? (isWorldNews ? `top world breaking news headlines today ${currentDateStr}` : `world news today ${currentDateStr} ${cleanedSearchQuery || query}`)
           : query;
 
         try {

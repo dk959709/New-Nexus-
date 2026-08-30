@@ -237,9 +237,12 @@ export function JarvisSearchCore({ settings, onSearchNexus }: JarvisSearchCorePr
   };
 
   const handleCopy = async () => {
-    const textToCopy = result?.answer || result?.text;
+    let textToCopy = result?.answer || result?.text;
     if (!textToCopy) return;
     playTapSound();
+    if (result?.model) {
+      textToCopy = `${textToCopy.trim()}\n\n---\nModels Used:\nAI Synthesis: ${result.model}`;
+    }
     const success = await copyToClipboard(textToCopy);
     if (success) {
       setCopied(true);

@@ -18,6 +18,7 @@ import {
 import { JarvisExecutionStep } from '../../types';
 import { FormattedText } from './FormattedText';
 import { copyToClipboard } from '@/lib/clipboard';
+import { cleanAndFormatFact, cleanAndFormatInsight } from '../../lib/factFormatter';
 
 interface JarvisDeepResearchMeshAnswersProps {
   steps: JarvisExecutionStep[];
@@ -491,29 +492,9 @@ function formatAgentContentToMarkdown(step: JarvisExecutionStep): {
     let md = `### 🔎 Core Fact Intelligence & Verified Findings\n`;
     if (facts.length > 0) {
       facts.forEach((fact) => {
-        if (typeof fact === 'string') {
-          md += `- ${fact}\n`;
-        } else if (typeof fact === 'object' && fact !== null) {
-          const fObj = fact as Record<string, unknown>;
-          const text = String(
-            fObj.fact ||
-            fObj.text ||
-            fObj.statement ||
-            fObj.claim ||
-            fObj.finding ||
-            fObj.point ||
-            fObj.description ||
-            fObj.value ||
-            JSON.stringify(fact)
-          );
-          const sourceIdx = fObj.sourceIndex !== undefined ? fObj.sourceIndex : fObj.source;
-          if (sourceIdx !== undefined && sourceIdx !== null && String(sourceIdx).trim() !== '') {
-            md += `- ${text} \`[Source #${sourceIdx}]\`\n`;
-          } else {
-            md += `- ${text}\n`;
-          }
-        } else {
-          md += `- ${String(fact)}\n`;
+        const formatted = cleanAndFormatFact(fact, { markdownSource: true });
+        if (formatted) {
+          md += `- ${formatted}\n`;
         }
       });
     } else {
@@ -523,22 +504,9 @@ function formatAgentContentToMarkdown(step: JarvisExecutionStep): {
     if (keyInsights.length > 0) {
       md += `\n### 💡 Key Empirical Insights\n`;
       keyInsights.forEach((insight) => {
-        if (typeof insight === 'string') {
-          md += `- ${insight}\n`;
-        } else if (typeof insight === 'object' && insight !== null) {
-          const iObj = insight as Record<string, unknown>;
-          const text = String(
-            iObj.insight ||
-            iObj.text ||
-            iObj.statement ||
-            iObj.point ||
-            iObj.fact ||
-            iObj.description ||
-            JSON.stringify(insight)
-          );
-          md += `- ${text}\n`;
-        } else {
-          md += `- ${String(insight)}\n`;
+        const formatted = cleanAndFormatInsight(insight);
+        if (formatted) {
+          md += `- ${formatted}\n`;
         }
       });
     }
@@ -591,15 +559,9 @@ function formatAgentContentToMarkdown(step: JarvisExecutionStep): {
     if (Array.isArray(parsed)) {
       let md = `### 📊 ${step.name ? step.name.toUpperCase() : step.agentId.toUpperCase()} // STRUCTURED RECORDS\n\n`;
       parsed.forEach((item, i) => {
-        if (typeof item === 'object' && item !== null) {
-          const iObj = item as Record<string, unknown>;
-          const text = iObj.fact || iObj.claim || iObj.point || iObj.name || iObj.title || iObj.text || iObj.description;
-          if (typeof text === 'string' && text.trim()) {
-            const src = iObj.sourceIndex !== undefined ? iObj.sourceIndex : iObj.source;
-            md += `${i + 1}. ${text.trim()}${src !== undefined && src !== null && String(src).trim() !== '' ? ` \`[Source #${src}]\`` : ''}\n`;
-          } else {
-            md += `${i + 1}. ${JSON.stringify(item)}\n`;
-          }
+        const formatted = cleanAndFormatFact(item, { markdownSource: true });
+        if (formatted) {
+          md += `${i + 1}. ${formatted}\n`;
         } else {
           md += `${i + 1}. ${String(item)}\n`;
         }
@@ -615,15 +577,9 @@ function formatAgentContentToMarkdown(step: JarvisExecutionStep): {
       if (Array.isArray(val)) {
         md += `**${titleKey}:**\n`;
         val.forEach((item) => {
-          if (typeof item === 'object' && item !== null) {
-            const iObj = item as Record<string, unknown>;
-            const text = iObj.fact || iObj.claim || iObj.point || iObj.name || iObj.title || iObj.text || iObj.description;
-            if (typeof text === 'string' && text.trim()) {
-              const src = iObj.sourceIndex !== undefined ? iObj.sourceIndex : iObj.source;
-              md += `- ${text.trim()}${src !== undefined && src !== null && String(src).trim() !== '' ? ` \`[Source #${src}]\`` : ''}\n`;
-            } else {
-              md += `- ${JSON.stringify(item)}\n`;
-            }
+          const formatted = cleanAndFormatFact(item, { markdownSource: true });
+          if (formatted) {
+            md += `- ${formatted}\n`;
           } else {
             md += `- ${String(item)}\n`;
           }
@@ -668,12 +624,15 @@ export const JarvisDeepResearchMeshAnswers: React.FC<JarvisDeepResearchMeshAnswe
 
   if (agentSteps.length === 0) return null;
 
-  const handleCopy = async (text: string, idx: number, e?: React.MouseEvent) => {
+  const handleCopy = async (text: string, step: JarvisExecutionStep, idx: number, e?: React.MouseEvent) => {
     if (e) {
       e.stopPropagation();
       e.preventDefault();
     }
-    const success = await copyToClipboard(text);
+    const agentName = step.name || step.agentId || 'Agent';
+    const modelId = step.model || step.providerName || 'unknown';
+    const textWithModel = `${text.trim()}\n\n---\nModels Used:\n${agentName}: ${modelId}`;
+    const success = await copyToClipboard(textWithModel);
     if (success) {
       setCopiedStepIndex(idx);
       setTimeout(() => setCopiedStepIndex(null), 2000);
@@ -829,7 +788,7 @@ export const JarvisDeepResearchMeshAnswers: React.FC<JarvisDeepResearchMeshAnswe
 
                   <button
                     type="button"
-                    onClick={(e) => handleCopy(isShowingRaw ? raw : formatted, idx, e)}
+                    onClick={(e) => handleCopy(isShowingRaw ? raw : formatted, step, idx, e)}
                     className="p-1.5 rounded-lg text-slate-300 hover:text-white hover:bg-white/10 active:scale-95 transition-all flex items-center gap-1 text-xs font-mono bg-black/40 border border-white/10"
                     title="Copy full agent answer"
                   >

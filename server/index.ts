@@ -1212,11 +1212,64 @@ async function fetchDuckDuckGoSearch(query: string): Promise<SearchResult[]> {
   }
 }
 
-async function fetchGoogleNewsRSS(query?: string): Promise<SearchResult[]> {
+function isGeneralWorldNewsQuery(q?: string): boolean {
+  if (!q || !q.trim()) return true;
+  const lower = q.toLowerCase().trim();
+  // Strip common punctuation and filler numbers
+  const normalized = lower.replace(/[^a-z0-9\s]/g, ' ').replace(/\s+/g, ' ').trim();
+  const worldNewsPatterns = [
+    /^latest world news$/,
+    /^world news$/,
+    /^top world news$/,
+    /^top \d+ world news( today)?$/,
+    /^top \d+ news( today)?$/,
+    /^world news today$/,
+    /^breaking world news$/,
+    /^global news$/,
+    /^international news$/,
+    /^world news breaking headlines$/,
+    /^today s top world news$/,
+    /^top stories$/,
+    /^top headlines$/,
+    /^breaking news$/,
+    /^latest news$/,
+    /^news$/,
+  ];
+  if (worldNewsPatterns.some((pattern) => pattern.test(normalized))) {
+    return true;
+  }
+  // Check if it's solely asking for top/world/global news
+  const isJustWorldOrTop = /^(what are the )?(top \d+ |latest |breaking )?(world|global|international) news( today| this week)?$/.test(normalized);
+  return isJustWorldOrTop;
+}
+
+function cleanNewsSearchTopic(q: string): string {
+  return q
+    .replace(/^(what are the|tell me the|give me the|find|search for|show me)\s+/i, '')
+    .replace(/^top \d+\s+/i, '')
+    .replace(/\b(today|yesterday|this week|latest)\b/gi, '')
+    .replace(/\bnews\b/gi, '')
+    .trim();
+}
+
+async function fetchGoogleNewsRSS(query?: string, category?: string): Promise<SearchResult[]> {
   try {
-    const rawQ = query && query.trim() && query !== 'latest world news' ? query : 'world news breaking headlines';
-    const q = rawQ.includes('when:') ? rawQ : `${rawQ} when:7d`;
-    const rssUrl = `https://news.google.com/rss/search?q=${encodeURIComponent(q)}&hl=en-US&gl=US&ceid=US:en`;
+    let rssUrl: string;
+    const cat = category?.toUpperCase().trim();
+    const knownTopics = ['WORLD', 'BUSINESS', 'TECHNOLOGY', 'SCIENCE', 'HEALTH', 'SPORTS', 'ENTERTAINMENT', 'NATION'];
+
+    if (cat && knownTopics.includes(cat)) {
+      rssUrl = `https://news.google.com/rss/headlines/section/topic/${cat}?hl=en-US&gl=US&ceid=US:en`;
+    } else if (isGeneralWorldNewsQuery(query)) {
+      // Direct curated World News topic feed from Google News
+      rssUrl = `https://news.google.com/rss/headlines/section/topic/WORLD?hl=en-US&gl=US&ceid=US:en`;
+    } else {
+      const rawQ = query?.trim() || 'world news breaking';
+      const cleanTopic = cleanNewsSearchTopic(rawQ) || rawQ;
+      const q = cleanTopic.includes('when:') ? cleanTopic : `${cleanTopic} when:7d`;
+      rssUrl = `https://news.google.com/rss/search?q=${encodeURIComponent(q)}&hl=en-US&gl=US&ceid=US:en`;
+    }
+
     const res = await fetch(rssUrl, {
       headers: {
         'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
@@ -1264,7 +1317,7 @@ async function fetchGoogleNewsRSS(query?: string): Promise<SearchResult[]> {
           results.push({
             title,
             url: link,
-            domain: domainOf(link),
+            domain: domainOf(link) || sourceName || 'News',
             description: description || title,
             date,
             type: 'news',
@@ -1284,7 +1337,6 @@ async function fetchGoogleNewsRSS(query?: string): Promise<SearchResult[]> {
     });
 
     const finalResults = results.slice(0, 25);
-    console.log('FINAL SORTED DATES (DEBUG):', finalResults.map(r => r.date || 'No Date'));
     return finalResults;
   } catch (err) {
     console.warn('[Google News RSS Error]:', err);
@@ -1330,17 +1382,19 @@ async function fetchGNewsArticles(options: FetchGNewsOptions = {}): Promise<{
     throw new Error('GNEWS_API_KEY is not configured in server environment');
   }
 
-  const category = options.category && options.category.trim() ? options.category.trim() : 'general';
+  const isWorld = isGeneralWorldNewsQuery(options.query) || options.category === 'world';
+  const category = isWorld ? 'world' : options.category && options.category.trim() ? options.category.trim() : 'general';
   const lang = options.lang || 'en';
   const country = options.country || 'us';
   const max = Math.min(options.max || 10, 10); // GNews free tier limit is 10
-  const query = options.query?.trim();
 
   let url: string;
-  if (query) {
-    url = `https://gnews.io/api/v4/search?q=${encodeURIComponent(query)}&lang=${lang}&country=${country}&max=${max}&apikey=${apiKey.trim()}`;
-  } else {
+  if (isWorld || !options.query?.trim()) {
+    // Curated top world headlines endpoint
     url = `https://gnews.io/api/v4/top-headlines?category=${encodeURIComponent(category)}&lang=${lang}&country=${country}&max=${max}&apikey=${apiKey.trim()}`;
+  } else {
+    const cleanTopic = cleanNewsSearchTopic(options.query.trim()) || options.query.trim();
+    url = `https://gnews.io/api/v4/search?q=${encodeURIComponent(cleanTopic)}&lang=${lang}&country=${country}&max=${max}&apikey=${apiKey.trim()}`;
   }
 
   const res = await fetch(url, {
@@ -6031,7 +6085,7 @@ async function startServer() {
       // Gracefully fall back to Google News RSS so the Live News page always has data
       try {
         const rssQuery = query || (category && category !== 'general' ? `${category} news` : 'latest world news');
-        const fallbackResults = await fetchGoogleNewsRSS(rssQuery);
+        const fallbackResults = await fetchGoogleNewsRSS(rssQuery, category);
         return res.json({
           data: fallbackResults,
           source: 'Google News RSS (Fallback)',

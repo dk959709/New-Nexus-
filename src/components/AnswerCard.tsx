@@ -32,7 +32,11 @@ export function AnswerCard({ result, onSelectFollowUp, className = '' }: AnswerC
 
   const handleCopy = async () => {
     playTapSound();
-    const success = await copyToClipboard(result.answer);
+    let textToCopy = result.answer;
+    if (result.model) {
+      textToCopy = `${textToCopy.trim()}\n\n---\nModels Used:\nAI Synthesis: ${result.model}`;
+    }
+    const success = await copyToClipboard(textToCopy);
     if (success) {
       setCopied(true);
       setTimeout(() => setCopied(false), 2000);
