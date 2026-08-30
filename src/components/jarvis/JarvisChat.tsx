@@ -21,6 +21,8 @@ import {
   Bookmark,
   BookmarkCheck,
   Radio,
+  Code2,
+  FileText,
 } from 'lucide-react';
 import { storage } from '@/lib/storage';
 import { stripConversationalMetaText } from '@/lib/format';
@@ -185,6 +187,9 @@ export function JarvisChat({ config, onOpenSettings }: JarvisChatProps) {
   const [edgeTtsPlayingId, setEdgeTtsPlayingId] = useState<string | null>(null);
   const edgeTtsAudioRef = useRef<HTMLAudioElement | null>(null);
 
+  const [synthRawViewMap, setSynthRawViewMap] = useState<Record<string, boolean>>({});
+  const [copiedSynthId, setCopiedSynthId] = useState<string | null>(null);
+
 
   const [showClearConfirm, setShowClearConfirm] = useState(false);
   const [clearedBanner, setClearedBanner] = useState(false);
@@ -212,6 +217,36 @@ export function JarvisChat({ config, onOpenSettings }: JarvisChatProps) {
       ...prev,
       [id]: !prev[id],
     }));
+  };
+
+  const toggleSynthRawView = (id: string) => {
+    setSynthRawViewMap((prev) => ({
+      ...prev,
+      [id]: !prev[id],
+    }));
+  };
+
+  const handleCopySynth = async (msg: JarvisMessage, e?: React.MouseEvent) => {
+    if (e) {
+      e.stopPropagation();
+      e.preventDefault();
+    }
+    const isShowingRaw = Boolean(synthRawViewMap[msg.id]);
+    const synthStep = msg.steps?.find((s) => s.agentId === 'finalSynthesizer');
+    const rawContent = synthStep?.rawOutput || msg.answer;
+    const rawText = typeof rawContent === 'object' ? JSON.stringify(rawContent, null, 2) : String(rawContent || '');
+    const cleaned = stripConversationalMetaText(msg.answer);
+    const content = isShowingRaw ? rawText : (cleaned || msg.answer);
+
+    const agentName = synthStep?.name || 'Final Synthesizer';
+    const modelId = synthStep?.model || synthStep?.providerName;
+    const textWithModel = modelId ? `${content.trim()}\n\n---\nModels Used:\n${agentName}: ${modelId}` : content.trim();
+
+    const success = await copyToClipboard(textWithModel);
+    if (success) {
+      setCopiedSynthId(msg.id);
+      setTimeout(() => setCopiedSynthId(null), 2000);
+    }
   };
 
   const handleSelectPromptFromDeck = (prompt: string) => {
@@ -989,17 +1024,75 @@ export function JarvisChat({ config, onOpenSettings }: JarvisChatProps) {
                   )}
 
                   {/* Synthesized Output Body */}
-                  <div className="prose prose-invert max-w-none text-slate-100 leading-relaxed text-sm sm:text-base">
-                    {(msg.deepResearch || (msg.steps && msg.steps.some((s) => s.status === 'completed' && s.agentId !== 'finalSynthesizer'))) && (
-                      <div className="flex items-center gap-2 mb-3 pt-3 border-t border-purple-500/30">
-                        <div className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full bg-purple-500/20 border border-purple-400/40 text-xs font-mono font-bold text-purple-300 shadow-[0_0_10px_rgba(192,132,252,0.2)]">
-                          <Zap size={13} className="text-purple-400" />
-                          <span>JARVIS // UNIFIED FINAL SYNTHESIS</span>
-                        </div>
+                  {(() => {
+                    const isShowingSynthRaw = Boolean(synthRawViewMap[msg.id]);
+                    const synthStep = msg.steps?.find((s) => s.agentId === 'finalSynthesizer');
+                    const rawContent = synthStep?.rawOutput || msg.answer;
+                    const rawText = typeof rawContent === 'object' ? JSON.stringify(rawContent, null, 2) : String(rawContent || '');
+
+                    return (
+                      <div className="prose prose-invert max-w-none text-slate-100 leading-relaxed text-sm sm:text-base">
+                        {(msg.deepResearch || (msg.steps && msg.steps.some((s) => s.status === 'completed' && s.agentId !== 'finalSynthesizer'))) && (
+                          <div className="flex items-center justify-between flex-wrap gap-2 mb-3 pt-3 border-t border-purple-500/30">
+                            <div className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full bg-purple-500/20 border border-purple-400/40 text-xs font-mono font-bold text-purple-300 shadow-[0_0_10px_rgba(192,132,252,0.2)]">
+                              <Zap size={13} className="text-purple-400" />
+                              <span>JARVIS // UNIFIED FINAL SYNTHESIS</span>
+                            </div>
+
+                            {/* Action Buttons: Raw JSON Toggle & Copy (matching agent button style) */}
+                            <div className="flex items-center gap-1.5 shrink-0 not-prose">
+                              <button
+                                type="button"
+                                onClick={() => toggleSynthRawView(msg.id)}
+                                className="px-2 py-1 rounded text-xs font-mono flex items-center gap-1 bg-black/50 border border-white/15 text-slate-300 hover:text-white hover:border-white/30 transition-all"
+                                title={isShowingSynthRaw ? 'Switch to Formatted View' : 'Switch to Raw JSON View'}
+                              >
+                                {isShowingSynthRaw ? (
+                                  <>
+                                    <FileText size={12} className="text-cyan-300" />
+                                    <span>Formatted</span>
+                                  </>
+                                ) : (
+                                  <>
+                                    <Code2 size={12} className="text-cyan-300" />
+                                    <span>Raw JSON</span>
+                                  </>
+                                )}
+                              </button>
+
+                              <button
+                                type="button"
+                                onClick={(e) => handleCopySynth(msg, e)}
+                                className="p-1.5 rounded-lg text-slate-300 hover:text-white hover:bg-white/10 active:scale-95 transition-all flex items-center gap-1 text-xs font-mono bg-black/40 border border-white/10"
+                                title="Copy final synthesis"
+                              >
+                                {copiedSynthId === msg.id ? (
+                                  <>
+                                    <Check size={13} className="text-emerald-400" />
+                                    <span className="text-emerald-300 text-[10px]">Copied</span>
+                                  </>
+                                ) : (
+                                  <>
+                                    <Copy size={13} />
+                                    <span className="text-[10px] hidden sm:inline">Copy</span>
+                                  </>
+                                )}
+                              </button>
+                            </div>
+                          </div>
+                        )}
+                        {isShowingSynthRaw ? (
+                          <div className="rounded-xl bg-black/70 border border-white/10 p-3.5 overflow-x-auto max-h-[500px] overflow-y-auto not-prose my-2">
+                            <pre className="font-mono text-xs text-cyan-200 leading-relaxed whitespace-pre-wrap break-words m-0">
+                              {rawText}
+                            </pre>
+                          </div>
+                        ) : (
+                          <FormattedText content={cleanedAnswer || msg.answer} />
+                        )}
                       </div>
-                    )}
-                    <FormattedText content={cleanedAnswer || msg.answer} />
-                  </div>
+                    );
+                  })()}
 
                   {/* Interactive Quantitative Chart Card */}
                   {msg.chartData && (
