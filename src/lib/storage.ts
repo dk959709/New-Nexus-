@@ -65,6 +65,7 @@ Instructions:
 7. For news or current event inquiries, prioritize searching for recent news headlines and current events. If retrieved search results are encyclopedia pages or lack actual current news data, explicitly note that current news data is unavailable rather than assuming past facts apply.
 8. Only include a source in "sources" if its snippet is directly and specifically relevant to the task topic. If a search result's snippet doesn't clearly support the task topic, leave it out rather than including it as a weak or tangential match.
 9. Never include two sources that point to the same page. Keep only one, choosing the cleaner/canonical URL.
+10. SPECIFIC COUNT & BACKUP CANDIDATE FACTS BUFFER: When the user's task or query requests a specific count of items (e.g. "5 world news", "top 3 movies", "4 breakthroughs"), and more raw search sources or snippets are available than the requested count, extract 1-2 EXTRA candidate facts from those additional already-retrieved sources (e.g. 6-7 candidate facts total for a "5 items" request, utilizing sources that would otherwise be skipped). This ensures that if the Fact Checker or Reviewer rejects or excludes any candidate fact as unverified, hallucinated, or out-of-scope, the downstream Final Synthesizer still has enough verified candidate facts to fulfill the user's requested count without requiring additional search calls.
 
 Output ONLY a valid JSON object in this exact format, no extra text:
 {
@@ -133,6 +134,7 @@ Guidelines:
 - RELEVANCE & TOPIC MISMATCH SAFETY CHECK: Before synthesizing your final answer, compare the research/facts you've been given against the user's ORIGINAL question. If the provided facts/research do not actually relate to or answer what the user asked (e.g. the user asked about your own capabilities or identity, but the research is about an unrelated external topic), do NOT confidently present the unrelated research as if it answers the question. Instead, recognize the mismatch and either:
   1. Answer the user's actual question directly using your own knowledge if possible, or
   2. Clearly state that the available research doesn't match the question, rather than presenting irrelevant information as a confident answer.
+- SPECIFIC COUNT & SHORTFALL EXPLANATION: If the user requested a specific count of items (e.g. "5 world news", "top 10 laptops") and, after fact-checking, scope filtering, and utilizing backup facts, fewer verified items remain than the requested count, clearly state in the response that only X verified items were available instead of the requested count, rather than silently delivering fewer items without explanation.
 - Do NOT use LaTeX math syntax or delimiters (e.g. do NOT use \\[ \\], \\( \\), $$ or $). Always use clean plain-text mathematical notation and standard unicode symbols instead (for example: "Thrust = mass flow rate × exhaust velocity" or "F = m · a" or "E = mc²").
 - Do NOT mention intermediate agent names, JSON formats, or internal reasoning steps.
 - ABSOLUTE FACT-CHECKER EXCLUSION RULE: If the Fact Checker or Issues list has explicitly flagged any claim, event, or headline as incorrect, unverified, inaccurate, or unsupported, you MUST completely omit and exclude it from the final synthesis. Never present a flagged-false or unverified claim as a real fact or headline.
@@ -537,7 +539,8 @@ export const storage = {
             !stored.agents.researcher.systemPrompt.includes('nasa.gov, esa.int, space.com') ||
             stored.agents.researcher?.systemPrompt?.includes('Extract verified facts and source references.\nOutput ONLY a JSON object:') ||
             stored.agents.researcher?.systemPrompt?.includes('If search data is empty or insufficient, return an empty facts array') ||
-            !stored.agents.researcher?.systemPrompt?.includes('Never include two sources that point to the same page')
+            !stored.agents.researcher?.systemPrompt?.includes('Never include two sources that point to the same page') ||
+            !stored.agents.researcher?.systemPrompt?.includes('BACKUP CANDIDATE FACTS BUFFER')
               ? DEFAULT_AGENT_SYSTEM_PROMPTS.researcher
               : stored.agents.researcher.systemPrompt,
         },
@@ -570,7 +573,8 @@ export const storage = {
             !stored.agents.finalSynthesizer?.systemPrompt?.includes('Do NOT use LaTeX math syntax') ||
             !stored.agents.finalSynthesizer?.systemPrompt?.includes('CURRENT-YEAR SOURCE PRIORITY RULE') ||
             !stored.agents.finalSynthesizer?.systemPrompt?.includes('RELEVANCE & TOPIC MISMATCH SAFETY CHECK') ||
-            !stored.agents.finalSynthesizer?.systemPrompt?.includes('REVIEWER RECOMMENDATIONS & CONTENT SELECTION')
+            !stored.agents.finalSynthesizer?.systemPrompt?.includes('REVIEWER RECOMMENDATIONS & CONTENT SELECTION') ||
+            !stored.agents.finalSynthesizer?.systemPrompt?.includes('SPECIFIC COUNT & SHORTFALL EXPLANATION')
               ? DEFAULT_AGENT_SYSTEM_PROMPTS.finalSynthesizer
               : stored.agents.finalSynthesizer.systemPrompt,
         },

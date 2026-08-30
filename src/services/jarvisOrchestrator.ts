@@ -2045,7 +2045,7 @@ Please perform your specialized processing for this inquiry. Provide clear, conc
         `[JARVIS Researcher] Relevance filter evaluated ${rawCandidates.length} raw search results -> kept ${filteredSources.length} on-topic sources.`,
       );
 
-      filteredSources.slice(0, 8).forEach((src, idx) => {
+      filteredSources.slice(0, 10).forEach((src, idx) => {
         gatheredSnippets.push(`[Source ${idx + 1} | ${src.domain || 'Source'}: ${src.title}] ${src.description}`);
         sourcesCollected.push({
           title: src.title,
