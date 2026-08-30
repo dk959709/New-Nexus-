@@ -1401,9 +1401,17 @@ async function searchProvider(input: z.infer<typeof searchSchema>): Promise<{ re
   }
 
   if (input.category === 'NEWS') {
+    try {
+      const gnews = await fetchGNewsArticles({ query: input.query });
+      if (gnews.articles.length > 0) {
+        return { results: gnews.articles, searchSource: 'GNews API' };
+      }
+    } catch {
+      // Automatic fallback to Google News RSS
+    }
     const newsResults = await fetchGoogleNewsRSS(input.query);
     if (newsResults.length > 0) {
-      return { results: newsResults, searchSource: 'Google News RSS' };
+      return { results: newsResults, searchSource: 'Google News RSS (fallback)' };
     }
   }
 
