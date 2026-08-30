@@ -1608,6 +1608,15 @@ Please perform your specialized processing for this inquiry. Provide clear, conc
     }
   };
 
+  // Helper to detect self-referential / meta / greeting inquiries about JARVIS itself
+  const isSelfReferentialInquiry = (text: string): boolean => {
+    const lower = text.toLowerCase().trim().replace(/[?!.,]+$/g, '');
+    return (
+      /^(hi|hello|hey|greetings|howdy|good (morning|afternoon|evening))\b/i.test(lower) ||
+      /\b(what (can|do) you do|what are your capabilities|who are you|what is your name|how do you work|tell me about yourself|what is jarvis|what can jarvis do|who made you|are you an ai|help me)\b/i.test(lower)
+    );
+  };
+
   // ==========================================
   // STEP 1: 🧭 PLANNER
   // ==========================================
@@ -1717,6 +1726,15 @@ Please perform your specialized processing for this inquiry. Provide clear, conc
         plannerOutput.plan = Array.isArray(rawPlan) ? rawPlan.map(String) : typeof rawPlan === 'string' ? [rawPlan] : ['Task analyzed and routed.'];
       }
       plannerOutput.task = String(plannerOutput.task || query);
+      if (isSelfReferentialInquiry(query) && !deepResearch) {
+        plannerOutput.needsResearch = false;
+        plannerOutput.needsFactCheck = false;
+        plannerOutput.needsReview = false;
+        plannerOutput.needsWikipedia = false;
+        plannerOutput.needsDiagram = false;
+        plannerOutput.needsChart = false;
+        plannerOutput.needsImage = false;
+      }
       if (!diagramMode) {
         plannerOutput.needsDiagram = false;
       }
@@ -1753,12 +1771,6 @@ Please perform your specialized processing for this inquiry. Provide clear, conc
     }
   }
 
-  // Heuristic detection for complex queries
-  const isComplexQuery =
-    query.length > 50 ||
-    /\b(how|why|compare|versus|vs|explain|difference|implement|create|design|code|analyze|architecture|review|best practices|pros and cons|guide|steps|tutorial)\b/i.test(query) ||
-    (query.includes('?') && query.split(' ').length > 7);
-
   // Standalone whole-word matching for news inquiries (excludes technical terms like 'electrical current')
   const isNewsInquiry = (text: string): boolean => {
     const lower = text.toLowerCase();
@@ -1786,18 +1798,20 @@ Please perform your specialized processing for this inquiry. Provide clear, conc
   const isWorldNews = isWorldNewsInquiry(combinedQueryText);
   const isWeatherQuery = /\b(weather|temperature|forecast|rain|snow|wind|humidity|degrees)\b/i.test(combinedQueryText);
 
-  // Determine which downstream agents are required
+  // Determine which downstream agents are required.
+  // Researcher ONLY runs if enabled AND (deepResearch toggle is active OR plannerOutput.needsResearch is true).
+  // When needsResearch is false, Researcher (including Tavily, GNews, DuckDuckGo, and Wikipedia) is skipped entirely.
   const shouldResearch =
     agentConfigs.researcher.enabled &&
-    (deepResearch || isNewsQuery || isWeatherQuery || plannerOutput.needsResearch || plannerOutput.needsWikipedia || query.length > 30);
+    (deepResearch || Boolean(plannerOutput.needsResearch));
 
   const shouldFactCheck =
     agentConfigs.factChecker.enabled &&
-    (deepResearch || isNewsQuery || isWeatherQuery || (shouldResearch && plannerOutput.needsFactCheck) || isComplexQuery);
+    (deepResearch || (shouldResearch && Boolean(plannerOutput.needsFactCheck)));
 
   const shouldReview =
     agentConfigs.reviewer.enabled &&
-    (deepResearch || plannerOutput.needsReview || isComplexQuery);
+    (deepResearch || Boolean(plannerOutput.needsReview));
 
   // ==========================================
   // STEP 2: 🔎 RESEARCHER
