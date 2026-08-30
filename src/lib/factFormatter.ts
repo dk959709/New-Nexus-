@@ -1,8 +1,114 @@
 /**
  * Universal Fact & Insight Sanitizer and Formatter
  * Ensures every fact is cleanly formatted as "- [fact text]. [Source #X]"
- * with no stray commas, no broken indentation, and no raw object/array syntax leaking through.
+ * with no stray commas, no duplicate/malformed citations, and no raw object/array syntax leaking through.
  */
+
+// Helper to extract clean alphanumeric source indexes (e.g., "6" from "[Source #6. [Source #6]")
+function extractSourceIndices(text: string, explicitSource?: unknown): string[] {
+  const found: string[] = [];
+
+  // 1. If explicit source property exists
+  if (explicitSource !== undefined && explicitSource !== null) {
+    const sStr = String(explicitSource).trim();
+    if (sStr) {
+      const match = sStr.match(/\b\d+\b/g);
+      if (match) {
+        match.forEach((m) => {
+          if (!found.includes(m)) found.push(m);
+        });
+      } else {
+        const cleanedExplicit = sStr.replace(/^\[?#?|\]?$/g, '').trim();
+        if (cleanedExplicit && !found.includes(cleanedExplicit)) {
+          found.push(cleanedExplicit);
+        }
+      }
+    }
+  }
+
+  // 2. Search for inline / trailing source patterns in text
+  // Matches: [Source #6], (Source 6), sourceIndex: 6, [Citation #6], [Source #6. [Source #6], etc.
+  const regexPatterns = [
+    /\[?\b(?:Source|Citation|Ref|SourceIndex)\s*#?\s*:?\s*(\d+)\b/gi,
+    /(?:sourceIndex|source|citation)\s*[:=]\s*["']?(\d+)["']?/gi,
+    /\[(?:Source\s*#?|Citation\s*#?)\s*(\d+)\]/gi,
+  ];
+
+  for (const regex of regexPatterns) {
+    let match: RegExpExecArray | null;
+    while ((match = regex.exec(text)) !== null) {
+      if (match[1] && !found.includes(match[1])) {
+        found.push(match[1]);
+      }
+    }
+  }
+
+  return found;
+}
+
+// Helper to strip ALL source citations, fragments, and associated trailing punctuation
+function stripSourceCitationsAndFragments(text: string): string {
+  let cleaned = text;
+
+  // Remove key-value style source definitions (e.g., `"sourceIndex": 6` or `sourceIndex: 6`)
+  cleaned = cleaned.replace(/,?\s*["']?(?:sourceIndex|source_index|source|citation|sourceId|source_id)["']?\s*[:=]\s*["']?\w+["']?/gi, '');
+
+  // Remove duplicated/malformed citation sequences at end or middle (e.g. `[Source #6. [Source #6]`, `[Source #6] [Source #6]`, `[Source 6]`)
+  cleaned = cleaned.replace(/(?:,\s*|\s*[-–—]\s*|\s+)?`?\[?\s*(?:Source|Citation|Ref)\s*#?\s*:?\s*\d+(?:\s*[.,;:–—]*\s*`?\[?\s*(?:Source|Citation|Ref)\s*#?\s*:?\s*\d+)*\s*\]?`?/gi, ' ');
+
+  // Remove any unclosed or partial source fragments at the end (e.g., `[Source #6` or `[Source` or `Source #6]`)
+  cleaned = cleaned.replace(/\s*`?\[\s*(?:Source|Citation|Ref)\b[^\]]*$/i, '');
+  cleaned = cleaned.replace(/\s*(?:Source|Citation|Ref)\s*#?\s*\d*\s*\]?`?$/i, '');
+
+  return cleaned;
+}
+
+// General safety-net cleaner for prose text
+function cleanProseText(text: string): string {
+  if (!text) return '';
+
+  let cleaned = text
+    // Remove outermost wrapping JSON braces/brackets if any
+    .replace(/^[\s{}[\]"']+|[\s{}[\]"']+$/g, '')
+    // Remove leading list bullets / numbers / dashes first
+    .replace(/^[-*•\d.)\]:]+\s*/, '')
+    // Remove common JSON field name prefixes (e.g., `"fact":` or `insight:`)
+    .replace(/^["']?(?:fact|text|statement|claim|finding|point|description|value|insight|summary|content)["']?\s*[:=]\s*["']?/i, '')
+    // Remove any leftover leading list bullets / numbers
+    .replace(/^[-*•\d.)\]:]+\s*/, '')
+    // Remove leading quotes / whitespace / commas / colons
+    .replace(/^[\s,;:\-–—"'‘“]+/, '')
+    // Remove trailing quotes
+    .replace(/["'’”]+$/, '')
+    // Fix stray comma before periods: "word. ," or "word ," -> "word."
+    .replace(/\s*,\s*\./g, '.')
+    .replace(/\.\s*,+/g, '.')
+    // Fix space before punctuation
+    .replace(/\s+([.,;:!?])/g, '$1')
+    // Fix double commas or double semicolons
+    .replace(/,\s*,+/g, ',')
+    .replace(/;\s*;+/g, ';')
+    // Remove trailing orphan comma, colon, semicolon, or dash
+    .replace(/[\s,;:\-–—]+$/, '')
+    // Remove unclosed trailing opening bracket/parenthesis if it has no counterpart
+    .replace(/\s*[[({]\s*$/, '')
+    // Normalize whitespace
+    .replace(/\s+/g, ' ')
+    .trim();
+
+  // If text ends with an unmatched closing bracket ']' or ')' with no opening bracket in the string, strip it
+  if (cleaned.endsWith(']') && !cleaned.includes('[')) {
+    cleaned = cleaned.slice(0, -1).trim();
+  }
+  if (cleaned.endsWith(')') && !cleaned.includes('(')) {
+    cleaned = cleaned.slice(0, -1).trim();
+  }
+
+  // Remove trailing comma/dash again in case bracket removal exposed one
+  cleaned = cleaned.replace(/[\s,;:\-–—]+$/, '').trim();
+
+  return cleaned;
+}
 
 export function cleanAndFormatFact(
   item: unknown,
@@ -10,41 +116,45 @@ export function cleanAndFormatFact(
 ): string {
   if (item === undefined || item === null) return '';
 
-  let factText = '';
-  let sourceIndex: string | number | null = null;
+  let rawText = '';
+  let explicitSource: unknown = null;
 
-  // 1. If item is an object, extract text and source
+  // 1. If item is an object, extract text and explicit source property
   if (typeof item === 'object' && item !== null) {
     const obj = item as Record<string, unknown>;
     const candidate =
-      obj.fact ||
-      obj.text ||
-      obj.statement ||
-      obj.claim ||
-      obj.finding ||
-      obj.point ||
-      obj.description ||
-      obj.title ||
-      obj.value ||
+      obj.fact ??
+      obj.text ??
+      obj.statement ??
+      obj.claim ??
+      obj.finding ??
+      obj.point ??
+      obj.description ??
+      obj.title ??
+      obj.value ??
+      obj.summary ??
+      obj.content ??
       '';
 
-    factText = typeof candidate === 'string' ? candidate : String(candidate || '');
-    if (!factText || factText === '[object Object]') {
+    rawText = typeof candidate === 'string' ? candidate : String(candidate || '');
+    if (!rawText || rawText === '[object Object]') {
       const strVal = Object.values(obj).find((v) => typeof v === 'string' && (v as string).length > 5);
-      factText = strVal ? (strVal as string) : '';
+      rawText = strVal ? (strVal as string) : '';
     }
 
-    if (obj.sourceIndex !== undefined && obj.sourceIndex !== null) {
-      sourceIndex = obj.sourceIndex as string | number;
-    } else if (obj.source !== undefined && obj.source !== null) {
-      sourceIndex = obj.source as string | number;
-    }
+    explicitSource =
+      obj.sourceIndex ??
+      obj.source_index ??
+      obj.source ??
+      obj.citation ??
+      obj.sourceId ??
+      obj.source_id;
   } else {
-    factText = String(item);
+    rawText = String(item);
   }
 
-  // 2. If factText looks like a serialized JSON object, parse it
-  const trimmed = factText.trim();
+  // 2. If rawText looks like a serialized JSON object, parse it
+  const trimmed = rawText.trim();
   if (trimmed.startsWith('{') && trimmed.endsWith('}')) {
     try {
       const parsed = JSON.parse(trimmed);
@@ -52,95 +162,97 @@ export function cleanAndFormatFact(
         return cleanAndFormatFact(parsed, options);
       }
     } catch {
-      // Continue to regex cleanup
+      // Continue with text processing
     }
   }
 
-  // 3. Extract any embedded sourceIndex in the text (e.g. `sourceIndex: 1` or `"sourceIndex": 1` or `[Source #1]`)
-  if (sourceIndex === null || sourceIndex === undefined) {
-    const srcMatch = factText.match(/(?:sourceIndex|source|citation)\s*[:=]\s*["']?(\d+)["']?/i);
-    if (srcMatch && srcMatch[1]) {
-      sourceIndex = srcMatch[1];
+  // 3. Detect and collect all unique source index references (e.g., ["6"])
+  const sourceIndices = extractSourceIndices(rawText, explicitSource);
+
+  // 4. Strip all embedded source citations and partial/duplicated citation fragments from the text
+  let factText = stripSourceCitationsAndFragments(rawText);
+
+  // 5. Clean prose text and punctuation
+  factText = cleanProseText(factText);
+
+  // If too short after cleaning, discard
+  if (!factText || factText.length < 3) return '';
+
+  // 6. Ensure sentence ends cleanly with standard end punctuation (. ! ?)
+  if (!/[.!?]$/.test(factText)) {
+    factText += '.';
+  }
+
+  // 7. Format clean source tag
+  let formattedResult = factText;
+  if (sourceIndices.length > 0) {
+    const sourceLabel = sourceIndices.length === 1
+      ? `Source #${sourceIndices[0]}`
+      : `Sources #${sourceIndices.join(', #')}`;
+
+    if (options.markdownSource) {
+      formattedResult = `${factText} \`[${sourceLabel}]\``;
     } else {
-      const bracketMatch = factText.match(/\[(?:Source\s*#?|Citation\s*#?)\s*(\d+)\]/i);
-      if (bracketMatch && bracketMatch[1]) {
-        sourceIndex = bracketMatch[1];
-      }
+      formattedResult = `${factText} [${sourceLabel}]`;
     }
   }
 
-  // 4. Clean out raw JSON syntax, escaped quotes, dangling commas, leaked keys
-  let cleaned = factText
-    // Remove embedded sourceIndex key-value pairs
-    .replace(/,?\s*["']?(?:sourceIndex|source|citation)["']?\s*[:=]\s*["']?\d+["']?/gi, '')
-    // Remove leading/trailing JSON markers & braces
-    .replace(/^[\s{}[\]"']+|[\s{}[\]"']+$/g, '')
-    // Remove "fact": or "text": or "claim": prefixes
-    .replace(/^["']?(?:fact|text|statement|claim|finding|point|description|value)["']?\s*[:=]\s*["']?/i, '')
-    // Remove trailing commas, colons, or unneeded punctuation
-    .replace(/["']?\s*[,;:]\s*$/, '')
-    .replace(/^["']|["']$/g, '')
-    // Replace multiple newlines or irregular indentation with a single clean space
+  // 8. Final safety net pass: ensure no stray comma before the source bracket or double periods
+  formattedResult = formattedResult
+    .replace(/\s*,\s*(\[[^\]]+\]|`\[[^\]]+\]`)/g, ' $1')
+    .replace(/\s*\.\s*\./g, '.')
     .replace(/\s+/g, ' ')
     .trim();
 
-  // If too short after cleaning, discard
-  if (!cleaned || cleaned.length < 3) return '';
-
-  // Clean any leading bullet or list indicators from within the text
-  cleaned = cleaned.replace(/^[-*•\d.)\]:]+\s*/, '').trim();
-  if (!cleaned) return '';
-
-  // Ensure sentence ends cleanly with a period if it doesn't already have end punctuation
-  if (!/[.!?]$/.test(cleaned)) {
-    cleaned += '.';
-  }
-
-  // If sourceIndex is present, append [Source #X]
-  if (sourceIndex !== null && sourceIndex !== undefined && String(sourceIndex).trim() !== '') {
-    const sStr = String(sourceIndex).trim();
-    if (options.markdownSource) {
-      return `${cleaned} \`[Source #${sStr}]\``;
-    }
-    return `${cleaned} [Source #${sStr}]`;
-  }
-
-  return cleaned;
+  return formattedResult;
 }
 
 export function cleanAndFormatInsight(item: unknown): string {
   if (item === undefined || item === null) return '';
 
-  let text = '';
+  let rawText = '';
   if (typeof item === 'object' && item !== null) {
     const obj = item as Record<string, unknown>;
     const candidate =
-      obj.insight ||
-      obj.text ||
-      obj.statement ||
-      obj.point ||
-      obj.fact ||
-      obj.description ||
+      obj.insight ??
+      obj.text ??
+      obj.statement ??
+      obj.point ??
+      obj.fact ??
+      obj.finding ??
+      obj.description ??
+      obj.summary ??
       '';
-    text = typeof candidate === 'string' ? candidate : String(candidate || '');
+    rawText = typeof candidate === 'string' ? candidate : String(candidate || '');
   } else {
-    text = String(item);
+    rawText = String(item);
   }
 
-  let cleaned = text
-    .replace(/^[\s{}[\]"']+|[\s{}[\]"']+$/g, '')
-    .replace(/^["']?(?:insight|text|statement|point|fact|description)["']?\s*[:=]\s*["']?/i, '')
-    .replace(/["']?\s*[,;:]\s*$/, '')
-    .replace(/^["']|["']$/g, '')
+  const trimmed = rawText.trim();
+  if (trimmed.startsWith('{') && trimmed.endsWith('}')) {
+    try {
+      const parsed = JSON.parse(trimmed);
+      if (parsed && typeof parsed === 'object') {
+        return cleanAndFormatInsight(parsed);
+      }
+    } catch {
+      // Continue
+    }
+  }
+
+  // Strip any accidental source tags from insights
+  let text = stripSourceCitationsAndFragments(rawText);
+  text = cleanProseText(text);
+
+  if (!text || text.length < 3) return '';
+
+  if (!/[.!?]$/.test(text)) {
+    text += '.';
+  }
+
+  return text
+    .replace(/\s*\.\s*\./g, '.')
     .replace(/\s+/g, ' ')
     .trim();
-
-  cleaned = cleaned.replace(/^[-*•\d.)\]:]+\s*/, '').trim();
-  if (!cleaned || cleaned.length < 3) return '';
-
-  if (!/[.!?]$/.test(cleaned)) {
-    cleaned += '.';
-  }
-
-  return cleaned;
 }
+
