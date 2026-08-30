@@ -1845,18 +1845,18 @@ Please perform your specialized processing for this inquiry. Provide clear, conc
         }
       }
 
-      // 2. When Planner detects a news/current-events query, Researcher calls api.news()
+      // 2. When Planner detects a news/current-events query, Researcher calls Google News RSS
       else if (isNewsQuery) {
         try {
-          console.log('[JARVIS Researcher] Calling api.news() for news query:', query);
-          const liveNewsRes = await api.news();
-          console.log('[JARVIS Researcher] RAW DATA USED (DEBUG) - News API Response:', JSON.stringify(liveNewsRes, null, 2));
+          console.log('[JARVIS Researcher] Calling api.newsRss() (Google News RSS) for news query:', query);
+          const liveNewsRes = await api.newsRss(query);
+          console.log('[JARVIS Researcher] RAW DATA USED (DEBUG) - News RSS Response:', JSON.stringify(liveNewsRes, null, 2));
           if (Array.isArray(liveNewsRes) && liveNewsRes.length > 0) {
             searchResults = liveNewsRes;
-            searchSource = 'Live News API';
+            searchSource = 'Google News RSS';
           }
         } catch (err) {
-          console.warn('[JARVIS Researcher] Live News API api.news() failed, falling back to general search:', err);
+          console.warn('[JARVIS Researcher] Google News RSS failed, falling back to general search:', err);
         }
       }
 

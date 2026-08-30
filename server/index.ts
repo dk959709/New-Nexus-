@@ -1283,11 +1283,115 @@ async function fetchGoogleNewsRSS(query?: string): Promise<SearchResult[]> {
       return validB - validA;
     });
 
-    return results.slice(0, 25);
+    const finalResults = results.slice(0, 25);
+    console.log('FINAL SORTED DATES (DEBUG):', finalResults.map(r => r.date || 'No Date'));
+    return finalResults;
   } catch (err) {
     console.warn('[Google News RSS Error]:', err);
     return [];
   }
+}
+
+interface GNewsArticleItem {
+  title: string;
+  description: string;
+  content?: string;
+  url: string;
+  image?: string;
+  publishedAt: string;
+  source: {
+    name: string;
+    url?: string;
+  };
+}
+
+interface GNewsResponse {
+  totalArticles: number;
+  articles: GNewsArticleItem[];
+  errors?: string[] | string;
+}
+
+interface FetchGNewsOptions {
+  category?: string;
+  query?: string;
+  country?: string;
+  lang?: string;
+  max?: number;
+}
+
+async function fetchGNewsArticles(options: FetchGNewsOptions = {}): Promise<{
+  articles: SearchResult[];
+  source: string;
+  totalArticles: number;
+  category: string;
+}> {
+  const apiKey = process.env.GNEWS_API_KEY;
+  if (!apiKey || !apiKey.trim()) {
+    throw new Error('GNEWS_API_KEY is not configured in server environment');
+  }
+
+  const category = options.category && options.category.trim() ? options.category.trim() : 'general';
+  const lang = options.lang || 'en';
+  const country = options.country || 'us';
+  const max = Math.min(options.max || 10, 10); // GNews free tier limit is 10
+  const query = options.query?.trim();
+
+  let url: string;
+  if (query) {
+    url = `https://gnews.io/api/v4/search?q=${encodeURIComponent(query)}&lang=${lang}&country=${country}&max=${max}&apikey=${apiKey.trim()}`;
+  } else {
+    url = `https://gnews.io/api/v4/top-headlines?category=${encodeURIComponent(category)}&lang=${lang}&country=${country}&max=${max}&apikey=${apiKey.trim()}`;
+  }
+
+  const res = await fetch(url, {
+    headers: {
+      'User-Agent': 'NEXUS-Intelligence/1.0',
+    },
+  });
+
+  if (res.status === 401 || res.status === 403) {
+    throw new Error('GNews API Key is invalid or unauthorized');
+  }
+  if (res.status === 429) {
+    throw new Error('GNews API daily request limit reached (100 requests/day limit on free tier)');
+  }
+  if (!res.ok) {
+    let errorDetail = `GNews API returned HTTP ${res.status}`;
+    try {
+      const errJson = (await res.json()) as { errors?: string[] | string };
+      if (errJson.errors) {
+        errorDetail += `: ${Array.isArray(errJson.errors) ? errJson.errors.join(', ') : errJson.errors}`;
+      }
+    } catch {
+      // ignore
+    }
+    throw new Error(errorDetail);
+  }
+
+  const data = (await res.json()) as GNewsResponse;
+  const rawArticles = data.articles || [];
+
+  const articles: SearchResult[] = rawArticles.map((art) => {
+    const rawPublisher = art.source?.name?.trim() || '';
+    const domain = rawPublisher || domainOf(art.url) || 'News';
+    return {
+      title: art.title || 'Untitled Headline',
+      url: art.url,
+      domain,
+      description: art.description || art.content || art.title || '',
+      date: art.publishedAt || new Date().toISOString(),
+      image: art.image || undefined,
+      thumbnail: art.image || undefined,
+      type: 'news' as const,
+    };
+  });
+
+  return {
+    articles,
+    source: 'GNews API',
+    totalArticles: data.totalArticles || articles.length,
+    category,
+  };
 }
 
 async function searchProvider(input: z.infer<typeof searchSchema>): Promise<{ results: SearchResult[]; searchSource: string }> {
@@ -5800,15 +5904,59 @@ async function startServer() {
 
   app.get('/api/weather/alerts', (_req, res) => res.json({ data: [] }));
 
-  app.get('/api/news', async (_req, res) => {
+  // Live News Page Endpoint (Primary GNews Integration with fallback)
+  app.get('/api/news', async (req, res) => {
+    const category = typeof req.query.category === 'string' ? req.query.category : 'general';
+    const query = typeof req.query.q === 'string' ? req.query.q : typeof req.query.query === 'string' ? req.query.query : undefined;
+    const country = typeof req.query.country === 'string' ? req.query.country : 'us';
+    const lang = typeof req.query.lang === 'string' ? req.query.lang : 'en';
+
     try {
-      const sp = await searchProvider({ query: 'latest world news', category: 'NEWS' });
+      const gnews = await fetchGNewsArticles({ category, query, country, lang });
       return res.json({
-        data: sp.results,
+        data: gnews.articles,
+        source: 'GNews',
+        provider: 'gnews',
+        category: gnews.category,
+        total: gnews.totalArticles,
+        isFallback: false,
+        hasGNewsKey: true,
       });
     } catch (error) {
-      const err = error as Error & { status?: number };
-      return errorResponse(res, err.status ?? 502, err.message);
+      const err = error as Error;
+      console.warn('[Live News Page GNews Error]:', err.message);
+
+      // Gracefully fall back to Google News RSS so the Live News page always has data
+      try {
+        const rssQuery = query || (category && category !== 'general' ? `${category} news` : 'latest world news');
+        const fallbackResults = await fetchGoogleNewsRSS(rssQuery);
+        return res.json({
+          data: fallbackResults,
+          source: 'Google News RSS (Fallback)',
+          provider: 'google_rss',
+          category,
+          total: fallbackResults.length,
+          isFallback: true,
+          error: err.message,
+          hasGNewsKey: Boolean(process.env.GNEWS_API_KEY && process.env.GNEWS_API_KEY.trim()),
+        });
+      } catch {
+        return errorResponse(res, 502, err.message || 'News provider is temporarily unavailable.');
+      }
+    }
+  });
+
+  // Dedicated Google News RSS Endpoint (Keeps JARVIS Researcher independent)
+  app.get('/api/news/rss', async (req, res) => {
+    try {
+      const q = typeof req.query.q === 'string' ? req.query.q : typeof req.query.query === 'string' ? req.query.query : undefined;
+      const results = await fetchGoogleNewsRSS(q);
+      return res.json({
+        data: results,
+        source: 'Google News RSS',
+      });
+    } catch (err) {
+      return errorResponse(res, 502, (err as Error).message);
     }
   });
 

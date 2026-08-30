@@ -114,11 +114,60 @@ export const api = {
     );
   },
 
-  async news(): Promise<SearchResult[]> {
-    const raw = await call<unknown>('/api/news');
-    if (Array.isArray(raw)) return raw as SearchResult[];
+  async news(params?: { category?: string; query?: string; country?: string; lang?: string }): Promise<{
+    data: SearchResult[];
+    source: string;
+    provider?: string;
+    category?: string;
+    total?: number;
+    isFallback?: boolean;
+    error?: string;
+    hasGNewsKey?: boolean;
+  }> {
+    const searchParams = new URLSearchParams();
+    if (params?.category) searchParams.set('category', params.category);
+    if (params?.query) searchParams.set('q', params.query);
+    if (params?.country) searchParams.set('country', params.country);
+    if (params?.lang) searchParams.set('lang', params.lang);
+
+    const qs = searchParams.toString();
+    const raw = await call<unknown>(`/api/news${qs ? `?${qs}` : ''}`);
+    if (Array.isArray(raw)) {
+      return { data: raw as SearchResult[], source: 'GNews', isFallback: false };
+    }
+    if (raw && typeof raw === 'object' && 'data' in raw && Array.isArray((raw as { data: unknown }).data)) {
+      const obj = raw as {
+        data: SearchResult[];
+        source?: string;
+        provider?: string;
+        category?: string;
+        total?: number;
+        isFallback?: boolean;
+        error?: string;
+        hasGNewsKey?: boolean;
+      };
+      return {
+        data: obj.data,
+        source: obj.source || 'GNews',
+        provider: obj.provider,
+        category: obj.category,
+        total: obj.total ?? obj.data.length,
+        isFallback: obj.isFallback,
+        error: obj.error,
+        hasGNewsKey: obj.hasGNewsKey,
+      };
+    }
     if (raw && typeof raw === 'object' && 'results' in raw && Array.isArray((raw as { results: unknown }).results)) {
-      return (raw as { results: SearchResult[] }).results;
+      return { data: (raw as { results: SearchResult[] }).results, source: 'GNews' };
+    }
+    return { data: [], source: 'GNews' };
+  },
+
+  async newsRss(query?: string): Promise<SearchResult[]> {
+    const raw = await call<unknown>(`/api/news/rss${query ? `?q=${encodeURIComponent(query)}` : ''}`);
+    if (Array.isArray(raw)) return raw as SearchResult[];
+    if (raw && typeof raw === 'object' && 'data' in raw && Array.isArray((raw as { data: unknown }).data)) {
+      return (raw as { data: SearchResult[] }).data;
     }
     return [];
   },
