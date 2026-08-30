@@ -80,22 +80,36 @@ async function call<T>(path: string, init?: RequestInit): Promise<T> {
 }
 
 export const api = {
-  async search(query: string, category?: string, page?: number): Promise<SearchResult[]> {
+  async search(query: string, category?: string, page?: number): Promise<SearchResult[] & { searchSource?: string; fallbackOccurred?: boolean; fallbackReason?: string }> {
     const url = BASE + '/api/search';
     const res = await fetch(url, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ query, category, page }),
     });
-    const body = (await res.json().catch(() => ({}))) as { data?: SearchResult[]; searchSource?: string; error?: string };
+    const body = (await res.json().catch(() => ({}))) as {
+      data?: SearchResult[];
+      searchSource?: string;
+      fallbackOccurred?: boolean;
+      fallbackReason?: string;
+      error?: string;
+    };
     if (!res.ok) {
       let errorMsg = 'Search failed.';
       if (typeof body.error === 'string') errorMsg = body.error;
       throw new Error(errorMsg);
     }
-    const results = body.data ?? (Array.isArray(body) ? body : []);
+    const results = (body.data ?? (Array.isArray(body) ? body : [])) as SearchResult[] & {
+      searchSource?: string;
+      fallbackOccurred?: boolean;
+      fallbackReason?: string;
+    };
     if (body.searchSource) {
-      (results as SearchResult[] & { searchSource?: string }).searchSource = body.searchSource;
+      results.searchSource = body.searchSource;
+    }
+    if (body.fallbackOccurred !== undefined) {
+      results.fallbackOccurred = body.fallbackOccurred;
+      results.fallbackReason = body.fallbackReason;
     }
     return results;
   },

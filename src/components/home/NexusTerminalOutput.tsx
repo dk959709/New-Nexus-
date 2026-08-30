@@ -11,6 +11,7 @@ import { NexusWorldMapTelemetry } from './NexusWorldMapTelemetry';
 import { formatTemp } from '@/lib/format';
 import { api } from '@/services/api';
 import type { WeatherData, Settings } from '@/types';
+import { JARVIS_TERMINAL_STORAGE_KEY, JARVIS_TERMINAL_EVENT } from '@/lib/jarvisTerminalLogger';
 
 interface NexusTerminalOutputProps {
   weather?: WeatherData | null;
@@ -19,17 +20,18 @@ interface NexusTerminalOutputProps {
   isSearching?: boolean;
   onExecuteSearch?: (query: string) => void;
   title?: string;
+  storageKey?: string;
 }
 
 interface LogLine {
   id: string;
   timestamp: string;
-  sender?: 'you' | 'jarvis' | 'system';
+  sender?: 'you' | 'jarvis' | 'system' | 'search';
   text: string;
   type: 'system' | 'telemetry' | 'network' | 'warning' | 'user' | 'assistant';
 }
 
-const CHAT_STORAGE_KEY = 'nexus-terminal-inline-chat-v1';
+const DEFAULT_CHAT_STORAGE_KEY = 'nexus-terminal-inline-chat-v1';
 const MAX_STORED_MESSAGES = 30;
 
 function getWeatherEmoji(condition?: string, isDay: boolean = true): string {
@@ -93,9 +95,9 @@ function getStaticBootLogs(): LogLine[] {
   ];
 }
 
-function loadStoredChat(): LogLine[] {
+function loadStoredChat(key: string): LogLine[] {
   try {
-    const raw = localStorage.getItem(CHAT_STORAGE_KEY);
+    const raw = localStorage.getItem(key);
     if (!raw) return [];
     const parsed = JSON.parse(raw);
     if (Array.isArray(parsed)) {
@@ -105,8 +107,7 @@ function loadStoredChat(): LogLine[] {
           Boolean(
             l &&
               typeof l.id === 'string' &&
-              typeof l.text === 'string' &&
-              (l.type === 'user' || l.type === 'assistant' || l.type === 'warning')
+              typeof l.text === 'string'
           )
         );
     }
@@ -116,12 +117,12 @@ function loadStoredChat(): LogLine[] {
   return [];
 }
 
-function saveStoredChat(logsToSave: LogLine[]) {
+function saveStoredChat(key: string, logsToSave: LogLine[]) {
   try {
     const chatOnly = logsToSave
-      .filter((l) => l.type === 'user' || l.type === 'assistant' || l.type === 'warning')
+      .filter((l) => l.type === 'user' || l.type === 'assistant' || l.type === 'warning' || l.sender === 'search')
       .slice(-MAX_STORED_MESSAGES);
-    localStorage.setItem(CHAT_STORAGE_KEY, JSON.stringify(chatOnly));
+    localStorage.setItem(key, JSON.stringify(chatOnly));
   } catch (err) {
     console.warn('Failed to save terminal chat history to localStorage', err);
   }
@@ -133,14 +134,16 @@ export function NexusTerminalOutput({
   activeQuery,
   isSearching = false,
   title = 'TERMINAL OUTPUT',
+  storageKey,
 }: NexusTerminalOutputProps) {
+  const effectiveStorageKey = storageKey || DEFAULT_CHAT_STORAGE_KEY;
   const [showWeatherDetail, setShowWeatherDetail] = useState(false);
   const [isAiResponding, setIsAiResponding] = useState(false);
   const [showClearToast, setShowClearToast] = useState(false);
 
   // Initialize chat history context for multi-turn inline dialogue
   const [chatHistory, setChatHistory] = useState<Array<{ role: 'user' | 'assistant'; content: string }>>(() => {
-    const saved = loadStoredChat();
+    const saved = loadStoredChat(effectiveStorageKey);
     return saved
       .filter((l) => l.type === 'user' || l.type === 'assistant')
       .map((l) => ({
@@ -152,11 +155,31 @@ export function NexusTerminalOutput({
   // Terminal log lines (boot diagnostics + loaded persisted chat conversation)
   const [logs, setLogs] = useState<LogLine[]>(() => {
     const bootLogs = getStaticBootLogs();
-    const savedChatLogs = loadStoredChat();
+    const savedChatLogs = loadStoredChat(effectiveStorageKey);
     return [...bootLogs, ...savedChatLogs];
   });
 
   const logContainerRef = useRef<HTMLDivElement>(null);
+
+  // Real-time listener for live JARVIS pipeline terminal logs
+  useEffect(() => {
+    if (effectiveStorageKey !== JARVIS_TERMINAL_STORAGE_KEY) return;
+
+    const handleJarvisLog = (event: Event) => {
+      const customEvt = event as CustomEvent<LogLine>;
+      if (!customEvt.detail) return;
+      setLogs((prev) => {
+        // Prevent duplicate IDs
+        if (prev.some((l) => l.id === customEvt.detail.id)) return prev;
+        return [...prev, customEvt.detail];
+      });
+    };
+
+    window.addEventListener(JARVIS_TERMINAL_EVENT, handleJarvisLog);
+    return () => {
+      window.removeEventListener(JARVIS_TERMINAL_EVENT, handleJarvisLog);
+    };
+  }, [effectiveStorageKey]);
 
   // Auto-scroll the log container to the bottom when new logs or thinking indicator appear
   useEffect(() => {
@@ -184,7 +207,7 @@ export function NexusTerminalOutput({
 
     setLogs((prev) => {
       const updated = [...prev, userLog];
-      saveStoredChat(updated);
+      saveStoredChat(effectiveStorageKey, updated);
       return updated;
     });
     setIsAiResponding(true);
@@ -210,7 +233,7 @@ export function NexusTerminalOutput({
 
       setLogs((prev) => {
         const updated = [...prev, assistantLog];
-        saveStoredChat(updated);
+        saveStoredChat(effectiveStorageKey, updated);
         return updated;
       });
 
@@ -233,7 +256,7 @@ export function NexusTerminalOutput({
 
       setLogs((prev) => {
         const updated = [...prev, errorLog];
-        saveStoredChat(updated);
+        saveStoredChat(effectiveStorageKey, updated);
         return updated;
       });
     } finally {
@@ -244,13 +267,13 @@ export function NexusTerminalOutput({
   // Clear only the user/AI chat messages while preserving static system diagnostics
   const handleClearChat = () => {
     try {
-      localStorage.removeItem(CHAT_STORAGE_KEY);
+      localStorage.removeItem(effectiveStorageKey);
     } catch (err) {
       console.warn('Failed to clear terminal chat storage', err);
     }
 
     setChatHistory([]);
-    setLogs((prev) => prev.filter((l) => l.type !== 'user' && l.type !== 'assistant' && l.type !== 'warning'));
+    setLogs((prev) => prev.filter((l) => l.type !== 'user' && l.type !== 'assistant' && l.type !== 'warning' && l.sender !== 'search'));
 
     setShowClearToast(true);
     setTimeout(() => {
@@ -401,6 +424,7 @@ export function NexusTerminalOutput({
               const isSystem = log.type === 'system';
               const isNetwork = log.type === 'network';
               const isWarning = log.type === 'warning';
+              const isSearch = log.sender === 'search' || log.text.startsWith('search:');
 
               return (
                 <div
@@ -414,6 +438,8 @@ export function NexusTerminalOutput({
                         ? 'text-sky-400'
                         : isAssistant
                         ? 'text-emerald-400'
+                        : isSearch
+                        ? 'text-cyan-400'
                         : 'text-emerald-400'
                     }`}
                   >
@@ -427,7 +453,11 @@ export function NexusTerminalOutput({
 
                   {/* Sender & Content Color-coded */}
                   <div className="flex-1 min-w-0">
-                    {isUser ? (
+                    {isSearch ? (
+                      <span className="text-cyan-300 font-medium">
+                        {log.text.startsWith('search:') ? log.text : `search: ${log.text}`}
+                      </span>
+                    ) : isUser ? (
                       <div className="flex items-start gap-1.5 flex-wrap">
                         <span className="text-sky-300 font-bold select-none">you:</span>
                         <span className="text-white font-medium break-all">{log.text}</span>

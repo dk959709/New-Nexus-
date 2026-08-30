@@ -642,6 +642,7 @@ export function JarvisChat({ config, onOpenSettings }: JarvisChatProps) {
         <div className="animate-in fade-in zoom-in-95 duration-200">
           <NexusTerminalOutput
             title="JARVIS ASSISTANT TERMINAL OUTPUT"
+            storageKey="jarvis-terminal-inline-chat-v1"
             activeQuery={query}
             isSearching={isRunning}
             onExecuteSearch={(prompt) => {

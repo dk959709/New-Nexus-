@@ -1583,11 +1583,17 @@ async function searchProvider(input: z.infer<typeof searchSchema>): Promise<{ re
 
   if (!needsFallback && primaryResults.length >= 3) {
     console.log(`[Search] Source Used: Tavily (${primaryResults.length} results) for query: "${input.query}"`);
-    return { results: primaryResults, searchSource: 'Tavily' };
+    return { results: primaryResults, searchSource: 'Tavily API', fallbackOccurred: false };
   }
 
   // 3. Fall back to DuckDuckGo search (reusing existing fetchDuckDuckGoSearch in this codebase)
-  console.log(`[Search] Fallback to DuckDuckGo Search triggered (primaryFailed=${primaryFailed}, count=${primaryResults.length}, lacksTrustedDomains=${lacksTrustedDomainsForTopic}) for query: "${input.query}"`);
+  const fallbackReason = primaryFailed
+    ? 'Tavily failed, falling back to DuckDuckGo'
+    : primaryResults.length < 3
+      ? 'Tavily returned insufficient results, falling back to DuckDuckGo'
+      : 'Domain verification triggered DuckDuckGo fallback';
+
+  console.log(`[Search] Fallback to DuckDuckGo Search triggered (${fallbackReason}) for query: "${input.query}"`);
   const ddgResults = await fetchDuckDuckGoSearch(input.query);
 
   // 4. Merge or replace results with DuckDuckGo output, then pass to the Researcher agent
@@ -1598,14 +1604,24 @@ async function searchProvider(input: z.infer<typeof searchSchema>): Promise<{ re
       const seenUrls = new Set(ddgResults.map((r) => r.url.toLowerCase()));
       const extraPrimary = primaryResults.filter((r) => !seenUrls.has(r.url.toLowerCase()));
       finalResults = [...ddgResults, ...extraPrimary];
-      return { results: finalResults, searchSource: 'DuckDuckGo Fallback (Merged)' };
+      return {
+        results: finalResults,
+        searchSource: 'DuckDuckGo fallback',
+        fallbackOccurred: true,
+        fallbackReason,
+      };
     }
-    return { results: finalResults, searchSource: 'DuckDuckGo Fallback' };
+    return {
+      results: finalResults,
+      searchSource: 'DuckDuckGo fallback',
+      fallbackOccurred: true,
+      fallbackReason,
+    };
   }
 
   if (primaryResults.length > 0) {
     console.log(`[Search] Source Used: Tavily (Partial ${primaryResults.length} results) for query: "${input.query}"`);
-    return { results: primaryResults, searchSource: 'Tavily' };
+    return { results: primaryResults, searchSource: 'Tavily API', fallbackOccurred: false };
   }
 
   // Fallback: Wikipedia search
@@ -1613,17 +1629,22 @@ async function searchProvider(input: z.infer<typeof searchSchema>): Promise<{ re
     const wikiResults = await fetchWikipediaSearch(input.query, 10);
     if (wikiResults.length > 0) {
       console.log(`[Search] Source Used: Wikipedia Fallback (${wikiResults.length} results) for query: "${input.query}"`);
-      return { results: wikiResults, searchSource: 'Wikipedia Fallback' };
+      return {
+        results: wikiResults,
+        searchSource: 'Wikipedia Fallback',
+        fallbackOccurred: true,
+        fallbackReason: 'Primary & DuckDuckGo returned 0 results, used Wikipedia fallback',
+      };
     }
   }
 
   if (!key || !url) {
-    return { results: [], searchSource: 'DuckDuckGo Fallback (No Results)' };
+    return { results: [], searchSource: 'DuckDuckGo fallback', fallbackOccurred: true, fallbackReason };
   }
   if (primaryFailed) {
-    return { results: [], searchSource: 'DuckDuckGo Fallback (No Results)' };
+    return { results: [], searchSource: 'DuckDuckGo fallback', fallbackOccurred: true, fallbackReason };
   }
-  return { results: [], searchSource: 'No Results' };
+  return { results: [], searchSource: 'No Results', fallbackOccurred: false };
 }
 
 async function geocode(city: string) {
@@ -5839,7 +5860,12 @@ async function startServer() {
     if (!parsed.success) return errorResponse(res, 400, 'Enter a valid search query.');
     try {
       const searchRes = await searchProvider(parsed.data);
-      return res.json({ data: searchRes.results, searchSource: searchRes.searchSource });
+      return res.json({
+        data: searchRes.results,
+        searchSource: searchRes.searchSource,
+        fallbackOccurred: searchRes.fallbackOccurred,
+        fallbackReason: searchRes.fallbackReason,
+      });
     } catch (error) {
       const err = error as Error & { status?: number };
       return errorResponse(res, err.status ?? 502, err.message);

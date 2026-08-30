@@ -2,6 +2,7 @@ import { api } from '@/services/api';
 import { storage, DEFAULT_AGENT_SYSTEM_PROMPTS } from '@/lib/storage';
 import { searchWikipedia, getWikipediaSummary } from '@/services/wikipedia';
 import { stripConversationalMetaText } from '@/lib/format';
+import { logToJarvisTerminal } from '@/lib/jarvisTerminalLogger';
 import type {
   AIProviderConfig,
   AISource,
@@ -1853,9 +1854,11 @@ Please perform your specialized processing for this inquiry. Provide clear, conc
               domain: 'open-meteo.com',
             }];
             searchSource = 'Live Weather API';
+            logToJarvisTerminal(`Using Live Weather API (${searchResults.length} result${searchResults.length === 1 ? '' : 's'})`);
           }
         } catch (err) {
           console.warn('[JARVIS Researcher] api.weather() failed, falling back to general search:', err);
+          logToJarvisTerminal('Live Weather API failed, falling back to general search', 'warning');
         }
       }
 
@@ -1878,6 +1881,7 @@ Please perform your specialized processing for this inquiry. Provide clear, conc
             searchSource = 'GNews API';
             gnewsSucceeded = true;
             console.log('[JARVIS Researcher] News source used: GNews');
+            logToJarvisTerminal(`Using GNews API (${searchResults.length} result${searchResults.length === 1 ? '' : 's'})`);
           } else {
             const specificError =
               gnewsRes?.error ||
@@ -1893,6 +1897,7 @@ Please perform your specialized processing for this inquiry. Provide clear, conc
 
         // Automatic fallback to Google News RSS if GNews failed, hit rate limits, had no API key, or returned 0 results
         if (!gnewsSucceeded) {
+          logToJarvisTerminal('GNews failed, falling back to Google News RSS', 'warning');
           try {
             console.log('[JARVIS Researcher] Falling back to Google News RSS for news query:', query);
             const liveNewsRes = await api.newsRss(query);
@@ -1901,9 +1906,13 @@ Please perform your specialized processing for this inquiry. Provide clear, conc
               searchResults = liveNewsRes;
               searchSource = 'Google News RSS (fallback)';
               console.log('[JARVIS Researcher] News source used: Google RSS (fallback)');
+              logToJarvisTerminal(`Using Google News RSS (${searchResults.length} result${searchResults.length === 1 ? '' : 's'})`);
+            } else {
+              logToJarvisTerminal('Google News RSS returned 0 results, falling back to general search', 'warning');
             }
           } catch (err) {
             console.warn('[JARVIS Researcher] Google News RSS fallback failed, falling back to general search:', err);
+            logToJarvisTerminal('Google News RSS failed, falling back to general search', 'warning');
           }
         }
       }
@@ -1917,15 +1926,36 @@ Please perform your specialized processing for this inquiry. Provide clear, conc
 
         try {
           const searchRes = await api.search(effectiveSearchQuery);
+          let rawResults: SearchResult[] = [];
+          let sourceLabel = 'Tavily API';
+          let fallbackOccurred = false;
+
           if (Array.isArray(searchRes)) {
-            searchResults = searchRes;
+            rawResults = searchRes;
+            const resMeta = searchRes as SearchResult[] & { searchSource?: string; fallbackOccurred?: boolean };
+            if (resMeta.searchSource) sourceLabel = resMeta.searchSource;
+            if (resMeta.fallbackOccurred) fallbackOccurred = true;
           } else if (searchRes && Array.isArray((searchRes as { results?: SearchResult[] }).results)) {
-            searchResults = (searchRes as { results?: SearchResult[] }).results || [];
-            searchSource = (searchRes as { searchSource?: string }).searchSource || 'Tavily Search';
+            rawResults = (searchRes as { results?: SearchResult[] }).results || [];
+            sourceLabel = (searchRes as { searchSource?: string }).searchSource || 'Tavily API';
+            if ((searchRes as { fallbackOccurred?: boolean }).fallbackOccurred) fallbackOccurred = true;
           }
+
+          searchResults = rawResults;
+          searchSource = sourceLabel;
           console.log('[JARVIS Researcher] RAW DATA USED (DEBUG) - Search Results:', JSON.stringify(searchResults, null, 2));
+
+          if (fallbackOccurred || sourceLabel.toLowerCase().includes('duckduckgo')) {
+            logToJarvisTerminal('Tavily failed, falling back to DuckDuckGo', 'warning');
+            logToJarvisTerminal(`Using DuckDuckGo fallback (${searchResults.length} result${searchResults.length === 1 ? '' : 's'})`);
+          } else if (sourceLabel.toLowerCase().includes('tavily')) {
+            logToJarvisTerminal(`Using Tavily API (${searchResults.length} result${searchResults.length === 1 ? '' : 's'})`);
+          } else {
+            logToJarvisTerminal(`Using ${sourceLabel} (${searchResults.length} result${searchResults.length === 1 ? '' : 's'})`);
+          }
         } catch (err) {
           console.warn('[JARVIS Researcher] Search API error:', err);
+          logToJarvisTerminal('Search API failed, falling back to DuckDuckGo', 'warning');
         }
       }
 
@@ -1951,12 +1981,15 @@ Please perform your specialized processing for this inquiry. Provide clear, conc
               type: 'wikipedia',
             };
             console.log(`[JARVIS Researcher] Wikipedia Step 2 retrieved summary (${extract.length} chars) for "${topPage.title}".`);
+            logToJarvisTerminal(`Wikipedia lookup triggered - found "${topPage.title}" page`);
           } else {
             // Safety check: 0 results returned, skip summary step and proceed with Tavily results only
             console.log(`[JARVIS Researcher] Wikipedia Step 1 returned 0 results for query: "${query}". Skipping summary step.`);
+            logToJarvisTerminal('Wikipedia lookup triggered - no matching page found, skipped', 'warning');
           }
         } catch (wikiErr) {
           console.warn('[JARVIS Researcher] Wikipedia 2-step lookup error (continuing with search results):', wikiErr);
+          logToJarvisTerminal('Wikipedia lookup triggered - lookup error, skipped', 'warning');
         }
       } else if (!plannerOutput.needsWikipedia) {
         console.log('[JARVIS Researcher] needsWikipedia is false. Skipping Wikipedia lookup to save tokens.');
