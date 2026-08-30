@@ -1,6 +1,6 @@
 import { api } from '@/services/api';
 import { storage, DEFAULT_AGENT_SYSTEM_PROMPTS } from '@/lib/storage';
-import { searchWikipedia } from '@/services/wikipedia';
+import { searchWikipedia, getWikipediaSummary } from '@/services/wikipedia';
 import { stripConversationalMetaText } from '@/lib/format';
 import type {
   AIProviderConfig,
@@ -12,7 +12,6 @@ import type {
   JarvisImageResult,
   JarvisSystemConfig,
   SearchResult,
-  WikipediaSearchResult,
 } from '@/types';
 
 export interface JarvisExecutionResult {
@@ -1638,6 +1637,7 @@ Please perform your specialized processing for this inquiry. Provide clear, conc
     needsDiagram: boolean;
     needsChart?: boolean;
     needsImage?: boolean;
+    needsWikipedia?: boolean;
   } = {
     task: query,
     plan: ['Synthesize accurate response directly.'],
@@ -1647,6 +1647,7 @@ Please perform your specialized processing for this inquiry. Provide clear, conc
     needsDiagram: false,
     needsChart: false,
     needsImage: false,
+    needsWikipedia: false,
   };
 
   if (agentConfigs.planner.enabled) {
@@ -1725,6 +1726,7 @@ Please perform your specialized processing for this inquiry. Provide clear, conc
           needsDiagram: false,
           needsChart: false,
           needsImage: false,
+          needsWikipedia: false,
         };
       }
       if (!Array.isArray(plannerOutput.plan)) {
@@ -1774,13 +1776,24 @@ Please perform your specialized processing for this inquiry. Provide clear, conc
     /\b(how|why|compare|versus|vs|explain|difference|implement|create|design|code|analyze|architecture|review|best practices|pros and cons|guide|steps|tutorial)\b/i.test(query) ||
     (query.includes('?') && query.split(' ').length > 7);
 
-  const isNewsQuery = /\b(news|today|latest|recent|headlines|update|what happened|current events|breaking|today's)\b/i.test(`${query} ${plannerOutput.task || ''}`);
+  // Standalone whole-word matching for news inquiries (excludes technical terms like 'electrical current')
+  const isNewsInquiry = (text: string): boolean => {
+    const lower = text.toLowerCase();
+    // Exclude technical/scientific phrases with "current" (e.g. electrical current, alternating current, direct current, ocean currents)
+    if (/\b(electric|electrical|alternating|direct|ocean|water|eddy|fluid|flow|air|convection)\s+current\b/i.test(lower) || /\bcurrents\b/i.test(lower)) {
+      return false;
+    }
+    // Match standalone whole words only
+    return /\b(news|today|current|latest|breaking)\b/i.test(lower);
+  };
+
+  const isNewsQuery = isNewsInquiry(`${query} ${plannerOutput.task || ''}`);
   const isWeatherQuery = /\b(weather|temperature|forecast|rain|snow|wind|humidity|degrees)\b/i.test(`${query} ${plannerOutput.task || ''}`);
 
   // Determine which downstream agents are required
   const shouldResearch =
     agentConfigs.researcher.enabled &&
-    (deepResearch || isNewsQuery || isWeatherQuery || plannerOutput.needsResearch || query.length > 30);
+    (deepResearch || isNewsQuery || isWeatherQuery || plannerOutput.needsResearch || plannerOutput.needsWikipedia || query.length > 30);
 
   const shouldFactCheck =
     agentConfigs.factChecker.enabled &&
@@ -1799,7 +1812,7 @@ Please perform your specialized processing for this inquiry. Provide clear, conc
   };
 
   if (shouldResearch) {
-    console.log('[JARVIS Researcher] QUERY TYPE DEBUG - Query:', query, '| isNewsQuery:', isNewsQuery, '| isWeatherQuery:', isWeatherQuery);
+    console.log('[JARVIS Researcher] QUERY TYPE DEBUG - Query:', query, '| isNewsQuery:', isNewsQuery, '| isWeatherQuery:', isWeatherQuery, '| needsWikipedia:', plannerOutput.needsWikipedia);
     const rCfg = agentConfigs.researcher;
     const provInfo = resolveProviderConfig(rCfg);
     const start = Date.now();
@@ -1821,8 +1834,7 @@ Please perform your specialized processing for this inquiry. Provide clear, conc
       const { cleanedSearchQuery } = extractTopicKeywords(query, plannerOutput.task);
 
       let searchResults: SearchResult[] = [];
-      let wikiResults1: WikipediaSearchResult[] = [];
-      let wikiResults2: WikipediaSearchResult[] = [];
+      let wikiSummaryCandidate: RawSearchResultCandidate | null = null;
 
       // 1. Weather Query handling using api.weather()
       if (isWeatherQuery) {
@@ -1896,48 +1908,66 @@ Please perform your specialized processing for this inquiry. Provide clear, conc
         }
       }
 
-      // 3. Only fall back to DuckDuckGo/Wikipedia if real-time APIs return zero results
+      // 3. General / Factual Search (Tavily with DuckDuckGo fallback in backend)
       if (searchResults.length === 0) {
         const currentDateStr = new Date().toLocaleDateString('en-US', { month: 'long', day: 'numeric', year: 'numeric' });
         const effectiveSearchQuery = isNewsQuery
           ? `world news today ${currentDateStr} ${cleanedSearchQuery || query}`
           : query;
 
-        const searchTasks: [
-          Promise<WikipediaSearchResult[]>,
-          Promise<SearchResult[]>,
-          Promise<WikipediaSearchResult[]>,
-        ] = [
-          isNewsQuery || isWeatherQuery ? Promise.resolve([]) : api.searchWikipedia(query, 6).catch(() => [] as WikipediaSearchResult[]),
-          api.search(effectiveSearchQuery).catch(() => [] as SearchResult[]),
-          !isNewsQuery && !isWeatherQuery && cleanedSearchQuery && cleanedSearchQuery.toLowerCase() !== query.toLowerCase()
-            ? api.searchWikipedia(cleanedSearchQuery, 6).catch(() => [] as WikipediaSearchResult[])
-            : Promise.resolve([] as WikipediaSearchResult[]),
-        ];
+        try {
+          const searchRes = await api.search(effectiveSearchQuery);
+          if (Array.isArray(searchRes)) {
+            searchResults = searchRes;
+          } else if (searchRes && Array.isArray((searchRes as { results?: SearchResult[] }).results)) {
+            searchResults = (searchRes as { results?: SearchResult[] }).results || [];
+            searchSource = (searchRes as { searchSource?: string }).searchSource || 'Tavily Search';
+          }
+          console.log('[JARVIS Researcher] RAW DATA USED (DEBUG) - Search Results:', JSON.stringify(searchResults, null, 2));
+        } catch (err) {
+          console.warn('[JARVIS Researcher] Search API error:', err);
+        }
+      }
 
-        const [w1, sRes, w2] = await Promise.all(searchTasks);
-        wikiResults1 = w1;
-        searchResults = sRes;
-        searchSource = (searchResults as SearchResult[] & { searchSource?: string }).searchSource || 'DuckDuckGo (fallback)';
-        wikiResults2 = w2;
-        console.log('[JARVIS Researcher] RAW DATA USED (DEBUG) - Fallback Search Results:', JSON.stringify(searchResults, null, 2));
+      // 4. AI-Decided Wikipedia Lookup for factual/encyclopedic queries (Works in both Deep Research ON and OFF)
+      if (plannerOutput.needsWikipedia && !isWeatherQuery && !isNewsQuery) {
+        console.log(`[JARVIS Researcher] AI Planner indicated needsWikipedia: true for query: "${query}". Executing 2-step lookup...`);
+        try {
+          // Step 1: Call fetchWikipediaSearch with limit=1 to find the single best-matching page title/ID
+          const wikiPages = await searchWikipedia(query, 1);
+          if (wikiPages && wikiPages.length > 0 && wikiPages[0]?.title) {
+            const topPage = wikiPages[0];
+            console.log(`[JARVIS Researcher] Wikipedia Step 1 matched page: "${topPage.title}". Fetching full lead summary (Step 2)...`);
+            // Step 2: Call fetchWikipediaSummary using that page's title to get the full lead-paragraph summary
+            const summary = await getWikipediaSummary(topPage.title);
+            const extract = summary?.extract || topPage.snippet || topPage.description || '';
+            const pageUrl = summary?.url || topPage.url || `https://en.wikipedia.org/wiki/${encodeURIComponent(topPage.title.replace(/ /g, '_'))}`;
+
+            wikiSummaryCandidate = {
+              title: summary?.title || topPage.title,
+              url: pageUrl,
+              domain: 'wikipedia.org',
+              description: extract,
+              type: 'wikipedia',
+            };
+            console.log(`[JARVIS Researcher] Wikipedia Step 2 retrieved summary (${extract.length} chars) for "${topPage.title}".`);
+          } else {
+            // Safety check: 0 results returned, skip summary step and proceed with Tavily results only
+            console.log(`[JARVIS Researcher] Wikipedia Step 1 returned 0 results for query: "${query}". Skipping summary step.`);
+          }
+        } catch (wikiErr) {
+          console.warn('[JARVIS Researcher] Wikipedia 2-step lookup error (continuing with search results):', wikiErr);
+        }
+      } else if (!plannerOutput.needsWikipedia) {
+        console.log('[JARVIS Researcher] needsWikipedia is false. Skipping Wikipedia lookup to save tokens.');
       }
 
       const rawCandidates: RawSearchResultCandidate[] = [];
 
-      // Combine Wikipedia articles
-      [...wikiResults1, ...wikiResults2].forEach((w) => {
-        if (w && w.title && w.url) {
-          const cleaned = (w.snippet || '').replace(/<[^>]+>/g, '').trim();
-          rawCandidates.push({
-            title: w.title,
-            url: w.url,
-            domain: 'wikipedia.org',
-            description: cleaned,
-            type: 'wikipedia',
-          });
-        }
-      });
+      // Step 3: Add Wikipedia summary alongside existing search results (don't replace them)
+      if (wikiSummaryCandidate) {
+        rawCandidates.push(wikiSummaryCandidate);
+      }
 
       // Combine Web Search results
       (searchResults || []).forEach((s) => {
@@ -1948,7 +1978,7 @@ Please perform your specialized processing for this inquiry. Provide clear, conc
             url: s.url,
             domain: s.domain || (s.url.startsWith('http') ? new URL(s.url).hostname.replace(/^www\./, '') : 'web'),
             description: desc,
-            type: 'web',
+            type: s.type || 'web',
           });
         }
       });
@@ -1969,8 +1999,8 @@ Please perform your specialized processing for this inquiry. Provide clear, conc
         `[JARVIS Researcher] Relevance filter evaluated ${rawCandidates.length} raw search results -> kept ${filteredSources.length} on-topic sources.`,
       );
 
-      filteredSources.slice(0, 5).forEach((src) => {
-        gatheredSnippets.push(`[${src.domain || 'Source'}: ${src.title}] ${src.description}`);
+      filteredSources.slice(0, 8).forEach((src, idx) => {
+        gatheredSnippets.push(`[Source ${idx + 1} | ${src.domain || 'Source'}: ${src.title}] ${src.description}`);
         sourcesCollected.push({
           title: src.title,
           url: src.url,

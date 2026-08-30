@@ -29,6 +29,7 @@ Decide execution strategy:
 - needsDiagram: true whenever Diagram Mode is enabled AND the query involves technical systems, hardware/device architecture, system workflows, comparisons (e.g. phone/hardware specs, camera sensor mechanisms, software architecture), processes, or concepts that benefit from a visual blueprint. Set false only if Diagram Mode is off or query has no structure.
 - needsChart: true whenever Chart Mode is enabled AND the query involves comparative numbers, specs, battery mAh, RAM, storage, camera megapixels, prices, dimensions, statistics, timelines, or quantitative metrics across products, categories, or items. Set false only if Chart Mode is off or query has no numbers.
 - needsImage: true whenever Image Mode is enabled AND the query mentions physical products (e.g. smartphones, laptops, cars, hardware), real-world objects, places, landmarks, animals, space imagery, or tangible subjects. Set false only if Image Mode is off or topic is purely abstract.
+- needsWikipedia: Set needsWikipedia to true ONLY if the query is asking for a general definition, explanation of a concept, historical background, or information about a specific person/place/thing/event (e.g. 'what is a black hole', 'who was Einstein', 'history of NASA', 'define photosynthesis'). Set needsWikipedia to false if the query is asking for real-time or live data that changes constantly and Wikipedia would not have (e.g. current time, current weather, today's date, live prices, breaking news, current status of something). Also set it to false for casual conversation, opinions, or questions unrelated to a specific factual topic.
 - task: a concise goal statement, under 15 words.
 - plan: 2-4 short steps describing your approach, not a full essay.
 - If the user's question is only asking for the current date or time, answer it directly using the date/time provided above, and set needsResearch, needsFactCheck, and needsReview all to false.
@@ -42,28 +43,34 @@ Output ONLY a JSON object with this exact structure:
   "needsReview": true,
   "needsDiagram": true,
   "needsChart": true,
-  "needsImage": true
+  "needsImage": true,
+  "needsWikipedia": true
 }`,
 
   researcher: `You are the RESEARCHER agent of JARVIS.
 Task: "{task}"
 Live Context / Search Data:
 {searchSnippets}
+
 Instructions:
-- Extract 3-7 concise, verified facts directly relevant to the task.
-- Each fact must be specific (include numbers, dates, names, or key technical/factual details when available).
-- For news or current event inquiries, prioritize searching for recent news headlines and current events. If retrieved search results are encyclopedia pages (e.g. Wikipedia pages about news organizations) or lack actual current news data, explicitly note that current news data is unavailable rather than assuming past facts apply.
-- Synthesize facts from the provided search data and high-confidence domain knowledge.
-- If search snippets are available, ground your facts in them and list the corresponding sources.
-- If search snippets are brief, supplement with verified factual knowledge to fully address the inquiry.
-- Always output a non-empty list of core facts.
-- Keep total output concise - this is a research briefing, not a full article.
-- Only include a source in "sources" if its snippet is directly and specifically relevant to the task topic. If a search result's snippet doesn't clearly support the task topic, leave it out rather than including it as a weak or tangential match.
-- Prefer sources with focused, on-topic snippets over broad list/index-style pages when a more specific source is available.
-- Never include two sources that point to the same page (e.g. same URL with/without a trailing slash, or the same article mirrored under a different URL). Keep only one, choosing the cleaner/canonical URL.
+1. Before searching, first think of 3-5 focused, specific search keywords based on the user's query (not the raw question) - use these keywords for the search instead of the full question.
+2. When searching for information, prioritize these trusted domains when available:
+- nasa.gov, esa.int, space.com, wikipedia.org, nature.com, sciencedirect.com, .edu and .gov domains
+3. For each fact you extract, link it to the specific source number that supports it, using this format:
+{ "fact": "...", "sourceIndex": 2 }
+4. Only include a fact if at least one search result directly supports it. Do NOT include facts that are not backed by any of the provided search snippets.
+5. If multiple sources confirm the same fact, note that too (higher confidence).
+6. If the search results are mostly irrelevant to the query topic, say so clearly in your output instead of forcing weak facts from unrelated sources.
+7. For news or current event inquiries, prioritize searching for recent news headlines and current events. If retrieved search results are encyclopedia pages or lack actual current news data, explicitly note that current news data is unavailable rather than assuming past facts apply.
+8. Only include a source in "sources" if its snippet is directly and specifically relevant to the task topic. If a search result's snippet doesn't clearly support the task topic, leave it out rather than including it as a weak or tangential match.
+9. Never include two sources that point to the same page. Keep only one, choosing the cleaner/canonical URL.
+
 Output ONLY a valid JSON object in this exact format, no extra text:
 {
-  "facts": ["Concise fact 1", "Concise fact 2", "Concise fact 3"],
+  "facts": [
+    { "fact": "Concise verified fact 1", "sourceIndex": 1 },
+    { "fact": "Concise verified fact 2", "sourceIndex": 2 }
+  ],
   "sources": [{"title": "Source name", "url": "https://...", "domain": "domain.com"}],
   "notes": ""
 }`,
@@ -502,6 +509,7 @@ export const storage = {
           maxTokens: Math.max(400, stored.agents.planner?.maxTokens || 500),
           systemPrompt:
             !stored.agents.planner?.systemPrompt ||
+            !stored.agents.planner.systemPrompt.includes('needsWikipedia') ||
             !stored.agents.planner.systemPrompt.includes('needsDiagram') ||
             !stored.agents.planner.systemPrompt.includes('needsChart') ||
             !stored.agents.planner.systemPrompt.includes('needsImage') ||
@@ -517,9 +525,10 @@ export const storage = {
           maxTokens: Math.max(800, stored.agents.researcher?.maxTokens || 1200),
           systemPrompt:
             !stored.agents.researcher?.systemPrompt ||
+            !stored.agents.researcher.systemPrompt.includes('sourceIndex') ||
+            !stored.agents.researcher.systemPrompt.includes('nasa.gov, esa.int, space.com') ||
             stored.agents.researcher?.systemPrompt?.includes('Extract verified facts and source references.\nOutput ONLY a JSON object:') ||
             stored.agents.researcher?.systemPrompt?.includes('If search data is empty or insufficient, return an empty facts array') ||
-            !stored.agents.researcher?.systemPrompt?.includes('Synthesize facts from the provided search data') ||
             !stored.agents.researcher?.systemPrompt?.includes('Never include two sources that point to the same page')
               ? DEFAULT_AGENT_SYSTEM_PROMPTS.researcher
               : stored.agents.researcher.systemPrompt,

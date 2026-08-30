@@ -1467,30 +1467,69 @@ async function searchProvider(input: z.infer<typeof searchSchema>): Promise<{ re
     }
   }
 
-  const key = process.env.SEARCH_API_KEY;
-  const url = process.env.SEARCH_API_URL;
+  const TRUSTED_RESEARCH_DOMAINS = [
+    'nasa.gov',
+    'esa.int',
+    'space.com',
+    'wikipedia.org',
+    'nature.com',
+    'sciencedirect.com',
+    '.edu',
+    '.gov',
+  ];
+
+  const isTrustedResearchDomain = (urlOrDomain: string): boolean => {
+    if (!urlOrDomain) return false;
+    const lower = urlOrDomain.toLowerCase();
+    return TRUSTED_RESEARCH_DOMAINS.some((td) =>
+      td.startsWith('.') ? lower.includes(td) || lower.endsWith(td.slice(1)) : lower.includes(td),
+    );
+  };
+
+  const key = process.env.SEARCH_API_KEY || process.env.TAVILY_API_KEY;
+  const url = process.env.SEARCH_API_URL || (key ? 'https://api.tavily.com/search' : undefined);
   let primaryResults: SearchResult[] = [];
   let primaryFailed = false;
 
+  // 1. Try Tavily search as normal (existing SEARCH_API_KEY flow)
   if (key && url) {
     try {
+      const isTavily = url.includes('tavily.com') || Boolean(process.env.TAVILY_API_KEY);
+      const bodyPayload = isTavily
+        ? {
+            api_key: key,
+            query: input.query,
+            search_depth: 'basic',
+            max_results: 15,
+            topic: input.category === 'NEWS' ? 'news' : 'general',
+            include_answer: false,
+          }
+        : {
+            query: input.query,
+            page: input.page ?? 1,
+            category: input.category ?? 'ALL',
+            region: input.region,
+            language: input.language,
+            max_results: 20,
+          };
+
+      const headers: Record<string, string> = {
+        'Content-Type': 'application/json',
+      };
+      if (!isTavily) {
+        headers['Authorization'] = `Bearer ${key}`;
+        headers['X-API-Key'] = key;
+      }
+
       const response = await fetch(url, {
         method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          Authorization: `Bearer ${key}`,
-          'X-API-Key': key,
-        },
-        body: JSON.stringify({
-          query: input.query,
-          page: input.page ?? 1,
-          category: input.category ?? 'ALL',
-          region: input.region,
-          language: input.language,
-          max_results: 20,
-        }),
+        headers,
+        body: JSON.stringify(bodyPayload),
+        signal: AbortSignal.timeout(6000),
       });
+
       if (!response.ok) {
+        console.warn(`[Search] Tavily/Primary search returned HTTP ${response.status}`);
         primaryFailed = true;
       } else {
         const payload = (await response.json()) as {
@@ -1517,7 +1556,7 @@ async function searchProvider(input: z.infer<typeof searchSchema>): Promise<{ re
               title: String(item.title ?? ''),
               url: urlValue,
               domain: domainOf(urlValue),
-              description: String(item.description ?? item.snippet ?? ''),
+              description: String(item.content ?? item.description ?? item.snippet ?? ''),
               date: item.date ? String(item.date) : undefined,
               image: item.image ? String(item.image) : (item.thumbnail ? String(item.thumbnail) : undefined),
               thumbnail: item.thumbnail ? String(item.thumbnail) : undefined,
@@ -1526,38 +1565,65 @@ async function searchProvider(input: z.infer<typeof searchSchema>): Promise<{ re
           })
           .filter((item) => item.title && item.url);
       }
-    } catch {
+    } catch (err) {
+      console.warn('[Search] Primary search (Tavily/API) error or timeout:', err);
       primaryFailed = true;
     }
   } else {
     primaryFailed = true;
   }
 
-  if (!primaryFailed && primaryResults.length > 0) {
-    return { results: primaryResults, searchSource: 'Live News API' };
+  // 2. Check the Tavily results:
+  // - If Tavily returns an error, times out, or returns fewer than 3 usable results
+  // - OR if none of the result domains match the trusted domain list for the topic (for science/factual/academic queries)
+  const isScientificOrFactualTopic = /\b(nasa|space|mars|moon|galaxy|physics|science|biology|chemistry|einstein|theory|history|edu|research|paper|quantum|black hole|astronomy|telescope)\b/i.test(input.query);
+  const hasTrustedDomainMatch = primaryResults.some((r) => isTrustedResearchDomain(r.domain || r.url));
+  const lacksTrustedDomainsForTopic = isScientificOrFactualTopic && !hasTrustedDomainMatch && primaryResults.length > 0;
+  const needsFallback = primaryFailed || primaryResults.length < 3 || lacksTrustedDomainsForTopic;
+
+  if (!needsFallback && primaryResults.length >= 3) {
+    console.log(`[Search] Source Used: Tavily (${primaryResults.length} results) for query: "${input.query}"`);
+    return { results: primaryResults, searchSource: 'Tavily' };
   }
 
-  // Fallback 1: DuckDuckGo free search API / HTML fallback
+  // 3. Fall back to DuckDuckGo search (reusing existing fetchDuckDuckGoSearch in this codebase)
+  console.log(`[Search] Fallback to DuckDuckGo Search triggered (primaryFailed=${primaryFailed}, count=${primaryResults.length}, lacksTrustedDomains=${lacksTrustedDomainsForTopic}) for query: "${input.query}"`);
   const ddgResults = await fetchDuckDuckGoSearch(input.query);
+
+  // 4. Merge or replace results with DuckDuckGo output, then pass to the Researcher agent
   if (ddgResults.length > 0) {
-    return { results: ddgResults, searchSource: 'DuckDuckGo (fallback)' };
+    console.log(`[Search] Source Used: DuckDuckGo Fallback (${ddgResults.length} results) for query: "${input.query}"`);
+    let finalResults = ddgResults;
+    if (primaryResults.length > 0) {
+      const seenUrls = new Set(ddgResults.map((r) => r.url.toLowerCase()));
+      const extraPrimary = primaryResults.filter((r) => !seenUrls.has(r.url.toLowerCase()));
+      finalResults = [...ddgResults, ...extraPrimary];
+      return { results: finalResults, searchSource: 'DuckDuckGo Fallback (Merged)' };
+    }
+    return { results: finalResults, searchSource: 'DuckDuckGo Fallback' };
   }
 
-  // Fallback 2: Wikipedia search
+  if (primaryResults.length > 0) {
+    console.log(`[Search] Source Used: Tavily (Partial ${primaryResults.length} results) for query: "${input.query}"`);
+    return { results: primaryResults, searchSource: 'Tavily' };
+  }
+
+  // Fallback: Wikipedia search
   if (input.category === 'ALL' || !input.category) {
     const wikiResults = await fetchWikipediaSearch(input.query, 10);
     if (wikiResults.length > 0) {
-      return { results: wikiResults, searchSource: 'Wikipedia (fallback)' };
+      console.log(`[Search] Source Used: Wikipedia Fallback (${wikiResults.length} results) for query: "${input.query}"`);
+      return { results: wikiResults, searchSource: 'Wikipedia Fallback' };
     }
   }
 
   if (!key || !url) {
-    throw Object.assign(new Error('Search provider is not configured.'), { status: 503 });
+    return { results: [], searchSource: 'DuckDuckGo Fallback (No Results)' };
   }
   if (primaryFailed) {
-    throw Object.assign(new Error('Search provider is temporarily unavailable.'), { status: 502 });
+    return { results: [], searchSource: 'DuckDuckGo Fallback (No Results)' };
   }
-  return { results: [], searchSource: 'Live News API (No Results)' };
+  return { results: [], searchSource: 'No Results' };
 }
 
 async function geocode(city: string) {
