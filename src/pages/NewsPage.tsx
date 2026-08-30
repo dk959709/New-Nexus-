@@ -17,6 +17,7 @@ import {
 } from 'lucide-react';
 import { ErrorMessage, LoadingMessage } from '@/components';
 import { storage } from '@/lib/storage';
+import { copyToClipboard } from '@/lib/clipboard';
 import { api } from '@/services/api';
 import type { SearchResult } from '@/types';
 
@@ -147,10 +148,12 @@ export function NewsPage() {
     setSubmittedQuery('');
   };
 
-  const handleCopyLink = (url: string) => {
-    navigator.clipboard.writeText(url);
-    setCopiedUrl(url);
-    setTimeout(() => setCopiedUrl(null), 2000);
+  const handleCopyLink = async (url: string) => {
+    const success = await copyToClipboard(url);
+    if (success) {
+      setCopiedUrl(url);
+      setTimeout(() => setCopiedUrl(null), 2000);
+    }
   };
 
   const handleToggleBookmark = (item: SearchResult) => {

@@ -441,17 +441,48 @@ function formatAgentStep(step: JarvisExecutionStep): string {
 }
 
 export function formatFullPipelineExport(
-  userQuery: string,
-  steps: JarvisExecutionStep[],
-  finalMessage: JarvisMessage,
+  msgOrQuery: JarvisMessage | string,
+  maybeSteps?: JarvisExecutionStep[],
+  maybeFinalMessage?: JarvisMessage,
 ): string {
+  let userQuery = '';
+  let steps: JarvisExecutionStep[] = [];
+  let finalMessage: JarvisMessage | null = null;
+
+  if (typeof msgOrQuery === 'object' && msgOrQuery !== null) {
+    const msg = msgOrQuery as JarvisMessage;
+    userQuery = msg.query || '';
+    steps = Array.isArray(msg.steps) ? msg.steps : [];
+    finalMessage = msg;
+  } else {
+    userQuery = typeof msgOrQuery === 'string' ? msgOrQuery : '';
+    steps = Array.isArray(maybeSteps) ? maybeSteps : [];
+    finalMessage = maybeFinalMessage || null;
+  }
+
   const exportParts: string[] = [];
 
-  const timestamp = new Date().toISOString();
-  exportParts.push(`JARVIS AUTONOMOUS MULTI-AGENT INTELLIGENCE PIPELINE`);
-  exportParts.push(`Generated: ${timestamp}`);
-  exportParts.push(`Query: "${userQuery}"`);
-  exportParts.push(`================================================================================\n`);
+  const dateObj = finalMessage?.timestamp ? new Date(finalMessage.timestamp) : new Date();
+  const formattedDate = dateObj.toLocaleString('en-GB', {
+    day: '2-digit',
+    month: '2-digit',
+    year: 'numeric',
+    hour: '2-digit',
+    minute: '2-digit',
+    second: '2-digit',
+  });
+
+  const mode =
+    finalMessage && finalMessage.deepResearch === false
+      ? 'Standard Multi-Agent Research'
+      : 'Autonomous Multi-Agent Deep Research';
+
+  exportParts.push('========================================');
+  exportParts.push('JARVIS INTELLIGENCE REPORT');
+  exportParts.push(`Query: ${userQuery}`);
+  exportParts.push(`Mode: ${mode}`);
+  exportParts.push(`Timestamp: ${formattedDate}`);
+  exportParts.push('========================================\n');
 
   // Render individual completed agent steps
   const completedSteps = steps.filter(
@@ -474,11 +505,14 @@ export function formatFullPipelineExport(
 
   // Render final synthesis
   exportParts.push(`=== FINAL SYNTHESIS & UNIFIED COMPREHENSIVE INTELLIGENCE ===\n`);
-  const cleanFinalText = stripConversationalMetaText(finalMessage.content || '');
-  exportParts.push(cleanFinalText);
+  const finalAnswerText = finalMessage
+    ? (finalMessage.answer || (finalMessage as Record<string, unknown>).content as string || '')
+    : '';
+  const cleanFinalText = stripConversationalMetaText(finalAnswerText);
+  exportParts.push(cleanFinalText || 'Synthesis complete.');
 
   // If sources exist on final answer
-  if (finalMessage.sources && finalMessage.sources.length > 0) {
+  if (finalMessage?.sources && finalMessage.sources.length > 0) {
     exportParts.push(`\n\n=== VERIFIED CITATIONS & GROUNDING SOURCES ===`);
     finalMessage.sources.forEach((src, idx) => {
       exportParts.push(`[${idx + 1}] ${src.title} - ${src.url}`);

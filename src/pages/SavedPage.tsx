@@ -19,6 +19,7 @@ import {
 } from '@/components/jarvis';
 import { storage } from '@/lib/storage';
 import { playTapSound } from '@/lib/audio';
+import { copyToClipboard } from '@/lib/clipboard';
 
 function PageIntro({ eyebrow, title, description }: { eyebrow: string; title: string; description: string }) {
   return <div className="page-intro"><span className="eyebrow">{eyebrow}</span><h1>{title}</h1><p>{description}</p></div>;
@@ -34,11 +35,13 @@ export function SavedPage() {
     setItems(storage.removeSaved(id));
   };
 
-  const handleCopy = (text: string, id: string) => {
+  const handleCopy = async (text: string, id: string) => {
     playTapSound();
-    navigator.clipboard.writeText(text);
-    setCopiedId(id);
-    setTimeout(() => setCopiedId(null), 2000);
+    const success = await copyToClipboard(text);
+    if (success) {
+      setCopiedId(id);
+      setTimeout(() => setCopiedId(null), 2000);
+    }
   };
 
   const jarvisItems = items.filter((i) => i.type === 'jarvis');

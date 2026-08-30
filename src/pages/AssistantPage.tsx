@@ -3,6 +3,7 @@ import { Bot, Send, Sparkles, User, Trash2, Plus, Brain, BookOpen, Globe, Extern
 import { Link } from 'react-router-dom';
 import { api } from '@/services/api';
 import { storage } from '@/lib/storage';
+import { copyToClipboard } from '@/lib/clipboard';
 import { ErrorMessage } from '@/components';
 import type { AISource } from '@/types';
 
@@ -227,10 +228,12 @@ export function AssistantPage() {
     [edgeTtsPlayingIndex, stopSpeak],
   );
 
-  const handleCopyText = useCallback((text: string, index: number) => {
-    navigator.clipboard.writeText(text);
-    setCopiedIndex(index);
-    setTimeout(() => setCopiedIndex(null), 2000);
+  const handleCopyText = useCallback(async (text: string, index: number) => {
+    const success = await copyToClipboard(text);
+    if (success) {
+      setCopiedIndex(index);
+      setTimeout(() => setCopiedIndex(null), 2000);
+    }
   }, []);
 
   useEffect(() => {
