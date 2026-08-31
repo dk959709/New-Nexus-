@@ -1,8 +1,8 @@
 /**
  * Universal Fact & Insight Sanitizer and Formatter
  * Ensures every fact and news candidate is cleanly formatted as
- * "- [Title] (domain.com, [date]) — [confirmedBy sources if any]" or "- [fact text]. [Source #X]"
- * with no stray commas, no duplicate/malformed citations, and no raw object/array syntax leaking through.
+ * "- **[Title]** (domain.com, [date]) — Confirmed by: [sources] `[Source #X]`"
+ * with no stray commas, no duplicate/malformed citations, and no raw object/array/field syntax leaking through.
  */
 
 // Helper to extract clean alphanumeric source indexes (e.g., "6" from "[Source #6. [Source #6]")
@@ -133,8 +133,16 @@ export function cleanProseText(text: string): string {
 }
 
 /**
+ * Check if a string is just an isolated JSON key name artifact (e.g., "title", "domain", "eventDate")
+ */
+function isJsonKeyArtifact(str: string): boolean {
+  const normalized = str.trim().toLowerCase().replace(/^["'`]|["'`]$/g, '');
+  return /^(?:title|fact|claim|domain|url|eventdate|event_date|publishedat|published_at|updatedat|updated_at|confirmedby|confirmed_by|sourceindex|source_index|source|sources|location|category|description|headline)$/i.test(normalized);
+}
+
+/**
  * Format a news candidate item into a clean, separate bullet point:
- * "- [Title] (domain.com, [date]) — [confirmedBy sources if any]"
+ * "- **[Title]** (domain.com, [date]) — Confirmed by: [sources] `[Source #X]`"
  * Followed optionally by the core fact description if distinct from title.
  */
 export function formatCandidateBullet(
@@ -158,21 +166,27 @@ export function formatCandidateBullet(
     if (Array.isArray(obj.confirmedBy)) {
       confirmedList = (obj.confirmedBy as string[])
         .map((s) => String(s).trim().replace(/^https?:\/\//, '').replace(/^www\./, ''))
-        .filter(Boolean);
+        .filter((s) => Boolean(s) && !isJsonKeyArtifact(s));
     } else if (typeof obj.confirmedBy === 'string' && obj.confirmedBy.trim()) {
-      confirmedList = [obj.confirmedBy.trim().replace(/^https?:\/\//, '').replace(/^www\./, '')];
+      const c = obj.confirmedBy.trim().replace(/^https?:\/\//, '').replace(/^www\./, '');
+      if (!isJsonKeyArtifact(c)) {
+        confirmedList = [c];
+      }
     }
 
     const sourceIdx = typeof obj.sourceIndex === 'number' ? obj.sourceIndex : undefined;
 
     // Determine the primary headline
-    const headline = title || fact || 'News Event';
+    const headline = (title && !isJsonKeyArtifact(title) ? title : '') || (fact && !isJsonKeyArtifact(fact) ? fact : '') || 'Verified News Event';
     const cleanHeadline = cleanProseText(headline).replace(/[.]+$/, '');
+    if (!cleanHeadline || isJsonKeyArtifact(cleanHeadline) || cleanHeadline.length < 3) {
+      return '';
+    }
 
     // Parenthetical metadata: (domain.com, date)
     const metaParts: string[] = [];
-    if (domain) metaParts.push(domain);
-    if (dateStr) metaParts.push(dateStr);
+    if (domain && !isJsonKeyArtifact(domain)) metaParts.push(domain);
+    if (dateStr && !isJsonKeyArtifact(dateStr)) metaParts.push(dateStr);
     const parensStr = metaParts.length > 0 ? ` (${metaParts.join(', ')})` : '';
 
     // Confirmed by text
@@ -187,18 +201,30 @@ export function formatCandidateBullet(
     if (options.markdown) {
       let bullet = `- **${cleanHeadline}**${parensStr}${confirmedStr}${sourceTag}`;
       // If fact is substantially distinct from title, append as indented description
-      if (fact && title && fact.toLowerCase() !== title.toLowerCase() && !fact.toLowerCase().includes(title.toLowerCase().slice(0, 20))) {
+      if (
+        fact &&
+        title &&
+        !isJsonKeyArtifact(fact) &&
+        fact.toLowerCase() !== title.toLowerCase() &&
+        !fact.toLowerCase().includes(title.toLowerCase().slice(0, 20))
+      ) {
         const cleanFact = cleanProseText(fact);
-        if (cleanFact && cleanFact.length > 10) {
+        if (cleanFact && cleanFact.length > 10 && !isJsonKeyArtifact(cleanFact)) {
           bullet += `\n  - ${cleanFact}`;
         }
       }
       return bullet;
     } else {
       let bullet = `- ${cleanHeadline}${parensStr}${confirmedStr}${sourceTag}`;
-      if (fact && title && fact.toLowerCase() !== title.toLowerCase() && !fact.toLowerCase().includes(title.toLowerCase().slice(0, 20))) {
+      if (
+        fact &&
+        title &&
+        !isJsonKeyArtifact(fact) &&
+        fact.toLowerCase() !== title.toLowerCase() &&
+        !fact.toLowerCase().includes(title.toLowerCase().slice(0, 20))
+      ) {
         const cleanFact = cleanProseText(fact);
-        if (cleanFact && cleanFact.length > 10) {
+        if (cleanFact && cleanFact.length > 10 && !isJsonKeyArtifact(cleanFact)) {
           bullet += ` — ${cleanFact}`;
         }
       }
@@ -206,8 +232,13 @@ export function formatCandidateBullet(
     }
   }
 
-  // If item is string, check if it's a serialized JSON object
+  // If item is string, check if it's an isolated JSON key artifact
   const rawStr = String(item).trim();
+  if (isJsonKeyArtifact(rawStr) || rawStr.length < 3) {
+    return '';
+  }
+
+  // If item is string, check if it's a serialized JSON object
   if (rawStr.startsWith('{') && rawStr.endsWith('}')) {
     try {
       const parsed = JSON.parse(rawStr);
@@ -219,9 +250,31 @@ export function formatCandidateBullet(
     }
   }
 
+  // Check if string contains key-value patterns like "title: ..., domain: ..., eventDate: ..."
+  if (/(?:title|fact|claim|domain|eventDate|publishedAt)\s*[:=]/i.test(rawStr)) {
+    const titleMatch = rawStr.match(/(?:title|headline)\s*[:=]\s*["']?([^,"';\n]+)["']?/i);
+    const factMatch = rawStr.match(/(?:fact|claim|description)\s*[:=]\s*["']?([^,"';\n]+)["']?/i);
+    const domainMatch = rawStr.match(/domain\s*[:=]\s*["']?([^,"';\n]+)["']?/i);
+    const dateMatch = rawStr.match(/(?:eventDate|publishedAt|date)\s*[:=]\s*["']?([^,"';\n]+)["']?/i);
+    const sourceMatch = rawStr.match(/sourceIndex\s*[:=]\s*["']?(\d+)["']?/i);
+
+    if (titleMatch || factMatch) {
+      return formatCandidateBullet(
+        {
+          title: titleMatch ? titleMatch[1] : undefined,
+          fact: factMatch ? factMatch[1] : undefined,
+          domain: domainMatch ? domainMatch[1] : undefined,
+          eventDate: dateMatch ? dateMatch[1] : undefined,
+          sourceIndex: sourceMatch ? parseInt(sourceMatch[1], 10) : undefined,
+        },
+        options,
+      );
+    }
+  }
+
   // Fallback for general fact strings
   const cleaned = cleanAndFormatFact(rawStr, { markdownSource: Boolean(options.markdown) });
-  if (!cleaned) return '';
+  if (!cleaned || isJsonKeyArtifact(cleaned)) return '';
   return cleaned.startsWith('-') ? cleaned : `- ${cleaned}`;
 }
 
@@ -286,6 +339,8 @@ export function cleanAndFormatFact(
     }
   }
 
+  if (isJsonKeyArtifact(trimmed)) return '';
+
   // 3. Detect and collect all unique source index references (e.g., ["6"])
   const sourceIndices = extractSourceIndices(rawText, explicitSource);
 
@@ -295,8 +350,8 @@ export function cleanAndFormatFact(
   // 5. Clean prose text and punctuation
   factText = cleanProseText(factText);
 
-  // If too short after cleaning, discard
-  if (!factText || factText.length < 3) return '';
+  // If too short or just a key name artifact after cleaning, discard
+  if (!factText || factText.length < 3 || isJsonKeyArtifact(factText)) return '';
 
   // 6. Ensure sentence ends cleanly with standard end punctuation (. ! ?)
   factText = factText.replace(/[\s,;:\-–—]+$/, '');
@@ -351,6 +406,8 @@ export function cleanAndFormatInsight(item: unknown): string {
   }
 
   const trimmed = rawText.trim();
+  if (isJsonKeyArtifact(trimmed)) return '';
+
   if (trimmed.startsWith('{') && trimmed.endsWith('}')) {
     try {
       const parsed = JSON.parse(trimmed);
@@ -366,7 +423,7 @@ export function cleanAndFormatInsight(item: unknown): string {
   let text = stripSourceCitationsAndFragments(rawText);
   text = cleanProseText(text);
 
-  if (!text || text.length < 3) return '';
+  if (!text || text.length < 3 || isJsonKeyArtifact(text)) return '';
 
   text = text.replace(/[\s,;:\-–—]+$/, '');
   if (!/[.!?]$/.test(text)) {
@@ -378,3 +435,175 @@ export function cleanAndFormatInsight(item: unknown): string {
     .replace(/\s+/g, ' ')
     .trim();
 }
+
+/**
+ * Specialized Researcher Formatter that GUARANTEES clean separated markdown bullet points
+ * for live Researcher display and saved items.
+ */
+export function formatResearcherOutput(
+  step: { outputPreview?: string; rawOutput?: string; summary?: string },
+  parsedObj?: unknown,
+  rawStr?: string,
+): string {
+  const raw = rawStr || step.rawOutput || step.outputPreview || step.summary || '';
+  let candidates: unknown[] = [];
+  let facts: unknown[] = [];
+  let keyInsights: unknown[] = [];
+  let context = '';
+
+  // Helper to extract candidate objects and facts from any object
+  const inspectObject = (obj: Record<string, unknown>) => {
+    // 1. Check candidates array
+    const candKeys = ['candidates', 'news_candidates', 'newsCandidates', 'items', 'articles', 'stories'];
+    for (const key of candKeys) {
+      if (Array.isArray(obj[key]) && (obj[key] as unknown[]).length > 0) {
+        candidates = obj[key] as unknown[];
+        break;
+      }
+    }
+
+    // 2. Check facts array
+    const factKeys = ['facts', 'findings', 'core_facts', 'coreFacts', 'key_facts', 'keyFacts', 'points', 'claims'];
+    for (const key of factKeys) {
+      if (Array.isArray(obj[key]) && (obj[key] as unknown[]).length > 0) {
+        facts = obj[key] as unknown[];
+        break;
+      }
+    }
+
+    // 3. Check insights
+    const insightKeys = ['keyInsights', 'insights', 'takeaways'];
+    for (const key of insightKeys) {
+      if (Array.isArray(obj[key]) && (obj[key] as unknown[]).length > 0) {
+        keyInsights = obj[key] as unknown[];
+        break;
+      }
+    }
+
+    // 4. Check context
+    if (typeof obj.context === 'string') context = obj.context;
+    else if (typeof obj.summary === 'string' && !context) context = obj.summary;
+  };
+
+  // Step 1: Check parsedObj
+  if (parsedObj && typeof parsedObj === 'object' && !Array.isArray(parsedObj)) {
+    inspectObject(parsedObj as Record<string, unknown>);
+  }
+
+  // Step 2: Try parsing step.outputPreview if candidates/facts are still empty
+  if (candidates.length === 0 && facts.length === 0 && step.outputPreview) {
+    try {
+      const previewJson = JSON.parse(step.outputPreview);
+      if (previewJson && typeof previewJson === 'object' && !Array.isArray(previewJson)) {
+        inspectObject(previewJson as Record<string, unknown>);
+      }
+    } catch {
+      // continue
+    }
+  }
+
+  // Step 3: Try parsing raw string
+  if (candidates.length === 0 && facts.length === 0 && raw) {
+    try {
+      const rawJson = JSON.parse(raw);
+      if (rawJson && typeof rawJson === 'object') {
+        if (Array.isArray(rawJson)) {
+          candidates = rawJson;
+        } else {
+          inspectObject(rawJson as Record<string, unknown>);
+        }
+      }
+    } catch {
+      // Extract individual { ... } blocks from inside array
+      const objectBlockMatches = raw.match(/\{[^{}]*(?:"title"|"fact"|"domain")[^{}]*\}/g);
+      if (objectBlockMatches && objectBlockMatches.length > 0) {
+        const extracted: unknown[] = [];
+        for (const block of objectBlockMatches) {
+          try {
+            const parsedBlock = JSON.parse(block);
+            if (parsedBlock && typeof parsedBlock === 'object') {
+              extracted.push(parsedBlock);
+            }
+          } catch {
+            // Regex extraction for individual fields inside the block
+            const titleM = block.match(/"title"\s*:\s*"((?:\\.|[^"\\])*)"/i);
+            const factM = block.match(/"fact"\s*:\s*"((?:\\.|[^"\\])*)"/i);
+            const domainM = block.match(/"domain"\s*:\s*"((?:\\.|[^"\\])*)"/i);
+            const dateM = block.match(/(?:"eventDate"|"publishedAt")\s*:\s*"((?:\\.|[^"\\])*)"/i);
+            if (titleM || factM) {
+              extracted.push({
+                title: titleM ? titleM[1].replace(/\\"/g, '"') : undefined,
+                fact: factM ? factM[1].replace(/\\"/g, '"') : undefined,
+                domain: domainM ? domainM[1].replace(/\\"/g, '"') : undefined,
+                eventDate: dateM ? dateM[1].replace(/\\"/g, '"') : undefined,
+              });
+            }
+          }
+        }
+        if (extracted.length > 0) {
+          candidates = extracted;
+        }
+      }
+    }
+  }
+
+  // Step 4: Fallback to line-by-line bullet extraction if still empty
+  if (candidates.length === 0 && facts.length === 0 && raw) {
+    const lines = raw.split(/\r?\n/).map((l) => l.trim()).filter(Boolean);
+    const parsedLines: string[] = [];
+    for (const l of lines) {
+      if (l.startsWith('{') || l.startsWith('}') || l.startsWith('[') || l.startsWith(']') || l.startsWith('```')) {
+        continue;
+      }
+      const bulletMatch = l.match(/^(?:(?:\d+[.)]|[*•–—-]|\s*-)\s+|fact\s*\d*\s*[:-]\s*)(.*)$/i);
+      const text = bulletMatch ? bulletMatch[1].trim() : l;
+      if (text.length > 10 && !isJsonKeyArtifact(text)) {
+        parsedLines.push(text);
+      }
+    }
+    if (parsedLines.length > 0) {
+      facts = parsedLines;
+    }
+  }
+
+  let md = `### 🔎 Core Fact Intelligence & Verified Findings\n`;
+
+  const itemsToRender = candidates.length > 0 ? candidates : facts;
+  const renderedBullets: string[] = [];
+
+  if (itemsToRender.length > 0) {
+    itemsToRender.forEach((item) => {
+      const bullet = formatCandidateBullet(item, { markdown: true });
+      if (bullet && !renderedBullets.includes(bullet)) {
+        renderedBullets.push(bullet);
+      }
+    });
+  }
+
+  if (renderedBullets.length > 0) {
+    md += renderedBullets.join('\n') + '\n';
+  } else {
+    md += `- Empirical research gathering completed successfully.\n`;
+  }
+
+  if (keyInsights.length > 0) {
+    md += `\n### 💡 Key Empirical Insights\n`;
+    const renderedInsights: string[] = [];
+    keyInsights.forEach((insight) => {
+      const formatted = cleanAndFormatInsight(insight);
+      if (formatted && !renderedInsights.includes(formatted)) {
+        renderedInsights.push(`- ${formatted}`);
+      }
+    });
+    if (renderedInsights.length > 0) {
+      md += renderedInsights.join('\n') + '\n';
+    }
+  }
+
+  if (context && context.trim().length > 15) {
+    md += `\n### 📖 Deep Contextual Background\n${cleanProseText(context)}\n`;
+  }
+
+  return md;
+}
+

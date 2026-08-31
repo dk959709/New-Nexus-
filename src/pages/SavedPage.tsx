@@ -403,22 +403,61 @@ export function SavedPage() {
                   )}
 
                   {/* Embedded Data Analyst Quantitative Chart if present */}
-                  {item.chartData && (
-                    <JarvisChartCard
-                      id={`chart-${item.id}`}
-                      chartData={item.chartData}
-                      title={item.title}
-                    />
-                  )}
+                  {(() => {
+                    const effectiveChartData = item.chartData || (() => {
+                      if (!item.steps) return null;
+                      const daStep = item.steps.find((s) => s.agentId === 'dataAnalyst' && (s.status === 'completed' || s.outputPreview || s.rawOutput));
+                      const raw = daStep?.outputPreview || daStep?.rawOutput;
+                      if (raw) {
+                        try {
+                          const parsed = typeof raw === 'string' ? JSON.parse(raw) : raw;
+                          if (parsed && Array.isArray(parsed.labels) && Array.isArray(parsed.series)) {
+                            return parsed;
+                          }
+                        } catch (err) {
+                          void err;
+                        }
+                      }
+                      return null;
+                    })();
+
+                    if (!effectiveChartData) return null;
+
+                    return (
+                      <JarvisChartCard
+                        id={`chart-${item.id}`}
+                        chartData={effectiveChartData}
+                        title={item.title}
+                      />
+                    );
+                  })()}
 
                   {/* Embedded SVG Architectural Blueprint if present */}
-                  {item.diagramSvg && (
-                    <JarvisSvgDiagram
-                      id={`diagram-${item.id}`}
-                      svgMarkup={item.diagramSvg}
-                      title={item.title}
-                    />
-                  )}
+                  {(() => {
+                    const effectiveDiagramSvg = item.diagramSvg || (() => {
+                      if (!item.steps) return undefined;
+                      const archStep = item.steps.find((s) => s.agentId === 'architect' && (s.status === 'completed' || s.outputPreview || s.rawOutput));
+                      const raw = archStep?.outputPreview || archStep?.rawOutput;
+                      if (raw && typeof raw === 'string' && raw.includes('<svg')) {
+                        const start = raw.indexOf('<svg');
+                        const end = raw.lastIndexOf('</svg>');
+                        if (start !== -1 && end !== -1 && end > start) {
+                          return raw.substring(start, end + 6);
+                        }
+                      }
+                      return undefined;
+                    })();
+
+                    if (!effectiveDiagramSvg) return null;
+
+                    return (
+                      <JarvisSvgDiagram
+                        id={`diagram-${item.id}`}
+                        svgMarkup={effectiveDiagramSvg}
+                        title={item.title}
+                      />
+                    );
+                  })()}
 
                   {/* Grounded Sources */}
                   {item.sources && item.sources.length > 0 && (

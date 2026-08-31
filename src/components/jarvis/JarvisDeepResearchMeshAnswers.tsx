@@ -18,7 +18,7 @@ import {
 import { JarvisExecutionStep } from '../../types';
 import { FormattedText } from './FormattedText';
 import { copyToClipboard } from '@/lib/clipboard';
-import { cleanAndFormatFact, cleanAndFormatInsight, formatCandidateBullet } from '../../lib/factFormatter';
+import { cleanAndFormatFact, formatResearcherOutput } from '../../lib/factFormatter';
 
 interface JarvisDeepResearchMeshAnswersProps {
   steps: JarvisExecutionStep[];
@@ -475,52 +475,7 @@ function formatAgentContentToMarkdown(step: JarvisExecutionStep): {
 
   // 3. RESEARCHER AGENT
   if (step.agentId === 'researcher') {
-    let facts: unknown[] = [];
-    let candidates: unknown[] = [];
-    let context = '';
-    let keyInsights: unknown[] = [];
-
-    if (parsed && typeof parsed === 'object' && !Array.isArray(parsed)) {
-      const rObj = parsed as Record<string, unknown>;
-      candidates = Array.isArray(rObj.candidates) ? (rObj.candidates as unknown[]) : [];
-      facts = Array.isArray(rObj.facts) ? (rObj.facts as unknown[]) : Array.isArray(rObj.findings) ? (rObj.findings as unknown[]) : [];
-      context = typeof rObj.context === 'string' ? rObj.context : typeof rObj.summary === 'string' ? rObj.summary : '';
-      keyInsights = Array.isArray(rObj.keyInsights) ? (rObj.keyInsights as unknown[]) : Array.isArray(rObj.insights) ? (rObj.insights as unknown[]) : [];
-    } else {
-      candidates = extractArrayFromDirtyJson(raw, ['candidates', 'news_candidates', 'stories']);
-      facts = extractArrayFromDirtyJson(raw, ['facts', 'findings', 'points']);
-      keyInsights = extractArrayFromDirtyJson(raw, ['keyInsights', 'insights']);
-      context = extractStringFromDirtyJson(raw, ['context', 'summary']);
-    }
-
-    let md = `### 🔎 Core Fact Intelligence & Verified Findings\n`;
-
-    const itemsToRender = candidates.length > 0 ? candidates : facts;
-    if (itemsToRender.length > 0) {
-      itemsToRender.forEach((item) => {
-        const bullet = formatCandidateBullet(item, { markdown: true });
-        if (bullet) {
-          md += `${bullet}\n`;
-        }
-      });
-    } else {
-      md += `- Empirical research gathering completed successfully.\n`;
-    }
-
-    if (keyInsights.length > 0) {
-      md += `\n### 💡 Key Empirical Insights\n`;
-      keyInsights.forEach((insight) => {
-        const formatted = cleanAndFormatInsight(insight);
-        if (formatted) {
-          md += `- ${formatted}\n`;
-        }
-      });
-    }
-
-    if (context) {
-      md += `\n### 📖 Deep Contextual Background\n${context}\n`;
-    }
-
+    const md = formatResearcherOutput(step, parsed, raw);
     return { formatted: md, isStructuredJson: true, raw };
   }
 

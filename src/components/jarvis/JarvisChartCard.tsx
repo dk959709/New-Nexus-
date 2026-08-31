@@ -36,14 +36,26 @@ const SERIES_COLORS = [
 ];
 
 export function JarvisChartCard({ id, chartData, title, onSaveChange }: JarvisChartCardProps) {
+  // Normalize chartData from object or string
+  let parsedChartData: JarvisChartData | null = null;
+  if (typeof chartData === 'string') {
+    try {
+      parsedChartData = JSON.parse(chartData);
+    } catch {
+      parsedChartData = null;
+    }
+  } else if (chartData && typeof chartData === 'object') {
+    parsedChartData = chartData;
+  }
+
   const [chartType, setChartType] = useState<'bar' | 'line'>(() => {
-    return chartData.chartType === 'line' ? 'line' : 'bar';
+    return parsedChartData?.chartType === 'line' ? 'line' : 'bar';
   });
   const [copied, setCopied] = useState(false);
   const [saved, setSaved] = useState(false);
   const [recentlySaved, setRecentlySaved] = useState(false);
 
-  const chartTitle = chartData.title || title || 'Comparative Data Analysis';
+  const chartTitle = parsedChartData?.title || title || 'Comparative Data Analysis';
   const chartId = id || `chart-${chartTitle.toLowerCase().replace(/[^a-z0-9]+/g, '-').slice(0, 40)}`;
 
   useEffect(() => {
@@ -51,6 +63,7 @@ export function JarvisChartCard({ id, chartData, title, onSaveChange }: JarvisCh
   }, [chartId]);
 
   const handleToggleSave = () => {
+    if (!parsedChartData) return;
     playTapSound();
     const isNowSaved = !saved;
     if (isNowSaved) {
@@ -58,8 +71,8 @@ export function JarvisChartCard({ id, chartData, title, onSaveChange }: JarvisCh
         id: chartId,
         type: 'chart',
         title: chartTitle,
-        subtitle: `JARVIS Data Analyst Chart (${chartData.series?.length || 0} series, ${chartData.labels?.length || 0} points)`,
-        chartData,
+        subtitle: `JARVIS Data Analyst Chart (${parsedChartData.series?.length || 0} series, ${parsedChartData.labels?.length || 0} points)`,
+        chartData: parsedChartData,
         savedAt: new Date().toISOString(),
       });
       setSaved(true);
@@ -74,17 +87,17 @@ export function JarvisChartCard({ id, chartData, title, onSaveChange }: JarvisCh
   };
 
   if (
-    !chartData ||
-    !Array.isArray(chartData.labels) ||
-    chartData.labels.length === 0 ||
-    !Array.isArray(chartData.series) ||
-    chartData.series.length === 0
+    !parsedChartData ||
+    !Array.isArray(parsedChartData.labels) ||
+    parsedChartData.labels.length === 0 ||
+    !Array.isArray(parsedChartData.series) ||
+    parsedChartData.series.length === 0
   ) {
     return null;
   }
 
   // Filter valid series items
-  const validSeries = (chartData.series || []).filter(
+  const validSeries = (parsedChartData.series || []).filter(
     (s): s is { name: string; values: number[] } =>
       Boolean(s && typeof s === 'object' && typeof s.name === 'string' && Array.isArray(s.values)),
   );
@@ -94,25 +107,27 @@ export function JarvisChartCard({ id, chartData, title, onSaveChange }: JarvisCh
   }
 
   // Transform labels and series into Recharts row-based data structure
-  const formattedData = chartData.labels.map((label, idx) => {
+  const formattedData = parsedChartData.labels.map((label, idx) => {
     const row: Record<string, string | number> = { label: String(label ?? '') };
     validSeries.forEach((s) => {
       const val = s.values && s.values[idx] !== undefined ? s.values[idx] : 0;
-      row[s.name] = typeof val === 'number' && !isNaN(val) ? val : 0;
+      const num = typeof val === 'number' ? val : parseFloat(String(val).replace(/[^0-9.-]/g, ''));
+      row[s.name] = !isNaN(num) ? num : 0;
     });
     return row;
   });
 
   const handleCopyJson = async () => {
+    if (!parsedChartData) return;
     playTapSound();
-    const success = await copyToClipboard(JSON.stringify(chartData, null, 2));
+    const success = await copyToClipboard(JSON.stringify(parsedChartData, null, 2));
     if (success) {
       setCopied(true);
       setTimeout(() => setCopied(false), 2000);
     }
   };
 
-  const labelsCount = chartData.labels?.length || 0;
+  const labelsCount = parsedChartData.labels?.length || 0;
 
   return (
     <div

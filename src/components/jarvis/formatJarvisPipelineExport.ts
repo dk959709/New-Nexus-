@@ -181,35 +181,84 @@ function formatAgentStep(step: JarvisExecutionStep): string {
 
   // 2. Researcher Agent
   if (step.agentId === 'researcher') {
-    let facts: unknown[] = [];
     let candidates: unknown[] = [];
-    let context = '';
+    let facts: unknown[] = [];
     let keyInsights: unknown[] = [];
+    let context = '';
+
+    const inspectObject = (obj: Record<string, unknown>) => {
+      const candKeys = ['candidates', 'news_candidates', 'newsCandidates', 'items', 'articles', 'stories'];
+      for (const key of candKeys) {
+        if (Array.isArray(obj[key]) && (obj[key] as unknown[]).length > 0) {
+          candidates = obj[key] as unknown[];
+          break;
+        }
+      }
+      const factKeys = ['facts', 'findings', 'core_facts', 'coreFacts', 'key_facts', 'keyFacts', 'points', 'claims'];
+      for (const key of factKeys) {
+        if (Array.isArray(obj[key]) && (obj[key] as unknown[]).length > 0) {
+          facts = obj[key] as unknown[];
+          break;
+        }
+      }
+      const insightKeys = ['keyInsights', 'insights', 'takeaways'];
+      for (const key of insightKeys) {
+        if (Array.isArray(obj[key]) && (obj[key] as unknown[]).length > 0) {
+          keyInsights = obj[key] as unknown[];
+          break;
+        }
+      }
+      if (typeof obj.context === 'string') context = obj.context;
+      else if (typeof obj.summary === 'string' && !context) context = obj.summary;
+    };
 
     if (parsed && typeof parsed === 'object' && !Array.isArray(parsed)) {
-      const rObj = parsed as Record<string, unknown>;
-      candidates = Array.isArray(rObj.candidates) ? (rObj.candidates as unknown[]) : [];
-      facts = Array.isArray(rObj.facts) ? (rObj.facts as unknown[]) : Array.isArray(rObj.findings) ? (rObj.findings as unknown[]) : [];
-      context = typeof rObj.context === 'string' ? rObj.context : typeof rObj.summary === 'string' ? rObj.summary : '';
-      keyInsights = Array.isArray(rObj.keyInsights) ? (rObj.keyInsights as unknown[]) : Array.isArray(rObj.insights) ? (rObj.insights as unknown[]) : [];
-    } else {
-      candidates = extractArrayFromDirtyJson(raw, ['candidates', 'news_candidates', 'stories']);
-      facts = extractArrayFromDirtyJson(raw, ['facts', 'findings', 'points']);
-      keyInsights = extractArrayFromDirtyJson(raw, ['keyInsights', 'insights']);
-      context = extractStringFromDirtyJson(raw, ['context', 'summary']);
+      inspectObject(parsed as Record<string, unknown>);
+    }
+
+    if (candidates.length === 0 && facts.length === 0 && step.outputPreview) {
+      try {
+        const previewJson = JSON.parse(step.outputPreview);
+        if (previewJson && typeof previewJson === 'object' && !Array.isArray(previewJson)) {
+          inspectObject(previewJson as Record<string, unknown>);
+        }
+      } catch (err) {
+        void err;
+      }
+    }
+
+    if (candidates.length === 0 && facts.length === 0 && raw) {
+      try {
+        const rawJson = JSON.parse(raw);
+        if (rawJson && typeof rawJson === 'object') {
+          if (Array.isArray(rawJson)) candidates = rawJson;
+          else inspectObject(rawJson as Record<string, unknown>);
+        }
+      } catch (err) {
+        void err;
+      }
     }
 
     const lines: string[] = [`=== ${agentTitle} ===`];
-
     const itemsToRender = candidates.length > 0 ? candidates : facts;
+    const renderedBullets: string[] = [];
+
     if (itemsToRender.length > 0) {
-      lines.push(`Core Facts & Intelligence:`);
       itemsToRender.forEach((item) => {
         const formatted = formatCandidateBullet(item, { markdown: false });
-        if (formatted) {
-          lines.push(formatted);
+        if (formatted && !renderedBullets.includes(formatted)) {
+          renderedBullets.push(formatted);
         }
       });
+    }
+
+    if (renderedBullets.length > 0) {
+      lines.push(`Core Facts & Intelligence:`);
+      renderedBullets.forEach((b) => lines.push(b));
+      lines.push(``);
+    } else {
+      lines.push(`Core Facts & Intelligence:`);
+      lines.push(`- Empirical research gathering completed successfully.`);
       lines.push(``);
     }
 

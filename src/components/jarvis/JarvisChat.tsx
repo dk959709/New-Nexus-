@@ -589,6 +589,38 @@ export function JarvisChat({ config, onOpenSettings }: JarvisChatProps) {
 
   const handleSave = (msg: JarvisMessage) => {
     const savedId = `jarvis-${msg.id}`;
+
+    // Resolve chartData if not directly on msg, check steps
+    let resolvedChartData = msg.chartData;
+    if (!resolvedChartData && msg.steps) {
+      const daStep = msg.steps.find((s) => s.agentId === 'dataAnalyst' && (s.status === 'completed' || s.outputPreview || s.rawOutput));
+      const raw = daStep?.outputPreview || daStep?.rawOutput;
+      if (raw) {
+        try {
+          const parsed = typeof raw === 'string' ? JSON.parse(raw) : raw;
+          if (parsed && Array.isArray(parsed.series) && Array.isArray(parsed.labels)) {
+            resolvedChartData = parsed;
+          }
+        } catch (err) {
+          void err;
+        }
+      }
+    }
+
+    // Resolve diagramSvg if not directly on msg, check steps
+    let resolvedDiagramSvg = msg.diagramSvg;
+    if (!resolvedDiagramSvg && msg.steps) {
+      const archStep = msg.steps.find((s) => s.agentId === 'architect' && (s.status === 'completed' || s.outputPreview || s.rawOutput));
+      const raw = archStep?.outputPreview || archStep?.rawOutput;
+      if (raw && typeof raw === 'string' && raw.includes('<svg')) {
+        const start = raw.indexOf('<svg');
+        const end = raw.lastIndexOf('</svg>');
+        if (start !== -1 && end !== -1 && end > start) {
+          resolvedDiagramSvg = raw.substring(start, end + 6);
+        }
+      }
+    }
+
     const jarvisSavedItem: SavedItem = {
       id: savedId,
       type: 'jarvis',
@@ -601,8 +633,8 @@ export function JarvisChat({ config, onOpenSettings }: JarvisChatProps) {
         domain: s.domain,
       })),
       savedAt: new Date(msg.timestamp || Date.now()).toISOString(),
-      diagramSvg: msg.diagramSvg,
-      chartData: msg.chartData,
+      diagramSvg: resolvedDiagramSvg,
+      chartData: resolvedChartData,
       steps: msg.steps,
       deepResearch: msg.deepResearch,
       images: msg.images,
