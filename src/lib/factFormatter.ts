@@ -153,8 +153,8 @@ export function formatCandidateBullet(
 
   if (typeof item === 'object' && item !== null) {
     const obj = item as Record<string, unknown>;
-    const title = String(obj.title || obj.headline || '').trim();
-    const fact = String(obj.fact || obj.claim || obj.statement || obj.description || '').trim();
+    const rawTitle = String(obj.title || obj.headline || '').trim();
+    const rawFact = String(obj.fact || obj.claim || obj.statement || obj.description || '').trim();
     const domain = String(obj.domain || '').trim().replace(/^https?:\/\//, '').replace(/^www\./, '');
     const eventDate = String(obj.eventDate || '').trim();
     const publishedAt = String(obj.publishedAt || '').trim();
@@ -176,11 +176,25 @@ export function formatCandidateBullet(
 
     const sourceIdx = typeof obj.sourceIndex === 'number' ? obj.sourceIndex : undefined;
 
-    // Determine the primary headline
-    const headline = (title && !isJsonKeyArtifact(title) ? title : '') || (fact && !isJsonKeyArtifact(fact) ? fact : '') || 'Verified News Event';
-    const cleanHeadline = cleanProseText(headline).replace(/[.]+$/, '');
-    if (!cleanHeadline || isJsonKeyArtifact(cleanHeadline) || cleanHeadline.length < 3) {
+    const cleanTitle = cleanProseText(rawTitle).replace(/[.]+$/, '');
+    const cleanFact = cleanProseText(rawFact);
+
+    // If both title and fact are missing or invalid, return empty
+    if ((!cleanTitle || isJsonKeyArtifact(cleanTitle)) && (!cleanFact || isJsonKeyArtifact(cleanFact))) {
       return '';
+    }
+
+    // Determine headline and body text
+    let headline = '';
+    let body = '';
+
+    if (cleanTitle && !isJsonKeyArtifact(cleanTitle)) {
+      headline = cleanTitle;
+      if (cleanFact && !isJsonKeyArtifact(cleanFact) && cleanFact.toLowerCase() !== cleanTitle.toLowerCase()) {
+        body = cleanFact;
+      }
+    } else if (cleanFact && !isJsonKeyArtifact(cleanFact)) {
+      headline = cleanFact;
     }
 
     // Parenthetical metadata: (domain.com, date)
@@ -199,36 +213,21 @@ export function formatCandidateBullet(
     }
 
     if (options.markdown) {
-      let bullet = `- **${cleanHeadline}**${parensStr}${confirmedStr}${sourceTag}`;
-      // If fact is substantially distinct from title, append as indented description
-      if (
-        fact &&
-        title &&
-        !isJsonKeyArtifact(fact) &&
-        fact.toLowerCase() !== title.toLowerCase() &&
-        !fact.toLowerCase().includes(title.toLowerCase().slice(0, 20))
-      ) {
-        const cleanFact = cleanProseText(fact);
-        if (cleanFact && cleanFact.length > 10 && !isJsonKeyArtifact(cleanFact)) {
-          bullet += `\n  - ${cleanFact}`;
-        }
+      if (headline && body) {
+        return `- **${headline}**: ${body}${parensStr}${confirmedStr}${sourceTag}`;
+      } else if (headline) {
+        return `- **${headline}**${parensStr}${confirmedStr}${sourceTag}`;
+      } else if (body) {
+        return `- ${body}${parensStr}${confirmedStr}${sourceTag}`;
       }
-      return bullet;
     } else {
-      let bullet = `- ${cleanHeadline}${parensStr}${confirmedStr}${sourceTag}`;
-      if (
-        fact &&
-        title &&
-        !isJsonKeyArtifact(fact) &&
-        fact.toLowerCase() !== title.toLowerCase() &&
-        !fact.toLowerCase().includes(title.toLowerCase().slice(0, 20))
-      ) {
-        const cleanFact = cleanProseText(fact);
-        if (cleanFact && cleanFact.length > 10 && !isJsonKeyArtifact(cleanFact)) {
-          bullet += ` — ${cleanFact}`;
-        }
+      if (headline && body) {
+        return `- ${headline}: ${body}${parensStr}${confirmedStr}${sourceTag}`;
+      } else if (headline) {
+        return `- ${headline}${parensStr}${confirmedStr}${sourceTag}`;
+      } else if (body) {
+        return `- ${body}${parensStr}${confirmedStr}${sourceTag}`;
       }
-      return bullet;
     }
   }
 

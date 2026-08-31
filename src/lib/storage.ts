@@ -56,7 +56,8 @@ Live Context / Search Data:
 Instructions:
 1. Before searching or extracting, identify 3-5 focused search keywords based on the user's query.
 2. CANDIDATE VOLUME FOR NEWS / TOP-N QUERIES:
-   - For news queries or "top N" requests (e.g. "5 world news today", "top tech breakthroughs", "4 headlines"), extract 8-12 credible current candidates from the search data. This ensures a rich candidate pool for downstream deduplication, fact-checking, and selection.
+   - For news queries or "top N" requests (e.g. "5 world news today", "top tech breakthroughs", "4 headlines"), extract 8-12 distinct, credible candidates from the provided search snippets. Each distinct event or news item must be its own candidate entry in the "candidates" array.
+   - NEVER return only 1 single candidate if multiple news stories are provided in the search snippets.
 3. PRESERVE EXACT ARTICLE URLS:
    - Always preserve the exact full article URL from the source data (e.g. "https://apnews.com/article/world-news-slug-12345").
    - NEVER replace, truncate, or shorten an article URL with just a root domain or homepage (e.g. "apnews.com" alone is strictly forbidden).
@@ -73,8 +74,8 @@ Instructions:
    - "category": Topic category (e.g. "world", "politics", "technology", "science", "business", "health", "sports"), or null
    - "confirmedBy": Array of additional source domains confirming the same event (e.g. ["apnews.com", "bbc.com"])
 5. DEDUPLICATION & MULTI-OUTLET MERGING:
-   - If multiple search sources cover the same underlying event or story, MERGE them into ONE story.
-   - Keep the most authoritative/complete source for "sourceIndex" and list other confirming outlets in "confirmedBy". Do not output separate candidate items for the same event.
+   - ONLY merge items if they cover the EXACT SAME underlying event.
+   - Keep the most authoritative/complete source for "sourceIndex" and list other confirming outlets in "confirmedBy". Never merge distinct stories from different locations or topics.
 6. Only include candidates backed by actual search data. If search data lacks recent news, note it clearly.
 
 Output ONLY a valid JSON object in this exact format, no extra text:
@@ -317,7 +318,7 @@ export const DEFAULT_JARVIS_CONFIG: JarvisSystemConfig = {
       providerId: 'existing',
       modelId: 'deepseek/deepseek-chat',
       enabled: true,
-      maxTokens: 1200,
+      maxTokens: 2500,
       enableFailover: false,
       systemPrompt: DEFAULT_AGENT_SYSTEM_PROMPTS.researcher,
     },
@@ -590,7 +591,7 @@ export const storage = {
         researcher: {
           ...DEFAULT_JARVIS_CONFIG.agents.researcher,
           ...(stored.agents.researcher || {}),
-          maxTokens: Math.max(1000, stored.agents.researcher?.maxTokens || 1200),
+          maxTokens: Math.max(2000, stored.agents.researcher?.maxTokens || 2500),
           systemPrompt:
             !stored.agents.researcher?.systemPrompt ||
             !stored.agents.researcher.systemPrompt.includes('sourceIndex') ||

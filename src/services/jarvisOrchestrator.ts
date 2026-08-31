@@ -986,31 +986,66 @@ export function deduplicateNewsCandidates(
 
   const merged: ResearcherCandidate[] = [];
 
-  for (const cand of candidates) {
-    if (!cand || !cand.fact) continue;
+  const GENERIC_NEWS_STOPWORDS = new Set([
+    'the', 'a', 'an', 'is', 'are', 'was', 'were', 'be', 'been', 'being',
+    'in', 'on', 'at', 'to', 'for', 'of', 'with', 'by', 'from', 'about',
+    'and', 'or', 'not', 'but', 'so', 'yet', 'as', 'if', 'then', 'this',
+    'that', 'it', 'its', 'they', 'them', 'their', 'what', 'which', 'who',
+    'news', 'world', 'today', 'breaking', 'latest', 'report', 'reports',
+    'reported', 'reporting', 'update', 'updates', 'updated', 'live',
+    'announces', 'announced', 'announcement', 'statement', 'says', 'said',
+    'according', 'sources', 'source', 'official', 'officials', 'government',
+    'minister', 'president', 'country', 'state', 'states', 'international',
+    'reuters', 'apnews', 'bbc', 'cnn', 'bloomberg', 'times', 'post', 'daily',
+    'august', 'september', 'october', 'november', 'december', 'january',
+    'february', 'march', 'april', 'may', 'june', 'july', 'monday', 'tuesday',
+    'wednesday', 'thursday', 'friday', 'saturday', 'sunday', 'year', 'month',
+    'week', 'day', 'time', 'first', 'new', 'after', 'over', 'more',
+  ]);
 
-    const normText = `${cand.title || ''} ${cand.fact}`
+  for (const cand of candidates) {
+    if (!cand || (!cand.fact && !cand.title)) continue;
+
+    const normText = `${cand.title || ''} ${cand.fact || ''}`
       .toLowerCase()
       .replace(/[^\w\s]/g, ' ')
       .replace(/\s+/g, ' ')
       .trim();
 
-    const candTokens = normText.split(' ').filter((w) => w.length > 3);
+    const candTokens = normText
+      .split(' ')
+      .filter((w) => w.length > 2 && !GENERIC_NEWS_STOPWORDS.has(w));
 
     let matchIdx = -1;
     for (let i = 0; i < merged.length; i++) {
       const existing = merged[i];
-      const existingNorm = `${existing.title || ''} ${existing.fact}`
+
+      // If both candidates have distinct locations/countries (e.g. Norway vs Germany), NEVER merge them
+      if (
+        cand.location &&
+        existing.location &&
+        cand.location.trim().toLowerCase() !== existing.location.trim().toLowerCase()
+      ) {
+        continue;
+      }
+
+      const existingNorm = `${existing.title || ''} ${existing.fact || ''}`
         .toLowerCase()
         .replace(/[^\w\s]/g, ' ')
         .replace(/\s+/g, ' ')
         .trim();
 
-      const existingTokens = existingNorm.split(' ').filter((w) => w.length > 3);
-      if (candTokens.length > 0 && existingTokens.length > 0) {
+      const existingTokens = existingNorm
+        .split(' ')
+        .filter((w) => w.length > 2 && !GENERIC_NEWS_STOPWORDS.has(w));
+
+      if (candTokens.length >= 4 && existingTokens.length >= 4) {
         const overlap = candTokens.filter((t) => existingTokens.includes(t)).length;
-        const similarity = overlap / Math.min(candTokens.length, existingTokens.length);
-        if (similarity >= 0.52) {
+        const totalUniqueTokens = new Set([...candTokens, ...existingTokens]).size;
+        const jaccard = overlap / (totalUniqueTokens || 1);
+
+        // Require at least 55% Jaccard overlap on specific content words AND at least 4 shared meaningful words
+        if (jaccard >= 0.55 && overlap >= 4) {
           matchIdx = i;
           break;
         }
@@ -1026,7 +1061,7 @@ export function deduplicateNewsCandidates(
       }
       existing.confirmedBy = Array.from(newConfirmed);
 
-      if ((cand.fact.length > existing.fact.length && !existing.title) || (!existing.title && cand.title)) {
+      if ((cand.fact && cand.fact.length > (existing.fact || '').length && !existing.title) || (!existing.title && cand.title)) {
         if (cand.title) existing.title = cand.title;
       }
       if (!existing.eventDate && cand.eventDate) existing.eventDate = cand.eventDate;
@@ -2292,20 +2327,32 @@ Please perform your specialized processing for this inquiry. Provide clear, conc
         }
       });
 
-      // Score and strictly filter candidates before passing them to the Researcher AI agent (bypass for live weather/news APIs)
+      // Score and strictly filter candidates before passing them to the Researcher AI agent (bypass for live weather/news APIs and any news query)
       const isDirectNewsOrWeather =
+        isNewsQuery ||
+        isWorldNews ||
+        isWeatherQuery ||
         searchSource === 'GNews API' ||
         searchSource === 'Google News RSS (fallback)' ||
         searchSource === 'Google News RSS' ||
         searchSource === 'Live News API' ||
-        searchSource === 'Live Weather API';
+        searchSource === 'Live Weather API' ||
+        searchSource.toLowerCase().includes('news');
 
-      const filteredSources = isDirectNewsOrWeather
+      let filteredSources = isDirectNewsOrWeather
         ? rawCandidates
         : scoreAndFilterSearchResults(rawCandidates, query, plannerOutput.task);
 
+      // Fallback: If relevance filter pruned too aggressively (< 3 sources), recover original candidates
+      if (filteredSources.length < 3 && rawCandidates.length >= 3) {
+        console.log(
+          `[JARVIS Researcher] Relevance filter kept only ${filteredSources.length} sources; falling back to all ${rawCandidates.length} raw search candidates.`,
+        );
+        filteredSources = rawCandidates;
+      }
+
       console.log(
-        `[JARVIS Researcher] Relevance filter evaluated ${rawCandidates.length} raw search results -> kept ${filteredSources.length} on-topic sources.`,
+        `[JARVIS Researcher] Candidate pool evaluated ${rawCandidates.length} raw search results -> passing ${filteredSources.length} sources to Researcher.`,
       );
 
       const candidatePoolLimit = isNewsQuery ? 12 : 10;
