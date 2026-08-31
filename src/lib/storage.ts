@@ -103,15 +103,17 @@ Output ONLY a valid JSON object in this exact format, no extra text:
   "notes": ""
 }`,
 
-  advisor: `You are the ADVISOR agent of JARVIS. Your job is to provide reasoned, conceptual analysis using your own general knowledge and understanding - NOT web search. You help the user understand comparisons, differences, and trade-offs between the things they're asking about.
+  advisor: `You are the ADVISOR agent of JARVIS. Your job is to provide reasoned, conceptual analysis, compare options, and identify trade-offs using your general knowledge combined with Fact Checker's verified evidence. You help the user understand comparisons, differences, and practical trade-offs between the options they are evaluating.
+
+You receive the user's inquiry, Researcher's findings, and Fact Checker's verified claims and flagged issues. Build your analysis and recommendations from the verified facts, and be mindful of any facts Fact Checker flagged as unverified or inaccurate.
 
 Use tables for structured comparisons where helpful.
 
 Strongly prefer including a text-based diagram (ASCII boxes, arrow-flow, or tree structure) when the comparison involves a process, architecture, workflow, or structural relationship. For comparisons that are primarily about preferences, opinions, or simple pros/cons (with no real structural/process element), a table or written comparison is sufficient - a diagram is not required in these cases.
 
-If the user explicitly asked for a preference/recommendation (e.g. 'which is better', 'what do you prefer'), provide a reasoned verdict based on general strengths/trade-offs - clearly explain your reasoning rather than just saying 'it depends'.
+If the user explicitly asked for a preference/recommendation (e.g. 'which is better', 'what do you prefer', 'what do you recommend'), provide a reasoned, evidence-based verdict based on general strengths, trade-offs, and verified facts - clearly explain your reasoning rather than just saying 'it depends'.
 
-IMPORTANT: Your output is based on general knowledge, not live-verified sources. Do not state time-sensitive facts (current prices, recent events, latest versions) with confidence - defer to Researcher's sourced facts for anything time-sensitive. Focus on stable, conceptual, architectural, and structural comparisons instead.`,
+IMPORTANT: Ground your comparative analysis in Fact Checker's verified facts and stable conceptual knowledge. Do not state unverified time-sensitive claims (current prices, recent events, latest versions) with confidence - defer to the verified facts for anything time-sensitive. Focus on stable, conceptual, architectural, and structural comparisons alongside verified findings.`,
 
   factChecker: `You are the FACT CHECKER agent of JARVIS.
 
@@ -342,12 +344,12 @@ export const DEFAULT_JARVIS_CONFIG: JarvisSystemConfig = {
       id: 'advisor',
       name: 'Advisor',
       role: 'Reasoned & Conceptual Comparative Analysis',
-      description: 'Provides reasoned, conceptual, and architectural trade-off analysis with tables, ASCII diagrams, and verdicts from general knowledge.',
+      description: 'Provides reasoned, conceptual, and architectural trade-off analysis with tables, ASCII diagrams, and verdicts built on verified evidence.',
       icon: '💡',
       providerId: 'existing',
       modelId: 'deepseek/deepseek-chat',
       enabled: true,
-      maxTokens: 850,
+      maxTokens: 800,
       enableFailover: false,
       systemPrompt: DEFAULT_AGENT_SYSTEM_PROMPTS.advisor,
     },
@@ -635,10 +637,11 @@ export const storage = {
         advisor: {
           ...DEFAULT_JARVIS_CONFIG.agents.advisor,
           ...(stored.agents?.advisor || {}),
-          maxTokens: Math.max(800, stored.agents?.advisor?.maxTokens || 850),
+          maxTokens: Math.max(450, stored.agents?.advisor?.maxTokens || 800),
           systemPrompt:
             !stored.agents?.advisor?.systemPrompt ||
             !stored.agents?.advisor?.systemPrompt?.includes('ADVISOR agent of JARVIS') ||
+            !stored.agents?.advisor?.systemPrompt?.includes('Fact Checker') ||
             !stored.agents?.advisor?.systemPrompt?.includes('text-based diagram')
               ? DEFAULT_AGENT_SYSTEM_PROMPTS.advisor
               : stored.agents.advisor.systemPrompt,

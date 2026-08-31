@@ -370,6 +370,13 @@ function formatAgentStep(step: JarvisExecutionStep): string {
     return lines.join('\n').trim();
   }
 
+  // 3.5. Advisor Agent
+  if (step.agentId === 'advisor') {
+    const lines: string[] = [`=== ${agentTitle} ===`];
+    lines.push(raw || step.summary || 'Comparative, trade-off, and conceptual analysis completed.');
+    return lines.join('\n').trim();
+  }
+
   // 4. Reviewer Agent
   if (step.agentId === 'reviewer') {
     let recommendation = 'Proceed with comprehensive synthesis.';
