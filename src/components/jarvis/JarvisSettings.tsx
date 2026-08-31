@@ -38,6 +38,7 @@ interface JarvisSettingsProps {
 const AGENT_ORDER: JarvisAgentId[] = [
   'planner',
   'researcher',
+  'advisor',
   'factChecker',
   'reviewer',
   'finalSynthesizer',
@@ -54,6 +55,10 @@ const PROMPT_HELP_TAGS: Record<string, { vars: string[]; purpose: string }> = {
   researcher: {
     vars: ['{task}', '{searchSnippets}'],
     purpose: 'Investigates live web and Wikipedia contexts, extracting core facts.',
+  },
+  advisor: {
+    vars: ['{task}', '{query}'],
+    purpose: 'Provides reasoned conceptual comparative analysis, structured tables, ASCII diagrams, and trade-off verdicts from general knowledge.',
   },
   factChecker: {
     vars: ['{task}', '{claims}', '{sources}'],

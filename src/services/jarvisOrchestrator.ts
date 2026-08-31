@@ -1922,6 +1922,7 @@ Please perform your specialized processing for this inquiry. Provide clear, conc
     task: string;
     plan: string[];
     needsResearch: boolean;
+    needsKnowledgeAgent?: boolean;
     needsFactCheck: boolean;
     needsReview: boolean;
     needsDiagram: boolean;
@@ -1932,6 +1933,7 @@ Please perform your specialized processing for this inquiry. Provide clear, conc
     task: query,
     plan: ['Synthesize accurate response directly.'],
     needsResearch: false,
+    needsKnowledgeAgent: false,
     needsFactCheck: false,
     needsReview: false,
     needsDiagram: false,
@@ -2024,8 +2026,10 @@ Please perform your specialized processing for this inquiry. Provide clear, conc
         plannerOutput.plan = Array.isArray(rawPlan) ? rawPlan.map(String) : typeof rawPlan === 'string' ? [rawPlan] : ['Task analyzed and routed.'];
       }
       plannerOutput.task = String(plannerOutput.task || query);
+      plannerOutput.needsKnowledgeAgent = Boolean(plannerOutput.needsKnowledgeAgent);
       if (isSelfReferentialInquiry(query) && !deepResearch) {
         plannerOutput.needsResearch = false;
+        plannerOutput.needsKnowledgeAgent = false;
         plannerOutput.needsFactCheck = false;
         plannerOutput.needsReview = false;
         plannerOutput.needsWikipedia = false;
@@ -2502,6 +2506,85 @@ Please perform your specialized processing for this inquiry. Provide clear, conc
   }
 
   // ==========================================
+  // STEP 2.5: 💡 ADVISOR (COMPARATIVE & CONCEPTUAL KNOWLEDGE)
+  // ==========================================
+  let advisorOutput = '';
+  const shouldRunAdvisor =
+    agentConfigs.advisor &&
+    agentConfigs.advisor.enabled !== false &&
+    Boolean(plannerOutput.needsKnowledgeAgent);
+
+  if (shouldRunAdvisor) {
+    const advCfg = agentConfigs.advisor;
+    const provInfo = resolveProviderConfig(advCfg);
+    const start = Date.now();
+
+    storage.addJarvisQueryLog('Advisor agent activated - generating comparative analysis', 'ai');
+
+    updateStep({
+      agentId: 'advisor',
+      name: advCfg.name,
+      icon: advCfg.icon,
+      status: 'running',
+      providerName: provInfo.provider?.name || 'Primary',
+      model: provInfo.model,
+    });
+
+    const defaultPromptTemplate = DEFAULT_AGENT_SYSTEM_PROMPTS.advisor;
+    const activePrompt = (advCfg.systemPrompt || defaultPromptTemplate)
+      .replace('{task}', plannerOutput.task || query)
+      .replace('{query}', query);
+
+    const advisorRes = await callAgent('advisor', [
+      { role: 'system', content: activePrompt },
+      {
+        role: 'user',
+        content: `Query: "${query}"\nTask: "${plannerOutput.task || query}"\n\nPlease provide your reasoned comparative analysis, differences, trade-offs, structured comparison table, text diagram (if structural/workflow/process), and reasoned verdict if a recommendation was requested.`,
+      },
+    ]);
+
+    const duration = Date.now() - start;
+
+    if (advisorRes.ok) {
+      advisorOutput = advisorRes.text.trim();
+      updateStep({
+        agentId: 'advisor',
+        name: advCfg.name,
+        icon: advCfg.icon,
+        status: 'completed',
+        providerName: advisorRes.providerName,
+        model: advisorRes.model,
+        durationMs: duration,
+        summary: 'Generated reasoned conceptual trade-offs & comparative analysis.',
+        outputPreview: advisorOutput.slice(0, 400) + (advisorOutput.length > 400 ? '...' : ''),
+        rawOutput: advisorOutput,
+        usedFallback: advisorRes.usedFallback,
+      });
+    } else {
+      updateStep({
+        agentId: 'advisor',
+        name: advCfg.name,
+        icon: advCfg.icon,
+        status: 'failed',
+        providerName: advisorRes.providerName,
+        model: advisorRes.model,
+        durationMs: duration,
+        error: advisorRes.error || 'Advisor failed.',
+      });
+    }
+  } else {
+    updateStep({
+      agentId: 'advisor',
+      name: agentConfigs.advisor?.name || 'Advisor',
+      icon: agentConfigs.advisor?.icon || '💡',
+      status: 'skipped',
+      providerName: agentConfigs.advisor?.providerId || 'existing',
+      model: agentConfigs.advisor?.modelId || 'deepseek/deepseek-chat',
+      summary: 'Comparative knowledge analysis not required for this query.',
+    });
+  }
+
+  // ==========================================
   // STEP 3: 🛡️ FACT CHECKER
   // ==========================================
   let factCheckOutput = {
@@ -2816,6 +2899,10 @@ Please perform your specialized processing for this inquiry. Provide clear, conc
       task: plannerOutput.task || query,
       query: query,
       plan: plannerPlanText,
+      advisor: advisorOutput,
+      advisorOutput: advisorOutput,
+      advisorAnalysis: advisorOutput,
+      advisorTradeoffs: advisorOutput,
       facts: factsList.map((f, i) => `${i + 1}. ${f}`).join('\n'),
       research: factsList.map((f, i) => `${i + 1}. ${f}`).join('\n'),
       claims: factsList.map((f, i) => `${i + 1}. ${f}`).join('\n'),
@@ -2933,6 +3020,7 @@ Please perform your specialized processing for this inquiry. Provide clear, conc
 User Query: "${query}"
 
 Planner Guidance: ${plannerPlanText}
+${advisorOutput ? `Advisor Conceptual Analysis & Technical Comparison (General Knowledge):\n${advisorOutput}\n` : ''}
 ${factsList.length > 0 ? `Key Verified Facts:\n${factsList.map((f) => `- ${f}`).join('\n')}` : ''}
 ${verifiedList.length > 0 ? `Verified Claims:\n${verifiedList.map((c) => `- ${c}`).join('\n')}` : ''}
 ${issuesList.length > 0 ? `CRITICAL FACT-CHECKER CORRECTIONS / FLAGGED ISSUES (YOU MUST EXCLUDE AND REMOVE ANY CLAIM MENTIONED HERE FROM THE FINAL SYNTHESIS):\n${issuesList.map((i) => `- ${i}`).join('\n')}` : ''}

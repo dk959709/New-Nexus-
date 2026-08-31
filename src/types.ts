@@ -159,6 +159,7 @@ export interface AIProvidersState {
 export type JarvisAgentId =
   | 'planner'
   | 'researcher'
+  | 'advisor'
   | 'factChecker'
   | 'reviewer'
   | 'finalSynthesizer'
