@@ -1,6 +1,7 @@
 /**
  * Universal Fact & Insight Sanitizer and Formatter
- * Ensures every fact is cleanly formatted as "- [fact text]. [Source #X]"
+ * Ensures every fact and news candidate is cleanly formatted as
+ * "- [Title] (domain.com, [date]) — [confirmedBy sources if any]" or "- [fact text]. [Source #X]"
  * with no stray commas, no duplicate/malformed citations, and no raw object/array syntax leaking through.
  */
 
@@ -80,7 +81,7 @@ function stripSourceCitationsAndFragments(text: string): string {
 }
 
 // General safety-net cleaner for prose text
-function cleanProseText(text: string): string {
+export function cleanProseText(text: string): string {
   if (!text) return '';
 
   let cleaned = text
@@ -131,6 +132,99 @@ function cleanProseText(text: string): string {
   return cleaned;
 }
 
+/**
+ * Format a news candidate item into a clean, separate bullet point:
+ * "- [Title] (domain.com, [date]) — [confirmedBy sources if any]"
+ * Followed optionally by the core fact description if distinct from title.
+ */
+export function formatCandidateBullet(
+  item: unknown,
+  options: { markdown?: boolean } = {},
+): string {
+  if (item === undefined || item === null) return '';
+
+  if (typeof item === 'object' && item !== null) {
+    const obj = item as Record<string, unknown>;
+    const title = String(obj.title || obj.headline || '').trim();
+    const fact = String(obj.fact || obj.claim || obj.statement || obj.description || '').trim();
+    const domain = String(obj.domain || '').trim().replace(/^https?:\/\//, '').replace(/^www\./, '');
+    const eventDate = String(obj.eventDate || '').trim();
+    const publishedAt = String(obj.publishedAt || '').trim();
+    const updatedAt = String(obj.updatedAt || '').trim();
+    const dateVal = eventDate || publishedAt || updatedAt || String(obj.date || '').trim();
+    const dateStr = dateVal && dateVal !== 'null' && dateVal !== 'undefined' ? dateVal : '';
+
+    let confirmedList: string[] = [];
+    if (Array.isArray(obj.confirmedBy)) {
+      confirmedList = (obj.confirmedBy as string[])
+        .map((s) => String(s).trim().replace(/^https?:\/\//, '').replace(/^www\./, ''))
+        .filter(Boolean);
+    } else if (typeof obj.confirmedBy === 'string' && obj.confirmedBy.trim()) {
+      confirmedList = [obj.confirmedBy.trim().replace(/^https?:\/\//, '').replace(/^www\./, '')];
+    }
+
+    const sourceIdx = typeof obj.sourceIndex === 'number' ? obj.sourceIndex : undefined;
+
+    // Determine the primary headline
+    const headline = title || fact || 'News Event';
+    const cleanHeadline = cleanProseText(headline).replace(/[.]+$/, '');
+
+    // Parenthetical metadata: (domain.com, date)
+    const metaParts: string[] = [];
+    if (domain) metaParts.push(domain);
+    if (dateStr) metaParts.push(dateStr);
+    const parensStr = metaParts.length > 0 ? ` (${metaParts.join(', ')})` : '';
+
+    // Confirmed by text
+    const confirmedStr = confirmedList.length > 0 ? ` — Confirmed by: ${confirmedList.join(', ')}` : '';
+
+    // Source tag
+    let sourceTag = '';
+    if (sourceIdx) {
+      sourceTag = options.markdown ? ` \`[Source #${sourceIdx}]\`` : ` [Source #${sourceIdx}]`;
+    }
+
+    if (options.markdown) {
+      let bullet = `- **${cleanHeadline}**${parensStr}${confirmedStr}${sourceTag}`;
+      // If fact is substantially distinct from title, append as indented description
+      if (fact && title && fact.toLowerCase() !== title.toLowerCase() && !fact.toLowerCase().includes(title.toLowerCase().slice(0, 20))) {
+        const cleanFact = cleanProseText(fact);
+        if (cleanFact && cleanFact.length > 10) {
+          bullet += `\n  - ${cleanFact}`;
+        }
+      }
+      return bullet;
+    } else {
+      let bullet = `- ${cleanHeadline}${parensStr}${confirmedStr}${sourceTag}`;
+      if (fact && title && fact.toLowerCase() !== title.toLowerCase() && !fact.toLowerCase().includes(title.toLowerCase().slice(0, 20))) {
+        const cleanFact = cleanProseText(fact);
+        if (cleanFact && cleanFact.length > 10) {
+          bullet += ` — ${cleanFact}`;
+        }
+      }
+      return bullet;
+    }
+  }
+
+  // If item is string, check if it's a serialized JSON object
+  const rawStr = String(item).trim();
+  if (rawStr.startsWith('{') && rawStr.endsWith('}')) {
+    try {
+      const parsed = JSON.parse(rawStr);
+      if (parsed && typeof parsed === 'object') {
+        return formatCandidateBullet(parsed, options);
+      }
+    } catch {
+      // Continue with string handling
+    }
+  }
+
+  // Fallback for general fact strings
+  const cleaned = cleanAndFormatFact(rawStr, { markdownSource: Boolean(options.markdown) });
+  if (!cleaned) return '';
+  return cleaned.startsWith('-') ? cleaned : `- ${cleaned}`;
+}
+
 export function cleanAndFormatFact(
   item: unknown,
   options: { markdownSource?: boolean } = {},
@@ -140,9 +234,14 @@ export function cleanAndFormatFact(
   let rawText = '';
   let explicitSource: unknown = null;
 
-  // 1. If item is an object, extract text and explicit source property
+  // 1. If item is an object, check if it's a candidate structure
   if (typeof item === 'object' && item !== null) {
     const obj = item as Record<string, unknown>;
+    // If it has candidate fields like title + (domain or eventDate or confirmedBy), delegate to formatCandidateBullet
+    if (obj.title && (obj.domain || obj.eventDate || obj.publishedAt || obj.confirmedBy)) {
+      return formatCandidateBullet(obj, { markdown: Boolean(options.markdownSource) }).replace(/^- /, '');
+    }
+
     const candidate =
       obj.fact ??
       obj.text ??
@@ -200,7 +299,6 @@ export function cleanAndFormatFact(
   if (!factText || factText.length < 3) return '';
 
   // 6. Ensure sentence ends cleanly with standard end punctuation (. ! ?)
-  // Remove any trailing commas or stray punctuation before the period
   factText = factText.replace(/[\s,;:\-–—]+$/, '');
   if (!/[.!?]$/.test(factText)) {
     factText += '.';

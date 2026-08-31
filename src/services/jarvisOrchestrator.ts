@@ -3,7 +3,7 @@ import { storage, DEFAULT_AGENT_SYSTEM_PROMPTS } from '@/lib/storage';
 import { searchWikipedia, getWikipediaSummary } from '@/services/wikipedia';
 import { stripConversationalMetaText } from '@/lib/format';
 import { logToJarvisTerminal } from '@/lib/jarvisTerminalLogger';
-import { cleanAndFormatFact } from '@/lib/factFormatter';
+import { formatCandidateBullet } from '@/lib/factFormatter';
 import type {
   AIProviderConfig,
   AISource,
@@ -1252,7 +1252,7 @@ export function parseResearcherOutput(
 
   // Helper to extract clean string from fact item (handles strings, objects, numbers)
   const cleanFactItem = (item: unknown): string => {
-    return cleanAndFormatFact(item, { markdownSource: false });
+    return formatCandidateBullet(item, { markdown: false }).replace(/^- /, '');
   };
 
   const rawCandidateList: ResearcherCandidate[] = [];
@@ -2637,13 +2637,35 @@ Please perform your specialized processing for this inquiry. Provide clear, conc
     });
 
     const defaultPromptTemplate = DEFAULT_AGENT_SYSTEM_PROMPTS.reviewer;
-    const factsSubset = Array.isArray(researcherOutput?.facts) ? researcherOutput.facts.slice(0, 5) : [];
+
+    // For news queries, provide the full candidate pool with structured metadata so Reviewer can actively compare and rank all candidates
+    let factsForReviewer = '';
+    if (isNewsQuery && Array.isArray(researcherOutput?.candidates) && researcherOutput.candidates.length > 0) {
+      const candidatesPayload = researcherOutput.candidates.slice(0, 12).map((c, idx) => ({
+        candidateIndex: idx + 1,
+        title: c.title || null,
+        fact: c.fact,
+        domain: c.domain || null,
+        eventDate: c.eventDate || null,
+        publishedAt: c.publishedAt || null,
+        location: c.location || null,
+        category: c.category || null,
+        confirmedBy: c.confirmedBy || [],
+        sourceIndex: c.sourceIndex || null,
+      }));
+      factsForReviewer = JSON.stringify(candidatesPayload, null, 2);
+    } else if (Array.isArray(researcherOutput?.facts) && researcherOutput.facts.length > 0) {
+      factsForReviewer = researcherOutput.facts.slice(0, 10).map((f, i) => `${i + 1}. ${f}`).join('\n');
+    } else {
+      factsForReviewer = 'No facts gathered.';
+    }
+
     const issuesSubset = Array.isArray(factCheckOutput?.issues) ? factCheckOutput.issues : [];
 
     const activePrompt = (revCfg.systemPrompt || defaultPromptTemplate)
       .replace('{task}', plannerOutput.task || query)
-      .replace('{facts}', JSON.stringify(factsSubset))
-      .replace('{issues}', JSON.stringify(issuesSubset));
+      .replace('{facts}', factsForReviewer)
+      .replace('{issues}', JSON.stringify(issuesSubset, null, 2));
 
     const reviewRes = await callAgent('reviewer', [
       { role: 'system', content: 'You are the JARVIS Reviewer. Output strictly valid JSON.' },

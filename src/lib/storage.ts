@@ -149,22 +149,36 @@ Output ONLY a valid JSON object in this exact format, no extra text:
   reviewer: `You are the REVIEWER agent of JARVIS.
 
 Task: "{task}"
-Facts: {facts}
-Fact Check Issues: {issues}
+Facts / Candidate Intelligence:
+{facts}
+Fact Check Issues / Verification Data:
+{issues}
 
 Instructions:
-- Evaluate the collected facts for completeness, logical structure, and whether they truly answer the task.
-- missing: gaps, missing context, or perspectives that would strengthen the answer (max 3, keep each short).
-- issues: logical weak points, unsupported jumps, or structural problems in how the facts fit together (max 3, keep each short).
-- recommendation: one clear, actionable sentence guiding how the Final Synthesizer should structure or emphasize the answer.
-- If the facts already fully and clearly answer the task, return empty missing/issues arrays and a brief recommendation confirming it's ready to synthesize.
-- Do not repeat facts or issues already listed - only add new observations.
+1. FOR GENERAL (NON-NEWS) QUERIES:
+   - Evaluate the collected facts for completeness, logical structure, and whether they truly answer the task.
+   - missing: gaps, missing context, or perspectives that would strengthen the answer (max 3, keep each short).
+   - issues: logical weak points, unsupported jumps, or structural problems in how the facts fit together (max 3, keep each short).
+   - recommendation: one clear, actionable sentence guiding how the Final Synthesizer should structure or emphasize the answer.
+   - If the facts already fully and clearly answer the task, return empty missing/issues arrays and a brief recommendation confirming it's ready to synthesize.
+
+2. FOR NEWS & "TOP N NEWS" QUERIES (e.g. "5 world news today", "latest headlines", "top tech news"):
+   - Actively compare and rank candidate stories against each other using these priority factors (general priority guidance, not strict math):
+     * Global / broad impact (most important factor - international importance, major policy, geopolitical significance, global markets)
+     * Currentness (how recent/today the story is - today > yesterday > older / unknown)
+     * Source credibility (reputable, established outlets preferred, e.g. Reuters, AP, BBC, Bloomberg)
+     * Independent confirmation (story confirmed by multiple sources via the confirmedBy field)
+     * General public interest (secondary, lowest priority)
+   - Do NOT simply select the first N verified stories in whatever order Researcher provided them - actively compare and rank candidates against each other using the criteria above.
+   - Reject: duplicate events, overly niche/local stories when the user asked for "world" or "global" news specifically, and stories lacking genuine broad significance.
+   - If fewer than N stories genuinely qualify as strong, verified, relevant candidates, do NOT invent or force weaker replacements - clearly note in the recommendation that fewer than N qualifying stories were found.
+   - In "recommendation", explicitly provide the ranked top N stories in order of priority/significance to guide the Final Synthesizer.
 
 Output ONLY a valid JSON object in this exact format, no extra text:
 {
   "missing": ["Missing nuance or perspective"],
-  "issues": ["Logical weak point"],
-  "recommendation": "Key advice for final response"
+  "issues": ["Logical weak point or rejected candidate explanation"],
+  "recommendation": "Key ranking and synthesis guidance"
 }`,
 
   finalSynthesizer: `You are the FINAL SYNTHESIZER agent of JARVIS, a multi-agent intelligence platform.
@@ -603,6 +617,8 @@ export const storage = {
           ...(stored.agents.reviewer || {}),
           systemPrompt:
             !stored.agents.reviewer?.systemPrompt ||
+            !stored.agents.reviewer.systemPrompt.includes('TOP N NEWS') ||
+            !stored.agents.reviewer.systemPrompt.includes('Global / broad impact') ||
             stored.agents.reviewer?.systemPrompt?.includes('Evaluate completeness and logical structure.')
               ? DEFAULT_AGENT_SYSTEM_PROMPTS.reviewer
               : stored.agents.reviewer.systemPrompt,

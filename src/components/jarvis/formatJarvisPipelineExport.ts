@@ -1,6 +1,6 @@
 import { JarvisExecutionStep, JarvisMessage } from '../../types';
 import { stripConversationalMetaText } from '../../lib/format';
-import { cleanAndFormatFact, cleanAndFormatInsight } from '../../lib/factFormatter';
+import { cleanAndFormatFact, cleanAndFormatInsight, formatCandidateBullet } from '../../lib/factFormatter';
 
 /**
  * Multi-pass ultra-resilient JSON parser with repair strategies
@@ -182,28 +182,32 @@ function formatAgentStep(step: JarvisExecutionStep): string {
   // 2. Researcher Agent
   if (step.agentId === 'researcher') {
     let facts: unknown[] = [];
+    let candidates: unknown[] = [];
     let context = '';
     let keyInsights: unknown[] = [];
 
     if (parsed && typeof parsed === 'object' && !Array.isArray(parsed)) {
       const rObj = parsed as Record<string, unknown>;
+      candidates = Array.isArray(rObj.candidates) ? (rObj.candidates as unknown[]) : [];
       facts = Array.isArray(rObj.facts) ? (rObj.facts as unknown[]) : Array.isArray(rObj.findings) ? (rObj.findings as unknown[]) : [];
       context = typeof rObj.context === 'string' ? rObj.context : typeof rObj.summary === 'string' ? rObj.summary : '';
       keyInsights = Array.isArray(rObj.keyInsights) ? (rObj.keyInsights as unknown[]) : Array.isArray(rObj.insights) ? (rObj.insights as unknown[]) : [];
     } else {
-      facts = extractArrayFromDirtyJson(raw, ['facts', 'findings']);
+      candidates = extractArrayFromDirtyJson(raw, ['candidates', 'news_candidates', 'stories']);
+      facts = extractArrayFromDirtyJson(raw, ['facts', 'findings', 'points']);
       keyInsights = extractArrayFromDirtyJson(raw, ['keyInsights', 'insights']);
       context = extractStringFromDirtyJson(raw, ['context', 'summary']);
     }
 
     const lines: string[] = [`=== ${agentTitle} ===`];
 
-    if (facts.length > 0) {
+    const itemsToRender = candidates.length > 0 ? candidates : facts;
+    if (itemsToRender.length > 0) {
       lines.push(`Core Facts & Intelligence:`);
-      facts.forEach((fact) => {
-        const formatted = cleanAndFormatFact(fact, { markdownSource: false });
+      itemsToRender.forEach((item) => {
+        const formatted = formatCandidateBullet(item, { markdown: false });
         if (formatted) {
-          lines.push(`- ${formatted}`);
+          lines.push(formatted);
         }
       });
       lines.push(``);
