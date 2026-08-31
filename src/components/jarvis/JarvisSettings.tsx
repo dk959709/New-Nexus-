@@ -2044,7 +2044,7 @@ export function JarvisSettings({ onSaved }: JarvisSettingsProps) {
             <p style={{ margin: '0 0 20px', color: '#cbd5e1', fontSize: '13px', lineHeight: 1.6 }}>
               This master reset will:
               <br />
-              • Restore all 5 core agents (Planner, Researcher, Fact Checker, Reviewer, Synthesizer) to their original default system prompts.
+              • Restore all 9 built-in agents (Planner, Researcher, Fact Checker, Advisor, Reviewer, Final Synthesizer, Architect, Data Analyst, Image Finder) to their original default system prompts.
               <br />
               • Reset all models and token limits to defaults.
               <br />

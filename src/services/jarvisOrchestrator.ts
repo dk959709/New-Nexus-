@@ -1941,7 +1941,9 @@ Please perform your specialized processing for this inquiry. Provide clear, conc
     const lower = text.toLowerCase().trim().replace(/[?!.,]+$/g, '');
     return (
       /^(hi|hello|hey|greetings|howdy|good (morning|afternoon|evening))\b/i.test(lower) ||
-      /\b(what (can|do) you do|what are your capabilities|who are you|what is your name|how do you work|tell me about yourself|what is jarvis|what can jarvis do|who made you|are you an ai|help me)\b/i.test(lower) ||
+      /\b(what (can|do) you do|what are your capabilities|who are you|what is your name|how do you work|tell me about yourself|what is jarvis|what can jarvis do|who made you|are you an ai|help me|how many agents|what agents|what are your agents|list (your )?agents|who are your agents|your architecture|how does jarvis work|how does your system work|explain your agents|how many ai agents|agent architecture)\b/i.test(lower) ||
+      /\b(?:how many|what|list|explain|describe|who are)\s+(?:the\s+)?agents\b/i.test(lower) ||
+      /\b(?:agent|agents|architecture)\s+(?:breakdown|overview|pipeline|capabilities)\b/i.test(lower) ||
       isPersonalOrHumanAiComparison(text)
     );
   };
@@ -3097,6 +3099,28 @@ Please perform your specialized processing for this inquiry. Provide clear, conc
       ? `\n\n[CRITICAL USER IDENTITY & ANTI-MISATTRIBUTION RULE]: The user asked a human vs AI / personal comparison ("${query}"). You must NEVER attribute any third-party stranger's identity, real name, LinkedIn profile, or personal background to the user. Present the synthesis as Human Intelligence vs Artificial Intelligence conceptually, objectively, and respectfully.`
       : '';
 
+    const isSelfOrArchitectureQuery =
+      isSelfQuery ||
+      /\b(agents?|architecture|capabilities|what can you do|how many agents|who made you|how do you work)\b/i.test(query);
+
+    const architectureReferenceDirective = isSelfOrArchitectureQuery && !isPersonalOrHumanAiComparison(query)
+      ? `\n\n[JARVIS MULTI-AGENT ARCHITECTURE REFERENCE]:
+JARVIS is a multi-agent AI intelligence platform composed of 9 specialized agents:
+• 6 Core Pipeline Agents:
+  1. Planner (Query analysis, task scoping, and dynamic agent orchestration)
+  2. Researcher (Multi-engine live web search, news aggregation, and source retrieval)
+  3. Fact Checker (Claim validation, date/number verification, and hallucination elimination)
+  4. Advisor (Multi-perspective conceptual analysis, trade-off comparisons, and deep technical evaluation)
+  5. Reviewer (Synthesis quality evaluation, source ranking, and scope enforcement)
+  6. Final Synthesizer (Publication-grade intelligence integration and definitive response delivery)
+• 3 Specialized Toggle-Based Visual & Analytical Agents:
+  7. Architect (Interactive SVG diagram, workflow pipeline, and architecture blueprint generation via Diagram Mode)
+  8. Data Analyst (Quantitative metric extraction and interactive Bar/Line chart generation via Chart Mode)
+  9. Image Finder (Real-world product, landmark, and photographic image retrieval via Image Mode)
+• Custom Agents: Support for user-defined custom specialized agents.
+When answering questions about JARVIS's architecture, agent count, or capabilities, describe all 9 agents comprehensively.`
+      : '';
+
     const rawSynthesizerContext = `Current date and time: ${currentDateTime}
 User Query: "${query}"
 
@@ -3109,7 +3133,7 @@ ${reviewerMissingList.length > 0 ? `Reviewer Missing Context Suggestions:\n${rev
 ${reviewerIssuesList.length > 0 ? `Reviewer Flagged Content/Scope Issues (EXCLUDE OR REPLACE ITEMS FLAGGED HERE):\n${reviewerIssuesList.map((iss) => `- ${iss}`).join('\n')}` : ''}
 ${reviewerRecommendation ? `Reviewer Actionable Guidance & Content Selection (HONOR THESE SELECTION & EXCLUSION INSTRUCTIONS):\n${reviewerRecommendation}` : ''}
 Retrieved Ground-Truth Sources (CRITICAL RULE: Only cite sources from this exact list. Never invent or cite any other sources):
-${sourcesListText}${customInsightsBlock}${personalIdentityDirective}`;
+${sourcesListText}${customInsightsBlock}${personalIdentityDirective}${architectureReferenceDirective}`;
 
     const defaultSysPrompt = DEFAULT_AGENT_SYSTEM_PROMPTS.finalSynthesizer;
     let activeSysPrompt =

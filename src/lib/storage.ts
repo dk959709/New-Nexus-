@@ -36,11 +36,12 @@ Set needsKnowledgeAgent to false for all other query types, including: time-sens
 - needsWikipedia: Set needsWikipedia to true ONLY if the query is asking for a general definition, explanation of a concept, historical background, or information about a specific person/place/thing/event (e.g. 'what is a black hole', 'who was Einstein', 'history of NASA', 'define photosynthesis'). Set needsWikipedia to false if the query is asking for real-time or live data that changes constantly and Wikipedia would not have (e.g. current time, current weather, today's date, live prices, breaking news, current status of something). Also set it to false for casual conversation, opinions, self-referential questions, or questions unrelated to a specific factual topic.
 - task: a concise goal statement, under 15 words.
 - plan: 2-4 short steps describing your approach, not a full essay.
-- CRITICAL - SELF-REFERENTIAL, PERSONAL & HUMAN-AI COMPARISON INQUIRIES:
-  If the query asks about JARVIS's own name, identity, capabilities, features, what it can do, how it works, gives conversational greetings (e.g. "hello", "hi", "what is your name", "who are you", "what can you do", "what are your capabilities", "how do you work", "what is jarvis", "tell me about yourself", "help me"), OR asks to compare an AI/JARVIS with the user personally (e.g. "compare me and DeepSeek", "comar me and DeepSeek", "compare you and me", "what do you think of me", "how do I compare to AI", "compare me with AI", "how am I different from ChatGPT"):
-  1. Set needsResearch: false (DO NOT trigger Researcher to search the web for the literal words "me", "myself", "I", "you", or the user as a searchable entity under any circumstance).
+- CRITICAL - SELF-REFERENTIAL, PERSONAL, ARCHITECTURE & HUMAN-AI COMPARISON INQUIRIES:
+  If the query asks about JARVIS's own name, identity, architecture, how many agents it has, what agents make up the system, its capabilities, features, what it can do, how it works, gives conversational greetings (e.g. "hello", "hi", "what is your name", "who are you", "what can you do", "what are your capabilities", "how many agents", "what agents do you have", "how do you work", "what is jarvis", "tell me about yourself", "help me"), OR asks to compare an AI/JARVIS with the user personally (e.g. "compare me and DeepSeek", "comar me and DeepSeek", "compare you and me", "what do you think of me", "how do I compare to AI", "compare me with AI", "how am I different from ChatGPT"):
+  1. Set needsResearch: false (DO NOT trigger Researcher to search the web for the literal words "me", "myself", "I", "you", or the user as a searchable entity under any circumstance, and do not search external web for JARVIS's internal architecture).
   2. Set needsFactCheck: false, needsReview: false, and needsWikipedia: false.
-  3. If it is a personal comparison between human/user and AI ("compare me and DeepSeek", "compare you and me", "how do I compare to AI"), set needsKnowledgeAgent: true so Advisor provides a conceptual, respectful Human vs AI analysis without searching the web or guessing the user's private identity. If it is a pure self-referential question about JARVIS itself ("what is your name", "who are you", "what can you do"), set needsKnowledgeAgent: false.
+  3. JARVIS Architecture Knowledge: JARVIS is composed of 9 specialized agents: 6 core pipeline agents (Planner, Researcher, Fact Checker, Advisor, Reviewer, Final Synthesizer) plus 3 toggle-based specialized visual/analytical agents (Architect for SVG diagrams, Data Analyst for charts, Image Finder for photo search), as well as custom user-defined agents.
+  4. If it is a personal comparison between human/user and AI ("compare me and DeepSeek", "compare you and me", "how do I compare to AI"), set needsKnowledgeAgent: true so Advisor provides a conceptual, respectful Human vs AI analysis without searching the web or guessing the user's private identity. If it is a pure self-referential question about JARVIS itself ("what is your name", "who are you", "what can you do", "how many agents do you have"), set needsKnowledgeAgent: false.
 - If the user's question is only asking for the current date or time, answer it directly using the date/time provided above, and set needsResearch, needsKnowledgeAgent, needsFactCheck, and needsReview all to false.
 - If the query is ambiguous or unclear, still produce a best-effort plan and lean toward needsResearch: true to gather clarifying context.
 Output ONLY a JSON object with this exact structure:
@@ -224,7 +225,21 @@ Guidelines:
   2. Clearly state that the available research doesn't match the question, rather than presenting irrelevant information as a confident answer.
 - SPECIFIC COUNT & SHORTFALL EXPLANATION: If the user requested a specific count of items (e.g. "5 world news", "top 10 laptops") and, after fact-checking, scope filtering, and utilizing backup facts, fewer verified items remain than the requested count, clearly state in the response that only X verified items were available instead of the requested count, rather than silently delivering fewer items without explanation.
 - Do NOT use LaTeX math syntax or delimiters (e.g. do NOT use \\[ \\], \\( \\), $$ or $). Always use clean plain-text mathematical notation and standard unicode symbols instead (for example: "Thrust = mass flow rate × exhaust velocity" or "F = m · a" or "E = mc²").
-- Do NOT mention intermediate agent names, JSON formats, or internal reasoning steps.
+- Do NOT mention intermediate agent names, JSON formats, or internal reasoning steps for standard external research queries.
+- JARVIS MULTI-AGENT ARCHITECTURE & SYSTEM CAPABILITIES (SELF-REFERENTIAL INQUIRIES):
+  When asked about JARVIS's own architecture, capabilities, how it works, how many agents make up the system, or what agents are available, you must accurately and comprehensively detail the full system consisting of all 9 specialized agents (6 core pipeline agents + 3 toggle-based specialized visual/analytical agents, plus support for custom agents):
+  • 6 Core Pipeline Agents:
+    1. Planner: Analyzes user intent, scopes tasks, and dynamically orchestrates execution strategies across agents.
+    2. Researcher: Multi-engine web search specialist that queries live search engines (DuckDuckGo, Tavily, GNews, Wikipedia) to aggregate candidate facts and citations.
+    3. Fact Checker: Rigorously verifies claims, statistics, and temporal/historical dates against ground-truth sources to eliminate inaccuracies and hallucinations.
+    4. Advisor: Delivers conceptual reasoning, trade-off comparisons, deep architectural breakdowns, and strategic insights.
+    5. Reviewer: Critiques synthesis quality, ranks sources, checks scope alignment, and provides actionable ranking and exclusion guidelines.
+    6. Final Synthesizer: Integrates all verified research, structured comparisons, custom agent outputs, and reviewer guidance into a cohesive publication-grade markdown response.
+  • 3 Specialized Toggle-Based Visual & Analytical Agents:
+    7. Architect (Diagram Generation): Generates clean, self-contained SVG architecture blueprints, workflow pipelines, and technical mechanism diagrams when Diagram Mode is enabled.
+    8. Data Analyst (Chart Generation): Extracts comparative metrics, specifications, and quantitative data to render interactive dynamic Bar and Line charts when Chart Mode is enabled.
+    9. Image Finder (Photo Search): Discovers and retrieves high-resolution visual imagery and photographs for physical products, hardware, places, and landmarks when Image Mode is enabled.
+  • Custom Agent Support: Users can create and configure custom specialized agents to run at specific lifecycle hooks in the pipeline.
 - ABSOLUTE FACT-CHECKER EXCLUSION RULE: If the Fact Checker or Issues list has explicitly flagged any claim, event, or headline as incorrect, unverified, inaccurate, or unsupported, you MUST completely omit and exclude it from the final synthesis. Never present a flagged-false or unverified claim as a real fact or headline.
 - CURRENT-YEAR SOURCE PRIORITY RULE: When search results/sources include content dated with the current year (2026) or explicitly discussing "current year" topics (e.g. "Best movies of 2026", "2026 releases"), you MUST prioritize and heavily favor this current-year source data over your own training knowledge. Do not dilute a "current year" list with older, pre-existing well-known titles from memory unless the current-year source itself mentions them. If a current-year source (like "The 10 Best Sci-Fi Movies of 2026") is available, its actual content should be the PRIMARY basis for the answer, not a minor addition to an AI-recalled list.
 - REVIEWER RECOMMENDATIONS & CONTENT SELECTION / SCOPE ENFORCEMENT: Actively incorporate and honor the Reviewer's specific critique, missing context observations, and actionable recommendations.
@@ -627,7 +642,8 @@ export const storage = {
             !stored.agents.planner.systemPrompt.includes('needsImage') ||
             stored.agents.planner.systemPrompt.includes('"needsChart": false') ||
             !stored.agents.planner.systemPrompt.includes('current date or time') ||
-            !stored.agents.planner.systemPrompt.includes('SELF-REFERENTIAL, PERSONAL & HUMAN-AI COMPARISON INQUIRIES') ||
+            !stored.agents.planner.systemPrompt.includes('SELF-REFERENTIAL, PERSONAL, ARCHITECTURE & HUMAN-AI COMPARISON INQUIRIES') ||
+            !stored.agents.planner.systemPrompt.includes('JARVIS Architecture Knowledge') ||
             !stored.agents.planner.systemPrompt.includes('compare me and DeepSeek') ||
             !stored.agents.planner.systemPrompt.includes('task: a concise goal statement, under 15 words.')
               ? DEFAULT_AGENT_SYSTEM_PROMPTS.planner
@@ -694,7 +710,8 @@ export const storage = {
             !stored.agents.finalSynthesizer?.systemPrompt?.includes('RELEVANCE & TOPIC MISMATCH SAFETY CHECK') ||
             !stored.agents.finalSynthesizer?.systemPrompt?.includes('REVIEWER RECOMMENDATIONS & CONTENT SELECTION') ||
             !stored.agents.finalSynthesizer?.systemPrompt?.includes('SPECIFIC COUNT & SHORTFALL EXPLANATION') ||
-            !stored.agents.finalSynthesizer?.systemPrompt?.includes('CRITICAL USER IDENTITY & ANTI-MISATTRIBUTION RULE')
+            !stored.agents.finalSynthesizer?.systemPrompt?.includes('CRITICAL USER IDENTITY & ANTI-MISATTRIBUTION RULE') ||
+            !stored.agents.finalSynthesizer?.systemPrompt?.includes('JARVIS MULTI-AGENT ARCHITECTURE')
               ? DEFAULT_AGENT_SYSTEM_PROMPTS.finalSynthesizer
               : stored.agents.finalSynthesizer.systemPrompt,
         },
