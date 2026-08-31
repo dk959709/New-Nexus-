@@ -54,26 +54,48 @@ Live Context / Search Data:
 {searchSnippets}
 
 Instructions:
-1. Before searching, first think of 3-5 focused, specific search keywords based on the user's query (not the raw question) - use these keywords for the search instead of the full question.
-2. When searching for information, prioritize these trusted domains when available:
-- nasa.gov, esa.int, space.com, wikipedia.org, nature.com, sciencedirect.com, .edu and .gov domains
-3. For each fact you extract, link it to the specific source number that supports it, using this format:
-{ "fact": "...", "sourceIndex": 2 }
-4. Only include a fact if at least one search result directly supports it. Do NOT include facts that are not backed by any of the provided search snippets.
-5. If multiple sources confirm the same fact, note that too (higher confidence).
-6. If the search results are mostly irrelevant to the query topic, say so clearly in your output instead of forcing weak facts from unrelated sources.
-7. For news or current event inquiries, prioritize searching for recent news headlines and current events. If retrieved search results are encyclopedia pages or lack actual current news data, explicitly note that current news data is unavailable rather than assuming past facts apply.
-8. Only include a source in "sources" if its snippet is directly and specifically relevant to the task topic. If a search result's snippet doesn't clearly support the task topic, leave it out rather than including it as a weak or tangential match.
-9. Never include two sources that point to the same page. Keep only one, choosing the cleaner/canonical URL.
-10. SPECIFIC COUNT & BACKUP CANDIDATE FACTS BUFFER: When the user's task or query requests a specific count of items (e.g. "5 world news", "top 3 movies", "4 breakthroughs"), and more raw search sources or snippets are available than the requested count, extract 1-2 EXTRA candidate facts from those additional already-retrieved sources (e.g. 6-7 candidate facts total for a "5 items" request, utilizing sources that would otherwise be skipped). This ensures that if the Fact Checker or Reviewer rejects or excludes any candidate fact as unverified, hallucinated, or out-of-scope, the downstream Final Synthesizer still has enough verified candidate facts to fulfill the user's requested count without requiring additional search calls.
+1. Before searching or extracting, identify 3-5 focused search keywords based on the user's query.
+2. CANDIDATE VOLUME FOR NEWS / TOP-N QUERIES:
+   - For news queries or "top N" requests (e.g. "5 world news today", "top tech breakthroughs", "4 headlines"), extract 8-12 credible current candidates from the search data. This ensures a rich candidate pool for downstream deduplication, fact-checking, and selection.
+3. PRESERVE EXACT ARTICLE URLS:
+   - Always preserve the exact full article URL from the source data (e.g. "https://apnews.com/article/world-news-slug-12345").
+   - NEVER replace, truncate, or shorten an article URL with just a root domain or homepage (e.g. "apnews.com" alone is strictly forbidden).
+4. CAPTURE DETAILED CANDIDATE METADATA:
+   For each candidate, capture (when available in the source data):
+   - "title": Exact headline or story title
+   - "fact": Concise core factual statement (1-2 sentences)
+   - "sourceIndex": 1-based index matching the entry in "sources"
+   - "domain": Domain of primary source (e.g. "reuters.com")
+   - "eventDate": Date string (YYYY-MM-DD) of when the event actually happened, or null if not explicitly stated in source (DO NOT GUESS OR FABRICATE)
+   - "publishedAt": ISO timestamp/date string when the article was published if available in source, or null
+   - "updatedAt": ISO timestamp/date string when the article was updated if available in source, or null
+   - "location": Geographic location/country if mentioned, or null
+   - "category": Topic category (e.g. "world", "politics", "technology", "science", "business", "health", "sports"), or null
+   - "confirmedBy": Array of additional source domains confirming the same event (e.g. ["apnews.com", "bbc.com"])
+5. DEDUPLICATION & MULTI-OUTLET MERGING:
+   - If multiple search sources cover the same underlying event or story, MERGE them into ONE story.
+   - Keep the most authoritative/complete source for "sourceIndex" and list other confirming outlets in "confirmedBy". Do not output separate candidate items for the same event.
+6. Only include candidates backed by actual search data. If search data lacks recent news, note it clearly.
 
 Output ONLY a valid JSON object in this exact format, no extra text:
 {
-  "facts": [
-    { "fact": "Concise verified fact 1", "sourceIndex": 1 },
-    { "fact": "Concise verified fact 2", "sourceIndex": 2 }
+  "candidates": [
+    {
+      "title": "Exact headline",
+      "fact": "Verified factual statement",
+      "sourceIndex": 1,
+      "domain": "reuters.com",
+      "eventDate": null,
+      "publishedAt": null,
+      "updatedAt": null,
+      "location": null,
+      "category": null,
+      "confirmedBy": []
+    }
   ],
-  "sources": [{"title": "Source name", "url": "https://...", "domain": "domain.com"}],
+  "sources": [
+    { "index": 1, "title": "Exact Article Title", "url": "https://...", "domain": "reuters.com", "publishedAt": null }
+  ],
   "notes": ""
 }`,
 
@@ -81,25 +103,47 @@ Output ONLY a valid JSON object in this exact format, no extra text:
 
 Original Task: "{task}"
 
-Collected Claims & Facts:
+Collected Candidate Claims & Metadata:
 {claims}
 
-Collected Sources & Snippets:
+Collected Sources & Exact URLs:
 {sources}
 
 Instructions:
-1. Factual Accuracy: Review each claim against general knowledge and internal consistency.
-2. Source Relevance Verification (CRITICAL): For each claim, inspect the associated sources and snippets. Does the cited source's title, domain, or snippet actually relate to the claim's topic and the task topic? If a source is clearly irrelevant or unrelated to the claim it's attached to (e.g. a country's Wikipedia page cited for a movie fact, or an unrelated news topic), you MUST flag it explicitly as a "Source Mismatch: [Explanation of why the source is unrelated]" in the "issues" array.
-3. Issues Reporting: List any claim that is incorrect, outdated, unsupported, exaggerated, contradicts another claim, OR suffers from a "Source Mismatch" in the "issues" array with a brief explanation (max 5, keep each short).
-4. If any claims look like fabricated current news headlines, unsupported assertions, or unbacked speculative facts without backing research data, flag them immediately in issues as unverified or fabricated.
-5. If a claim's accuracy is uncertain, note it in issues as "needs verification".
-6. If all claims check out and have relevant sources, return an empty issues array - do not invent problems.
-7. If no claims were provided, return both arrays empty.
+1. Factual Accuracy & Grounding: Review each candidate claim against the provided sources and general knowledge.
+2. Source Relevance & Exact URL Verification: Confirm each candidate matches its cited source. Ensure exact article URLs are preserved. Flag any unrelated source as "Source Mismatch: [Explanation]" in the "issues" array.
+3. Date Validation & Disambiguation (CRITICAL):
+   - Distinguish between when an event actually happened ("eventDate") vs when an article was published ("publishedAt") vs last updated ("updatedAt").
+   - Never treat the current report-generation timestamp as an event's date.
+   - Never claim or assume an older event happened today. If dates are not available in source data, use null - do not guess or fabricate.
+4. Date Status Classification:
+   For each verified candidate claim, mark its "dateStatus" as strictly one of:
+   - "today": event occurred today
+   - "published today": article was published today
+   - "updated today": article was updated today
+   - "yesterday": event/article from yesterday
+   - "older": event/article from earlier dates
+   - "unknown": date not determinable from source data
+5. Multi-Outlet Verification: Confirm merged multi-source stories. Flag unsupported or fabricated assertions in "issues".
+6. Keep data compact (structured JSON only).
 
 Output ONLY a valid JSON object in this exact format, no extra text:
 {
-  "verified": ["Confirmed claim 1"],
-  "issues": ["Source Mismatch: [Explanation]", "Identified factual error or note 1"]
+  "verified": [
+    {
+      "claim": "Verified factual claim summary",
+      "dateStatus": "today",
+      "eventDate": null,
+      "publishedAt": null,
+      "updatedAt": null,
+      "domain": "reuters.com",
+      "url": "https://...",
+      "confirmedBy": []
+    }
+  ],
+  "issues": [
+    "Source Mismatch: [Explanation]"
+  ]
 }`,
 
   reviewer: `You are the REVIEWER agent of JARVIS.
@@ -532,15 +576,14 @@ export const storage = {
         researcher: {
           ...DEFAULT_JARVIS_CONFIG.agents.researcher,
           ...(stored.agents.researcher || {}),
-          maxTokens: Math.max(800, stored.agents.researcher?.maxTokens || 1200),
+          maxTokens: Math.max(1000, stored.agents.researcher?.maxTokens || 1200),
           systemPrompt:
             !stored.agents.researcher?.systemPrompt ||
             !stored.agents.researcher.systemPrompt.includes('sourceIndex') ||
-            !stored.agents.researcher.systemPrompt.includes('nasa.gov, esa.int, space.com') ||
-            stored.agents.researcher?.systemPrompt?.includes('Extract verified facts and source references.\nOutput ONLY a JSON object:') ||
-            stored.agents.researcher?.systemPrompt?.includes('If search data is empty or insufficient, return an empty facts array') ||
-            !stored.agents.researcher?.systemPrompt?.includes('Never include two sources that point to the same page') ||
-            !stored.agents.researcher?.systemPrompt?.includes('BACKUP CANDIDATE FACTS BUFFER')
+            !stored.agents.researcher.systemPrompt.includes('PRESERVE EXACT ARTICLE URLS') ||
+            !stored.agents.researcher.systemPrompt.includes('eventDate') ||
+            !stored.agents.researcher.systemPrompt.includes('DEDUPLICATION') ||
+            stored.agents.researcher?.systemPrompt?.includes('nasa.gov, esa.int, space.com')
               ? DEFAULT_AGENT_SYSTEM_PROMPTS.researcher
               : stored.agents.researcher.systemPrompt,
         },
@@ -549,9 +592,9 @@ export const storage = {
           ...(stored.agents.factChecker || {}),
           systemPrompt:
             !stored.agents.factChecker?.systemPrompt ||
-            stored.agents.factChecker?.systemPrompt?.includes('Verify claims, identify discrepancies, and isolate corrections.') ||
-            !stored.agents.factChecker?.systemPrompt?.includes('{sources}') ||
-            !stored.agents.factChecker?.systemPrompt?.includes('Source Relevance Verification')
+            !stored.agents.factChecker.systemPrompt.includes('dateStatus') ||
+            !stored.agents.factChecker.systemPrompt.includes('eventDate') ||
+            !stored.agents.factChecker.systemPrompt.includes('Date Status Classification')
               ? DEFAULT_AGENT_SYSTEM_PROMPTS.factChecker
               : stored.agents.factChecker.systemPrompt,
         },

@@ -22,6 +22,7 @@ import { cleanAndFormatFact, cleanAndFormatInsight } from '../../lib/factFormatt
 
 interface JarvisDeepResearchMeshAnswersProps {
   steps: JarvisExecutionStep[];
+  query?: string;
   isDeepResearch?: boolean;
 }
 
@@ -475,11 +476,13 @@ function formatAgentContentToMarkdown(step: JarvisExecutionStep): {
   // 3. RESEARCHER AGENT
   if (step.agentId === 'researcher') {
     let facts: unknown[] = [];
+    let candidates: unknown[] = [];
     let context = '';
     let keyInsights: unknown[] = [];
 
     if (parsed && typeof parsed === 'object' && !Array.isArray(parsed)) {
       const rObj = parsed as Record<string, unknown>;
+      candidates = Array.isArray(rObj.candidates) ? (rObj.candidates as unknown[]) : [];
       facts = Array.isArray(rObj.facts) ? (rObj.facts as unknown[]) : Array.isArray(rObj.findings) ? (rObj.findings as unknown[]) : [];
       context = typeof rObj.context === 'string' ? rObj.context : typeof rObj.summary === 'string' ? rObj.summary : '';
       keyInsights = Array.isArray(rObj.keyInsights) ? (rObj.keyInsights as unknown[]) : Array.isArray(rObj.insights) ? (rObj.insights as unknown[]) : [];
@@ -490,7 +493,41 @@ function formatAgentContentToMarkdown(step: JarvisExecutionStep): {
     }
 
     let md = `### 🔎 Core Fact Intelligence & Verified Findings\n`;
-    if (facts.length > 0) {
+
+    if (candidates.length > 0) {
+      candidates.forEach((cand, idx) => {
+        if (typeof cand === 'object' && cand !== null) {
+          const cObj = cand as Record<string, unknown>;
+          const title = cObj.title ? `**${String(cObj.title).trim()}**` : '';
+          const factText = cleanAndFormatFact(cObj.fact || cObj.description || cObj.title || '', { markdownSource: false });
+
+          const metaTags: string[] = [];
+          if (cObj.domain) metaTags.push(`Domain: \`${cObj.domain}\``);
+          if (cObj.eventDate) metaTags.push(`Event: ${cObj.eventDate}`);
+          if (cObj.publishedAt) metaTags.push(`Published: ${cObj.publishedAt}`);
+          if (cObj.updatedAt) metaTags.push(`Updated: ${cObj.updatedAt}`);
+          if (cObj.location) metaTags.push(`📍 ${cObj.location}`);
+          if (cObj.category) metaTags.push(`Tag: ${cObj.category}`);
+          if (Array.isArray(cObj.confirmedBy) && cObj.confirmedBy.length > 0) {
+            metaTags.push(`Confirmed by: ${cObj.confirmedBy.join(', ')}`);
+          }
+
+          const sourceTag = cObj.sourceIndex ? ` \`[Source #${cObj.sourceIndex}]\`` : '';
+          const metaLine = metaTags.length > 0 ? `\n  - *${metaTags.join(' • ')}*` : '';
+
+          if (title && factText && factText !== title) {
+            md += `${idx + 1}. ${title}${sourceTag}\n  - ${factText}${metaLine}\n`;
+          } else {
+            md += `${idx + 1}. ${factText || title}${sourceTag}${metaLine}\n`;
+          }
+        } else {
+          const formatted = cleanAndFormatFact(cand, { markdownSource: true });
+          if (formatted) {
+            md += `- ${formatted}\n`;
+          }
+        }
+      });
+    } else if (facts.length > 0) {
       facts.forEach((fact) => {
         const formatted = cleanAndFormatFact(fact, { markdownSource: true });
         if (formatted) {

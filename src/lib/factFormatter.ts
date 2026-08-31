@@ -10,28 +10,38 @@ function extractSourceIndices(text: string, explicitSource?: unknown): string[] 
 
   // 1. If explicit source property exists
   if (explicitSource !== undefined && explicitSource !== null) {
-    const sStr = String(explicitSource).trim();
-    if (sStr) {
-      const match = sStr.match(/\b\d+\b/g);
-      if (match) {
-        match.forEach((m) => {
-          if (!found.includes(m)) found.push(m);
+    if (Array.isArray(explicitSource)) {
+      explicitSource.forEach((item) => {
+        const itemIndices = extractSourceIndices(String(item));
+        itemIndices.forEach((idx) => {
+          if (!found.includes(idx)) found.push(idx);
         });
-      } else {
-        const cleanedExplicit = sStr.replace(/^\[?#?|\]?$/g, '').trim();
-        if (cleanedExplicit && !found.includes(cleanedExplicit)) {
-          found.push(cleanedExplicit);
+      });
+    } else {
+      const sStr = String(explicitSource).trim();
+      if (sStr) {
+        const matches = sStr.match(/\b\d+\b/g);
+        if (matches) {
+          matches.forEach((m) => {
+            if (!found.includes(m)) found.push(m);
+          });
+        } else {
+          const cleanedExplicit = sStr.replace(/^\[?#?|\]?$/g, '').trim();
+          if (cleanedExplicit && !found.includes(cleanedExplicit)) {
+            found.push(cleanedExplicit);
+          }
         }
       }
     }
   }
 
   // 2. Search for inline / trailing source patterns in text
-  // Matches: [Source #6], (Source 6), sourceIndex: 6, [Citation #6], [Source #6. [Source #6], etc.
+  // Matches: [Source #6], [Source #6. [Source #6], (Source 6), sourceIndex: 6, [Citation #6], [Ref 6], [#6], etc.
   const regexPatterns = [
-    /\[?\b(?:Source|Citation|Ref|SourceIndex)\s*#?\s*:?\s*(\d+)\b/gi,
-    /(?:sourceIndex|source|citation)\s*[:=]\s*["']?(\d+)["']?/gi,
-    /\[(?:Source\s*#?|Citation\s*#?)\s*(\d+)\]/gi,
+    /\[?\b(?:Source|Citation|Ref|Reference|SourceIndex)\s*#?\s*:?\s*(\d+)\b/gi,
+    /(?:sourceIndex|source_index|sourceId|source_id|source|citation)\s*[:=]\s*["']?(\d+)["']?/gi,
+    /\[(?:Source\s*#?|Citation\s*#?|Ref\s*#?|#)\s*(\d+)\]/gi,
+    /\((?:Source\s*#?|Citation\s*#?|Ref\s*#?)\s*(\d+)\)/gi,
   ];
 
   for (const regex of regexPatterns) {
@@ -46,19 +56,25 @@ function extractSourceIndices(text: string, explicitSource?: unknown): string[] 
   return found;
 }
 
-// Helper to strip ALL source citations, fragments, and associated trailing punctuation
+// Helper to strip ALL source citations, duplicate/nested fragments, and associated punctuation
 function stripSourceCitationsAndFragments(text: string): string {
   let cleaned = text;
 
-  // Remove key-value style source definitions (e.g., `"sourceIndex": 6` or `sourceIndex: 6`)
+  // 1. Remove key-value style source definitions (e.g., `"sourceIndex": 6` or `sourceIndex: 6`)
   cleaned = cleaned.replace(/,?\s*["']?(?:sourceIndex|source_index|source|citation|sourceId|source_id)["']?\s*[:=]\s*["']?\w+["']?/gi, '');
 
-  // Remove duplicated/malformed citation sequences at end or middle (e.g. `[Source #6. [Source #6]`, `[Source #6] [Source #6]`, `[Source 6]`)
-  cleaned = cleaned.replace(/(?:,\s*|\s*[-–—]\s*|\s+)?`?\[?\s*(?:Source|Citation|Ref)\s*#?\s*:?\s*\d+(?:\s*[.,;:–—]*\s*`?\[?\s*(?:Source|Citation|Ref)\s*#?\s*:?\s*\d+)*\s*\]?`?/gi, ' ');
+  // 2. Remove chained / duplicated / nested citations (e.g. `[Source #6. [Source #6]`, `[Source #6] [Source #6]`, `[Source #6, #7]`, `[Source 6]`)
+  cleaned = cleaned.replace(/(?:,\s*|\s*[-–—]\s*|\s+)?`?\[[^\]]*\b(?:Source|Citation|Ref|Reference)\b[^\]]*\]`?/gi, ' ');
 
-  // Remove any unclosed or partial source fragments at the end (e.g., `[Source #6` or `[Source` or `Source #6]`)
-  cleaned = cleaned.replace(/\s*`?\[\s*(?:Source|Citation|Ref)\b[^\]]*$/i, '');
-  cleaned = cleaned.replace(/\s*(?:Source|Citation|Ref)\s*#?\s*\d*\s*\]?`?$/i, '');
+  // 3. Remove repeated fragments like `[Source #6. [Source #6` where the inner bracket was not closed
+  cleaned = cleaned.replace(/`?\[\s*(?:Source|Citation|Ref|Reference)\s*#?\s*\d+[\s\S]*?(?:\]|(?=\s*\[|\s*$))/gi, ' ');
+
+  // 4. Remove standalone unclosed source fragments at the end of a string
+  cleaned = cleaned.replace(/\s*`?\[\s*(?:Source|Citation|Ref|Reference)\b[\s\S]*$/gi, '');
+  cleaned = cleaned.replace(/\s*(?:Source|Citation|Ref|Reference)\s*#?\s*\d*\s*\]?`?$/gi, '');
+
+  // 5. Remove parenthetical citations like `(Source #6)` or `(Source 6)`
+  cleaned = cleaned.replace(/\(\s*(?:Source|Citation|Ref|Reference)\s*#?\s*\d+\s*\)/gi, ' ');
 
   return cleaned;
 }
@@ -80,9 +96,10 @@ function cleanProseText(text: string): string {
     .replace(/^[\s,;:\-–—"'‘“]+/, '')
     // Remove trailing quotes
     .replace(/["'’”]+$/, '')
-    // Fix stray comma before periods: "word. ," or "word ," -> "word."
+    // Fix stray comma before/after periods: "word. ," or "word ,." or "word ," -> "word."
     .replace(/\s*,\s*\./g, '.')
     .replace(/\.\s*,+/g, '.')
+    .replace(/,\s*\.\s*,+/g, '.')
     // Fix space before punctuation
     .replace(/\s+([.,;:!?])/g, '$1')
     // Fix double commas or double semicolons
@@ -104,8 +121,12 @@ function cleanProseText(text: string): string {
     cleaned = cleaned.slice(0, -1).trim();
   }
 
-  // Remove trailing comma/dash again in case bracket removal exposed one
-  cleaned = cleaned.replace(/[\s,;:\-–—]+$/, '').trim();
+  // Remove trailing commas, colons, or dashes again in case bracket removal exposed one
+  cleaned = cleaned
+    .replace(/\.\s*,+\s*$/, '.')
+    .replace(/,\s*\.\s*$/, '.')
+    .replace(/[\s,;:\-–—]+$/, '')
+    .trim();
 
   return cleaned;
 }
@@ -179,6 +200,8 @@ export function cleanAndFormatFact(
   if (!factText || factText.length < 3) return '';
 
   // 6. Ensure sentence ends cleanly with standard end punctuation (. ! ?)
+  // Remove any trailing commas or stray punctuation before the period
+  factText = factText.replace(/[\s,;:\-–—]+$/, '');
   if (!/[.!?]$/.test(factText)) {
     factText += '.';
   }
@@ -200,6 +223,7 @@ export function cleanAndFormatFact(
   // 8. Final safety net pass: ensure no stray comma before the source bracket or double periods
   formattedResult = formattedResult
     .replace(/\s*,\s*(\[[^\]]+\]|`\[[^\]]+\]`)/g, ' $1')
+    .replace(/\.\s*,\s*(\[[^\]]+\]|`\[[^\]]+\]`)/g, '. $1')
     .replace(/\s*\.\s*\./g, '.')
     .replace(/\s+/g, ' ')
     .trim();
@@ -246,6 +270,7 @@ export function cleanAndFormatInsight(item: unknown): string {
 
   if (!text || text.length < 3) return '';
 
+  text = text.replace(/[\s,;:\-–—]+$/, '');
   if (!/[.!?]$/.test(text)) {
     text += '.';
   }
@@ -255,4 +280,3 @@ export function cleanAndFormatInsight(item: unknown): string {
     .replace(/\s+/g, ' ')
     .trim();
 }
-

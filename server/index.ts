@@ -1433,7 +1433,7 @@ async function fetchGNewsArticles(options: FetchGNewsOptions = {}): Promise<{
       url: art.url,
       domain,
       description: art.description || art.content || art.title || '',
-      date: art.publishedAt || new Date().toISOString(),
+      date: art.publishedAt || undefined,
       image: art.image || undefined,
       thumbnail: art.image || undefined,
       type: 'news' as const,

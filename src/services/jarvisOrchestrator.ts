@@ -877,9 +877,36 @@ function safeJsonParse<T>(text: string, fallback: T): T {
   }
 }
 
+export interface ResearcherCandidate {
+  title?: string;
+  fact: string;
+  sourceIndex?: number;
+  domain?: string;
+  url?: string;
+  eventDate?: string | null;
+  publishedAt?: string | null;
+  updatedAt?: string | null;
+  location?: string | null;
+  category?: string | null;
+  confirmedBy?: string[];
+}
+
+export interface FactCheckVerifiedItem {
+  claim: string;
+  dateStatus: 'today' | 'published today' | 'updated today' | 'yesterday' | 'older' | 'unknown';
+  eventDate?: string | null;
+  publishedAt?: string | null;
+  updatedAt?: string | null;
+  domain?: string;
+  url?: string;
+  confirmedBy?: string[];
+  notes?: string;
+}
+
 export interface ResearcherParsedOutput {
   facts: string[];
-  sources: Array<{ title: string; url: string; domain?: string }>;
+  candidates?: ResearcherCandidate[];
+  sources: Array<{ title: string; url: string; domain?: string; publishedAt?: string | null }>;
   notes?: string;
 }
 
@@ -888,7 +915,145 @@ export interface RawSearchResultCandidate {
   url: string;
   domain?: string;
   description: string;
-  type: 'wikipedia' | 'web';
+  date?: string;
+  publishedAt?: string;
+  updatedAt?: string;
+  location?: string;
+  category?: string;
+  type: 'wikipedia' | 'web' | 'news';
+}
+
+/**
+ * Validates and classifies date status based on actual source dates (never assuming current time is event time)
+ */
+export function classifyDateStatus(
+  eventDate?: string | null,
+  publishedAt?: string | null,
+  updatedAt?: string | null,
+): 'today' | 'published today' | 'updated today' | 'yesterday' | 'older' | 'unknown' {
+  const now = new Date();
+  const todayStr = now.toISOString().slice(0, 10);
+  const yesterday = new Date(now.getTime() - 24 * 60 * 60 * 1000);
+  const yesterdayStr = yesterday.toISOString().slice(0, 10);
+
+  const getDayStr = (dStr?: string | null): string | null => {
+    if (!dStr) return null;
+    try {
+      const parsed = new Date(dStr);
+      if (!isNaN(parsed.getTime())) {
+        return parsed.toISOString().slice(0, 10);
+      }
+      const m = String(dStr).match(/\b\d{4}-\d{2}-\d{2}\b/);
+      return m ? m[0] : null;
+    } catch {
+      return null;
+    }
+  };
+
+  const eventDay = getDayStr(eventDate);
+  const pubDay = getDayStr(publishedAt);
+  const updDay = getDayStr(updatedAt);
+
+  if (eventDay) {
+    if (eventDay === todayStr) return 'today';
+    if (eventDay === yesterdayStr) return 'yesterday';
+    return 'older';
+  }
+
+  if (pubDay) {
+    if (pubDay === todayStr) return 'published today';
+    if (pubDay === yesterdayStr) return 'yesterday';
+    return 'older';
+  }
+
+  if (updDay) {
+    if (updDay === todayStr) return 'updated today';
+    if (updDay === yesterdayStr) return 'yesterday';
+    return 'older';
+  }
+
+  return 'unknown';
+}
+
+/**
+ * Deduplicates news candidates covering the same underlying event, merging sources and confirmed outlets
+ */
+export function deduplicateNewsCandidates(
+  candidates: ResearcherCandidate[],
+  allSources: AISource[] = [],
+): ResearcherCandidate[] {
+  if (!candidates || candidates.length === 0) return [];
+
+  const merged: ResearcherCandidate[] = [];
+
+  for (const cand of candidates) {
+    if (!cand || !cand.fact) continue;
+
+    const normText = `${cand.title || ''} ${cand.fact}`
+      .toLowerCase()
+      .replace(/[^\w\s]/g, ' ')
+      .replace(/\s+/g, ' ')
+      .trim();
+
+    const candTokens = normText.split(' ').filter((w) => w.length > 3);
+
+    let matchIdx = -1;
+    for (let i = 0; i < merged.length; i++) {
+      const existing = merged[i];
+      const existingNorm = `${existing.title || ''} ${existing.fact}`
+        .toLowerCase()
+        .replace(/[^\w\s]/g, ' ')
+        .replace(/\s+/g, ' ')
+        .trim();
+
+      const existingTokens = existingNorm.split(' ').filter((w) => w.length > 3);
+      if (candTokens.length > 0 && existingTokens.length > 0) {
+        const overlap = candTokens.filter((t) => existingTokens.includes(t)).length;
+        const similarity = overlap / Math.min(candTokens.length, existingTokens.length);
+        if (similarity >= 0.52) {
+          matchIdx = i;
+          break;
+        }
+      }
+    }
+
+    if (matchIdx !== -1) {
+      const existing = merged[matchIdx];
+      const newConfirmed = new Set(existing.confirmedBy || []);
+      if (cand.domain) newConfirmed.add(cand.domain);
+      if (Array.isArray(cand.confirmedBy)) {
+        cand.confirmedBy.forEach((c) => newConfirmed.add(c));
+      }
+      existing.confirmedBy = Array.from(newConfirmed);
+
+      if ((cand.fact.length > existing.fact.length && !existing.title) || (!existing.title && cand.title)) {
+        if (cand.title) existing.title = cand.title;
+      }
+      if (!existing.eventDate && cand.eventDate) existing.eventDate = cand.eventDate;
+      if (!existing.publishedAt && cand.publishedAt) existing.publishedAt = cand.publishedAt;
+      if (!existing.location && cand.location) existing.location = cand.location;
+      if (!existing.category && cand.category) existing.category = cand.category;
+    } else {
+      const confirmed = new Set(cand.confirmedBy || []);
+      if (cand.domain) confirmed.add(cand.domain);
+
+      let exactUrl = cand.url;
+      if (!exactUrl && cand.sourceIndex && allSources[cand.sourceIndex - 1]?.url) {
+        exactUrl = allSources[cand.sourceIndex - 1].url;
+      } else if (!exactUrl && cand.domain) {
+        const matchSrc = allSources.find((s) => s.domain === cand.domain || (s.url && s.url.includes(cand.domain!)));
+        if (matchSrc) exactUrl = matchSrc.url;
+      }
+
+      merged.push({
+        ...cand,
+        url: exactUrl,
+        confirmedBy: Array.from(confirmed),
+      });
+    }
+  }
+
+  return merged;
 }
 
 /**
@@ -1066,6 +1231,7 @@ export function parseResearcherOutput(
 ): ResearcherParsedOutput {
   const result: ResearcherParsedOutput = {
     facts: [],
+    candidates: [],
     sources: [],
     notes: '',
   };
@@ -1089,19 +1255,78 @@ export function parseResearcherOutput(
     return cleanAndFormatFact(item, { markdownSource: false });
   };
 
-  // Helper to populate facts from array
-  const populateFactsFromArray = (arr: unknown[]) => {
-    if (!Array.isArray(arr)) return;
-    for (const item of arr) {
-      const cleaned = cleanFactItem(item);
-      if (cleaned && cleaned.length > 3 && !result.facts.includes(cleaned)) {
-        result.facts.push(cleaned);
+  const rawCandidateList: ResearcherCandidate[] = [];
+
+  // Helper to process candidate items (both objects and strings)
+  const processCandidateItem = (item: unknown) => {
+    if (!item) return;
+    if (typeof item === 'object' && item !== null) {
+      const obj = item as Record<string, unknown>;
+      const factText = String(obj.fact || obj.claim || obj.description || obj.title || '').trim();
+      if (!factText) return;
+
+      const sourceIdx = typeof obj.sourceIndex === 'number' ? obj.sourceIndex : undefined;
+      let domain = typeof obj.domain === 'string' ? obj.domain.trim() : undefined;
+      let url = typeof obj.url === 'string' ? obj.url.trim() : undefined;
+      const title = typeof obj.title === 'string' ? obj.title.trim() : undefined;
+      const eventDate = typeof obj.eventDate === 'string' ? obj.eventDate.trim() : null;
+      let publishedAt = typeof obj.publishedAt === 'string' ? obj.publishedAt.trim() : null;
+      const updatedAt = typeof obj.updatedAt === 'string' ? obj.updatedAt.trim() : null;
+      const location = typeof obj.location === 'string' ? obj.location.trim() : null;
+      const category = typeof obj.category === 'string' ? obj.category.trim() : null;
+      const confirmedBy = Array.isArray(obj.confirmedBy)
+        ? (obj.confirmedBy as string[]).map((c) => String(c).trim()).filter(Boolean)
+        : [];
+
+      // If URL is missing or just a homepage, resolve against fallback sources
+      if (sourceIdx && fallbackSources[sourceIdx - 1]) {
+        const matched = fallbackSources[sourceIdx - 1];
+        if (!url || !url.startsWith('http') || url.replace(/^https?:\/\//, '').split('/')[1]?.length === 0) {
+          if (matched.url) url = matched.url;
+        }
+        if (!domain && matched.domain) domain = matched.domain;
+        if (!publishedAt && matched.date) publishedAt = matched.date;
+      } else if (domain) {
+        const matched = fallbackSources.find((s) => s.domain === domain || (s.url && s.url.includes(domain!)));
+        if (matched) {
+          if (!url || !url.startsWith('http') || url.replace(/^https?:\/\//, '').split('/')[1]?.length === 0) {
+            if (matched.url) url = matched.url;
+          }
+          if (!publishedAt && matched.date) publishedAt = matched.date;
+        }
       }
+
+      rawCandidateList.push({
+        title,
+        fact: factText,
+        sourceIndex: sourceIdx,
+        domain,
+        url,
+        eventDate,
+        publishedAt,
+        updatedAt,
+        location,
+        category,
+        confirmedBy,
+      });
+    } else if (typeof item === 'string' && item.trim().length > 3) {
+      rawCandidateList.push({
+        fact: item.trim(),
+      });
     }
   };
 
   // Helper to inspect parsed object
   const extractFromObject = (data: Record<string, unknown>) => {
+    // Check candidates first
+    const possibleCandidateKeys = ['candidates', 'news_candidates', 'newsCandidates', 'items', 'articles', 'stories'];
+    for (const key of possibleCandidateKeys) {
+      if (Array.isArray(data[key]) && (data[key] as unknown[]).length > 0) {
+        (data[key] as unknown[]).forEach((item) => processCandidateItem(item));
+        break;
+      }
+    }
+
     const possibleFactKeys = [
       'facts',
       'core_facts',
@@ -1114,21 +1339,22 @@ export function parseResearcherOutput(
       'claims',
       'extracted_facts',
       'fact_list',
-      'items',
       'insights',
       'data',
       'verified_facts',
     ];
 
-    for (const key of possibleFactKeys) {
-      if (Array.isArray(data[key]) && (data[key] as unknown[]).length > 0) {
-        populateFactsFromArray(data[key] as unknown[]);
-        break;
+    if (rawCandidateList.length === 0) {
+      for (const key of possibleFactKeys) {
+        if (Array.isArray(data[key]) && (data[key] as unknown[]).length > 0) {
+          (data[key] as unknown[]).forEach((item) => processCandidateItem(item));
+          break;
+        }
       }
     }
 
     // If facts is a string with newlines or bullets
-    if (result.facts.length === 0) {
+    if (rawCandidateList.length === 0) {
       for (const key of possibleFactKeys) {
         if (typeof data[key] === 'string' && (data[key] as string).trim()) {
           const lines = (data[key] as string)
@@ -1136,9 +1362,7 @@ export function parseResearcherOutput(
             .map((l) => l.replace(/^[\s*•\-#\d.)\]:]+/, '').trim())
             .filter((l) => l.length > 8);
           if (lines.length > 0) {
-            lines.forEach((l) => {
-              if (!result.facts.includes(l)) result.facts.push(l);
-            });
+            lines.forEach((l) => processCandidateItem(l));
             break;
           }
         }
@@ -1146,12 +1370,12 @@ export function parseResearcherOutput(
     }
 
     // Check nested objects (e.g. data.research.facts or data.researcher.facts)
-    if (result.facts.length === 0) {
+    if (rawCandidateList.length === 0) {
       const nestedContainers = ['research', 'researcher', 'output', 'response', 'result'];
       for (const containerKey of nestedContainers) {
         if (typeof data[containerKey] === 'object' && data[containerKey] !== null) {
           extractFromObject(data[containerKey] as Record<string, unknown>);
-          if (result.facts.length > 0) break;
+          if (rawCandidateList.length > 0) break;
         }
       }
     }
@@ -1164,13 +1388,28 @@ export function parseResearcherOutput(
           if (typeof s === 'object' && s !== null) {
             const sobj = s as Record<string, unknown>;
             const title = String(sobj.title || sobj.name || sobj.domain || 'Source').trim();
-            const url = String(sobj.url || sobj.link || sobj.uri || '').trim();
+            let url = String(sobj.url || sobj.link || sobj.uri || '').trim();
             const domain = String(sobj.domain || '').trim();
+            const publishedAt = typeof sobj.publishedAt === 'string' ? sobj.publishedAt.trim() : null;
+
+            // Restore exact full URL from fallbackSources if LLM truncated it to root domain
+            if (domain || title) {
+              const matchedFallback = fallbackSources.find(
+                (fs) => (domain && fs.domain === domain) || (fs.title && fs.title.toLowerCase().includes(title.toLowerCase())),
+              );
+              if (matchedFallback && matchedFallback.url) {
+                if (!url || !url.startsWith('http') || url.replace(/^https?:\/\//, '').split('/')[1]?.length === 0) {
+                  url = matchedFallback.url;
+                }
+              }
+            }
+
             if (title || url) {
               result.sources.push({
                 title: title || domain || url,
                 url: url || (domain ? `https://${domain}` : ''),
                 domain: domain || (url && url.startsWith('http') ? new URL(url).hostname.replace(/^www\./, '') : undefined),
+                publishedAt,
               });
             }
           } else if (typeof s === 'string' && s.trim()) {
@@ -1195,14 +1434,14 @@ export function parseResearcherOutput(
   const parsed = safeJsonParse<unknown>(text, null);
   if (parsed) {
     if (Array.isArray(parsed)) {
-      populateFactsFromArray(parsed);
+      parsed.forEach((item) => processCandidateItem(item));
     } else if (typeof parsed === 'object' && parsed !== null) {
       extractFromObject(parsed as Record<string, unknown>);
     }
   }
 
-  // 2. Fallback text parsing if JSON returned 0 facts (e.g. model output plain text with bullets)
-  if (result.facts.length === 0) {
+  // 2. Fallback text parsing if JSON returned 0 items (e.g. model output plain text with bullets)
+  if (rawCandidateList.length === 0) {
     const lines = text.split(/\r?\n/);
     for (const rawLine of lines) {
       const line = rawLine.trim();
@@ -1213,16 +1452,13 @@ export function parseResearcherOutput(
           candidate.length > 8 &&
           !/^(sources?|references?|notes?|summary|context|tasks?|guidance)\b/i.test(candidate)
         ) {
-          const cleaned = cleanFactItem(candidate);
-          if (cleaned && !result.facts.includes(cleaned)) {
-            result.facts.push(cleaned);
-          }
+          processCandidateItem(candidate);
         }
       }
     }
 
     // If still empty and text is substantial, split into clean sentences
-    if (result.facts.length === 0 && text.length > 25) {
+    if (rawCandidateList.length === 0 && text.length > 25) {
       const stripped = text
         .replace(/```[\s\S]*?```/g, '')
         .replace(/[{}[\]"]/g, '')
@@ -1237,21 +1473,48 @@ export function parseResearcherOutput(
             !/^(here are|i have|in summary|based on|as an ai|below are)/i.test(s),
         );
       if (sentences.length > 0) {
-        result.facts = sentences.slice(0, 7);
+        sentences.slice(0, 7).forEach((s) => processCandidateItem(s));
       }
     }
   }
 
   // 3. Fallback to gathered search snippets if LLM produced 0 facts
-  if (result.facts.length === 0 && fallbackSources.length > 0) {
-    fallbackSources.forEach((s) => {
+  if (rawCandidateList.length === 0 && fallbackSources.length > 0) {
+    fallbackSources.forEach((s, idx) => {
       if (s.description && s.description.trim().length > 15) {
-        const snippetFact = `${s.title ? `[${s.title}] ` : ''}${s.description.trim()}`;
-        const cleaned = cleanFactItem(snippetFact);
-        if (cleaned && !result.facts.includes(cleaned)) {
-          result.facts.push(cleaned);
-        }
+        rawCandidateList.push({
+          title: s.title,
+          fact: s.description.trim(),
+          sourceIndex: idx + 1,
+          domain: s.domain,
+          url: s.url,
+          publishedAt: s.date || null,
+        });
       }
+    });
+  }
+
+  // Deduplicate candidates covering the same story
+  const deduplicatedCandidates = deduplicateNewsCandidates(rawCandidateList, fallbackSources);
+  result.candidates = deduplicatedCandidates;
+
+  // Populate formatted facts
+  for (const cand of deduplicatedCandidates) {
+    const cleaned = cleanFactItem(cand);
+    if (cleaned && cleaned.length > 3 && !result.facts.includes(cleaned)) {
+      result.facts.push(cleaned);
+    }
+  }
+
+  // Ensure fallback sources are preserved if result.sources was empty
+  if (result.sources.length === 0 && fallbackSources.length > 0) {
+    fallbackSources.forEach((fs) => {
+      result.sources.push({
+        title: fs.title || fs.domain || 'Source',
+        url: fs.url || '',
+        domain: fs.domain,
+        publishedAt: fs.date || null,
+      });
     });
   }
 
@@ -2045,13 +2308,17 @@ Please perform your specialized processing for this inquiry. Provide clear, conc
         `[JARVIS Researcher] Relevance filter evaluated ${rawCandidates.length} raw search results -> kept ${filteredSources.length} on-topic sources.`,
       );
 
-      filteredSources.slice(0, 10).forEach((src, idx) => {
-        gatheredSnippets.push(`[Source ${idx + 1} | ${src.domain || 'Source'}: ${src.title}] ${src.description}`);
+      const candidatePoolLimit = isNewsQuery ? 12 : 10;
+
+      filteredSources.slice(0, candidatePoolLimit).forEach((src, idx) => {
+        const pubDateStr = src.publishedAt || src.date ? ` (Published: ${src.publishedAt || src.date})` : '';
+        gatheredSnippets.push(`[Source ${idx + 1} | ${src.domain || 'Source'}: ${src.title}]${pubDateStr} ${src.description} [URL: ${src.url}]`);
         sourcesCollected.push({
           title: src.title,
           url: src.url,
           domain: src.domain,
           description: src.description,
+          date: src.publishedAt || src.date,
           type: src.type,
         });
       });
@@ -2095,6 +2362,7 @@ Please perform your specialized processing for this inquiry. Provide clear, conc
     if (researchRes.ok && researchRes.text) {
       const parsedResearcher = parseResearcherOutput(researchRes.text, sourcesCollected);
       researcherOutput.facts = parsedResearcher.facts;
+      researcherOutput.candidates = parsedResearcher.candidates;
       researcherOutput.sources = parsedResearcher.sources;
 
       console.log(`[JARVIS Researcher] Parsed ${researcherOutput.facts.length} facts:`, researcherOutput.facts);
@@ -2209,15 +2477,46 @@ Please perform your specialized processing for this inquiry. Provide clear, conc
     });
 
     const defaultPromptTemplate = DEFAULT_AGENT_SYSTEM_PROMPTS.factChecker;
-    const claimsText =
-      researcherOutput.facts.length > 0
-        ? researcherOutput.facts.map((f, i) => `${i + 1}. ${f}`).join('\n')
-        : 'Evaluate general knowledge truthfulness for: ' + query;
 
-    const sourcesText =
-      sourcesCollected.length > 0
-        ? sourcesCollected.map((s, i) => `Source [${i + 1}]: Title: "${s.title}", Domain: "${s.domain || 'N/A'}", URL: "${s.url || 'N/A'}", Snippet: "${s.description || 'N/A'}"`).join('\n')
-        : 'No sources collected.';
+    let claimsText = '';
+    if (researcherOutput.candidates && researcherOutput.candidates.length > 0) {
+      const candidateClaims = researcherOutput.candidates.map((c, i) => ({
+        id: i + 1,
+        title: c.title || null,
+        fact: c.fact,
+        sourceIndex: c.sourceIndex || null,
+        domain: c.domain || null,
+        eventDate: c.eventDate || null,
+        publishedAt: c.publishedAt || null,
+        updatedAt: c.updatedAt || null,
+        location: c.location || null,
+        category: c.category || null,
+        confirmedBy: c.confirmedBy || [],
+      }));
+      claimsText = JSON.stringify(candidateClaims, null, 2);
+    } else if (researcherOutput.facts.length > 0) {
+      claimsText = JSON.stringify(
+        researcherOutput.facts.map((f, i) => ({ id: i + 1, fact: f })),
+        null,
+        2,
+      );
+    } else {
+      claimsText = 'Evaluate general knowledge truthfulness for: ' + query;
+    }
+
+    let sourcesText = '';
+    if (sourcesCollected.length > 0) {
+      const compactSources = sourcesCollected.slice(0, 12).map((s, i) => ({
+        index: i + 1,
+        title: s.title,
+        domain: s.domain || 'web',
+        url: s.url,
+        publishedAt: s.date || null,
+      }));
+      sourcesText = JSON.stringify(compactSources, null, 2);
+    } else {
+      sourcesText = 'No sources collected.';
+    }
 
     const activePrompt = (fCfg.systemPrompt || defaultPromptTemplate)
       .replace('{task}', plannerOutput.task || query)
@@ -2242,6 +2541,41 @@ Please perform your specialized processing for this inquiry. Provide clear, conc
       if (!Array.isArray(factCheckOutput.issues)) {
         factCheckOutput.issues = [];
       }
+
+      // Normalize verified claims into clean, rich representations
+      const normalizedVerified: string[] = [];
+      factCheckOutput.verified.forEach((vItem) => {
+        if (typeof vItem === 'object' && vItem !== null) {
+          const vObj = vItem as Record<string, unknown>;
+          const claimText = String(vObj.claim || vObj.fact || vObj.statement || vObj.title || '').trim();
+          if (!claimText) return;
+
+          let dateStatus = String(vObj.dateStatus || '').toLowerCase();
+          const calculatedStatus = classifyDateStatus(
+            vObj.eventDate as string | null,
+            vObj.publishedAt as string | null,
+            vObj.updatedAt as string | null,
+          );
+          if (!dateStatus || dateStatus === 'undefined' || dateStatus === 'null') {
+            dateStatus = calculatedStatus;
+          }
+
+          const confirmedBy = Array.isArray(vObj.confirmedBy) && vObj.confirmedBy.length > 0
+            ? ` (Confirmed by: ${vObj.confirmedBy.join(', ')})`
+            : '';
+          const domainInfo = vObj.domain ? ` [${vObj.domain}]` : '';
+          const statusLabel = dateStatus && dateStatus !== 'unknown' ? ` [${dateStatus}]` : '';
+
+          normalizedVerified.push(`${statusLabel}${domainInfo} ${claimText}${confirmedBy}`.trim());
+        } else if (typeof vItem === 'string' && vItem.trim()) {
+          normalizedVerified.push(vItem.trim());
+        }
+      });
+
+      if (normalizedVerified.length > 0) {
+        factCheckOutput.verified = normalizedVerified;
+      }
+
       updateStep({
         agentId: 'factChecker',
         name: fCfg.name,
