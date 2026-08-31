@@ -1124,7 +1124,7 @@ export function extractTopicKeywords(query: string, task?: string): {
   // 2. Remove command & question prefix filler
   const cleanedSearchQuery = query
     .replace(
-      /^(?:fact-?check|investigate|debunk|verify|research|analyze|tell me about|explain|what is|how does|why is|why does|who was|who is)\s+/i,
+      /^(?:fact-?check|investigate|debunk|verify|research|analyze|tell me about|explain|what is|how does|why is|why does|who was|who is|compare|comar|comparing|comparison between|diff between|difference between)\s+/i,
       '',
     )
     .trim();
@@ -1135,7 +1135,13 @@ export function extractTopicKeywords(query: string, task?: string): {
     'in', 'on', 'at', 'to', 'for', 'of', 'with', 'by', 'from', 'about',
     'into', 'through', 'during', 'before', 'after', 'above', 'below',
     'and', 'or', 'not', 'but', 'nor', 'so', 'yet', 'as', 'if', 'then',
-    'this', 'that', 'these', 'those', 'it', 'its', 'they', 'them', 'their',
+    'this', 'that', 'these', 'those', 'it', 'its',
+    'i', 'me', 'my', 'myself', 'mine',
+    'you', 'your', 'yours', 'yourself',
+    'we', 'us', 'our', 'ours', 'ourselves',
+    'he', 'him', 'his', 'himself',
+    'she', 'her', 'hers', 'herself',
+    'they', 'them', 'their', 'theirs', 'themselves',
     'what', 'which', 'who', 'whom', 'whose', 'when', 'where', 'why', 'how',
     'can', 'could', 'should', 'would', 'will', 'shall', 'may', 'might', 'must',
     'do', 'does', 'did', 'have', 'has', 'had', 'having',
@@ -1914,12 +1920,29 @@ Please perform your specialized processing for this inquiry. Provide clear, conc
     }
   };
 
+  // Helper to detect comparison inquiries involving the user ("me", "myself", "you and me", "us", "I") vs AI or asking personal questions about the user
+  const isPersonalOrHumanAiComparison = (text: string): boolean => {
+    if (!text || typeof text !== 'string') return false;
+    const lower = text.toLowerCase().trim().replace(/[?!.,]+$/g, '');
+    return (
+      /\b(?:compare|comar|comparing|comparison between|diff|difference between)\s+(?:me|myself|i|us|you and me|me and you)\b/i.test(lower) ||
+      /\b(?:compare|comar|comparing|comparison between|diff|difference between)\s+.*?\s+(?:and|with|to|vs|versus)\s+(?:me|myself|i|us)\b/i.test(lower) ||
+      /\b(?:me|myself|i|us)\s+(?:and|with|vs|versus)\s+(?:deepseek|chatgpt|openai|claude|gemini|jarvis|ai|llm|robot|machine|bot|technology)\b/i.test(lower) ||
+      /\b(?:deepseek|chatgpt|openai|claude|gemini|jarvis|ai|llm|robot|machine|bot|technology)\s+(?:and|with|vs|versus)\s+(?:me|myself|i|us)\b/i.test(lower) ||
+      /\b(?:how do i compare to|how do i stack up against|how am i different from|how do you compare to me)\b/i.test(lower) ||
+      /\b(?:what do you think of me|how do you see me|tell me about me|who am i|rate me)\b/i.test(lower) ||
+      (/\byou and me\b/i.test(lower) && /\b(?:compare|difference|better|vs|versus|similar)\b/i.test(lower))
+    );
+  };
+
   // Helper to detect self-referential / meta / greeting inquiries about JARVIS itself
   const isSelfReferentialInquiry = (text: string): boolean => {
+    if (!text || typeof text !== 'string') return false;
     const lower = text.toLowerCase().trim().replace(/[?!.,]+$/g, '');
     return (
       /^(hi|hello|hey|greetings|howdy|good (morning|afternoon|evening))\b/i.test(lower) ||
-      /\b(what (can|do) you do|what are your capabilities|who are you|what is your name|how do you work|tell me about yourself|what is jarvis|what can jarvis do|who made you|are you an ai|help me)\b/i.test(lower)
+      /\b(what (can|do) you do|what are your capabilities|who are you|what is your name|how do you work|tell me about yourself|what is jarvis|what can jarvis do|who made you|are you an ai|help me)\b/i.test(lower) ||
+      isPersonalOrHumanAiComparison(text)
     );
   };
 
@@ -2035,7 +2058,17 @@ Please perform your specialized processing for this inquiry. Provide clear, conc
       }
       plannerOutput.task = String(plannerOutput.task || query);
       plannerOutput.needsKnowledgeAgent = Boolean(plannerOutput.needsKnowledgeAgent);
-      if (isSelfReferentialInquiry(query) && !deepResearch) {
+
+      if (isPersonalOrHumanAiComparison(query)) {
+        plannerOutput.needsResearch = false;
+        plannerOutput.needsKnowledgeAgent = true; // Advisor runs to provide conceptual Human vs AI breakdown
+        plannerOutput.needsFactCheck = false;
+        plannerOutput.needsReview = false;
+        plannerOutput.needsWikipedia = false;
+        plannerOutput.needsDiagram = false;
+        plannerOutput.needsChart = false;
+        plannerOutput.needsImage = false;
+      } else if (isSelfReferentialInquiry(query)) {
         plannerOutput.needsResearch = false;
         plannerOutput.needsKnowledgeAgent = false;
         plannerOutput.needsFactCheck = false;
@@ -2107,11 +2140,15 @@ Please perform your specialized processing for this inquiry. Provide clear, conc
   const isNewsQuery = isNewsInquiry(combinedQueryText);
   const isWorldNews = isWorldNewsInquiry(combinedQueryText);
   const isWeatherQuery = /\b(weather|temperature|forecast|rain|snow|wind|humidity|degrees)\b/i.test(combinedQueryText);
+  const isPersonalQuery = isPersonalOrHumanAiComparison(query) || isPersonalOrHumanAiComparison(combinedQueryText);
+  const isSelfQuery = isSelfReferentialInquiry(query) || isSelfReferentialInquiry(combinedQueryText);
 
   // Determine which downstream agents are required.
   // Researcher ONLY runs if enabled AND (deepResearch toggle is active OR plannerOutput.needsResearch is true).
-  // When needsResearch is false, Researcher (including Tavily, GNews, DuckDuckGo, and Wikipedia) is skipped entirely.
+  // When needsResearch is false or query is personal/self-referential, Researcher (including Tavily, GNews, DuckDuckGo, and Wikipedia) is skipped entirely.
   const shouldResearch =
+    !isPersonalQuery &&
+    !isSelfQuery &&
     agentConfigs.researcher.enabled &&
     (deepResearch || Boolean(plannerOutput.needsResearch));
 
@@ -2711,6 +2748,10 @@ Please perform your specialized processing for this inquiry. Provide clear, conc
 
     let advisorUserContent = `User Inquiry: "${query}"\nTask Scope: "${plannerOutput.task || query}"\n\n`;
 
+    if (isPersonalOrHumanAiComparison(query)) {
+      advisorUserContent += `[CRITICAL IDENTITY INTEGRITY DIRECTIVE: This is a Human vs AI comparative inquiry involving the user ("me" / "you and me"). Do NOT guess, search for, or fabricate the user's specific real-world identity, name, or personal background. Compare Human capabilities (biological cognition, creativity, intuition, consciousness, subjective experience, physical agency, contextual judgment) with Artificial Intelligence capabilities conceptually and respectfully.]\n\n`;
+    }
+
     if (verifiedList.length > 0) {
       advisorUserContent += `Fact Checker Verified Claims:\n${verifiedList.map((c) => `- ${c}`).join('\n')}\n\n`;
     }
@@ -3052,6 +3093,10 @@ Please perform your specialized processing for this inquiry. Provide clear, conc
     const reviewerIssuesList = Array.isArray(reviewerOutput?.issues) ? reviewerOutput.issues : [];
     const reviewerRecommendation = reviewerOutput?.recommendation ? reviewerOutput.recommendation.trim() : '';
 
+    const personalIdentityDirective = isPersonalOrHumanAiComparison(query)
+      ? `\n\n[CRITICAL USER IDENTITY & ANTI-MISATTRIBUTION RULE]: The user asked a human vs AI / personal comparison ("${query}"). You must NEVER attribute any third-party stranger's identity, real name, LinkedIn profile, or personal background to the user. Present the synthesis as Human Intelligence vs Artificial Intelligence conceptually, objectively, and respectfully.`
+      : '';
+
     const rawSynthesizerContext = `Current date and time: ${currentDateTime}
 User Query: "${query}"
 
@@ -3064,7 +3109,7 @@ ${reviewerMissingList.length > 0 ? `Reviewer Missing Context Suggestions:\n${rev
 ${reviewerIssuesList.length > 0 ? `Reviewer Flagged Content/Scope Issues (EXCLUDE OR REPLACE ITEMS FLAGGED HERE):\n${reviewerIssuesList.map((iss) => `- ${iss}`).join('\n')}` : ''}
 ${reviewerRecommendation ? `Reviewer Actionable Guidance & Content Selection (HONOR THESE SELECTION & EXCLUSION INSTRUCTIONS):\n${reviewerRecommendation}` : ''}
 Retrieved Ground-Truth Sources (CRITICAL RULE: Only cite sources from this exact list. Never invent or cite any other sources):
-${sourcesListText}${customInsightsBlock}`;
+${sourcesListText}${customInsightsBlock}${personalIdentityDirective}`;
 
     const defaultSysPrompt = DEFAULT_AGENT_SYSTEM_PROMPTS.finalSynthesizer;
     let activeSysPrompt =
