@@ -749,9 +749,11 @@ export function generateConceptBlueprintSvg(query: string, contextText: string):
 function resolveProviderConfig(
   agentConfig: JarvisAgentConfig,
   isFallback = false,
+  overrideMaxTokens?: number,
 ): { provider: AIProviderConfig | null; model: string; error?: string } {
   const providerId = isFallback ? agentConfig.fallbackProviderId : agentConfig.providerId;
   const modelId = isFallback ? agentConfig.fallbackModelId : agentConfig.modelId;
+  const effectiveMaxTokens = overrideMaxTokens !== undefined ? overrideMaxTokens : agentConfig.maxTokens;
 
   const state = storage.getAIProvidersState();
   const activeCustom = storage.getActiveAIProvider();
@@ -765,7 +767,7 @@ function resolveProviderConfig(
       const customConfig: AIProviderConfig = {
         ...activeCustom,
         model: liveModel,
-        maxTokens: agentConfig.maxTokens,
+        maxTokens: effectiveMaxTokens,
       };
       return {
         provider: customConfig,
@@ -782,7 +784,7 @@ function resolveProviderConfig(
         keyStrategy: 'failover',
         keys: [],
         capabilities: { text: true, tools: true, web: true, wikipedia: true, memory: true },
-        maxTokens: agentConfig.maxTokens,
+        maxTokens: effectiveMaxTokens,
       },
       model: modelId || 'deepseek/deepseek-chat',
     };
@@ -799,7 +801,7 @@ function resolveProviderConfig(
       const customConfig: AIProviderConfig = {
         ...activeCustom,
         model: liveModel,
-        maxTokens: agentConfig.maxTokens,
+        maxTokens: effectiveMaxTokens,
       };
       return {
         provider: customConfig,
@@ -823,7 +825,7 @@ function resolveProviderConfig(
   const customConfig: AIProviderConfig = {
     ...matched,
     model: liveModel,
-    maxTokens: agentConfig.maxTokens,
+    maxTokens: effectiveMaxTokens,
   };
 
   return {
@@ -1714,7 +1716,17 @@ export async function runJarvisPipeline(
       return { ok: false, text: '', error: 'Agent disabled in configuration', providerName: '', model: '' };
     }
 
-    const primary = resolveProviderConfig(cfg, false);
+    const effectiveMaxTokens =
+      overrideMaxTokens !== undefined
+        ? overrideMaxTokens
+        : agentId === 'architect'
+        ? Math.max(cfg.maxTokens || 4500, 4500)
+        : agentId === 'advisor'
+        ? (deepResearch ? 800 : 400)
+        : cfg.maxTokens;
+    const effectiveTimeoutMs = agentId === 'architect' ? 75000 : 35000;
+
+    const primary = resolveProviderConfig(cfg, false, effectiveMaxTokens);
     if (primary.error) {
       return {
         ok: false,
@@ -1727,21 +1739,11 @@ export async function runJarvisPipeline(
 
     let fallbackConfig: AIProviderConfig | null = null;
     if (cfg.enableFailover && cfg.fallbackProviderId) {
-      const fb = resolveProviderConfig(cfg, true);
+      const fb = resolveProviderConfig(cfg, true, effectiveMaxTokens);
       if (!fb.error && fb.provider) {
         fallbackConfig = fb.provider;
       }
     }
-
-    const effectiveMaxTokens =
-      overrideMaxTokens !== undefined
-        ? overrideMaxTokens
-        : agentId === 'architect'
-        ? Math.max(cfg.maxTokens || 4500, 4500)
-        : agentId === 'advisor'
-        ? (deepResearch ? 800 : 450)
-        : cfg.maxTokens;
-    const effectiveTimeoutMs = agentId === 'architect' ? 75000 : 35000;
 
     try {
       const res = await api.jarvisAgentCall({
@@ -2719,13 +2721,13 @@ Please perform your specialized processing for this inquiry. Provide clear, conc
       advisorUserContent += `Researcher Sourced Findings:\n${factsList.map((f, i) => `${i + 1}. ${f}`).join('\n')}\n\n`;
     }
 
-    if (deepResearch) {
-      advisorUserContent += `Deep Research Mode is ON. Token Budget: 800 tokens.\nPlease provide a rich, comprehensive comparative analysis including:\n- Structured comparison table\n- Text-based ASCII architecture/workflow/system diagram if comparing processes, workflows, or structural relationships\n- Detailed trade-off analysis\n- Clear reasoned recommendation/verdict if a choice or preference was requested.`;
-    } else {
-      advisorUserContent += `Quick Mode (Budget: 450 tokens).\nPlease prioritize a direct, focused comparative breakdown with a clear reasoned verdict/recommendation and supporting reasoning (full detailed tables or text-diagrams are optional/condensed).`;
-    }
+    const advisorMaxTokens = deepResearch ? 800 : 400;
 
-    const advisorMaxTokens = deepResearch ? 800 : 450;
+    if (deepResearch) {
+      advisorUserContent += `Deep Research Mode: ON (Budget: 800 tokens max).\nPlease provide a rich, comprehensive comparative analysis including:\n- Structured comparison table\n- Text-based ASCII architecture/workflow/system diagram if comparing processes, workflows, or structural relationships\n- Detailed multi-dimensional trade-off analysis\n- Clear reasoned recommendation/verdict if a choice or preference was requested.`;
+    } else {
+      advisorUserContent += `Deep Research Mode: OFF (Quick Mode - Strict Budget: ~350-400 tokens max).\nPlease provide a concise, direct comparative summary and a clear, reasoned verdict/recommendation.\nIMPORTANT: Do NOT output ASCII diagrams. Keep comparison to brief bullet points rather than large tables so your entire response stays tightly within the ~400-token budget.`;
+    }
 
     const advisorRes = await callAgent(
       'advisor',

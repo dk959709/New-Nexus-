@@ -953,9 +953,11 @@ async function executeAiWithProviderOrFallback({
   lastStatus: number;
 } | null> {
   const effectiveMaxTokens =
-    providerConfig?.maxTokens && providerConfig.maxTokens > 0
+    maxTokens && maxTokens > 0
+      ? maxTokens
+      : providerConfig?.maxTokens && providerConfig.maxTokens > 0
       ? providerConfig.maxTokens
-      : maxTokens || 128;
+      : 128;
   const effectiveTimeout = timeoutMs || 35000;
 
   // If no custom provider or existing default is specified, use generateOpenRouterOrCustomAi
