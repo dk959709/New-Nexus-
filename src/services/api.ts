@@ -27,10 +27,15 @@ import { storage } from '@/lib/storage';
 import { searchWikipedia, getWikipediaSummary, wikipediaToSearchResult } from './wikipedia';
 
 function getBaseUrl(): string {
-  const envUrl = import.meta.env.VITE_API_URL;
-  if (!envUrl) return '';
+  const envUrl = (typeof import.meta !== 'undefined' && import.meta.env?.VITE_API_URL) || (typeof process !== 'undefined' && process.env?.VITE_API_URL) || '';
+  if (!envUrl) {
+    if (typeof window === 'undefined') {
+      return 'http://localhost:3000';
+    }
+    return '';
+  }
 
-  // If envUrl points to legacy localhost/port 8787 or standard dev ports, always use relative path
+  // If envUrl points to legacy localhost/port 8787 or standard dev ports, always use relative path in browser
   if (
     envUrl.includes('localhost') ||
     envUrl.includes('127.0.0.1') ||
@@ -39,6 +44,9 @@ function getBaseUrl(): string {
     envUrl.includes(':3000') ||
     envUrl.includes(':5173')
   ) {
+    if (typeof window === 'undefined') {
+      return 'http://localhost:3000';
+    }
     return '';
   }
 
@@ -56,6 +64,8 @@ export interface WebFetchResult {
   headings: string[];
   textContent: string;
   length: number;
+  rawTotalLength?: number;
+  isTruncated?: boolean;
   status: number;
 }
 
@@ -139,6 +149,7 @@ export const api = {
   async webFetch(url: string): Promise<WebFetchResponse> {
     try {
       const endpoint = BASE + '/api/web/fetch';
+      console.log(`[API webFetch] Starting request to ${endpoint} with target URL: "${url}"`);
       const res = await fetch(endpoint, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
@@ -149,6 +160,7 @@ export const api = {
         data?: WebFetchResult;
         error?: string;
       };
+      console.log(`[API webFetch] Received response status ${res.status}:`, body);
       if (res.ok && body.ok && body.data) {
         return {
           ok: true,
@@ -163,6 +175,7 @@ export const api = {
       };
     } catch (err: unknown) {
       const errMsg = err instanceof Error ? err.message : String(err);
+      console.error(`[API webFetch] Catch block network error for "${url}":`, errMsg);
       return {
         ok: false,
         error: `Network connection error: ${errMsg}`,

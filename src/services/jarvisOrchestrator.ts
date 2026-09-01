@@ -2284,6 +2284,8 @@ Please perform your specialized processing for this inquiry. Provide clear, conc
     finalUrl?: string;
     title: string;
     length: number;
+    rawTotalLength?: number;
+    isTruncated?: boolean;
     description?: string;
     headings?: string[];
     preview: string;
@@ -2292,6 +2294,7 @@ Please perform your specialized processing for this inquiry. Provide clear, conc
   let webFetchError = '';
 
   if (isWebFetch && targetWebUrl) {
+    console.log(`[JARVIS Orchestrator] STEP 1.5: webFetcher triggered for targetWebUrl: "${targetWebUrl}" (raw query: "${query}")`);
     const webFetchStart = Date.now();
     updateStep({
       agentId: 'webFetcher',
@@ -2305,13 +2308,28 @@ Please perform your specialized processing for this inquiry. Provide clear, conc
 
     const webRes = await api.webFetch(targetWebUrl);
     const webFetchDuration = Date.now() - webFetchStart;
+    console.log(`[JARVIS Orchestrator] STEP 1.5: webRes received in ${webFetchDuration}ms:`, {
+      ok: webRes.ok,
+      statusCode: webRes.statusCode,
+      error: webRes.error,
+      hasData: Boolean(webRes.data),
+      title: webRes.data?.title,
+      length: webRes.data?.length,
+      rawTotalLength: webRes.data?.rawTotalLength,
+      isTruncated: webRes.data?.isTruncated,
+    });
 
     if (webRes.ok && webRes.data) {
+      const totalLen = webRes.data.rawTotalLength || webRes.data.length || (webRes.data.textContent ? webRes.data.textContent.length : 0);
+      const isTrunc = Boolean(webRes.data.isTruncated || totalLen > 3500);
+
       webFetchData = {
         url: webRes.data.url || targetWebUrl,
         finalUrl: webRes.data.finalUrl || targetWebUrl,
         title: webRes.data.title || targetWebUrl,
-        length: webRes.data.length || (webRes.data.textContent ? webRes.data.textContent.length : 0),
+        length: webRes.data.length || totalLen,
+        rawTotalLength: totalLen,
+        isTruncated: isTrunc,
         description: webRes.data.description || '',
         headings: webRes.data.headings || [],
         preview: (webRes.data.textContent || '').slice(0, 1500),
@@ -2331,6 +2349,10 @@ Please perform your specialized processing for this inquiry. Provide clear, conc
         snippet: webRes.data.description || (webRes.data.textContent || '').slice(0, 200),
       });
 
+      const summaryText = isTrunc
+        ? `Successfully fetched ${totalLen.toLocaleString()} characters from ${webFetchData.title} (truncated to 3,500 chars for optimal synthesis).`
+        : `Successfully fetched ${totalLen.toLocaleString()} characters from ${webFetchData.title}.`;
+
       updateStep({
         agentId: 'webFetcher',
         name: 'Web Fetcher',
@@ -2339,12 +2361,13 @@ Please perform your specialized processing for this inquiry. Provide clear, conc
         providerName: 'Direct HTTP Fetch',
         model: 'Direct Web Reader',
         durationMs: webFetchDuration,
-        summary: `Successfully fetched ${webFetchData.length.toLocaleString()} characters from ${webFetchData.title}.`,
+        summary: summaryText,
         outputPreview: JSON.stringify(webFetchData, null, 2),
         rawOutput: JSON.stringify(webFetchData, null, 2),
       });
     } else {
       webFetchError = webRes.error || `Could not fetch content from ${targetWebUrl}`;
+      console.error(`[JARVIS Orchestrator] STEP 1.5: webFetcher failed:`, webFetchError);
       updateStep({
         agentId: 'webFetcher',
         name: 'Web Fetcher',
@@ -2785,7 +2808,9 @@ Please perform your specialized processing for this inquiry. Provide clear, conc
           pageTitle: webFetchData.title,
           metaDescription: webFetchData.description,
           headings: webFetchData.headings,
-          contentExcerpt: webFetchData.textContent.slice(0, 5000),
+          contentExcerpt: webFetchData.textContent.slice(0, 3500),
+          totalCharacters: webFetchData.rawTotalLength || webFetchData.length,
+          isTruncated: webFetchData.isTruncated || false,
         },
         null,
         2,
@@ -3350,9 +3375,8 @@ When answering questions about JARVIS's architecture, agent count, or capabiliti
         ? `\n\n[DIRECT WEBPAGE EXTRACTION - ${webFetchData.url}]:
 Title: ${webFetchData.title}
 URL: ${webFetchData.finalUrl || webFetchData.url}
-${webFetchData.description ? `Meta Description: ${webFetchData.description}\n` : ''}${webFetchData.headings && webFetchData.headings.length > 0 ? `Key Page Headings: ${webFetchData.headings.join(' • ')}\n` : ''}
-Full Page Content Extracted (Read directly from target URL):
-${webFetchData.textContent.slice(0, 18000)}
+${webFetchData.description ? `Meta Description: ${webFetchData.description}\n` : ''}${webFetchData.headings && webFetchData.headings.length > 0 ? `Key Page Headings: ${webFetchData.headings.join(' • ')}\n` : ''}${webFetchData.isTruncated ? `[Total Document Size: ${(webFetchData.rawTotalLength || webFetchData.length).toLocaleString()} characters - text content capped to ~3,500 characters for optimal processing]\n` : ''}Page Content Extracted (Read directly from target URL):
+${webFetchData.textContent}
 
 DIRECT WEBPAGE ANALYSIS DIRECTIVES:
 - Provide a clear, thorough, and well-structured summary and analysis of this specific webpage's real content.

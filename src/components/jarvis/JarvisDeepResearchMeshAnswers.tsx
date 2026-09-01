@@ -544,6 +544,8 @@ function formatAgentContentToMarkdown(step: JarvisExecutionStep): {
     let title = '';
     let url = '';
     let length = 0;
+    let rawTotalLength = 0;
+    let isTruncated = false;
     let description = '';
     let headings: string[] = [];
     let preview = '';
@@ -553,6 +555,8 @@ function formatAgentContentToMarkdown(step: JarvisExecutionStep): {
       title = String(wObj.title || '');
       url = String(wObj.finalUrl || wObj.url || '');
       length = typeof wObj.length === 'number' ? wObj.length : 0;
+      rawTotalLength = typeof wObj.rawTotalLength === 'number' ? wObj.rawTotalLength : length;
+      isTruncated = Boolean(wObj.isTruncated || (rawTotalLength > 3500));
       description = String(wObj.description || '');
       headings = Array.isArray(wObj.headings) ? (wObj.headings as string[]) : [];
       preview = String(wObj.preview || wObj.textContent || '');
@@ -561,7 +565,9 @@ function formatAgentContentToMarkdown(step: JarvisExecutionStep): {
     let md = `### 🌐 Web Fetcher // Direct Page Extraction\n`;
     if (title) md += `**Page Title:** ${title}\n`;
     if (url) md += `**Source URL:** [${url}](${url})\n`;
-    if (length > 0) md += `**Content Length:** ${length.toLocaleString()} characters parsed\n\n`;
+    if (rawTotalLength > 0) {
+      md += `**Content Parsed:** ${rawTotalLength.toLocaleString()} characters total${isTruncated ? ' _(capped to 3,500 chars for concise synthesis)_' : ''}\n\n`;
+    }
     if (description) md += `**Meta Description:** ${description}\n\n`;
     if (headings.length > 0) {
       md += `#### 📑 Page Structure & Sections:\n${headings.map((h) => `- ${h}`).join('\n')}\n\n`;

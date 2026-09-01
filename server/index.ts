@@ -1772,7 +1772,16 @@ function extractReadableTextFromHtml(html: string): {
     .map((l) => l.replace(/[ \t]+/g, ' ').trim())
     .filter((l) => l.length > 0);
 
-  let textContent = lines.join('\n\n').slice(0, 35000);
+  const fullText = lines.join('\n\n');
+  const rawTotalLength = fullText.length;
+  const MAX_CONTENT_CHARS = 3500;
+  let textContent = fullText;
+  let isTruncated = false;
+
+  if (rawTotalLength > MAX_CONTENT_CHARS) {
+    isTruncated = true;
+    textContent = fullText.slice(0, MAX_CONTENT_CHARS) + `\n\n[Note: Page content truncated from ${rawTotalLength.toLocaleString()} characters to ${MAX_CONTENT_CHARS.toLocaleString()} characters for optimal synthesis.]`;
+  }
 
   // Fallback for SPAs or pages with minimal direct text
   if (!textContent || textContent.trim().length === 0) {
@@ -1789,6 +1798,8 @@ function extractReadableTextFromHtml(html: string): {
     description,
     headings: headings.slice(0, 25),
     textContent,
+    rawTotalLength: rawTotalLength || textContent.length,
+    isTruncated,
   };
 }
 
@@ -1802,6 +1813,8 @@ async function fetchDirectWebPage(targetUrl: string): Promise<{
     headings: string[];
     textContent: string;
     length: number;
+    rawTotalLength: number;
+    isTruncated: boolean;
     status: number;
   };
   error?: string;
@@ -1855,6 +1868,9 @@ async function fetchDirectWebPage(targetUrl: string): Promise<{
         const wikiQuery = decodeURIComponent(articlePath || 'Main_Page');
         const wikiSummary = await fetchWikipediaSummary(wikiQuery);
         if (wikiSummary && wikiSummary.extract) {
+          const wikiText = wikiSummary.extract;
+          const isTrunc = wikiText.length > 3500;
+          const cappedWikiText = isTrunc ? wikiText.slice(0, 3500) + `\n\n[Note: Page content truncated from ${wikiText.length.toLocaleString()} characters to 3,500 characters for optimal synthesis.]` : wikiText;
           return {
             ok: true,
             data: {
@@ -1863,8 +1879,10 @@ async function fetchDirectWebPage(targetUrl: string): Promise<{
               title: wikiSummary.title || parsed.hostname,
               description: wikiSummary.description || '',
               headings: ['H1: ' + wikiSummary.title],
-              textContent: wikiSummary.extract,
-              length: wikiSummary.extract.length,
+              textContent: cappedWikiText,
+              length: cappedWikiText.length,
+              rawTotalLength: wikiText.length,
+              isTruncated: isTrunc,
               status: response.status,
             },
           };
@@ -1897,6 +1915,8 @@ async function fetchDirectWebPage(targetUrl: string): Promise<{
         headings: parsedData.headings,
         textContent: parsedData.textContent,
         length: parsedData.textContent.length,
+        rawTotalLength: parsedData.rawTotalLength,
+        isTruncated: parsedData.isTruncated,
         status: response.status,
       },
     };
