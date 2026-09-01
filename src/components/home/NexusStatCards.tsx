@@ -18,12 +18,10 @@ export function NexusStatCards({
   const todayForecast = weather?.daily?.[0];
   const highTemp = todayForecast ? formatTemp(todayForecast.high, settings.temperature) : '--';
   const lowTemp = todayForecast ? formatTemp(todayForecast.low, settings.temperature) : '--';
-  const currentTemp = weather?.current?.temp != null
-    ? formatTemp(weather.current.temp, settings.temperature)
+  const currentTemp = weather?.current?.temperature != null
+    ? formatTemp(weather.current.temperature, settings.temperature)
     : '22°';
-  const locationName = weather?.location?.name
-    ? `${weather.location.name}${weather.location.country ? `, ${weather.location.country}` : ''}`
-    : 'Local Terminal';
+  const locationName = weather?.current?.location || 'Local Terminal';
   const condition = weather?.current?.condition ? conditionLabel(weather.current.condition) : 'Clear Sky';
 
   return (

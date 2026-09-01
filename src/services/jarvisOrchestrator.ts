@@ -2347,7 +2347,7 @@ Please perform your specialized processing for this inquiry. Provide clear, conc
             return 'web';
           }
         })(),
-        snippet: webRes.data.description || (webRes.data.textContent || '').slice(0, 200),
+        description: webRes.data.description || (webRes.data.textContent || '').slice(0, 200),
       });
 
       const renderNote =
@@ -2395,9 +2395,14 @@ Please perform your specialized processing for this inquiry. Provide clear, conc
   // ==========================================
   // STEP 2: 🔎 RESEARCHER
   // ==========================================
-  const researcherOutput = {
-    facts: [] as string[],
-    sources: [] as Array<{ title: string; url: string; domain?: string }>,
+  const researcherOutput: {
+    facts: string[];
+    candidates?: ResearcherCandidate[];
+    sources: Array<{ title: string; url: string; domain?: string }>;
+  } = {
+    facts: [],
+    candidates: [],
+    sources: [],
   };
 
   if (shouldResearch) {
@@ -2440,6 +2445,7 @@ Please perform your specialized processing for this inquiry. Provide clear, conc
               url: `/weather?city=${encodeURIComponent(weatherRes.current.location)}`,
               description: wSummary,
               domain: 'open-meteo.com',
+              type: 'web',
             }];
             searchSource = 'Live Weather API';
             logToJarvisTerminal(`Using Live Weather API (${searchResults.length} result${searchResults.length === 1 ? '' : 's'})`);
@@ -2603,7 +2609,7 @@ Please perform your specialized processing for this inquiry. Provide clear, conc
             url: s.url,
             domain: s.domain || (s.url.startsWith('http') ? new URL(s.url).hostname.replace(/^www\./, '') : 'web'),
             description: desc,
-            type: s.type || 'web',
+            type: (s.type === 'news' || s.type === 'wikipedia' ? s.type : 'web') as 'wikipedia' | 'web' | 'news',
           });
         }
       });
@@ -3406,12 +3412,7 @@ User Query: "${strippedQuery}"
 ${webFetchContextBlock}
 Planner Guidance: ${plannerPlanText}
 ${advisorOutput ? `Advisor Conceptual Analysis & Technical Comparison (General Knowledge):\n${advisorOutput}\n` : ''}
-${factsList.length > 0 ? `Key Verified Facts:\n${factsList.map((f) => `- ${f}`).join('\n')}` : ''}
-${verifiedList.length > 0 ? `Verified Claims:\n${verifiedList.map((c) => `- ${c}`).join('\n')}` : ''}
-${issuesList.length > 0 ? `CRITICAL FACT-CHECKER CORRECTIONS / FLAGGED ISSUES (YOU MUST EXCLUDE AND REMOVE ANY CLAIM MENTIONED HERE FROM THE FINAL SYNTHESIS):\n${issuesList.map((i) => `- ${i}`).join('\n')}` : ''}
-${reviewerMissingList.length > 0 ? `Reviewer Missing Context Suggestions:\n${reviewerMissingList.map((m) => `- ${m}`).join('\n')}` : ''}
-${reviewerIssuesList.length > 0 ? `Reviewer Flagged Content/Scope Issues (EXCLUDE OR REPLACE ITEMS FLAGGED HERE):\n${reviewerIssuesList.map((iss) => `- ${iss}`).join('\n')}` : ''}
-${reviewerRecommendation ? `Reviewer Actionable Guidance & Content Selection (HONOR THESE SELECTION & EXCLUSION INSTRUCTIONS):\n${reviewerRecommendation}` : ''}
+${factsList.length > 0 ? `Key Verified Facts:\n${factsList.map((f) => `- ${f}`).join('\n')}\n` : ''}${verifiedList.length > 0 ? `Verified Claims:\n${verifiedList.map((c) => `- ${c}`).join('\n')}\n` : ''}${issuesList.length > 0 ? `Fact-Checker Identified Issues (Exclude only specific invalid claims; do NOT discard other valid qualifying candidates):\n${issuesList.map((i) => `- ${i}`).join('\n')}\n` : ''}${reviewerMissingList.length > 0 ? `Reviewer Missing Context Suggestions (Advisory):\n${reviewerMissingList.map((m) => `- ${m}`).join('\n')}\n` : ''}${reviewerIssuesList.length > 0 ? `Reviewer Flagged Issues & Scope Critique (Advisory - exclude only specific problematic items, preserve and synthesize all other valid candidates):\n${reviewerIssuesList.map((iss) => `- ${iss}`).join('\n')}\n` : ''}${reviewerRecommendation ? `Reviewer Actionable Guidance & Candidate Priority (Advisory ranking guidance):\n${reviewerRecommendation}\n` : ''}[SYNTHESIS MANDATE]: If any specific candidates were flagged or excluded by Fact-Checker or Reviewer, synthesize all remaining verified, valid candidates into the final answer. Only state that verified news/data is unavailable if ALL candidates are completely unusable or no verified data exists.
 Retrieved Ground-Truth Sources (CRITICAL RULE: Only cite sources from this exact list. Never invent or cite any other sources):
 ${sourcesListText}${customInsightsBlock}${personalIdentityDirective}${architectureReferenceDirective}`;
 

@@ -68,10 +68,10 @@ function stripSourceCitationsAndFragments(text: string): string {
   cleaned = cleaned.replace(/(?:,\s*|\s*[-–—]\s*|\s+)?`?\[[^\]]*\b(?:Source|Citation|Ref|Reference)\b[^\]]*\]`?/gi, ' ');
 
   // 3. Remove repeated fragments like `[Source #6. [Source #6` where the inner bracket was not closed
-  cleaned = cleaned.replace(/`?\[\s*(?:Source|Citation|Ref|Reference)\s*#?\s*\d+[\s\S]*?(?:\]|(?=\s*\[|\s*$))/gi, ' ');
+  cleaned = cleaned.replace(/`?\[\s*(?:Source|Citation|Ref|Reference)\s*#?\s*\d+[^\]\n]*\]?`?/gi, ' ');
 
   // 4. Remove standalone unclosed source fragments at the end of a string
-  cleaned = cleaned.replace(/\s*`?\[\s*(?:Source|Citation|Ref|Reference)\b[\s\S]*$/gi, '');
+  cleaned = cleaned.replace(/\s*`?\[\s*(?:Source|Citation|Ref|Reference)\b[^\]\n]*$/gi, '');
   cleaned = cleaned.replace(/\s*(?:Source|Citation|Ref|Reference)\s*#?\s*\d*\s*\]?`?$/gi, '');
 
   // 5. Remove parenthetical citations like `(Source #6)` or `(Source 6)`
@@ -251,20 +251,26 @@ export function formatCandidateBullet(
 
   // Check if string contains key-value patterns like "title: ..., domain: ..., eventDate: ..."
   if (/(?:title|fact|claim|domain|eventDate|publishedAt)\s*[:=]/i.test(rawStr)) {
-    const titleMatch = rawStr.match(/(?:title|headline)\s*[:=]\s*["']?([^,"';\n]+)["']?/i);
-    const factMatch = rawStr.match(/(?:fact|claim|description)\s*[:=]\s*["']?([^,"';\n]+)["']?/i);
-    const domainMatch = rawStr.match(/domain\s*[:=]\s*["']?([^,"';\n]+)["']?/i);
-    const dateMatch = rawStr.match(/(?:eventDate|publishedAt|date)\s*[:=]\s*["']?([^,"';\n]+)["']?/i);
-    const sourceMatch = rawStr.match(/sourceIndex\s*[:=]\s*["']?(\d+)["']?/i);
+    const titleMatch = rawStr.match(/(?:title|headline)\s*[:=]\s*(?:"((?:\\.|[^"\\])*)"|'((?:\\.|[^'\\])*)'|([^,;\n]+))/i);
+    const factMatch = rawStr.match(/(?:fact|claim|description|statement)\s*[:=]\s*(?:"((?:\\.|[^"\\])*)"|'((?:\\.|[^'\\])*)'|([^,;\n]+))/i);
+    const domainMatch = rawStr.match(/domain\s*[:=]\s*(?:"((?:\\.|[^"\\])*)"|'((?:\\.|[^'\\])*)'|([^,;\s]+))/i);
+    const dateMatch = rawStr.match(/(?:eventDate|publishedAt|updatedAt|date)\s*[:=]\s*(?:"((?:\\.|[^"\\])*)"|'((?:\\.|[^'\\])*)'|([^,;\s]+))/i);
+    const sourceMatch = rawStr.match(/sourceIndex\s*[:=]\s*(?:"?(\d+)"?)/i);
 
-    if (titleMatch || factMatch) {
+    const extractedTitle = titleMatch ? (titleMatch[1] || titleMatch[2] || titleMatch[3] || '').trim() : undefined;
+    const extractedFact = factMatch ? (factMatch[1] || factMatch[2] || factMatch[3] || '').trim() : undefined;
+    const extractedDomain = domainMatch ? (domainMatch[1] || domainMatch[2] || domainMatch[3] || '').trim() : undefined;
+    const extractedDate = dateMatch ? (dateMatch[1] || dateMatch[2] || dateMatch[3] || '').trim() : undefined;
+    const extractedSourceIdx = sourceMatch && sourceMatch[1] ? parseInt(sourceMatch[1], 10) : undefined;
+
+    if (extractedTitle || extractedFact) {
       return formatCandidateBullet(
         {
-          title: titleMatch ? titleMatch[1] : undefined,
-          fact: factMatch ? factMatch[1] : undefined,
-          domain: domainMatch ? domainMatch[1] : undefined,
-          eventDate: dateMatch ? dateMatch[1] : undefined,
-          sourceIndex: sourceMatch ? parseInt(sourceMatch[1], 10) : undefined,
+          title: extractedTitle,
+          fact: extractedFact,
+          domain: extractedDomain,
+          eventDate: extractedDate,
+          sourceIndex: extractedSourceIdx,
         },
         options,
       );
@@ -513,35 +519,45 @@ export function formatResearcherOutput(
         }
       }
     } catch {
-      // Extract individual { ... } blocks from inside array
-      const objectBlockMatches = raw.match(/\{[^{}]*(?:"title"|"fact"|"domain")[^{}]*\}/g);
-      if (objectBlockMatches && objectBlockMatches.length > 0) {
-        const extracted: unknown[] = [];
-        for (const block of objectBlockMatches) {
-          try {
-            const parsedBlock = JSON.parse(block);
-            if (parsedBlock && typeof parsedBlock === 'object') {
-              extracted.push(parsedBlock);
+      // Robust balanced-brace block extraction for candidate objects
+      const extracted: unknown[] = [];
+      let depth = 0;
+      let startIdx = -1;
+      for (let i = 0; i < raw.length; i++) {
+        if (raw[i] === '{') {
+          if (depth === 0) startIdx = i;
+          depth++;
+        } else if (raw[i] === '}') {
+          depth--;
+          if (depth === 0 && startIdx !== -1) {
+            const block = raw.slice(startIdx, i + 1);
+            try {
+              const parsedBlock = JSON.parse(block);
+              if (parsedBlock && typeof parsedBlock === 'object') {
+                extracted.push(parsedBlock);
+              }
+            } catch {
+              const titleM = block.match(/"title"\s*:\s*"((?:\\.|[^"\\])*)"/i);
+              const factM = block.match(/"fact"\s*:\s*"((?:\\.|[^"\\])*)"/i);
+              const domainM = block.match(/"domain"\s*:\s*"((?:\\.|[^"\\])*)"/i);
+              const dateM = block.match(/(?:"eventDate"|"publishedAt"|"updatedAt")\s*:\s*"((?:\\.|[^"\\])*)"/i);
+              const srcM = block.match(/(?:"sourceIndex"|"source_index")\s*:\s*(\d+)/i);
+              if (titleM || factM) {
+                extracted.push({
+                  title: titleM ? titleM[1].replace(/\\"/g, '"') : undefined,
+                  fact: factM ? factM[1].replace(/\\"/g, '"') : undefined,
+                  domain: domainM ? domainM[1].replace(/\\"/g, '"') : undefined,
+                  eventDate: dateM ? dateM[1].replace(/\\"/g, '"') : undefined,
+                  sourceIndex: srcM ? parseInt(srcM[1], 10) : undefined,
+                });
+              }
             }
-          } catch {
-            // Regex extraction for individual fields inside the block
-            const titleM = block.match(/"title"\s*:\s*"((?:\\.|[^"\\])*)"/i);
-            const factM = block.match(/"fact"\s*:\s*"((?:\\.|[^"\\])*)"/i);
-            const domainM = block.match(/"domain"\s*:\s*"((?:\\.|[^"\\])*)"/i);
-            const dateM = block.match(/(?:"eventDate"|"publishedAt")\s*:\s*"((?:\\.|[^"\\])*)"/i);
-            if (titleM || factM) {
-              extracted.push({
-                title: titleM ? titleM[1].replace(/\\"/g, '"') : undefined,
-                fact: factM ? factM[1].replace(/\\"/g, '"') : undefined,
-                domain: domainM ? domainM[1].replace(/\\"/g, '"') : undefined,
-                eventDate: dateM ? dateM[1].replace(/\\"/g, '"') : undefined,
-              });
-            }
+            startIdx = -1;
           }
         }
-        if (extracted.length > 0) {
-          candidates = extracted;
-        }
+      }
+      if (extracted.length > 0) {
+        candidates = extracted;
       }
     }
   }

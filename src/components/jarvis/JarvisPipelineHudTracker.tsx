@@ -175,7 +175,8 @@ export const JarvisPipelineHudTracker: React.FC<JarvisPipelineHudTrackerProps> =
         id: s.agentId,
         name: s.name || 'Custom Agent',
         shortLabel: (s.name || s.agentId).replace(/^custom[_\s-]*/i, '').slice(0, 8) || 'CUSTOM',
-        icon: s.icon || '🤖',
+        code: 'CST-99',
+        icon: s.icon ? <span>{s.icon}</span> : <Boxes size={13} />,
         color: '#c084fc',
         glowColor: 'rgba(192, 132, 252, 0.4)',
       };

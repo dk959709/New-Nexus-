@@ -287,10 +287,10 @@ export function NexusTerminalOutput({
   const isDay = weather?.current?.isDay ?? true;
   const conditionStr = weather?.current?.conditionLabel || (weather?.current?.condition as string) || 'Clear';
   const weatherEmoji = getWeatherEmoji(weather?.current?.condition || conditionStr, isDay);
-  const tempVal = weather?.current?.temp ?? (weather?.current as unknown as { temperature?: number })?.temperature;
+  const tempVal = weather?.current?.temperature;
   const tempUnit = settings?.temperature || 'celsius';
   const formattedTemp = tempVal != null ? formatTemp(tempVal, tempUnit) : '22°C';
-  const locName = weather?.location?.name || 'Station Nexus';
+  const locName = weather?.current?.location || 'Station Nexus';
 
   const hasChatMessages = logs.some(
     (l) => l.type === 'user' || l.type === 'assistant' || l.type === 'warning' || l.sender === 'search',
@@ -362,9 +362,9 @@ export function NexusTerminalOutput({
                 <Thermometer size={11} className="text-cyan-400 hidden sm:inline" />
                 {formattedTemp}
               </span>
-              {weather?.location?.name && (
+              {weather?.current?.location && (
                 <span className="text-slate-400 text-[10px] hidden md:inline truncate max-w-[90px]">
-                  {weather.location.name}
+                  {weather.current.location}
                 </span>
               )}
             </div>
