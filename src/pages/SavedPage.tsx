@@ -20,7 +20,7 @@ import {
   JarvisImageGallery,
 } from '@/components/jarvis';
 import { FormattedText } from '@/components/jarvis/FormattedText';
-import { formatFullPipelineExport, formatModelsUsedFooter } from '@/components/jarvis/formatJarvisPipelineExport';
+import { formatFullPipelineExport } from '@/components/jarvis/formatJarvisPipelineExport';
 import { stripConversationalMetaText } from '@/lib/format';
 import { storage } from '@/lib/storage';
 import { playTapSound } from '@/lib/audio';
@@ -53,14 +53,7 @@ export function SavedPage() {
     playTapSound();
     let textToCopy = text;
     if (item && item.type === 'jarvis') {
-      if (item.steps && item.steps.length > 0) {
-        textToCopy = formatFullPipelineExport(item);
-      } else {
-        const modelsFooter = formatModelsUsedFooter(item.steps);
-        if (modelsFooter) {
-          textToCopy = `${text.trim()}\n\n${modelsFooter}`;
-        }
-      }
+      textToCopy = formatFullPipelineExport(item);
     }
     const success = await copyToClipboard(textToCopy);
     if (success) {
@@ -344,6 +337,30 @@ export function SavedPage() {
             }
 
             if (isJarvis) {
+              const itemQuery = (item.query && item.query.trim()) || (item.title && item.title.trim()) || '';
+              let resolvedQuery = itemQuery;
+              if (!resolvedQuery || resolvedQuery.toLowerCase() === 'jarvis synthesis' || resolvedQuery.toLowerCase() === 'untitled synthesis') {
+                const plannerStep = item.steps?.find((s) => s.agentId === 'planner');
+                if (plannerStep) {
+                  try {
+                    const raw = plannerStep.rawOutput || plannerStep.outputPreview;
+                    if (raw) {
+                      const parsed = typeof raw === 'string' ? JSON.parse(raw) : raw;
+                      if (parsed && typeof parsed.task === 'string' && parsed.task.trim()) {
+                        resolvedQuery = parsed.task.trim();
+                      }
+                    }
+                  } catch {
+                    // ignore
+                  }
+                  if ((!resolvedQuery || resolvedQuery.toLowerCase() === 'jarvis synthesis') && plannerStep.summary) {
+                    const cleanedSummary = plannerStep.summary.replace(/^Decomposing inquiry:\s*/i, '').replace(/^Executing plan for:\s*/i, '').trim();
+                    if (cleanedSummary) resolvedQuery = cleanedSummary;
+                  }
+                }
+              }
+              const displayTitle = resolvedQuery || item.title || 'JARVIS Synthesis';
+
               return (
                 <div
                   key={item.id}
@@ -373,9 +390,9 @@ export function SavedPage() {
                     <div className="flex items-center gap-2">
                       <button
                         type="button"
-                        onClick={() => handleCopy(item.steps && item.steps.length > 0 ? formatFullPipelineExport(item) : answerText, item.id, item)}
+                        onClick={() => handleCopy(formatFullPipelineExport(item), item.id, item)}
                         className="px-2.5 py-1 rounded-lg bg-white/5 hover:bg-white/10 border border-white/10 text-xs text-slate-300 hover:text-white flex items-center gap-1.5 transition-all"
-                        title={item.steps && item.steps.length > 0 ? "Copy full synthesis & report" : "Copy synthesis text"}
+                        title="Copy full synthesis & report"
                       >
                         {copiedId === item.id ? (
                           <>
@@ -391,7 +408,7 @@ export function SavedPage() {
                       </button>
 
                       <Link
-                        to={`/jarvis?q=${encodeURIComponent(item.title)}`}
+                        to={`/jarvis?q=${encodeURIComponent(displayTitle)}`}
                         className="px-2.5 py-1 rounded-lg bg-cyan-500/15 hover:bg-cyan-500/25 border border-cyan-500/35 text-xs text-cyan-300 flex items-center gap-1 transition-all"
                         title="Open in JARVIS Workspace"
                       >
@@ -413,14 +430,14 @@ export function SavedPage() {
 
                   {/* Question / Title */}
                   <h2 className="text-base sm:text-lg font-bold text-white mb-3 leading-snug">
-                    {item.title}
+                    {displayTitle}
                   </h2>
 
                   {/* Multi-Agent Breakdown (Full individual agent answers in saved library) */}
                   {item.steps && item.steps.length > 0 && (
                     <JarvisDeepResearchMeshAnswers
                       steps={item.steps}
-                      query={item.title}
+                      query={displayTitle}
                       isDeepResearch={item.deepResearch}
                     />
                   )}

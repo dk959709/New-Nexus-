@@ -259,6 +259,7 @@ export function JarvisSearchCore({ settings, onSearchNexus }: JarvisSearchCorePr
       id: savedId,
       type: 'jarvis',
       title: query.trim() || 'JARVIS Synthesis',
+      query: query.trim(),
       subtitle: textToSave.length > 180 ? `${textToSave.slice(0, 180)}...` : textToSave,
       content: textToSave,
       sources: result.sources?.map((s) => ({

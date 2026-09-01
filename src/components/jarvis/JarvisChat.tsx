@@ -625,6 +625,7 @@ export function JarvisChat({ config, onOpenSettings }: JarvisChatProps) {
       id: savedId,
       type: 'jarvis',
       title: msg.query || 'JARVIS Synthesis',
+      query: msg.query,
       subtitle: msg.answer.length > 180 ? `${msg.answer.slice(0, 180)}...` : msg.answer,
       content: msg.answer,
       sources: msg.sources?.map((s) => ({

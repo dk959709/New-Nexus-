@@ -1,4 +1,4 @@
-import { JarvisExecutionStep, JarvisMessage } from '../../types';
+import { JarvisExecutionStep, JarvisMessage, SavedItem } from '../../types';
 import { stripConversationalMetaText } from '../../lib/format';
 import { cleanAndFormatFact, cleanAndFormatInsight, formatCandidateBullet } from '../../lib/factFormatter';
 
@@ -500,36 +500,85 @@ export function formatModelsUsedFooter(steps?: JarvisExecutionStep[]): string {
 }
 
 export function formatFullPipelineExport(
-  msgOrQuery: JarvisMessage | string,
+  msgOrQuery: JarvisMessage | SavedItem | { query?: string; title?: string; steps?: JarvisExecutionStep[]; deepResearch?: boolean; timestamp?: number | string; savedAt?: string; content?: string; answer?: string; sources?: unknown[] } | string,
   maybeSteps?: JarvisExecutionStep[],
-  maybeFinalMessage?: JarvisMessage,
+  maybeFinalMessage?: JarvisMessage | SavedItem | Record<string, unknown>,
 ): string {
   let userQuery = '';
   let steps: JarvisExecutionStep[] = [];
-  let finalMessage: JarvisMessage | null = null;
+  let finalMessage: Record<string, unknown> | null = null;
 
   if (typeof msgOrQuery === 'object' && msgOrQuery !== null) {
-    const msg = msgOrQuery as JarvisMessage;
-    userQuery = msg.query || '';
-    steps = Array.isArray(msg.steps) ? msg.steps : [];
-    finalMessage = msg;
+    const item = msgOrQuery as Record<string, unknown>;
+    const rawQuery = typeof item.query === 'string' ? item.query.trim() : '';
+    const rawTitle = typeof item.title === 'string' ? item.title.trim() : '';
+    userQuery = rawQuery || rawTitle;
+    steps = Array.isArray(item.steps) ? (item.steps as JarvisExecutionStep[]) : [];
+    finalMessage = item;
   } else {
-    userQuery = typeof msgOrQuery === 'string' ? msgOrQuery : '';
+    userQuery = typeof msgOrQuery === 'string' ? msgOrQuery.trim() : '';
     steps = Array.isArray(maybeSteps) ? maybeSteps : [];
-    finalMessage = maybeFinalMessage || null;
+    finalMessage = (maybeFinalMessage as Record<string, unknown>) || null;
+    if (!userQuery && finalMessage) {
+      const fQuery = typeof finalMessage.query === 'string' ? finalMessage.query.trim() : '';
+      const fTitle = typeof finalMessage.title === 'string' ? finalMessage.title.trim() : '';
+      userQuery = fQuery || fTitle;
+    }
+  }
+
+  // If userQuery is still empty or a generic fallback placeholder, look inside planner agent step
+  if (!userQuery || userQuery.toLowerCase() === 'jarvis synthesis' || userQuery.toLowerCase() === 'untitled synthesis') {
+    const plannerStep = steps.find((s) => s && s.agentId === 'planner');
+    if (plannerStep) {
+      try {
+        const raw = plannerStep.rawOutput || plannerStep.outputPreview;
+        if (raw) {
+          const parsed = typeof raw === 'string' ? JSON.parse(raw) : raw;
+          if (parsed && typeof parsed.task === 'string' && parsed.task.trim()) {
+            userQuery = parsed.task.trim();
+          }
+        }
+      } catch {
+        // ignore
+      }
+      if ((!userQuery || userQuery.toLowerCase() === 'jarvis synthesis') && plannerStep.summary && plannerStep.summary.trim()) {
+        const cleanedSummary = plannerStep.summary
+          .replace(/^Decomposing inquiry:\s*/i, '')
+          .replace(/^Executing plan for:\s*/i, '')
+          .trim();
+        if (cleanedSummary) {
+          userQuery = cleanedSummary;
+        }
+      }
+    }
+  }
+
+  // Fallback if still empty
+  if (!userQuery || userQuery.toLowerCase() === 'jarvis synthesis') {
+    userQuery = 'Autonomous Multi-Agent Synthesis';
   }
 
   const exportParts: string[] = [];
 
-  const dateObj = finalMessage?.timestamp ? new Date(finalMessage.timestamp) : new Date();
-  const formattedDate = dateObj.toLocaleString('en-GB', {
-    day: '2-digit',
-    month: '2-digit',
-    year: 'numeric',
-    hour: '2-digit',
-    minute: '2-digit',
-    second: '2-digit',
-  });
+  const rawTimestamp = finalMessage?.timestamp || finalMessage?.savedAt;
+  const dateObj = rawTimestamp ? new Date(rawTimestamp as string | number) : new Date();
+  const formattedDate = !isNaN(dateObj.getTime())
+    ? dateObj.toLocaleString('en-GB', {
+        day: '2-digit',
+        month: '2-digit',
+        year: 'numeric',
+        hour: '2-digit',
+        minute: '2-digit',
+        second: '2-digit',
+      })
+    : new Date().toLocaleString('en-GB', {
+        day: '2-digit',
+        month: '2-digit',
+        year: 'numeric',
+        hour: '2-digit',
+        minute: '2-digit',
+        second: '2-digit',
+      });
 
   const mode =
     finalMessage && finalMessage.deepResearch === false
@@ -565,16 +614,20 @@ export function formatFullPipelineExport(
   // Render final synthesis
   exportParts.push(`=== FINAL SYNTHESIS & UNIFIED COMPREHENSIVE INTELLIGENCE ===\n`);
   const finalAnswerText = finalMessage
-    ? (finalMessage.answer || (finalMessage as Record<string, unknown>).content as string || '')
+    ? (finalMessage.answer || (finalMessage as Record<string, unknown>).content as string || (finalMessage as Record<string, unknown>).subtitle as string || '')
     : '';
-  const cleanFinalText = stripConversationalMetaText(finalAnswerText);
+  const cleanFinalText = stripConversationalMetaText(finalAnswerText as string);
   exportParts.push(cleanFinalText || 'Synthesis complete.');
 
   // If sources exist on final answer
-  if (finalMessage?.sources && finalMessage.sources.length > 0) {
+  const sources = finalMessage?.sources;
+  if (Array.isArray(sources) && sources.length > 0) {
     exportParts.push(`\n\n=== VERIFIED CITATIONS & GROUNDING SOURCES ===`);
-    finalMessage.sources.forEach((src, idx) => {
-      exportParts.push(`[${idx + 1}] ${src.title} - ${src.url}`);
+    sources.forEach((rawSrc: unknown, idx: number) => {
+      const src = (rawSrc && typeof rawSrc === 'object') ? (rawSrc as Record<string, unknown>) : {};
+      const title = (typeof src.title === 'string' && src.title) || (typeof src.domain === 'string' && src.domain) || 'Source';
+      const url = typeof src.url === 'string' ? src.url : '';
+      exportParts.push(`[${idx + 1}] ${title}${url ? ` - ${url}` : ''}`);
     });
   }
 

@@ -100,6 +100,7 @@ export interface SavedItem {
   id: string;
   type: 'search' | 'news' | 'location' | 'space' | 'jarvis' | 'diagram' | 'chart' | string;
   title: string;
+  query?: string;
   subtitle: string;
   url?: string;
   content?: string;
