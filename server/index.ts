@@ -1772,7 +1772,17 @@ function extractReadableTextFromHtml(html: string): {
     .map((l) => l.replace(/[ \t]+/g, ' ').trim())
     .filter((l) => l.length > 0);
 
-  const textContent = lines.join('\n\n').slice(0, 35000);
+  let textContent = lines.join('\n\n').slice(0, 35000);
+
+  // Fallback for SPAs or pages with minimal direct text
+  if (!textContent || textContent.trim().length === 0) {
+    const fallbackParts = [
+      title ? `Page Title: ${title}` : '',
+      description ? `Meta Description: ${description}` : '',
+      headings.length > 0 ? `Page Headings:\n${headings.join('\n')}` : '',
+    ].filter(Boolean);
+    textContent = fallbackParts.join('\n\n') || (title ? `Webpage at title: ${title}` : 'Webpage content loaded (Single-Page Application interface).');
+  }
 
   return {
     title,
@@ -1796,7 +1806,7 @@ async function fetchDirectWebPage(targetUrl: string): Promise<{
   };
   error?: string;
 }> {
-  let normalizedUrl = targetUrl.trim();
+  let normalizedUrl = targetUrl.trim().replace(/^["'`<]+|[>"'`]+$/g, '').trim();
   if (!/^https?:\/\//i.test(normalizedUrl)) {
     normalizedUrl = `https://${normalizedUrl}`;
   }
@@ -1809,19 +1819,26 @@ async function fetchDirectWebPage(targetUrl: string): Promise<{
   }
 
   if (parsed.protocol !== 'http:' && parsed.protocol !== 'https:') {
-    return { ok: false, error: `Unsupported protocol: "${parsed.protocol}"` };
+    return { ok: false, error: `Unsupported protocol: "${parsed.protocol}" (only HTTP and HTTPS are supported)` };
   }
+
+  console.log(`[Server WebFetch] Initiating fetch for: ${normalizedUrl}`);
 
   try {
     const controller = new AbortController();
-    const timeoutId = setTimeout(() => controller.abort(), 12000);
+    const timeoutId = setTimeout(() => controller.abort(), 15000);
 
     const response = await fetch(normalizedUrl, {
       headers: {
         'User-Agent':
-          'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36 NEXUS-Intelligence/1.0',
-        'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,text/plain;q=0.8,*/*;q=0.7',
+          'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36 (compatible; NEXUS-Intelligence/1.0; +https://nexus.app)',
+        'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,*/*;q=0.8',
         'Accept-Language': 'en-US,en;q=0.9',
+        'Sec-Fetch-Dest': 'document',
+        'Sec-Fetch-Mode': 'navigate',
+        'Sec-Fetch-Site': 'none',
+        'Sec-Fetch-User': '?1',
+        'Upgrade-Insecure-Requests': '1',
       },
       signal: controller.signal,
       redirect: 'follow',
@@ -1829,10 +1846,34 @@ async function fetchDirectWebPage(targetUrl: string): Promise<{
 
     clearTimeout(timeoutId);
 
+    console.log(`[Server WebFetch] Response status ${response.status} ${response.statusText} for ${normalizedUrl}`);
+
     if (!response.ok) {
+      // If it's a Wikipedia page that encountered an issue, try Wikipedia API summary as fallback
+      if (parsed.hostname.includes('wikipedia.org')) {
+        const articlePath = parsed.pathname.replace(/^\/wiki\//, '').replace(/^\//, '');
+        const wikiQuery = decodeURIComponent(articlePath || 'Main_Page');
+        const wikiSummary = await fetchWikipediaSummary(wikiQuery);
+        if (wikiSummary && wikiSummary.extract) {
+          return {
+            ok: true,
+            data: {
+              url: normalizedUrl,
+              finalUrl: wikiSummary.url || normalizedUrl,
+              title: wikiSummary.title || parsed.hostname,
+              description: wikiSummary.description || '',
+              headings: ['H1: ' + wikiSummary.title],
+              textContent: wikiSummary.extract,
+              length: wikiSummary.extract.length,
+              status: response.status,
+            },
+          };
+        }
+      }
+
       return {
         ok: false,
-        error: `HTTP ${response.status} (${response.statusText || 'Error'}) when fetching ${normalizedUrl}`,
+        error: `HTTP ${response.status} (${response.statusText || 'Fetch Error'}) when requesting ${normalizedUrl}`,
       };
     }
 
@@ -1840,18 +1881,11 @@ async function fetchDirectWebPage(targetUrl: string): Promise<{
     if (!rawBody || !rawBody.trim()) {
       return {
         ok: false,
-        error: `Page at ${normalizedUrl} returned an empty response.`,
+        error: `Page at ${normalizedUrl} returned an empty response body.`,
       };
     }
 
     const parsedData = extractReadableTextFromHtml(rawBody);
-
-    if (!parsedData.textContent || parsedData.textContent.trim().length === 0) {
-      return {
-        ok: false,
-        error: `Unable to parse readable text content from ${normalizedUrl}.`,
-      };
-    }
 
     return {
       ok: true,
@@ -1868,12 +1902,13 @@ async function fetchDirectWebPage(targetUrl: string): Promise<{
     };
   } catch (err) {
     const errObj = err as Error;
+    console.error(`[Server WebFetch] Fetch failed for ${normalizedUrl}:`, errObj);
     const isTimeout =
       errObj.name === 'AbortError' ||
       errObj.message?.includes('timeout') ||
       errObj.message?.includes('aborted');
     const msg = isTimeout
-      ? `Connection timed out while fetching ${normalizedUrl}`
+      ? `Connection timed out after 15s while fetching ${normalizedUrl}`
       : `Failed to reach ${normalizedUrl}: ${errObj.message || 'Network error'}`;
     return { ok: false, error: msg };
   }

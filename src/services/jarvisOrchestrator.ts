@@ -1115,6 +1115,7 @@ export function isWebFetchQuery(text: string): boolean {
 export function extractWebFetchUrl(text: string): string {
   if (!text || typeof text !== 'string') return '';
   let url = text.trim().replace(/^\/web\s*/i, '').trim();
+  url = url.replace(/^["'`<]+|[>"'`]+$/g, '').trim();
   if (url && !/^https?:\/\//i.test(url)) {
     url = `https://${url}`;
   }
@@ -1123,7 +1124,7 @@ export function extractWebFetchUrl(text: string): string {
 
 export function stripWebFetchPrefix(text: string): string {
   if (!text || typeof text !== 'string') return text;
-  return text.trim().replace(/^\/web\s*/i, '').trim();
+  return text.trim().replace(/^\/web\s*/i, '').trim().replace(/^["'`<]+|[>"'`]+$/g, '').trim();
 }
 
 export function extractTopicKeywords(query: string, task?: string): {

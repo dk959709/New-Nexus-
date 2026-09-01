@@ -48,6 +48,24 @@ function getBaseUrl(): string {
 
 export const BASE = getBaseUrl();
 
+export interface WebFetchResult {
+  url: string;
+  finalUrl: string;
+  title: string;
+  description: string;
+  headings: string[];
+  textContent: string;
+  length: number;
+  status: number;
+}
+
+export interface WebFetchResponse {
+  ok: boolean;
+  data?: WebFetchResult;
+  error?: string;
+  statusCode?: number;
+}
+
 async function call<T>(path: string, init?: RequestInit): Promise<T> {
   const url = BASE + path;
   console.log(`[API] Fetching ${init?.method ?? 'GET'} ${url}`, init?.body ? JSON.parse(init.body as string) : '');
@@ -118,40 +136,38 @@ export const api = {
     return call<MediaItem[]>(`/api/videos/search?query=${encodeURIComponent(query)}&page=${page}`);
   },
 
-  async webFetch(url: string): Promise<{
-    url: string;
-    finalUrl: string;
-    title: string;
-    description: string;
-    headings: string[];
-    textContent: string;
-    length: number;
-    status: number;
-  }> {
-    const endpoint = BASE + '/api/web/fetch';
-    const res = await fetch(endpoint, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ url }),
-    });
-    const body = (await res.json().catch(() => ({}))) as {
-      ok?: boolean;
-      data?: {
-        url: string;
-        finalUrl: string;
-        title: string;
-        description: string;
-        headings: string[];
-        textContent: string;
-        length: number;
-        status: number;
+  async webFetch(url: string): Promise<WebFetchResponse> {
+    try {
+      const endpoint = BASE + '/api/web/fetch';
+      const res = await fetch(endpoint, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ url }),
+      });
+      const body = (await res.json().catch(() => ({}))) as {
+        ok?: boolean;
+        data?: WebFetchResult;
+        error?: string;
       };
-      error?: string;
-    };
-    if (!res.ok || !body.ok || !body.data) {
-      throw new Error(body.error || `Failed to fetch web content from ${url}`);
+      if (res.ok && body.ok && body.data) {
+        return {
+          ok: true,
+          data: body.data,
+          statusCode: res.status,
+        };
+      }
+      return {
+        ok: false,
+        error: body.error || `HTTP ${res.status} error while fetching ${url}`,
+        statusCode: res.status,
+      };
+    } catch (err: unknown) {
+      const errMsg = err instanceof Error ? err.message : String(err);
+      return {
+        ok: false,
+        error: `Network connection error: ${errMsg}`,
+      };
     }
-    return body.data;
   },
 
   weather(queryString: string): Promise<WeatherData> {
