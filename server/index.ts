@@ -1803,6 +1803,146 @@ function extractReadableTextFromHtml(html: string): {
   };
 }
 
+// ==========================================================
+// Headless / dynamic rendering support for JS-heavy pages
+// (single-page apps, "please enable JavaScript" pages, etc.)
+// ==========================================================
+
+const HEADLESS_RENDER_TIMEOUT_MS = Number(process.env.HEADLESS_RENDER_TIMEOUT_MS) || 12000;
+const ENABLE_HEADLESS_RENDER = process.env.ENABLE_HEADLESS_RENDER !== 'false';
+const RENDER_PROXY_URL = process.env.RENDER_PROXY_URL || '';
+const RENDER_PROXY_API_KEY = process.env.RENDER_PROXY_API_KEY || '';
+
+interface PlaywrightRoute {
+  request: () => { resourceType: () => string };
+  abort: () => Promise<void>;
+  continue: () => Promise<void>;
+}
+
+interface PlaywrightPage {
+  route: (url: string, handler: (route: PlaywrightRoute) => Promise<void> | void) => Promise<void>;
+  goto: (url: string, options?: { waitUntil?: string; timeout?: number }) => Promise<unknown>;
+  waitForLoadState: (state?: string, options?: { timeout?: number }) => Promise<unknown>;
+  content: () => Promise<string>;
+}
+
+interface PlaywrightBrowserContext {
+  newPage: () => Promise<PlaywrightPage>;
+}
+
+interface PlaywrightBrowser {
+  newContext: (options?: { userAgent?: string }) => Promise<PlaywrightBrowserContext>;
+  close: () => Promise<void>;
+}
+
+interface PlaywrightModule {
+  chromium: {
+    launch: (options?: { headless?: boolean; args?: string[] }) => Promise<PlaywrightBrowser>;
+  };
+}
+
+let cachedPlaywrightModule: PlaywrightModule | null | undefined;
+
+async function loadPlaywright(): Promise<PlaywrightModule | null> {
+  if (cachedPlaywrightModule !== undefined) return cachedPlaywrightModule;
+  try {
+    const dynamicImport = new Function('specifier', 'return import(specifier)') as (
+      specifier: string,
+    ) => Promise<PlaywrightModule>;
+    cachedPlaywrightModule = await dynamicImport('playwright-chromium');
+  } catch {
+    cachedPlaywrightModule = null;
+  }
+  return cachedPlaywrightModule;
+}
+
+function isLikelyJsGatedPage(rawHtml: string, extractedText: string): boolean {
+  const noscriptWarning =
+    /enable javascript|javascript is disabled|requires javascript|please turn on javascript|you need to enable javascript|this app requires javascript/i.test(
+      rawHtml,
+    );
+  const emptyAppRoot = /<div[^>]*id=["'](root|app|__next|___gatsby)["'][^>]*>\s*<\/div>/i.test(rawHtml);
+  const veryThinText = extractedText.trim().length < 200;
+  const scriptHeavyThinPage =
+    veryThinText && rawHtml.length > 1500 && (rawHtml.match(/<script\b/gi)?.length || 0) >= 3;
+  return noscriptWarning || emptyAppRoot || scriptHeavyThinPage;
+}
+
+async function renderPageHeadless(url: string): Promise<{ ok: boolean; html?: string; error?: string }> {
+  if (!ENABLE_HEADLESS_RENDER) {
+    return { ok: false, error: 'Headless rendering disabled (ENABLE_HEADLESS_RENDER=false).' };
+  }
+  const playwright = await loadPlaywright();
+  if (!playwright) {
+    return { ok: false, error: 'playwright-chromium is not installed on this server.' };
+  }
+
+  let browser: PlaywrightBrowser | null = null;
+  try {
+    browser = await playwright.chromium.launch({
+      headless: true,
+      args: ['--no-sandbox', '--disable-setuid-sandbox', '--disable-dev-shm-usage'],
+    });
+    const context = await browser.newContext({
+      userAgent:
+        'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36 (compatible; NEXUS-Intelligence/1.0; +https://nexus.app)',
+    });
+    const page = await context.newPage();
+
+    await page.route('**/*', (route: PlaywrightRoute) => {
+      const type = route.request().resourceType();
+      if (type === 'image' || type === 'media' || type === 'font') {
+        return route.abort();
+      }
+      return route.continue();
+    });
+
+    await page.goto(url, { waitUntil: 'domcontentloaded', timeout: HEADLESS_RENDER_TIMEOUT_MS });
+    await page.waitForLoadState('networkidle', { timeout: HEADLESS_RENDER_TIMEOUT_MS }).catch(() => {});
+    const html = await page.content();
+    return { ok: true, html };
+  } catch (err) {
+    const errObj = err as Error;
+    return { ok: false, error: `Headless render failed: ${errObj.message || 'Unknown error'}` };
+  } finally {
+    if (browser) await browser.close().catch(() => {});
+  }
+}
+
+async function renderPageViaProxy(url: string): Promise<{ ok: boolean; html?: string; error?: string }> {
+  if (!RENDER_PROXY_URL) {
+    return { ok: false, error: 'No RENDER_PROXY_URL configured.' };
+  }
+  try {
+    const separator = RENDER_PROXY_URL.includes('?') ? '&' : '?';
+    const proxyUrl = RENDER_PROXY_API_KEY
+      ? `${RENDER_PROXY_URL}${separator}token=${encodeURIComponent(RENDER_PROXY_API_KEY)}`
+      : RENDER_PROXY_URL;
+
+    const controller = new AbortController();
+    const timeoutId = setTimeout(() => controller.abort(), HEADLESS_RENDER_TIMEOUT_MS);
+    const response = await fetch(proxyUrl, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ url }),
+      signal: controller.signal,
+    });
+    clearTimeout(timeoutId);
+
+    if (!response.ok) {
+      return { ok: false, error: `Render proxy returned HTTP ${response.status}` };
+    }
+    const html = await response.text();
+    if (!html || !html.trim()) {
+      return { ok: false, error: 'Render proxy returned an empty response.' };
+    }
+    return { ok: true, html };
+  } catch (err) {
+    const errObj = err as Error;
+    return { ok: false, error: `Render proxy request failed: ${errObj.message || 'Unknown error'}` };
+  }
+}
+
 async function fetchDirectWebPage(targetUrl: string): Promise<{
   ok: boolean;
   data?: {
@@ -1815,6 +1955,7 @@ async function fetchDirectWebPage(targetUrl: string): Promise<{
     length: number;
     rawTotalLength: number;
     isTruncated: boolean;
+    renderedVia: 'static' | 'headless-browser' | 'render-proxy' | 'wikipedia-api';
     status: number;
   };
   error?: string;
@@ -1883,6 +2024,7 @@ async function fetchDirectWebPage(targetUrl: string): Promise<{
               length: cappedWikiText.length,
               rawTotalLength: wikiText.length,
               isTruncated: isTrunc,
+              renderedVia: 'wikipedia-api',
               status: response.status,
             },
           };
@@ -1903,7 +2045,29 @@ async function fetchDirectWebPage(targetUrl: string): Promise<{
       };
     }
 
-    const parsedData = extractReadableTextFromHtml(rawBody);
+    let parsedData = extractReadableTextFromHtml(rawBody);
+
+    let renderedVia: 'static' | 'headless-browser' | 'render-proxy' = 'static';
+
+    if (isLikelyJsGatedPage(rawBody, parsedData.textContent)) {
+      const headlessResult = await renderPageHeadless(normalizedUrl);
+      if (headlessResult.ok && headlessResult.html) {
+        const renderedData = extractReadableTextFromHtml(headlessResult.html);
+        if (renderedData.textContent.trim().length > parsedData.textContent.trim().length) {
+          parsedData = renderedData;
+          renderedVia = 'headless-browser';
+        }
+      } else {
+        const proxyResult = await renderPageViaProxy(normalizedUrl);
+        if (proxyResult.ok && proxyResult.html) {
+          const renderedData = extractReadableTextFromHtml(proxyResult.html);
+          if (renderedData.textContent.trim().length > parsedData.textContent.trim().length) {
+            parsedData = renderedData;
+            renderedVia = 'render-proxy';
+          }
+        }
+      }
+    }
 
     return {
       ok: true,
@@ -1917,6 +2081,7 @@ async function fetchDirectWebPage(targetUrl: string): Promise<{
         length: parsedData.textContent.length,
         rawTotalLength: parsedData.rawTotalLength,
         isTruncated: parsedData.isTruncated,
+        renderedVia,
         status: response.status,
       },
     };

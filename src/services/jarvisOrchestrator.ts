@@ -2284,6 +2284,7 @@ Please perform your specialized processing for this inquiry. Provide clear, conc
     length: number;
     rawTotalLength?: number;
     isTruncated?: boolean;
+    renderedVia?: 'static' | 'headless-browser' | 'render-proxy' | 'wikipedia-api';
     description?: string;
     headings?: string[];
     preview: string;
@@ -2315,6 +2316,7 @@ Please perform your specialized processing for this inquiry. Provide clear, conc
       length: webRes.data?.length,
       rawTotalLength: webRes.data?.rawTotalLength,
       isTruncated: webRes.data?.isTruncated,
+      renderedVia: webRes.data?.renderedVia,
     });
 
     if (webRes.ok && webRes.data) {
@@ -2328,6 +2330,7 @@ Please perform your specialized processing for this inquiry. Provide clear, conc
         length: webRes.data.length || totalLen,
         rawTotalLength: totalLen,
         isTruncated: isTrunc,
+        renderedVia: webRes.data.renderedVia || 'static',
         description: webRes.data.description || '',
         headings: webRes.data.headings || [],
         preview: (webRes.data.textContent || '').slice(0, 1500),
@@ -2347,9 +2350,16 @@ Please perform your specialized processing for this inquiry. Provide clear, conc
         snippet: webRes.data.description || (webRes.data.textContent || '').slice(0, 200),
       });
 
+      const renderNote =
+        webFetchData.renderedVia === 'headless-browser'
+          ? ' (page needed JavaScript to load - rendered in a headless browser.)'
+          : webFetchData.renderedVia === 'render-proxy'
+            ? ' (page needed JavaScript to load - rendered via proxy fallback.)'
+            : '';
+
       const summaryText = isTrunc
-        ? `Successfully fetched ${totalLen.toLocaleString()} characters from ${webFetchData.title} (truncated to 3,500 chars for optimal synthesis).`
-        : `Successfully fetched ${totalLen.toLocaleString()} characters from ${webFetchData.title}.`;
+        ? `Successfully fetched ${totalLen.toLocaleString()} characters from ${webFetchData.title} (truncated to 3,500 chars for optimal synthesis).${renderNote}`
+        : `Successfully fetched ${totalLen.toLocaleString()} characters from ${webFetchData.title}.${renderNote}`;
 
       updateStep({
         agentId: 'webFetcher',
