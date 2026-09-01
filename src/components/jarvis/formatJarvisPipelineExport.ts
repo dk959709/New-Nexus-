@@ -386,6 +386,7 @@ function formatAgentStep(step: JarvisExecutionStep): string {
     let isTruncated = false;
     let description = '';
     let headings: string[] = [];
+    let excerpt = '';
 
     if (parsed && typeof parsed === 'object' && !Array.isArray(parsed)) {
       const wObj = parsed as Record<string, unknown>;
@@ -396,6 +397,7 @@ function formatAgentStep(step: JarvisExecutionStep): string {
       isTruncated = Boolean(wObj.isTruncated || (rawTotalLength > 3500));
       description = String(wObj.description || '');
       headings = Array.isArray(wObj.headings) ? (wObj.headings as string[]) : [];
+      excerpt = String(wObj.textContent || wObj.preview || wObj.contentExcerpt || '');
     }
 
     const lines: string[] = [`=== ${agentTitle} ===`];
@@ -408,6 +410,10 @@ function formatAgentStep(step: JarvisExecutionStep): string {
     if (headings.length > 0) {
       lines.push(`Key Headings:`);
       headings.forEach((h) => lines.push(`- ${h}`));
+    }
+    if (excerpt) {
+      lines.push(`Content Excerpt:`);
+      lines.push(excerpt);
     }
     return lines.join('\n').trim();
   }

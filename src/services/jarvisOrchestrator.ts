@@ -2102,14 +2102,13 @@ Please perform your specialized processing for this inquiry. Provide clear, conc
         plannerOutput.needsWikipedia = false;
         plannerOutput.needsKnowledgeAgent = false;
         plannerOutput.needsReview = false;
-        plannerOutput.needsFactCheck = true;
+        plannerOutput.needsFactCheck = false;
         plannerOutput.needsDiagram = false;
         plannerOutput.needsChart = false;
         plannerOutput.needsImage = false;
         plannerOutput.task = `Fetch and analyze webpage content from ${targetUrl}`;
         plannerOutput.plan = [
           `Directly fetch raw webpage content from ${targetUrl}`,
-          'Verify extracted text integrity and structure',
           'Synthesize comprehensive summary and analysis',
         ];
       } else if (isSearchOverrideQuery(query)) {
@@ -2169,14 +2168,13 @@ Please perform your specialized processing for this inquiry. Provide clear, conc
         plannerOutput.needsWikipedia = false;
         plannerOutput.needsKnowledgeAgent = false;
         plannerOutput.needsReview = false;
-        plannerOutput.needsFactCheck = true;
+        plannerOutput.needsFactCheck = false;
         plannerOutput.needsDiagram = false;
         plannerOutput.needsChart = false;
         plannerOutput.needsImage = false;
         plannerOutput.task = `Fetch and analyze webpage content from ${targetUrl}`;
         plannerOutput.plan = [
           `Directly fetch raw webpage content from ${targetUrl}`,
-          'Verify extracted text integrity and structure',
           'Synthesize comprehensive summary and analysis',
         ];
       } else if (isSearchOverrideQuery(query)) {
@@ -2204,14 +2202,13 @@ Please perform your specialized processing for this inquiry. Provide clear, conc
     plannerOutput.needsWikipedia = false;
     plannerOutput.needsKnowledgeAgent = false;
     plannerOutput.needsReview = false;
-    plannerOutput.needsFactCheck = true;
+    plannerOutput.needsFactCheck = false;
     plannerOutput.needsDiagram = false;
     plannerOutput.needsChart = false;
     plannerOutput.needsImage = false;
     plannerOutput.task = `Fetch and analyze webpage content from ${targetUrl}`;
     plannerOutput.plan = [
       `Directly fetch raw webpage content from ${targetUrl}`,
-      'Verify extracted text integrity and structure',
       'Synthesize comprehensive summary and analysis',
     ];
   } else if (isSearchOverrideQuery(query)) {
@@ -2257,7 +2254,7 @@ Please perform your specialized processing for this inquiry. Provide clear, conc
   const isSelfQuery = !isWebFetch && !isSearchOverride && (isSelfReferentialInquiry(query) || isSelfReferentialInquiry(combinedQueryText));
 
   // Determine which downstream agents are required.
-  // When isWebFetch is true, Researcher, Wikipedia, Advisor, and Reviewer are skipped.
+  // When isWebFetch is true, Researcher, Wikipedia, Advisor, Fact Checker, and Reviewer are skipped.
   // Researcher ONLY runs if enabled AND (deepResearch toggle is active OR plannerOutput.needsResearch is true).
   const shouldResearch =
     !isWebFetch &&
@@ -2267,8 +2264,9 @@ Please perform your specialized processing for this inquiry. Provide clear, conc
     (isSearchOverride || deepResearch || Boolean(plannerOutput.needsResearch));
 
   const shouldFactCheck =
+    !isWebFetch &&
     agentConfigs.factChecker.enabled &&
-    (isWebFetch || deepResearch || (shouldResearch && Boolean(plannerOutput.needsFactCheck)));
+    (deepResearch || (shouldResearch && Boolean(plannerOutput.needsFactCheck)));
 
   const shouldReview =
     !isWebFetch &&

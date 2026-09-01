@@ -559,7 +559,7 @@ function formatAgentContentToMarkdown(step: JarvisExecutionStep): {
       isTruncated = Boolean(wObj.isTruncated || (rawTotalLength > 3500));
       description = String(wObj.description || '');
       headings = Array.isArray(wObj.headings) ? (wObj.headings as string[]) : [];
-      preview = String(wObj.preview || wObj.textContent || '');
+      preview = String(wObj.textContent || wObj.preview || wObj.contentExcerpt || '');
     }
 
     let md = `### 🌐 Web Fetcher // Direct Page Extraction\n`;
@@ -573,7 +573,7 @@ function formatAgentContentToMarkdown(step: JarvisExecutionStep): {
       md += `#### 📑 Page Structure & Sections:\n${headings.map((h) => `- ${h}`).join('\n')}\n\n`;
     }
     if (preview) {
-      md += `#### 📄 Content Excerpt:\n${preview.slice(0, 1500)}${preview.length > 1500 ? '...' : ''}\n`;
+      md += `#### 📄 Content Excerpt:\n${preview}\n`;
     }
 
     return { formatted: md, isStructuredJson: true, raw };

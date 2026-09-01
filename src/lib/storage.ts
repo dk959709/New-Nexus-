@@ -40,7 +40,7 @@ Set needsKnowledgeAgent to false for all other query types, including: time-sens
   2. Set needsWikipedia: false (skip Wikipedia lookup).
   3. Set needsKnowledgeAgent: false (skip Advisor).
   4. Set needsReview: false (skip Reviewer).
-  5. Set needsFactCheck: true (validate and audit direct fetched page content).
+  5. Set needsFactCheck: false (skip Fact Checker to maintain a direct, fast fetch-and-synthesize pipeline).
   6. In "task", set "Direct Web Fetch: [URL]".
 - EXPLICIT "/search" OVERRIDE COMMAND:
   If the query begins with the explicit slash command prefix "/search" (e.g. "/search what is AI", "/search latest iPhone price", "/search black hole"):
