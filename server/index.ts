@@ -1703,6 +1703,182 @@ async function searchProvider(input: z.infer<typeof searchSchema>): Promise<{ re
   return { results: [], searchSource: 'No Results', fallbackOccurred: false };
 }
 
+function extractReadableTextFromHtml(html: string): {
+  title: string;
+  description: string;
+  headings: string[];
+  textContent: string;
+} {
+  let title = '';
+  const titleMatch = html.match(/<title[^>]*>([\s\S]*?)<\/title>/i);
+  if (titleMatch && titleMatch[1]) {
+    title = titleMatch[1].replace(/<[^>]+>/g, '').trim();
+  }
+
+  let description = '';
+  const descMatch =
+    html.match(/<meta[^>]*name=["']description["'][^>]*content=["']([\s\S]*?)["']/i) ||
+    html.match(/<meta[^>]*content=["']([\s\S]*?)["'][^>]*name=["']description["']/i) ||
+    html.match(/<meta[^>]*property=["']og:description["'][^>]*content=["']([\s\S]*?)["']/i);
+  if (descMatch && descMatch[1]) {
+    description = descMatch[1].trim();
+  }
+
+  // Extract headings
+  const headings: string[] = [];
+  const headingRegex = /<h([1-3])[^>]*>([\s\S]*?)<\/h\1>/gi;
+  let hMatch: RegExpExecArray | null;
+  while ((hMatch = headingRegex.exec(html)) !== null) {
+    const hText = hMatch[2].replace(/<[^>]+>/g, '').trim();
+    if (hText && hText.length > 1 && !headings.includes(hText)) {
+      headings.push(`H${hMatch[1]}: ${hText}`);
+    }
+  }
+
+  // Clean HTML: strip script, style, noscript, svg, canvas, nav, comments
+  let cleaned = html
+    .replace(/<!--[\s\S]*?-->/g, '')
+    .replace(/<script\b[^<]*(?:(?!<\/script>)<[^<]*)*<\/script>/gi, ' ')
+    .replace(/<style\b[^<]*(?:(?!<\/style>)<[^<]*)*<\/style>/gi, ' ')
+    .replace(/<noscript\b[^<]*(?:(?!<\/noscript>)<[^<]*)*<\/noscript>/gi, ' ')
+    .replace(/<svg\b[^<]*(?:(?!<\/svg>)<[^<]*)*<\/svg>/gi, ' ')
+    .replace(/<canvas\b[^<]*(?:(?!<\/canvas>)<[^<]*)*<\/canvas>/gi, ' ');
+
+  // Format headers and block elements with clear line breaks
+  cleaned = cleaned
+    .replace(/<\/(h[1-6]|p|div|section|article|li|tr|blockquote)>/gi, '\n')
+    .replace(/<br\s*\/?>/gi, '\n')
+    .replace(/<li[^>]*>/gi, '• ');
+
+  // Strip remaining HTML tags
+  cleaned = cleaned.replace(/<[^>]+>/g, ' ');
+
+  // Decode common HTML entities
+  cleaned = cleaned
+    .replace(/&nbsp;/gi, ' ')
+    .replace(/&amp;/gi, '&')
+    .replace(/&lt;/gi, '<')
+    .replace(/&gt;/gi, '>')
+    .replace(/&quot;/gi, '"')
+    .replace(/&#39;/gi, "'")
+    .replace(/&mdash;/gi, '—')
+    .replace(/&ndash;/gi, '–')
+    .replace(/&#(\d+);/g, (_, dec) => String.fromCharCode(Number(dec)))
+    .replace(/&#x([0-9a-f]+);/gi, (_, hex) => String.fromCharCode(parseInt(hex, 16)));
+
+  // Normalize whitespace: collapse spaces on lines, collapse multiple empty lines
+  const lines = cleaned
+    .split('\n')
+    .map((l) => l.replace(/[ \t]+/g, ' ').trim())
+    .filter((l) => l.length > 0);
+
+  const textContent = lines.join('\n\n').slice(0, 35000);
+
+  return {
+    title,
+    description,
+    headings: headings.slice(0, 25),
+    textContent,
+  };
+}
+
+async function fetchDirectWebPage(targetUrl: string): Promise<{
+  ok: boolean;
+  data?: {
+    url: string;
+    finalUrl: string;
+    title: string;
+    description: string;
+    headings: string[];
+    textContent: string;
+    length: number;
+    status: number;
+  };
+  error?: string;
+}> {
+  let normalizedUrl = targetUrl.trim();
+  if (!/^https?:\/\//i.test(normalizedUrl)) {
+    normalizedUrl = `https://${normalizedUrl}`;
+  }
+
+  let parsed: URL;
+  try {
+    parsed = new URL(normalizedUrl);
+  } catch {
+    return { ok: false, error: `Invalid URL format: "${targetUrl}"` };
+  }
+
+  if (parsed.protocol !== 'http:' && parsed.protocol !== 'https:') {
+    return { ok: false, error: `Unsupported protocol: "${parsed.protocol}"` };
+  }
+
+  try {
+    const controller = new AbortController();
+    const timeoutId = setTimeout(() => controller.abort(), 12000);
+
+    const response = await fetch(normalizedUrl, {
+      headers: {
+        'User-Agent':
+          'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36 NEXUS-Intelligence/1.0',
+        'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,text/plain;q=0.8,*/*;q=0.7',
+        'Accept-Language': 'en-US,en;q=0.9',
+      },
+      signal: controller.signal,
+      redirect: 'follow',
+    });
+
+    clearTimeout(timeoutId);
+
+    if (!response.ok) {
+      return {
+        ok: false,
+        error: `HTTP ${response.status} (${response.statusText || 'Error'}) when fetching ${normalizedUrl}`,
+      };
+    }
+
+    const rawBody = await response.text();
+    if (!rawBody || !rawBody.trim()) {
+      return {
+        ok: false,
+        error: `Page at ${normalizedUrl} returned an empty response.`,
+      };
+    }
+
+    const parsedData = extractReadableTextFromHtml(rawBody);
+
+    if (!parsedData.textContent || parsedData.textContent.trim().length === 0) {
+      return {
+        ok: false,
+        error: `Unable to parse readable text content from ${normalizedUrl}.`,
+      };
+    }
+
+    return {
+      ok: true,
+      data: {
+        url: normalizedUrl,
+        finalUrl: response.url || normalizedUrl,
+        title: parsedData.title || parsed.hostname,
+        description: parsedData.description,
+        headings: parsedData.headings,
+        textContent: parsedData.textContent,
+        length: parsedData.textContent.length,
+        status: response.status,
+      },
+    };
+  } catch (err) {
+    const errObj = err as Error;
+    const isTimeout =
+      errObj.name === 'AbortError' ||
+      errObj.message?.includes('timeout') ||
+      errObj.message?.includes('aborted');
+    const msg = isTimeout
+      ? `Connection timed out while fetching ${normalizedUrl}`
+      : `Failed to reach ${normalizedUrl}: ${errObj.message || 'Network error'}`;
+    return { ok: false, error: msg };
+  }
+}
+
 async function geocode(city: string) {
   const response = await fetch(
     `https://geocoding-api.open-meteo.com/v1/search?name=${encodeURIComponent(city)}&count=5&language=en&format=json`,
@@ -5926,6 +6102,42 @@ async function startServer() {
       const err = error as Error & { status?: number };
       return errorResponse(res, err.status ?? 502, err.message);
     }
+  });
+
+  app.post('/api/web/fetch', async (req, res) => {
+    const url = typeof req.body?.url === 'string' ? req.body.url.trim() : '';
+    if (!url) {
+      return errorResponse(res, 400, 'A valid URL is required.');
+    }
+    const result = await fetchDirectWebPage(url);
+    if (!result.ok || !result.data) {
+      return res.status(200).json({
+        ok: false,
+        error: result.error || `Unable to fetch web page at ${url}`,
+      });
+    }
+    return res.json({
+      ok: true,
+      data: result.data,
+    });
+  });
+
+  app.get('/api/web/fetch', async (req, res) => {
+    const url = typeof req.query?.url === 'string' ? req.query.url.trim() : '';
+    if (!url) {
+      return errorResponse(res, 400, 'A valid URL query parameter is required.');
+    }
+    const result = await fetchDirectWebPage(url);
+    if (!result.ok || !result.data) {
+      return res.status(200).json({
+        ok: false,
+        error: result.error || `Unable to fetch web page at ${url}`,
+      });
+    }
+    return res.json({
+      ok: true,
+      data: result.data,
+    });
   });
 
   app.get('/api/videos/search', async (req, res) => {

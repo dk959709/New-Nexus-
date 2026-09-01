@@ -28,6 +28,7 @@ interface JarvisTerminalDiagnosticLogProps {
 const AGENT_ICONS: Record<string, React.ReactNode> = {
   planner: <Compass size={14} className="text-emerald-400" />,
   researcher: <Globe2 size={14} className="text-sky-400" />,
+  webFetcher: <Globe2 size={14} className="text-cyan-400" />,
   factChecker: <ShieldCheck size={14} className="text-purple-400" />,
   advisor: <Lightbulb size={14} className="text-amber-400" />,
   reviewer: <ScanEye size={14} className="text-amber-400" />,
@@ -41,6 +42,7 @@ const AGENT_ICONS: Record<string, React.ReactNode> = {
 const AGENT_ROLE_DESCRIPTIONS: Record<string, string> = {
   planner: 'Decomposes inquiry & constructs execution topology',
   researcher: 'Gathers multi-source intelligence & verifiable facts',
+  webFetcher: 'Fetches and parses raw webpage HTML directly',
   factChecker: 'Audits claims, detects anomalies & verifies truth',
   advisor: 'Evaluates trade-offs, comparisons & verified verdicts',
   reviewer: 'Conducts quality critique, tone balance & rigor audit',
@@ -74,6 +76,13 @@ const AGENT_THEMES: Record<
     text: '#38bdf8',
     glow: 'rgba(56, 189, 248, 0.25)',
     badgeBg: 'rgba(56, 189, 248, 0.18)',
+  },
+  webFetcher: {
+    border: 'rgba(34, 211, 238, 0.4)',
+    bg: 'rgba(34, 211, 238, 0.08)',
+    text: '#22d3ee',
+    glow: 'rgba(34, 211, 238, 0.25)',
+    badgeBg: 'rgba(34, 211, 238, 0.18)',
   },
   factChecker: {
     border: 'rgba(192, 132, 252, 0.4)',

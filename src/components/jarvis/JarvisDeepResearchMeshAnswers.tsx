@@ -7,6 +7,7 @@ import {
   Code2,
   Copy,
   FileText,
+  Globe,
   HelpCircle,
   Layers,
   Lightbulb,
@@ -61,6 +62,17 @@ const AGENT_THEMES: Record<string, AgentTheme> = {
     badgeBg: 'rgba(56, 189, 248, 0.15)',
     accentGlow: 'rgba(56, 189, 248, 0.3)',
     icon: <Search size={18} className="text-sky-400" />,
+  },
+  webFetcher: {
+    title: 'WEB FETCHER // DIRECT PAGE EXTRACTION',
+    subtitle: 'Raw HTML Content Retrieval, Text Extraction & Structure Parsing',
+    border: 'rgba(34, 211, 238, 0.45)',
+    bg: 'linear-gradient(150deg, rgba(8, 32, 40, 0.9) 0%, rgba(5, 20, 26, 0.95) 100%)',
+    headerBg: 'rgba(12, 44, 56, 0.6)',
+    text: '#22d3ee',
+    badgeBg: 'rgba(34, 211, 238, 0.15)',
+    accentGlow: 'rgba(34, 211, 238, 0.3)',
+    icon: <Globe size={18} className="text-cyan-400" />,
   },
   advisor: {
     title: 'ADVISOR // COMPARATIVE & CONCEPTUAL ANALYSIS',
@@ -522,6 +534,40 @@ function formatAgentContentToMarkdown(step: JarvisExecutionStep): {
 
     if (critique) {
       md += `### 🔍 Refinements & Editorial Critique\n${critique}\n`;
+    }
+
+    return { formatted: md, isStructuredJson: true, raw };
+  }
+
+  // 4.5 WEB FETCHER AGENT
+  if (step.agentId === 'webFetcher') {
+    let title = '';
+    let url = '';
+    let length = 0;
+    let description = '';
+    let headings: string[] = [];
+    let preview = '';
+
+    if (parsed && typeof parsed === 'object' && !Array.isArray(parsed)) {
+      const wObj = parsed as Record<string, unknown>;
+      title = String(wObj.title || '');
+      url = String(wObj.finalUrl || wObj.url || '');
+      length = typeof wObj.length === 'number' ? wObj.length : 0;
+      description = String(wObj.description || '');
+      headings = Array.isArray(wObj.headings) ? (wObj.headings as string[]) : [];
+      preview = String(wObj.preview || wObj.textContent || '');
+    }
+
+    let md = `### 🌐 Web Fetcher // Direct Page Extraction\n`;
+    if (title) md += `**Page Title:** ${title}\n`;
+    if (url) md += `**Source URL:** [${url}](${url})\n`;
+    if (length > 0) md += `**Content Length:** ${length.toLocaleString()} characters parsed\n\n`;
+    if (description) md += `**Meta Description:** ${description}\n\n`;
+    if (headings.length > 0) {
+      md += `#### 📑 Page Structure & Sections:\n${headings.map((h) => `- ${h}`).join('\n')}\n\n`;
+    }
+    if (preview) {
+      md += `#### 📄 Content Excerpt:\n${preview.slice(0, 1500)}${preview.length > 1500 ? '...' : ''}\n`;
     }
 
     return { formatted: md, isStructuredJson: true, raw };

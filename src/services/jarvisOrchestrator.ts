@@ -1107,6 +1107,25 @@ export function stripSearchOverridePrefix(text: string): string {
   return text.trim().replace(/^\/search\s*/i, '').trim();
 }
 
+export function isWebFetchQuery(text: string): boolean {
+  if (!text || typeof text !== 'string') return false;
+  return /^\/web(?:\s+|$)/i.test(text.trim());
+}
+
+export function extractWebFetchUrl(text: string): string {
+  if (!text || typeof text !== 'string') return '';
+  let url = text.trim().replace(/^\/web\s*/i, '').trim();
+  if (url && !/^https?:\/\//i.test(url)) {
+    url = `https://${url}`;
+  }
+  return url;
+}
+
+export function stripWebFetchPrefix(text: string): string {
+  if (!text || typeof text !== 'string') return text;
+  return text.trim().replace(/^\/web\s*/i, '').trim();
+}
+
 export function extractTopicKeywords(query: string, task?: string): {
   coreTerms: string[];
   keyPhrases: string[];
@@ -1934,6 +1953,7 @@ Please perform your specialized processing for this inquiry. Provide clear, conc
   // Helper to detect comparison inquiries involving the user ("me", "myself", "you and me", "us", "I") vs AI or asking personal questions about the user
   const isPersonalOrHumanAiComparison = (text: string): boolean => {
     if (!text || typeof text !== 'string') return false;
+    if (isWebFetchQuery(text)) return false;
     if (isSearchOverrideQuery(text)) return false;
     const lower = text.toLowerCase().trim().replace(/[?!.,]+$/g, '');
     return (
@@ -1950,6 +1970,7 @@ Please perform your specialized processing for this inquiry. Provide clear, conc
   // Helper to detect self-referential / meta / greeting inquiries about JARVIS itself
   const isSelfReferentialInquiry = (text: string): boolean => {
     if (!text || typeof text !== 'string') return false;
+    if (isWebFetchQuery(text)) return false;
     if (isSearchOverrideQuery(text)) return false;
     const lower = text.toLowerCase().trim().replace(/[?!.,]+$/g, '');
     return (
@@ -2074,7 +2095,23 @@ Please perform your specialized processing for this inquiry. Provide clear, conc
       plannerOutput.task = String(plannerOutput.task || query);
       plannerOutput.needsKnowledgeAgent = Boolean(plannerOutput.needsKnowledgeAgent);
 
-      if (isSearchOverrideQuery(query)) {
+      if (isWebFetchQuery(query)) {
+        const targetUrl = extractWebFetchUrl(query);
+        plannerOutput.needsResearch = false;
+        plannerOutput.needsWikipedia = false;
+        plannerOutput.needsKnowledgeAgent = false;
+        plannerOutput.needsReview = false;
+        plannerOutput.needsFactCheck = true;
+        plannerOutput.needsDiagram = false;
+        plannerOutput.needsChart = false;
+        plannerOutput.needsImage = false;
+        plannerOutput.task = `Fetch and analyze webpage content from ${targetUrl}`;
+        plannerOutput.plan = [
+          `Directly fetch raw webpage content from ${targetUrl}`,
+          'Verify extracted text integrity and structure',
+          'Synthesize comprehensive summary and analysis',
+        ];
+      } else if (isSearchOverrideQuery(query)) {
         plannerOutput.needsResearch = true;
         plannerOutput.needsWikipedia = false;
         plannerOutput.needsKnowledgeAgent = false;
@@ -2125,7 +2162,23 @@ Please perform your specialized processing for this inquiry. Provide clear, conc
         usedFallback: planRes.usedFallback,
       });
     } else {
-      if (isSearchOverrideQuery(query)) {
+      if (isWebFetchQuery(query)) {
+        const targetUrl = extractWebFetchUrl(query);
+        plannerOutput.needsResearch = false;
+        plannerOutput.needsWikipedia = false;
+        plannerOutput.needsKnowledgeAgent = false;
+        plannerOutput.needsReview = false;
+        plannerOutput.needsFactCheck = true;
+        plannerOutput.needsDiagram = false;
+        plannerOutput.needsChart = false;
+        plannerOutput.needsImage = false;
+        plannerOutput.task = `Fetch and analyze webpage content from ${targetUrl}`;
+        plannerOutput.plan = [
+          `Directly fetch raw webpage content from ${targetUrl}`,
+          'Verify extracted text integrity and structure',
+          'Synthesize comprehensive summary and analysis',
+        ];
+      } else if (isSearchOverrideQuery(query)) {
         plannerOutput.needsResearch = true;
         plannerOutput.needsWikipedia = false;
         plannerOutput.needsKnowledgeAgent = false;
@@ -2144,6 +2197,22 @@ Please perform your specialized processing for this inquiry. Provide clear, conc
         error: planRes.error || 'Planner execution failed.',
       });
     }
+  } else if (isWebFetchQuery(query)) {
+    const targetUrl = extractWebFetchUrl(query);
+    plannerOutput.needsResearch = false;
+    plannerOutput.needsWikipedia = false;
+    plannerOutput.needsKnowledgeAgent = false;
+    plannerOutput.needsReview = false;
+    plannerOutput.needsFactCheck = true;
+    plannerOutput.needsDiagram = false;
+    plannerOutput.needsChart = false;
+    plannerOutput.needsImage = false;
+    plannerOutput.task = `Fetch and analyze webpage content from ${targetUrl}`;
+    plannerOutput.plan = [
+      `Directly fetch raw webpage content from ${targetUrl}`,
+      'Verify extracted text integrity and structure',
+      'Synthesize comprehensive summary and analysis',
+    ];
   } else if (isSearchOverrideQuery(query)) {
     plannerOutput.needsResearch = true;
     plannerOutput.needsWikipedia = false;
@@ -2175,19 +2244,22 @@ Please perform your specialized processing for this inquiry. Provide clear, conc
     );
   };
 
+  const isWebFetch = isWebFetchQuery(query);
+  const targetWebUrl = isWebFetch ? extractWebFetchUrl(query) : '';
   const isSearchOverride = isSearchOverrideQuery(query);
-  const strippedQuery = isSearchOverride ? stripSearchOverridePrefix(query) : query;
+  const strippedQuery = isWebFetch ? targetWebUrl : isSearchOverride ? stripSearchOverridePrefix(query) : query;
   const combinedQueryText = `${strippedQuery} ${plannerOutput.task || ''}`;
-  const isNewsQuery = isNewsInquiry(combinedQueryText);
-  const isWorldNews = isWorldNewsInquiry(combinedQueryText);
-  const isWeatherQuery = !isSearchOverride && /\b(weather|temperature|forecast|rain|snow|wind|humidity|degrees)\b/i.test(combinedQueryText);
-  const isPersonalQuery = !isSearchOverride && (isPersonalOrHumanAiComparison(query) || isPersonalOrHumanAiComparison(combinedQueryText));
-  const isSelfQuery = !isSearchOverride && (isSelfReferentialInquiry(query) || isSelfReferentialInquiry(combinedQueryText));
+  const isNewsQuery = !isWebFetch && isNewsInquiry(combinedQueryText);
+  const isWorldNews = !isWebFetch && isWorldNewsInquiry(combinedQueryText);
+  const isWeatherQuery = !isWebFetch && !isSearchOverride && /\b(weather|temperature|forecast|rain|snow|wind|humidity|degrees)\b/i.test(combinedQueryText);
+  const isPersonalQuery = !isWebFetch && !isSearchOverride && (isPersonalOrHumanAiComparison(query) || isPersonalOrHumanAiComparison(combinedQueryText));
+  const isSelfQuery = !isWebFetch && !isSearchOverride && (isSelfReferentialInquiry(query) || isSelfReferentialInquiry(combinedQueryText));
 
   // Determine which downstream agents are required.
+  // When isWebFetch is true, Researcher, Wikipedia, Advisor, and Reviewer are skipped.
   // Researcher ONLY runs if enabled AND (deepResearch toggle is active OR plannerOutput.needsResearch is true).
-  // When needsResearch is false or query is personal/self-referential, Researcher (including Tavily, GNews, DuckDuckGo, and Wikipedia) is skipped entirely.
   const shouldResearch =
+    !isWebFetch &&
     !isPersonalQuery &&
     !isSelfQuery &&
     agentConfigs.researcher.enabled &&
@@ -2195,12 +2267,98 @@ Please perform your specialized processing for this inquiry. Provide clear, conc
 
   const shouldFactCheck =
     agentConfigs.factChecker.enabled &&
-    (deepResearch || (shouldResearch && Boolean(plannerOutput.needsFactCheck)));
+    (isWebFetch || deepResearch || (shouldResearch && Boolean(plannerOutput.needsFactCheck)));
 
   const shouldReview =
+    !isWebFetch &&
     !isSearchOverride &&
     agentConfigs.reviewer.enabled &&
     (deepResearch || Boolean(plannerOutput.needsReview));
+
+  // ==========================================
+  // STEP 1.5: 🌐 WEB FETCHER (for /web [URL])
+  // ==========================================
+  let webFetchData: {
+    url: string;
+    finalUrl?: string;
+    title: string;
+    length: number;
+    description?: string;
+    headings?: string[];
+    preview: string;
+    textContent: string;
+  } | null = null;
+  let webFetchError = '';
+
+  if (isWebFetch && targetWebUrl) {
+    const webFetchStart = Date.now();
+    updateStep({
+      agentId: 'webFetcher',
+      name: 'Web Fetcher',
+      icon: 'Globe',
+      status: 'running',
+      providerName: 'Direct HTTP Fetch',
+      model: 'Direct Web Reader',
+      summary: `Fetching webpage content directly from ${targetWebUrl}...`,
+    });
+
+    const webRes = await api.webFetch(targetWebUrl);
+    const webFetchDuration = Date.now() - webFetchStart;
+
+    if (webRes.ok && webRes.data) {
+      webFetchData = {
+        url: webRes.data.url || targetWebUrl,
+        finalUrl: webRes.data.finalUrl || targetWebUrl,
+        title: webRes.data.title || targetWebUrl,
+        length: webRes.data.length || (webRes.data.textContent ? webRes.data.textContent.length : 0),
+        description: webRes.data.description || '',
+        headings: webRes.data.headings || [],
+        preview: (webRes.data.textContent || '').slice(0, 1500),
+        textContent: webRes.data.textContent || '',
+      };
+
+      sourcesCollected.push({
+        title: webRes.data.title || targetWebUrl,
+        url: webRes.data.finalUrl || targetWebUrl,
+        domain: (() => {
+          try {
+            return new URL(webRes.data.finalUrl || targetWebUrl).hostname;
+          } catch {
+            return 'web';
+          }
+        })(),
+        snippet: webRes.data.description || (webRes.data.textContent || '').slice(0, 200),
+      });
+
+      updateStep({
+        agentId: 'webFetcher',
+        name: 'Web Fetcher',
+        icon: 'Globe',
+        status: 'completed',
+        providerName: 'Direct HTTP Fetch',
+        model: 'Direct Web Reader',
+        durationMs: webFetchDuration,
+        summary: `Successfully fetched ${webFetchData.length.toLocaleString()} characters from ${webFetchData.title}.`,
+        outputPreview: JSON.stringify(webFetchData, null, 2),
+        rawOutput: JSON.stringify(webFetchData, null, 2),
+      });
+    } else {
+      webFetchError = webRes.error || `Could not fetch content from ${targetWebUrl}`;
+      updateStep({
+        agentId: 'webFetcher',
+        name: 'Web Fetcher',
+        icon: 'Globe',
+        status: 'failed',
+        providerName: 'Direct HTTP Fetch',
+        model: 'Direct Web Reader',
+        durationMs: webFetchDuration,
+        summary: `Failed to fetch webpage: ${webFetchError}`,
+        error: webFetchError,
+        outputPreview: JSON.stringify({ error: webFetchError, url: targetWebUrl }, null, 2),
+        rawOutput: JSON.stringify({ error: webFetchError, url: targetWebUrl }, null, 2),
+      });
+    }
+  }
 
   // ==========================================
   // STEP 2: 🔎 RESEARCHER
@@ -2617,7 +2775,32 @@ Please perform your specialized processing for this inquiry. Provide clear, conc
     const defaultPromptTemplate = DEFAULT_AGENT_SYSTEM_PROMPTS.factChecker;
 
     let claimsText = '';
-    if (researcherOutput.candidates && researcherOutput.candidates.length > 0) {
+    if (isWebFetch && webFetchData) {
+      claimsText = JSON.stringify(
+        {
+          mode: 'direct_web_fetch_audit',
+          targetUrl: webFetchData.url,
+          finalUrl: webFetchData.finalUrl,
+          pageTitle: webFetchData.title,
+          metaDescription: webFetchData.description,
+          headings: webFetchData.headings,
+          contentExcerpt: webFetchData.textContent.slice(0, 5000),
+        },
+        null,
+        2,
+      );
+    } else if (isWebFetch && webFetchError) {
+      claimsText = JSON.stringify(
+        {
+          mode: 'direct_web_fetch_audit',
+          targetUrl: targetWebUrl,
+          error: webFetchError,
+          status: 'fetch_failed',
+        },
+        null,
+        2,
+      );
+    } else if (researcherOutput.candidates && researcherOutput.candidates.length > 0) {
       const candidateClaims = researcherOutput.candidates.map((c, i) => ({
         id: i + 1,
         title: c.title || null,
@@ -3161,9 +3344,33 @@ JARVIS is a multi-agent AI intelligence platform composed of 9 specialized agent
 When answering questions about JARVIS's architecture, agent count, or capabilities, describe all 9 agents comprehensively.`
       : '';
 
+    const webFetchContextBlock = isWebFetch
+      ? (webFetchData
+        ? `\n\n[DIRECT WEBPAGE EXTRACTION - ${webFetchData.url}]:
+Title: ${webFetchData.title}
+URL: ${webFetchData.finalUrl || webFetchData.url}
+${webFetchData.description ? `Meta Description: ${webFetchData.description}\n` : ''}${webFetchData.headings && webFetchData.headings.length > 0 ? `Key Page Headings: ${webFetchData.headings.join(' • ')}\n` : ''}
+Full Page Content Extracted (Read directly from target URL):
+${webFetchData.textContent.slice(0, 18000)}
+
+DIRECT WEBPAGE ANALYSIS DIRECTIVES:
+- Provide a clear, thorough, and well-structured summary and analysis of this specific webpage's real content.
+- Present the main thesis/purpose, key features, announcements, articles, documentation sections, or specifications found on the page.
+- Do NOT search for other topics; ground your answer exclusively in the fetched page content above.
+- Cite the source URL [${webFetchData.title}](${webFetchData.finalUrl || webFetchData.url}).`
+        : `\n\n[DIRECT WEBPAGE FETCH FAILED]:
+Target URL: ${targetWebUrl}
+Fetch Error: ${webFetchError || 'Webpage could not be reached or parsed.'}
+
+DIRECT WEBPAGE ERROR DIRECTIVES:
+- Clearly and honestly state that the webpage at "${targetWebUrl}" could not be retrieved.
+- Provide the failure reason (${webFetchError || 'unreachable or returned an error'}).
+- Do NOT invent, speculate, or fabricate any contents about what might be on this page.`)
+      : '';
+
     const rawSynthesizerContext = `Current date and time: ${currentDateTime}
 User Query: "${strippedQuery}"
-
+${webFetchContextBlock}
 Planner Guidance: ${plannerPlanText}
 ${advisorOutput ? `Advisor Conceptual Analysis & Technical Comparison (General Knowledge):\n${advisorOutput}\n` : ''}
 ${factsList.length > 0 ? `Key Verified Facts:\n${factsList.map((f) => `- ${f}`).join('\n')}` : ''}

@@ -377,6 +377,35 @@ function formatAgentStep(step: JarvisExecutionStep): string {
     return lines.join('\n').trim();
   }
 
+  // 3.8. Web Fetcher Agent
+  if (step.agentId === 'webFetcher') {
+    let title = '';
+    let url = '';
+    let length = 0;
+    let description = '';
+    let headings: string[] = [];
+
+    if (parsed && typeof parsed === 'object' && !Array.isArray(parsed)) {
+      const wObj = parsed as Record<string, unknown>;
+      title = String(wObj.title || '');
+      url = String(wObj.finalUrl || wObj.url || '');
+      length = typeof wObj.length === 'number' ? wObj.length : 0;
+      description = String(wObj.description || '');
+      headings = Array.isArray(wObj.headings) ? (wObj.headings as string[]) : [];
+    }
+
+    const lines: string[] = [`=== ${agentTitle} ===`];
+    if (title) lines.push(`Page Title: ${title}`);
+    if (url) lines.push(`Source URL: ${url}`);
+    if (length > 0) lines.push(`Parsed Content Length: ${length.toLocaleString()} characters`);
+    if (description) lines.push(`Description: ${description}`);
+    if (headings.length > 0) {
+      lines.push(`Key Headings:`);
+      headings.forEach((h) => lines.push(`- ${h}`));
+    }
+    return lines.join('\n').trim();
+  }
+
   // 4. Reviewer Agent
   if (step.agentId === 'reviewer') {
     let recommendation = 'Proceed with comprehensive synthesis.';

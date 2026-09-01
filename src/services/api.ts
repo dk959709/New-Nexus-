@@ -118,6 +118,42 @@ export const api = {
     return call<MediaItem[]>(`/api/videos/search?query=${encodeURIComponent(query)}&page=${page}`);
   },
 
+  async webFetch(url: string): Promise<{
+    url: string;
+    finalUrl: string;
+    title: string;
+    description: string;
+    headings: string[];
+    textContent: string;
+    length: number;
+    status: number;
+  }> {
+    const endpoint = BASE + '/api/web/fetch';
+    const res = await fetch(endpoint, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ url }),
+    });
+    const body = (await res.json().catch(() => ({}))) as {
+      ok?: boolean;
+      data?: {
+        url: string;
+        finalUrl: string;
+        title: string;
+        description: string;
+        headings: string[];
+        textContent: string;
+        length: number;
+        status: number;
+      };
+      error?: string;
+    };
+    if (!res.ok || !body.ok || !body.data) {
+      throw new Error(body.error || `Failed to fetch web content from ${url}`);
+    }
+    return body.data;
+  },
+
   weather(queryString: string): Promise<WeatherData> {
     return call<WeatherData>('/api/weather?' + queryString);
   },

@@ -34,6 +34,14 @@ Set needsKnowledgeAgent to false for all other query types, including: time-sens
 - needsChart: true whenever Chart Mode is enabled AND the query involves comparative numbers, specs, battery mAh, RAM, storage, camera megapixels, prices, dimensions, statistics, timelines, or quantitative metrics across products, categories, or items. Set false only if Chart Mode is off or query has no numbers.
 - needsImage: true whenever Image Mode is enabled AND the query mentions physical products (e.g. smartphones, laptops, cars, hardware), real-world objects, places, landmarks, animals, space imagery, or tangible subjects. Set false only if Image Mode is off or topic is purely abstract.
 - needsWikipedia: Set needsWikipedia to true ONLY if the query is asking for a general definition, explanation of a concept, historical background, or information about a specific person/place/thing/event (e.g. 'what is a black hole', 'who was Einstein', 'history of NASA', 'define photosynthesis'). Set needsWikipedia to false if the query is asking for real-time or live data that changes constantly and Wikipedia would not have (e.g. current time, current weather, today's date, live prices, breaking news, current status of something). Also set it to false for casual conversation, opinions, self-referential questions, or questions unrelated to a specific factual topic.
+- EXPLICIT "/web" DIRECT URL FETCH COMMAND:
+  If the query begins with the explicit slash command prefix "/web" followed by a URL (e.g. "/web new-nexus.onrender.com", "/web new-nexus.onrender.com/space", "/web https://example.com/article"):
+  1. Set needsResearch: false (skip standard search engines, as this is a direct web page fetch).
+  2. Set needsWikipedia: false (skip Wikipedia lookup).
+  3. Set needsKnowledgeAgent: false (skip Advisor).
+  4. Set needsReview: false (skip Reviewer).
+  5. Set needsFactCheck: true (validate and audit direct fetched page content).
+  6. In "task", set "Direct Web Fetch: [URL]".
 - EXPLICIT "/search" OVERRIDE COMMAND:
   If the query begins with the explicit slash command prefix "/search" (e.g. "/search what is AI", "/search latest iPhone price", "/search black hole"):
   1. Set needsResearch: true (always force a real live web search, regardless of what the rest of the query looks like).
