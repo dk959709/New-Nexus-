@@ -34,6 +34,14 @@ Set needsKnowledgeAgent to false for all other query types, including: time-sens
 - needsChart: true whenever Chart Mode is enabled AND the query involves comparative numbers, specs, battery mAh, RAM, storage, camera megapixels, prices, dimensions, statistics, timelines, or quantitative metrics across products, categories, or items. Set false only if Chart Mode is off or query has no numbers.
 - needsImage: true whenever Image Mode is enabled AND the query mentions physical products (e.g. smartphones, laptops, cars, hardware), real-world objects, places, landmarks, animals, space imagery, or tangible subjects. Set false only if Image Mode is off or topic is purely abstract.
 - needsWikipedia: Set needsWikipedia to true ONLY if the query is asking for a general definition, explanation of a concept, historical background, or information about a specific person/place/thing/event (e.g. 'what is a black hole', 'who was Einstein', 'history of NASA', 'define photosynthesis'). Set needsWikipedia to false if the query is asking for real-time or live data that changes constantly and Wikipedia would not have (e.g. current time, current weather, today's date, live prices, breaking news, current status of something). Also set it to false for casual conversation, opinions, self-referential questions, or questions unrelated to a specific factual topic.
+- EXPLICIT "/search" OVERRIDE COMMAND:
+  If the query begins with the explicit slash command prefix "/search" (e.g. "/search what is AI", "/search latest iPhone price", "/search black hole"):
+  1. Set needsResearch: true (always force a real live web search, regardless of what the rest of the query looks like).
+  2. Set needsWikipedia: false (explicitly skip Wikipedia summary lookup, even if the query would normally look like a definition question).
+  3. Set needsKnowledgeAgent: false (explicitly skip Advisor, even if the query would normally look like a comparison).
+  4. Set needsReview: false (skip Reviewer to maintain a lightweight, fast direct search pipeline).
+  5. Set needsFactCheck: true (still verify extracted facts and data).
+  6. In "task", strip the "/search" prefix so downstream agents work directly on the target query (e.g. for "/search black hole", task should be "Research black hole" or "Search for black hole").
 - task: a concise goal statement, under 15 words.
 - plan: 2-4 short steps describing your approach, not a full essay.
 - CRITICAL - SELF-REFERENTIAL, PERSONAL, ARCHITECTURE & HUMAN-AI COMPARISON INQUIRIES:
@@ -646,6 +654,7 @@ export const storage = {
             !stored.agents.planner.systemPrompt.includes('JARVIS Architecture Knowledge') ||
             !stored.agents.planner.systemPrompt.includes('compare me and DeepSeek') ||
             !stored.agents.planner.systemPrompt.includes('whenever needsResearch or needsFactCheck is true') ||
+            !stored.agents.planner.systemPrompt.includes('EXPLICIT "/search" OVERRIDE COMMAND') ||
             !stored.agents.planner.systemPrompt.includes('task: a concise goal statement, under 15 words.')
               ? DEFAULT_AGENT_SYSTEM_PROMPTS.planner
               : stored.agents.planner.systemPrompt,

@@ -1097,6 +1097,16 @@ export function deduplicateNewsCandidates(
  * Extracts essential topic terms and phrases from a user query / task.
  * Strips generic question words, command prefixes, and common stop words.
  */
+export function isSearchOverrideQuery(text: string): boolean {
+  if (!text || typeof text !== 'string') return false;
+  return /^\/search(?:\s+|$)/i.test(text.trim());
+}
+
+export function stripSearchOverridePrefix(text: string): string {
+  if (!text || typeof text !== 'string') return text;
+  return text.trim().replace(/^\/search\s*/i, '').trim();
+}
+
 export function extractTopicKeywords(query: string, task?: string): {
   coreTerms: string[];
   keyPhrases: string[];
@@ -1123,6 +1133,7 @@ export function extractTopicKeywords(query: string, task?: string): {
 
   // 2. Remove command & question prefix filler
   const cleanedSearchQuery = query
+    .replace(/^\/search\s+/i, '')
     .replace(
       /^(?:fact-?check|investigate|debunk|verify|research|analyze|tell me about|explain|what is|how does|why is|why does|who was|who is|compare|comar|comparing|comparison between|diff between|difference between)\s+/i,
       '',
@@ -1923,6 +1934,7 @@ Please perform your specialized processing for this inquiry. Provide clear, conc
   // Helper to detect comparison inquiries involving the user ("me", "myself", "you and me", "us", "I") vs AI or asking personal questions about the user
   const isPersonalOrHumanAiComparison = (text: string): boolean => {
     if (!text || typeof text !== 'string') return false;
+    if (isSearchOverrideQuery(text)) return false;
     const lower = text.toLowerCase().trim().replace(/[?!.,]+$/g, '');
     return (
       /\b(?:compare|comar|comparing|comparison between|diff|difference between)\s+(?:me|myself|i|us|you and me|me and you)\b/i.test(lower) ||
@@ -1938,6 +1950,7 @@ Please perform your specialized processing for this inquiry. Provide clear, conc
   // Helper to detect self-referential / meta / greeting inquiries about JARVIS itself
   const isSelfReferentialInquiry = (text: string): boolean => {
     if (!text || typeof text !== 'string') return false;
+    if (isSearchOverrideQuery(text)) return false;
     const lower = text.toLowerCase().trim().replace(/[?!.,]+$/g, '');
     return (
       /^(hi|hello|hey|greetings|howdy|good (morning|afternoon|evening))\b/i.test(lower) ||
@@ -2061,7 +2074,16 @@ Please perform your specialized processing for this inquiry. Provide clear, conc
       plannerOutput.task = String(plannerOutput.task || query);
       plannerOutput.needsKnowledgeAgent = Boolean(plannerOutput.needsKnowledgeAgent);
 
-      if (isPersonalOrHumanAiComparison(query)) {
+      if (isSearchOverrideQuery(query)) {
+        plannerOutput.needsResearch = true;
+        plannerOutput.needsWikipedia = false;
+        plannerOutput.needsKnowledgeAgent = false;
+        plannerOutput.needsReview = false;
+        plannerOutput.needsFactCheck = true;
+        if (!plannerOutput.task || plannerOutput.task === query || isSearchOverrideQuery(plannerOutput.task)) {
+          plannerOutput.task = stripSearchOverridePrefix(plannerOutput.task || query) || 'Web search';
+        }
+      } else if (isPersonalOrHumanAiComparison(query)) {
         plannerOutput.needsResearch = false;
         plannerOutput.needsKnowledgeAgent = true; // Advisor runs to provide conceptual Human vs AI breakdown
         plannerOutput.needsFactCheck = false;
@@ -2103,6 +2125,14 @@ Please perform your specialized processing for this inquiry. Provide clear, conc
         usedFallback: planRes.usedFallback,
       });
     } else {
+      if (isSearchOverrideQuery(query)) {
+        plannerOutput.needsResearch = true;
+        plannerOutput.needsWikipedia = false;
+        plannerOutput.needsKnowledgeAgent = false;
+        plannerOutput.needsReview = false;
+        plannerOutput.needsFactCheck = true;
+        plannerOutput.task = stripSearchOverridePrefix(query) || 'Web search';
+      }
       updateStep({
         agentId: 'planner',
         name: pCfg.name,
@@ -2114,6 +2144,13 @@ Please perform your specialized processing for this inquiry. Provide clear, conc
         error: planRes.error || 'Planner execution failed.',
       });
     }
+  } else if (isSearchOverrideQuery(query)) {
+    plannerOutput.needsResearch = true;
+    plannerOutput.needsWikipedia = false;
+    plannerOutput.needsKnowledgeAgent = false;
+    plannerOutput.needsReview = false;
+    plannerOutput.needsFactCheck = true;
+    plannerOutput.task = stripSearchOverridePrefix(query) || 'Web search';
   }
 
   // Standalone whole-word matching for news inquiries (excludes technical terms like 'electrical current')
@@ -2138,12 +2175,14 @@ Please perform your specialized processing for this inquiry. Provide clear, conc
     );
   };
 
-  const combinedQueryText = `${query} ${plannerOutput.task || ''}`;
+  const isSearchOverride = isSearchOverrideQuery(query);
+  const strippedQuery = isSearchOverride ? stripSearchOverridePrefix(query) : query;
+  const combinedQueryText = `${strippedQuery} ${plannerOutput.task || ''}`;
   const isNewsQuery = isNewsInquiry(combinedQueryText);
   const isWorldNews = isWorldNewsInquiry(combinedQueryText);
-  const isWeatherQuery = /\b(weather|temperature|forecast|rain|snow|wind|humidity|degrees)\b/i.test(combinedQueryText);
-  const isPersonalQuery = isPersonalOrHumanAiComparison(query) || isPersonalOrHumanAiComparison(combinedQueryText);
-  const isSelfQuery = isSelfReferentialInquiry(query) || isSelfReferentialInquiry(combinedQueryText);
+  const isWeatherQuery = !isSearchOverride && /\b(weather|temperature|forecast|rain|snow|wind|humidity|degrees)\b/i.test(combinedQueryText);
+  const isPersonalQuery = !isSearchOverride && (isPersonalOrHumanAiComparison(query) || isPersonalOrHumanAiComparison(combinedQueryText));
+  const isSelfQuery = !isSearchOverride && (isSelfReferentialInquiry(query) || isSelfReferentialInquiry(combinedQueryText));
 
   // Determine which downstream agents are required.
   // Researcher ONLY runs if enabled AND (deepResearch toggle is active OR plannerOutput.needsResearch is true).
@@ -2152,13 +2191,14 @@ Please perform your specialized processing for this inquiry. Provide clear, conc
     !isPersonalQuery &&
     !isSelfQuery &&
     agentConfigs.researcher.enabled &&
-    (deepResearch || Boolean(plannerOutput.needsResearch));
+    (isSearchOverride || deepResearch || Boolean(plannerOutput.needsResearch));
 
   const shouldFactCheck =
     agentConfigs.factChecker.enabled &&
     (deepResearch || (shouldResearch && Boolean(plannerOutput.needsFactCheck)));
 
   const shouldReview =
+    !isSearchOverride &&
     agentConfigs.reviewer.enabled &&
     (deepResearch || Boolean(plannerOutput.needsReview));
 
@@ -2171,7 +2211,7 @@ Please perform your specialized processing for this inquiry. Provide clear, conc
   };
 
   if (shouldResearch) {
-    console.log('[JARVIS Researcher] QUERY TYPE DEBUG - Query:', query, '| isNewsQuery:', isNewsQuery, '| isWorldNews:', isWorldNews, '| isWeatherQuery:', isWeatherQuery, '| needsWikipedia:', plannerOutput.needsWikipedia);
+    console.log('[JARVIS Researcher] QUERY TYPE DEBUG - Query:', strippedQuery, '| isSearchOverride:', isSearchOverride, '| isNewsQuery:', isNewsQuery, '| isWorldNews:', isWorldNews, '| isWeatherQuery:', isWeatherQuery, '| needsWikipedia:', plannerOutput.needsWikipedia);
     const rCfg = agentConfigs.researcher;
     const provInfo = resolveProviderConfig(rCfg);
     const start = Date.now();
@@ -2190,7 +2230,7 @@ Please perform your specialized processing for this inquiry. Provide clear, conc
     let searchSource = 'Live News API';
 
     try {
-      const { cleanedSearchQuery } = extractTopicKeywords(query, plannerOutput.task);
+      const { cleanedSearchQuery } = extractTopicKeywords(strippedQuery, plannerOutput.task);
 
       let searchResults: SearchResult[] = [];
       let wikiSummaryCandidate: RawSearchResultCandidate | null = null;
@@ -2198,7 +2238,7 @@ Please perform your specialized processing for this inquiry. Provide clear, conc
       // 1. Weather Query handling using api.weather()
       if (isWeatherQuery) {
         try {
-          const matchCity = query.match(/(?:in|for|at)\s+([a-zA-Z\s]+)(?:\?|$)/i);
+          const matchCity = strippedQuery.match(/(?:in|for|at)\s+([a-zA-Z\s]+)(?:\?|$)/i);
           const cityName = matchCity ? matchCity[1].trim() : 'London';
           console.log('[JARVIS Researcher] Calling api.weather() for weather query, city:', cityName);
           const weatherRes = await api.weather(`city=${encodeURIComponent(cityName)}`);
@@ -2224,9 +2264,9 @@ Please perform your specialized processing for this inquiry. Provide clear, conc
       else if (isNewsQuery) {
         let gnewsSucceeded = false;
         try {
-          console.log('[JARVIS Researcher] Attempting primary GNews API for news query:', query, 'isWorldNews:', isWorldNews);
+          console.log('[JARVIS Researcher] Attempting primary GNews API for news query:', strippedQuery, 'isWorldNews:', isWorldNews);
           const gnewsRes = await api.news({
-            query: isWorldNews ? undefined : (cleanedSearchQuery || query),
+            query: isWorldNews ? undefined : (cleanedSearchQuery || strippedQuery),
             category: isWorldNews ? 'world' : 'general',
           });
           console.log('[JARVIS Researcher] RAW DATA USED (DEBUG) - GNews Response:', JSON.stringify(gnewsRes, null, 2));
@@ -2260,7 +2300,7 @@ Please perform your specialized processing for this inquiry. Provide clear, conc
         if (!gnewsSucceeded) {
           logToJarvisTerminal('GNews failed, falling back to Google News RSS', 'warning');
           try {
-            const rssQuery = isWorldNews ? 'latest world news' : (cleanedSearchQuery || query);
+            const rssQuery = isWorldNews ? 'latest world news' : (cleanedSearchQuery || strippedQuery);
             console.log('[JARVIS Researcher] Falling back to Google News RSS for news query:', rssQuery);
             const liveNewsRes = await api.newsRss(rssQuery);
             console.log('[JARVIS Researcher] RAW DATA USED (DEBUG) - News RSS Response:', JSON.stringify(liveNewsRes, null, 2));
@@ -2283,8 +2323,8 @@ Please perform your specialized processing for this inquiry. Provide clear, conc
       if (searchResults.length === 0) {
         const currentDateStr = new Date().toLocaleDateString('en-US', { month: 'long', day: 'numeric', year: 'numeric' });
         const effectiveSearchQuery = isNewsQuery
-          ? (isWorldNews ? `top world breaking news headlines today ${currentDateStr}` : `world news today ${currentDateStr} ${cleanedSearchQuery || query}`)
-          : query;
+          ? (isWorldNews ? `top world breaking news headlines today ${currentDateStr}` : `world news today ${currentDateStr} ${cleanedSearchQuery || strippedQuery}`)
+          : (isSearchOverride ? (cleanedSearchQuery || strippedQuery) : query);
 
         try {
           const searchRes = await api.search(effectiveSearchQuery);
@@ -2323,10 +2363,10 @@ Please perform your specialized processing for this inquiry. Provide clear, conc
 
       // 4. AI-Decided Wikipedia Lookup for factual/encyclopedic queries (Works in both Deep Research ON and OFF)
       if (plannerOutput.needsWikipedia && !isWeatherQuery && !isNewsQuery) {
-        console.log(`[JARVIS Researcher] AI Planner indicated needsWikipedia: true for query: "${query}". Executing 2-step lookup...`);
+        console.log(`[JARVIS Researcher] AI Planner indicated needsWikipedia: true for query: "${strippedQuery}". Executing 2-step lookup...`);
         try {
           // Step 1: Call fetchWikipediaSearch with limit=1 to find the single best-matching page title/ID
-          const wikiPages = await searchWikipedia(query, 1);
+          const wikiPages = await searchWikipedia(strippedQuery, 1);
           if (wikiPages && wikiPages.length > 0 && wikiPages[0]?.title) {
             const topPage = wikiPages[0];
             console.log(`[JARVIS Researcher] Wikipedia Step 1 matched page: "${topPage.title}". Fetching full lead summary (Step 2)...`);
@@ -2346,7 +2386,7 @@ Please perform your specialized processing for this inquiry. Provide clear, conc
             logToJarvisTerminal(`Wikipedia lookup triggered - found "${topPage.title}" page`);
           } else {
             // Safety check: 0 results returned, skip summary step and proceed with Tavily results only
-            console.log(`[JARVIS Researcher] Wikipedia Step 1 returned 0 results for query: "${query}". Skipping summary step.`);
+            console.log(`[JARVIS Researcher] Wikipedia Step 1 returned 0 results for query: "${strippedQuery}". Skipping summary step.`);
             logToJarvisTerminal('Wikipedia lookup triggered - no matching page found, skipped', 'warning');
           }
         } catch (wikiErr) {
@@ -2392,7 +2432,7 @@ Please perform your specialized processing for this inquiry. Provide clear, conc
 
       let filteredSources = isDirectNewsOrWeather
         ? rawCandidates
-        : scoreAndFilterSearchResults(rawCandidates, query, plannerOutput.task);
+        : scoreAndFilterSearchResults(rawCandidates, strippedQuery, plannerOutput.task);
 
       // Fallback: If relevance filter pruned too aggressively (< 3 sources), recover original candidates
       if (filteredSources.length < 3 && rawCandidates.length >= 3) {
@@ -2428,7 +2468,7 @@ Please perform your specialized processing for this inquiry. Provide clear, conc
 
     const defaultPromptTemplate = DEFAULT_AGENT_SYSTEM_PROMPTS.researcher;
     let activePrompt = (rCfg.systemPrompt || defaultPromptTemplate)
-      .replace('{task}', plannerOutput.task || query);
+      .replace('{task}', plannerOutput.task || strippedQuery);
 
     if (activePrompt.includes('{searchSnippets}')) {
       activePrompt = activePrompt.replace(
@@ -2439,8 +2479,8 @@ Please perform your specialized processing for this inquiry. Provide clear, conc
       activePrompt += `\n\nLive Context / Search Data:\n${searchSnippets}`;
     }
 
-    console.group(`[JARVIS Researcher] Executing Research for: "${query}"`);
-    console.log(`[JARVIS Researcher] Planner Task: "${plannerOutput.task || query}"`);
+    console.group(`[JARVIS Researcher] Executing Research for: "${strippedQuery}"`);
+    console.log(`[JARVIS Researcher] Planner Task: "${plannerOutput.task || strippedQuery}"`);
     console.log(`[JARVIS Researcher] Gathered ${gatheredSnippets.length} snippets:`, gatheredSnippets);
     console.log(`[JARVIS Researcher] Active Prompt:`, activePrompt);
 
@@ -3122,7 +3162,7 @@ When answering questions about JARVIS's architecture, agent count, or capabiliti
       : '';
 
     const rawSynthesizerContext = `Current date and time: ${currentDateTime}
-User Query: "${query}"
+User Query: "${strippedQuery}"
 
 Planner Guidance: ${plannerPlanText}
 ${advisorOutput ? `Advisor Conceptual Analysis & Technical Comparison (General Knowledge):\n${advisorOutput}\n` : ''}
