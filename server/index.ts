@@ -4148,7 +4148,6 @@ function startTelegramPolling(token: string) {
             if (!msg || !msg.text) continue;
 
             const targetChatId = msg.chat?.id;
-            console.log('[TELEGRAM DEBUG] from.id=', msg.from?.id, 'chat.id=', msg.chat?.id, 'username=', msg.from?.username, 'first_name=', msg.from?.first_name);
             const senderName = msg.from?.username
               ? `@${msg.from.username}`
               : msg.from?.first_name || `User #${msg.from?.id || targetChatId}`;
