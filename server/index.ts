@@ -1770,7 +1770,7 @@ function extractReadableTextFromHtml(html: string): {
   const lines = cleaned
     .split('\n')
     .map((l) => l.replace(/[ \t]+/g, ' ').trim())
-    .filter((l) => l.length > 0);
+    .filter((l) => l.length > 0 && l !== '•' && l !== '• ');
 
   const fullText = lines.join('\n\n');
   const rawTotalLength = fullText.length;
