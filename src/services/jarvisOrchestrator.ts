@@ -1127,6 +1127,34 @@ export function stripWebFetchPrefix(text: string): string {
   return text.trim().replace(/^\/web\s*/i, '').trim().replace(/^["'`<]+|[>"'`]+$/g, '').trim();
 }
 
+/**
+ * Detects whether a query has "PRODUCT/MODEL LINEUP" intent:
+ * Queries asking what current models/versions/products exist for a subject
+ * (e.g. "latest Claude models", "current Claude model lineup", "what models does Claude have now", "current iPhone lineup").
+ * These queries seek official model/product listings and specs, NOT general news, controversies, or lawsuits.
+ */
+export function isProductLineupInquiry(text: string): boolean {
+  if (!text || typeof text !== 'string') return false;
+  const lower = text.toLowerCase().trim();
+
+  // If query explicitly asks for news, scandals, lawsuits, controversies, or breaking happenings, it is RECENT NEWS intent
+  if (/\b(news|headlines|breaking|lawsuit|lawsuits|controversy|controversies|scandal|investigation|crime|arrest|accident)\b/i.test(lower)) {
+    return false;
+  }
+
+  // Check for product / model lineup nouns
+  const hasLineupNoun = /\b(models?|lineup|line-up|line\s+up|variants?|editions?|family|tiers?|versions?|portfolio|catalog|catalogue|offerings?)\b/i.test(lower);
+
+  // Check for catalog / inquiry intent patterns
+  const hasLineupIntent =
+    /\b(latest|current|newest|all|available|existing|what|which|list|overview|compare|tell|show|explain|now|hierarchy|specs?)\b/i.test(lower) ||
+    /what\s+(?:are\s+the\s+)?(?:latest\s+|current\s+|newest\s+)?(?:models?|versions?|lineup)/i.test(lower) ||
+    /what\s+models?\s+does\s+/i.test(lower) ||
+    /models?\s+(?:available|now|currently|list|overview)/i.test(lower);
+
+  return hasLineupNoun && hasLineupIntent;
+}
+
 export function extractTopicKeywords(query: string, task?: string): {
   coreTerms: string[];
   keyPhrases: string[];
@@ -1212,6 +1240,7 @@ export function scoreAndFilterSearchResults(
   if (!candidates || candidates.length === 0) return [];
 
   const { coreTerms, keyPhrases } = extractTopicKeywords(query, task);
+  const isLineupQuery = isProductLineupInquiry(query) || (task ? isProductLineupInquiry(task) : false);
   const normalizedSeenUrls = new Set<string>();
 
   const scoredList: Array<{ candidate: RawSearchResultCandidate; score: number }> = [];
@@ -1416,6 +1445,45 @@ export function scoreAndFilterSearchResults(
     // Penalize completely unrelated snippet contents where snippet has 0 core topic matches
     if (snippetTermMatches === 0 && coreTerms.length >= 2) {
       score -= 30;
+    }
+
+    // Specific Scoring Adjustments for Product/Model Lineup Queries:
+    if (isLineupQuery) {
+      // Bonus: Official model overview, pricing, developer docs, or product lineup pages
+      const isOfficialDocOrModelPage =
+        urlLower.includes('/models') ||
+        urlLower.includes('/pricing') ||
+        urlLower.includes('/docs') ||
+        urlLower.includes('/about') ||
+        urlLower.includes('/overview') ||
+        urlLower.includes('/specs') ||
+        urlLower.includes('/product') ||
+        urlLower.includes('wikipedia.org/wiki/claude') ||
+        urlLower.includes('wikipedia.org/wiki/gpt') ||
+        urlLower.includes('wikipedia.org/wiki/gemini') ||
+        urlLower.includes('wikipedia.org/wiki/llama') ||
+        urlLower.includes('wikipedia.org/wiki/iphone');
+
+      if (isOfficialDocOrModelPage) {
+        score += 35;
+      }
+
+      // Bonus: Explicit mentions of known product model tiers or versions
+      const mentionsModelTiers = /\b(opus|sonnet|haiku|gpt-4|gpt-4o|o1|o3|gemini|flash|pro|ultra|deepseek|llama|mini|max|plus|tier|model family)\b/i.test(
+        fullContent,
+      );
+      if (mentionsModelTiers) {
+        score += 30;
+      }
+
+      // Penalty: Off-topic articles focusing on lawsuits, legal battles, stock prices, executive crimes with zero model specs
+      const isOffTopicLawsuitOrDrama =
+        /\b(lawsuit|copyright|sued|suing|legal battle|antitrust|investigation|indictment|arrested|shares fall|stock drops)\b/i.test(fullContent) &&
+        !mentionsModelTiers;
+
+      if (isOffTopicLawsuitOrDrama) {
+        score -= 40;
+      }
     }
 
     // Strict Relevance Threshold
@@ -2360,18 +2428,33 @@ Please perform your specialized processing for this inquiry. Provide clear, conc
     plannerOutput.task = stripSearchOverridePrefix(query) || 'Web search';
   }
 
-  // Standalone whole-word matching for news inquiries (excludes technical terms like 'electrical current')
+  // Standalone whole-word matching for news inquiries (excludes technical terms like 'electrical current' and product lineup inquiries)
   const isNewsInquiry = (text: string): boolean => {
     const lower = text.toLowerCase();
+    // Exclude product lineup inquiries: queries like "latest Claude models" should NOT be treated as news
+    if (isProductLineupInquiry(text)) {
+      return false;
+    }
     // Exclude technical/scientific phrases with "current" (e.g. electrical current, alternating current, direct current, ocean currents)
     if (/\b(electric|electrical|alternating|direct|ocean|water|eddy|fluid|flow|air|convection)\s+current\b/i.test(lower) || /\bcurrents\b/i.test(lower)) {
       return false;
     }
-    // Match standalone whole words only
-    return /\b(news|today|current|latest|breaking|headlines)\b/i.test(lower);
+    // Match explicit news keywords
+    if (/\b(news|headlines|breaking|lawsuits?|controvers(?:y|ies)|scandals?)\b/i.test(lower)) {
+      return true;
+    }
+    // Match today's news/events or recent happenings
+    if (/\btoday\b/i.test(lower) && !/\b(weather|temperature|forecast|degrees)\b/i.test(lower)) {
+      return true;
+    }
+    if (/\b(happening|developments|events)\b/i.test(lower) && /\b(with|in|at|for|around)\b/i.test(lower)) {
+      return true;
+    }
+    return (/\b(latest|current|recent)\b/i.test(lower) && /\b(news|happenings?|stories|events?|updates?|controversy|controversies|lawsuits?)\b/i.test(lower));
   };
 
   const isWorldNewsInquiry = (text: string): boolean => {
+    if (isProductLineupInquiry(text)) return false;
     const lower = text.toLowerCase();
     return (
       /\b(world|global|international)\b.*\b(news|headlines|breaking|stories)\b/i.test(lower) ||
@@ -2387,8 +2470,9 @@ Please perform your specialized processing for this inquiry. Provide clear, conc
   const isSearchOverride = isSearchOverrideQuery(query);
   const strippedQuery = isWebFetch ? targetWebUrl : isSearchOverride ? stripSearchOverridePrefix(query) : query;
   const combinedQueryText = `${strippedQuery} ${plannerOutput.task || ''}`;
-  const isNewsQuery = !isWebFetch && isNewsInquiry(combinedQueryText);
-  const isWorldNews = !isWebFetch && isWorldNewsInquiry(combinedQueryText);
+  const isProductLineupQuery = !isWebFetch && isProductLineupInquiry(combinedQueryText);
+  const isNewsQuery = !isWebFetch && !isProductLineupQuery && isNewsInquiry(combinedQueryText);
+  const isWorldNews = !isWebFetch && !isProductLineupQuery && isWorldNewsInquiry(combinedQueryText);
   const isWeatherQuery = !isWebFetch && !isSearchOverride && /\b(weather|temperature|forecast|rain|snow|wind|humidity|degrees)\b/i.test(combinedQueryText);
   const isPersonalQuery = !isWebFetch && !isSearchOverride && (isPersonalOrHumanAiComparison(query) || isPersonalOrHumanAiComparison(combinedQueryText));
   const isSelfQuery = !isWebFetch && !isSearchOverride && (isSelfReferentialInquiry(query) || isSelfReferentialInquiry(combinedQueryText));
@@ -2663,16 +2747,39 @@ Please perform your specialized processing for this inquiry. Provide clear, conc
           `${strippedQuery} ${plannerOutput.task || ''}`,
         );
 
-        let effectiveSearchQuery = isNewsQuery
-          ? (isWorldNews ? `top world breaking news headlines today ${currentDateStr}` : `world news today ${currentDateStr} ${cleanedSearchQuery || strippedQuery}`)
-          : (isSearchOverride ? (cleanedSearchQuery || strippedQuery) : query);
+        let effectiveSearchQuery = '';
+        if (isProductLineupQuery) {
+          // For product/model lineup queries: specifically target official product/model listing and documentation pages
+          const queryWithoutPunctuation = (cleanedSearchQuery || strippedQuery).replace(/[^\w\s-]/g, ' ').replace(/\s+/g, ' ').trim();
+          const lower = queryWithoutPunctuation.toLowerCase();
+          let brandPrefix = '';
+          if (/\bclaude\b/i.test(lower) && !/\banthropic\b/i.test(lower)) {
+            brandPrefix = 'Anthropic ';
+          } else if (/\bgpt\b|\bchatgpt\b/i.test(lower) && !/\bopenai\b/i.test(lower)) {
+            brandPrefix = 'OpenAI ';
+          } else if (/\bgemini\b/i.test(lower) && !/\bgoogle\b/i.test(lower)) {
+            brandPrefix = 'Google ';
+          } else if (/\bllama\b/i.test(lower) && !/\bmeta\b/i.test(lower)) {
+            brandPrefix = 'Meta ';
+          } else if (/\biphone\b|\bipad\b|\bmacbook\b/i.test(lower) && !/\bapple\b/i.test(lower)) {
+            brandPrefix = 'Apple ';
+          }
+
+          effectiveSearchQuery = `${brandPrefix}${queryWithoutPunctuation} models list current lineup overview official documentation`;
+        } else if (isNewsQuery) {
+          effectiveSearchQuery = isWorldNews
+            ? `top world breaking news headlines today ${currentDateStr}`
+            : `world news today ${currentDateStr} ${cleanedSearchQuery || strippedQuery}`;
+        } else {
+          effectiveSearchQuery = isSearchOverride ? (cleanedSearchQuery || strippedQuery) : query;
+        }
 
         const userExplicitlyRequestedRecency = /\b(?:latest|recent|updates?|newest|new|current|today|releases?|versions?|pricing|specs?|changelog)\b/i.test(
           `${strippedQuery} ${plannerOutput.task || ''}`,
         );
 
-        // Enhance search query with recency-focused terms for fast-changing topics ONLY when recency is explicitly relevant
-        if (isFastChangingTopic && userExplicitlyRequestedRecency && !/\b(?:latest|current|newest|today|\d{4})\b/i.test(effectiveSearchQuery)) {
+        // Enhance search query with recency-focused terms for fast-changing topics ONLY when recency is explicitly relevant and not a product lineup query
+        if (!isProductLineupQuery && isFastChangingTopic && userExplicitlyRequestedRecency && !/\b(?:latest|current|newest|today|\d{4})\b/i.test(effectiveSearchQuery)) {
           effectiveSearchQuery = `${effectiveSearchQuery} latest ${currentYear}`;
         }
 
@@ -2711,12 +2818,25 @@ Please perform your specialized processing for this inquiry. Provide clear, conc
         }
       }
 
-      // 4. AI-Decided Wikipedia Lookup for factual/encyclopedic queries (Works in both Deep Research ON and OFF)
-      if (plannerOutput.needsWikipedia && !isWeatherQuery && !isNewsQuery) {
-        console.log(`[JARVIS Researcher] AI Planner indicated needsWikipedia: true for query: "${strippedQuery}". Executing 2-step lookup...`);
+      // 4. AI-Decided or Product-Lineup Wikipedia Lookup for factual/encyclopedic context (Works in both Deep Research ON and OFF)
+      if ((plannerOutput.needsWikipedia || isProductLineupQuery) && !isWeatherQuery && !isNewsQuery) {
+        console.log(`[JARVIS Researcher] Executing Wikipedia lookup for query: "${strippedQuery}" (needsWikipedia: ${plannerOutput.needsWikipedia}, isProductLineup: ${isProductLineupQuery})...`);
         try {
+          // Clean search query for Wikipedia: extract core subject like "Claude (language model)" or "Claude" or "iPhone"
+          let wikiSearchTerm = strippedQuery;
+          if (isProductLineupQuery) {
+            const lower = strippedQuery.toLowerCase();
+            if (/\bclaude\b/i.test(lower)) wikiSearchTerm = 'Claude (language model)';
+            else if (/\bgpt\b|\bchatgpt\b/i.test(lower)) wikiSearchTerm = 'ChatGPT';
+            else if (/\bgemini\b/i.test(lower)) wikiSearchTerm = 'Gemini (language model)';
+            else if (/\bllama\b/i.test(lower)) wikiSearchTerm = 'Llama (language model)';
+            else if (/\bdeepseek\b/i.test(lower)) wikiSearchTerm = 'DeepSeek';
+            else if (/\biphone\b/i.test(lower)) wikiSearchTerm = 'iPhone';
+            else wikiSearchTerm = cleanedSearchQuery || strippedQuery;
+          }
+
           // Step 1: Call fetchWikipediaSearch with limit=1 to find the single best-matching page title/ID
-          const wikiPages = await searchWikipedia(strippedQuery, 1);
+          const wikiPages = await searchWikipedia(wikiSearchTerm, 1);
           if (wikiPages && wikiPages.length > 0 && wikiPages[0]?.title) {
             const topPage = wikiPages[0];
             console.log(`[JARVIS Researcher] Wikipedia Step 1 matched page: "${topPage.title}". Fetching full lead summary (Step 2)...`);
@@ -2736,14 +2856,14 @@ Please perform your specialized processing for this inquiry. Provide clear, conc
             logToJarvisTerminal(`Wikipedia lookup triggered - found "${topPage.title}" page`);
           } else {
             // Safety check: 0 results returned, skip summary step and proceed with Tavily results only
-            console.log(`[JARVIS Researcher] Wikipedia Step 1 returned 0 results for query: "${strippedQuery}". Skipping summary step.`);
+            console.log(`[JARVIS Researcher] Wikipedia Step 1 returned 0 results for query: "${wikiSearchTerm}". Skipping summary step.`);
             logToJarvisTerminal('Wikipedia lookup triggered - no matching page found, skipped', 'warning');
           }
         } catch (wikiErr) {
           console.warn('[JARVIS Researcher] Wikipedia 2-step lookup error (continuing with search results):', wikiErr);
           logToJarvisTerminal('Wikipedia lookup triggered - lookup error, skipped', 'warning');
         }
-      } else if (!plannerOutput.needsWikipedia) {
+      } else if (!plannerOutput.needsWikipedia && !isProductLineupQuery) {
         console.log('[JARVIS Researcher] needsWikipedia is false. Skipping Wikipedia lookup to save tokens.');
       }
 

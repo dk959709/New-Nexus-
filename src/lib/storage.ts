@@ -50,6 +50,16 @@ Set needsKnowledgeAgent to false for all other query types, including: time-sens
   4. Set needsReview: false (skip Reviewer to maintain a lightweight, fast direct search pipeline).
   5. Set needsFactCheck: true (still verify extracted facts and data).
   6. In "task", strip the "/search" prefix so downstream agents work directly on the target query (e.g. for "/search black hole", task should be "Research black hole" or "Search for black hole").
+- SEARCH INTENT DISTINCTION: PRODUCT/MODEL LINEUP VS RECENT NEWS (CRITICAL):
+  When analyzing queries with similar phrasing (such as "latest X" or "current X"), distinguish between two distinct search intents:
+  1. "PRODUCT/MODEL LINEUP" intent:
+     - Queries asking what current models, versions, products, or tiers exist for a subject (e.g. "latest Claude models", "current Claude model lineup", "what models does Claude have now", "what Claude models are available now", "current iPhone lineup", "latest GPT models", "what Gemini models are available").
+     - Examples: "latest Claude models" / "current Claude model lineup" / "what models does Claude have now" = PRODUCT/MODEL LINEUP intent.
+     - Action: In "task", specifically target the subject's official product/model listing and current lineup (e.g. "Identify current Claude model lineup and specifications"). Set needsResearch: true. Set needsWikipedia: true if model-family history or encyclopedic listing exists. Do NOT treat this as general news, scandals, or lawsuits.
+  2. "RECENT NEWS" intent:
+     - Queries asking about recent happenings, events, headlines, controversies, lawsuits, or news related to a subject (e.g. "latest Claude news", "recent Anthropic news", "recent Anthropic controversies", "what's happening with Claude", "breaking AI news today").
+     - Examples: "latest Claude news" / "recent Anthropic news" / "what's happening with Claude" = RECENT NEWS intent.
+     - Action: In "task", target recent news stories and events. Set needsResearch: true, needsWikipedia: false.
 - task: a concise goal statement, under 15 words.
 - plan: 2-4 short steps describing your approach, not a full essay.
 - CRITICAL - SELF-REFERENTIAL, PERSONAL, ARCHITECTURE & HUMAN-AI COMPARISON INQUIRIES:
@@ -108,7 +118,11 @@ Instructions:
    - Never Uncritically Repeat Rumors: Do NOT present speculative future roadmap rumors, unconfirmed version numbers, or fabricated model names from third-party blogs as established facts.
    - Query enhancement: When forming search queries for time-sensitive updates or versions, include recency-focused terms - but do not rely on this alone, since keyword presence doesn't guarantee actual recency. For general overview queries (e.g. "tell about Claude"), focus on core established facts from authoritative sources.
    - Honesty fallback: After searching, check the actual publication/update dates of what was found. If no source with a clearly recent date could be found for a fast-changing topic, explicitly note this limitation in the output (e.g. 'Available sources may not reflect the most recent updates') rather than presenting older or speculative information with full confidence as if it were current.
-7. Only include candidates backed by actual search data. If search data lacks recent news, note it clearly.
+7. PRODUCT/MODEL LINEUP QUERIES:
+   When researching what models, versions, or products currently exist for a subject (e.g. 'latest Claude models', 'current Claude model lineup', 'current iPhone lineup'):
+   - Focus on extracting the current official model names, generations, tiers, capabilities, and pricing/access.
+   - Prioritize official product documentation, pricing pages, model overview pages, and model-family summaries over unrelated lawsuits, controversies, or corporate gossip.
+8. Only include candidates backed by actual search data. If search data lacks recent news, note it clearly.
 
 Output ONLY a valid JSON object in this exact format, no extra text:
 {
@@ -702,6 +716,7 @@ export const storage = {
             !stored.agents.planner.systemPrompt.includes('compare me and DeepSeek') ||
             !stored.agents.planner.systemPrompt.includes('whenever needsResearch or needsFactCheck is true') ||
             !stored.agents.planner.systemPrompt.includes('EXPLICIT "/search" OVERRIDE COMMAND') ||
+            !stored.agents.planner.systemPrompt.includes('SEARCH INTENT DISTINCTION: PRODUCT/MODEL LINEUP VS RECENT NEWS') ||
             !stored.agents.planner.systemPrompt.includes('task: a concise goal statement, under 15 words.')
               ? DEFAULT_AGENT_SYSTEM_PROMPTS.planner
               : stored.agents.planner.systemPrompt,
@@ -717,6 +732,7 @@ export const storage = {
             !stored.agents.researcher.systemPrompt.includes('eventDate') ||
             !stored.agents.researcher.systemPrompt.includes('DEDUPLICATION') ||
             !stored.agents.researcher.systemPrompt.includes('FAST-CHANGING / FREQUENTLY-UPDATED TOPICS & SOURCE AUTHORITY') ||
+            !stored.agents.researcher.systemPrompt.includes('PRODUCT/MODEL LINEUP QUERIES') ||
             !stored.agents.researcher.systemPrompt.includes('Authority First') ||
             stored.agents.researcher?.systemPrompt?.includes('nasa.gov, esa.int, space.com')
               ? DEFAULT_AGENT_SYSTEM_PROMPTS.researcher
