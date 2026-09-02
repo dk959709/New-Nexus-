@@ -315,7 +315,9 @@ Guidelines:
      - This ensures the answer provides a comprehensive, nuanced overview without presenting single-source items as absolute certainty or erroneously omitting them.
 - CURRENT-YEAR SOURCE PRIORITY RULE: When search results/sources include content dated with the current year (2026) or explicitly discussing "current year" topics (e.g. "Best movies of 2026", "2026 releases"), you MUST prioritize and heavily favor this current-year source data over your own training knowledge. Do not dilute a "current year" list with older, pre-existing well-known titles from memory unless the current-year source itself mentions them. If a current-year source (like "The 10 Best Sci-Fi Movies of 2026") is available, its actual content should be the PRIMARY basis for the answer, not a minor addition to an AI-recalled list.
 - STRICT ANTI-FABRICATION RULE: NEVER fabricate specific events, headlines, dates, quotes, statistics, or facts not present in the actual research data. If the research data does not contain real current news or verified facts on this topic, you MUST state clearly: "I don't have access to verified current news on this topic" rather than inventing plausible-sounding but fake headlines, events, or facts.
-- GROUNDED SOURCES RULE: Only cite sources that are explicitly present in the retrieved ground-truth sources list provided in the context. Never cite, invent, or hallucinate a source or URL not present in that list. If no sources were retrieved or if sources are irrelevant, do not cite external news sources.
+- GROUNDED SOURCES & NO DUPLICATE SOURCES SECTION (CRITICAL):
+  - Only cite sources that are explicitly present in the retrieved ground-truth sources list provided in the context. Never cite, invent, or hallucinate a source or URL not present in that list.
+  - Grounded sources and citations are automatically parsed and displayed in a dedicated "GROUNDED SOURCES" section below your answer. Therefore, do NOT add a separate "### Sources", "## References", or "Sources:" list at the end of your markdown response. Present only the structured synthesis and findings.
 - CRITICAL USER IDENTITY & ANTI-MISATTRIBUTION RULE:
   You must NEVER state, imply, guess, or assume a specific personal identity, real name, LinkedIn profile, career, or personal biographical background for the user unless the user has explicitly stated that information themselves in the prompt/conversation. You must NEVER attribute an unrelated person's name or search snippet from external results to the user. For queries like "compare me and DeepSeek" or "compare you and me", treat the user respectfully and objectively as a human conversational partner, structuring the comparison around Human Intelligence vs Artificial Intelligence (DeepSeek / JARVIS) conceptually without fabricating or guessing personal identities.
 - If the available information is incomplete or uncertain, say so honestly rather than filling gaps with confident-sounding guesses.
@@ -794,7 +796,8 @@ export const storage = {
             !stored.agents.finalSynthesizer?.systemPrompt?.includes('CRITICAL USER IDENTITY & ANTI-MISATTRIBUTION RULE') ||
             !stored.agents.finalSynthesizer?.systemPrompt?.includes('FACT-CHECKER ISSUE SEVERITIES & HEDGING') ||
             !stored.agents.finalSynthesizer?.systemPrompt?.includes('PLAUSIBLE BUT UNCONFIRMED DATES, TIERS & DETAILS') ||
-            !stored.agents.finalSynthesizer?.systemPrompt?.includes('JARVIS MULTI-AGENT ARCHITECTURE')
+            !stored.agents.finalSynthesizer?.systemPrompt?.includes('JARVIS MULTI-AGENT ARCHITECTURE') ||
+            !stored.agents.finalSynthesizer?.systemPrompt?.includes('NO DUPLICATE SOURCES SECTION')
               ? DEFAULT_AGENT_SYSTEM_PROMPTS.finalSynthesizer
               : stored.agents.finalSynthesizer.systemPrompt,
         },

@@ -37,38 +37,103 @@ export function formatDay(iso: string): string {
 }
 
 /**
- * Strips raw conversational meta-text and unprompted parenthesis disclaimers
- * (e.g. "(Note: This response was kept brief...)" or "(Note: Fact checker verified...)")
- * from the synthesized output, letting the technical Agent Log HUD present the diagnostic context.
+ * Strips redundant markdown "Sources" / "References" / "Citations" sections
+ * from synthesized output so that citations are not duplicated in the text,
+ * since they are already presented in the dedicated GROUNDED SOURCES UI component.
+ */
+export function stripSourcesSection(text: string): string {
+  if (!text || typeof text !== 'string') return '';
+
+  const lines = text.split(/\r?\n/);
+
+  // Find the index of a trailing "Sources" / "References" / "Citations" heading line
+  let sourcesHeaderIdx = -1;
+
+  for (let i = lines.length - 1; i >= 0; i--) {
+    const line = lines[i].trim();
+    if (!line) continue;
+
+    const isHeader =
+      /^(?:#{1,6}\s+|\*{1,2}|_{1,2})?(?:Sources|References|Citations|Grounded Sources|Primary Sources|Sources Consulted|Cited Sources|Sources\s*&\s*References|Sources\s*\/\s*References)(?:\*{1,2}|_{1,2})?:?$/i.test(line);
+
+    if (isHeader) {
+      // Check if all subsequent non-empty lines look like source list items, links, or notes
+      const subsequentLines = lines.slice(i + 1).filter((l) => l.trim().length > 0);
+      const isList =
+        subsequentLines.length === 0 ||
+        subsequentLines.every((l) => {
+          const trimmed = l.trim();
+          return (
+            trimmed.startsWith('-') ||
+            trimmed.startsWith('*') ||
+            trimmed.startsWith('+') ||
+            trimmed.startsWith('•') ||
+            /^\d+[.)]/.test(trimmed) ||
+            trimmed.startsWith('[') ||
+            trimmed.startsWith('http://') ||
+            trimmed.startsWith('https://') ||
+            trimmed.startsWith('(')
+          );
+        });
+
+      if (isList) {
+        sourcesHeaderIdx = i;
+        // Also check if there's a divider '---' immediately preceding this header
+        if (sourcesHeaderIdx > 0 && /^[-*_]{3,}$/.test(lines[sourcesHeaderIdx - 1].trim())) {
+          sourcesHeaderIdx--;
+        }
+        break;
+      }
+    }
+  }
+
+  if (sourcesHeaderIdx !== -1) {
+    return lines.slice(0, sourcesHeaderIdx).join('\n').trim();
+  }
+
+  return text.trim();
+}
+
+/**
+ * Strips raw conversational meta-text, unprompted parenthesis disclaimers
+ * (e.g. "(Note: This response was kept brief...)" or "(Note: Fact checker verified...)"),
+ * and redundant markdown Sources sections from synthesized output,
+ * letting the dedicated GROUNDED SOURCES component present the verified citations.
  */
 export function stripConversationalMetaText(text: string): string {
   if (!text || typeof text !== 'string') return '';
 
   let cleaned = text.trim();
 
-  // 1. Remove standalone paragraph lines enclosed in parentheses with meta-notes
+  // 1. Strip trailing markdown Sources/References/Citations sections
+  cleaned = stripSourcesSection(cleaned);
+
+  // 2. Remove standalone paragraph lines enclosed in parentheses with meta-notes
   cleaned = cleaned.replace(
     /^\s*\((?:Note|Notice|Disclaimer|Summary|Brief|Output|Synthesizer|Fact\s*Check|Verified|Response|Analysis|Caveat)[^)]*\)\s*$/gim,
     ''
   );
 
-  // 2. Remove trailing parenthetical meta-notes at the end of the text
+  // 3. Remove trailing parenthetical meta-notes at the end of the text
   cleaned = cleaned.replace(
     /\n*\s*\((?:Note|Notice|Disclaimer|Summary|Brief|Output|Synthesizer|Fact\s*Check|Verified|Response|Analysis|Caveat|Please\s+note)[^)]*\)\s*$/gi,
     ''
   );
 
-  // 3. Remove "(This answer/response is brief because...)" or "(Brief because...)"
+  // 4. Remove "(This answer/response is brief because...)" or "(Brief because...)"
   cleaned = cleaned.replace(
     /\n*\s*\((?:This\s+)?(?:answer|response|summary|synthesis|explanation)\s+is\s+(?:brief|concise|short|streamlined)[^)]*\)\s*$/gi,
     ''
   );
 
-  // 4. Remove leading meta parenthetical notes like "(Note: ...)" on the first line
+  // 5. Remove leading meta parenthetical notes like "(Note: ...)" on the first line
   cleaned = cleaned.replace(
     /^\s*\((?:Note|Notice|Disclaimer|Summary|Brief|Output|Synthesizer|Fact\s*Check|Verified|Response|Analysis|Caveat)[^)]*\)\s*\n*/gi,
     ''
   );
+
+  // 6. Run stripSourcesSection once more in case a meta-note was located after the sources section
+  cleaned = stripSourcesSection(cleaned);
 
   return cleaned.trim();
 }
