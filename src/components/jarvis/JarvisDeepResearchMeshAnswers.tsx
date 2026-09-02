@@ -1,11 +1,16 @@
 import React, { useState } from 'react';
 import {
+  BookOpen,
   Bot,
   Brain,
+  Calendar,
   Check,
+  ChevronDown,
+  ChevronUp,
   Clock,
   Code2,
   Copy,
+  ExternalLink,
   FileText,
   Globe,
   HelpCircle,
@@ -21,6 +26,14 @@ import { JarvisExecutionStep } from '../../types';
 import { FormattedText } from './FormattedText';
 import { copyToClipboard } from '@/lib/clipboard';
 import { cleanAndFormatFact, formatResearcherOutput } from '../../lib/factFormatter';
+
+function extractDomain(urlStr: string): string {
+  try {
+    return new URL(urlStr).hostname.replace(/^www\./, '');
+  } catch {
+    return urlStr.replace(/^https?:\/\//, '').replace(/^www\./, '').split('/')[0];
+  }
+}
 
 interface JarvisDeepResearchMeshAnswersProps {
   steps: JarvisExecutionStep[];
@@ -774,6 +787,531 @@ function formatAgentContentToMarkdown(step: JarvisExecutionStep): {
   return { formatted: raw, isStructuredJson: true, raw };
 }
 
+interface ParsedResearcherCandidate {
+  id: string;
+  title: string;
+  fact: string;
+  domain?: string;
+  eventDate?: string;
+  publishedAt?: string;
+  updatedAt?: string;
+  confirmedBy?: string[];
+  sourceIndex?: number;
+  url?: string;
+  category?: string;
+}
+
+interface ParsedResearcherSource {
+  index?: number;
+  title: string;
+  url: string;
+  domain?: string;
+  publishedAt?: string;
+}
+
+interface ParsedResearcherData {
+  candidates: ParsedResearcherCandidate[];
+  sources: ParsedResearcherSource[];
+  insights: string[];
+  context: string;
+}
+
+function getFactPreview(text: string, maxWords = 22): { preview: string; isTruncated: boolean; totalWords: number } {
+  if (!text) return { preview: '', isTruncated: false, totalWords: 0 };
+  const words = text.trim().split(/\s+/);
+  if (words.length <= maxWords) {
+    return { preview: text, isTruncated: false, totalWords: words.length };
+  }
+  return {
+    preview: words.slice(0, maxWords).join(' ') + '...',
+    isTruncated: true,
+    totalWords: words.length,
+  };
+}
+
+function extractResearcherData(
+  step: JarvisExecutionStep,
+  parsed: unknown,
+  raw: string
+): ParsedResearcherData {
+  const candidates: ParsedResearcherCandidate[] = [];
+  const sources: ParsedResearcherSource[] = [];
+  let insights: string[] = [];
+  let context = '';
+
+  const processObject = (obj: Record<string, unknown>) => {
+    // 1. Process candidate objects
+    const candKeys = ['candidates', 'news_candidates', 'newsCandidates', 'items', 'articles', 'stories'];
+    for (const key of candKeys) {
+      if (Array.isArray(obj[key]) && (obj[key] as unknown[]).length > 0) {
+        const rawCands = obj[key] as unknown[];
+        rawCands.forEach((cand, idx) => {
+          if (typeof cand === 'object' && cand !== null) {
+            const cObj = cand as Record<string, unknown>;
+            const rawTitle = String(cObj.title || cObj.headline || '').trim();
+            const rawFact = String(cObj.fact || cObj.claim || cObj.statement || cObj.description || '').trim();
+            const domain = String(cObj.domain || (cObj.url ? extractDomain(String(cObj.url)) : '')).trim();
+            const eventDate = String(cObj.eventDate || cObj.publishedAt || cObj.updatedAt || cObj.date || '').trim();
+
+            let confirmedList: string[] = [];
+            if (Array.isArray(cObj.confirmedBy)) {
+              confirmedList = (cObj.confirmedBy as string[])
+                .map(String)
+                .map((s) => s.trim().replace(/^https?:\/\//, '').replace(/^www\./, ''))
+                .filter(Boolean);
+            } else if (typeof cObj.confirmedBy === 'string' && cObj.confirmedBy.trim()) {
+              confirmedList = [cObj.confirmedBy.trim().replace(/^https?:\/\//, '').replace(/^www\./, '')];
+            }
+
+            const sourceIdx = typeof cObj.sourceIndex === 'number' ? cObj.sourceIndex : typeof cObj.source_index === 'number' ? cObj.source_index : undefined;
+            const url = typeof cObj.url === 'string' && cObj.url ? cObj.url : undefined;
+            const category = typeof cObj.category === 'string' && cObj.category ? cObj.category : undefined;
+
+            if (rawTitle || rawFact) {
+              candidates.push({
+                id: `cand-${idx}`,
+                title: rawTitle,
+                fact: rawFact || rawTitle,
+                domain: domain && domain !== 'null' && domain !== 'undefined' ? domain : undefined,
+                eventDate: eventDate && eventDate !== 'null' && eventDate !== 'undefined' ? eventDate : undefined,
+                publishedAt: typeof cObj.publishedAt === 'string' ? cObj.publishedAt : undefined,
+                updatedAt: typeof cObj.updatedAt === 'string' ? cObj.updatedAt : undefined,
+                confirmedBy: confirmedList.length > 0 ? confirmedList : undefined,
+                sourceIndex: sourceIdx,
+                url,
+                category,
+              });
+            }
+          } else if (typeof cand === 'string' && cand.trim().length > 5) {
+            candidates.push({
+              id: `cand-${idx}`,
+              title: '',
+              fact: cand.trim(),
+            });
+          }
+        });
+        break;
+      }
+    }
+
+    // 2. Process facts array if candidates was empty
+    if (candidates.length === 0) {
+      const factKeys = ['facts', 'findings', 'core_facts', 'coreFacts', 'key_facts', 'keyFacts', 'points', 'claims'];
+      for (const key of factKeys) {
+        if (Array.isArray(obj[key]) && (obj[key] as unknown[]).length > 0) {
+          (obj[key] as unknown[]).forEach((f, idx) => {
+            if (typeof f === 'string' && f.trim().length > 5) {
+              const bulletMatch = f.match(/^(?:[-*•]\s*)?(?:\*\*([^*]+)\*\*[:\s]+)?(.*)$/);
+              if (bulletMatch && bulletMatch[1]) {
+                const title = bulletMatch[1].trim();
+                const fact = bulletMatch[2] ? bulletMatch[2].trim() : f.trim();
+                candidates.push({
+                  id: `fact-${idx}`,
+                  title,
+                  fact: fact || title,
+                });
+              } else {
+                candidates.push({
+                  id: `fact-${idx}`,
+                  title: '',
+                  fact: f.trim(),
+                });
+              }
+            } else if (typeof f === 'object' && f !== null) {
+              const fObj = f as Record<string, unknown>;
+              const factText = String(fObj.fact || fObj.claim || fObj.statement || fObj.text || fObj.finding || '').trim();
+              const title = String(fObj.title || fObj.headline || '').trim();
+              if (factText || title) {
+                candidates.push({
+                  id: `fact-${idx}`,
+                  title,
+                  fact: factText || title,
+                  domain: typeof fObj.domain === 'string' ? fObj.domain : undefined,
+                  eventDate: typeof fObj.eventDate === 'string' ? fObj.eventDate : typeof fObj.date === 'string' ? fObj.date : undefined,
+                  sourceIndex: typeof fObj.sourceIndex === 'number' ? fObj.sourceIndex : undefined,
+                });
+              }
+            }
+          });
+          break;
+        }
+      }
+    }
+
+    // 3. Process sources
+    const srcKeys = ['sources', 'references', 'search_results'];
+    for (const key of srcKeys) {
+      if (Array.isArray(obj[key]) && (obj[key] as unknown[]).length > 0) {
+        (obj[key] as unknown[]).forEach((s, idx) => {
+          if (typeof s === 'object' && s !== null) {
+            const sObj = s as Record<string, unknown>;
+            const url = String(sObj.url || sObj.link || '');
+            const title = String(sObj.title || sObj.name || url);
+            const domain = String(sObj.domain || (url ? extractDomain(url) : ''));
+            const sIdx = typeof sObj.index === 'number' ? sObj.index : idx + 1;
+            const publishedAt = typeof sObj.publishedAt === 'string' ? sObj.publishedAt : undefined;
+            if (url) {
+              sources.push({
+                index: sIdx,
+                title,
+                url,
+                domain: domain || undefined,
+                publishedAt,
+              });
+            }
+          }
+        });
+        break;
+      }
+    }
+
+    // 4. Process insights
+    const insightKeys = ['keyInsights', 'insights', 'takeaways'];
+    for (const key of insightKeys) {
+      if (Array.isArray(obj[key]) && (obj[key] as unknown[]).length > 0 && insights.length === 0) {
+        insights = (obj[key] as unknown[]).map(String).filter(Boolean);
+        break;
+      }
+    }
+
+    // 5. Context
+    if (typeof obj.context === 'string' && !context) context = obj.context;
+    else if (typeof obj.summary === 'string' && !context) context = obj.summary;
+    else if (typeof obj.notes === 'string' && !context) context = obj.notes;
+  };
+
+  // Inspect parsed object
+  if (parsed && typeof parsed === 'object' && !Array.isArray(parsed)) {
+    processObject(parsed as Record<string, unknown>);
+  }
+
+  // Fallback to step.outputPreview
+  if (candidates.length === 0 && step.outputPreview) {
+    try {
+      const previewJson = JSON.parse(step.outputPreview);
+      if (previewJson && typeof previewJson === 'object' && !Array.isArray(previewJson)) {
+        processObject(previewJson as Record<string, unknown>);
+      }
+    } catch {
+      // ignore
+    }
+  }
+
+  // Fallback to raw string parsing
+  if (candidates.length === 0 && raw) {
+    try {
+      const rawJson = JSON.parse(raw);
+      if (rawJson && typeof rawJson === 'object') {
+        if (Array.isArray(rawJson)) {
+          rawJson.forEach((item, idx) => {
+            if (typeof item === 'object' && item !== null) {
+              const iObj = item as Record<string, unknown>;
+              candidates.push({
+                id: `cand-raw-${idx}`,
+                title: String(iObj.title || ''),
+                fact: String(iObj.fact || iObj.claim || iObj.description || iObj.title || ''),
+                domain: typeof iObj.domain === 'string' ? iObj.domain : undefined,
+                eventDate: typeof iObj.eventDate === 'string' ? iObj.eventDate : undefined,
+                sourceIndex: typeof iObj.sourceIndex === 'number' ? iObj.sourceIndex : undefined,
+              });
+            } else if (typeof item === 'string') {
+              candidates.push({ id: `cand-raw-${idx}`, title: '', fact: item });
+            }
+          });
+        } else {
+          processObject(rawJson as Record<string, unknown>);
+        }
+      }
+    } catch {
+      // Line by line bullet extraction
+      const lines = raw.split(/\r?\n/).map((l) => l.trim()).filter(Boolean);
+      let idx = 0;
+      for (const line of lines) {
+        if (line.startsWith('{') || line.startsWith('}') || line.startsWith('[') || line.startsWith(']') || line.startsWith('```')) {
+          continue;
+        }
+        const bulletMatch = line.match(/^(?:(?:\d+[.)]|[*•–—-]|\s*-)\s+|fact\s*\d*\s*[:-]\s*)(.*)$/i);
+        const text = bulletMatch ? bulletMatch[1].trim() : line;
+        if (text.length > 10 && !text.includes('":') && !text.startsWith('"')) {
+          const boldTitleMatch = text.match(/^\*\*([^*]+)\*\*[:\s]+(.*)$/);
+          if (boldTitleMatch) {
+            candidates.push({
+              id: `line-${idx++}`,
+              title: boldTitleMatch[1].trim(),
+              fact: boldTitleMatch[2].trim(),
+            });
+          } else {
+            candidates.push({
+              id: `line-${idx++}`,
+              title: '',
+              fact: text,
+            });
+          }
+        }
+      }
+    }
+  }
+
+  return { candidates, sources, insights, context };
+}
+
+/**
+ * Interactive Researcher Mesh Answer View:
+ * Shortens each fact to a 20-word preview with an expandable "Show more" / "Show less" toggle,
+ * keeping full data intact internally while providing clean, scannable reading on screen.
+ */
+export const ResearcherMeshAnswerView: React.FC<{
+  step: JarvisExecutionStep;
+  parsed: unknown;
+  raw: string;
+  fallbackFormatted: string;
+}> = ({ step, parsed, raw, fallbackFormatted }) => {
+  const data = extractResearcherData(step, parsed, raw);
+  const [expandedMap, setExpandedMap] = useState<Record<string, boolean>>({});
+  const [allExpanded, setAllExpanded] = useState(false);
+  const [sourcesOpen, setSourcesOpen] = useState(false);
+
+  // If no candidates could be extracted, fall back to FormattedText
+  if (data.candidates.length === 0) {
+    return <FormattedText content={fallbackFormatted} />;
+  }
+
+  const toggleItem = (id: string) => {
+    setExpandedMap((prev) => ({
+      ...prev,
+      [id]: !prev[id],
+    }));
+  };
+
+  const toggleAll = () => {
+    const nextState = !allExpanded;
+    setAllExpanded(nextState);
+    const newMap: Record<string, boolean> = {};
+    data.candidates.forEach((c) => {
+      newMap[c.id] = nextState;
+    });
+    setExpandedMap(newMap);
+  };
+
+  const hasAnyTruncated = data.candidates.some((c) => getFactPreview(c.fact, 22).isTruncated);
+
+  return (
+    <div className="flex flex-col gap-4">
+      {/* Header bar with count & Expand All toggle */}
+      <div className="flex items-center justify-between flex-wrap gap-2 pb-2 border-b border-sky-500/20">
+        <div className="flex items-center gap-2">
+          <div className="w-5 h-5 rounded-md bg-sky-500/20 border border-sky-400/40 flex items-center justify-center text-sky-300">
+            <Search size={12} />
+          </div>
+          <span className="text-xs font-mono font-bold uppercase tracking-wider text-sky-300">
+            Core Fact Intelligence & Findings
+          </span>
+          <span className="px-2 py-0.5 rounded-full text-[10px] font-mono font-bold bg-sky-500/15 border border-sky-400/30 text-sky-300">
+            {data.candidates.length} {data.candidates.length === 1 ? 'Fact' : 'Facts'} Extracted
+          </span>
+        </div>
+
+        {hasAnyTruncated && (
+          <button
+            type="button"
+            onClick={toggleAll}
+            className="px-2.5 py-1 rounded-lg text-xs font-mono font-semibold bg-sky-950/60 border border-sky-500/30 text-sky-300 hover:text-sky-100 hover:bg-sky-900/50 hover:border-sky-400/50 transition-all flex items-center gap-1 cursor-pointer"
+          >
+            {allExpanded ? (
+              <>
+                <ChevronUp size={13} className="text-sky-400" />
+                <span>Collapse All Previews</span>
+              </>
+            ) : (
+              <>
+                <ChevronDown size={13} className="text-sky-400" />
+                <span>Expand All Full Details</span>
+              </>
+            )}
+          </button>
+        )}
+      </div>
+
+      {/* Facts Card List */}
+      <div className="flex flex-col gap-2.5">
+        {data.candidates.map((cand, idx) => {
+          const isExpanded = Boolean(expandedMap[cand.id]);
+          const { preview, isTruncated, totalWords } = getFactPreview(cand.fact, 22);
+
+          return (
+            <div
+              key={cand.id || idx}
+              className="group relative rounded-xl border border-sky-500/20 bg-sky-950/20 hover:border-sky-500/40 hover:bg-sky-950/35 transition-all p-3 sm:p-3.5 shadow-sm"
+            >
+              <div className="flex items-start gap-2.5">
+                {/* Index badge */}
+                <span className="shrink-0 px-2 py-0.5 rounded-md text-[11px] font-mono font-bold bg-sky-500/15 text-sky-300 border border-sky-400/25 mt-0.5">
+                  #{idx + 1}
+                </span>
+
+                <div className="flex-1 min-w-0">
+                  {/* Headline / Title if distinct */}
+                  {cand.title && (
+                    <h5 className="font-bold text-slate-100 text-sm tracking-tight m-0 mb-1 leading-snug">
+                      {cand.title}
+                    </h5>
+                  )}
+
+                  {/* Fact Body with Preview Truncation */}
+                  <div className="text-sm text-slate-200 leading-relaxed">
+                    <span>{isExpanded ? cand.fact : preview}</span>
+
+                    {/* Show more / Show less button */}
+                    {isTruncated && (
+                      <button
+                        type="button"
+                        onClick={() => toggleItem(cand.id)}
+                        className="ml-1.5 inline-flex items-center gap-0.5 text-xs font-mono font-semibold text-sky-400 hover:text-sky-200 underline decoration-sky-400/40 hover:decoration-sky-200 transition-colors cursor-pointer select-none"
+                      >
+                        {isExpanded ? (
+                          <>
+                            <span>Show less</span>
+                            <ChevronUp size={12} className="inline ml-0.5" />
+                          </>
+                        ) : (
+                          <>
+                            <span>Show full ({totalWords} words)</span>
+                            <ChevronDown size={12} className="inline ml-0.5" />
+                          </>
+                        )}
+                      </button>
+                    )}
+                  </div>
+
+                  {/* Metadata chips */}
+                  <div className="flex items-center gap-2 flex-wrap mt-2.5 pt-2 border-t border-sky-500/10 text-xs">
+                    {cand.domain && (
+                      <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[11px] font-mono bg-sky-950/80 border border-sky-500/30 text-sky-300">
+                        <Globe size={10} className="text-sky-400" />
+                        <span>{cand.domain}</span>
+                      </span>
+                    )}
+
+                    {(cand.eventDate || cand.publishedAt) && (
+                      <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[11px] font-mono bg-slate-900/80 border border-slate-700/50 text-slate-300">
+                        <Calendar size={10} className="text-slate-400" />
+                        <span>{cand.eventDate || cand.publishedAt}</span>
+                      </span>
+                    )}
+
+                    {cand.confirmedBy && cand.confirmedBy.length > 0 && (
+                      <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[11px] font-mono bg-emerald-950/60 border border-emerald-500/30 text-emerald-300">
+                        <ShieldCheck size={10} className="text-emerald-400" />
+                        <span>Confirmed by: {cand.confirmedBy.join(', ')}</span>
+                      </span>
+                    )}
+
+                    {cand.sourceIndex && (
+                      <span className="px-1.5 py-0.5 rounded text-[10px] font-mono bg-black/50 border border-white/10 text-slate-400">
+                        Source #{cand.sourceIndex}
+                      </span>
+                    )}
+
+                    {cand.url && (
+                      <a
+                        href={cand.url}
+                        target="_blank"
+                        rel="noreferrer"
+                        className="inline-flex items-center gap-1 text-[11px] font-mono text-cyan-400 hover:text-cyan-200 underline decoration-cyan-400/40 hover:decoration-cyan-200 transition-colors ml-auto"
+                      >
+                        <ExternalLink size={10} />
+                        <span>View Source</span>
+                      </a>
+                    )}
+                  </div>
+                </div>
+              </div>
+            </div>
+          );
+        })}
+      </div>
+
+      {/* Primary Sources Section */}
+      {data.sources.length > 0 && (
+        <div className="mt-2 rounded-xl border border-sky-500/20 bg-black/40 overflow-hidden">
+          <button
+            type="button"
+            onClick={() => setSourcesOpen(!sourcesOpen)}
+            className="w-full px-3.5 py-2.5 flex items-center justify-between bg-sky-950/30 hover:bg-sky-950/50 text-left transition-colors cursor-pointer"
+          >
+            <div className="flex items-center gap-2">
+              <BookOpen size={13} className="text-sky-400" />
+              <span className="text-xs font-mono font-bold text-sky-300 uppercase">
+                Collected Primary Sources ({data.sources.length})
+              </span>
+            </div>
+            <div className="flex items-center gap-1 text-xs font-mono text-slate-400">
+              <span>{sourcesOpen ? 'Hide' : 'Show'}</span>
+              {sourcesOpen ? <ChevronUp size={13} /> : <ChevronDown size={13} />}
+            </div>
+          </button>
+
+          {sourcesOpen && (
+            <div className="p-3 border-t border-sky-500/15 flex flex-col gap-2 bg-slate-950/60">
+              {data.sources.map((src, i) => (
+                <div key={i} className="flex items-center justify-between gap-2 text-xs">
+                  <div className="flex items-center gap-2 min-w-0">
+                    <span className="font-mono text-slate-500 shrink-0">[{src.index || i + 1}]</span>
+                    <a
+                      href={src.url}
+                      target="_blank"
+                      rel="noreferrer"
+                      className="text-cyan-300 hover:text-cyan-100 underline decoration-cyan-400/40 truncate font-medium flex items-center gap-1"
+                    >
+                      <span className="truncate">{src.title}</span>
+                      <ExternalLink size={10} className="shrink-0 opacity-70" />
+                    </a>
+                  </div>
+                  {src.domain && (
+                    <span className="font-mono text-[11px] text-slate-400 shrink-0 px-1.5 py-0.5 rounded bg-black/40 border border-white/10">
+                      {src.domain}
+                    </span>
+                  )}
+                </div>
+              ))}
+            </div>
+          )}
+        </div>
+      )}
+
+      {/* Key Insights Section */}
+      {data.insights.length > 0 && (
+        <div className="mt-1 rounded-xl border border-amber-500/25 bg-amber-950/15 p-3.5">
+          <div className="flex items-center gap-2 mb-2">
+            <Lightbulb size={13} className="text-amber-400" />
+            <span className="text-xs font-mono font-bold text-amber-300 uppercase">
+              Key Empirical Insights
+            </span>
+          </div>
+          <div className="flex flex-col gap-1.5">
+            {data.insights.map((insight, idx) => (
+              <div key={idx} className="text-xs text-slate-200 flex items-start gap-2">
+                <span className="text-amber-400 shrink-0 mt-0.5">•</span>
+                <span>{insight}</span>
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
+
+      {/* Context Section */}
+      {data.context && data.context.trim().length > 15 && (
+        <div className="mt-1 rounded-xl border border-sky-500/20 bg-sky-950/15 p-3.5 text-xs text-slate-300 leading-relaxed">
+          <span className="font-mono font-bold text-sky-300 uppercase block mb-1">
+            Contextual Background
+          </span>
+          <p className="m-0">{data.context}</p>
+        </div>
+      )}
+    </div>
+  );
+};
+
 export const JarvisDeepResearchMeshAnswers: React.FC<JarvisDeepResearchMeshAnswersProps> = ({
   steps,
   isDeepResearch = false,
@@ -859,6 +1397,7 @@ export const JarvisDeepResearchMeshAnswers: React.FC<JarvisDeepResearchMeshAnswe
           };
 
           const { formatted, isStructuredJson, raw } = formatAgentContentToMarkdown(step);
+          const { parsed } = parseAgentJson(raw);
           const isShowingRaw = Boolean(rawViewMap[idx]);
 
           return (
@@ -979,6 +1518,13 @@ export const JarvisDeepResearchMeshAnswers: React.FC<JarvisDeepResearchMeshAnswe
                       {raw}
                     </pre>
                   </div>
+                ) : step.agentId === 'researcher' ? (
+                  <ResearcherMeshAnswerView
+                    step={step}
+                    parsed={parsed}
+                    raw={raw}
+                    fallbackFormatted={formatted}
+                  />
                 ) : (
                   <FormattedText content={formatted} />
                 )}

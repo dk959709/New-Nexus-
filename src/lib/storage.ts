@@ -734,7 +734,8 @@ export const storage = {
             !stored.agents.researcher.systemPrompt.includes('FAST-CHANGING / FREQUENTLY-UPDATED TOPICS & SOURCE AUTHORITY') ||
             !stored.agents.researcher.systemPrompt.includes('PRODUCT/MODEL LINEUP QUERIES') ||
             !stored.agents.researcher.systemPrompt.includes('Authority First') ||
-            stored.agents.researcher?.systemPrompt?.includes('nasa.gov, esa.int, space.com')
+            stored.agents.researcher.systemPrompt.includes('maximum 20 words') ||
+            stored.agents.researcher.systemPrompt.includes('ONE short fact per source')
               ? DEFAULT_AGENT_SYSTEM_PROMPTS.researcher
               : stored.agents.researcher.systemPrompt,
         },
