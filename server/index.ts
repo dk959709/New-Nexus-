@@ -5364,7 +5364,7 @@ async function startServer() {
     });
   }
 
-  // POST /api/edge-tts (Microsoft Edge TTS Python CLI wrapper)
+  // POST /api/edge-tts (Microsoft Edge TTS Python CLI wrapper with chunking support)
   app.post('/api/edge-tts', async (req, res) => {
     try {
       const { text, voice } = req.body || {};
@@ -5375,37 +5375,102 @@ async function startServer() {
       const selectedVoice = (typeof voice === 'string' && voice.trim()) ? voice.trim() : 'en-US-AriaNeural';
       const tmpDir = os.tmpdir();
       const tmpFilePath = resolve(tmpDir, `edge_tts_${Date.now()}_${Math.random().toString(36).substring(2, 8)}.mp3`);
-
       const execFileAsync = promisify(execFile);
-      let success = false;
-      let errorMsg = '';
 
-      try {
-        await execFileAsync('edge-tts', [
-          '--text', text.trim(),
-          '--voice', selectedVoice,
-          '--write-media', tmpFilePath
-        ], { timeout: 35000 });
-        success = true;
-      } catch (e1: unknown) {
+      // Helper to synthesize single chunk
+      const synthesizeChunk = async (chunkText: string, outPath: string) => {
         try {
-          await execFileAsync('python3', [
-            '-m', 'edge_tts',
-            '--text', text.trim(),
+          await execFileAsync('edge-tts', [
+            '--text', chunkText.trim(),
             '--voice', selectedVoice,
-            '--write-media', tmpFilePath
-          ], { timeout: 35000 });
-          success = true;
-        } catch (e2: unknown) {
-          const m2 = e2 instanceof Error ? e2.message : String(e2);
-          const m1 = e1 instanceof Error ? e1.message : String(e1);
-          errorMsg = m2 || m1 || 'Failed to execute edge-tts python tool';
+            '--write-media', outPath
+          ], { timeout: 45000 });
+          return true;
+        } catch (e1: unknown) {
+          try {
+            await execFileAsync('python3', [
+              '-m', 'edge_tts',
+              '--text', chunkText.trim(),
+              '--voice', selectedVoice,
+              '--write-media', outPath
+            ], { timeout: 45000 });
+            return true;
+          } catch (e2: unknown) {
+            const m2 = e2 instanceof Error ? e2.message : String(e2);
+            const m1 = e1 instanceof Error ? e1.message : String(e1);
+            throw new Error(m2 || m1 || 'Failed to execute edge-tts python tool');
+          }
+        }
+      };
+
+      const rawText = text.trim();
+      if (rawText.length <= 2500) {
+        await synthesizeChunk(rawText, tmpFilePath);
+      } else {
+        // Split into chunks under 2500 characters
+        const chunks: string[] = [];
+        let rem = rawText;
+        while (rem.length > 0) {
+          if (rem.length <= 2500) {
+            chunks.push(rem);
+            break;
+          }
+          let sliceEnd = -1;
+          const windowText = rem.slice(0, 2500);
+          const puncMatches = Array.from(windowText.matchAll(/[.!?;\n]\s+/g));
+          if (puncMatches.length > 0) {
+            const lastMatch = puncMatches[puncMatches.length - 1];
+            if (lastMatch.index !== undefined && lastMatch.index > 800) {
+              sliceEnd = lastMatch.index + lastMatch[0].length;
+            }
+          }
+          if (sliceEnd === -1) {
+            const commaMatches = Array.from(windowText.matchAll(/[,:]\s+/g));
+            if (commaMatches.length > 0) {
+              const lastComma = commaMatches[commaMatches.length - 1];
+              if (lastComma.index !== undefined && lastComma.index > 800) {
+                sliceEnd = lastComma.index + lastComma[0].length;
+              }
+            }
+          }
+          if (sliceEnd === -1) {
+            const lastSpace = windowText.lastIndexOf(' ');
+            if (lastSpace > 800) {
+              sliceEnd = lastSpace + 1;
+            } else {
+              sliceEnd = 2500;
+            }
+          }
+          const chunk = rem.slice(0, sliceEnd).trim();
+          if (chunk) chunks.push(chunk);
+          rem = rem.slice(sliceEnd).trim();
+        }
+
+        const chunkFiles: string[] = [];
+        try {
+          for (let i = 0; i < chunks.length; i++) {
+            const chunkPath = resolve(tmpDir, `edge_chunk_${Date.now()}_${i}_${Math.random().toString(36).substring(2, 6)}.mp3`);
+            await synthesizeChunk(chunks[i], chunkPath);
+            chunkFiles.push(chunkPath);
+          }
+
+          // Stitch chunks into main output file
+          const buffers = chunkFiles.map(f => fs.readFileSync(f));
+          fs.writeFileSync(tmpFilePath, Buffer.concat(buffers));
+        } finally {
+          // Clean up chunk files
+          for (const cf of chunkFiles) {
+            try {
+              if (fs.existsSync(cf)) fs.unlinkSync(cf);
+            } catch {
+              // ignore cleanup
+            }
+          }
         }
       }
 
-      if (!success || !fs.existsSync(tmpFilePath)) {
-        console.error('[API /api/edge-tts] Error:', errorMsg);
-        return res.status(500).json({ error: `TTS generation failed: ${errorMsg || 'edge-tts tool error'}` });
+      if (!fs.existsSync(tmpFilePath)) {
+        return res.status(500).json({ error: 'TTS generation failed: output file not created' });
       }
 
       res.setHeader('Content-Type', 'audio/mpeg');

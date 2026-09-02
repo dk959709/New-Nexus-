@@ -1,8 +1,12 @@
-import { useState, useRef } from 'react';
-import { Mic, Play, Pause, Download, Sparkles, RefreshCw, AlertCircle, CheckCircle2 } from 'lucide-react';
+import { useState, useRef, useCallback } from 'react';
+import { Mic, Play, Pause, Download, Sparkles, RefreshCw, AlertCircle, CheckCircle2, Loader2 } from 'lucide-react';
 import { playTapSound } from '@/lib/audio';
 import { storage } from '@/lib/storage';
 import { EdgeVoicePicker } from '@/components/voice/EdgeVoicePicker';
+import { cleanMarkdownForSpeech } from '@/lib/format';
+
+const MAX_CHAR_LIMIT = 10000;
+const CHUNK_SIZE_LIMIT = 2500;
 
 const SAMPLE_TEXTS = [
   "Welcome to NEXUS Intelligence OS. Microsoft Edge TTS neural speech synthesis is online and ready.",
@@ -11,17 +15,150 @@ const SAMPLE_TEXTS = [
   "In a world driven by data and automation, clear vocal interfaces bridge human intent and machine execution seamlessly.",
 ];
 
+/**
+ * Splits long text into natural sentence/clause chunks under maxChunkLen characters
+ * so Edge TTS can process each chunk reliably without timeout or buffer limits.
+ */
+function splitTextIntoSpeechChunks(text: string, maxChunkLen = CHUNK_SIZE_LIMIT): string[] {
+  if (text.length <= maxChunkLen) return [text];
+
+  const chunks: string[] = [];
+  let remaining = text.trim();
+
+  while (remaining.length > 0) {
+    if (remaining.length <= maxChunkLen) {
+      chunks.push(remaining);
+      break;
+    }
+
+    let sliceEnd = -1;
+    const windowText = remaining.slice(0, maxChunkLen);
+
+    // 1. Try to find the last sentence-ending punctuation followed by space or newline
+    const sentenceMatches = Array.from(windowText.matchAll(/[.!?;\n]\s+/g));
+    if (sentenceMatches.length > 0) {
+      const lastMatch = sentenceMatches[sentenceMatches.length - 1];
+      if (lastMatch.index !== undefined && lastMatch.index > maxChunkLen * 0.3) {
+        sliceEnd = lastMatch.index + lastMatch[0].length;
+      }
+    }
+
+    // 2. Try comma or colon clause separators if no sentence boundary found
+    if (sliceEnd === -1) {
+      const clauseMatches = Array.from(windowText.matchAll(/[,:]\s+/g));
+      if (clauseMatches.length > 0) {
+        const lastClause = clauseMatches[clauseMatches.length - 1];
+        if (lastClause.index !== undefined && lastClause.index > maxChunkLen * 0.3) {
+          sliceEnd = lastClause.index + lastClause[0].length;
+        }
+      }
+    }
+
+    // 3. Fall back to word boundary (space)
+    if (sliceEnd === -1) {
+      const lastSpace = windowText.lastIndexOf(' ');
+      if (lastSpace > maxChunkLen * 0.3) {
+        sliceEnd = lastSpace + 1;
+      } else {
+        sliceEnd = maxChunkLen;
+      }
+    }
+
+    const chunk = remaining.slice(0, sliceEnd).trim();
+    if (chunk) {
+      chunks.push(chunk);
+    }
+    remaining = remaining.slice(sliceEnd).trim();
+  }
+
+  return chunks.filter(Boolean);
+}
+
 export function VoiceAI() {
   const [text, setText] = useState('');
   const [selectedVoice, setSelectedVoice] = useState(() => storage.getEdgeVoice());
   const [loading, setLoading] = useState(false);
+  const [downloading, setDownloading] = useState(false);
+  const [progressStatus, setProgressStatus] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [audioUrl, setAudioUrl] = useState<string | null>(null);
+  const [synthesizedText, setSynthesizedText] = useState<string | null>(null);
+  const [synthesizedVoice, setSynthesizedVoice] = useState<string | null>(null);
   const [isPlaying, setIsPlaying] = useState(false);
   const audioRef = useRef<HTMLAudioElement | null>(null);
 
-  const handleSpeak = async (e: React.FormEvent) => {
-    e.preventDefault();
+  /**
+   * Synthesizes audio using cleanMarkdownForSpeech and automatic chunking + stitching
+   */
+  const synthesizeAudio = useCallback(
+    async (
+      rawText: string,
+      voice: string,
+      onProgress?: (msg: string) => void
+    ): Promise<Blob> => {
+      // Clean markdown syntax using the shared formatting function
+      const cleaned = cleanMarkdownForSpeech(rawText);
+      if (!cleaned) {
+        throw new Error('Please enter text to synthesize.');
+      }
+
+      const chunks = splitTextIntoSpeechChunks(cleaned, CHUNK_SIZE_LIMIT);
+
+      if (chunks.length === 1) {
+        if (onProgress) onProgress('Generating Neural Audio...');
+        const response = await fetch('/api/edge-tts', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            text: chunks[0],
+            voice,
+          }),
+        });
+
+        if (!response.ok) {
+          const data = await response.json().catch(() => ({}));
+          throw new Error(data.error || `Server responded with status ${response.status}`);
+        }
+
+        return await response.blob();
+      }
+
+      // Multi-chunk synthesis & stitching
+      const audioBlobs: Blob[] = [];
+      for (let i = 0; i < chunks.length; i++) {
+        if (onProgress) {
+          onProgress(`Synthesizing Part ${i + 1} of ${chunks.length}...`);
+        }
+
+        const response = await fetch('/api/edge-tts', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            text: chunks[i],
+            voice,
+          }),
+        });
+
+        if (!response.ok) {
+          const data = await response.json().catch(() => ({}));
+          throw new Error(
+            data.error || `Chunk ${i + 1}/${chunks.length} failed with status ${response.status}`
+          );
+        }
+
+        const blob = await response.blob();
+        audioBlobs.push(blob);
+      }
+
+      if (onProgress) onProgress('Stitching Audio Streams...');
+      // Concatenate MP3 binary streams into a single seamless audio file
+      return new Blob(audioBlobs, { type: 'audio/mpeg' });
+    },
+    []
+  );
+
+  const handleSpeak = async (e?: React.FormEvent) => {
+    if (e) e.preventDefault();
     if (!text.trim()) {
       setError('Please enter text to synthesize.');
       return;
@@ -29,30 +166,23 @@ export function VoiceAI() {
 
     playTapSound();
     setLoading(true);
+    setProgressStatus('Preparing Speech Synthesis...');
     setError(null);
+
     if (audioUrl) {
       URL.revokeObjectURL(audioUrl);
       setAudioUrl(null);
     }
 
     try {
-      const response = await fetch('/api/edge-tts', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          text: text.trim(),
-          voice: selectedVoice,
-        }),
+      const blob = await synthesizeAudio(text, selectedVoice, (msg) => {
+        setProgressStatus(msg);
       });
 
-      if (!response.ok) {
-        const data = await response.json().catch(() => ({}));
-        throw new Error(data.error || `Server responded with status ${response.status}`);
-      }
-
-      const blob = await response.blob();
       const url = URL.createObjectURL(blob);
       setAudioUrl(url);
+      setSynthesizedText(text);
+      setSynthesizedVoice(selectedVoice);
 
       // Auto play audio once ready
       setTimeout(() => {
@@ -69,7 +199,59 @@ export function VoiceAI() {
       setError(msg || 'Failed to generate speech. Please ensure edge-tts is running.');
     } finally {
       setLoading(false);
+      setProgressStatus(null);
     }
+  };
+
+  const handleDownload = async () => {
+    if (!text.trim()) {
+      setError('Please enter text to synthesize and download.');
+      return;
+    }
+
+    playTapSound();
+    setError(null);
+
+    // If audio is already synthesized for the current text and voice, download directly
+    if (audioUrl && synthesizedText === text && synthesizedVoice === selectedVoice) {
+      triggerDownloadUrl(audioUrl);
+      return;
+    }
+
+    setDownloading(true);
+    setProgressStatus('Generating MP3 for Download...');
+
+    try {
+      const blob = await synthesizeAudio(text, selectedVoice, (msg) => {
+        setProgressStatus(msg);
+      });
+
+      const url = URL.createObjectURL(blob);
+      if (audioUrl) {
+        URL.revokeObjectURL(audioUrl);
+      }
+      setAudioUrl(url);
+      setSynthesizedText(text);
+      setSynthesizedVoice(selectedVoice);
+
+      triggerDownloadUrl(url);
+    } catch (err: unknown) {
+      console.error('[Voice AI] Download error:', err);
+      const msg = err instanceof Error ? err.message : String(err);
+      setError(msg || 'Failed to download audio.');
+    } finally {
+      setDownloading(false);
+      setProgressStatus(null);
+    }
+  };
+
+  const triggerDownloadUrl = (url: string) => {
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = `voice_ai_${Date.now()}.mp3`;
+    document.body.appendChild(a);
+    a.click();
+    document.body.removeChild(a);
   };
 
   const handleSampleSelect = (sample: string) => {
@@ -153,8 +335,14 @@ export function VoiceAI() {
               <label className="block text-xs font-mono font-semibold text-slate-300 uppercase tracking-wider">
                 Input Text for Speech Synthesis
               </label>
-              <span className="text-xs font-mono text-slate-500">
-                {text.length} / 3000 chars
+              <span
+                className={`text-xs font-mono transition-colors ${
+                  text.length > MAX_CHAR_LIMIT * 0.9
+                    ? 'text-amber-400 font-bold'
+                    : 'text-slate-500'
+                }`}
+              >
+                {text.length} / {MAX_CHAR_LIMIT} chars
               </span>
             </div>
             <textarea
@@ -163,9 +351,9 @@ export function VoiceAI() {
                 setText(e.target.value);
                 if (error) setError(null);
               }}
-              placeholder="Type or paste any text here to synthesize with Microsoft Edge TTS..."
-              rows={5}
-              maxLength={3000}
+              placeholder="Type or paste any text here (markdown formatting will be cleaned automatically for natural neural speech)..."
+              rows={6}
+              maxLength={MAX_CHAR_LIMIT}
               className="w-full bg-slate-950 border border-slate-700/80 rounded-xl p-4 text-slate-100 text-sm focus:outline-none focus:border-cyan-500 transition resize-y shadow-inner leading-relaxed"
             />
           </div>
@@ -180,31 +368,55 @@ export function VoiceAI() {
 
           {/* Action Bar */}
           <div className="flex flex-wrap items-center justify-between gap-4 pt-2">
-            <button
-              type="submit"
-              disabled={loading || !text.trim()}
-              className="px-6 py-3 rounded-xl bg-gradient-to-r from-cyan-500 to-blue-600 text-white font-semibold text-sm shadow-lg shadow-cyan-500/20 hover:from-cyan-400 hover:to-blue-500 disabled:opacity-50 disabled:cursor-not-allowed transition flex items-center gap-2 cursor-pointer"
-            >
-              {loading ? (
-                <>
-                  <RefreshCw size={17} className="animate-spin" />
-                  Generating Neural Audio...
-                </>
-              ) : (
-                <>
-                  <Sparkles size={17} />
-                  Speak It
-                </>
-              )}
-            </button>
+            <div className="flex flex-wrap items-center gap-3">
+              <button
+                type="submit"
+                disabled={loading || downloading || !text.trim()}
+                className="px-6 py-3 rounded-xl bg-gradient-to-r from-cyan-500 to-blue-600 text-white font-semibold text-sm shadow-lg shadow-cyan-500/20 hover:from-cyan-400 hover:to-blue-500 disabled:opacity-50 disabled:cursor-not-allowed transition flex items-center gap-2 cursor-pointer"
+              >
+                {loading ? (
+                  <>
+                    <RefreshCw size={17} className="animate-spin" />
+                    <span>{progressStatus || 'Generating Neural Audio...'}</span>
+                  </>
+                ) : (
+                  <>
+                    <Sparkles size={17} />
+                    <span>Speak It</span>
+                  </>
+                )}
+              </button>
 
-            {text && !loading && (
+              <button
+                type="button"
+                onClick={handleDownload}
+                disabled={loading || downloading || !text.trim()}
+                className="px-5 py-3 rounded-xl bg-slate-800 hover:bg-slate-700 border border-slate-700 text-cyan-300 font-semibold text-sm shadow-md hover:text-cyan-200 disabled:opacity-50 disabled:cursor-not-allowed transition flex items-center gap-2 cursor-pointer"
+                title="Synthesize and download audio as MP3 file"
+              >
+                {downloading ? (
+                  <>
+                    <Loader2 size={17} className="animate-spin text-cyan-400" />
+                    <span>{progressStatus || 'Downloading MP3...'}</span>
+                  </>
+                ) : (
+                  <>
+                    <Download size={17} />
+                    <span>Download MP3</span>
+                  </>
+                )}
+              </button>
+            </div>
+
+            {text && !loading && !downloading && (
               <button
                 type="button"
                 onClick={() => {
                   playTapSound();
                   setText('');
                   setAudioUrl(null);
+                  setSynthesizedText(null);
+                  setSynthesizedVoice(null);
                   setError(null);
                 }}
                 className="text-xs text-slate-400 hover:text-slate-200 transition"
@@ -223,13 +435,13 @@ export function VoiceAI() {
                 <CheckCircle2 size={18} />
                 <span>Audio Generated Successfully</span>
               </div>
-              <a
-                href={audioUrl}
-                download={`voice_ai_${Date.now()}.mp3`}
-                className="inline-flex items-center gap-1.5 text-xs font-medium px-3 py-1.5 rounded-lg bg-slate-800 hover:bg-slate-700 text-cyan-400 border border-slate-700 transition"
+              <button
+                type="button"
+                onClick={handleDownload}
+                className="inline-flex items-center gap-1.5 text-xs font-medium px-3 py-1.5 rounded-lg bg-slate-800 hover:bg-slate-700 text-cyan-400 border border-slate-700 transition cursor-pointer"
               >
                 <Download size={14} /> Download MP3
-              </a>
+              </button>
             </div>
 
             <div className="bg-slate-950 border border-slate-800 rounded-xl p-4 flex items-center gap-4">
@@ -260,3 +472,4 @@ export function VoiceAI() {
     </div>
   );
 }
+
