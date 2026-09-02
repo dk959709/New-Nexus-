@@ -14,3 +14,5 @@ export { JarvisPipelineHudTracker } from './JarvisPipelineHudTracker';
 export { JarvisTerminalDiagnosticLog } from './JarvisTerminalDiagnosticLog';
 export { JarvisCornerBrackets } from './JarvisCornerBrackets';
 export { JarvisDeepResearchMeshAnswers } from './JarvisDeepResearchMeshAnswers';
+export { JarvisFactCheckNotes } from './JarvisFactCheckNotes';
+export { extractFactCheckerNotes } from '@/lib/factCheckerHelper';

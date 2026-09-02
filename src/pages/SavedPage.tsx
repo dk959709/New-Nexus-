@@ -18,6 +18,7 @@ import {
   JarvisChartCard,
   JarvisDeepResearchMeshAnswers,
   JarvisImageGallery,
+  JarvisFactCheckNotes,
 } from '@/components/jarvis';
 import { FormattedText } from '@/components/jarvis/FormattedText';
 import { formatFullPipelineExport } from '@/components/jarvis/formatJarvisPipelineExport';
@@ -509,7 +510,10 @@ export function SavedPage() {
                             </pre>
                           </div>
                         ) : (
-                          <FormattedText content={cleanAnswer || answerText} />
+                          <>
+                            <FormattedText content={cleanAnswer || answerText} />
+                            <JarvisFactCheckNotes steps={item.steps} />
+                          </>
                         )}
                       </div>
                     );

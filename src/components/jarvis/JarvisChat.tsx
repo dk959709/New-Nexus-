@@ -39,6 +39,7 @@ import { JarvisTerminalDiagnosticLog } from './JarvisTerminalDiagnosticLog';
 import { JarvisCornerBrackets } from './JarvisCornerBrackets';
 import { FormattedText } from './FormattedText';
 import { JarvisDeepResearchMeshAnswers } from './JarvisDeepResearchMeshAnswers';
+import { JarvisFactCheckNotes } from './JarvisFactCheckNotes';
 import { formatFullPipelineExport } from './formatJarvisPipelineExport';
 import { copyToClipboard } from '@/lib/clipboard';
 import type {
@@ -1195,7 +1196,10 @@ export function JarvisChat({ config, onOpenSettings }: JarvisChatProps) {
                             </pre>
                           </div>
                         ) : (
-                          <FormattedText content={cleanedAnswer || msg.answer} />
+                          <>
+                            <FormattedText content={cleanedAnswer || msg.answer} />
+                            <JarvisFactCheckNotes steps={msg.steps} />
+                          </>
                         )}
                       </div>
                     );
