@@ -102,15 +102,12 @@ Instructions:
 5. DEDUPLICATION & MULTI-OUTLET MERGING:
    - ONLY merge items if they cover the EXACT SAME underlying event.
    - Keep the most authoritative/complete source for "sourceIndex" and list other confirming outlets in "confirmedBy". Never merge distinct stories from different locations or topics.
-6. FAST-CHANGING / FREQUENTLY-UPDATED TOPICS:
+6. FAST-CHANGING / FREQUENTLY-UPDATED TOPICS & SOURCE AUTHORITY:
    When researching topics that change frequently over time (e.g. AI models, software versions, current events, product releases, pricing), do the following:
-   - Query enhancement: When forming search queries for this type of topic, include recency-focused terms (e.g. append 'latest', 'current', or the current year) to nudge search results toward newer content - but do not rely on this alone, since keyword presence doesn't guarantee actual recency.
-   - Source prioritization for freshness: For fast-changing topics specifically, prioritize these source types over generic 'explainer'/blog articles (e.g. Zapier, Grammarly, generic 'What is X' blog posts), which tend to go stale and not get updated after major changes:
-     * The subject's own official company news/announcement page (e.g. anthropic.com/news, openai.com/news) - highest priority
-     * Wikipedia (tends to be updated reasonably quickly for actively-developed products)
-     * Established tech news outlets that publish frequently (TechCrunch, The Verge, Ars Technica, VentureBeat)
-     Generic evergreen explainer blogs should be treated as lower priority/secondary supporting sources for this topic type, not the primary source for 'current' facts.
-   - Honesty fallback: After searching, check the actual publication/update dates of what was found. If no source with a clearly recent date could be found for a fast-changing topic, explicitly note this limitation in the output (e.g. 'Available sources may not reflect the most recent updates') rather than presenting older information with full confidence as if it were current.
+   - Authority First: Prioritize authoritative primary sources (official company announcement and news pages like anthropic.com/news, openai.com/news, developer docs, Wikipedia, and tier-1 tech news like TechCrunch, The Verge, Ars Technica, VentureBeat, Reuters, Bloomberg) over speculative blogs, Medium posts, Substack newsletters, and SEO tool-review sites.
+   - Never Uncritically Repeat Rumors: Do NOT present speculative future roadmap rumors, unconfirmed version numbers, or fabricated model names from third-party blogs as established facts.
+   - Query enhancement: When forming search queries for time-sensitive updates or versions, include recency-focused terms - but do not rely on this alone, since keyword presence doesn't guarantee actual recency. For general overview queries (e.g. "tell about Claude"), focus on core established facts from authoritative sources.
+   - Honesty fallback: After searching, check the actual publication/update dates of what was found. If no source with a clearly recent date could be found for a fast-changing topic, explicitly note this limitation in the output (e.g. 'Available sources may not reflect the most recent updates') rather than presenting older or speculative information with full confidence as if it were current.
 7. Only include candidates backed by actual search data. If search data lacks recent news, note it clearly.
 
 Output ONLY a valid JSON object in this exact format, no extra text:
@@ -182,7 +179,10 @@ Instructions:
    - "older": event/article from earlier dates
    - "unknown": date not determinable from source data
 6. Multi-Outlet Verification: Confirm merged multi-source stories. Flag unsupported assertions in "issues" using the exact story title.
-7. Keep data compact (structured JSON only).
+7. AGGRESSIVE SPECULATION & HALLUCINATION FLAGGING (CRITICAL):
+   - Scrutinize specific model version names, unconfirmed roadmap releases, leaked product specs, and non-existent version numbering (e.g. "Opus 46", "Sonnet 5", speculative release years) that lack corroboration from official company announcements or tier-1 established tech outlets.
+   - If a candidate repeats speculative claims or invented version numbers from low-authority blogs, SEO content farms, or user posts, DO NOT pass it as verified. Instead, aggressively flag it in the "issues" array (e.g. "[Exact Story Title] ([domain]): Unverified/speculative model name or roadmap claim not confirmed by official announcements or credible reporting").
+8. Keep data compact (structured JSON only).
 
 Output ONLY a valid JSON object in this exact format, no extra text:
 {
@@ -691,7 +691,8 @@ export const storage = {
             !stored.agents.researcher.systemPrompt.includes('PRESERVE EXACT ARTICLE URLS') ||
             !stored.agents.researcher.systemPrompt.includes('eventDate') ||
             !stored.agents.researcher.systemPrompt.includes('DEDUPLICATION') ||
-            !stored.agents.researcher.systemPrompt.includes('Source prioritization for freshness') ||
+            !stored.agents.researcher.systemPrompt.includes('FAST-CHANGING / FREQUENTLY-UPDATED TOPICS & SOURCE AUTHORITY') ||
+            !stored.agents.researcher.systemPrompt.includes('Authority First') ||
             stored.agents.researcher?.systemPrompt?.includes('nasa.gov, esa.int, space.com')
               ? DEFAULT_AGENT_SYSTEM_PROMPTS.researcher
               : stored.agents.researcher.systemPrompt,
@@ -716,7 +717,8 @@ export const storage = {
             !stored.agents.factChecker?.systemPrompt ||
             !stored.agents.factChecker.systemPrompt.includes('dateStatus') ||
             !stored.agents.factChecker.systemPrompt.includes('eventDate') ||
-            !stored.agents.factChecker.systemPrompt.includes('Date Status Classification')
+            !stored.agents.factChecker.systemPrompt.includes('Date Status Classification') ||
+            !stored.agents.factChecker.systemPrompt.includes('AGGRESSIVE SPECULATION & HALLUCINATION FLAGGING')
               ? DEFAULT_AGENT_SYSTEM_PROMPTS.factChecker
               : stored.agents.factChecker.systemPrompt,
         },

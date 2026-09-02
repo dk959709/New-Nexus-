@@ -1264,29 +1264,39 @@ export function scoreAndFilterSearchResults(
       score += Math.round(coverageRatio * 25);
     }
 
-    // Source Prioritization for Freshness & Fast-Changing Topics:
-    // 1. Official company/product announcement and news pages - highest priority
+    // Source Prioritization for Authority, Freshness & Quality:
+    // Tier 1: Official company/product announcement and news pages - HIGHEST PRIORITY
     const domainLower = (c.domain || '').toLowerCase();
     const urlLower = (c.url || '').toLowerCase();
+
     const isOfficialDomain =
-      coreTerms.some((term) => term.length >= 3 && domainLower.includes(term)) ||
+      coreTerms.some((term) => term.length >= 3 && (domainLower.includes(term) || urlLower.includes(`/${term}`))) ||
       urlLower.includes('anthropic.com') ||
+      urlLower.includes('claude.ai') ||
       urlLower.includes('openai.com') ||
       urlLower.includes('deepmind.google') ||
       urlLower.includes('ai.google') ||
-      urlLower.includes('github.com');
+      urlLower.includes('github.com') ||
+      urlLower.includes('microsoft.com') ||
+      urlLower.includes('meta.com') ||
+      urlLower.includes('apple.com') ||
+      urlLower.includes('google.com') ||
+      urlLower.includes('aws.amazon.com') ||
+      urlLower.includes('nvidia.com') ||
+      urlLower.includes('mistral.ai') ||
+      urlLower.includes('cohere.com');
 
     if (isOfficialDomain) {
-      score += 30;
+      score += 70;
     }
 
-    // 2. Wikipedia (regularly updated for active subjects)
-    if (domainLower.includes('wikipedia.org') || c.type === 'wikipedia') {
-      score += 25;
+    // Tier 2: Wikipedia & major reference encyclopedias/documentation
+    if (domainLower.includes('wikipedia.org') || c.type === 'wikipedia' || domainLower.includes('britannica.com') || domainLower.startsWith('docs.') || domainLower.startsWith('developer.')) {
+      score += 50;
     }
 
-    // 3. Established tech news outlets that publish frequently
-    const isEstablishedTechNews =
+    // Tier 3: Established tier-1 tech and major global news outlets
+    const isTier1TechAndGlobalNews =
       domainLower.includes('techcrunch.com') ||
       domainLower.includes('theverge.com') ||
       domainLower.includes('arstechnica.com') ||
@@ -1296,27 +1306,99 @@ export function scoreAndFilterSearchResults(
       domainLower.includes('engadget.com') ||
       domainLower.includes('reuters.com') ||
       domainLower.includes('bloomberg.com') ||
+      domainLower.includes('wsj.com') ||
+      domainLower.includes('nytimes.com') ||
+      domainLower.includes('bbc.com') ||
+      domainLower.includes('bbc.co.uk') ||
+      domainLower.includes('apnews.com') ||
+      domainLower.includes('cnbc.com') ||
+      domainLower.includes('theinformation.com') ||
       domainLower.includes('tomshardware.com') ||
       domainLower.includes('9to5google.com') ||
-      domainLower.includes('9to5mac.com');
+      domainLower.includes('9to5mac.com') ||
+      domainLower.includes('technologyreview.com') ||
+      domainLower.includes('nature.com') ||
+      domainLower.includes('science.org');
 
-    if (isEstablishedTechNews) {
+    if (isTier1TechAndGlobalNews) {
+      score += 40;
+    }
+
+    // Tier 4: Credible secondary news/tech press
+    const isCredibleSecondaryPress =
+      domainLower.includes('forbes.com') ||
+      domainLower.includes('theguardian.com') ||
+      domainLower.includes('ft.com') ||
+      domainLower.includes('economist.com') ||
+      domainLower.includes('time.com') ||
+      domainLower.includes('axios.com') ||
+      domainLower.includes('politico.com') ||
+      domainLower.includes('cnet.com') ||
+      domainLower.includes('digitaltrends.com') ||
+      domainLower.includes('mashable.com') ||
+      domainLower.includes('siliconangle.com') ||
+      domainLower.includes('thenextweb.com') ||
+      domainLower.includes('readwrite.com');
+
+    if (isCredibleSecondaryPress) {
       score += 20;
     }
 
-    // 4. Demote generic evergreen explainer/marketing blogs (e.g. Zapier, Grammarly, generic 'what is X' posts)
-    const isGenericExplainerBlog =
+    // Secondary Factor: Modest recency bonus if source has an explicit recent date
+    const dateStr = c.publishedAt || (c as { date?: string }).date || '';
+    const currentYearStr = String(new Date().getFullYear());
+    const prevYearStr = String(new Date().getFullYear() - 1);
+    if (dateStr.includes(currentYearStr) || (c.type === 'news' && (dateStr.includes(prevYearStr) || !dateStr))) {
+      score += 10;
+    }
+
+    // Penalty: Unverified user-generated blogging platforms (Medium, Substack, etc.)
+    const isUserBlogPlatform =
+      domainLower.includes('medium.com') ||
+      domainLower.includes('substack.com') ||
+      domainLower.includes('dev.to') ||
+      domainLower.includes('hashnode.dev') ||
+      domainLower.includes('blogger.com') ||
+      domainLower.includes('blogspot.com') ||
+      domainLower.includes('wordpress.com') ||
+      domainLower.includes('tumblr.com') ||
+      urlLower.includes('linkedin.com/pulse');
+
+    if (isUserBlogPlatform) {
+      score -= 40;
+    }
+
+    // Penalty: SEO content farms, AI aggregators, tool review spam, rumor blogs, generic explainer blogs
+    const isSeoOrSpeculativeBlog =
+      domainLower.includes('aitoolsreview') ||
+      domainLower.includes('the-ai-corner') ||
+      domainLower.includes('suprmind') ||
+      domainLower.includes('topai') ||
+      domainLower.includes('futurepedia') ||
+      domainLower.includes('toolify') ||
+      domainLower.includes('geeky-gadgets') ||
+      domainLower.includes('gizchina') ||
+      domainLower.includes('wccftech') ||
+      domainLower.includes('bgr.com') ||
       domainLower.includes('zapier.com') ||
       domainLower.includes('grammarly.com') ||
       domainLower.includes('hubspot.com') ||
       domainLower.includes('simplilearn.com') ||
       domainLower.includes('geeksforgeeks.org') ||
       domainLower.includes('investopedia.com') ||
+      domainLower.includes('tutorialspoint.com') ||
+      domainLower.includes('quora.com') ||
+      domainLower.includes('pinterest.com') ||
+      domainLower.includes('scribd.com') ||
       urlLower.includes('/blog/') ||
+      urlLower.includes('roadmap-leak') ||
+      urlLower.includes('specs-leaked') ||
+      urlLower.includes('free-download') ||
+      urlLower.includes('tool-review') ||
       /what-is-|what-are-|guide-to-|explained/i.test(urlLower);
 
-    if (isGenericExplainerBlog) {
-      score -= 15;
+    if (isSeoOrSpeculativeBlog) {
+      score -= 50;
     }
 
     // Penalize generic broad index / list pages if their snippet doesn't strongly hit the query terms
@@ -1607,10 +1689,13 @@ export function parseResearcherOutput(
     }
   }
 
-  // 3. Fallback to gathered search snippets if LLM produced 0 facts
-  if (rawCandidateList.length === 0 && fallbackSources.length > 0) {
+  // 3. Fallback / Supplement: If LLM produced fewer than 4 candidates but we have richer gathered search sources, supplement from fallbackSources
+  if (fallbackSources.length > 0 && rawCandidateList.length < Math.min(fallbackSources.length, 6)) {
     fallbackSources.forEach((s, idx) => {
-      if (s.description && s.description.trim().length > 15) {
+      const alreadyPresent = rawCandidateList.some(
+        (c) => (c.url && s.url && c.url === s.url) || (c.domain && s.domain && c.domain === s.domain && c.title && s.title && c.title.toLowerCase().includes(s.title.toLowerCase().slice(0, 15))),
+      );
+      if (!alreadyPresent && s.description && s.description.trim().length > 15) {
         rawCandidateList.push({
           title: s.title,
           fact: s.description.trim(),
@@ -2582,8 +2667,12 @@ Please perform your specialized processing for this inquiry. Provide clear, conc
           ? (isWorldNews ? `top world breaking news headlines today ${currentDateStr}` : `world news today ${currentDateStr} ${cleanedSearchQuery || strippedQuery}`)
           : (isSearchOverride ? (cleanedSearchQuery || strippedQuery) : query);
 
-        // Enhance search query with recency-focused terms for fast-changing topics if not already present
-        if (isFastChangingTopic && !/\b(?:latest|current|newest|today|\d{4})\b/i.test(effectiveSearchQuery)) {
+        const userExplicitlyRequestedRecency = /\b(?:latest|recent|updates?|newest|new|current|today|releases?|versions?|pricing|specs?|changelog)\b/i.test(
+          `${strippedQuery} ${plannerOutput.task || ''}`,
+        );
+
+        // Enhance search query with recency-focused terms for fast-changing topics ONLY when recency is explicitly relevant
+        if (isFastChangingTopic && userExplicitlyRequestedRecency && !/\b(?:latest|current|newest|today|\d{4})\b/i.test(effectiveSearchQuery)) {
           effectiveSearchQuery = `${effectiveSearchQuery} latest ${currentYear}`;
         }
 

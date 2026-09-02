@@ -106,6 +106,9 @@ export function cleanProseText(text: string): string {
     // Fix double commas or double semicolons
     .replace(/,\s*,+/g, ',')
     .replace(/;\s*;+/g, ';')
+    // Remove trailing unclosed source tags like `[Source #1` or `[Source 1` or `(Source 1` or `[Source`
+    .replace(/\s*`?\[\s*(?:Source|Citation|Ref|Reference)\b[^\]\n]*$/gi, '')
+    .replace(/\s*\(\s*(?:Source|Citation|Ref|Reference)\b[^)\n]*$/gi, '')
     // Remove trailing orphan comma, colon, semicolon, or dash
     .replace(/[\s,;:\-–—]+$/, '')
     // Remove unclosed trailing opening bracket/parenthesis if it has no counterpart
@@ -120,6 +123,21 @@ export function cleanProseText(text: string): string {
   }
   if (cleaned.endsWith(')') && !cleaned.includes('(')) {
     cleaned = cleaned.slice(0, -1).trim();
+  }
+
+  // If text has an unmatched opening bracket '[' with no closing ']'
+  const openBrackets = (cleaned.match(/\[/g) || []).length;
+  const closeBrackets = (cleaned.match(/\]/g) || []).length;
+  if (openBrackets > closeBrackets) {
+    // Strip trailing unclosed bracket segment
+    cleaned = cleaned.replace(/\[[^\]]*$/, '').trim();
+  }
+
+  const openParens = (cleaned.match(/\(/g) || []).length;
+  const closeParens = (cleaned.match(/\)/g) || []).length;
+  if (openParens > closeParens) {
+    // Strip trailing unclosed parenthesis segment
+    cleaned = cleaned.replace(/\([^)]*$/, '').trim();
   }
 
   // Remove trailing commas, colons, or dashes again in case bracket removal exposed one
@@ -457,12 +475,15 @@ export function formatResearcherOutput(
   let context = '';
 
   // Helper to extract candidate objects and facts from any object
-  const inspectObject = (obj: Record<string, unknown>) => {
+  const inspectObject = (obj: Record<string, unknown>): { foundCandidates: unknown[]; foundFacts: unknown[] } => {
+    let foundCandidates: unknown[] = [];
+    let foundFacts: unknown[] = [];
+
     // 1. Check candidates array
     const candKeys = ['candidates', 'news_candidates', 'newsCandidates', 'items', 'articles', 'stories'];
     for (const key of candKeys) {
       if (Array.isArray(obj[key]) && (obj[key] as unknown[]).length > 0) {
-        candidates = obj[key] as unknown[];
+        foundCandidates = obj[key] as unknown[];
         break;
       }
     }
@@ -471,7 +492,7 @@ export function formatResearcherOutput(
     const factKeys = ['facts', 'findings', 'core_facts', 'coreFacts', 'key_facts', 'keyFacts', 'points', 'claims'];
     for (const key of factKeys) {
       if (Array.isArray(obj[key]) && (obj[key] as unknown[]).length > 0) {
-        facts = obj[key] as unknown[];
+        foundFacts = obj[key] as unknown[];
         break;
       }
     }
@@ -479,43 +500,55 @@ export function formatResearcherOutput(
     // 3. Check insights
     const insightKeys = ['keyInsights', 'insights', 'takeaways'];
     for (const key of insightKeys) {
-      if (Array.isArray(obj[key]) && (obj[key] as unknown[]).length > 0) {
+      if (Array.isArray(obj[key]) && (obj[key] as unknown[]).length > 0 && keyInsights.length === 0) {
         keyInsights = obj[key] as unknown[];
         break;
       }
     }
 
     // 4. Check context
-    if (typeof obj.context === 'string') context = obj.context;
+    if (typeof obj.context === 'string' && !context) context = obj.context;
     else if (typeof obj.summary === 'string' && !context) context = obj.summary;
+
+    return { foundCandidates, foundFacts };
   };
 
   // Step 1: Check parsedObj
   if (parsedObj && typeof parsedObj === 'object' && !Array.isArray(parsedObj)) {
-    inspectObject(parsedObj as Record<string, unknown>);
+    const { foundCandidates, foundFacts } = inspectObject(parsedObj as Record<string, unknown>);
+    candidates = foundCandidates;
+    facts = foundFacts;
   }
 
-  // Step 2: Try parsing step.outputPreview if candidates/facts are still empty
-  if (candidates.length === 0 && facts.length === 0 && step.outputPreview) {
+  // Step 2: Check step.outputPreview - use if richer or if primary list is small/incomplete
+  if (step.outputPreview) {
     try {
       const previewJson = JSON.parse(step.outputPreview);
       if (previewJson && typeof previewJson === 'object' && !Array.isArray(previewJson)) {
-        inspectObject(previewJson as Record<string, unknown>);
+        const { foundCandidates: pCands, foundFacts: pFacts } = inspectObject(previewJson as Record<string, unknown>);
+        if (pCands.length > candidates.length) {
+          candidates = pCands;
+        }
+        if (pFacts.length > facts.length) {
+          facts = pFacts;
+        }
       }
     } catch {
       // continue
     }
   }
 
-  // Step 3: Try parsing raw string
-  if (candidates.length === 0 && facts.length === 0 && raw) {
+  // Step 3: Try parsing raw string if still fewer than 3 items
+  if (candidates.length < 3 && facts.length < 3 && raw) {
     try {
       const rawJson = JSON.parse(raw);
       if (rawJson && typeof rawJson === 'object') {
         if (Array.isArray(rawJson)) {
-          candidates = rawJson;
+          if (rawJson.length > candidates.length) candidates = rawJson;
         } else {
-          inspectObject(rawJson as Record<string, unknown>);
+          const { foundCandidates: rCands, foundFacts: rFacts } = inspectObject(rawJson as Record<string, unknown>);
+          if (rCands.length > candidates.length) candidates = rCands;
+          if (rFacts.length > facts.length) facts = rFacts;
         }
       }
     } catch {
@@ -556,7 +589,7 @@ export function formatResearcherOutput(
           }
         }
       }
-      if (extracted.length > 0) {
+      if (extracted.length > candidates.length) {
         candidates = extracted;
       }
     }

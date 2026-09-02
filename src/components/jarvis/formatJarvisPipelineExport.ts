@@ -186,53 +186,71 @@ function formatAgentStep(step: JarvisExecutionStep): string {
     let keyInsights: unknown[] = [];
     let context = '';
 
-    const inspectObject = (obj: Record<string, unknown>) => {
+    const inspectObject = (obj: Record<string, unknown>): { foundCandidates: unknown[]; foundFacts: unknown[] } => {
+      let foundCandidates: unknown[] = [];
+      let foundFacts: unknown[] = [];
+
       const candKeys = ['candidates', 'news_candidates', 'newsCandidates', 'items', 'articles', 'stories'];
       for (const key of candKeys) {
         if (Array.isArray(obj[key]) && (obj[key] as unknown[]).length > 0) {
-          candidates = obj[key] as unknown[];
+          foundCandidates = obj[key] as unknown[];
           break;
         }
       }
       const factKeys = ['facts', 'findings', 'core_facts', 'coreFacts', 'key_facts', 'keyFacts', 'points', 'claims'];
       for (const key of factKeys) {
         if (Array.isArray(obj[key]) && (obj[key] as unknown[]).length > 0) {
-          facts = obj[key] as unknown[];
+          foundFacts = obj[key] as unknown[];
           break;
         }
       }
       const insightKeys = ['keyInsights', 'insights', 'takeaways'];
       for (const key of insightKeys) {
-        if (Array.isArray(obj[key]) && (obj[key] as unknown[]).length > 0) {
+        if (Array.isArray(obj[key]) && (obj[key] as unknown[]).length > 0 && keyInsights.length === 0) {
           keyInsights = obj[key] as unknown[];
           break;
         }
       }
-      if (typeof obj.context === 'string') context = obj.context;
+      if (typeof obj.context === 'string' && !context) context = obj.context;
       else if (typeof obj.summary === 'string' && !context) context = obj.summary;
+
+      return { foundCandidates, foundFacts };
     };
 
     if (parsed && typeof parsed === 'object' && !Array.isArray(parsed)) {
-      inspectObject(parsed as Record<string, unknown>);
+      const { foundCandidates, foundFacts } = inspectObject(parsed as Record<string, unknown>);
+      candidates = foundCandidates;
+      facts = foundFacts;
     }
 
-    if (candidates.length === 0 && facts.length === 0 && step.outputPreview) {
+    if (step.outputPreview) {
       try {
         const previewJson = JSON.parse(step.outputPreview);
         if (previewJson && typeof previewJson === 'object' && !Array.isArray(previewJson)) {
-          inspectObject(previewJson as Record<string, unknown>);
+          const { foundCandidates: pCands, foundFacts: pFacts } = inspectObject(previewJson as Record<string, unknown>);
+          if (pCands.length > candidates.length) {
+            candidates = pCands;
+          }
+          if (pFacts.length > facts.length) {
+            facts = pFacts;
+          }
         }
       } catch (err) {
         void err;
       }
     }
 
-    if (candidates.length === 0 && facts.length === 0 && raw) {
+    if (candidates.length < 3 && facts.length < 3 && raw) {
       try {
         const rawJson = JSON.parse(raw);
         if (rawJson && typeof rawJson === 'object') {
-          if (Array.isArray(rawJson)) candidates = rawJson;
-          else inspectObject(rawJson as Record<string, unknown>);
+          if (Array.isArray(rawJson)) {
+            if (rawJson.length > candidates.length) candidates = rawJson;
+          } else {
+            const { foundCandidates: rCands, foundFacts: rFacts } = inspectObject(rawJson as Record<string, unknown>);
+            if (rCands.length > candidates.length) candidates = rCands;
+            if (rFacts.length > facts.length) facts = rFacts;
+          }
         }
       } catch (err) {
         void err;
