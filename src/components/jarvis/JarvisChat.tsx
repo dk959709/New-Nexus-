@@ -21,11 +21,12 @@ import {
   Bookmark,
   BookmarkCheck,
   Radio,
+  Download,
   Code2,
   FileText,
 } from 'lucide-react';
 import { storage } from '@/lib/storage';
-import { stripConversationalMetaText } from '@/lib/format';
+import { stripConversationalMetaText, cleanMarkdownForSpeech } from '@/lib/format';
 import { runJarvisPipeline } from '@/services/jarvisOrchestrator';
 
 import { JarvisHudHeader } from './JarvisHudHeader';
@@ -185,6 +186,8 @@ export function JarvisChat({ config, onOpenSettings }: JarvisChatProps) {
   const [speakingId, setSpeakingId] = useState<string | null>(null);
   const [edgeTtsLoadingId, setEdgeTtsLoadingId] = useState<string | null>(null);
   const [edgeTtsPlayingId, setEdgeTtsPlayingId] = useState<string | null>(null);
+  const [downloadingAudioId, setDownloadingAudioId] = useState<string | null>(null);
+  const [downloadSuccessId, setDownloadSuccessId] = useState<string | null>(null);
   const edgeTtsAudioRef = useRef<HTMLAudioElement | null>(null);
 
   const [synthRawViewMap, setSynthRawViewMap] = useState<Record<string, boolean>>({});
@@ -400,11 +403,7 @@ export function JarvisChat({ config, onOpenSettings }: JarvisChatProps) {
       }
 
       // Clean markdown tags for natural speech
-      const cleanText = text
-        .replace(/```[\s\S]*?```/g, ' Code snippet omitted. ')
-        .replace(/[*#`_~>[\]()]/g, '')
-        .replace(/\s+/g, ' ')
-        .trim();
+      const cleanText = cleanMarkdownForSpeech(text);
 
       if (!cleanText) return;
 
@@ -464,11 +463,7 @@ export function JarvisChat({ config, onOpenSettings }: JarvisChatProps) {
         edgeTtsAudioRef.current = null;
       }
 
-      const cleanText = text
-        .replace(/```[\s\S]*?```/g, ' Code snippet omitted. ')
-        .replace(/[*#`_~>[\]()]/g, '')
-        .replace(/\s+/g, ' ')
-        .trim();
+      const cleanText = cleanMarkdownForSpeech(text);
 
       if (!cleanText) return;
 
@@ -520,6 +515,56 @@ export function JarvisChat({ config, onOpenSettings }: JarvisChatProps) {
       }
     },
     [edgeTtsPlayingId, stopSpeak],
+  );
+
+  const handleDownloadAudio = useCallback(
+    async (text: string, id: string, query?: string) => {
+      const cleanText = cleanMarkdownForSpeech(text);
+      if (!cleanText) return;
+
+      setDownloadingAudioId(id);
+      try {
+        const response = await fetch('/api/edge-tts', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            text: cleanText.slice(0, 4000),
+            voice: storage.getEdgeVoice(),
+          }),
+        });
+
+        if (!response.ok) {
+          const data = await response.json().catch(() => ({}));
+          throw new Error(data.error || `Server responded with status ${response.status}`);
+        }
+
+        const blob = await response.blob();
+        const url = URL.createObjectURL(blob);
+
+        const a = document.createElement('a');
+        a.href = url;
+        const safeSlug = query
+          ? query
+              .slice(0, 30)
+              .trim()
+              .replace(/[^a-zA-Z0-9_-]+/g, '_')
+              .toLowerCase()
+          : 'answer';
+        a.download = `nexus_jarvis_${safeSlug}_${Date.now()}.mp3`;
+        document.body.appendChild(a);
+        a.click();
+        document.body.removeChild(a);
+
+        setTimeout(() => URL.revokeObjectURL(url), 2000);
+        setDownloadSuccessId(id);
+        setTimeout(() => setDownloadSuccessId((cur) => (cur === id ? null : cur)), 2500);
+      } catch (err) {
+        console.error('[JARVIS] Audio download error:', err);
+      } finally {
+        setDownloadingAudioId(null);
+      }
+    },
+    [],
   );
 
 
@@ -967,6 +1012,35 @@ export function JarvisChat({ config, onOpenSettings }: JarvisChatProps) {
                           <Radio size={15} className="animate-pulse" />
                         ) : (
                           <Radio size={15} />
+                        )}
+                      </button>
+
+                      {/* Download Audio (Edge TTS MP3) Button */}
+                      <button
+                        type="button"
+                        onClick={() => handleDownloadAudio(cleanedAnswer || msg.answer, msg.id, msg.query)}
+                        disabled={downloadingAudioId === msg.id}
+                        className={`p-2 rounded-full transition-all duration-200 flex items-center justify-center ${
+                          downloadSuccessId === msg.id
+                            ? 'bg-emerald-500/25 border border-emerald-400/50 text-emerald-300 shadow-[0_0_12px_rgba(16,185,129,0.4)]'
+                            : downloadingAudioId === msg.id
+                            ? 'bg-cyan-500/20 text-cyan-300'
+                            : 'text-slate-300 hover:text-cyan-300 hover:bg-cyan-500/15'
+                        }`}
+                        title={
+                          downloadingAudioId === msg.id
+                            ? 'Synthesizing & Downloading MP3...'
+                            : downloadSuccessId === msg.id
+                            ? 'Audio Downloaded Successfully'
+                            : 'Download Answer Audio as MP3 (Edge TTS Neural Voice)'
+                        }
+                      >
+                        {downloadingAudioId === msg.id ? (
+                          <Loader2 size={15} className="animate-spin text-cyan-400" />
+                        ) : downloadSuccessId === msg.id ? (
+                          <Check size={15} className="text-emerald-400" />
+                        ) : (
+                          <Download size={15} />
                         )}
                       </button>
 
