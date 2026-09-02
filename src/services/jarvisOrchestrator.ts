@@ -1264,6 +1264,61 @@ export function scoreAndFilterSearchResults(
       score += Math.round(coverageRatio * 25);
     }
 
+    // Source Prioritization for Freshness & Fast-Changing Topics:
+    // 1. Official company/product announcement and news pages - highest priority
+    const domainLower = (c.domain || '').toLowerCase();
+    const urlLower = (c.url || '').toLowerCase();
+    const isOfficialDomain =
+      coreTerms.some((term) => term.length >= 3 && domainLower.includes(term)) ||
+      urlLower.includes('anthropic.com') ||
+      urlLower.includes('openai.com') ||
+      urlLower.includes('deepmind.google') ||
+      urlLower.includes('ai.google') ||
+      urlLower.includes('github.com');
+
+    if (isOfficialDomain) {
+      score += 30;
+    }
+
+    // 2. Wikipedia (regularly updated for active subjects)
+    if (domainLower.includes('wikipedia.org') || c.type === 'wikipedia') {
+      score += 25;
+    }
+
+    // 3. Established tech news outlets that publish frequently
+    const isEstablishedTechNews =
+      domainLower.includes('techcrunch.com') ||
+      domainLower.includes('theverge.com') ||
+      domainLower.includes('arstechnica.com') ||
+      domainLower.includes('venturebeat.com') ||
+      domainLower.includes('wired.com') ||
+      domainLower.includes('zdnet.com') ||
+      domainLower.includes('engadget.com') ||
+      domainLower.includes('reuters.com') ||
+      domainLower.includes('bloomberg.com') ||
+      domainLower.includes('tomshardware.com') ||
+      domainLower.includes('9to5google.com') ||
+      domainLower.includes('9to5mac.com');
+
+    if (isEstablishedTechNews) {
+      score += 20;
+    }
+
+    // 4. Demote generic evergreen explainer/marketing blogs (e.g. Zapier, Grammarly, generic 'what is X' posts)
+    const isGenericExplainerBlog =
+      domainLower.includes('zapier.com') ||
+      domainLower.includes('grammarly.com') ||
+      domainLower.includes('hubspot.com') ||
+      domainLower.includes('simplilearn.com') ||
+      domainLower.includes('geeksforgeeks.org') ||
+      domainLower.includes('investopedia.com') ||
+      urlLower.includes('/blog/') ||
+      /what-is-|what-are-|guide-to-|explained/i.test(urlLower);
+
+    if (isGenericExplainerBlog) {
+      score -= 15;
+    }
+
     // Penalize generic broad index / list pages if their snippet doesn't strongly hit the query terms
     const isBroadListPage = /^(?:list of|index of|outline of|glossary of|category:)/i.test(titleLower);
     if (isBroadListPage) {
@@ -2518,9 +2573,19 @@ Please perform your specialized processing for this inquiry. Provide clear, conc
       // 3. General / Factual Search (Tavily with DuckDuckGo fallback in backend)
       if (searchResults.length === 0) {
         const currentDateStr = new Date().toLocaleDateString('en-US', { month: 'long', day: 'numeric', year: 'numeric' });
-        const effectiveSearchQuery = isNewsQuery
+        const currentYear = new Date().getFullYear();
+        const isFastChangingTopic = /\b(?:ai|model|models|llm|llms|claude|gpt|gemini|llama|deepseek|mistral|anthropic|openai|version|releases?|pricing|specs?|software|firmware|hardware)\b/i.test(
+          `${strippedQuery} ${plannerOutput.task || ''}`,
+        );
+
+        let effectiveSearchQuery = isNewsQuery
           ? (isWorldNews ? `top world breaking news headlines today ${currentDateStr}` : `world news today ${currentDateStr} ${cleanedSearchQuery || strippedQuery}`)
           : (isSearchOverride ? (cleanedSearchQuery || strippedQuery) : query);
+
+        // Enhance search query with recency-focused terms for fast-changing topics if not already present
+        if (isFastChangingTopic && !/\b(?:latest|current|newest|today|\d{4})\b/i.test(effectiveSearchQuery)) {
+          effectiveSearchQuery = `${effectiveSearchQuery} latest ${currentYear}`;
+        }
 
         try {
           const searchRes = await api.search(effectiveSearchQuery);

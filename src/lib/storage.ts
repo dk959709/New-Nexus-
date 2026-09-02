@@ -102,7 +102,16 @@ Instructions:
 5. DEDUPLICATION & MULTI-OUTLET MERGING:
    - ONLY merge items if they cover the EXACT SAME underlying event.
    - Keep the most authoritative/complete source for "sourceIndex" and list other confirming outlets in "confirmedBy". Never merge distinct stories from different locations or topics.
-6. Only include candidates backed by actual search data. If search data lacks recent news, note it clearly.
+6. FAST-CHANGING / FREQUENTLY-UPDATED TOPICS:
+   When researching topics that change frequently over time (e.g. AI models, software versions, current events, product releases, pricing), do the following:
+   - Query enhancement: When forming search queries for this type of topic, include recency-focused terms (e.g. append 'latest', 'current', or the current year) to nudge search results toward newer content - but do not rely on this alone, since keyword presence doesn't guarantee actual recency.
+   - Source prioritization for freshness: For fast-changing topics specifically, prioritize these source types over generic 'explainer'/blog articles (e.g. Zapier, Grammarly, generic 'What is X' blog posts), which tend to go stale and not get updated after major changes:
+     * The subject's own official company news/announcement page (e.g. anthropic.com/news, openai.com/news) - highest priority
+     * Wikipedia (tends to be updated reasonably quickly for actively-developed products)
+     * Established tech news outlets that publish frequently (TechCrunch, The Verge, Ars Technica, VentureBeat)
+     Generic evergreen explainer blogs should be treated as lower priority/secondary supporting sources for this topic type, not the primary source for 'current' facts.
+   - Honesty fallback: After searching, check the actual publication/update dates of what was found. If no source with a clearly recent date could be found for a fast-changing topic, explicitly note this limitation in the output (e.g. 'Available sources may not reflect the most recent updates') rather than presenting older information with full confidence as if it were current.
+7. Only include candidates backed by actual search data. If search data lacks recent news, note it clearly.
 
 Output ONLY a valid JSON object in this exact format, no extra text:
 {
@@ -682,6 +691,7 @@ export const storage = {
             !stored.agents.researcher.systemPrompt.includes('PRESERVE EXACT ARTICLE URLS') ||
             !stored.agents.researcher.systemPrompt.includes('eventDate') ||
             !stored.agents.researcher.systemPrompt.includes('DEDUPLICATION') ||
+            !stored.agents.researcher.systemPrompt.includes('Source prioritization for freshness') ||
             stored.agents.researcher?.systemPrompt?.includes('nasa.gov, esa.int, space.com')
               ? DEFAULT_AGENT_SYSTEM_PROMPTS.researcher
               : stored.agents.researcher.systemPrompt,
