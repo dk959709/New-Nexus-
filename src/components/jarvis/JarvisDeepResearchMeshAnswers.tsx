@@ -338,6 +338,35 @@ function formatFactCheckerOutput(step: JarvisExecutionStep, parsed: unknown, raw
         })
         .filter(Boolean);
     }
+
+    const rawPlausible =
+      fObj.plausible_unconfirmed ||
+      fObj.plausibleUnconfirmed ||
+      fObj.unconfirmed ||
+      fObj.plausible;
+    if (Array.isArray(rawPlausible)) {
+      rawPlausible.forEach((p) => {
+        const str = typeof p === 'object' && p !== null
+          ? String((p as Record<string, unknown>).issue || (p as Record<string, unknown>).claim || (p as Record<string, unknown>).detail || JSON.stringify(p))
+          : String(p || '').trim();
+        if (str && !issues.includes(str)) issues.push(str);
+      });
+    }
+
+    const rawFabricated =
+      fObj.fabricated_or_contradicted ||
+      fObj.fabricatedOrContradicted ||
+      fObj.fabricated ||
+      fObj.contradicted ||
+      fObj.hallucinations;
+    if (Array.isArray(rawFabricated)) {
+      rawFabricated.forEach((fb) => {
+        const str = typeof fb === 'object' && fb !== null
+          ? String((fb as Record<string, unknown>).issue || (fb as Record<string, unknown>).claim || (fb as Record<string, unknown>).detail || JSON.stringify(fb))
+          : String(fb || '').trim();
+        if (str && !issues.includes(str)) issues.push(str);
+      });
+    }
   }
 
   // Case B: Array of objects or strings
@@ -411,10 +440,61 @@ function formatFactCheckerOutput(step: JarvisExecutionStep, parsed: unknown, raw
   }
 
   if (issues.length > 0) {
-    md += `\n#### ⚠️ Discrepancy & Correction Notes:\n`;
-    issues.forEach((issue) => {
-      md += `- **Correction:** ${issue}\n`;
+    const plausibleItems: string[] = [];
+    const fabricatedItems: string[] = [];
+    const otherIssues: string[] = [];
+
+    issues.forEach((iss) => {
+      const lower = iss.toLowerCase();
+      if (
+        iss.includes('[PLAUSIBLE BUT UNCONFIRMED]') ||
+        lower.includes('unverified event date') ||
+        lower.includes('lacks confirmation') ||
+        lower.includes('lacks independent') ||
+        lower.includes('lacks secondary') ||
+        lower.includes('single source')
+      ) {
+        plausibleItems.push(iss.replace(/^\[PLAUSIBLE BUT UNCONFIRMED\]\s*/i, ''));
+      } else if (
+        iss.includes('[FABRICATED/CONTRADICTED]') ||
+        iss.includes('[FABRICATED]') ||
+        iss.includes('[CONTRADICTED]') ||
+        lower.includes('speculative model') ||
+        lower.includes('invented') ||
+        lower.includes('fabricated') ||
+        lower.includes('hallucinat')
+      ) {
+        fabricatedItems.push(
+          iss
+            .replace(/^\[FABRICATED\/CONTRADICTED\]\s*/i, '')
+            .replace(/^\[FABRICATED\]\s*/i, '')
+            .replace(/^\[CONTRADICTED\]\s*/i, '')
+        );
+      } else {
+        otherIssues.push(iss);
+      }
     });
+
+    if (plausibleItems.length > 0) {
+      md += `\n#### 🔍 Plausible Details (Single-source - hedged in synthesis):\n`;
+      plausibleItems.forEach((p) => {
+        md += `- **Hedged detail:** ${p}\n`;
+      });
+    }
+
+    if (fabricatedItems.length > 0) {
+      md += `\n#### 🚫 Contradicted / Fabricated Discrepancies (Excluded from synthesis):\n`;
+      fabricatedItems.forEach((fb) => {
+        md += `- **Excluded:** ${fb}\n`;
+      });
+    }
+
+    if (otherIssues.length > 0) {
+      md += `\n#### ⚠️ Discrepancy & Correction Notes:\n`;
+      otherIssues.forEach((issue) => {
+        md += `- **Correction:** ${issue}\n`;
+      });
+    }
   } else {
     md += `\n#### 🛡️ Cross-Verification Audit Result:\n- No factual contradictions, anomalies, or unsupported hallucinations detected.\n`;
   }

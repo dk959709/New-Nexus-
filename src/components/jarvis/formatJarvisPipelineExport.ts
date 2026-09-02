@@ -355,6 +355,33 @@ function formatAgentStep(step: JarvisExecutionStep): string {
           })
           .filter(Boolean);
       }
+
+      const rawPlausible =
+        fObj.plausible_unconfirmed ||
+        fObj.plausibleUnconfirmed ||
+        fObj.unconfirmed;
+      if (Array.isArray(rawPlausible)) {
+        rawPlausible.forEach((p) => {
+          const str = typeof p === 'object' && p !== null
+            ? String((p as Record<string, unknown>).issue || (p as Record<string, unknown>).claim || (p as Record<string, unknown>).detail || JSON.stringify(p))
+            : String(p || '').trim();
+          if (str && !issues.includes(str)) issues.push(str);
+        });
+      }
+
+      const rawFabricated =
+        fObj.fabricated_or_contradicted ||
+        fObj.fabricatedOrContradicted ||
+        fObj.fabricated ||
+        fObj.contradicted;
+      if (Array.isArray(rawFabricated)) {
+        rawFabricated.forEach((fb) => {
+          const str = typeof fb === 'object' && fb !== null
+            ? String((fb as Record<string, unknown>).issue || (fb as Record<string, unknown>).claim || (fb as Record<string, unknown>).detail || JSON.stringify(fb))
+            : String(fb || '').trim();
+          if (str && !issues.includes(str)) issues.push(str);
+        });
+      }
     } else {
       verified = extractArrayFromDirtyJson(raw, ['verified', 'verifiedClaims', 'claims', 'facts']);
       issues = extractArrayFromDirtyJson(raw, ['issues', 'corrections', 'discrepancies', 'errors', 'notes']);

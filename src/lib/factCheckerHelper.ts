@@ -2,6 +2,8 @@ import type { JarvisExecutionStep } from '@/types';
 
 export interface FactCheckerNotes {
   issues: string[];
+  plausibleUnconfirmed: string[];
+  fabricatedOrContradicted: string[];
   hasOutdatedOrUnknownDate: boolean;
 }
 
@@ -62,12 +64,44 @@ export function extractFactCheckerNotes(steps?: JarvisExecutionStep[]): FactChec
   const parsed = parseJsonSafely(raw) || parseJsonSafely(factStep.outputPreview || '');
 
   const issues: string[] = [];
+  const plausibleUnconfirmed: string[] = [];
+  const fabricatedOrContradicted: string[] = [];
   let hasOutdatedOrUnknownDate = false;
 
   if (parsed && typeof parsed === 'object' && !Array.isArray(parsed)) {
     const fObj = parsed as Record<string, unknown>;
 
-    // 1. Extract issues array
+    // 1. Extract dedicated categories if present
+    const rawPlausible =
+      fObj.plausible_unconfirmed ||
+      fObj.plausibleUnconfirmed ||
+      fObj.unconfirmed ||
+      fObj.plausible;
+    if (Array.isArray(rawPlausible)) {
+      rawPlausible.forEach((item) => {
+        const str = typeof item === 'object' && item !== null
+          ? String((item as Record<string, unknown>).issue || (item as Record<string, unknown>).claim || (item as Record<string, unknown>).detail || JSON.stringify(item))
+          : String(item || '').trim();
+        if (str && !plausibleUnconfirmed.includes(str)) plausibleUnconfirmed.push(str);
+      });
+    }
+
+    const rawFabricated =
+      fObj.fabricated_or_contradicted ||
+      fObj.fabricatedOrContradicted ||
+      fObj.fabricated ||
+      fObj.contradicted ||
+      fObj.hallucinations;
+    if (Array.isArray(rawFabricated)) {
+      rawFabricated.forEach((item) => {
+        const str = typeof item === 'object' && item !== null
+          ? String((item as Record<string, unknown>).issue || (item as Record<string, unknown>).claim || (item as Record<string, unknown>).detail || JSON.stringify(item))
+          : String(item || '').trim();
+        if (str && !fabricatedOrContradicted.includes(str)) fabricatedOrContradicted.push(str);
+      });
+    }
+
+    // 2. Extract issues array
     const rawIssues =
       fObj.issues ||
       fObj.corrections ||
@@ -77,19 +111,45 @@ export function extractFactCheckerNotes(steps?: JarvisExecutionStep[]): FactChec
 
     if (Array.isArray(rawIssues)) {
       rawIssues.forEach((item) => {
+        let msg = '';
         if (typeof item === 'string' && item.trim()) {
-          issues.push(item.trim());
+          msg = item.trim();
         } else if (typeof item === 'object' && item !== null) {
           const iObj = item as Record<string, unknown>;
-          const msg = (iObj.issue || iObj.correction || iObj.error || iObj.message || iObj.text || '') as string;
-          if (msg.trim()) {
-            issues.push(msg.trim());
+          msg = String(iObj.issue || iObj.correction || iObj.error || iObj.message || iObj.text || '').trim();
+        }
+
+        if (msg) {
+          issues.push(msg);
+
+          const lower = msg.toLowerCase();
+          const isPlausible =
+            msg.includes('[PLAUSIBLE BUT UNCONFIRMED]') ||
+            lower.includes('unverified event date') ||
+            lower.includes('lacks confirmation') ||
+            lower.includes('lacks independent') ||
+            lower.includes('lacks secondary') ||
+            lower.includes('single source');
+          const isFabricated =
+            msg.includes('[FABRICATED/CONTRADICTED]') ||
+            msg.includes('[FABRICATED]') ||
+            msg.includes('[CONTRADICTED]') ||
+            lower.includes('speculative model') ||
+            lower.includes('invented') ||
+            lower.includes('fabricated') ||
+            lower.includes('hallucinat') ||
+            lower.includes('non-existent');
+
+          if (isPlausible && !plausibleUnconfirmed.includes(msg)) {
+            plausibleUnconfirmed.push(msg);
+          } else if (isFabricated && !fabricatedOrContradicted.includes(msg)) {
+            fabricatedOrContradicted.push(msg);
           }
         }
       });
     }
 
-    // 2. Check dateStatus in verified array
+    // 3. Check dateStatus in verified array
     const rawVerified =
       fObj.verified ||
       fObj.verifiedClaims ||
@@ -128,14 +188,33 @@ export function extractFactCheckerNotes(steps?: JarvisExecutionStep[]): FactChec
       const stringMatches = issueMatches[1].match(/"((?:\\.|[^"\\])*)"/g);
       if (stringMatches) {
         stringMatches.forEach((s) => {
+          let clean = '';
           try {
             const parsedStr = JSON.parse(s);
             if (typeof parsedStr === 'string' && parsedStr.trim()) {
-              issues.push(parsedStr.trim());
+              clean = parsedStr.trim();
             }
           } catch {
-            const clean = s.slice(1, -1).replace(/\\"/g, '"').trim();
-            if (clean) issues.push(clean);
+            clean = s.slice(1, -1).replace(/\\"/g, '"').trim();
+          }
+          if (clean) {
+            issues.push(clean);
+            const lower = clean.toLowerCase();
+            if (
+              clean.includes('[PLAUSIBLE BUT UNCONFIRMED]') ||
+              lower.includes('unverified event date') ||
+              lower.includes('lacks confirmation')
+            ) {
+              if (!plausibleUnconfirmed.includes(clean)) plausibleUnconfirmed.push(clean);
+            } else if (
+              clean.includes('[FABRICATED/CONTRADICTED]') ||
+              clean.includes('[FABRICATED]') ||
+              lower.includes('speculative model') ||
+              lower.includes('invented') ||
+              lower.includes('fabricated')
+            ) {
+              if (!fabricatedOrContradicted.includes(clean)) fabricatedOrContradicted.push(clean);
+            }
           }
         });
       }
@@ -150,12 +229,14 @@ export function extractFactCheckerNotes(steps?: JarvisExecutionStep[]): FactChec
     }
   }
 
-  if (issues.length === 0 && !hasOutdatedOrUnknownDate) {
+  if (issues.length === 0 && plausibleUnconfirmed.length === 0 && fabricatedOrContradicted.length === 0 && !hasOutdatedOrUnknownDate) {
     return null;
   }
 
   return {
     issues,
+    plausibleUnconfirmed,
+    fabricatedOrContradicted,
     hasOutdatedOrUnknownDate,
   };
 }

@@ -3057,6 +3057,77 @@ Please perform your specialized processing for this inquiry. Provide clear, conc
         factCheckOutput.issues = [];
       }
 
+      // Extract categorized issue severities: Plausible unconfirmed (soft hedge) vs Fabricated (hard exclusion)
+      const plausibleUnconfirmed: string[] = [];
+      const fabricatedOrContradicted: string[] = [];
+
+      const rawPlausible =
+        (factCheckOutput as Record<string, unknown>).plausible_unconfirmed ||
+        (factCheckOutput as Record<string, unknown>).plausibleUnconfirmed ||
+        (factCheckOutput as Record<string, unknown>).unconfirmed ||
+        (factCheckOutput as Record<string, unknown>).plausible;
+      if (Array.isArray(rawPlausible)) {
+        rawPlausible.forEach((p) => {
+          const str = typeof p === 'object' && p !== null
+            ? String((p as Record<string, unknown>).issue || (p as Record<string, unknown>).claim || (p as Record<string, unknown>).detail || JSON.stringify(p))
+            : String(p || '').trim();
+          if (str && !plausibleUnconfirmed.includes(str)) plausibleUnconfirmed.push(str);
+        });
+      }
+
+      const rawFabricated =
+        (factCheckOutput as Record<string, unknown>).fabricated_or_contradicted ||
+        (factCheckOutput as Record<string, unknown>).fabricatedOrContradicted ||
+        (factCheckOutput as Record<string, unknown>).fabricated ||
+        (factCheckOutput as Record<string, unknown>).contradicted ||
+        (factCheckOutput as Record<string, unknown>).hallucinations;
+      if (Array.isArray(rawFabricated)) {
+        rawFabricated.forEach((fb) => {
+          const str = typeof fb === 'object' && fb !== null
+            ? String((fb as Record<string, unknown>).issue || (fb as Record<string, unknown>).claim || (fb as Record<string, unknown>).detail || JSON.stringify(fb))
+            : String(fb || '').trim();
+          if (str && !fabricatedOrContradicted.includes(str)) fabricatedOrContradicted.push(str);
+        });
+      }
+
+      // Process general issues array to classify or tag entries
+      const normalizedIssues: string[] = [];
+      factCheckOutput.issues.forEach((rawIssue) => {
+        const issueStr = typeof rawIssue === 'object' && rawIssue !== null
+          ? String((rawIssue as Record<string, unknown>).issue || (rawIssue as Record<string, unknown>).correction || (rawIssue as Record<string, unknown>).message || JSON.stringify(rawIssue))
+          : String(rawIssue || '').trim();
+        if (!issueStr) return;
+
+        normalizedIssues.push(issueStr);
+
+        const lower = issueStr.toLowerCase();
+        const isPlausible =
+          issueStr.includes('[PLAUSIBLE BUT UNCONFIRMED]') ||
+          lower.includes('unverified event date') ||
+          lower.includes('lacks confirmation') ||
+          lower.includes('lacks independent') ||
+          lower.includes('lacks secondary') ||
+          lower.includes('single source');
+        const isFabricated =
+          issueStr.includes('[FABRICATED/CONTRADICTED]') ||
+          issueStr.includes('[FABRICATED]') ||
+          issueStr.includes('[CONTRADICTED]') ||
+          lower.includes('speculative model') ||
+          lower.includes('invented') ||
+          lower.includes('fabricated') ||
+          lower.includes('hallucinat') ||
+          lower.includes('non-existent');
+
+        if (isPlausible && !plausibleUnconfirmed.includes(issueStr)) {
+          plausibleUnconfirmed.push(issueStr);
+        } else if (isFabricated && !fabricatedOrContradicted.includes(issueStr)) {
+          fabricatedOrContradicted.push(issueStr);
+        }
+      });
+      factCheckOutput.issues = normalizedIssues;
+      (factCheckOutput as Record<string, unknown>).plausible_unconfirmed = plausibleUnconfirmed;
+      (factCheckOutput as Record<string, unknown>).fabricated_or_contradicted = fabricatedOrContradicted;
+
       // Normalize verified claims into clean, rich representations
       const normalizedVerified: string[] = [];
       factCheckOutput.verified.forEach((vItem) => {
@@ -3099,7 +3170,7 @@ Please perform your specialized processing for this inquiry. Provide clear, conc
         providerName: factRes.providerName,
         model: factRes.model,
         durationMs: duration,
-        summary: `Validated ${factCheckOutput.verified?.length || 0} claims (${factCheckOutput.issues?.length || 0} corrections).`,
+        summary: `Validated ${factCheckOutput.verified?.length || 0} claims (${plausibleUnconfirmed.length} hedged unconfirmed, ${fabricatedOrContradicted.length} excluded, ${factCheckOutput.issues?.length || 0} total notes).`,
         outputPreview: JSON.stringify(factCheckOutput, null, 2),
         rawOutput: factRes.text || JSON.stringify(factCheckOutput, null, 2),
         usedFallback: factRes.usedFallback,
@@ -3389,6 +3460,17 @@ Please perform your specialized processing for this inquiry. Provide clear, conc
     const factsList = Array.isArray(researcherOutput?.facts) ? researcherOutput.facts : [];
     const verifiedList = Array.isArray(factCheckOutput?.verified) ? factCheckOutput.verified : [];
     const issuesList = Array.isArray(factCheckOutput?.issues) ? factCheckOutput.issues : [];
+    const plausibleUnconfirmedList: string[] = Array.isArray((factCheckOutput as Record<string, unknown>).plausible_unconfirmed)
+      ? ((factCheckOutput as Record<string, unknown>).plausible_unconfirmed as string[])
+      : [];
+    const fabricatedList: string[] = Array.isArray((factCheckOutput as Record<string, unknown>).fabricated_or_contradicted)
+      ? ((factCheckOutput as Record<string, unknown>).fabricated_or_contradicted as string[])
+      : [];
+
+    // Filter general issues to avoid redundant display if already in plausible or fabricated
+    const generalIssuesList = issuesList.filter(
+      (iss) => !plausibleUnconfirmedList.includes(iss) && !fabricatedList.includes(iss)
+    );
 
     // Build rich variable substitution dictionary for Synthesizer prompts
     const synthReplacements: Record<string, string> = {
@@ -3404,6 +3486,10 @@ Please perform your specialized processing for this inquiry. Provide clear, conc
       claims: factsList.map((f, i) => `${i + 1}. ${f}`).join('\n'),
       verified: verifiedList.map((c) => `- ${c}`).join('\n'),
       issues: issuesList.map((i) => `- ${i}`).join('\n'),
+      plausibleUnconfirmed: plausibleUnconfirmedList.map((p) => `- ${p}`).join('\n'),
+      unconfirmed: plausibleUnconfirmedList.map((p) => `- ${p}`).join('\n'),
+      fabricated: fabricatedList.map((fb) => `- ${fb}`).join('\n'),
+      contradictions: fabricatedList.map((fb) => `- ${fb}`).join('\n'),
       reviewer: [
         reviewerOutput?.recommendation || '',
         ...(Array.isArray(reviewerOutput?.issues) ? reviewerOutput.issues.map((iss) => `Scope/Issue: ${iss}`) : []),
@@ -3566,7 +3652,7 @@ User Query: "${strippedQuery}"
 ${webFetchContextBlock}
 Planner Guidance: ${plannerPlanText}
 ${advisorOutput ? `Advisor Conceptual Analysis & Technical Comparison (General Knowledge):\n${advisorOutput}\n` : ''}
-${factsList.length > 0 ? `Key Verified Facts:\n${factsList.map((f) => `- ${f}`).join('\n')}\n` : ''}${verifiedList.length > 0 ? `Verified Claims:\n${verifiedList.map((c) => `- ${c}`).join('\n')}\n` : ''}${issuesList.length > 0 ? `Fact-Checker Identified Issues (Exclude only specific invalid claims; do NOT discard other valid qualifying candidates):\n${issuesList.map((i) => `- ${i}`).join('\n')}\n` : ''}${reviewerMissingList.length > 0 ? `Reviewer Missing Context Suggestions (Advisory):\n${reviewerMissingList.map((m) => `- ${m}`).join('\n')}\n` : ''}${reviewerIssuesList.length > 0 ? `Reviewer Flagged Issues & Scope Critique (Advisory - exclude only specific problematic items, preserve and synthesize all other valid candidates):\n${reviewerIssuesList.map((iss) => `- ${iss}`).join('\n')}\n` : ''}${reviewerRecommendation ? `Reviewer Actionable Guidance & Candidate Priority (Advisory ranking guidance):\n${reviewerRecommendation}\n` : ''}[SYNTHESIS MANDATE]: If any specific candidates were flagged or excluded by Fact-Checker or Reviewer, synthesize all remaining verified, valid candidates into the final answer. Only state that verified news/data is unavailable if ALL candidates are completely unusable or no verified data exists.
+${factsList.length > 0 ? `Key Verified Facts:\n${factsList.map((f) => `- ${f}`).join('\n')}\n` : ''}${verifiedList.length > 0 ? `Verified Claims:\n${verifiedList.map((c) => `- ${c}`).join('\n')}\n` : ''}${plausibleUnconfirmedList.length > 0 ? `Fact-Checker Plausible Unconfirmed Details (CRITICAL - INCLUDE WITH NATURAL HEDGE/CAVEAT, e.g. "reportedly released around February 2025 (date not independently confirmed)" - DO NOT OMIT DATES/TIMELINES):\n${plausibleUnconfirmedList.map((p) => `- ${p}`).join('\n')}\n` : ''}${fabricatedList.length > 0 ? `Fact-Checker Fabricated/Contradicted Items (HARD EXCLUSION - DO NOT MENTION IN FINAL SYNTHESIS):\n${fabricatedList.map((fb) => `- ${fb}`).join('\n')}\n` : ''}${generalIssuesList.length > 0 ? `Fact-Checker Identified Issues (Exclude only specific invalid claims; do NOT discard other valid qualifying candidates):\n${generalIssuesList.map((i) => `- ${i}`).join('\n')}\n` : ''}${reviewerMissingList.length > 0 ? `Reviewer Missing Context Suggestions (Advisory):\n${reviewerMissingList.map((m) => `- ${m}`).join('\n')}\n` : ''}${reviewerIssuesList.length > 0 ? `Reviewer Flagged Issues & Scope Critique (Advisory - exclude only specific problematic items, preserve and synthesize all other valid candidates):\n${reviewerIssuesList.map((iss) => `- ${iss}`).join('\n')}\n` : ''}${reviewerRecommendation ? `Reviewer Actionable Guidance & Candidate Priority (Advisory ranking guidance):\n${reviewerRecommendation}\n` : ''}[SYNTHESIS MANDATE]: If any specific candidates were flagged or excluded by Fact-Checker or Reviewer, synthesize all remaining verified, valid candidates into the final answer. Only state that verified news/data is unavailable if ALL candidates are completely unusable or no verified data exists.
 Retrieved Ground-Truth Sources (CRITICAL RULE: Only cite sources from this exact list. Never invent or cite any other sources):
 ${sourcesListText}${customInsightsBlock}${personalIdentityDirective}${architectureReferenceDirective}`;
 
