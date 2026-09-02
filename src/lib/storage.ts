@@ -194,20 +194,20 @@ Instructions:
    - "unknown": date not determinable from source data
 6. Multi-Outlet Verification: Confirm merged multi-source stories.
 7. ISSUE SEVERITY & DISTINCTION CLASSIFICATION (CRITICAL):
-   When auditing claims, distinguish strictly between two distinct severity categories:
+   When auditing claims, distinguish strictly between two distinct severity categories and record each issue in the single "issues" array:
    - CRITICAL RULE: SINGLE-SOURCE CLAIMS ARE NOT AUTOMATICALLY FABRICATED:
      A claim or tier name mentioned by only a single source must NOT automatically be classified as "[FABRICATED/CONTRADICTED]". Single-source-only reporting is grounds for "[PLAUSIBLE BUT UNCONFIRMED]" (hedge and include), not hard exclusion. Being under-covered by mainstream press or reported in a single niche/specialized source is not the same as being false.
-   - Severity A: [FABRICATED / CONTRADICTED] (Hard Exclusion)
+   - Severity A: [FABRICATED/CONTRADICTED] (Hard Exclusion)
      * Reserve this category STRICTLY and SPECIFICALLY for claims that meet at least one of these criteria:
        1. Actively contradicted by another authoritative source or established ground truth (e.g. claims that Anthropic is owned by Google, or that Claude was released in 2018).
        2. Contain implausible or internally inconsistent details (e.g. an absurd model version number like "Claude 46", "GPT-99", or "Sonnet 5.0" that breaks all known naming patterns).
        3. Show clear, explicit signs of unverified speculation, clickbait, or rumor framing within the source itself (e.g. "Anonymous forum leaks suggest...", "Unconfirmed rumor says...").
-     * Mark in "fabricated_or_contradicted" and prefix in "issues" with "[FABRICATED/CONTRADICTED]": e.g. "[FABRICATED/CONTRADICTED] [Exact Story Title] (domain): Speculative rumor or contradicted version number not supported by facts".
+     * Prefix in "issues" with "[FABRICATED/CONTRADICTED]": e.g. "[FABRICATED/CONTRADICTED] [Exact Story Title] (domain): Speculative rumor or contradicted version number not supported by facts".
    - Severity B: [PLAUSIBLE BUT UNCONFIRMED] (Soft Hedge / Caveat - Hedge and Include)
      * Realistic, coherent claims, tier names, model variants (e.g. "Claude Mythos", "Claude 3.7 Sonnet", "Claude 3.5 Haiku"), release timelines (e.g. "released around February 2025" or "introduced mid-2024"), pricing, or specific minor metrics from a single source with no other source disputing or contradicting them.
      * These are NOT fabricated falsehoods; they are single-source reports that should be hedged rather than deleted.
-     * Mark in "plausible_unconfirmed" and prefix in "issues" with "[PLAUSIBLE BUT UNCONFIRMED]": e.g. "[PLAUSIBLE BUT UNCONFIRMED] [Exact Story Title] (domain): Plausible detail or tier name reported by single source, not independently cross-confirmed (hedge and include)".
-8. Keep data compact (structured JSON only).
+     * Prefix in "issues" with "[PLAUSIBLE BUT UNCONFIRMED]": e.g. "[PLAUSIBLE BUT UNCONFIRMED] [Exact Story Title] (domain): Plausible detail or tier name reported by single source, not independently cross-confirmed (hedge and include)".
+8. Keep data compact (structured JSON only). Avoid repeating issue strings across duplicate arrays.
 
 Output ONLY a valid JSON object in this exact format, no extra text:
 {
@@ -223,15 +223,9 @@ Output ONLY a valid JSON object in this exact format, no extra text:
       "confirmedBy": []
     }
   ],
-  "plausible_unconfirmed": [
-    "[PLAUSIBLE BUT UNCONFIRMED] [Exact Story Title] (domain.com): Plausible event date, tier name, or detail from single source that lacks secondary cross-confirmation (hedge and include)"
-  ],
-  "fabricated_or_contradicted": [
-    "[FABRICATED/CONTRADICTED] [Exact Story Title] (domain.com): Contradicted claim, implausible version number, or speculative rumor"
-  ],
   "issues": [
-    "[PLAUSIBLE BUT UNCONFIRMED] [Exact Story Title] (domain.com): Plausible detail/tier reported by single source, not independently confirmed (include with hedge)",
-    "[FABRICATED/CONTRADICTED] [Exact Story Title] (domain.com): Contradicted claim or rumor"
+    "[PLAUSIBLE BUT UNCONFIRMED] [Exact Story Title] (domain.com): Plausible detail, tier name, or event date reported by single source, not independently confirmed (include with hedge)",
+    "[FABRICATED/CONTRADICTED] [Exact Story Title] (domain.com): Contradicted claim, implausible version number, or speculative rumor"
   ]
 }`,
 
@@ -465,7 +459,7 @@ export const DEFAULT_JARVIS_CONFIG: JarvisSystemConfig = {
       providerId: 'existing',
       modelId: 'deepseek/deepseek-chat',
       enabled: true,
-      maxTokens: 300,
+      maxTokens: 1200,
       enableFailover: false,
       systemPrompt: DEFAULT_AGENT_SYSTEM_PROMPTS.factChecker,
     },
@@ -760,6 +754,7 @@ export const storage = {
         factChecker: {
           ...DEFAULT_JARVIS_CONFIG.agents.factChecker,
           ...(stored.agents.factChecker || {}),
+          maxTokens: Math.max(1000, stored.agents.factChecker?.maxTokens || 1200),
           systemPrompt:
             !stored.agents.factChecker?.systemPrompt ||
             !stored.agents.factChecker.systemPrompt.includes('dateStatus') ||
@@ -767,7 +762,8 @@ export const storage = {
             !stored.agents.factChecker.systemPrompt.includes('Date Status Classification') ||
             !stored.agents.factChecker.systemPrompt.includes('ISSUE SEVERITY & DISTINCTION CLASSIFICATION') ||
             !stored.agents.factChecker.systemPrompt.includes('SINGLE-SOURCE CLAIMS ARE NOT AUTOMATICALLY FABRICATED') ||
-            !stored.agents.factChecker.systemPrompt.includes('PLAUSIBLE BUT UNCONFIRMED')
+            !stored.agents.factChecker.systemPrompt.includes('PLAUSIBLE BUT UNCONFIRMED') ||
+            stored.agents.factChecker.systemPrompt.includes('"plausible_unconfirmed": [')
               ? DEFAULT_AGENT_SYSTEM_PROMPTS.factChecker
               : stored.agents.factChecker.systemPrompt,
         },

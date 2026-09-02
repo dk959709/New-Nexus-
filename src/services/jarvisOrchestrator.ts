@@ -1966,6 +1966,8 @@ export async function runJarvisPipeline(
         ? overrideMaxTokens
         : agentId === 'architect'
         ? Math.max(cfg.maxTokens || 4500, 4500)
+        : agentId === 'factChecker'
+        ? Math.max(cfg.maxTokens || 1200, 1000)
         : agentId === 'advisor'
         ? (deepResearch ? 800 : 400)
         : cfg.maxTokens;
@@ -3248,7 +3250,7 @@ Please perform your specialized processing for this inquiry. Provide clear, conc
       (factCheckOutput as Record<string, unknown>).plausible_unconfirmed = plausibleUnconfirmed;
       (factCheckOutput as Record<string, unknown>).fabricated_or_contradicted = fabricatedOrContradicted;
 
-      // Normalize verified claims into clean, rich representations
+      // Normalize verified claims into clean, rich representations: [claim] ([domain], [eventDate]) — Confirmed by: [confirmedBy list]
       const normalizedVerified: string[] = [];
       factCheckOutput.verified.forEach((vItem) => {
         if (typeof vItem === 'object' && vItem !== null) {
@@ -3256,23 +3258,28 @@ Please perform your specialized processing for this inquiry. Provide clear, conc
           const claimText = String(vObj.claim || vObj.fact || vObj.statement || vObj.title || '').trim();
           if (!claimText) return;
 
-          let dateStatus = String(vObj.dateStatus || '').toLowerCase();
-          const calculatedStatus = classifyDateStatus(
-            vObj.eventDate as string | null,
-            vObj.publishedAt as string | null,
-            vObj.updatedAt as string | null,
-          );
-          if (!dateStatus || dateStatus === 'undefined' || dateStatus === 'null') {
-            dateStatus = calculatedStatus;
+          let domain = vObj.domain ? String(vObj.domain).trim() : '';
+          if (!domain && vObj.url) {
+            domain = String(vObj.url).replace(/^https?:\/\/(?:www\.)?([^/]+).*/i, '$1');
           }
 
-          const confirmedBy = Array.isArray(vObj.confirmedBy) && vObj.confirmedBy.length > 0
-            ? ` (Confirmed by: ${vObj.confirmedBy.join(', ')})`
-            : '';
-          const domainInfo = vObj.domain ? ` [${vObj.domain}]` : '';
-          const statusLabel = dateStatus && dateStatus !== 'unknown' ? ` [${dateStatus}]` : '';
+          const dateStr = (vObj.eventDate || vObj.publishedAt || vObj.updatedAt || '') as string;
+          const metaParts: string[] = [];
+          if (domain) metaParts.push(domain);
+          if (dateStr) metaParts.push(dateStr);
+          const metaStr = metaParts.length > 0 ? ` (${metaParts.join(', ')})` : '';
 
-          normalizedVerified.push(`${statusLabel}${domainInfo} ${claimText}${confirmedBy}`.trim());
+          let confirmedStr = '';
+          if (Array.isArray(vObj.confirmedBy) && vObj.confirmedBy.length > 0) {
+            const validConfirmed = vObj.confirmedBy.map(String).filter(Boolean);
+            if (validConfirmed.length > 0) {
+              confirmedStr = ` — Confirmed by: ${validConfirmed.join(', ')}`;
+            }
+          } else if (typeof vObj.confirmedBy === 'string' && vObj.confirmedBy.trim()) {
+            confirmedStr = ` — Confirmed by: ${vObj.confirmedBy.trim()}`;
+          }
+
+          normalizedVerified.push(`${claimText}${metaStr}${confirmedStr}`.trim());
         } else if (typeof vItem === 'string' && vItem.trim()) {
           normalizedVerified.push(vItem.trim());
         }

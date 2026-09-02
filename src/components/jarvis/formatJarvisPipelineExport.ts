@@ -66,6 +66,41 @@ function parseAgentJson(rawOutput: string): { parsed: unknown; isJson: boolean }
   return { parsed: null, isJson: false };
 }
 
+function formatVerifiedClaimEntry(v: unknown): string {
+  if (!v) return '';
+  if (typeof v === 'string') {
+    return v.trim();
+  }
+  if (typeof v === 'object' && v !== null) {
+    const vObj = v as Record<string, unknown>;
+    const claim = String(vObj.claim || vObj.fact || vObj.statement || vObj.title || vObj.text || vObj.point || vObj.finding || '').trim();
+    if (!claim) {
+      return '';
+    }
+
+    const domain = (vObj.domain || (vObj.url ? extractDomain(String(vObj.url)) : '')) as string;
+    const dateStr = (vObj.eventDate || vObj.publishedAt || vObj.updatedAt || (vObj.dateStatus && vObj.dateStatus !== 'unknown' ? vObj.dateStatus : '')) as string;
+
+    const metaParts: string[] = [];
+    if (domain) metaParts.push(domain);
+    if (dateStr) metaParts.push(dateStr);
+    const metaStr = metaParts.length > 0 ? ` (${metaParts.join(', ')})` : '';
+
+    let confirmedStr = '';
+    if (Array.isArray(vObj.confirmedBy) && vObj.confirmedBy.length > 0) {
+      const validConfirmed = vObj.confirmedBy.map(String).filter(Boolean);
+      if (validConfirmed.length > 0) {
+        confirmedStr = ` — Confirmed by: ${validConfirmed.join(', ')}`;
+      }
+    } else if (typeof vObj.confirmedBy === 'string' && vObj.confirmedBy.trim()) {
+      confirmedStr = ` — Confirmed by: ${vObj.confirmedBy.trim()}`;
+    }
+
+    return `${claim}${metaStr}${confirmedStr}`.trim();
+  }
+  return String(v).trim();
+}
+
 function extractArrayFromDirtyJson(raw: string, keyNames: string[]): string[] {
   const items: string[] = [];
 
@@ -73,20 +108,47 @@ function extractArrayFromDirtyJson(raw: string, keyNames: string[]): string[] {
     const keyRegex = new RegExp(`"${key}"\\s*:\\s*\\[([\\s\\S]*?)\\]`, 'i');
     const match = raw.match(keyRegex);
     if (match && match[1]) {
-      const stringMatches = match[1].match(/"((?:\\.|[^"\\])*)"/g);
-      if (stringMatches) {
-        for (const s of stringMatches) {
-          try {
-            const parsed = JSON.parse(s);
-            if (typeof parsed === 'string' && parsed.trim()) {
-              items.push(parsed.trim());
+      const arrayContent = match[1].trim();
+
+      if (arrayContent.includes('{')) {
+        const objectMatches = arrayContent.match(/\{[\s\S]*?\}/g);
+        if (objectMatches) {
+          for (const objStr of objectMatches) {
+            try {
+              const parsed = JSON.parse(objStr);
+              const formatted = formatVerifiedClaimEntry(parsed);
+              if (formatted) items.push(formatted);
+            } catch {
+              const claimMatch = objStr.match(/"claim"\s*:\s*"((?:\\.|[^"\\])*)"/i) || objStr.match(/"fact"\s*:\s*"((?:\\.|[^"\\])*)"/i);
+              const domainMatch = objStr.match(/"domain"\s*:\s*"((?:\\.|[^"\\])*)"/i);
+              const dateMatch = objStr.match(/"eventDate"\s*:\s*"((?:\\.|[^"\\])*)"/i) || objStr.match(/"publishedAt"\s*:\s*"((?:\\.|[^"\\])*)"/i);
+              if (claimMatch && claimMatch[1]) {
+                const claim = claimMatch[1].replace(/\\"/g, '"');
+                const domain = domainMatch ? domainMatch[1].replace(/\\"/g, '"') : '';
+                const date = dateMatch ? dateMatch[1].replace(/\\"/g, '"') : '';
+                const meta = [domain, date].filter(Boolean).join(', ');
+                items.push(meta ? `${claim} (${meta})` : claim);
+              }
             }
-          } catch {
-            const clean = s.slice(1, -1).replace(/\\"/g, '"').trim();
-            if (clean) items.push(clean);
+          }
+        }
+      } else {
+        const stringMatches = arrayContent.match(/"((?:\\.|[^"\\])*)"/g);
+        if (stringMatches) {
+          for (const s of stringMatches) {
+            try {
+              const parsed = JSON.parse(s);
+              if (typeof parsed === 'string' && parsed.trim()) {
+                items.push(parsed.trim());
+              }
+            } catch {
+              const clean = s.slice(1, -1).replace(/\\"/g, '"').trim();
+              if (clean) items.push(clean);
+            }
           }
         }
       }
+
       if (items.length > 0) break;
     }
   }
@@ -325,14 +387,7 @@ function formatAgentStep(step: JarvisExecutionStep): string {
 
       if (Array.isArray(rawVerified)) {
         verified = rawVerified
-          .map((v) => {
-            if (typeof v === 'object' && v !== null) {
-              const vObj = v as Record<string, unknown>;
-              const text = (vObj.claim || vObj.fact || vObj.statement || vObj.text || vObj.point || vObj.finding || '') as string;
-              return text || JSON.stringify(v);
-            }
-            return String(v);
-          })
+          .map((v) => formatVerifiedClaimEntry(v))
           .filter(Boolean);
       }
 
