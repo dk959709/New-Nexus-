@@ -194,14 +194,19 @@ Instructions:
    - "unknown": date not determinable from source data
 6. Multi-Outlet Verification: Confirm merged multi-source stories.
 7. ISSUE SEVERITY & DISTINCTION CLASSIFICATION (CRITICAL):
-   When auditing claims, distinguish between two distinct severity categories:
+   When auditing claims, distinguish strictly between two distinct severity categories:
+   - CRITICAL RULE: SINGLE-SOURCE CLAIMS ARE NOT AUTOMATICALLY FABRICATED:
+     A claim or tier name mentioned by only a single source must NOT automatically be classified as "[FABRICATED/CONTRADICTED]". Single-source-only reporting is grounds for "[PLAUSIBLE BUT UNCONFIRMED]" (hedge and include), not hard exclusion. Being under-covered by mainstream press or reported in a single niche/specialized source is not the same as being false.
    - Severity A: [FABRICATED / CONTRADICTED] (Hard Exclusion)
-     * Genuinely suspicious, invented, or fabricated details (e.g. invented model names/versions like "Opus 46" or "Sonnet 5", speculative leaked roadmap rumors from SEO blogs/aggregators, or claims contradicted by verified facts).
-     * Mark in "fabricated_or_contradicted" and prefix in "issues" with "[FABRICATED/CONTRADICTED]": e.g. "[FABRICATED/CONTRADICTED] [Exact Story Title] (domain): Speculative/invented model version not supported by official announcements".
-   - Severity B: [PLAUSIBLE BUT UNCONFIRMED] (Soft Hedge / Caveat)
-     * Realistic, plausible dates (e.g. "Claude 3.7 Sonnet released around February 2025" or "Claude 3.5 Sonnet released June 2024"), release timelines, pricing, or specific minor metrics from a single reasonably credible source that make sense in context but lack independent secondary cross-verification.
+     * Reserve this category STRICTLY and SPECIFICALLY for claims that meet at least one of these criteria:
+       1. Actively contradicted by another authoritative source or established ground truth (e.g. claims that Anthropic is owned by Google, or that Claude was released in 2018).
+       2. Contain implausible or internally inconsistent details (e.g. an absurd model version number like "Claude 46", "GPT-99", or "Sonnet 5.0" that breaks all known naming patterns).
+       3. Show clear, explicit signs of unverified speculation, clickbait, or rumor framing within the source itself (e.g. "Anonymous forum leaks suggest...", "Unconfirmed rumor says...").
+     * Mark in "fabricated_or_contradicted" and prefix in "issues" with "[FABRICATED/CONTRADICTED]": e.g. "[FABRICATED/CONTRADICTED] [Exact Story Title] (domain): Speculative rumor or contradicted version number not supported by facts".
+   - Severity B: [PLAUSIBLE BUT UNCONFIRMED] (Soft Hedge / Caveat - Hedge and Include)
+     * Realistic, coherent claims, tier names, model variants (e.g. "Claude Mythos", "Claude 3.7 Sonnet", "Claude 3.5 Haiku"), release timelines (e.g. "released around February 2025" or "introduced mid-2024"), pricing, or specific minor metrics from a single source with no other source disputing or contradicting them.
      * These are NOT fabricated falsehoods; they are single-source reports that should be hedged rather than deleted.
-     * Mark in "plausible_unconfirmed" and prefix in "issues" with "[PLAUSIBLE BUT UNCONFIRMED]": e.g. "[PLAUSIBLE BUT UNCONFIRMED] [Exact Story Title] (domain): Event date '2025-02-24' from single source lacks independent secondary cross-confirmation".
+     * Mark in "plausible_unconfirmed" and prefix in "issues" with "[PLAUSIBLE BUT UNCONFIRMED]": e.g. "[PLAUSIBLE BUT UNCONFIRMED] [Exact Story Title] (domain): Plausible detail or tier name reported by single source, not independently cross-confirmed (hedge and include)".
 8. Keep data compact (structured JSON only).
 
 Output ONLY a valid JSON object in this exact format, no extra text:
@@ -219,14 +224,14 @@ Output ONLY a valid JSON object in this exact format, no extra text:
     }
   ],
   "plausible_unconfirmed": [
-    "[PLAUSIBLE BUT UNCONFIRMED] [Exact Story Title] (domain.com): Plausible event date or detail from single source that lacks secondary cross-confirmation"
+    "[PLAUSIBLE BUT UNCONFIRMED] [Exact Story Title] (domain.com): Plausible event date, tier name, or detail from single source that lacks secondary cross-confirmation (hedge and include)"
   ],
   "fabricated_or_contradicted": [
-    "[FABRICATED/CONTRADICTED] [Exact Story Title] (domain.com): Fabricated/invented version number, or speculative roadmap rumor"
+    "[FABRICATED/CONTRADICTED] [Exact Story Title] (domain.com): Contradicted claim, implausible version number, or speculative rumor"
   ],
   "issues": [
-    "[PLAUSIBLE BUT UNCONFIRMED] [Exact Story Title] (domain.com): Specific date or detail reported by source but lacks secondary confirmation",
-    "[FABRICATED/CONTRADICTED] [Exact Story Title] (domain.com): Invented claim or rumor"
+    "[PLAUSIBLE BUT UNCONFIRMED] [Exact Story Title] (domain.com): Plausible detail/tier reported by single source, not independently confirmed (include with hedge)",
+    "[FABRICATED/CONTRADICTED] [Exact Story Title] (domain.com): Contradicted claim or rumor"
   ]
 }`,
 
@@ -304,15 +309,16 @@ Guidelines:
 - FACT-CHECKER ISSUE SEVERITIES & HEDGING (CRITICAL - HEDGE-AND-INCLUDE VS EXCLUDE):
   Fact-Checker categorizes flagged items into two distinct severities. You MUST handle them differently:
   1. FABRICATED OR CONTRADICTED CLAIMS (HARD EXCLUSION):
-     - Completely exclude any invented model names, hallucinated version numbers (e.g. "Opus 46", "Sonnet 5"), speculative leaked roadmap rumors, or contradicted facts. Do NOT mention them in your final synthesis.
-  2. PLAUSIBLE BUT UNCONFIRMED DATES & DETAILS (HEDGE-AND-INCLUDE):
-     - DO NOT omit useful timeline/date information, model releases, or plausible facts simply because they were flagged as unconfirmed by a second source.
-     - Instead, INCLUDE these plausible dates and details in your answer with an appropriate, natural hedge or caveat.
+     - Completely exclude any invented model names, hallucinated version numbers (e.g. "Opus 46", "Sonnet 5"), speculative leaked roadmap rumors from forums, or contradicted facts. Do NOT mention them in your final synthesis.
+  2. PLAUSIBLE BUT UNCONFIRMED DATES, TIERS & DETAILS (HEDGE-AND-INCLUDE):
+     - DO NOT omit useful timeline/date information, model names, tier variants (e.g. "Claude Mythos", "Claude 3.7 Sonnet"), release dates, or plausible facts simply because they were reported by only a single source and lack secondary confirmation. Single-source reporting is NOT evidence of falsehood.
+     - Instead, INCLUDE these plausible items in your answer with an appropriate, natural hedge or caveat.
      - Example phrasing:
-       * "Claude 3.7 Sonnet was reportedly released around February 2025 (date not independently confirmed)"
+       * "Claude 3.7 Sonnet was reportedly released around February 2025 (based on a single source, not independently confirmed)"
+       * "Claude Mythos reportedly exists as a specialized tier according to single-source reports, though not independently confirmed"
        * "Released in early 2025 according to secondary industry reports"
        * "Claude 3.5 Sonnet (introduced around mid-2024)"
-     - This ensures the answer provides a rich, informative timeline and comprehensive overview without presenting single-source dates as absolute certainty.
+     - This ensures the answer provides a comprehensive, nuanced overview without presenting single-source items as absolute certainty or erroneously omitting them.
 - CURRENT-YEAR SOURCE PRIORITY RULE: When search results/sources include content dated with the current year (2026) or explicitly discussing "current year" topics (e.g. "Best movies of 2026", "2026 releases"), you MUST prioritize and heavily favor this current-year source data over your own training knowledge. Do not dilute a "current year" list with older, pre-existing well-known titles from memory unless the current-year source itself mentions them. If a current-year source (like "The 10 Best Sci-Fi Movies of 2026") is available, its actual content should be the PRIMARY basis for the answer, not a minor addition to an AI-recalled list.
 - STRICT ANTI-FABRICATION RULE: NEVER fabricate specific events, headlines, dates, quotes, statistics, or facts not present in the actual research data. If the research data does not contain real current news or verified facts on this topic, you MUST state clearly: "I don't have access to verified current news on this topic" rather than inventing plausible-sounding but fake headlines, events, or facts.
 - GROUNDED SOURCES RULE: Only cite sources that are explicitly present in the retrieved ground-truth sources list provided in the context. Never cite, invent, or hallucinate a source or URL not present in that list. If no sources were retrieved or if sources are irrelevant, do not cite external news sources.
@@ -760,6 +766,7 @@ export const storage = {
             !stored.agents.factChecker.systemPrompt.includes('eventDate') ||
             !stored.agents.factChecker.systemPrompt.includes('Date Status Classification') ||
             !stored.agents.factChecker.systemPrompt.includes('ISSUE SEVERITY & DISTINCTION CLASSIFICATION') ||
+            !stored.agents.factChecker.systemPrompt.includes('SINGLE-SOURCE CLAIMS ARE NOT AUTOMATICALLY FABRICATED') ||
             !stored.agents.factChecker.systemPrompt.includes('PLAUSIBLE BUT UNCONFIRMED')
               ? DEFAULT_AGENT_SYSTEM_PROMPTS.factChecker
               : stored.agents.factChecker.systemPrompt,
@@ -789,6 +796,7 @@ export const storage = {
             !stored.agents.finalSynthesizer?.systemPrompt?.includes('SPECIFIC COUNT & SHORTFALL EXPLANATION') ||
             !stored.agents.finalSynthesizer?.systemPrompt?.includes('CRITICAL USER IDENTITY & ANTI-MISATTRIBUTION RULE') ||
             !stored.agents.finalSynthesizer?.systemPrompt?.includes('FACT-CHECKER ISSUE SEVERITIES & HEDGING') ||
+            !stored.agents.finalSynthesizer?.systemPrompt?.includes('PLAUSIBLE BUT UNCONFIRMED DATES, TIERS & DETAILS') ||
             !stored.agents.finalSynthesizer?.systemPrompt?.includes('JARVIS MULTI-AGENT ARCHITECTURE')
               ? DEFAULT_AGENT_SYSTEM_PROMPTS.finalSynthesizer
               : stored.agents.finalSynthesizer.systemPrompt,
