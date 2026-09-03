@@ -5,6 +5,7 @@ import {
   getWikidataEntity,
   formatWikidataForReport,
   wikidataToSearchResult,
+  extractLastCapitalizedPhrase,
 } from '@/services/wikidata';
 import { stripConversationalMetaText } from '@/lib/format';
 import { logToJarvisTerminal } from '@/lib/jarvisTerminalLogger';
@@ -2214,6 +2215,7 @@ Please perform your specialized processing for this inquiry. Provide clear, conc
     needsImage?: boolean;
     needsWikipedia?: boolean;
     needsWikidata?: boolean;
+    wikidataQuery?: string;
   } = {
     task: query,
     plan: ['Synthesize accurate response directly.'],
@@ -2226,6 +2228,7 @@ Please perform your specialized processing for this inquiry. Provide clear, conc
     needsImage: false,
     needsWikipedia: false,
     needsWikidata: false,
+    wikidataQuery: '',
   };
 
   if (agentConfigs.planner.enabled) {
@@ -2315,12 +2318,17 @@ Please perform your specialized processing for this inquiry. Provide clear, conc
       plannerOutput.task = String(plannerOutput.task || query);
       plannerOutput.needsKnowledgeAgent = Boolean(plannerOutput.needsKnowledgeAgent);
       plannerOutput.needsWikidata = Boolean(plannerOutput.needsWikidata);
+      plannerOutput.wikidataQuery =
+        plannerOutput.needsWikidata && typeof plannerOutput.wikidataQuery === 'string'
+          ? plannerOutput.wikidataQuery.trim()
+          : '';
 
       if (isWebFetchQuery(query)) {
         const targetUrl = extractWebFetchUrl(query);
         plannerOutput.needsResearch = false;
         plannerOutput.needsWikipedia = false;
         plannerOutput.needsWikidata = false;
+        plannerOutput.wikidataQuery = '';
         plannerOutput.needsKnowledgeAgent = false;
         plannerOutput.needsReview = false;
         plannerOutput.needsFactCheck = false;
@@ -2336,6 +2344,7 @@ Please perform your specialized processing for this inquiry. Provide clear, conc
         plannerOutput.needsResearch = true;
         plannerOutput.needsWikipedia = false;
         plannerOutput.needsWikidata = false;
+        plannerOutput.wikidataQuery = '';
         plannerOutput.needsKnowledgeAgent = false;
         plannerOutput.needsReview = false;
         plannerOutput.needsFactCheck = true;
@@ -2349,6 +2358,7 @@ Please perform your specialized processing for this inquiry. Provide clear, conc
         plannerOutput.needsReview = false;
         plannerOutput.needsWikipedia = false;
         plannerOutput.needsWikidata = false;
+        plannerOutput.wikidataQuery = '';
         plannerOutput.needsDiagram = false;
         plannerOutput.needsChart = false;
         plannerOutput.needsImage = false;
@@ -2359,6 +2369,7 @@ Please perform your specialized processing for this inquiry. Provide clear, conc
         plannerOutput.needsReview = false;
         plannerOutput.needsWikipedia = false;
         plannerOutput.needsWikidata = false;
+        plannerOutput.wikidataQuery = '';
         plannerOutput.needsDiagram = false;
         plannerOutput.needsChart = false;
         plannerOutput.needsImage = false;
@@ -2866,16 +2877,23 @@ Please perform your specialized processing for this inquiry. Provide clear, conc
 
         // Step 4A: Wikidata Lookup (when needsWikidata is true)
         if (plannerOutput.needsWikidata) {
-          console.log(`[JARVIS Researcher] Calling Wikidata API for query: "${strippedQuery}"...`);
-          logToJarvisTerminal(`Wikidata lookup initiated for: "${strippedQuery}"`);
+          const plannerWdQuery = typeof plannerOutput.wikidataQuery === 'string' ? plannerOutput.wikidataQuery.trim() : '';
+          const fallbackCapitalized = extractLastCapitalizedPhrase(strippedQuery) || extractLastCapitalizedPhrase(query);
+          const primaryWdQuery = plannerWdQuery || fallbackCapitalized || cleanedSearchQuery || strippedQuery;
+
+          console.log(`[JARVIS Researcher] Calling Wikidata API for entity: "${primaryWdQuery}" (planner wikidataQuery: "${plannerWdQuery}", fallback: "${fallbackCapitalized}", full query: "${strippedQuery}")...`);
+          logToJarvisTerminal(`Wikidata lookup initiated for: "${primaryWdQuery}"`);
           try {
-            // Attempt search by stripped query; if no result, try cleanedSearchQuery or planner task
-            let entity = await getWikidataEntity(strippedQuery);
-            if (!entity && cleanedSearchQuery && cleanedSearchQuery !== strippedQuery) {
-              entity = await getWikidataEntity(cleanedSearchQuery);
+            // Attempt search by planner's wikidataQuery (or fallback) with strippedQuery as contextual hint
+            let entity = await getWikidataEntity(primaryWdQuery, strippedQuery);
+            if (!entity && fallbackCapitalized && fallbackCapitalized !== primaryWdQuery) {
+              entity = await getWikidataEntity(fallbackCapitalized, strippedQuery);
             }
-            if (!entity && plannerOutput.task) {
-              entity = await getWikidataEntity(plannerOutput.task);
+            if (!entity && cleanedSearchQuery && cleanedSearchQuery !== primaryWdQuery) {
+              entity = await getWikidataEntity(cleanedSearchQuery, strippedQuery);
+            }
+            if (!entity && strippedQuery !== primaryWdQuery) {
+              entity = await getWikidataEntity(strippedQuery);
             }
 
             if (entity) {
@@ -2903,9 +2921,9 @@ Please perform your specialized processing for this inquiry. Provide clear, conc
                 }
               }
             } else {
-              console.log(`[JARVIS Researcher] Wikidata API call returned no entry for: "${strippedQuery}". Falling back to Wikipedia automatically (Rule 5).`);
+              console.log(`[JARVIS Researcher] Wikidata API call returned no entry for: "${primaryWdQuery}". Falling back to Wikipedia automatically (Rule 5).`);
               wikidataReportSection = formatWikidataForReport(null);
-              logToJarvisTerminal('Wikidata lookup: no entry found - falling back to Wikipedia', 'warning');
+              logToJarvisTerminal(`Wikidata lookup: no entry found for "${primaryWdQuery}" - falling back to Wikipedia`, 'warning');
               needsWikipediaFallback = true;
             }
           } catch (wdErr) {

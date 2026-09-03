@@ -44,6 +44,42 @@ const KNOWN_PROPERTIES: Record<string, string> = {
 };
 
 /**
+ * Extract the last capitalized word or contiguous phrase of capitalized words from a query string.
+ * Used as a fallback safety net when wikidataQuery is missing or empty.
+ */
+export function extractLastCapitalizedPhrase(text: string): string {
+  if (!text || typeof text !== 'string') return '';
+
+  const alphaChars = text.replace(/[^a-zA-Z]/g, '');
+  if (alphaChars.length > 3 && alphaChars === alphaChars.toUpperCase()) {
+    return '';
+  }
+
+  // Clean trailing punctuation
+  const cleaned = text.replace(/["'?!,.;:()[\]{}]/g, ' ').trim();
+
+  // Find all sequences of capitalized words: e.g. "Mount Everest", "Albert Einstein", "Saturn", "Tokyo"
+  const matches = cleaned.match(/\b[A-Z][a-zA-Z0-9]*(?:\s+[A-Z][a-zA-Z0-9]*)*\b/g);
+  if (!matches || matches.length === 0) return '';
+
+  const questionStarters = new Set([
+    'WHAT', 'WHO', 'WHERE', 'WHEN', 'WHY', 'HOW', 'FIND', 'TELL', 'LIST', 'SHOW', 'WHICH', 'IS', 'ARE', 'CAN', 'DOES', 'DO', 'DID', 'PLEASE', 'GIVE'
+  ]);
+
+  // Prefer the last match that isn't just a generic question starter
+  for (let i = matches.length - 1; i >= 0; i--) {
+    const candidate = matches[i].trim();
+    if (!candidate) continue;
+    if (matches.length > 1 && questionStarters.has(candidate.toUpperCase())) {
+      continue;
+    }
+    return candidate;
+  }
+
+  return matches[matches.length - 1].trim();
+}
+
+/**
  * Clean and extract search candidates from natural language questions
  */
 function extractSubjectCandidates(rawQuery: string): string[] {
@@ -58,6 +94,12 @@ function extractSubjectCandidates(rawQuery: string): string[] {
   const withoutSlash = trimmed.replace(/^\/(?:search|web)\s+/i, '').trim();
   if (withoutSlash && withoutSlash !== trimmed) {
     candidates.push(withoutSlash);
+  }
+
+  // Extract last capitalized phrase as a high-priority entity candidate (e.g. "Saturn", "Einstein", "Tokyo")
+  const capitalizedPhrase = extractLastCapitalizedPhrase(withoutSlash || trimmed);
+  if (capitalizedPhrase && !candidates.includes(capitalizedPhrase)) {
+    candidates.push(capitalizedPhrase);
   }
 
   // Strip common conversational question preambles
@@ -217,11 +259,14 @@ function formatClaimValue(datavalue: unknown): { text: string; entityId?: string
 /**
  * Fetch detailed Wikidata entity information by entity ID or query
  */
-export async function getWikidataEntity(titleOrQuery: string): Promise<WikidataEntity | null> {
+export async function getWikidataEntity(
+  titleOrQuery: string,
+  contextHint?: string,
+): Promise<WikidataEntity | null> {
   const trimmed = titleOrQuery.trim();
   if (!trimmed) return null;
 
-  const cacheKey = trimmed.toLowerCase();
+  const cacheKey = `${trimmed.toLowerCase()}${contextHint ? `_${contextHint.toLowerCase().slice(0, 40)}` : ''}`;
   const cached = entityCache.get(cacheKey);
   if (cached && Date.now() - cached.timestamp < CACHE_TTL_MS) {
     return cached.entity;
@@ -240,12 +285,79 @@ export async function getWikidataEntity(titleOrQuery: string): Promise<WikidataE
       const candidateQueries = extractSubjectCandidates(trimmed);
 
       for (const query of candidateQueries) {
-        const results = await searchWikidata(query, 3);
-        if (results.length > 0 && results[0]?.id) {
-          targetEntityId = results[0].id;
-          initialLabel = results[0].label;
-          initialDescription = results[0].description || '';
-          break;
+        const results = await searchWikidata(query, 5);
+        if (results.length > 0) {
+          let selected = results[0];
+
+          // Disambiguation & generic surname check: prefer concrete entity over family name or disambiguation page
+          const isGeneric = (desc?: string) => {
+            if (!desc) return false;
+            const d = desc.toLowerCase();
+            return d === 'family name' || d.includes('disambiguation') || d === 'surname';
+          };
+
+          if (isGeneric(selected.description)) {
+            const nonGeneric = results.find((r) => !isGeneric(r.description));
+            if (nonGeneric) {
+              selected = nonGeneric;
+            }
+          }
+
+          // If contextHint is provided, evaluate if another candidate matches the inquiry context better
+          if (contextHint) {
+            const lowerContext = contextHint.toLowerCase();
+            const contextWords = lowerContext.split(/\s+/).filter((w) => w.length > 3);
+            let bestScore = -1;
+            let bestCandidate = selected;
+
+            for (const res of results) {
+              if (isGeneric(res.description)) continue;
+              let score = 0;
+              const desc = (res.description || '').toLowerCase();
+              const labelText = res.label.toLowerCase();
+
+              for (const word of contextWords) {
+                if (labelText.includes(word)) score += 2;
+                if (desc.includes(word)) score += 3;
+              }
+
+              // Astronomical / celestial context: e.g. "moons", "orbiting", "rings", "planet"
+              if (/\b(moons?|orbit(?:ing|s)?|rings?|planets?|solar system|space|astronom(?:y|ical))\b/i.test(lowerContext)) {
+                if (/\b(planet|solar system|astronomical|celestial body)\b/i.test(desc)) {
+                  score += 8;
+                }
+              }
+
+              // Biographical / historical context: e.g. "born", "died", "physicist", "inventor", "theory", "president"
+              if (/\b(born|died|physic(?:s|ist)|theor(?:y|ist)|scientist|nobel|invent(?:or|ed))\b/i.test(lowerContext)) {
+                if (/\b(physicist|scientist|mathematician|theorist|author|person)\b/i.test(desc)) {
+                  score += 8;
+                }
+              }
+
+              // Geographic / city context: e.g. "population", "capital", "country", "city", "elevation"
+              if (/\b(population|capital|country|metropolis|city|prefecture)\b/i.test(lowerContext)) {
+                if (/\b(capital|city|metropolis|municipality|country)\b/i.test(desc)) {
+                  score += 8;
+                }
+              }
+
+              if (score > bestScore) {
+                bestScore = score;
+                bestCandidate = res;
+              }
+            }
+            if (bestScore > 0) {
+              selected = bestCandidate;
+            }
+          }
+
+          if (selected?.id) {
+            targetEntityId = selected.id;
+            initialLabel = selected.label;
+            initialDescription = selected.description || '';
+            break;
+          }
         }
       }
     }
@@ -274,9 +386,9 @@ export async function getWikidataEntity(titleOrQuery: string): Promise<WikidataE
         string,
         {
           id: string;
-          labels?: { en?: { value: string } };
-          descriptions?: { en?: { value: string } };
-          aliases?: { en?: Array<{ value: string }> };
+          labels?: Record<string, { value: string }>;
+          descriptions?: Record<string, { value: string }>;
+          aliases?: Record<string, Array<{ value: string }>>;
           sitelinks?: { enwiki?: { title: string } };
           claims?: Record<
             string,
@@ -298,7 +410,7 @@ export async function getWikidataEntity(titleOrQuery: string): Promise<WikidataE
       return null;
     }
 
-    const label = rawEntity.labels?.en?.value || initialLabel || targetEntityId;
+    const label = rawEntity.labels?.en?.value || rawEntity.labels?.mul?.value || initialLabel || targetEntityId;
     const description = rawEntity.descriptions?.en?.value || initialDescription || undefined;
     const aliases = (rawEntity.aliases?.en ?? []).map((a) => a.value).filter(Boolean);
     const wikipediaTitle = rawEntity.sitelinks?.enwiki?.title;
