@@ -3,8 +3,8 @@ import { storage, DEFAULT_AGENT_SYSTEM_PROMPTS } from '@/lib/storage';
 import {
   searchWikipedia,
   getWikipediaSummary,
-  formatWikipediaForReport,
   wikipediaToSearchResult,
+  extractWikipediaSubject,
 } from '@/services/wikipedia';
 import {
   getWikidataEntity,
@@ -23,6 +23,7 @@ import type {
   JarvisChartData,
   JarvisExecutionStep,
   JarvisImageResult,
+  JarvisPlannerOutput,
   JarvisSystemConfig,
   SearchResult,
   WikidataEntity,
@@ -2208,21 +2209,7 @@ Please perform your specialized processing for this inquiry. Provide clear, conc
   // ==========================================
   // STEP 1: 🧭 PLANNER
   // ==========================================
-  let plannerOutput: {
-    task: string;
-    plan: string[];
-    needsResearch: boolean;
-    needsKnowledgeAgent?: boolean;
-    needsFactCheck: boolean;
-    needsReview: boolean;
-    needsDiagram: boolean;
-    needsChart?: boolean;
-    needsImage?: boolean;
-    needsWikipedia?: boolean;
-    wikipediaQuery?: string;
-    needsWikidata?: boolean;
-    wikidataQuery?: string;
-  } = {
+  let plannerOutput: JarvisPlannerOutput = {
     task: query,
     plan: ['Synthesize accurate response directly.'],
     needsResearch: false,
@@ -2295,8 +2282,30 @@ Please perform your specialized processing for this inquiry. Provide clear, conc
 - The final synthesized answer returned to the user must be written in **${responseLang}**.`;
     activePrompt += responseLangDirective;
 
+    const PLANNER_SYSTEM_SCHEMA = `Current date and time: ${currentDateTime}
+You are the JARVIS Planner. You MUST output ONLY a valid JSON object strictly matching this schema. All fields are MANDATORY and must be present in every response:
+{
+  "task": string (concise goal statement under 15 words),
+  "plan": string[] (2-4 short steps),
+  "needsResearch": boolean,
+  "needsKnowledgeAgent": boolean,
+  "needsFactCheck": boolean,
+  "needsReview": boolean,
+  "needsDiagram": boolean,
+  "needsChart": boolean,
+  "needsImage": boolean,
+  "needsWikipedia": boolean,
+  "wikipediaQuery": string (MANDATORY: clean subject/title if needsWikipedia is true, or empty string "" if false),
+  "needsWikidata": boolean,
+  "wikidataQuery": string (MANDATORY: clean entity name if needsWikidata is true, or empty string "" if false)
+}
+CRITICAL RULES:
+1. Under NO circumstance should "wikipediaQuery" or "wikidataQuery" be omitted from the JSON output. Both keys MUST always be present in the returned JSON object.
+2. When needsWikipedia is true, "wikipediaQuery" MUST be the clean, concise subject/title (e.g. for "tell about brawl stars game", wikipediaQuery MUST be "Brawl Stars"). If needsWikipedia is false, set it to "".
+3. When needsWikidata is true, "wikidataQuery" MUST be the clean entity name. If needsWikidata is false, set it to "".`;
+
     const planRes = await callAgent('planner', [
-      { role: 'system', content: `Current date and time: ${currentDateTime}\nYou are the JARVIS Planner. Output only valid JSON.` },
+      { role: 'system', content: PLANNER_SYSTEM_SCHEMA },
       { role: 'user', content: activePrompt },
     ]);
 
@@ -2315,7 +2324,9 @@ Please perform your specialized processing for this inquiry. Provide clear, conc
           needsChart: false,
           needsImage: false,
           needsWikipedia: false,
+          wikipediaQuery: '',
           needsWikidata: false,
+          wikidataQuery: '',
         };
       }
       if (!Array.isArray(plannerOutput.plan)) {
@@ -2325,15 +2336,29 @@ Please perform your specialized processing for this inquiry. Provide clear, conc
       plannerOutput.task = String(plannerOutput.task || query);
       plannerOutput.needsKnowledgeAgent = Boolean(plannerOutput.needsKnowledgeAgent);
       plannerOutput.needsWikipedia = Boolean(plannerOutput.needsWikipedia);
-      plannerOutput.wikipediaQuery =
-        plannerOutput.needsWikipedia && typeof plannerOutput.wikipediaQuery === 'string'
-          ? plannerOutput.wikipediaQuery.trim()
-          : '';
+      if (plannerOutput.needsWikipedia) {
+        if (typeof plannerOutput.wikipediaQuery === 'string' && plannerOutput.wikipediaQuery.trim()) {
+          plannerOutput.wikipediaQuery = plannerOutput.wikipediaQuery.trim();
+        } else {
+          const subject = extractWikipediaSubject(query);
+          const fallbackCap = extractLastCapitalizedPhrase(strippedQuery) || extractLastCapitalizedPhrase(query);
+          plannerOutput.wikipediaQuery = subject || fallbackCap || strippedQuery;
+        }
+      } else {
+        plannerOutput.wikipediaQuery = '';
+      }
+
       plannerOutput.needsWikidata = Boolean(plannerOutput.needsWikidata);
-      plannerOutput.wikidataQuery =
-        plannerOutput.needsWikidata && typeof plannerOutput.wikidataQuery === 'string'
-          ? plannerOutput.wikidataQuery.trim()
-          : '';
+      if (plannerOutput.needsWikidata) {
+        if (typeof plannerOutput.wikidataQuery === 'string' && plannerOutput.wikidataQuery.trim()) {
+          plannerOutput.wikidataQuery = plannerOutput.wikidataQuery.trim();
+        } else {
+          const fallbackCap = extractLastCapitalizedPhrase(strippedQuery) || extractLastCapitalizedPhrase(query);
+          plannerOutput.wikidataQuery = fallbackCap || extractWikipediaSubject(query) || strippedQuery;
+        }
+      } else {
+        plannerOutput.wikidataQuery = '';
+      }
 
       if (isWebFetchQuery(query)) {
         const targetUrl = extractWebFetchUrl(query);
@@ -2399,6 +2424,7 @@ Please perform your specialized processing for this inquiry. Provide clear, conc
       if (!imageMode) {
         plannerOutput.needsImage = false;
       }
+      const normalizedPlanJson = JSON.stringify(plannerOutput, null, 2);
       updateStep({
         agentId: 'planner',
         name: pCfg.name,
@@ -2408,8 +2434,8 @@ Please perform your specialized processing for this inquiry. Provide clear, conc
         model: planRes.model,
         durationMs: duration,
         summary: Array.isArray(plannerOutput.plan) && plannerOutput.plan.length > 0 ? plannerOutput.plan.slice(0, 2).join(' • ') : 'Task analyzed and routed.',
-        outputPreview: JSON.stringify(plannerOutput, null, 2),
-        rawOutput: planRes.text || JSON.stringify(plannerOutput, null, 2),
+        outputPreview: normalizedPlanJson,
+        rawOutput: (planRes.text && planRes.text.includes('"wikipediaQuery"')) ? planRes.text : normalizedPlanJson,
         usedFallback: planRes.usedFallback,
       });
     } else {
@@ -2442,6 +2468,16 @@ Please perform your specialized processing for this inquiry. Provide clear, conc
         plannerOutput.needsFactCheck = true;
         plannerOutput.task = stripSearchOverridePrefix(query) || 'Web search';
       }
+      if (plannerOutput.needsWikipedia && !plannerOutput.wikipediaQuery) {
+        plannerOutput.wikipediaQuery = extractWikipediaSubject(query) || strippedQuery;
+      }
+      if (!plannerOutput.needsWikipedia) {
+        plannerOutput.wikipediaQuery = '';
+      }
+      if (!plannerOutput.needsWikidata) {
+        plannerOutput.wikidataQuery = '';
+      }
+      const fallbackJson = JSON.stringify(plannerOutput, null, 2);
       updateStep({
         agentId: 'planner',
         name: pCfg.name,
@@ -2451,6 +2487,8 @@ Please perform your specialized processing for this inquiry. Provide clear, conc
         model: planRes.model,
         durationMs: duration,
         error: planRes.error || 'Planner execution failed.',
+        outputPreview: fallbackJson,
+        rawOutput: fallbackJson,
       });
     }
   } else if (isWebFetchQuery(query)) {
@@ -2563,7 +2601,7 @@ Please perform your specialized processing for this inquiry. Provide clear, conc
 
   let wikidataEntity: WikidataEntity | null = null;
   let wikidataReportSection = '';
-  let wikipediaReportSection = '';
+  let wikipediaArticleSummary = '';
   let needsWikipediaFallback = false;
 
   const shouldFactCheck =
@@ -2888,6 +2926,7 @@ Please perform your specialized processing for this inquiry. Provide clear, conc
         if (shouldLookupWikipedia) {
           try {
             const plannerWikiQuery = typeof plannerOutput.wikipediaQuery === 'string' ? plannerOutput.wikipediaQuery.trim() : '';
+            const extractedSubject = extractWikipediaSubject(query);
             const fallbackCapitalized = extractLastCapitalizedPhrase(strippedQuery) || extractLastCapitalizedPhrase(query);
             let wikiSearchTerm = plannerWikiQuery;
 
@@ -2902,6 +2941,8 @@ Please perform your specialized processing for this inquiry. Provide clear, conc
               else if (/\bdeepseek\b/i.test(lower)) wikiSearchTerm = 'DeepSeek';
               else if (/\biphone\b/i.test(lower)) wikiSearchTerm = 'iPhone';
               else wikiSearchTerm = cleanedSearchQuery || strippedQuery;
+            } else if (!wikiSearchTerm && extractedSubject) {
+              wikiSearchTerm = extractedSubject;
             } else if (!wikiSearchTerm && fallbackCapitalized) {
               wikiSearchTerm = fallbackCapitalized;
             } else if (!wikiSearchTerm && cleanedSearchQuery) {
@@ -2910,13 +2951,16 @@ Please perform your specialized processing for this inquiry. Provide clear, conc
               wikiSearchTerm = strippedQuery;
             }
 
-            console.log(`[JARVIS Researcher] Calling Wikipedia API for term: "${wikiSearchTerm}" (planner wikipediaQuery: "${plannerWikiQuery}", fallback: "${fallbackCapitalized}", full query: "${strippedQuery}")...`);
+            console.log(`[JARVIS Researcher] Calling Wikipedia API for term: "${wikiSearchTerm}" (planner wikipediaQuery: "${plannerWikiQuery}", extracted subject: "${extractedSubject}", fallback: "${fallbackCapitalized}", full query: "${strippedQuery}")...`);
             logToJarvisTerminal(`Wikipedia lookup initiated for: "${wikiSearchTerm}"`);
 
             // Direct call to getWikipediaSummary (which queries REST API and falls back to MediaWiki prop=extracts/search)
             let summary = await getWikipediaSummary(wikiSearchTerm);
             if (!summary && fallbackCapitalized && fallbackCapitalized !== wikiSearchTerm) {
               summary = await getWikipediaSummary(fallbackCapitalized);
+            }
+            if (!summary && extractedSubject && extractedSubject !== wikiSearchTerm) {
+              summary = await getWikipediaSummary(extractedSubject);
             }
             if (!summary && cleanedSearchQuery && cleanedSearchQuery !== wikiSearchTerm) {
               summary = await getWikipediaSummary(cleanedSearchQuery);
@@ -2926,7 +2970,7 @@ Please perform your specialized processing for this inquiry. Provide clear, conc
             }
 
             if (summary && summary.extract) {
-              wikipediaReportSection = formatWikipediaForReport(summary);
+              wikipediaArticleSummary = `Title: ${summary.title}\nURL: ${summary.url}\nSummary: ${summary.extract}${summary.description ? `\nDescription: ${summary.description}` : ''}`;
               wikiSummaryCandidate = {
                 title: summary.title,
                 url: summary.url,
@@ -2934,13 +2978,15 @@ Please perform your specialized processing for this inquiry. Provide clear, conc
                 description: summary.extract,
                 type: 'wikipedia',
               };
-              sourcesCollected.push(wikipediaToSearchResult(summary));
+              if (!sourcesCollected.some((s) => s.url === summary.url)) {
+                sourcesCollected.push(wikipediaToSearchResult(summary));
+              }
               researcherOutput.facts.push(`Wikipedia: ${summary.title} - ${summary.extract}`);
               console.log(`[JARVIS Researcher] Wikipedia API retrieved summary (${summary.extract.length} chars) for "${summary.title}".`);
-              logToJarvisTerminal(`Wikipedia lookup succeeded - found "${summary.title}" page`);
+              logToJarvisTerminal(`Wikipedia lookup succeeded - found "${summary.title}" article`);
             } else {
               console.log(`[JARVIS Researcher] Wikipedia lookup returned no article for: "${wikiSearchTerm}".`);
-              wikipediaReportSection = formatWikipediaForReport(null);
+              wikipediaArticleSummary = '';
               logToJarvisTerminal(`Wikipedia lookup: no matching article found for "${wikiSearchTerm}"`, 'warning');
               // Rule 6: If neither source has information, respond that no information was found instead of guessing
               researcherOutput.facts.push('No information was found on Wikipedia for this query.');
@@ -2950,7 +2996,7 @@ Please perform your specialized processing for this inquiry. Provide clear, conc
             }
           } catch (wikiErr) {
             console.warn('[JARVIS Researcher] Wikipedia lookup error:', wikiErr);
-            wikipediaReportSection = formatWikipediaForReport(null);
+            wikipediaArticleSummary = '';
             logToJarvisTerminal('Wikipedia lookup error, skipped', 'warning');
             researcherOutput.facts.push('Wikipedia lookup encountered an error.');
             if (needsWikipediaFallback && !wikidataEntity) {
@@ -3972,7 +4018,7 @@ User Query: "${strippedQuery}"
 ${webFetchContextBlock}
 Planner Guidance: ${plannerPlanText}
 ${advisorOutput ? `Advisor Conceptual Analysis & Technical Comparison (General Knowledge):\n${advisorOutput}\n` : ''}
-${wikidataReportSection ? `[WIKIDATA INTELLIGENCE & REQUIRED REPORT SECTION]:\n${wikidataReportSection}\n\nCRITICAL REPORT REQUIREMENT: Because Wikidata was queried, your report output MUST include a section titled exactly:\n=== WIKIDATA ===\nfollowed by the Wikidata result details (or "no entry found" if no entry was found).\n\n` : ''}${wikipediaReportSection ? `[WIKIPEDIA INTELLIGENCE & REQUIRED REPORT SECTION]:\n${wikipediaReportSection}\n\nCRITICAL REPORT REQUIREMENT: Because Wikipedia was queried, your report output MUST include a section titled exactly:\n=== WIKIPEDIA ===\nfollowed by the Wikipedia title, extract/summary, and URL (or "no entry found" if no entry was found).\n\n` : ''}${factsList.length > 0 ? `Key Verified Facts:\n${factsList.map((f) => `- ${f}`).join('\n')}\n` : ''}${verifiedList.length > 0 ? `Verified Claims:\n${verifiedList.map((c) => `- ${c}`).join('\n')}\n` : ''}${plausibleUnconfirmedList.length > 0 ? `Fact-Checker Plausible Unconfirmed Details (CRITICAL - INCLUDE WITH NATURAL HEDGE/CAVEAT, e.g. "reportedly exists/released, based on a single source, not independently confirmed" - DO NOT OMIT DATES, TIERS, OR PLAUSIBLE CLAIMS):\n${plausibleUnconfirmedList.map((p) => `- ${p}`).join('\n')}\n` : ''}${fabricatedList.length > 0 ? `Fact-Checker Fabricated/Contradicted Items (HARD EXCLUSION - DO NOT MENTION IN FINAL SYNTHESIS):\n${fabricatedList.map((fb) => `- ${fb}`).join('\n')}\n` : ''}${generalIssuesList.length > 0 ? `Fact-Checker Identified Issues (Exclude only specific invalid claims; do NOT discard other valid qualifying candidates):\n${generalIssuesList.map((i) => `- ${i}`).join('\n')}\n` : ''}${reviewerMissingList.length > 0 ? `Reviewer Missing Context Suggestions (Advisory):\n${reviewerMissingList.map((m) => `- ${m}`).join('\n')}\n` : ''}${reviewerIssuesList.length > 0 ? `Reviewer Flagged Issues & Scope Critique (Advisory - exclude only specific problematic items, preserve and synthesize all other valid candidates):\n${reviewerIssuesList.map((iss) => `- ${iss}`).join('\n')}\n` : ''}${reviewerRecommendation ? `Reviewer Actionable Guidance & Candidate Priority (Advisory ranking guidance):\n${reviewerRecommendation}\n` : ''}[SYNTHESIS MANDATE]: If any specific candidates were flagged or excluded by Fact-Checker or Reviewer, synthesize all remaining verified, valid candidates into the final answer. Only state that verified news/data is unavailable if ALL candidates are completely unusable or no verified data exists.
+${wikidataReportSection ? `[WIKIDATA INTELLIGENCE & REQUIRED REPORT SECTION]:\n${wikidataReportSection}\n\nCRITICAL REPORT REQUIREMENT: Because Wikidata was queried, your report output MUST include a section titled exactly:\n=== WIKIDATA ===\nfollowed by the Wikidata result details (or "no entry found" if no entry was found).\n\n` : ''}${wikipediaArticleSummary ? `[WIKIPEDIA GROUNDING & ENCYCLOPEDIC INTELLIGENCE]:\n${wikipediaArticleSummary}\n\n(SYNTHESIS MANDATE: Naturally blend this authoritative Wikipedia encyclopedic knowledge directly into your main synthesized prose. DO NOT output any visible "=== WIKIPEDIA ===" section header in your response; cite the Wikipedia source using standard bracket notation [1] from the sources list below.)\n\n` : ''}${factsList.length > 0 ? `Key Verified Facts:\n${factsList.map((f) => `- ${f}`).join('\n')}\n` : ''}${verifiedList.length > 0 ? `Verified Claims:\n${verifiedList.map((c) => `- ${c}`).join('\n')}\n` : ''}${plausibleUnconfirmedList.length > 0 ? `Fact-Checker Plausible Unconfirmed Details (CRITICAL - INCLUDE WITH NATURAL HEDGE/CAVEAT, e.g. "reportedly exists/released, based on a single source, not independently confirmed" - DO NOT OMIT DATES, TIERS, OR PLAUSIBLE CLAIMS):\n${plausibleUnconfirmedList.map((p) => `- ${p}`).join('\n')}\n` : ''}${fabricatedList.length > 0 ? `Fact-Checker Fabricated/Contradicted Items (HARD EXCLUSION - DO NOT MENTION IN FINAL SYNTHESIS):\n${fabricatedList.map((fb) => `- ${fb}`).join('\n')}\n` : ''}${generalIssuesList.length > 0 ? `Fact-Checker Identified Issues (Exclude only specific invalid claims; do NOT discard other valid qualifying candidates):\n${generalIssuesList.map((i) => `- ${i}`).join('\n')}\n` : ''}${reviewerMissingList.length > 0 ? `Reviewer Missing Context Suggestions (Advisory):\n${reviewerMissingList.map((m) => `- ${m}`).join('\n')}\n` : ''}${reviewerIssuesList.length > 0 ? `Reviewer Flagged Issues & Scope Critique (Advisory - exclude only specific problematic items, preserve and synthesize all other valid candidates):\n${reviewerIssuesList.map((iss) => `- ${iss}`).join('\n')}\n` : ''}${reviewerRecommendation ? `Reviewer Actionable Guidance & Candidate Priority (Advisory ranking guidance):\n${reviewerRecommendation}\n` : ''}[SYNTHESIS MANDATE]: If any specific candidates were flagged or excluded by Fact-Checker or Reviewer, synthesize all remaining verified, valid candidates into the final answer. Only state that verified news/data is unavailable if ALL candidates are completely unusable or no verified data exists.
 Retrieved Ground-Truth Sources (CRITICAL RULE: Only cite sources from this exact list. Never invent or cite any other sources):
 ${sourcesListText}${customInsightsBlock}${personalIdentityDirective}${architectureReferenceDirective}`;
 
@@ -4466,15 +4512,10 @@ ${sourcesListText}${customInsightsBlock}${personalIdentityDirective}${architectu
     }
   }
 
-  // If Wikipedia was requested (needsWikipedia is true or fallback from Wikidata), guarantee the "=== WIKIPEDIA ===" section is visible in the report output
-  if (!isSearchOverride && !isWebFetch && (plannerOutput.needsWikipedia || needsWikipediaFallback)) {
-    const wikiSection = wikipediaReportSection || formatWikipediaForReport(null);
-    if (!cleanedFinalAnswer.includes('=== WIKIPEDIA ===')) {
-      cleanedFinalAnswer = cleanedFinalAnswer.trim()
-        ? `${cleanedFinalAnswer.trim()}\n\n${wikiSection}`
-        : wikiSection;
-    }
-  }
+  // Ensure no "=== WIKIPEDIA ===" section header or block is displayed in the final report output per user mandate
+  cleanedFinalAnswer = cleanedFinalAnswer
+    .replace(/(?:\r?\n)*={3,}\s*WIKIPEDIA\s*={3,}[\s\S]*?(?=(?:\r?\n={3,}|\r?\n#{1,3}\s|\r?\n\r?\n\r?\n|$))/gi, '')
+    .trim();
 
   return {
     answer: cleanedFinalAnswer,

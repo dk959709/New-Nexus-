@@ -326,3 +326,37 @@ export function formatWikipediaForReport(article: WikipediaArticle | null): stri
   return lines.join('\n');
 }
 
+/**
+ * Extract a clean encyclopedic subject title from a natural language query
+ * e.g. "tell about brawl stars game" -> "Brawl Stars"
+ * e.g. "what is photosynthesis" -> "Photosynthesis"
+ * e.g. "who is Nikola Tesla" -> "Nikola Tesla"
+ */
+export function extractWikipediaSubject(text: string): string {
+  if (!text || typeof text !== 'string') return '';
+  let cleaned = text.trim();
+  // Strip question / command prefixes
+  cleaned = cleaned.replace(
+    /^(?:tell(?:\s+me)?\s+about|what(?:\s+is|\s+are|\s+'s)?|who(?:\s+is|\s+was|\s+'s)?|where(?:\s+is|\s+are)?|when(?:\s+was|\s+did)?|explain|describe|overview(?:\s+of)?|history(?:\s+of)?|information(?:\s+on|\s+about)?|details(?:\s+about|\s+on)?)\s+/i,
+    '',
+  );
+  // Strip trailing punctuation
+  cleaned = cleaned.replace(/[?!,.;:]+$/, '').trim();
+  // Strip trailing category words if query has multiple words
+  if (cleaned.split(/\s+/).length > 1) {
+    cleaned = cleaned.replace(
+      /\s+(?:the\s+)?(?:video\s+game|mobile\s+game|board\s+game|card\s+game|game|movie|film|book|novel|song|album|tv\s+series|series|app|application|software)$/i,
+      '',
+    ).trim();
+  }
+  // Title-case if all lowercase
+  if (cleaned === cleaned.toLowerCase() && cleaned.length > 0) {
+    cleaned = cleaned
+      .split(/\s+/)
+      .map((w) => (w.length > 0 ? w[0].toUpperCase() + w.slice(1) : w))
+      .join(' ');
+  }
+  return cleaned;
+}
+
+

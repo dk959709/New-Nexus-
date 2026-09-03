@@ -232,6 +232,22 @@ export interface CustomJarvisAgentConfig extends JarvisAgentConfig {
   createdAt?: number;
 }
 
+export interface JarvisPlannerOutput {
+  task: string;
+  plan: string[];
+  needsResearch: boolean;
+  needsKnowledgeAgent?: boolean;
+  needsFactCheck: boolean;
+  needsReview: boolean;
+  needsDiagram: boolean;
+  needsChart?: boolean;
+  needsImage?: boolean;
+  needsWikipedia: boolean;
+  wikipediaQuery: string;
+  needsWikidata: boolean;
+  wikidataQuery: string;
+}
+
 export interface JarvisSystemConfig {
   deepResearchDefault: boolean;
   diagramModeDefault?: boolean;
