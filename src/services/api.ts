@@ -109,12 +109,12 @@ async function call<T>(path: string, init?: RequestInit): Promise<T> {
 }
 
 export const api = {
-  async search(query: string, category?: string, page?: number): Promise<SearchResult[] & { searchSource?: string; fallbackOccurred?: boolean; fallbackReason?: string }> {
+  async search(query: string, category?: string, page?: number, maxResults?: number): Promise<SearchResult[] & { searchSource?: string; fallbackOccurred?: boolean; fallbackReason?: string }> {
     const url = BASE + '/api/search';
     const res = await fetch(url, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ query, category, page }),
+      body: JSON.stringify({ query, category, page, max_results: maxResults }),
     });
     const body = (await res.json().catch(() => ({}))) as {
       data?: SearchResult[];

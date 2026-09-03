@@ -1979,12 +1979,23 @@ export async function runJarvisPipeline(
         ? overrideMaxTokens
         : agentId === 'architect'
         ? Math.max(cfg.maxTokens || 4500, 4500)
+        : agentId === 'researcher'
+        ? (deepResearch ? Math.max(cfg.maxTokens || 4500, 4500) : cfg.maxTokens)
+        : agentId === 'reviewer'
+        ? (deepResearch ? Math.max(cfg.maxTokens || 1000, 1000) : cfg.maxTokens)
         : agentId === 'factChecker'
-        ? Math.max(cfg.maxTokens || 1200, 1000)
+        ? (deepResearch ? Math.max(cfg.maxTokens || 2500, 2500) : Math.max(cfg.maxTokens || 1200, 1000))
         : agentId === 'advisor'
         ? (deepResearch ? 800 : 400)
+        : agentId === 'finalSynthesizer'
+        ? (deepResearch ? Math.max(cfg.maxTokens || 4000, 4000) : cfg.maxTokens)
         : cfg.maxTokens;
-    const effectiveTimeoutMs = agentId === 'architect' ? 75000 : 35000;
+    const effectiveTimeoutMs =
+      agentId === 'architect'
+        ? 75000
+        : deepResearch && (agentId === 'researcher' || agentId === 'finalSynthesizer')
+        ? 55000
+        : 35000;
 
     const primary = resolveProviderConfig(cfg, false, effectiveMaxTokens);
     if (primary.error) {
@@ -2856,6 +2867,25 @@ CRITICAL RULES:
             gnewsSucceeded = true;
             console.log('[JARVIS Researcher] News source used: GNews');
             logToJarvisTerminal(`Using GNews API (${searchResults.length} result${searchResults.length === 1 ? '' : 's'})`);
+
+            if (deepResearch && searchResults.length < 18) {
+              try {
+                const rssQuery = isWorldNews ? 'latest world news' : (plannerResearchQuery || cleanedSearchQuery || strippedQuery);
+                const extraNews = await api.newsRss(rssQuery);
+                if (Array.isArray(extraNews) && extraNews.length > 0) {
+                  const existingUrls = new Set(searchResults.map((r) => (r.url || '').toLowerCase()));
+                  extraNews.forEach((item) => {
+                    if (item && item.url && !existingUrls.has(item.url.toLowerCase())) {
+                      existingUrls.add(item.url.toLowerCase());
+                      searchResults.push(item);
+                    }
+                  });
+                  console.log(`[JARVIS Researcher] Deep Research supplemented news pool to ${searchResults.length} articles`);
+                }
+              } catch (e) {
+                console.warn('[JARVIS Researcher] Supplemental RSS news fetch error in Deep Research mode:', e);
+              }
+            }
           } else {
             const specificError =
               gnewsRes?.error ||
@@ -3102,7 +3132,7 @@ CRITICAL RULES:
         }
 
         try {
-          const searchRes = await api.search(effectiveSearchQuery);
+          const searchRes = await api.search(effectiveSearchQuery, undefined, undefined, deepResearch ? 20 : 15);
           let rawResults: SearchResult[] = [];
           let sourceLabel = 'Tavily API';
           let fallbackOccurred = false;
@@ -3116,6 +3146,33 @@ CRITICAL RULES:
             rawResults = (searchRes as { results?: SearchResult[] }).results || [];
             sourceLabel = (searchRes as { searchSource?: string }).searchSource || 'Tavily API';
             if ((searchRes as { fallbackOccurred?: boolean }).fallbackOccurred) fallbackOccurred = true;
+          }
+
+          if (deepResearch && rawResults.length < 18) {
+            try {
+              const secondaryQuery =
+                plannerResearchQuery && plannerResearchQuery.toLowerCase() !== effectiveSearchQuery.toLowerCase()
+                  ? plannerResearchQuery
+                  : `${strippedQuery} in-depth analysis`;
+              console.log('[JARVIS Researcher] Deep Research: performing secondary query for richer source pool:', secondaryQuery);
+              const secondaryRes = await api.search(secondaryQuery, undefined, undefined, 20);
+              let secondaryList: SearchResult[] = [];
+              if (Array.isArray(secondaryRes)) {
+                secondaryList = secondaryRes;
+              } else if (secondaryRes && Array.isArray((secondaryRes as { results?: SearchResult[] }).results)) {
+                secondaryList = (secondaryRes as { results?: SearchResult[] }).results || [];
+              }
+              const seenUrls = new Set(rawResults.map((r) => (r.url || '').toLowerCase()));
+              secondaryList.forEach((sr) => {
+                if (sr && sr.url && !seenUrls.has(sr.url.toLowerCase())) {
+                  seenUrls.add(sr.url.toLowerCase());
+                  rawResults.push(sr);
+                }
+              });
+              console.log(`[JARVIS Researcher] Deep Research expanded raw results pool to ${rawResults.length} sources`);
+            } catch (secErr) {
+              console.warn('[JARVIS Researcher] Secondary search error in Deep Research mode:', secErr);
+            }
           }
 
           searchResults = rawResults;
@@ -3192,7 +3249,7 @@ CRITICAL RULES:
         `[JARVIS Researcher] Candidate pool evaluated ${rawCandidates.length} raw search results -> passing ${filteredSources.length} sources to Researcher.`,
       );
 
-      const candidatePoolLimit = isNewsQuery ? 12 : 10;
+      const candidatePoolLimit = deepResearch ? 20 : (isNewsQuery ? 12 : 10);
 
       filteredSources.slice(0, candidatePoolLimit).forEach((src, idx) => {
         const pubDateStr = src.publishedAt || src.date ? ` (Published: ${src.publishedAt || src.date})` : '';
@@ -3216,6 +3273,14 @@ CRITICAL RULES:
     let activePrompt = (rCfg.systemPrompt || defaultPromptTemplate)
       .replace('{task}', plannerOutput.task || strippedQuery);
 
+    if (deepResearch) {
+      activePrompt += `\n\n[DEEP RESEARCH MODE DIRECTIVE - EXPANDED EVIDENCE GATHERING]:
+1. SOURCE & FACT TARGET: Extract 15-20 distinct, high-quality factual candidates/findings from the provided search sources.
+2. MULTI-PILLAR COVERAGE: Cover multiple core pillars/angles of the topic (e.g. underlying architecture/mechanisms, technical specifications, comparative trade-offs, practical implementations, benchmarks, and latest developments).
+3. EXACT URL & CITATIONS: Map each finding to its exact source in the "sources" array with full article URL, domain, and publication date when available.
+4. DETAIL RETENTION: Do not compress or truncate findings into brief generic notes. Provide rich, concrete factual detail for each of the 15-20 candidates so downstream agents have maximum raw material for deep synthesis.`;
+    }
+
     if (activePrompt.includes('{searchSnippets}')) {
       activePrompt = activePrompt.replace(
         '{searchSnippets}',
@@ -3233,8 +3298,9 @@ CRITICAL RULES:
     const researchRes = await callAgent('researcher', [
       {
         role: 'system',
-        content:
-          'You are the JARVIS Researcher. Extract specific factual points and output valid JSON with facts and sources.',
+        content: deepResearch
+          ? 'You are the JARVIS Researcher operating in DEEP RESEARCH mode. Extract 15-20 distinct, comprehensive factual findings with full metadata and cite 15-20 sources with exact URLs in valid JSON.'
+          : 'You are the JARVIS Researcher. Extract specific factual points and output valid JSON with facts and sources.',
       },
       { role: 'user', content: activePrompt },
     ]);
@@ -3417,7 +3483,7 @@ CRITICAL RULES:
 
     let sourcesText = '';
     if (sourcesCollected.length > 0) {
-      const compactSources = sourcesCollected.slice(0, 12).map((s, i) => ({
+      const compactSources = sourcesCollected.slice(0, deepResearch ? 20 : 12).map((s, i) => ({
         index: i + 1,
         title: s.title,
         domain: s.domain || 'web',
@@ -3738,8 +3804,10 @@ CRITICAL RULES:
 
     // For news queries, provide the full candidate pool with structured metadata so Reviewer can actively compare and rank all candidates
     let factsForReviewer = '';
+    const reviewerCandidateLimit = deepResearch ? 20 : 12;
+    const reviewerFactLimit = deepResearch ? 20 : 10;
     if (isNewsQuery && Array.isArray(researcherOutput?.candidates) && researcherOutput.candidates.length > 0) {
-      const candidatesPayload = researcherOutput.candidates.slice(0, 12).map((c, idx) => ({
+      const candidatesPayload = researcherOutput.candidates.slice(0, reviewerCandidateLimit).map((c, idx) => ({
         candidateIndex: idx + 1,
         title: c.title || null,
         fact: c.fact,
@@ -3753,20 +3821,38 @@ CRITICAL RULES:
       }));
       factsForReviewer = JSON.stringify(candidatesPayload, null, 2);
     } else if (Array.isArray(researcherOutput?.facts) && researcherOutput.facts.length > 0) {
-      factsForReviewer = researcherOutput.facts.slice(0, 10).map((f, i) => `${i + 1}. ${f}`).join('\n');
+      factsForReviewer = researcherOutput.facts.slice(0, reviewerFactLimit).map((f, i) => `${i + 1}. ${f}`).join('\n');
     } else {
       factsForReviewer = 'No facts gathered.';
     }
 
     const issuesSubset = Array.isArray(factCheckOutput?.issues) ? factCheckOutput.issues : [];
 
-    const activePrompt = (revCfg.systemPrompt || defaultPromptTemplate)
+    let activePrompt = (revCfg.systemPrompt || defaultPromptTemplate)
       .replace('{task}', plannerOutput.task || query)
       .replace('{facts}', factsForReviewer)
       .replace('{issues}', JSON.stringify(issuesSubset, null, 2));
 
+    if (deepResearch) {
+      activePrompt += `\n\n[DEEP RESEARCH STRUCTURING & DEPTH DIRECTIVE FOR REVIEWER]:
+1. THOROUGH MULTI-PILLAR STRUCTURING GUIDANCE:
+   - In "recommendation", provide extensive, detailed structuring guidance for the Final Synthesizer. Do NOT provide a single-sentence or superficial summary.
+   - Explicitly instruct the Synthesizer to structure the final answer around multiple distinct core angles/pillars of the topic (for example: Fundamental Architecture/Mechanisms, Detailed Specifications & Benchmarks, Concrete Real-World Examples & Case Studies, Comparative Trade-offs, and Practical/Operational Implications).
+   - Require the Synthesizer to include concrete examples, empirical numbers, and technical case studies rather than vague generalizations.
+   - Mandate exhaustive, thorough coverage across all gathered verified facts and sources rather than a brief or high-level summary.
+2. EXPANDED GAP AUDITING:
+   - In "missing": Detail specific technical nuances, complementary perspectives, or domain depth angles that the Synthesizer should expand using the verified facts.
+3. LOGICAL COHERENCE & PRECISION:
+   - In "issues": Flag any logical gaps, unconfirmed assumptions, or structural weaknesses in how the findings connect.`;
+    }
+
     const reviewRes = await callAgent('reviewer', [
-      { role: 'system', content: 'You are the JARVIS Reviewer. Output strictly valid JSON.' },
+      {
+        role: 'system',
+        content: deepResearch
+          ? 'You are the JARVIS Reviewer in DEEP RESEARCH mode. Provide thorough, multi-pillar structuring guidance for the Final Synthesizer in strictly valid JSON.'
+          : 'You are the JARVIS Reviewer. Output strictly valid JSON.',
+      },
       { role: 'user', content: activePrompt },
     ]);
 

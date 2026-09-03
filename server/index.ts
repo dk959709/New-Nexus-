@@ -20,6 +20,8 @@ const searchSchema = z.object({
   category: z.enum(['ALL', 'NEWS', 'IMAGES', 'VIDEOS', 'SHOPPING', 'WIKIPEDIA']).optional(),
   region: z.string().optional(),
   language: z.string().optional(),
+  max_results: z.number().int().min(1).max(30).optional(),
+  maxResults: z.number().int().min(1).max(30).optional(),
 });
 
 const WIKIPEDIA_USER_AGENT = 'NEXUS-Intelligence/1.0 (https://nexus.app; contact: dk959709@gmail.com)';
@@ -1551,12 +1553,13 @@ async function searchProvider(input: z.infer<typeof searchSchema>): Promise<{ re
   if (key && url) {
     try {
       const isTavily = url.includes('tavily.com') || Boolean(process.env.TAVILY_API_KEY);
+      const requestedMax = input.max_results ?? input.maxResults ?? 15;
       const bodyPayload = isTavily
         ? {
             api_key: key,
             query: input.query,
             search_depth: 'basic',
-            max_results: 15,
+            max_results: Math.min(Math.max(requestedMax, 5), 25),
             topic: input.category === 'NEWS' ? 'news' : 'general',
             include_answer: false,
           }
@@ -1566,7 +1569,7 @@ async function searchProvider(input: z.infer<typeof searchSchema>): Promise<{ re
             category: input.category ?? 'ALL',
             region: input.region,
             language: input.language,
-            max_results: 20,
+            max_results: Math.min(Math.max(requestedMax, 5), 25),
           };
 
       const headers: Record<string, string> = {
