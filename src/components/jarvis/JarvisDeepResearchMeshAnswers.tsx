@@ -70,13 +70,13 @@ const AGENT_THEMES: Record<string, AgentTheme> = {
   researcher: {
     title: 'RESEARCHER // EMPIRICAL INTELLIGENCE',
     subtitle: 'Real-time Web Search, Multi-Engine Retrieval & Fact Extraction',
-    border: 'rgba(56, 189, 248, 0.45)',
-    bg: 'linear-gradient(150deg, rgba(10, 24, 44, 0.9) 0%, rgba(6, 15, 30, 0.95) 100%)',
-    headerBg: 'rgba(14, 35, 62, 0.6)',
-    text: '#38bdf8',
-    badgeBg: 'rgba(56, 189, 248, 0.15)',
-    accentGlow: 'rgba(56, 189, 248, 0.3)',
-    icon: <Search size={18} className="text-sky-400" />,
+    border: 'rgba(97, 215, 201, 0.45)',
+    bg: 'linear-gradient(150deg, rgba(8, 28, 36, 0.9) 0%, rgba(5, 18, 24, 0.95) 100%)',
+    headerBg: 'rgba(12, 38, 48, 0.6)',
+    text: '#61d7c9',
+    badgeBg: 'rgba(97, 215, 201, 0.15)',
+    accentGlow: 'rgba(97, 215, 201, 0.3)',
+    icon: <Search size={18} className="text-cyan-400" />,
   },
   webFetcher: {
     title: 'WEB FETCHER // DIRECT PAGE EXTRACTION',
@@ -103,13 +103,13 @@ const AGENT_THEMES: Record<string, AgentTheme> = {
   factChecker: {
     title: 'FACT CHECKER // INTEGRITY & ACCURACY AUDIT',
     subtitle: 'Cross-Verification, Anomaly Detection & Grounded Claim Scrutiny',
-    border: 'rgba(192, 132, 252, 0.45)',
-    bg: 'linear-gradient(150deg, rgba(28, 14, 48, 0.9) 0%, rgba(16, 8, 30, 0.95) 100%)',
-    headerBg: 'rgba(42, 18, 70, 0.6)',
-    text: '#c084fc',
-    badgeBg: 'rgba(192, 132, 252, 0.15)',
-    accentGlow: 'rgba(192, 132, 252, 0.3)',
-    icon: <ShieldCheck size={18} className="text-purple-400" />,
+    border: 'rgba(97, 215, 201, 0.45)',
+    bg: 'linear-gradient(150deg, rgba(8, 28, 36, 0.9) 0%, rgba(5, 18, 24, 0.95) 100%)',
+    headerBg: 'rgba(12, 38, 48, 0.6)',
+    text: '#61d7c9',
+    badgeBg: 'rgba(97, 215, 201, 0.15)',
+    accentGlow: 'rgba(97, 215, 201, 0.3)',
+    icon: <ShieldCheck size={18} className="text-cyan-400" />,
   },
   reviewer: {
     title: 'REVIEWER // QUALITY ASSURANCE',
@@ -803,50 +803,50 @@ function formatFactCheckerOutput(step: JarvisExecutionStep, parsed: unknown, raw
   const data = extractFactCheckerData(step, parsed, raw);
 
   const lines: string[] = [
-    `### ⚖️ Fact-Check Audit Summary`,
-    `**Verification Status:** ${data.summary}`,
+    `### 🎯 Verification Audit Scope`,
+    `**Audit Scope:** ${data.summary || 'Empirical ground verification & claim scrutiny'}`,
     ``,
+    `### 📋 Verified Empirical Claims`,
   ];
 
   if (data.claims.length > 0) {
-    lines.push(`#### ✅ Verified Claims:`);
-    data.claims.forEach((c) => {
-      lines.push(`✅ ${c.claim}`);
+    data.claims.forEach((c, idx) => {
+      lines.push(`${idx + 1}. **Claim ${idx + 1}:** ${c.claim}`);
       const hasSource = Boolean(c.domain || c.date);
       if (hasSource) {
         if (c.domain && c.date) {
-          lines.push(`   Source: ${c.domain} (${c.date})`);
+          lines.push(`   - **Source:** ${c.domain} (${c.date})`);
         } else if (c.domain) {
-          lines.push(`   Source: ${c.domain}`);
+          lines.push(`   - **Source:** ${c.domain}`);
         } else {
-          lines.push(`   Source: ${c.date}`);
+          lines.push(`   - **Source:** ${c.date}`);
         }
       }
       if (c.confirmedBy && c.confirmedBy.length > 0) {
-        lines.push(`   Confirmed by: ${c.confirmedBy.join(', ')}`);
+        lines.push(`   - **Confirmed by:** ${c.confirmedBy.join(', ')}`);
       }
-      lines.push(``);
     });
   } else {
-    lines.push(`#### ✅ Verified Claims:\n- All claims checked and verified against grounding corpus.\n`);
+    lines.push(`1. **Full Integrity Verification:** All empirical claims verified against grounding corpus.`);
   }
 
+  lines.push(``);
+  lines.push(`### 🧭 Audit Integrity Directives`);
+
   if (data.plausibleUnconfirmed.length > 0) {
-    lines.push(`#### 🔍 Plausible Details (Single-source - hedged in synthesis):`);
-    data.plausibleUnconfirmed.forEach((p) => lines.push(`- **Hedged detail:** ${p}`));
-    lines.push(``);
+    data.plausibleUnconfirmed.forEach((p) => lines.push(`- **Hedged Detail:** ${p}`));
+  } else {
+    lines.push(`- **Hedged Details:** ⚪ None (All claims backed by multiple sources)`);
   }
 
   if (data.fabricatedOrContradicted.length > 0) {
-    lines.push(`#### 🚫 Contradicted / Fabricated Discrepancies (Excluded from synthesis):`);
-    data.fabricatedOrContradicted.forEach((fb) => lines.push(`- **Excluded:** ${fb}`));
-    lines.push(``);
+    data.fabricatedOrContradicted.forEach((fb) => lines.push(`- **Excluded Discrepancy:** ${fb}`));
+  } else {
+    lines.push(`- **Contradicted Items:** ⚪ None detected (Full grounding consistency)`);
   }
 
   if (data.issues.length > 0) {
-    lines.push(`#### ⚠️ Discrepancy & Correction Notes:`);
-    data.issues.forEach((issue) => lines.push(`- **Correction:** ${issue}`));
-    lines.push(``);
+    data.issues.forEach((issue) => lines.push(`- **Correction Directive:** ${issue}`));
   }
 
   return lines.join('\n').trim();
@@ -929,8 +929,43 @@ function formatAgentContentToMarkdown(step: JarvisExecutionStep): {
 
   // 3. RESEARCHER AGENT
   if (step.agentId === 'researcher') {
-    const md = formatResearcherOutput(step, parsed, raw);
-    return { formatted: md, isStructuredJson: true, raw };
+    const resData = extractResearcherData(step, parsed, raw);
+    let md = `### 🎯 Targeted Research Scope\n**Research Focus:** ${step.summary || 'Real-time multi-source empirical retrieval and fact extraction'}\n\n### 📋 Verified Empirical Findings\n`;
+
+    if (resData.candidates.length > 0) {
+      resData.candidates.forEach((cand, idx) => {
+        const title = cand.title ? `**${cand.title}:** ` : '';
+        md += `${idx + 1}. ${title}${cand.fact}\n`;
+        const hasSource = Boolean(cand.domain || cand.eventDate || (cand.sourceIndex !== undefined));
+        if (hasSource) {
+          const srcPart = cand.domain ? cand.domain : cand.sourceIndex !== undefined ? `Source #${cand.sourceIndex}` : '';
+          const datePart = cand.eventDate ? ` (${cand.eventDate})` : '';
+          md += `   - **Source:** ${srcPart}${datePart}\n`;
+        }
+        if (cand.confirmedBy && cand.confirmedBy.length > 0) {
+          md += `   - **Confirmed by:** ${cand.confirmedBy.join(', ')}\n`;
+        }
+      });
+    } else {
+      const fallbackMd = formatResearcherOutput(step, parsed, raw);
+      md = fallbackMd;
+    }
+
+    if (resData.insights.length > 0) {
+      md += `\n### 🧭 Empirical Insights & Directives\n`;
+      resData.insights.forEach((ins) => {
+        md += `- **Key Insight:** ${ins}\n`;
+      });
+    }
+
+    if (resData.sources.length > 0) {
+      md += `\n### 🌐 Primary Grounding Index\n`;
+      resData.sources.slice(0, 6).forEach((src) => {
+        md += `- **[${src.title || src.domain || 'Source'}](${src.url})**${src.publishedAt ? ` _(${src.publishedAt})_` : ''}\n`;
+      });
+    }
+
+    return { formatted: md.trim(), isStructuredJson: true, raw };
   }
 
   // 4. REVIEWER AGENT
@@ -1601,7 +1636,7 @@ export const ResearcherMeshAnswerView: React.FC<{
  * Never displays raw field names (dateStatus, eventDate, publishedAt, updatedAt, url)
  * unless they contain a real date value. Hides any field that is null.
  */
-const FactCheckerMeshAnswerView: React.FC<{
+export const FactCheckerMeshAnswerView: React.FC<{
   step: JarvisExecutionStep;
   parsed: unknown;
   raw: string;
@@ -1862,7 +1897,6 @@ export const JarvisDeepResearchMeshAnswers: React.FC<JarvisDeepResearchMeshAnswe
           };
 
           const { formatted, isStructuredJson, raw } = formatAgentContentToMarkdown(step);
-          const { parsed } = parseAgentJson(raw);
           const isShowingRaw = Boolean(rawViewMap[idx]);
 
           return (
@@ -1983,20 +2017,6 @@ export const JarvisDeepResearchMeshAnswers: React.FC<JarvisDeepResearchMeshAnswe
                       {raw}
                     </pre>
                   </div>
-                ) : step.agentId === 'researcher' ? (
-                  <ResearcherMeshAnswerView
-                    step={step}
-                    parsed={parsed}
-                    raw={raw}
-                    fallbackFormatted={formatted}
-                  />
-                ) : step.agentId === 'factChecker' ? (
-                  <FactCheckerMeshAnswerView
-                    step={step}
-                    parsed={parsed}
-                    raw={raw}
-                    fallbackFormatted={formatted}
-                  />
                 ) : (
                   <FormattedText content={formatted} />
                 )}
