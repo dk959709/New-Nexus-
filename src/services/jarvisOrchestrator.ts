@@ -1,6 +1,11 @@
 import { api } from '@/services/api';
 import { storage, DEFAULT_AGENT_SYSTEM_PROMPTS } from '@/lib/storage';
 import { searchWikipedia, getWikipediaSummary } from '@/services/wikipedia';
+import {
+  getWikidataEntity,
+  formatWikidataForReport,
+  wikidataToSearchResult,
+} from '@/services/wikidata';
 import { stripConversationalMetaText } from '@/lib/format';
 import { logToJarvisTerminal } from '@/lib/jarvisTerminalLogger';
 import { formatCandidateBullet } from '@/lib/factFormatter';
@@ -14,6 +19,7 @@ import type {
   JarvisImageResult,
   JarvisSystemConfig,
   SearchResult,
+  WikidataEntity,
 } from '@/types';
 
 export interface JarvisExecutionResult {
@@ -922,7 +928,7 @@ export interface RawSearchResultCandidate {
   updatedAt?: string;
   location?: string;
   category?: string;
-  type: 'wikipedia' | 'web' | 'news';
+  type: 'wikipedia' | 'wikidata' | 'web' | 'news';
 }
 
 /**
@@ -1319,8 +1325,8 @@ export function scoreAndFilterSearchResults(
       score += 70;
     }
 
-    // Tier 2: Wikipedia & major reference encyclopedias/documentation
-    if (domainLower.includes('wikipedia.org') || c.type === 'wikipedia' || domainLower.includes('britannica.com') || domainLower.startsWith('docs.') || domainLower.startsWith('developer.')) {
+    // Tier 2: Wikipedia, Wikidata & major reference encyclopedias/documentation
+    if (domainLower.includes('wikipedia.org') || c.type === 'wikipedia' || domainLower.includes('wikidata.org') || c.type === 'wikidata' || domainLower.includes('britannica.com') || domainLower.startsWith('docs.') || domainLower.startsWith('developer.')) {
       score += 50;
     }
 
@@ -2504,13 +2510,20 @@ Please perform your specialized processing for this inquiry. Provide clear, conc
 
   // Determine which downstream agents are required.
   // When isWebFetch is true, Researcher, Wikipedia, Advisor, Fact Checker, and Reviewer are skipped.
-  // Researcher ONLY runs if enabled AND (deepResearch toggle is active OR plannerOutput.needsResearch is true).
+  // Researcher runs if enabled AND (deepResearch toggle is active OR plannerOutput.needsResearch, needsWikipedia, or needsWikidata is true).
   const shouldResearch =
     !isWebFetch &&
     !isPersonalQuery &&
     !isSelfQuery &&
     agentConfigs.researcher.enabled &&
-    (isSearchOverride || deepResearch || Boolean(plannerOutput.needsResearch));
+    (isSearchOverride ||
+      deepResearch ||
+      Boolean(plannerOutput.needsResearch) ||
+      Boolean(plannerOutput.needsWikipedia) ||
+      Boolean(plannerOutput.needsWikidata));
+
+  let wikidataEntity: WikidataEntity | null = null;
+  let wikidataReportSection = '';
 
   const shouldFactCheck =
     !isWebFetch &&
@@ -2677,6 +2690,7 @@ Please perform your specialized processing for this inquiry. Provide clear, conc
       const { cleanedSearchQuery } = extractTopicKeywords(strippedQuery, plannerOutput.task);
 
       let searchResults: SearchResult[] = [];
+      let wikidataCandidate: RawSearchResultCandidate | null = null;
       let wikiSummaryCandidate: RawSearchResultCandidate | null = null;
 
       // 1. Weather Query handling using api.weather()
@@ -2843,51 +2857,123 @@ Please perform your specialized processing for this inquiry. Provide clear, conc
         }
       }
 
-      // 4. AI-Decided or Product-Lineup Wikipedia/Wikidata Lookup for factual/encyclopedic context (Works in both Deep Research ON and OFF)
+      // 4. AI-Decided or Product-Lineup Wikidata / Wikipedia Lookup for factual/encyclopedic context (Works in both Deep Research ON and OFF)
       // Note: Wikidata and Wikipedia must NEVER be triggered in /search or /web commands.
       if (!isSearchOverride && !isWebFetch && (plannerOutput.needsWikipedia || plannerOutput.needsWikidata || isProductLineupQuery) && !isWeatherQuery && !isNewsQuery) {
-        console.log(`[JARVIS Researcher] Executing Wikipedia/Wikidata lookup for query: "${strippedQuery}" (needsWikipedia: ${plannerOutput.needsWikipedia}, needsWikidata: ${plannerOutput.needsWikidata}, isProductLineup: ${isProductLineupQuery})...`);
-        try {
-          // Clean search query for Wikipedia: extract core subject like "Claude (language model)" or "Claude" or "iPhone"
-          let wikiSearchTerm = strippedQuery;
-          if (isProductLineupQuery) {
-            const lower = strippedQuery.toLowerCase();
-            if (/\bclaude\b/i.test(lower)) wikiSearchTerm = 'Claude (language model)';
-            else if (/\bgpt\b|\bchatgpt\b/i.test(lower)) wikiSearchTerm = 'ChatGPT';
-            else if (/\bgemini\b/i.test(lower)) wikiSearchTerm = 'Gemini (language model)';
-            else if (/\bllama\b/i.test(lower)) wikiSearchTerm = 'Llama (language model)';
-            else if (/\bdeepseek\b/i.test(lower)) wikiSearchTerm = 'DeepSeek';
-            else if (/\biphone\b/i.test(lower)) wikiSearchTerm = 'iPhone';
-            else wikiSearchTerm = cleanedSearchQuery || strippedQuery;
-          }
+        console.log(`[JARVIS Researcher] Executing encyclopedic lookup for query: "${strippedQuery}" (needsWikipedia: ${plannerOutput.needsWikipedia}, needsWikidata: ${plannerOutput.needsWikidata}, isProductLineup: ${isProductLineupQuery})...`);
 
-          // Step 1: Call fetchWikipediaSearch with limit=1 to find the single best-matching page title/ID
-          const wikiPages = await searchWikipedia(wikiSearchTerm, 1);
-          if (wikiPages && wikiPages.length > 0 && wikiPages[0]?.title) {
-            const topPage = wikiPages[0];
-            console.log(`[JARVIS Researcher] Wikipedia Step 1 matched page: "${topPage.title}". Fetching full lead summary (Step 2)...`);
-            // Step 2: Call fetchWikipediaSummary using that page's title to get the full lead-paragraph summary
-            const summary = await getWikipediaSummary(topPage.title);
-            const extract = summary?.extract || topPage.snippet || topPage.description || '';
-            const pageUrl = summary?.url || topPage.url || `https://en.wikipedia.org/wiki/${encodeURIComponent(topPage.title.replace(/ /g, '_'))}`;
+        let needsWikipediaFallback = false;
 
-            wikiSummaryCandidate = {
-              title: summary?.title || topPage.title,
-              url: pageUrl,
-              domain: 'wikipedia.org',
-              description: extract,
-              type: 'wikipedia',
-            };
-            console.log(`[JARVIS Researcher] Wikipedia Step 2 retrieved summary (${extract.length} chars) for "${topPage.title}".`);
-            logToJarvisTerminal(`Wikipedia lookup triggered - found "${topPage.title}" page`);
-          } else {
-            // Safety check: 0 results returned, skip summary step and proceed with Tavily results only
-            console.log(`[JARVIS Researcher] Wikipedia Step 1 returned 0 results for query: "${wikiSearchTerm}". Skipping summary step.`);
-            logToJarvisTerminal('Wikipedia lookup triggered - no matching page found, skipped', 'warning');
+        // Step 4A: Wikidata Lookup (when needsWikidata is true)
+        if (plannerOutput.needsWikidata) {
+          console.log(`[JARVIS Researcher] Calling Wikidata API for query: "${strippedQuery}"...`);
+          logToJarvisTerminal(`Wikidata lookup initiated for: "${strippedQuery}"`);
+          try {
+            // Attempt search by stripped query; if no result, try cleanedSearchQuery or planner task
+            let entity = await getWikidataEntity(strippedQuery);
+            if (!entity && cleanedSearchQuery && cleanedSearchQuery !== strippedQuery) {
+              entity = await getWikidataEntity(cleanedSearchQuery);
+            }
+            if (!entity && plannerOutput.task) {
+              entity = await getWikidataEntity(plannerOutput.task);
+            }
+
+            if (entity) {
+              wikidataEntity = entity;
+              wikidataReportSection = formatWikidataForReport(entity);
+              wikidataCandidate = {
+                title: `${entity.label} (${entity.id}) - Wikidata`,
+                url: entity.url,
+                domain: 'wikidata.org',
+                description: wikidataReportSection,
+                type: 'wikidata',
+              };
+
+              console.log(`[JARVIS Researcher] Wikidata API call succeeded: "${entity.label}" (${entity.id}).`);
+              logToJarvisTerminal(`Wikidata lookup succeeded - found "${entity.label}" (${entity.id})`);
+              sourcesCollected.push(wikidataToSearchResult(entity));
+
+              // Add factual knowledge to facts list
+              researcherOutput.facts.push(`Wikidata Entity: ${entity.label} (${entity.id}) - ${entity.description || 'No description'}`);
+              if (entity.claims) {
+                for (const [propName, values] of Object.entries(entity.claims)) {
+                  if (values && values.length > 0) {
+                    researcherOutput.facts.push(`${propName}: ${values.join(', ')}`);
+                  }
+                }
+              }
+            } else {
+              console.log(`[JARVIS Researcher] Wikidata API call returned no entry for: "${strippedQuery}". Falling back to Wikipedia automatically (Rule 5).`);
+              wikidataReportSection = formatWikidataForReport(null);
+              logToJarvisTerminal('Wikidata lookup: no entry found - falling back to Wikipedia', 'warning');
+              needsWikipediaFallback = true;
+            }
+          } catch (wdErr) {
+            console.warn('[JARVIS Researcher] Wikidata API lookup error:', wdErr);
+            wikidataReportSection = formatWikidataForReport(null);
+            logToJarvisTerminal('Wikidata lookup error - falling back to Wikipedia', 'warning');
+            needsWikipediaFallback = true;
           }
-        } catch (wikiErr) {
-          console.warn('[JARVIS Researcher] Wikipedia 2-step lookup error (continuing with search results):', wikiErr);
-          logToJarvisTerminal('Wikipedia lookup triggered - lookup error, skipped', 'warning');
+        }
+
+        // Step 4B: Wikipedia Lookup (if needsWikipedia is true, or fallback from Wikidata per Rule 5, or product lineup)
+        const shouldLookupWikipedia = plannerOutput.needsWikipedia || needsWikipediaFallback || isProductLineupQuery;
+        if (shouldLookupWikipedia) {
+          try {
+            // Clean search query for Wikipedia: extract core subject or use linked Wikipedia title from Wikidata entity if available
+            let wikiSearchTerm = strippedQuery;
+            if (wikidataEntity?.wikipediaTitle) {
+              wikiSearchTerm = wikidataEntity.wikipediaTitle;
+            } else if (isProductLineupQuery) {
+              const lower = strippedQuery.toLowerCase();
+              if (/\bclaude\b/i.test(lower)) wikiSearchTerm = 'Claude (language model)';
+              else if (/\bgpt\b|\bchatgpt\b/i.test(lower)) wikiSearchTerm = 'ChatGPT';
+              else if (/\bgemini\b/i.test(lower)) wikiSearchTerm = 'Gemini (language model)';
+              else if (/\bllama\b/i.test(lower)) wikiSearchTerm = 'Llama (language model)';
+              else if (/\bdeepseek\b/i.test(lower)) wikiSearchTerm = 'DeepSeek';
+              else if (/\biphone\b/i.test(lower)) wikiSearchTerm = 'iPhone';
+              else wikiSearchTerm = cleanedSearchQuery || strippedQuery;
+            } else if (cleanedSearchQuery) {
+              wikiSearchTerm = cleanedSearchQuery;
+            }
+
+            console.log(`[JARVIS Researcher] Calling Wikipedia search for term: "${wikiSearchTerm}"...`);
+            // Step 1: Call searchWikipedia with limit=1 to find the single best-matching page title/ID
+            const wikiPages = await searchWikipedia(wikiSearchTerm, 1);
+            if (wikiPages && wikiPages.length > 0 && wikiPages[0]?.title) {
+              const topPage = wikiPages[0];
+              console.log(`[JARVIS Researcher] Wikipedia Step 1 matched page: "${topPage.title}". Fetching full lead summary (Step 2)...`);
+              // Step 2: Call getWikipediaSummary using that page's title to get the full lead-paragraph summary
+              const summary = await getWikipediaSummary(topPage.title);
+              const extract = summary?.extract || topPage.snippet || topPage.description || '';
+              const pageUrl = summary?.url || topPage.url || `https://en.wikipedia.org/wiki/${encodeURIComponent(topPage.title.replace(/ /g, '_'))}`;
+
+              wikiSummaryCandidate = {
+                title: summary?.title || topPage.title,
+                url: pageUrl,
+                domain: 'wikipedia.org',
+                description: extract,
+                type: 'wikipedia',
+              };
+              researcherOutput.facts.push(`Wikipedia: ${summary?.title || topPage.title} - ${extract}`);
+              console.log(`[JARVIS Researcher] Wikipedia Step 2 retrieved summary (${extract.length} chars) for "${topPage.title}".`);
+              logToJarvisTerminal(`Wikipedia lookup triggered - found "${topPage.title}" page`);
+            } else {
+              // Safety check: 0 results returned, skip summary step and proceed with Tavily results only
+              console.log(`[JARVIS Researcher] Wikipedia Step 1 returned 0 results for query: "${wikiSearchTerm}". Skipping summary step.`);
+              logToJarvisTerminal('Wikipedia lookup triggered - no matching page found, skipped', 'warning');
+              // Rule 6: If neither source has information, respond that no information was found instead of guessing
+              if (needsWikipediaFallback && !wikidataEntity) {
+                researcherOutput.facts.push('No information was found in Wikidata or Wikipedia for this query.');
+              }
+            }
+          } catch (wikiErr) {
+            console.warn('[JARVIS Researcher] Wikipedia 2-step lookup error (continuing with search results):', wikiErr);
+            logToJarvisTerminal('Wikipedia lookup triggered - lookup error, skipped', 'warning');
+            if (needsWikipediaFallback && !wikidataEntity) {
+              researcherOutput.facts.push('No information was found in Wikidata or Wikipedia for this query.');
+            }
+          }
         }
       } else if (isSearchOverride || isWebFetch) {
         console.log('[JARVIS Researcher] /search or /web command detected. Skipping Wikipedia and Wikidata lookups.');
@@ -2897,7 +2983,12 @@ Please perform your specialized processing for this inquiry. Provide clear, conc
 
       const rawCandidates: RawSearchResultCandidate[] = [];
 
-      // Step 3: Add Wikipedia summary alongside existing search results (don't replace them)
+      // Add Wikidata candidate if available
+      if (wikidataCandidate) {
+        rawCandidates.push(wikidataCandidate);
+      }
+
+      // Add Wikipedia summary alongside existing search results (don't replace them)
       if (wikiSummaryCandidate) {
         rawCandidates.push(wikiSummaryCandidate);
       }
@@ -3637,6 +3728,9 @@ Please perform your specialized processing for this inquiry. Provide clear, conc
       facts: factsList.map((f, i) => `${i + 1}. ${f}`).join('\n'),
       research: factsList.map((f, i) => `${i + 1}. ${f}`).join('\n'),
       claims: factsList.map((f, i) => `${i + 1}. ${f}`).join('\n'),
+      wikidata: wikidataReportSection,
+      wikidataReport: wikidataReportSection,
+      wikidataSection: wikidataReportSection,
       verified: verifiedList.map((c) => `- ${c}`).join('\n'),
       issues: issuesList.map((i) => `- ${i}`).join('\n'),
       plausibleUnconfirmed: plausibleUnconfirmedList.map((p) => `- ${p}`).join('\n'),
@@ -3805,7 +3899,7 @@ User Query: "${strippedQuery}"
 ${webFetchContextBlock}
 Planner Guidance: ${plannerPlanText}
 ${advisorOutput ? `Advisor Conceptual Analysis & Technical Comparison (General Knowledge):\n${advisorOutput}\n` : ''}
-${factsList.length > 0 ? `Key Verified Facts:\n${factsList.map((f) => `- ${f}`).join('\n')}\n` : ''}${verifiedList.length > 0 ? `Verified Claims:\n${verifiedList.map((c) => `- ${c}`).join('\n')}\n` : ''}${plausibleUnconfirmedList.length > 0 ? `Fact-Checker Plausible Unconfirmed Details (CRITICAL - INCLUDE WITH NATURAL HEDGE/CAVEAT, e.g. "reportedly exists/released, based on a single source, not independently confirmed" - DO NOT OMIT DATES, TIERS, OR PLAUSIBLE CLAIMS):\n${plausibleUnconfirmedList.map((p) => `- ${p}`).join('\n')}\n` : ''}${fabricatedList.length > 0 ? `Fact-Checker Fabricated/Contradicted Items (HARD EXCLUSION - DO NOT MENTION IN FINAL SYNTHESIS):\n${fabricatedList.map((fb) => `- ${fb}`).join('\n')}\n` : ''}${generalIssuesList.length > 0 ? `Fact-Checker Identified Issues (Exclude only specific invalid claims; do NOT discard other valid qualifying candidates):\n${generalIssuesList.map((i) => `- ${i}`).join('\n')}\n` : ''}${reviewerMissingList.length > 0 ? `Reviewer Missing Context Suggestions (Advisory):\n${reviewerMissingList.map((m) => `- ${m}`).join('\n')}\n` : ''}${reviewerIssuesList.length > 0 ? `Reviewer Flagged Issues & Scope Critique (Advisory - exclude only specific problematic items, preserve and synthesize all other valid candidates):\n${reviewerIssuesList.map((iss) => `- ${iss}`).join('\n')}\n` : ''}${reviewerRecommendation ? `Reviewer Actionable Guidance & Candidate Priority (Advisory ranking guidance):\n${reviewerRecommendation}\n` : ''}[SYNTHESIS MANDATE]: If any specific candidates were flagged or excluded by Fact-Checker or Reviewer, synthesize all remaining verified, valid candidates into the final answer. Only state that verified news/data is unavailable if ALL candidates are completely unusable or no verified data exists.
+${wikidataReportSection ? `[WIKIDATA INTELLIGENCE & REQUIRED REPORT SECTION]:\n${wikidataReportSection}\n\nCRITICAL REPORT REQUIREMENT: Because Wikidata was queried, your report output MUST include a section titled exactly:\n=== WIKIDATA ===\nfollowed by the Wikidata result details (or "no entry found" if no entry was found).\n\n` : ''}${factsList.length > 0 ? `Key Verified Facts:\n${factsList.map((f) => `- ${f}`).join('\n')}\n` : ''}${verifiedList.length > 0 ? `Verified Claims:\n${verifiedList.map((c) => `- ${c}`).join('\n')}\n` : ''}${plausibleUnconfirmedList.length > 0 ? `Fact-Checker Plausible Unconfirmed Details (CRITICAL - INCLUDE WITH NATURAL HEDGE/CAVEAT, e.g. "reportedly exists/released, based on a single source, not independently confirmed" - DO NOT OMIT DATES, TIERS, OR PLAUSIBLE CLAIMS):\n${plausibleUnconfirmedList.map((p) => `- ${p}`).join('\n')}\n` : ''}${fabricatedList.length > 0 ? `Fact-Checker Fabricated/Contradicted Items (HARD EXCLUSION - DO NOT MENTION IN FINAL SYNTHESIS):\n${fabricatedList.map((fb) => `- ${fb}`).join('\n')}\n` : ''}${generalIssuesList.length > 0 ? `Fact-Checker Identified Issues (Exclude only specific invalid claims; do NOT discard other valid qualifying candidates):\n${generalIssuesList.map((i) => `- ${i}`).join('\n')}\n` : ''}${reviewerMissingList.length > 0 ? `Reviewer Missing Context Suggestions (Advisory):\n${reviewerMissingList.map((m) => `- ${m}`).join('\n')}\n` : ''}${reviewerIssuesList.length > 0 ? `Reviewer Flagged Issues & Scope Critique (Advisory - exclude only specific problematic items, preserve and synthesize all other valid candidates):\n${reviewerIssuesList.map((iss) => `- ${iss}`).join('\n')}\n` : ''}${reviewerRecommendation ? `Reviewer Actionable Guidance & Candidate Priority (Advisory ranking guidance):\n${reviewerRecommendation}\n` : ''}[SYNTHESIS MANDATE]: If any specific candidates were flagged or excluded by Fact-Checker or Reviewer, synthesize all remaining verified, valid candidates into the final answer. Only state that verified news/data is unavailable if ALL candidates are completely unusable or no verified data exists.
 Retrieved Ground-Truth Sources (CRITICAL RULE: Only cite sources from this exact list. Never invent or cite any other sources):
 ${sourcesListText}${customInsightsBlock}${personalIdentityDirective}${architectureReferenceDirective}`;
 
@@ -4287,7 +4381,17 @@ ${sourcesListText}${customInsightsBlock}${personalIdentityDirective}${architectu
     }
   }
 
-  const cleanedFinalAnswer = stripConversationalMetaText(finalAnswer);
+  let cleanedFinalAnswer = stripConversationalMetaText(finalAnswer);
+
+  // If Wikidata was requested (needsWikidata is true), guarantee the "=== WIKIDATA ===" section is visible in the report output
+  if (!isSearchOverride && !isWebFetch && plannerOutput.needsWikidata) {
+    const wdSection = wikidataReportSection || formatWikidataForReport(null);
+    if (!cleanedFinalAnswer.includes('=== WIKIDATA ===')) {
+      cleanedFinalAnswer = cleanedFinalAnswer.trim()
+        ? `${cleanedFinalAnswer.trim()}\n\n${wdSection}`
+        : wdSection;
+    }
+  }
 
   return {
     answer: cleanedFinalAnswer,

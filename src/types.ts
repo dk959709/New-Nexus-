@@ -8,10 +8,21 @@ export interface SearchResult {
   date?: string;
   image?: string;
   thumbnail?: string;
-  type: 'web' | 'news' | 'images' | 'videos' | 'shopping' | 'wikipedia';
+  type: 'web' | 'news' | 'images' | 'videos' | 'shopping' | 'wikipedia' | 'wikidata';
   videoId?: string;
   channel?: string;
   duration?: string;
+}
+
+export interface WikidataEntity {
+  id: string;
+  label: string;
+  description?: string;
+  aliases?: string[];
+  url: string;
+  wikipediaTitle?: string;
+  wikipediaUrl?: string;
+  claims?: Record<string, string[]>;
 }
 
 export interface WikipediaSearchResult {
