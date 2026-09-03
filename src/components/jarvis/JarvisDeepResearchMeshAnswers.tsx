@@ -26,7 +26,7 @@ import {
 } from 'lucide-react';
 import { JarvisExecutionStep } from '../../types';
 import { FormattedText } from './FormattedText';
-import { copyToClipboard } from '@/lib/clipboard';
+import { copyToClipboard, formatMarkdownToRichHtml } from '@/lib/clipboard';
 import { cleanAndFormatFact } from '../../lib/factFormatter';
 
 function extractDomain(urlStr: string): string {
@@ -1861,16 +1861,23 @@ export const JarvisDeepResearchMeshAnswers: React.FC<JarvisDeepResearchMeshAnswe
     }
 
     const agentId = (step.agentId || '').toLowerCase();
+    const isShowingRaw = Boolean(rawViewMap[idx]);
 
-    // For Researcher and FactChecker agent boxes only:
+    // For Researcher and FactChecker agent boxes:
+    // If 'Formatted' view is active:
     // When the Copy button is clicked, the copied text matches the exact formatted text structure
     // that is displayed in the UI:
     // - Section headers ('🎯 Targeted Research Scope' / '🎯 Verification Audit Scope', '📋 Verified Empirical Findings' / '📋 Verified Empirical Claims')
     // - Numbered list items with bold titles
     // - 'Source:' and 'Confirmed by:' lines, formatted the same way they appear on screen
-    if (agentId === 'researcher' || agentId === 'factchecker') {
+    // If 'Raw JSON' view is active:
+    // Fall through to copy the actual raw JSON data with model metadata (like Planner already does correctly)
+    if ((agentId === 'researcher' || agentId === 'factchecker') && !isShowingRaw) {
       const { formatted } = formatAgentContentToMarkdown(step);
-      const success = await copyToClipboard(formatted.trim());
+      const plainText = formatted.trim();
+      const themeColor = agentId === 'researcher' ? '#b45309' : '#7c3aed';
+      const richHtml = formatMarkdownToRichHtml(plainText, themeColor);
+      const success = await copyToClipboard(plainText, richHtml);
       if (success) {
         setCopiedStepIndex(idx);
         setTimeout(() => setCopiedStepIndex(null), 2000);
@@ -1878,11 +1885,13 @@ export const JarvisDeepResearchMeshAnswers: React.FC<JarvisDeepResearchMeshAnswe
       return;
     }
 
-    // Leave Planner, Reviewer, and Final Synthesis boxes completely untouched:
+    // Leave Planner, Reviewer, and Final Synthesis boxes completely untouched in text structure:
     const agentName = step.name || step.agentId || 'Agent';
     const modelId = step.model || step.providerName || 'unknown';
     const textWithModel = `${text.trim()}\n\n---\nModels Used:\n${agentName}: ${modelId}`;
-    const success = await copyToClipboard(textWithModel);
+    const agentTheme = AGENT_THEMES[step.agentId]?.text;
+    const richHtml = formatMarkdownToRichHtml(textWithModel, agentTheme);
+    const success = await copyToClipboard(textWithModel, richHtml);
     if (success) {
       setCopiedStepIndex(idx);
       setTimeout(() => setCopiedStepIndex(null), 2000);

@@ -25,7 +25,7 @@ import { formatFullPipelineExport } from '@/components/jarvis/formatJarvisPipeli
 import { stripConversationalMetaText } from '@/lib/format';
 import { storage } from '@/lib/storage';
 import { playTapSound } from '@/lib/audio';
-import { copyToClipboard } from '@/lib/clipboard';
+import { copyToClipboard, formatMarkdownToRichHtml } from '@/lib/clipboard';
 
 function PageIntro({ eyebrow, title, description }: { eyebrow: string; title: string; description: string }) {
   return <div className="page-intro"><span className="eyebrow">{eyebrow}</span><h1>{title}</h1><p>{description}</p></div>;
@@ -56,7 +56,8 @@ export function SavedPage() {
     if (item && item.type === 'jarvis') {
       textToCopy = formatFullPipelineExport(item);
     }
-    const success = await copyToClipboard(textToCopy);
+    const richHtml = formatMarkdownToRichHtml(textToCopy);
+    const success = await copyToClipboard(textToCopy, richHtml);
     if (success) {
       setCopiedId(id);
       setTimeout(() => setCopiedId(null), 2000);
@@ -80,7 +81,8 @@ export function SavedPage() {
     const modelId = synthStep?.model || synthStep?.providerName;
     const textWithModel = modelId ? `${content.trim()}\n\n---\nModels Used:\n${agentName}: ${modelId}` : content.trim();
 
-    const success = await copyToClipboard(textWithModel);
+    const richHtml = formatMarkdownToRichHtml(textWithModel, '#c084fc');
+    const success = await copyToClipboard(textWithModel, richHtml);
     if (success) {
       setCopiedSynthId(item.id);
       setTimeout(() => setCopiedSynthId(null), 2000);

@@ -41,7 +41,7 @@ import { FormattedText } from './FormattedText';
 import { JarvisDeepResearchMeshAnswers } from './JarvisDeepResearchMeshAnswers';
 import { JarvisFactCheckNotes } from './JarvisFactCheckNotes';
 import { formatFullPipelineExport } from './formatJarvisPipelineExport';
-import { copyToClipboard } from '@/lib/clipboard';
+import { copyToClipboard, formatMarkdownToRichHtml } from '@/lib/clipboard';
 import type {
   JarvisExecutionStep,
   JarvisMessage,
@@ -246,7 +246,8 @@ export function JarvisChat({ config, onOpenSettings }: JarvisChatProps) {
     const modelId = synthStep?.model || synthStep?.providerName;
     const textWithModel = modelId ? `${content.trim()}\n\n---\nModels Used:\n${agentName}: ${modelId}` : content.trim();
 
-    const success = await copyToClipboard(textWithModel);
+    const richHtml = formatMarkdownToRichHtml(textWithModel, '#c084fc');
+    const success = await copyToClipboard(textWithModel, richHtml);
     if (success) {
       setCopiedSynthId(msg.id);
       setTimeout(() => setCopiedSynthId(null), 2000);
@@ -626,7 +627,8 @@ export function JarvisChat({ config, onOpenSettings }: JarvisChatProps) {
   };
 
   const handleCopy = async (text: string, id: string) => {
-    const success = await copyToClipboard(text);
+    const richHtml = formatMarkdownToRichHtml(text);
+    const success = await copyToClipboard(text, richHtml);
     if (success) {
       setCopiedId(id);
       setTimeout(() => setCopiedId(null), 2000);
