@@ -69,34 +69,82 @@ function parseAgentJson(rawOutput: string): { parsed: unknown; isJson: boolean }
 function formatVerifiedClaimEntry(v: unknown): string {
   if (!v) return '';
   if (typeof v === 'string') {
-    return v.trim();
+    const trimmed = v.trim();
+    if (/^"?([a-zA-Z0-9_]+)"?\s*[:=]\s*(?:null|undefined|""|''|\[\]|\{\})\s*,?$/i.test(trimmed)) return '';
+    if (/^"?(dateStatus|eventDate|publishedAt|updatedAt|url)"?\s*[:=]/i.test(trimmed)) return '';
+    return trimmed;
   }
   if (typeof v === 'object' && v !== null) {
     const vObj = v as Record<string, unknown>;
-    const claim = String(vObj.claim || vObj.fact || vObj.statement || vObj.title || vObj.text || vObj.point || vObj.finding || '').trim();
+    let claim = String(
+      vObj.claim ||
+      vObj.fact ||
+      vObj.statement ||
+      vObj.title ||
+      vObj.text ||
+      vObj.point ||
+      vObj.finding ||
+      ''
+    ).trim();
+
     if (!claim) {
-      return '';
+      const entry = Object.entries(vObj).find(
+        ([k, val]) =>
+          !/^(domain|url|eventDate|publishedAt|updatedAt|dateStatus|confirmedBy|id|sourceIndex)$/i.test(k) &&
+          typeof val === 'string' &&
+          val.trim().length > 10
+      );
+      if (entry) claim = String(entry[1]).trim();
     }
 
-    const domain = (vObj.domain || (vObj.url ? extractDomain(String(vObj.url)) : '')) as string;
-    const dateStr = (vObj.eventDate || vObj.publishedAt || vObj.updatedAt || (vObj.dateStatus && vObj.dateStatus !== 'unknown' ? vObj.dateStatus : '')) as string;
+    if (!claim) return '';
+    claim = claim.replace(/^✅\s*/, '').replace(/^[-*•]\s*/, '').trim();
 
-    const metaParts: string[] = [];
-    if (domain) metaParts.push(domain);
-    if (dateStr) metaParts.push(dateStr);
-    const metaStr = metaParts.length > 0 ? ` (${metaParts.join(', ')})` : '';
+    const domain = (
+      typeof vObj.domain === 'string' && vObj.domain.trim() && !/^(null|undefined|unknown|none)$/i.test(vObj.domain.trim())
+        ? vObj.domain.trim()
+        : vObj.url && typeof vObj.url === 'string' && !/^(null|undefined)$/i.test(vObj.url.trim())
+        ? extractDomain(String(vObj.url))
+        : ''
+    );
+
+    let dateStr = '';
+    const rawDate = vObj.eventDate || vObj.publishedAt || vObj.updatedAt;
+    if (typeof rawDate === 'string' && rawDate.trim() && !/^(null|undefined|unknown|none|n\/a)$/i.test(rawDate.trim())) {
+      dateStr = rawDate.trim();
+    }
 
     let confirmedStr = '';
     if (Array.isArray(vObj.confirmedBy) && vObj.confirmedBy.length > 0) {
-      const validConfirmed = vObj.confirmedBy.map(String).filter(Boolean);
+      const validConfirmed = vObj.confirmedBy
+        .map(String)
+        .map((s) => s.trim())
+        .filter((s) => s && !/^(null|undefined|none|\[\])$/i.test(s));
       if (validConfirmed.length > 0) {
-        confirmedStr = ` — Confirmed by: ${validConfirmed.join(', ')}`;
+        confirmedStr = validConfirmed.join(', ');
       }
     } else if (typeof vObj.confirmedBy === 'string' && vObj.confirmedBy.trim()) {
-      confirmedStr = ` — Confirmed by: ${vObj.confirmedBy.trim()}`;
+      const trimmedConf = vObj.confirmedBy.trim();
+      if (!/^(null|undefined|none|\[\])$/i.test(trimmedConf)) {
+        confirmedStr = trimmedConf;
+      }
     }
 
-    return `${claim}${metaStr}${confirmedStr}`.trim();
+    const blockLines: string[] = [`✅ ${claim}`];
+    if (domain || dateStr) {
+      if (domain && dateStr) {
+        blockLines.push(`   Source: ${domain} (${dateStr})`);
+      } else if (domain) {
+        blockLines.push(`   Source: ${domain}`);
+      } else {
+        blockLines.push(`   Source: ${dateStr}`);
+      }
+    }
+    if (confirmedStr) {
+      blockLines.push(`   Confirmed by: ${confirmedStr}`);
+    }
+
+    return blockLines.join('\n');
   }
   return String(v).trim();
 }
@@ -453,9 +501,9 @@ function formatAgentStep(step: JarvisExecutionStep): string {
     if (verified.length > 0) {
       lines.push(`Verified Claims:`);
       verified.forEach((v) => {
-        lines.push(`- ${String(v)}`);
+        lines.push(String(v));
+        lines.push(``);
       });
-      lines.push(``);
     }
 
     lines.push(`Correction & Audit Notes:`);

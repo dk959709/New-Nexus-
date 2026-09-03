@@ -1,5 +1,6 @@
 import React, { useState } from 'react';
 import {
+  AlertTriangle,
   BookOpen,
   Bot,
   Brain,
@@ -14,6 +15,7 @@ import {
   FileText,
   Globe,
   HelpCircle,
+  Info,
   Layers,
   Lightbulb,
   RotateCcw,
@@ -234,42 +236,164 @@ function parseAgentJson(rawOutput: string): { parsed: unknown; isJson: boolean }
 }
 
 /**
- * Formats a verified claim item (object or string) into a coherent, readable entry
- * e.g. "[claim] ([domain], [eventDate]) — Confirmed by: [confirmedBy list]"
+ * Check if a string is an isolated JSON key name artifact
+ */
+function isJsonKeyArtifact(str: string): boolean {
+  if (!str) return true;
+  const normalized = str.trim().toLowerCase().replace(/^["'`]|["'`]$/g, '');
+  return /^(?:title|fact|claim|domain|url|eventdate|event_date|publishedat|published_at|updatedat|updated_at|datestatus|date_status|confirmedby|confirmed_by|sourceindex|source_index|source|sources|location|category|description|headline)$/i.test(normalized);
+}
+
+/**
+ * Validates whether a value is a real, meaningful date string.
+ * Discards null, undefined, "null", "undefined", "unknown", "none", or JSON key names.
+ */
+function isValidDateValue(val: unknown): boolean {
+  if (val === null || val === undefined) return false;
+  if (typeof val !== 'string' && typeof val !== 'number') return false;
+  const str = String(val).trim();
+  if (!str) return false;
+  if (/^(null|undefined|unknown|none|n\/a|unspecified)$/i.test(str)) return false;
+  if (/^(dateStatus|eventDate|publishedAt|updatedAt|url|domain|claim|fact)$/i.test(str)) return false;
+  return true;
+}
+
+/**
+ * Extracts a real date value from the object properties (eventDate, publishedAt, updatedAt, or valid dateStatus)
+ */
+function extractRealDateValue(obj: Record<string, unknown>): string {
+  if (isValidDateValue(obj.eventDate)) return String(obj.eventDate).trim();
+  if (isValidDateValue(obj.publishedAt)) return String(obj.publishedAt).trim();
+  if (isValidDateValue(obj.updatedAt)) return String(obj.updatedAt).trim();
+  if (isValidDateValue(obj.dateStatus)) {
+    const ds = String(obj.dateStatus).trim();
+    if (!/^(unknown|null|undefined|none|n\/a)$/i.test(ds)) {
+      return ds;
+    }
+  }
+  return '';
+}
+
+/**
+ * Formats a verified claim item (object or string) into ONE clean block:
+ *
+ * ✅ [claim text]
+ *    Source: [domain] ([eventDate or publishedAt if available])
+ *    Confirmed by: [confirmedBy list, comma-separated]
+ *
+ * Hides any field that is null. Never outputs raw field names.
  */
 function formatVerifiedClaimEntry(v: unknown): string {
   if (!v) return '';
+
   if (typeof v === 'string') {
-    return v.trim();
-  }
-  if (typeof v === 'object' && v !== null) {
-    const vObj = v as Record<string, unknown>;
-    const claim = String(vObj.claim || vObj.fact || vObj.statement || vObj.title || vObj.text || vObj.point || vObj.finding || '').trim();
-    if (!claim) {
+    const trimmed = v.trim();
+    if (!trimmed) return '';
+
+    // If already starts with ✅, return as-is
+    if (trimmed.startsWith('✅')) {
+      return trimmed;
+    }
+
+    // Check if the string is serialized JSON
+    if (trimmed.startsWith('{') && trimmed.endsWith('}')) {
+      try {
+        const parsed = JSON.parse(trimmed);
+        if (parsed && typeof parsed === 'object') {
+          return formatVerifiedClaimEntry(parsed);
+        }
+      } catch {
+        // Fall through
+      }
+    }
+
+    // Check if the string is an isolated raw JSON field or null field
+    if (/^"?([a-zA-Z0-9_]+)"?\s*[:=]\s*(?:null|undefined|""|''|\[\]|\{\})\s*,?$/i.test(trimmed)) {
+      return '';
+    }
+    if (/^"?(dateStatus|eventDate|publishedAt|updatedAt|url)"?\s*[:=]/i.test(trimmed)) {
       return '';
     }
 
-    const domain = (vObj.domain || (vObj.url ? extractDomain(String(vObj.url)) : '')) as string;
-    const dateStr = (vObj.eventDate || vObj.publishedAt || vObj.updatedAt || (vObj.dateStatus && vObj.dateStatus !== 'unknown' ? vObj.dateStatus : '')) as string;
+    // Clean any leading bullets or checkmarks
+    const cleanClaim = trimmed.replace(/^[-*•]\s*/, '').replace(/^✅\s*/, '').trim();
+    if (!cleanClaim || isJsonKeyArtifact(cleanClaim)) return '';
+    return `✅ ${cleanClaim}`;
+  }
 
-    const metaParts: string[] = [];
-    if (domain) metaParts.push(domain);
-    if (dateStr) metaParts.push(dateStr);
-    const metaStr = metaParts.length > 0 ? ` (${metaParts.join(', ')})` : '';
+  if (typeof v === 'object' && v !== null) {
+    const vObj = v as Record<string, unknown>;
 
-    let confirmedStr = '';
-    if (Array.isArray(vObj.confirmedBy) && vObj.confirmedBy.length > 0) {
-      const validConfirmed = vObj.confirmedBy.map(String).filter(Boolean);
-      if (validConfirmed.length > 0) {
-        confirmedStr = ` — Confirmed by: ${validConfirmed.join(', ')}`;
-      }
-    } else if (typeof vObj.confirmedBy === 'string' && vObj.confirmedBy.trim()) {
-      confirmedStr = ` — Confirmed by: ${vObj.confirmedBy.trim()}`;
+    let claim = String(
+      vObj.claim ||
+      vObj.fact ||
+      vObj.statement ||
+      vObj.title ||
+      vObj.text ||
+      vObj.point ||
+      vObj.finding ||
+      ''
+    ).trim();
+
+    if (!claim || isJsonKeyArtifact(claim)) {
+      const entry = Object.entries(vObj).find(
+        ([k, val]) =>
+          !/^(domain|url|eventDate|publishedAt|updatedAt|dateStatus|confirmedBy|id|sourceIndex)$/i.test(k) &&
+          typeof val === 'string' &&
+          val.trim().length > 10
+      );
+      if (entry) claim = String(entry[1]).trim();
     }
 
-    return `${claim}${metaStr}${confirmedStr}`.trim();
+    if (!claim || isJsonKeyArtifact(claim)) {
+      return '';
+    }
+
+    claim = claim.replace(/^✅\s*/, '').replace(/^[-*•]\s*/, '').trim();
+
+    let domain = '';
+    if (typeof vObj.domain === 'string' && vObj.domain.trim() && !/^(null|undefined|unknown|none)$/i.test(vObj.domain.trim())) {
+      domain = vObj.domain.trim();
+    } else if (typeof vObj.url === 'string' && vObj.url.trim() && !/^(null|undefined)$/i.test(vObj.url.trim())) {
+      domain = extractDomain(vObj.url.trim());
+    }
+
+    const dateStr = extractRealDateValue(vObj);
+
+    let sourceLine = '';
+    if (domain && dateStr) {
+      sourceLine = `   Source: ${domain} (${dateStr})`;
+    } else if (domain) {
+      sourceLine = `   Source: ${domain}`;
+    } else if (dateStr) {
+      sourceLine = `   Source: ${dateStr}`;
+    }
+
+    let confirmedList: string[] = [];
+    if (Array.isArray(vObj.confirmedBy)) {
+      confirmedList = vObj.confirmedBy
+        .map((c) => String(c || '').trim())
+        .filter((c) => c && !/^(null|undefined|none|\[\])$/i.test(c));
+    } else if (typeof vObj.confirmedBy === 'string' && vObj.confirmedBy.trim()) {
+      const cStr = vObj.confirmedBy.trim();
+      if (!/^(null|undefined|none|\[\])$/i.test(cStr)) {
+        confirmedList = cStr.split(',').map((s) => s.trim()).filter(Boolean);
+      }
+    }
+
+    let confirmedLine = '';
+    if (confirmedList.length > 0) {
+      confirmedLine = `   Confirmed by: ${confirmedList.join(', ')}`;
+    }
+
+    const blockParts = [`✅ ${claim}`];
+    if (sourceLine) blockParts.push(sourceLine);
+    if (confirmedLine) blockParts.push(confirmedLine);
+
+    return blockParts.join('\n');
   }
-  return String(v).trim();
+
+  return '';
 }
 
 /**
@@ -294,15 +418,15 @@ function extractArrayFromDirtyJson(raw: string, keyNames: string[]): string[] {
               const formatted = formatVerifiedClaimEntry(parsed);
               if (formatted) items.push(formatted);
             } catch {
-              const claimMatch = objStr.match(/"claim"\s*:\s*"((?:\\.|[^"\\])*)"/i) || objStr.match(/"fact"\s*:\s*"((?:\\.|[^"\\])*)"/i);
+              const claimMatch = objStr.match(/"(?:claim|fact|statement|title)"\s*:\s*"((?:\\.|[^"\\])*)"/i);
               const domainMatch = objStr.match(/"domain"\s*:\s*"((?:\\.|[^"\\])*)"/i);
-              const dateMatch = objStr.match(/"eventDate"\s*:\s*"((?:\\.|[^"\\])*)"/i) || objStr.match(/"publishedAt"\s*:\s*"((?:\\.|[^"\\])*)"/i);
+              const dateMatch = objStr.match(/"(?:eventDate|publishedAt|updatedAt)"\s*:\s*"((?:\\.|[^"\\])*)"/i);
               if (claimMatch && claimMatch[1]) {
                 const claim = claimMatch[1].replace(/\\"/g, '"');
-                const domain = domainMatch ? domainMatch[1].replace(/\\"/g, '"') : '';
-                const date = dateMatch ? dateMatch[1].replace(/\\"/g, '"') : '';
-                const meta = [domain, date].filter(Boolean).join(', ');
-                items.push(meta ? `${claim} (${meta})` : claim);
+                const domain = domainMatch ? domainMatch[1].replace(/\\"/g, '"') : undefined;
+                const date = dateMatch ? dateMatch[1].replace(/\\"/g, '"') : undefined;
+                const formatted = formatVerifiedClaimEntry({ claim, domain, eventDate: date });
+                if (formatted) items.push(formatted);
               }
             }
           }
@@ -315,11 +439,15 @@ function extractArrayFromDirtyJson(raw: string, keyNames: string[]): string[] {
             try {
               const parsed = JSON.parse(s);
               if (typeof parsed === 'string' && parsed.trim()) {
-                items.push(parsed.trim());
+                const formatted = formatVerifiedClaimEntry(parsed);
+                if (formatted) items.push(formatted);
               }
             } catch {
               const clean = s.slice(1, -1).replace(/\\"/g, '"').trim();
-              if (clean) items.push(clean);
+              if (clean) {
+                const formatted = formatVerifiedClaimEntry(clean);
+                if (formatted) items.push(formatted);
+              }
             }
           }
         }
@@ -350,18 +478,46 @@ function extractStringFromDirtyJson(raw: string, keyNames: string[]): string {
   return '';
 }
 
+interface ParsedFactCheckerClaim {
+  id: string;
+  claim: string;
+  domain?: string;
+  url?: string;
+  date?: string;
+  confirmedBy?: string[];
+}
+
+interface ParsedFactCheckerData {
+  summary: string;
+  claims: ParsedFactCheckerClaim[];
+  issues: string[];
+  plausibleUnconfirmed: string[];
+  fabricatedOrContradicted: string[];
+}
+
 /**
- * Specialized Fact Checker Formatter that GUARANTEES clean markdown rendering
- * even on malformed JSON, dirty strings, or partial outputs.
+ * Robust extractor for Fact Checker outputs across all schemas and raw strings
  */
-function formatFactCheckerOutput(step: JarvisExecutionStep, parsed: unknown, raw: string): string {
+function extractFactCheckerData(
+  step: JarvisExecutionStep,
+  parsed: unknown,
+  raw: string,
+): ParsedFactCheckerData {
   let summary = '';
-  let verified: string[] = [];
-  let issues: string[] = [];
+  const claims: ParsedFactCheckerClaim[] = [];
+  const issues: string[] = [];
+  const plausibleUnconfirmed: string[] = [];
+  const fabricatedOrContradicted: string[] = [];
+
+  let rawClaims: unknown[] = [];
+  let rawIssues: unknown[] = [];
+  let rawPlausible: unknown[] = [];
+  let rawFabricated: unknown[] = [];
 
   // Case A: Structured object
   if (parsed && typeof parsed === 'object' && !Array.isArray(parsed)) {
     const fObj = parsed as Record<string, unknown>;
+
     summary =
       typeof fObj.summary === 'string'
         ? fObj.summary
@@ -373,7 +529,7 @@ function formatFactCheckerOutput(step: JarvisExecutionStep, parsed: unknown, raw
         ? fObj.auditSummary
         : '';
 
-    const rawVerified =
+    const verifiedField =
       fObj.verified ||
       fObj.verifiedClaims ||
       fObj.claims ||
@@ -382,13 +538,13 @@ function formatFactCheckerOutput(step: JarvisExecutionStep, parsed: unknown, raw
       fObj.facts ||
       fObj.trueClaims;
 
-    if (Array.isArray(rawVerified)) {
-      verified = rawVerified
-        .map((v) => formatVerifiedClaimEntry(v))
-        .filter(Boolean);
+    if (Array.isArray(verifiedField)) {
+      rawClaims = verifiedField;
+    } else if (fObj.claim || fObj.fact || fObj.statement) {
+      rawClaims = [fObj];
     }
 
-    const rawIssues =
+    const issuesField =
       fObj.issues ||
       fObj.corrections ||
       fObj.discrepancies ||
@@ -397,181 +553,303 @@ function formatFactCheckerOutput(step: JarvisExecutionStep, parsed: unknown, raw
       fObj.flagged ||
       fObj.contradictions ||
       fObj.unverified;
-
-    if (Array.isArray(rawIssues)) {
-      issues = rawIssues
-        .map((i) => {
-          if (typeof i === 'object' && i !== null) {
-            const iObj = i as Record<string, unknown>;
-            const text = (iObj.issue || iObj.correction || iObj.error || iObj.discrepancy || iObj.note || iObj.message || iObj.text || '') as string;
-            return text || JSON.stringify(i);
-          }
-          return String(i);
-        })
-        .filter(Boolean);
+    if (Array.isArray(issuesField)) {
+      rawIssues = issuesField;
     }
 
-    const rawPlausible =
+    const plausibleField =
       fObj.plausible_unconfirmed ||
       fObj.plausibleUnconfirmed ||
       fObj.unconfirmed ||
       fObj.plausible;
-    if (Array.isArray(rawPlausible)) {
-      rawPlausible.forEach((p) => {
-        const str = typeof p === 'object' && p !== null
-          ? String((p as Record<string, unknown>).issue || (p as Record<string, unknown>).claim || (p as Record<string, unknown>).detail || JSON.stringify(p))
-          : String(p || '').trim();
-        if (str && !issues.includes(str)) issues.push(str);
-      });
+    if (Array.isArray(plausibleField)) {
+      rawPlausible = plausibleField;
     }
 
-    const rawFabricated =
+    const fabricatedField =
       fObj.fabricated_or_contradicted ||
       fObj.fabricatedOrContradicted ||
       fObj.fabricated ||
       fObj.contradicted ||
       fObj.hallucinations;
-    if (Array.isArray(rawFabricated)) {
-      rawFabricated.forEach((fb) => {
-        const str = typeof fb === 'object' && fb !== null
-          ? String((fb as Record<string, unknown>).issue || (fb as Record<string, unknown>).claim || (fb as Record<string, unknown>).detail || JSON.stringify(fb))
-          : String(fb || '').trim();
-        if (str && !issues.includes(str)) issues.push(str);
-      });
+    if (Array.isArray(fabricatedField)) {
+      rawFabricated = fabricatedField;
     }
-  }
-
-  // Case B: Array of objects or strings
-  else if (Array.isArray(parsed)) {
+  } else if (Array.isArray(parsed)) {
     parsed.forEach((item) => {
-      if (typeof item === 'string') {
-        if (item.toLowerCase().includes('issue') || item.toLowerCase().includes('correction') || item.toLowerCase().includes('mismatch')) {
+      if (typeof item === 'object' && item !== null) {
+        const iObj = item as Record<string, unknown>;
+        if (iObj.issue || iObj.correction || iObj.error || iObj.invalid || iObj.flagged) {
+          rawIssues.push(iObj);
+        } else {
+          rawClaims.push(iObj);
+        }
+      } else if (typeof item === 'string') {
+        if (item.toLowerCase().includes('issue') || item.toLowerCase().includes('mismatch')) {
           issues.push(item);
         } else {
-          verified.push(item);
-        }
-      } else if (typeof item === 'object' && item !== null) {
-        const iObj = item as Record<string, unknown>;
-        const claimText = String(iObj.claim || iObj.fact || iObj.text || iObj.statement || iObj.point || '');
-        const isIssue = Boolean(iObj.issue || iObj.correction || iObj.error || iObj.invalid || iObj.flagged);
-        if (isIssue) {
-          issues.push(String(iObj.issue || iObj.correction || iObj.error || iObj.message || claimText));
-        } else if (claimText) {
-          verified.push(claimText);
+          rawClaims.push(item);
         }
       }
     });
   }
 
-  // Case C: JSON parsing failed on raw string - apply regex heuristic extraction
-  if (verified.length === 0 && issues.length === 0) {
+  // Fallback: If no claims found from parsed, scan raw string for JSON objects in "verified": [ ... ]
+  if (rawClaims.length === 0) {
     const rawToScan = raw || step.outputPreview || step.summary || '';
-    verified = extractArrayFromDirtyJson(rawToScan, ['verified', 'verifiedClaims', 'claims', 'validated', 'facts']);
-    issues = extractArrayFromDirtyJson(rawToScan, ['issues', 'corrections', 'discrepancies', 'errors', 'notes', 'flagged']);
-    if (!summary) {
-      summary = extractStringFromDirtyJson(rawToScan, ['summary', 'status', 'verdict', 'auditSummary']);
+    const match = rawToScan.match(/"(?:verified|verifiedClaims|claims|facts)"\s*:\s*\[([\s\S]*?)\]/i);
+    if (match && match[1]) {
+      const objMatches = match[1].match(/\{[\s\S]*?\}/g);
+      if (objMatches) {
+        objMatches.forEach((objStr) => {
+          try {
+            const parsedObj = JSON.parse(objStr);
+            if (parsedObj && typeof parsedObj === 'object') {
+              rawClaims.push(parsedObj);
+            }
+          } catch {
+            const claimMatch = objStr.match(/"(?:claim|fact|statement|title)"\s*:\s*"((?:\\.|[^"\\])*)"/i);
+            const domainMatch = objStr.match(/"domain"\s*:\s*"((?:\\.|[^"\\])*)"/i);
+            const urlMatch = objStr.match(/"url"\s*:\s*"((?:\\.|[^"\\])*)"/i);
+            const dateMatch = objStr.match(/"(?:eventDate|publishedAt|updatedAt)"\s*:\s*"((?:\\.|[^"\\])*)"/i);
+            if (claimMatch && claimMatch[1]) {
+              rawClaims.push({
+                claim: claimMatch[1].replace(/\\"/g, '"'),
+                domain: domainMatch ? domainMatch[1].replace(/\\"/g, '"') : undefined,
+                url: urlMatch ? urlMatch[1].replace(/\\"/g, '"') : undefined,
+                eventDate: dateMatch ? dateMatch[1].replace(/\\"/g, '"') : undefined,
+              });
+            }
+          }
+        });
+      }
     }
+  }
 
-    // If still empty, check for markdown/bullet list items in raw text
-    if (verified.length === 0 && issues.length === 0) {
-      const lines = rawToScan.split('\n').map((l) => l.trim()).filter(Boolean);
-      lines.forEach((line) => {
-        // Skip JSON wrapper lines
-        if (line === '{' || line === '}' || line === '[' || line === ']' || line.startsWith('```') || line.startsWith('"verified":') || line.startsWith('"issues":')) {
+  // Parse each raw claim entry into a structured ParsedFactCheckerClaim
+  rawClaims.forEach((item, idx) => {
+    if (!item) return;
+
+    if (typeof item === 'object' && item !== null) {
+      const obj = item as Record<string, unknown>;
+      let claimText = String(
+        obj.claim ||
+        obj.fact ||
+        obj.statement ||
+        obj.title ||
+        obj.text ||
+        obj.point ||
+        obj.finding ||
+        ''
+      ).trim();
+
+      if (!claimText || isJsonKeyArtifact(claimText)) {
+        const entry = Object.entries(obj).find(
+          ([k, v]) =>
+            !/^(domain|url|eventDate|publishedAt|updatedAt|dateStatus|confirmedBy|id|sourceIndex)$/i.test(k) &&
+            typeof v === 'string' &&
+            v.trim().length > 10
+        );
+        if (entry) claimText = String(entry[1]).trim();
+      }
+
+      if (!claimText || isJsonKeyArtifact(claimText)) return;
+      claimText = claimText.replace(/^✅\s*/, '').replace(/^[-*•]\s*/, '').trim();
+
+      let domain = '';
+      if (typeof obj.domain === 'string' && obj.domain.trim() && !/^(null|undefined|unknown|none)$/i.test(obj.domain.trim())) {
+        domain = obj.domain.trim();
+      } else if (typeof obj.url === 'string' && obj.url.trim() && !/^(null|undefined)$/i.test(obj.url.trim())) {
+        domain = extractDomain(obj.url.trim());
+      }
+
+      let url: string | undefined = undefined;
+      if (typeof obj.url === 'string' && obj.url.trim() && obj.url.trim().startsWith('http')) {
+        url = obj.url.trim();
+      }
+
+      const dateStr = extractRealDateValue(obj);
+
+      let confirmedList: string[] = [];
+      if (Array.isArray(obj.confirmedBy)) {
+        confirmedList = obj.confirmedBy
+          .map((c) => String(c || '').trim())
+          .filter((c) => c && !/^(null|undefined|none|\[\])$/i.test(c));
+      } else if (typeof obj.confirmedBy === 'string' && obj.confirmedBy.trim()) {
+        const cStr = obj.confirmedBy.trim();
+        if (!/^(null|undefined|none|\[\])$/i.test(cStr)) {
+          confirmedList = cStr.split(',').map((s) => s.trim()).filter(Boolean);
+        }
+      }
+
+      claims.push({
+        id: `claim-${idx}`,
+        claim: claimText,
+        domain: domain || undefined,
+        url,
+        date: dateStr || undefined,
+        confirmedBy: confirmedList.length > 0 ? confirmedList : undefined,
+      });
+    } else if (typeof item === 'string') {
+      const trimmed = item.trim();
+      if (!trimmed) return;
+      // Skip raw JSON key: value noise lines
+      if (/^"?([a-zA-Z0-9_]+)"?\s*[:=]\s*(?:null|undefined|""|''|\[\]|\{\})\s*,?$/i.test(trimmed)) return;
+      if (/^"?(dateStatus|eventDate|publishedAt|updatedAt|url)"?\s*[:=]/i.test(trimmed)) return;
+
+      // Check if multi-line block already
+      if (trimmed.includes('\n')) {
+        const lines = trimmed.split('\n').map((l) => l.trim()).filter(Boolean);
+        let cText = '';
+        let cDomain = '';
+        let cDate = '';
+        let cConfirmed: string[] = [];
+
+        lines.forEach((l) => {
+          if (l.startsWith('✅') || (!cText && !l.toLowerCase().startsWith('source:') && !l.toLowerCase().startsWith('confirmed by:'))) {
+            cText = l.replace(/^✅\s*/, '').replace(/^[-*•]\s*/, '').trim();
+          } else if (l.toLowerCase().startsWith('source:')) {
+            const srcContent = l.replace(/^source:\s*/i, '').trim();
+            const dateM = srcContent.match(/\(([^)]+)\)/);
+            if (dateM) {
+              cDate = dateM[1].trim();
+              cDomain = srcContent.replace(/\s*\([^)]+\)/, '').trim();
+            } else {
+              cDomain = srcContent;
+            }
+          } else if (l.toLowerCase().startsWith('confirmed by:')) {
+            const confContent = l.replace(/^confirmed by:\s*/i, '').trim();
+            cConfirmed = confContent.split(',').map((s) => s.trim()).filter(Boolean);
+          }
+        });
+
+        if (cText && !isJsonKeyArtifact(cText)) {
+          claims.push({
+            id: `claim-${idx}`,
+            claim: cText,
+            domain: cDomain || undefined,
+            date: cDate || undefined,
+            confirmedBy: cConfirmed.length > 0 ? cConfirmed : undefined,
+          });
           return;
         }
-        const cleanLine = line
-          .replace(/^[-*•]\s*/, '')
-          .replace(/^\d+\.\s*/, '')
-          .replace(/^"(.*)"[,]*/, '$1')
-          .replace(/\\"/g, '"')
-          .trim();
-
-        if (cleanLine.length > 5) {
-          if (cleanLine.toLowerCase().includes('issue:') || cleanLine.toLowerCase().includes('correction:') || cleanLine.toLowerCase().includes('mismatch:')) {
-            issues.push(cleanLine);
-          } else {
-            verified.push(cleanLine);
-          }
-        }
-      });
-    }
-  }
-
-  // Build the clean Markdown output
-  const finalSummary = summary || (verified.length > 0 ? `Validated ${verified.length} claims with empirical ground checks.` : 'Fact verification audit completed.');
-  let md = `### ⚖️ Fact-Check Audit Summary\n**Verification Status:** ${finalSummary}\n\n`;
-
-  if (verified.length > 0) {
-    md += `#### ✅ Verified Claims & Accuracy Points:\n`;
-    verified.forEach((v) => {
-      md += `- **Verified:** ${v}\n`;
-    });
-  } else {
-    md += `#### ✅ Verified Claims & Accuracy Points:\n- Claims checked and verified against grounding corpus.\n`;
-  }
-
-  if (issues.length > 0) {
-    const plausibleItems: string[] = [];
-    const fabricatedItems: string[] = [];
-    const otherIssues: string[] = [];
-
-    issues.forEach((iss) => {
-      const lower = iss.toLowerCase();
-      if (
-        iss.includes('[PLAUSIBLE BUT UNCONFIRMED]') ||
-        lower.includes('unverified event date') ||
-        lower.includes('lacks confirmation') ||
-        lower.includes('lacks independent') ||
-        lower.includes('lacks secondary') ||
-        lower.includes('single source')
-      ) {
-        plausibleItems.push(iss.replace(/^\[PLAUSIBLE BUT UNCONFIRMED\]\s*/i, ''));
-      } else if (
-        iss.includes('[FABRICATED/CONTRADICTED]') ||
-        iss.includes('[FABRICATED]') ||
-        iss.includes('[CONTRADICTED]') ||
-        lower.includes('speculative model') ||
-        lower.includes('invented') ||
-        lower.includes('fabricated') ||
-        lower.includes('hallucinat')
-      ) {
-        fabricatedItems.push(
-          iss
-            .replace(/^\[FABRICATED\/CONTRADICTED\]\s*/i, '')
-            .replace(/^\[FABRICATED\]\s*/i, '')
-            .replace(/^\[CONTRADICTED\]\s*/i, '')
-        );
-      } else {
-        otherIssues.push(iss);
       }
-    });
 
-    if (plausibleItems.length > 0) {
-      md += `\n#### 🔍 Plausible Details (Single-source - hedged in synthesis):\n`;
-      plausibleItems.forEach((p) => {
-        md += `- **Hedged detail:** ${p}\n`;
-      });
+      // Single string
+      const cleanClaim = trimmed.replace(/^✅\s*/, '').replace(/^[-*•]\s*/, '').trim();
+      if (cleanClaim && !isJsonKeyArtifact(cleanClaim) && cleanClaim.length > 3) {
+        claims.push({
+          id: `claim-${idx}`,
+          claim: cleanClaim,
+        });
+      }
     }
+  });
 
-    if (fabricatedItems.length > 0) {
-      md += `\n#### 🚫 Contradicted / Fabricated Discrepancies (Excluded from synthesis):\n`;
-      fabricatedItems.forEach((fb) => {
-        md += `- **Excluded:** ${fb}\n`;
-      });
+  // Process issues
+  rawIssues.forEach((item) => {
+    if (typeof item === 'string' && item.trim()) {
+      issues.push(item.trim());
+    } else if (typeof item === 'object' && item !== null) {
+      const iObj = item as Record<string, unknown>;
+      const text = String(iObj.issue || iObj.correction || iObj.error || iObj.discrepancy || iObj.note || iObj.message || iObj.text || '').trim();
+      if (text) issues.push(text);
     }
+  });
 
-    if (otherIssues.length > 0) {
-      md += `\n#### ⚠️ Discrepancy & Correction Notes:\n`;
-      otherIssues.forEach((issue) => {
-        md += `- **Correction:** ${issue}\n`;
-      });
-    }
-  } else {
-    md += `\n#### 🛡️ Cross-Verification Audit Result:\n- No factual contradictions, anomalies, or unsupported hallucinations detected.\n`;
+  // Process plausibleUnconfirmed
+  rawPlausible.forEach((item) => {
+    const text = typeof item === 'object' && item !== null
+      ? String((item as Record<string, unknown>).issue || (item as Record<string, unknown>).claim || (item as Record<string, unknown>).detail || '')
+      : String(item || '').trim();
+    if (text && !plausibleUnconfirmed.includes(text)) plausibleUnconfirmed.push(text);
+  });
+
+  // Process fabricatedOrContradicted
+  rawFabricated.forEach((item) => {
+    const text = typeof item === 'object' && item !== null
+      ? String((item as Record<string, unknown>).issue || (item as Record<string, unknown>).claim || (item as Record<string, unknown>).detail || '')
+      : String(item || '').trim();
+    if (text && !fabricatedOrContradicted.includes(text)) fabricatedOrContradicted.push(text);
+  });
+
+  if (!summary) {
+    summary =
+      claims.length > 0
+        ? `Validated ${claims.length} ${claims.length === 1 ? 'claim' : 'claims'} with empirical ground checks.`
+        : (step.summary || 'Fact verification audit completed.');
   }
 
-  return md;
+  return {
+    summary,
+    claims,
+    issues,
+    plausibleUnconfirmed,
+    fabricatedOrContradicted,
+  };
+}
+
+/**
+ * Specialized Fact Checker Formatter that GUARANTEES clean rendering
+ * Each verified claim is rendered as ONE clean block:
+ *
+ * ✅ [claim text]
+ *    Source: [domain] ([eventDate or publishedAt if available])
+ *    Confirmed by: [confirmedBy list, comma-separated]
+ *
+ * No raw JSON keys (dateStatus, eventDate, publishedAt, url) are exposed unless containing real dates.
+ */
+function formatFactCheckerOutput(step: JarvisExecutionStep, parsed: unknown, raw: string): string {
+  const data = extractFactCheckerData(step, parsed, raw);
+
+  const lines: string[] = [
+    `### ⚖️ Fact-Check Audit Summary`,
+    `**Verification Status:** ${data.summary}`,
+    ``,
+  ];
+
+  if (data.claims.length > 0) {
+    lines.push(`#### ✅ Verified Claims:`);
+    data.claims.forEach((c) => {
+      lines.push(`✅ ${c.claim}`);
+      const hasSource = Boolean(c.domain || c.date);
+      if (hasSource) {
+        if (c.domain && c.date) {
+          lines.push(`   Source: ${c.domain} (${c.date})`);
+        } else if (c.domain) {
+          lines.push(`   Source: ${c.domain}`);
+        } else {
+          lines.push(`   Source: ${c.date}`);
+        }
+      }
+      if (c.confirmedBy && c.confirmedBy.length > 0) {
+        lines.push(`   Confirmed by: ${c.confirmedBy.join(', ')}`);
+      }
+      lines.push(``);
+    });
+  } else {
+    lines.push(`#### ✅ Verified Claims:\n- All claims checked and verified against grounding corpus.\n`);
+  }
+
+  if (data.plausibleUnconfirmed.length > 0) {
+    lines.push(`#### 🔍 Plausible Details (Single-source - hedged in synthesis):`);
+    data.plausibleUnconfirmed.forEach((p) => lines.push(`- **Hedged detail:** ${p}`));
+    lines.push(``);
+  }
+
+  if (data.fabricatedOrContradicted.length > 0) {
+    lines.push(`#### 🚫 Contradicted / Fabricated Discrepancies (Excluded from synthesis):`);
+    data.fabricatedOrContradicted.forEach((fb) => lines.push(`- **Excluded:** ${fb}`));
+    lines.push(``);
+  }
+
+  if (data.issues.length > 0) {
+    lines.push(`#### ⚠️ Discrepancy & Correction Notes:`);
+    data.issues.forEach((issue) => lines.push(`- **Correction:** ${issue}`));
+    lines.push(``);
+  }
+
+  return lines.join('\n').trim();
 }
 
 function formatAgentContentToMarkdown(step: JarvisExecutionStep): {
@@ -1312,6 +1590,193 @@ export const ResearcherMeshAnswerView: React.FC<{
   );
 };
 
+/**
+ * Clean Fact Checker Mesh Answer View:
+ * Renders each verified claim as ONE clean block:
+ *
+ * ✅ [claim text]
+ *    Source: [domain] ([eventDate or publishedAt if available])
+ *    Confirmed by: [confirmedBy list, comma-separated]
+ *
+ * Never displays raw field names (dateStatus, eventDate, publishedAt, updatedAt, url)
+ * unless they contain a real date value. Hides any field that is null.
+ */
+const FactCheckerMeshAnswerView: React.FC<{
+  step: JarvisExecutionStep;
+  parsed: unknown;
+  raw: string;
+  fallbackFormatted: string;
+}> = ({ step, parsed, raw, fallbackFormatted }) => {
+  const data = extractFactCheckerData(step, parsed, raw);
+
+  if (data.claims.length === 0 && data.issues.length === 0 && data.plausibleUnconfirmed.length === 0 && data.fabricatedOrContradicted.length === 0) {
+    return <FormattedText content={fallbackFormatted} />;
+  }
+
+  return (
+    <div className="flex flex-col gap-3.5">
+      {/* Verification Status Header Bar */}
+      <div className="rounded-xl border border-purple-500/25 bg-purple-950/20 p-3.5 flex flex-col gap-1.5 shadow-sm">
+        <div className="flex items-center justify-between flex-wrap gap-2">
+          <div className="flex items-center gap-2">
+            <div className="w-5 h-5 rounded-md bg-purple-500/20 border border-purple-400/40 flex items-center justify-center text-purple-300">
+              <ShieldCheck size={12} />
+            </div>
+            <span className="text-xs font-mono font-bold uppercase tracking-wider text-purple-300">
+              Fact Verification Audit
+            </span>
+          </div>
+          {data.claims.length > 0 && (
+            <span className="px-2.5 py-0.5 rounded-full text-[10px] font-mono font-bold bg-emerald-500/20 border border-emerald-400/30 text-emerald-300">
+              {data.claims.length} {data.claims.length === 1 ? 'Claim' : 'Claims'} Verified
+            </span>
+          )}
+        </div>
+        <div className="text-xs sm:text-[13px] text-purple-200/90 leading-relaxed font-sans">
+          <span className="font-semibold text-purple-300 mr-1.5 font-mono text-[11px] uppercase">
+            Status:
+          </span>
+          <span>{data.summary}</span>
+        </div>
+      </div>
+
+      {/* Verified Claims: EACH CLAIM AS ONE CLEAN BLOCK */}
+      {data.claims.length > 0 && (
+        <div className="flex flex-col gap-2.5">
+          <div className="text-[11px] font-mono font-bold uppercase tracking-wider text-emerald-400/90 flex items-center gap-1.5">
+            <span>Verified Claims:</span>
+          </div>
+
+          {data.claims.map((claim, idx) => {
+            const hasSource = Boolean(claim.domain || claim.date);
+            const hasConfirmedBy = Boolean(claim.confirmedBy && claim.confirmedBy.length > 0);
+
+            return (
+              <div
+                key={claim.id || idx}
+                className="group relative rounded-xl border border-emerald-500/25 bg-emerald-950/20 hover:border-emerald-500/40 hover:bg-emerald-950/30 transition-all p-3.5 shadow-sm flex flex-col gap-1.5"
+              >
+                {/* ✅ [claim text] */}
+                <div className="flex items-start gap-2.5">
+                  <span className="text-emerald-400 font-bold text-sm shrink-0 select-none mt-0.5" aria-hidden="true">
+                    ✅
+                  </span>
+                  <div className="text-sm sm:text-[14.5px] font-medium text-slate-100 leading-relaxed break-words flex-1">
+                    {claim.claim}
+                  </div>
+                </div>
+
+                {/* Indented metadata lines */}
+                {(hasSource || hasConfirmedBy) && (
+                  <div className="pl-6 sm:pl-7 flex flex-col gap-1 text-xs text-slate-300 pt-1">
+                    {/* Source: [domain] ([eventDate or publishedAt if available]) */}
+                    {hasSource && (
+                      <div className="flex items-center flex-wrap gap-1.5">
+                        <span className="text-slate-400 font-mono font-medium">Source:</span>
+                        {claim.domain && (
+                          <span className="text-emerald-300 font-mono font-semibold">
+                            {claim.domain}
+                          </span>
+                        )}
+                        {claim.date && (
+                          <span className="text-slate-400 font-mono text-[11px]">
+                            ({claim.date})
+                          </span>
+                        )}
+                        {claim.url && (
+                          <a
+                            href={claim.url}
+                            target="_blank"
+                            rel="noopener noreferrer"
+                            className="inline-flex items-center gap-0.5 text-cyan-400 hover:text-cyan-200 ml-1 hover:underline"
+                            title={`Open source: ${claim.url}`}
+                          >
+                            <ExternalLink size={11} />
+                          </a>
+                        )}
+                      </div>
+                    )}
+
+                    {/* Confirmed by: [confirmedBy list, comma-separated] */}
+                    {hasConfirmedBy && (
+                      <div className="flex items-center flex-wrap gap-1.5">
+                        <span className="text-slate-400 font-mono font-medium">Confirmed by:</span>
+                        <span className="text-cyan-300 font-medium">
+                          {claim.confirmedBy!.join(', ')}
+                        </span>
+                      </div>
+                    )}
+                  </div>
+                )}
+              </div>
+            );
+          })}
+        </div>
+      )}
+
+      {/* Unconfirmed details (hedged) */}
+      {data.plausibleUnconfirmed.length > 0 && (
+        <div className="flex flex-col gap-2 mt-1">
+          <span className="text-[11px] font-mono font-bold text-cyan-300 uppercase tracking-wider">
+            Unconfirmed Details (Hedged in Synthesis):
+          </span>
+          <div className="flex flex-col gap-1.5">
+            {data.plausibleUnconfirmed.map((item, idx) => (
+              <div
+                key={idx}
+                className="flex items-start gap-2.5 px-3.5 py-2 rounded-xl bg-cyan-500/10 border border-cyan-500/25 text-cyan-200/90 text-xs leading-relaxed"
+              >
+                <Info size={14} className="text-cyan-400 shrink-0 mt-0.5" />
+                <div className="flex-1">{item}</div>
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
+
+      {/* Excluded discrepancies and contradictions */}
+      {data.fabricatedOrContradicted.length > 0 && (
+        <div className="flex flex-col gap-2 mt-1">
+          <span className="text-[11px] font-mono font-bold text-rose-300 uppercase tracking-wider">
+            Excluded Discrepancies & Contradictions:
+          </span>
+          <div className="flex flex-col gap-1.5">
+            {data.fabricatedOrContradicted.map((item, idx) => (
+              <div
+                key={idx}
+                className="flex items-start gap-2.5 px-3.5 py-2 rounded-xl bg-rose-500/10 border border-rose-500/25 text-rose-200/90 text-xs leading-relaxed"
+              >
+                <AlertTriangle size={14} className="text-rose-400 shrink-0 mt-0.5" />
+                <div className="flex-1">{item}</div>
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
+
+      {/* General audit notes */}
+      {data.issues.length > 0 && (
+        <div className="flex flex-col gap-2 mt-1">
+          <span className="text-[11px] font-mono font-bold text-amber-300 uppercase tracking-wider">
+            Audit & Verification Notes:
+          </span>
+          <div className="flex flex-col gap-1.5">
+            {data.issues.map((item, idx) => (
+              <div
+                key={idx}
+                className="flex items-start gap-2.5 px-3.5 py-2 rounded-xl bg-amber-500/10 border border-amber-500/25 text-amber-200/90 text-xs leading-relaxed"
+              >
+                <AlertTriangle size={14} className="text-amber-400 shrink-0 mt-0.5" />
+                <div className="flex-1">{item}</div>
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
+    </div>
+  );
+};
+
 export const JarvisDeepResearchMeshAnswers: React.FC<JarvisDeepResearchMeshAnswersProps> = ({
   steps,
   isDeepResearch = false,
@@ -1520,6 +1985,13 @@ export const JarvisDeepResearchMeshAnswers: React.FC<JarvisDeepResearchMeshAnswe
                   </div>
                 ) : step.agentId === 'researcher' ? (
                   <ResearcherMeshAnswerView
+                    step={step}
+                    parsed={parsed}
+                    raw={raw}
+                    fallbackFormatted={formatted}
+                  />
+                ) : step.agentId === 'factChecker' ? (
+                  <FactCheckerMeshAnswerView
                     step={step}
                     parsed={parsed}
                     raw={raw}
