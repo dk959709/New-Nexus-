@@ -2781,7 +2781,8 @@ CRITICAL RULES:
   };
 
   if (shouldResearch) {
-    console.log('[JARVIS Researcher] QUERY TYPE DEBUG - Query:', strippedQuery, '| isSearchOverride:', isSearchOverride, '| isNewsQuery:', isNewsQuery, '| isWorldNews:', isWorldNews, '| isWeatherQuery:', isWeatherQuery, '| needsResearchQuery:', plannerOutput.needsResearchQuery, '| needsWikipedia:', plannerOutput.needsWikipedia, '| needsWikidata:', plannerOutput.needsWikidata);
+    const plannerResearchQuery = typeof plannerOutput.needsResearchQuery === 'string' ? plannerOutput.needsResearchQuery.trim() : '';
+    console.log('[JARVIS Researcher] QUERY TYPE DEBUG - Query:', strippedQuery, '| isSearchOverride:', isSearchOverride, '| isNewsQuery:', isNewsQuery, '| isWorldNews:', isWorldNews, '| isWeatherQuery:', isWeatherQuery, '| needsResearchQuery:', plannerResearchQuery, '| needsWikipedia:', plannerOutput.needsWikipedia, '| needsWikidata:', plannerOutput.needsWikidata);
     const rCfg = agentConfigs.researcher;
     const provInfo = resolveProviderConfig(rCfg);
     const start = Date.now();
@@ -2800,7 +2801,6 @@ CRITICAL RULES:
     let searchSource = 'Live News API';
 
     try {
-      const plannerResearchQuery = typeof plannerOutput.needsResearchQuery === 'string' ? plannerOutput.needsResearchQuery.trim() : '';
       const { cleanedSearchQuery } = extractTopicKeywords(strippedQuery, plannerOutput.task);
 
       let searchResults: SearchResult[] = [];
