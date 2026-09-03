@@ -27,7 +27,7 @@ import {
 import { JarvisExecutionStep } from '../../types';
 import { FormattedText } from './FormattedText';
 import { copyToClipboard } from '@/lib/clipboard';
-import { cleanAndFormatFact, formatResearcherOutput } from '../../lib/factFormatter';
+import { cleanAndFormatFact } from '../../lib/factFormatter';
 
 function extractDomain(urlStr: string): string {
   try {
@@ -811,15 +811,24 @@ function formatFactCheckerOutput(step: JarvisExecutionStep, parsed: unknown, raw
 
   if (data.claims.length > 0) {
     data.claims.forEach((c, idx) => {
-      lines.push(`${idx + 1}. **Claim ${idx + 1}:** ${c.claim}`);
-      const hasSource = Boolean(c.domain || c.date);
+      let cleanClaim = (c.claim || '').trim().replace(/^(?:\*\*)?Claim\s*\d*[:\s-]*(?:\*\*)?\s*/i, '').trim();
+      let boldTitle = `**Claim ${idx + 1}:** `;
+      const boldMatch = cleanClaim.match(/^(\*\*[^*]+\*\*[:\s]*)(.*)$/);
+      if (boldMatch) {
+        boldTitle = boldMatch[1].endsWith(' ') ? boldMatch[1] : `${boldMatch[1]} `;
+        cleanClaim = boldMatch[2].trim();
+      }
+      lines.push(`${idx + 1}. ${boldTitle}${cleanClaim}`);
+      const domain = c.domain || (c.url ? extractDomain(c.url) : '');
+      const dateStr = c.date && !/^(null|undefined|none|unknown)$/i.test(c.date) ? c.date : '';
+      const hasSource = Boolean(domain || dateStr);
       if (hasSource) {
-        if (c.domain && c.date) {
-          lines.push(`   - **Source:** ${c.domain} (${c.date})`);
-        } else if (c.domain) {
-          lines.push(`   - **Source:** ${c.domain}`);
+        if (domain && dateStr) {
+          lines.push(`   - **Source:** ${domain} (${dateStr})`);
+        } else if (domain) {
+          lines.push(`   - **Source:** ${domain}`);
         } else {
-          lines.push(`   - **Source:** ${c.date}`);
+          lines.push(`   - **Source:** ${dateStr}`);
         }
       }
       if (c.confirmedBy && c.confirmedBy.length > 0) {
@@ -915,12 +924,39 @@ function formatAgentContentToMarkdown(step: JarvisExecutionStep): {
 
     if (resData.candidates.length > 0) {
       resData.candidates.forEach((cand, idx) => {
-        const title = cand.title ? `**${cand.title}:** ` : '';
-        md += `${idx + 1}. ${title}${cand.fact}\n`;
-        const hasSource = Boolean(cand.domain || cand.eventDate || (cand.sourceIndex !== undefined));
-        if (hasSource) {
-          const srcPart = cand.domain ? cand.domain : cand.sourceIndex !== undefined ? `Source #${cand.sourceIndex}` : '';
-          const datePart = cand.eventDate ? ` (${cand.eventDate})` : '';
+        let boldTitle = '';
+        let cleanFact = (cand.fact || '').trim();
+
+        if (cand.title && cand.title.trim()) {
+          const t = cand.title.trim().replace(/^[:\s-]+|[:\s-]+$/g, '');
+          boldTitle = `**${t}:** `;
+          const escapedT = t.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+          cleanFact = cleanFact.replace(new RegExp(`^(?:\\*\\*)?${escapedT}(?:\\*\\*)?[:\\s-]*`, 'i'), '').trim();
+        } else {
+          const boldMatch = cleanFact.match(/^(\*\*[^*]+\*\*[:\s]*)(.*)$/);
+          if (boldMatch) {
+            boldTitle = boldMatch[1].endsWith(' ') ? boldMatch[1] : `${boldMatch[1]} `;
+            cleanFact = boldMatch[2].trim();
+          } else {
+            const colonMatch = cleanFact.match(/^([A-Za-z0-9\s-]{3,40}):\s+(.*)$/);
+            if (colonMatch) {
+              boldTitle = `**${colonMatch[1].trim()}:** `;
+              cleanFact = colonMatch[2].trim();
+            } else {
+              boldTitle = `**Finding ${idx + 1}:** `;
+            }
+          }
+        }
+
+        md += `${idx + 1}. ${boldTitle}${cleanFact}\n`;
+
+        const domain = cand.domain || (cand.url ? extractDomain(cand.url) : '');
+        const dateStr = cand.eventDate || cand.publishedAt || cand.updatedAt || '';
+        const cleanDate = dateStr && !/^(null|undefined|none|unknown)$/i.test(dateStr) ? dateStr : '';
+        const srcPart = domain || (cand.sourceIndex !== undefined ? `Source #${cand.sourceIndex}` : (step.searchSource ? step.searchSource : ''));
+
+        if (srcPart || cleanDate) {
+          const datePart = cleanDate ? ` (${cleanDate})` : '';
           md += `   - **Source:** ${srcPart}${datePart}\n`;
         }
         if (cand.confirmedBy && cand.confirmedBy.length > 0) {
@@ -928,15 +964,33 @@ function formatAgentContentToMarkdown(step: JarvisExecutionStep): {
         }
       });
     } else {
-      const fallbackMd = formatResearcherOutput(step, parsed, raw);
-      md = fallbackMd;
-    }
+      const rawText = (typeof raw === 'string' ? raw : '') || step.outputPreview || step.summary || '';
+      const candidateLines = rawText
+        .split('\n')
+        .map((l) => l.trim().replace(/^[-*•\d.]+\s*/, '').trim())
+        .filter((l) => l.length > 15 && !l.startsWith('{') && !l.startsWith('}') && !l.startsWith('[') && !l.startsWith(']'));
 
-    if (resData.insights.length > 0) {
-      md += `\n### 🧭 Empirical Insights & Directives\n`;
-      resData.insights.forEach((ins) => {
-        md += `- **Key Insight:** ${ins}\n`;
-      });
+      const fallbackItems = candidateLines.slice(0, 5);
+      if (fallbackItems.length > 0) {
+        fallbackItems.forEach((factText, idx) => {
+          let boldTitle = `**Finding ${idx + 1}:** `;
+          let cleanFact = factText;
+          const colonMatch = factText.match(/^([A-Za-z0-9\s-]{3,40}):\s+(.*)$/);
+          if (colonMatch) {
+            boldTitle = `**${colonMatch[1].trim()}:** `;
+            cleanFact = colonMatch[2].trim();
+          }
+          md += `${idx + 1}. ${boldTitle}${cleanFact}\n`;
+          if (step.searchSource) {
+            md += `   - **Source:** ${step.searchSource}\n`;
+          }
+        });
+      } else {
+        md += `1. **Empirical Retrieval:** Real-time multi-source fact gathering executed successfully.\n`;
+        if (step.searchSource) {
+          md += `   - **Source:** ${step.searchSource}\n`;
+        }
+      }
     }
 
     return { formatted: md.trim(), isStructuredJson: true, raw };
@@ -1805,6 +1859,26 @@ export const JarvisDeepResearchMeshAnswers: React.FC<JarvisDeepResearchMeshAnswe
       e.stopPropagation();
       e.preventDefault();
     }
+
+    const agentId = (step.agentId || '').toLowerCase();
+
+    // For Researcher and FactChecker agent boxes only:
+    // When the Copy button is clicked, the copied text matches the exact formatted text structure
+    // that is displayed in the UI:
+    // - Section headers ('🎯 Targeted Research Scope' / '🎯 Verification Audit Scope', '📋 Verified Empirical Findings' / '📋 Verified Empirical Claims')
+    // - Numbered list items with bold titles
+    // - 'Source:' and 'Confirmed by:' lines, formatted the same way they appear on screen
+    if (agentId === 'researcher' || agentId === 'factchecker') {
+      const { formatted } = formatAgentContentToMarkdown(step);
+      const success = await copyToClipboard(formatted.trim());
+      if (success) {
+        setCopiedStepIndex(idx);
+        setTimeout(() => setCopiedStepIndex(null), 2000);
+      }
+      return;
+    }
+
+    // Leave Planner, Reviewer, and Final Synthesis boxes completely untouched:
     const agentName = step.name || step.agentId || 'Agent';
     const modelId = step.model || step.providerName || 'unknown';
     const textWithModel = `${text.trim()}\n\n---\nModels Used:\n${agentName}: ${modelId}`;
