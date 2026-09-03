@@ -236,6 +236,7 @@ export interface JarvisPlannerOutput {
   task: string;
   plan: string[];
   needsResearch: boolean;
+  needsResearchQuery: string;
   needsKnowledgeAgent?: boolean;
   needsFactCheck: boolean;
   needsReview: boolean;

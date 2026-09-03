@@ -2213,6 +2213,7 @@ Please perform your specialized processing for this inquiry. Provide clear, conc
     task: query,
     plan: ['Synthesize accurate response directly.'],
     needsResearch: false,
+    needsResearchQuery: '',
     needsKnowledgeAgent: false,
     needsFactCheck: false,
     needsReview: false,
@@ -2288,6 +2289,7 @@ You are the JARVIS Planner. You MUST output ONLY a valid JSON object strictly ma
   "task": string (concise goal statement under 15 words),
   "plan": string[] (2-4 short steps),
   "needsResearch": boolean,
+  "needsResearchQuery": string (MANDATORY: clean, specific search phrase focusing strictly on the actual topic without conversational filler or full questions if needsResearch is true, or empty string "" if false),
   "needsKnowledgeAgent": boolean,
   "needsFactCheck": boolean,
   "needsReview": boolean,
@@ -2300,9 +2302,10 @@ You are the JARVIS Planner. You MUST output ONLY a valid JSON object strictly ma
   "wikidataQuery": string (MANDATORY: clean entity name if needsWikidata is true, or empty string "" if false)
 }
 CRITICAL RULES:
-1. Under NO circumstance should "wikipediaQuery" or "wikidataQuery" be omitted from the JSON output. Both keys MUST always be present in the returned JSON object.
-2. When needsWikipedia is true, "wikipediaQuery" MUST be the clean, concise subject/title (e.g. for "tell about brawl stars game", wikipediaQuery MUST be "Brawl Stars"). If needsWikipedia is false, set it to "".
-3. When needsWikidata is true, "wikidataQuery" MUST be the clean entity name. If needsWikidata is false, set it to "".`;
+1. Under NO circumstance should "needsResearchQuery", "wikipediaQuery", or "wikidataQuery" be omitted from the JSON output. All three keys MUST always be present in the returned JSON object.
+2. When needsResearch is true, "needsResearchQuery" MUST be a clean, specific search phrase (not the full raw user question) that the Researcher agent should use for its web search — strip out conversational words, filler ("Is this true?", "Tell me about"), punctuation, and focus only on the actual topic being researched (e.g. for "This is true? Rich HTML can carry hidden dangerous code...", needsResearchQuery MUST be "HTML security risks hidden code tracking scripts"). If needsResearch is false, set it to "".
+3. When needsWikipedia is true, "wikipediaQuery" MUST be the clean, concise subject/title (e.g. for "tell about brawl stars game", wikipediaQuery MUST be "Brawl Stars"). If needsWikipedia is false, set it to "".
+4. When needsWikidata is true, "wikidataQuery" MUST be the clean entity name. If needsWikidata is false, set it to "".`;
 
     const planRes = await callAgent('planner', [
       { role: 'system', content: PLANNER_SYSTEM_SCHEMA },
@@ -2318,6 +2321,7 @@ CRITICAL RULES:
           task: query,
           plan: ['Analyze and route inquiry.'],
           needsResearch: false,
+          needsResearchQuery: '',
           needsFactCheck: false,
           needsReview: false,
           needsDiagram: false,
@@ -2334,6 +2338,17 @@ CRITICAL RULES:
         plannerOutput.plan = Array.isArray(rawPlan) ? rawPlan.map(String) : typeof rawPlan === 'string' ? [rawPlan] : ['Task analyzed and routed.'];
       }
       plannerOutput.task = String(plannerOutput.task || query);
+      plannerOutput.needsResearch = Boolean(plannerOutput.needsResearch);
+      if (plannerOutput.needsResearch) {
+        if (typeof plannerOutput.needsResearchQuery === 'string' && plannerOutput.needsResearchQuery.trim()) {
+          plannerOutput.needsResearchQuery = plannerOutput.needsResearchQuery.trim();
+        } else {
+          const { cleanedSearchQuery } = extractTopicKeywords(strippedQuery, plannerOutput.task);
+          plannerOutput.needsResearchQuery = cleanedSearchQuery || strippedQuery;
+        }
+      } else {
+        plannerOutput.needsResearchQuery = '';
+      }
       plannerOutput.needsKnowledgeAgent = Boolean(plannerOutput.needsKnowledgeAgent);
       plannerOutput.needsWikipedia = Boolean(plannerOutput.needsWikipedia);
       if (plannerOutput.needsWikipedia) {
@@ -2363,6 +2378,7 @@ CRITICAL RULES:
       if (isWebFetchQuery(query)) {
         const targetUrl = extractWebFetchUrl(query);
         plannerOutput.needsResearch = false;
+        plannerOutput.needsResearchQuery = '';
         plannerOutput.needsWikipedia = false;
         plannerOutput.wikipediaQuery = '';
         plannerOutput.needsWikidata = false;
@@ -2380,6 +2396,7 @@ CRITICAL RULES:
         ];
       } else if (isSearchOverrideQuery(query)) {
         plannerOutput.needsResearch = true;
+        plannerOutput.needsResearchQuery = stripSearchOverridePrefix(query).trim();
         plannerOutput.needsWikipedia = false;
         plannerOutput.wikipediaQuery = '';
         plannerOutput.needsWikidata = false;
@@ -2392,6 +2409,7 @@ CRITICAL RULES:
         }
       } else if (isPersonalOrHumanAiComparison(query)) {
         plannerOutput.needsResearch = false;
+        plannerOutput.needsResearchQuery = '';
         plannerOutput.needsKnowledgeAgent = true; // Advisor runs to provide conceptual Human vs AI breakdown
         plannerOutput.needsFactCheck = false;
         plannerOutput.needsReview = false;
@@ -2404,6 +2422,7 @@ CRITICAL RULES:
         plannerOutput.needsImage = false;
       } else if (isSelfReferentialInquiry(query)) {
         plannerOutput.needsResearch = false;
+        plannerOutput.needsResearchQuery = '';
         plannerOutput.needsKnowledgeAgent = false;
         plannerOutput.needsFactCheck = false;
         plannerOutput.needsReview = false;
@@ -2442,6 +2461,7 @@ CRITICAL RULES:
       if (isWebFetchQuery(query)) {
         const targetUrl = extractWebFetchUrl(query);
         plannerOutput.needsResearch = false;
+        plannerOutput.needsResearchQuery = '';
         plannerOutput.needsWikipedia = false;
         plannerOutput.wikipediaQuery = '';
         plannerOutput.needsWikidata = false;
@@ -2459,6 +2479,7 @@ CRITICAL RULES:
         ];
       } else if (isSearchOverrideQuery(query)) {
         plannerOutput.needsResearch = true;
+        plannerOutput.needsResearchQuery = stripSearchOverridePrefix(query).trim();
         plannerOutput.needsWikipedia = false;
         plannerOutput.wikipediaQuery = '';
         plannerOutput.needsWikidata = false;
@@ -2467,6 +2488,13 @@ CRITICAL RULES:
         plannerOutput.needsReview = false;
         plannerOutput.needsFactCheck = true;
         plannerOutput.task = stripSearchOverridePrefix(query) || 'Web search';
+      }
+      if (plannerOutput.needsResearch && !plannerOutput.needsResearchQuery) {
+        const { cleanedSearchQuery } = extractTopicKeywords(strippedQuery, plannerOutput.task);
+        plannerOutput.needsResearchQuery = cleanedSearchQuery || strippedQuery;
+      }
+      if (!plannerOutput.needsResearch) {
+        plannerOutput.needsResearchQuery = '';
       }
       if (plannerOutput.needsWikipedia && !plannerOutput.wikipediaQuery) {
         plannerOutput.wikipediaQuery = extractWikipediaSubject(query) || strippedQuery;
@@ -2494,6 +2522,7 @@ CRITICAL RULES:
   } else if (isWebFetchQuery(query)) {
     const targetUrl = extractWebFetchUrl(query);
     plannerOutput.needsResearch = false;
+    plannerOutput.needsResearchQuery = '';
     plannerOutput.needsWikipedia = false;
     plannerOutput.wikipediaQuery = '';
     plannerOutput.needsWikidata = false;
@@ -2511,6 +2540,7 @@ CRITICAL RULES:
     ];
   } else if (isSearchOverrideQuery(query)) {
     plannerOutput.needsResearch = true;
+    plannerOutput.needsResearchQuery = stripSearchOverridePrefix(query).trim();
     plannerOutput.needsWikipedia = false;
     plannerOutput.wikipediaQuery = '';
     plannerOutput.needsWikidata = false;
@@ -2524,12 +2554,16 @@ CRITICAL RULES:
   // Strict enforcement: Wikidata and Wikipedia must NEVER be triggered for /search and /web commands
   if (isWebFetchQuery(query)) {
     plannerOutput.needsResearch = false;
+    plannerOutput.needsResearchQuery = '';
     plannerOutput.needsWikipedia = false;
     plannerOutput.wikipediaQuery = '';
     plannerOutput.needsWikidata = false;
     plannerOutput.wikidataQuery = '';
   } else if (isSearchOverrideQuery(query)) {
     plannerOutput.needsResearch = true;
+    if (!plannerOutput.needsResearchQuery) {
+      plannerOutput.needsResearchQuery = stripSearchOverridePrefix(query).trim();
+    }
     plannerOutput.needsWikipedia = false;
     plannerOutput.wikipediaQuery = '';
     plannerOutput.needsWikidata = false;
@@ -2747,7 +2781,7 @@ CRITICAL RULES:
   };
 
   if (shouldResearch) {
-    console.log('[JARVIS Researcher] QUERY TYPE DEBUG - Query:', strippedQuery, '| isSearchOverride:', isSearchOverride, '| isNewsQuery:', isNewsQuery, '| isWorldNews:', isWorldNews, '| isWeatherQuery:', isWeatherQuery, '| needsWikipedia:', plannerOutput.needsWikipedia, '| needsWikidata:', plannerOutput.needsWikidata);
+    console.log('[JARVIS Researcher] QUERY TYPE DEBUG - Query:', strippedQuery, '| isSearchOverride:', isSearchOverride, '| isNewsQuery:', isNewsQuery, '| isWorldNews:', isWorldNews, '| isWeatherQuery:', isWeatherQuery, '| needsResearchQuery:', plannerOutput.needsResearchQuery, '| needsWikipedia:', plannerOutput.needsWikipedia, '| needsWikidata:', plannerOutput.needsWikidata);
     const rCfg = agentConfigs.researcher;
     const provInfo = resolveProviderConfig(rCfg);
     const start = Date.now();
@@ -2766,6 +2800,7 @@ CRITICAL RULES:
     let searchSource = 'Live News API';
 
     try {
+      const plannerResearchQuery = typeof plannerOutput.needsResearchQuery === 'string' ? plannerOutput.needsResearchQuery.trim() : '';
       const { cleanedSearchQuery } = extractTopicKeywords(strippedQuery, plannerOutput.task);
 
       let searchResults: SearchResult[] = [];
@@ -2804,7 +2839,7 @@ CRITICAL RULES:
         try {
           console.log('[JARVIS Researcher] Attempting primary GNews API for news query:', strippedQuery, 'isWorldNews:', isWorldNews);
           const gnewsRes = await api.news({
-            query: isWorldNews ? undefined : (cleanedSearchQuery || strippedQuery),
+            query: isWorldNews ? undefined : (plannerResearchQuery || cleanedSearchQuery || strippedQuery),
             category: isWorldNews ? 'world' : 'general',
           });
           console.log('[JARVIS Researcher] RAW DATA USED (DEBUG) - GNews Response:', JSON.stringify(gnewsRes, null, 2));
@@ -2838,7 +2873,7 @@ CRITICAL RULES:
         if (!gnewsSucceeded) {
           logToJarvisTerminal('GNews failed, falling back to Google News RSS', 'warning');
           try {
-            const rssQuery = isWorldNews ? 'latest world news' : (cleanedSearchQuery || strippedQuery);
+            const rssQuery = isWorldNews ? 'latest world news' : (plannerResearchQuery || cleanedSearchQuery || strippedQuery);
             console.log('[JARVIS Researcher] Falling back to Google News RSS for news query:', rssQuery);
             const liveNewsRes = await api.newsRss(rssQuery);
             console.log('[JARVIS Researcher] RAW DATA USED (DEBUG) - News RSS Response:', JSON.stringify(liveNewsRes, null, 2));
@@ -3030,7 +3065,7 @@ CRITICAL RULES:
         let effectiveSearchQuery = '';
         if (isProductLineupQuery) {
           // For product/model lineup queries: specifically target official product/model listing and documentation pages
-          const queryWithoutPunctuation = (cleanedSearchQuery || strippedQuery).replace(/[^\w\s-]/g, ' ').replace(/\s+/g, ' ').trim();
+          const queryWithoutPunctuation = (plannerResearchQuery || cleanedSearchQuery || strippedQuery).replace(/[^\w\s-]/g, ' ').replace(/\s+/g, ' ').trim();
           const lower = queryWithoutPunctuation.toLowerCase();
           let brandPrefix = '';
           if (/\bclaude\b/i.test(lower) && !/\banthropic\b/i.test(lower)) {
@@ -3049,10 +3084,13 @@ CRITICAL RULES:
         } else if (isNewsQuery) {
           effectiveSearchQuery = isWorldNews
             ? `top world breaking news headlines today ${currentDateStr}`
-            : `world news today ${currentDateStr} ${cleanedSearchQuery || strippedQuery}`;
+            : `world news today ${currentDateStr} ${plannerResearchQuery || cleanedSearchQuery || strippedQuery}`;
         } else {
-          effectiveSearchQuery = isSearchOverride ? (cleanedSearchQuery || strippedQuery) : query;
+          // General / Factual Search: Prioritize clean, specific search phrase from Planner
+          effectiveSearchQuery = plannerResearchQuery || (isSearchOverride ? (cleanedSearchQuery || strippedQuery) : (cleanedSearchQuery || strippedQuery));
         }
+
+        console.log(`[JARVIS Researcher] Effective search query: "${effectiveSearchQuery}" (planner needsResearchQuery: "${plannerResearchQuery}", raw query: "${query}")...`);
 
         const userExplicitlyRequestedRecency = /\b(?:latest|recent|updates?|newest|new|current|today|releases?|versions?|pricing|specs?|changelog)\b/i.test(
           `${strippedQuery} ${plannerOutput.task || ''}`,
@@ -3140,7 +3178,7 @@ CRITICAL RULES:
 
       let filteredSources = isDirectNewsOrWeather
         ? rawCandidates
-        : scoreAndFilterSearchResults(rawCandidates, strippedQuery, plannerOutput.task);
+        : scoreAndFilterSearchResults(rawCandidates, plannerResearchQuery || strippedQuery, plannerOutput.task);
 
       // Fallback: If relevance filter pruned too aggressively (< 3 sources), recover original candidates
       if (filteredSources.length < 3 && rawCandidates.length >= 3) {
@@ -3223,7 +3261,7 @@ CRITICAL RULES:
           description: s.title || '',
           type: 'web' as const,
         }));
-        const validatedModelSources = scoreAndFilterSearchResults(candidateModelSources, query, plannerOutput.task);
+        const validatedModelSources = scoreAndFilterSearchResults(candidateModelSources, plannerResearchQuery || query, plannerOutput.task);
         validatedModelSources.forEach((s) => {
           if (s.title && s.url && !sourcesCollected.some((existing) => existing.url === s.url)) {
             sourcesCollected.push({

@@ -42,11 +42,13 @@ Set needsKnowledgeAgent to false for all other query types, including: time-sens
   6. If neither source has information, respond that no information was found instead of guessing.
   CRITICAL COMMAND RESTRICTIONS: Neither Wikidata (needsWikidata) nor Wikipedia (needsWikipedia) should EVER be triggered in "/search" and "/web" commands. For any query starting with "/search" or "/web", always set needsWikidata: false and needsWikipedia: false.
   (Note: Set both needsWikipedia and needsWikidata to false if the query is asking for real-time or live data that changes constantly like live prices, breaking news, current weather, or for casual conversation, opinions, and self-referential questions).
+- needsResearch: true if the query requires external information, web search, current news, recent data, or factual lookup. Set false for pure logic, casual conversation, code writing without research, or when answering solely with internal knowledge.
+- needsResearchQuery: MANDATORY JSON KEY. You MUST ALWAYS include "needsResearchQuery" in your JSON output without exception. When needsResearch is true, generate a clean, specific search phrase (not the full raw user question) that the Researcher agent should use for its web search — strip out conversational words, filler ("Is this true?", "Tell me about", "Can you explain"), punctuation, and focus strictly on the actual core topic/keywords being researched (e.g., for "This is true? Rich HTML can carry hidden dangerous code...", needsResearchQuery should be "HTML security risks hidden code tracking scripts"; for "Can you verify if quantum computers can break RSA encryption?", needsResearchQuery should be "quantum computing RSA encryption vulnerability"; for "What are the latest Claude models released?", needsResearchQuery should be "latest Claude models Anthropic release"). When needsResearch is false, needsResearchQuery MUST ALWAYS STILL BE INCLUDED as an empty string ("").
 - wikidataQuery: MANDATORY JSON KEY. You MUST ALWAYS include "wikidataQuery" in your JSON output without exception. When needsWikidata is true, extract a short, clean subject/entity name from the user's question (e.g., for "how many moons does Saturn have", wikidataQuery should be "Saturn"; for "when was Einstein born", wikidataQuery should be "Einstein"; for "what is the population of Tokyo", wikidataQuery should be "Tokyo"). When needsWikidata is false, wikidataQuery MUST ALWAYS STILL BE INCLUDED as an empty string ("").
 - wikipediaQuery: MANDATORY JSON KEY. You MUST ALWAYS include "wikipediaQuery" in your JSON output without exception. When needsWikipedia is true, extract a short, clean subject/title from the user's question (e.g., for "tell about brawl stars game", wikipediaQuery MUST be "Brawl Stars"; for "tell me about Brawl Stars", wikipediaQuery MUST be "Brawl Stars"; for "who is Nikola Tesla", wikipediaQuery MUST be "Nikola Tesla"; for "what is the theory of relativity", wikipediaQuery MUST be "Theory of relativity"). When needsWikipedia is false, wikipediaQuery MUST ALWAYS STILL BE INCLUDED as an empty string ("").
 - EXPLICIT "/web" DIRECT URL FETCH COMMAND:
   If the query begins with the explicit slash command prefix "/web" followed by a URL (e.g. "/web new-nexus.onrender.com", "/web new-nexus.onrender.com/space", "/web https://example.com/article"):
-  1. Set needsResearch: false (skip standard search engines, as this is a direct web page fetch).
+  1. Set needsResearch: false and needsResearchQuery: "" (skip standard search engines, as this is a direct web page fetch).
   2. Set needsWikipedia: false and needsWikidata: false (skip Wikipedia and Wikidata lookups. Wikidata and Wikipedia must NEVER be triggered for "/web").
   3. Set needsKnowledgeAgent: false (skip Advisor).
   4. Set needsReview: false (skip Reviewer).
@@ -55,37 +57,39 @@ Set needsKnowledgeAgent to false for all other query types, including: time-sens
 - EXPLICIT "/search" OVERRIDE COMMAND:
   If the query begins with the explicit slash command prefix "/search" (e.g. "/search what is AI", "/search latest iPhone price", "/search black hole"):
   1. Set needsResearch: true (always force a real live web search, regardless of what the rest of the query looks like).
-  2. Set needsWikipedia: false and needsWikidata: false (explicitly skip Wikipedia and Wikidata summary lookups, even if the query would normally look like a definition or exact fact question. Wikidata and Wikipedia must NEVER be triggered for "/search").
-  3. Set needsKnowledgeAgent: false (explicitly skip Advisor, even if the query would normally look like a comparison).
-  4. Set needsReview: false (skip Reviewer to maintain a lightweight, fast direct search pipeline).
-  5. Set needsFactCheck: true (still verify extracted facts and data).
-  6. In "task", strip the "/search" prefix so downstream agents work directly on the target query (e.g. for "/search black hole", task should be "Research black hole" or "Search for black hole").
+  2. In "needsResearchQuery", set the clean target search query without the "/search" prefix.
+  3. Set needsWikipedia: false and needsWikidata: false (explicitly skip Wikipedia and Wikidata summary lookups, even if the query would normally look like a definition or exact fact question. Wikidata and Wikipedia must NEVER be triggered for "/search").
+  4. Set needsKnowledgeAgent: false (explicitly skip Advisor, even if the query would normally look like a comparison).
+  5. Set needsReview: false (skip Reviewer to maintain a lightweight, fast direct search pipeline).
+  6. Set needsFactCheck: true (still verify extracted facts and data).
+  7. In "task", strip the "/search" prefix so downstream agents work directly on the target query (e.g. for "/search black hole", task should be "Research black hole" or "Search for black hole").
 - SEARCH INTENT DISTINCTION: PRODUCT/MODEL LINEUP VS RECENT NEWS (CRITICAL):
   When analyzing queries with similar phrasing (such as "latest X" or "current X"), distinguish between two distinct search intents:
   1. "PRODUCT/MODEL LINEUP" intent:
      - Queries asking what current models, versions, products, or tiers exist for a subject (e.g. "latest Claude models", "current Claude model lineup", "what models does Claude have now", "what Claude models are available now", "current iPhone lineup", "latest GPT models", "what Gemini models are available").
      - Examples: "latest Claude models" / "current Claude model lineup" / "what models does Claude have now" = PRODUCT/MODEL LINEUP intent.
-     - Action: In "task", specifically target the subject's official product/model listing and current lineup (e.g. "Identify current Claude model lineup and specifications"). Set needsResearch: true. Set needsWikipedia: true if model-family history or encyclopedic listing exists. Do NOT treat this as general news, scandals, or lawsuits.
+     - Action: In "task", specifically target the subject's official product/model listing and current lineup (e.g. "Identify current Claude model lineup and specifications"). Set needsResearch: true and set "needsResearchQuery" to targeted keywords (e.g. "latest Claude models Anthropic lineup specs"). Set needsWikipedia: true if model-family history or encyclopedic listing exists. Do NOT treat this as general news, scandals, or lawsuits.
   2. "RECENT NEWS" intent:
      - Queries asking about recent happenings, events, headlines, controversies, lawsuits, or news related to a subject (e.g. "latest Claude news", "recent Anthropic news", "recent Anthropic controversies", "what's happening with Claude", "breaking AI news today").
      - Examples: "latest Claude news" / "recent Anthropic news" / "what's happening with Claude" = RECENT NEWS intent.
-     - Action: In "task", target recent news stories and events. Set needsResearch: true, needsWikipedia: false, needsWikidata: false.
+     - Action: In "task", target recent news stories and events. Set needsResearch: true, needsResearchQuery: clean search query for the news topic, needsWikipedia: false, needsWikidata: false.
 - task: a concise goal statement, under 15 words.
 - plan: 2-4 short steps describing your approach, not a full essay.
 - CRITICAL - SELF-REFERENTIAL, PERSONAL, ARCHITECTURE & HUMAN-AI COMPARISON INQUIRIES:
   If the query asks about JARVIS's own name, identity, architecture, how many agents it has, what agents make up the system, its capabilities, features, what it can do, how it works, gives conversational greetings (e.g. "hello", "hi", "what is your name", "who are you", "what can you do", "what are your capabilities", "how many agents", "what agents do you have", "how do you work", "what is jarvis", "tell me about yourself", "help me"), OR asks to compare an AI/JARVIS with the user personally (e.g. "compare me and DeepSeek", "comar me and DeepSeek", "compare you and me", "what do you think of me", "how do I compare to AI", "compare me with AI", "how am I different from ChatGPT"):
-  1. Set needsResearch: false (DO NOT trigger Researcher to search the web for the literal words "me", "myself", "I", "you", or the user as a searchable entity under any circumstance, and do not search external web for JARVIS's internal architecture).
+  1. Set needsResearch: false and needsResearchQuery: "" (DO NOT trigger Researcher to search the web for the literal words "me", "myself", "I", "you", or the user as a searchable entity under any circumstance, and do not search external web for JARVIS's internal architecture).
   2. Set needsFactCheck: false, needsReview: false, needsWikipedia: false, and needsWikidata: false.
   3. JARVIS Architecture Knowledge: JARVIS is composed of 9 specialized agents: 6 core pipeline agents (Planner, Researcher, Fact Checker, Advisor, Reviewer, Final Synthesizer) plus 3 toggle-based specialized visual/analytical agents (Architect for SVG diagrams, Data Analyst for charts, Image Finder for photo search), as well as custom user-defined agents.
   4. If it is a personal comparison between human/user and AI ("compare me and DeepSeek", "compare you and me", "how do I compare to AI"), set needsKnowledgeAgent: true so Advisor provides a conceptual, respectful Human vs AI analysis without searching the web or guessing the user's private identity. If it is a pure self-referential question about JARVIS itself ("what is your name", "who are you", "what can you do", "how many agents do you have"), set needsKnowledgeAgent: false.
-- If the user's question is only asking for the current date or time, answer it directly using the date/time provided above, and set needsResearch, needsKnowledgeAgent, needsFactCheck, and needsReview all to false.
+- If the user's question is only asking for the current date or time, answer it directly using the date/time provided above, and set needsResearch, needsResearchQuery, needsKnowledgeAgent, needsFactCheck, and needsReview all to false or empty string.
 - If the query is ambiguous or unclear, still produce a best-effort plan and lean toward needsResearch: true to gather clarifying context.
 CRITICAL JSON FORMAT MANDATE:
-You MUST output ONLY a valid JSON object. Every response MUST include all 13 keys below without exception. "wikipediaQuery" and "wikidataQuery" are MANDATORY string fields (use empty string "" when not needed, never omit the key):
+You MUST output ONLY a valid JSON object. Every response MUST include all 14 keys below without exception. "needsResearchQuery", "wikipediaQuery", and "wikidataQuery" are MANDATORY string fields (use empty string "" when not needed, never omit the key):
 {
   "task": "concise goal statement",
   "plan": ["step 1", "step 2"],
   "needsResearch": true,
+  "needsResearchQuery": "HTML security risks hidden code tracking scripts",
   "needsKnowledgeAgent": true,
   "needsFactCheck": true,
   "needsReview": true,
@@ -720,6 +724,7 @@ export const storage = {
           maxTokens: Math.max(400, stored.agents.planner?.maxTokens || 500),
           systemPrompt:
             !stored.agents.planner?.systemPrompt ||
+            !stored.agents.planner.systemPrompt.includes('needsResearchQuery') ||
             !stored.agents.planner.systemPrompt.includes('needsKnowledgeAgent') ||
             !stored.agents.planner.systemPrompt.includes('needsWikipedia') ||
             !stored.agents.planner.systemPrompt.includes('needsWikidata') ||
