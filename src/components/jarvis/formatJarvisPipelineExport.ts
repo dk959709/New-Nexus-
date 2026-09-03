@@ -1,6 +1,6 @@
 import { JarvisExecutionStep, JarvisMessage, SavedItem } from '../../types';
 import { stripConversationalMetaText } from '../../lib/format';
-import { cleanAndFormatFact } from '../../lib/factFormatter';
+import { cleanAndFormatFact, cleanResearcherFinding } from '../../lib/factFormatter';
 
 function extractDomain(urlStr: string): string {
   try {
@@ -316,10 +316,11 @@ export function extractResearcherData(
             const category = typeof cObj.category === 'string' && cObj.category ? cObj.category : undefined;
 
             if (rawTitle || rawFact) {
+              const { title: cleanTitle, fact: cleanFact } = cleanResearcherFinding(rawTitle, rawFact, idx);
               candidates.push({
                 id: `cand-${idx}`,
-                title: rawTitle,
-                fact: rawFact || rawTitle,
+                title: cleanTitle,
+                fact: cleanFact,
                 domain: domain && domain !== 'null' && domain !== 'undefined' ? domain : undefined,
                 eventDate: eventDate && eventDate !== 'null' && eventDate !== 'undefined' ? eventDate : undefined,
                 publishedAt: typeof cObj.publishedAt === 'string' ? cObj.publishedAt : undefined,
@@ -331,10 +332,11 @@ export function extractResearcherData(
               });
             }
           } else if (typeof cand === 'string' && cand.trim().length > 5) {
+            const { title: cleanTitle, fact: cleanFact } = cleanResearcherFinding('', cand.trim(), idx);
             candidates.push({
               id: `cand-${idx}`,
-              title: '',
-              fact: cand.trim(),
+              title: cleanTitle,
+              fact: cleanFact,
             });
           }
         });
@@ -350,30 +352,24 @@ export function extractResearcherData(
           (obj[key] as unknown[]).forEach((f, idx) => {
             if (typeof f === 'string' && f.trim().length > 5) {
               const bulletMatch = f.match(/^(?:[-*•]\s*)?(?:\*\*([^*]+)\*\*[:\s]+)?(.*)$/);
-              if (bulletMatch && bulletMatch[1]) {
-                const title = bulletMatch[1].trim();
-                const fact = bulletMatch[2] ? bulletMatch[2].trim() : f.trim();
-                candidates.push({
-                  id: `fact-${idx}`,
-                  title,
-                  fact: fact || title,
-                });
-              } else {
-                candidates.push({
-                  id: `fact-${idx}`,
-                  title: '',
-                  fact: f.trim(),
-                });
-              }
+              const title = bulletMatch && bulletMatch[1] ? bulletMatch[1].trim() : '';
+              const fact = bulletMatch && bulletMatch[2] ? bulletMatch[2].trim() : f.trim();
+              const { title: cleanTitle, fact: cleanFact } = cleanResearcherFinding(title, fact, idx);
+              candidates.push({
+                id: `fact-${idx}`,
+                title: cleanTitle,
+                fact: cleanFact,
+              });
             } else if (typeof f === 'object' && f !== null) {
               const fObj = f as Record<string, unknown>;
               const factText = String(fObj.fact || fObj.claim || fObj.statement || fObj.text || fObj.finding || '').trim();
               const title = String(fObj.title || fObj.headline || '').trim();
               if (factText || title) {
+                const { title: cleanTitle, fact: cleanFact } = cleanResearcherFinding(title, factText, idx);
                 candidates.push({
                   id: `fact-${idx}`,
-                  title,
-                  fact: factText || title,
+                  title: cleanTitle,
+                  fact: cleanFact,
                   domain: typeof fObj.domain === 'string' ? fObj.domain : undefined,
                   eventDate: typeof fObj.eventDate === 'string' ? fObj.eventDate : typeof fObj.date === 'string' ? fObj.date : undefined,
                   sourceIndex: typeof fObj.sourceIndex === 'number' ? fObj.sourceIndex : undefined,
@@ -509,31 +505,9 @@ export function formatResearcherOutput(step: JarvisExecutionStep, parsed: unknow
 
   if (resData.candidates.length > 0) {
     resData.candidates.forEach((cand, idx) => {
-      let boldTitle = '';
-      let cleanFact = (cand.fact || '').trim();
+      const { title: cleanTitle, fact: cleanFact } = cleanResearcherFinding(cand.title, cand.fact, idx);
 
-      if (cand.title && cand.title.trim()) {
-        const t = cand.title.trim().replace(/^[:\s-]+|[:\s-]+$/g, '');
-        boldTitle = `**${t}:** `;
-        const escapedT = t.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
-        cleanFact = cleanFact.replace(new RegExp(`^(?:\\*\\*)?${escapedT}(?:\\*\\*)?[:\\s-]*`, 'i'), '').trim();
-      } else {
-        const boldMatch = cleanFact.match(/^(\*\*[^*]+\*\*[:\s]*)(.*)$/);
-        if (boldMatch) {
-          boldTitle = boldMatch[1].endsWith(' ') ? boldMatch[1] : `${boldMatch[1]} `;
-          cleanFact = boldMatch[2].trim();
-        } else {
-          const colonMatch = cleanFact.match(/^([A-Za-z0-9\s-]{3,40}):\s+(.*)$/);
-          if (colonMatch) {
-            boldTitle = `**${colonMatch[1].trim()}:** `;
-            cleanFact = colonMatch[2].trim();
-          } else {
-            boldTitle = `**Finding ${idx + 1}:** `;
-          }
-        }
-      }
-
-      md += `${idx + 1}. ${boldTitle}${cleanFact}\n`;
+      md += `${idx + 1}. **${cleanTitle}:** ${cleanFact}\n`;
 
       const domain = cand.domain || (cand.url ? extractDomain(cand.url) : '');
       const dateStr = cand.eventDate || cand.publishedAt || cand.updatedAt || '';
@@ -558,14 +532,8 @@ export function formatResearcherOutput(step: JarvisExecutionStep, parsed: unknow
     const fallbackItems = candidateLines.slice(0, 5);
     if (fallbackItems.length > 0) {
       fallbackItems.forEach((factText, idx) => {
-        let boldTitle = `**Finding ${idx + 1}:** `;
-        let cleanFact = factText;
-        const colonMatch = factText.match(/^([A-Za-z0-9\s-]{3,40}):\s+(.*)$/);
-        if (colonMatch) {
-          boldTitle = `**${colonMatch[1].trim()}:** `;
-          cleanFact = colonMatch[2].trim();
-        }
-        md += `${idx + 1}. ${boldTitle}${cleanFact}\n`;
+        const { title: cleanTitle, fact: cleanFact } = cleanResearcherFinding('', factText, idx);
+        md += `${idx + 1}. **${cleanTitle}:** ${cleanFact}\n`;
         if (step.searchSource) {
           md += `   - **Source:** ${step.searchSource}\n`;
         }

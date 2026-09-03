@@ -655,3 +655,263 @@ export function formatResearcherOutput(
   return md;
 }
 
+/**
+ * Set of known scraped headers, breadcrumbs, navigation items, or boilerplate phrases
+ * that frequently leak into scraped web snippets or LLM summaries.
+ */
+const KNOWN_JUNK_HEADERS = [
+  'it support',
+  'browser extension precautions',
+  'technical support',
+  'customer support',
+  'help desk',
+  'system requirements',
+  'security notice',
+  'security precautions',
+  'precautions',
+  'precautions to take',
+  'table of contents',
+  'frequently asked questions',
+  'faq',
+  'related articles',
+  'related posts',
+  'related topics',
+  'related content',
+  'recommended reading',
+  'key takeaways',
+  'overview',
+  'summary',
+  'introduction',
+  'conclusion',
+  'disclaimer',
+  'warning',
+  'notice',
+  'important note',
+  'cookie policy',
+  'privacy policy',
+  'terms of use',
+  'terms of service',
+  'about us',
+  'contact us',
+  'advertisement',
+  'sponsored',
+  'skip to content',
+  'read more',
+  'share this',
+  'comments',
+  'leave a reply',
+  'untitled',
+  'article',
+  'news',
+  'page',
+  'home',
+];
+
+const JUNK_HEADER_PREFIX_REGEX = new RegExp(
+  `^(?:(?:${KNOWN_JUNK_HEADERS.map((h) => h.replace(/\s+/g, '\\s+')).join('|')})[\\s:/-]*)+`,
+  'i',
+);
+
+/**
+ * Splits text into coherent sentences, avoiding splits on common abbreviations.
+ */
+function splitIntoSentences(text: string): string[] {
+  if (!text) return [];
+  // Protect common abbreviations by temporarily replacing period
+  const protectedText = text
+    .replace(/\b(e\.g\.|i\.e\.|vs\.|etc\.|dr\.|mr\.|ms\.|mrs\.|u\.s\.|jan\.|feb\.|mar\.|apr\.|jun\.|jul\.|aug\.|sep\.|oct\.|nov\.|dec\.)/gi, (m) =>
+      m.replace(/\./g, '__DOT__'),
+    )
+    .replace(/\b(\d+)\.(\d+)\b/g, '$1__DOT__$2');
+
+  const rawSentences = protectedText.split(/(?<=[.!?])\s+(?=[A-Z0-9"'])/);
+
+  return rawSentences
+    .map((s) => s.replace(/__DOT__/g, '.').trim())
+    .filter(Boolean);
+}
+
+/**
+ * Cleans a researcher finding for presentation in the UI:
+ * - Strips leftover headers/fragments from scraped source content (e.g. 'IT Support', 'Browser extension precautions', '###' markers).
+ * - Extracts/promotes a clean bold title.
+ * - Extracts and keeps only the relevant summary sentence(s) (1-2 clear, informative sentences).
+ * - Returns clean { title: string, fact: string } suitable for numbered display.
+ */
+export function cleanResearcherFinding(
+  rawTitle?: string | null,
+  rawFact?: string | null,
+  idx: number = 0,
+): { title: string; fact: string } {
+  const title = (rawTitle || '').trim();
+  let fact = (rawFact || '').trim();
+
+  // 1. Initial cleanup of markdown headers, dividers, HTML, and stray citations
+  const stripMarkdownAndNoise = (str: string): string => {
+    return str
+      .replace(/\r\n/g, '\n')
+      .replace(/<[^>]+>/g, ' ')
+      .replace(/#{1,6}\s*/g, ' ')
+      .replace(/^[-*_]{3,}\s*$/gm, ' ')
+      .replace(/(?:,\s*|\s*[-–—]\s*|\s+)?`?\[[^\]]*\b(?:Source|Citation|Ref|Reference)\b[^\]]*\]`?/gi, ' ')
+      .replace(/\(\s*(?:Source|Citation|Ref|Reference)\s*#?\s*\d+\s*\)/gi, ' ')
+      .replace(/`+/g, '')
+      .replace(/\s+/g, ' ')
+      .trim();
+  };
+
+  // 2. Handle multi-line scraped facts where early lines are heading fragments
+  if (fact.includes('\n')) {
+    const rawLines = fact.split('\n').map((l) => l.trim()).filter(Boolean);
+    const validLines: string[] = [];
+    for (const line of rawLines) {
+      const strippedLine = line.replace(/^#{1,6}\s*/, '').trim();
+      const lower = strippedLine.toLowerCase();
+      // If line is a known junk header or very short line with no punctuation at end
+      const isJunk = KNOWN_JUNK_HEADERS.some((h) => lower === h || lower.startsWith(`${h}:`) || lower.startsWith(`${h} -`));
+      const isShortHeader = strippedLine.split(/\s+/).length <= 4 && !/[.!?]$/.test(strippedLine);
+      if (isJunk || (isShortHeader && validLines.length === 0)) {
+        continue;
+      }
+      validLines.push(strippedLine);
+    }
+    fact = validLines.join(' ');
+  }
+
+  fact = stripMarkdownAndNoise(fact);
+
+  // Strip breadcrumbs (e.g., "Home > Category > Topic > ")
+  fact = fact.replace(/^(?:[A-Za-z0-9\s-]{2,25}\s*[>/»|]\s*)+/, '').trim();
+
+  // Strip leading junk header phrases (e.g. "IT Support Browser extension precautions", "IT Support: ")
+  while (JUNK_HEADER_PREFIX_REGEX.test(fact)) {
+    fact = fact.replace(JUNK_HEADER_PREFIX_REGEX, '').trim();
+  }
+
+  // Strip leading list numbering, bullets, and stray punctuation
+  fact = fact
+    .replace(/^[-*•\d.)\]:]+\s*/, '')
+    .replace(/^["']?(?:fact|finding|claim|statement|description|insight|point)\s*\d*[:=]\s*["']?/i, '')
+    .replace(/^[\s,;:\-–—"'‘“]+/, '')
+    .trim();
+
+  // Clean raw title
+  let cleanTitle = stripMarkdownAndNoise(title)
+    .replace(/^(?:Finding\s*\d+|Fact\s*\d+|Claim\s*\d+|\d+[.)])[:\s-]*/i, '')
+    .replace(/^[\s#*•\d.:–—-]+/, '')
+    .replace(/[\s:–—*#]+$/, '')
+    .trim();
+
+  // Check if cleanTitle is just a junk header
+  const isTitleJunk =
+    !cleanTitle ||
+    cleanTitle.length < 3 ||
+    KNOWN_JUNK_HEADERS.includes(cleanTitle.toLowerCase()) ||
+    JUNK_HEADER_PREFIX_REGEX.test(cleanTitle);
+
+  if (isTitleJunk) {
+    cleanTitle = '';
+  }
+
+  // Check if fact starts with bold title markdown: **Some Title:** or **Some Title**
+  const boldMatch = fact.match(/^(\*\*[^*]+\*\*[:\s]*)(.*)$/);
+  if (boldMatch) {
+    const extractedBold = boldMatch[1].replace(/[*:]/g, '').trim();
+    if (extractedBold && !KNOWN_JUNK_HEADERS.includes(extractedBold.toLowerCase()) && !JUNK_HEADER_PREFIX_REGEX.test(extractedBold)) {
+      if (!cleanTitle) {
+        cleanTitle = extractedBold;
+      }
+      fact = boldMatch[2].trim();
+    }
+  }
+
+  // Check if fact starts with a colon title: "Malware Infection: Using cracked software..."
+  if (!cleanTitle) {
+    const colonMatch = fact.match(/^([A-Za-z0-9\s-]{3,40}):\s+([A-Z].*)$/);
+    if (colonMatch) {
+      const candidateTitle = colonMatch[1].trim();
+      if (!KNOWN_JUNK_HEADERS.includes(candidateTitle.toLowerCase()) && !JUNK_HEADER_PREFIX_REGEX.test(candidateTitle)) {
+        cleanTitle = candidateTitle;
+        fact = colonMatch[2].trim();
+      }
+    }
+  }
+
+  // Fallback title if none found
+  if (!cleanTitle) {
+    cleanTitle = `Finding ${idx + 1}`;
+  }
+
+  // Remove duplicate title prefix from fact if fact repeats the title
+  if (cleanTitle && cleanTitle.toLowerCase() !== `finding ${idx + 1}`.toLowerCase()) {
+    const escaped = cleanTitle.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+    fact = fact.replace(new RegExp(`^(?:\\*\\*)?${escaped}(?:\\*\\*)?[:\\s-]*`, 'i'), '').trim();
+  }
+
+  // Again strip any leading junk headers exposed after title stripping
+  while (JUNK_HEADER_PREFIX_REGEX.test(fact)) {
+    fact = fact.replace(JUNK_HEADER_PREFIX_REGEX, '').trim();
+  }
+
+  // Strip leading quotes or punctuation from fact
+  fact = fact.replace(/^[\s,;:\-–—"'‘“]+/, '').replace(/^[-*•\d.)\]:]+\s*/, '').trim();
+
+  // Extract relevant summary sentence(s)
+  const sentences = splitIntoSentences(fact);
+  const validSentences: string[] = [];
+
+  const BOILERPLATE_SENTENCE_REGEX = /(?:click\s+here|read\s+more|learn\s+more|subscribe|newsletter|privacy\s+policy|terms\s+of\s+(?:use|service)|cookie\s+policy|leave\s+a\s+(?:reply|comment)|all\s+rights\s+reserved|follow\s+us|share\s+(?:this|on)|sign\s+up|log\s+in|table\s+of\s+contents|frequently\s+asked\s+questions)/i;
+  const AUTHOR_METADATA_REGEX = /^(?:photo|image|figure\s*\d+|author|published|written\s+by|source|credit)[:\s]/i;
+
+  for (const s of sentences) {
+    const sTrimmed = s.trim();
+    if (!sTrimmed) continue;
+    if (BOILERPLATE_SENTENCE_REGEX.test(sTrimmed)) continue;
+    if (AUTHOR_METADATA_REGEX.test(sTrimmed)) continue;
+    if (sTrimmed.split(/\s+/).length < 4 && !/[.!?]$/.test(sTrimmed)) continue;
+
+    validSentences.push(sTrimmed);
+  }
+
+  let finalFact = '';
+  if (validSentences.length > 0) {
+    // Keep 1-2 core sentences (up to 3 if first two are short)
+    const firstSentence = validSentences[0];
+    if (validSentences.length > 1 && (firstSentence.length < 90 || (firstSentence.length + validSentences[1].length < 240))) {
+      finalFact = `${validSentences[0]} ${validSentences[1]}`;
+      if (validSentences.length > 2 && finalFact.length < 140 && finalFact.length + validSentences[2].length < 240) {
+        finalFact += ` ${validSentences[2]}`;
+      }
+    } else {
+      finalFact = firstSentence;
+    }
+  } else {
+    // Fallback if no sentence boundaries detected
+    finalFact = fact.slice(0, 220).replace(/[,;:\s]+$/, '').trim();
+    if (fact.length > 220 && !/[.!?]$/.test(finalFact)) {
+      finalFact += '...';
+    }
+  }
+
+  // Capitalize first letter
+  if (finalFact) {
+    finalFact = finalFact.charAt(0).toUpperCase() + finalFact.slice(1);
+    // Ensure ending with a period if missing punctuation
+    if (!/[.!?]$/.test(finalFact) && !finalFact.endsWith('...')) {
+      finalFact += '.';
+    }
+  } else {
+    finalFact = 'Empirical evidence extracted from gathered sources.';
+  }
+
+  // Clean title formatting: Capitalize first letter, ensure no trailing colon or markdown
+  cleanTitle = cleanTitle.charAt(0).toUpperCase() + cleanTitle.slice(1);
+  cleanTitle = cleanTitle.replace(/[:\s-]+$/, '').trim();
+
+  return {
+    title: cleanTitle,
+    fact: finalFact,
+  };
+}
+
+
