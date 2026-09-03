@@ -33,11 +33,19 @@ Set needsKnowledgeAgent to false for all other query types, including: time-sens
 - needsDiagram: true whenever Diagram Mode is enabled AND the query involves technical systems, hardware/device architecture, system workflows, comparisons (e.g. phone/hardware specs, camera sensor mechanisms, software architecture), processes, or concepts that benefit from a visual blueprint. Set false only if Diagram Mode is off or query has no structure.
 - needsChart: true whenever Chart Mode is enabled AND the query involves comparative numbers, specs, battery mAh, RAM, storage, camera megapixels, prices, dimensions, statistics, timelines, or quantitative metrics across products, categories, or items. Set false only if Chart Mode is off or query has no numbers.
 - needsImage: true whenever Image Mode is enabled AND the query mentions physical products (e.g. smartphones, laptops, cars, hardware), real-world objects, places, landmarks, animals, space imagery, or tangible subjects. Set false only if Image Mode is off or topic is purely abstract.
-- needsWikipedia: Set needsWikipedia to true ONLY if the query is asking for a general definition, explanation of a concept, historical background, or information about a specific person/place/thing/event (e.g. 'what is a black hole', 'who was Einstein', 'history of NASA', 'define photosynthesis'). Set needsWikipedia to false if the query is asking for real-time or live data that changes constantly and Wikipedia would not have (e.g. current time, current weather, today's date, live prices, breaking news, current status of something). Also set it to false for casual conversation, opinions, self-referential questions, or questions unrelated to a specific factual topic.
+- needsWikipedia & needsWikidata:
+  1. If the question asks for ONE exact fact (number, date, name, count, measurement), set needsWikidata: true and needsWikipedia: false.
+  2. If the question asks for an explanation, description, or background, set needsWikipedia: true and needsWikidata: false.
+  3. If the question needs both an exact fact AND an explanation, set both needsWikipedia and needsWikidata to true.
+  4. If unsure, default to needsWikipedia: true only.
+  5. If needsWikidata is true but no Wikidata entry is found, fall back to Wikipedia automatically.
+  6. If neither source has information, respond that no information was found instead of guessing.
+  CRITICAL COMMAND RESTRICTIONS: Neither Wikidata (needsWikidata) nor Wikipedia (needsWikipedia) should EVER be triggered in "/search" and "/web" commands. For any query starting with "/search" or "/web", always set needsWikidata: false and needsWikipedia: false.
+  (Note: Set both needsWikipedia and needsWikidata to false if the query is asking for real-time or live data that changes constantly like live prices, breaking news, current weather, or for casual conversation, opinions, and self-referential questions).
 - EXPLICIT "/web" DIRECT URL FETCH COMMAND:
   If the query begins with the explicit slash command prefix "/web" followed by a URL (e.g. "/web new-nexus.onrender.com", "/web new-nexus.onrender.com/space", "/web https://example.com/article"):
   1. Set needsResearch: false (skip standard search engines, as this is a direct web page fetch).
-  2. Set needsWikipedia: false (skip Wikipedia lookup).
+  2. Set needsWikipedia: false and needsWikidata: false (skip Wikipedia and Wikidata lookups. Wikidata and Wikipedia must NEVER be triggered for "/web").
   3. Set needsKnowledgeAgent: false (skip Advisor).
   4. Set needsReview: false (skip Reviewer).
   5. Set needsFactCheck: false (skip Fact Checker to maintain a direct, fast fetch-and-synthesize pipeline).
@@ -45,7 +53,7 @@ Set needsKnowledgeAgent to false for all other query types, including: time-sens
 - EXPLICIT "/search" OVERRIDE COMMAND:
   If the query begins with the explicit slash command prefix "/search" (e.g. "/search what is AI", "/search latest iPhone price", "/search black hole"):
   1. Set needsResearch: true (always force a real live web search, regardless of what the rest of the query looks like).
-  2. Set needsWikipedia: false (explicitly skip Wikipedia summary lookup, even if the query would normally look like a definition question).
+  2. Set needsWikipedia: false and needsWikidata: false (explicitly skip Wikipedia and Wikidata summary lookups, even if the query would normally look like a definition or exact fact question. Wikidata and Wikipedia must NEVER be triggered for "/search").
   3. Set needsKnowledgeAgent: false (explicitly skip Advisor, even if the query would normally look like a comparison).
   4. Set needsReview: false (skip Reviewer to maintain a lightweight, fast direct search pipeline).
   5. Set needsFactCheck: true (still verify extracted facts and data).
@@ -59,13 +67,13 @@ Set needsKnowledgeAgent to false for all other query types, including: time-sens
   2. "RECENT NEWS" intent:
      - Queries asking about recent happenings, events, headlines, controversies, lawsuits, or news related to a subject (e.g. "latest Claude news", "recent Anthropic news", "recent Anthropic controversies", "what's happening with Claude", "breaking AI news today").
      - Examples: "latest Claude news" / "recent Anthropic news" / "what's happening with Claude" = RECENT NEWS intent.
-     - Action: In "task", target recent news stories and events. Set needsResearch: true, needsWikipedia: false.
+     - Action: In "task", target recent news stories and events. Set needsResearch: true, needsWikipedia: false, needsWikidata: false.
 - task: a concise goal statement, under 15 words.
 - plan: 2-4 short steps describing your approach, not a full essay.
 - CRITICAL - SELF-REFERENTIAL, PERSONAL, ARCHITECTURE & HUMAN-AI COMPARISON INQUIRIES:
   If the query asks about JARVIS's own name, identity, architecture, how many agents it has, what agents make up the system, its capabilities, features, what it can do, how it works, gives conversational greetings (e.g. "hello", "hi", "what is your name", "who are you", "what can you do", "what are your capabilities", "how many agents", "what agents do you have", "how do you work", "what is jarvis", "tell me about yourself", "help me"), OR asks to compare an AI/JARVIS with the user personally (e.g. "compare me and DeepSeek", "comar me and DeepSeek", "compare you and me", "what do you think of me", "how do I compare to AI", "compare me with AI", "how am I different from ChatGPT"):
   1. Set needsResearch: false (DO NOT trigger Researcher to search the web for the literal words "me", "myself", "I", "you", or the user as a searchable entity under any circumstance, and do not search external web for JARVIS's internal architecture).
-  2. Set needsFactCheck: false, needsReview: false, and needsWikipedia: false.
+  2. Set needsFactCheck: false, needsReview: false, needsWikipedia: false, and needsWikidata: false.
   3. JARVIS Architecture Knowledge: JARVIS is composed of 9 specialized agents: 6 core pipeline agents (Planner, Researcher, Fact Checker, Advisor, Reviewer, Final Synthesizer) plus 3 toggle-based specialized visual/analytical agents (Architect for SVG diagrams, Data Analyst for charts, Image Finder for photo search), as well as custom user-defined agents.
   4. If it is a personal comparison between human/user and AI ("compare me and DeepSeek", "compare you and me", "how do I compare to AI"), set needsKnowledgeAgent: true so Advisor provides a conceptual, respectful Human vs AI analysis without searching the web or guessing the user's private identity. If it is a pure self-referential question about JARVIS itself ("what is your name", "who are you", "what can you do", "how many agents do you have"), set needsKnowledgeAgent: false.
 - If the user's question is only asking for the current date or time, answer it directly using the date/time provided above, and set needsResearch, needsKnowledgeAgent, needsFactCheck, and needsReview all to false.
@@ -81,7 +89,8 @@ Output ONLY a JSON object with this exact structure:
   "needsDiagram": true,
   "needsChart": true,
   "needsImage": true,
-  "needsWikipedia": true
+  "needsWikipedia": true,
+  "needsWikidata": false
 }`,
 
   researcher: `You are the RESEARCHER agent of JARVIS.
@@ -708,6 +717,8 @@ export const storage = {
             !stored.agents.planner?.systemPrompt ||
             !stored.agents.planner.systemPrompt.includes('needsKnowledgeAgent') ||
             !stored.agents.planner.systemPrompt.includes('needsWikipedia') ||
+            !stored.agents.planner.systemPrompt.includes('needsWikidata') ||
+            !stored.agents.planner.systemPrompt.includes('CRITICAL COMMAND RESTRICTIONS: Neither Wikidata') ||
             !stored.agents.planner.systemPrompt.includes('needsDiagram') ||
             !stored.agents.planner.systemPrompt.includes('needsChart') ||
             !stored.agents.planner.systemPrompt.includes('needsImage') ||

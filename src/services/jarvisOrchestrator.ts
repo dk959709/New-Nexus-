@@ -2207,6 +2207,7 @@ Please perform your specialized processing for this inquiry. Provide clear, conc
     needsChart?: boolean;
     needsImage?: boolean;
     needsWikipedia?: boolean;
+    needsWikidata?: boolean;
   } = {
     task: query,
     plan: ['Synthesize accurate response directly.'],
@@ -2218,6 +2219,7 @@ Please perform your specialized processing for this inquiry. Provide clear, conc
     needsChart: false,
     needsImage: false,
     needsWikipedia: false,
+    needsWikidata: false,
   };
 
   if (agentConfigs.planner.enabled) {
@@ -2297,6 +2299,7 @@ Please perform your specialized processing for this inquiry. Provide clear, conc
           needsChart: false,
           needsImage: false,
           needsWikipedia: false,
+          needsWikidata: false,
         };
       }
       if (!Array.isArray(plannerOutput.plan)) {
@@ -2305,11 +2308,13 @@ Please perform your specialized processing for this inquiry. Provide clear, conc
       }
       plannerOutput.task = String(plannerOutput.task || query);
       plannerOutput.needsKnowledgeAgent = Boolean(plannerOutput.needsKnowledgeAgent);
+      plannerOutput.needsWikidata = Boolean(plannerOutput.needsWikidata);
 
       if (isWebFetchQuery(query)) {
         const targetUrl = extractWebFetchUrl(query);
         plannerOutput.needsResearch = false;
         plannerOutput.needsWikipedia = false;
+        plannerOutput.needsWikidata = false;
         plannerOutput.needsKnowledgeAgent = false;
         plannerOutput.needsReview = false;
         plannerOutput.needsFactCheck = false;
@@ -2324,6 +2329,7 @@ Please perform your specialized processing for this inquiry. Provide clear, conc
       } else if (isSearchOverrideQuery(query)) {
         plannerOutput.needsResearch = true;
         plannerOutput.needsWikipedia = false;
+        plannerOutput.needsWikidata = false;
         plannerOutput.needsKnowledgeAgent = false;
         plannerOutput.needsReview = false;
         plannerOutput.needsFactCheck = true;
@@ -2336,6 +2342,7 @@ Please perform your specialized processing for this inquiry. Provide clear, conc
         plannerOutput.needsFactCheck = false;
         plannerOutput.needsReview = false;
         plannerOutput.needsWikipedia = false;
+        plannerOutput.needsWikidata = false;
         plannerOutput.needsDiagram = false;
         plannerOutput.needsChart = false;
         plannerOutput.needsImage = false;
@@ -2345,6 +2352,7 @@ Please perform your specialized processing for this inquiry. Provide clear, conc
         plannerOutput.needsFactCheck = false;
         plannerOutput.needsReview = false;
         plannerOutput.needsWikipedia = false;
+        plannerOutput.needsWikidata = false;
         plannerOutput.needsDiagram = false;
         plannerOutput.needsChart = false;
         plannerOutput.needsImage = false;
@@ -2376,6 +2384,7 @@ Please perform your specialized processing for this inquiry. Provide clear, conc
         const targetUrl = extractWebFetchUrl(query);
         plannerOutput.needsResearch = false;
         plannerOutput.needsWikipedia = false;
+        plannerOutput.needsWikidata = false;
         plannerOutput.needsKnowledgeAgent = false;
         plannerOutput.needsReview = false;
         plannerOutput.needsFactCheck = false;
@@ -2390,6 +2399,7 @@ Please perform your specialized processing for this inquiry. Provide clear, conc
       } else if (isSearchOverrideQuery(query)) {
         plannerOutput.needsResearch = true;
         plannerOutput.needsWikipedia = false;
+        plannerOutput.needsWikidata = false;
         plannerOutput.needsKnowledgeAgent = false;
         plannerOutput.needsReview = false;
         plannerOutput.needsFactCheck = true;
@@ -2410,6 +2420,7 @@ Please perform your specialized processing for this inquiry. Provide clear, conc
     const targetUrl = extractWebFetchUrl(query);
     plannerOutput.needsResearch = false;
     plannerOutput.needsWikipedia = false;
+    plannerOutput.needsWikidata = false;
     plannerOutput.needsKnowledgeAgent = false;
     plannerOutput.needsReview = false;
     plannerOutput.needsFactCheck = false;
@@ -2424,10 +2435,22 @@ Please perform your specialized processing for this inquiry. Provide clear, conc
   } else if (isSearchOverrideQuery(query)) {
     plannerOutput.needsResearch = true;
     plannerOutput.needsWikipedia = false;
+    plannerOutput.needsWikidata = false;
     plannerOutput.needsKnowledgeAgent = false;
     plannerOutput.needsReview = false;
     plannerOutput.needsFactCheck = true;
     plannerOutput.task = stripSearchOverridePrefix(query) || 'Web search';
+  }
+
+  // Strict enforcement: Wikidata and Wikipedia must NEVER be triggered for /search and /web commands
+  if (isWebFetchQuery(query)) {
+    plannerOutput.needsResearch = false;
+    plannerOutput.needsWikipedia = false;
+    plannerOutput.needsWikidata = false;
+  } else if (isSearchOverrideQuery(query)) {
+    plannerOutput.needsResearch = true;
+    plannerOutput.needsWikipedia = false;
+    plannerOutput.needsWikidata = false;
   }
 
   // Standalone whole-word matching for news inquiries (excludes technical terms like 'electrical current' and product lineup inquiries)
@@ -2632,7 +2655,7 @@ Please perform your specialized processing for this inquiry. Provide clear, conc
   };
 
   if (shouldResearch) {
-    console.log('[JARVIS Researcher] QUERY TYPE DEBUG - Query:', strippedQuery, '| isSearchOverride:', isSearchOverride, '| isNewsQuery:', isNewsQuery, '| isWorldNews:', isWorldNews, '| isWeatherQuery:', isWeatherQuery, '| needsWikipedia:', plannerOutput.needsWikipedia);
+    console.log('[JARVIS Researcher] QUERY TYPE DEBUG - Query:', strippedQuery, '| isSearchOverride:', isSearchOverride, '| isNewsQuery:', isNewsQuery, '| isWorldNews:', isWorldNews, '| isWeatherQuery:', isWeatherQuery, '| needsWikipedia:', plannerOutput.needsWikipedia, '| needsWikidata:', plannerOutput.needsWikidata);
     const rCfg = agentConfigs.researcher;
     const provInfo = resolveProviderConfig(rCfg);
     const start = Date.now();
@@ -2820,9 +2843,10 @@ Please perform your specialized processing for this inquiry. Provide clear, conc
         }
       }
 
-      // 4. AI-Decided or Product-Lineup Wikipedia Lookup for factual/encyclopedic context (Works in both Deep Research ON and OFF)
-      if ((plannerOutput.needsWikipedia || isProductLineupQuery) && !isWeatherQuery && !isNewsQuery) {
-        console.log(`[JARVIS Researcher] Executing Wikipedia lookup for query: "${strippedQuery}" (needsWikipedia: ${plannerOutput.needsWikipedia}, isProductLineup: ${isProductLineupQuery})...`);
+      // 4. AI-Decided or Product-Lineup Wikipedia/Wikidata Lookup for factual/encyclopedic context (Works in both Deep Research ON and OFF)
+      // Note: Wikidata and Wikipedia must NEVER be triggered in /search or /web commands.
+      if (!isSearchOverride && !isWebFetch && (plannerOutput.needsWikipedia || plannerOutput.needsWikidata || isProductLineupQuery) && !isWeatherQuery && !isNewsQuery) {
+        console.log(`[JARVIS Researcher] Executing Wikipedia/Wikidata lookup for query: "${strippedQuery}" (needsWikipedia: ${plannerOutput.needsWikipedia}, needsWikidata: ${plannerOutput.needsWikidata}, isProductLineup: ${isProductLineupQuery})...`);
         try {
           // Clean search query for Wikipedia: extract core subject like "Claude (language model)" or "Claude" or "iPhone"
           let wikiSearchTerm = strippedQuery;
@@ -2865,8 +2889,10 @@ Please perform your specialized processing for this inquiry. Provide clear, conc
           console.warn('[JARVIS Researcher] Wikipedia 2-step lookup error (continuing with search results):', wikiErr);
           logToJarvisTerminal('Wikipedia lookup triggered - lookup error, skipped', 'warning');
         }
-      } else if (!plannerOutput.needsWikipedia && !isProductLineupQuery) {
-        console.log('[JARVIS Researcher] needsWikipedia is false. Skipping Wikipedia lookup to save tokens.');
+      } else if (isSearchOverride || isWebFetch) {
+        console.log('[JARVIS Researcher] /search or /web command detected. Skipping Wikipedia and Wikidata lookups.');
+      } else if (!plannerOutput.needsWikipedia && !plannerOutput.needsWikidata && !isProductLineupQuery) {
+        console.log('[JARVIS Researcher] needsWikipedia and needsWikidata are false. Skipping Wikipedia/Wikidata lookup to save tokens.');
       }
 
       const rawCandidates: RawSearchResultCandidate[] = [];
