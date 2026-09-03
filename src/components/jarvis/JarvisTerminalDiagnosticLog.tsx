@@ -27,7 +27,7 @@ interface JarvisTerminalDiagnosticLogProps {
 // Icon mapping per role
 const AGENT_ICONS: Record<string, React.ReactNode> = {
   planner: <Compass size={14} className="text-emerald-400" />,
-  researcher: <Globe2 size={14} className="text-sky-400" />,
+  researcher: <Globe2 size={14} className="text-[#d99b64]" />,
   webFetcher: <Globe2 size={14} className="text-cyan-400" />,
   factChecker: <ShieldCheck size={14} className="text-purple-400" />,
   advisor: <Lightbulb size={14} className="text-amber-400" />,
@@ -71,11 +71,11 @@ const AGENT_THEMES: Record<
     badgeBg: 'rgba(52, 211, 153, 0.18)',
   },
   researcher: {
-    border: 'rgba(56, 189, 248, 0.4)',
-    bg: 'rgba(56, 189, 248, 0.08)',
-    text: '#38bdf8',
-    glow: 'rgba(56, 189, 248, 0.25)',
-    badgeBg: 'rgba(56, 189, 248, 0.18)',
+    border: 'rgba(180, 115, 60, 0.4)',
+    bg: 'rgba(180, 115, 60, 0.08)',
+    text: '#d99b64',
+    glow: 'rgba(180, 115, 60, 0.25)',
+    badgeBg: 'rgba(180, 115, 60, 0.18)',
   },
   webFetcher: {
     border: 'rgba(34, 211, 238, 0.4)',

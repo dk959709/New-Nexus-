@@ -50,8 +50,8 @@ const CORE_AGENTS: AgentNodeDef[] = [
     shortLabel: 'RSRCH',
     code: 'RSC-02',
     icon: <Globe2 size={13} />,
-    color: '#38bdf8',
-    glowColor: 'rgba(56, 189, 248, 0.5)',
+    color: '#d99b64',
+    glowColor: 'rgba(180, 115, 60, 0.5)',
   },
   {
     id: 'factChecker',

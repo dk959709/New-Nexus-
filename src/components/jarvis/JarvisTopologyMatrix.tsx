@@ -48,7 +48,7 @@ const AGENTS_META: Array<{
     name: 'RESEARCHER',
     emoji: '🔎',
     icon: Search,
-    color: '#38bdf8',
+    color: '#d99b64',
     description: 'Fetches grounded real-time search & Wiki data',
     detailedPurpose: 'Executes live web search and Wikipedia queries, gathers factual citations, extracts data snippets, and compiles rich background context.',
     sampleQuery: 'What are the newest discoveries confirmed by the James Webb Space Telescope in 2025/2026?',

@@ -70,13 +70,13 @@ const AGENT_THEMES: Record<string, AgentTheme> = {
   researcher: {
     title: 'RESEARCHER // EMPIRICAL INTELLIGENCE',
     subtitle: 'Real-time Web Search, Multi-Engine Retrieval & Fact Extraction',
-    border: 'rgba(97, 215, 201, 0.45)',
-    bg: 'linear-gradient(150deg, rgba(8, 28, 36, 0.9) 0%, rgba(5, 18, 24, 0.95) 100%)',
-    headerBg: 'rgba(12, 38, 48, 0.6)',
-    text: '#61d7c9',
-    badgeBg: 'rgba(97, 215, 201, 0.15)',
-    accentGlow: 'rgba(97, 215, 201, 0.3)',
-    icon: <Search size={18} className="text-cyan-400" />,
+    border: 'rgba(180, 115, 60, 0.5)',
+    bg: 'linear-gradient(150deg, rgba(38, 22, 12, 0.92) 0%, rgba(24, 14, 8, 0.96) 100%)',
+    headerBg: 'rgba(54, 28, 14, 0.65)',
+    text: '#d99b64',
+    badgeBg: 'rgba(180, 115, 60, 0.18)',
+    accentGlow: 'rgba(180, 115, 60, 0.35)',
+    icon: <Search size={18} className="text-amber-500" />,
   },
   webFetcher: {
     title: 'WEB FETCHER // DIRECT PAGE EXTRACTION',
@@ -103,13 +103,13 @@ const AGENT_THEMES: Record<string, AgentTheme> = {
   factChecker: {
     title: 'FACT CHECKER // INTEGRITY & ACCURACY AUDIT',
     subtitle: 'Cross-Verification, Anomaly Detection & Grounded Claim Scrutiny',
-    border: 'rgba(97, 215, 201, 0.45)',
-    bg: 'linear-gradient(150deg, rgba(8, 28, 36, 0.9) 0%, rgba(5, 18, 24, 0.95) 100%)',
-    headerBg: 'rgba(12, 38, 48, 0.6)',
-    text: '#61d7c9',
-    badgeBg: 'rgba(97, 215, 201, 0.15)',
-    accentGlow: 'rgba(97, 215, 201, 0.3)',
-    icon: <ShieldCheck size={18} className="text-cyan-400" />,
+    border: 'rgba(192, 132, 252, 0.45)',
+    bg: 'linear-gradient(150deg, rgba(28, 14, 48, 0.92) 0%, rgba(16, 8, 30, 0.96) 100%)',
+    headerBg: 'rgba(42, 18, 70, 0.65)',
+    text: '#c084fc',
+    badgeBg: 'rgba(192, 132, 252, 0.15)',
+    accentGlow: 'rgba(192, 132, 252, 0.35)',
+    icon: <ShieldCheck size={18} className="text-purple-400" />,
   },
   reviewer: {
     title: 'REVIEWER // QUALITY ASSURANCE',
@@ -830,25 +830,6 @@ function formatFactCheckerOutput(step: JarvisExecutionStep, parsed: unknown, raw
     lines.push(`1. **Full Integrity Verification:** All empirical claims verified against grounding corpus.`);
   }
 
-  lines.push(``);
-  lines.push(`### 🧭 Audit Integrity Directives`);
-
-  if (data.plausibleUnconfirmed.length > 0) {
-    data.plausibleUnconfirmed.forEach((p) => lines.push(`- **Hedged Detail:** ${p}`));
-  } else {
-    lines.push(`- **Hedged Details:** ⚪ None (All claims backed by multiple sources)`);
-  }
-
-  if (data.fabricatedOrContradicted.length > 0) {
-    data.fabricatedOrContradicted.forEach((fb) => lines.push(`- **Excluded Discrepancy:** ${fb}`));
-  } else {
-    lines.push(`- **Contradicted Items:** ⚪ None detected (Full grounding consistency)`);
-  }
-
-  if (data.issues.length > 0) {
-    data.issues.forEach((issue) => lines.push(`- **Correction Directive:** ${issue}`));
-  }
-
   return lines.join('\n').trim();
 }
 
@@ -955,13 +936,6 @@ function formatAgentContentToMarkdown(step: JarvisExecutionStep): {
       md += `\n### 🧭 Empirical Insights & Directives\n`;
       resData.insights.forEach((ins) => {
         md += `- **Key Insight:** ${ins}\n`;
-      });
-    }
-
-    if (resData.sources.length > 0) {
-      md += `\n### 🌐 Primary Grounding Index\n`;
-      resData.sources.slice(0, 6).forEach((src) => {
-        md += `- **[${src.title || src.domain || 'Source'}](${src.url})**${src.publishedAt ? ` _(${src.publishedAt})_` : ''}\n`;
       });
     }
 
@@ -1947,7 +1921,7 @@ export const JarvisDeepResearchMeshAnswers: React.FC<JarvisDeepResearchMeshAnswe
                         </span>
                       )}
                       {step.agentId === 'researcher' && step.searchSource && (
-                        <span className="px-2 py-0.5 rounded text-[10px] font-mono bg-cyan-500/15 border border-cyan-400/30 text-cyan-300">
+                        <span className="px-2 py-0.5 rounded text-[10px] font-mono bg-amber-950/60 border border-amber-600/40 text-amber-300">
                           via {step.searchSource}
                         </span>
                       )}

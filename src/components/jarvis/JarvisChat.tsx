@@ -74,11 +74,11 @@ const AGENT_COLORS: Record<string, { bg: string; border: string; text: string; g
     gradient: 'linear-gradient(135deg, rgba(52,211,153,0.3) 0%, rgba(16,185,129,0.15) 100%)',
   },
   researcher: {
-    bg: 'rgba(56, 189, 248, 0.15)',
-    border: 'rgba(56, 189, 248, 0.45)',
-    text: '#38bdf8',
-    glow: 'rgba(56, 189, 248, 0.3)',
-    gradient: 'linear-gradient(135deg, rgba(56,189,248,0.3) 0%, rgba(14,165,233,0.15) 100%)',
+    bg: 'rgba(180, 115, 60, 0.15)',
+    border: 'rgba(180, 115, 60, 0.45)',
+    text: '#d99b64',
+    glow: 'rgba(180, 115, 60, 0.3)',
+    gradient: 'linear-gradient(135deg, rgba(180,115,60,0.3) 0%, rgba(138,80,30,0.15) 100%)',
   },
   factChecker: {
     bg: 'rgba(168, 85, 247, 0.15)',
