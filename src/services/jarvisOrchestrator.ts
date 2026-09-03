@@ -1,6 +1,11 @@
 import { api } from '@/services/api';
 import { storage, DEFAULT_AGENT_SYSTEM_PROMPTS } from '@/lib/storage';
-import { searchWikipedia, getWikipediaSummary } from '@/services/wikipedia';
+import {
+  searchWikipedia,
+  getWikipediaSummary,
+  formatWikipediaForReport,
+  wikipediaToSearchResult,
+} from '@/services/wikipedia';
 import {
   getWikidataEntity,
   formatWikidataForReport,
@@ -2214,6 +2219,7 @@ Please perform your specialized processing for this inquiry. Provide clear, conc
     needsChart?: boolean;
     needsImage?: boolean;
     needsWikipedia?: boolean;
+    wikipediaQuery?: string;
     needsWikidata?: boolean;
     wikidataQuery?: string;
   } = {
@@ -2227,6 +2233,7 @@ Please perform your specialized processing for this inquiry. Provide clear, conc
     needsChart: false,
     needsImage: false,
     needsWikipedia: false,
+    wikipediaQuery: '',
     needsWikidata: false,
     wikidataQuery: '',
   };
@@ -2317,6 +2324,11 @@ Please perform your specialized processing for this inquiry. Provide clear, conc
       }
       plannerOutput.task = String(plannerOutput.task || query);
       plannerOutput.needsKnowledgeAgent = Boolean(plannerOutput.needsKnowledgeAgent);
+      plannerOutput.needsWikipedia = Boolean(plannerOutput.needsWikipedia);
+      plannerOutput.wikipediaQuery =
+        plannerOutput.needsWikipedia && typeof plannerOutput.wikipediaQuery === 'string'
+          ? plannerOutput.wikipediaQuery.trim()
+          : '';
       plannerOutput.needsWikidata = Boolean(plannerOutput.needsWikidata);
       plannerOutput.wikidataQuery =
         plannerOutput.needsWikidata && typeof plannerOutput.wikidataQuery === 'string'
@@ -2327,6 +2339,7 @@ Please perform your specialized processing for this inquiry. Provide clear, conc
         const targetUrl = extractWebFetchUrl(query);
         plannerOutput.needsResearch = false;
         plannerOutput.needsWikipedia = false;
+        plannerOutput.wikipediaQuery = '';
         plannerOutput.needsWikidata = false;
         plannerOutput.wikidataQuery = '';
         plannerOutput.needsKnowledgeAgent = false;
@@ -2343,6 +2356,7 @@ Please perform your specialized processing for this inquiry. Provide clear, conc
       } else if (isSearchOverrideQuery(query)) {
         plannerOutput.needsResearch = true;
         plannerOutput.needsWikipedia = false;
+        plannerOutput.wikipediaQuery = '';
         plannerOutput.needsWikidata = false;
         plannerOutput.wikidataQuery = '';
         plannerOutput.needsKnowledgeAgent = false;
@@ -2357,6 +2371,7 @@ Please perform your specialized processing for this inquiry. Provide clear, conc
         plannerOutput.needsFactCheck = false;
         plannerOutput.needsReview = false;
         plannerOutput.needsWikipedia = false;
+        plannerOutput.wikipediaQuery = '';
         plannerOutput.needsWikidata = false;
         plannerOutput.wikidataQuery = '';
         plannerOutput.needsDiagram = false;
@@ -2368,6 +2383,7 @@ Please perform your specialized processing for this inquiry. Provide clear, conc
         plannerOutput.needsFactCheck = false;
         plannerOutput.needsReview = false;
         plannerOutput.needsWikipedia = false;
+        plannerOutput.wikipediaQuery = '';
         plannerOutput.needsWikidata = false;
         plannerOutput.wikidataQuery = '';
         plannerOutput.needsDiagram = false;
@@ -2401,7 +2417,9 @@ Please perform your specialized processing for this inquiry. Provide clear, conc
         const targetUrl = extractWebFetchUrl(query);
         plannerOutput.needsResearch = false;
         plannerOutput.needsWikipedia = false;
+        plannerOutput.wikipediaQuery = '';
         plannerOutput.needsWikidata = false;
+        plannerOutput.wikidataQuery = '';
         plannerOutput.needsKnowledgeAgent = false;
         plannerOutput.needsReview = false;
         plannerOutput.needsFactCheck = false;
@@ -2416,7 +2434,9 @@ Please perform your specialized processing for this inquiry. Provide clear, conc
       } else if (isSearchOverrideQuery(query)) {
         plannerOutput.needsResearch = true;
         plannerOutput.needsWikipedia = false;
+        plannerOutput.wikipediaQuery = '';
         plannerOutput.needsWikidata = false;
+        plannerOutput.wikidataQuery = '';
         plannerOutput.needsKnowledgeAgent = false;
         plannerOutput.needsReview = false;
         plannerOutput.needsFactCheck = true;
@@ -2437,7 +2457,9 @@ Please perform your specialized processing for this inquiry. Provide clear, conc
     const targetUrl = extractWebFetchUrl(query);
     plannerOutput.needsResearch = false;
     plannerOutput.needsWikipedia = false;
+    plannerOutput.wikipediaQuery = '';
     plannerOutput.needsWikidata = false;
+    plannerOutput.wikidataQuery = '';
     plannerOutput.needsKnowledgeAgent = false;
     plannerOutput.needsReview = false;
     plannerOutput.needsFactCheck = false;
@@ -2452,7 +2474,9 @@ Please perform your specialized processing for this inquiry. Provide clear, conc
   } else if (isSearchOverrideQuery(query)) {
     plannerOutput.needsResearch = true;
     plannerOutput.needsWikipedia = false;
+    plannerOutput.wikipediaQuery = '';
     plannerOutput.needsWikidata = false;
+    plannerOutput.wikidataQuery = '';
     plannerOutput.needsKnowledgeAgent = false;
     plannerOutput.needsReview = false;
     plannerOutput.needsFactCheck = true;
@@ -2463,11 +2487,15 @@ Please perform your specialized processing for this inquiry. Provide clear, conc
   if (isWebFetchQuery(query)) {
     plannerOutput.needsResearch = false;
     plannerOutput.needsWikipedia = false;
+    plannerOutput.wikipediaQuery = '';
     plannerOutput.needsWikidata = false;
+    plannerOutput.wikidataQuery = '';
   } else if (isSearchOverrideQuery(query)) {
     plannerOutput.needsResearch = true;
     plannerOutput.needsWikipedia = false;
+    plannerOutput.wikipediaQuery = '';
     plannerOutput.needsWikidata = false;
+    plannerOutput.wikidataQuery = '';
   }
 
   // Standalone whole-word matching for news inquiries (excludes technical terms like 'electrical current' and product lineup inquiries)
@@ -2535,6 +2563,8 @@ Please perform your specialized processing for this inquiry. Provide clear, conc
 
   let wikidataEntity: WikidataEntity | null = null;
   let wikidataReportSection = '';
+  let wikipediaReportSection = '';
+  let needsWikipediaFallback = false;
 
   const shouldFactCheck =
     !isWebFetch &&
@@ -2789,8 +2819,162 @@ Please perform your specialized processing for this inquiry. Provide clear, conc
         }
       }
 
-      // 3. General / Factual Search (Tavily with DuckDuckGo fallback in backend)
-      if (searchResults.length === 0) {
+      // 3. AI-Decided or Product-Lineup Wikidata / Wikipedia Lookup for factual/encyclopedic context (Works in both Deep Research ON and OFF)
+      // Note: Wikidata and Wikipedia must NEVER be triggered in /search or /web commands.
+      if (!isSearchOverride && !isWebFetch && (plannerOutput.needsWikipedia || plannerOutput.needsWikidata || isProductLineupQuery) && !isWeatherQuery && !isNewsQuery) {
+        console.log(`[JARVIS Researcher] Executing encyclopedic lookup for query: "${strippedQuery}" (needsWikipedia: ${plannerOutput.needsWikipedia}, wikipediaQuery: "${plannerOutput.wikipediaQuery}", needsWikidata: ${plannerOutput.needsWikidata}, isProductLineup: ${isProductLineupQuery})...`);
+
+        // Step 3A: Wikidata Lookup (when needsWikidata is true)
+        if (plannerOutput.needsWikidata) {
+          const plannerWdQuery = typeof plannerOutput.wikidataQuery === 'string' ? plannerOutput.wikidataQuery.trim() : '';
+          const fallbackCapitalized = extractLastCapitalizedPhrase(strippedQuery) || extractLastCapitalizedPhrase(query);
+          const primaryWdQuery = plannerWdQuery || fallbackCapitalized || cleanedSearchQuery || strippedQuery;
+
+          console.log(`[JARVIS Researcher] Calling Wikidata API for entity: "${primaryWdQuery}" (planner wikidataQuery: "${plannerWdQuery}", fallback: "${fallbackCapitalized}", full query: "${strippedQuery}")...`);
+          logToJarvisTerminal(`Wikidata lookup initiated for: "${primaryWdQuery}"`);
+          try {
+            // Attempt search by planner's wikidataQuery (or fallback) with strippedQuery as contextual hint
+            let entity = await getWikidataEntity(primaryWdQuery, strippedQuery);
+            if (!entity && fallbackCapitalized && fallbackCapitalized !== primaryWdQuery) {
+              entity = await getWikidataEntity(fallbackCapitalized, strippedQuery);
+            }
+            if (!entity && cleanedSearchQuery && cleanedSearchQuery !== primaryWdQuery) {
+              entity = await getWikidataEntity(cleanedSearchQuery, strippedQuery);
+            }
+            if (!entity && strippedQuery !== primaryWdQuery) {
+              entity = await getWikidataEntity(strippedQuery);
+            }
+
+            if (entity) {
+              wikidataEntity = entity;
+              wikidataReportSection = formatWikidataForReport(entity);
+              wikidataCandidate = {
+                title: `${entity.label} (${entity.id}) - Wikidata`,
+                url: entity.url,
+                domain: 'wikidata.org',
+                description: wikidataReportSection,
+                type: 'wikidata',
+              };
+
+              console.log(`[JARVIS Researcher] Wikidata API call succeeded: "${entity.label}" (${entity.id}).`);
+              logToJarvisTerminal(`Wikidata lookup succeeded - found "${entity.label}" (${entity.id})`);
+              sourcesCollected.push(wikidataToSearchResult(entity));
+
+              // Add factual knowledge to facts list
+              researcherOutput.facts.push(`Wikidata Entity: ${entity.label} (${entity.id}) - ${entity.description || 'No description'}`);
+              if (entity.claims) {
+                for (const [propName, values] of Object.entries(entity.claims)) {
+                  if (values && values.length > 0) {
+                    researcherOutput.facts.push(`${propName}: ${values.join(', ')}`);
+                  }
+                }
+              }
+            } else {
+              console.log(`[JARVIS Researcher] Wikidata API call returned no entry for: "${primaryWdQuery}". Falling back to Wikipedia automatically (Rule 5).`);
+              wikidataReportSection = formatWikidataForReport(null);
+              logToJarvisTerminal(`Wikidata lookup: no entry found for "${primaryWdQuery}" - falling back to Wikipedia`, 'warning');
+              needsWikipediaFallback = true;
+            }
+          } catch (wdErr) {
+            console.warn('[JARVIS Researcher] Wikidata API lookup error:', wdErr);
+            wikidataReportSection = formatWikidataForReport(null);
+            logToJarvisTerminal('Wikidata lookup error - falling back to Wikipedia', 'warning');
+            needsWikipediaFallback = true;
+          }
+        }
+
+        // Step 3B: Wikipedia Lookup (if needsWikipedia is true, or fallback from Wikidata per Rule 5, or product lineup)
+        const shouldLookupWikipedia = plannerOutput.needsWikipedia || needsWikipediaFallback || isProductLineupQuery;
+        if (shouldLookupWikipedia) {
+          try {
+            const plannerWikiQuery = typeof plannerOutput.wikipediaQuery === 'string' ? plannerOutput.wikipediaQuery.trim() : '';
+            const fallbackCapitalized = extractLastCapitalizedPhrase(strippedQuery) || extractLastCapitalizedPhrase(query);
+            let wikiSearchTerm = plannerWikiQuery;
+
+            if (!wikiSearchTerm && wikidataEntity?.wikipediaTitle) {
+              wikiSearchTerm = wikidataEntity.wikipediaTitle;
+            } else if (!wikiSearchTerm && isProductLineupQuery) {
+              const lower = strippedQuery.toLowerCase();
+              if (/\bclaude\b/i.test(lower)) wikiSearchTerm = 'Claude (language model)';
+              else if (/\bgpt\b|\bchatgpt\b/i.test(lower)) wikiSearchTerm = 'ChatGPT';
+              else if (/\bgemini\b/i.test(lower)) wikiSearchTerm = 'Gemini (language model)';
+              else if (/\bllama\b/i.test(lower)) wikiSearchTerm = 'Llama (language model)';
+              else if (/\bdeepseek\b/i.test(lower)) wikiSearchTerm = 'DeepSeek';
+              else if (/\biphone\b/i.test(lower)) wikiSearchTerm = 'iPhone';
+              else wikiSearchTerm = cleanedSearchQuery || strippedQuery;
+            } else if (!wikiSearchTerm && fallbackCapitalized) {
+              wikiSearchTerm = fallbackCapitalized;
+            } else if (!wikiSearchTerm && cleanedSearchQuery) {
+              wikiSearchTerm = cleanedSearchQuery;
+            } else if (!wikiSearchTerm) {
+              wikiSearchTerm = strippedQuery;
+            }
+
+            console.log(`[JARVIS Researcher] Calling Wikipedia API for term: "${wikiSearchTerm}" (planner wikipediaQuery: "${plannerWikiQuery}", fallback: "${fallbackCapitalized}", full query: "${strippedQuery}")...`);
+            logToJarvisTerminal(`Wikipedia lookup initiated for: "${wikiSearchTerm}"`);
+
+            // Direct call to getWikipediaSummary (which queries REST API and falls back to MediaWiki prop=extracts/search)
+            let summary = await getWikipediaSummary(wikiSearchTerm);
+            if (!summary && fallbackCapitalized && fallbackCapitalized !== wikiSearchTerm) {
+              summary = await getWikipediaSummary(fallbackCapitalized);
+            }
+            if (!summary && cleanedSearchQuery && cleanedSearchQuery !== wikiSearchTerm) {
+              summary = await getWikipediaSummary(cleanedSearchQuery);
+            }
+            if (!summary && strippedQuery !== wikiSearchTerm) {
+              summary = await getWikipediaSummary(strippedQuery);
+            }
+
+            if (summary && summary.extract) {
+              wikipediaReportSection = formatWikipediaForReport(summary);
+              wikiSummaryCandidate = {
+                title: summary.title,
+                url: summary.url,
+                domain: 'wikipedia.org',
+                description: summary.extract,
+                type: 'wikipedia',
+              };
+              sourcesCollected.push(wikipediaToSearchResult(summary));
+              researcherOutput.facts.push(`Wikipedia: ${summary.title} - ${summary.extract}`);
+              console.log(`[JARVIS Researcher] Wikipedia API retrieved summary (${summary.extract.length} chars) for "${summary.title}".`);
+              logToJarvisTerminal(`Wikipedia lookup succeeded - found "${summary.title}" page`);
+            } else {
+              console.log(`[JARVIS Researcher] Wikipedia lookup returned no article for: "${wikiSearchTerm}".`);
+              wikipediaReportSection = formatWikipediaForReport(null);
+              logToJarvisTerminal(`Wikipedia lookup: no matching article found for "${wikiSearchTerm}"`, 'warning');
+              // Rule 6: If neither source has information, respond that no information was found instead of guessing
+              researcherOutput.facts.push('No information was found on Wikipedia for this query.');
+              if (needsWikipediaFallback && !wikidataEntity) {
+                researcherOutput.facts.push('No information was found in Wikidata or Wikipedia for this query.');
+              }
+            }
+          } catch (wikiErr) {
+            console.warn('[JARVIS Researcher] Wikipedia lookup error:', wikiErr);
+            wikipediaReportSection = formatWikipediaForReport(null);
+            logToJarvisTerminal('Wikipedia lookup error, skipped', 'warning');
+            researcherOutput.facts.push('Wikipedia lookup encountered an error.');
+            if (needsWikipediaFallback && !wikidataEntity) {
+              researcherOutput.facts.push('No information was found in Wikidata or Wikipedia for this query.');
+            }
+          }
+        }
+      } else if (isSearchOverride || isWebFetch) {
+        console.log('[JARVIS Researcher] /search or /web command detected. Skipping Wikipedia and Wikidata lookups.');
+      } else if (!plannerOutput.needsWikipedia && !plannerOutput.needsWikidata && !isProductLineupQuery) {
+        console.log('[JARVIS Researcher] needsWikipedia and needsWikidata are false. Skipping Wikipedia/Wikidata lookup to save tokens.');
+      }
+
+      // 4. General / Factual Search (Tavily with DuckDuckGo fallback in backend)
+      // Only executed if:
+      // - It is not weather/news (handled above)
+      // - AND needsResearch is true (or deepResearch or isSearchOverride)
+      // When needsWikipedia or needsWikidata is true and needsResearch is false, general web search is SKIPPED.
+      const shouldRunWebSearch =
+        !isWeatherQuery &&
+        !isNewsQuery &&
+        (isSearchOverride || deepResearch || Boolean(plannerOutput.needsResearch));
+
+      if (shouldRunWebSearch && searchResults.length === 0) {
         const currentDateStr = new Date().toLocaleDateString('en-US', { month: 'long', day: 'numeric', year: 'numeric' });
         const currentYear = new Date().getFullYear();
         const isFastChangingTopic = /\b(?:ai|model|models|llm|llms|claude|gpt|gemini|llama|deepseek|mistral|anthropic|openai|version|releases?|pricing|specs?|software|firmware|hardware)\b/i.test(
@@ -2866,137 +3050,8 @@ Please perform your specialized processing for this inquiry. Provide clear, conc
           console.warn('[JARVIS Researcher] Search API error:', err);
           logToJarvisTerminal('Search API failed, falling back to DuckDuckGo', 'warning');
         }
-      }
-
-      // 4. AI-Decided or Product-Lineup Wikidata / Wikipedia Lookup for factual/encyclopedic context (Works in both Deep Research ON and OFF)
-      // Note: Wikidata and Wikipedia must NEVER be triggered in /search or /web commands.
-      if (!isSearchOverride && !isWebFetch && (plannerOutput.needsWikipedia || plannerOutput.needsWikidata || isProductLineupQuery) && !isWeatherQuery && !isNewsQuery) {
-        console.log(`[JARVIS Researcher] Executing encyclopedic lookup for query: "${strippedQuery}" (needsWikipedia: ${plannerOutput.needsWikipedia}, needsWikidata: ${plannerOutput.needsWikidata}, isProductLineup: ${isProductLineupQuery})...`);
-
-        let needsWikipediaFallback = false;
-
-        // Step 4A: Wikidata Lookup (when needsWikidata is true)
-        if (plannerOutput.needsWikidata) {
-          const plannerWdQuery = typeof plannerOutput.wikidataQuery === 'string' ? plannerOutput.wikidataQuery.trim() : '';
-          const fallbackCapitalized = extractLastCapitalizedPhrase(strippedQuery) || extractLastCapitalizedPhrase(query);
-          const primaryWdQuery = plannerWdQuery || fallbackCapitalized || cleanedSearchQuery || strippedQuery;
-
-          console.log(`[JARVIS Researcher] Calling Wikidata API for entity: "${primaryWdQuery}" (planner wikidataQuery: "${plannerWdQuery}", fallback: "${fallbackCapitalized}", full query: "${strippedQuery}")...`);
-          logToJarvisTerminal(`Wikidata lookup initiated for: "${primaryWdQuery}"`);
-          try {
-            // Attempt search by planner's wikidataQuery (or fallback) with strippedQuery as contextual hint
-            let entity = await getWikidataEntity(primaryWdQuery, strippedQuery);
-            if (!entity && fallbackCapitalized && fallbackCapitalized !== primaryWdQuery) {
-              entity = await getWikidataEntity(fallbackCapitalized, strippedQuery);
-            }
-            if (!entity && cleanedSearchQuery && cleanedSearchQuery !== primaryWdQuery) {
-              entity = await getWikidataEntity(cleanedSearchQuery, strippedQuery);
-            }
-            if (!entity && strippedQuery !== primaryWdQuery) {
-              entity = await getWikidataEntity(strippedQuery);
-            }
-
-            if (entity) {
-              wikidataEntity = entity;
-              wikidataReportSection = formatWikidataForReport(entity);
-              wikidataCandidate = {
-                title: `${entity.label} (${entity.id}) - Wikidata`,
-                url: entity.url,
-                domain: 'wikidata.org',
-                description: wikidataReportSection,
-                type: 'wikidata',
-              };
-
-              console.log(`[JARVIS Researcher] Wikidata API call succeeded: "${entity.label}" (${entity.id}).`);
-              logToJarvisTerminal(`Wikidata lookup succeeded - found "${entity.label}" (${entity.id})`);
-              sourcesCollected.push(wikidataToSearchResult(entity));
-
-              // Add factual knowledge to facts list
-              researcherOutput.facts.push(`Wikidata Entity: ${entity.label} (${entity.id}) - ${entity.description || 'No description'}`);
-              if (entity.claims) {
-                for (const [propName, values] of Object.entries(entity.claims)) {
-                  if (values && values.length > 0) {
-                    researcherOutput.facts.push(`${propName}: ${values.join(', ')}`);
-                  }
-                }
-              }
-            } else {
-              console.log(`[JARVIS Researcher] Wikidata API call returned no entry for: "${primaryWdQuery}". Falling back to Wikipedia automatically (Rule 5).`);
-              wikidataReportSection = formatWikidataForReport(null);
-              logToJarvisTerminal(`Wikidata lookup: no entry found for "${primaryWdQuery}" - falling back to Wikipedia`, 'warning');
-              needsWikipediaFallback = true;
-            }
-          } catch (wdErr) {
-            console.warn('[JARVIS Researcher] Wikidata API lookup error:', wdErr);
-            wikidataReportSection = formatWikidataForReport(null);
-            logToJarvisTerminal('Wikidata lookup error - falling back to Wikipedia', 'warning');
-            needsWikipediaFallback = true;
-          }
-        }
-
-        // Step 4B: Wikipedia Lookup (if needsWikipedia is true, or fallback from Wikidata per Rule 5, or product lineup)
-        const shouldLookupWikipedia = plannerOutput.needsWikipedia || needsWikipediaFallback || isProductLineupQuery;
-        if (shouldLookupWikipedia) {
-          try {
-            // Clean search query for Wikipedia: extract core subject or use linked Wikipedia title from Wikidata entity if available
-            let wikiSearchTerm = strippedQuery;
-            if (wikidataEntity?.wikipediaTitle) {
-              wikiSearchTerm = wikidataEntity.wikipediaTitle;
-            } else if (isProductLineupQuery) {
-              const lower = strippedQuery.toLowerCase();
-              if (/\bclaude\b/i.test(lower)) wikiSearchTerm = 'Claude (language model)';
-              else if (/\bgpt\b|\bchatgpt\b/i.test(lower)) wikiSearchTerm = 'ChatGPT';
-              else if (/\bgemini\b/i.test(lower)) wikiSearchTerm = 'Gemini (language model)';
-              else if (/\bllama\b/i.test(lower)) wikiSearchTerm = 'Llama (language model)';
-              else if (/\bdeepseek\b/i.test(lower)) wikiSearchTerm = 'DeepSeek';
-              else if (/\biphone\b/i.test(lower)) wikiSearchTerm = 'iPhone';
-              else wikiSearchTerm = cleanedSearchQuery || strippedQuery;
-            } else if (cleanedSearchQuery) {
-              wikiSearchTerm = cleanedSearchQuery;
-            }
-
-            console.log(`[JARVIS Researcher] Calling Wikipedia search for term: "${wikiSearchTerm}"...`);
-            // Step 1: Call searchWikipedia with limit=1 to find the single best-matching page title/ID
-            const wikiPages = await searchWikipedia(wikiSearchTerm, 1);
-            if (wikiPages && wikiPages.length > 0 && wikiPages[0]?.title) {
-              const topPage = wikiPages[0];
-              console.log(`[JARVIS Researcher] Wikipedia Step 1 matched page: "${topPage.title}". Fetching full lead summary (Step 2)...`);
-              // Step 2: Call getWikipediaSummary using that page's title to get the full lead-paragraph summary
-              const summary = await getWikipediaSummary(topPage.title);
-              const extract = summary?.extract || topPage.snippet || topPage.description || '';
-              const pageUrl = summary?.url || topPage.url || `https://en.wikipedia.org/wiki/${encodeURIComponent(topPage.title.replace(/ /g, '_'))}`;
-
-              wikiSummaryCandidate = {
-                title: summary?.title || topPage.title,
-                url: pageUrl,
-                domain: 'wikipedia.org',
-                description: extract,
-                type: 'wikipedia',
-              };
-              researcherOutput.facts.push(`Wikipedia: ${summary?.title || topPage.title} - ${extract}`);
-              console.log(`[JARVIS Researcher] Wikipedia Step 2 retrieved summary (${extract.length} chars) for "${topPage.title}".`);
-              logToJarvisTerminal(`Wikipedia lookup triggered - found "${topPage.title}" page`);
-            } else {
-              // Safety check: 0 results returned, skip summary step and proceed with Tavily results only
-              console.log(`[JARVIS Researcher] Wikipedia Step 1 returned 0 results for query: "${wikiSearchTerm}". Skipping summary step.`);
-              logToJarvisTerminal('Wikipedia lookup triggered - no matching page found, skipped', 'warning');
-              // Rule 6: If neither source has information, respond that no information was found instead of guessing
-              if (needsWikipediaFallback && !wikidataEntity) {
-                researcherOutput.facts.push('No information was found in Wikidata or Wikipedia for this query.');
-              }
-            }
-          } catch (wikiErr) {
-            console.warn('[JARVIS Researcher] Wikipedia 2-step lookup error (continuing with search results):', wikiErr);
-            logToJarvisTerminal('Wikipedia lookup triggered - lookup error, skipped', 'warning');
-            if (needsWikipediaFallback && !wikidataEntity) {
-              researcherOutput.facts.push('No information was found in Wikidata or Wikipedia for this query.');
-            }
-          }
-        }
-      } else if (isSearchOverride || isWebFetch) {
-        console.log('[JARVIS Researcher] /search or /web command detected. Skipping Wikipedia and Wikidata lookups.');
-      } else if (!plannerOutput.needsWikipedia && !plannerOutput.needsWikidata && !isProductLineupQuery) {
-        console.log('[JARVIS Researcher] needsWikipedia and needsWikidata are false. Skipping Wikipedia/Wikidata lookup to save tokens.');
+      } else if (!shouldRunWebSearch && !isWeatherQuery && !isNewsQuery) {
+        console.log('[JARVIS Researcher] General web search skipped because needsResearch is false (encyclopedic lookup only).');
       }
 
       const rawCandidates: RawSearchResultCandidate[] = [];
@@ -3917,7 +3972,7 @@ User Query: "${strippedQuery}"
 ${webFetchContextBlock}
 Planner Guidance: ${plannerPlanText}
 ${advisorOutput ? `Advisor Conceptual Analysis & Technical Comparison (General Knowledge):\n${advisorOutput}\n` : ''}
-${wikidataReportSection ? `[WIKIDATA INTELLIGENCE & REQUIRED REPORT SECTION]:\n${wikidataReportSection}\n\nCRITICAL REPORT REQUIREMENT: Because Wikidata was queried, your report output MUST include a section titled exactly:\n=== WIKIDATA ===\nfollowed by the Wikidata result details (or "no entry found" if no entry was found).\n\n` : ''}${factsList.length > 0 ? `Key Verified Facts:\n${factsList.map((f) => `- ${f}`).join('\n')}\n` : ''}${verifiedList.length > 0 ? `Verified Claims:\n${verifiedList.map((c) => `- ${c}`).join('\n')}\n` : ''}${plausibleUnconfirmedList.length > 0 ? `Fact-Checker Plausible Unconfirmed Details (CRITICAL - INCLUDE WITH NATURAL HEDGE/CAVEAT, e.g. "reportedly exists/released, based on a single source, not independently confirmed" - DO NOT OMIT DATES, TIERS, OR PLAUSIBLE CLAIMS):\n${plausibleUnconfirmedList.map((p) => `- ${p}`).join('\n')}\n` : ''}${fabricatedList.length > 0 ? `Fact-Checker Fabricated/Contradicted Items (HARD EXCLUSION - DO NOT MENTION IN FINAL SYNTHESIS):\n${fabricatedList.map((fb) => `- ${fb}`).join('\n')}\n` : ''}${generalIssuesList.length > 0 ? `Fact-Checker Identified Issues (Exclude only specific invalid claims; do NOT discard other valid qualifying candidates):\n${generalIssuesList.map((i) => `- ${i}`).join('\n')}\n` : ''}${reviewerMissingList.length > 0 ? `Reviewer Missing Context Suggestions (Advisory):\n${reviewerMissingList.map((m) => `- ${m}`).join('\n')}\n` : ''}${reviewerIssuesList.length > 0 ? `Reviewer Flagged Issues & Scope Critique (Advisory - exclude only specific problematic items, preserve and synthesize all other valid candidates):\n${reviewerIssuesList.map((iss) => `- ${iss}`).join('\n')}\n` : ''}${reviewerRecommendation ? `Reviewer Actionable Guidance & Candidate Priority (Advisory ranking guidance):\n${reviewerRecommendation}\n` : ''}[SYNTHESIS MANDATE]: If any specific candidates were flagged or excluded by Fact-Checker or Reviewer, synthesize all remaining verified, valid candidates into the final answer. Only state that verified news/data is unavailable if ALL candidates are completely unusable or no verified data exists.
+${wikidataReportSection ? `[WIKIDATA INTELLIGENCE & REQUIRED REPORT SECTION]:\n${wikidataReportSection}\n\nCRITICAL REPORT REQUIREMENT: Because Wikidata was queried, your report output MUST include a section titled exactly:\n=== WIKIDATA ===\nfollowed by the Wikidata result details (or "no entry found" if no entry was found).\n\n` : ''}${wikipediaReportSection ? `[WIKIPEDIA INTELLIGENCE & REQUIRED REPORT SECTION]:\n${wikipediaReportSection}\n\nCRITICAL REPORT REQUIREMENT: Because Wikipedia was queried, your report output MUST include a section titled exactly:\n=== WIKIPEDIA ===\nfollowed by the Wikipedia title, extract/summary, and URL (or "no entry found" if no entry was found).\n\n` : ''}${factsList.length > 0 ? `Key Verified Facts:\n${factsList.map((f) => `- ${f}`).join('\n')}\n` : ''}${verifiedList.length > 0 ? `Verified Claims:\n${verifiedList.map((c) => `- ${c}`).join('\n')}\n` : ''}${plausibleUnconfirmedList.length > 0 ? `Fact-Checker Plausible Unconfirmed Details (CRITICAL - INCLUDE WITH NATURAL HEDGE/CAVEAT, e.g. "reportedly exists/released, based on a single source, not independently confirmed" - DO NOT OMIT DATES, TIERS, OR PLAUSIBLE CLAIMS):\n${plausibleUnconfirmedList.map((p) => `- ${p}`).join('\n')}\n` : ''}${fabricatedList.length > 0 ? `Fact-Checker Fabricated/Contradicted Items (HARD EXCLUSION - DO NOT MENTION IN FINAL SYNTHESIS):\n${fabricatedList.map((fb) => `- ${fb}`).join('\n')}\n` : ''}${generalIssuesList.length > 0 ? `Fact-Checker Identified Issues (Exclude only specific invalid claims; do NOT discard other valid qualifying candidates):\n${generalIssuesList.map((i) => `- ${i}`).join('\n')}\n` : ''}${reviewerMissingList.length > 0 ? `Reviewer Missing Context Suggestions (Advisory):\n${reviewerMissingList.map((m) => `- ${m}`).join('\n')}\n` : ''}${reviewerIssuesList.length > 0 ? `Reviewer Flagged Issues & Scope Critique (Advisory - exclude only specific problematic items, preserve and synthesize all other valid candidates):\n${reviewerIssuesList.map((iss) => `- ${iss}`).join('\n')}\n` : ''}${reviewerRecommendation ? `Reviewer Actionable Guidance & Candidate Priority (Advisory ranking guidance):\n${reviewerRecommendation}\n` : ''}[SYNTHESIS MANDATE]: If any specific candidates were flagged or excluded by Fact-Checker or Reviewer, synthesize all remaining verified, valid candidates into the final answer. Only state that verified news/data is unavailable if ALL candidates are completely unusable or no verified data exists.
 Retrieved Ground-Truth Sources (CRITICAL RULE: Only cite sources from this exact list. Never invent or cite any other sources):
 ${sourcesListText}${customInsightsBlock}${personalIdentityDirective}${architectureReferenceDirective}`;
 
@@ -4408,6 +4463,16 @@ ${sourcesListText}${customInsightsBlock}${personalIdentityDirective}${architectu
       cleanedFinalAnswer = cleanedFinalAnswer.trim()
         ? `${cleanedFinalAnswer.trim()}\n\n${wdSection}`
         : wdSection;
+    }
+  }
+
+  // If Wikipedia was requested (needsWikipedia is true or fallback from Wikidata), guarantee the "=== WIKIPEDIA ===" section is visible in the report output
+  if (!isSearchOverride && !isWebFetch && (plannerOutput.needsWikipedia || needsWikipediaFallback)) {
+    const wikiSection = wikipediaReportSection || formatWikipediaForReport(null);
+    if (!cleanedFinalAnswer.includes('=== WIKIPEDIA ===')) {
+      cleanedFinalAnswer = cleanedFinalAnswer.trim()
+        ? `${cleanedFinalAnswer.trim()}\n\n${wikiSection}`
+        : wikiSection;
     }
   }
 

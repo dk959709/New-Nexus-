@@ -183,7 +183,54 @@ export async function getWikipediaSummary(titleOrQuery: string): Promise<Wikiped
       }
     }
 
-    // Fallback: search for top article then fetch its summary
+    // Fallback 1: Try MediaWiki prop=extracts for fuller article extract or if REST summary was missing/disambiguation
+    const extractsUrl = `https://en.wikipedia.org/w/api.php?action=query&prop=extracts|pageimages|description|info&inprop=url&exintro=true&explaintext=true&titles=${encodedTitle}&pithumbsize=400&format=json&origin=*`;
+    const extractsRes = await fetch(extractsUrl, {
+      headers: { 'Api-User-Agent': WIKIPEDIA_USER_AGENT },
+    }).catch(() => null);
+
+    if (extractsRes && extractsRes.ok) {
+      const extData = (await extractsRes.json()) as {
+        query?: {
+          pages?: Record<
+            string,
+            {
+              pageid: number;
+              title: string;
+              extract?: string;
+              description?: string;
+              thumbnail?: { source: string };
+              fullurl?: string;
+              canonicalurl?: string;
+            }
+          >;
+        };
+      };
+      const pages = extData.query?.pages;
+      if (pages) {
+        const firstKey = Object.keys(pages)[0];
+        if (firstKey && firstKey !== '-1') {
+          const p = pages[firstKey];
+          if (p && p.extract && p.extract.trim().length > 0) {
+            const article: WikipediaArticle = {
+              pageid: p.pageid,
+              title: p.title,
+              extract: p.extract.trim(),
+              description: p.description,
+              thumbnail: p.thumbnail?.source,
+              url:
+                p.fullurl ||
+                p.canonicalurl ||
+                `https://en.wikipedia.org/wiki/${encodeURIComponent(p.title.replace(/ /g, '_'))}`,
+            };
+            articleCache.set(cacheKey, { timestamp: Date.now(), article });
+            return article;
+          }
+        }
+      }
+    }
+
+    // Fallback 2: search for top article then fetch its summary
     const searchResults = await searchWikipedia(trimmed, 1);
     if (searchResults.length > 0) {
       const top = searchResults[0];
@@ -257,3 +304,25 @@ export function wikipediaToSearchResult(
     type: 'wikipedia',
   };
 }
+
+/**
+ * Format Wikipedia response into the required report section format
+ */
+export function formatWikipediaForReport(article: WikipediaArticle | null): string {
+  if (!article) {
+    return `=== WIKIPEDIA ===\nno entry found`;
+  }
+
+  const lines: string[] = ['=== WIKIPEDIA ==='];
+  lines.push(`Title: ${article.title}`);
+  if (article.description) {
+    lines.push(`Description: ${article.description}`);
+  }
+  if (article.extract) {
+    lines.push(`Summary: ${article.extract}`);
+  }
+  lines.push(`URL: ${article.url}`);
+
+  return lines.join('\n');
+}
+

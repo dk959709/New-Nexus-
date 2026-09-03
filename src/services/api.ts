@@ -24,7 +24,7 @@ import type {
   NetworkScanResult,
 } from '@/types';
 import { storage } from '@/lib/storage';
-import { searchWikipedia, getWikipediaSummary, wikipediaToSearchResult } from './wikipedia';
+import { searchWikipedia, getWikipediaSummary, wikipediaToSearchResult, formatWikipediaForReport } from './wikipedia';
 
 function getBaseUrl(): string {
   const envUrl = (typeof import.meta !== 'undefined' && import.meta.env?.VITE_API_URL) || (typeof process !== 'undefined' && process.env?.VITE_API_URL) || '';
@@ -360,6 +360,10 @@ export const api = {
 
   wikipediaToSearchResult(item: WikipediaSearchResult | WikipediaArticle): SearchResult {
     return wikipediaToSearchResult(item);
+  },
+
+  formatWikipediaForReport(article: WikipediaArticle | null): string {
+    return formatWikipediaForReport(article);
   },
 
   wallpapers(query: string, page?: number): Promise<WallpaperPhoto[]> {

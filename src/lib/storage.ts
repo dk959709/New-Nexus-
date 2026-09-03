@@ -43,6 +43,7 @@ Set needsKnowledgeAgent to false for all other query types, including: time-sens
   CRITICAL COMMAND RESTRICTIONS: Neither Wikidata (needsWikidata) nor Wikipedia (needsWikipedia) should EVER be triggered in "/search" and "/web" commands. For any query starting with "/search" or "/web", always set needsWikidata: false and needsWikipedia: false.
   (Note: Set both needsWikipedia and needsWikidata to false if the query is asking for real-time or live data that changes constantly like live prices, breaking news, current weather, or for casual conversation, opinions, and self-referential questions).
 - wikidataQuery: When needsWikidata is true, extract a short, clean subject/entity name from the user's question (e.g., for "how many moons does Saturn have", wikidataQuery should be "Saturn"; for "when was Einstein born", wikidataQuery should be "Einstein"; for "what is the population of Tokyo", wikidataQuery should be "Tokyo"). If needsWikidata is false, set wikidataQuery to "".
+- wikipediaQuery: When needsWikipedia is true, extract a short, clean subject/title from the user's question (e.g., for "tell me about Brawl Stars", wikipediaQuery should be "Brawl Stars"; for "who is Nikola Tesla", wikipediaQuery should be "Nikola Tesla"; for "what is the theory of relativity", wikipediaQuery should be "Theory of relativity"). If needsWikipedia is false, set wikipediaQuery to "".
 - EXPLICIT "/web" DIRECT URL FETCH COMMAND:
   If the query begins with the explicit slash command prefix "/web" followed by a URL (e.g. "/web new-nexus.onrender.com", "/web new-nexus.onrender.com/space", "/web https://example.com/article"):
   1. Set needsResearch: false (skip standard search engines, as this is a direct web page fetch).
@@ -91,6 +92,7 @@ Output ONLY a JSON object with this exact structure:
   "needsChart": true,
   "needsImage": true,
   "needsWikipedia": true,
+  "wikipediaQuery": "",
   "needsWikidata": false,
   "wikidataQuery": ""
 }`,
@@ -721,6 +723,7 @@ export const storage = {
             !stored.agents.planner.systemPrompt.includes('needsWikipedia') ||
             !stored.agents.planner.systemPrompt.includes('needsWikidata') ||
             !stored.agents.planner.systemPrompt.includes('wikidataQuery') ||
+            !stored.agents.planner.systemPrompt.includes('wikipediaQuery') ||
             !stored.agents.planner.systemPrompt.includes('CRITICAL COMMAND RESTRICTIONS: Neither Wikidata') ||
             !stored.agents.planner.systemPrompt.includes('needsDiagram') ||
             !stored.agents.planner.systemPrompt.includes('needsChart') ||
