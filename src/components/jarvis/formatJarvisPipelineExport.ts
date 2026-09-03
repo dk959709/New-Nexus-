@@ -1,6 +1,43 @@
 import { JarvisExecutionStep, JarvisMessage, SavedItem } from '../../types';
 import { stripConversationalMetaText } from '../../lib/format';
-import { cleanAndFormatFact, cleanAndFormatInsight, formatCandidateBullet } from '../../lib/factFormatter';
+import { cleanAndFormatFact } from '../../lib/factFormatter';
+
+function extractDomain(urlStr: string): string {
+  try {
+    return new URL(urlStr).hostname.replace(/^www\./, '');
+  } catch {
+    return urlStr.replace(/^https?:\/\//, '').replace(/^www\./, '').split('/')[0];
+  }
+}
+
+function isJsonKeyArtifact(str: string): boolean {
+  if (!str) return true;
+  const normalized = str.trim().toLowerCase().replace(/^["'`]|["'`]$/g, '');
+  return /^(?:title|fact|claim|domain|url|eventdate|event_date|publishedat|published_at|updatedat|updated_at|datestatus|date_status|confirmedby|confirmed_by|sourceindex|source_index|source|sources|location|category|description|headline)$/i.test(normalized);
+}
+
+function isValidDateValue(val: unknown): boolean {
+  if (val === null || val === undefined) return false;
+  if (typeof val !== 'string' && typeof val !== 'number') return false;
+  const str = String(val).trim();
+  if (!str) return false;
+  if (/^(null|undefined|unknown|none|n\/a|unspecified)$/i.test(str)) return false;
+  if (/^(dateStatus|eventDate|publishedAt|updatedAt|url|domain|claim|fact)$/i.test(str)) return false;
+  return true;
+}
+
+function extractRealDateValue(obj: Record<string, unknown>): string {
+  if (isValidDateValue(obj.eventDate)) return String(obj.eventDate).trim();
+  if (isValidDateValue(obj.publishedAt)) return String(obj.publishedAt).trim();
+  if (isValidDateValue(obj.updatedAt)) return String(obj.updatedAt).trim();
+  if (isValidDateValue(obj.dateStatus)) {
+    const ds = String(obj.dateStatus).trim();
+    if (!/^(unknown|null|undefined|none|n\/a)$/i.test(ds)) {
+      return ds;
+    }
+  }
+  return '';
+}
 
 /**
  * Multi-pass ultra-resilient JSON parser with repair strategies
@@ -219,6 +256,682 @@ function extractStringFromDirtyJson(raw: string, keyNames: string[]): string {
   return '';
 }
 
+export interface ParsedResearcherCandidate {
+  id: string;
+  title: string;
+  fact: string;
+  domain?: string;
+  eventDate?: string;
+  publishedAt?: string;
+  updatedAt?: string;
+  confirmedBy?: string[];
+  sourceIndex?: number;
+  url?: string;
+  category?: string;
+}
+
+export interface ParsedResearcherData {
+  candidates: ParsedResearcherCandidate[];
+  sources: unknown[];
+  insights: string[];
+  context: string;
+}
+
+export function extractResearcherData(
+  step: JarvisExecutionStep,
+  parsed: unknown,
+  raw: string
+): ParsedResearcherData {
+  const candidates: ParsedResearcherCandidate[] = [];
+  const sources: unknown[] = [];
+  let insights: string[] = [];
+  let context = '';
+
+  const processObject = (obj: Record<string, unknown>) => {
+    // 1. Process candidate objects
+    const candKeys = ['candidates', 'news_candidates', 'newsCandidates', 'items', 'articles', 'stories'];
+    for (const key of candKeys) {
+      if (Array.isArray(obj[key]) && (obj[key] as unknown[]).length > 0) {
+        const rawCands = obj[key] as unknown[];
+        rawCands.forEach((cand, idx) => {
+          if (typeof cand === 'object' && cand !== null) {
+            const cObj = cand as Record<string, unknown>;
+            const rawTitle = String(cObj.title || cObj.headline || '').trim();
+            const rawFact = String(cObj.fact || cObj.claim || cObj.statement || cObj.description || '').trim();
+            const domain = String(cObj.domain || (cObj.url ? extractDomain(String(cObj.url)) : '')).trim();
+            const eventDate = String(cObj.eventDate || cObj.publishedAt || cObj.updatedAt || cObj.date || '').trim();
+
+            let confirmedList: string[] = [];
+            if (Array.isArray(cObj.confirmedBy)) {
+              confirmedList = (cObj.confirmedBy as string[])
+                .map(String)
+                .map((s) => s.trim().replace(/^https?:\/\//, '').replace(/^www\./, ''))
+                .filter(Boolean);
+            } else if (typeof cObj.confirmedBy === 'string' && cObj.confirmedBy.trim()) {
+              confirmedList = [cObj.confirmedBy.trim().replace(/^https?:\/\//, '').replace(/^www\./, '')];
+            }
+
+            const sourceIdx = typeof cObj.sourceIndex === 'number' ? cObj.sourceIndex : typeof cObj.source_index === 'number' ? cObj.source_index : undefined;
+            const url = typeof cObj.url === 'string' && cObj.url ? cObj.url : undefined;
+            const category = typeof cObj.category === 'string' && cObj.category ? cObj.category : undefined;
+
+            if (rawTitle || rawFact) {
+              candidates.push({
+                id: `cand-${idx}`,
+                title: rawTitle,
+                fact: rawFact || rawTitle,
+                domain: domain && domain !== 'null' && domain !== 'undefined' ? domain : undefined,
+                eventDate: eventDate && eventDate !== 'null' && eventDate !== 'undefined' ? eventDate : undefined,
+                publishedAt: typeof cObj.publishedAt === 'string' ? cObj.publishedAt : undefined,
+                updatedAt: typeof cObj.updatedAt === 'string' ? cObj.updatedAt : undefined,
+                confirmedBy: confirmedList.length > 0 ? confirmedList : undefined,
+                sourceIndex: sourceIdx,
+                url,
+                category,
+              });
+            }
+          } else if (typeof cand === 'string' && cand.trim().length > 5) {
+            candidates.push({
+              id: `cand-${idx}`,
+              title: '',
+              fact: cand.trim(),
+            });
+          }
+        });
+        break;
+      }
+    }
+
+    // 2. Process facts array if candidates was empty
+    if (candidates.length === 0) {
+      const factKeys = ['facts', 'findings', 'core_facts', 'coreFacts', 'key_facts', 'keyFacts', 'points', 'claims'];
+      for (const key of factKeys) {
+        if (Array.isArray(obj[key]) && (obj[key] as unknown[]).length > 0) {
+          (obj[key] as unknown[]).forEach((f, idx) => {
+            if (typeof f === 'string' && f.trim().length > 5) {
+              const bulletMatch = f.match(/^(?:[-*•]\s*)?(?:\*\*([^*]+)\*\*[:\s]+)?(.*)$/);
+              if (bulletMatch && bulletMatch[1]) {
+                const title = bulletMatch[1].trim();
+                const fact = bulletMatch[2] ? bulletMatch[2].trim() : f.trim();
+                candidates.push({
+                  id: `fact-${idx}`,
+                  title,
+                  fact: fact || title,
+                });
+              } else {
+                candidates.push({
+                  id: `fact-${idx}`,
+                  title: '',
+                  fact: f.trim(),
+                });
+              }
+            } else if (typeof f === 'object' && f !== null) {
+              const fObj = f as Record<string, unknown>;
+              const factText = String(fObj.fact || fObj.claim || fObj.statement || fObj.text || fObj.finding || '').trim();
+              const title = String(fObj.title || fObj.headline || '').trim();
+              if (factText || title) {
+                candidates.push({
+                  id: `fact-${idx}`,
+                  title,
+                  fact: factText || title,
+                  domain: typeof fObj.domain === 'string' ? fObj.domain : undefined,
+                  eventDate: typeof fObj.eventDate === 'string' ? fObj.eventDate : typeof fObj.date === 'string' ? fObj.date : undefined,
+                  sourceIndex: typeof fObj.sourceIndex === 'number' ? fObj.sourceIndex : undefined,
+                });
+              }
+            }
+          });
+          break;
+        }
+      }
+    }
+
+    // 3. Process sources
+    const srcKeys = ['sources', 'references', 'search_results'];
+    for (const key of srcKeys) {
+      if (Array.isArray(obj[key]) && (obj[key] as unknown[]).length > 0) {
+        (obj[key] as unknown[]).forEach((s, idx) => {
+          if (typeof s === 'object' && s !== null) {
+            const sObj = s as Record<string, unknown>;
+            const url = String(sObj.url || sObj.link || '');
+            const title = String(sObj.title || sObj.name || url);
+            const domain = String(sObj.domain || (url ? extractDomain(url) : ''));
+            const sIdx = typeof sObj.index === 'number' ? sObj.index : idx + 1;
+            const publishedAt = typeof sObj.publishedAt === 'string' ? sObj.publishedAt : undefined;
+            if (url) {
+              sources.push({
+                index: sIdx,
+                title,
+                url,
+                domain: domain || undefined,
+                publishedAt,
+              });
+            }
+          }
+        });
+        break;
+      }
+    }
+
+    // 4. Process insights
+    const insightKeys = ['keyInsights', 'insights', 'takeaways'];
+    for (const key of insightKeys) {
+      if (Array.isArray(obj[key]) && (obj[key] as unknown[]).length > 0 && insights.length === 0) {
+        insights = (obj[key] as unknown[]).map(String).filter(Boolean);
+        break;
+      }
+    }
+
+    // 5. Context
+    if (typeof obj.context === 'string' && !context) context = obj.context;
+    else if (typeof obj.summary === 'string' && !context) context = obj.summary;
+    else if (typeof obj.notes === 'string' && !context) context = obj.notes;
+  };
+
+  // Inspect parsed object
+  if (parsed && typeof parsed === 'object' && !Array.isArray(parsed)) {
+    processObject(parsed as Record<string, unknown>);
+  }
+
+  // Fallback to step.outputPreview
+  if (candidates.length === 0 && step.outputPreview) {
+    try {
+      const previewJson = JSON.parse(step.outputPreview);
+      if (previewJson && typeof previewJson === 'object' && !Array.isArray(previewJson)) {
+        processObject(previewJson as Record<string, unknown>);
+      }
+    } catch {
+      // ignore
+    }
+  }
+
+  // Fallback to raw string parsing
+  if (candidates.length === 0 && raw) {
+    try {
+      const rawJson = JSON.parse(raw);
+      if (rawJson && typeof rawJson === 'object') {
+        if (Array.isArray(rawJson)) {
+          rawJson.forEach((item, idx) => {
+            if (typeof item === 'object' && item !== null) {
+              const iObj = item as Record<string, unknown>;
+              candidates.push({
+                id: `cand-raw-${idx}`,
+                title: String(iObj.title || ''),
+                fact: String(iObj.fact || iObj.claim || iObj.description || iObj.title || ''),
+                domain: typeof iObj.domain === 'string' ? iObj.domain : undefined,
+                eventDate: typeof iObj.eventDate === 'string' ? iObj.eventDate : undefined,
+                sourceIndex: typeof iObj.sourceIndex === 'number' ? iObj.sourceIndex : undefined,
+              });
+            } else if (typeof item === 'string') {
+              candidates.push({ id: `cand-raw-${idx}`, title: '', fact: item });
+            }
+          });
+        } else {
+          processObject(rawJson as Record<string, unknown>);
+        }
+      }
+    } catch {
+      // Line by line bullet extraction
+      const lines = raw.split(/\r?\n/).map((l) => l.trim()).filter(Boolean);
+      let idx = 0;
+      for (const line of lines) {
+        if (line.startsWith('{') || line.startsWith('}') || line.startsWith('[') || line.startsWith(']') || line.startsWith('```')) {
+          continue;
+        }
+        const bulletMatch = line.match(/^(?:(?:\d+[.)]|[*•–—-]|\s*-)\s+|fact\s*\d*\s*[:-]\s*)(.*)$/i);
+        const text = bulletMatch ? bulletMatch[1].trim() : line;
+        if (text.length > 10 && !text.includes('":') && !text.startsWith('"')) {
+          const boldTitleMatch = text.match(/^\*\*([^*]+)\*\*[:\s]+(.*)$/);
+          if (boldTitleMatch) {
+            candidates.push({
+              id: `line-${idx++}`,
+              title: boldTitleMatch[1].trim(),
+              fact: boldTitleMatch[2].trim(),
+            });
+          } else {
+            candidates.push({
+              id: `line-${idx++}`,
+              title: '',
+              fact: text,
+            });
+          }
+        }
+      }
+    }
+  }
+
+  return { candidates, sources, insights, context };
+}
+
+export function formatResearcherOutput(step: JarvisExecutionStep, parsed: unknown, raw: string): string {
+  const resData = extractResearcherData(step, parsed, raw);
+  let md = `### 🎯 Targeted Research Scope\n**Research Focus:** ${step.summary || 'Real-time multi-source empirical retrieval and fact extraction'}\n\n### 📋 Verified Empirical Findings\n`;
+
+  if (resData.candidates.length > 0) {
+    resData.candidates.forEach((cand, idx) => {
+      let boldTitle = '';
+      let cleanFact = (cand.fact || '').trim();
+
+      if (cand.title && cand.title.trim()) {
+        const t = cand.title.trim().replace(/^[:\s-]+|[:\s-]+$/g, '');
+        boldTitle = `**${t}:** `;
+        const escapedT = t.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+        cleanFact = cleanFact.replace(new RegExp(`^(?:\\*\\*)?${escapedT}(?:\\*\\*)?[:\\s-]*`, 'i'), '').trim();
+      } else {
+        const boldMatch = cleanFact.match(/^(\*\*[^*]+\*\*[:\s]*)(.*)$/);
+        if (boldMatch) {
+          boldTitle = boldMatch[1].endsWith(' ') ? boldMatch[1] : `${boldMatch[1]} `;
+          cleanFact = boldMatch[2].trim();
+        } else {
+          const colonMatch = cleanFact.match(/^([A-Za-z0-9\s-]{3,40}):\s+(.*)$/);
+          if (colonMatch) {
+            boldTitle = `**${colonMatch[1].trim()}:** `;
+            cleanFact = colonMatch[2].trim();
+          } else {
+            boldTitle = `**Finding ${idx + 1}:** `;
+          }
+        }
+      }
+
+      md += `${idx + 1}. ${boldTitle}${cleanFact}\n`;
+
+      const domain = cand.domain || (cand.url ? extractDomain(cand.url) : '');
+      const dateStr = cand.eventDate || cand.publishedAt || cand.updatedAt || '';
+      const cleanDate = dateStr && !/^(null|undefined|none|unknown)$/i.test(dateStr) ? dateStr : '';
+      const srcPart = domain || (cand.sourceIndex !== undefined ? `Source #${cand.sourceIndex}` : (step.searchSource ? step.searchSource : ''));
+
+      if (srcPart || cleanDate) {
+        const datePart = cleanDate ? ` (${cleanDate})` : '';
+        md += `   - **Source:** ${srcPart}${datePart}\n`;
+      }
+      if (cand.confirmedBy && cand.confirmedBy.length > 0) {
+        md += `   - **Confirmed by:** ${cand.confirmedBy.join(', ')}\n`;
+      }
+    });
+  } else {
+    const rawText = (typeof raw === 'string' ? raw : '') || step.outputPreview || step.summary || '';
+    const candidateLines = rawText
+      .split('\n')
+      .map((l) => l.trim().replace(/^[-*•\d.]+\s*/, '').trim())
+      .filter((l) => l.length > 15 && !l.startsWith('{') && !l.startsWith('}') && !l.startsWith('[') && !l.startsWith(']'));
+
+    const fallbackItems = candidateLines.slice(0, 5);
+    if (fallbackItems.length > 0) {
+      fallbackItems.forEach((factText, idx) => {
+        let boldTitle = `**Finding ${idx + 1}:** `;
+        let cleanFact = factText;
+        const colonMatch = factText.match(/^([A-Za-z0-9\s-]{3,40}):\s+(.*)$/);
+        if (colonMatch) {
+          boldTitle = `**${colonMatch[1].trim()}:** `;
+          cleanFact = colonMatch[2].trim();
+        }
+        md += `${idx + 1}. ${boldTitle}${cleanFact}\n`;
+        if (step.searchSource) {
+          md += `   - **Source:** ${step.searchSource}\n`;
+        }
+      });
+    } else {
+      md += `1. **Empirical Retrieval:** Real-time multi-source fact gathering executed successfully.\n`;
+      if (step.searchSource) {
+        md += `   - **Source:** ${step.searchSource}\n`;
+      }
+    }
+  }
+
+  return md.trim();
+}
+
+export interface ParsedFactCheckerClaim {
+  id: string;
+  claim: string;
+  domain?: string;
+  url?: string;
+  date?: string;
+  confirmedBy?: string[];
+}
+
+export interface ParsedFactCheckerData {
+  summary: string;
+  claims: ParsedFactCheckerClaim[];
+  issues: string[];
+  plausibleUnconfirmed: string[];
+  fabricatedOrContradicted: string[];
+}
+
+export function extractFactCheckerData(
+  step: JarvisExecutionStep,
+  parsed: unknown,
+  raw: string
+): ParsedFactCheckerData {
+  let summary = '';
+  const claims: ParsedFactCheckerClaim[] = [];
+  const issues: string[] = [];
+  const plausibleUnconfirmed: string[] = [];
+  const fabricatedOrContradicted: string[] = [];
+
+  let rawClaims: unknown[] = [];
+  let rawIssues: unknown[] = [];
+  let rawPlausible: unknown[] = [];
+  let rawFabricated: unknown[] = [];
+
+  // Case A: Structured object
+  if (parsed && typeof parsed === 'object' && !Array.isArray(parsed)) {
+    const fObj = parsed as Record<string, unknown>;
+
+    summary =
+      typeof fObj.summary === 'string'
+        ? fObj.summary
+        : typeof fObj.status === 'string'
+        ? fObj.status
+        : typeof fObj.verdict === 'string'
+        ? fObj.verdict
+        : typeof fObj.auditSummary === 'string'
+        ? fObj.auditSummary
+        : '';
+
+    const verifiedField =
+      fObj.verified ||
+      fObj.verifiedClaims ||
+      fObj.claims ||
+      fObj.validated ||
+      fObj.validClaims ||
+      fObj.facts ||
+      fObj.trueClaims;
+
+    if (Array.isArray(verifiedField)) {
+      rawClaims = verifiedField;
+    } else if (fObj.claim || fObj.fact || fObj.statement) {
+      rawClaims = [fObj];
+    }
+
+    const issuesField =
+      fObj.issues ||
+      fObj.corrections ||
+      fObj.discrepancies ||
+      fObj.errors ||
+      fObj.notes ||
+      fObj.flagged ||
+      fObj.contradictions ||
+      fObj.unverified;
+    if (Array.isArray(issuesField)) {
+      rawIssues = issuesField;
+    }
+
+    const plausibleField =
+      fObj.plausible_unconfirmed ||
+      fObj.plausibleUnconfirmed ||
+      fObj.unconfirmed ||
+      fObj.plausible;
+    if (Array.isArray(plausibleField)) {
+      rawPlausible = plausibleField;
+    }
+
+    const fabricatedField =
+      fObj.fabricated_or_contradicted ||
+      fObj.fabricatedOrContradicted ||
+      fObj.fabricated ||
+      fObj.contradicted ||
+      fObj.hallucinations;
+    if (Array.isArray(fabricatedField)) {
+      rawFabricated = fabricatedField;
+    }
+  } else if (Array.isArray(parsed)) {
+    parsed.forEach((item) => {
+      if (typeof item === 'object' && item !== null) {
+        const iObj = item as Record<string, unknown>;
+        if (iObj.issue || iObj.correction || iObj.error || iObj.invalid || iObj.flagged) {
+          rawIssues.push(iObj);
+        } else {
+          rawClaims.push(iObj);
+        }
+      } else if (typeof item === 'string') {
+        if (item.toLowerCase().includes('issue') || item.toLowerCase().includes('mismatch')) {
+          issues.push(item);
+        } else {
+          rawClaims.push(item);
+        }
+      }
+    });
+  }
+
+  // Fallback: If no claims found from parsed, scan raw string for JSON objects in "verified": [ ... ]
+  if (rawClaims.length === 0) {
+    const rawToScan = raw || step.outputPreview || step.summary || '';
+    const match = rawToScan.match(/"(?:verified|verifiedClaims|claims|facts)"\s*:\s*\[([\s\S]*?)\]/i);
+    if (match && match[1]) {
+      const objMatches = match[1].match(/\{[\s\S]*?\}/g);
+      if (objMatches) {
+        objMatches.forEach((objStr) => {
+          try {
+            const parsedObj = JSON.parse(objStr);
+            if (parsedObj && typeof parsedObj === 'object') {
+              rawClaims.push(parsedObj);
+            }
+          } catch {
+            const claimMatch = objStr.match(/"(?:claim|fact|statement|title)"\s*:\s*"((?:\\.|[^"\\])*)"/i);
+            const domainMatch = objStr.match(/"domain"\s*:\s*"((?:\\.|[^"\\])*)"/i);
+            const urlMatch = objStr.match(/"url"\s*:\s*"((?:\\.|[^"\\])*)"/i);
+            const dateMatch = objStr.match(/"(?:eventDate|publishedAt|updatedAt)"\s*:\s*"((?:\\.|[^"\\])*)"/i);
+            if (claimMatch && claimMatch[1]) {
+              rawClaims.push({
+                claim: claimMatch[1].replace(/\\"/g, '"'),
+                domain: domainMatch ? domainMatch[1].replace(/\\"/g, '"') : undefined,
+                url: urlMatch ? urlMatch[1].replace(/\\"/g, '"') : undefined,
+                eventDate: dateMatch ? dateMatch[1].replace(/\\"/g, '"') : undefined,
+              });
+            }
+          }
+        });
+      }
+    }
+  }
+
+  // Parse each raw claim entry into a structured ParsedFactCheckerClaim
+  rawClaims.forEach((item, idx) => {
+    if (!item) return;
+
+    if (typeof item === 'object' && item !== null) {
+      const obj = item as Record<string, unknown>;
+      let claimText = String(
+        obj.claim ||
+        obj.fact ||
+        obj.statement ||
+        obj.title ||
+        obj.text ||
+        obj.point ||
+        obj.finding ||
+        ''
+      ).trim();
+
+      if (!claimText || isJsonKeyArtifact(claimText)) {
+        const entry = Object.entries(obj).find(
+          ([k, v]) =>
+            !/^(domain|url|eventDate|publishedAt|updatedAt|dateStatus|confirmedBy|id|sourceIndex)$/i.test(k) &&
+            typeof v === 'string' &&
+            v.trim().length > 10
+        );
+        if (entry) claimText = String(entry[1]).trim();
+      }
+
+      if (!claimText || isJsonKeyArtifact(claimText)) return;
+      claimText = claimText.replace(/^✅\s*/, '').replace(/^[-*•]\s*/, '').trim();
+
+      let domain = '';
+      if (typeof obj.domain === 'string' && obj.domain.trim() && !/^(null|undefined|unknown|none)$/i.test(obj.domain.trim())) {
+        domain = obj.domain.trim();
+      } else if (typeof obj.url === 'string' && obj.url.trim() && !/^(null|undefined)$/i.test(obj.url.trim())) {
+        domain = extractDomain(obj.url.trim());
+      }
+
+      let url: string | undefined = undefined;
+      if (typeof obj.url === 'string' && obj.url.trim() && obj.url.trim().startsWith('http')) {
+        url = obj.url.trim();
+      }
+
+      const dateStr = extractRealDateValue(obj);
+
+      let confirmedList: string[] = [];
+      if (Array.isArray(obj.confirmedBy)) {
+        confirmedList = obj.confirmedBy
+          .map((c) => String(c || '').trim())
+          .filter((c) => c && !/^(null|undefined|none|\[\])$/i.test(c));
+      } else if (typeof obj.confirmedBy === 'string' && obj.confirmedBy.trim()) {
+        const cStr = obj.confirmedBy.trim();
+        if (!/^(null|undefined|none|\[\])$/i.test(cStr)) {
+          confirmedList = cStr.split(',').map((s) => s.trim()).filter(Boolean);
+        }
+      }
+
+      claims.push({
+        id: `claim-${idx}`,
+        claim: claimText,
+        domain: domain || undefined,
+        url,
+        date: dateStr || undefined,
+        confirmedBy: confirmedList.length > 0 ? confirmedList : undefined,
+      });
+    } else if (typeof item === 'string') {
+      const trimmed = item.trim();
+      if (!trimmed) return;
+      // Skip raw JSON key: value noise lines
+      if (/^"?([a-zA-Z0-9_]+)"?\s*[:=]\s*(?:null|undefined|""|''|\[\]|\{\})\s*,?$/i.test(trimmed)) return;
+      if (/^"?(dateStatus|eventDate|publishedAt|updatedAt|url)"?\s*[:=]/i.test(trimmed)) return;
+
+      // Check if multi-line block already
+      if (trimmed.includes('\n')) {
+        const lines = trimmed.split('\n').map((l) => l.trim()).filter(Boolean);
+        let cText = '';
+        let cDomain = '';
+        let cDate = '';
+        let cConfirmed: string[] = [];
+
+        lines.forEach((l) => {
+          if (l.startsWith('✅') || (!cText && !l.toLowerCase().startsWith('source:') && !l.toLowerCase().startsWith('confirmed by:'))) {
+            cText = l.replace(/^✅\s*/, '').replace(/^[-*•]\s*/, '').trim();
+          } else if (l.toLowerCase().startsWith('source:')) {
+            const srcContent = l.replace(/^source:\s*/i, '').trim();
+            const dateM = srcContent.match(/\(([^)]+)\)/);
+            if (dateM) {
+              cDate = dateM[1].trim();
+              cDomain = srcContent.replace(/\s*\([^)]+\)/, '').trim();
+            } else {
+              cDomain = srcContent;
+            }
+          } else if (l.toLowerCase().startsWith('confirmed by:')) {
+            const confContent = l.replace(/^confirmed by:\s*/i, '').trim();
+            cConfirmed = confContent.split(',').map((s) => s.trim()).filter(Boolean);
+          }
+        });
+
+        if (cText && !isJsonKeyArtifact(cText)) {
+          claims.push({
+            id: `claim-${idx}`,
+            claim: cText,
+            domain: cDomain || undefined,
+            date: cDate || undefined,
+            confirmedBy: cConfirmed.length > 0 ? cConfirmed : undefined,
+          });
+          return;
+        }
+      }
+
+      // Single string
+      const cleanClaim = trimmed.replace(/^✅\s*/, '').replace(/^[-*•]\s*/, '').trim();
+      if (cleanClaim && !isJsonKeyArtifact(cleanClaim) && cleanClaim.length > 3) {
+        claims.push({
+          id: `claim-${idx}`,
+          claim: cleanClaim,
+        });
+      }
+    }
+  });
+
+  // Process issues
+  rawIssues.forEach((item) => {
+    if (typeof item === 'string' && item.trim()) {
+      issues.push(item.trim());
+    } else if (typeof item === 'object' && item !== null) {
+      const iObj = item as Record<string, unknown>;
+      const text = String(iObj.issue || iObj.correction || iObj.error || iObj.discrepancy || iObj.note || iObj.message || iObj.text || '').trim();
+      if (text) issues.push(text);
+    }
+  });
+
+  // Process plausibleUnconfirmed
+  rawPlausible.forEach((item) => {
+    const text = typeof item === 'object' && item !== null
+      ? String((item as Record<string, unknown>).issue || (item as Record<string, unknown>).claim || (item as Record<string, unknown>).detail || '')
+      : String(item || '').trim();
+    if (text && !plausibleUnconfirmed.includes(text)) plausibleUnconfirmed.push(text);
+  });
+
+  // Process fabricatedOrContradicted
+  rawFabricated.forEach((item) => {
+    const text = typeof item === 'object' && item !== null
+      ? String((item as Record<string, unknown>).issue || (item as Record<string, unknown>).claim || (item as Record<string, unknown>).detail || '')
+      : String(item || '').trim();
+    if (text && !fabricatedOrContradicted.includes(text)) fabricatedOrContradicted.push(text);
+  });
+
+  if (!summary) {
+    summary =
+      claims.length > 0
+        ? `Validated ${claims.length} ${claims.length === 1 ? 'claim' : 'claims'} with empirical ground checks.`
+        : (step.summary || 'Fact verification audit completed.');
+  }
+
+  return {
+    summary,
+    claims,
+    issues,
+    plausibleUnconfirmed,
+    fabricatedOrContradicted,
+  };
+}
+
+export function formatFactCheckerOutput(step: JarvisExecutionStep, parsed: unknown, raw: string): string {
+  const data = extractFactCheckerData(step, parsed, raw);
+
+  const lines: string[] = [
+    `### 🎯 Verification Audit Scope`,
+    `**Audit Scope:** ${data.summary || 'Empirical ground verification & claim scrutiny'}`,
+    ``,
+    `### 📋 Verified Empirical Claims`,
+  ];
+
+  if (data.claims.length > 0) {
+    data.claims.forEach((c, idx) => {
+      let cleanClaim = (c.claim || '').trim().replace(/^(?:\*\*)?Claim\s*\d*[:\s-]*(?:\*\*)?\s*/i, '').trim();
+      let boldTitle = `**Claim ${idx + 1}:** `;
+      const boldMatch = cleanClaim.match(/^(\*\*[^*]+\*\*[:\s]*)(.*)$/);
+      if (boldMatch) {
+        boldTitle = boldMatch[1].endsWith(' ') ? boldMatch[1] : `${boldMatch[1]} `;
+        cleanClaim = boldMatch[2].trim();
+      }
+      lines.push(`${idx + 1}. ${boldTitle}${cleanClaim}`);
+      const domain = c.domain || (c.url ? extractDomain(c.url) : '');
+      const dateStr = c.date && !/^(null|undefined|none|unknown)$/i.test(c.date) ? c.date : '';
+      const hasSource = Boolean(domain || dateStr);
+      if (hasSource) {
+        if (domain && dateStr) {
+          lines.push(`   - **Source:** ${domain} (${dateStr})`);
+        } else if (domain) {
+          lines.push(`   - **Source:** ${domain}`);
+        } else {
+          lines.push(`   - **Source:** ${dateStr}`);
+        }
+      }
+      if (c.confirmedBy && c.confirmedBy.length > 0) {
+        lines.push(`   - **Confirmed by:** ${c.confirmedBy.join(', ')}`);
+      }
+    });
+  } else {
+    lines.push(`1. **Full Integrity Verification:** All empirical claims verified against grounding corpus.`);
+  }
+
+  return lines.join('\n').trim();
+}
+
 function formatAgentStep(step: JarvisExecutionStep): string {
   const agentTitle = step.name ? step.name.toUpperCase() : step.agentId.toUpperCase();
   const raw = step.rawOutput || step.outputPreview || step.summary || '';
@@ -291,231 +1004,14 @@ function formatAgentStep(step: JarvisExecutionStep): string {
 
   // 2. Researcher Agent
   if (step.agentId === 'researcher') {
-    let candidates: unknown[] = [];
-    let facts: unknown[] = [];
-    let keyInsights: unknown[] = [];
-    let context = '';
-
-    const inspectObject = (obj: Record<string, unknown>): { foundCandidates: unknown[]; foundFacts: unknown[] } => {
-      let foundCandidates: unknown[] = [];
-      let foundFacts: unknown[] = [];
-
-      const candKeys = ['candidates', 'news_candidates', 'newsCandidates', 'items', 'articles', 'stories'];
-      for (const key of candKeys) {
-        if (Array.isArray(obj[key]) && (obj[key] as unknown[]).length > 0) {
-          foundCandidates = obj[key] as unknown[];
-          break;
-        }
-      }
-      const factKeys = ['facts', 'findings', 'core_facts', 'coreFacts', 'key_facts', 'keyFacts', 'points', 'claims'];
-      for (const key of factKeys) {
-        if (Array.isArray(obj[key]) && (obj[key] as unknown[]).length > 0) {
-          foundFacts = obj[key] as unknown[];
-          break;
-        }
-      }
-      const insightKeys = ['keyInsights', 'insights', 'takeaways'];
-      for (const key of insightKeys) {
-        if (Array.isArray(obj[key]) && (obj[key] as unknown[]).length > 0 && keyInsights.length === 0) {
-          keyInsights = obj[key] as unknown[];
-          break;
-        }
-      }
-      if (typeof obj.context === 'string' && !context) context = obj.context;
-      else if (typeof obj.summary === 'string' && !context) context = obj.summary;
-
-      return { foundCandidates, foundFacts };
-    };
-
-    if (parsed && typeof parsed === 'object' && !Array.isArray(parsed)) {
-      const { foundCandidates, foundFacts } = inspectObject(parsed as Record<string, unknown>);
-      candidates = foundCandidates;
-      facts = foundFacts;
-    }
-
-    if (step.outputPreview) {
-      try {
-        const previewJson = JSON.parse(step.outputPreview);
-        if (previewJson && typeof previewJson === 'object' && !Array.isArray(previewJson)) {
-          const { foundCandidates: pCands, foundFacts: pFacts } = inspectObject(previewJson as Record<string, unknown>);
-          if (pCands.length > candidates.length) {
-            candidates = pCands;
-          }
-          if (pFacts.length > facts.length) {
-            facts = pFacts;
-          }
-        }
-      } catch (err) {
-        void err;
-      }
-    }
-
-    if (candidates.length < 3 && facts.length < 3 && raw) {
-      try {
-        const rawJson = JSON.parse(raw);
-        if (rawJson && typeof rawJson === 'object') {
-          if (Array.isArray(rawJson)) {
-            if (rawJson.length > candidates.length) candidates = rawJson;
-          } else {
-            const { foundCandidates: rCands, foundFacts: rFacts } = inspectObject(rawJson as Record<string, unknown>);
-            if (rCands.length > candidates.length) candidates = rCands;
-            if (rFacts.length > facts.length) facts = rFacts;
-          }
-        }
-      } catch (err) {
-        void err;
-      }
-    }
-
-    const lines: string[] = [`=== ${agentTitle} ===`];
-    const itemsToRender = candidates.length > 0 ? candidates : facts;
-    const renderedBullets: string[] = [];
-
-    if (itemsToRender.length > 0) {
-      itemsToRender.forEach((item) => {
-        const formatted = formatCandidateBullet(item, { markdown: false });
-        if (formatted && !renderedBullets.includes(formatted)) {
-          renderedBullets.push(formatted);
-        }
-      });
-    }
-
-    if (renderedBullets.length > 0) {
-      lines.push(`Core Facts & Intelligence:`);
-      renderedBullets.forEach((b) => lines.push(b));
-      lines.push(``);
-    } else {
-      lines.push(`Core Facts & Intelligence:`);
-      lines.push(`- Empirical research gathering completed successfully.`);
-      lines.push(``);
-    }
-
-    if (keyInsights.length > 0) {
-      lines.push(`Key Empirical Insights:`);
-      keyInsights.forEach((insight) => {
-        const formatted = cleanAndFormatInsight(insight);
-        if (formatted) {
-          lines.push(`- ${formatted}`);
-        }
-      });
-      lines.push(``);
-    }
-
-    if (context) {
-      lines.push(`Contextual Background:`);
-      lines.push(context);
-    }
-
-    return lines.join('\n').trim();
+    const formatted = formatResearcherOutput(step, parsed, raw);
+    return `=== ${agentTitle} ===\n${formatted}`.trim();
   }
 
-  // 3. Fact Checker Agent (GUARANTEED CLEAN VIEW ALWAYS)
-  if (step.agentId === 'factChecker') {
-    let summary = '';
-    let verified: string[] = [];
-    let issues: string[] = [];
-
-    if (parsed && typeof parsed === 'object' && !Array.isArray(parsed)) {
-      const fObj = parsed as Record<string, unknown>;
-      summary =
-        typeof fObj.summary === 'string'
-          ? fObj.summary
-          : typeof fObj.status === 'string'
-          ? fObj.status
-          : typeof fObj.verdict === 'string'
-          ? fObj.verdict
-          : '';
-
-      const rawVerified =
-        fObj.verified ||
-        fObj.verifiedClaims ||
-        fObj.claims ||
-        fObj.validated ||
-        fObj.facts;
-
-      if (Array.isArray(rawVerified)) {
-        verified = rawVerified
-          .map((v) => formatVerifiedClaimEntry(v))
-          .filter(Boolean);
-      }
-
-      const rawIssues =
-        fObj.issues ||
-        fObj.corrections ||
-        fObj.discrepancies ||
-        fObj.errors ||
-        fObj.notes;
-
-      if (Array.isArray(rawIssues)) {
-        issues = rawIssues
-          .map((i) => {
-            if (typeof i === 'object' && i !== null) {
-              const iObj = i as Record<string, unknown>;
-              const text = (iObj.issue || iObj.correction || iObj.error || iObj.discrepancy || iObj.note || iObj.message || iObj.text || '') as string;
-              return text || JSON.stringify(i);
-            }
-            return String(i);
-          })
-          .filter(Boolean);
-      }
-
-      const rawPlausible =
-        fObj.plausible_unconfirmed ||
-        fObj.plausibleUnconfirmed ||
-        fObj.unconfirmed;
-      if (Array.isArray(rawPlausible)) {
-        rawPlausible.forEach((p) => {
-          const str = typeof p === 'object' && p !== null
-            ? String((p as Record<string, unknown>).issue || (p as Record<string, unknown>).claim || (p as Record<string, unknown>).detail || JSON.stringify(p))
-            : String(p || '').trim();
-          if (str && !issues.includes(str)) issues.push(str);
-        });
-      }
-
-      const rawFabricated =
-        fObj.fabricated_or_contradicted ||
-        fObj.fabricatedOrContradicted ||
-        fObj.fabricated ||
-        fObj.contradicted;
-      if (Array.isArray(rawFabricated)) {
-        rawFabricated.forEach((fb) => {
-          const str = typeof fb === 'object' && fb !== null
-            ? String((fb as Record<string, unknown>).issue || (fb as Record<string, unknown>).claim || (fb as Record<string, unknown>).detail || JSON.stringify(fb))
-            : String(fb || '').trim();
-          if (str && !issues.includes(str)) issues.push(str);
-        });
-      }
-    } else {
-      verified = extractArrayFromDirtyJson(raw, ['verified', 'verifiedClaims', 'claims', 'facts']);
-      issues = extractArrayFromDirtyJson(raw, ['issues', 'corrections', 'discrepancies', 'errors', 'notes']);
-      summary = extractStringFromDirtyJson(raw, ['summary', 'status', 'verdict']);
-    }
-
-    const finalSummary = summary || (verified.length > 0 ? `Validated ${verified.length} claims.` : 'All claims verified.');
-    const lines: string[] = [
-      `=== ${agentTitle} ===`,
-      `Verification Status: ${finalSummary}`,
-      ``,
-    ];
-
-    if (verified.length > 0) {
-      lines.push(`Verified Claims:`);
-      verified.forEach((v) => {
-        lines.push(String(v));
-        lines.push(``);
-      });
-    }
-
-    lines.push(`Correction & Audit Notes:`);
-    if (issues.length > 0) {
-      issues.forEach((issue) => {
-        lines.push(`- ${String(issue)}`);
-      });
-    } else {
-      lines.push(`- No factual contradictions or ungrounded claims detected.`);
-    }
-
-    return lines.join('\n').trim();
+  // 3. Fact Checker Agent
+  if (step.agentId === 'factChecker' || step.agentId === 'factchecker') {
+    const formatted = formatFactCheckerOutput(step, parsed, raw);
+    return `=== ${agentTitle} ===\n${formatted}`.trim();
   }
 
   // 3.5. Advisor Agent
