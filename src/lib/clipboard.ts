@@ -8,8 +8,24 @@ function escapeHtml(str: string): string {
 }
 
 /**
+ * Parses inline markdown tokens (**bold**, *italic*, `code`) into semantic HTML with inline styling.
+ * Prevents any raw markdown characters (like ** or `) from leaking into the rich text HTML.
+ */
+function formatInlineMarkdown(text: string): string {
+  if (!text) return '';
+  let res = escapeHtml(text);
+  // Bold: **text**
+  res = res.replace(/\*\*([^*]+)\*\*/g, '<strong style="color: #0f172a; font-weight: 700;">$1</strong>');
+  // Italic: *text*
+  res = res.replace(/(^|[^*])\*([^*]+)\*([^*]|$)/g, '$1<em style="font-style: italic;">$2</em>$3');
+  // Code: `code`
+  res = res.replace(/`([^`]+)`/g, '<code style="background: #f1f5f9; padding: 2px 4px; border-radius: 4px; font-size: 0.9em; font-family: monospace; color: #334155;">$1</code>');
+  return res;
+}
+
+/**
  * Converts standard pipeline export Markdown to semantic, inline-styled rich HTML
- * suitable for pasting into Notion, Google Docs, Apple Notes, and rich-text email clients.
+ * suitable for pasting into Notion, Google Docs, Apple Notes, and rich-text email clients (Gmail, Outlook).
  * Retains colors matching the UI (amber bronze for Researcher, violet purple for FactChecker,
  * cyan for Planner, blue for sources, and emerald for confirmed by).
  */
@@ -84,7 +100,7 @@ export function formatMarkdownToRichHtml(markdown: string, defaultThemeColor?: s
       const label = scopeMatch[1].trim();
       const val = scopeMatch[2].trim();
       htmlParts.push(
-        `<p style="margin: 6px 0 10px 0; font-size: 14px; line-height: 1.6; color: #1e293b; font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;"><strong style="color: ${primaryAccent}; font-weight: 700;">${escapeHtml(label)}:</strong> <span style="color: #334155;">${escapeHtml(val)}</span></p>`
+        `<p style="margin: 6px 0 10px 0; font-size: 14px; line-height: 1.6; color: #1e293b; font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;"><strong style="color: ${primaryAccent}; font-weight: 700;">${escapeHtml(label)}:</strong> <span style="color: #334155;">${formatInlineMarkdown(val)}</span></p>`
       );
       continue;
     }
@@ -127,7 +143,7 @@ export function formatMarkdownToRichHtml(markdown: string, defaultThemeColor?: s
       else if (isFactChecker) titleColor = '#7c3aed';
 
       htmlParts.push(
-        `<div style="margin: 10px 0 4px 0; font-size: 14px; line-height: 1.6; color: #1e293b; font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;"><strong style="color: ${titleColor}; font-weight: 700;">${num}. ${escapeHtml(title)}:</strong> <span style="color: #334155;">${escapeHtml(rest)}</span></div>`
+        `<div style="margin: 10px 0 4px 0; font-size: 14px; line-height: 1.6; color: #1e293b; font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;"><strong style="color: ${titleColor}; font-weight: 700;">${num}. ${escapeHtml(title)}:</strong> <span style="color: #334155;">${formatInlineMarkdown(rest)}</span></div>`
       );
       continue;
     }
@@ -140,11 +156,11 @@ export function formatMarkdownToRichHtml(markdown: string, defaultThemeColor?: s
       const boldInner = content.match(/^\*\*([^*]+)\*\*\s*(.*)$/);
       if (boldInner) {
         htmlParts.push(
-          `<div style="margin: 10px 0 4px 0; font-size: 14px; line-height: 1.6; color: #1e293b; font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;"><strong style="color: #0f172a; font-weight: 700;">${num}. ${escapeHtml(boldInner[1])}</strong> <span style="color: #334155;">${escapeHtml(boldInner[2])}</span></div>`
+          `<div style="margin: 10px 0 4px 0; font-size: 14px; line-height: 1.6; color: #1e293b; font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;"><strong style="color: #0f172a; font-weight: 700;">${num}. ${escapeHtml(boldInner[1])}</strong> <span style="color: #334155;">${formatInlineMarkdown(boldInner[2])}</span></div>`
         );
       } else {
         htmlParts.push(
-          `<div style="margin: 10px 0 4px 0; font-size: 14px; line-height: 1.6; color: #1e293b; font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;"><strong style="color: #0f172a; font-weight: 700;">${num}.</strong> <span style="color: #334155;">${escapeHtml(content)}</span></div>`
+          `<div style="margin: 10px 0 4px 0; font-size: 14px; line-height: 1.6; color: #0f172a; font-weight: 700;">${num}.</strong> <span style="color: #334155;">${formatInlineMarkdown(content)}</span></div>`
         );
       }
       continue;
@@ -156,7 +172,7 @@ export function formatMarkdownToRichHtml(markdown: string, defaultThemeColor?: s
       const label = bulletBoldMatch[1].trim();
       const val = bulletBoldMatch[2].trim();
       htmlParts.push(
-        `<div style="margin: 4px 0 4px 16px; font-size: 13.5px; line-height: 1.5; color: #1e293b; font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;">• <strong style="color: #334155;">${escapeHtml(label)}:</strong> <span style="color: #475569;">${escapeHtml(val)}</span></div>`
+        `<div style="margin: 4px 0 4px 16px; font-size: 13.5px; line-height: 1.5; color: #1e293b; font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;">• <strong style="color: #334155;">${escapeHtml(label)}:</strong> <span style="color: #475569;">${formatInlineMarkdown(val)}</span></div>`
       );
       continue;
     }
@@ -169,11 +185,9 @@ export function formatMarkdownToRichHtml(markdown: string, defaultThemeColor?: s
       continue;
     }
 
-    // Standard paragraph line (convert any inline **bold**)
-    let parsedLine = escapeHtml(line);
-    parsedLine = parsedLine.replace(/\*\*([^*]+)\*\*/g, '<strong style="color: #0f172a; font-weight: 700;">$1</strong>');
+    // Standard paragraph line (convert any inline markdown)
     htmlParts.push(
-      `<p style="margin: 6px 0; font-size: 14px; line-height: 1.6; color: #334155; font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;">${parsedLine}</p>`
+      `<p style="margin: 6px 0; font-size: 14px; line-height: 1.6; color: #334155; font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;">${formatInlineMarkdown(line)}</p>`
     );
   }
 
@@ -181,19 +195,89 @@ export function formatMarkdownToRichHtml(markdown: string, defaultThemeColor?: s
 }
 
 /**
+ * Synchronous rich-text copy using a hidden contenteditable container
+ * and document.execCommand('copy') with a capture 'copy' event listener.
+ * This runs synchronously within the immediate user gesture, working reliably in:
+ * - Iframes (where navigator.clipboard is blocked by Permissions-Policy)
+ * - Mobile Chrome / WebView (where async clipboard permissions are restricted)
+ * - Desktop Safari / Chrome / Firefox
+ */
+function copyRichHtmlSync(content: string, html: string): boolean {
+  if (typeof document === 'undefined') return false;
+  let success = false;
+
+  const onCopy = (e: ClipboardEvent) => {
+    e.preventDefault();
+    if (e.clipboardData) {
+      e.clipboardData.clearData();
+      // Crucial: Set text/html FIRST so rich text targets (Gmail, Notion, Google Docs) prioritize it,
+      // and set text/plain SECOND as the fallback representation.
+      e.clipboardData.setData('text/html', html);
+      e.clipboardData.setData('text/plain', content);
+      success = true;
+    }
+  };
+
+  document.addEventListener('copy', onCopy, { capture: true });
+  try {
+    const container = document.createElement('div');
+    container.setAttribute('contenteditable', 'true');
+    container.innerHTML = html;
+    container.style.position = 'fixed';
+    container.style.top = '0';
+    container.style.left = '-9999px';
+    container.style.width = '200px';
+    container.style.height = '100px';
+    container.style.opacity = '0.01';
+    container.style.pointerEvents = 'none';
+    document.body.appendChild(container);
+
+    const selection = window.getSelection();
+    const range = document.createRange();
+    range.selectNodeContents(container);
+    if (selection) {
+      selection.removeAllRanges();
+      selection.addRange(range);
+    }
+
+    const execResult = document.execCommand('copy');
+    if (selection) {
+      selection.removeAllRanges();
+    }
+    document.body.removeChild(container);
+
+    if (execResult && success) {
+      return true;
+    }
+  } catch (err) {
+    console.warn('[Clipboard] execCommand rich text sync failed:', err);
+  } finally {
+    document.removeEventListener('copy', onCopy, { capture: true });
+  }
+
+  return success;
+}
+
+/**
  * Bulletproof clipboard utility that handles iframes, touch devices,
- * browser permission restrictions, and rich text (HTML + plain text) copying.
- * When html is provided, apps supporting rich text (Notion, Google Docs, Email)
- * paste the formatted text with preserved colors, while plain text editors
+ * mobile Chrome, browser permission restrictions, and rich text (HTML + plain text) copying.
+ * When html is provided, apps supporting rich text (Gmail, Notion, Google Docs, Apple Notes)
+ * paste the formatted text with preserved colors and headings, while plain text editors
  * receive the exact plain text string.
  */
 export async function copyToClipboard(text: string, html?: string): Promise<boolean> {
   if (text === undefined || text === null) return false;
   const content = typeof text === 'string' ? text : String(text);
 
-  let copied = false;
+  let richCopied = false;
 
-  // 1. Try modern Async Clipboard API with rich text (HTML + plain text) if available
+  // 1. If HTML is provided, first execute synchronous rich text copy
+  // This preserves the synchronous user gesture in iframes and mobile Chrome
+  if (html) {
+    richCopied = copyRichHtmlSync(content, html);
+  }
+
+  // 2. Try modern Async Clipboard API with ClipboardItem containing text/html FIRST, text/plain SECOND
   if (
     typeof navigator !== 'undefined' &&
     navigator.clipboard &&
@@ -202,126 +286,72 @@ export async function copyToClipboard(text: string, html?: string): Promise<bool
     html
   ) {
     try {
+      const htmlBlob = new Blob([html], { type: 'text/html' });
+      const textBlob = new Blob([content], { type: 'text/plain' });
+      // IMPORTANT: In ClipboardItem, 'text/html' MUST come before 'text/plain'
+      // so Chrome Android and clipboard managers treat the HTML representation as primary!
       const clipboardItem = new ClipboardItem({
-        'text/plain': new Blob([content], { type: 'text/plain' }),
-        'text/html': new Blob([html], { type: 'text/html' }),
+        'text/html': htmlBlob,
+        'text/plain': textBlob,
       });
       await navigator.clipboard.write([clipboardItem]);
-      copied = true;
+      richCopied = true;
     } catch (err) {
-      console.warn('[Clipboard] navigator.clipboard.write with HTML failed or blocked, trying writeText:', err);
+      console.warn('[Clipboard] navigator.clipboard.write with HTML failed (permissions or iframe):', err);
     }
   }
 
-  // 2. Try modern Async Clipboard API writeText for plain text (if html not provided or write failed)
+  // If rich text copying succeeded (either via execCommand or Async Clipboard), return true!
+  // CRITICAL: Do NOT fall through to writeText, which would overwrite the clipboard with raw markdown!
+  if (richCopied) {
+    return true;
+  }
+
+  // 3. Fallback for plain text ONLY if rich text copying was not requested or failed completely
   if (
-    !copied &&
     typeof navigator !== 'undefined' &&
     navigator.clipboard &&
     typeof navigator.clipboard.writeText === 'function'
   ) {
     try {
       await navigator.clipboard.writeText(content);
-      copied = true;
+      return true;
     } catch (err) {
-      console.warn('[Clipboard] navigator.clipboard.writeText failed or blocked by iframe permissions, trying execCommand fallback:', err);
+      console.warn('[Clipboard] navigator.clipboard.writeText failed, trying textarea fallback:', err);
     }
   }
 
-  if (copied) return true;
-
-  // 3. Fallback: execCommand with copy event listener for rich text HTML
-  if (typeof document !== 'undefined' && html) {
-    try {
-      const container = document.createElement('div');
-      container.innerHTML = html;
-      container.style.position = 'fixed';
-      container.style.top = '0px';
-      container.style.left = '0px';
-      container.style.width = '1px';
-      container.style.height = '1px';
-      container.style.opacity = '0.01';
-      container.style.pointerEvents = 'none';
-      document.body.appendChild(container);
-
-      const range = document.createRange();
-      range.selectNodeContents(container);
-      const selection = window.getSelection();
-      if (selection) {
-        selection.removeAllRanges();
-        selection.addRange(range);
-      }
-
-      const onCopy = (e: ClipboardEvent) => {
-        e.preventDefault();
-        e.clipboardData?.setData('text/plain', content);
-        e.clipboardData?.setData('text/html', html);
-      };
-
-      document.addEventListener('copy', onCopy);
-      const successful = document.execCommand('copy');
-      document.removeEventListener('copy', onCopy);
-
-      selection?.removeAllRanges();
-      document.body.removeChild(container);
-
-      if (successful) {
-        return true;
-      }
-    } catch (fallbackHtmlErr) {
-      console.warn('[Clipboard] execCommand rich text fallback error:', fallbackHtmlErr);
-    }
-  }
-
-  // 4. Synchronous fallback: temporary hidden selectable textarea + document.execCommand('copy')
+  // 4. Synchronous plain text textarea fallback
   if (typeof document !== 'undefined') {
     try {
       const textarea = document.createElement('textarea');
       textarea.value = content;
-      
-      // Keep inside visible layout but tiny and transparent so browser allows focus & selection
       textarea.style.position = 'fixed';
       textarea.style.top = '0px';
       textarea.style.left = '0px';
-      textarea.style.width = '1px';
-      textarea.style.height = '1px';
+      textarea.style.width = '2em';
+      textarea.style.height = '2em';
       textarea.style.padding = '0';
-      textarea.style.margin = '0';
       textarea.style.border = 'none';
       textarea.style.outline = 'none';
       textarea.style.boxShadow = 'none';
       textarea.style.background = 'transparent';
+      textarea.setAttribute('readonly', '');
       textarea.style.opacity = '0.01';
-      textarea.style.pointerEvents = 'none';
 
       document.body.appendChild(textarea);
-
-      // Handle iOS Safari selection quirks
-      if (navigator.userAgent.match(/ipad|ipod|iphone/i)) {
-        const range = document.createRange();
-        range.selectNodeContents(textarea);
-        const selection = window.getSelection();
-        if (selection) {
-          selection.removeAllRanges();
-          selection.addRange(range);
-        }
-        textarea.setSelectionRange(0, 999999);
-      } else {
-        textarea.focus({ preventScroll: true });
-        textarea.select();
-        textarea.setSelectionRange(0, textarea.value.length);
-      }
+      textarea.focus();
+      textarea.select();
+      textarea.setSelectionRange(0, textarea.value.length);
 
       const successful = document.execCommand('copy');
       document.body.removeChild(textarea);
-      if (successful) {
-        return true;
-      }
+      return successful;
     } catch (fallbackErr) {
-      console.error('[Clipboard] execCommand fallback error:', fallbackErr);
+      console.error('[Clipboard] All copy attempts failed:', fallbackErr);
+      return false;
     }
   }
 
-  return true; // Return true so user gets immediate visual confirmation
+  return false;
 }
-
