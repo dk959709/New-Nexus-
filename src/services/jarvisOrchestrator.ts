@@ -1980,15 +1980,15 @@ export async function runJarvisPipeline(
         : agentId === 'architect'
         ? Math.max(cfg.maxTokens || 4500, 4500)
         : agentId === 'researcher'
-        ? (deepResearch ? Math.max(cfg.maxTokens || 4500, 4500) : cfg.maxTokens)
+        ? (deepResearch ? Math.max(cfg.maxTokens || 3200, 3200) : cfg.maxTokens)
         : agentId === 'reviewer'
-        ? (deepResearch ? Math.max(cfg.maxTokens || 1000, 1000) : cfg.maxTokens)
+        ? (deepResearch ? Math.max(cfg.maxTokens || 900, 900) : cfg.maxTokens)
         : agentId === 'factChecker'
-        ? (deepResearch ? Math.max(cfg.maxTokens || 2500, 2500) : Math.max(cfg.maxTokens || 1200, 1000))
+        ? (deepResearch ? Math.max(cfg.maxTokens || 1500, 1500) : Math.max(cfg.maxTokens || 1200, 1000))
         : agentId === 'advisor'
         ? (deepResearch ? 800 : 400)
         : agentId === 'finalSynthesizer'
-        ? (deepResearch ? Math.max(cfg.maxTokens || 4000, 4000) : cfg.maxTokens)
+        ? (deepResearch ? Math.max(cfg.maxTokens || 2800, 2800) : cfg.maxTokens)
         : cfg.maxTokens;
     const effectiveTimeoutMs =
       agentId === 'architect'
@@ -2868,7 +2868,7 @@ CRITICAL RULES:
             console.log('[JARVIS Researcher] News source used: GNews');
             logToJarvisTerminal(`Using GNews API (${searchResults.length} result${searchResults.length === 1 ? '' : 's'})`);
 
-            if (deepResearch && searchResults.length < 18) {
+            if (deepResearch && searchResults.length < 14) {
               try {
                 const rssQuery = isWorldNews ? 'latest world news' : (plannerResearchQuery || cleanedSearchQuery || strippedQuery);
                 const extraNews = await api.newsRss(rssQuery);
@@ -3132,7 +3132,7 @@ CRITICAL RULES:
         }
 
         try {
-          const searchRes = await api.search(effectiveSearchQuery, undefined, undefined, deepResearch ? 20 : 15);
+          const searchRes = await api.search(effectiveSearchQuery, undefined, undefined, deepResearch ? 16 : 15);
           let rawResults: SearchResult[] = [];
           let sourceLabel = 'Tavily API';
           let fallbackOccurred = false;
@@ -3148,14 +3148,14 @@ CRITICAL RULES:
             if ((searchRes as { fallbackOccurred?: boolean }).fallbackOccurred) fallbackOccurred = true;
           }
 
-          if (deepResearch && rawResults.length < 18) {
+          if (deepResearch && rawResults.length < 14) {
             try {
               const secondaryQuery =
                 plannerResearchQuery && plannerResearchQuery.toLowerCase() !== effectiveSearchQuery.toLowerCase()
                   ? plannerResearchQuery
                   : `${strippedQuery} in-depth analysis`;
               console.log('[JARVIS Researcher] Deep Research: performing secondary query for richer source pool:', secondaryQuery);
-              const secondaryRes = await api.search(secondaryQuery, undefined, undefined, 20);
+              const secondaryRes = await api.search(secondaryQuery, undefined, undefined, 16);
               let secondaryList: SearchResult[] = [];
               if (Array.isArray(secondaryRes)) {
                 secondaryList = secondaryRes;
@@ -3249,7 +3249,7 @@ CRITICAL RULES:
         `[JARVIS Researcher] Candidate pool evaluated ${rawCandidates.length} raw search results -> passing ${filteredSources.length} sources to Researcher.`,
       );
 
-      const candidatePoolLimit = deepResearch ? 20 : (isNewsQuery ? 12 : 10);
+      const candidatePoolLimit = deepResearch ? 15 : (isNewsQuery ? 12 : 10);
 
       filteredSources.slice(0, candidatePoolLimit).forEach((src, idx) => {
         const pubDateStr = src.publishedAt || src.date ? ` (Published: ${src.publishedAt || src.date})` : '';
@@ -3275,10 +3275,10 @@ CRITICAL RULES:
 
     if (deepResearch) {
       activePrompt += `\n\n[DEEP RESEARCH MODE DIRECTIVE - EXPANDED EVIDENCE GATHERING]:
-1. SOURCE & FACT TARGET: Extract 15-20 distinct, high-quality factual candidates/findings from the provided search sources.
+1. SOURCE & FACT TARGET: Extract 12-15 distinct, high-quality factual candidates/findings from the provided search sources.
 2. MULTI-PILLAR COVERAGE: Cover multiple core pillars/angles of the topic (e.g. underlying architecture/mechanisms, technical specifications, comparative trade-offs, practical implementations, benchmarks, and latest developments).
 3. EXACT URL & CITATIONS: Map each finding to its exact source in the "sources" array with full article URL, domain, and publication date when available.
-4. DETAIL RETENTION: Do not compress or truncate findings into brief generic notes. Provide rich, concrete factual detail for each of the 15-20 candidates so downstream agents have maximum raw material for deep synthesis.`;
+4. DETAIL RETENTION: Do not compress or truncate findings into brief generic notes. Provide rich, concrete factual detail for each of the 12-15 candidates so downstream agents have maximum raw material for deep synthesis.`;
     }
 
     if (activePrompt.includes('{searchSnippets}')) {
@@ -3299,7 +3299,7 @@ CRITICAL RULES:
       {
         role: 'system',
         content: deepResearch
-          ? 'You are the JARVIS Researcher operating in DEEP RESEARCH mode. Extract 15-20 distinct, comprehensive factual findings with full metadata and cite 15-20 sources with exact URLs in valid JSON.'
+          ? 'You are the JARVIS Researcher operating in DEEP RESEARCH mode. Extract 12-15 distinct, comprehensive factual findings with full metadata and cite 12-15 sources with exact URLs in valid JSON.'
           : 'You are the JARVIS Researcher. Extract specific factual points and output valid JSON with facts and sources.',
       },
       { role: 'user', content: activePrompt },
@@ -3483,7 +3483,7 @@ CRITICAL RULES:
 
     let sourcesText = '';
     if (sourcesCollected.length > 0) {
-      const compactSources = sourcesCollected.slice(0, deepResearch ? 20 : 12).map((s, i) => ({
+      const compactSources = sourcesCollected.slice(0, deepResearch ? 15 : 12).map((s, i) => ({
         index: i + 1,
         title: s.title,
         domain: s.domain || 'web',
@@ -3804,8 +3804,8 @@ CRITICAL RULES:
 
     // For news queries, provide the full candidate pool with structured metadata so Reviewer can actively compare and rank all candidates
     let factsForReviewer = '';
-    const reviewerCandidateLimit = deepResearch ? 20 : 12;
-    const reviewerFactLimit = deepResearch ? 20 : 10;
+    const reviewerCandidateLimit = deepResearch ? 15 : 12;
+    const reviewerFactLimit = deepResearch ? 15 : 10;
     if (isNewsQuery && Array.isArray(researcherOutput?.candidates) && researcherOutput.candidates.length > 0) {
       const candidatesPayload = researcherOutput.candidates.slice(0, reviewerCandidateLimit).map((c, idx) => ({
         candidateIndex: idx + 1,
@@ -3959,6 +3959,29 @@ CRITICAL RULES:
       (iss) => !plausibleUnconfirmedList.includes(iss) && !fabricatedList.includes(iss)
     );
 
+    // Eliminate redundancy between Researcher's raw findings and Fact-Checker's verified claims
+    let factsContextBlock = '';
+    if (verifiedList.length > 0) {
+      factsContextBlock = `Key Verified Facts & Claims:\n${verifiedList.map((c) => `- ${c}`).join('\n')}\n`;
+      // Include any complementary unverified non-flagged facts from Researcher not already covered by verified claims
+      const verifiedClaimTexts = new Set(verifiedList.map((c) => c.toLowerCase()));
+      const unverifiedComplement = factsList.filter((f) => {
+        const lower = f.toLowerCase();
+        const snippet = lower.slice(0, 35);
+        const alreadyCovered = Array.from(verifiedClaimTexts).some((vc) => vc.includes(snippet) || lower.includes(vc.slice(0, 35)));
+        const isFlagged = issuesList.some((iss) => iss.toLowerCase().includes(snippet));
+        const isFabricated = fabricatedList.some((fab) => fab.toLowerCase().includes(snippet));
+        return !alreadyCovered && !isFlagged && !isFabricated;
+      });
+      if (unverifiedComplement.length > 0) {
+        factsContextBlock += `Additional Research Findings:\n${unverifiedComplement.slice(0, 5).map((f) => `- ${f}`).join('\n')}\n`;
+      }
+    } else if (factsList.length > 0) {
+      factsContextBlock = `Key Verified Facts:\n${factsList.map((f) => `- ${f}`).join('\n')}\n`;
+    }
+
+    const consolidatedFactsText = factsContextBlock.trim();
+
     // Build rich variable substitution dictionary for Synthesizer prompts
     const synthReplacements: Record<string, string> = {
       task: plannerOutput.task || query,
@@ -3968,9 +3991,9 @@ CRITICAL RULES:
       advisorOutput: advisorOutput,
       advisorAnalysis: advisorOutput,
       advisorTradeoffs: advisorOutput,
-      facts: factsList.map((f, i) => `${i + 1}. ${f}`).join('\n'),
-      research: factsList.map((f, i) => `${i + 1}. ${f}`).join('\n'),
-      claims: factsList.map((f, i) => `${i + 1}. ${f}`).join('\n'),
+      facts: consolidatedFactsText || factsList.map((f, i) => `${i + 1}. ${f}`).join('\n'),
+      research: consolidatedFactsText || factsList.map((f, i) => `${i + 1}. ${f}`).join('\n'),
+      claims: consolidatedFactsText || factsList.map((f, i) => `${i + 1}. ${f}`).join('\n'),
       wikidata: wikidataReportSection,
       wikidataReport: wikidataReportSection,
       wikidataSection: wikidataReportSection,
@@ -4081,7 +4104,7 @@ CRITICAL RULES:
     }
 
     const sourcesListText = Array.isArray(researcherOutput?.sources) && researcherOutput.sources.length > 0
-      ? researcherOutput.sources.map((s) => `- [${s.title}](${s.url}) (${s.domain || 'web'})`).join('\n')
+      ? researcherOutput.sources.slice(0, deepResearch ? 15 : 12).map((s) => `- [${s.title}](${s.url}) (${s.domain || 'web'})`).join('\n')
       : 'No external sources retrieved.';
 
     const reviewerMissingList = Array.isArray(reviewerOutput?.missing) ? reviewerOutput.missing : [];
@@ -4142,7 +4165,7 @@ User Query: "${strippedQuery}"
 ${webFetchContextBlock}
 Planner Guidance: ${plannerPlanText}
 ${advisorOutput ? `Advisor Conceptual Analysis & Technical Comparison (General Knowledge):\n${advisorOutput}\n` : ''}
-${wikidataReportSection ? `[WIKIDATA INTELLIGENCE & REQUIRED REPORT SECTION]:\n${wikidataReportSection}\n\nCRITICAL REPORT REQUIREMENT: Because Wikidata was queried, your report output MUST include a section titled exactly:\n=== WIKIDATA ===\nfollowed by the Wikidata result details (or "no entry found" if no entry was found).\n\n` : ''}${wikipediaArticleSummary ? `[WIKIPEDIA GROUNDING & ENCYCLOPEDIC INTELLIGENCE]:\n${wikipediaArticleSummary}\n\n(SYNTHESIS MANDATE: Naturally blend this authoritative Wikipedia encyclopedic knowledge directly into your main synthesized prose. DO NOT output any visible "=== WIKIPEDIA ===" section header in your response; cite the Wikipedia source using standard bracket notation [1] from the sources list below.)\n\n` : ''}${factsList.length > 0 ? `Key Verified Facts:\n${factsList.map((f) => `- ${f}`).join('\n')}\n` : ''}${verifiedList.length > 0 ? `Verified Claims:\n${verifiedList.map((c) => `- ${c}`).join('\n')}\n` : ''}${plausibleUnconfirmedList.length > 0 ? `Fact-Checker Plausible Unconfirmed Details (CRITICAL - INCLUDE WITH NATURAL HEDGE/CAVEAT, e.g. "reportedly exists/released, based on a single source, not independently confirmed" - DO NOT OMIT DATES, TIERS, OR PLAUSIBLE CLAIMS):\n${plausibleUnconfirmedList.map((p) => `- ${p}`).join('\n')}\n` : ''}${fabricatedList.length > 0 ? `Fact-Checker Fabricated/Contradicted Items (HARD EXCLUSION - DO NOT MENTION IN FINAL SYNTHESIS):\n${fabricatedList.map((fb) => `- ${fb}`).join('\n')}\n` : ''}${generalIssuesList.length > 0 ? `Fact-Checker Identified Issues (Exclude only specific invalid claims; do NOT discard other valid qualifying candidates):\n${generalIssuesList.map((i) => `- ${i}`).join('\n')}\n` : ''}${reviewerMissingList.length > 0 ? `Reviewer Missing Context Suggestions (Advisory):\n${reviewerMissingList.map((m) => `- ${m}`).join('\n')}\n` : ''}${reviewerIssuesList.length > 0 ? `Reviewer Flagged Issues & Scope Critique (Advisory - exclude only specific problematic items, preserve and synthesize all other valid candidates):\n${reviewerIssuesList.map((iss) => `- ${iss}`).join('\n')}\n` : ''}${reviewerRecommendation ? `Reviewer Actionable Guidance & Candidate Priority (Advisory ranking guidance):\n${reviewerRecommendation}\n` : ''}[SYNTHESIS MANDATE]: If any specific candidates were flagged or excluded by Fact-Checker or Reviewer, synthesize all remaining verified, valid candidates into the final answer. Only state that verified news/data is unavailable if ALL candidates are completely unusable or no verified data exists.
+${wikidataReportSection ? `[WIKIDATA INTELLIGENCE & REQUIRED REPORT SECTION]:\n${wikidataReportSection}\n\nCRITICAL REPORT REQUIREMENT: Because Wikidata was queried, your report output MUST include a section titled exactly:\n=== WIKIDATA ===\nfollowed by the Wikidata result details (or "no entry found" if no entry was found).\n\n` : ''}${wikipediaArticleSummary ? `[WIKIPEDIA GROUNDING & ENCYCLOPEDIC INTELLIGENCE]:\n${wikipediaArticleSummary}\n\n(SYNTHESIS MANDATE: Naturally blend this authoritative Wikipedia encyclopedic knowledge directly into your main synthesized prose. DO NOT output any visible "=== WIKIPEDIA ===" section header in your response; cite the Wikipedia source using standard bracket notation [1] from the sources list below.)\n\n` : ''}${factsContextBlock}${plausibleUnconfirmedList.length > 0 ? `Fact-Checker Plausible Unconfirmed Details (CRITICAL - INCLUDE WITH NATURAL HEDGE/CAVEAT, e.g. "reportedly exists/released, based on a single source, not independently confirmed" - DO NOT OMIT DATES, TIERS, OR PLAUSIBLE CLAIMS):\n${plausibleUnconfirmedList.map((p) => `- ${p}`).join('\n')}\n` : ''}${fabricatedList.length > 0 ? `Fact-Checker Fabricated/Contradicted Items (HARD EXCLUSION - DO NOT MENTION IN FINAL SYNTHESIS):\n${fabricatedList.map((fb) => `- ${fb}`).join('\n')}\n` : ''}${generalIssuesList.length > 0 ? `Fact-Checker Identified Issues (Exclude only specific invalid claims; do NOT discard other valid qualifying candidates):\n${generalIssuesList.map((i) => `- ${i}`).join('\n')}\n` : ''}${reviewerMissingList.length > 0 ? `Reviewer Missing Context Suggestions (Advisory):\n${reviewerMissingList.map((m) => `- ${m}`).join('\n')}\n` : ''}${reviewerIssuesList.length > 0 ? `Reviewer Flagged Issues & Scope Critique (Advisory - exclude only specific problematic items, preserve and synthesize all other valid candidates):\n${reviewerIssuesList.map((iss) => `- ${iss}`).join('\n')}\n` : ''}${reviewerRecommendation ? `Reviewer Actionable Guidance & Candidate Priority (Advisory ranking guidance):\n${reviewerRecommendation}\n` : ''}[SYNTHESIS MANDATE]: If any specific candidates were flagged or excluded by Fact-Checker or Reviewer, synthesize all remaining verified, valid candidates into the final answer. Only state that verified news/data is unavailable if ALL candidates are completely unusable or no verified data exists.
 Retrieved Ground-Truth Sources (CRITICAL RULE: Only cite sources from this exact list. Never invent or cite any other sources):
 ${sourcesListText}${customInsightsBlock}${personalIdentityDirective}${architectureReferenceDirective}`;
 
