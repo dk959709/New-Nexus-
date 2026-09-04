@@ -1166,6 +1166,74 @@ async function executeAiWithProviderOrFallback({
   };
 }
 
+async function fetchExaSearch(query: string, requestedMax = 15): Promise<SearchResult[]> {
+  const exaKey = (process.env.EXA_API_KEY || '').trim();
+  if (!exaKey) return [];
+  try {
+    const numResults = Math.min(Math.max(requestedMax, 5), 25);
+    const res = await fetch('https://api.exa.ai/search', {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'x-api-key': exaKey,
+      },
+      body: JSON.stringify({
+        query,
+        numResults,
+        type: 'auto',
+        contents: {
+          text: { maxCharacters: 1000 },
+          highlights: true,
+        },
+      }),
+      signal: AbortSignal.timeout(7000),
+    });
+
+    if (!res.ok) {
+      console.warn(`[Exa AI] Search API returned HTTP ${res.status}`);
+      return [];
+    }
+
+    const data = (await res.json()) as {
+      results?: Array<{
+        title?: string;
+        url?: string;
+        publishedDate?: string;
+        author?: string;
+        image?: string;
+        favicon?: string;
+        text?: string;
+        highlights?: string[];
+      }>;
+    };
+
+    if (!Array.isArray(data.results)) return [];
+
+    return data.results
+      .map((item) => {
+        const urlValue = String(item.url || '');
+        const snippet =
+          Array.isArray(item.highlights) && item.highlights.length > 0
+            ? item.highlights.join(' ')
+            : (item.text || item.title || '');
+
+        return {
+          title: String(item.title || 'Exa Search Result').trim(),
+          url: urlValue,
+          domain: domainOf(urlValue),
+          description: String(snippet).trim().slice(0, 1000),
+          date: item.publishedDate,
+          image: item.image,
+          type: 'web' as const,
+        };
+      })
+      .filter((item) => item.title && item.url);
+  } catch (err) {
+    console.warn('[Exa AI Fallback Search Error]:', err);
+    return [];
+  }
+}
+
 async function fetchDuckDuckGoSearch(query: string): Promise<SearchResult[]> {
   try {
     const res = await fetch(`https://html.duckduckgo.com/html/?q=${encodeURIComponent(query)}`, {
@@ -1548,12 +1616,12 @@ async function searchProvider(input: z.infer<typeof searchSchema>): Promise<{ re
   const url = process.env.SEARCH_API_URL || (key ? 'https://api.tavily.com/search' : undefined);
   let primaryResults: SearchResult[] = [];
   let primaryFailed = false;
+  const requestedMax = input.max_results ?? input.maxResults ?? 15;
 
   // 1. Try Tavily search as normal (existing SEARCH_API_KEY flow)
   if (key && url) {
     try {
       const isTavily = url.includes('tavily.com') || Boolean(process.env.TAVILY_API_KEY);
-      const requestedMax = input.max_results ?? input.maxResults ?? 15;
       const bodyPayload = isTavily
         ? {
             api_key: key,
@@ -1645,36 +1713,70 @@ async function searchProvider(input: z.infer<typeof searchSchema>): Promise<{ re
     return { results: primaryResults, searchSource: 'Tavily API', fallbackOccurred: false };
   }
 
-  // 3. Fall back to DuckDuckGo search (reusing existing fetchDuckDuckGoSearch in this codebase)
-  const fallbackReason = primaryFailed
-    ? 'Tavily failed, falling back to DuckDuckGo'
+  const tavilyFallbackReason = primaryFailed
+    ? 'Tavily failed'
     : primaryResults.length < 3
-      ? 'Tavily returned insufficient results, falling back to DuckDuckGo'
-      : 'Domain verification triggered DuckDuckGo fallback';
+      ? 'Tavily returned insufficient results'
+      : 'Domain verification triggered Tavily fallback';
 
-  console.log(`[Search] Fallback to DuckDuckGo Search triggered (${fallbackReason}) for query: "${input.query}"`);
+  // 3. Fallback 1: Exa AI search (positioned between Tavily and DuckDuckGo)
+  let exaResults: SearchResult[] = [];
+  const exaKey = (process.env.EXA_API_KEY || '').trim();
+
+  if (exaKey) {
+    console.log(`[Search] Fallback 1 to Exa AI Search triggered (${tavilyFallbackReason}) for query: "${input.query}"`);
+    exaResults = await fetchExaSearch(input.query, requestedMax);
+    if (exaResults.length >= 3) {
+      console.log(`[Search] Source Used: Exa AI Fallback (${exaResults.length} results) for query: "${input.query}"`);
+      let finalResults = exaResults;
+      if (primaryResults.length > 0) {
+        const seenUrls = new Set(exaResults.map((r) => r.url.toLowerCase()));
+        const extraPrimary = primaryResults.filter((r) => !seenUrls.has(r.url.toLowerCase()));
+        finalResults = [...exaResults, ...extraPrimary];
+      }
+      return {
+        results: finalResults,
+        searchSource: 'Exa AI fallback',
+        fallbackOccurred: true,
+        fallbackReason: `${tavilyFallbackReason}, falling back to Exa AI`,
+      };
+    } else {
+      console.log(`[Search] Exa AI returned ${exaResults.length} results (insufficient), proceeding to Fallback 2 (DuckDuckGo)...`);
+    }
+  }
+
+  // 4. Fallback 2: DuckDuckGo search (moved to Fallback 2)
+  const ddgFallbackReason = primaryFailed
+    ? (exaKey ? 'Tavily & Exa AI failed, falling back to DuckDuckGo' : 'Tavily failed, falling back to DuckDuckGo')
+    : (exaKey ? 'Tavily & Exa AI returned insufficient results, falling back to DuckDuckGo' : 'Tavily returned insufficient results, falling back to DuckDuckGo');
+
+  console.log(`[Search] Fallback 2 to DuckDuckGo Search triggered (${ddgFallbackReason}) for query: "${input.query}"`);
   const ddgResults = await fetchDuckDuckGoSearch(input.query);
 
-  // 4. Merge or replace results with DuckDuckGo output, then pass to the Researcher agent
   if (ddgResults.length > 0) {
     console.log(`[Search] Source Used: DuckDuckGo Fallback (${ddgResults.length} results) for query: "${input.query}"`);
     let finalResults = ddgResults;
-    if (primaryResults.length > 0) {
+    const priorResults = [...exaResults, ...primaryResults];
+    if (priorResults.length > 0) {
       const seenUrls = new Set(ddgResults.map((r) => r.url.toLowerCase()));
-      const extraPrimary = primaryResults.filter((r) => !seenUrls.has(r.url.toLowerCase()));
-      finalResults = [...ddgResults, ...extraPrimary];
-      return {
-        results: finalResults,
-        searchSource: 'DuckDuckGo fallback',
-        fallbackOccurred: true,
-        fallbackReason,
-      };
+      const extraPrior = priorResults.filter((r) => !seenUrls.has(r.url.toLowerCase()));
+      finalResults = [...ddgResults, ...extraPrior];
     }
     return {
       results: finalResults,
       searchSource: 'DuckDuckGo fallback',
       fallbackOccurred: true,
-      fallbackReason,
+      fallbackReason: ddgFallbackReason,
+    };
+  }
+
+  if (exaResults.length > 0) {
+    console.log(`[Search] Source Used: Exa AI (Partial ${exaResults.length} results) for query: "${input.query}"`);
+    return {
+      results: exaResults,
+      searchSource: 'Exa AI fallback',
+      fallbackOccurred: true,
+      fallbackReason: `${tavilyFallbackReason}, partial Exa AI results`,
     };
   }
 
@@ -1683,7 +1785,7 @@ async function searchProvider(input: z.infer<typeof searchSchema>): Promise<{ re
     return { results: primaryResults, searchSource: 'Tavily API', fallbackOccurred: false };
   }
 
-  // Fallback: Wikipedia search
+  // 5. Fallback 3: Wikipedia search (moved to Fallback 3, unchanged trigger conditions)
   if (input.category === 'ALL' || !input.category) {
     const wikiResults = await fetchWikipediaSearch(input.query, 10);
     if (wikiResults.length > 0) {
@@ -1692,18 +1794,12 @@ async function searchProvider(input: z.infer<typeof searchSchema>): Promise<{ re
         results: wikiResults,
         searchSource: 'Wikipedia Fallback',
         fallbackOccurred: true,
-        fallbackReason: 'Primary & DuckDuckGo returned 0 results, used Wikipedia fallback',
+        fallbackReason: 'Primary, Exa AI & DuckDuckGo returned 0 results, used Wikipedia fallback',
       };
     }
   }
 
-  if (!key || !url) {
-    return { results: [], searchSource: 'DuckDuckGo fallback', fallbackOccurred: true, fallbackReason };
-  }
-  if (primaryFailed) {
-    return { results: [], searchSource: 'DuckDuckGo fallback', fallbackOccurred: true, fallbackReason };
-  }
-  return { results: [], searchSource: 'No Results', fallbackOccurred: false };
+  return { results: [], searchSource: 'No Results', fallbackOccurred: true, fallbackReason: ddgFallbackReason };
 }
 
 function extractTagContents(html: string, tagName: string): string[] {
@@ -1878,7 +1974,7 @@ function extractReadableTextFromHtml(html: string): {
   }
 
   const rawTotalLength = fullText.length;
-  const MAX_CONTENT_CHARS = 3500;
+  const MAX_CONTENT_CHARS = 4500;
   let textContent = fullText;
   let isTruncated = false;
 
@@ -2181,7 +2277,7 @@ async function renderPageViaJinaReader(url: string): Promise<{
     }
 
     const rawTotalLength = rawContent.length;
-    const MAX_CONTENT_CHARS = 3500;
+    const MAX_CONTENT_CHARS = 4500;
     let textContent = rawContent;
     let isTruncated = false;
 
@@ -2462,10 +2558,10 @@ async function fetchDirectWebPage(targetUrl: string): Promise<{
         const wikiSummary = await fetchWikipediaSummary(wikiQuery);
         if (wikiSummary && wikiSummary.extract) {
           const wikiText = wikiSummary.extract;
-          const isTrunc = wikiText.length > 3500;
+          const isTrunc = wikiText.length > 4500;
           const cappedWikiText = isTrunc
-            ? wikiText.slice(0, 3500) +
-              `\n\n[Note: Page content truncated from ${wikiText.length.toLocaleString()} characters to 3,500 characters for optimal synthesis.]`
+            ? wikiText.slice(0, 4500) +
+              `\n\n[Note: Page content truncated from ${wikiText.length.toLocaleString()} characters to 4,500 characters for optimal synthesis.]`
             : wikiText;
           return {
             ok: true,
@@ -4883,7 +4979,7 @@ async function startServer() {
   app.get('/api/config/status', (_req, res) =>
     res.json({
       data: {
-        search: Boolean(process.env.SEARCH_API_KEY && process.env.SEARCH_API_URL),
+        search: Boolean((process.env.SEARCH_API_KEY && process.env.SEARCH_API_URL) || process.env.TAVILY_API_KEY || process.env.EXA_API_KEY),
         weather: true,
         map: Boolean(process.env.MAP_API_KEY),
         ai: Boolean(

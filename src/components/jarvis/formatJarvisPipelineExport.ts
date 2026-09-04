@@ -1006,7 +1006,7 @@ function formatAgentStep(step: JarvisExecutionStep): string {
       url = String(wObj.finalUrl || wObj.url || '');
       length = typeof wObj.length === 'number' ? wObj.length : 0;
       rawTotalLength = typeof wObj.rawTotalLength === 'number' ? wObj.rawTotalLength : length;
-      isTruncated = Boolean(wObj.isTruncated || (rawTotalLength > 3500));
+      isTruncated = Boolean(wObj.isTruncated || (rawTotalLength > 4500));
       description = String(wObj.description || '');
       headings = Array.isArray(wObj.headings) ? (wObj.headings as string[]) : [];
       excerpt = String(wObj.textContent || wObj.preview || wObj.contentExcerpt || '');
@@ -1016,7 +1016,7 @@ function formatAgentStep(step: JarvisExecutionStep): string {
     if (title) lines.push(`Page Title: ${title}`);
     if (url) lines.push(`Source URL: ${url}`);
     if (rawTotalLength > 0) {
-      lines.push(`Parsed Content Length: ${rawTotalLength.toLocaleString()} characters${isTruncated ? ' (capped to 3,500 characters for processing)' : ''}`);
+      lines.push(`Parsed Content Length: ${rawTotalLength.toLocaleString()} characters${isTruncated ? ' (capped to 4,500 characters for processing)' : ''}`);
     }
     if (description) lines.push(`Description: ${description}`);
     if (headings.length > 0) {

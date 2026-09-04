@@ -2707,7 +2707,7 @@ CRITICAL RULES:
 
     if (webRes.ok && webRes.data) {
       const totalLen = webRes.data.rawTotalLength || webRes.data.length || (webRes.data.textContent ? webRes.data.textContent.length : 0);
-      const isTrunc = Boolean(webRes.data.isTruncated || totalLen > 3500);
+      const isTrunc = Boolean(webRes.data.isTruncated || totalLen > 4500);
 
       webFetchData = {
         url: webRes.data.url || targetWebUrl,
@@ -2746,7 +2746,7 @@ CRITICAL RULES:
               : '';
 
       const summaryText = isTrunc
-        ? `Successfully fetched ${totalLen.toLocaleString()} characters from ${webFetchData.title} (truncated to 3,500 chars for optimal synthesis).${renderNote}`
+        ? `Successfully fetched ${totalLen.toLocaleString()} characters from ${webFetchData.title} (truncated to 4,500 chars for optimal synthesis).${renderNote}`
         : `Successfully fetched ${totalLen.toLocaleString()} characters from ${webFetchData.title}.${renderNote}`;
 
       const fetchProviderName =
@@ -3190,9 +3190,15 @@ CRITICAL RULES:
           searchSource = sourceLabel;
           console.log('[JARVIS Researcher] RAW DATA USED (DEBUG) - Search Results:', JSON.stringify(searchResults, null, 2));
 
-          if (fallbackOccurred || sourceLabel.toLowerCase().includes('duckduckgo')) {
-            logToJarvisTerminal('Tavily failed, falling back to DuckDuckGo', 'warning');
+          if (sourceLabel.toLowerCase().includes('exa')) {
+            logToJarvisTerminal('Tavily failed, falling back to Exa AI', 'warning');
+            logToJarvisTerminal(`Using Exa AI fallback (${searchResults.length} result${searchResults.length === 1 ? '' : 's'})`);
+          } else if (sourceLabel.toLowerCase().includes('duckduckgo')) {
+            logToJarvisTerminal(fallbackOccurred ? 'Primary search failed, falling back to DuckDuckGo' : 'Falling back to DuckDuckGo', 'warning');
             logToJarvisTerminal(`Using DuckDuckGo fallback (${searchResults.length} result${searchResults.length === 1 ? '' : 's'})`);
+          } else if (sourceLabel.toLowerCase().includes('wikipedia')) {
+            logToJarvisTerminal('Web search failed, falling back to Wikipedia', 'warning');
+            logToJarvisTerminal(`Using Wikipedia fallback (${searchResults.length} result${searchResults.length === 1 ? '' : 's'})`);
           } else if (sourceLabel.toLowerCase().includes('tavily')) {
             logToJarvisTerminal(`Using Tavily API (${searchResults.length} result${searchResults.length === 1 ? '' : 's'})`);
           } else {
@@ -3449,7 +3455,7 @@ CRITICAL RULES:
           pageTitle: webFetchData.title,
           metaDescription: webFetchData.description,
           headings: webFetchData.headings,
-          contentExcerpt: webFetchData.textContent.slice(0, 3500),
+          contentExcerpt: webFetchData.textContent.slice(0, 4500),
           totalCharacters: webFetchData.rawTotalLength || webFetchData.length,
           isTruncated: webFetchData.isTruncated || false,
         },
@@ -4153,7 +4159,7 @@ When answering questions about JARVIS's architecture, agent count, or capabiliti
         ? `\n\n[DIRECT WEBPAGE EXTRACTION - ${webFetchData.url}]:
 Title: ${webFetchData.title}
 URL: ${webFetchData.finalUrl || webFetchData.url}
-${webFetchData.description ? `Meta Description: ${webFetchData.description}\n` : ''}${webFetchData.headings && webFetchData.headings.length > 0 ? `Key Page Headings: ${webFetchData.headings.join(' • ')}\n` : ''}${webFetchData.isTruncated ? `[Total Document Size: ${(webFetchData.rawTotalLength || webFetchData.length).toLocaleString()} characters - text content capped to ~3,500 characters for optimal processing]\n` : ''}Page Content Extracted (Read directly from target URL):
+${webFetchData.description ? `Meta Description: ${webFetchData.description}\n` : ''}${webFetchData.headings && webFetchData.headings.length > 0 ? `Key Page Headings: ${webFetchData.headings.join(' • ')}\n` : ''}${webFetchData.isTruncated ? `[Total Document Size: ${(webFetchData.rawTotalLength || webFetchData.length).toLocaleString()} characters - text content capped to ~4,500 characters for optimal processing]\n` : ''}Page Content Extracted (Read directly from target URL):
 ${webFetchData.textContent}
 
 DIRECT WEBPAGE ANALYSIS DIRECTIVES:
