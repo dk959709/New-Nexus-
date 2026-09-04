@@ -2670,7 +2670,7 @@ CRITICAL RULES:
     length: number;
     rawTotalLength?: number;
     isTruncated?: boolean;
-    renderedVia?: 'static' | 'headless-browser' | 'render-proxy' | 'wikipedia-api';
+    renderedVia?: 'static' | 'headless-browser' | 'render-proxy' | 'jina-reader' | 'wikipedia-api';
     description?: string;
     headings?: string[];
     preview: string;
@@ -2740,19 +2740,30 @@ CRITICAL RULES:
         webFetchData.renderedVia === 'headless-browser'
           ? ' (page needed JavaScript to load - rendered in a headless browser.)'
           : webFetchData.renderedVia === 'render-proxy'
-            ? ' (page needed JavaScript to load - rendered via proxy fallback.)'
-            : '';
+            ? ' (page needed JavaScript to load - rendered via Browserless proxy fallback.)'
+            : webFetchData.renderedVia === 'jina-reader'
+              ? ' (retrieved via Jina Reader fallback.)'
+              : '';
 
       const summaryText = isTrunc
         ? `Successfully fetched ${totalLen.toLocaleString()} characters from ${webFetchData.title} (truncated to 3,500 chars for optimal synthesis).${renderNote}`
         : `Successfully fetched ${totalLen.toLocaleString()} characters from ${webFetchData.title}.${renderNote}`;
+
+      const fetchProviderName =
+        webFetchData.renderedVia === 'jina-reader'
+          ? 'Jina Reader'
+          : webFetchData.renderedVia === 'render-proxy'
+            ? 'Browserless Proxy'
+            : webFetchData.renderedVia === 'headless-browser'
+              ? 'Headless Browser'
+              : 'Direct HTTP Fetch';
 
       updateStep({
         agentId: 'webFetcher',
         name: 'Web Fetcher',
         icon: 'Globe',
         status: 'completed',
-        providerName: 'Direct HTTP Fetch',
+        providerName: fetchProviderName,
         model: 'Direct Web Reader',
         durationMs: webFetchDuration,
         summary: summaryText,

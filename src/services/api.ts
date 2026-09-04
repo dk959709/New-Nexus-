@@ -66,7 +66,7 @@ export interface WebFetchResult {
   length: number;
   rawTotalLength?: number;
   isTruncated?: boolean;
-  renderedVia?: 'static' | 'headless-browser' | 'render-proxy' | 'wikipedia-api';
+  renderedVia?: 'static' | 'headless-browser' | 'render-proxy' | 'jina-reader' | 'wikipedia-api';
   status: number;
 }
 

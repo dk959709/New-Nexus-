@@ -1946,6 +1946,120 @@ async function renderPageViaProxy(url: string): Promise<{ ok: boolean; html?: st
   }
 }
 
+// Fallback 3: Jina Reader (https://r.jina.ai/<url>) - free, no API key required
+async function renderPageViaJinaReader(url: string): Promise<{
+  ok: boolean;
+  data?: {
+    title: string;
+    description: string;
+    headings: string[];
+    textContent: string;
+    length: number;
+    rawTotalLength: number;
+    isTruncated: boolean;
+  };
+  error?: string;
+}> {
+  try {
+    const jinaUrl = `https://r.jina.ai/${url}`;
+    console.log(`[Server WebFetch] Attempting Fallback 3 (Jina Reader): ${jinaUrl}`);
+
+    const controller = new AbortController();
+    const timeoutId = setTimeout(() => controller.abort(), 15000);
+
+    const response = await fetch(jinaUrl, {
+      headers: {
+        'Accept': 'application/json',
+      },
+      signal: controller.signal,
+    });
+    clearTimeout(timeoutId);
+
+    if (!response.ok) {
+      return { ok: false, error: `Jina Reader returned HTTP ${response.status}` };
+    }
+
+    const rawBodyText = await response.text().catch(() => '');
+    if (!rawBodyText || !rawBodyText.trim()) {
+      return { ok: false, error: 'Jina Reader returned an empty response.' };
+    }
+
+    let title = '';
+    let description = '';
+    let rawContent = '';
+
+    try {
+      const json = JSON.parse(rawBodyText) as {
+        data?: {
+          title?: string;
+          description?: string;
+          content?: string;
+        };
+        title?: string;
+        description?: string;
+        content?: string;
+      };
+      if (json && (json.data || json.content)) {
+        title = (json.data?.title || json.title || '').trim();
+        description = (json.data?.description || json.description || '').trim();
+        rawContent = (json.data?.content || json.content || '').trim();
+      }
+    } catch {
+      // Non-JSON format (Markdown plain text)
+    }
+
+    if (!rawContent && rawBodyText) {
+      const titleMatch = rawBodyText.match(/^Title:\s*(.+)$/m);
+      if (titleMatch) title = titleMatch[1].trim();
+      const contentMatch = rawBodyText.match(/Markdown Content:\s*([\s\S]+)$/i);
+      rawContent = contentMatch ? contentMatch[1].trim() : rawBodyText.trim();
+    }
+
+    if (!rawContent || rawContent.trim().length === 0) {
+      return { ok: false, error: 'Jina Reader returned empty content.' };
+    }
+
+    const headings: string[] = [];
+    const headingRegex = /^(#{1,3})\s+(.+)$/gm;
+    let hMatch: RegExpExecArray | null;
+    while ((hMatch = headingRegex.exec(rawContent)) !== null) {
+      const level = hMatch[1].length;
+      const hText = hMatch[2].replace(/[#*_`]/g, '').trim();
+      if (hText && !headings.includes(hText)) {
+        headings.push(`H${level}: ${hText}`);
+      }
+    }
+
+    const rawTotalLength = rawContent.length;
+    const MAX_CONTENT_CHARS = 3500;
+    let textContent = rawContent;
+    let isTruncated = false;
+
+    if (rawTotalLength > MAX_CONTENT_CHARS) {
+      isTruncated = true;
+      textContent =
+        rawContent.slice(0, MAX_CONTENT_CHARS) +
+        `\n\n[Note: Page content truncated from ${rawTotalLength.toLocaleString()} characters to ${MAX_CONTENT_CHARS.toLocaleString()} characters for optimal synthesis.]`;
+    }
+
+    return {
+      ok: true,
+      data: {
+        title,
+        description,
+        headings: headings.slice(0, 25),
+        textContent,
+        length: textContent.length,
+        rawTotalLength,
+        isTruncated,
+      },
+    };
+  } catch (err) {
+    const errObj = err as Error;
+    return { ok: false, error: `Jina Reader failed: ${errObj.message || 'Network error'}` };
+  }
+}
+
 async function fetchDirectWebPage(targetUrl: string): Promise<{
   ok: boolean;
   data?: {
@@ -1958,7 +2072,7 @@ async function fetchDirectWebPage(targetUrl: string): Promise<{
     length: number;
     rawTotalLength: number;
     isTruncated: boolean;
-    renderedVia: 'static' | 'headless-browser' | 'render-proxy' | 'wikipedia-api';
+    renderedVia: 'static' | 'headless-browser' | 'render-proxy' | 'jina-reader' | 'wikipedia-api';
     status: number;
   };
   error?: string;
@@ -2006,7 +2120,7 @@ async function fetchDirectWebPage(targetUrl: string): Promise<{
     console.log(`[Server WebFetch] Response status ${response.status} ${response.statusText} for ${normalizedUrl}`);
 
     if (!response.ok) {
-      // If it's a Wikipedia page that encountered an issue, try Wikipedia API summary as fallback
+      // If it's a Wikipedia page that encountered an issue, try Wikipedia API summary first
       if (parsed.hostname.includes('wikipedia.org')) {
         const articlePath = parsed.pathname.replace(/^\/wiki\//, '').replace(/^\//, '');
         const wikiQuery = decodeURIComponent(articlePath || 'Main_Page');
@@ -2034,6 +2148,79 @@ async function fetchDirectWebPage(targetUrl: string): Promise<{
         }
       }
 
+      // Direct fetch was blocked or failed (e.g. 403 Forbidden, 429 Rate Limit, 500/503).
+      // Cascade through Fallback 1 (Headless) -> Fallback 2 (Browserless proxy) -> Fallback 3 (Jina Reader)
+      console.log(`[Server WebFetch] Direct fetch returned HTTP ${response.status}. Attempting fallback cascade...`);
+
+      // Fallback 1: Headless Chromium
+      const headlessResult = await renderPageHeadless(normalizedUrl);
+      if (headlessResult.ok && headlessResult.html) {
+        const renderedData = extractReadableTextFromHtml(headlessResult.html);
+        if (renderedData.textContent.trim().length > 100) {
+          return {
+            ok: true,
+            data: {
+              url: normalizedUrl,
+              finalUrl: normalizedUrl,
+              title: renderedData.title || parsed.hostname,
+              description: renderedData.description,
+              headings: renderedData.headings,
+              textContent: renderedData.textContent,
+              length: renderedData.textContent.length,
+              rawTotalLength: renderedData.rawTotalLength,
+              isTruncated: renderedData.isTruncated,
+              renderedVia: 'headless-browser',
+              status: 200,
+            },
+          };
+        }
+      }
+
+      // Fallback 2: Browserless / external render proxy (RENDER_PROXY_URL)
+      const proxyResult = await renderPageViaProxy(normalizedUrl);
+      if (proxyResult.ok && proxyResult.html) {
+        const renderedData = extractReadableTextFromHtml(proxyResult.html);
+        if (renderedData.textContent.trim().length > 100) {
+          return {
+            ok: true,
+            data: {
+              url: normalizedUrl,
+              finalUrl: normalizedUrl,
+              title: renderedData.title || parsed.hostname,
+              description: renderedData.description,
+              headings: renderedData.headings,
+              textContent: renderedData.textContent,
+              length: renderedData.textContent.length,
+              rawTotalLength: renderedData.rawTotalLength,
+              isTruncated: renderedData.isTruncated,
+              renderedVia: 'render-proxy',
+              status: 200,
+            },
+          };
+        }
+      }
+
+      // Fallback 3: Jina Reader (https://r.jina.ai/<url>)
+      const jinaResult = await renderPageViaJinaReader(normalizedUrl);
+      if (jinaResult.ok && jinaResult.data && jinaResult.data.textContent.trim().length > 100) {
+        return {
+          ok: true,
+          data: {
+            url: normalizedUrl,
+            finalUrl: normalizedUrl,
+            title: jinaResult.data.title || parsed.hostname,
+            description: jinaResult.data.description,
+            headings: jinaResult.data.headings,
+            textContent: jinaResult.data.textContent,
+            length: jinaResult.data.length,
+            rawTotalLength: jinaResult.data.rawTotalLength,
+            isTruncated: jinaResult.data.isTruncated,
+            renderedVia: 'jina-reader',
+            status: 200,
+          },
+        };
+      }
+
       return {
         ok: false,
         error: `HTTP ${response.status} (${response.statusText || 'Fetch Error'}) when requesting ${normalizedUrl}`,
@@ -2050,9 +2237,10 @@ async function fetchDirectWebPage(targetUrl: string): Promise<{
 
     let parsedData = extractReadableTextFromHtml(rawBody);
 
-    let renderedVia: 'static' | 'headless-browser' | 'render-proxy' = 'static';
+    let renderedVia: 'static' | 'headless-browser' | 'render-proxy' | 'jina-reader' = 'static';
 
     if (isLikelyJsGatedPage(rawBody, parsedData.textContent)) {
+      // Fallback 1: Headless Chromium
       const headlessResult = await renderPageHeadless(normalizedUrl);
       if (headlessResult.ok && headlessResult.html) {
         const renderedData = extractReadableTextFromHtml(headlessResult.html);
@@ -2061,12 +2249,27 @@ async function fetchDirectWebPage(targetUrl: string): Promise<{
           renderedVia = 'headless-browser';
         }
       } else {
+        // Fallback 2: Browserless via RENDER_PROXY_URL
         const proxyResult = await renderPageViaProxy(normalizedUrl);
         if (proxyResult.ok && proxyResult.html) {
           const renderedData = extractReadableTextFromHtml(proxyResult.html);
           if (renderedData.textContent.trim().length > parsedData.textContent.trim().length) {
             parsedData = renderedData;
             renderedVia = 'render-proxy';
+          }
+        } else {
+          // Fallback 3: Jina Reader
+          const jinaResult = await renderPageViaJinaReader(normalizedUrl);
+          if (jinaResult.ok && jinaResult.data && jinaResult.data.textContent.trim().length > parsedData.textContent.trim().length) {
+            parsedData = {
+              title: jinaResult.data.title || parsedData.title,
+              description: jinaResult.data.description || parsedData.description,
+              headings: jinaResult.data.headings.length > 0 ? jinaResult.data.headings : parsedData.headings,
+              textContent: jinaResult.data.textContent,
+              rawTotalLength: jinaResult.data.rawTotalLength,
+              isTruncated: jinaResult.data.isTruncated,
+            };
+            renderedVia = 'jina-reader';
           }
         }
       }
@@ -2090,7 +2293,80 @@ async function fetchDirectWebPage(targetUrl: string): Promise<{
     };
   } catch (err) {
     const errObj = err as Error;
-    console.error(`[Server WebFetch] Fetch failed for ${normalizedUrl}:`, errObj);
+    console.error(`[Server WebFetch] Direct fetch failed for ${normalizedUrl}:`, errObj);
+
+    // If direct fetch threw network/timeout error, attempt fallback cascade before giving up
+    console.log(`[Server WebFetch] Network error on direct fetch. Attempting fallback cascade...`);
+
+    // Fallback 1: Headless Chromium
+    const headlessResult = await renderPageHeadless(normalizedUrl);
+    if (headlessResult.ok && headlessResult.html) {
+      const renderedData = extractReadableTextFromHtml(headlessResult.html);
+      if (renderedData.textContent.trim().length > 100) {
+        return {
+          ok: true,
+          data: {
+            url: normalizedUrl,
+            finalUrl: normalizedUrl,
+            title: renderedData.title || parsed.hostname,
+            description: renderedData.description,
+            headings: renderedData.headings,
+            textContent: renderedData.textContent,
+            length: renderedData.textContent.length,
+            rawTotalLength: renderedData.rawTotalLength,
+            isTruncated: renderedData.isTruncated,
+            renderedVia: 'headless-browser',
+            status: 200,
+          },
+        };
+      }
+    }
+
+    // Fallback 2: Browserless via RENDER_PROXY_URL
+    const proxyResult = await renderPageViaProxy(normalizedUrl);
+    if (proxyResult.ok && proxyResult.html) {
+      const renderedData = extractReadableTextFromHtml(proxyResult.html);
+      if (renderedData.textContent.trim().length > 100) {
+        return {
+          ok: true,
+          data: {
+            url: normalizedUrl,
+            finalUrl: normalizedUrl,
+            title: renderedData.title || parsed.hostname,
+            description: renderedData.description,
+            headings: renderedData.headings,
+            textContent: renderedData.textContent,
+            length: renderedData.textContent.length,
+            rawTotalLength: renderedData.rawTotalLength,
+            isTruncated: renderedData.isTruncated,
+            renderedVia: 'render-proxy',
+            status: 200,
+          },
+        };
+      }
+    }
+
+    // Fallback 3: Jina Reader
+    const jinaResult = await renderPageViaJinaReader(normalizedUrl);
+    if (jinaResult.ok && jinaResult.data && jinaResult.data.textContent.trim().length > 100) {
+      return {
+        ok: true,
+        data: {
+          url: normalizedUrl,
+          finalUrl: normalizedUrl,
+          title: jinaResult.data.title || parsed.hostname,
+          description: jinaResult.data.description,
+          headings: jinaResult.data.headings,
+          textContent: jinaResult.data.textContent,
+          length: jinaResult.data.length,
+          rawTotalLength: jinaResult.data.rawTotalLength,
+          isTruncated: jinaResult.data.isTruncated,
+          renderedVia: 'jina-reader',
+          status: 200,
+        },
+      };
+    }
+
     const isTimeout =
       errObj.name === 'AbortError' ||
       errObj.message?.includes('timeout') ||
