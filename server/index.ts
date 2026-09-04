@@ -1706,46 +1706,66 @@ async function searchProvider(input: z.infer<typeof searchSchema>): Promise<{ re
   return { results: [], searchSource: 'No Results', fallbackOccurred: false };
 }
 
-function extractReadableTextFromHtml(html: string): {
-  title: string;
-  description: string;
-  headings: string[];
-  textContent: string;
-} {
-  let title = '';
-  const titleMatch = html.match(/<title[^>]*>([\s\S]*?)<\/title>/i);
-  if (titleMatch && titleMatch[1]) {
-    title = titleMatch[1].replace(/<[^>]+>/g, '').trim();
-  }
+function extractTagContents(html: string, tagName: string): string[] {
+  const results: string[] = [];
+  const openTagRegex = new RegExp(`<${tagName}\\b[^>]*>`, 'gi');
+  let match: RegExpExecArray | null;
 
-  let description = '';
-  const descMatch =
-    html.match(/<meta[^>]*name=["']description["'][^>]*content=["']([\s\S]*?)["']/i) ||
-    html.match(/<meta[^>]*content=["']([\s\S]*?)["'][^>]*name=["']description["']/i) ||
-    html.match(/<meta[^>]*property=["']og:description["'][^>]*content=["']([\s\S]*?)["']/i);
-  if (descMatch && descMatch[1]) {
-    description = descMatch[1].trim();
-  }
+  while ((match = openTagRegex.exec(html)) !== null) {
+    const startIndex = match.index + match[0].length;
+    let depth = 1;
+    let searchIdx = startIndex;
+    let endIndex = -1;
 
-  // Extract headings
-  const headings: string[] = [];
-  const headingRegex = /<h([1-3])[^>]*>([\s\S]*?)<\/h\1>/gi;
-  let hMatch: RegExpExecArray | null;
-  while ((hMatch = headingRegex.exec(html)) !== null) {
-    const hText = hMatch[2].replace(/<[^>]+>/g, '').trim();
-    if (hText && hText.length > 1 && !headings.includes(hText)) {
-      headings.push(`H${hMatch[1]}: ${hText}`);
+    while (depth > 0) {
+      const nextOpen = html.toLowerCase().indexOf(`<${tagName}`, searchIdx);
+      const nextClose = html.toLowerCase().indexOf(`</${tagName}>`, searchIdx);
+
+      if (nextClose === -1) {
+        endIndex = html.length;
+        break;
+      }
+
+      if (nextOpen !== -1 && nextOpen < nextClose) {
+        depth++;
+        searchIdx = nextOpen + `<${tagName}`.length;
+      } else {
+        depth--;
+        if (depth === 0) {
+          endIndex = nextClose;
+          break;
+        }
+        searchIdx = nextClose + `</${tagName}>`.length;
+      }
+    }
+
+    if (endIndex !== -1) {
+      results.push(html.slice(startIndex, endIndex));
+      openTagRegex.lastIndex = endIndex + `</${tagName}>`.length;
     }
   }
 
-  // Clean HTML: strip script, style, noscript, svg, canvas, nav, comments
-  let cleaned = html
+  return results;
+}
+
+function cleanHtmlToText(rawChunk: string, isArticleOrMainScope = false): string {
+  let cleaned = rawChunk
     .replace(/<!--[\s\S]*?-->/g, '')
     .replace(/<script\b[^<]*(?:(?!<\/script>)<[^<]*)*<\/script>/gi, ' ')
     .replace(/<style\b[^<]*(?:(?!<\/style>)<[^<]*)*<\/style>/gi, ' ')
     .replace(/<noscript\b[^<]*(?:(?!<\/noscript>)<[^<]*)*<\/noscript>/gi, ' ')
     .replace(/<svg\b[^<]*(?:(?!<\/svg>)<[^<]*)*<\/svg>/gi, ' ')
-    .replace(/<canvas\b[^<]*(?:(?!<\/canvas>)<[^<]*)*<\/canvas>/gi, ' ');
+    .replace(/<canvas\b[^<]*(?:(?!<\/canvas>)<[^<]*)*<\/canvas>/gi, ' ')
+    .replace(/<nav\b[^<]*(?:(?!<\/nav>)<[^<]*)*<\/nav>/gi, ' ')
+    .replace(/<footer\b[^<]*(?:(?!<\/footer>)<[^<]*)*<\/footer>/gi, ' ')
+    .replace(/<aside\b[^<]*(?:(?!<\/aside>)<[^<]*)*<\/aside>/gi, ' ')
+    .replace(/<form\b[^<]*(?:(?!<\/form>)<[^<]*)*<\/form>/gi, ' ');
+
+  // For full-page fallback, strip top-level site <header> banner to prevent header nav clutter.
+  // Within <article> or <main>, preserve <header> which holds article titles and bylines.
+  if (!isArticleOrMainScope) {
+    cleaned = cleaned.replace(/<header\b[^<]*(?:(?!<\/header>)<[^<]*)*<\/header>/gi, ' ');
+  }
 
   // Format headers and block elements with clear line breaks
   cleaned = cleaned
@@ -1775,7 +1795,88 @@ function extractReadableTextFromHtml(html: string): {
     .map((l) => l.replace(/[ \t]+/g, ' ').trim())
     .filter((l) => l.length > 0 && l !== '•' && l !== '• ');
 
-  const fullText = lines.join('\n\n');
+  return lines.join('\n\n');
+}
+
+function extractReadableTextFromHtml(html: string): {
+  title: string;
+  description: string;
+  headings: string[];
+  textContent: string;
+  rawTotalLength: number;
+  isTruncated: boolean;
+} {
+  let title = '';
+  const titleMatch = html.match(/<title[^>]*>([\s\S]*?)<\/title>/i);
+  if (titleMatch && titleMatch[1]) {
+    title = titleMatch[1].replace(/<[^>]+>/g, '').trim();
+  }
+
+  let description = '';
+  const descMatch =
+    html.match(/<meta[^>]*name=["']description["'][^>]*content=["']([\s\S]*?)["']/i) ||
+    html.match(/<meta[^>]*content=["']([\s\S]*?)["'][^>]*name=["']description["']/i) ||
+    html.match(/<meta[^>]*property=["']og:description["'][^>]*content=["']([\s\S]*?)["']/i);
+  if (descMatch && descMatch[1]) {
+    description = descMatch[1].trim();
+  }
+
+  // Prioritize <article> or <main> HTML tags when present
+  // 1. Check for <article> tags first
+  let selectedSourceHtml = '';
+  let fullText = '';
+  const articleSnippets = extractTagContents(html, 'article');
+  if (articleSnippets.length > 0) {
+    const combinedArticle = articleSnippets.join('\n\n');
+    const articleText = cleanHtmlToText(combinedArticle, true);
+    if (articleText.trim().length >= 80) {
+      fullText = articleText;
+      selectedSourceHtml = combinedArticle;
+    }
+  }
+
+  // 2. If no <article> tag (or text was negligible), check for <main> tag
+  if (!fullText) {
+    const mainSnippets = extractTagContents(html, 'main');
+    if (mainSnippets.length > 0) {
+      const combinedMain = mainSnippets.join('\n\n');
+      const mainText = cleanHtmlToText(combinedMain, true);
+      if (mainText.trim().length >= 80) {
+        fullText = mainText;
+        selectedSourceHtml = combinedMain;
+      }
+    }
+  }
+
+  // 3. If neither exists (or both produced minimal text), fall back to full-page extraction as-is
+  if (!fullText) {
+    fullText = cleanHtmlToText(html, false);
+    selectedSourceHtml = html;
+  }
+
+  // Extract headings from the prioritized content (or full-page fallback)
+  const headings: string[] = [];
+  const headingRegex = /<h([1-3])[^>]*>([\s\S]*?)<\/h\1>/gi;
+  let hMatch: RegExpExecArray | null;
+  const headingSource = selectedSourceHtml || html;
+  while ((hMatch = headingRegex.exec(headingSource)) !== null) {
+    const hText = hMatch[2].replace(/<[^>]+>/g, '').trim();
+    if (hText && hText.length > 1 && !headings.includes(hText)) {
+      headings.push(`H${hMatch[1]}: ${hText}`);
+    }
+  }
+
+  // Fallback heading extraction from full HTML if prioritized section had no headings
+  if (headings.length === 0 && selectedSourceHtml !== html) {
+    let fallbackHMatch: RegExpExecArray | null;
+    while ((fallbackHMatch = headingRegex.exec(html)) !== null) {
+      const hText = fallbackHMatch[2].replace(/<[^>]+>/g, '').trim();
+      if (hText && hText.length > 1 && !headings.includes(hText)) {
+        headings.push(`H${fallbackHMatch[1]}: ${hText}`);
+      }
+    }
+  }
+
   const rawTotalLength = fullText.length;
   const MAX_CONTENT_CHARS = 3500;
   let textContent = fullText;
@@ -1985,17 +2086,48 @@ async function renderPageViaJinaReader(url: string): Promise<{
     const controller = new AbortController();
     const timeoutId = setTimeout(() => controller.abort(), 15000);
 
-    const response = await fetch(jinaUrl, {
-      headers: {
-        'Accept': 'application/json',
-      },
-      signal: controller.signal,
-    });
+    // Prioritize <article> or <main> HTML tags when present; strip navigation, header, footer, and sidebars
+    let response: Response | null = null;
+    let usedTargetSelector = true;
+
+    try {
+      response = await fetch(jinaUrl, {
+        headers: {
+          'Accept': 'application/json',
+          'X-Target-Selector': 'article, main',
+          'X-Remove-Selector': 'nav, header, footer, aside',
+        },
+        signal: controller.signal,
+      });
+    } catch {
+      // Network or abort error on first attempt
+    }
+
+    // If targeted selector failed (e.g. 422 because the page lacks <article> or <main>),
+    // fall back to full-page extraction without X-Target-Selector
+    if (!response || !response.ok) {
+      usedTargetSelector = false;
+      const fallbackController = new AbortController();
+      const fallbackTimeoutId = setTimeout(() => fallbackController.abort(), 15000);
+      try {
+        response = await fetch(jinaUrl, {
+          headers: {
+            'Accept': 'application/json',
+            'X-Remove-Selector': 'nav, header, footer, aside',
+          },
+          signal: fallbackController.signal,
+        });
+      } finally {
+        clearTimeout(fallbackTimeoutId);
+      }
+    }
     clearTimeout(timeoutId);
 
-    if (!response.ok) {
-      return { ok: false, error: `Jina Reader returned HTTP ${response.status}` };
+    if (!response || !response.ok) {
+      return { ok: false, error: `Jina Reader returned HTTP ${response?.status || 502}` };
     }
+
+    console.log(`[Server WebFetch] Jina Reader content extracted via: ${usedTargetSelector ? 'article/main target selector' : 'full-page fallback'}`);
 
     const rawBodyText = await response.text().catch(() => '');
     if (!rawBodyText || !rawBodyText.trim()) {
