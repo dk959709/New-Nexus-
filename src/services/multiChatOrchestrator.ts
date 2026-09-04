@@ -94,11 +94,38 @@ export function resolvePersonaProviderConfig(
 }
 
 /**
- * Builds the last 10 messages of conversation history (both user messages and all persona replies)
+ * Sanitizes persona output to eliminate any accidental leading labels
+ * (e.g. "[ORBIT]:", "ORBIT:", "[NOVA]:", "**COSMOS**:")
+ */
+export function sanitizePersonaOutput(text: string, personaName: string): string {
+  let cleaned = text.trim();
+  // Strip target persona's own label
+  const personaRegex = new RegExp(
+    `^(?:\\[?${personaName}\\]?|\\*\\*${personaName}\\*\\*)\\s*[:\\-—]\\s*`,
+    'i',
+  );
+  cleaned = cleaned.replace(personaRegex, '').trim();
+
+  // Strip any other persona label prefix if it leaked into the output
+  cleaned = cleaned
+    .replace(
+      /^(?:\[?(?:NOVA|ORBIT|COSMOS)\]?|\*\*(?:NOVA|ORBIT|COSMOS)\*\*)\s*[:\-—]\s*/i,
+      '',
+    )
+    .trim();
+
+  return cleaned;
+}
+
+/**
+ * Builds the last 10 messages of conversation history for a specific persona.
+ * ONLY includes the user's queries and THIS persona's prior completed responses as assistant turns.
+ * This guarantees no other persona labels or responses leak into this persona's context.
  */
 export function buildMultiChatHistoryMessages(
   conversationHistory: MultiChatMessage[],
   maxTurns = 10,
+  targetPersonaId?: string,
 ): Array<{ role: 'user' | 'assistant'; content: string }> {
   const historyMessages: Array<{ role: 'user' | 'assistant'; content: string }> = [];
   const recentTurns = conversationHistory.slice(-maxTurns);
@@ -111,17 +138,25 @@ export function buildMultiChatHistoryMessages(
       });
     }
 
-    // Format all persona replies that completed in this turn
-    const completedReplies = turn.responses
-      .filter((r) => r.status === 'completed' && r.text && r.text.trim())
-      .map((r) => `[${r.name}]:\n${r.text.trim()}`)
-      .join('\n\n---\n\n');
-
-    if (completedReplies) {
-      historyMessages.push({
-        role: 'assistant',
-        content: completedReplies,
-      });
+    if (targetPersonaId) {
+      // Find ONLY this persona's completed response in this turn
+      const myReply = turn.responses.find(
+        (r) =>
+          r.personaId === targetPersonaId &&
+          r.status === 'completed' &&
+          r.text &&
+          r.text.trim(),
+      );
+      if (myReply && myReply.text) {
+        // Strip any residual label prefix in the history item
+        const cleanContent = sanitizePersonaOutput(myReply.text, myReply.name);
+        if (cleanContent) {
+          historyMessages.push({
+            role: 'assistant',
+            content: cleanContent,
+          });
+        }
+      }
     }
   }
 
@@ -147,7 +182,7 @@ export async function executeSinglePersona(
     status: 'running',
   };
 
-  const primary = resolvePersonaProviderConfig(persona, false);
+  const primary = resolvePersonaProviderConfig(persona, false, persona.maxTokens || 100);
   if (primary.error) {
     return {
       ...baseResponse,
@@ -159,14 +194,14 @@ export async function executeSinglePersona(
 
   let fallbackConfig: AIProviderConfig | null = null;
   if (persona.enableFailover && persona.fallbackProviderId) {
-    const fb = resolvePersonaProviderConfig(persona, true);
+    const fb = resolvePersonaProviderConfig(persona, true, persona.maxTokens || 100);
     if (!fb.error && fb.provider) {
       fallbackConfig = fb.provider;
     }
   }
 
-  // Build full message context with system prompt + last 10 messages of history + current user query
-  const historyMessages = buildMultiChatHistoryMessages(conversationHistory, 10);
+  // Build full message context with system prompt + last 10 messages of history for THIS persona + current user query
+  const historyMessages = buildMultiChatHistoryMessages(conversationHistory, 10, persona.id);
   const messages: Array<{ role: 'system' | 'user' | 'assistant'; content: string }> = [
     { role: 'system', content: persona.systemPrompt },
     ...historyMessages,
@@ -181,17 +216,18 @@ export async function executeSinglePersona(
       fallbackConfig,
       enableFailover: Boolean(persona.enableFailover),
       temperature: persona.id === 'orbit' ? 0.7 : persona.id === 'cosmos' ? 0.5 : 0.2,
-      maxTokens: persona.maxTokens || 1000,
+      maxTokens: persona.maxTokens || 100,
       timeoutMs: 40000,
     });
 
     const durationMs = Date.now() - startTime;
 
     if (res.ok && res.text) {
+      const cleanText = sanitizePersonaOutput(res.text, persona.name);
       return {
         ...baseResponse,
         status: 'completed',
-        text: res.text.trim(),
+        text: cleanText,
         model: res.model || primary.model,
         providerName: res.providerName || primary.provider?.name || 'Configured AI',
         durationMs,

@@ -527,9 +527,9 @@ export function MultiChatSettings({ onSaved }: MultiChatSettingsProps) {
                   <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
                     <input
                       type="range"
-                      min={128}
-                      max={4000}
-                      step={64}
+                      min={40}
+                      max={2000}
+                      step={10}
                       value={persona.maxTokens}
                       onChange={(e) =>
                         handlePersonaChange(persona.id, { maxTokens: parseInt(e.target.value, 10) })
@@ -538,12 +538,12 @@ export function MultiChatSettings({ onSaved }: MultiChatSettingsProps) {
                     />
                     <input
                       type="number"
-                      min={64}
-                      max={8000}
+                      min={40}
+                      max={4000}
                       value={persona.maxTokens}
                       onChange={(e) =>
                         handlePersonaChange(persona.id, {
-                          maxTokens: Math.max(64, parseInt(e.target.value, 10) || 128),
+                          maxTokens: Math.max(40, parseInt(e.target.value, 10) || 100),
                         })
                       }
                       style={{

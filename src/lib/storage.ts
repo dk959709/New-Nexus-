@@ -557,11 +557,26 @@ export const DEFAULT_JARVIS_CONFIG: JarvisSystemConfig = {
 };
 
 export const DEFAULT_MULTICHAT_SYSTEM_PROMPTS: Record<string, string> = {
-  nova: `You are NOVA, a sharp and intelligent AI persona. You give clear, fact-based answers with confidence and precision. You speak like an expert — direct, no fluff, no jokes. You focus on accuracy and depth. Keep answers well-structured and informative. No emojis. Tone: professional, brilliant, straight-to-the-point.`,
+  nova: `You are NOVA, a sharp and factual AI persona.
+RESPONSE RULES:
+- Keep answers ultra-SHORT: around 30 words maximum.
+- Use 2-3 concise bullet points or very short sentences. Never write long paragraphs.
+- Be direct, factual, and precise with zero fluff. No emojis.
+- Only respond as yourself. Do not include other personas' names or answers in your reply.`,
 
-  orbit: `You are ORBIT, a fun and casual AI persona — like a close friend chatting with the user. Use simple words, relaxed tone, and emojis often. Crack light jokes when it fits. Keep answers short and easy to read, never too formal or robotic. Talk TO the user, not AT them — like texting a buddy.`,
+  orbit: `You are ORBIT, a fun and casual AI buddy chatting with a friend.
+RESPONSE RULES:
+- Keep answers ultra-SHORT: around 30 words maximum.
+- Use 2-3 quick bullet points or punchy short sentences. Never write long paragraphs.
+- Use a relaxed conversational tone with emojis.
+- Only respond as yourself. Do not include other personas' names or answers in your reply.`,
 
-  cosmos: `You are COSMOS, a calm and wise AI persona. You speak slowly and thoughtfully, like a mentor guiding the user. Ask reflective questions sometimes instead of just giving answers. Encourage the user, give big-picture perspective, and stay patient and warm. Use gentle, comforting language.`,
+  cosmos: `You are COSMOS, a calm and wise AI mentor.
+RESPONSE RULES:
+- Keep answers ultra-SHORT: around 30 words maximum.
+- Use 2-3 gentle bullet points or short thoughtful sentences. Never write long paragraphs.
+- Offer calm perspective and a reflective thought or question.
+- Only respond as yourself. Do not include other personas' names or answers in your reply.`,
 };
 
 export const DEFAULT_MULTICHAT_CONFIG: MultiChatSystemConfig = {
@@ -570,14 +585,14 @@ export const DEFAULT_MULTICHAT_CONFIG: MultiChatSystemConfig = {
       id: 'nova',
       name: 'NOVA',
       role: 'Researcher',
-      description: 'Sharp, factual, precise, no-nonsense expert analysis with zero fluff or emojis.',
+      description: 'Sharp, factual, precise, concise answers with zero fluff or emojis (30 words max).',
       icon: '🧠',
       toneBadge: 'Professional & Factual',
       accentColor: '#61d7c9',
       providerId: 'existing',
       modelId: 'deepseek/deepseek-chat',
       enabled: true,
-      maxTokens: 1000,
+      maxTokens: 100,
       enableFailover: false,
       systemPrompt: DEFAULT_MULTICHAT_SYSTEM_PROMPTS.nova,
     },
@@ -585,14 +600,14 @@ export const DEFAULT_MULTICHAT_CONFIG: MultiChatSystemConfig = {
       id: 'orbit',
       name: 'ORBIT',
       role: 'Buddy',
-      description: 'Casual, funny, friendly buddy chatting with jokes and emojis like texting a friend.',
+      description: 'Casual, funny, friendly buddy with emojis and punchy bullets (30 words max).',
       icon: '😎',
       toneBadge: 'Casual & Friendly',
       accentColor: '#f59e0b',
       providerId: 'existing',
       modelId: 'deepseek/deepseek-chat',
       enabled: true,
-      maxTokens: 1000,
+      maxTokens: 100,
       enableFailover: false,
       systemPrompt: DEFAULT_MULTICHAT_SYSTEM_PROMPTS.orbit,
     },
@@ -600,14 +615,14 @@ export const DEFAULT_MULTICHAT_CONFIG: MultiChatSystemConfig = {
       id: 'cosmos',
       name: 'COSMOS',
       role: 'Mentor',
-      description: 'Calm, wise, thoughtful, encouraging mentor offering reflective questions and perspective.',
+      description: 'Calm, wise, thoughtful mentor with gentle concise insights (30 words max).',
       icon: '🧘',
       toneBadge: 'Calm & Wise',
       accentColor: '#818cf8',
       providerId: 'existing',
       modelId: 'deepseek/deepseek-chat',
       enabled: true,
-      maxTokens: 1000,
+      maxTokens: 100,
       enableFailover: false,
       systemPrompt: DEFAULT_MULTICHAT_SYSTEM_PROMPTS.cosmos,
     },
@@ -984,14 +999,23 @@ export const storage = {
       const defaultPersona = DEFAULT_MULTICHAT_CONFIG.personas[key];
       const userPersona = stored.personas[key];
       if (userPersona) {
+        // Automatically upgrade outdated lengthy prompts that lack the persona isolation and brevity rules
+        const isOutdatedPrompt =
+          !userPersona.systemPrompt ||
+          !userPersona.systemPrompt.includes('Only respond as yourself') ||
+          !userPersona.systemPrompt.includes('30 words maximum');
+
+        // Clamps legacy 1000 token limit to 100 tokens as requested
+        const effectiveTokens =
+          !userPersona.maxTokens || userPersona.maxTokens > 150
+            ? 100
+            : userPersona.maxTokens;
+
         mergedPersonas[key] = {
           ...defaultPersona,
           ...userPersona,
-          systemPrompt:
-            typeof userPersona.systemPrompt === 'string' && userPersona.systemPrompt.trim().length > 0
-              ? userPersona.systemPrompt
-              : defaultPersona.systemPrompt,
-          maxTokens: Math.max(64, userPersona.maxTokens || defaultPersona.maxTokens),
+          systemPrompt: isOutdatedPrompt ? defaultPersona.systemPrompt : userPersona.systemPrompt,
+          maxTokens: effectiveTokens,
         };
       } else {
         mergedPersonas[key] = { ...defaultPersona };
