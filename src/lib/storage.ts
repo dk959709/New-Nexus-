@@ -1023,4 +1023,10 @@ export const storage = {
   clearMultiChatMessages(): void {
     write(KEYS.multiChatMessages, []);
   },
+
+  deleteMultiChatMessage(messageId: string): void {
+    const current = read<MultiChatMessage[]>(KEYS.multiChatMessages, []);
+    const filtered = current.filter((m) => m.id !== messageId);
+    write(KEYS.multiChatMessages, filtered);
+  },
 };

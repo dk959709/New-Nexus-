@@ -539,6 +539,32 @@ export function MultiChatConsole({ config, onNavigateToSettings }: MultiChatCons
     setTimeout(() => setClearedBanner(false), 3500);
   };
 
+  // 5. DELETE SINGLE MESSAGE BOX:
+  // Deletes only that specific message card (user question + that card's 3 persona answers)
+  // from the current conversation view and from persistent memory/history.
+  const handleDeleteMessage = (messageId: string) => {
+    // If audio is currently playing for this message, stop it immediately
+    if (
+      playingAudioKey === `all_${messageId}` ||
+      (playingAudioKey && playingAudioKey.startsWith(`${messageId}_`))
+    ) {
+      stopAudio();
+    }
+
+    // Clean up persona tab selection state for this message
+    setSelectedPersonaTab((prev) => {
+      const next = { ...prev };
+      delete next[messageId];
+      return next;
+    });
+
+    // Remove from persistent storage
+    storage.deleteMultiChatMessage(messageId);
+
+    // Remove from active React state
+    setMessages((prev) => prev.filter((m) => m.id !== messageId));
+  };
+
   const handleExportTranscript = async () => {
     if (messages.length === 0) return;
 
@@ -992,6 +1018,17 @@ export function MultiChatConsole({ config, onNavigateToSettings }: MultiChatCons
                                 </>
                               )}
                             </button>
+
+                            {/* Delete Message Box Button */}
+                            <button
+                              type="button"
+                              onClick={() => handleDeleteMessage(msg.id)}
+                              className="px-2.5 py-1.5 rounded-xl text-xs font-bold flex items-center gap-1.5 bg-slate-900/90 hover:bg-rose-950/40 text-slate-300 hover:text-rose-400 border border-white/10 hover:border-rose-500/40 transition-all shadow-sm group/del"
+                              title="Delete this message and its persona responses"
+                            >
+                              <Trash2 size={13} className="text-slate-400 group-hover/del:text-rose-400 transition-colors" />
+                              <span className="hidden sm:inline">Delete</span>
+                            </button>
                           </div>
                         </div>
 
@@ -1316,6 +1353,17 @@ export function MultiChatConsole({ config, onNavigateToSettings }: MultiChatCons
                                   <span>Copy</span>
                                 </>
                               )}
+                            </button>
+
+                            {/* Delete Message Box Button */}
+                            <button
+                              type="button"
+                              onClick={() => handleDeleteMessage(msg.id)}
+                              className="px-2.5 py-1.5 rounded-xl text-xs font-bold flex items-center gap-1.5 bg-slate-900/90 hover:bg-rose-950/40 text-slate-300 hover:text-rose-400 border border-white/10 hover:border-rose-500/40 transition-all shadow-sm group/del"
+                              title="Delete this message and its persona responses"
+                            >
+                              <Trash2 size={13} className="text-slate-400 group-hover/del:text-rose-400 transition-colors" />
+                              <span className="hidden sm:inline">Delete</span>
                             </button>
                           </div>
                         </div>
