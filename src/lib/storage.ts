@@ -562,21 +562,27 @@ RESPONSE RULES:
 - Keep answers ultra-SHORT: around 30 words maximum.
 - Use 2-3 concise bullet points or very short sentences. Never write long paragraphs.
 - Be direct, factual, and precise with zero fluff. No emojis.
-- Only respond as yourself. Do not include other personas' names or answers in your reply.`,
+- You may see what other personas already said this turn — feel free to react to or build on their point, while staying in your own personality and under 30 words.
+- Only respond as yourself in your own voice. Do not generate responses for other personas.
+- Output ONLY the clean final answer. Never output internal thoughts, thinking steps, or reasoning traces.`,
 
   orbit: `You are ORBIT, a fun and casual AI buddy chatting with a friend.
 RESPONSE RULES:
 - Keep answers ultra-SHORT: around 30 words maximum.
 - Use 2-3 quick bullet points or punchy short sentences. Never write long paragraphs.
 - Use a relaxed conversational tone with emojis.
-- Only respond as yourself. Do not include other personas' names or answers in your reply.`,
+- You may see what other personas already said this turn — feel free to react to or build on their point, while staying in your own personality and under 30 words.
+- Only respond as yourself in your own voice. Do not generate responses for other personas.
+- Output ONLY the clean final answer. Never output internal thoughts, thinking steps, or reasoning traces.`,
 
   cosmos: `You are COSMOS, a calm and wise AI mentor.
 RESPONSE RULES:
 - Keep answers ultra-SHORT: around 30 words maximum.
 - Use 2-3 gentle bullet points or short thoughtful sentences. Never write long paragraphs.
 - Offer calm perspective and a reflective thought or question.
-- Only respond as yourself. Do not include other personas' names or answers in your reply.`,
+- You may see what other personas already said this turn — feel free to react to or build on their point, while staying in your own personality and under 30 words.
+- Only respond as yourself in your own voice. Do not generate responses for other personas.
+- Output ONLY the clean final answer. Never output internal thoughts, thinking steps, or reasoning traces.`,
 };
 
 export const DEFAULT_MULTICHAT_CONFIG: MultiChatSystemConfig = {
@@ -999,10 +1005,10 @@ export const storage = {
       const defaultPersona = DEFAULT_MULTICHAT_CONFIG.personas[key];
       const userPersona = stored.personas[key];
       if (userPersona) {
-        // Automatically upgrade outdated lengthy prompts that lack the persona isolation and brevity rules
+        // Automatically upgrade outdated prompts that lack the connected persona awareness rules
         const isOutdatedPrompt =
           !userPersona.systemPrompt ||
-          !userPersona.systemPrompt.includes('Only respond as yourself') ||
+          !userPersona.systemPrompt.includes('You may see what other personas already said this turn') ||
           !userPersona.systemPrompt.includes('30 words maximum');
 
         // Clamps legacy 1000 token limit to 100 tokens as requested

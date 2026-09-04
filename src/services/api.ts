@@ -332,6 +332,8 @@ export const api = {
   }): Promise<{
     ok: boolean;
     text?: string;
+    content?: string;
+    reasoning?: string;
     model: string;
     providerName: string;
     usedFallback?: boolean;
@@ -340,6 +342,8 @@ export const api = {
     return call<{
       ok: boolean;
       text?: string;
+      content?: string;
+      reasoning?: string;
       model: string;
       providerName: string;
       usedFallback?: boolean;

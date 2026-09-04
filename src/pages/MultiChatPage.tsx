@@ -82,7 +82,7 @@ export function MultiChatPage() {
             </div>
           </div>
           <p style={{ margin: '6px 0 0', color: 'var(--muted)', fontSize: '13px' }}>
-            Parallel Intelligence: NOVA 🧠 (Researcher) • ORBIT 😎 (Buddy) • COSMOS 🧘 (Mentor)
+            Connected Multi-Agent Dialogue: NOVA 🧠 (Researcher) → ORBIT 😎 (Buddy) → COSMOS 🧘 (Mentor)
           </p>
         </div>
 

@@ -8,6 +8,7 @@ import {
   ChevronUp,
   FileCode2,
   AlertCircle,
+  Sparkles,
 } from 'lucide-react';
 import { storage, DEFAULT_MULTICHAT_CONFIG, DEFAULT_MULTICHAT_SYSTEM_PROMPTS } from '@/lib/storage';
 import type { MultiChatSystemConfig, MultiChatPersonaConfig, AIProvidersState } from '@/types';
@@ -17,6 +18,8 @@ interface MultiChatSettingsProps {
 }
 
 const MODEL_PRESETS = [
+  'nvidia/nemotron-3-nano-30b-a3b',
+  'nemotron-3-nano-30b-a3b',
   'deepseek/deepseek-chat',
   'deepseek/deepseek-r1',
   'google/gemini-2.0-flash-001',
@@ -260,6 +263,63 @@ export function MultiChatSettings({ onSaved }: MultiChatSettingsProps) {
           {saveStatus}
         </div>
       )}
+
+      {/* Connected Sequential Pipeline Callout */}
+      <div
+        style={{
+          padding: '14px 18px',
+          borderRadius: '14px',
+          background: 'linear-gradient(135deg, rgba(6, 182, 212, 0.08) 0%, rgba(15, 23, 42, 0.75) 100%)',
+          border: '1px solid rgba(6, 182, 212, 0.25)',
+          display: 'flex',
+          alignItems: 'center',
+          justifyContent: 'space-between',
+          flexWrap: 'wrap',
+          gap: '12px',
+        }}
+      >
+        <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
+          <div
+            style={{
+              width: '36px',
+              height: '36px',
+              borderRadius: '10px',
+              background: 'rgba(6, 182, 212, 0.15)',
+              border: '1px solid rgba(6, 182, 212, 0.35)',
+              display: 'grid',
+              placeItems: 'center',
+              color: '#67e8f9',
+              flexShrink: 0,
+            }}
+          >
+            <Sparkles size={18} />
+          </div>
+          <div>
+            <div style={{ display: 'flex', alignItems: 'center', gap: '8px', flexWrap: 'wrap' }}>
+              <span style={{ fontSize: '13px', fontWeight: 800, color: '#fff', letterSpacing: '-0.01em' }}>
+                Connected Sequential Pipeline
+              </span>
+              <span
+                style={{
+                  padding: '2px 8px',
+                  borderRadius: '999px',
+                  background: 'rgba(6, 182, 212, 0.2)',
+                  color: '#67e8f9',
+                  fontSize: '11px',
+                  fontFamily: 'DM Mono, monospace',
+                  fontWeight: 700,
+                  border: '1px solid rgba(6, 182, 212, 0.3)',
+                }}
+              >
+                NOVA 🧠 → ORBIT 😎 → COSMOS 🧘
+              </span>
+            </div>
+            <p style={{ margin: '4px 0 0', fontSize: '12px', color: '#94a3b8', lineHeight: 1.5 }}>
+              Personas respond in sequence instead of in a vacuum. NOVA answers first; ORBIT receives NOVA's answer to react or build upon it; COSMOS receives both answers to reflect and synthesize. Note: Responses are generated one after another.
+            </p>
+          </div>
+        </div>
+      </div>
 
       {/* 3 Persona Cards Grid */}
       <div className="grid grid-cols-1 gap-6">

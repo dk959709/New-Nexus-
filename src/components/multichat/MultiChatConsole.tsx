@@ -29,7 +29,7 @@ import { storage } from '@/lib/storage';
 import { copyToClipboard } from '@/lib/clipboard';
 import { cleanMarkdownForSpeech } from '@/lib/format';
 import { FormattedText } from '@/components/jarvis/FormattedText';
-import { executeMultiChatTurn } from '@/services/multiChatOrchestrator';
+import { executeMultiChatTurn, getPersonaCleanText } from '@/services/multiChatOrchestrator';
 import type {
   MultiChatMessage,
   MultiChatSystemConfig,
@@ -145,14 +145,21 @@ export function MultiChatConsole({ config, onNavigateToSettings }: MultiChatCons
     setIsGenerating(true);
 
     const messageId = `mc_${Date.now()}_${Math.random().toString(36).slice(2, 7)}`;
-    const initialResponses: MultiChatPersonaResponse[] = enabledPersonas.map((p) => ({
+    const orderedIds = ['nova', 'orbit', 'cosmos'];
+    const sortedEnabledPersonas = [...enabledPersonas].sort((a, b) => {
+      const idxA = orderedIds.indexOf(a.id);
+      const idxB = orderedIds.indexOf(b.id);
+      return (idxA === -1 ? 99 : idxA) - (idxB === -1 ? 99 : idxB);
+    });
+
+    const initialResponses: MultiChatPersonaResponse[] = sortedEnabledPersonas.map((p, idx) => ({
       personaId: p.id,
       name: p.name,
       icon: p.icon,
       accentColor: p.accentColor,
       toneBadge: p.toneBadge,
       text: '',
-      status: 'running',
+      status: idx === 0 ? 'running' : 'pending',
     }));
 
     const newMessage: MultiChatMessage = {
@@ -237,13 +244,13 @@ export function MultiChatConsole({ config, onNavigateToSettings }: MultiChatCons
   // [cosmos's answer]
   const handleCopyCombined = async (msg: MultiChatMessage) => {
     const completedResponses = msg.responses.filter(
-      (r) => r.status === 'completed' && (r.text || (r as { reasoning?: string }).reasoning)
+      (r) => r.status === 'completed' && getPersonaCleanText(r).length > 0
     );
     if (completedResponses.length === 0) return;
 
     const formattedBlock = completedResponses
       .map((r) => {
-        const answer = (r.text || (r as { reasoning?: string }).reasoning || '').trim();
+        const answer = getPersonaCleanText(r);
         return `=== ${r.name.toUpperCase()} ===\n${answer}`;
       })
       .join('\n\n');
@@ -336,7 +343,7 @@ export function MultiChatConsole({ config, onNavigateToSettings }: MultiChatCons
     stopAudio();
 
     const completedResponses = msg.responses.filter(
-      (r) => r.status === 'completed' && (r.text || (r as { reasoning?: string }).reasoning)
+      (r) => r.status === 'completed' && getPersonaCleanText(r).length > 0
     );
     if (completedResponses.length === 0) return;
 
@@ -345,7 +352,7 @@ export function MultiChatConsole({ config, onNavigateToSettings }: MultiChatCons
       const audioBlobs: Blob[] = [];
 
       for (const resp of completedResponses) {
-        const rawText = (resp.text || (resp as { reasoning?: string }).reasoning || '').trim();
+        const rawText = getPersonaCleanText(resp);
         const cleanText = cleanMarkdownForSpeech(rawText);
         if (!cleanText) continue;
 
@@ -463,7 +470,7 @@ export function MultiChatConsole({ config, onNavigateToSettings }: MultiChatCons
   // Stitches all 3 persona audios into one contiguous MP3 file
   const handleDownloadAllAudio = async (msg: MultiChatMessage) => {
     const completedResponses = msg.responses.filter(
-      (r) => r.status === 'completed' && (r.text || (r as { reasoning?: string }).reasoning)
+      (r) => r.status === 'completed' && getPersonaCleanText(r).length > 0
     );
     if (completedResponses.length === 0) return;
 
@@ -474,7 +481,7 @@ export function MultiChatConsole({ config, onNavigateToSettings }: MultiChatCons
       const audioBlobs: Blob[] = [];
 
       for (const resp of completedResponses) {
-        const rawText = (resp.text || (resp as { reasoning?: string }).reasoning || '').trim();
+        const rawText = getPersonaCleanText(resp);
         const cleanText = cleanMarkdownForSpeech(rawText);
         if (!cleanText) continue;
 
@@ -580,7 +587,7 @@ export function MultiChatConsole({ config, onNavigateToSettings }: MultiChatCons
       transcriptLines.push('');
       for (const resp of msg.responses) {
         transcriptLines.push(`#### ${resp.icon} ${resp.name} [${resp.toneBadge || 'Persona'}]`);
-        const text = resp.text || (resp as { reasoning?: string }).reasoning || '';
+        const text = getPersonaCleanText(resp);
         if (resp.status === 'completed') {
           transcriptLines.push(text);
         } else if (resp.status === 'failed') {
@@ -750,14 +757,14 @@ export function MultiChatConsole({ config, onNavigateToSettings }: MultiChatCons
             {/* Header Badge */}
             <div className="inline-flex items-center gap-2 px-3 py-1 rounded-full bg-cyan-500/10 border border-cyan-500/30 text-cyan-300 text-xs font-mono font-semibold mb-6">
               <Sparkles size={13} />
-              PARALLEL INTELLIGENCE MESH
+              CONNECTED MULTI-AGENT MESH
             </div>
 
             <h2 className="text-2xl sm:text-3xl font-black tracking-tight text-white mb-3">
-              One Query. Three Distinct Minds.
+              One Query. Three Connected Minds.
             </h2>
             <p className="text-slate-400 text-sm max-w-xl mx-auto leading-relaxed mb-8">
-              Experience the power of simultaneous multi-perspective reasoning. Every inquiry is answered in parallel by your personalized AI team.
+              Experience sequential multi-perspective reasoning. Personas respond in sequence (NOVA → ORBIT → COSMOS), each building upon or reacting to previous answers.
             </p>
 
             {/* Persona Cards Showcase */}
@@ -1038,7 +1045,7 @@ export function MultiChatConsole({ config, onNavigateToSettings }: MultiChatCons
                             const personaKey = `${msg.id}_${resp.personaId}`;
                             const isPlayingThis = playingAudioKey === personaKey;
                             const isCopied = copiedId === personaKey;
-                            const displayText = resp.text || (resp as { reasoning?: string }).reasoning || '';
+                            const displayText = getPersonaCleanText(resp);
 
                             return (
                               <div
@@ -1221,6 +1228,17 @@ export function MultiChatConsole({ config, onNavigateToSettings }: MultiChatCons
                                     </div>
                                   )}
 
+                                  {resp.status === 'pending' && (
+                                    <div className="flex items-center gap-2.5 py-3 text-slate-400">
+                                      <div className="flex items-center gap-2 px-3 py-1.5 rounded-full bg-white/[0.04] border border-white/10">
+                                        <Clock size={12} className="text-slate-400 animate-pulse" />
+                                        <span className="text-xs font-mono text-slate-400">
+                                          Waiting in sequence for previous persona...
+                                        </span>
+                                      </div>
+                                    </div>
+                                  )}
+
                                   {resp.status === 'failed' && (
                                     <div className="flex items-center gap-2.5 p-3 rounded-xl bg-rose-500/10 border border-rose-500/25 text-rose-300 text-xs font-mono">
                                       <AlertCircle size={15} className="shrink-0" />
@@ -1263,7 +1281,7 @@ export function MultiChatConsole({ config, onNavigateToSettings }: MultiChatCons
                               disabled={
                                 isGenerating ||
                                 msg.responses.filter(
-                                  (r) => r.status === 'completed' && (r.text || (r as { reasoning?: string }).reasoning)
+                                  (r) => r.status === 'completed' && getPersonaCleanText(r).length > 0
                                 ).length === 0
                               }
                               className={`px-3 py-1.5 rounded-xl text-xs font-bold flex items-center gap-1.5 transition-all border shadow-sm ${
@@ -1300,7 +1318,7 @@ export function MultiChatConsole({ config, onNavigateToSettings }: MultiChatCons
                               disabled={
                                 downloadingAudioId === `all_dl_${msg.id}` ||
                                 msg.responses.filter(
-                                  (r) => r.status === 'completed' && (r.text || (r as { reasoning?: string }).reasoning)
+                                  (r) => r.status === 'completed' && getPersonaCleanText(r).length > 0
                                 ).length === 0
                               }
                               className={`px-3 py-1.5 rounded-xl text-xs font-bold flex items-center gap-1.5 transition-all border shadow-sm ${
@@ -1336,7 +1354,7 @@ export function MultiChatConsole({ config, onNavigateToSettings }: MultiChatCons
                               onClick={() => handleCopyCombined(msg)}
                               disabled={
                                 msg.responses.filter(
-                                  (r) => r.status === 'completed' && (r.text || (r as { reasoning?: string }).reasoning)
+                                  (r) => r.status === 'completed' && getPersonaCleanText(r).length > 0
                                 ).length === 0
                               }
                               className="px-3 py-1.5 rounded-xl text-xs font-bold flex items-center gap-1.5 bg-slate-900/90 hover:bg-white/10 text-slate-200 hover:text-white border border-white/10 hover:border-white/25 transition-all shadow-sm"
@@ -1373,7 +1391,7 @@ export function MultiChatConsole({ config, onNavigateToSettings }: MultiChatCons
                             const personaKey = `${msg.id}_${resp.personaId}`;
                             const isPlayingThis = playingAudioKey === personaKey;
                             const isCopied = copiedId === personaKey;
-                            const displayText = resp.text || (resp as { reasoning?: string }).reasoning || '';
+                            const displayText = getPersonaCleanText(resp);
 
                             return (
                               <div
@@ -1474,6 +1492,13 @@ export function MultiChatConsole({ config, onNavigateToSettings }: MultiChatCons
                                   <div className="py-6 flex flex-col items-center justify-center gap-2" style={{ color: resp.accentColor }}>
                                     <Loader2 size={18} className="animate-spin" />
                                     <span className="font-mono text-[11px]">{resp.name} is computing...</span>
+                                  </div>
+                                )}
+
+                                {resp.status === 'pending' && (
+                                  <div className="py-6 flex flex-col items-center justify-center gap-2 text-slate-500">
+                                    <Clock size={16} className="text-slate-500 animate-pulse" />
+                                    <span className="font-mono text-[11px]">Waiting in sequence...</span>
                                   </div>
                                 )}
 

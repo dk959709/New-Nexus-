@@ -324,6 +324,8 @@ export interface MultiChatPersonaResponse {
   accentColor: string;
   toneBadge?: string;
   text: string;
+  content?: string;
+  reasoning?: string;
   status: 'pending' | 'running' | 'completed' | 'failed';
   error?: string;
   model?: string;

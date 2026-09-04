@@ -487,6 +487,8 @@ interface ProviderRequestOptions {
 interface ProviderRequestResult {
   ok: boolean;
   text: string;
+  content?: string;
+  reasoning?: string;
   model: string;
   status: number;
   error?: string;
@@ -509,6 +511,8 @@ async function executeProviderChatRequest({
     return {
       ok: false,
       text: '',
+      content: '',
+      reasoning: '',
       model,
       status: 401,
       error: 'Missing or empty API key.',
@@ -544,38 +548,42 @@ async function executeProviderChatRequest({
             message?: {
               content?: string | Array<{ type?: string; text?: string }>;
               reasoning?: string;
+              reasoning_content?: string;
             };
             text?: string;
           }>;
         };
 
-        let text = '';
         const choice = payload.choices?.[0];
+        let contentStr = '';
         if (choice?.message?.content) {
           if (typeof choice.message.content === 'string') {
-            text = choice.message.content.trim();
+            contentStr = choice.message.content.trim();
           } else if (Array.isArray(choice.message.content)) {
-            text = choice.message.content
+            contentStr = choice.message.content
               .map((part) => (typeof part === 'string' ? part : part?.text || ''))
               .join('')
               .trim();
           }
         }
 
-        if (!text && choice?.message?.reasoning) {
-          if (typeof choice.message.reasoning === 'string') {
-            text = choice.message.reasoning.trim();
-          }
+        const rawReasoning =
+          choice?.message?.reasoning ||
+          (choice?.message as { reasoning_content?: string })?.reasoning_content;
+        let reasoningStr = '';
+        if (rawReasoning && typeof rawReasoning === 'string') {
+          reasoningStr = rawReasoning.trim();
         }
 
-        if (!text && typeof choice?.text === 'string') {
-          text = choice.text.trim();
-        }
+        // Primary answer is message.content, falling back to message.reasoning only if content is empty
+        const text = contentStr || reasoningStr || (typeof choice?.text === 'string' ? choice.text.trim() : '');
 
         if (!text) {
           return {
             ok: false,
             text: '',
+            content: '',
+            reasoning: '',
             model: payload.model || model,
             status: 502,
             error: 'AI provider returned an empty response.',
@@ -585,6 +593,8 @@ async function executeProviderChatRequest({
         return {
           ok: true,
           text,
+          content: contentStr,
+          reasoning: reasoningStr,
           model: payload.model || model,
           status: res.status,
         };
@@ -864,12 +874,17 @@ async function generateOpenRouterOrCustomAi({
   temperature?: number;
   maxTokens?: number;
   timeoutMs?: number;
-}): Promise<{ text: string; model: string } | null> {
+}): Promise<{ text: string; content?: string; reasoning?: string; model: string } | null> {
   // Try Gemini first if key is available
   if (process.env.GEMINI_API_KEY) {
     const geminiRes = await generateWithGemini({ messages, temperature, maxTokens });
     if (geminiRes && geminiRes.text) {
-      return geminiRes;
+      return {
+        text: geminiRes.text,
+        content: geminiRes.text,
+        reasoning: '',
+        model: geminiRes.model,
+      };
     }
   }
 
@@ -894,7 +909,12 @@ async function generateOpenRouterOrCustomAi({
   });
 
   if (result.ok && result.text) {
-    return { text: result.text, model: result.model };
+    return {
+      text: result.text,
+      content: result.content,
+      reasoning: result.reasoning,
+      model: result.model,
+    };
   }
 
   console.warn(`[Built-in AI] Request failed: ${result.error || `HTTP ${result.status}`}`);
@@ -943,12 +963,16 @@ async function executeAiWithProviderOrFallback({
   timeoutMs?: number;
 }): Promise<{
   text: string;
+  content?: string;
+  reasoning?: string;
   model: string;
   providerName?: string;
   lastError?: string;
   lastStatus?: number;
 } | {
   text?: never;
+  content?: never;
+  reasoning?: never;
   model?: never;
   providerName?: never;
   lastError: string;
@@ -973,6 +997,8 @@ async function executeAiWithProviderOrFallback({
     if (builtInResult) {
       return {
         text: builtInResult.text,
+        content: builtInResult.content,
+        reasoning: builtInResult.reasoning,
         model: builtInResult.model,
         providerName: 'Built-in AI',
       };
@@ -1012,6 +1038,8 @@ async function executeAiWithProviderOrFallback({
       if (serverResult.ok && serverResult.text) {
         return {
           text: serverResult.text,
+          content: serverResult.content,
+          reasoning: serverResult.reasoning,
           model: serverResult.model || model,
           providerName: providerConfig.name || 'OpenRouter',
         };
@@ -1097,6 +1125,8 @@ async function executeAiWithProviderOrFallback({
       keyCooldownMap.delete(keyVal);
       return {
         text: result.text,
+        content: result.content,
+        reasoning: result.reasoning,
         model: result.model || model,
         providerName: providerConfig.name,
       };
@@ -1134,6 +1164,8 @@ async function executeAiWithProviderOrFallback({
     if (geminiFallback && geminiFallback.text) {
       return {
         text: geminiFallback.text,
+        content: geminiFallback.text,
+        reasoning: '',
         model: geminiFallback.model,
         providerName: 'Google Gemini',
       };
@@ -1154,6 +1186,8 @@ async function executeAiWithProviderOrFallback({
     if (serverFallbackResult.ok && serverFallbackResult.text) {
       return {
         text: serverFallbackResult.text,
+        content: serverFallbackResult.content,
+        reasoning: serverFallbackResult.reasoning,
         model: serverFallbackResult.model || model,
         providerName: providerConfig.name || 'OpenRouter',
       };
@@ -6261,6 +6295,8 @@ async function startServer() {
           data: {
             ok: true,
             text: primaryResult.text,
+            content: primaryResult.content,
+            reasoning: primaryResult.reasoning,
             model: primaryResult.model || providerConfig?.model || 'deepseek/deepseek-chat',
             providerName: primaryResult.providerName || providerConfig?.name || 'Configured AI',
             usedFallback: false,
@@ -6287,6 +6323,8 @@ async function startServer() {
             data: {
               ok: true,
               text: fallbackResult.text,
+              content: fallbackResult.content,
+              reasoning: fallbackResult.reasoning,
               model: fallbackResult.model || fallbackConfig.model || 'fallback-model',
               providerName: fallbackResult.providerName || fallbackConfig.name || 'Fallback AI',
               usedFallback: true,
