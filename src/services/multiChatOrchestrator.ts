@@ -219,13 +219,13 @@ export function getPersonaCleanText(resp: MultiChatPersonaResponse): string {
 }
 
 /**
- * Builds the last 10 messages of conversation history for a specific persona.
+ * Builds the last 20 messages of conversation history for a specific persona.
  * ONLY includes the user's queries and THIS persona's prior completed responses as assistant turns.
  * This guarantees no other persona labels or responses leak into this persona's context.
  */
 export function buildMultiChatHistoryMessages(
   conversationHistory: MultiChatMessage[],
-  maxTurns = 10,
+  maxTurns = 20,
   targetPersonaId?: string,
 ): Array<{ role: 'user' | 'assistant'; content: string }> {
   const historyMessages: Array<{ role: 'user' | 'assistant'; content: string }> = [];
@@ -308,8 +308,8 @@ export async function executeSinglePersona(
     }
   }
 
-  // Build full message context with system prompt + last 10 messages of history for THIS persona
-  const historyMessages = buildMultiChatHistoryMessages(conversationHistory, 10, persona.id);
+  // Build full message context with system prompt + last 20 messages of history for THIS persona
+  const historyMessages = buildMultiChatHistoryMessages(conversationHistory, 20, persona.id);
 
   // If previous personas answered in this turn, provide their answers as live turn context
   let userContent = query.trim();

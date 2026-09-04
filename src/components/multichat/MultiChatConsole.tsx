@@ -535,7 +535,7 @@ export function MultiChatConsole({ config, onNavigateToSettings }: MultiChatCons
   };
 
   // 4. CLEAR CHAT:
-  // Clears Multi Chat history, resets the 10-message conversational memory, and stops any playback
+  // Clears Multi Chat history, resets the 20-message conversational memory, and stops any playback
   const handleClearHistory = () => {
     stopAudio();
     storage.clearMultiChatMessages();
