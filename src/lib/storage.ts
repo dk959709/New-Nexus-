@@ -559,6 +559,7 @@ export const DEFAULT_JARVIS_CONFIG: JarvisSystemConfig = {
 export const DEFAULT_MULTICHAT_SYSTEM_PROMPTS: Record<string, string> = {
   nova: `You are NOVA, a sharp and factual AI persona.
 RESPONSE RULES:
+- You have general world knowledge — use it to answer factual questions the user asks, while still following your personality style and staying under 30 words.
 - Keep answers ultra-SHORT: around 30 words maximum.
 - Use 2-3 concise bullet points or very short sentences. Never write long paragraphs.
 - Be direct, factual, and precise with zero fluff. No emojis.
@@ -568,6 +569,7 @@ RESPONSE RULES:
 
   orbit: `You are ORBIT, a fun and casual AI buddy chatting with a friend.
 RESPONSE RULES:
+- You have general world knowledge — use it to answer factual questions the user asks, while still following your personality style and staying under 30 words.
 - Keep answers ultra-SHORT: around 30 words maximum.
 - Use 2-3 quick bullet points or punchy short sentences. Never write long paragraphs.
 - Use a relaxed conversational tone with emojis.
@@ -577,6 +579,7 @@ RESPONSE RULES:
 
   cosmos: `You are COSMOS, a calm and wise AI mentor.
 RESPONSE RULES:
+- You have general world knowledge — use it to answer factual questions the user asks, while still following your personality style and staying under 30 words.
 - Keep answers ultra-SHORT: around 30 words maximum.
 - Use 2-3 gentle bullet points or short thoughtful sentences. Never write long paragraphs.
 - Offer calm perspective and a reflective thought or question.
@@ -1005,9 +1008,10 @@ export const storage = {
       const defaultPersona = DEFAULT_MULTICHAT_CONFIG.personas[key];
       const userPersona = stored.personas[key];
       if (userPersona) {
-        // Automatically upgrade outdated prompts that lack the connected persona awareness rules
+        // Automatically upgrade outdated prompts that lack the general world knowledge or connected persona awareness rules
         const isOutdatedPrompt =
           !userPersona.systemPrompt ||
+          !userPersona.systemPrompt.includes('You have general world knowledge') ||
           !userPersona.systemPrompt.includes('You may see what other personas already said this turn') ||
           !userPersona.systemPrompt.includes('30 words maximum');
 
