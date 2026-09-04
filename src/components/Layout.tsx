@@ -5,6 +5,7 @@ import {
   Home,
   Map,
   Menu,
+  MessagesSquare,
   Mic,
   Newspaper,
   Radio,
@@ -23,6 +24,7 @@ import { playTapSound } from '@/lib/audio';
 const navItems = [
   { to: '/', label: 'Overview', icon: Home },
   { to: '/jarvis', label: '🤖 JARVIS', icon: Bot },
+  { to: '/multi-chat', label: '💬 Multi Chat', icon: MessagesSquare },
   { to: '/search', label: 'Web Search', icon: Search },
   { to: '/assistant', label: 'AI Assistant', icon: Sparkles },
   { to: '/voice-ai', label: 'Voice AI', icon: Mic },

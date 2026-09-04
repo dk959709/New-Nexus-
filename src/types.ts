@@ -293,6 +293,51 @@ export interface JarvisMessage {
   error?: string;
 }
 
+export type MultiChatPersonaId = 'nova' | 'orbit' | 'cosmos' | string;
+
+export interface MultiChatPersonaConfig {
+  id: MultiChatPersonaId;
+  name: string;
+  role: string;
+  description: string;
+  icon: string;
+  toneBadge: string;
+  accentColor: string;
+  providerId: string;
+  modelId: string;
+  enabled: boolean;
+  maxTokens: number;
+  enableFailover?: boolean;
+  fallbackProviderId?: string;
+  fallbackModelId?: string;
+  systemPrompt: string;
+}
+
+export interface MultiChatSystemConfig {
+  personas: Record<string, MultiChatPersonaConfig>;
+}
+
+export interface MultiChatPersonaResponse {
+  personaId: MultiChatPersonaId;
+  name: string;
+  icon: string;
+  accentColor: string;
+  toneBadge?: string;
+  text: string;
+  status: 'pending' | 'running' | 'completed' | 'failed';
+  error?: string;
+  model?: string;
+  providerName?: string;
+  durationMs?: number;
+}
+
+export interface MultiChatMessage {
+  id: string;
+  query: string;
+  timestamp: number;
+  responses: MultiChatPersonaResponse[];
+}
+
 export interface Settings {
   theme: ThemeMode;
   temperature: TemperatureUnit;

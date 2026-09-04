@@ -6,6 +6,9 @@ import type {
   KeyHealthStatus,
   JarvisSystemConfig,
   JarvisMessage,
+  MultiChatSystemConfig,
+  MultiChatMessage,
+  MultiChatPersonaConfig,
 } from '@/types';
 
 const KEYS = {
@@ -17,6 +20,8 @@ const KEYS = {
   jarvisConfig: 'nexus-jarvis-config-v1',
   jarvisMessages: 'nexus-jarvis-messages-v1',
   edgeVoice: 'nexus-edge-voice-v1',
+  multiChatConfig: 'nexus-multichat-config-v1',
+  multiChatMessages: 'nexus-multichat-messages-v1',
 } as const;
 
 export const DEFAULT_AGENT_SYSTEM_PROMPTS: Record<string, string> = {
@@ -551,6 +556,64 @@ export const DEFAULT_JARVIS_CONFIG: JarvisSystemConfig = {
   },
 };
 
+export const DEFAULT_MULTICHAT_SYSTEM_PROMPTS: Record<string, string> = {
+  nova: `You are NOVA, a sharp and intelligent AI persona. You give clear, fact-based answers with confidence and precision. You speak like an expert — direct, no fluff, no jokes. You focus on accuracy and depth. Keep answers well-structured and informative. No emojis. Tone: professional, brilliant, straight-to-the-point.`,
+
+  orbit: `You are ORBIT, a fun and casual AI persona — like a close friend chatting with the user. Use simple words, relaxed tone, and emojis often. Crack light jokes when it fits. Keep answers short and easy to read, never too formal or robotic. Talk TO the user, not AT them — like texting a buddy.`,
+
+  cosmos: `You are COSMOS, a calm and wise AI persona. You speak slowly and thoughtfully, like a mentor guiding the user. Ask reflective questions sometimes instead of just giving answers. Encourage the user, give big-picture perspective, and stay patient and warm. Use gentle, comforting language.`,
+};
+
+export const DEFAULT_MULTICHAT_CONFIG: MultiChatSystemConfig = {
+  personas: {
+    nova: {
+      id: 'nova',
+      name: 'NOVA',
+      role: 'Researcher',
+      description: 'Sharp, factual, precise, no-nonsense expert analysis with zero fluff or emojis.',
+      icon: '🧠',
+      toneBadge: 'Professional & Factual',
+      accentColor: '#61d7c9',
+      providerId: 'existing',
+      modelId: 'deepseek/deepseek-chat',
+      enabled: true,
+      maxTokens: 1000,
+      enableFailover: false,
+      systemPrompt: DEFAULT_MULTICHAT_SYSTEM_PROMPTS.nova,
+    },
+    orbit: {
+      id: 'orbit',
+      name: 'ORBIT',
+      role: 'Buddy',
+      description: 'Casual, funny, friendly buddy chatting with jokes and emojis like texting a friend.',
+      icon: '😎',
+      toneBadge: 'Casual & Friendly',
+      accentColor: '#f59e0b',
+      providerId: 'existing',
+      modelId: 'deepseek/deepseek-chat',
+      enabled: true,
+      maxTokens: 1000,
+      enableFailover: false,
+      systemPrompt: DEFAULT_MULTICHAT_SYSTEM_PROMPTS.orbit,
+    },
+    cosmos: {
+      id: 'cosmos',
+      name: 'COSMOS',
+      role: 'Mentor',
+      description: 'Calm, wise, thoughtful, encouraging mentor offering reflective questions and perspective.',
+      icon: '🧘',
+      toneBadge: 'Calm & Wise',
+      accentColor: '#818cf8',
+      providerId: 'existing',
+      modelId: 'deepseek/deepseek-chat',
+      enabled: true,
+      maxTokens: 1000,
+      enableFailover: false,
+      systemPrompt: DEFAULT_MULTICHAT_SYSTEM_PROMPTS.cosmos,
+    },
+  },
+};
+
 function read<T>(key: string, fallback: T): T {
   try {
     const raw = localStorage.getItem(key);
@@ -906,5 +969,58 @@ export const storage = {
     } catch {
       // ignore
     }
+  },
+
+  getMultiChatConfig(): MultiChatSystemConfig {
+    const stored = read<Partial<MultiChatSystemConfig> | null>(KEYS.multiChatConfig, null);
+    if (!stored || !stored.personas) {
+      return DEFAULT_MULTICHAT_CONFIG;
+    }
+
+    const mergedPersonas: Record<string, MultiChatPersonaConfig> = {};
+    const defaultKeys = Object.keys(DEFAULT_MULTICHAT_CONFIG.personas);
+
+    for (const key of defaultKeys) {
+      const defaultPersona = DEFAULT_MULTICHAT_CONFIG.personas[key];
+      const userPersona = stored.personas[key];
+      if (userPersona) {
+        mergedPersonas[key] = {
+          ...defaultPersona,
+          ...userPersona,
+          systemPrompt:
+            typeof userPersona.systemPrompt === 'string' && userPersona.systemPrompt.trim().length > 0
+              ? userPersona.systemPrompt
+              : defaultPersona.systemPrompt,
+          maxTokens: Math.max(64, userPersona.maxTokens || defaultPersona.maxTokens),
+        };
+      } else {
+        mergedPersonas[key] = { ...defaultPersona };
+      }
+    }
+
+    return {
+      personas: mergedPersonas,
+    };
+  },
+
+  saveMultiChatConfig(config: MultiChatSystemConfig): void {
+    write(KEYS.multiChatConfig, config);
+  },
+
+  resetMultiChatConfig(): MultiChatSystemConfig {
+    write(KEYS.multiChatConfig, DEFAULT_MULTICHAT_CONFIG);
+    return DEFAULT_MULTICHAT_CONFIG;
+  },
+
+  getMultiChatMessages(): MultiChatMessage[] {
+    return read<MultiChatMessage[]>(KEYS.multiChatMessages, []);
+  },
+
+  saveMultiChatMessages(messages: MultiChatMessage[]): void {
+    write(KEYS.multiChatMessages, messages.slice(-50));
+  },
+
+  clearMultiChatMessages(): void {
+    write(KEYS.multiChatMessages, []);
   },
 };

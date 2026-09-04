@@ -6,6 +6,7 @@ import { ErrorBoundary } from '@/components/ErrorBoundary';
 import { HomePage, SearchPage, WeatherPage, SettingsPage, VoiceAI } from '@/pages';
 import { AssistantPage } from '@/pages/AssistantPage';
 import { JarvisPage } from '@/pages/JarvisPage';
+import { MultiChatPage } from '@/pages/MultiChatPage';
 
 const SpacePage = lazy(() => import('@/pages/SpacePage').then((m) => ({ default: m.SpacePage })));
 const MapPage = lazy(() => import('@/pages/MapPage').then((m) => ({ default: m.MapPage })));
@@ -31,6 +32,7 @@ export default function App() {
           <Route element={<Layout />}>
             <Route path="/" element={<HomePage />} />
             <Route path="/jarvis" element={<JarvisPage />} />
+            <Route path="/multi-chat" element={<MultiChatPage />} />
             <Route path="/search" element={<SearchPage />} />
             <Route path="/assistant" element={<AssistantPage />} />
             <Route path="/voice-ai" element={<VoiceAI />} />
