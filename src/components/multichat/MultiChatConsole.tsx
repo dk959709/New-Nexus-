@@ -204,6 +204,8 @@ export function MultiChatConsole({ config, onNavigateToSettings }: MultiChatCons
         query: textToSend,
         conversationHistory: messages,
         config,
+        permanentMemories: storage.getMultiChatMemories(),
+        responseLanguage: config.responseLanguage ?? storage.getMultiChatResponseLanguage(),
         onPersonaUpdate: (updatedResp) => {
           setMessages((prev) => {
             const next = prev.map((msg) => {

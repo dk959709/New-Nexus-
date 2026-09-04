@@ -22,6 +22,7 @@ const KEYS = {
   edgeVoice: 'nexus-edge-voice-v1',
   multiChatConfig: 'nexus-multichat-config-v1',
   multiChatMessages: 'nexus-multichat-messages-v1',
+  multiChatMemories: 'nexus-multichat-memories-v1',
 } as const;
 
 export const DEFAULT_AGENT_SYSTEM_PROMPTS: Record<string, string> = {
@@ -589,6 +590,7 @@ RESPONSE RULES:
 };
 
 export const DEFAULT_MULTICHAT_CONFIG: MultiChatSystemConfig = {
+  responseLanguage: 'English',
   personas: {
     nova: {
       id: 'nova',
@@ -1033,6 +1035,7 @@ export const storage = {
     }
 
     return {
+      responseLanguage: stored.responseLanguage || 'English',
       personas: mergedPersonas,
     };
   },
@@ -1062,5 +1065,42 @@ export const storage = {
     const current = read<MultiChatMessage[]>(KEYS.multiChatMessages, []);
     const filtered = current.filter((m) => m.id !== messageId);
     write(KEYS.multiChatMessages, filtered);
+  },
+
+  getMultiChatMemories(): string[] {
+    return read<string[]>(KEYS.multiChatMemories, []);
+  },
+
+  saveMultiChatMemories(memories: string[]): void {
+    write(KEYS.multiChatMemories, memories);
+  },
+
+  addMultiChatMemory(memory: string): string[] {
+    const trimmed = memory.trim();
+    if (!trimmed) return this.getMultiChatMemories();
+    const current = this.getMultiChatMemories();
+    const updated = [...current, trimmed];
+    write(KEYS.multiChatMemories, updated);
+    return updated;
+  },
+
+  deleteMultiChatMemory(index: number): string[] {
+    const current = this.getMultiChatMemories();
+    const updated = current.filter((_, idx) => idx !== index);
+    write(KEYS.multiChatMemories, updated);
+    return updated;
+  },
+
+  getMultiChatResponseLanguage(): string {
+    const cfg = this.getMultiChatConfig();
+    return cfg.responseLanguage || 'English';
+  },
+
+  setMultiChatResponseLanguage(language: string): string {
+    const cfg = this.getMultiChatConfig();
+    const updated = language.trim() || 'English';
+    cfg.responseLanguage = updated;
+    this.saveMultiChatConfig(cfg);
+    return updated;
   },
 };

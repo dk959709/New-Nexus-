@@ -315,6 +315,7 @@ export interface MultiChatPersonaConfig {
 
 export interface MultiChatSystemConfig {
   personas: Record<string, MultiChatPersonaConfig>;
+  responseLanguage?: string;
 }
 
 export interface MultiChatPersonaResponse {

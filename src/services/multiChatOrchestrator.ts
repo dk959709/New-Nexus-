@@ -278,6 +278,8 @@ export async function executeSinglePersona(
   query: string,
   conversationHistory: MultiChatMessage[],
   priorTurnResponses: PriorPersonaTurnAnswer[] = [],
+  permanentMemories?: string[],
+  responseLanguage?: string,
 ): Promise<MultiChatPersonaResponse> {
   const startTime = Date.now();
   const baseResponse: MultiChatPersonaResponse = {
@@ -311,6 +313,24 @@ export async function executeSinglePersona(
   // Build full message context with system prompt + last 20 messages of history for THIS persona
   const historyMessages = buildMultiChatHistoryMessages(conversationHistory, 20, persona.id);
 
+  // Inject permanent memories into persona context if any exist
+  const memoriesToInject = permanentMemories ?? storage.getMultiChatMemories();
+  let systemContent = persona.systemPrompt;
+  if (memoriesToInject && memoriesToInject.length > 0) {
+    const validMemories = memoriesToInject.map((m) => m.trim()).filter(Boolean);
+    if (validMemories.length > 0) {
+      const memoryBlock = validMemories.map((m) => `- ${m}`).join('\n');
+      systemContent = `Known facts about the user:\n${memoryBlock}\n\n${persona.systemPrompt}`;
+    }
+  }
+
+  // Inject chosen response language instruction
+  const rawLang = responseLanguage ?? storage.getMultiChatResponseLanguage();
+  const lang = (typeof rawLang === 'string' && rawLang.trim()) ? rawLang.trim() : 'English';
+  if (lang) {
+    systemContent += `\n\nRespond only in: ${lang}. Strictly output your response in ${lang} while maintaining your personality style and staying under 30 words.`;
+  }
+
   // If previous personas answered in this turn, provide their answers as live turn context
   let userContent = query.trim();
   if (priorTurnResponses && priorTurnResponses.length > 0) {
@@ -325,7 +345,7 @@ export async function executeSinglePersona(
   }
 
   const messages: Array<{ role: 'system' | 'user' | 'assistant'; content: string }> = [
-    { role: 'system', content: persona.systemPrompt },
+    { role: 'system', content: systemContent },
     ...historyMessages,
     { role: 'user', content: userContent },
   ];
@@ -394,12 +414,18 @@ export async function executeMultiChatTurn({
   conversationHistory,
   config,
   onPersonaUpdate,
+  permanentMemories,
+  responseLanguage,
 }: {
   query: string;
   conversationHistory: MultiChatMessage[];
   config: MultiChatSystemConfig;
   onPersonaUpdate?: (response: MultiChatPersonaResponse) => void;
+  permanentMemories?: string[];
+  responseLanguage?: string;
 }): Promise<MultiChatPersonaResponse[]> {
+  const activeMemories = permanentMemories ?? storage.getMultiChatMemories();
+  const activeLanguage = responseLanguage ?? config.responseLanguage ?? storage.getMultiChatResponseLanguage();
   const personas = Object.values(config.personas);
   const enabledPersonas = personas.filter((p) => p.enabled);
 
@@ -454,6 +480,8 @@ export async function executeMultiChatTurn({
       query,
       conversationHistory,
       [...turnContext],
+      activeMemories,
+      activeLanguage,
     );
 
     results.push(result);

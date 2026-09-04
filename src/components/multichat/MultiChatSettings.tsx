@@ -9,6 +9,10 @@ import {
   FileCode2,
   AlertCircle,
   Sparkles,
+  Bookmark,
+  Languages,
+  Plus,
+  Trash2,
 } from 'lucide-react';
 import { storage, DEFAULT_MULTICHAT_CONFIG, DEFAULT_MULTICHAT_SYSTEM_PROMPTS } from '@/lib/storage';
 import type { MultiChatSystemConfig, MultiChatPersonaConfig, AIProvidersState } from '@/types';
@@ -42,11 +46,27 @@ export function MultiChatSettings({ onSaved }: MultiChatSettingsProps) {
     cosmos: true,
   });
   const [showResetModal, setShowResetModal] = useState(false);
+  const [memories, setMemories] = useState<string[]>(() => storage.getMultiChatMemories());
+  const [newMemoryInput, setNewMemoryInput] = useState('');
+
+  const handleAddMemory = () => {
+    const trimmed = newMemoryInput.trim();
+    if (!trimmed) return;
+    const updated = storage.addMultiChatMemory(trimmed);
+    setMemories(updated);
+    setNewMemoryInput('');
+  };
+
+  const handleDeleteMemory = (index: number) => {
+    const updated = storage.deleteMultiChatMemory(index);
+    setMemories(updated);
+  };
 
   useEffect(() => {
     const handleStorage = () => {
       setProvidersState(storage.getAIProvidersState());
       setConfig(storage.getMultiChatConfig());
+      setMemories(storage.getMultiChatMemories());
     };
     window.addEventListener('storage', handleStorage);
     window.addEventListener('focus', handleStorage);
@@ -55,6 +75,26 @@ export function MultiChatSettings({ onSaved }: MultiChatSettingsProps) {
       window.removeEventListener('focus', handleStorage);
     };
   }, []);
+
+  const handleResponseLanguageChange = (val: string) => {
+    const updated: MultiChatSystemConfig = {
+      ...config,
+      responseLanguage: val,
+    };
+    setConfig(updated);
+    storage.saveMultiChatConfig(updated);
+    onSaved?.(updated);
+  };
+
+  const handleResetResponseLanguage = () => {
+    const updated: MultiChatSystemConfig = {
+      ...config,
+      responseLanguage: 'English',
+    };
+    setConfig(updated);
+    storage.saveMultiChatConfig(updated);
+    onSaved?.(updated);
+  };
 
   const handlePersonaChange = (id: string, updates: Partial<MultiChatPersonaConfig>) => {
     setConfig((prev) => ({
@@ -319,6 +359,310 @@ export function MultiChatSettings({ onSaved }: MultiChatSettingsProps) {
             </p>
           </div>
         </div>
+      </div>
+
+      {/* Permanent Memories Section */}
+      <div
+        id="multichat-permanent-memories-card"
+        style={{
+          padding: '18px 20px',
+          borderRadius: '16px',
+          background: 'linear-gradient(145deg, rgba(8, 22, 34, 0.85) 0%, rgba(4, 12, 18, 0.92) 100%)',
+          border: '1px solid rgba(97, 215, 201, 0.28)',
+          boxShadow: '0 4px 20px rgba(0, 0, 0, 0.35)',
+        }}
+      >
+        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '14px', flexWrap: 'wrap', gap: '8px' }}>
+          <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
+            <div
+              style={{
+                width: '34px',
+                height: '34px',
+                borderRadius: '10px',
+                background: 'rgba(97, 215, 201, 0.15)',
+                border: '1px solid rgba(97, 215, 201, 0.35)',
+                display: 'grid',
+                placeItems: 'center',
+                color: '#61d7c9',
+                flexShrink: 0,
+              }}
+            >
+              <Bookmark size={18} />
+            </div>
+            <div>
+              <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                <span style={{ fontSize: '14px', fontWeight: 800, color: '#fff', letterSpacing: '-0.01em' }}>
+                  Permanent Memories
+                </span>
+                <span
+                  style={{
+                    padding: '2px 8px',
+                    borderRadius: '999px',
+                    background: memories.length > 0 ? 'rgba(97, 215, 201, 0.2)' : 'rgba(148, 163, 184, 0.15)',
+                    color: memories.length > 0 ? '#61d7c9' : '#94a3b8',
+                    fontSize: '11px',
+                    fontFamily: 'DM Mono, monospace',
+                    fontWeight: 700,
+                    border: `1px solid ${memories.length > 0 ? 'rgba(97, 215, 201, 0.35)' : 'rgba(148, 163, 184, 0.25)'}`,
+                  }}
+                >
+                  {memories.length} saved
+                </span>
+              </div>
+              <p style={{ margin: '3px 0 0', fontSize: '12px', color: '#94a3b8', lineHeight: 1.4 }}>
+                Facts about you that all 3 personas (NOVA, ORBIT, COSMOS) will always remember, even after old messages roll off.
+              </p>
+            </div>
+          </div>
+        </div>
+
+        {/* Input box */}
+        <div style={{ marginBottom: '14px' }}>
+          <label
+            htmlFor="multichat-memory-input"
+            style={{
+              display: 'block',
+              fontSize: '12px',
+              fontWeight: 600,
+              color: '#cbd5e1',
+              marginBottom: '6px',
+            }}
+          >
+            Add a memory (e.g. My name is DK):
+          </label>
+          <div style={{ display: 'flex', gap: '8px' }}>
+            <input
+              id="multichat-memory-input"
+              type="text"
+              value={newMemoryInput}
+              onChange={(e) => setNewMemoryInput(e.target.value)}
+              onKeyDown={(e) => {
+                if (e.key === 'Enter') {
+                  e.preventDefault();
+                  handleAddMemory();
+                }
+              }}
+              placeholder="Type a fact (e.g. My name is DK)..."
+              style={{
+                flex: 1,
+                padding: '9px 14px',
+                borderRadius: '10px',
+                background: 'rgba(15, 23, 42, 0.75)',
+                border: '1px solid rgba(165, 207, 214, 0.25)',
+                color: '#fff',
+                fontSize: '13px',
+                outline: 'none',
+              }}
+              className="focus:border-[#61d7c9] transition-colors"
+            />
+            <button
+              id="multichat-add-memory-btn"
+              type="button"
+              onClick={handleAddMemory}
+              disabled={!newMemoryInput.trim()}
+              style={{
+                padding: '9px 18px',
+                borderRadius: '10px',
+                background: newMemoryInput.trim() ? '#61d7c9' : 'rgba(97, 215, 201, 0.2)',
+                color: newMemoryInput.trim() ? '#04181a' : '#61d7c9',
+                border: 'none',
+                fontSize: '13px',
+                fontWeight: 700,
+                cursor: newMemoryInput.trim() ? 'pointer' : 'not-allowed',
+                display: 'flex',
+                alignItems: 'center',
+                gap: '6px',
+                transition: 'all 0.15s ease',
+              }}
+            >
+              <Plus size={16} />
+              Add
+            </button>
+          </div>
+        </div>
+
+        {/* List of currently saved memories */}
+        <div>
+          {memories.length === 0 ? (
+            <div
+              style={{
+                padding: '12px 14px',
+                borderRadius: '10px',
+                background: 'rgba(15, 23, 42, 0.5)',
+                border: '1px dashed rgba(165, 207, 214, 0.2)',
+                color: '#94a3b8',
+                fontSize: '12px',
+                textAlign: 'center',
+              }}
+            >
+              No permanent memories saved yet. Add facts above to have NOVA, ORBIT, and COSMOS always remember them.
+            </div>
+          ) : (
+            <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
+              {memories.map((mem, index) => (
+                <div
+                  key={`${index}-${mem}`}
+                  id={`multichat-memory-item-${index}`}
+                  style={{
+                    padding: '8px 12px',
+                    borderRadius: '10px',
+                    background: 'rgba(15, 23, 42, 0.7)',
+                    border: '1px solid rgba(165, 207, 214, 0.18)',
+                    display: 'flex',
+                    alignItems: 'center',
+                    justifyContent: 'space-between',
+                    gap: '12px',
+                  }}
+                >
+                  <div style={{ display: 'flex', alignItems: 'center', gap: '8px', overflow: 'hidden' }}>
+                    <span
+                      style={{
+                        width: '6px',
+                        height: '6px',
+                        borderRadius: '50%',
+                        background: '#61d7c9',
+                        flexShrink: 0,
+                      }}
+                    />
+                    <span
+                      style={{
+                        fontSize: '13px',
+                        color: '#e2e8f0',
+                        wordBreak: 'break-word',
+                      }}
+                    >
+                      {mem}
+                    </span>
+                  </div>
+                  <button
+                    id={`multichat-delete-memory-btn-${index}`}
+                    type="button"
+                    onClick={() => handleDeleteMemory(index)}
+                    title="Remove memory"
+                    style={{
+                      padding: '5px',
+                      borderRadius: '6px',
+                      background: 'transparent',
+                      border: 'none',
+                      color: '#94a3b8',
+                      cursor: 'pointer',
+                      display: 'grid',
+                      placeItems: 'center',
+                      flexShrink: 0,
+                      transition: 'all 0.15s ease',
+                    }}
+                    className="hover:text-red-400 hover:bg-red-500/10"
+                  >
+                    <Trash2 size={15} />
+                  </button>
+                </div>
+              ))}
+            </div>
+          )}
+        </div>
+      </div>
+
+      {/* Response Language Section */}
+      <div
+        id="multichat-response-language-card"
+        style={{
+          padding: '18px 20px',
+          borderRadius: '16px',
+          background: 'linear-gradient(145deg, rgba(8, 22, 34, 0.85) 0%, rgba(4, 12, 18, 0.92) 100%)',
+          border: '1px solid rgba(97, 215, 201, 0.28)',
+          boxShadow: '0 4px 20px rgba(0, 0, 0, 0.35)',
+        }}
+      >
+        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '14px', flexWrap: 'wrap', gap: '8px' }}>
+          <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
+            <div
+              style={{
+                width: '34px',
+                height: '34px',
+                borderRadius: '10px',
+                background: 'rgba(97, 215, 201, 0.15)',
+                border: '1px solid rgba(97, 215, 201, 0.35)',
+                display: 'grid',
+                placeItems: 'center',
+                color: '#61d7c9',
+                flexShrink: 0,
+              }}
+            >
+              <Languages size={18} />
+            </div>
+            <div>
+              <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                <span style={{ fontSize: '14px', fontWeight: 800, color: '#fff', letterSpacing: '-0.01em' }}>
+                  RESPONSE LANGUAGE
+                </span>
+                <span
+                  style={{
+                    padding: '2px 8px',
+                    borderRadius: '999px',
+                    background: (config.responseLanguage || 'English').toLowerCase() !== 'english' ? 'rgba(97, 215, 201, 0.2)' : 'rgba(148, 163, 184, 0.15)',
+                    color: (config.responseLanguage || 'English').toLowerCase() !== 'english' ? '#61d7c9' : '#94a3b8',
+                    fontSize: '11px',
+                    fontFamily: 'DM Mono, monospace',
+                    fontWeight: 700,
+                    border: `1px solid ${(config.responseLanguage || 'English').toLowerCase() !== 'english' ? 'rgba(97, 215, 201, 0.35)' : 'rgba(148, 163, 184, 0.25)'}`,
+                  }}
+                >
+                  {config.responseLanguage || 'English'}
+                </span>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        {/* Input box + Reset to English button */}
+        <div style={{ display: 'flex', gap: '8px', alignItems: 'center' }}>
+          <input
+            id="multichat-response-language-input"
+            type="text"
+            value={config.responseLanguage !== undefined ? config.responseLanguage : 'English'}
+            onChange={(e) => handleResponseLanguageChange(e.target.value)}
+            placeholder="English"
+            style={{
+              flex: 1,
+              padding: '9px 14px',
+              borderRadius: '10px',
+              background: 'rgba(15, 23, 42, 0.75)',
+              border: '1px solid rgba(165, 207, 214, 0.25)',
+              color: '#fff',
+              fontSize: '13px',
+              outline: 'none',
+            }}
+            className="focus:border-[#61d7c9] transition-colors"
+          />
+          <button
+            id="multichat-reset-language-btn"
+            type="button"
+            onClick={handleResetResponseLanguage}
+            title="Reset Response Language to English"
+            style={{
+              padding: '9px 16px',
+              borderRadius: '10px',
+              background: 'rgba(15, 23, 42, 0.8)',
+              color: '#cbd5e1',
+              border: '1px solid rgba(165, 207, 214, 0.25)',
+              fontSize: '13px',
+              fontWeight: 600,
+              cursor: 'pointer',
+              display: 'flex',
+              alignItems: 'center',
+              gap: '6px',
+              whiteSpace: 'nowrap',
+              transition: 'all 0.15s ease',
+            }}
+            className="hover:border-[#61d7c9] hover:text-[#61d7c9]"
+          >
+            <RotateCcw size={14} />
+            Reset to English
+          </button>
+        </div>
+        <p style={{ margin: '8px 0 0', fontSize: '12px', color: '#94a3b8', lineHeight: 1.4 }}>
+          Type any language (e.g. &quot;Japanese&quot;, &quot;France&quot;, &quot;Formal English&quot;). All 3 personas will respond in this language.
+        </p>
       </div>
 
       {/* 3 Persona Cards Grid */}
