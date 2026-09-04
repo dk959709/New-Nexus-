@@ -9,7 +9,10 @@ import {
   Sparkles,
   User,
   AlertCircle,
+  AlertTriangle,
+  CheckCircle2,
   Loader2,
+  Download,
   Share2,
   Sliders,
   Layers,
@@ -24,6 +27,7 @@ import {
 } from 'lucide-react';
 import { storage } from '@/lib/storage';
 import { copyToClipboard } from '@/lib/clipboard';
+import { cleanMarkdownForSpeech } from '@/lib/format';
 import { FormattedText } from '@/components/jarvis/FormattedText';
 import { executeMultiChatTurn } from '@/services/multiChatOrchestrator';
 import type {
@@ -79,8 +83,13 @@ export function MultiChatConsole({ config, onNavigateToSettings }: MultiChatCons
   const [inputText, setInputText] = useState('');
   const [isGenerating, setIsGenerating] = useState(false);
   const [copiedId, setCopiedId] = useState<string | null>(null);
+  const [copiedCombinedId, setCopiedCombinedId] = useState<string | null>(null);
   const [copiedQueryId, setCopiedQueryId] = useState<string | null>(null);
   const [playingAudioKey, setPlayingAudioKey] = useState<string | null>(null);
+  const [edgeTtsLoadingId, setEdgeTtsLoadingId] = useState<string | null>(null);
+  const [downloadingAudioId, setDownloadingAudioId] = useState<string | null>(null);
+  const [downloadSuccessId, setDownloadSuccessId] = useState<string | null>(null);
+  const [clearedBanner, setClearedBanner] = useState(false);
   const [showClearModal, setShowClearModal] = useState(false);
   const [viewMode, setViewMode] = useState<ViewMode>('unified');
   const [selectedPersonaTab, setSelectedPersonaTab] = useState<Record<string, string>>({});
@@ -88,6 +97,20 @@ export function MultiChatConsole({ config, onNavigateToSettings }: MultiChatCons
 
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const inputRef = useRef<HTMLTextAreaElement>(null);
+  const edgeTtsAudioRef = useRef<HTMLAudioElement | null>(null);
+
+  // Stop active speech or audio
+  const stopAudio = () => {
+    if (edgeTtsAudioRef.current) {
+      edgeTtsAudioRef.current.pause();
+      edgeTtsAudioRef.current = null;
+    }
+    if (typeof window !== 'undefined' && 'speechSynthesis' in window) {
+      window.speechSynthesis.cancel();
+    }
+    setPlayingAudioKey(null);
+    setEdgeTtsLoadingId(null);
+  };
 
   // Sync with storage on mount and window focus
   useEffect(() => {
@@ -101,9 +124,7 @@ export function MultiChatConsole({ config, onNavigateToSettings }: MultiChatCons
   // Clean up any speech on unmount
   useEffect(() => {
     return () => {
-      if (typeof window !== 'undefined' && 'speechSynthesis' in window) {
-        window.speechSynthesis.cancel();
-      }
+      stopAudio();
     };
   }, []);
 
@@ -197,40 +218,325 @@ export function MultiChatConsole({ config, onNavigateToSettings }: MultiChatCons
     }
   };
 
-  const handleToggleAudio = (text: string, idKey: string) => {
-    if (typeof window === 'undefined' || !('speechSynthesis' in window)) {
-      alert('Speech synthesis is not supported in this browser.');
-      return;
-    }
-
-    if (playingAudioKey === idKey) {
-      window.speechSynthesis.cancel();
-      setPlayingAudioKey(null);
-      return;
-    }
-
-    window.speechSynthesis.cancel();
-    const cleanText = text
-      .replace(/[*_#`~[\]()]/g, ' ')
-      .replace(/\s+/g, ' ')
-      .trim();
-
-    if (!cleanText) return;
-
-    const utterance = new SpeechSynthesisUtterance(cleanText);
-    utterance.rate = 1.0;
-    utterance.pitch = idKey.includes('orbit') ? 1.1 : idKey.includes('cosmos') ? 0.9 : 1.0;
-    utterance.onend = () => setPlayingAudioKey(null);
-    utterance.onerror = () => setPlayingAudioKey(null);
-
-    setPlayingAudioKey(idKey);
-    window.speechSynthesis.speak(utterance);
+  // Helper to map persona to matched Edge TTS neural voice
+  const getPersonaVoice = (personaId?: string): string => {
+    const globalVoice = storage.getEdgeVoice();
+    if (personaId === 'nova') return 'en-US-JennyNeural';
+    if (personaId === 'orbit') return 'en-US-GuyNeural';
+    if (personaId === 'cosmos') return 'en-US-EricNeural';
+    return globalVoice || 'en-US-AriaNeural';
   };
 
+  // 1. UNIVERSAL COPY BUTTON:
+  // Copies all persona responses together as one formatted text block:
+  // === NOVA ===
+  // [nova's answer]
+  // === ORBIT ===
+  // [orbit's answer]
+  // === COSMOS ===
+  // [cosmos's answer]
+  const handleCopyCombined = async (msg: MultiChatMessage) => {
+    const completedResponses = msg.responses.filter(
+      (r) => r.status === 'completed' && (r.text || (r as { reasoning?: string }).reasoning)
+    );
+    if (completedResponses.length === 0) return;
+
+    const formattedBlock = completedResponses
+      .map((r) => {
+        const answer = (r.text || (r as { reasoning?: string }).reasoning || '').trim();
+        return `=== ${r.name.toUpperCase()} ===\n${answer}`;
+      })
+      .join('\n\n');
+
+    const success = await copyToClipboard(formattedBlock);
+    if (success) {
+      setCopiedCombinedId(msg.id);
+      setTimeout(() => setCopiedCombinedId(null), 2000);
+    }
+  };
+
+  // 2. INDIVIDUAL EDGE TTS LISTEN (Play / Stop)
+  const handleToggleAudio = async (text: string, idKey: string, personaId?: string) => {
+    if (playingAudioKey === idKey) {
+      stopAudio();
+      return;
+    }
+
+    stopAudio();
+
+    const cleanText = cleanMarkdownForSpeech(text);
+    if (!cleanText) return;
+
+    setEdgeTtsLoadingId(idKey);
+    try {
+      const voice = getPersonaVoice(personaId);
+      const response = await fetch('/api/edge-tts', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          text: cleanText.slice(0, 3500),
+          voice,
+        }),
+      });
+
+      if (!response.ok) {
+        throw new Error(`Edge TTS synthesis error: ${response.status}`);
+      }
+
+      const blob = await response.blob();
+      const url = URL.createObjectURL(blob);
+      const audio = new Audio(url);
+      edgeTtsAudioRef.current = audio;
+
+      audio.onplay = () => {
+        setPlayingAudioKey(idKey);
+        setEdgeTtsLoadingId(null);
+      };
+
+      audio.onended = () => {
+        setPlayingAudioKey(null);
+        edgeTtsAudioRef.current = null;
+        URL.revokeObjectURL(url);
+      };
+
+      audio.onerror = () => {
+        setPlayingAudioKey(null);
+        edgeTtsAudioRef.current = null;
+        URL.revokeObjectURL(url);
+      };
+
+      await audio.play();
+    } catch (err) {
+      console.warn('[MultiChat] Edge TTS error, falling back to local speech synthesis:', err);
+      setEdgeTtsLoadingId(null);
+      if (typeof window !== 'undefined' && 'speechSynthesis' in window) {
+        window.speechSynthesis.cancel();
+        const utterance = new SpeechSynthesisUtterance(cleanText);
+        utterance.rate = 1.0;
+        utterance.pitch = idKey.includes('orbit') ? 1.1 : idKey.includes('cosmos') ? 0.9 : 1.0;
+        utterance.onend = () => setPlayingAudioKey(null);
+        utterance.onerror = () => setPlayingAudioKey(null);
+        setPlayingAudioKey(idKey);
+        window.speechSynthesis.speak(utterance);
+      } else {
+        setPlayingAudioKey(null);
+      }
+    }
+  };
+
+  // 2. UNIVERSAL LISTEN TO ALL:
+  // Plays all 3 persona responses back-to-back using the Edge TTS system
+  const handleListenToAll = async (msg: MultiChatMessage) => {
+    const combinedKey = `all_${msg.id}`;
+    if (playingAudioKey === combinedKey) {
+      stopAudio();
+      return;
+    }
+
+    stopAudio();
+
+    const completedResponses = msg.responses.filter(
+      (r) => r.status === 'completed' && (r.text || (r as { reasoning?: string }).reasoning)
+    );
+    if (completedResponses.length === 0) return;
+
+    setEdgeTtsLoadingId(combinedKey);
+    try {
+      const audioBlobs: Blob[] = [];
+
+      for (const resp of completedResponses) {
+        const rawText = (resp.text || (resp as { reasoning?: string }).reasoning || '').trim();
+        const cleanText = cleanMarkdownForSpeech(rawText);
+        if (!cleanText) continue;
+
+        const spokenIntro = `${resp.name}. `;
+        const voice = getPersonaVoice(resp.personaId);
+
+        const response = await fetch('/api/edge-tts', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            text: cleanMarkdownForSpeech(spokenIntro + cleanText).slice(0, 3500),
+            voice,
+          }),
+        });
+
+        if (!response.ok) {
+          throw new Error(`Edge TTS synthesis failed for ${resp.name}: ${response.status}`);
+        }
+
+        const blob = await response.blob();
+        audioBlobs.push(blob);
+      }
+
+      if (audioBlobs.length === 0) {
+        throw new Error('No audio was generated');
+      }
+
+      // Concatenate all persona MP3 binary streams into a single seamless audio file
+      const stitchedBlob = new Blob(audioBlobs, { type: 'audio/mpeg' });
+      const url = URL.createObjectURL(stitchedBlob);
+      const audio = new Audio(url);
+      edgeTtsAudioRef.current = audio;
+
+      audio.onplay = () => {
+        setPlayingAudioKey(combinedKey);
+        setEdgeTtsLoadingId(null);
+      };
+
+      audio.onended = () => {
+        setPlayingAudioKey(null);
+        edgeTtsAudioRef.current = null;
+        URL.revokeObjectURL(url);
+      };
+
+      audio.onerror = () => {
+        setPlayingAudioKey(null);
+        edgeTtsAudioRef.current = null;
+        URL.revokeObjectURL(url);
+      };
+
+      await audio.play();
+    } catch (err) {
+      console.error('[MultiChat] Listen to All error:', err);
+      setPlayingAudioKey(null);
+      setEdgeTtsLoadingId(null);
+    }
+  };
+
+  // 3. INDIVIDUAL MP3 DOWNLOAD:
+  // Edge TTS download for a single persona's response
+  const handleDownloadPersonaAudio = async (
+    text: string,
+    idKey: string,
+    personaName: string,
+    personaId: string,
+    query?: string
+  ) => {
+    const cleanText = cleanMarkdownForSpeech(text);
+    if (!cleanText) return;
+
+    setDownloadingAudioId(idKey);
+    try {
+      const voice = getPersonaVoice(personaId);
+      const response = await fetch('/api/edge-tts', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          text: cleanText.slice(0, 4000),
+          voice,
+        }),
+      });
+
+      if (!response.ok) {
+        throw new Error(`Edge TTS download failed: ${response.status}`);
+      }
+
+      const blob = await response.blob();
+      const url = URL.createObjectURL(blob);
+
+      const a = document.createElement('a');
+      a.href = url;
+      const safeSlug = query
+        ? query
+            .slice(0, 25)
+            .trim()
+            .replace(/[^a-zA-Z0-9_-]+/g, '_')
+            .toLowerCase()
+        : 'response';
+      a.download = `nexus_multichat_${personaName.toLowerCase()}_${safeSlug}_${Date.now()}.mp3`;
+      document.body.appendChild(a);
+      a.click();
+      document.body.removeChild(a);
+
+      setTimeout(() => URL.revokeObjectURL(url), 2000);
+      setDownloadSuccessId(idKey);
+      setTimeout(() => setDownloadSuccessId((cur) => (cur === idKey ? null : cur)), 2500);
+    } catch (err) {
+      console.error('[MultiChat] Individual audio download error:', err);
+    } finally {
+      setDownloadingAudioId(null);
+    }
+  };
+
+  // 3. UNIVERSAL MP3 DOWNLOAD:
+  // Stitches all 3 persona audios into one contiguous MP3 file
+  const handleDownloadAllAudio = async (msg: MultiChatMessage) => {
+    const completedResponses = msg.responses.filter(
+      (r) => r.status === 'completed' && (r.text || (r as { reasoning?: string }).reasoning)
+    );
+    if (completedResponses.length === 0) return;
+
+    const downloadKey = `all_dl_${msg.id}`;
+    setDownloadingAudioId(downloadKey);
+
+    try {
+      const audioBlobs: Blob[] = [];
+
+      for (const resp of completedResponses) {
+        const rawText = (resp.text || (resp as { reasoning?: string }).reasoning || '').trim();
+        const cleanText = cleanMarkdownForSpeech(rawText);
+        if (!cleanText) continue;
+
+        const spokenIntro = `${resp.name}. `;
+        const voice = getPersonaVoice(resp.personaId);
+
+        const response = await fetch('/api/edge-tts', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            text: cleanMarkdownForSpeech(spokenIntro + cleanText).slice(0, 4000),
+            voice,
+          }),
+        });
+
+        if (!response.ok) {
+          throw new Error(`Edge TTS download failed for ${resp.name}: ${response.status}`);
+        }
+
+        const blob = await response.blob();
+        audioBlobs.push(blob);
+      }
+
+      if (audioBlobs.length === 0) return;
+
+      const stitchedBlob = new Blob(audioBlobs, { type: 'audio/mpeg' });
+      const url = URL.createObjectURL(stitchedBlob);
+
+      const a = document.createElement('a');
+      a.href = url;
+      const safeSlug = msg.query
+        ? msg.query
+            .slice(0, 25)
+            .trim()
+            .replace(/[^a-zA-Z0-9_-]+/g, '_')
+            .toLowerCase()
+        : 'multi_all';
+      a.download = `nexus_multichat_all_personas_${safeSlug}_${Date.now()}.mp3`;
+      document.body.appendChild(a);
+      a.click();
+      document.body.removeChild(a);
+
+      setTimeout(() => URL.revokeObjectURL(url), 2000);
+      setDownloadSuccessId(downloadKey);
+      setTimeout(() => setDownloadSuccessId((cur) => (cur === downloadKey ? null : cur)), 2500);
+    } catch (err) {
+      console.error('[MultiChat] Stitched MP3 download error:', err);
+    } finally {
+      setDownloadingAudioId(null);
+    }
+  };
+
+  // 4. CLEAR CHAT:
+  // Clears Multi Chat history, resets the 10-message conversational memory, and stops any playback
   const handleClearHistory = () => {
+    stopAudio();
     storage.clearMultiChatMessages();
     setMessages([]);
+    setSelectedPersonaTab({});
     setShowClearModal(false);
+    setClearedBanner(true);
+    setTimeout(() => setClearedBanner(false), 3500);
   };
 
   const handleExportTranscript = async () => {
@@ -387,11 +693,14 @@ export function MultiChatConsole({ config, onNavigateToSettings }: MultiChatCons
             <button
               type="button"
               onClick={() => setShowClearModal(true)}
-              className="p-1.5 sm:px-2.5 sm:py-1 rounded-xl bg-rose-500/10 border border-rose-500/25 hover:bg-rose-500/20 text-rose-400 transition-all text-xs font-medium flex items-center gap-1.5"
-              title="Clear conversation messages"
+              className="p-1.5 sm:px-3 sm:py-1.5 rounded-xl bg-rose-500/10 border border-rose-500/30 hover:bg-rose-500/20 hover:border-rose-400/60 text-rose-300 transition-all text-xs font-bold flex items-center gap-1.5 shadow-sm"
+              title="Clear Multi Chat conversation history and reset memory"
             >
-              <Trash2 size={13} />
-              <span className="hidden md:inline">Clear</span>
+              <Trash2 size={13} className="text-rose-400" />
+              <span className="hidden sm:inline">Clear Chat</span>
+              <span className="px-1.5 py-0.2 rounded-full bg-rose-500/30 text-[10px] font-mono">
+                {messages.length}
+              </span>
             </button>
           )}
 
@@ -561,6 +870,131 @@ export function MultiChatConsole({ config, onNavigateToSettings }: MultiChatCons
                     {/* View Layout 1: UNIFIED & TABS STREAM */}
                     {viewMode !== 'grid' && (
                       <div className="rounded-3xl rounded-tl-md bg-gradient-to-b from-slate-900/90 via-slate-950/95 to-slate-950 border border-white/12 shadow-2xl shadow-black/50 overflow-hidden flex flex-col divide-y divide-white/8">
+                        {/* Master Universal Toolbar for Combined Card */}
+                        <div className="flex items-center justify-between px-4 sm:px-5 py-3 bg-gradient-to-r from-slate-950 via-slate-900/90 to-slate-950 border-b border-white/10 flex-wrap gap-2.5">
+                          {/* Left: Combined Label */}
+                          <div className="flex items-center gap-2.5 min-w-0">
+                            <div className="flex items-center gap-1.5 px-2.5 py-1 rounded-lg bg-cyan-950/60 border border-cyan-500/30 text-cyan-300 font-mono text-xs font-bold shadow-sm">
+                              <span className="w-2 h-2 rounded-full bg-cyan-400 animate-pulse" />
+                              <span>COMBINED INTELLIGENCE</span>
+                            </div>
+                            <span className="text-[11px] font-mono text-slate-400 hidden sm:inline">
+                              NOVA • ORBIT • COSMOS
+                            </span>
+                          </div>
+
+                          {/* Right: Universal Action Buttons */}
+                          <div className="flex items-center gap-2 flex-wrap ml-auto">
+                            {/* Universal Listen to All Button */}
+                            <button
+                              type="button"
+                              onClick={() => handleListenToAll(msg)}
+                              disabled={
+                                isGenerating ||
+                                msg.responses.filter(
+                                  (r) => r.status === 'completed' && (r.text || (r as { reasoning?: string }).reasoning)
+                                ).length === 0
+                              }
+                              className={`px-3 py-1.5 rounded-xl text-xs font-bold flex items-center gap-1.5 transition-all border shadow-sm ${
+                                playingAudioKey === `all_${msg.id}`
+                                  ? 'bg-cyan-500/25 text-cyan-200 border-cyan-400/60 shadow-cyan-500/25'
+                                  : edgeTtsLoadingId === `all_${msg.id}`
+                                  ? 'bg-cyan-950/40 text-cyan-300 border-cyan-500/30 cursor-wait'
+                                  : 'bg-slate-900/90 hover:bg-cyan-950/40 text-slate-200 hover:text-cyan-300 border-white/10 hover:border-cyan-500/40'
+                              }`}
+                              title={
+                                playingAudioKey === `all_${msg.id}`
+                                  ? 'Stop playback'
+                                  : 'Play all 3 persona responses back-to-back using Edge TTS'
+                              }
+                            >
+                              {edgeTtsLoadingId === `all_${msg.id}` ? (
+                                <>
+                                  <Loader2 size={13} className="animate-spin text-cyan-400" />
+                                  <span className="text-[11px] font-mono">Synthesizing...</span>
+                                </>
+                              ) : playingAudioKey === `all_${msg.id}` ? (
+                                <>
+                                  <VolumeX size={13} className="text-cyan-400 animate-pulse" />
+                                  <span className="flex items-end gap-0.5 h-3">
+                                    <span className="w-0.5 h-3 bg-cyan-400 animate-pulse rounded-full" />
+                                    <span className="w-0.5 h-2 bg-cyan-400 animate-pulse rounded-full" style={{ animationDelay: '100ms' }} />
+                                    <span className="w-0.5 h-3 bg-cyan-400 animate-pulse rounded-full" style={{ animationDelay: '200ms' }} />
+                                  </span>
+                                  <span className="text-[11px] font-mono">Stop All</span>
+                                </>
+                              ) : (
+                                <>
+                                  <Volume2 size={13} className="text-cyan-400" />
+                                  <span>Listen to All</span>
+                                </>
+                              )}
+                            </button>
+
+                            {/* Universal Download All as MP3 */}
+                            <button
+                              type="button"
+                              onClick={() => handleDownloadAllAudio(msg)}
+                              disabled={
+                                downloadingAudioId === `all_dl_${msg.id}` ||
+                                msg.responses.filter(
+                                  (r) => r.status === 'completed' && (r.text || (r as { reasoning?: string }).reasoning)
+                                ).length === 0
+                              }
+                              className={`px-3 py-1.5 rounded-xl text-xs font-bold flex items-center gap-1.5 transition-all border shadow-sm ${
+                                downloadSuccessId === `all_dl_${msg.id}`
+                                  ? 'bg-emerald-500/20 text-emerald-300 border-emerald-500/40'
+                                  : downloadingAudioId === `all_dl_${msg.id}`
+                                  ? 'bg-cyan-950/40 text-cyan-300 border-cyan-500/30 cursor-wait'
+                                  : 'bg-slate-900/90 hover:bg-emerald-950/40 text-slate-200 hover:text-emerald-300 border-white/10 hover:border-emerald-500/40'
+                              }`}
+                              title="Download all 3 persona responses stitched into one complete MP3 file (Edge TTS)"
+                            >
+                              {downloadingAudioId === `all_dl_${msg.id}` ? (
+                                <>
+                                  <Loader2 size={13} className="animate-spin text-cyan-400" />
+                                  <span className="text-[11px] font-mono">Stitching MP3...</span>
+                                </>
+                              ) : downloadSuccessId === `all_dl_${msg.id}` ? (
+                                <>
+                                  <Check size={13} className="text-emerald-400" />
+                                  <span className="text-[11px] font-mono text-emerald-300">Downloaded</span>
+                                </>
+                              ) : (
+                                <>
+                                  <Download size={13} className="text-emerald-400" />
+                                  <span>Download All as MP3</span>
+                                </>
+                              )}
+                            </button>
+
+                            {/* Universal Copy Button */}
+                            <button
+                              type="button"
+                              onClick={() => handleCopyCombined(msg)}
+                              disabled={
+                                msg.responses.filter(
+                                  (r) => r.status === 'completed' && (r.text || (r as { reasoning?: string }).reasoning)
+                                ).length === 0
+                              }
+                              className="px-3 py-1.5 rounded-xl text-xs font-bold flex items-center gap-1.5 bg-slate-900/90 hover:bg-white/10 text-slate-200 hover:text-white border border-white/10 hover:border-white/25 transition-all shadow-sm"
+                              title="Copy all 3 persona responses as one formatted text block (=== NOVA ===, etc.)"
+                            >
+                              {copiedCombinedId === msg.id ? (
+                                <>
+                                  <Check size={13} className="text-emerald-400" />
+                                  <span className="text-[11px] font-mono text-emerald-300">Copied All</span>
+                                </>
+                              ) : (
+                                <>
+                                  <Copy size={13} className="text-slate-300" />
+                                  <span>Copy</span>
+                                </>
+                              )}
+                            </button>
+                          </div>
+                        </div>
+
                         {msg.responses
                           .filter((resp) => activeTab === 'all' || activeTab === resp.personaId)
                           .map((resp) => {
@@ -632,17 +1066,22 @@ export function MultiChatConsole({ config, onNavigateToSettings }: MultiChatCons
                                   <div className="flex items-center gap-1.5 shrink-0">
                                     {resp.status === 'completed' && displayText && (
                                       <>
+                                        {/* Individual Listen Button */}
                                         <button
                                           type="button"
-                                          onClick={() => handleToggleAudio(displayText, personaKey)}
+                                          onClick={() => handleToggleAudio(displayText, personaKey, resp.personaId)}
                                           className={`px-2 py-1 rounded-lg text-xs font-medium flex items-center gap-1.5 transition-all border ${
                                             isPlayingThis
                                               ? 'bg-cyan-500/20 text-cyan-300 border-cyan-500/40 shadow-sm'
+                                              : edgeTtsLoadingId === personaKey
+                                              ? 'bg-cyan-950/40 text-cyan-300 border-cyan-500/30 cursor-wait'
                                               : 'bg-black/30 text-slate-400 hover:text-white border-white/10 hover:border-white/20'
                                           }`}
-                                          title={isPlayingThis ? 'Stop voice readout' : 'Listen with voice'}
+                                          title={isPlayingThis ? 'Stop voice readout' : 'Listen with Edge TTS voice'}
                                         >
-                                          {isPlayingThis ? (
+                                          {edgeTtsLoadingId === personaKey ? (
+                                            <Loader2 size={13} className="animate-spin text-cyan-400" />
+                                          ) : isPlayingThis ? (
                                             <>
                                               <VolumeX size={13} className="text-cyan-400 animate-pulse" />
                                               <span className="flex items-end gap-0.5 h-3">
@@ -660,6 +1099,44 @@ export function MultiChatConsole({ config, onNavigateToSettings }: MultiChatCons
                                           )}
                                         </button>
 
+                                        {/* Individual MP3 Download Button */}
+                                        <button
+                                          type="button"
+                                          onClick={() =>
+                                            handleDownloadPersonaAudio(
+                                              displayText,
+                                              personaKey,
+                                              resp.name,
+                                              resp.personaId,
+                                              msg.query
+                                            )
+                                          }
+                                          disabled={downloadingAudioId === personaKey}
+                                          className={`px-2 py-1 rounded-lg text-xs font-medium flex items-center gap-1 transition-all border ${
+                                            downloadSuccessId === personaKey
+                                              ? 'bg-emerald-500/20 text-emerald-300 border-emerald-500/40'
+                                              : downloadingAudioId === personaKey
+                                              ? 'bg-cyan-950/40 text-cyan-300 border-cyan-500/30 cursor-wait'
+                                              : 'bg-black/30 text-slate-400 hover:text-emerald-300 border-white/10 hover:border-emerald-500/30'
+                                          }`}
+                                          title="Download persona response as MP3 (Edge TTS)"
+                                        >
+                                          {downloadingAudioId === personaKey ? (
+                                            <Loader2 size={13} className="animate-spin text-cyan-400" />
+                                          ) : downloadSuccessId === personaKey ? (
+                                            <>
+                                              <Check size={13} className="text-emerald-400" />
+                                              <span className="text-[11px] font-mono text-emerald-300 hidden sm:inline">Saved</span>
+                                            </>
+                                          ) : (
+                                            <>
+                                              <Download size={13} />
+                                              <span className="text-[11px] font-mono hidden sm:inline">MP3</span>
+                                            </>
+                                          )}
+                                        </button>
+
+                                        {/* Individual Copy Button */}
                                         <button
                                           type="button"
                                           onClick={() => handleCopyText(displayText, personaKey)}
@@ -728,67 +1205,220 @@ export function MultiChatConsole({ config, onNavigateToSettings }: MultiChatCons
 
                     {/* View Layout 2: SPLIT GRID COMPARISON */}
                     {viewMode === 'grid' && (
-                      <div className="grid grid-cols-1 md:grid-cols-3 gap-3 w-full">
-                        {msg.responses.map((resp) => {
-                          const personaKey = `${msg.id}_${resp.personaId}`;
-                          const isPlayingThis = playingAudioKey === personaKey;
-                          const isCopied = copiedId === personaKey;
-                          const displayText = resp.text || (resp as { reasoning?: string }).reasoning || '';
+                      <div className="flex flex-col gap-3 w-full">
+                        {/* Master Universal Toolbar for Grid View */}
+                        <div className="flex items-center justify-between px-4 py-2.5 rounded-2xl bg-gradient-to-r from-slate-950 via-slate-900/90 to-slate-950 border border-white/10 flex-wrap gap-2.5 shadow-lg">
+                          <div className="flex items-center gap-2">
+                            <div className="flex items-center gap-1.5 px-2.5 py-1 rounded-lg bg-cyan-950/60 border border-cyan-500/30 text-cyan-300 font-mono text-xs font-bold">
+                              <span className="w-2 h-2 rounded-full bg-cyan-400 animate-pulse" />
+                              <span>COMBINED INTELLIGENCE</span>
+                            </div>
+                            <span className="text-[11px] font-mono text-slate-400 hidden sm:inline">
+                              NOVA • ORBIT • COSMOS
+                            </span>
+                          </div>
 
-                          return (
-                            <div
-                              key={resp.personaId}
-                              className="flex flex-col rounded-2xl bg-gradient-to-b from-slate-900/90 to-slate-950 border overflow-hidden shadow-lg"
-                              style={{ borderColor: `${resp.accentColor}35` }}
+                          <div className="flex items-center gap-2 flex-wrap ml-auto">
+                            {/* Universal Listen to All */}
+                            <button
+                              type="button"
+                              onClick={() => handleListenToAll(msg)}
+                              disabled={
+                                isGenerating ||
+                                msg.responses.filter(
+                                  (r) => r.status === 'completed' && (r.text || (r as { reasoning?: string }).reasoning)
+                                ).length === 0
+                              }
+                              className={`px-3 py-1.5 rounded-xl text-xs font-bold flex items-center gap-1.5 transition-all border shadow-sm ${
+                                playingAudioKey === `all_${msg.id}`
+                                  ? 'bg-cyan-500/25 text-cyan-200 border-cyan-400/60 shadow-cyan-500/25'
+                                  : edgeTtsLoadingId === `all_${msg.id}`
+                                  ? 'bg-cyan-950/40 text-cyan-300 border-cyan-500/30 cursor-wait'
+                                  : 'bg-slate-900/90 hover:bg-cyan-950/40 text-slate-200 hover:text-cyan-300 border-white/10 hover:border-cyan-500/40'
+                              }`}
+                              title="Play all 3 persona responses back-to-back using Edge TTS"
                             >
-                              {/* Persona Mini Header */}
+                              {edgeTtsLoadingId === `all_${msg.id}` ? (
+                                <>
+                                  <Loader2 size={13} className="animate-spin text-cyan-400" />
+                                  <span className="text-[11px] font-mono">Synthesizing...</span>
+                                </>
+                              ) : playingAudioKey === `all_${msg.id}` ? (
+                                <>
+                                  <VolumeX size={13} className="text-cyan-400 animate-pulse" />
+                                  <span className="text-[11px] font-mono">Stop All</span>
+                                </>
+                              ) : (
+                                <>
+                                  <Volume2 size={13} className="text-cyan-400" />
+                                  <span>Listen to All</span>
+                                </>
+                              )}
+                            </button>
+
+                            {/* Universal Download All as MP3 */}
+                            <button
+                              type="button"
+                              onClick={() => handleDownloadAllAudio(msg)}
+                              disabled={
+                                downloadingAudioId === `all_dl_${msg.id}` ||
+                                msg.responses.filter(
+                                  (r) => r.status === 'completed' && (r.text || (r as { reasoning?: string }).reasoning)
+                                ).length === 0
+                              }
+                              className={`px-3 py-1.5 rounded-xl text-xs font-bold flex items-center gap-1.5 transition-all border shadow-sm ${
+                                downloadSuccessId === `all_dl_${msg.id}`
+                                  ? 'bg-emerald-500/20 text-emerald-300 border-emerald-500/40'
+                                  : downloadingAudioId === `all_dl_${msg.id}`
+                                  ? 'bg-cyan-950/40 text-cyan-300 border-cyan-500/30 cursor-wait'
+                                  : 'bg-slate-900/90 hover:bg-emerald-950/40 text-slate-200 hover:text-emerald-300 border-white/10 hover:border-emerald-500/40'
+                              }`}
+                              title="Download all 3 persona responses stitched into one complete MP3 file (Edge TTS)"
+                            >
+                              {downloadingAudioId === `all_dl_${msg.id}` ? (
+                                <>
+                                  <Loader2 size={13} className="animate-spin text-cyan-400" />
+                                  <span className="text-[11px] font-mono">Stitching...</span>
+                                </>
+                              ) : downloadSuccessId === `all_dl_${msg.id}` ? (
+                                <>
+                                  <Check size={13} className="text-emerald-400" />
+                                  <span className="text-[11px] font-mono text-emerald-300">Downloaded</span>
+                                </>
+                              ) : (
+                                <>
+                                  <Download size={13} className="text-emerald-400" />
+                                  <span>Download All as MP3</span>
+                                </>
+                              )}
+                            </button>
+
+                            {/* Universal Copy Button */}
+                            <button
+                              type="button"
+                              onClick={() => handleCopyCombined(msg)}
+                              disabled={
+                                msg.responses.filter(
+                                  (r) => r.status === 'completed' && (r.text || (r as { reasoning?: string }).reasoning)
+                                ).length === 0
+                              }
+                              className="px-3 py-1.5 rounded-xl text-xs font-bold flex items-center gap-1.5 bg-slate-900/90 hover:bg-white/10 text-slate-200 hover:text-white border border-white/10 hover:border-white/25 transition-all shadow-sm"
+                              title="Copy all 3 persona responses as formatted text block (=== NOVA ===, etc.)"
+                            >
+                              {copiedCombinedId === msg.id ? (
+                                <>
+                                  <Check size={13} className="text-emerald-400" />
+                                  <span className="text-[11px] font-mono text-emerald-300">Copied All</span>
+                                </>
+                              ) : (
+                                <>
+                                  <Copy size={13} className="text-slate-300" />
+                                  <span>Copy</span>
+                                </>
+                              )}
+                            </button>
+                          </div>
+                        </div>
+
+                        <div className="grid grid-cols-1 md:grid-cols-3 gap-3 w-full">
+                          {msg.responses.map((resp) => {
+                            const personaKey = `${msg.id}_${resp.personaId}`;
+                            const isPlayingThis = playingAudioKey === personaKey;
+                            const isCopied = copiedId === personaKey;
+                            const displayText = resp.text || (resp as { reasoning?: string }).reasoning || '';
+
+                            return (
                               <div
-                                className="p-3 border-b border-white/5 flex items-center justify-between"
-                                style={{ background: `${resp.accentColor}10` }}
+                                key={resp.personaId}
+                                className="flex flex-col rounded-2xl bg-gradient-to-b from-slate-900/90 to-slate-950 border overflow-hidden shadow-lg"
+                                style={{ borderColor: `${resp.accentColor}35` }}
                               >
-                                <div className="flex items-center gap-2 min-w-0">
-                                  <span className="text-base">{resp.icon}</span>
-                                  <div>
-                                    <h4 className="text-xs font-bold leading-tight" style={{ color: resp.accentColor }}>
-                                      {resp.name}
-                                    </h4>
-                                    <span className="text-[10px] font-mono text-slate-400">
-                                      {resp.toneBadge}
-                                    </span>
+                                {/* Persona Mini Header */}
+                                <div
+                                  className="p-3 border-b border-white/5 flex items-center justify-between"
+                                  style={{ background: `${resp.accentColor}10` }}
+                                >
+                                  <div className="flex items-center gap-2 min-w-0">
+                                    <span className="text-base">{resp.icon}</span>
+                                    <div>
+                                      <h4 className="text-xs font-bold leading-tight" style={{ color: resp.accentColor }}>
+                                        {resp.name}
+                                      </h4>
+                                      <span className="text-[10px] font-mono text-slate-400">
+                                        {resp.toneBadge}
+                                      </span>
+                                    </div>
+                                  </div>
+
+                                  <div className="flex items-center gap-1">
+                                    {resp.status === 'completed' && displayText && (
+                                      <>
+                                        {/* Individual Listen Button */}
+                                        <button
+                                          type="button"
+                                          onClick={() => handleToggleAudio(displayText, personaKey, resp.personaId)}
+                                          className={`p-1.5 rounded transition-colors ${
+                                            isPlayingThis
+                                              ? 'bg-cyan-500/20 text-cyan-300'
+                                              : edgeTtsLoadingId === personaKey
+                                              ? 'bg-cyan-950/40 text-cyan-300 cursor-wait'
+                                              : 'bg-black/40 text-slate-400 hover:text-white'
+                                          }`}
+                                          title={isPlayingThis ? 'Stop voice readout' : 'Listen with Edge TTS'}
+                                        >
+                                          {edgeTtsLoadingId === personaKey ? (
+                                            <Loader2 size={12} className="animate-spin text-cyan-400" />
+                                          ) : isPlayingThis ? (
+                                            <VolumeX size={12} className="animate-pulse text-cyan-400" />
+                                          ) : (
+                                            <Volume2 size={12} />
+                                          )}
+                                        </button>
+
+                                        {/* Individual MP3 Download Button */}
+                                        <button
+                                          type="button"
+                                          onClick={() =>
+                                            handleDownloadPersonaAudio(
+                                              displayText,
+                                              personaKey,
+                                              resp.name,
+                                              resp.personaId,
+                                              msg.query
+                                            )
+                                          }
+                                          disabled={downloadingAudioId === personaKey}
+                                          className={`p-1.5 rounded transition-colors ${
+                                            downloadSuccessId === personaKey
+                                              ? 'bg-emerald-500/20 text-emerald-300'
+                                              : downloadingAudioId === personaKey
+                                              ? 'bg-cyan-950/40 text-cyan-300 cursor-wait'
+                                              : 'bg-black/40 text-slate-400 hover:text-emerald-300'
+                                          }`}
+                                          title="Download persona MP3 audio (Edge TTS)"
+                                        >
+                                          {downloadingAudioId === personaKey ? (
+                                            <Loader2 size={12} className="animate-spin text-cyan-400" />
+                                          ) : downloadSuccessId === personaKey ? (
+                                            <Check size={12} className="text-emerald-400" />
+                                          ) : (
+                                            <Download size={12} />
+                                          )}
+                                        </button>
+
+                                        {/* Individual Copy Button */}
+                                        <button
+                                          type="button"
+                                          onClick={() => handleCopyText(displayText, personaKey)}
+                                          className="p-1.5 rounded bg-black/40 text-slate-400 hover:text-white"
+                                          title="Copy"
+                                        >
+                                          {isCopied ? <Check size={12} className="text-emerald-400" /> : <Copy size={12} />}
+                                        </button>
+                                      </>
+                                    )}
                                   </div>
                                 </div>
-
-                                <div className="flex items-center gap-1">
-                                  {resp.status === 'completed' && displayText && (
-                                    <>
-                                      <button
-                                        type="button"
-                                        onClick={() => handleToggleAudio(displayText, personaKey)}
-                                        className={`p-1 rounded transition-colors ${
-                                          isPlayingThis
-                                            ? 'bg-cyan-500/20 text-cyan-300'
-                                            : 'bg-black/40 text-slate-400 hover:text-white'
-                                        }`}
-                                        title={isPlayingThis ? 'Stop voice readout' : 'Listen'}
-                                      >
-                                        {isPlayingThis ? (
-                                          <VolumeX size={12} className="animate-pulse text-cyan-400" />
-                                        ) : (
-                                          <Volume2 size={12} />
-                                        )}
-                                      </button>
-                                      <button
-                                        type="button"
-                                        onClick={() => handleCopyText(displayText, personaKey)}
-                                        className="p-1 rounded bg-black/40 text-slate-400 hover:text-white"
-                                        title="Copy"
-                                      >
-                                        {isCopied ? <Check size={12} className="text-emerald-400" /> : <Copy size={12} />}
-                                      </button>
-                                    </>
-                                  )}
-                                </div>
-                              </div>
 
                               {/* Persona Mini Body */}
                               <div className="p-3.5 flex-1 flex flex-col text-xs">
@@ -815,7 +1445,8 @@ export function MultiChatConsole({ config, onNavigateToSettings }: MultiChatCons
                           );
                         })}
                       </div>
-                    )}
+                    </div>
+                  )}
                   </div>
                 </div>
               </div>
@@ -859,6 +1490,23 @@ export function MultiChatConsole({ config, onNavigateToSettings }: MultiChatCons
                 </button>
               ))}
             </div>
+          </div>
+        )}
+
+        {/* Cleared Success Notification Banner */}
+        {clearedBanner && (
+          <div className="mb-3 px-4 py-2.5 rounded-2xl bg-emerald-950/40 border border-emerald-500/30 text-emerald-300 text-xs font-medium flex items-center justify-between shadow-lg animate-in fade-in slide-in-from-bottom-2 duration-200">
+            <div className="flex items-center gap-2">
+              <CheckCircle2 size={15} className="text-emerald-400 shrink-0" />
+              <span>Multi Chat history cleared and memory reset successfully.</span>
+            </div>
+            <button
+              type="button"
+              onClick={() => setClearedBanner(false)}
+              className="text-emerald-400 hover:text-emerald-200 p-1"
+            >
+              <X size={13} />
+            </button>
           </div>
         )}
 
@@ -919,6 +1567,22 @@ export function MultiChatConsole({ config, onNavigateToSettings }: MultiChatCons
                   <span className="text-[10.5px] font-mono text-cyan-300/90 px-2.5 py-0.5 rounded-lg bg-cyan-950/40 border border-cyan-500/25 shadow-sm">
                     {charCount} chars • {wordCount} words
                   </span>
+                )}
+
+                {/* Clear Chat Button in Dock */}
+                {messages.length > 0 && (
+                  <button
+                    type="button"
+                    onClick={() => setShowClearModal(true)}
+                    className="flex items-center gap-1.5 px-2.5 py-1 rounded-xl text-xs font-semibold bg-rose-500/10 hover:bg-rose-500/20 text-rose-300 border border-rose-500/30 hover:border-rose-400/50 transition-all shadow-sm"
+                    title="Clear Multi Chat conversation history and reset memory"
+                  >
+                    <Trash2 size={12} className="text-rose-400" />
+                    <span className="hidden sm:inline">Clear</span>
+                    <span className="px-1.5 py-0.2 rounded-full bg-rose-500/30 text-[10px] font-mono">
+                      {messages.length}
+                    </span>
+                  </button>
                 )}
 
                 <button
@@ -1053,28 +1717,36 @@ export function MultiChatConsole({ config, onNavigateToSettings }: MultiChatCons
       {/* Clear Chat Confirmation Modal */}
       {showClearModal && (
         <div className="fixed inset-0 z-50 grid place-items-center bg-black/80 backdrop-blur-sm p-4 animate-in fade-in duration-150">
-          <div className="max-w-md w-full bg-slate-950 rounded-2xl border border-rose-500/30 p-6 shadow-2xl shadow-rose-950/30">
+          <div className="max-w-md w-full bg-slate-950 rounded-2xl border border-rose-500/30 p-6 shadow-2xl shadow-rose-950/40">
             <div className="flex items-center gap-3 text-rose-400 mb-3">
-              <Trash2 size={22} />
-              <h3 className="text-lg font-bold text-white m-0">Clear Multi Chat History?</h3>
+              <div className="w-10 h-10 rounded-xl bg-rose-500/10 border border-rose-500/30 grid place-items-center shrink-0">
+                <AlertTriangle size={20} className="text-rose-400" />
+              </div>
+              <div>
+                <h3 className="text-base font-bold text-white m-0">Clear Multi Chat History?</h3>
+                <span className="text-xs text-rose-400/80 font-mono">
+                  {messages.length} message {messages.length === 1 ? 'turn' : 'turns'} will be deleted
+                </span>
+              </div>
             </div>
-            <p className="text-sm text-slate-300 leading-relaxed mb-6">
-              This will remove all conversation turns, inquiries, and generated responses across all personas in Multi Chat.
+            <p className="text-xs sm:text-sm text-slate-300 leading-relaxed mb-6">
+              This will permanently remove all multi-persona conversation turns, inquiries, active audio sessions, and generated responses. Active agent memory context will be completely refreshed.
             </p>
             <div className="flex justify-end gap-2.5">
               <button
                 type="button"
                 onClick={() => setShowClearModal(false)}
-                className="px-4 py-2 rounded-xl bg-white/5 hover:bg-white/10 text-slate-300 text-xs font-semibold border border-white/10"
+                className="px-4 py-2 rounded-xl bg-white/5 hover:bg-white/10 text-slate-300 text-xs font-semibold border border-white/10 transition-all"
               >
                 Cancel
               </button>
               <button
                 type="button"
                 onClick={handleClearHistory}
-                className="px-4 py-2 rounded-xl bg-rose-500 hover:bg-rose-600 text-white text-xs font-bold shadow-lg shadow-rose-500/25"
+                className="px-4 py-2 rounded-xl bg-rose-500 hover:bg-rose-600 text-white text-xs font-bold shadow-lg shadow-rose-500/25 transition-all flex items-center gap-1.5"
               >
-                Yes, Clear Chat
+                <Trash2 size={13} />
+                <span>Yes, Clear Chat</span>
               </button>
             </div>
           </div>
