@@ -199,19 +199,6 @@ export function MultiChatConsole({ config, onNavigateToSettings }: MultiChatCons
     setMessages(updatedMessages);
     storage.saveMultiChatMessages(updatedMessages);
 
-    // Auto-cleanup: check after each new message is added — if total message count > 20,
-    // automatically delete the oldest message so the count settles back to 20.
-    // Reuses the exact same handleDeleteMessage function that the manual Delete button calls.
-    if (updatedMessages.length > 20) {
-      const excessCount = updatedMessages.length - 20;
-      for (let i = 0; i < excessCount; i++) {
-        const oldest = updatedMessages[i];
-        if (oldest) {
-          handleDeleteMessage(oldest.id);
-        }
-      }
-    }
-
     try {
       await executeMultiChatTurn({
         query: textToSend,
@@ -231,6 +218,20 @@ export function MultiChatConsole({ config, onNavigateToSettings }: MultiChatCons
           });
         },
       });
+
+      // Auto-cleanup: ONLY AFTER all 3 persona responses are fully received and saved,
+      // check if total message count > 20, and automatically delete the oldest message(s)
+      // to settle back to 20. Reuses the exact same handleDeleteMessage function as manual delete.
+      const currentStored = storage.getMultiChatMessages();
+      if (currentStored.length > 20) {
+        const excessCount = currentStored.length - 20;
+        for (let i = 0; i < excessCount; i++) {
+          const oldest = currentStored[i];
+          if (oldest) {
+            handleDeleteMessage(oldest.id);
+          }
+        }
+      }
     } catch (err: unknown) {
       console.error('[MultiChatConsole] Execution error:', err);
     } finally {
