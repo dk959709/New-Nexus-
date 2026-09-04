@@ -112,6 +112,32 @@ export function MultiChatConsole({ config, onNavigateToSettings }: MultiChatCons
     setEdgeTtsLoadingId(null);
   };
 
+  // Delete message box (reused by both manual Delete button and auto-cleanup):
+  // Deletes only that specific message card (user question + that card's persona answers)
+  // from the current conversation view, cleans up audio/tabs, and removes from persistent storage.
+  const handleDeleteMessage = (messageId: string) => {
+    // If audio is currently playing for this message, stop it immediately
+    if (
+      playingAudioKey === `all_${messageId}` ||
+      (playingAudioKey && playingAudioKey.startsWith(`${messageId}_`))
+    ) {
+      stopAudio();
+    }
+
+    // Clean up persona tab selection state for this message
+    setSelectedPersonaTab((prev) => {
+      const next = { ...prev };
+      delete next[messageId];
+      return next;
+    });
+
+    // Remove from persistent storage
+    storage.deleteMultiChatMessage(messageId);
+
+    // Remove from active React state
+    setMessages((prev) => prev.filter((m) => m.id !== messageId));
+  };
+
   // Sync with storage on mount and window focus
   useEffect(() => {
     setMessages(storage.getMultiChatMessages());
@@ -172,6 +198,19 @@ export function MultiChatConsole({ config, onNavigateToSettings }: MultiChatCons
     const updatedMessages = [...messages, newMessage];
     setMessages(updatedMessages);
     storage.saveMultiChatMessages(updatedMessages);
+
+    // Auto-cleanup: check after each new message is added — if total message count > 20,
+    // automatically delete the oldest message so the count settles back to 20.
+    // Reuses the exact same handleDeleteMessage function that the manual Delete button calls.
+    if (updatedMessages.length > 20) {
+      const excessCount = updatedMessages.length - 20;
+      for (let i = 0; i < excessCount; i++) {
+        const oldest = updatedMessages[i];
+        if (oldest) {
+          handleDeleteMessage(oldest.id);
+        }
+      }
+    }
 
     try {
       await executeMultiChatTurn({
@@ -544,32 +583,6 @@ export function MultiChatConsole({ config, onNavigateToSettings }: MultiChatCons
     setShowClearModal(false);
     setClearedBanner(true);
     setTimeout(() => setClearedBanner(false), 3500);
-  };
-
-  // 5. DELETE SINGLE MESSAGE BOX:
-  // Deletes only that specific message card (user question + that card's 3 persona answers)
-  // from the current conversation view and from persistent memory/history.
-  const handleDeleteMessage = (messageId: string) => {
-    // If audio is currently playing for this message, stop it immediately
-    if (
-      playingAudioKey === `all_${messageId}` ||
-      (playingAudioKey && playingAudioKey.startsWith(`${messageId}_`))
-    ) {
-      stopAudio();
-    }
-
-    // Clean up persona tab selection state for this message
-    setSelectedPersonaTab((prev) => {
-      const next = { ...prev };
-      delete next[messageId];
-      return next;
-    });
-
-    // Remove from persistent storage
-    storage.deleteMultiChatMessage(messageId);
-
-    // Remove from active React state
-    setMessages((prev) => prev.filter((m) => m.id !== messageId));
   };
 
   const handleExportTranscript = async () => {
