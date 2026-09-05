@@ -13,7 +13,7 @@ interface State {
   showDetails: boolean;
 }
 
-export class ErrorBoundary extends Component<Props, State> {
+export class AppBoundary extends Component<Props, State> {
   public state: State = {
     hasError: false,
     error: null,
@@ -55,11 +55,7 @@ export class ErrorBoundary extends Component<Props, State> {
           className="min-h-screen flex items-center justify-center p-6 bg-slate-950 text-slate-100 font-sans"
         >
           <div
-            className="w-full max-w-lg p-6 sm:p-8 rounded-3xl backdrop-blur-xl border border-rose-500/30 text-center shadow-2xl"
-            style={{
-              background: 'linear-gradient(145deg, rgba(15, 23, 42, 0.95) 0%, rgba(30, 10, 20, 0.95) 100%)',
-              boxShadow: '0 20px 50px rgba(0,0,0,0.6), 0 0 30px rgba(244,63,94,0.15)',
-            }}
+            className="w-full max-w-lg p-6 sm:p-8 rounded-3xl backdrop-blur-xl border border-rose-500/30 text-center shadow-2xl bg-gradient-to-br from-slate-900/95 to-slate-950/95"
           >
             <div className="w-14 h-14 rounded-full bg-rose-500/20 text-rose-400 border border-rose-500/40 flex items-center justify-center mx-auto mb-4 shadow-[0_0_20px_rgba(244,63,94,0.3)]">
               <AlertTriangle size={28} />
@@ -124,3 +120,4 @@ export class ErrorBoundary extends Component<Props, State> {
   }
 }
 
+export { AppBoundary as ErrorBoundary };

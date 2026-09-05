@@ -4976,7 +4976,11 @@ async function startServer() {
   );
   app.use(cors());
   app.use(express.json({ limit: '1mb' }));
-  app.use(morgan('tiny'));
+  app.use(
+    morgan('tiny', {
+      skip: (req) => !req.url.startsWith('/api'),
+    }),
+  );
 
   // Offline model proxy removed
   app.get('/api/health', (_req, res) =>

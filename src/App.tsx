@@ -2,7 +2,7 @@ import { lazy, Suspense } from 'react';
 import { BrowserRouter, Route, Routes } from 'react-router-dom';
 import { Loader2 } from 'lucide-react';
 import { Layout } from '@/components';
-import { ErrorBoundary } from '@/components/ErrorBoundary';
+import { AppBoundary } from '@/components/AppBoundary';
 import { HomePage, SearchPage, WeatherPage, SettingsPage, VoiceAI } from '@/pages';
 import { AssistantPage } from '@/pages/AssistantPage';
 import { JarvisPage } from '@/pages/JarvisPage';
@@ -26,7 +26,7 @@ function PageLoadingFallback() {
 
 export default function App() {
   return (
-    <ErrorBoundary>
+    <AppBoundary>
       <BrowserRouter>
         <Routes>
           <Route element={<Layout />}>
@@ -89,6 +89,6 @@ export default function App() {
           </Route>
         </Routes>
       </BrowserRouter>
-    </ErrorBoundary>
+    </AppBoundary>
   );
 }
