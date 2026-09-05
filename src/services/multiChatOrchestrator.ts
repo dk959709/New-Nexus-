@@ -93,77 +93,100 @@ export function resolvePersonaProviderConfig(
   };
 }
 
+export const FALLBACK_REASONING_REPLY = 'Let me think about that differently — could you ask again?';
+
 /**
  * Sanitizes persona output to eliminate internal reasoning traces,
- * thinking blocks (<think>...</think>, ```thought```, CoT preambles),
- * and leading labels (e.g. "[ORBIT]:", "ORBIT:", "[NOVA]:", "**COSMOS**:").
+ * thinking blocks (<think>...</think>, ```thought```, CoT preambles,
+ * "Here's a thinking process...", "Analyze User Input:", "Check Constraints:",
+ * "Let's draft", "Wait,", numbered reasoning steps), and leading labels
+ * (e.g. "[ORBIT]:", "ORBIT:", "[NOVA]:", "**COSMOS**:").
  */
 export function sanitizePersonaOutput(text: string, personaName: string): string {
   if (!text) return '';
   let cleaned = text.trim();
 
   // 1. Strip markdown thought/reasoning code blocks
-  cleaned = cleaned.replace(/```(?:thought|thinking|reasoning)[\s\S]*?```/gi, '').trim();
+  cleaned = cleaned.replace(/```(?:thought|thinking|reasoning|plan)[\s\S]*?```/gi, '').trim();
 
   // 2. Strip XML/HTML-like reasoning/thought tags (<think>...</think>, etc.)
   cleaned = cleaned
     .replace(
-      /<(?:think|thought|reasoning|reflection|internal_reasoning|plan)>[\s\S]*?<\/(?:think|thought|reasoning|reflection|internal_reasoning|plan)>/gi,
+      /<(?:think|thought|reasoning|reflection|internal_reasoning|plan|details)>[\s\S]*?<\/(?:think|thought|reasoning|reflection|internal_reasoning|plan|details)>/gi,
       '',
     )
     .trim();
 
   // 2b. Handle unclosed opening thought tags at start (e.g. <think>... with no closing tag)
-  if (/^<(?:think|thought|reasoning|reflection|internal_reasoning|plan)>/i.test(cleaned)) {
-    const craftMatch = cleaned.match(
-      /(?:Let's craft|Let's draft|Let's respond|Let's write|Final Answer|Answer|Response)\s*[-:—]?\s*(?:['"]([^'"]+)['"]|([^\n\r]+))/i,
-    );
-    if (craftMatch) {
-      cleaned = (craftMatch[1] || craftMatch[2] || '').trim();
-    } else {
-      cleaned = cleaned.replace(/^<[^>]+>[\s\S]*?(?:<\/[^>]+>|$)/i, '').trim();
-    }
-  }
+  cleaned = cleaned
+    .replace(/^<(?:think|thought|reasoning|reflection|internal_reasoning|plan|details)>[\s\S]*?(?:<\/[^>]+>|$)/gi, '')
+    .trim();
 
-  // 3. Strip structured "Thinking Process: ... Final Answer: ..." blocks
+  // 3. Strip preambles like "Here's a thinking process:", "Thinking Process:", etc.
   cleaned = cleaned
     .replace(
-      /^(?:Thinking Process|Thinking|Thought|Internal Reasoning|Reasoning|Analysis)\s*[-:—]?[\s\S]*?(?:(?:Final Answer|Answer|Response)\s*[-:—]?\s*|\n\n+)/i,
+      /^(?:Here(?:\x27s|\x20is)\s+(?:a\s+)?thinking\s+process\s*[-:—]?|Thinking\s+Process\s*[-:—]?|Internal\s+Reasoning\s*[-:—]?|Reasoning\s*Process\s*[-:—]?|Reasoning\s*[-:—]?|Thought\s*Process\s*[-:—]?|Thought\s*[-:—]?|Analysis\s*[-:—]?)\s*/i,
       '',
     )
     .trim();
 
-  // 4. Strip Nemotron / CoT meta-thinking traces like:
-  // "We need to respond as NOVA persona, ultra short, 30 words max... Let's craft: 'Hello!...' "
-  const cotPattern = /(?:(?:We need to respond as|In this persona|As\s+(?:NOVA|ORBIT|COSMOS)|Let's think|Thinking:)[^]*?)(?:Let's craft|Let's draft|Let's respond|Let's say|Let's output|Final Answer|Response)\s*[-:—]?\s*(?:['"]([^'"]+)['"]|(.+))/is;
-  const cotMatch = cleaned.match(cotPattern);
-  if (cotMatch) {
-    cleaned = (cotMatch[1] || cotMatch[2] || '').trim();
-  } else {
-    // Check for standalone "Let's craft: '...'" or "Let's draft: '...'" preceded by thought-like phrasing
-    const craftMatch = cleaned.match(
-      /(?:Let's craft|Let's draft|Let's write|Let's output)\s*[-:—]?\s*(?:['"]([^'"]+)['"]|(.+))/is,
-    );
-    if (craftMatch && /^(?:We need|Thinking|To respond|Persona|Short answer|Goal)/i.test(cleaned)) {
-      cleaned = (craftMatch[1] || craftMatch[2] || '').trim();
-    }
-  }
-
-  // 5. Strip leading persona labels (e.g. "[NOVA]:", "NOVA:", "**COSMOS**:")
-  const personaRegex = new RegExp(
-    `^(?:\\[?${personaName}\\]?|\\*\\*${personaName}\\*\\*)\\s*[-:—]\\s*`,
-    'i',
+  // 4. Check for explicit final answer marker
+  const answerMarker = cleaned.match(
+    /(?:(?:Final\s+Answer|Final\s+Response|Clean\s+Answer|Final\s+Draft|Final\s+Polish|Actual\s+Response|Response|Answer)\s*[-:—]?|(?:Let\x27s\s+craft|Let\x27s\s+draft|Let\x27s\s+respond|Let\x27s\s+write|Let\x27s\s+say|Let\x27s\s+output)\s*[-:—]?)\s*(?:[\x27"]([^\x27"]+)[\x27"]|([^\n\r]+.*))$/is,
   );
-  cleaned = cleaned.replace(personaRegex, '').trim();
+  if (answerMarker) {
+    const candidate = (answerMarker[1] || answerMarker[2] || '').trim();
+    if (candidate && !/^(?:Analyze\s+User\s+Input|Check\s+Constraints|Persona:|Step\s+\d)/i.test(candidate)) {
+      cleaned = candidate;
+    }
+  }
 
+  // 5. Strip numbered reasoning steps like:
+  // "1. Analyze User Input: ... 2. Check Constraints: ..."
   cleaned = cleaned
     .replace(
-      /^(?:\[?(?:NOVA|ORBIT|COSMOS)\]?|\*\*(?:NOVA|ORBIT|COSMOS)\*\*)\s*[-:—]\\s*/i,
+      /(?:^|\n|\s+)\d+[.)]\s*(?:Analyze\s+User\s+Input|Check\s+Constraints|User\s+Input|Constraints|Persona|Goal|Plan|Draft|Identify|Evaluate|Reflect|Consider|Tone|Brevity|Rule)[^\n.]*(?:\.|$)/gi,
+      ' ',
+    )
+    .trim();
+
+  // 6. Strip standalone meta patterns like "Analyze User Input:", "Check Constraints:", "Wait, ..."
+  cleaned = cleaned.replace(/(?:Analyze\s+User\s+Input|User\s+Input)[^:.\n]*[:.\n][^.\n]*(?:\.|$)/gi, ' ').trim();
+  cleaned = cleaned.replace(/(?:Check\s+Constraints|Constraints)[^:.\n]*[:.\n][^.\n]*(?:\.|$)/gi, ' ').trim();
+  cleaned = cleaned.replace(/Wait\s*[,.][^.\n]*(?:\.|$)/gi, ' ').trim();
+
+  // Meta commentary phrases
+  cleaned = cleaned.replace(/(?:Persona|Tone|Role|Word\s*count|Word\s*limit)\s*:\s*(?:NOVA|ORBIT|COSMOS|[^.\n]+)(?:\.|$)/gi, '').trim();
+  cleaned = cleaned
+    .replace(
+      /\b(?:\d+\s*words?\s*max|under\s*\d+\s*words|around\s*\d+\s*words|zero\s*fluff|no\s*emojis|ultra\s*short|keep\s*answers?\s*ultra[\s-]short)\b/gi,
       '',
     )
     .trim();
 
-  // 6. If remaining answer is wrapped in outer quotes (e.g. 'Hello!...' or "Hello!..."), unwrap them
+  // 7. Strip CoT meta-thinking traces like "We need to respond as NOVA persona, ultra short..."
+  cleaned = cleaned
+    .replace(
+      /^(?:We\s+need\s+to\s+respond\s+as|In\s+this\s+persona|As\s+(?:NOVA|ORBIT|COSMOS)|Let\x27s\s+think|Thinking:)[^]*?(?:Let\x27s\s+craft|Let\x27s\s+draft|Let\x27s\s+respond|Let\x27s\s+say|Let\x27s\s+output|Final\s+Answer|Response)\s*[-:—]?\s*(?:[\x27"]([^\x27"]+)[\x27"]|(.+))$/is,
+      '$1$2',
+    )
+    .trim();
+
+  // 8. Strip leading persona labels (e.g. "[NOVA]:", "NOVA:", "**COSMOS**:")
+  const personaRegex = new RegExp(`^(?:\\[?${personaName}\\]?|\\*\\*${personaName}\\*\\*)\\s*[-:—]\\s*`, 'i');
+  cleaned = cleaned.replace(personaRegex, '').trim();
+  cleaned = cleaned.replace(/^(?:\[?(?:NOVA|ORBIT|COSMOS)\]?|\*\*(?:NOVA|ORBIT|COSMOS)\*\*)\s*[-:—]\s*/i, '').trim();
+
+  // 9. If text has multiple paragraphs and previous was reasoning, extract the last coherent paragraph
+  const paragraphs = cleaned.split(/\n\s*\n/).map((p) => p.trim()).filter(Boolean);
+  if (paragraphs.length > 1) {
+    const lastP = paragraphs[paragraphs.length - 1];
+    if (!/^(?:Here(?:\x27s|\x20is)|Analyze|Check|1\.|2\.|3\.|Wait,|Thinking)/i.test(lastP)) {
+      cleaned = lastP;
+    }
+  }
+
+  // 10. Unwrap outer quotes
   if (
     (cleaned.startsWith("'") && cleaned.endsWith("'") && cleaned.length > 2) ||
     (cleaned.startsWith('"') && cleaned.endsWith('"') && cleaned.length > 2) ||
@@ -172,15 +195,35 @@ export function sanitizePersonaOutput(text: string, personaName: string): string
     cleaned = cleaned.slice(1, -1).trim();
   }
 
+  // 11. Check if usable in-character text remains
+  const alphaChars = cleaned.replace(/[^a-zA-Z0-9]/g, '');
+  if (alphaChars.length < 3) {
+    return '';
+  }
+
+  // Reject if the remainder is still pure meta-reasoning
+  if (
+    /^(?:Here(?:\x27s|\x20is)\s+(?:a\s+)?thinking\s+process|Analyze\s+User\s+Input|Check\s+Constraints|Wait\s*,)/i.test(cleaned) ||
+    /\b(?:thinking process|check constraints|persona rules|word limit)\b/i.test(cleaned)
+  ) {
+    return '';
+  }
+
   return cleaned;
 }
 
 /**
  * Extracts and sanitizes the clean final answer for a Multi Chat persona response.
- * Priority:
- * 1. Primary: message.content (raw.content)
- * 2. Fallback: message.reasoning (raw.reasoning) ONLY if content is empty
- * 3. Fallback: raw.text
+ *
+ * Rules:
+ * 1. Extract message.content as the primary/preferred answer. If non-empty,
+ *    display ONLY that — ignore any message.reasoning or message.reasoning_content.
+ * 2. If message.content is empty/null (or contained only meta-reasoning that was stripped),
+ *    fall back to message.reasoning/message.reasoning_content (or raw text).
+ *    Apply the cleanup filter to strip thinking steps, preambles, and meta-commentary.
+ * 3. Keep only the last coherent in-character answer.
+ * 4. If nothing usable remains after stripping, return the fallback:
+ *    "Let me think about that differently — could you ask again?"
  */
 export function extractCleanPersonaResponse(
   raw: { text?: string; content?: string; reasoning?: string },
@@ -190,32 +233,41 @@ export function extractCleanPersonaResponse(
   const reasoningCandidate = typeof raw.reasoning === 'string' ? raw.reasoning.trim() : '';
   const textCandidate = typeof raw.text === 'string' ? raw.text.trim() : '';
 
-  let chosenRaw = '';
+  // 1. Primary: message.content
   if (contentCandidate.length > 0) {
-    chosenRaw = contentCandidate;
-  } else if (reasoningCandidate.length > 0) {
-    chosenRaw = reasoningCandidate;
-  } else {
-    chosenRaw = textCandidate;
+    const cleanContent = sanitizePersonaOutput(contentCandidate, personaName);
+    if (cleanContent.length > 0) {
+      return cleanContent;
+    }
   }
 
-  return sanitizePersonaOutput(chosenRaw, personaName);
+  // 2. Fallback: message.reasoning / message.reasoning_content (or raw.text if content is empty)
+  const fallbackRaw = reasoningCandidate.length > 0 ? reasoningCandidate : textCandidate;
+  if (fallbackRaw.length > 0) {
+    const cleanReasoning = sanitizePersonaOutput(fallbackRaw, personaName);
+    if (cleanReasoning.length > 0) {
+      return cleanReasoning;
+    }
+  }
+
+  return FALLBACK_REPLY;
 }
 
 /**
  * Gets the clean final text for display, speech, copy, and export in Multi Chat.
  */
 export function getPersonaCleanText(resp: MultiChatPersonaResponse): string {
-  if (resp.content && resp.content.trim()) {
-    return sanitizePersonaOutput(resp.content, resp.name).trim();
-  }
   if (resp.text && resp.text.trim()) {
-    return sanitizePersonaOutput(resp.text, resp.name).trim();
+    const cleaned = extractCleanPersonaResponse(
+      { content: resp.text, reasoning: resp.reasoning },
+      resp.name,
+    );
+    if (cleaned && cleaned !== FALLBACK_REPLY) return cleaned;
   }
-  if (resp.reasoning && resp.reasoning.trim()) {
-    return sanitizePersonaOutput(resp.reasoning, resp.name).trim();
-  }
-  return '';
+  return extractCleanPersonaResponse(
+    { content: resp.content, reasoning: resp.reasoning, text: resp.text },
+    resp.name,
+  );
 }
 
 /**
@@ -358,7 +410,7 @@ export async function executeSinglePersona(
       fallbackConfig,
       enableFailover: Boolean(persona.enableFailover),
       temperature: persona.id === 'orbit' ? 0.7 : persona.id === 'cosmos' ? 0.5 : 0.2,
-      maxTokens: persona.maxTokens || 100,
+      maxTokens: Math.max(persona.maxTokens || 100, 350),
       timeoutMs: 40000,
     });
 
@@ -377,7 +429,7 @@ export async function executeSinglePersona(
         ...baseResponse,
         status: 'completed',
         text: cleanText,
-        content: res.content,
+        content: cleanText,
         reasoning: res.reasoning,
         model: res.model || primary.model,
         providerName: res.providerName || primary.provider?.name || 'Configured AI',
