@@ -93,7 +93,8 @@ export function resolvePersonaProviderConfig(
   };
 }
 
-export const FALLBACK_REASONING_REPLY = 'Let me think about that differently — could you ask again?';
+export const FALLBACK_REPLY = 'Let me think about that differently — could you ask again?';
+export const FALLBACK_REASONING_REPLY = FALLBACK_REPLY;
 
 /**
  * Sanitizes persona output to eliminate internal reasoning traces,
