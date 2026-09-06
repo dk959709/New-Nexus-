@@ -85,7 +85,7 @@ Set needsKnowledgeAgent to false for all other query types, including: time-sens
   If the query asks about JARVIS's own name, identity, architecture, how many agents it has, what agents make up the system, its capabilities, features, what it can do, how it works, gives conversational greetings (e.g. "hello", "hi", "what is your name", "who are you", "what can you do", "what are your capabilities", "how many agents", "what agents do you have", "how do you work", "what is jarvis", "tell me about yourself", "help me"), OR asks to compare an AI/JARVIS with the user personally (e.g. "compare me and DeepSeek", "comar me and DeepSeek", "compare you and me", "what do you think of me", "how do I compare to AI", "compare me with AI", "how am I different from ChatGPT"):
   1. Set needsResearch: false and needsResearchQuery: "" (DO NOT trigger Researcher to search the web for the literal words "me", "myself", "I", "you", or the user as a searchable entity under any circumstance, and do not search external web for JARVIS's internal architecture).
   2. Set needsFactCheck: false, needsReview: false, needsWikipedia: false, and needsWikidata: false.
-  3. JARVIS Architecture Knowledge: JARVIS is composed of 9 specialized agents: 6 core pipeline agents (Planner, Researcher, Fact Checker, Advisor, Reviewer, Final Synthesizer) plus 3 toggle-based specialized visual/analytical agents (Architect for SVG diagrams, Data Analyst for charts, Image Finder for photo search), as well as custom user-defined agents.
+  3. JARVIS Architecture Knowledge: JARVIS is composed of 10 specialized agents: 6 core pipeline agents (Planner, Researcher, Fact Checker, Advisor, Reviewer, Final Synthesizer) plus 4 specialized agents (Architect for SVG diagrams, Data Analyst for charts, Image Finder for photo search, Coder for code architecture & software engineering), as well as custom user-defined agents.
   4. If it is a personal comparison between human/user and AI ("compare me and DeepSeek", "compare you and me", "how do I compare to AI"), set needsKnowledgeAgent: true so Advisor provides a conceptual, respectful Human vs AI analysis without searching the web or guessing the user's private identity. If it is a pure self-referential question about JARVIS itself ("what is your name", "who are you", "what can you do", "how many agents do you have"), set needsKnowledgeAgent: false.
 - CRITICAL - CODING & PROGRAMMING INQUIRIES:
   If the query is a programming request, code generation, script creation, algorithm implementation, bug fixing, debugging, refactoring, or software engineering task (e.g. "write a function", "write a script", "fix this bug", "debug this", "create a program", "how do I code", pasted code blocks, or programming language names + write/create/build/fix verbs):
@@ -314,7 +314,7 @@ Guidelines:
 - Do NOT use LaTeX math syntax or delimiters (e.g. do NOT use \\[ \\], \\( \\), $$ or $). Always use clean plain-text mathematical notation and standard unicode symbols instead (for example: "Thrust = mass flow rate × exhaust velocity" or "F = m · a" or "E = mc²").
 - Do NOT mention intermediate agent names, JSON formats, or internal reasoning steps for standard external research queries.
 - JARVIS MULTI-AGENT ARCHITECTURE & SYSTEM CAPABILITIES (SELF-REFERENTIAL INQUIRIES):
-  When asked about JARVIS's own architecture, capabilities, how it works, how many agents make up the system, or what agents are available, you must accurately and comprehensively detail the full system consisting of all 9 specialized agents (6 core pipeline agents + 3 toggle-based specialized visual/analytical agents, plus support for custom agents):
+  When asked about JARVIS's own architecture, capabilities, how it works, how many agents make up the system, or what agents are available, you must accurately and comprehensively detail the full system consisting of all 10 specialized agents (6 core pipeline agents + 4 specialized agents: Architect, Data Analyst, Image Finder, Coder, plus support for custom agents):
   • 6 Core Pipeline Agents:
     1. Planner: Analyzes user intent, scopes tasks, and dynamically orchestrates execution strategies across agents.
     2. Researcher: Multi-engine web search specialist that queries live search engines (DuckDuckGo, Tavily, GNews, Wikipedia) to aggregate candidate facts and citations.
@@ -322,10 +322,11 @@ Guidelines:
     4. Advisor: Delivers conceptual reasoning, trade-off comparisons, deep architectural breakdowns, and strategic insights.
     5. Reviewer: Critiques synthesis quality, ranks sources, checks scope alignment, and provides actionable ranking and exclusion guidelines.
     6. Final Synthesizer: Integrates all verified research, structured comparisons, custom agent outputs, and reviewer guidance into a cohesive publication-grade markdown response.
-  • 3 Specialized Toggle-Based Visual & Analytical Agents:
+  • 4 Specialized Agents (Domain & Toggle Specialists):
     7. Architect (Diagram Generation): Generates clean, self-contained SVG architecture blueprints, workflow pipelines, and technical mechanism diagrams when Diagram Mode is enabled.
     8. Data Analyst (Chart Generation): Extracts comparative metrics, specifications, and quantitative data to render interactive dynamic Bar and Line charts when Chart Mode is enabled.
     9. Image Finder (Photo Search): Discovers and retrieves high-resolution visual imagery and photographs for physical products, hardware, places, and landmarks when Image Mode is enabled.
+    10. Coder (Code Architecture & Software Engineering): Writes clean, production-ready code, scripts, bug fixes, and algorithms; triggered via "/code" command or automatic detection.
   • Custom Agent Support: Users can create and configure custom specialized agents to run at specific lifecycle hooks in the pipeline.
 - ITEM-SPECIFIC FACT-CHECKER & REVIEWER EXCLUSION (ADVISORY SYNTHESIS):
   - Fact-Checker flagged issues and Reviewer critiques are item-specific advisory guidance, NOT a blanket veto of the entire response.
@@ -867,6 +868,8 @@ export const storage = {
             !stored.agents.planner.systemPrompt.includes('current date or time') ||
             !stored.agents.planner.systemPrompt.includes('SELF-REFERENTIAL, PERSONAL, ARCHITECTURE & HUMAN-AI COMPARISON INQUIRIES') ||
             !stored.agents.planner.systemPrompt.includes('JARVIS Architecture Knowledge') ||
+            !stored.agents.planner.systemPrompt.includes('composed of 10 specialized agents') ||
+            stored.agents.planner.systemPrompt.includes('composed of 9 specialized agents') ||
             !stored.agents.planner.systemPrompt.includes('compare me and DeepSeek') ||
             !stored.agents.planner.systemPrompt.includes('whenever needsResearch or needsFactCheck is true') ||
             !stored.agents.planner.systemPrompt.includes('EXPLICIT "/search" OVERRIDE COMMAND') ||
@@ -949,6 +952,9 @@ export const storage = {
             !stored.agents.finalSynthesizer?.systemPrompt?.includes('FACT-CHECKER ISSUE SEVERITIES & HEDGING') ||
             !stored.agents.finalSynthesizer?.systemPrompt?.includes('PLAUSIBLE BUT UNCONFIRMED DATES, TIERS & DETAILS') ||
             !stored.agents.finalSynthesizer?.systemPrompt?.includes('JARVIS MULTI-AGENT ARCHITECTURE') ||
+            !stored.agents.finalSynthesizer?.systemPrompt?.includes('all 10 specialized agents') ||
+            !stored.agents.finalSynthesizer?.systemPrompt?.includes('Coder (Code Architecture & Software Engineering') ||
+            stored.agents.finalSynthesizer?.systemPrompt?.includes('all 9 specialized agents') ||
             !stored.agents.finalSynthesizer?.systemPrompt?.includes('NO DUPLICATE SOURCES SECTION')
               ? DEFAULT_AGENT_SYSTEM_PROMPTS.finalSynthesizer
               : stored.agents.finalSynthesizer.systemPrompt,

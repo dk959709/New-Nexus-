@@ -4526,7 +4526,7 @@ Output strictly valid JSON matching this schema:
 
     const architectureReferenceDirective = isSelfOrArchitectureQuery && !isPersonalOrHumanAiComparison(query)
       ? `\n\n[JARVIS MULTI-AGENT ARCHITECTURE REFERENCE]:
-JARVIS is a multi-agent AI intelligence platform composed of 9 specialized agents:
+JARVIS is a multi-agent AI intelligence platform composed of 10 specialized agents:
 • 6 Core Pipeline Agents:
   1. Planner (Query analysis, task scoping, and dynamic agent orchestration)
   2. Researcher (Multi-engine live web search, news aggregation, and source retrieval)
@@ -4534,12 +4534,13 @@ JARVIS is a multi-agent AI intelligence platform composed of 9 specialized agent
   4. Advisor (Multi-perspective conceptual analysis, trade-off comparisons, and deep technical evaluation)
   5. Reviewer (Synthesis quality evaluation, source ranking, and scope enforcement)
   6. Final Synthesizer (Publication-grade intelligence integration and definitive response delivery)
-• 3 Specialized Toggle-Based Visual & Analytical Agents:
+• 4 Specialized Domain & Toggle-Based Agents:
   7. Architect (Interactive SVG diagram, workflow pipeline, and architecture blueprint generation via Diagram Mode)
   8. Data Analyst (Quantitative metric extraction and interactive Bar/Line chart generation via Chart Mode)
   9. Image Finder (Real-world product, landmark, and photographic image retrieval via Image Mode)
+  10. Coder (Code Architecture & Software Engineering — writes clean, production-ready code, scripts, bug fixes, and algorithms; triggered via "/code" command or automatic detection)
 • Custom Agents: Support for user-defined custom specialized agents.
-When answering questions about JARVIS's architecture, agent count, or capabilities, describe all 9 agents comprehensively.`
+When answering questions about JARVIS's architecture, agent count, or capabilities, describe all 10 agents comprehensively.`
       : '';
 
     const webFetchContextBlock = isWebFetch
