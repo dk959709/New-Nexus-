@@ -87,13 +87,21 @@ Set needsKnowledgeAgent to false for all other query types, including: time-sens
   2. Set needsFactCheck: false, needsReview: false, needsWikipedia: false, and needsWikidata: false.
   3. JARVIS Architecture Knowledge: JARVIS is composed of 9 specialized agents: 6 core pipeline agents (Planner, Researcher, Fact Checker, Advisor, Reviewer, Final Synthesizer) plus 3 toggle-based specialized visual/analytical agents (Architect for SVG diagrams, Data Analyst for charts, Image Finder for photo search), as well as custom user-defined agents.
   4. If it is a personal comparison between human/user and AI ("compare me and DeepSeek", "compare you and me", "how do I compare to AI"), set needsKnowledgeAgent: true so Advisor provides a conceptual, respectful Human vs AI analysis without searching the web or guessing the user's private identity. If it is a pure self-referential question about JARVIS itself ("what is your name", "who are you", "what can you do", "how many agents do you have"), set needsKnowledgeAgent: false.
+- CRITICAL - CODING & PROGRAMMING INQUIRIES:
+  If the query is a programming request, code generation, script creation, algorithm implementation, bug fixing, debugging, refactoring, or software engineering task (e.g. "write a function", "write a script", "fix this bug", "debug this", "create a program", "how do I code", pasted code blocks, or programming language names + write/create/build/fix verbs):
+  1. Set needsCode: true.
+  2. Set needsResearch: false and needsResearchQuery: "" (no web research or fact-checking needed for code generation).
+  3. Set needsFactCheck: false.
+  4. Set needsReview: true (Reviewer audits the Coder's output for bugs, logic errors, and edge cases).
+  5. Set needsKnowledgeAgent: false, needsWikipedia: false, needsWikidata: false, needsDiagram: false, needsChart: false, needsImage: false.
 - If the user's question is only asking for the current date or time, answer it directly using the date/time provided above, and set needsResearch, needsResearchQuery, needsKnowledgeAgent, needsFactCheck, and needsReview all to false or empty string.
 - If the query is ambiguous or unclear, still produce a best-effort plan and lean toward needsResearch: true to gather clarifying context.
 CRITICAL JSON FORMAT MANDATE:
-You MUST output ONLY a valid JSON object. Every response MUST include all 14 keys below without exception. "needsResearchQuery", "wikipediaQuery", and "wikidataQuery" are MANDATORY string fields (use empty string "" when not needed, never omit the key):
+You MUST output ONLY a valid JSON object. Every response MUST include all keys below without exception. "needsResearchQuery", "wikipediaQuery", and "wikidataQuery" are MANDATORY string fields (use empty string "" when not needed, never omit the key):
 {
   "task": "concise goal statement",
   "plan": ["step 1", "step 2"],
+  "needsCode": false,
   "needsResearch": true,
   "needsResearchQuery": "HTML security risks hidden code tracking scripts",
   "needsKnowledgeAgent": true,
@@ -427,6 +435,20 @@ Instructions:
 {
   "searchQuery": "short specific search query"
 }`,
+
+  coder: `You are the JARVIS CODER agent, an expert senior software engineer and systems architect.
+Your mission is to write clean, robust, efficient, production-ready code, scripts, bug fixes, or algorithmic solutions for the user's task.
+
+User Task / Query:
+{task}
+
+Instructions:
+- Write complete, working, well-structured code with proper syntax, error handling, and type safety where applicable.
+- Follow modern idiomatic best practices for the specified language or framework.
+- Format all code inside clean, correctly-tagged markdown code blocks (e.g. \`\`\`python, \`\`\`typescript, \`\`\`rust, etc.).
+- Never truncate critical code with placeholders like "...rest of code..." or "TODO: implement here" unless specifically requested.
+- Provide a clear, concise technical explanation of the implementation, key design choices, computational complexity (Big-O), and usage examples.
+- Deliver high-leverage technical engineering solutions with zero conversational fluff.`,
 };
 
 export const DEFAULT_JARVIS_CONFIG: JarvisSystemConfig = {
@@ -553,6 +575,19 @@ export const DEFAULT_JARVIS_CONFIG: JarvisSystemConfig = {
       maxTokens: 150,
       enableFailover: false,
       systemPrompt: DEFAULT_AGENT_SYSTEM_PROMPTS.imageFinder,
+    },
+    coder: {
+      id: 'coder',
+      name: 'Coder',
+      role: 'Code Architecture & Software Engineering',
+      description: 'Writes clean, production-ready code, scripts, bug fixes, algorithms, and technical implementations.',
+      icon: '💻',
+      providerId: 'existing',
+      modelId: 'deepseek/deepseek-chat',
+      enabled: true,
+      maxTokens: 2500,
+      enableFailover: false,
+      systemPrompt: DEFAULT_AGENT_SYSTEM_PROMPTS.coder,
     },
   },
 };
@@ -946,6 +981,16 @@ export const storage = {
             !stored.agents?.imageFinder?.systemPrompt?.includes('physical subject')
               ? DEFAULT_AGENT_SYSTEM_PROMPTS.imageFinder
               : stored.agents.imageFinder.systemPrompt,
+        },
+        coder: {
+          ...DEFAULT_JARVIS_CONFIG.agents.coder,
+          ...(stored.agents?.coder || {}),
+          maxTokens: Math.max(800, stored.agents?.coder?.maxTokens || 2500),
+          systemPrompt:
+            !stored.agents?.coder?.systemPrompt ||
+            !stored.agents?.coder?.systemPrompt?.includes('JARVIS CODER')
+              ? DEFAULT_AGENT_SYSTEM_PROMPTS.coder
+              : stored.agents.coder.systemPrompt,
         },
       },
     };

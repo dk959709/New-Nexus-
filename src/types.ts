@@ -178,6 +178,7 @@ export type JarvisAgentId =
   | 'architect'
   | 'dataAnalyst'
   | 'imageFinder'
+  | 'coder'
   | string;
 
 export type CustomAgentPipelinePosition =
@@ -243,6 +244,7 @@ export interface JarvisPlannerOutput {
   needsDiagram: boolean;
   needsChart?: boolean;
   needsImage?: boolean;
+  needsCode?: boolean;
   needsWikipedia: boolean;
   wikipediaQuery: string;
   needsWikidata: boolean;

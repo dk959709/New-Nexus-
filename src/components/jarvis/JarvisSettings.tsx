@@ -45,6 +45,7 @@ const AGENT_ORDER: JarvisAgentId[] = [
   'architect',
   'dataAnalyst',
   'imageFinder',
+  'coder',
 ];
 
 const PROMPT_HELP_TAGS: Record<string, { vars: string[]; purpose: string }> = {
@@ -83,6 +84,10 @@ const PROMPT_HELP_TAGS: Record<string, { vars: string[]; purpose: string }> = {
   imageFinder: {
     vars: ['{task}'],
     purpose: 'Formulates a precise, specific image search query to retrieve real photographs via NEXUS Search & Wikimedia.',
+  },
+  coder: {
+    vars: ['{task}', '{query}'],
+    purpose: 'Writes clean, robust, production-ready code, scripts, bug fixes, and algorithmic implementations.',
   },
 };
 
@@ -188,6 +193,7 @@ export function JarvisSettings({ onSaved }: JarvisSettingsProps) {
     architect: false,
     dataAnalyst: false,
     imageFinder: false,
+    coder: false,
   });
 
   // Modal / drawer state for "Add New Custom Agent"
@@ -2044,7 +2050,7 @@ export function JarvisSettings({ onSaved }: JarvisSettingsProps) {
             <p style={{ margin: '0 0 20px', color: '#cbd5e1', fontSize: '13px', lineHeight: 1.6 }}>
               This master reset will:
               <br />
-              • Restore all 9 built-in agents (Planner, Researcher, Fact Checker, Advisor, Reviewer, Final Synthesizer, Architect, Data Analyst, Image Finder) to their original default system prompts.
+              • Restore all 10 built-in agents (Planner, Researcher, Fact Checker, Advisor, Reviewer, Final Synthesizer, Architect, Data Analyst, Image Finder, Coder) to their original default system prompts.
               <br />
               • Reset all models and token limits to defaults.
               <br />

@@ -1140,6 +1140,91 @@ export function stripWebFetchPrefix(text: string): string {
   return text.trim().replace(/^\/web\s*/i, '').trim().replace(/^["'`<]+|[>"'`]+$/g, '').trim();
 }
 
+export function isCodeSlashCommand(text: string): boolean {
+  if (!text || typeof text !== 'string') return false;
+  return /^\/code(?:\s+|$)/i.test(text.trim());
+}
+
+export function stripCodePrefix(text: string): string {
+  if (!text || typeof text !== 'string') return text;
+  return text.trim().replace(/^\/code\s*/i, '').trim().replace(/^["'`<]+|[>"'`]+$/g, '').trim();
+}
+
+export function isCodingQuery(text: string): boolean {
+  if (!text || typeof text !== 'string') return false;
+  if (isWebFetchQuery(text) || isSearchOverrideQuery(text) || isCodeSlashCommand(text)) return false;
+
+  const trimmed = text.trim();
+  const lower = trimmed.toLowerCase();
+
+  // 1. Markdown code block check
+  if (/```(?:[a-z0-9_-]+)?\s*[\r\n][\s\S]*?```/i.test(trimmed)) {
+    return true;
+  }
+
+  // 2. Explicit code creation / programming keywords
+  if (
+    /\b(?:write|create|implement|build|generate|develop|code|script|program)\s+(?:a\s+|an\s+|some\s+)?(?:clean\s+|simple\s+|fast\s+|production\s+|unit\s+)?(?:code|script|function|algorithm|class|method|component|hook|endpoint|api|query|regex|solution|module|decorator|parser|generator|middleware)\b/i.test(
+      lower,
+    )
+  ) {
+    return true;
+  }
+
+  // 3. Programming language or framework + coding terms
+  const languagesOrFrameworks =
+    'python|javascript|typescript|react|vue|angular|svelte|next\\.?js|node\\.?js|express|html|css|c\\+\\+|c#|java|golang|go lang|rust|php|ruby|swift|kotlin|sql|postgresql|mysql|sqlite|mongodb|bash|shell|powershell|regex|regular expression|dockerfile|yaml|json|graphql';
+
+  const codeNouns =
+    'code|script|function|program|algorithm|class|method|component|hook|endpoint|query|api|regex|snippet|syntax|module|decorator|test case|unit test|solution';
+
+  const langRegex = new RegExp(
+    `\\b(?:${languagesOrFrameworks})\\b.*\\b(?:${codeNouns})\\b`,
+    'i',
+  );
+  const nounThenLangRegex = new RegExp(
+    `\\b(?:${codeNouns})\\b.*\\b(?:in|with|using|for)\\b.*\\b(?:${languagesOrFrameworks})\\b`,
+    'i',
+  );
+
+  if (langRegex.test(lower) || nounThenLangRegex.test(lower)) {
+    return true;
+  }
+
+  // 4. Debugging / bug fixing / refactoring
+  if (
+    /\b(?:fix|debug|troubleshoot|refactor|optimize)\s+(?:this|the|my)?\s*(?:bug|error|issue|code|script|function|exception|syntax|typeerror|referenceerror)\b/i.test(
+      lower,
+    ) ||
+    /\bwhy is this code (?:failing|crashing|broken|not working|throwing)\b/i.test(lower)
+  ) {
+    return true;
+  }
+
+  // 5. Code syntax heuristics
+  if (
+    /\b(?:def\s+[a-z_][a-z0-9_]*\s*\(|function\s+[a-z_][a-z0-9_]*\s*\(|const\s+[a-z_][a-z0-9_]*\s*=|let\s+[a-z_][a-z0-9_]*\s*=|class\s+[a-z_][a-z0-9_]*\s*(?:extends|\{|:)|import\s+.*?from\s+['"]|export\s+(?:default\s+)?(?:function|class|const)|SELECT\s+.*?\s+FROM\s+[a-z0-9_]+|public\s+static\s+void\s+main)\b/i.test(
+      trimmed,
+    )
+  ) {
+    return true;
+  }
+
+  // 6. Common LeetCode / algorithmic problems
+  if (
+    /\b(?:leetcode|two sum|binary search|quicksort|mergesort|depth first search|breadth first search|dfs|bfs|dynamic programming|linked list|binary tree|trie)\b/i.test(
+      lower,
+    ) &&
+    /\b(?:solve|solution|implement|code|in python|in javascript|in c\+\+|in java|in rust)\b/i.test(
+      lower,
+    )
+  ) {
+    return true;
+  }
+
+  return false;
+}
+
 /**
  * Detects whether a query has "PRODUCT/MODEL LINEUP" intent:
  * Queries asking what current models/versions/products exist for a subject
@@ -1915,9 +2000,10 @@ export async function runJarvisPipeline(
     return custom || null;
   };
 
-  // Initialize step statuses for default 6 agents
+  // Initialize step statuses for default pipeline agents
   const defaultAgentOrder: JarvisAgentId[] = [
     'planner',
+    'coder',
     'researcher',
     'factChecker',
     'advisor',
@@ -1970,7 +2056,8 @@ export async function runJarvisPipeline(
     if (!cfg) {
       return { ok: false, text: '', error: `Agent ${agentId} not found in configuration`, providerName: '', model: '' };
     }
-    if (!cfg.enabled) {
+    const isCodeCommandInvocation = agentId === 'coder' && isCodeSlashCommand(query);
+    if (!cfg.enabled && !isCodeCommandInvocation) {
       return { ok: false, text: '', error: 'Agent disabled in configuration', providerName: '', model: '' };
     }
 
@@ -1979,6 +2066,8 @@ export async function runJarvisPipeline(
         ? overrideMaxTokens
         : agentId === 'architect'
         ? Math.max(cfg.maxTokens || 4500, 4500)
+        : agentId === 'coder'
+        ? Math.max(cfg.maxTokens || 2500, 2500)
         : agentId === 'researcher'
         ? (deepResearch ? Math.max(cfg.maxTokens || 3200, 3200) : cfg.maxTokens)
         : agentId === 'reviewer'
@@ -1991,7 +2080,7 @@ export async function runJarvisPipeline(
         ? (deepResearch ? Math.max(cfg.maxTokens || 2800, 2800) : cfg.maxTokens)
         : cfg.maxTokens;
     const effectiveTimeoutMs =
-      agentId === 'architect'
+      agentId === 'architect' || agentId === 'coder'
         ? 75000
         : deepResearch && (agentId === 'researcher' || agentId === 'finalSynthesizer')
         ? 55000
@@ -2023,7 +2112,7 @@ export async function runJarvisPipeline(
         providerConfig: primary.provider,
         fallbackConfig,
         enableFailover: cfg.enableFailover,
-        temperature: agentId === 'architect' ? 0.1 : 0.2,
+        temperature: agentId === 'architect' || agentId === 'coder' ? 0.1 : 0.2,
         maxTokens: effectiveMaxTokens,
         timeoutMs: effectiveTimeoutMs,
       });
@@ -2223,6 +2312,7 @@ Please perform your specialized processing for this inquiry. Provide clear, conc
   let plannerOutput: JarvisPlannerOutput = {
     task: query,
     plan: ['Synthesize accurate response directly.'],
+    needsCode: false,
     needsResearch: false,
     needsResearchQuery: '',
     needsKnowledgeAgent: false,
@@ -2240,7 +2330,6 @@ Please perform your specialized processing for this inquiry. Provide clear, conc
   if (agentConfigs.planner.enabled) {
     const pCfg = agentConfigs.planner;
     const provInfo = resolveProviderConfig(pCfg);
-    const start = Date.now();
 
     updateStep({
       agentId: 'planner',
@@ -2287,6 +2376,17 @@ Please perform your specialized processing for this inquiry. Provide clear, conc
 
     activePrompt += imageModeNotice;
 
+    // Explicitly inject current Coder Agent state so Planner's decision is context-aware
+    const coderAgentEnabled = Boolean(agentConfigs.coder && agentConfigs.coder.enabled !== false);
+    const coderModeNotice = coderAgentEnabled
+      ? `\n\n[SYSTEM CONTEXT: Coder Agent is currently ENABLED (ON).]
+- The user has enabled the Coder agent.
+- If the inquiry is a programming, scripting, bug fixing, algorithm, or code generation task, set "needsCode": true, "needsResearch": false, "needsFactCheck": false, and "needsReview": true. (Coder will implement the solution, Reviewer will audit it, and Final Synthesizer will combine them into the final answer).`
+      : `\n\n[SYSTEM CONTEXT: Coder Agent is currently DISABLED (OFF).]
+- Coder Agent is OFF. Set "needsCode": false.`;
+
+    activePrompt += coderModeNotice;
+
     const rawLang = pCfg.responseLanguage;
     const responseLang = (typeof rawLang === 'string' && rawLang.trim()) ? rawLang.trim() : 'English';
     const responseLangDirective = `\n\n[SYSTEM RESPONSE LANGUAGE DIRECTIVE: RESPONSE LANGUAGE = "${responseLang}"]
@@ -2299,6 +2399,7 @@ You are the JARVIS Planner. You MUST output ONLY a valid JSON object strictly ma
 {
   "task": string (concise goal statement under 15 words),
   "plan": string[] (2-4 short steps),
+  "needsCode": boolean (true if inquiry is a coding, programming, bug fixing, or software engineering task),
   "needsResearch": boolean,
   "needsResearchQuery": string (MANDATORY: clean, specific search phrase focusing strictly on the actual topic without conversational filler or full questions if needsResearch is true, or empty string "" if false),
   "needsKnowledgeAgent": boolean,
@@ -2318,12 +2419,46 @@ CRITICAL RULES:
 3. When needsWikipedia is true, "wikipediaQuery" MUST be the clean, concise subject/title (e.g. for "tell about brawl stars game", wikipediaQuery MUST be "Brawl Stars"). If needsWikipedia is false, set it to "".
 4. When needsWikidata is true, "wikidataQuery" MUST be the clean entity name. If needsWikidata is false, set it to "".`;
 
-    const planRes = await callAgent('planner', [
-      { role: 'system', content: PLANNER_SYSTEM_SCHEMA },
-      { role: 'user', content: activePrompt },
-    ]);
+    let planRes: { ok: boolean; text: string; error?: string; providerName: string; model: string; usedFallback?: boolean };
+    let duration = 0;
 
-    const duration = Date.now() - start;
+    if (isCodeSlashCommand(query)) {
+      const stripped = stripCodePrefix(query);
+      plannerOutput = {
+        task: `Generate code solution: ${stripped}`,
+        plan: [
+          'Analyze programming language, requirements, and software architecture',
+          'Generate clean, well-commented, production-ready code solution via Coder',
+        ],
+        needsCode: true,
+        needsResearch: false,
+        needsResearchQuery: '',
+        needsWikipedia: false,
+        wikipediaQuery: '',
+        needsWikidata: false,
+        wikidataQuery: '',
+        needsKnowledgeAgent: false,
+        needsReview: false,
+        needsFactCheck: false,
+        needsDiagram: false,
+        needsChart: false,
+        needsImage: false,
+      };
+      duration = 5;
+      planRes = {
+        ok: true,
+        text: JSON.stringify(plannerOutput, null, 2),
+        providerName: 'Internal Router',
+        model: 'code-pipeline',
+      };
+    } else {
+      const pStart = Date.now();
+      planRes = await callAgent('planner', [
+        { role: 'system', content: PLANNER_SYSTEM_SCHEMA },
+        { role: 'user', content: activePrompt },
+      ]);
+      duration = Date.now() - pStart;
+    }
 
     if (planRes.ok) {
       plannerOutput = safeJsonParse(planRes.text, plannerOutput);
@@ -2331,6 +2466,7 @@ CRITICAL RULES:
         plannerOutput = {
           task: query,
           plan: ['Analyze and route inquiry.'],
+          needsCode: false,
           needsResearch: false,
           needsResearchQuery: '',
           needsFactCheck: false,
@@ -2349,6 +2485,7 @@ CRITICAL RULES:
         plannerOutput.plan = Array.isArray(rawPlan) ? rawPlan.map(String) : typeof rawPlan === 'string' ? [rawPlan] : ['Task analyzed and routed.'];
       }
       plannerOutput.task = String(plannerOutput.task || query);
+      plannerOutput.needsCode = Boolean(plannerOutput.needsCode);
       plannerOutput.needsResearch = Boolean(plannerOutput.needsResearch);
       if (plannerOutput.needsResearch) {
         if (typeof plannerOutput.needsResearchQuery === 'string' && plannerOutput.needsResearchQuery.trim()) {
@@ -2384,6 +2521,55 @@ CRITICAL RULES:
         }
       } else {
         plannerOutput.wikidataQuery = '';
+      }
+
+      if (isCodeSlashCommand(query)) {
+        const stripped = stripCodePrefix(query);
+        plannerOutput.task = `Generate code solution: ${stripped}`;
+        plannerOutput.plan = [
+          'Analyze programming language, requirements, and software architecture',
+          'Generate clean, well-commented, production-ready code solution via Coder',
+        ];
+        plannerOutput.needsCode = true;
+        plannerOutput.needsResearch = false;
+        plannerOutput.needsResearchQuery = '';
+        plannerOutput.needsWikipedia = false;
+        plannerOutput.wikipediaQuery = '';
+        plannerOutput.needsWikidata = false;
+        plannerOutput.wikidataQuery = '';
+        plannerOutput.needsKnowledgeAgent = false;
+        plannerOutput.needsReview = false;
+        plannerOutput.needsFactCheck = false;
+        plannerOutput.needsDiagram = false;
+        plannerOutput.needsChart = false;
+        plannerOutput.needsImage = false;
+      } else {
+        const isCoderToggleEnabled = Boolean(agentConfigs.coder && agentConfigs.coder.enabled !== false);
+        const isAutoCode =
+          isCoderToggleEnabled &&
+          (Boolean(plannerOutput.needsCode) || isCodingQuery(query) || isCodingQuery(plannerOutput.task));
+
+        if (isAutoCode) {
+          plannerOutput.needsCode = true;
+          plannerOutput.needsResearch = false;
+          plannerOutput.needsResearchQuery = '';
+          plannerOutput.needsWikipedia = false;
+          plannerOutput.wikipediaQuery = '';
+          plannerOutput.needsWikidata = false;
+          plannerOutput.wikidataQuery = '';
+          plannerOutput.needsKnowledgeAgent = false;
+          plannerOutput.needsFactCheck = false;
+          plannerOutput.needsReview = true;
+          plannerOutput.needsDiagram = false;
+          plannerOutput.needsChart = false;
+          plannerOutput.needsImage = false;
+          plannerOutput.plan = [
+            'Analyze coding requirements, target language/framework, and architectural scope',
+            'Generate clean, well-commented, production-ready code solution via Coder',
+            'Perform rigorous code review for bugs, logic errors, and edge cases via Reviewer',
+            'Synthesize definitive unified code solution with usage guidance and notes via Final Synthesizer',
+          ];
+        }
       }
 
       if (isWebFetchQuery(query)) {
@@ -2630,10 +2816,20 @@ CRITICAL RULES:
   const isPersonalQuery = !isWebFetch && !isSearchOverride && (isPersonalOrHumanAiComparison(query) || isPersonalOrHumanAiComparison(combinedQueryText));
   const isSelfQuery = !isWebFetch && !isSearchOverride && (isSelfReferentialInquiry(query) || isSelfReferentialInquiry(combinedQueryText));
 
+  const isCodeCommand = isCodeSlashCommand(query);
+  const isCoderToggleEnabled = Boolean(agentConfigs.coder && agentConfigs.coder.enabled !== false);
+  const isAutoCode =
+    !isCodeCommand &&
+    isCoderToggleEnabled &&
+    (Boolean(plannerOutput.needsCode) || isCodingQuery(query) || isCodingQuery(plannerOutput.task));
+
   // Determine which downstream agents are required.
-  // When isWebFetch is true, Researcher, Wikipedia, Advisor, Fact Checker, and Reviewer are skipped.
-  // Researcher runs if enabled AND (deepResearch toggle is active OR plannerOutput.needsResearch, needsWikipedia, or needsWikidata is true).
+  // When isCodeCommand is true: Planner -> Coder ONLY.
+  // When isAutoCode is true: Planner -> Coder -> Reviewer -> Final Synthesizer.
+  // Researcher and Fact Checker are bypassed for both coding pipelines.
   const shouldResearch =
+    !isCodeCommand &&
+    !isAutoCode &&
     !isWebFetch &&
     !isPersonalQuery &&
     !isSelfQuery &&
@@ -2650,15 +2846,18 @@ CRITICAL RULES:
   let needsWikipediaFallback = false;
 
   const shouldFactCheck =
+    !isCodeCommand &&
+    !isAutoCode &&
     !isWebFetch &&
     agentConfigs.factChecker.enabled &&
     (deepResearch || (shouldResearch && Boolean(plannerOutput.needsFactCheck)));
 
   const shouldReview =
+    !isCodeCommand &&
     !isWebFetch &&
     !isSearchOverride &&
     agentConfigs.reviewer.enabled &&
-    (deepResearch || Boolean(plannerOutput.needsReview));
+    (isAutoCode || deepResearch || Boolean(plannerOutput.needsReview));
 
   // ==========================================
   // STEP 1.5: 🌐 WEB FETCHER (for /web [URL])
@@ -2785,6 +2984,135 @@ CRITICAL RULES:
         error: webFetchError,
         outputPreview: JSON.stringify({ error: webFetchError, url: targetWebUrl }, null, 2),
         rawOutput: JSON.stringify({ error: webFetchError, url: targetWebUrl }, null, 2),
+      });
+    }
+  }
+
+  // ==========================================
+  // STEP 1.6: 💻 CODER AGENT
+  // ==========================================
+  let coderOutput = '';
+
+  if (isCodeCommand || isAutoCode) {
+    const coderCfg = agentConfigs.coder || {
+      id: 'coder',
+      name: 'Coder',
+      role: 'Code Architecture & Software Engineering',
+      description: 'Writes clean, production-ready code, scripts, bug fixes, and algorithms.',
+      icon: '💻',
+      providerId: 'existing',
+      modelId: 'deepseek/deepseek-chat',
+      enabled: true,
+      maxTokens: 2500,
+      enableFailover: false,
+    };
+    const provInfo = resolveProviderConfig(coderCfg);
+    const start = Date.now();
+
+    storage.addJarvisQueryLog('Coder agent activated - generating complete code solution', 'ai');
+
+    updateStep({
+      agentId: 'coder',
+      name: coderCfg.name || 'Coder',
+      icon: coderCfg.icon || '💻',
+      status: 'running',
+      providerName: provInfo.provider?.name || 'Primary',
+      model: provInfo.model,
+    });
+
+    const strippedCodeQuery = isCodeCommand ? stripCodePrefix(query) : query;
+    const defaultPromptTemplate = DEFAULT_AGENT_SYSTEM_PROMPTS.coder;
+    const coderSysPrompt = coderCfg.systemPrompt || defaultPromptTemplate;
+
+    const coderRes = await callAgent('coder', [
+      { role: 'system', content: coderSysPrompt },
+      {
+        role: 'user',
+        content: `Target Coding Task: "${strippedCodeQuery}"\nPlanner Scoped Objective: "${plannerOutput.task || strippedCodeQuery}"\nExecution Plan:\n${Array.isArray(plannerOutput.plan) ? plannerOutput.plan.map((p, i) => `${i + 1}. ${p}`).join('\n') : plannerOutput.task}\n\nPlease generate a clean, complete, well-commented, production-ready implementation fulfilling all requirements.`,
+      },
+    ]);
+
+    const duration = Date.now() - start;
+
+    if (coderRes.ok && coderRes.text) {
+      coderOutput = coderRes.text;
+      updateStep({
+        agentId: 'coder',
+        name: coderCfg.name || 'Coder',
+        icon: coderCfg.icon || '💻',
+        status: 'completed',
+        providerName: coderRes.providerName,
+        model: coderRes.model,
+        durationMs: duration,
+        summary: 'Production code implementation completed.',
+        outputPreview: coderOutput,
+        rawOutput: coderOutput,
+        usedFallback: coderRes.usedFallback,
+      });
+    } else {
+      coderOutput = `// Code generation encountered an issue:\n// ${coderRes.error || 'Failed to generate code.'}\n// Query: ${strippedCodeQuery}`;
+      updateStep({
+        agentId: 'coder',
+        name: coderCfg.name || 'Coder',
+        icon: coderCfg.icon || '💻',
+        status: 'failed',
+        providerName: coderRes.providerName,
+        model: coderRes.model,
+        durationMs: duration,
+        error: coderRes.error || 'Coder execution failed.',
+        outputPreview: coderOutput,
+        rawOutput: coderOutput,
+      });
+    }
+
+    if (isCodeCommand) {
+      // /code slash command: Planner -> Coder ONLY.
+      // Mark all other pipeline agents as skipped:
+      const skipIds: JarvisAgentId[] = [
+        'researcher',
+        'factChecker',
+        'advisor',
+        'reviewer',
+        'finalSynthesizer',
+        'architect',
+        'dataAnalyst',
+        'imageFinder',
+      ];
+      skipIds.forEach((id) => {
+        const aCfg = agentConfigs[id as keyof typeof agentConfigs];
+        if (aCfg) {
+          updateStep({
+            agentId: id,
+            name: aCfg.name,
+            icon: aCfg.icon,
+            status: 'skipped',
+            providerName: aCfg.providerId,
+            model: aCfg.modelId,
+            summary: 'Bypassed for lightweight /code pipeline.',
+          });
+        }
+      });
+      return {
+        answer: coderOutput,
+        steps,
+        sources: [],
+        diagramSvg: null,
+        chartData: null,
+        images: [],
+      };
+    }
+  } else {
+    // Coding agent skipped for non-coding task
+    const coderCfg = agentConfigs.coder;
+    if (coderCfg) {
+      updateStep({
+        agentId: 'coder',
+        name: coderCfg.name || 'Coder',
+        icon: coderCfg.icon || '💻',
+        status: 'skipped',
+        providerName: coderCfg.providerId,
+        model: coderCfg.modelId,
+        summary: 'Coding agent bypassed for non-coding task.',
       });
     }
   }
@@ -3688,6 +4016,8 @@ CRITICAL RULES:
   // ==========================================
   let advisorOutput = '';
   const shouldRunAdvisor =
+    !isCodeCommand &&
+    !isAutoCode &&
     agentConfigs.advisor &&
     agentConfigs.advisor.enabled !== false &&
     Boolean(plannerOutput.needsKnowledgeAgent);
@@ -3817,41 +4147,75 @@ CRITICAL RULES:
       model: provInfo.model,
     });
 
-    const defaultPromptTemplate = DEFAULT_AGENT_SYSTEM_PROMPTS.reviewer;
+    let reviewRes: { ok: boolean; text: string; error?: string; providerName: string; model: string; usedFallback?: boolean };
 
-    // For news queries, provide the full candidate pool with structured metadata so Reviewer can actively compare and rank all candidates
-    let factsForReviewer = '';
-    const reviewerCandidateLimit = deepResearch ? 15 : 12;
-    const reviewerFactLimit = deepResearch ? 15 : 10;
-    if (isNewsQuery && Array.isArray(researcherOutput?.candidates) && researcherOutput.candidates.length > 0) {
-      const candidatesPayload = researcherOutput.candidates.slice(0, reviewerCandidateLimit).map((c, idx) => ({
-        candidateIndex: idx + 1,
-        title: c.title || null,
-        fact: c.fact,
-        domain: c.domain || null,
-        eventDate: c.eventDate || null,
-        publishedAt: c.publishedAt || null,
-        location: c.location || null,
-        category: c.category || null,
-        confirmedBy: c.confirmedBy || [],
-        sourceIndex: c.sourceIndex || null,
-      }));
-      factsForReviewer = JSON.stringify(candidatesPayload, null, 2);
-    } else if (Array.isArray(researcherOutput?.facts) && researcherOutput.facts.length > 0) {
-      factsForReviewer = researcherOutput.facts.slice(0, reviewerFactLimit).map((f, i) => `${i + 1}. ${f}`).join('\n');
+    if (isAutoCode) {
+      const codeReviewerSysPrompt =
+        'You are the JARVIS Reviewer agent conducting an in-depth code audit. Output strictly valid JSON.';
+      const codeReviewerUserPrompt = `You are the JARVIS Reviewer evaluating code generated by the Coder agent.
+
+User Original Coding Request: "${query}"
+Task Objective: "${plannerOutput.task || query}"
+Planner Execution Plan:
+${Array.isArray(plannerOutput.plan) ? plannerOutput.plan.map((p, i) => `${i + 1}. ${p}`).join('\n') : plannerOutput.task}
+
+=== CODER AGENT CODE OUTPUT ===
+${coderOutput}
+
+=== CODE REVIEW REQUIREMENTS ===
+1. Review the Coder's output for bugs, logic errors, syntax flaws, and missed edge cases (e.g. boundary conditions, empty inputs, error handling).
+2. Evaluate whether it completely and accurately fulfills the user's original request.
+3. Suggest specific improvements, optimizations, or fixes if needed.
+
+Output strictly valid JSON matching this schema:
+{
+  "recommendation": "APPROVED" | "APPROVED_WITH_IMPROVEMENTS" | "NEEDS_REVISION",
+  "score": number (0-100),
+  "critique": "Comprehensive critique evaluating code correctness, structure, and edge case coverage.",
+  "issues": ["Specific bug, edge case, or logic flaw identified"],
+  "missing": ["Any missed requirement or nuance from user prompt"]
+}`;
+
+      reviewRes = await callAgent('reviewer', [
+        { role: 'system', content: codeReviewerSysPrompt },
+        { role: 'user', content: codeReviewerUserPrompt },
+      ]);
     } else {
-      factsForReviewer = 'No facts gathered.';
-    }
+      const defaultPromptTemplate = DEFAULT_AGENT_SYSTEM_PROMPTS.reviewer;
 
-    const issuesSubset = Array.isArray(factCheckOutput?.issues) ? factCheckOutput.issues : [];
+      // For news queries, provide the full candidate pool with structured metadata so Reviewer can actively compare and rank all candidates
+      let factsForReviewer = '';
+      const reviewerCandidateLimit = deepResearch ? 15 : 12;
+      const reviewerFactLimit = deepResearch ? 15 : 10;
+      if (isNewsQuery && Array.isArray(researcherOutput?.candidates) && researcherOutput.candidates.length > 0) {
+        const candidatesPayload = researcherOutput.candidates.slice(0, reviewerCandidateLimit).map((c, idx) => ({
+          candidateIndex: idx + 1,
+          title: c.title || null,
+          fact: c.fact,
+          domain: c.domain || null,
+          eventDate: c.eventDate || null,
+          publishedAt: c.publishedAt || null,
+          location: c.location || null,
+          category: c.category || null,
+          confirmedBy: c.confirmedBy || [],
+          sourceIndex: c.sourceIndex || null,
+        }));
+        factsForReviewer = JSON.stringify(candidatesPayload, null, 2);
+      } else if (Array.isArray(researcherOutput?.facts) && researcherOutput.facts.length > 0) {
+        factsForReviewer = researcherOutput.facts.slice(0, reviewerFactLimit).map((f, i) => `${i + 1}. ${f}`).join('\n');
+      } else {
+        factsForReviewer = 'No facts gathered.';
+      }
 
-    let activePrompt = (revCfg.systemPrompt || defaultPromptTemplate)
-      .replace('{task}', plannerOutput.task || query)
-      .replace('{facts}', factsForReviewer)
-      .replace('{issues}', JSON.stringify(issuesSubset, null, 2));
+      const issuesSubset = Array.isArray(factCheckOutput?.issues) ? factCheckOutput.issues : [];
 
-    if (deepResearch) {
-      activePrompt += `\n\n[DEEP RESEARCH STRUCTURING & DEPTH DIRECTIVE FOR REVIEWER]:
+      let activePrompt = (revCfg.systemPrompt || defaultPromptTemplate)
+        .replace('{task}', plannerOutput.task || query)
+        .replace('{facts}', factsForReviewer)
+        .replace('{issues}', JSON.stringify(issuesSubset, null, 2));
+
+      if (deepResearch) {
+        activePrompt += `\n\n[DEEP RESEARCH STRUCTURING & DEPTH DIRECTIVE FOR REVIEWER]:
 1. THOROUGH MULTI-PILLAR STRUCTURING GUIDANCE:
    - In "recommendation", provide extensive, detailed structuring guidance for the Final Synthesizer. Do NOT provide a single-sentence or superficial summary.
    - Explicitly instruct the Synthesizer to structure the final answer around multiple distinct core angles/pillars of the topic (for example: Fundamental Architecture/Mechanisms, Detailed Specifications & Benchmarks, Concrete Real-World Examples & Case Studies, Comparative Trade-offs, and Practical/Operational Implications).
@@ -3861,17 +4225,18 @@ CRITICAL RULES:
    - In "missing": Detail specific technical nuances, complementary perspectives, or domain depth angles that the Synthesizer should expand using the verified facts.
 3. LOGICAL COHERENCE & PRECISION:
    - In "issues": Flag any logical gaps, unconfirmed assumptions, or structural weaknesses in how the findings connect.`;
-    }
+      }
 
-    const reviewRes = await callAgent('reviewer', [
-      {
-        role: 'system',
-        content: deepResearch
-          ? 'You are the JARVIS Reviewer in DEEP RESEARCH mode. Provide thorough, multi-pillar structuring guidance for the Final Synthesizer in strictly valid JSON.'
-          : 'You are the JARVIS Reviewer. Output strictly valid JSON.',
-      },
-      { role: 'user', content: activePrompt },
-    ]);
+      reviewRes = await callAgent('reviewer', [
+        {
+          role: 'system',
+          content: deepResearch
+            ? 'You are the JARVIS Reviewer in DEEP RESEARCH mode. Provide thorough, multi-pillar structuring guidance for the Final Synthesizer in strictly valid JSON.'
+            : 'You are the JARVIS Reviewer. Output strictly valid JSON.',
+        },
+        { role: 'user', content: activePrompt },
+      ]);
+    }
 
     const duration = Date.now() - start;
 
@@ -3886,7 +4251,11 @@ CRITICAL RULES:
       }
       if (!Array.isArray(reviewerOutput.missing)) reviewerOutput.missing = [];
       if (!Array.isArray(reviewerOutput.issues)) reviewerOutput.issues = [];
-      reviewerOutput.recommendation = String(reviewerOutput.recommendation || 'Quality review complete.');
+      reviewerOutput.recommendation = String(reviewerOutput.recommendation || (isAutoCode ? 'APPROVED' : 'Quality review complete.'));
+
+      const summaryText = isAutoCode
+        ? `Code review verdict: ${reviewerOutput.recommendation}${((reviewerOutput as Record<string, unknown>).score) ? ` (Score: ${(reviewerOutput as Record<string, unknown>).score}/100)` : ''}`
+        : (reviewerOutput.recommendation || 'Quality review complete.');
 
       updateStep({
         agentId: 'reviewer',
@@ -3896,7 +4265,7 @@ CRITICAL RULES:
         providerName: reviewRes.providerName,
         model: reviewRes.model,
         durationMs: duration,
-        summary: reviewerOutput.recommendation || 'Quality review complete.',
+        summary: summaryText,
         outputPreview: JSON.stringify(reviewerOutput, null, 2),
         rawOutput: reviewRes.text || JSON.stringify(reviewerOutput, null, 2),
         usedFallback: reviewRes.usedFallback,
@@ -3921,7 +4290,7 @@ CRITICAL RULES:
       status: 'skipped',
       providerName: agentConfigs.reviewer.providerId,
       model: agentConfigs.reviewer.modelId,
-      summary: 'Deep critique review bypassed for speed.',
+      summary: isCodeCommand ? 'Bypassed for lightweight /code pipeline.' : 'Deep critique review bypassed for speed.',
     });
   }
 
@@ -4217,16 +4586,51 @@ ${sourcesListText}${customInsightsBlock}${personalIdentityDirective}${architectu
       synthReplacements,
     );
 
-    const synthRes = await callAgent('finalSynthesizer', [
-      {
-        role: 'system',
-        content: fullSynthesizerSysPrompt,
-      },
-      {
-        role: 'user',
-        content: `Please synthesize the definitive answer based on the following verified intelligence and agent outputs (including any visual descriptions, custom agent findings, or alt-texts):\n\n${finalizedSynthesizerContext}`,
-      },
-    ]);
+    let synthRes: { ok: boolean; text: string; error?: string; providerName: string; model: string; usedFallback?: boolean };
+
+    if (isAutoCode) {
+      const codeSynthesizerSysPrompt = `Current date and time: ${currentDateTime}
+
+You are the FINAL SYNTHESIZER agent of JARVIS, a multi-agent intelligence platform.
+Your task is to combine the Coder's code and the Reviewer's feedback into a clean, well-formatted final response — proper code block(s), brief explanation, and any important notes from the review (e.g., edge cases handled, assumptions made).
+
+DIRECTIVES:
+1. Provide the complete, production-ready code in clean Markdown code blocks with appropriate language tags (e.g. \`\`\`python, \`\`\`typescript, \`\`\`go). Incorporate any fixes, optimizations, or edge-case handling suggested by the Reviewer.
+2. Provide a brief, crisp explanation of how the code works and how to run or use it.
+3. Include any important notes from the review (such as edge cases handled, performance characteristics, and assumptions made).
+4. Do NOT mention internal agent names, JSON formats, or pipeline steps in your final response. Deliver an authoritative, polished software engineering solution.`;
+
+      const codeSynthesizerUserPrompt = `User Original Coding Request: "${query}"
+Task Scope: "${plannerOutput.task || query}"
+
+=== CODER IMPLEMENTATION ===
+${coderOutput}
+
+=== REVIEWER CODE AUDIT & FEEDBACK ===
+Recommendation: ${reviewerOutput.recommendation || 'APPROVED'}
+Reviewer Critique:
+${(reviewerOutput as Record<string, unknown>).critique || 'Code fulfills specified objectives.'}
+${Array.isArray(reviewerOutput.issues) && reviewerOutput.issues.length > 0 ? `Identified Issues / Edge Cases to address:\n${reviewerOutput.issues.map((i) => `- ${i}`).join('\n')}` : ''}
+${Array.isArray(reviewerOutput.missing) && reviewerOutput.missing.length > 0 ? `Missing Elements:\n${reviewerOutput.missing.map((m) => `- ${m}`).join('\n')}` : ''}
+
+Please combine the Coder's code and the Reviewer's feedback into a clean, well-formatted final response following your system directives.`;
+
+      synthRes = await callAgent('finalSynthesizer', [
+        { role: 'system', content: codeSynthesizerSysPrompt },
+        { role: 'user', content: codeSynthesizerUserPrompt },
+      ]);
+    } else {
+      synthRes = await callAgent('finalSynthesizer', [
+        {
+          role: 'system',
+          content: fullSynthesizerSysPrompt,
+        },
+        {
+          role: 'user',
+          content: `Please synthesize the definitive answer based on the following verified intelligence and agent outputs (including any visual descriptions, custom agent findings, or alt-texts):\n\n${finalizedSynthesizerContext}`,
+        },
+      ]);
+    }
 
     const duration = Date.now() - start;
 
@@ -4240,7 +4644,9 @@ ${sourcesListText}${customInsightsBlock}${personalIdentityDirective}${architectu
         providerName: synthRes.providerName,
         model: synthRes.model,
         durationMs: duration,
-        summary: 'Final synthesis compiled and formatted.',
+        summary: isAutoCode
+          ? 'Synthesized final code solution incorporating code review and usage notes.'
+          : 'Final synthesis compiled and formatted.',
         outputPreview: finalAnswer,
         rawOutput: finalAnswer,
         usedFallback: synthRes.usedFallback,
@@ -4256,7 +4662,9 @@ ${sourcesListText}${customInsightsBlock}${personalIdentityDirective}${architectu
         durationMs: duration,
         error: synthRes.error || 'Final Synthesizer failed.',
       });
-      if (researcherOutput.facts.length > 0) {
+      if (isAutoCode && coderOutput) {
+        finalAnswer = coderOutput;
+      } else if (researcherOutput.facts.length > 0) {
         finalAnswer = `### Key Intelligence & Findings\n\n${researcherOutput.facts.map((f) => `- ${f}`).join('\n')}`;
       } else if (factCheckOutput.verified.length > 0) {
         finalAnswer = `### Verified Claims\n\n${factCheckOutput.verified.map((v) => `- ${v}`).join('\n')}`;

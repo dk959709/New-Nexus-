@@ -14,6 +14,7 @@ import {
   ChevronDown,
   ChevronUp,
   Layers,
+  Code2,
 } from 'lucide-react';
 import type { JarvisExecutionStep, JarvisMessage } from '@/types';
 
@@ -122,6 +123,16 @@ const OPTIONAL_AGENTS: Record<string, AgentNodeDef> = {
     glowColor: 'rgba(244, 114, 182, 0.5)',
     isOptional: true,
   },
+  coder: {
+    id: 'coder',
+    name: 'Coder',
+    shortLabel: 'CODE',
+    code: 'COD-10',
+    icon: <Code2 size={13} />,
+    color: '#60a5fa',
+    glowColor: 'rgba(96, 165, 250, 0.5)',
+    isOptional: true,
+  },
 };
 
 export const JarvisPipelineHudTracker: React.FC<JarvisPipelineHudTrackerProps> = ({
@@ -143,8 +154,37 @@ export const JarvisPipelineHudTracker: React.FC<JarvisPipelineHudTrackerProps> =
   };
 
   // Build the list of active agents to display in the tracker:
-  // 1. All 5 core agents always shown
-  const activeNodes: AgentNodeDef[] = [...CORE_AGENTS];
+  const isCodeOnlyPipeline =
+    steps.some((s) => s?.agentId === 'coder') &&
+    steps.some((s) => s?.agentId === 'finalSynthesizer' && s.status === 'skipped');
+
+  const isAutoCodePipeline =
+    steps.some((s) => s?.agentId === 'coder') &&
+    (steps.some((s) => s?.agentId === 'finalSynthesizer' && s.status !== 'skipped') ||
+      steps.some((s) => s?.agentId === 'reviewer' && s.status !== 'skipped'));
+
+  let activeNodes: AgentNodeDef[] = [];
+
+  if (isCodeOnlyPipeline) {
+    // 2-agent pipeline: Planner → Coder ONLY
+    const plannerNode = CORE_AGENTS.find((a) => a.id === 'planner');
+    if (plannerNode) activeNodes.push(plannerNode);
+    activeNodes.push(OPTIONAL_AGENTS.coder);
+  } else if (isAutoCodePipeline) {
+    // 4-agent pipeline: Planner → Coder → Reviewer → Final Synthesizer
+    const pNode = CORE_AGENTS.find((a) => a.id === 'planner');
+    const revNode = CORE_AGENTS.find((a) => a.id === 'reviewer');
+    const sNode = CORE_AGENTS.find((a) => a.id === 'finalSynthesizer');
+    if (pNode) activeNodes.push(pNode);
+    activeNodes.push(OPTIONAL_AGENTS.coder);
+    if (revNode) activeNodes.push(revNode);
+    if (sNode) activeNodes.push(sNode);
+  } else {
+    activeNodes = [...CORE_AGENTS];
+    if (steps.some((s) => s?.agentId === 'coder')) {
+      activeNodes.push(OPTIONAL_AGENTS.coder);
+    }
+  }
 
   // 2. Optional agents only added if their respective mode was ON or executed
   if (message?.diagramMode || steps.some((s) => s?.agentId === 'architect')) {

@@ -144,6 +144,17 @@ const AGENT_THEMES: Record<string, AgentTheme> = {
     accentGlow: 'rgba(244, 114, 182, 0.3)',
     icon: <Sparkles size={18} className="text-pink-400" />,
   },
+  coder: {
+    title: 'CODER // SOFTWARE ARCHITECTURE & IMPLEMENTATION',
+    subtitle: 'Production-Grade Code, Scripts, Bug Fixes & Algorithmic Engineering',
+    border: 'rgba(59, 130, 246, 0.45)',
+    bg: 'linear-gradient(150deg, rgba(10, 25, 47, 0.92) 0%, rgba(6, 16, 32, 0.96) 100%)',
+    headerBg: 'rgba(15, 38, 70, 0.65)',
+    text: '#60a5fa',
+    badgeBg: 'rgba(59, 130, 246, 0.18)',
+    accentGlow: 'rgba(59, 130, 246, 0.35)',
+    icon: <Code2 size={18} className="text-blue-400" />,
+  },
   critic: {
     title: 'CRITIC // DEVIL\'S ADVOCATE & STRESS TEST',
     subtitle: 'Counter-Hypothesis Generation & Edge-Case Probing',
@@ -1002,6 +1013,13 @@ function formatAgentContentToMarkdown(step: JarvisExecutionStep): {
     }
 
     return { formatted: md, isStructuredJson: true, raw };
+  }
+
+  // 4.2 CODER AGENT
+  if (step.agentId === 'coder') {
+    const codeContent = raw || step.outputPreview || step.summary || 'Code implementation completed.';
+    const md = `### 💻 Production Code & Systems Engineering\n\n${codeContent}`;
+    return { formatted: md, isStructuredJson: false, raw };
   }
 
   // 4.5 WEB FETCHER AGENT
