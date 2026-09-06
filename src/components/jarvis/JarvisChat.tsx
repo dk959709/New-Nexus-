@@ -24,10 +24,21 @@ import {
   Download,
   Code2,
   FileText,
+  Paperclip,
+  Clipboard,
+  FileCode,
+  X,
 } from 'lucide-react';
 import { storage } from '@/lib/storage';
 import { stripConversationalMetaText, cleanMarkdownForSpeech } from '@/lib/format';
 import { runJarvisPipeline } from '@/services/jarvisOrchestrator';
+import {
+  validateAttachmentFile,
+  processAttachedFile,
+  formatAttachmentSize,
+  formatPromptWithAttachments,
+  UNSUPPORTED_FILE_ERROR_MESSAGE,
+} from '@/services/jarvisAttachmentService';
 
 import { JarvisHudHeader } from './JarvisHudHeader';
 import { JarvisCoreVisualizer } from './JarvisCoreVisualizer';
@@ -43,6 +54,7 @@ import { JarvisFactCheckNotes } from './JarvisFactCheckNotes';
 import { formatFullPipelineExport } from './formatJarvisPipelineExport';
 import { copyToClipboard, formatMarkdownToRichHtml } from '@/lib/clipboard';
 import type {
+  JarvisAttachedFile,
   JarvisExecutionStep,
   JarvisMessage,
   JarvisSystemConfig,
@@ -229,6 +241,13 @@ export function JarvisChat({ config, onOpenSettings }: JarvisChatProps) {
   const [synthRawViewMap, setSynthRawViewMap] = useState<Record<string, boolean>>({});
   const [copiedSynthId, setCopiedSynthId] = useState<string | null>(null);
 
+  // Attachment & Clipboard states
+  const [attachedFiles, setAttachedFiles] = useState<JarvisAttachedFile[]>([]);
+  const [isExtractingAttachment, setIsExtractingAttachment] = useState(false);
+  const [attachmentError, setAttachmentError] = useState<string | null>(null);
+  const [showAttachMenu, setShowAttachMenu] = useState(false);
+  const attachMenuRef = useRef<HTMLDivElement | null>(null);
+  const fileInputRef = useRef<HTMLInputElement | null>(null);
 
   const [showClearConfirm, setShowClearConfirm] = useState(false);
   const [clearedBanner, setClearedBanner] = useState(false);
@@ -238,6 +257,94 @@ export function JarvisChat({ config, onOpenSettings }: JarvisChatProps) {
   const inputRef = useRef<HTMLInputElement>(null);
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const utteranceRef = useRef<SpeechSynthesisUtterance | null>(null);
+
+  // Close attachment dropdown when clicking outside
+  useEffect(() => {
+    function handleClickOutside(event: MouseEvent) {
+      if (attachMenuRef.current && !attachMenuRef.current.contains(event.target as Node)) {
+        setShowAttachMenu(false);
+      }
+    }
+    if (showAttachMenu) {
+      document.addEventListener('mousedown', handleClickOutside);
+    }
+    return () => {
+      document.removeEventListener('mousedown', handleClickOutside);
+    };
+  }, [showAttachMenu]);
+
+  const handleAttachFileClick = () => {
+    setShowAttachMenu(false);
+    fileInputRef.current?.click();
+  };
+
+  const handleFileInputChange = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const files = e.target.files;
+    if (!files || files.length === 0) return;
+
+    setAttachmentError(null);
+    setIsExtractingAttachment(true);
+
+    try {
+      const newAttachments: JarvisAttachedFile[] = [];
+
+      for (let i = 0; i < files.length; i++) {
+        const file = files[i];
+        const validation = validateAttachmentFile(file);
+        if (!validation.valid) {
+          setAttachmentError(validation.error || UNSUPPORTED_FILE_ERROR_MESSAGE);
+          continue;
+        }
+
+        try {
+          const processed = await processAttachedFile(file);
+          newAttachments.push(processed);
+        } catch (procErr: unknown) {
+          const msg = procErr instanceof Error ? procErr.message : UNSUPPORTED_FILE_ERROR_MESSAGE;
+          setAttachmentError(msg);
+        }
+      }
+
+      if (newAttachments.length > 0) {
+        setAttachedFiles((prev) => [...prev, ...newAttachments]);
+      }
+    } finally {
+      setIsExtractingAttachment(false);
+      if (fileInputRef.current) {
+        fileInputRef.current.value = '';
+      }
+    }
+  };
+
+  const handleRemoveAttachment = (id: string) => {
+    setAttachedFiles((prev) => prev.filter((f) => f.id !== id));
+  };
+
+  const handlePasteFromClipboard = async () => {
+    setShowAttachMenu(false);
+    setAttachmentError(null);
+
+    try {
+      if (navigator.clipboard && navigator.clipboard.readText) {
+        const clipboardText = await navigator.clipboard.readText();
+        if (clipboardText && clipboardText.trim()) {
+          setQuery((prev) => (prev ? `${prev}\n${clipboardText}` : clipboardText));
+          setTimeout(() => {
+            inputRef.current?.focus();
+          }, 50);
+        } else {
+          setAttachmentError('Clipboard is empty or does not contain text.');
+          setTimeout(() => setAttachmentError(null), 4000);
+        }
+      } else {
+        setAttachmentError('Clipboard API is not accessible in this context. Please use standard paste (Ctrl+V or long-press).');
+        setTimeout(() => setAttachmentError(null), 4000);
+      }
+    } catch {
+      setAttachmentError('Clipboard access permission denied. Please paste directly into the input box using Ctrl+V or long-press.');
+      setTimeout(() => setAttachmentError(null), 4000);
+    }
+  };
 
   const isRunning = Boolean(currentRunningMessageId);
 
@@ -296,26 +403,42 @@ export function JarvisChat({ config, onOpenSettings }: JarvisChatProps) {
 
   const handleSend = useCallback(
     async (textToSend?: string) => {
-      const prompt = (textToSend || query).trim();
-      if (!prompt || isRunning) return;
+      const userText = (textToSend || query).trim();
+      const currentAttachments = [...attachedFiles];
+      if ((!userText && currentAttachments.length === 0) || isRunning) return;
 
       setActiveView('chat');
       const messageId = `jarvis-${Date.now()}`;
+
+      // Formatted prompt passed to the multi-agent pipeline
+      const fullPipelinePrompt = formatPromptWithAttachments(userText, currentAttachments);
+
+      // Display query in UI
+      const displayQuery =
+        userText ||
+        (currentAttachments.length === 1
+          ? `Analyze attached file: ${currentAttachments[0].name}`
+          : `Analyze ${currentAttachments.length} attached files`);
+
       const initialMessage: JarvisMessage = {
         id: messageId,
-        query: prompt,
+        query: displayQuery,
         answer: '',
         timestamp: Date.now(),
         deepResearch,
         diagramMode,
         chartMode,
         imageMode,
+        coderMode,
+        attachments: currentAttachments.length > 0 ? currentAttachments : undefined,
         steps: [],
       };
 
       // Append new messages to the bottom (WhatsApp-style chronological order)
       setMessages((prev) => [...prev, initialMessage]);
       setQuery('');
+      setAttachedFiles([]);
+      setAttachmentError(null);
       setCurrentRunningMessageId(messageId);
       setActiveSteps([]);
 
@@ -338,7 +461,7 @@ export function JarvisChat({ config, onOpenSettings }: JarvisChatProps) {
         };
 
         const result = await runJarvisPipeline(
-          prompt,
+          fullPipelinePrompt,
           effectiveConfig,
           deepResearch,
           diagramMode,
@@ -361,7 +484,7 @@ export function JarvisChat({ config, onOpenSettings }: JarvisChatProps) {
 
         const completedMessage: JarvisMessage = {
           id: messageId,
-          query: prompt,
+          query: displayQuery,
           answer: result.answer,
           timestamp: Date.now(),
           deepResearch,
@@ -369,6 +492,7 @@ export function JarvisChat({ config, onOpenSettings }: JarvisChatProps) {
           chartMode,
           imageMode,
           coderMode,
+          attachments: currentAttachments.length > 0 ? currentAttachments : undefined,
           steps: result.steps,
           sources: result.sources,
           diagramSvg: result.diagramSvg,
@@ -386,7 +510,7 @@ export function JarvisChat({ config, onOpenSettings }: JarvisChatProps) {
         const errMsg = err instanceof Error ? err.message : 'Execution failed';
         const failedMessage: JarvisMessage = {
           id: messageId,
-          query: prompt,
+          query: displayQuery,
           answer: 'Sorry, I encountered an issue during multi-agent execution.',
           timestamp: Date.now(),
           deepResearch,
@@ -394,6 +518,7 @@ export function JarvisChat({ config, onOpenSettings }: JarvisChatProps) {
           chartMode,
           imageMode,
           coderMode,
+          attachments: currentAttachments.length > 0 ? currentAttachments : undefined,
           steps: activeSteps,
           error: errMsg,
         };
@@ -407,7 +532,7 @@ export function JarvisChat({ config, onOpenSettings }: JarvisChatProps) {
         setCurrentRunningMessageId(null);
       }
     },
-    [query, isRunning, deepResearch, diagramMode, chartMode, imageMode, coderMode, config, activeSteps],
+    [query, isRunning, deepResearch, diagramMode, chartMode, imageMode, coderMode, attachedFiles, config, activeSteps],
   );
 
   useEffect(() => {
@@ -976,6 +1101,26 @@ export function JarvisChat({ config, onOpenSettings }: JarvisChatProps) {
                   <h3 className="text-base sm:text-lg font-bold text-white m-0 leading-relaxed">
                     {msg.query}
                   </h3>
+
+                  {/* Attached File Chips on User Message Card */}
+                  {msg.attachments && msg.attachments.length > 0 && (
+                    <div className="flex items-center gap-2 flex-wrap mt-2.5">
+                      {msg.attachments.map((att) => (
+                        <div
+                          key={att.id}
+                          className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-lg text-xs font-mono bg-cyan-950/60 border border-cyan-500/30 text-cyan-200"
+                        >
+                          {att.extension === 'pdf' ? (
+                            <FileText size={12} className="text-amber-400 shrink-0" />
+                          ) : (
+                            <FileCode size={12} className="text-emerald-400 shrink-0" />
+                          )}
+                          <span className="font-semibold text-white max-w-[200px] truncate">{att.name}</span>
+                          <span className="text-[10px] text-cyan-400/70 shrink-0">({formatAttachmentSize(att.size)})</span>
+                        </div>
+                      ))}
+                    </div>
+                  )}
                 </div>
 
                 {/* User Avatar Circle */}
@@ -1385,8 +1530,83 @@ export function JarvisChat({ config, onOpenSettings }: JarvisChatProps) {
             e.preventDefault();
             handleSend();
           }}
-          className="relative z-10 flex flex-col gap-4"
+          className="relative z-10 flex flex-col gap-3"
         >
+          {/* Hidden File Input for Attachments */}
+          <input
+            ref={fileInputRef}
+            type="file"
+            multiple
+            accept=".txt,.pdf,.py,.html,.htm,.js,.jsx,.mjs,.cjs,.ts,.tsx,.json,.css,.scss,.sass,.less,.md,.markdown,.yaml,.yml,.xml,.csv,.sql,.sh,.bash,.zsh,.env,.toml,.ini,.log,.c,.cpp,.h,.hpp,.java,.go,.rs,.php,.rb,text/*,application/pdf"
+            onChange={handleFileInputChange}
+            className="hidden"
+            tabIndex={-1}
+            aria-hidden="true"
+          />
+
+          {/* Error Banner for Rejected/Unsupported Files */}
+          {attachmentError && (
+            <div className="flex items-center justify-between gap-2 px-4 py-2 rounded-2xl bg-rose-950/80 border border-rose-500/50 text-rose-200 text-xs font-mono shadow-lg animate-in fade-in slide-in-from-bottom-2">
+              <div className="flex items-center gap-2 min-w-0">
+                <AlertTriangle size={15} className="text-rose-400 shrink-0" />
+                <span className="leading-snug">{attachmentError}</span>
+              </div>
+              <button
+                type="button"
+                onClick={() => setAttachmentError(null)}
+                className="p-1 hover:bg-white/10 rounded-md text-rose-300 hover:text-white transition-colors shrink-0 cursor-pointer"
+                title="Dismiss error"
+              >
+                <X size={14} />
+              </button>
+            </div>
+          )}
+
+          {/* Loading Extraction Indicator */}
+          {isExtractingAttachment && (
+            <div className="flex items-center gap-2 px-3.5 py-1.5 rounded-xl bg-cyan-950/60 border border-cyan-500/30 text-cyan-300 text-xs font-mono animate-pulse">
+              <Loader2 size={13} className="animate-spin text-cyan-400" />
+              <span>Extracting text content from attachment...</span>
+            </div>
+          )}
+
+          {/* Attached Files Chips Row */}
+          {attachedFiles.length > 0 && (
+            <div className="flex items-center gap-2 flex-wrap px-1">
+              <span className="text-[10px] font-mono text-cyan-400 font-bold uppercase tracking-wider flex items-center gap-1">
+                <Paperclip size={11} />
+                <span>Attached ({attachedFiles.length}):</span>
+              </span>
+              {attachedFiles.map((file) => (
+                <div
+                  key={file.id}
+                  className="inline-flex items-center gap-2 px-3 py-1 rounded-xl text-xs font-mono bg-cyan-950/70 border border-cyan-400/40 text-cyan-200 shadow-md backdrop-blur-md transition-all group"
+                >
+                  {file.extension === 'pdf' ? (
+                    <FileText size={13} className="text-amber-400 shrink-0" />
+                  ) : (
+                    <FileCode size={13} className="text-emerald-400 shrink-0" />
+                  )}
+                  <span className="font-semibold text-white max-w-[180px] sm:max-w-[240px] truncate" title={file.name}>
+                    {file.name}
+                  </span>
+                  <span className="text-[10px] text-cyan-400/70 shrink-0">
+                    ({formatAttachmentSize(file.size)})
+                  </span>
+                  <button
+                    type="button"
+                    onClick={() => handleRemoveAttachment(file.id)}
+                    className="p-0.5 rounded-md hover:bg-rose-500/20 text-slate-400 hover:text-rose-300 transition-colors cursor-pointer"
+                    title={`Remove ${file.name}`}
+                    aria-label={`Remove ${file.name}`}
+                  >
+                    <X size={13} />
+                  </button>
+                </div>
+              ))}
+            </div>
+          )}
+
           {/* Main Round Pill Search Input Bar */}
           <div
             className="group relative flex items-center gap-2 p-2 sm:p-2.5 rounded-full backdrop-blur-md transition-all duration-300"
@@ -1429,7 +1649,11 @@ export function JarvisChat({ config, onOpenSettings }: JarvisChatProps) {
               type="text"
               value={query}
               onChange={(e) => setQuery(e.target.value)}
-              placeholder="Ask JARVIS anything (multi-agent research, fact check, scientific audit)..."
+              placeholder={
+                attachedFiles.length > 0
+                  ? `Ask JARVIS about ${attachedFiles.length === 1 ? attachedFiles[0].name : `${attachedFiles.length} attached files`}...`
+                  : 'Ask JARVIS anything (multi-agent research, fact check, scientific audit)...'
+              }
               disabled={isRunning}
               className="flex-1 min-w-0 bg-transparent border-0 outline-none text-white text-sm sm:text-base placeholder:text-slate-400 font-medium px-2 py-2"
             />
@@ -1449,12 +1673,10 @@ export function JarvisChat({ config, onOpenSettings }: JarvisChatProps) {
               <Mic size={17} className={voiceListening ? 'animate-bounce' : ''} />
             </button>
 
-
-
             {/* Submit Pill Button */}
             <button
               type="submit"
-              disabled={!query.trim() || isRunning}
+              disabled={(!query.trim() && attachedFiles.length === 0) || isRunning || isExtractingAttachment}
               className="px-5 sm:px-6 py-2.5 sm:py-3 rounded-full font-bold text-xs sm:text-sm tracking-wide transition-all duration-300 flex items-center gap-2 shadow-lg active:scale-95 disabled:opacity-40 disabled:cursor-not-allowed shrink-0"
               style={{
                 background: isRunning
@@ -1471,7 +1693,7 @@ export function JarvisChat({ config, onOpenSettings }: JarvisChatProps) {
               ) : (
                 <Send size={15} className="text-slate-950" />
               )}
-              <span className="font-extrabold">{isRunning ? 'Orchestrating...' : 'Ask JARVIS'}</span>
+              <span className="font-extrabold">{isRunning ? 'Orchestrating...' : isExtractingAttachment ? 'Extracting...' : 'Ask JARVIS'}</span>
             </button>
           </div>
 
@@ -1667,6 +1889,101 @@ export function JarvisChat({ config, onOpenSettings }: JarvisChatProps) {
                   <span>CODER</span>
                 </span>
               </label>
+
+              {/* Attachment & Clipboard Menu Trigger "+" */}
+              <div className="relative" ref={attachMenuRef}>
+                <button
+                  type="button"
+                  onClick={() => {
+                    setShowAttachMenu((prev) => !prev);
+                    setAttachmentError(null);
+                  }}
+                  className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-full cursor-pointer transition-all duration-200 border text-[11px] font-mono font-bold select-none active:scale-95"
+                  style={{
+                    background:
+                      showAttachMenu || attachedFiles.length > 0
+                        ? 'linear-gradient(135deg, rgba(97,215,201,0.22) 0%, rgba(56,189,248,0.18) 100%)'
+                        : 'rgba(255,255,255,0.03)',
+                    borderColor:
+                      showAttachMenu || attachedFiles.length > 0
+                        ? 'rgba(97,215,201,0.55)'
+                        : 'rgba(255,255,255,0.1)',
+                    boxShadow:
+                      showAttachMenu || attachedFiles.length > 0
+                        ? '0 0 14px rgba(97,215,201,0.3)'
+                        : 'none',
+                    color:
+                      showAttachMenu || attachedFiles.length > 0 ? '#61d7c9' : '#94a3b8',
+                  }}
+                  title="Attach text/code/PDF file or paste from clipboard"
+                  aria-label="Add attachment or paste from clipboard"
+                >
+                  <Plus
+                    size={14}
+                    className={`transition-transform duration-200 ${
+                      showAttachMenu ? 'rotate-45 text-cyan-300' : 'text-cyan-400'
+                    }`}
+                  />
+                  <span>ATTACH</span>
+                  {attachedFiles.length > 0 && (
+                    <span className="w-4 h-4 rounded-full bg-cyan-400 text-slate-950 text-[9px] font-black flex items-center justify-center">
+                      {attachedFiles.length}
+                    </span>
+                  )}
+                </button>
+
+                {/* Popup Menu */}
+                {showAttachMenu && (
+                  <div
+                    className="absolute bottom-full mb-2 left-0 w-64 rounded-2xl p-2 z-50 backdrop-blur-xl border shadow-2xl flex flex-col gap-1.5 animate-in fade-in zoom-in-95 duration-150"
+                    style={{
+                      background:
+                        'linear-gradient(145deg, rgba(8, 20, 36, 0.98) 0%, rgba(14, 18, 48, 0.98) 100%)',
+                      borderColor: 'rgba(97, 215, 201, 0.4)',
+                      boxShadow: '0 12px 32px rgba(0,0,0,0.6), 0 0 20px rgba(97,215,201,0.2)',
+                    }}
+                  >
+                    <div className="px-3 py-1 border-b border-white/10 text-[10px] font-mono text-slate-400 tracking-wider font-semibold flex items-center justify-between">
+                      <span>ATTACHMENT OPTIONS</span>
+                      <span className="text-cyan-400 font-bold">TEXT/CODE</span>
+                    </div>
+
+                    {/* Option 1: Attach File */}
+                    <button
+                      type="button"
+                      onClick={handleAttachFileClick}
+                      className="w-full flex items-center gap-2.5 px-3 py-2 rounded-xl text-left text-xs font-mono text-slate-200 hover:text-white hover:bg-cyan-500/15 transition-all group border border-transparent hover:border-cyan-400/30 cursor-pointer"
+                    >
+                      <div className="w-7 h-7 rounded-lg bg-cyan-500/10 border border-cyan-400/30 flex items-center justify-center shrink-0 group-hover:bg-cyan-500/20 text-cyan-300">
+                        <Paperclip size={14} />
+                      </div>
+                      <div className="flex flex-col min-w-0">
+                        <span className="font-bold text-white tracking-wide">Attach File</span>
+                        <span className="text-[10px] text-slate-400 truncate">
+                          .txt, .pdf, .py, .html, .js, .ts, .json, .md
+                        </span>
+                      </div>
+                    </button>
+
+                    {/* Option 2: Paste from Clipboard */}
+                    <button
+                      type="button"
+                      onClick={handlePasteFromClipboard}
+                      className="w-full flex items-center gap-2.5 px-3 py-2 rounded-xl text-left text-xs font-mono text-slate-200 hover:text-white hover:bg-purple-500/15 transition-all group border border-transparent hover:border-purple-400/30 cursor-pointer"
+                    >
+                      <div className="w-7 h-7 rounded-lg bg-purple-500/10 border border-purple-400/30 flex items-center justify-center shrink-0 group-hover:bg-purple-500/20 text-purple-300">
+                        <Clipboard size={14} />
+                      </div>
+                      <div className="flex flex-col min-w-0">
+                        <span className="font-bold text-white tracking-wide">Paste from Clipboard</span>
+                        <span className="text-[10px] text-slate-400">
+                          Insert copied text or code into input
+                        </span>
+                      </div>
+                    </button>
+                  </div>
+                )}
+              </div>
             </div>
 
             {/* Round Auxiliary Action Chips */}

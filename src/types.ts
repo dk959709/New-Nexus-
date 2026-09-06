@@ -279,6 +279,15 @@ export interface JarvisExecutionStep {
   searchSource?: string;
 }
 
+export interface JarvisAttachedFile {
+  id: string;
+  name: string;
+  size: number;
+  type: string;
+  extension: string;
+  content: string;
+}
+
 export interface JarvisMessage {
   id: string;
   query: string;
@@ -292,6 +301,7 @@ export interface JarvisMessage {
   imageMode?: boolean;
   images?: JarvisImageResult[];
   coderMode?: boolean;
+  attachments?: JarvisAttachedFile[];
   steps: JarvisExecutionStep[];
   sources?: AISource[];
   error?: string;
