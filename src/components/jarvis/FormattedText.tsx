@@ -1,5 +1,87 @@
-import React from 'react';
-import { ExternalLink } from 'lucide-react';
+import React, { useState } from 'react';
+import { ExternalLink, Copy, Check } from 'lucide-react';
+
+interface JarvisCodeBlockProps {
+  code: string;
+  language?: string;
+  showCopyButton?: boolean;
+}
+
+export function JarvisCodeBlock({
+  code,
+  language,
+  showCopyButton = true,
+}: JarvisCodeBlockProps) {
+  const [copied, setCopied] = useState(false);
+
+  const handleCopy = async (e: React.MouseEvent) => {
+    e.stopPropagation();
+    try {
+      if (navigator.clipboard && navigator.clipboard.writeText) {
+        await navigator.clipboard.writeText(code);
+      } else {
+        const textarea = document.createElement('textarea');
+        textarea.value = code;
+        textarea.style.position = 'fixed';
+        textarea.style.opacity = '0';
+        document.body.appendChild(textarea);
+        textarea.select();
+        document.execCommand('copy');
+        document.body.removeChild(textarea);
+      }
+      setCopied(true);
+      setTimeout(() => {
+        setCopied(false);
+      }, 2000);
+    } catch {
+      setCopied(false);
+    }
+  };
+
+  const displayLang = language ? language.toUpperCase() : 'CODE / SYNTAX';
+
+  return (
+    <div className="my-3 rounded-2xl overflow-hidden border border-cyan-500/30 shadow-lg">
+      <div className="bg-slate-950 px-4 py-1.5 border-b border-cyan-500/20 flex items-center justify-between text-[11px] font-mono text-cyan-300 font-semibold">
+        <span className="flex items-center gap-1.5">
+          <span className="w-2.5 h-2.5 rounded-full bg-rose-500/80 inline-block" />
+          <span className="w-2.5 h-2.5 rounded-full bg-amber-500/80 inline-block" />
+          <span className="w-2.5 h-2.5 rounded-full bg-emerald-500/80 inline-block" />
+          <span className="ml-2 font-bold tracking-wider">{displayLang}</span>
+        </span>
+
+        {showCopyButton && (
+          <button
+            type="button"
+            onClick={handleCopy}
+            className={`inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-md text-[10px] font-mono font-medium transition-all duration-200 border cursor-pointer select-none active:scale-95 ${
+              copied
+                ? 'bg-emerald-500/20 text-emerald-300 border-emerald-500/50 shadow-[0_0_12px_rgba(16,185,129,0.35)]'
+                : 'bg-white/5 hover:bg-cyan-500/15 text-slate-300 hover:text-cyan-200 border-white/10 hover:border-cyan-400/40'
+            }`}
+            title={copied ? 'Code copied to clipboard!' : 'Copy code only'}
+            aria-label="Copy code block"
+          >
+            {copied ? (
+              <>
+                <Check size={12} className="text-emerald-400 shrink-0" />
+                <span className="text-emerald-300 font-semibold">Copied!</span>
+              </>
+            ) : (
+              <>
+                <Copy size={12} className="opacity-75 shrink-0" />
+                <span>Copy Code</span>
+              </>
+            )}
+          </button>
+        )}
+      </div>
+      <pre className="p-4 bg-slate-950/90 text-cyan-200 font-mono text-xs overflow-x-auto m-0 leading-relaxed">
+        <code>{code}</code>
+      </pre>
+    </div>
+  );
+}
 
 function cleanFormula(formula: string): string {
   if (!formula) return '';
@@ -105,8 +187,21 @@ function renderInline(text: string): React.ReactNode {
   });
 }
 
-export function FormattedText({ content }: { content: string }) {
+export function FormattedText({
+  content,
+  enableCopyCode,
+}: {
+  content: string;
+  enableCopyCode?: boolean;
+}) {
   if (!content) return null;
+
+  const shouldEnableCopy =
+    enableCopyCode !== undefined
+      ? enableCopyCode
+      : typeof window !== 'undefined'
+        ? !window.location.pathname.includes('/multi-chat')
+        : true;
 
   const rawLines = content.split('\n');
   const elements: React.ReactNode[] = [];
@@ -186,22 +281,12 @@ export function FormattedText({ content }: { content: string }) {
       if (tableBuffer.length > 0) flushTable(`pre-code-${idx}`);
       if (inCodeBlock) {
         elements.push(
-          <div
+          <JarvisCodeBlock
             key={`code-box-${idx}`}
-            className="my-3 rounded-2xl overflow-hidden border border-cyan-500/30 shadow-lg"
-          >
-            <div className="bg-slate-950 px-4 py-1.5 border-b border-cyan-500/20 flex items-center justify-between text-[11px] font-mono text-cyan-300 font-semibold">
-              <span className="flex items-center gap-1.5">
-                <span className="w-2.5 h-2.5 rounded-full bg-rose-500/80 inline-block" />
-                <span className="w-2.5 h-2.5 rounded-full bg-amber-500/80 inline-block" />
-                <span className="w-2.5 h-2.5 rounded-full bg-emerald-500/80 inline-block" />
-                <span className="ml-2">{codeLang ? codeLang.toUpperCase() : 'CODE / SYNTAX'}</span>
-              </span>
-            </div>
-            <pre className="p-4 bg-slate-950/90 text-cyan-200 font-mono text-xs overflow-x-auto m-0 leading-relaxed">
-              <code>{codeBuffer.join('\n')}</code>
-            </pre>
-          </div>,
+            code={codeBuffer.join('\n')}
+            language={codeLang}
+            showCopyButton={shouldEnableCopy}
+          />,
         );
         codeBuffer = [];
         codeLang = '';
@@ -404,6 +489,18 @@ export function FormattedText({ content }: { content: string }) {
         {renderInline(line)}
       </p>,
     );
+  }
+
+  if (inCodeBlock && codeBuffer.length > 0) {
+    elements.push(
+      <JarvisCodeBlock
+        key="code-box-end"
+        code={codeBuffer.join('\n')}
+        language={codeLang}
+        showCopyButton={shouldEnableCopy}
+      />,
+    );
+    codeBuffer = [];
   }
 
   if (tableBuffer.length > 0) {
