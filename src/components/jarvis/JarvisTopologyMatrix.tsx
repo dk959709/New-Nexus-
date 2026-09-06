@@ -8,6 +8,8 @@ import {
   Sparkles,
   Layers,
   BarChart3,
+  Image as ImageIcon,
+  Code2,
   Cpu,
   ArrowRight,
   Zap,
@@ -15,6 +17,7 @@ import {
   Clock,
 } from 'lucide-react';
 import type { JarvisAgentId, JarvisExecutionStep, JarvisSystemConfig } from '@/types';
+import { DEFAULT_JARVIS_CONFIG } from '@/lib/storage';
 
 interface JarvisTopologyMatrixProps {
   config: JarvisSystemConfig;
@@ -29,6 +32,7 @@ const AGENTS_META: Array<{
   emoji: string;
   icon: typeof Compass;
   color: string;
+  tier: 'Core' | 'Specialized';
   description: string;
   detailedPurpose: string;
   sampleQuery: string;
@@ -39,6 +43,7 @@ const AGENTS_META: Array<{
     emoji: '🧭',
     icon: Compass,
     color: '#61d7c9',
+    tier: 'Core',
     description: 'Decomposes complex requests & routes agent tasks',
     detailedPurpose: 'Analyzes user prompts, identifies knowledge gaps, generates a structured execution plan, and decides which downstream agents are required.',
     sampleQuery: 'Design a step-by-step migration plan from a monolithic Rails backend to Go microservices.',
@@ -49,6 +54,7 @@ const AGENTS_META: Array<{
     emoji: '🔎',
     icon: Search,
     color: '#d99b64',
+    tier: 'Core',
     description: 'Fetches grounded real-time search & Wiki data',
     detailedPurpose: 'Executes live web search and Wikipedia queries, gathers factual citations, extracts data snippets, and compiles rich background context.',
     sampleQuery: 'What are the newest discoveries confirmed by the James Webb Space Telescope in 2025/2026?',
@@ -59,6 +65,7 @@ const AGENTS_META: Array<{
     emoji: '🛡️',
     icon: ShieldCheck,
     color: '#a855f7',
+    tier: 'Core',
     description: 'Validates claims & eliminates hallucinations',
     detailedPurpose: 'Scrutinizes intermediate research notes, audits numbers, dates, and claims against verified sources, tagging any discrepancies.',
     sampleQuery: 'Fact check the claims that humans only use 10% of their brains.',
@@ -69,6 +76,7 @@ const AGENTS_META: Array<{
     emoji: '💡',
     icon: Lightbulb,
     color: '#facc15',
+    tier: 'Core',
     description: 'Provides reasoned trade-offs, conceptual comparisons & verdicts',
     detailedPurpose: 'Interprets verified facts to evaluate comparisons, weigh pros and cons, build structural ASCII diagrams or tables, and provide reasoned recommendations.',
     sampleQuery: 'Compare PostgreSQL and MongoDB, which is better for a financial ledger?',
@@ -79,6 +87,7 @@ const AGENTS_META: Array<{
     emoji: '🔬',
     icon: Microscope,
     color: '#f1b66f',
+    tier: 'Core',
     description: 'Refines coherence, logic & argument depth',
     detailedPurpose: 'Reviews the synthesized findings for completeness, logical flow, structural clarity, and executive readiness.',
     sampleQuery: 'Review the economic trade-offs between universal basic income and targeted negative income tax.',
@@ -89,6 +98,7 @@ const AGENTS_META: Array<{
     emoji: '✨',
     icon: Sparkles,
     color: '#34d399',
+    tier: 'Core',
     description: 'Outputs pristine, executive final response',
     detailedPurpose: 'Transforms verified findings into a beautifully structured, comprehensive response for the user with zero internal reasoning leaks.',
     sampleQuery: 'Synthesize a definitive executive briefing on commercial fusion reactor timelines.',
@@ -99,6 +109,7 @@ const AGENTS_META: Array<{
     emoji: '🏗️',
     icon: Layers,
     color: '#f59e0b',
+    tier: 'Specialized',
     description: 'Generates precision vector SVG blueprints & diagrams',
     detailedPurpose: 'Engaged in Diagram Mode for structural or process concepts to produce sleek, dark-themed SVG architecture diagrams and workflow charts.',
     sampleQuery: 'Explain the event-driven microservices architecture with a visual diagram.',
@@ -109,9 +120,32 @@ const AGENTS_META: Array<{
     emoji: '📊',
     icon: BarChart3,
     color: '#38bdf8',
+    tier: 'Specialized',
     description: 'Extracts comparative statistics & renders responsive charts',
     detailedPurpose: 'Engaged in Chart Mode for queries involving numerical datasets, statistics, or trend comparisons to extract metrics and render interactive charts.',
     sampleQuery: 'Compare the orbital payload capacities and launch costs of Falcon 9, Starship, and New Glenn.',
+  },
+  {
+    role: 'imageFinder',
+    name: 'IMAGE FINDER',
+    emoji: '🖼️',
+    icon: ImageIcon,
+    color: '#ec4899',
+    tier: 'Specialized',
+    description: 'Identifies visual photo requirements & retrieves real imagery',
+    detailedPurpose: 'Engaged in Image Mode to formulate targeted photographic search queries, retrieve verified high-resolution photographs via Wikimedia & NEXUS Search, and integrate visual assets.',
+    sampleQuery: 'Find high-resolution photographs of the James Webb Space Telescope and its primary mirror.',
+  },
+  {
+    role: 'coder',
+    name: 'CODER',
+    emoji: '💻',
+    icon: Code2,
+    color: '#10b981',
+    tier: 'Specialized',
+    description: 'Writes clean, production-ready code, scripts & algorithms',
+    detailedPurpose: 'Engaged via /code slash command or auto-detected programming prompts to architect software solutions, generate production-ready code, debug scripts, and implement algorithms.',
+    sampleQuery: 'Write a Python script to scrape financial earnings reports using asyncio and BeautifulSoup.',
   },
 ];
 
@@ -124,7 +158,10 @@ export function JarvisTopologyMatrix({
   const [selectedAgent, setSelectedAgent] = useState<JarvisAgentId>('planner');
 
   const selectedAgentMeta = AGENTS_META.find((a) => a.role === selectedAgent) || AGENTS_META[0];
-  const selectedAgentConfig = config?.agents?.[selectedAgent] || config?.agents?.planner;
+  const selectedAgentConfig =
+    config?.agents?.[selectedAgent] ||
+    DEFAULT_JARVIS_CONFIG.agents[selectedAgent] ||
+    config?.agents?.planner;
 
   return (
     <div
@@ -149,7 +186,7 @@ export function JarvisTopologyMatrix({
           <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
             <Cpu size={18} className="text-accent" />
             <h3 style={{ margin: 0, fontSize: '18px', fontWeight: 800, color: '#fff' }}>
-              6-Agent Neural Pipeline Topology
+              10-Agent Neural Pipeline Topology
             </h3>
             <span
               style={{
@@ -163,11 +200,11 @@ export function JarvisTopologyMatrix({
                 border: '1px solid rgba(97,215,201,0.3)',
               }}
             >
-              INTERACTIVE
+              10 AGENTS (6 CORE + 4 SPECIALIZED)
             </span>
           </div>
           <p style={{ margin: '4px 0 0', fontSize: '12px', color: 'var(--muted)' }}>
-            Sequential multi-tier consensus mesh. Click any agent node to inspect its runtime parameters & model configurations.
+            Sequential 6-core consensus mesh + 4 toggle-based specialized channels (Architect, Data Analyst, Image Finder, Coder). Click any agent node to inspect runtime telemetry & configurations.
           </p>
         </div>
 
@@ -195,7 +232,7 @@ export function JarvisTopologyMatrix({
         )}
       </div>
 
-      {/* 5-Node Interactive Grid with Laser Flow */}
+      {/* 10-Node Interactive Grid with Laser Flow */}
       <div
         style={{
           display: 'grid',
@@ -206,7 +243,9 @@ export function JarvisTopologyMatrix({
         }}
       >
         {AGENTS_META.map((meta, index) => {
-          const agentConf = config?.agents?.[meta.role];
+          const agentConf =
+            config?.agents?.[meta.role] ||
+            DEFAULT_JARVIS_CONFIG.agents[meta.role];
           const isSelected = selectedAgent === meta.role;
           const liveStep = activeSteps.find((s) => s.agentId === meta.role);
           const isRunningStep = liveStep?.status === 'running';
@@ -248,20 +287,36 @@ export function JarvisTopologyMatrix({
                   marginBottom: '10px',
                 }}
               >
-                <span
-                  style={{
-                    fontSize: '10px',
-                    fontFamily: 'DM Mono',
-                    fontWeight: 800,
-                    color: meta.color,
-                    background: `${meta.color}20`,
-                    padding: '2px 6px',
-                    borderRadius: '4px',
-                    border: `1px solid ${meta.color}40`,
-                  }}
-                >
-                  NODE 0{index + 1}
-                </span>
+                <div style={{ display: 'flex', alignItems: 'center', gap: '5px' }}>
+                  <span
+                    style={{
+                      fontSize: '10px',
+                      fontFamily: 'DM Mono',
+                      fontWeight: 800,
+                      color: meta.color,
+                      background: `${meta.color}20`,
+                      padding: '2px 6px',
+                      borderRadius: '4px',
+                      border: `1px solid ${meta.color}40`,
+                    }}
+                  >
+                    NODE {(index + 1).toString().padStart(2, '0')}
+                  </span>
+                  <span
+                    style={{
+                      fontSize: '9px',
+                      fontFamily: 'DM Mono',
+                      fontWeight: 700,
+                      color: meta.tier === 'Core' ? '#61d7c9' : '#fbbf24',
+                      background: meta.tier === 'Core' ? 'rgba(97,215,201,0.12)' : 'rgba(251,191,36,0.12)',
+                      padding: '2px 5px',
+                      borderRadius: '4px',
+                      border: meta.tier === 'Core' ? '1px solid rgba(97,215,201,0.25)' : '1px solid rgba(251,191,36,0.25)',
+                    }}
+                  >
+                    {meta.tier === 'Core' ? 'CORE' : 'SPECIALIZED'}
+                  </span>
+                </div>
 
                 {isRunningStep ? (
                   <span
@@ -366,6 +421,20 @@ export function JarvisTopologyMatrix({
                 >
                   STATUS: {selectedAgentConfig?.enabled !== false ? 'ACTIVE' : 'DISABLED'}
                 </span>
+                <span
+                  style={{
+                    fontSize: '10px',
+                    fontFamily: 'DM Mono',
+                    padding: '2px 6px',
+                    borderRadius: '4px',
+                    background: selectedAgentMeta.tier === 'Core' ? 'rgba(97,215,201,0.15)' : 'rgba(251,191,36,0.15)',
+                    color: selectedAgentMeta.tier === 'Core' ? '#61d7c9' : '#fbbf24',
+                    fontWeight: 700,
+                    border: selectedAgentMeta.tier === 'Core' ? '1px solid rgba(97,215,201,0.3)' : '1px solid rgba(251,191,36,0.3)',
+                  }}
+                >
+                  {selectedAgentMeta.tier === 'Core' ? '6-CORE PIPELINE' : 'TOGGLE SPECIALIST'}
+                </span>
               </div>
               <p style={{ margin: '2px 0 0', fontSize: '12px', color: 'var(--muted)' }}>
                 {selectedAgentMeta.detailedPurpose}
@@ -416,7 +485,7 @@ export function JarvisTopologyMatrix({
           <div style={{ padding: '8px', borderRadius: '6px', background: 'rgba(255,255,255,0.03)', border: '1px solid rgba(255,255,255,0.08)' }}>
             <span style={{ color: 'var(--muted)' }}>TOKEN ALLOCATION:</span>
             <div style={{ color: '#fff', fontWeight: 700, marginTop: '2px' }}>
-              {selectedAgentConfig?.maxTokens || 4096} TOKENS
+              {selectedAgentConfig?.maxTokens || (selectedAgentMeta.role === 'imageFinder' ? 150 : selectedAgentMeta.role === 'coder' ? 2500 : 4096)} TOKENS
             </div>
           </div>
 

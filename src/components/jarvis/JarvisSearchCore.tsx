@@ -645,7 +645,7 @@ export function JarvisSearchCore({ settings, onSearchNexus }: JarvisSearchCorePr
                 }}
               >
                 <Compass size={15} />
-                <span>Launch in 5-Agent JARVIS Deep Research</span>
+                <span>Launch in 10-Agent JARVIS Deep Research</span>
                 <ChevronRight size={14} />
               </button>
 

@@ -160,7 +160,7 @@ export function JarvisCategoryDeck({ onSelectPrompt }: JarvisCategoryDeckProps) 
               </span>
             </div>
             <p className="text-xs text-slate-400 m-0 mt-0.5">
-              Curated inquiry tracks tuned specifically for the 5-Agent research, verification, and synthesis pipeline.
+              Curated inquiry tracks tuned specifically for the 10-Agent research, verification, and synthesis pipeline.
             </p>
           </div>
         </div>
@@ -337,7 +337,7 @@ export function JarvisCategoryDeck({ onSelectPrompt }: JarvisCategoryDeckProps) 
                 </span>
               </div>
               <span className="text-[11px] text-slate-400 font-mono">
-                Click prompt to auto-load in 5-Agent pipeline
+                Click prompt to auto-load in 10-Agent pipeline
               </span>
             </div>
 

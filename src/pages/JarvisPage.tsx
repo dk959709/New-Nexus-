@@ -76,13 +76,13 @@ export function JarvisPage() {
                     fontWeight: 700,
                   }}
                 >
-                  5-AGENT COGNITIVE MESH
+                  10-AGENT COGNITIVE MESH
                 </span>
               </div>
             </div>
           </div>
           <p style={{ margin: '6px 0 0', color: 'var(--muted)', fontSize: '13px' }}>
-            Multi-Tier Pipeline: Planner 🧭 → Researcher 🔎 → Fact Checker 🛡️ → Reviewer 🔬 → Synthesizer ✨
+            Multi-Tier Pipeline: 6 Core Consensus (Planner 🧭 → Researcher 🔎 → Fact Checker 🛡️ → Advisor 💡 → Reviewer 🔬 → Synthesizer ✨) + 4 Specialized (Architect 🏗️ · Data Analyst 📊 · Image Finder 🖼️ · Coder 💻)
           </p>
         </div>
 

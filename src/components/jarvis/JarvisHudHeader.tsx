@@ -47,7 +47,7 @@ export function JarvisHudHeader({
 
   const activeAgentsCount = config?.agents
     ? Object.values(config.agents).filter((a) => a?.enabled).length
-    : 5;
+    : 10;
 
   return (
     <div
@@ -97,7 +97,7 @@ export function JarvisHudHeader({
 
           <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
             <Radio size={12} className="text-accent" />
-            <span>NEURAL CHANNELS: <strong style={{ color: '#fff' }}>{activeAgentsCount}/5</strong></span>
+            <span>NEURAL CHANNELS: <strong style={{ color: '#fff' }}>{activeAgentsCount}/10</strong></span>
           </div>
 
           <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
@@ -178,7 +178,7 @@ export function JarvisHudHeader({
               </span>
             </div>
             <p style={{ margin: '2px 0 0', fontSize: '12px', color: 'var(--muted)' }}>
-              Autonomous 5-Tier Reasoning & Knowledge Synthesis Network
+              Autonomous 10-Agent Reasoning & Knowledge Synthesis Network
             </p>
           </div>
         </div>
@@ -237,7 +237,7 @@ export function JarvisHudHeader({
             }}
           >
             <Cpu size={13} />
-            <span>5-Agent Topology</span>
+            <span>10-Agent Topology</span>
           </button>
 
           <button
