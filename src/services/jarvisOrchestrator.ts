@@ -1910,6 +1910,7 @@ export async function runJarvisPipeline(
   imageMode = false,
   onStepUpdate?: StepUpdateCallback,
   userTimeZone?: string,
+  coderMode?: boolean,
 ): Promise<JarvisExecutionResult> {
   // Safely resolve and validate user's local timezone with fallback to Europe/London
   let effectiveTimeZone = 'Europe/London';
@@ -1985,10 +1986,22 @@ export async function runJarvisPipeline(
         : config?.customAgents || [],
   };
 
-  const agentConfigs = effectiveConfig.agents;
+  const agentConfigs = { ...effectiveConfig.agents };
+  if (coderMode !== undefined && agentConfigs.coder) {
+    agentConfigs.coder = {
+      ...agentConfigs.coder,
+      enabled: coderMode,
+    };
+  }
   const customAgents = (effectiveConfig.customAgents || []).filter((ca) => ca && ca.id);
 
   const getAgentConfig = (agentId: string): JarvisAgentConfig | null => {
+    if (agentId === 'coder' && coderMode !== undefined) {
+      const liveFresh = storage.getJarvisConfig();
+      const baseCoder =
+        liveFresh?.agents?.coder || agentConfigs.coder || DEFAULT_JARVIS_CONFIG.agents.coder;
+      return { ...baseCoder, enabled: coderMode };
+    }
     const liveFresh = storage.getJarvisConfig();
     if (liveFresh.agents && liveFresh.agents[agentId as keyof typeof liveFresh.agents]) {
       return liveFresh.agents[agentId as keyof typeof liveFresh.agents];
@@ -2544,7 +2557,10 @@ CRITICAL RULES:
         plannerOutput.needsChart = false;
         plannerOutput.needsImage = false;
       } else {
-        const isCoderToggleEnabled = Boolean(agentConfigs.coder && agentConfigs.coder.enabled !== false);
+        const isCoderToggleEnabled =
+          coderMode !== undefined
+            ? coderMode
+            : Boolean(agentConfigs.coder && agentConfigs.coder.enabled !== false);
         const isAutoCode =
           isCoderToggleEnabled &&
           (Boolean(plannerOutput.needsCode) || isCodingQuery(query) || isCodingQuery(plannerOutput.task));
@@ -2817,7 +2833,10 @@ CRITICAL RULES:
   const isSelfQuery = !isWebFetch && !isSearchOverride && (isSelfReferentialInquiry(query) || isSelfReferentialInquiry(combinedQueryText));
 
   const isCodeCommand = isCodeSlashCommand(query);
-  const isCoderToggleEnabled = Boolean(agentConfigs.coder && agentConfigs.coder.enabled !== false);
+  const isCoderToggleEnabled =
+    coderMode !== undefined
+      ? coderMode
+      : Boolean(agentConfigs.coder && agentConfigs.coder.enabled !== false);
   const isAutoCode =
     !isCodeCommand &&
     isCoderToggleEnabled &&

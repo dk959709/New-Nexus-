@@ -161,7 +161,17 @@ function getModelSuggestions(provider?: AIProviderConfig | null): string[] {
 }
 
 export function JarvisSettings({ onSaved }: JarvisSettingsProps) {
-  const [config, setConfig] = useState<JarvisSystemConfig>(() => storage.getJarvisConfig());
+  const [config, setConfig] = useState<JarvisSystemConfig>(() => {
+    const loaded = storage.getJarvisConfig();
+    return {
+      ...loaded,
+      agents: {
+        ...DEFAULT_JARVIS_CONFIG.agents,
+        ...loaded.agents,
+        coder: loaded.agents?.coder || DEFAULT_JARVIS_CONFIG.agents.coder,
+      },
+    };
+  });
   const [providersState, setProvidersState] = useState(() => storage.getAIProvidersState());
   const [saveStatus, setSaveStatus] = useState<string | null>(null);
   const [isSavedRecently, setIsSavedRecently] = useState(false);
@@ -169,11 +179,27 @@ export function JarvisSettings({ onSaved }: JarvisSettingsProps) {
 
   useEffect(() => {
     setProvidersState(storage.getAIProvidersState());
-    setConfig(storage.getJarvisConfig());
+    const loaded = storage.getJarvisConfig();
+    setConfig({
+      ...loaded,
+      agents: {
+        ...DEFAULT_JARVIS_CONFIG.agents,
+        ...loaded.agents,
+        coder: loaded.agents?.coder || DEFAULT_JARVIS_CONFIG.agents.coder,
+      },
+    });
 
     const handleStorage = () => {
       setProvidersState(storage.getAIProvidersState());
-      setConfig(storage.getJarvisConfig());
+      const freshLoaded = storage.getJarvisConfig();
+      setConfig({
+        ...freshLoaded,
+        agents: {
+          ...DEFAULT_JARVIS_CONFIG.agents,
+          ...freshLoaded.agents,
+          coder: freshLoaded.agents?.coder || DEFAULT_JARVIS_CONFIG.agents.coder,
+        },
+      });
     };
     window.addEventListener('storage', handleStorage);
     window.addEventListener('focus', handleStorage);
@@ -242,16 +268,29 @@ export function JarvisSettings({ onSaved }: JarvisSettingsProps) {
     patch: Partial<JarvisAgentConfig>,
   ) => {
     setConfig((prev) => {
-      const updated = {
+      const existingAgent =
+        prev.agents?.[agentId as keyof typeof prev.agents] ||
+        DEFAULT_JARVIS_CONFIG.agents[agentId as keyof typeof DEFAULT_JARVIS_CONFIG.agents];
+      const updatedAgent = {
+        ...existingAgent,
+        ...patch,
+      };
+      const updated: JarvisSystemConfig = {
         ...prev,
+        coderModeDefault:
+          agentId === 'coder' && patch.enabled !== undefined ? patch.enabled : prev.coderModeDefault,
         agents: {
           ...prev.agents,
-          [agentId]: {
-            ...prev.agents[agentId as keyof typeof prev.agents],
-            ...patch,
-          },
+          [agentId]: updatedAgent,
         },
       };
+      // Auto-persist immediately so toggle behavior is instantly live
+      try {
+        storage.saveJarvisConfig(updated);
+        onSaved?.(updated);
+      } catch {
+        // ignore
+      }
       return updated;
     });
 
@@ -410,7 +449,7 @@ export function JarvisSettings({ onSaved }: JarvisSettingsProps) {
     storage.saveJarvisConfig(DEFAULT_JARVIS_CONFIG);
     setShowResetConfirmModal(false);
     setIsSavedRecently(true);
-    setSaveStatus('All 8 agents and custom agents have been reset to original factory defaults.');
+    setSaveStatus('All 10 built-in agents and custom agents have been reset to original factory defaults.');
     onSaved?.(DEFAULT_JARVIS_CONFIG);
     setTimeout(() => {
       setSaveStatus(null);
@@ -554,7 +593,7 @@ export function JarvisSettings({ onSaved }: JarvisSettingsProps) {
           <div style={{ display: 'flex', alignItems: 'center', gap: '8px', color: 'var(--accent)' }}>
             <Sliders size={15} />
             <span>
-              <strong>8 Core Agents</strong> + <strong>{customAgentsList.length} Custom Agent(s)</strong> active in JARVIS Pipeline.
+              <strong>10 Built-In Agents</strong> (6 Core + 4 Specialized: Architect, Data Analyst, Image Finder, Coder) + <strong>{customAgentsList.length} Custom Agent(s)</strong> active in JARVIS Pipeline.
             </span>
           </div>
           <span style={{ color: 'var(--muted)' }}>
@@ -610,13 +649,13 @@ export function JarvisSettings({ onSaved }: JarvisSettingsProps) {
         </div>
       )}
 
-      {/* SECTION 1: CORE 8 AGENTS */}
+      {/* SECTION 1: BUILT-IN 10 AGENTS */}
       <div style={{ display: 'grid', gap: '18px' }}>
         <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '0 4px' }}>
           <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
             <Bot size={18} className="text-cyan-400" />
             <h3 style={{ margin: 0, fontSize: '16px', fontWeight: 700, color: '#fff', letterSpacing: '-0.01em' }}>
-              Core 8-Agent Pipeline
+              Built-In Neural Agents (10 Agents)
             </h3>
           </div>
           <span style={{ fontSize: '12px', color: 'var(--muted)', fontFamily: 'DM Mono' }}>
@@ -625,7 +664,10 @@ export function JarvisSettings({ onSaved }: JarvisSettingsProps) {
         </div>
 
         {AGENT_ORDER.map((agentId) => {
-          const agent = config.agents[agentId];
+          const agent =
+            config.agents?.[agentId] ||
+            DEFAULT_JARVIS_CONFIG.agents[agentId as keyof typeof DEFAULT_JARVIS_CONFIG.agents];
+          if (!agent) return null;
           const hasError = Boolean(validationErrors[agentId]);
           const currentProvider =
             agent.providerId === 'existing'
@@ -922,7 +964,7 @@ export function JarvisSettings({ onSaved }: JarvisSettingsProps) {
                         <input
                           type="range"
                           min={64}
-                          max={agentId === 'architect' ? 6000 : 2500}
+                          max={agentId === 'architect' ? 6000 : agentId === 'coder' ? 4000 : 2500}
                           step={32}
                           value={agent.maxTokens}
                           onChange={(e) =>

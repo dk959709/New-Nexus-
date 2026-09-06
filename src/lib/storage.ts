@@ -456,6 +456,7 @@ export const DEFAULT_JARVIS_CONFIG: JarvisSystemConfig = {
   diagramModeDefault: false,
   chartModeDefault: false,
   imageModeDefault: false,
+  coderModeDefault: true,
   customAgents: [],
   agents: {
     planner: {
@@ -840,6 +841,9 @@ export const storage = {
       diagramModeDefault: stored.diagramModeDefault ?? DEFAULT_JARVIS_CONFIG.diagramModeDefault,
       chartModeDefault: stored.chartModeDefault ?? DEFAULT_JARVIS_CONFIG.chartModeDefault,
       imageModeDefault: stored.imageModeDefault ?? DEFAULT_JARVIS_CONFIG.imageModeDefault,
+      coderModeDefault:
+        stored.coderModeDefault ??
+        (stored.agents?.coder?.enabled !== undefined ? stored.agents.coder.enabled : DEFAULT_JARVIS_CONFIG.coderModeDefault),
       customAgents: Array.isArray(stored.customAgents) ? stored.customAgents : [],
       agents: {
         planner: {
@@ -985,6 +989,12 @@ export const storage = {
         coder: {
           ...DEFAULT_JARVIS_CONFIG.agents.coder,
           ...(stored.agents?.coder || {}),
+          enabled:
+            stored.agents?.coder?.enabled !== undefined
+              ? stored.agents.coder.enabled
+              : stored.coderModeDefault !== undefined
+                ? stored.coderModeDefault
+                : DEFAULT_JARVIS_CONFIG.agents.coder.enabled,
           maxTokens: Math.max(800, stored.agents?.coder?.maxTokens || 2500),
           systemPrompt:
             !stored.agents?.coder?.systemPrompt ||

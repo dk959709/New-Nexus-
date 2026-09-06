@@ -256,6 +256,7 @@ export interface JarvisSystemConfig {
   diagramModeDefault?: boolean;
   chartModeDefault?: boolean;
   imageModeDefault?: boolean;
+  coderModeDefault?: boolean;
   agents: Record<string, JarvisAgentConfig>;
   customAgents?: CustomJarvisAgentConfig[];
 }
@@ -290,6 +291,7 @@ export interface JarvisMessage {
   chartData?: JarvisChartData | null;
   imageMode?: boolean;
   images?: JarvisImageResult[];
+  coderMode?: boolean;
   steps: JarvisExecutionStep[];
   sources?: AISource[];
   error?: string;

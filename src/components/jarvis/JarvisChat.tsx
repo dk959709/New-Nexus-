@@ -171,6 +171,41 @@ export function JarvisChat({ config, onOpenSettings }: JarvisChatProps) {
     if (imgParam === 'false') return false;
     return config.imageModeDefault ?? false;
   });
+  const [coderMode, setCoderMode] = useState(() => {
+    const codeParam = searchParams.get('code') || searchParams.get('coder');
+    if (codeParam === 'true') return true;
+    if (codeParam === 'false') return false;
+    return config.coderModeDefault ?? (config.agents?.coder?.enabled !== false);
+  });
+
+  const handleToggleCoderMode = (enabled: boolean) => {
+    setCoderMode(enabled);
+    try {
+      const current = storage.getJarvisConfig();
+      const updated: JarvisSystemConfig = {
+        ...current,
+        coderModeDefault: enabled,
+        agents: {
+          ...current.agents,
+          coder: {
+            ...(current.agents?.coder || DEFAULT_JARVIS_CONFIG.agents.coder),
+            enabled,
+          },
+        },
+      };
+      storage.saveJarvisConfig(updated);
+    } catch {
+      // ignore
+    }
+  };
+
+  useEffect(() => {
+    if (config.agents?.coder?.enabled !== undefined) {
+      setCoderMode(config.agents.coder.enabled);
+    } else if (config.coderModeDefault !== undefined) {
+      setCoderMode(config.coderModeDefault);
+    }
+  }, [config.agents?.coder?.enabled, config.coderModeDefault]);
   const [messages, setMessages] = useState<JarvisMessage[]>(() => {
     const stored = storage.getJarvisMessages();
     return [...stored].sort((a, b) => a.timestamp - b.timestamp);
@@ -290,9 +325,21 @@ export function JarvisChat({ config, onOpenSettings }: JarvisChatProps) {
             ? Intl.DateTimeFormat().resolvedOptions().timeZone
             : 'Europe/London';
 
+        const effectiveConfig: JarvisSystemConfig = {
+          ...config,
+          coderModeDefault: coderMode,
+          agents: {
+            ...config.agents,
+            coder: {
+              ...(config.agents?.coder || DEFAULT_JARVIS_CONFIG.agents.coder),
+              enabled: coderMode,
+            },
+          },
+        };
+
         const result = await runJarvisPipeline(
           prompt,
-          config,
+          effectiveConfig,
           deepResearch,
           diagramMode,
           chartMode,
@@ -309,6 +356,7 @@ export function JarvisChat({ config, onOpenSettings }: JarvisChatProps) {
             });
           },
           userTimeZone,
+          coderMode,
         );
 
         const completedMessage: JarvisMessage = {
@@ -320,6 +368,7 @@ export function JarvisChat({ config, onOpenSettings }: JarvisChatProps) {
           diagramMode,
           chartMode,
           imageMode,
+          coderMode,
           steps: result.steps,
           sources: result.sources,
           diagramSvg: result.diagramSvg,
@@ -344,6 +393,7 @@ export function JarvisChat({ config, onOpenSettings }: JarvisChatProps) {
           diagramMode,
           chartMode,
           imageMode,
+          coderMode,
           steps: activeSteps,
           error: errMsg,
         };
@@ -357,7 +407,7 @@ export function JarvisChat({ config, onOpenSettings }: JarvisChatProps) {
         setCurrentRunningMessageId(null);
       }
     },
-    [query, isRunning, deepResearch, diagramMode, chartMode, imageMode, config, activeSteps],
+    [query, isRunning, deepResearch, diagramMode, chartMode, imageMode, coderMode, config, activeSteps],
   );
 
   useEffect(() => {
@@ -914,6 +964,11 @@ export function JarvisChat({ config, onOpenSettings }: JarvisChatProps) {
                       {msg.imageMode && (
                         <span className="px-2.5 py-0.5 rounded-full bg-pink-500/20 border border-pink-400/40 text-pink-300 text-[10px] font-mono font-bold">
                           🖼️ IMAGE MODE
+                        </span>
+                      )}
+                      {msg.coderMode && (
+                        <span className="px-2.5 py-0.5 rounded-full bg-emerald-500/20 border border-emerald-400/40 text-emerald-300 text-[10px] font-mono font-bold">
+                          💻 CODER AGENT
                         </span>
                       )}
                     </div>
@@ -1571,6 +1626,45 @@ export function JarvisChat({ config, onOpenSettings }: JarvisChatProps) {
                 >
                   <span>🖼️</span>
                   <span>IMAGE MODE</span>
+                </span>
+              </label>
+
+              {/* Coder Mode / Coder Agent Colorful Pill Switch */}
+              <label
+                className="inline-flex items-center gap-2 px-3 py-1.5 rounded-full cursor-pointer transition-all duration-200 border"
+                style={{
+                  background: coderMode
+                    ? 'linear-gradient(135deg, rgba(16,185,129,0.22) 0%, rgba(5,150,105,0.18) 100%)'
+                    : 'rgba(255,255,255,0.03)',
+                  borderColor: coderMode ? 'rgba(16,185,129,0.55)' : 'rgba(255,255,255,0.1)',
+                  boxShadow: coderMode ? '0 0 14px rgba(16,185,129,0.3)' : 'none',
+                }}
+                title={coderMode ? 'Coder Agent enabled (auto-detection active)' : 'Coder Agent disabled (auto-detection disabled)'}
+              >
+                <input
+                  type="checkbox"
+                  checked={coderMode}
+                  onChange={(e) => handleToggleCoderMode(e.target.checked)}
+                  className="hidden"
+                />
+                <div
+                  className={`w-7 h-3.5 rounded-full transition-colors relative flex items-center p-0.5 ${
+                    coderMode ? 'bg-emerald-400' : 'bg-slate-700'
+                  }`}
+                >
+                  <div
+                    className={`w-2.5 h-2.5 rounded-full bg-slate-950 transition-transform duration-200 ${
+                      coderMode ? 'translate-x-3.5' : 'translate-x-0'
+                    }`}
+                  />
+                </div>
+                <span
+                  className={`text-[11px] font-bold font-mono tracking-wide flex items-center gap-1.5 ${
+                    coderMode ? 'text-emerald-300' : 'text-slate-400'
+                  }`}
+                >
+                  <span>💻</span>
+                  <span>CODER</span>
                 </span>
               </label>
             </div>
