@@ -413,6 +413,7 @@ export function AssistantPage() {
         <div className="absolute top-0 right-0 w-96 h-96 bg-gradient-to-br from-cyan-500/15 via-purple-500/10 to-transparent rounded-full blur-3xl pointer-events-none" />
 
         <header
+          className="assistant-header"
           style={{
             display: 'flex',
             alignItems: 'center',
@@ -423,8 +424,9 @@ export function AssistantPage() {
             background: 'rgba(255,255,255,0.02)',
           }}
         >
-          <div style={{ display: 'flex', alignItems: 'center', gap: 14 }}>
+          <div className="assistant-header-title-box" style={{ display: 'flex', alignItems: 'center', gap: 14 }}>
             <div
+              className="assistant-avatar"
               style={{
                 width: 44,
                 height: 44,
@@ -474,9 +476,9 @@ export function AssistantPage() {
             </div>
           </div>
 
-          <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+          <div className="assistant-header-actions" style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
             <button
-              className="hover:border-cyan-500/40 transition-all text-xs font-semibold px-3 py-1.5 rounded-lg border border-slate-700 bg-slate-800/60 text-slate-200 flex items-center gap-1.5"
+              className="assistant-header-btn hover:border-cyan-500/40 transition-all text-xs font-semibold px-3 py-1.5 rounded-lg border border-slate-700 bg-slate-800/60 text-slate-200 flex items-center gap-1.5"
               onClick={newChat}
               aria-label="New chat"
               title="Start a new chat session"
@@ -487,7 +489,7 @@ export function AssistantPage() {
             </button>
 
             <button
-              className="hover:border-red-500/40 transition-all text-xs font-semibold px-3 py-1.5 rounded-lg border border-red-500/30 bg-red-500/10 text-red-300 flex items-center gap-1.5"
+              className="assistant-header-btn hover:border-red-500/40 transition-all text-xs font-semibold px-3 py-1.5 rounded-lg border border-red-500/30 bg-red-500/10 text-red-300 flex items-center gap-1.5"
               onClick={() => setShowClearConfirm(true)}
               aria-label="Clear chat"
               title="Clear conversation and memory"
@@ -1080,6 +1082,7 @@ export function AssistantPage() {
         </div>
 
         <div
+          className="assistant-bottom-bar"
           style={{
             padding: '12px 16px',
             borderTop: '1px solid rgba(255,255,255,.07)',
@@ -1087,6 +1090,7 @@ export function AssistantPage() {
         >
           {!input && (
             <div
+              className="nexus-quick-prompts-row"
               style={{
                 display: 'flex',
                 gap: 8,
@@ -1098,7 +1102,7 @@ export function AssistantPage() {
                 <button
                   key={prompt}
                   type="button"
-                  className="secondary-button"
+                  className="secondary-button nexus-quick-prompt-btn"
                   onClick={() => sendMessage(prompt)}
                   disabled={loading}
                   style={{ whiteSpace: 'nowrap' }}
@@ -1110,6 +1114,7 @@ export function AssistantPage() {
           )}
 
           <form
+            className="assistant-input-form"
             onSubmit={(event) => {
               event.preventDefault();
               sendMessage();
@@ -1121,6 +1126,7 @@ export function AssistantPage() {
             }}
           >
             <textarea
+              className="assistant-input-textarea"
               value={input}
               onChange={(event) => setInput(event.target.value)}
               onKeyDown={(event) => {
@@ -1149,7 +1155,7 @@ export function AssistantPage() {
             />
 
             <button
-              className="search-submit"
+              className="search-submit assistant-submit-btn"
               type="submit"
               disabled={!input.trim() || loading}
               aria-label="Send message"

@@ -34,6 +34,7 @@ export function JarvisPage() {
     <div className="main-content-flow" style={{ maxWidth: '1160px', margin: '0 auto', paddingBottom: '32px' }}>
       {/* JARVIS Top Header */}
       <div
+        className="jarvis-page-header"
         style={{
           display: 'flex',
           justifyContent: 'space-between',
@@ -61,10 +62,11 @@ export function JarvisPage() {
             </div>
             <div>
               <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
-                <h1 style={{ margin: 0, fontSize: '26px', fontWeight: 900, letterSpacing: '-0.03em', color: '#fff' }}>
+                <h1 className="jarvis-page-title" style={{ margin: 0, fontSize: '26px', fontWeight: 900, letterSpacing: '-0.03em', color: '#fff' }}>
                   JARVIS
                 </h1>
                 <span
+                  className="jarvis-page-badge"
                   style={{
                     fontSize: '11px',
                     fontFamily: 'DM Mono',
@@ -81,13 +83,14 @@ export function JarvisPage() {
               </div>
             </div>
           </div>
-          <p style={{ margin: '6px 0 0', color: 'var(--muted)', fontSize: '13px' }}>
+          <p className="jarvis-page-description" style={{ margin: '6px 0 0', color: 'var(--muted)', fontSize: '13px' }}>
             Multi-Tier Pipeline: 6 Core Consensus (Planner 🧭 → Researcher 🔎 → Fact Checker 🛡️ → Advisor 💡 → Reviewer 🔬 → Synthesizer ✨) + 4 Specialized (Architect 🏗️ · Data Analyst 📊 · Image Finder 🖼️ · Coder 💻)
           </p>
         </div>
 
         {/* Tab Controls */}
         <div
+          className="jarvis-page-tabs"
           style={{
             display: 'flex',
             padding: '4px',
@@ -99,6 +102,7 @@ export function JarvisPage() {
         >
           <button
             type="button"
+            className="jarvis-tab-btn"
             onClick={() => setActiveTab('chat')}
             style={{
               display: 'inline-flex',
@@ -121,6 +125,7 @@ export function JarvisPage() {
 
           <button
             type="button"
+            className="jarvis-tab-btn"
             onClick={() => setActiveTab('settings')}
             style={{
               display: 'inline-flex',

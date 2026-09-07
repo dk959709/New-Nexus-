@@ -62,6 +62,7 @@ export function JarvisHudHeader({
     >
       {/* Top Telemetry Ticker */}
       <div
+        className="jarvis-hud-ticker"
         style={{
           display: 'flex',
           alignItems: 'center',
@@ -133,6 +134,7 @@ export function JarvisHudHeader({
 
       {/* Main Control & Visual Switcher Row */}
       <div
+        className="jarvis-hud-main-row"
         style={{
           display: 'flex',
           alignItems: 'center',
@@ -142,7 +144,7 @@ export function JarvisHudHeader({
           paddingTop: '12px',
         }}
       >
-        <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
+        <div className="jarvis-hud-title-box" style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
           <div
             style={{
               width: '38px',
@@ -185,6 +187,7 @@ export function JarvisHudHeader({
 
         {/* Visual Mode Navigation */}
         <div
+          className="jarvis-hud-switcher"
           style={{
             display: 'flex',
             alignItems: 'center',
@@ -198,6 +201,7 @@ export function JarvisHudHeader({
         >
           <button
             type="button"
+            className="jarvis-hud-switcher-btn"
             onClick={() => onSelectView('chat')}
             style={{
               padding: '6px 12px',
@@ -220,6 +224,7 @@ export function JarvisHudHeader({
 
           <button
             type="button"
+            className="jarvis-hud-switcher-btn"
             onClick={() => onSelectView('topology')}
             style={{
               padding: '6px 12px',
@@ -242,6 +247,7 @@ export function JarvisHudHeader({
 
           <button
             type="button"
+            className="jarvis-hud-switcher-btn"
             onClick={() => onSelectView('categories')}
             style={{
               padding: '6px 12px',
@@ -264,6 +270,7 @@ export function JarvisHudHeader({
 
           <button
             type="button"
+            className="jarvis-hud-switcher-btn"
             onClick={() => onSelectView('reactor')}
             style={{
               padding: '6px 12px',

@@ -234,6 +234,7 @@ export function JarvisTopologyMatrix({
 
       {/* 10-Node Interactive Grid with Laser Flow */}
       <div
+        className="jarvis-topology-grid"
         style={{
           display: 'grid',
           gridTemplateColumns: 'repeat(auto-fit, minmax(180px, 1fr))',

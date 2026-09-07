@@ -2258,6 +2258,352 @@
   }
 }
 
+/* ==========================================================================
+   MOBILE RESPONSIVE STYLES FOR JARVIS & NEXUS AI CHAT PAGES (max-width: 768px)
+   Strictly scoped inside media query to preserve desktop layout & sizing 100%
+   ========================================================================== */
+@media (max-width: 768px) {
+  /* --------------------------------------------------
+     1. JARVIS Main Page Layout & Headers
+     -------------------------------------------------- */
+  .jarvis-page-header {
+    gap: 10px !important;
+    padding-bottom: 10px !important;
+  }
+
+  .jarvis-page-title {
+    font-size: 20px !important;
+  }
+
+  .jarvis-page-badge {
+    font-size: 10px !important;
+    padding: 2px 6px !important;
+  }
+
+  .jarvis-page-description {
+    font-size: 11.5px !important;
+    line-height: 1.4 !important;
+  }
+
+  .jarvis-page-tabs {
+    width: 100% !important;
+    display: flex !important;
+  }
+
+  .jarvis-tab-btn {
+    flex: 1 1 0% !important;
+    justify-content: center !important;
+    padding: 6px 10px !important;
+    font-size: 11.5px !important;
+    white-space: nowrap !important;
+  }
+
+  /* --------------------------------------------------
+     2. JARVIS HUD Header & Switcher
+     -------------------------------------------------- */
+  .jarvis-hud-ticker {
+    font-size: 9.5px !important;
+    gap: 6px !important;
+    padding-bottom: 8px !important;
+  }
+
+  .jarvis-hud-main-row {
+    gap: 10px !important;
+    padding-top: 8px !important;
+  }
+
+  .jarvis-hud-title-box h2 {
+    font-size: 15px !important;
+  }
+
+  .jarvis-hud-title-box p {
+    font-size: 11px !important;
+  }
+
+  .jarvis-hud-switcher {
+    width: 100% !important;
+    display: grid !important;
+    grid-template-columns: repeat(2, minmax(0, 1fr)) !important;
+    gap: 4px !important;
+  }
+
+  .jarvis-hud-switcher-btn {
+    justify-content: center !important;
+    padding: 6px 8px !important;
+    font-size: 11px !important;
+    white-space: nowrap !important;
+  }
+
+  /* --------------------------------------------------
+     3. JARVIS Console Input Bar & "Ask JARVIS" Button
+     Prevents text clipping (e.g. 'Ask JARVI...')
+     -------------------------------------------------- */
+  .jarvis-bottom-console-card {
+    padding: 12px 10px !important;
+    border-radius: 20px !important;
+  }
+
+  .jarvis-input-bar-container {
+    padding: 4px 6px 4px 4px !important;
+    gap: 4px !important;
+    border-radius: 9999px !important;
+  }
+
+  .jarvis-input-orb-wrapper {
+    padding-left: 2px !important;
+    padding-right: 0 !important;
+  }
+
+  .jarvis-input-orb-wrapper > div {
+    width: 32px !important;
+    height: 32px !important;
+  }
+
+  .jarvis-search-input {
+    font-size: 13px !important;
+    padding: 6px 4px !important;
+    min-width: 0 !important;
+  }
+
+  .jarvis-mic-btn {
+    width: 32px !important;
+    height: 32px !important;
+    flex-shrink: 0 !important;
+  }
+
+  .jarvis-mic-btn svg {
+    width: 14px !important;
+    height: 14px !important;
+  }
+
+  /* Crucial: ensure "Ask JARVIS" button fits and doesn't get clipped */
+  .jarvis-submit-btn {
+    padding: 6px 12px !important;
+    font-size: 12px !important;
+    gap: 4px !important;
+    flex-shrink: 0 !important;
+    border-radius: 9999px !important;
+    white-space: nowrap !important;
+  }
+
+  .jarvis-submit-btn svg {
+    width: 13px !important;
+    height: 13px !important;
+  }
+
+  .jarvis-submit-text {
+    font-size: 12px !important;
+    font-weight: 800 !important;
+    white-space: nowrap !important;
+    letter-spacing: 0 !important;
+  }
+
+  /* --------------------------------------------------
+     4. JARVIS Controls Hub (Mode Toggles & Action Chips)
+     Ensure toggle buttons and cards fit properly without horizontal overflow
+     -------------------------------------------------- */
+  .jarvis-controls-hub {
+    gap: 8px !important;
+    padding-top: 2px !important;
+  }
+
+  .jarvis-toggles-group {
+    width: 100% !important;
+    gap: 6px !important;
+    flex-wrap: wrap !important;
+  }
+
+  .jarvis-mode-toggle {
+    padding: 4px 8px !important;
+    font-size: 10px !important;
+    gap: 6px !important;
+    border-radius: 9999px !important;
+    max-width: 100% !important;
+    box-sizing: border-box !important;
+  }
+
+  .jarvis-mode-toggle span {
+    font-size: 10px !important;
+    letter-spacing: 0 !important;
+  }
+
+  .jarvis-toggle-subtext {
+    display: none !important; /* Hide secondary "(5-AGENT MESH)" on narrow screens so text fits cleanly */
+  }
+
+  .jarvis-attach-btn {
+    padding: 4px 8px !important;
+    font-size: 10px !important;
+    border-radius: 9999px !important;
+  }
+
+  .jarvis-aux-buttons-group {
+    width: 100% !important;
+    gap: 6px !important;
+    flex-wrap: wrap !important;
+    justify-content: flex-start !important;
+  }
+
+  .jarvis-aux-btn {
+    padding: 4px 9px !important;
+    font-size: 11px !important;
+    border-radius: 9999px !important;
+  }
+
+  /* Quick prompt pills */
+  .jarvis-prompt-pills-row {
+    gap: 6px !important;
+  }
+
+  .jarvis-quick-prompt-pill {
+    padding: 5px 10px !important;
+    font-size: 11px !important;
+    border-radius: 9999px !important;
+    white-space: normal !important;
+    line-height: 1.3 !important;
+    text-align: left !important;
+  }
+
+  /* Response card & avatar */
+  .jarvis-response-avatar {
+    width: 32px !important;
+    height: 32px !important;
+  }
+
+  .jarvis-response-avatar svg {
+    width: 15px !important;
+    height: 15px !important;
+  }
+
+  .jarvis-response-card {
+    padding: 12px 14px !important;
+    border-radius: 18px !important;
+    font-size: 13.5px !important;
+    max-width: 100% !important;
+    box-sizing: border-box !important;
+    overflow-x: hidden !important;
+  }
+
+  /* Topology Matrix Grid on Mobile */
+  .jarvis-topology-grid {
+    grid-template-columns: repeat(2, minmax(0, 1fr)) !important;
+    gap: 8px !important;
+    margin-bottom: 14px !important;
+  }
+
+  /* Category card on Mobile */
+  .jarvis-category-card {
+    padding: 12px !important;
+    border-radius: 12px !important;
+  }
+
+  /* --------------------------------------------------
+     5. NEXUS AI (AssistantPage) Mobile Responsiveness
+     Prevents 'Help me solve a...' being clipped
+     -------------------------------------------------- */
+  .assistant-shell {
+    border-radius: 16px !important;
+    min-height: 60vh !important;
+    max-width: 100% !important;
+    overflow-x: hidden !important;
+  }
+
+  .assistant-header {
+    padding: 12px 14px !important;
+    gap: 8px !important;
+    flex-wrap: wrap !important;
+  }
+
+  .assistant-header-title-box {
+    gap: 10px !important;
+  }
+
+  .assistant-avatar {
+    width: 36px !important;
+    height: 36px !important;
+    border-radius: 10px !important;
+  }
+
+  .assistant-avatar svg {
+    width: 18px !important;
+    height: 18px !important;
+  }
+
+  .assistant-header-actions {
+    gap: 6px !important;
+    margin-left: auto !important;
+  }
+
+  .assistant-header-btn {
+    padding: 5px 8px !important;
+    font-size: 11px !important;
+    border-radius: 6px !important;
+    gap: 4px !important;
+  }
+
+  .assistant-bottom-bar {
+    padding: 10px 12px !important;
+  }
+
+  /* Quick prompt chips - horizontal scrolling with touch and no clipping */
+  .nexus-quick-prompts-row {
+    gap: 6px !important;
+    padding-bottom: 8px !important;
+    overflow-x: auto !important;
+    -webkit-overflow-scrolling: touch !important;
+    scrollbar-width: none !important;
+    flex-wrap: nowrap !important;
+  }
+
+  .nexus-quick-prompts-row::-webkit-scrollbar {
+    display: none !important;
+  }
+
+  /* Crucial: smaller font and padding so 'Help me solve a...' is clean and not cut off */
+  .nexus-quick-prompt-btn {
+    padding: 5px 10px !important;
+    font-size: 11px !important;
+    border-radius: 8px !important;
+    flex-shrink: 0 !important;
+    white-space: nowrap !important;
+    line-height: 1.3 !important;
+  }
+
+  .assistant-input-form {
+    gap: 8px !important;
+  }
+
+  .assistant-input-textarea {
+    min-height: 42px !important;
+    padding: 10px 12px !important;
+    font-size: 13px !important;
+    border-radius: 10px !important;
+  }
+
+  /* Send button for assistant */
+  .assistant-submit-btn {
+    min-width: 42px !important;
+    min-height: 42px !important;
+    width: 42px !important;
+    height: 42px !important;
+    border-radius: 10px !important;
+    padding: 0 !important;
+    display: grid !important;
+    place-items: center !important;
+  }
+
+  /* Override any global .search-submit:after styles that break the button on mobile */
+  .assistant-submit-btn:after {
+    content: none !important;
+  }
+
+  .assistant-submit-btn svg {
+    display: block !important;
+    width: 16px !important;
+    height: 16px !important;
+  }
+}
+
 
 
 

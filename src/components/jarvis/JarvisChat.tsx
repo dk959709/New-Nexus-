@@ -1142,7 +1142,7 @@ export function JarvisChat({ config, onOpenSettings }: JarvisChatProps) {
               <div className="flex items-start gap-3 w-full">
                 {/* JARVIS Avatar Node */}
                 <div
-                  className="w-10 h-10 rounded-full shrink-0 flex items-center justify-center mt-1 shadow-lg"
+                  className="jarvis-response-avatar w-10 h-10 rounded-full shrink-0 flex items-center justify-center mt-1 shadow-lg"
                   style={{
                     background: 'linear-gradient(135deg, #061826 0%, #0d223a 100%)',
                     border: '1.5px solid rgba(97, 215, 201, 0.6)',
@@ -1154,7 +1154,7 @@ export function JarvisChat({ config, onOpenSettings }: JarvisChatProps) {
 
                 {/* Response Container */}
                 <div
-                  className="relative flex-1 min-w-0 p-5 sm:p-7 rounded-3xl rounded-tl-md backdrop-blur-xl shadow-2xl transition-all duration-300 overflow-hidden"
+                  className="jarvis-response-card relative flex-1 min-w-0 p-5 sm:p-7 rounded-3xl rounded-tl-md backdrop-blur-xl shadow-2xl transition-all duration-300 overflow-hidden"
                   style={{
                     background: 'linear-gradient(145deg, rgba(8, 22, 38, 0.92) 0%, rgba(12, 18, 48, 0.96) 100%)',
                     border: '1.5px solid rgba(97, 215, 201, 0.35)',
@@ -1514,7 +1514,7 @@ export function JarvisChat({ config, onOpenSettings }: JarvisChatProps) {
       {/* BOTTOM "ASK JARVIS" CONSOLE INPUT BAR (NORMAL PAGE FLOW) */}
       {/* ========================================================= */}
       <div
-        className="relative overflow-hidden rounded-3xl p-5 sm:p-6 backdrop-blur-xl transition-all duration-300"
+        className="jarvis-bottom-console-card relative overflow-hidden rounded-3xl p-5 sm:p-6 backdrop-blur-xl transition-all duration-300"
         style={{
           background: 'linear-gradient(145deg, rgba(8, 20, 36, 0.92) 0%, rgba(14, 18, 48, 0.94) 50%, rgba(6, 26, 38, 0.92) 100%)',
           border: '1px solid rgba(97, 215, 201, 0.38)',
@@ -1609,7 +1609,7 @@ export function JarvisChat({ config, onOpenSettings }: JarvisChatProps) {
 
           {/* Main Round Pill Search Input Bar */}
           <div
-            className="group relative flex items-center gap-2 p-2 sm:p-2.5 rounded-full backdrop-blur-md transition-all duration-300"
+            className="jarvis-input-bar-container group relative flex items-center gap-2 p-2 sm:p-2.5 rounded-full backdrop-blur-md transition-all duration-300"
             style={{
               background: 'rgba(5, 15, 28, 0.85)',
               border: isRunning
@@ -1621,7 +1621,7 @@ export function JarvisChat({ config, onOpenSettings }: JarvisChatProps) {
             }}
           >
             {/* Glowing Leading Node - JARVIS Round Ball Orb attached seamlessly merged */}
-            <div className="pl-2 sm:pl-3 flex items-center justify-center shrink-0">
+            <div className="jarvis-input-orb-wrapper pl-2 sm:pl-3 flex items-center justify-center shrink-0">
               <div
                 className="w-10 h-10 rounded-full flex items-center justify-center transition-all duration-300 relative cursor-pointer group-hover:scale-105"
                 onClick={() => inputRef.current?.focus()}
@@ -1655,7 +1655,7 @@ export function JarvisChat({ config, onOpenSettings }: JarvisChatProps) {
                   : 'Ask JARVIS anything (multi-agent research, fact check, scientific audit)...'
               }
               disabled={isRunning}
-              className="flex-1 min-w-0 bg-transparent border-0 outline-none text-white text-sm sm:text-base placeholder:text-slate-400 font-medium px-2 py-2"
+              className="jarvis-search-input flex-1 min-w-0 bg-transparent border-0 outline-none text-white text-sm sm:text-base placeholder:text-slate-400 font-medium px-2 py-2"
             />
 
             {/* Mic / Voice Button */}
@@ -1664,7 +1664,7 @@ export function JarvisChat({ config, onOpenSettings }: JarvisChatProps) {
               onClick={toggleVoiceInput}
               aria-label="Voice input"
               title={voiceListening ? 'Stop Listening' : 'Speak Prompt'}
-              className={`w-9 h-9 sm:w-10 sm:h-10 rounded-full flex items-center justify-center transition-all duration-200 shrink-0 ${
+              className={`jarvis-mic-btn w-9 h-9 sm:w-10 sm:h-10 rounded-full flex items-center justify-center transition-all duration-200 shrink-0 ${
                 voiceListening
                   ? 'bg-rose-500 text-white shadow-[0_0_16px_#f43f5e] animate-pulse'
                   : 'bg-white/5 hover:bg-cyan-500/20 text-slate-300 hover:text-cyan-300 border border-white/10 hover:border-cyan-400/40'
@@ -1677,7 +1677,7 @@ export function JarvisChat({ config, onOpenSettings }: JarvisChatProps) {
             <button
               type="submit"
               disabled={(!query.trim() && attachedFiles.length === 0) || isRunning || isExtractingAttachment}
-              className="px-5 sm:px-6 py-2.5 sm:py-3 rounded-full font-bold text-xs sm:text-sm tracking-wide transition-all duration-300 flex items-center gap-2 shadow-lg active:scale-95 disabled:opacity-40 disabled:cursor-not-allowed shrink-0"
+              className="jarvis-submit-btn px-5 sm:px-6 py-2.5 sm:py-3 rounded-full font-bold text-xs sm:text-sm tracking-wide transition-all duration-300 flex items-center gap-2 shadow-lg active:scale-95 disabled:opacity-40 disabled:cursor-not-allowed shrink-0"
               style={{
                 background: isRunning
                   ? 'linear-gradient(135deg, #38bdf8 0%, #a855f7 100%)'
@@ -1693,16 +1693,16 @@ export function JarvisChat({ config, onOpenSettings }: JarvisChatProps) {
               ) : (
                 <Send size={15} className="text-slate-950" />
               )}
-              <span className="font-extrabold">{isRunning ? 'Orchestrating...' : isExtractingAttachment ? 'Extracting...' : 'Ask JARVIS'}</span>
+              <span className="jarvis-submit-text font-extrabold">{isRunning ? 'Orchestrating...' : isExtractingAttachment ? 'Extracting...' : 'Ask JARVIS'}</span>
             </button>
           </div>
 
           {/* Controls Hub: Deep Research & Diagram Mode Switches + Action Chips */}
-          <div className="flex items-center justify-between flex-wrap gap-3 pt-1">
-            <div className="flex items-center gap-2.5 flex-wrap">
+          <div className="jarvis-controls-hub flex items-center justify-between flex-wrap gap-3 pt-1">
+            <div className="jarvis-toggles-group flex items-center gap-2.5 flex-wrap">
               {/* Deep Research Colorful Pill Switch */}
               <label
-                className="inline-flex items-center gap-2 px-3 py-1.5 rounded-full cursor-pointer transition-all duration-200 border"
+                className="jarvis-mode-toggle inline-flex items-center gap-2 px-3 py-1.5 rounded-full cursor-pointer transition-all duration-200 border"
                 style={{
                   background: deepResearch
                     ? 'linear-gradient(135deg, rgba(97,215,201,0.2) 0%, rgba(56,189,248,0.15) 100%)'
@@ -1733,13 +1733,13 @@ export function JarvisChat({ config, onOpenSettings }: JarvisChatProps) {
                     deepResearch ? 'text-cyan-300' : 'text-slate-400'
                   }`}
                 >
-                  ⚡ DEEP RESEARCH (5-AGENT MESH)
+                  ⚡ DEEP RESEARCH <span className="jarvis-toggle-subtext">(5-AGENT MESH)</span>
                 </span>
               </label>
 
               {/* Diagram Mode Colorful Pill Switch */}
               <label
-                className="inline-flex items-center gap-2 px-3 py-1.5 rounded-full cursor-pointer transition-all duration-200 border"
+                className="jarvis-mode-toggle inline-flex items-center gap-2 px-3 py-1.5 rounded-full cursor-pointer transition-all duration-200 border"
                 style={{
                   background: diagramMode
                     ? 'linear-gradient(135deg, rgba(245,158,11,0.22) 0%, rgba(217,119,6,0.18) 100%)'
@@ -1777,7 +1777,7 @@ export function JarvisChat({ config, onOpenSettings }: JarvisChatProps) {
 
               {/* Chart Mode Colorful Pill Switch */}
               <label
-                className="inline-flex items-center gap-2 px-3 py-1.5 rounded-full cursor-pointer transition-all duration-200 border"
+                className="jarvis-mode-toggle inline-flex items-center gap-2 px-3 py-1.5 rounded-full cursor-pointer transition-all duration-200 border"
                 style={{
                   background: chartMode
                     ? 'linear-gradient(135deg, rgba(56,189,248,0.22) 0%, rgba(14,165,233,0.18) 100%)'
@@ -1815,7 +1815,7 @@ export function JarvisChat({ config, onOpenSettings }: JarvisChatProps) {
 
               {/* Image Mode Colorful Pill Switch */}
               <label
-                className="inline-flex items-center gap-2 px-3 py-1.5 rounded-full cursor-pointer transition-all duration-200 border"
+                className="jarvis-mode-toggle inline-flex items-center gap-2 px-3 py-1.5 rounded-full cursor-pointer transition-all duration-200 border"
                 style={{
                   background: imageMode
                     ? 'linear-gradient(135deg, rgba(236,72,153,0.22) 0%, rgba(219,39,119,0.18) 100%)'
@@ -1853,7 +1853,7 @@ export function JarvisChat({ config, onOpenSettings }: JarvisChatProps) {
 
               {/* Coder Mode / Coder Agent Colorful Pill Switch */}
               <label
-                className="inline-flex items-center gap-2 px-3 py-1.5 rounded-full cursor-pointer transition-all duration-200 border"
+                className="jarvis-mode-toggle inline-flex items-center gap-2 px-3 py-1.5 rounded-full cursor-pointer transition-all duration-200 border"
                 style={{
                   background: coderMode
                     ? 'linear-gradient(135deg, rgba(16,185,129,0.22) 0%, rgba(5,150,105,0.18) 100%)'
@@ -1898,7 +1898,7 @@ export function JarvisChat({ config, onOpenSettings }: JarvisChatProps) {
                     setShowAttachMenu((prev) => !prev);
                     setAttachmentError(null);
                   }}
-                  className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-full cursor-pointer transition-all duration-200 border text-[11px] font-mono font-bold select-none active:scale-95"
+                  className="jarvis-attach-btn inline-flex items-center gap-1.5 px-3 py-1.5 rounded-full cursor-pointer transition-all duration-200 border text-[11px] font-mono font-bold select-none active:scale-95"
                   style={{
                     background:
                       showAttachMenu || attachedFiles.length > 0
@@ -1935,7 +1935,7 @@ export function JarvisChat({ config, onOpenSettings }: JarvisChatProps) {
                 {/* Popup Menu */}
                 {showAttachMenu && (
                   <div
-                    className="absolute bottom-full mb-2 left-0 w-64 rounded-2xl p-2 z-50 backdrop-blur-xl border shadow-2xl flex flex-col gap-1.5 animate-in fade-in zoom-in-95 duration-150"
+                    className="jarvis-attach-menu absolute bottom-full mb-2 left-0 w-64 rounded-2xl p-2 z-50 backdrop-blur-xl border shadow-2xl flex flex-col gap-1.5 animate-in fade-in zoom-in-95 duration-150"
                     style={{
                       background:
                         'linear-gradient(145deg, rgba(8, 20, 36, 0.98) 0%, rgba(14, 18, 48, 0.98) 100%)',
@@ -1987,11 +1987,11 @@ export function JarvisChat({ config, onOpenSettings }: JarvisChatProps) {
             </div>
 
             {/* Round Auxiliary Action Chips */}
-            <div className="flex items-center gap-2 flex-wrap">
+            <div className="jarvis-aux-buttons-group flex items-center gap-2 flex-wrap">
               <button
                 type="button"
                 onClick={onOpenSettings}
-                className="inline-flex items-center gap-1.5 px-3.5 py-1.5 rounded-full text-xs font-bold text-cyan-300 bg-cyan-500/10 hover:bg-cyan-500/20 border border-cyan-500/30 hover:border-cyan-400/60 shadow-sm transition-all duration-200"
+                className="jarvis-aux-btn inline-flex items-center gap-1.5 px-3.5 py-1.5 rounded-full text-xs font-bold text-cyan-300 bg-cyan-500/10 hover:bg-cyan-500/20 border border-cyan-500/30 hover:border-cyan-400/60 shadow-sm transition-all duration-200"
                 title="Configure Agent parameters, providers and models"
               >
                 <Cpu size={13} className="text-cyan-400" />
@@ -2002,7 +2002,7 @@ export function JarvisChat({ config, onOpenSettings }: JarvisChatProps) {
                 <button
                   type="button"
                   onClick={handleNewChat}
-                  className="inline-flex items-center gap-1.5 px-3.5 py-1.5 rounded-full text-xs font-bold text-sky-200 bg-sky-500/10 hover:bg-sky-500/20 border border-sky-400/30 hover:border-sky-300/60 shadow-sm transition-all duration-200"
+                  className="jarvis-aux-btn inline-flex items-center gap-1.5 px-3.5 py-1.5 rounded-full text-xs font-bold text-sky-200 bg-sky-500/10 hover:bg-sky-500/20 border border-sky-400/30 hover:border-sky-300/60 shadow-sm transition-all duration-200"
                   title="Start a fresh chat"
                 >
                   <Plus size={13} className="text-sky-300" />
@@ -2014,7 +2014,7 @@ export function JarvisChat({ config, onOpenSettings }: JarvisChatProps) {
                 <button
                   type="button"
                   onClick={() => setShowClearConfirm(true)}
-                  className="inline-flex items-center gap-1.5 px-3.5 py-1.5 rounded-full text-xs font-bold text-rose-300 bg-rose-500/10 hover:bg-rose-500/20 border border-rose-500/30 hover:border-rose-400/60 shadow-sm transition-all duration-200"
+                  className="jarvis-aux-btn inline-flex items-center gap-1.5 px-3.5 py-1.5 rounded-full text-xs font-bold text-rose-300 bg-rose-500/10 hover:bg-rose-500/20 border border-rose-500/30 hover:border-rose-400/60 shadow-sm transition-all duration-200"
                   title="Clear conversation history"
                 >
                   <Trash2 size={13} className="text-rose-400" />
@@ -2034,13 +2034,13 @@ export function JarvisChat({ config, onOpenSettings }: JarvisChatProps) {
                 <Sparkles size={12} className="text-cyan-400" />
                 Suggested Research Tracks:
               </span>
-              <div className="flex flex-wrap gap-2">
+              <div className="jarvis-prompt-pills-row flex flex-wrap gap-2">
                 {QUICK_PROMPT_PILLS.map((p, idx) => (
                   <button
                     key={idx}
                     type="button"
                     onClick={() => handleSend(p.label)}
-                    className={`inline-flex items-center gap-1.5 px-3.5 py-1.5 rounded-full text-xs font-semibold bg-gradient-to-r ${p.color} border ${p.border} ${p.text} hover:scale-105 hover:shadow-[0_0_14px_rgba(97,215,201,0.25)] transition-all duration-200`}
+                    className={`jarvis-quick-prompt-pill inline-flex items-center gap-1.5 px-3.5 py-1.5 rounded-full text-xs font-semibold bg-gradient-to-r ${p.color} border ${p.border} ${p.text} hover:scale-105 hover:shadow-[0_0_14px_rgba(97,215,201,0.25)] transition-all duration-200`}
                   >
                     <span>{p.emoji}</span>
                     <span>{p.label}</span>
