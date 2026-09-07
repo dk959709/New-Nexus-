@@ -4522,7 +4522,10 @@ Output strictly valid JSON matching this schema:
 
     const isSelfOrArchitectureQuery =
       isSelfQuery ||
-      /\b(agents?|architecture|capabilities|what can you do|how many agents|who made you|how do you work)\b/i.test(query);
+      isSelfReferentialInquiry(query) ||
+      /\b(agents?|architecture|capabilities|what can you do|who are you|how many agents|what agents|list (your )?agents|who are your agents|explain your agents|describe your agents|how do you work)\b/i.test(query) ||
+      /\b(?:how many|what|list|explain|describe|who are)\s+(?:the\s+)?(?:ai\s+)?agents\b/i.test(query) ||
+      /\b(?:agent|agents|architecture)\s+(?:breakdown|overview|pipeline|capabilities|topology)\b/i.test(query);
 
     const architectureReferenceDirective = isSelfOrArchitectureQuery && !isPersonalOrHumanAiComparison(query)
       ? `\n\n[JARVIS MULTI-AGENT ARCHITECTURE REFERENCE]:

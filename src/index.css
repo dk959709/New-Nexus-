@@ -2602,6 +2602,318 @@
     width: 16px !important;
     height: 16px !important;
   }
+
+  /* =========================================================
+     SITE-WIDE MOBILE RESPONSIVENESS (MAX-WIDTH: 768px)
+     ========================================================= */
+
+  /* Global Page Intro & Headings */
+  .page-intro {
+    margin-bottom: 20px !important;
+  }
+
+  .page-intro h1 {
+    font-size: 24px !important;
+    line-height: 1.25 !important;
+    word-break: break-word !important;
+  }
+
+  .page-intro p {
+    font-size: 13px !important;
+    line-height: 1.5 !important;
+  }
+
+  .page-intro .eyebrow {
+    font-size: 10px !important;
+    letter-spacing: 0.08em !important;
+    padding: 3px 8px !important;
+  }
+
+  /* General Cards & Containers */
+  .news-card,
+  .metric-card,
+  .device-card,
+  .weather-card,
+  .space-card,
+  .terminal-card,
+  .settings-card {
+    padding: 16px !important;
+    border-radius: 14px !important;
+  }
+
+  /* 1. HOME PAGE RESPONSIVENESS */
+  .home-top-grid,
+  .dashboard-grid {
+    grid-template-columns: 1fr !important;
+    gap: 16px !important;
+  }
+
+  .home-quick-stats {
+    grid-template-columns: 1fr !important;
+    gap: 10px !important;
+  }
+
+  .home-search-panel {
+    padding: 16px !important;
+  }
+
+  .terminal-window,
+  .nexus-terminal-panel {
+    padding: 12px !important;
+    font-size: 12px !important;
+    max-height: 380px !important;
+  }
+
+  /* 2. WEATHER PAGE RESPONSIVENESS */
+  .weather-grid-top,
+  .weather-main-grid {
+    grid-template-columns: 1fr !important;
+    gap: 16px !important;
+  }
+
+  .weather-overview-card {
+    padding: 16px !important;
+  }
+
+  .weather-stat-grid {
+    grid-template-columns: repeat(2, 1fr) !important;
+    gap: 10px !important;
+  }
+
+  .weather-forecast-strip,
+  .weather-hourly-strip {
+    overflow-x: auto !important;
+    -webkit-overflow-scrolling: touch !important;
+    padding-bottom: 8px !important;
+    gap: 8px !important;
+  }
+
+  .weather-forecast-card {
+    min-width: 90px !important;
+    padding: 10px !important;
+  }
+
+  /* 3. SPACE PAGE RESPONSIVENESS */
+  .space-tabs-bar {
+    display: flex !important;
+    overflow-x: auto !important;
+    flex-wrap: nowrap !important;
+    padding-bottom: 8px !important;
+    -webkit-overflow-scrolling: touch !important;
+    gap: 6px !important;
+    margin-bottom: 16px !important;
+  }
+
+  .space-tab-button {
+    padding: 7px 12px !important;
+    font-size: 12px !important;
+    white-space: nowrap !important;
+    flex-shrink: 0 !important;
+    border-radius: 8px !important;
+  }
+
+  .space-lunar-metrics,
+  .space-planets-grid,
+  .space-missions-grid {
+    grid-template-columns: 1fr !important;
+    gap: 14px !important;
+  }
+
+  .space-apod-card,
+  .space-iss-panel {
+    padding: 16px !important;
+  }
+
+  /* 4. NEWS PAGE RESPONSIVENESS */
+  .news-grid {
+    grid-template-columns: 1fr !important;
+    gap: 14px !important;
+  }
+
+  .news-card h3,
+  .news-title {
+    font-size: 15px !important;
+    line-height: 1.35 !important;
+  }
+
+  .news-filter-tabs {
+    display: flex !important;
+    overflow-x: auto !important;
+    flex-wrap: nowrap !important;
+    padding-bottom: 8px !important;
+    -webkit-overflow-scrolling: touch !important;
+    gap: 6px !important;
+  }
+
+  .news-filter-tab {
+    padding: 6px 12px !important;
+    font-size: 12px !important;
+    white-space: nowrap !important;
+    flex-shrink: 0 !important;
+  }
+
+  .news-header-actions {
+    flex-direction: column !important;
+    align-items: stretch !important;
+    gap: 10px !important;
+  }
+
+  /* 5. DEVICES PAGE RESPONSIVENESS */
+  .nexus-devices-wrapper {
+    padding: 0 !important;
+  }
+
+  .nexus-devices-wrapper .device-grid,
+  .devices-grid {
+    grid-template-columns: 1fr !important;
+    gap: 14px !important;
+  }
+
+  .nexus-devices-wrapper .scanner-panel,
+  .nexus-devices-wrapper .device-card {
+    padding: 16px !important;
+  }
+
+  /* 6. SEARCH PAGE RESPONSIVENESS */
+  .search-input-wrapper {
+    flex-direction: column !important;
+    gap: 10px !important;
+  }
+
+  .search-filter-chips {
+    overflow-x: auto !important;
+    flex-wrap: nowrap !important;
+    padding-bottom: 6px !important;
+    -webkit-overflow-scrolling: touch !important;
+    gap: 6px !important;
+  }
+
+  .search-result-card {
+    padding: 16px !important;
+    word-break: break-word !important;
+  }
+
+  /* 7. SAVED PAGE RESPONSIVENESS */
+  .saved-filter-bar {
+    overflow-x: auto !important;
+    flex-wrap: nowrap !important;
+    padding-bottom: 8px !important;
+    -webkit-overflow-scrolling: touch !important;
+    gap: 6px !important;
+  }
+
+  .saved-filter-bar button {
+    white-space: nowrap !important;
+    flex-shrink: 0 !important;
+    padding: 6px 12px !important;
+    font-size: 11px !important;
+  }
+
+  .saved-item-card {
+    padding: 16px !important;
+  }
+
+  .saved-item-header-actions {
+    flex-wrap: wrap !important;
+    gap: 6px !important;
+  }
+
+  /* 8. SETTINGS PAGE RESPONSIVENESS */
+  .settings-category-bar {
+    overflow-x: auto !important;
+    flex-wrap: nowrap !important;
+    padding-bottom: 8px !important;
+    -webkit-overflow-scrolling: touch !important;
+    gap: 6px !important;
+    margin-bottom: 16px !important;
+  }
+
+  .settings-category-bar button {
+    padding: 7px 12px !important;
+    font-size: 12px !important;
+    white-space: nowrap !important;
+    flex-shrink: 0 !important;
+  }
+
+  .settings-section-card {
+    padding: 16px !important;
+  }
+
+  /* 9. TELEGRAM PAGE RESPONSIVENESS */
+  #telegram-active-panel {
+    padding: 16px !important;
+    gap: 16px !important;
+  }
+
+  #disconnect-bot-button {
+    width: 100% !important;
+    justify-content: center !important;
+    margin-top: 6px !important;
+  }
+
+  .telegram-status-badge {
+    padding: 14px !important;
+    border-radius: 12px !important;
+  }
+
+  .telegram-automation-card {
+    padding: 16px !important;
+  }
+
+  /* 10. VOICE AI PAGE RESPONSIVENESS */
+  .voice-studio-container {
+    padding: 0 4px !important;
+  }
+
+  .voice-studio-container textarea {
+    font-size: 14px !important;
+    padding: 12px !important;
+  }
+
+  .voice-studio-container .action-bar-buttons {
+    flex-direction: column !important;
+    align-items: stretch !important;
+    gap: 10px !important;
+    width: 100% !important;
+  }
+
+  .voice-studio-container .action-bar-buttons button {
+    width: 100% !important;
+    justify-content: center !important;
+  }
+
+  /* 11. MAP PAGE & WEATHER MAP RESPONSIVENESS */
+  .weather-map {
+    height: 380px !important;
+    border-radius: 12px !important;
+  }
+
+  .weather-map-layers {
+    overflow-x: auto !important;
+    flex-wrap: nowrap !important;
+    padding: 8px !important;
+    gap: 6px !important;
+    -webkit-overflow-scrolling: touch !important;
+  }
+
+  .weather-map-layer-btn {
+    padding: 6px 10px !important;
+    font-size: 11px !important;
+    white-space: nowrap !important;
+    flex-shrink: 0 !important;
+  }
+
+  .weather-map-legend {
+    bottom: 10px !important;
+    right: 10px !important;
+    max-width: calc(100% - 20px) !important;
+    padding: 8px 10px !important;
+    font-size: 11px !important;
+  }
+
+  .map-panel {
+    padding: 24px 16px !important;
+  }
 }
 
 

@@ -113,7 +113,7 @@ export function SavedPage() {
       />
 
       {items.length > 0 && (
-        <div className="flex items-center gap-2 mb-6 flex-wrap">
+        <div className="saved-filter-bar flex items-center gap-2 mb-6 flex-wrap">
           <button
             type="button"
             onClick={() => setFilter('all')}

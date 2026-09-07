@@ -273,7 +273,7 @@ export function VoiceAI() {
   };
 
   return (
-    <div className="max-w-4xl mx-auto space-y-8 pb-12">
+    <div className="voice-studio-container max-w-4xl mx-auto space-y-8 pb-12">
       {/* Page Header */}
       <div className="page-intro space-y-2">
         <div className="flex items-center gap-2">

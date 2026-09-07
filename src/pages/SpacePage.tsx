@@ -77,28 +77,28 @@ export function SpacePage() {
         <PageIntro eyebrow="COSMIC OBSERVATORY" title="Deep Space & NASA Explorer" description="Real-time orbital tracking, astronomical imagery, and solar system telemetry." />
         
         {/* Navigation Tabs */}
-        <div className="flex flex-wrap gap-2 mb-8 border-b border-white/10 pb-4">
+        <div className="space-tabs-bar flex flex-wrap gap-2 mb-8 border-b border-white/10 pb-4">
           <button
             onClick={() => { playTapSound(); setActiveTab('apod'); }}
-            className={`px-4 py-2 rounded-xl text-sm font-medium transition-all flex items-center gap-2 ${activeTab === 'apod' ? 'bg-cyan-500/20 text-cyan-300 border border-cyan-500/40 shadow-lg shadow-cyan-500/10' : 'bg-white/[0.03] text-slate-400 hover:text-white border border-white/5'}`}
+            className={`space-tab-button px-4 py-2 rounded-xl text-sm font-medium transition-all flex items-center gap-2 ${activeTab === 'apod' ? 'bg-cyan-500/20 text-cyan-300 border border-cyan-500/40 shadow-lg shadow-cyan-500/10' : 'bg-white/[0.03] text-slate-400 hover:text-white border border-white/5'}`}
           >
             <Sparkles size={16} /> NASA APOD
           </button>
           <button
             onClick={() => { playTapSound(); setActiveTab('iss'); }}
-            className={`px-4 py-2 rounded-xl text-sm font-medium transition-all flex items-center gap-2 ${activeTab === 'iss' ? 'bg-cyan-500/20 text-cyan-300 border border-cyan-500/40 shadow-lg shadow-cyan-500/10' : 'bg-white/[0.03] text-slate-400 hover:text-white border border-white/5'}`}
+            className={`space-tab-button px-4 py-2 rounded-xl text-sm font-medium transition-all flex items-center gap-2 ${activeTab === 'iss' ? 'bg-cyan-500/20 text-cyan-300 border border-cyan-500/40 shadow-lg shadow-cyan-500/10' : 'bg-white/[0.03] text-slate-400 hover:text-white border border-white/5'}`}
           >
             <Rocket size={16} /> Live ISS Tracker
           </button>
           <button
             onClick={() => { playTapSound(); setActiveTab('moon'); }}
-            className={`px-4 py-2 rounded-xl text-sm font-medium transition-all flex items-center gap-2 ${activeTab === 'moon' ? 'bg-cyan-500/20 text-cyan-300 border border-cyan-500/40 shadow-lg shadow-cyan-500/10' : 'bg-white/[0.03] text-slate-400 hover:text-white border border-white/5'}`}
+            className={`space-tab-button px-4 py-2 rounded-xl text-sm font-medium transition-all flex items-center gap-2 ${activeTab === 'moon' ? 'bg-cyan-500/20 text-cyan-300 border border-cyan-500/40 shadow-lg shadow-cyan-500/10' : 'bg-white/[0.03] text-slate-400 hover:text-white border border-white/5'}`}
           >
             <MoonIcon size={16} /> Lunar Phase
           </button>
           <button
             onClick={() => { playTapSound(); setActiveTab('planets'); }}
-            className={`px-4 py-2 rounded-xl text-sm font-medium transition-all flex items-center gap-2 ${activeTab === 'planets' ? 'bg-cyan-500/20 text-cyan-300 border border-cyan-500/40 shadow-lg shadow-cyan-500/10' : 'bg-white/[0.03] text-slate-400 hover:text-white border border-white/5'}`}
+            className={`space-tab-button px-4 py-2 rounded-xl text-sm font-medium transition-all flex items-center gap-2 ${activeTab === 'planets' ? 'bg-cyan-500/20 text-cyan-300 border border-cyan-500/40 shadow-lg shadow-cyan-500/10' : 'bg-white/[0.03] text-slate-400 hover:text-white border border-white/5'}`}
           >
             <Globe size={16} /> Solar System
           </button>

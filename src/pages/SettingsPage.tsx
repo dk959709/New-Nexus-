@@ -245,6 +245,7 @@ export function SettingsPage() {
 
       {/* Category Navigation Bar */}
       <div
+        className="settings-category-bar"
         style={{
           display: 'flex',
           gap: '8px',
