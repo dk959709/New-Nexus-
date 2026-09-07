@@ -27,6 +27,9 @@ import java.security.PrivateKey;
 import java.security.PublicKey;
 import java.security.SecureRandom;
 import java.security.Signature;
+import java.security.interfaces.RSAPrivateCrtKey;
+import java.security.interfaces.RSAPublicKey;
+import java.security.spec.RSAPublicKeySpec;
 import javax.crypto.Cipher;
 import java.security.cert.Certificate;
 import java.security.cert.CertificateFactory;
@@ -273,17 +276,25 @@ public class AndroidTvRemotePlugin extends Plugin {
                 try {
                     // If targetPort is 5555 or method is android_tv, perform real authenticated ADB handshake!
                     if (targetPort == 5555 || (method != null && method.equals("android_tv"))) {
-                        boolean adbConnected = connectAndAuthenticateAdb(targetIp, 5555);
+                        AdbAuthOutcome adbRes = connectAndAuthenticateAdb(targetIp, 5555);
                         JSObject res = new JSObject();
-                        res.put("success", adbConnected);
-                        res.put("isConnected", adbConnected);
-                        res.put("isPaired", true);
+                        res.put("success", adbRes.connected);
+                        res.put("isConnected", adbRes.connected);
+                        res.put("isPaired", adbRes.connected);
+                        res.put("needPairing", adbRes.promptSent);
                         res.put("ip", targetIp);
                         res.put("port", 5555);
                         res.put("deviceName", "Android TV (ADB)");
                         res.put("model", "Android TV");
-                        if (!adbConnected) {
-                            res.put("error", "ADB authentication failed or TV debugging prompt not accepted. Check TV screen.");
+                        if (!adbRes.connected) {
+                            res.put("error", adbRes.message);
+                        } else {
+                            connectedTvIp = targetIp;
+                            connectedTvPort = 5555;
+                            connectedTvModel = "Android TV";
+                            isTvConnected = true;
+                            savePairedIp(targetIp);
+                            saveTvModel("Android TV");
                         }
                         savedCall.resolve(res);
                         return;
@@ -400,29 +411,47 @@ public class AndroidTvRemotePlugin extends Plugin {
     private synchronized KeyPair ensureAdbRsaKey() throws Exception {
         SharedPreferences prefs = getContext().getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE);
         String privB64 = prefs.getString(KEY_ADB_PRIV_KEY, null);
+        String pubB64 = prefs.getString(KEY_ADB_PUB_KEY, null);
+
+        KeyFactory kf = KeyFactory.getInstance("RSA");
 
         if (privB64 != null) {
-            byte[] privBytes = Base64.decode(privB64, Base64.DEFAULT);
-            PKCS8EncodedKeySpec spec = new PKCS8EncodedKeySpec(privBytes);
-            KeyFactory kf = KeyFactory.getInstance("RSA");
-            PrivateKey privKey = kf.generatePrivate(spec);
+            try {
+                byte[] privBytes = Base64.decode(privB64, Base64.DEFAULT);
+                PKCS8EncodedKeySpec privSpec = new PKCS8EncodedKeySpec(privBytes);
+                PrivateKey privKey = kf.generatePrivate(privSpec);
 
-            // Re-derive public key from private key spec or generate if needed
-            KeyPairGenerator kpg = KeyPairGenerator.getInstance("RSA");
-            kpg.initialize(2048, new SecureRandom());
-            // To ensure public key matches, we can also store public key b64
-            String pubB64 = prefs.getString(KEY_ADB_PUB_KEY, null);
-            PublicKey pubKey;
-            if (pubB64 != null) {
-                byte[] pubBytes = Base64.decode(pubB64, Base64.DEFAULT);
-                X509EncodedKeySpec pubSpec = new X509EncodedKeySpec(pubBytes);
-                pubKey = kf.generatePublic(pubSpec);
-            } else {
-                KeyPair kp = kpg.generateKeyPair();
-                pubKey = kp.getPublic();
-                prefs.edit().putString(KEY_ADB_PUB_KEY, Base64.encodeToString(pubKey.getEncoded(), Base64.NO_WRAP)).apply();
+                PublicKey pubKey = null;
+                if (pubB64 != null) {
+                    try {
+                        byte[] pubBytes = Base64.decode(pubB64, Base64.DEFAULT);
+                        X509EncodedKeySpec pubSpec = new X509EncodedKeySpec(pubBytes);
+                        pubKey = kf.generatePublic(pubSpec);
+                    } catch (Exception pubEx) {
+                        Log.w(TAG, "Could not decode stored public key, will re-derive from private CRT spec", pubEx);
+                    }
+                }
+
+                // If public key is missing or not matched, derive directly from private CRT key spec
+                if (pubKey == null || !(pubKey instanceof RSAPublicKey)) {
+                    if (privKey instanceof RSAPrivateCrtKey) {
+                        RSAPrivateCrtKey crt = (RSAPrivateCrtKey) privKey;
+                        RSAPublicKeySpec pubSpec = new RSAPublicKeySpec(crt.getModulus(), crt.getPublicExponent());
+                        pubKey = kf.generatePublic(pubSpec);
+                        prefs.edit().putString(KEY_ADB_PUB_KEY, Base64.encodeToString(pubKey.getEncoded(), Base64.NO_WRAP)).apply();
+                    }
+                }
+
+                if (pubKey instanceof RSAPublicKey && privKey instanceof RSAPrivateCrtKey) {
+                    RSAPublicKey rsaPub = (RSAPublicKey) pubKey;
+                    RSAPrivateCrtKey rsaPriv = (RSAPrivateCrtKey) privKey;
+                    if (rsaPub.getModulus().equals(rsaPriv.getModulus())) {
+                        return new KeyPair(pubKey, privKey);
+                    }
+                }
+            } catch (Exception e) {
+                Log.w(TAG, "Cached ADB RSA keys invalid or mismatched, generating fresh 2048-bit pair", e);
             }
-            return new KeyPair(pubKey, privKey);
         }
 
         Log.d(TAG, "Generating new persistent 2048-bit RSA KeyPair for ADB authentication...");
@@ -439,70 +468,117 @@ public class AndroidTvRemotePlugin extends Plugin {
         return keyPair;
     }
 
-    private boolean connectAndAuthenticateAdb(String ip, int port) {
+    private static class AdbAuthOutcome {
+        final boolean connected;
+        final boolean promptSent;
+        final String message;
+
+        AdbAuthOutcome(boolean connected, boolean promptSent, String message) {
+            this.connected = connected;
+            this.promptSent = promptSent;
+            this.message = message;
+        }
+    }
+
+    private AdbAuthOutcome performAdbAuth(InputStream in, OutputStream out, KeyPair kp, long timeoutMs) throws Exception {
+        // 1. Send A_CNXN packet
+        // command = 0x4e584e43 ("CNXN"), arg0 = 0x01000000 (A_VERSION = 1), arg1 = 0x00100000 (1MB max data payload)
+        byte[] cnxnPayload = "host::nexus-remote\0".getBytes("UTF-8");
+        writeAdbPacket(out, 0x4e584e43, 0x01000000, 0x00100000, cnxnPayload);
+
+        boolean signatureSent = false;
+        boolean pubKeySent = false;
+        long start = System.currentTimeMillis();
+
+        while (System.currentTimeMillis() - start < timeoutMs) {
+            AdbHeader header = readAdbHeader(in);
+            if (header == null) break;
+            byte[] data = readAdbPayload(in, header);
+
+            if (header.command == 0x4e584e43) {
+                // A_CNXN received from TV! Fully authenticated. TV accepted our connection.
+                Log.d(TAG, "ADB Connection accepted by TV (CNXN packet received)");
+                return new AdbAuthOutcome(true, pubKeySent, "Connected successfully via ADB");
+            } else if (header.command == 0x48545541) {
+                // A_AUTH received (command = 0x48545541)
+                if (header.arg0 == 1) {
+                    // A_AUTH_TOKEN: TV provided challenge token
+                    Log.d(TAG, "Received ADB AUTH token challenge from TV (" + (data != null ? data.length : 0) + " bytes)");
+                    if (!signatureSent) {
+                        Log.d(TAG, "Signing token with persistent RSA private key and sending A_AUTH_SIGNATURE...");
+                        byte[] signature = signAdbToken(kp.getPrivate(), data);
+                        writeAdbPacket(out, 0x48545541, 1, 0, signature);
+                        signatureSent = true;
+
+                        // PROACTIVE PUBLIC KEY TRANSMISSION:
+                        // In Android adbd (Android 7+ / Android TV / Google TV), when signature verification
+                        // fails against /data/misc/adb/adb_keys, adbd does NOT send a second token or prompt;
+                        // it waits for the client to transmit A_AUTH_RSAPUBLICKEY (arg0 = 2).
+                        // By proactively pushing the Android-structured RSAPublicKey, the TV triggers the
+                        // "Allow USB/Network debugging?" modal dialog immediately on screen.
+                        Log.d(TAG, "Proactively sending Android RSAPublicKey struct to trigger TV authorization popup...");
+                        byte[] pubKeyPacket = getAdbPublicKeyPayload(kp.getPublic());
+                        writeAdbPacket(out, 0x48545541, 2, 0, pubKeyPacket);
+                        pubKeySent = true;
+                    } else if (!pubKeySent) {
+                        Log.d(TAG, "Subsequent AUTH token received from TV. Sending Android RSAPublicKey struct...");
+                        byte[] pubKeyPacket = getAdbPublicKeyPayload(kp.getPublic());
+                        writeAdbPacket(out, 0x48545541, 2, 0, pubKeyPacket);
+                        pubKeySent = true;
+                    }
+                } else if (header.arg0 == 2) {
+                    // TV explicitly requested RSAPublicKey (arg0 = 2)
+                    Log.d(TAG, "TV explicitly requested RSAPublicKey (arg0=2). Sending public key...");
+                    byte[] pubKeyPacket = getAdbPublicKeyPayload(kp.getPublic());
+                    writeAdbPacket(out, 0x48545541, 2, 0, pubKeyPacket);
+                    pubKeySent = true;
+                }
+            } else {
+                Log.w(TAG, "Received unexpected ADB packet command: 0x" + Integer.toHexString(header.command));
+            }
+        }
+
+        if (pubKeySent) {
+            return new AdbAuthOutcome(false, true, "Authorization prompt sent to TV screen. Please select 'Always allow' on your TV and press Connect again.");
+        }
+        return new AdbAuthOutcome(false, false, "TV closed connection or did not respond to ADB handshake.");
+    }
+
+    private AdbAuthOutcome connectAndAuthenticateAdb(String ip, int port) {
         Socket socket = null;
         try {
-            ensureAdbRsaKey();
+            KeyPair kp = ensureAdbRsaKey();
             socket = new Socket();
-            socket.connect(new InetSocketAddress(ip, port), 3000);
-            socket.setSoTimeout(5000);
+            socket.connect(new InetSocketAddress(ip, port), 3500);
+            // 15-second read timeout gives user time to grab TV remote and click "Always allow"
+            socket.setSoTimeout(15000);
 
             OutputStream out = socket.getOutputStream();
             InputStream in = socket.getInputStream();
 
-            // 1. Send A_CNXN packet
-            // command = 0x4e584e43 ("CNXN"), arg0 = 0x01000000 (version), arg1 = 0x00100000 (max data)
-            byte[] cnxnPayload = "host::nexus-remote\0".getBytes("UTF-8");
-            writeAdbPacket(out, 0x4e584e43, 0x01000000, 0x00100000, cnxnPayload);
+            AdbAuthOutcome outcome = performAdbAuth(in, out, kp, 15000);
 
-            // 2. Read response loop for authentication challenge or CNXN confirmation
-            while (true) {
-                AdbHeader header = readAdbHeader(in);
-                if (header == null) break;
-                byte[] data = readAdbPayload(in, header);
-
-                if (header.command == 0x4e584e43) {
-                    // CNXN received! Successfully authenticated. TV has accepted us.
-                    Log.d(TAG, "ADB Connection accepted (CNXN received)");
-                    socket.close();
-                    return true;
-                } else if (header.command == 0x48545541) {
-                    // AUTH received (A_AUTH)
-                    // arg0 == 1 means AUTH_TOKEN (TV sends a 20-byte random challenge token)
-                    if (header.arg0 == 1) {
-                        Log.d(TAG, "Received ADB AUTH token challenge. Signing with persistent RSA private key...");
-                        KeyPair kp = ensureAdbRsaKey();
-                        byte[] signature = signAdbToken(kp.getPrivate(), data);
-
-                        // Send signed token back: A_AUTH with arg0 = 1 (AUTH_SIGNATURE)
-                        writeAdbPacket(out, 0x48545541, 1, 0, signature);
-                    } else if (header.arg0 == 2) {
-                        // TV requested RSA public key (AUTH_RSAPUBLICKEY)
-                        Log.d(TAG, "TV requested RSA Public Key (AUTH_RSAPUBLICKEY). Sending public key...");
-                        KeyPair kp = ensureAdbRsaKey();
-                        byte[] pubKeyPacket = getAdbPublicKeyPayload(kp.getPublic());
-                        writeAdbPacket(out, 0x48545541, 2, 0, pubKeyPacket);
-                    }
-                } else {
-                    Log.w(TAG, "Received unexpected ADB packet command: 0x" + Integer.toHexString(header.command));
-                }
+            try { socket.close(); } catch (Exception ignored) {}
+            return outcome;
+        } catch (java.net.SocketTimeoutException te) {
+            Log.w(TAG, "ADB socket timed out while waiting for TV user authorization", te);
+            if (socket != null) {
+                try { socket.close(); } catch (Exception ignored) {}
             }
-
-            socket.close();
-            return false;
+            return new AdbAuthOutcome(false, true, "Authorization prompt sent to TV screen. Please tap 'Always allow' on your TV screen, then click Connect again.");
         } catch (Exception e) {
             Log.e(TAG, "ADB authentication failed with " + ip + ":" + port, e);
             if (socket != null) {
                 try { socket.close(); } catch (Exception ignored) {}
             }
-            return false;
+            return new AdbAuthOutcome(false, false, "ADB connection error: " + e.getMessage());
         }
     }
 
     private boolean sendAdbKeyAuthenticated(String ip, int port, int keyCode) {
         Socket socket = null;
         try {
-            ensureAdbRsaKey();
+            KeyPair kp = ensureAdbRsaKey();
             socket = new Socket();
             socket.connect(new InetSocketAddress(ip, port), 3000);
             socket.setSoTimeout(5000);
@@ -510,34 +586,8 @@ public class AndroidTvRemotePlugin extends Plugin {
             OutputStream out = socket.getOutputStream();
             InputStream in = socket.getInputStream();
 
-            // 1. CNXN
-            byte[] cnxnPayload = "host::nexus-remote\0".getBytes("UTF-8");
-            writeAdbPacket(out, 0x4e584e43, 0x01000000, 0x00100000, cnxnPayload);
-
-            boolean authenticated = false;
-
-            // 2. Auth loop
-            while (!authenticated) {
-                AdbHeader header = readAdbHeader(in);
-                if (header == null) break;
-                byte[] data = readAdbPayload(in, header);
-
-                if (header.command == 0x4e584e43) {
-                    authenticated = true;
-                } else if (header.command == 0x48545541) {
-                    if (header.arg0 == 1) {
-                        KeyPair kp = ensureAdbRsaKey();
-                        byte[] signature = signAdbToken(kp.getPrivate(), data);
-                        writeAdbPacket(out, 0x48545541, 1, 0, signature);
-                    } else if (header.arg0 == 2) {
-                        KeyPair kp = ensureAdbRsaKey();
-                        byte[] pubKeyPacket = getAdbPublicKeyPayload(kp.getPublic());
-                        writeAdbPacket(out, 0x48545541, 2, 0, pubKeyPacket);
-                    }
-                }
-            }
-
-            if (!authenticated) {
+            AdbAuthOutcome outcome = performAdbAuth(in, out, kp, 5000);
+            if (!outcome.connected) {
                 socket.close();
                 return false;
             }
@@ -660,10 +710,58 @@ public class AndroidTvRemotePlugin extends Plugin {
     }
 
     private byte[] getAdbPublicKeyPayload(PublicKey pubKey) throws Exception {
-        // Format for ADB public key: base64(X.509 or public key bytes) + " nexus@android\n"
-        String pubB64 = Base64.encodeToString(pubKey.getEncoded(), Base64.NO_WRAP);
+        if (!(pubKey instanceof RSAPublicKey)) {
+            throw new IllegalArgumentException("Expected RSAPublicKey, got: " + (pubKey != null ? pubKey.getClass().getName() : "null"));
+        }
+        RSAPublicKey rsaPubKey = (RSAPublicKey) pubKey;
+        BigInteger n = rsaPubKey.getModulus();
+        BigInteger e = rsaPubKey.getPublicExponent();
+
+        // Android RSAPublicKey struct format (defined in Android system/core/libcrypto_utils/android_pubkey.c):
+        // struct RSAPublicKey {
+        //     uint32_t modulus_size_words; // 64 (for 2048-bit RSA: 2048 / 32)
+        //     uint32_t n0inv;              // -1 / n[0] mod 2^32 = (2^32 - (n % 2^32)^(-1) mod 2^32) mod 2^32
+        //     uint8_t modulus[256];        // Little-endian 256 bytes
+        //     uint8_t rr[256];             // Montgomery parameter (2^2048)^2 mod n, Little-endian 256 bytes
+        //     uint32_t exponent;           // RSA exponent, typically 65537 (0x00010001)
+        // };
+        // Total binary size = 4 + 4 + 256 + 256 + 4 = 524 bytes.
+
+        int numWords = 64; // 2048 bits / 32 bits per word
+
+        BigInteger r32 = BigInteger.ONE.shiftLeft(32);
+        BigInteger n0 = n.remainder(r32);
+        BigInteger rem = n0.modInverse(r32);
+        BigInteger n0invBig = r32.subtract(rem).remainder(r32);
+        long n0inv = n0invBig.longValue();
+
+        BigInteger r = BigInteger.ONE.shiftLeft(2048);
+        BigInteger rr = r.multiply(r).remainder(n);
+
+        byte[] nBytes = toLittleEndian(n, 256);
+        byte[] rrBytes = toLittleEndian(rr, 256);
+
+        byte[] struct = new byte[524];
+        writeInt32LE(struct, 0, numWords);
+        writeInt32LE(struct, 4, (int) n0inv);
+        System.arraycopy(nBytes, 0, struct, 8, 256);
+        System.arraycopy(rrBytes, 0, struct, 264, 256);
+        writeInt32LE(struct, 520, e.intValue());
+
+        // Base64 encode the 524-byte struct without line breaks, followed by space, user/host tag, and null byte
+        String pubB64 = Base64.encodeToString(struct, Base64.NO_WRAP);
         String fullKeyStr = pubB64 + " nexus@android-remote\0";
         return fullKeyStr.getBytes("UTF-8");
+    }
+
+    private static byte[] toLittleEndian(BigInteger b, int numBytes) {
+        byte[] out = new byte[numBytes];
+        byte[] src = b.toByteArray();
+        int srcLen = src.length;
+        for (int i = 0; i < numBytes && i < srcLen; i++) {
+            out[i] = src[srcLen - 1 - i];
+        }
+        return out;
     }
 
     // =========================================================================
