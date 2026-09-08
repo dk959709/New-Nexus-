@@ -93,8 +93,31 @@ export function resolvePersonaProviderConfig(
   };
 }
 
-export const FALLBACK_REPLY = 'Let me think about that differently — could you ask again?';
+export const FALLBACK_REPLY = 'Understood. Standing by for your next query or directive.';
 export const FALLBACK_REASONING_REPLY = FALLBACK_REPLY;
+
+/**
+ * Returns a persona-specific, context-aware fallback response when extraction or response generation is empty,
+ * preventing confusing prompts like "could you ask again?" from confusing the user or other personas.
+ */
+export function getPersonaFallbackReply(personaName: string, query?: string): string {
+  const normName = (personaName || '').toLowerCase();
+  const isAck = query ? isAcknowledgmentOrReaction(query) : false;
+
+  if (normName.includes('nova')) {
+    if (isAck) return 'Acknowledged. Standing by for your next directive or topic.';
+    return 'Understood. Standing by for your next query or directive.';
+  }
+  if (normName.includes('orbit')) {
+    if (isAck) return 'Awesome, you got it! Let me know if you need anything else! ✨';
+    return 'Got it! Whenever you want to explore something new, let me know! 🚀';
+  }
+  if (normName.includes('cosmos')) {
+    if (isAck) return 'You are very welcome. I am here whenever you wish to proceed.';
+    return 'Understood. I am here whenever you wish to explore further.';
+  }
+  return 'Understood. Standing by for your next query.';
+}
 
 /**
  * Checks if a line or clause represents meta-reasoning, self-critique,
@@ -384,7 +407,7 @@ export function sanitizePersonaOutput(text: string, personaName: string): string
 
   // 10. Check if usable in-character text remains
   const alphaChars = cleaned.replace(/[^a-zA-Z0-9]/g, '');
-  if (alphaChars.length < 3) {
+  if (alphaChars.length < 2) {
     return '';
   }
 
@@ -500,7 +523,7 @@ export function extractFinalAnswerFromReasoning(
     // Must be a coherent sentence/phrase
     const words = seg.split(/\s+/).filter(Boolean);
     const alphaChars = seg.replace(/[^a-zA-Z0-9]/g, '');
-    if (words.length >= 2 && alphaChars.length >= 5) {
+    if (words.length >= 1 && alphaChars.length >= 2) {
       cleanCandidates.unshift(seg);
       // Stop after collecting up to 6 clean contiguous sentences to accommodate adaptive length
       if (cleanCandidates.length >= 6) break;
@@ -531,12 +554,12 @@ export function extractFinalAnswerFromReasoning(
  *    fall back to message.reasoning/message.reasoning_content (or raw text).
  *    Apply the cleanup filter to strip thinking steps, preambles, and meta-commentary.
  * 3. Attempt to extract the actual final answer from within the reasoning text (e.g. last clean sentence or draft).
- * 4. If nothing usable remains after stripping, return the fallback:
- *    "Let me think about that differently — could you ask again?"
+ * 4. If nothing usable remains after stripping, return a clean, persona-appropriate fallback.
  */
 export function extractCleanPersonaResponse(
   raw: { text?: string; content?: string; reasoning?: string },
   personaName: string,
+  userQuery?: string,
 ): string {
   const contentCandidate = typeof raw.content === 'string' ? raw.content.trim() : '';
   const reasoningCandidate = typeof raw.reasoning === 'string' ? raw.reasoning.trim() : '';
@@ -545,7 +568,11 @@ export function extractCleanPersonaResponse(
   // 1. Primary: message.content
   if (contentCandidate.length > 0) {
     const cleanContent = sanitizePersonaOutput(contentCandidate, personaName);
-    if (cleanContent.length > 0) {
+    if (
+      cleanContent.length > 0 &&
+      !cleanContent.includes('think about that differently') &&
+      !cleanContent.includes('could you ask again')
+    ) {
       return cleanContent;
     }
   }
@@ -555,18 +582,27 @@ export function extractCleanPersonaResponse(
   if (fallbackRaw.length > 0) {
     // Attempt targeted extraction from reasoning trace first (e.g. last clean sentence, draft, or quote)
     const extractedFromReasoning = extractFinalAnswerFromReasoning(fallbackRaw, personaName);
-    if (extractedFromReasoning.length > 0 && extractedFromReasoning !== FALLBACK_REPLY) {
+    if (
+      extractedFromReasoning.length > 0 &&
+      extractedFromReasoning !== FALLBACK_REPLY &&
+      !extractedFromReasoning.includes('think about that differently') &&
+      !extractedFromReasoning.includes('could you ask again')
+    ) {
       return extractedFromReasoning;
     }
 
     // Secondary fallback: general sanitization filter
     const cleanReasoning = sanitizePersonaOutput(fallbackRaw, personaName);
-    if (cleanReasoning.length > 0) {
+    if (
+      cleanReasoning.length > 0 &&
+      !cleanReasoning.includes('think about that differently') &&
+      !cleanReasoning.includes('could you ask again')
+    ) {
       return cleanReasoning;
     }
   }
 
-  return FALLBACK_REPLY;
+  return getPersonaFallbackReply(personaName, userQuery);
 }
 
 /**
@@ -640,11 +676,63 @@ export interface PriorPersonaTurnAnswer {
 
 export type QueryLengthIntent = 'detailed' | 'concise' | 'standard';
 
+export type QueryLengthCategory =
+  | 'acknowledgment'
+  | 'greeting'
+  | 'storytelling'
+  | 'explanation'
+  | 'complex'
+  | 'general';
+
 export interface QueryLengthProfile {
   intent: QueryLengthIntent;
+  category: QueryLengthCategory;
   reason: string;
   targetWords: string;
   minTokens: number;
+}
+
+/**
+ * Detects whether a user query is a simple acknowledgment, affirmation, or short reaction
+ * (e.g. "ok", "cool", "nice", "got it", "thanks", "lol", "awesome", "sounds good", "understood").
+ */
+export function isAcknowledgmentOrReaction(query: string): boolean {
+  const clean = query
+    .toLowerCase()
+    .replace(/[^\w\s']/g, ' ')
+    .replace(/\s+/g, ' ')
+    .trim();
+
+  if (!clean) return false;
+
+  const words = clean.split(' ').filter(Boolean);
+  if (words.length > 8) return false;
+
+  const exactAckPhrases = new Set([
+    'ok', 'okay', 'oki', 'okey', 'k', 'kk', 'k thanks', 'ok thanks', 'ok thank you',
+    'ok cool', 'ok got it', 'cool', 'cool cool', 'cool beans', 'nice', 'very nice',
+    'nice one', 'noice', 'got it', 'gotcha', 'get it', 'i get it', 'understood',
+    'acknowledged', 'noted', 'copy', 'copy that', 'roger', 'roger that', 'thanks',
+    'thank you', 'thank u', 'thx', 'ty', 'tysm', 'many thanks', 'cheers',
+    'appreciate it', 'much appreciated', 'awesome', 'great', 'excellent',
+    'perfect', 'sweet', 'neat', 'super', 'sounds good', 'sounds great', 'sound good',
+    'looks good', 'look good', 'works for me', 'works', 'fair enough', 'makes sense',
+    'good to know', 'alright', 'all right', 'alrighty', 'aight', 'sure', 'sure thing',
+    'for sure', 'yep', 'yup', 'yeah', 'yea', 'yes', 'aye', 'definitely', 'certainly',
+    'no problem', 'no worries', 'np', 'anytime', 'my pleasure', 'all set', 'done',
+    'i see', 'oh i see', 'agreed', 'indeed', 'true', 'valid', 'right on',
+    'lol', 'lmao', 'rofl', 'haha', 'hahaha', 'hahahaha', 'hehe', 'hehehe', 'heh',
+    'wow', 'whoa', 'woah', 'omg', 'interesting', 'fascinating', 'good', 'fine',
+  ]);
+
+  if (exactAckPhrases.has(clean)) {
+    return true;
+  }
+
+  const ackRegex =
+    /^(?:ok(?:ay|i|ey)?|k{1,2}|cool(?: beans)?|nice(?: one)?|noice|got\s*(?:it|cha)|understood|acknowledged|noted|copy(?:\s*that)?|roger(?:\s*that)?|thanks?(?:\s*(?:you|u))?|thx|ty|tysm|cheers|much\s*appreciated|appreciate\s*it|awesome|great|perfect|sweet|neat|super|sounds?\s*(?:good|great)|looks?\s*good|works?\s*(?:for\s*me)?|fair\s*enough|makes?\s*sense|good\s*to\s*know|alright(?:y)?|all\s*right|aight|sure(?:\s*thing)?|for\s*sure|yep|yup|yeah|yea|yes|aye|definitely|certainly|no\s*problem|no\s*worries|np|anytime|my\s*pleasure|all\s*set|done|i\s*see|oh\s*i\s*see|agreed|indeed|true|valid|right\s*on|lol|lmao|rofl|haha+|hehe+|heh+|wow|whoa|woah|omg|interesting|fascinating|good|fine)(?:\s+(?:thanks?(?:\s*(?:you|u))?|thx|ty|so\s*much|a\s*lot|bro|man|dude|buddy|team|all|everyone|nova|orbit|cosmos|mate|folks|friend|it|too|as\s*well|then|for\s*(?:that|now|the\s*help)|now|sounds?\s*good|got\s*it|perfect|cool|nice|ok|awesome))*\s*$/i;
+
+  return ackRegex.test(clean);
 }
 
 /**
@@ -674,6 +762,7 @@ export function detectQueryLengthIntent(query: string): QueryLengthProfile {
     if (regex.test(q)) {
       return {
         intent: 'detailed',
+        category: 'storytelling',
         reason: 'Explicit storytelling/creative request',
         targetWords: '80-100 words',
         minTokens: 500,
@@ -698,6 +787,7 @@ export function detectQueryLengthIntent(query: string): QueryLengthProfile {
     if (regex.test(q)) {
       return {
         intent: 'detailed',
+        category: 'explanation',
         reason: 'Explicit explanation or breakdown request',
         targetWords: '80-100 words',
         minTokens: 500,
@@ -705,33 +795,47 @@ export function detectQueryLengthIntent(query: string): QueryLengthProfile {
     }
   }
 
-  // 3. Multi-clause or substantial query length (>= 10 words or multiple questions)
+  // 3. Simple Acknowledgments & Short Reactions ("ok", "cool", "got it", "thanks", "nice", "lol", etc.) -> CONCISE (15-30 words)
+  if (isAcknowledgmentOrReaction(q)) {
+    return {
+      intent: 'concise',
+      category: 'acknowledgment',
+      reason: 'Simple acknowledgment or short reaction',
+      targetWords: '15-30 words',
+      minTokens: 200,
+    };
+  }
+
+  // 4. Multi-clause or substantial query length (>= 10 words or multiple questions)
   if (wordCount >= 10 || (q.includes('?') && q.split(/[.?!]+/).filter((s) => s.trim().length > 0).length >= 2)) {
     return {
       intent: 'detailed',
+      category: 'complex',
       reason: 'Complex or multi-sentence user inquiry',
       targetWords: '80-100 words',
       minTokens: 500,
     };
   }
 
-  // 4. Greetings & Small Talk -> CONCISE (20-30 words)
+  // 5. Greetings & Small Talk -> CONCISE (20-30 words)
   const greetingRegex = /^(?:hi|hello|hey|heya|howdy|sup|yo|greetings|salutations|good\s+(?:morning|afternoon|evening|night|day))\b/i;
-  const smallTalkRegex = /^(?:how\s+are\s+you|how\s+r\s+u|how\s+(?:are\s+things|is\s+it\s+going)|what(?:\x27s|\s+is)\s+up|what\s+are\s+you|who\s+are\s+you|what\s+can\s+you\s+do|nice\s+to\s+meet\s+you|thanks?|thank\s+you|bye|goodbye|see\s+ya|ping|test)\b/i;
+  const smallTalkRegex = /^(?:how\s+are\s+you|how\s+r\s+u|how\s+(?:are\s+things|is\s+it\s+going)|what(?:\x27s|\s+is)\s+up|what\s+are\s+you|who\s+are\s+you|what\s+can\s+you\s+do|nice\s+to\s+meet\s+you|bye|goodbye|see\s+ya|ping|test)\b/i;
 
   if (wordCount <= 6 && (greetingRegex.test(q) || smallTalkRegex.test(q))) {
     return {
       intent: 'concise',
+      category: 'greeting',
       reason: 'Simple greeting or short small talk',
       targetWords: '20-30 words',
       minTokens: 200,
     };
   }
 
-  // 5. General inquiries (e.g. "What is photosynthesis?", "Who was Ada Lovelace?"):
+  // 6. General inquiries (e.g. "What is photosynthesis?", "Who was Ada Lovelace?"):
   // Default to detailed/comprehensive (70-100 words) so users never receive 10-word fragments!
   return {
     intent: 'detailed',
+    category: 'general',
     reason: 'General inquiry requiring complete, well-developed answer',
     targetWords: '70-100 words',
     minTokens: 500,
@@ -805,10 +909,35 @@ export async function executeSinglePersona(
   // Inject mandatory current turn directive based on detected intent
   let turnDirective = '';
   if (lengthProfile.intent === 'concise') {
-    turnDirective = `\n\n[MANDATORY CURRENT TURN INSTRUCTION - CONCISE GREETING MODE]:
+    if (lengthProfile.category === 'acknowledgment') {
+      let ackGuidance = '';
+      if (persona.id === 'nova') {
+        ackGuidance =
+          'As NOVA (Professional & Factual): provide a crisp, natural confirmation or statement of readiness (e.g. "Acknowledged. Standing by for your next directive or topic.") with zero fluff or emojis. Do NOT say you are confused or ask the user to ask again.';
+      } else if (persona.id === 'orbit') {
+        ackGuidance =
+          'As ORBIT (Casual & Friendly): give a brief, cheerful confirmation or friendly sign-off with an emoji (e.g. "Awesome, you got it! Let me know if you need anything else! ✨") without inventing any story or going off-topic.';
+      } else {
+        ackGuidance =
+          'As COSMOS (Calm & Wise): offer a tranquil, warm, and gentle acknowledgment (e.g. "You are very welcome. Take your time, and I am here whenever you wish to proceed.") without introducing a new unrelated topic.';
+      }
+
+      turnDirective = `\n\n[MANDATORY CURRENT TURN INSTRUCTION - CONCISE ACKNOWLEDGMENT MODE]:
+- The user sent a simple acknowledgment or short reaction: "${query.trim()}".
+- Keep your response brief, natural, and concise (around 15 to 30 words).
+- STRICTLY FORBIDDEN:
+  • Do NOT invent a new story, fable, or narrative.
+  • Do NOT go off-topic or introduce unrelated concepts.
+  • Do NOT output a confused response asking the user to repeat, rephrase, or "think about that differently".
+- Simply acknowledge, confirm, or state readiness for the next topic in your own authentic persona voice.
+- ${ackGuidance}
+- Conclude on a complete, finished sentence.`;
+    } else {
+      turnDirective = `\n\n[MANDATORY CURRENT TURN INSTRUCTION - CONCISE GREETING / SMALL TALK MODE]:
 - The user is offering a brief greeting or casual small talk: "${query.trim()}".
 - Keep your response concise, sharp, and friendly (around 20 to 30 words).
 - End on a complete, finished sentence.`;
+    }
   } else {
     let personaGuidance = '';
     if (persona.id === 'nova') {
@@ -839,7 +968,12 @@ export async function executeSinglePersona(
         .map((p) => `• ${p.name.toUpperCase()} said:\n"${p.text.trim()}"`)
         .join('\n\n');
 
-      userContent += `\n\n=== CONTEXT FROM OTHER PERSONAS THIS TURN ===\n${priorContext}\n============================================\n(You may react to, agree/disagree with, or build on what they said, while answering the user in your own voice and following your adaptive length rules.)`;
+      const ackNote =
+        lengthProfile.category === 'acknowledgment'
+          ? '\n(Since the user gave a simple acknowledgment, stay brief and natural. Do NOT start a new story, debate, or go off-topic based on what other personas said.)'
+          : '\n(You may react to, agree/disagree with, or build on what they said, while answering the user in your own voice and following your adaptive length rules.)';
+
+      userContent += `\n\n=== CONTEXT FROM OTHER PERSONAS THIS TURN ===\n${priorContext}\n============================================${ackNote}`;
     }
   }
 
@@ -847,7 +981,11 @@ export async function executeSinglePersona(
   if (lengthProfile.intent === 'detailed') {
     userContent += `\n\n(Please write a rich, complete response of around 80-100 words in your voice. Do not summarize into a few words or fragments.)`;
   } else if (lengthProfile.intent === 'concise') {
-    userContent += `\n\n(Keep reply concise, around 20-30 words.)`;
+    if (lengthProfile.category === 'acknowledgment') {
+      userContent += `\n\n(Acknowledge naturally and briefly in around 15-30 words. Do not invent a story or ask to rephrase.)`;
+    } else {
+      userContent += `\n\n(Keep reply concise, around 20-30 words.)`;
+    }
   }
 
   const messages: Array<{ role: 'system' | 'user' | 'assistant'; content: string }> = [
@@ -878,6 +1016,7 @@ export async function executeSinglePersona(
           text: res.text,
         },
         persona.name,
+        query,
       );
       return {
         ...baseResponse,
