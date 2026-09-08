@@ -502,8 +502,8 @@ export function extractFinalAnswerFromReasoning(
     const alphaChars = seg.replace(/[^a-zA-Z0-9]/g, '');
     if (words.length >= 2 && alphaChars.length >= 5) {
       cleanCandidates.unshift(seg);
-      // Stop after collecting 1 or 2 clean contiguous sentences
-      if (cleanCandidates.length >= 2) break;
+      // Stop after collecting up to 6 clean contiguous sentences to accommodate adaptive length
+      if (cleanCandidates.length >= 6) break;
     } else if (cleanCandidates.length > 0) {
       // Break contiguous sequence
       break;
@@ -660,7 +660,7 @@ export async function executeSinglePersona(
     status: 'running',
   };
 
-  const primary = resolvePersonaProviderConfig(persona, false, persona.maxTokens || 100);
+  const primary = resolvePersonaProviderConfig(persona, false, persona.maxTokens || 250);
   if (primary.error) {
     return {
       ...baseResponse,
@@ -672,7 +672,7 @@ export async function executeSinglePersona(
 
   let fallbackConfig: AIProviderConfig | null = null;
   if (persona.enableFailover && persona.fallbackProviderId) {
-    const fb = resolvePersonaProviderConfig(persona, true, persona.maxTokens || 100);
+    const fb = resolvePersonaProviderConfig(persona, true, persona.maxTokens || 250);
     if (!fb.error && fb.provider) {
       fallbackConfig = fb.provider;
     }
@@ -696,7 +696,7 @@ export async function executeSinglePersona(
   const rawLang = responseLanguage ?? storage.getMultiChatResponseLanguage();
   const lang = (typeof rawLang === 'string' && rawLang.trim()) ? rawLang.trim() : 'English';
   if (lang) {
-    systemContent += `\n\nRespond only in: ${lang}. Strictly output your response in ${lang} while maintaining your personality style and staying under 30 words.`;
+    systemContent += `\n\nRespond only in: ${lang}. Strictly output your response in ${lang} while maintaining your personality style and adhering to your adaptive length rules.`;
   }
 
   // If previous personas answered in this turn, provide their answers as live turn context
@@ -708,7 +708,7 @@ export async function executeSinglePersona(
         .map((p) => `• ${p.name.toUpperCase()} said:\n"${p.text.trim()}"`)
         .join('\n\n');
 
-      userContent += `\n\n=== CONTEXT FROM OTHER PERSONAS THIS TURN ===\n${priorContext}\n============================================\n(You may react to, agree/disagree with, or build on what they said, while answering the user and keeping your answer under 30 words in your own voice.)`;
+      userContent += `\n\n=== CONTEXT FROM OTHER PERSONAS THIS TURN ===\n${priorContext}\n============================================\n(You may react to, agree/disagree with, or build on what they said, while answering the user in your own voice and following your adaptive length rules.)`;
     }
   }
 
@@ -726,7 +726,7 @@ export async function executeSinglePersona(
       fallbackConfig,
       enableFailover: Boolean(persona.enableFailover),
       temperature: persona.id === 'orbit' ? 0.7 : persona.id === 'cosmos' ? 0.5 : 0.2,
-      maxTokens: Math.max(persona.maxTokens || 100, 350),
+      maxTokens: Math.max(persona.maxTokens || 250, 400),
       timeoutMs: 40000,
     });
 

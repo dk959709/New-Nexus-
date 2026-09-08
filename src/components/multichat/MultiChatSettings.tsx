@@ -947,7 +947,7 @@ export function MultiChatSettings({ onSaved }: MultiChatSettingsProps) {
                       value={persona.maxTokens}
                       onChange={(e) =>
                         handlePersonaChange(persona.id, {
-                          maxTokens: Math.max(40, parseInt(e.target.value, 10) || 100),
+                          maxTokens: Math.max(40, parseInt(e.target.value, 10) || 250),
                         })
                       }
                       style={{
