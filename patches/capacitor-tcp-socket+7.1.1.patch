@@ -7,7 +7,7 @@ index 0000000..0d259dd
 +o/classes
 diff --git a/node_modules/capacitor-tcp-socket/android/build/.transforms/b9b2b5aa3dfae75a0ece1ec7157e13f5/transformed/classes/classes_dex/classes.dex b/node_modules/capacitor-tcp-socket/android/build/.transforms/b9b2b5aa3dfae75a0ece1ec7157e13f5/transformed/classes/classes_dex/classes.dex
 new file mode 100644
-index 0000000..782fe96
+index 0000000..b90fa77
 Binary files /dev/null and b/node_modules/capacitor-tcp-socket/android/build/.transforms/b9b2b5aa3dfae75a0ece1ec7157e13f5/transformed/classes/classes_dex/classes.dex differ
 diff --git a/node_modules/capacitor-tcp-socket/android/build/intermediates/aapt_friendly_merged_manifests/debug/processDebugManifest/aapt/AndroidManifest.xml b/node_modules/capacitor-tcp-socket/android/build/intermediates/aapt_friendly_merged_manifests/debug/processDebugManifest/aapt/AndroidManifest.xml
 new file mode 100644
@@ -50,7 +50,7 @@ index 0000000..231d312
 \ No newline at end of file
 diff --git a/node_modules/capacitor-tcp-socket/android/build/intermediates/aar_main_jar/debug/syncDebugLibJars/classes.jar b/node_modules/capacitor-tcp-socket/android/build/intermediates/aar_main_jar/debug/syncDebugLibJars/classes.jar
 new file mode 100644
-index 0000000..017d24d
+index 0000000..724f2a6
 Binary files /dev/null and b/node_modules/capacitor-tcp-socket/android/build/intermediates/aar_main_jar/debug/syncDebugLibJars/classes.jar differ
 diff --git a/node_modules/capacitor-tcp-socket/android/build/intermediates/aar_metadata/debug/writeDebugAarMetadata/aar-metadata.properties b/node_modules/capacitor-tcp-socket/android/build/intermediates/aar_metadata/debug/writeDebugAarMetadata/aar-metadata.properties
 new file mode 100644
@@ -77,7 +77,7 @@ new file mode 100644
 index 0000000..e69de29
 diff --git a/node_modules/capacitor-tcp-socket/android/build/intermediates/compile_library_classes_jar/debug/bundleLibCompileToJarDebug/classes.jar b/node_modules/capacitor-tcp-socket/android/build/intermediates/compile_library_classes_jar/debug/bundleLibCompileToJarDebug/classes.jar
 new file mode 100644
-index 0000000..8f5060b
+index 0000000..0058a03
 Binary files /dev/null and b/node_modules/capacitor-tcp-socket/android/build/intermediates/compile_library_classes_jar/debug/bundleLibCompileToJarDebug/classes.jar differ
 diff --git a/node_modules/capacitor-tcp-socket/android/build/intermediates/compile_r_class_jar/debug/generateDebugRFile/R.jar b/node_modules/capacitor-tcp-socket/android/build/intermediates/compile_r_class_jar/debug/generateDebugRFile/R.jar
 new file mode 100644
@@ -135,19 +135,23 @@ index 0000000..53baf66
 \ No newline at end of file
 diff --git a/node_modules/capacitor-tcp-socket/android/build/intermediates/javac/debug/compileDebugJavaWithJavac/classes/com/svend/plugins/tcp/socket/TcpSocketPlugin$1.class b/node_modules/capacitor-tcp-socket/android/build/intermediates/javac/debug/compileDebugJavaWithJavac/classes/com/svend/plugins/tcp/socket/TcpSocketPlugin$1.class
 new file mode 100644
-index 0000000..c059f99
+index 0000000..e63c582
 Binary files /dev/null and b/node_modules/capacitor-tcp-socket/android/build/intermediates/javac/debug/compileDebugJavaWithJavac/classes/com/svend/plugins/tcp/socket/TcpSocketPlugin$1.class differ
 diff --git a/node_modules/capacitor-tcp-socket/android/build/intermediates/javac/debug/compileDebugJavaWithJavac/classes/com/svend/plugins/tcp/socket/TcpSocketPlugin$2.class b/node_modules/capacitor-tcp-socket/android/build/intermediates/javac/debug/compileDebugJavaWithJavac/classes/com/svend/plugins/tcp/socket/TcpSocketPlugin$2.class
 new file mode 100644
-index 0000000..5ddb5c2
+index 0000000..9bdc037
 Binary files /dev/null and b/node_modules/capacitor-tcp-socket/android/build/intermediates/javac/debug/compileDebugJavaWithJavac/classes/com/svend/plugins/tcp/socket/TcpSocketPlugin$2.class differ
+diff --git a/node_modules/capacitor-tcp-socket/android/build/intermediates/javac/debug/compileDebugJavaWithJavac/classes/com/svend/plugins/tcp/socket/TcpSocketPlugin$3.class b/node_modules/capacitor-tcp-socket/android/build/intermediates/javac/debug/compileDebugJavaWithJavac/classes/com/svend/plugins/tcp/socket/TcpSocketPlugin$3.class
+new file mode 100644
+index 0000000..c4fdbf5
+Binary files /dev/null and b/node_modules/capacitor-tcp-socket/android/build/intermediates/javac/debug/compileDebugJavaWithJavac/classes/com/svend/plugins/tcp/socket/TcpSocketPlugin$3.class differ
 diff --git a/node_modules/capacitor-tcp-socket/android/build/intermediates/javac/debug/compileDebugJavaWithJavac/classes/com/svend/plugins/tcp/socket/TcpSocketPlugin$DataEncoding.class b/node_modules/capacitor-tcp-socket/android/build/intermediates/javac/debug/compileDebugJavaWithJavac/classes/com/svend/plugins/tcp/socket/TcpSocketPlugin$DataEncoding.class
 new file mode 100644
 index 0000000..3c413d3
 Binary files /dev/null and b/node_modules/capacitor-tcp-socket/android/build/intermediates/javac/debug/compileDebugJavaWithJavac/classes/com/svend/plugins/tcp/socket/TcpSocketPlugin$DataEncoding.class differ
 diff --git a/node_modules/capacitor-tcp-socket/android/build/intermediates/javac/debug/compileDebugJavaWithJavac/classes/com/svend/plugins/tcp/socket/TcpSocketPlugin.class b/node_modules/capacitor-tcp-socket/android/build/intermediates/javac/debug/compileDebugJavaWithJavac/classes/com/svend/plugins/tcp/socket/TcpSocketPlugin.class
 new file mode 100644
-index 0000000..396cbb3
+index 0000000..e5c75a7
 Binary files /dev/null and b/node_modules/capacitor-tcp-socket/android/build/intermediates/javac/debug/compileDebugJavaWithJavac/classes/com/svend/plugins/tcp/socket/TcpSocketPlugin.class differ
 diff --git a/node_modules/capacitor-tcp-socket/android/build/intermediates/local_only_symbol_list/debug/parseDebugLocalResources/R-def.txt b/node_modules/capacitor-tcp-socket/android/build/intermediates/local_only_symbol_list/debug/parseDebugLocalResources/R-def.txt
 new file mode 100644
@@ -206,7 +210,7 @@ index 0000000..08f4ebe
 \ No newline at end of file
 diff --git a/node_modules/capacitor-tcp-socket/android/build/intermediates/runtime_library_classes_jar/debug/bundleLibRuntimeToJarDebug/classes.jar b/node_modules/capacitor-tcp-socket/android/build/intermediates/runtime_library_classes_jar/debug/bundleLibRuntimeToJarDebug/classes.jar
 new file mode 100644
-index 0000000..a4445b4
+index 0000000..3484683
 Binary files /dev/null and b/node_modules/capacitor-tcp-socket/android/build/intermediates/runtime_library_classes_jar/debug/bundleLibRuntimeToJarDebug/classes.jar differ
 diff --git a/node_modules/capacitor-tcp-socket/android/build/intermediates/symbol_list_with_package_name/debug/generateDebugRFile/package-aware-r.txt b/node_modules/capacitor-tcp-socket/android/build/intermediates/symbol_list_with_package_name/debug/generateDebugRFile/package-aware-r.txt
 new file mode 100644
@@ -217,7 +221,7 @@ index 0000000..f1d7815
 +com.svend.plugins.tcp.socket
 diff --git a/node_modules/capacitor-tcp-socket/android/build/outputs/aar/capacitor-tcp-socket-debug.aar b/node_modules/capacitor-tcp-socket/android/build/outputs/aar/capacitor-tcp-socket-debug.aar
 new file mode 100644
-index 0000000..3f68254
+index 0000000..efaa6dd
 Binary files /dev/null and b/node_modules/capacitor-tcp-socket/android/build/outputs/aar/capacitor-tcp-socket-debug.aar differ
 diff --git a/node_modules/capacitor-tcp-socket/android/build/outputs/logs/manifest-merger-debug-report.txt b/node_modules/capacitor-tcp-socket/android/build/outputs/logs/manifest-merger-debug-report.txt
 new file mode 100644
@@ -241,9 +245,25 @@ index 0000000..3ca0133
 +		INJECTED from /workspaces/New-Nexus-/node_modules/capacitor-tcp-socket/android/src/main/AndroidManifest.xml
 +	android:minSdkVersion
 +		INJECTED from /workspaces/New-Nexus-/node_modules/capacitor-tcp-socket/android/src/main/AndroidManifest.xml
+diff --git a/node_modules/capacitor-tcp-socket/android/build/tmp/compileDebugJavaWithJavac/compileTransaction/stash-dir/TcpSocketPlugin$1.class.uniqueId1 b/node_modules/capacitor-tcp-socket/android/build/tmp/compileDebugJavaWithJavac/compileTransaction/stash-dir/TcpSocketPlugin$1.class.uniqueId1
+new file mode 100644
+index 0000000..c059f99
+Binary files /dev/null and b/node_modules/capacitor-tcp-socket/android/build/tmp/compileDebugJavaWithJavac/compileTransaction/stash-dir/TcpSocketPlugin$1.class.uniqueId1 differ
+diff --git a/node_modules/capacitor-tcp-socket/android/build/tmp/compileDebugJavaWithJavac/compileTransaction/stash-dir/TcpSocketPlugin$2.class.uniqueId0 b/node_modules/capacitor-tcp-socket/android/build/tmp/compileDebugJavaWithJavac/compileTransaction/stash-dir/TcpSocketPlugin$2.class.uniqueId0
+new file mode 100644
+index 0000000..5ddb5c2
+Binary files /dev/null and b/node_modules/capacitor-tcp-socket/android/build/tmp/compileDebugJavaWithJavac/compileTransaction/stash-dir/TcpSocketPlugin$2.class.uniqueId0 differ
+diff --git a/node_modules/capacitor-tcp-socket/android/build/tmp/compileDebugJavaWithJavac/compileTransaction/stash-dir/TcpSocketPlugin$DataEncoding.class.uniqueId3 b/node_modules/capacitor-tcp-socket/android/build/tmp/compileDebugJavaWithJavac/compileTransaction/stash-dir/TcpSocketPlugin$DataEncoding.class.uniqueId3
+new file mode 100644
+index 0000000..3c413d3
+Binary files /dev/null and b/node_modules/capacitor-tcp-socket/android/build/tmp/compileDebugJavaWithJavac/compileTransaction/stash-dir/TcpSocketPlugin$DataEncoding.class.uniqueId3 differ
+diff --git a/node_modules/capacitor-tcp-socket/android/build/tmp/compileDebugJavaWithJavac/compileTransaction/stash-dir/TcpSocketPlugin.class.uniqueId2 b/node_modules/capacitor-tcp-socket/android/build/tmp/compileDebugJavaWithJavac/compileTransaction/stash-dir/TcpSocketPlugin.class.uniqueId2
+new file mode 100644
+index 0000000..396cbb3
+Binary files /dev/null and b/node_modules/capacitor-tcp-socket/android/build/tmp/compileDebugJavaWithJavac/compileTransaction/stash-dir/TcpSocketPlugin.class.uniqueId2 differ
 diff --git a/node_modules/capacitor-tcp-socket/android/build/tmp/compileDebugJavaWithJavac/previous-compilation-data.bin b/node_modules/capacitor-tcp-socket/android/build/tmp/compileDebugJavaWithJavac/previous-compilation-data.bin
 new file mode 100644
-index 0000000..5fac0cb
+index 0000000..0612b1c
 Binary files /dev/null and b/node_modules/capacitor-tcp-socket/android/build/tmp/compileDebugJavaWithJavac/previous-compilation-data.bin differ
 diff --git a/node_modules/capacitor-tcp-socket/android/src/main/java/com/svend/plugins/tcp/socket/TcpSocketPlugin.java b/node_modules/capacitor-tcp-socket/android/src/main/java/com/svend/plugins/tcp/socket/TcpSocketPlugin.java
 index 45cff47..6b0004e 100644
