@@ -163,7 +163,7 @@ export async function extractMediaWithYtDlp(rawUrl: string): Promise<MediaExtrac
     let errorMessage = 'Failed to extract media via yt-dlp';
     if (err instanceof Error) {
       errorMessage = err.message;
-      const stderr = (err as Record<string, unknown>).stderr;
+      const stderr = (err as unknown as Record<string, unknown>).stderr;
       if (typeof stderr === 'string' && stderr.trim().length > 0) {
         const errorLine = stderr.split('\n').find((line) => line.includes('ERROR:'));
         if (errorLine) {
