@@ -249,6 +249,8 @@ export interface JarvisPlannerOutput {
   wikipediaQuery: string;
   needsWikidata: boolean;
   wikidataQuery: string;
+  needsWeather?: boolean;
+  weatherLocation?: string;
 }
 
 export interface JarvisSystemConfig {

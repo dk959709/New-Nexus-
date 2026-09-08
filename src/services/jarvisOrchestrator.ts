@@ -1,5 +1,6 @@
 import { api } from '@/services/api';
 import { storage, DEFAULT_AGENT_SYSTEM_PROMPTS } from '@/lib/storage';
+import { getLocation } from '@/services/location';
 import {
   searchWikipedia,
   getWikipediaSummary,
@@ -2338,6 +2339,8 @@ Please perform your specialized processing for this inquiry. Provide clear, conc
     wikipediaQuery: '',
     needsWikidata: false,
     wikidataQuery: '',
+    needsWeather: false,
+    weatherLocation: '',
   };
 
   if (agentConfigs.planner.enabled) {
@@ -2424,13 +2427,17 @@ You are the JARVIS Planner. You MUST output ONLY a valid JSON object strictly ma
   "needsWikipedia": boolean,
   "wikipediaQuery": string (MANDATORY: clean subject/title if needsWikipedia is true, or empty string "" if false),
   "needsWikidata": boolean,
-  "wikidataQuery": string (MANDATORY: clean entity name if needsWikidata is true, or empty string "" if false)
+  "wikidataQuery": string (MANDATORY: clean entity name if needsWikidata is true, or empty string "" if false),
+  "needsWeather": boolean (true if inquiry asks about current weather, temperature, forecast, rain, snow, wind, humidity, or atmospheric conditions),
+  "weatherLocation": string (clean city or location name if mentioned, or empty string "" if not mentioned)
 }
 CRITICAL RULES:
-1. Under NO circumstance should "needsResearchQuery", "wikipediaQuery", or "wikidataQuery" be omitted from the JSON output. All three keys MUST always be present in the returned JSON object.
+1. Under NO circumstance should "needsResearchQuery", "wikipediaQuery", "wikidataQuery", or "weatherLocation" be omitted from the JSON output. All four string keys MUST always be present in the returned JSON object.
 2. When needsResearch is true, "needsResearchQuery" MUST be a clean, specific search phrase (not the full raw user question) that the Researcher agent should use for its web search — strip out conversational words, filler ("Is this true?", "Tell me about"), punctuation, and focus only on the actual topic being researched (e.g. for "This is true? Rich HTML can carry hidden dangerous code...", needsResearchQuery MUST be "HTML security risks hidden code tracking scripts"). If needsResearch is false, set it to "".
 3. When needsWikipedia is true, "wikipediaQuery" MUST be the clean, concise subject/title (e.g. for "tell about brawl stars game", wikipediaQuery MUST be "Brawl Stars"). If needsWikipedia is false, set it to "".
-4. When needsWikidata is true, "wikidataQuery" MUST be the clean entity name. If needsWikidata is false, set it to "".`;
+4. When needsWikidata is true, "wikidataQuery" MUST be the clean entity name. If needsWikidata is false, set it to "".
+5. When needsWeather is true, set "weatherLocation" to the target city or location name (e.g. for "weather in Paris", weatherLocation MUST be "Paris"). If no specific location is mentioned, set it to "". When needsWeather is false, set it to "".
+6. When needsWeather is true, always set needsResearch: false, needsWikipedia: false, and needsWikidata: false (the system directly routes to the dedicated Live Weather API without general web search).`;
 
     let planRes: { ok: boolean; text: string; error?: string; providerName: string; model: string; usedFallback?: boolean };
     let duration = 0;
@@ -2450,6 +2457,8 @@ CRITICAL RULES:
         wikipediaQuery: '',
         needsWikidata: false,
         wikidataQuery: '',
+        needsWeather: false,
+        weatherLocation: '',
         needsKnowledgeAgent: false,
         needsReview: false,
         needsFactCheck: false,
@@ -2491,6 +2500,8 @@ CRITICAL RULES:
           wikipediaQuery: '',
           needsWikidata: false,
           wikidataQuery: '',
+          needsWeather: false,
+          weatherLocation: '',
         };
       }
       if (!Array.isArray(plannerOutput.plan)) {
@@ -2534,6 +2545,13 @@ CRITICAL RULES:
         }
       } else {
         plannerOutput.wikidataQuery = '';
+      }
+
+      plannerOutput.needsWeather = Boolean(plannerOutput.needsWeather);
+      if (typeof plannerOutput.weatherLocation === 'string' && plannerOutput.weatherLocation.trim()) {
+        plannerOutput.weatherLocation = plannerOutput.weatherLocation.trim();
+      } else {
+        plannerOutput.weatherLocation = '';
       }
 
       if (isCodeSlashCommand(query)) {
@@ -2820,15 +2838,72 @@ CRITICAL RULES:
     );
   };
 
+  const extractWeatherLocation = (queryText: string, rawLocation?: string): string => {
+    if (rawLocation && typeof rawLocation === 'string' && rawLocation.trim()) {
+      const cleaned = rawLocation.trim().replace(/[?.!,]+$/, '');
+      if (!/^(here|my area|my location|my city|current location|today|tomorrow|now|currently)$/i.test(cleaned)) {
+        return cleaned;
+      }
+    }
+
+    const matchIn = queryText.match(/(?:in|for|at|around|near|of)\s+([a-zA-Z\s.,'-]+?)(?:\s+(?:today|tomorrow|this week|now|tonight|currently|right now|\?|\.|$)|$)/i);
+    if (matchIn && matchIn[1]) {
+      const cand = matchIn[1].trim().replace(/[?.!,]+$/, '');
+      if (cand && !/^(here|my area|my location|my city|current location|today|tomorrow|now|currently)$/i.test(cand)) {
+        return cand;
+      }
+    }
+
+    const matchWhat = queryText.match(/(?:what is|what's|how is|how's|check)\s+the\s+weather\s+(?:in|for|at)\s+([a-zA-Z\s.,'-]+)/i);
+    if (matchWhat && matchWhat[1]) {
+      const cand = matchWhat[1].trim().replace(/[?.!,]+$/, '');
+      if (cand && !/^(here|my area|my location|my city|current location|today|tomorrow|now|currently)$/i.test(cand)) {
+        return cand;
+      }
+    }
+
+    return '';
+  };
+
+  const isWeatherInquiry = (text: string): boolean => {
+    const lower = text.toLowerCase();
+    if (/\bunder the weather\b/i.test(lower) || /\bweather(?:ing)? the storm\b/i.test(lower)) {
+      return false;
+    }
+    return /\b(weather|temperature|forecast|rain|raining|snow|snowing|precipitation|wind speed|humidity|degrees)\b/i.test(lower);
+  };
+
   const isWebFetch = isWebFetchQuery(query);
   const targetWebUrl = isWebFetch ? extractWebFetchUrl(query) : '';
   const isSearchOverride = isSearchOverrideQuery(query);
   const strippedQuery = isWebFetch ? targetWebUrl : isSearchOverride ? stripSearchOverridePrefix(query) : query;
   const combinedQueryText = `${strippedQuery} ${plannerOutput.task || ''}`;
+
+  // Strict enforcement: When inquiry is weather-related or Planner flagged needsWeather
+  const isWeatherQuery =
+    !isWebFetch &&
+    !isSearchOverride &&
+    (Boolean(plannerOutput.needsWeather) || isWeatherInquiry(combinedQueryText));
+
+  if (isWeatherQuery) {
+    plannerOutput.needsWeather = true;
+    plannerOutput.needsResearch = false;
+    plannerOutput.needsResearchQuery = '';
+    plannerOutput.needsWikipedia = false;
+    plannerOutput.wikipediaQuery = '';
+    plannerOutput.needsWikidata = false;
+    plannerOutput.wikidataQuery = '';
+    plannerOutput.needsDiagram = false;
+    plannerOutput.needsChart = false;
+    plannerOutput.needsImage = false;
+    if (!plannerOutput.weatherLocation) {
+      plannerOutput.weatherLocation = extractWeatherLocation(strippedQuery, plannerOutput.weatherLocation);
+    }
+  }
+
   const isProductLineupQuery = !isWebFetch && isProductLineupInquiry(combinedQueryText);
-  const isNewsQuery = !isWebFetch && !isProductLineupQuery && isNewsInquiry(combinedQueryText);
-  const isWorldNews = !isWebFetch && !isProductLineupQuery && isWorldNewsInquiry(combinedQueryText);
-  const isWeatherQuery = !isWebFetch && !isSearchOverride && /\b(weather|temperature|forecast|rain|snow|wind|humidity|degrees)\b/i.test(combinedQueryText);
+  const isNewsQuery = !isWebFetch && !isProductLineupQuery && !isWeatherQuery && isNewsInquiry(combinedQueryText);
+  const isWorldNews = !isWebFetch && !isProductLineupQuery && !isWeatherQuery && isWorldNewsInquiry(combinedQueryText);
   const isPersonalQuery = !isWebFetch && !isSearchOverride && (isPersonalOrHumanAiComparison(query) || isPersonalOrHumanAiComparison(combinedQueryText));
   const isSelfQuery = !isWebFetch && !isSearchOverride && (isSelfReferentialInquiry(query) || isSelfReferentialInquiry(combinedQueryText));
 
@@ -2857,7 +2932,9 @@ CRITICAL RULES:
       deepResearch ||
       Boolean(plannerOutput.needsResearch) ||
       Boolean(plannerOutput.needsWikipedia) ||
-      Boolean(plannerOutput.needsWikidata));
+      Boolean(plannerOutput.needsWikidata) ||
+      Boolean(plannerOutput.needsWeather) ||
+      isWeatherQuery);
 
   let wikidataEntity: WikidataEntity | null = null;
   let wikidataReportSection = '';
@@ -2868,6 +2945,7 @@ CRITICAL RULES:
     !isCodeCommand &&
     !isAutoCode &&
     !isWebFetch &&
+    !isWeatherQuery &&
     agentConfigs.factChecker.enabled &&
     (deepResearch || (shouldResearch && Boolean(plannerOutput.needsFactCheck)));
 
@@ -3176,29 +3254,101 @@ CRITICAL RULES:
       let wikidataCandidate: RawSearchResultCandidate | null = null;
       let wikiSummaryCandidate: RawSearchResultCandidate | null = null;
 
-      // 1. Weather Query handling using api.weather()
+      // 1. Live Weather API (Open-Meteo) integration when needsWeather is true or isWeatherQuery is true
       if (isWeatherQuery) {
-        try {
-          const matchCity = strippedQuery.match(/(?:in|for|at)\s+([a-zA-Z\s]+)(?:\?|$)/i);
-          const cityName = matchCity ? matchCity[1].trim() : 'London';
-          console.log('[JARVIS Researcher] Calling api.weather() for weather query, city:', cityName);
-          const weatherRes = await api.weather(`city=${encodeURIComponent(cityName)}`);
-          console.log('[JARVIS Researcher] RAW DATA USED (DEBUG) - Weather API Response:', JSON.stringify(weatherRes, null, 2));
-          if (weatherRes && weatherRes.current) {
-            const wSummary = `Location: ${weatherRes.current.location} | Temperature: ${weatherRes.current.temperature}°C (Feels like: ${weatherRes.current.feelsLike}°C) | Condition: ${weatherRes.current.conditionLabel} | Humidity: ${weatherRes.current.humidity}% | Wind: ${weatherRes.current.wind} km/h`;
+        logToJarvisTerminal('Live Weather query detected - accessing Open-Meteo weather service');
+        let targetCity = extractWeatherLocation(strippedQuery, plannerOutput.weatherLocation);
+        let coordsParam = '';
+
+        // If no city is specified in the query or plan, check saved locations from storage
+        if (!targetCity) {
+          try {
+            const savedLocations = storage.getLocations();
+            if (Array.isArray(savedLocations) && savedLocations.length > 0) {
+              const primarySaved = savedLocations[0];
+              const savedName = primarySaved.title || primarySaved.query || primarySaved.subtitle;
+              if (savedName && typeof savedName === 'string' && savedName.trim()) {
+                targetCity = savedName.trim();
+                logToJarvisTerminal(`Using user's saved location: "${targetCity}"`);
+              }
+            }
+          } catch (storageErr) {
+            console.warn('[JARVIS Researcher] Error reading saved locations:', storageErr);
+          }
+        }
+
+        // If still no city, try detected device geolocation via getLocation() with a short timeout
+        if (!targetCity && typeof navigator !== 'undefined' && 'geolocation' in navigator) {
+          try {
+            logToJarvisTerminal('Detecting device coordinates for local weather...');
+            const coords = await Promise.race([
+              getLocation(),
+              new Promise<never>((_, reject) => setTimeout(() => reject(new Error('timeout')), 3500)),
+            ]);
+            if (coords && typeof coords.latitude === 'number' && typeof coords.longitude === 'number') {
+              coordsParam = `latitude=${coords.latitude}&longitude=${coords.longitude}`;
+              logToJarvisTerminal(`Device location detected: (${coords.latitude.toFixed(2)}, ${coords.longitude.toFixed(2)})`);
+            }
+          } catch (geoErr) {
+            console.log('[JARVIS Researcher] Geolocation unavailable or timed out:', geoErr);
+          }
+        }
+
+        if (targetCity || coordsParam) {
+          const apiQuery = targetCity ? `city=${encodeURIComponent(targetCity)}` : coordsParam;
+          try {
+            console.log(`[JARVIS Researcher] Calling api.weather("${apiQuery}")...`);
+            const weatherRes = await api.weather(apiQuery);
+            console.log('[JARVIS Researcher] RAW DATA USED (DEBUG) - Weather API Response:', JSON.stringify(weatherRes, null, 2));
+
+            if (weatherRes && weatherRes.current) {
+              const c = weatherRes.current;
+              const wSummary = `Location: ${c.location} | Temperature: ${c.temperature}°C (Feels like: ${c.feelsLike}°C) | Condition: ${c.conditionLabel} | Humidity: ${c.humidity}% | Wind: ${c.wind} km/h | Surface Pressure: ${c.pressure} hPa | Rain Probability: ${c.rainProbability}% | UV Index: ${c.uvIndex} | Sunrise: ${c.sunrise} | Sunset: ${c.sunset}`;
+
+              searchResults = [{
+                title: `Live Weather for ${c.location}: ${c.temperature}°C, ${c.conditionLabel}`,
+                url: `/weather?city=${encodeURIComponent(c.location)}`,
+                description: wSummary,
+                domain: 'open-meteo.com',
+                type: 'web',
+              }];
+              searchSource = 'Live Weather API (Open-Meteo)';
+              logToJarvisTerminal(`Live Weather retrieved for "${c.location}" (${c.temperature}°C, ${c.conditionLabel})`);
+            } else {
+              searchResults = [{
+                title: `Weather Data Notice: ${targetCity || 'Location'}`,
+                url: '/weather',
+                description: `Live weather report could not be found for "${targetCity || 'your location'}". Please verify the city name.`,
+                domain: 'open-meteo.com',
+                type: 'web',
+              }];
+              searchSource = 'Live Weather API (Open-Meteo)';
+              logToJarvisTerminal(`No live weather data returned for "${targetCity || 'location'}"`, 'warning');
+            }
+          } catch (err) {
+            const errMsg = err instanceof Error ? err.message : String(err);
+            console.warn('[JARVIS Researcher] api.weather() failed:', errMsg);
             searchResults = [{
-              title: `Live Weather for ${weatherRes.current.location}: ${weatherRes.current.temperature}°C, ${weatherRes.current.conditionLabel}`,
-              url: `/weather?city=${encodeURIComponent(weatherRes.current.location)}`,
-              description: wSummary,
+              title: `Weather Lookup Notice: ${targetCity || 'Location'}`,
+              url: '/weather',
+              description: `Weather service error for "${targetCity || 'location'}": ${errMsg}. Please verify the city name and try again.`,
               domain: 'open-meteo.com',
               type: 'web',
             }];
-            searchSource = 'Live Weather API';
-            logToJarvisTerminal(`Using Live Weather API (${searchResults.length} result${searchResults.length === 1 ? '' : 's'})`);
+            searchSource = 'Live Weather API (Open-Meteo)';
+            logToJarvisTerminal(`Weather service lookup notice: ${errMsg}`, 'warning');
           }
-        } catch (err) {
-          console.warn('[JARVIS Researcher] api.weather() failed, falling back to general search:', err);
-          logToJarvisTerminal('Live Weather API failed, falling back to general search', 'warning');
+        } else {
+          // No city specified and neither saved location nor device location is available
+          searchResults = [{
+            title: 'Weather Information - City or Location Needed',
+            url: '/weather',
+            description: "No specific city was specified and device location is not available. Please ask the user to specify a city (for example, 'What's the weather in Tokyo?') or allow location permissions so live weather can be fetched.",
+            domain: 'open-meteo.com',
+            type: 'web',
+          }];
+          searchSource = 'Live Weather API (Open-Meteo)';
+          logToJarvisTerminal('No city specified and location unavailable — asking user for city', 'info');
         }
       }
 
@@ -3595,6 +3745,7 @@ CRITICAL RULES:
         searchSource === 'Google News RSS' ||
         searchSource === 'Live News API' ||
         searchSource === 'Live Weather API' ||
+        searchSource.toLowerCase().includes('weather') ||
         searchSource.toLowerCase().includes('news');
 
       let filteredSources = isDirectNewsOrWeather

@@ -39,6 +39,8 @@ Set needsKnowledgeAgent to false for all other query types, including: time-sens
 - needsDiagram: true whenever Diagram Mode is enabled AND the query involves technical systems, hardware/device architecture, system workflows, comparisons (e.g. phone/hardware specs, camera sensor mechanisms, software architecture), processes, or concepts that benefit from a visual blueprint. Set false only if Diagram Mode is off or query has no structure.
 - needsChart: true whenever Chart Mode is enabled AND the query involves comparative numbers, specs, battery mAh, RAM, storage, camera megapixels, prices, dimensions, statistics, timelines, or quantitative metrics across products, categories, or items. Set false only if Chart Mode is off or query has no numbers.
 - needsImage: true whenever Image Mode is enabled AND the query mentions physical products (e.g. smartphones, laptops, cars, hardware), real-world objects, places, landmarks, animals, space imagery, or tangible subjects. Set false only if Image Mode is off or topic is purely abstract.
+- needsWeather: true if the inquiry is asking about weather, current temperature, atmospheric conditions, weather forecast, rain, snow, precipitation, wind, humidity, or climate conditions for a city/location or user's location (e.g. "what's the weather in Tokyo", "is it going to rain tomorrow", "current temperature in New York", "weather forecast"). Set false for non-weather questions. When needsWeather is true: set needsResearch: false, needsResearchQuery: "", needsWikipedia: false, needsWikidata: false, needsDiagram: false, needsChart: false, needsImage: false (the Researcher agent will call the dedicated Live Weather API directly instead of routing through general web search).
+- weatherLocation: MANDATORY JSON KEY. You MUST ALWAYS include "weatherLocation" in your JSON output without exception. When needsWeather is true, extract the target city or location name from the inquiry (e.g. for "what's the weather in Tokyo", weatherLocation should be "Tokyo"; for "is it raining in Paris today", weatherLocation should be "Paris"; for "temperature at Heathrow", weatherLocation should be "Heathrow"). If no specific city or location is mentioned in the inquiry (e.g. "what's the weather today", "is it going to rain", "what's the temperature outside", "current weather"), set weatherLocation to "" (the Researcher will automatically use the user's saved/detected device location or request a city). When needsWeather is false, weatherLocation MUST ALWAYS STILL BE INCLUDED as an empty string ("").
 - needsWikipedia & needsWikidata:
   1. If the question asks for ONE exact fact (number, date, name, count, measurement), set needsWikidata: true and needsWikipedia: false.
   2. If the question asks for an explanation, description, or background, set needsWikipedia: true and needsWikidata: false.
@@ -97,7 +99,7 @@ Set needsKnowledgeAgent to false for all other query types, including: time-sens
 - If the user's question is only asking for the current date or time, answer it directly using the date/time provided above, and set needsResearch, needsResearchQuery, needsKnowledgeAgent, needsFactCheck, and needsReview all to false or empty string.
 - If the query is ambiguous or unclear, still produce a best-effort plan and lean toward needsResearch: true to gather clarifying context.
 CRITICAL JSON FORMAT MANDATE:
-You MUST output ONLY a valid JSON object. Every response MUST include all keys below without exception. "needsResearchQuery", "wikipediaQuery", and "wikidataQuery" are MANDATORY string fields (use empty string "" when not needed, never omit the key):
+You MUST output ONLY a valid JSON object. Every response MUST include all keys below without exception. "needsResearchQuery", "wikipediaQuery", "wikidataQuery", and "weatherLocation" are MANDATORY string fields (use empty string "" when not needed, never omit the key):
 {
   "task": "concise goal statement",
   "plan": ["step 1", "step 2"],
@@ -113,7 +115,9 @@ You MUST output ONLY a valid JSON object. Every response MUST include all keys b
   "needsWikipedia": true,
   "wikipediaQuery": "Brawl Stars",
   "needsWikidata": false,
-  "wikidataQuery": ""
+  "wikidataQuery": "",
+  "needsWeather": false,
+  "weatherLocation": ""
 }`,
 
   researcher: `You are the RESEARCHER agent of JARVIS.
@@ -859,6 +863,8 @@ export const storage = {
             !stored.agents.planner.systemPrompt.includes('needsWikidata') ||
             !stored.agents.planner.systemPrompt.includes('wikidataQuery') ||
             !stored.agents.planner.systemPrompt.includes('wikipediaQuery') ||
+            !stored.agents.planner.systemPrompt.includes('needsWeather') ||
+            !stored.agents.planner.systemPrompt.includes('weatherLocation') ||
             !stored.agents.planner.systemPrompt.includes('CRITICAL COMMAND RESTRICTIONS: Neither Wikidata') ||
             !stored.agents.planner.systemPrompt.includes('CRITICAL JSON FORMAT MANDATE') ||
             !stored.agents.planner.systemPrompt.includes('needsDiagram') ||
