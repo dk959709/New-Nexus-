@@ -1,6 +1,17 @@
 apply plugin: 'com.android.application'
 
 android {
+    packagingOptions {
+        resources {
+            excludes += [
+                "META-INF/LICENSE.md",
+                "META-INF/LICENSE-notice.md",
+                "META-INF/LICENSE",
+                "META-INF/NOTICE",
+                "META-INF/NOTICE.md"
+            ]
+        }
+    }
     namespace "com.nexus.intelligence"
     compileSdk rootProject.ext.compileSdkVersion
     defaultConfig {
