@@ -923,7 +923,7 @@ export function AIProvidersSettings() {
               </p>
             </div>
 
-            <div style={{ display: 'flex', gap: '8px' }}>
+            <div style={{ display: 'flex', gap: '8px', flexWrap: 'wrap' }}>
               <button
                 type="button"
                 onClick={() => {
@@ -937,7 +937,37 @@ export function AIProvidersSettings() {
                 className="secondary-button"
                 style={{ fontSize: '10px', padding: '4px 8px', borderRadius: '5px' }}
               >
-                OpenRouter Preset
+                OpenRouter
+              </button>
+              <button
+                type="button"
+                onClick={() => {
+                  setEditingProvider({
+                    ...editingProvider,
+                    name: 'Mistral AI',
+                    url: 'https://api.mistral.ai/v1/chat/completions',
+                    model: 'mistral-small-latest',
+                  });
+                }}
+                className="secondary-button"
+                style={{ fontSize: '10px', padding: '4px 8px', borderRadius: '5px' }}
+              >
+                Mistral Direct
+              </button>
+              <button
+                type="button"
+                onClick={() => {
+                  setEditingProvider({
+                    ...editingProvider,
+                    name: 'Cloudflare Workers AI',
+                    url: 'https://gateway.ai.cloudflare.com/v1/{account_id}/{gateway_id}/workers-ai/chat/completions',
+                    model: '@cf/meta/llama-3.1-8b-instruct',
+                  });
+                }}
+                className="secondary-button"
+                style={{ fontSize: '10px', padding: '4px 8px', borderRadius: '5px' }}
+              >
+                Cloudflare Gateway
               </button>
               <button
                 type="button"
@@ -952,7 +982,7 @@ export function AIProvidersSettings() {
                 className="secondary-button"
                 style={{ fontSize: '10px', padding: '4px 8px', borderRadius: '5px' }}
               >
-                DeepSeek Preset
+                DeepSeek
               </button>
               <button
                 type="button"
@@ -967,9 +997,8 @@ export function AIProvidersSettings() {
                 className="secondary-button"
                 style={{ fontSize: '10px', padding: '4px 8px', borderRadius: '5px' }}
               >
-                Groq Preset
+                Groq
               </button>
-
             </div>
           </div>
 
@@ -1057,6 +1086,9 @@ export function AIProvidersSettings() {
                   fontFamily: 'DM Mono, monospace',
                 }}
               />
+              <p style={{ margin: '5px 0 0', fontSize: '11px', color: 'var(--muted)' }}>
+                Direct endpoints require chat completions path (e.g. <code>.../v1/chat/completions</code> or <code>.../workers-ai/chat/completions</code>). Base URLs are normalized automatically.
+              </p>
             </div>
 
             <div>

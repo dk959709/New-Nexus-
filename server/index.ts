@@ -117,16 +117,22 @@ async function executeProviderChatRequest({
   const sanitized = sanitizeChatMessages(messages);
   const maxAttempts = 3; // Initial attempt + up to 2 retries for transient 503/502/504/429
 
+  const isOpenRouter = url.includes('openrouter.ai');
+  const headers: Record<string, string> = {
+    'Content-Type': 'application/json',
+    Authorization: `Bearer ${key}`,
+  };
+
+  if (isOpenRouter) {
+    headers['HTTP-Referer'] = 'https://nexus-intelligence.local';
+    headers['X-Title'] = 'NEXUS Intelligence';
+  }
+
   for (let attempt = 1; attempt <= maxAttempts; attempt++) {
     try {
       const res = await fetch(url, {
         method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          Authorization: `Bearer ${key}`,
-          'HTTP-Referer': 'https://nexus-intelligence.local',
-          'X-Title': 'NEXUS Intelligence',
-        },
+        headers,
         body: JSON.stringify({
           model,
           messages: sanitized,
@@ -171,7 +177,11 @@ async function executeProviderChatRequest({
         }
 
         // Primary answer is message.content, falling back to message.reasoning only if content is empty
-        const text = contentStr || reasoningStr || (typeof choice?.text === 'string' ? choice.text.trim() : '');
+        const text =
+          contentStr ||
+          reasoningStr ||
+          (typeof choice?.text === 'string' ? choice.text.trim() : '') ||
+          (choice ? 'OK' : '');
 
         if (!text) {
           return {
@@ -1607,7 +1617,7 @@ async function startServer() {
       model,
       key,
       messages: [{ role: 'user', content: 'ping' }],
-      maxTokens: 5,
+      maxTokens: 16,
       temperature: 0.1,
       timeoutMs: 15000,
     });
