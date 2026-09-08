@@ -1,6 +1,6 @@
 import { Capacitor, registerPlugin } from '@capacitor/core';
 import { Network } from '@capacitor/network';
-import { TcpSocket, DataEncoding } from 'capacitor-tcp-socket';
+import { TcpSocket } from 'capacitor-tcp-socket';
 import type {
   DiscoveredNetworkDevice,
   NetworkInfo,
@@ -57,6 +57,7 @@ export interface AndroidTvRemotePluginInterface {
     action: string;
     keyCode?: number;
     ipAddress?: string;
+    port?: number;
   }): Promise<{
     success: boolean;
     action?: string;
@@ -274,14 +275,15 @@ export async function sendTvCommandNative(
   const cleanIp = ipAddress.trim();
 
   try {
-    // 1. Send via Native AndroidTvRemote Plugin (Protobuf over TLS on port 6466 or ADB on 5555)
+    // 1. Send via Native AndroidTvRemote Plugin (TLS Google TV remote or dadb shell key injection on port 5555)
     const nativeRes = await AndroidTvRemote.sendKey({
       action,
       keyCode,
       ipAddress: cleanIp,
+      port,
     });
 
-    if (nativeRes.success) {
+    if (nativeRes && nativeRes.success) {
       const currentVol = currentTvState?.volume ?? 24;
       const isMuted = currentTvState?.isMuted ?? false;
       let newVol = currentVol;
@@ -313,84 +315,15 @@ export async function sendTvCommandNative(
         success: true,
         tvState: updatedState,
       };
+    } else {
+      return {
+        success: false,
+        tvState: currentTvState || {},
+        error: nativeRes?.error || 'TV did not respond to key command. Ensure TV debugging is authorized.',
+      };
     }
-  } catch {
-    // If native plugin failed, fallback to TCP ADB socket
-  }
-
-  // Fallback to TCP Socket
-  let client: number | null = null;
-  try {
-    const conn = await Promise.race([
-      TcpSocket.connect({
-        ipAddress: cleanIp,
-        port: Number(port) || 5555,
-      }),
-      new Promise<never>((_, reject) =>
-        setTimeout(() => reject(new Error(`Could not connect to TV at ${cleanIp}:${port}`)), 3000),
-      ),
-    ]);
-
-    client = conn.client;
-
-    try {
-      await TcpSocket.send({
-        client,
-        data: `input keyevent ${keyCode}\n`,
-        encoding: DataEncoding.UTF8,
-      });
-    } catch {
-      // Ignored
-    }
-
-    await new Promise((r) => setTimeout(r, 40));
-
-    try {
-      await TcpSocket.disconnect({ client });
-    } catch {
-      // Ignored
-    }
-
-    const currentVol = currentTvState?.volume ?? 24;
-    const isMuted = currentTvState?.isMuted ?? false;
-    let newVol = currentVol;
-    let newMute = isMuted;
-    let newPower = currentTvState?.powerState ?? 'ON';
-
-    if (action === 'volume_up') {
-      newVol = Math.min(100, currentVol + 2);
-      newMute = false;
-    } else if (action === 'volume_down') {
-      newVol = Math.max(0, currentVol - 2);
-    } else if (action === 'mute') {
-      newMute = !isMuted;
-    } else if (action === 'power') {
-      newPower = currentTvState?.powerState === 'ON' ? 'STANDBY' : 'ON';
-    }
-
-    const updatedState: SmartTVInfo = {
-      ...currentTvState,
-      powerState: newPower,
-      volume: newVol,
-      isMuted: newMute,
-      lastAction: action,
-      reachable: true,
-      connectionError: undefined,
-    };
-
-    return {
-      success: true,
-      tvState: updatedState,
-    };
   } catch (err: unknown) {
-    if (client !== null) {
-      try {
-        await TcpSocket.disconnect({ client });
-      } catch {
-        // Ignored
-      }
-    }
-    const msg = err instanceof Error ? err.message : 'Failed to send command to TV over socket.';
+    const msg = err instanceof Error ? err.message : 'Failed to send command to TV.';
     return {
       success: false,
       tvState: currentTvState || {},

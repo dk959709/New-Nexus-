@@ -41,6 +41,8 @@ dependencies {
     androidTestImplementation "androidx.test.ext:junit:$androidxJunitVersion"
     androidTestImplementation "androidx.test.espresso:espresso-core:$androidxEspressoCoreVersion"
     implementation project(':capacitor-cordova-android-plugins')
+    // dadb library for direct Android Debug Bridge (ADB) protocol communication and authorization
+    implementation 'dev.mobile:dadb:1.2.6'
 }
 
 apply from: 'capacitor.build.gradle'
