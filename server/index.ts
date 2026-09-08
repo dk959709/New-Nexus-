@@ -305,8 +305,8 @@ async function generateWithGemini({
 
   if (contents.length === 0) return null;
 
-  // Primary model and fast fallback models when experiencing high demand (503 / 429)
-  const candidateModels = ['gemini-3.7-flash', 'gemini-2.5-flash', 'gemini-3.1-flash-lite', 'gemini-2.5-flash-lite'];
+  // Primary model and fallback models supporting current API specifications
+  const candidateModels = ['gemini-3.7-flash', 'gemini-3.8-flash'];
 
   for (const model of candidateModels) {
     for (let attempt = 0; attempt < 2; attempt++) {
@@ -317,7 +317,9 @@ async function generateWithGemini({
           config: {
             systemInstruction: sys || undefined,
             temperature,
-            maxOutputTokens: maxTokens || 2400,
+            maxOutputTokens: Math.max(maxTokens || 1200, 1000),
+            // Disable thinking budget for conversational responses so output tokens are not consumed by reasoning traces
+            thinkingConfig: { thinkingBudget: 0 },
           },
         });
 

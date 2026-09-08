@@ -607,7 +607,7 @@ RESPONSE RULES:
   • For detailed questions, explanations, complex queries, or storytelling requests (e.g. "tell me a story", "explain X"): provide thorough, high-value depth allowing up to ~100 words.
   • Never cut off mid-sentence: always end on a complete, self-contained thought within the target length.
 - Tone: Professional, direct, factual, and precise with zero fluff. No emojis.
-- Structure: Use 2-3 concise bullet points or short, well-structured sentences.
+- Structure: For simple greetings, use 1-2 concise sentences. For stories, explanations, or detailed queries, write a rich, cohesive narrative or comprehensive factual explanation (approx. 80-100 words). Do NOT compress detailed topics into brief fragments.
 - You may see what other personas already said this turn — feel free to react to or build on their points, while staying in your own voice and following the adaptive length rules.
 - Only respond as yourself in your own voice. Do not generate responses for other personas.
 - Output ONLY the clean final answer. Never output internal thoughts, thinking steps, or reasoning traces.`,
@@ -620,7 +620,7 @@ RESPONSE RULES:
   • For detailed questions, explanations, or storytelling requests (e.g. "tell me a story", "explain X"): provide an engaging, lively breakdown or creative tale allowing up to ~100 words.
   • Never cut off mid-sentence: always end on a complete, self-contained thought within the target length.
 - Tone: Casual, upbeat, conversational, and warm with well-placed emojis.
-- Structure: Use punchy short sentences or quick bullet points.
+- Structure: For simple greetings, use 1-2 punchy lines. For stories, explanations, or creative queries, write an exciting, vivid narrative or lively breakdown (approx. 80-100 words) with emojis. Do NOT compress detailed topics into brief fragments.
 - You may see what other personas already said this turn — feel free to react to or build on their points, while staying in your own voice and following the adaptive length rules.
 - Only respond as yourself in your own voice. Do not generate responses for other personas.
 - Output ONLY the clean final answer. Never output internal thoughts, thinking steps, or reasoning traces.`,
@@ -633,7 +633,7 @@ RESPONSE RULES:
   • For detailed questions, explanations, philosophical topics, or storytelling requests (e.g. "tell me a story", "explain X"): offer rich perspective, thoughtful context, or inspiring narrative allowing up to ~100 words.
   • Never cut off mid-sentence: always end on a complete, self-contained thought within the target length.
 - Tone: Calm, wise, mindful, and reassuring. Offer thoughtful perspective or a gentle reflective insight/question.
-- Structure: Use gentle, articulate sentences or mindful bullet points.
+- Structure: For simple greetings, use 1-2 tranquil lines. For stories, explanations, or philosophical queries, write a deep, evocative reflection or inspiring tale (approx. 80-100 words). Do NOT compress detailed topics into brief fragments.
 - You may see what other personas already said this turn — feel free to react to or build on their points, while staying in your own voice and following the adaptive length rules.
 - Only respond as yourself in your own voice. Do not generate responses for other personas.
 - Output ONLY the clean final answer. Never output internal thoughts, thinking steps, or reasoning traces.`,
@@ -1081,23 +1081,31 @@ export const storage = {
 
     const mergedPersonas: Record<string, MultiChatPersonaConfig> = {};
     const defaultKeys = Object.keys(DEFAULT_MULTICHAT_CONFIG.personas);
+    let hasUpgrade = false;
 
     for (const key of defaultKeys) {
       const defaultPersona = DEFAULT_MULTICHAT_CONFIG.personas[key];
       const userPersona = stored.personas[key];
       if (userPersona) {
-        // Automatically upgrade outdated prompts that lack adaptive length rules or general world knowledge
+        // Automatically upgrade outdated prompts that lack adaptive length rules or contain old telegraphic constraints
         const isOutdatedPrompt =
           !userPersona.systemPrompt ||
           !userPersona.systemPrompt.includes('ADAPTIVE LENGTH RULES') ||
           userPersona.systemPrompt.includes('30 words maximum') ||
-          !userPersona.systemPrompt.includes('around 20-30 words');
+          userPersona.systemPrompt.includes('2-3 concise bullet points') ||
+          userPersona.systemPrompt.includes('quick bullet points') ||
+          userPersona.systemPrompt.includes('mindful bullet points') ||
+          !userPersona.systemPrompt.includes('Do NOT compress detailed topics');
 
-        // Ensure token limit supports adaptive replies up to ~100 words (defaults to 250)
+        // Ensure token limit supports adaptive replies up to ~100 words (defaults to 350)
         const effectiveTokens =
-          !userPersona.maxTokens || userPersona.maxTokens < 200
-            ? defaultPersona.maxTokens
+          !userPersona.maxTokens || userPersona.maxTokens < 300
+            ? Math.max(defaultPersona.maxTokens, 350)
             : userPersona.maxTokens;
+
+        if (isOutdatedPrompt || effectiveTokens !== userPersona.maxTokens) {
+          hasUpgrade = true;
+        }
 
         mergedPersonas[key] = {
           ...defaultPersona,
@@ -1106,14 +1114,21 @@ export const storage = {
           maxTokens: effectiveTokens,
         };
       } else {
+        hasUpgrade = true;
         mergedPersonas[key] = { ...defaultPersona };
       }
     }
 
-    return {
+    const result: MultiChatSystemConfig = {
       responseLanguage: stored.responseLanguage || 'English',
       personas: mergedPersonas,
     };
+
+    if (hasUpgrade) {
+      write(KEYS.multiChatConfig, result);
+    }
+
+    return result;
   },
 
   saveMultiChatConfig(config: MultiChatSystemConfig): void {

@@ -638,6 +638,106 @@ export interface PriorPersonaTurnAnswer {
   text: string;
 }
 
+export type QueryLengthIntent = 'detailed' | 'concise' | 'standard';
+
+export interface QueryLengthProfile {
+  intent: QueryLengthIntent;
+  reason: string;
+  targetWords: string;
+  minTokens: number;
+}
+
+/**
+ * Dynamically categorizes a user query into:
+ * - 'detailed' (e.g. "Tell me a story about a dragon", "explain X", "why does Y happen", "how does Z work"):
+ *   Triggers ~80-100 word rich narrative or comprehensive depth.
+ * - 'concise' (e.g. "Hello", "How are you", "Good morning", "Who are you"):
+ *   Triggers 20-30 word concise, punchy reply.
+ * - 'standard' (general questions):
+ *   Defaults to comprehensive/detailed mode (~70-100 words) to avoid telegraphic 10-word fragments.
+ */
+export function detectQueryLengthIntent(query: string): QueryLengthProfile {
+  const q = query.trim().toLowerCase();
+  const words = q.split(/\s+/).filter(Boolean);
+  const wordCount = words.length;
+
+  // 1. Explicit Storytelling & Creative Triggers -> FORCE DETAILED (~100 words)
+  const storytellingTriggers = [
+    /\b(?:tell\s+me\s+a\s+story|tell\s+a\s+story|write\s+a\s+story|make\s+up\s+a\s+story|bedtime\s+story|short\s+story)\b/,
+    /\b(?:story|tale|fable|narrative|parable|legend|myth|folklore|epic|saga)\b/,
+    /\b(?:poem|poetry|rhyme|ballad|song|lyrics|script|dialogue|scene|play)\b/,
+    /\b(?:roleplay|pretend\s+you\s+are|act\s+like|imagine\s+that|what\s+if)\b/,
+    /\b(?:adventure|journey|chronicle|quest)\b/,
+  ];
+
+  for (const regex of storytellingTriggers) {
+    if (regex.test(q)) {
+      return {
+        intent: 'detailed',
+        reason: 'Explicit storytelling/creative request',
+        targetWords: '80-100 words',
+        minTokens: 500,
+      };
+    }
+  }
+
+  // 2. Explicit Explanation & Deep Understanding Triggers -> FORCE DETAILED (~100 words)
+  const explanationTriggers = [
+    /\b(?:explain|elucidate|clarify|teach\s+me|break\s+down|demystify)\b/,
+    /\b(?:tell\s+me\s+about|talk\s+about|what\s+do\s+you\s+know\s+about)\b/,
+    /\b(?:how\s+does|how\s+do|how\s+can|how\s+would|how\s+to|how\s+is|how\s+come)\b/,
+    /\b(?:why\s+is|why\s+are|why\s+do|why\s+does|why\s+did|why\s+would|why\s+can|why\s+should)\b/,
+    /\b(?:what\s+causes|what\s+is\s+the\s+difference|compare|contrast|pros\s+and\s+cons)\b/,
+    /\b(?:describe|give\s+me\s+details|in[\s-]depth|in\s+detail|elaborate|expand\s+on)\b/,
+    /\b(?:history\s+of|origin\s+of|background\s+of|future\s+of|mechanics\s+of)\b/,
+    /\b(?:step\s+by\s+step|guide\s+me|tutorial|overview|deep\s+dive|analysis|analyze)\b/,
+    /\b(?:philosophy\s+of|meaning\s+of|significance\s+of|impact\s+of|implications\s+of)\b/,
+  ];
+
+  for (const regex of explanationTriggers) {
+    if (regex.test(q)) {
+      return {
+        intent: 'detailed',
+        reason: 'Explicit explanation or breakdown request',
+        targetWords: '80-100 words',
+        minTokens: 500,
+      };
+    }
+  }
+
+  // 3. Multi-clause or substantial query length (>= 10 words or multiple questions)
+  if (wordCount >= 10 || (q.includes('?') && q.split(/[.?!]+/).filter((s) => s.trim().length > 0).length >= 2)) {
+    return {
+      intent: 'detailed',
+      reason: 'Complex or multi-sentence user inquiry',
+      targetWords: '80-100 words',
+      minTokens: 500,
+    };
+  }
+
+  // 4. Greetings & Small Talk -> CONCISE (20-30 words)
+  const greetingRegex = /^(?:hi|hello|hey|heya|howdy|sup|yo|greetings|salutations|good\s+(?:morning|afternoon|evening|night|day))\b/i;
+  const smallTalkRegex = /^(?:how\s+are\s+you|how\s+r\s+u|how\s+(?:are\s+things|is\s+it\s+going)|what(?:\x27s|\s+is)\s+up|what\s+are\s+you|who\s+are\s+you|what\s+can\s+you\s+do|nice\s+to\s+meet\s+you|thanks?|thank\s+you|bye|goodbye|see\s+ya|ping|test)\b/i;
+
+  if (wordCount <= 6 && (greetingRegex.test(q) || smallTalkRegex.test(q))) {
+    return {
+      intent: 'concise',
+      reason: 'Simple greeting or short small talk',
+      targetWords: '20-30 words',
+      minTokens: 200,
+    };
+  }
+
+  // 5. General inquiries (e.g. "What is photosynthesis?", "Who was Ada Lovelace?"):
+  // Default to detailed/comprehensive (70-100 words) so users never receive 10-word fragments!
+  return {
+    intent: 'detailed',
+    reason: 'General inquiry requiring complete, well-developed answer',
+    targetWords: '70-100 words',
+    minTokens: 500,
+  };
+}
+
 /**
  * Executes a single persona call
  */
@@ -660,7 +760,10 @@ export async function executeSinglePersona(
     status: 'running',
   };
 
-  const primary = resolvePersonaProviderConfig(persona, false, persona.maxTokens || 250);
+  const lengthProfile = detectQueryLengthIntent(query);
+  const targetTokens = Math.max(persona.maxTokens || 350, lengthProfile.minTokens);
+
+  const primary = resolvePersonaProviderConfig(persona, false, targetTokens);
   if (primary.error) {
     return {
       ...baseResponse,
@@ -672,7 +775,7 @@ export async function executeSinglePersona(
 
   let fallbackConfig: AIProviderConfig | null = null;
   if (persona.enableFailover && persona.fallbackProviderId) {
-    const fb = resolvePersonaProviderConfig(persona, true, persona.maxTokens || 250);
+    const fb = resolvePersonaProviderConfig(persona, true, targetTokens);
     if (!fb.error && fb.provider) {
       fallbackConfig = fb.provider;
     }
@@ -699,6 +802,34 @@ export async function executeSinglePersona(
     systemContent += `\n\nRespond only in: ${lang}. Strictly output your response in ${lang} while maintaining your personality style and adhering to your adaptive length rules.`;
   }
 
+  // Inject mandatory current turn directive based on detected intent
+  let turnDirective = '';
+  if (lengthProfile.intent === 'concise') {
+    turnDirective = `\n\n[MANDATORY CURRENT TURN INSTRUCTION - CONCISE GREETING MODE]:
+- The user is offering a brief greeting or casual small talk: "${query.trim()}".
+- Keep your response concise, sharp, and friendly (around 20 to 30 words).
+- End on a complete, finished sentence.`;
+  } else {
+    let personaGuidance = '';
+    if (persona.id === 'nova') {
+      personaGuidance = 'As NOVA (Professional & Factual), write an informative, precise, and descriptive narrative or explanation with zero fluff or emojis.';
+    } else if (persona.id === 'orbit') {
+      personaGuidance = 'As ORBIT (Casual & Friendly), tell an exciting, fun, and engaging story or explanation with lively banter and emojis.';
+    } else {
+      personaGuidance = 'As COSMOS (Calm & Wise), share a tranquil, evocative, and thoughtful story or philosophical reflection.';
+    }
+
+    turnDirective = `\n\n[MANDATORY CURRENT TURN INSTRUCTION - DETAILED / STORYTELLING MODE]:
+- The user is explicitly requesting a story, explanation, or detailed breakdown: "${query.trim()}".
+- You MUST generate an expansive, immersive, and fully developed response of approximately 80 to 100 words.
+- STRICTLY FORBIDDEN: Do NOT output a brief 10-20 word fragment. Do NOT compress your response into telegram-style bullet points.
+- ${personaGuidance}
+- Write full, expressive sentences that fully develop the narrative or explanation.
+- CRITICAL: Never cut off mid-sentence. Always conclude on a finished, complete thought within the target length.`;
+  }
+
+  systemContent += turnDirective;
+
   // If previous personas answered in this turn, provide their answers as live turn context
   let userContent = query.trim();
   if (priorTurnResponses && priorTurnResponses.length > 0) {
@@ -710,6 +841,13 @@ export async function executeSinglePersona(
 
       userContent += `\n\n=== CONTEXT FROM OTHER PERSONAS THIS TURN ===\n${priorContext}\n============================================\n(You may react to, agree/disagree with, or build on what they said, while answering the user in your own voice and following your adaptive length rules.)`;
     }
+  }
+
+  // Reinforce length requirement directly in the user prompt as well
+  if (lengthProfile.intent === 'detailed') {
+    userContent += `\n\n(Please write a rich, complete response of around 80-100 words in your voice. Do not summarize into a few words or fragments.)`;
+  } else if (lengthProfile.intent === 'concise') {
+    userContent += `\n\n(Keep reply concise, around 20-30 words.)`;
   }
 
   const messages: Array<{ role: 'system' | 'user' | 'assistant'; content: string }> = [
@@ -726,7 +864,7 @@ export async function executeSinglePersona(
       fallbackConfig,
       enableFailover: Boolean(persona.enableFailover),
       temperature: persona.id === 'orbit' ? 0.7 : persona.id === 'cosmos' ? 0.5 : 0.2,
-      maxTokens: Math.max(persona.maxTokens || 250, 400),
+      maxTokens: Math.max(persona.maxTokens || 350, lengthProfile.minTokens, 500),
       timeoutMs: 40000,
     });
 
