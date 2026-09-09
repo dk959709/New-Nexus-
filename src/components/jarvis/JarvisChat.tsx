@@ -949,7 +949,7 @@ export function JarvisChat({ config, onOpenSettings }: JarvisChatProps) {
       {/* ========================================================= */}
       {isRunning && (
         <div
-          className="relative overflow-hidden rounded-3xl p-6 backdrop-blur-xl transition-all duration-300 animate-pulse"
+          className="jarvis-running-pipeline-card relative overflow-hidden rounded-3xl p-6 backdrop-blur-xl transition-all duration-300 animate-pulse"
           style={{
             background: 'linear-gradient(135deg, rgba(8, 26, 42, 0.9) 0%, rgba(18, 16, 52, 0.92) 100%)',
             border: '1.5px solid rgba(97, 215, 201, 0.5)',
@@ -1044,7 +1044,7 @@ export function JarvisChat({ config, onOpenSettings }: JarvisChatProps) {
       {/* ========================================================= */}
       {/* MESSAGES LIST (CHRONOLOGICAL: OLDEST TOP -> NEWEST BOTTOM) */}
       {/* ========================================================= */}
-      <div className="flex flex-col gap-6 w-full">
+      <div className="jarvis-messages-container flex flex-col gap-6 w-full">
         {messages.map((msg) => {
           const isMsgRunning = msg.id === currentRunningMessageId;
           if (isMsgRunning) return null; // Handled above in live visualizer
@@ -1052,13 +1052,13 @@ export function JarvisChat({ config, onOpenSettings }: JarvisChatProps) {
           const cleanedAnswer = stripConversationalMetaText(msg.answer);
 
           return (
-            <div key={msg.id} className="flex flex-col gap-3 w-full">
+            <div key={msg.id} className="jarvis-message-item flex flex-col gap-3 w-full">
               {/* ---------------------------------------------------- */}
               {/* 1. USER PROMPT BUBBLE (ROUNDED & COLORFUL GRADIENT)  */}
               {/* ---------------------------------------------------- */}
-              <div className="flex items-start justify-end gap-3 self-end max-w-3xl w-full">
+              <div className="jarvis-user-bubble-row flex items-start justify-end gap-3 self-end max-w-3xl w-full">
                 <div
-                  className="relative p-4 sm:p-5 rounded-3xl rounded-tr-md backdrop-blur-md transition-all shadow-xl overflow-hidden"
+                  className="jarvis-user-card relative p-4 sm:p-5 rounded-3xl rounded-tr-md backdrop-blur-md transition-all shadow-xl overflow-hidden"
                   style={{
                     background: 'linear-gradient(135deg, rgba(30, 58, 138, 0.6) 0%, rgba(88, 28, 135, 0.5) 100%)',
                     border: '1.5px solid rgba(147, 197, 253, 0.35)',
@@ -1139,7 +1139,7 @@ export function JarvisChat({ config, onOpenSettings }: JarvisChatProps) {
               {/* ---------------------------------------------------- */}
               {/* 2. JARVIS AI RESPONSE CARD (ROUNDED & HOLOGRAPHIC)   */}
               {/* ---------------------------------------------------- */}
-              <div className="flex items-start gap-3 w-full">
+              <div className="jarvis-response-row flex items-start gap-2.5 sm:gap-3 w-full">
                 {/* JARVIS Avatar Node */}
                 <div
                   className="jarvis-response-avatar w-10 h-10 rounded-full shrink-0 flex items-center justify-center mt-1 shadow-lg"
@@ -1164,7 +1164,7 @@ export function JarvisChat({ config, onOpenSettings }: JarvisChatProps) {
                   {/* Subtle Sci-Fi Corner Brackets */}
                   <JarvisCornerBrackets color="cyan" size={16} thickness={2} offset={4} />
                   {/* Response Header & Utilities Bar */}
-                  <div className="flex items-center justify-between flex-wrap gap-2 pb-3 mb-4 border-b border-white/10">
+                  <div className="jarvis-response-header flex items-center justify-between flex-wrap gap-2 pb-3 mb-4 border-b border-white/10">
                     <div className="flex items-center gap-2">
                       <div className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full bg-cyan-500/15 border border-cyan-500/35 text-[10px] font-mono tracking-widest text-cyan-300 font-bold uppercase">
                         <Sparkles size={12} className="text-cyan-400" />
@@ -1176,7 +1176,7 @@ export function JarvisChat({ config, onOpenSettings }: JarvisChatProps) {
                     </div>
 
                     {/* Action Buttons: Native Speak, Vox Neural TTS Speak, Copy, Save, Delete */}
-                    <div className="flex items-center gap-1.5">
+                    <div className="jarvis-response-actions flex items-center gap-1.5 flex-wrap">
                       {/* Native Browser Speech Button */}
                       <button
                         type="button"
@@ -1341,10 +1341,10 @@ export function JarvisChat({ config, onOpenSettings }: JarvisChatProps) {
                     const rawText = typeof rawContent === 'object' ? JSON.stringify(rawContent, null, 2) : String(rawContent || '');
 
                     return (
-                      <div className="prose prose-invert max-w-none text-slate-100 leading-relaxed text-sm sm:text-base">
+                      <div className="jarvis-synthesis-body prose prose-invert max-w-none text-slate-100 leading-relaxed text-sm sm:text-base">
                         {(msg.deepResearch || (msg.steps && msg.steps.some((s) => s.status === 'completed' && s.agentId !== 'finalSynthesizer'))) && (
-                          <div className="flex items-center justify-between flex-wrap gap-2 mb-3 pt-3 border-t border-purple-500/30">
-                            <div className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full bg-purple-500/20 border border-purple-400/40 text-xs font-mono font-bold text-purple-300 shadow-[0_0_10px_rgba(192,132,252,0.2)]">
+                          <div className="jarvis-synthesis-header flex items-center justify-between flex-wrap gap-2 mb-3 pt-3 border-t border-purple-500/30">
+                            <div className="jarvis-synthesis-badge inline-flex items-center gap-1.5 px-3 py-1 rounded-full bg-purple-500/20 border border-purple-400/40 text-xs font-mono font-bold text-purple-300 shadow-[0_0_10px_rgba(192,132,252,0.2)]">
                               <Zap size={13} className="text-purple-400" />
                               <span>JARVIS // UNIFIED FINAL SYNTHESIS</span>
                             </div>
