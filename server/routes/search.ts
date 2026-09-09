@@ -1,6 +1,7 @@
 import { Router } from 'express';
 import { z } from 'zod';
 import { errorResponse, domainOf } from '../shared.js';
+import { getBackendApiKey } from '../apiCatalog.js';
 
 export const WIKIPEDIA_USER_AGENT = 'NEXUS-Intelligence/1.0 (https://nexus.app; contact: dk959709@gmail.com)';
 
@@ -392,7 +393,7 @@ export async function fetchYouTubeSearchResults(query: string, page = 1): Promis
 }
 
 export async function fetchExaSearch(query: string, requestedMax = 15): Promise<SearchResult[]> {
-  const exaKey = (process.env.EXA_API_KEY || '').trim();
+  const exaKey = (getBackendApiKey('EXA_API_KEY') || '').trim();
   if (!exaKey) return [];
   try {
     const numResults = Math.min(Math.max(requestedMax, 5), 25);
@@ -669,9 +670,9 @@ export async function fetchGNewsArticles(options: FetchGNewsOptions = {}): Promi
   totalArticles: number;
   category: string;
 }> {
-  const apiKey = process.env.GNEWS_API_KEY;
+  const apiKey = getBackendApiKey('GNEWS_API_KEY');
   if (!apiKey || !apiKey.trim()) {
-    throw new Error('GNEWS_API_KEY is not configured in server environment');
+    throw new Error('GNEWS_API_KEY is not configured in server environment or API catalog');
   }
 
   const isWorld = isGeneralWorldNewsQuery(options.query) || options.category === 'world';
@@ -739,6 +740,148 @@ export async function fetchGNewsArticles(options: FetchGNewsOptions = {}): Promi
   };
 }
 
+export interface FetchNewsDataOptions {
+  query?: string;
+  category?: string;
+  country?: string;
+  lang?: string;
+  max?: number;
+}
+
+interface NewsDataArticleItem {
+  article_id?: string;
+  title?: string;
+  link?: string;
+  keywords?: string[];
+  creator?: string[];
+  description?: string;
+  content?: string;
+  pubDate?: string;
+  image_url?: string;
+  source_id?: string;
+  source_priority?: number;
+  source_name?: string;
+  source_url?: string;
+  source_icon?: string;
+  language?: string;
+  country?: string[];
+  category?: string[];
+}
+
+interface NewsDataResponse {
+  status?: string;
+  totalResults?: number;
+  results?: NewsDataArticleItem[];
+  message?: string;
+}
+
+const NEWSDATA_CATEGORY_MAP: Record<string, string> = {
+  general: 'top',
+  world: 'world',
+  technology: 'technology',
+  tech: 'technology',
+  business: 'business',
+  science: 'science',
+  health: 'health',
+  sports: 'sports',
+  entertainment: 'entertainment',
+  nation: 'politics',
+};
+
+export async function fetchNewsDataArticles(options: FetchNewsDataOptions = {}): Promise<{
+  articles: SearchResult[];
+  source: string;
+  totalArticles: number;
+  category: string;
+}> {
+  const apiKey = getBackendApiKey('NEWSDATA_API_KEY');
+  if (!apiKey || !apiKey.trim()) {
+    throw new Error('NEWSDATA_API_KEY is not configured in server environment or API catalog');
+  }
+
+  const isWorld = isGeneralWorldNewsQuery(options.query) || options.category === 'world';
+  const rawCat = isWorld ? 'world' : options.category && options.category.trim() ? options.category.trim().toLowerCase() : 'general';
+  const category = rawCat;
+  const lang = options.lang || 'en';
+
+  const params = new URLSearchParams();
+  params.set('apikey', apiKey.trim());
+  params.set('language', lang);
+
+  const cleanTopic = cleanNewsSearchTopic(options.query?.trim() || '') || (options.query ? options.query.trim() : '');
+
+  if (cleanTopic) {
+    params.set('q', cleanTopic.slice(0, 100));
+  } else {
+    const mappedCategory = NEWSDATA_CATEGORY_MAP[rawCat] || (rawCat === 'world' ? 'world' : 'top');
+    params.set('category', mappedCategory);
+    if (options.country) {
+      params.set('country', options.country);
+    }
+  }
+
+  const url = `https://newsdata.io/api/1/latest?${params.toString()}`;
+
+  const res = await fetch(url, {
+    headers: {
+      'User-Agent': 'NEXUS-Intelligence/1.0',
+    },
+    signal: AbortSignal.timeout(9000),
+  });
+
+  if (res.status === 401 || res.status === 403) {
+    throw new Error('NewsData.io API Key is invalid or unauthorized');
+  }
+  if (res.status === 429) {
+    throw new Error('NewsData.io API rate limit reached');
+  }
+  if (!res.ok) {
+    let errorDetail = `NewsData.io API returned HTTP ${res.status}`;
+    try {
+      const errJson = (await res.json()) as { message?: string; results?: { message?: string } };
+      if (errJson.message) {
+        errorDetail += `: ${errJson.message}`;
+      } else if (errJson.results?.message) {
+        errorDetail += `: ${errJson.results.message}`;
+      }
+    } catch {
+      // ignore
+    }
+    throw new Error(errorDetail);
+  }
+
+  const data = (await res.json()) as NewsDataResponse;
+  if (data.status === 'error') {
+    throw new Error(data.message || 'NewsData.io API returned error status');
+  }
+
+  const rawArticles = data.results || [];
+  const articles: SearchResult[] = rawArticles
+    .filter((art) => Boolean((art.title && art.title.trim()) || art.link))
+    .map((art) => {
+      const rawPublisher = art.source_name?.trim() || art.source_id?.trim() || '';
+      const domain = rawPublisher || (art.link ? domainOf(art.link) : 'News') || 'News';
+      const img = art.image_url || undefined;
+      return {
+        title: art.title || 'Untitled Headline',
+        url: art.link || '',
+        domain,
+        description: art.description || art.content || art.title || '',
+        date: art.pubDate || undefined,
+        image: img,
+        thumbnail: img,
+        type: 'news' as const,
+      };
+    });
+
+  return {
+    articles,
+    source: 'NewsData.io',
+    totalArticles: data.totalResults || articles.length,
+    category,
+  };
+}
+
 export async function searchProvider(input: z.infer<typeof searchSchema>): Promise<{
   results: SearchResult[];
   searchSource: string;
@@ -751,6 +894,7 @@ export async function searchProvider(input: z.infer<typeof searchSchema>): Promi
   }
 
   if (input.category === 'NEWS') {
+    // 1. Primary: GNews API
     try {
       const gnews = await fetchGNewsArticles({ query: input.query });
       if (gnews.articles.length > 0) {
@@ -760,6 +904,19 @@ export async function searchProvider(input: z.infer<typeof searchSchema>): Promi
     } catch (err) {
       console.log(`[searchProvider] GNews API error: ${(err as Error).message}`);
     }
+
+    // 2. Second Fallback: NewsData.io
+    try {
+      const newsdata = await fetchNewsDataArticles({ query: input.query });
+      if (newsdata.articles.length > 0) {
+        return { results: newsdata.articles, searchSource: 'NewsData.io (fallback)' };
+      }
+      console.log('[searchProvider] NewsData.io error: Zero articles returned');
+    } catch (err) {
+      console.log(`[searchProvider] NewsData.io error: ${(err as Error).message}`);
+    }
+
+    // 3. Final Fallback: Google News RSS
     const newsResults = await fetchGoogleNewsRSS(input.query);
     if (newsResults.length > 0) {
       return { results: newsResults, searchSource: 'Google News RSS (fallback)' };
@@ -835,7 +992,7 @@ export async function searchProvider(input: z.infer<typeof searchSchema>): Promi
     );
   };
 
-  const key = process.env.SEARCH_API_KEY || process.env.TAVILY_API_KEY;
+  const key = getBackendApiKey('SEARCH_API_KEY') || getBackendApiKey('TAVILY_API_KEY');
   const url = process.env.SEARCH_API_URL || (key ? 'https://api.tavily.com/search' : undefined);
   let primaryResults: SearchResult[] = [];
   let primaryFailed = false;
@@ -843,7 +1000,7 @@ export async function searchProvider(input: z.infer<typeof searchSchema>): Promi
 
   if (key && url) {
     try {
-      const isTavily = url.includes('tavily.com') || Boolean(process.env.TAVILY_API_KEY);
+      const isTavily = url.includes('tavily.com') || Boolean(getBackendApiKey('TAVILY_API_KEY'));
       const bodyPayload = isTavily
         ? {
             api_key: key,
@@ -1995,44 +2152,97 @@ export function createSearchRouter(deps: SearchRouterDependencies = {}) {
     return errorResponse(res, 503, 'AI summary provider is temporarily unavailable.');
   });
 
-  // Live News Page Endpoint (Primary GNews Integration with fallback)
+  // Live News Page Endpoint (Primary GNews -> Second Fallback NewsData.io -> Final Fallback Google News RSS)
   router.get('/api/news', async (req, res) => {
     const category = typeof req.query.category === 'string' ? req.query.category : 'general';
     const query = typeof req.query.q === 'string' ? req.query.q : typeof req.query.query === 'string' ? req.query.query : undefined;
     const country = typeof req.query.country === 'string' ? req.query.country : 'us';
     const lang = typeof req.query.lang === 'string' ? req.query.lang : 'en';
 
+    // 1. Primary: GNews API
+    let gnewsError = '';
     try {
       const gnews = await fetchGNewsArticles({ category, query, country, lang });
-      return res.json({
-        data: gnews.articles,
-        source: 'GNews',
-        provider: 'gnews',
-        category: gnews.category,
-        total: gnews.totalArticles,
-        isFallback: false,
-        hasGNewsKey: true,
-      });
+      if (gnews.articles.length > 0) {
+        return res.json({
+          data: gnews.articles,
+          source: 'GNews',
+          provider: 'gnews',
+          category: gnews.category,
+          total: gnews.totalArticles,
+          isFallback: false,
+          hasGNewsKey: true,
+          hasNewsDataKey: Boolean(getBackendApiKey('NEWSDATA_API_KEY')),
+        });
+      }
+      gnewsError = 'GNews returned zero articles.';
+      console.warn('[Live News Page GNews]:', gnewsError);
     } catch (error) {
       const err = error as Error;
-      console.warn('[Live News Page GNews Error]:', err.message);
+      gnewsError = err.message || 'GNews request failed.';
+      console.warn('[Live News Page GNews Error]:', gnewsError);
+    }
 
-      try {
-        const rssQuery = query || (category && category !== 'general' ? `${category} news` : 'latest world news');
-        const fallbackResults = await fetchGoogleNewsRSS(rssQuery, category);
+    // 2. Second Fallback: NewsData.io
+    let newsDataError = '';
+    try {
+      const newsdata = await fetchNewsDataArticles({ category, query, country, lang });
+      if (newsdata.articles.length > 0) {
         return res.json({
-          data: fallbackResults,
-          source: 'Google News RSS (Fallback)',
-          provider: 'google_rss',
-          category,
-          total: fallbackResults.length,
+          data: newsdata.articles,
+          source: 'NewsData.io (Fallback)',
+          provider: 'newsdata',
+          category: newsdata.category,
+          total: newsdata.totalArticles,
           isFallback: true,
-          error: err.message,
-          hasGNewsKey: Boolean(process.env.GNEWS_API_KEY && process.env.GNEWS_API_KEY.trim()),
+          error: gnewsError,
+          hasGNewsKey: Boolean(getBackendApiKey('GNEWS_API_KEY')),
+          hasNewsDataKey: true,
         });
-      } catch {
-        return errorResponse(res, 502, err.message || 'News provider is temporarily unavailable.');
       }
+      newsDataError = 'NewsData.io returned zero articles.';
+      console.warn('[Live News Page NewsData]:', newsDataError);
+    } catch (error) {
+      const err = error as Error;
+      newsDataError = err.message || 'NewsData.io request failed.';
+      console.warn('[Live News Page NewsData Error]:', newsDataError);
+    }
+
+    // 3. Final Fallback: Google News RSS
+    try {
+      const rssQuery = query || (category && category !== 'general' ? `${category} news` : 'latest world news');
+      const fallbackResults = await fetchGoogleNewsRSS(rssQuery, category);
+      return res.json({
+        data: fallbackResults,
+        source: 'Google News RSS (Fallback)',
+        provider: 'google_rss',
+        category,
+        total: fallbackResults.length,
+        isFallback: true,
+        error: newsDataError || gnewsError,
+        hasGNewsKey: Boolean(getBackendApiKey('GNEWS_API_KEY')),
+        hasNewsDataKey: Boolean(getBackendApiKey('NEWSDATA_API_KEY')),
+      });
+    } catch (finalError) {
+      return errorResponse(res, 502, (finalError as Error).message || newsDataError || gnewsError || 'News provider is temporarily unavailable.');
+    }
+  });
+
+  // Dedicated NewsData.io Endpoint
+  router.get('/api/news/newsdata', async (req, res) => {
+    try {
+      const q = typeof req.query.q === 'string' ? req.query.q : typeof req.query.query === 'string' ? req.query.query : undefined;
+      const category = typeof req.query.category === 'string' ? req.query.category : undefined;
+      const lang = typeof req.query.lang === 'string' ? req.query.lang : undefined;
+      const country = typeof req.query.country === 'string' ? req.query.country : undefined;
+      const results = await fetchNewsDataArticles({ query: q, category, lang, country });
+      return res.json({
+        data: results.articles,
+        source: 'NewsData.io',
+        total: results.totalArticles,
+      });
+    } catch (err) {
+      return errorResponse(res, 502, (err as Error).message);
     }
   });
 

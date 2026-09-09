@@ -627,5 +627,20 @@ export interface MediaItem {
   playableUrl?: string;
 }
 
+export interface ApiCatalogItem {
+  id: string;
+  name: string;
+  envVar: string;
+  fallbackEnvVars?: string[];
+  description: string;
+  docsUrl: string;
+  category: string;
+  status: 'connected' | 'not_configured';
+  source: 'env' | 'catalog' | 'none';
+  maskedKey?: string;
+  updatedAt?: string;
+  isCustom: boolean;
+}
+
 
 

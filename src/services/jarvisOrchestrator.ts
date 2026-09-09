@@ -3352,13 +3352,17 @@ CRITICAL RULES:
         }
       }
 
-      // 2. When Planner detects a news/current-events query, Researcher attempts GNews API first, then falls back to Google News RSS
+      // 2. When Planner detects a news/current-events query, Researcher attempts GNews API first, then NewsData.io, then Google News RSS
       else if (isNewsQuery) {
-        let gnewsSucceeded = false;
+        let newsSucceeded = false;
+        const targetNewsQuery = isWorldNews ? undefined : (plannerResearchQuery || cleanedSearchQuery || strippedQuery);
+        let gnewsRes: Awaited<ReturnType<typeof api.news>> | null = null;
+
+        // Layer 1: Attempt GNews API (Primary)
         try {
           console.log('[JARVIS Researcher] Attempting primary GNews API for news query:', strippedQuery, 'isWorldNews:', isWorldNews);
-          const gnewsRes = await api.news({
-            query: isWorldNews ? undefined : (plannerResearchQuery || cleanedSearchQuery || strippedQuery),
+          gnewsRes = await api.news({
+            query: targetNewsQuery,
             category: isWorldNews ? 'world' : 'general',
           });
           console.log('[JARVIS Researcher] RAW DATA USED (DEBUG) - GNews Response:', JSON.stringify(gnewsRes, null, 2));
@@ -3368,11 +3372,11 @@ CRITICAL RULES:
             Array.isArray(gnewsRes.data) &&
             gnewsRes.data.length > 0 &&
             !gnewsRes.isFallback &&
-            gnewsRes.provider !== 'google_rss'
+            gnewsRes.provider === 'gnews'
           ) {
             searchResults = gnewsRes.data;
             searchSource = 'GNews API';
-            gnewsSucceeded = true;
+            newsSucceeded = true;
             console.log('[JARVIS Researcher] News source used: GNews');
             logToJarvisTerminal(`Using GNews API (${searchResults.length} result${searchResults.length === 1 ? '' : 's'})`);
 
@@ -3394,6 +3398,17 @@ CRITICAL RULES:
                 console.warn('[JARVIS Researcher] Supplemental RSS news fetch error in Deep Research mode:', e);
               }
             }
+          } else if (
+            gnewsRes &&
+            Array.isArray(gnewsRes.data) &&
+            gnewsRes.data.length > 0 &&
+            gnewsRes.provider === 'newsdata'
+          ) {
+            searchResults = gnewsRes.data;
+            searchSource = 'NewsData.io (fallback)';
+            newsSucceeded = true;
+            console.log('[JARVIS Researcher] News source used: NewsData.io (via API fallback)');
+            logToJarvisTerminal(`Using NewsData.io fallback (${searchResults.length} result${searchResults.length === 1 ? '' : 's'})`);
           } else {
             const specificError =
               gnewsRes?.error ||
@@ -3407,21 +3422,73 @@ CRITICAL RULES:
           console.warn('[JARVIS Researcher] GNews API attempt encountered an error:', err);
         }
 
-        // Automatic fallback to Google News RSS if GNews failed, hit rate limits, had no API key, or returned 0 results
-        if (!gnewsSucceeded) {
-          logToJarvisTerminal('GNews failed, falling back to Google News RSS', 'warning');
+        // Layer 2: NewsData.io fallback (if not already satisfied)
+        if (!newsSucceeded) {
+          logToJarvisTerminal('GNews failed, falling back to NewsData.io', 'info');
+          try {
+            console.log('[JARVIS Researcher] Attempting NewsData.io fallback for news query:', targetNewsQuery);
+            const newsdataRes = await api.newsNewsData({
+              query: targetNewsQuery,
+              category: isWorldNews ? 'world' : 'general',
+            });
+            console.log('[JARVIS Researcher] RAW DATA USED (DEBUG) - NewsData.io Response:', JSON.stringify(newsdataRes, null, 2));
+
+            if (Array.isArray(newsdataRes) && newsdataRes.length > 0) {
+              searchResults = newsdataRes;
+              searchSource = 'NewsData.io (fallback)';
+              newsSucceeded = true;
+              console.log('[JARVIS Researcher] News source used: NewsData.io');
+              logToJarvisTerminal(`Using NewsData.io fallback (${searchResults.length} result${searchResults.length === 1 ? '' : 's'})`);
+
+              if (deepResearch && searchResults.length < 14) {
+                try {
+                  const rssQuery = isWorldNews ? 'latest world news' : (plannerResearchQuery || cleanedSearchQuery || strippedQuery);
+                  const extraNews = await api.newsRss(rssQuery);
+                  if (Array.isArray(extraNews) && extraNews.length > 0) {
+                    const existingUrls = new Set(searchResults.map((r) => (r.url || '').toLowerCase()));
+                    extraNews.forEach((item) => {
+                      if (item && item.url && !existingUrls.has(item.url.toLowerCase())) {
+                        existingUrls.add(item.url.toLowerCase());
+                        searchResults.push(item);
+                      }
+                    });
+                  }
+                } catch (e) {
+                  console.warn('[JARVIS Researcher] Supplemental RSS news fetch error in Deep Research mode:', e);
+                }
+              }
+            } else {
+              console.log('[JARVIS Researcher] NewsData.io returned 0 results');
+            }
+          } catch (ndErr) {
+            const errMsg = ndErr instanceof Error ? ndErr.message : String(ndErr);
+            console.warn('[JARVIS Researcher] NewsData.io fallback error:', errMsg);
+          }
+        }
+
+        // Layer 3: Automatic fallback to Google News RSS (Final fallback)
+        if (!newsSucceeded) {
+          logToJarvisTerminal('NewsData.io failed or unavailable, falling back to Google News RSS', 'warning');
           try {
             const rssQuery = isWorldNews ? 'latest world news' : (plannerResearchQuery || cleanedSearchQuery || strippedQuery);
             console.log('[JARVIS Researcher] Falling back to Google News RSS for news query:', rssQuery);
-            const liveNewsRes = await api.newsRss(rssQuery);
-            console.log('[JARVIS Researcher] RAW DATA USED (DEBUG) - News RSS Response:', JSON.stringify(liveNewsRes, null, 2));
-            if (Array.isArray(liveNewsRes) && liveNewsRes.length > 0) {
-              searchResults = liveNewsRes;
+
+            if (gnewsRes && gnewsRes.provider === 'google_rss' && Array.isArray(gnewsRes.data) && gnewsRes.data.length > 0) {
+              searchResults = gnewsRes.data;
               searchSource = 'Google News RSS (fallback)';
-              console.log('[JARVIS Researcher] News source used: Google RSS (fallback)');
+              console.log('[JARVIS Researcher] News source used: Google RSS (from API fallback)');
               logToJarvisTerminal(`Using Google News RSS (${searchResults.length} result${searchResults.length === 1 ? '' : 's'})`);
             } else {
-              logToJarvisTerminal('Google News RSS returned 0 results, falling back to general search', 'warning');
+              const liveNewsRes = await api.newsRss(rssQuery);
+              console.log('[JARVIS Researcher] RAW DATA USED (DEBUG) - News RSS Response:', JSON.stringify(liveNewsRes, null, 2));
+              if (Array.isArray(liveNewsRes) && liveNewsRes.length > 0) {
+                searchResults = liveNewsRes;
+                searchSource = 'Google News RSS (fallback)';
+                console.log('[JARVIS Researcher] News source used: Google RSS (fallback)');
+                logToJarvisTerminal(`Using Google News RSS (${searchResults.length} result${searchResults.length === 1 ? '' : 's'})`);
+              } else {
+                logToJarvisTerminal('Google News RSS returned 0 results, falling back to general search', 'warning');
+              }
             }
           } catch (err) {
             console.warn('[JARVIS Researcher] Google News RSS fallback failed, falling back to general search:', err);

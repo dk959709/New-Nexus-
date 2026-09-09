@@ -22,6 +22,7 @@ import type {
   DiscoveredNetworkDevice,
   NetworkInfo,
   NetworkScanResult,
+  ApiCatalogItem,
 } from '@/types';
 import { storage } from '@/lib/storage';
 import { searchWikipedia, getWikipediaSummary, wikipediaToSearchResult, formatWikipediaForReport } from './wikipedia';
@@ -203,6 +204,7 @@ export const api = {
     isFallback?: boolean;
     error?: string;
     hasGNewsKey?: boolean;
+    hasNewsDataKey?: boolean;
   }> {
     const searchParams = new URLSearchParams();
     if (params?.category) searchParams.set('category', params.category);
@@ -225,6 +227,7 @@ export const api = {
         isFallback?: boolean;
         error?: string;
         hasGNewsKey?: boolean;
+        hasNewsDataKey?: boolean;
       };
       return {
         data: obj.data,
@@ -235,12 +238,28 @@ export const api = {
         isFallback: obj.isFallback,
         error: obj.error,
         hasGNewsKey: obj.hasGNewsKey,
+        hasNewsDataKey: obj.hasNewsDataKey,
       };
     }
     if (raw && typeof raw === 'object' && 'results' in raw && Array.isArray((raw as { results: unknown }).results)) {
       return { data: (raw as { results: SearchResult[] }).results, source: 'GNews' };
     }
     return { data: [], source: 'GNews' };
+  },
+
+  async newsNewsData(params?: { query?: string; category?: string; lang?: string; country?: string }): Promise<SearchResult[]> {
+    const searchParams = new URLSearchParams();
+    if (params?.query) searchParams.set('q', params.query);
+    if (params?.category) searchParams.set('category', params.category);
+    if (params?.lang) searchParams.set('lang', params.lang);
+    if (params?.country) searchParams.set('country', params.country);
+    const qs = searchParams.toString();
+    const raw = await call<unknown>(`/api/news/newsdata${qs ? `?${qs}` : ''}`);
+    if (Array.isArray(raw)) return raw as SearchResult[];
+    if (raw && typeof raw === 'object' && 'data' in raw && Array.isArray((raw as { data: unknown }).data)) {
+      return (raw as { data: SearchResult[] }).data;
+    }
+    return [];
   },
 
   async newsRss(query?: string): Promise<SearchResult[]> {
@@ -772,6 +791,37 @@ export const api = {
     return call('/api/tts/test', {
       method: 'POST',
       body: JSON.stringify(params || {}),
+    });
+  },
+
+  getCatalog(): Promise<{ ok: boolean; data: ApiCatalogItem[] }> {
+    return call('/api/catalog');
+  },
+
+  saveCatalogKey(params: {
+    id: string;
+    key: string;
+    name?: string;
+    envVar?: string;
+    description?: string;
+    docsUrl?: string;
+    isCustom?: boolean;
+  }): Promise<{ ok: boolean; message: string; item: ApiCatalogItem }> {
+    return call('/api/catalog/keys', {
+      method: 'POST',
+      body: JSON.stringify(params),
+    });
+  },
+
+  deleteCatalogKey(id: string): Promise<{ ok: boolean; message: string }> {
+    return call(`/api/catalog/keys/${encodeURIComponent(id)}`, {
+      method: 'DELETE',
+    });
+  },
+
+  testCatalogKey(id: string): Promise<{ ok: boolean; message: string }> {
+    return call(`/api/catalog/test/${encodeURIComponent(id)}`, {
+      method: 'POST',
     });
   },
 };

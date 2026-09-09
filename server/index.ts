@@ -22,6 +22,7 @@ import { weatherRouter, geocode, weatherProvider } from './routes/weather.js';
 import { createSearchRouter, searchProvider, fetchWikipediaSummary } from './routes/search.js';
 import { devicesRouter } from './routes/devices.js';
 import { telegramRouter, setTelegramAiHandler } from './routes/telegram.js';
+import { apiCatalogRouter, getBackendApiKey } from './apiCatalog.js';
 
 
 function sanitizeChatMessages(
@@ -1052,7 +1053,7 @@ async function executeSmartAnswerEngine(
         (async () => {
           try {
             // Check NASA APOD or space topic summary
-            const apiKey = process.env.NASA_API_KEY || 'DEMO_KEY';
+            const apiKey = getBackendApiKey('NASA_API_KEY') || 'DEMO_KEY';
             const apodRes = await fetch(`https://api.nasa.gov/planetary/apod?api_key=${apiKey}`).catch(() => null);
             if (apodRes && apodRes.ok) {
               const apodData = (await apodRes.json()) as { title?: string; explanation?: string; hdurl?: string; url?: string; date?: string };
@@ -1512,9 +1513,13 @@ async function startServer() {
   app.get('/api/config/status', (_req, res) =>
     res.json({
       data: {
-        search: Boolean((process.env.SEARCH_API_KEY && process.env.SEARCH_API_URL) || process.env.TAVILY_API_KEY || process.env.EXA_API_KEY),
+        search: Boolean(
+          (getBackendApiKey('SEARCH_API_KEY') && process.env.SEARCH_API_URL) ||
+            getBackendApiKey('TAVILY_API_KEY') ||
+            getBackendApiKey('EXA_API_KEY'),
+        ),
         weather: true,
-        map: Boolean(process.env.MAP_API_KEY),
+        map: Boolean(getBackendApiKey('MAP_API_KEY') || getBackendApiKey('WEATHER_API_KEY')),
         ai: Boolean(
           process.env.GEMINI_API_KEY ||
             process.env.AI_API_KEY ||
@@ -1522,10 +1527,13 @@ async function startServer() {
             process.env.DEEPSEEK_API_KEY ||
             true,
         ),
-        wallpapers: Boolean(process.env.PEXELS_API_KEY),
+        wallpapers: Boolean(getBackendApiKey('PEXELS_API_KEY')),
       },
     }),
   );
+
+  // Mount API Catalog Router
+  app.use(apiCatalogRouter);
 
   // Mount extracted feature routers
   app.use(mediaRouter);
@@ -2210,7 +2218,7 @@ async function startServer() {
   app.get('/api/wallpapers', async (req, res) => {
     const parsed = wallpaperSchema.safeParse({ query: req.query.query, page: req.query.page });
     if (!parsed.success) return errorResponse(res, 400, 'Enter a wallpaper search term.');
-    const key = process.env.PEXELS_API_KEY;
+    const key = getBackendApiKey('PEXELS_API_KEY');
     if (!key) return errorResponse(res, 503, 'Wallpaper provider is not configured.');
     try {
       const upstream = await fetch(
@@ -2262,7 +2270,7 @@ async function startServer() {
       return errorResponse(res, 400, 'Invalid wallpaper image.');
     }
 
-    const key = process.env.PEXELS_API_KEY;
+    const key = getBackendApiKey('PEXELS_API_KEY');
     if (!key) return errorResponse(res, 503, 'Wallpaper provider is not configured.');
 
     try {
@@ -2306,7 +2314,7 @@ async function startServer() {
   app.get('/api/maptile/:layer/:z/:x/:y.png', async (req, res) => {
     const parsed = mapTileSchema.safeParse(req.params);
     if (!parsed.success) return errorResponse(res, 400, 'Invalid tile request.');
-    const key = process.env.MAP_API_KEY;
+    const key = getBackendApiKey('MAP_API_KEY') || getBackendApiKey('WEATHER_API_KEY');
     if (!key) return errorResponse(res, 503, 'Map provider is not configured.');
     const { layer, z, x, y } = parsed.data;
     try {
@@ -2326,7 +2334,7 @@ async function startServer() {
 
   app.get('/api/nasa/apod', async (_req, res) => {
     try {
-      const apiKey = process.env.NASA_API_KEY || 'DEMO_KEY';
+      const apiKey = getBackendApiKey('NASA_API_KEY') || 'DEMO_KEY';
       const response = await fetch(`https://api.nasa.gov/planetary/apod?api_key=${apiKey}`);
       if (!response.ok) return errorResponse(res, 502, 'NASA data is temporarily unavailable.');
       return res.json({ data: await response.json() });

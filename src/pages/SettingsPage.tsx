@@ -7,11 +7,13 @@ import {
   Info,
   Palette,
   Send,
+  Server,
   Shield,
   User,
 } from 'lucide-react';
 import { Link, useSearchParams } from 'react-router-dom';
 import { AIProvidersSettings } from '@/components/AIProvidersSettings';
+import { ApiCatalogSettings } from '@/components/ApiCatalogSettings';
 import { WallpaperSelector } from '@/components/WallpaperSelector';
 import { api } from '@/services/api';
 import { storage } from '@/lib/storage';
@@ -28,6 +30,7 @@ type SettingsCategory =
   | 'appearance'
   | 'notifications'
   | 'ai'
+  | 'api-catalog'
   | 'media-backend'
   | 'privacy'
   | 'about';
@@ -284,6 +287,37 @@ export function SettingsPage() {
         </button>
 
         <button
+          onClick={() => switchCategory('api-catalog')}
+          className={activeCategory === 'api-catalog' ? 'selected' : ''}
+          style={{
+            display: 'inline-flex',
+            alignItems: 'center',
+            gap: '8px',
+            padding: '9px 16px',
+            borderRadius: '8px',
+            border: `1px solid ${
+              activeCategory === 'api-catalog'
+                ? 'var(--accent)'
+                : 'rgba(165,207,214,0.18)'
+            }`,
+            background:
+              activeCategory === 'api-catalog'
+                ? 'rgba(97,215,201,0.15)'
+                : 'rgba(14,31,39,0.6)',
+            color:
+              activeCategory === 'api-catalog' ? 'var(--accent)' : 'var(--muted)',
+            fontWeight: 600,
+            fontSize: '13px',
+            cursor: 'pointer',
+            whiteSpace: 'nowrap',
+            boxShadow:
+              activeCategory === 'api-catalog' ? '0 0 12px rgba(97,215,201,0.2)' : 'none',
+          }}
+        >
+          <Server size={16} /> ⚡ API Catalog
+        </button>
+
+        <button
           onClick={() => switchCategory('appearance')}
           className={activeCategory === 'appearance' ? 'selected' : ''}
           style={{
@@ -457,6 +491,9 @@ export function SettingsPage() {
       <div className="settings-content-wrapper">
         {/* 🤖 AI Providers Category */}
         {activeCategory === 'ai' && <AIProvidersSettings />}
+
+        {/* ⚡ API Catalog Category */}
+        {activeCategory === 'api-catalog' && <ApiCatalogSettings />}
 
         {/* 🎬 Media Backends Category */}
         {activeCategory === 'media-backend' && <MediaBackendSettings />}
