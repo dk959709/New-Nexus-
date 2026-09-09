@@ -2590,33 +2590,25 @@
     padding: 12px 14px !important;
   }
 
-  /* JARVIS Answer / Synthesis Box Row & Avatar */
+  /* JARVIS Answer / Synthesis Box Row */
   .jarvis-response-row {
     width: 100% !important;
     max-width: 100vw !important;
     box-sizing: border-box !important;
     overflow-x: hidden !important;
-    gap: 8px !important;
+    gap: 0 !important;
     margin: 0 !important;
     padding: 0 !important;
   }
 
   .jarvis-response-avatar {
-    width: 30px !important;
-    height: 30px !important;
-    min-width: 30px !important;
-    flex-shrink: 0 !important;
-  }
-
-  .jarvis-response-avatar svg {
-    width: 14px !important;
-    height: 14px !important;
+    display: none !important;
   }
 
   /* JARVIS Answer / Synthesis Box Card Container */
   .jarvis-response-card {
     width: 100% !important;
-    max-width: calc(100% - 38px) !important;
+    max-width: 100% !important;
     flex: 1 1 0% !important;
     min-width: 0 !important;
     box-sizing: border-box !important;

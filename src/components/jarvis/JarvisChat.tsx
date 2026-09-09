@@ -1139,22 +1139,10 @@ export function JarvisChat({ config, onOpenSettings }: JarvisChatProps) {
               {/* ---------------------------------------------------- */}
               {/* 2. JARVIS AI RESPONSE CARD (ROUNDED & HOLOGRAPHIC)   */}
               {/* ---------------------------------------------------- */}
-              <div className="jarvis-response-row flex items-start gap-2.5 sm:gap-3 w-full">
-                {/* JARVIS Avatar Node */}
-                <div
-                  className="jarvis-response-avatar w-10 h-10 rounded-full shrink-0 flex items-center justify-center mt-1 shadow-lg"
-                  style={{
-                    background: 'linear-gradient(135deg, #061826 0%, #0d223a 100%)',
-                    border: '1.5px solid rgba(97, 215, 201, 0.6)',
-                    boxShadow: '0 0 16px rgba(97, 215, 201, 0.4)',
-                  }}
-                >
-                  <Zap size={18} className="text-cyan-300 animate-pulse" />
-                </div>
-
+              <div className="jarvis-response-row flex items-start w-full">
                 {/* Response Container */}
                 <div
-                  className="jarvis-response-card jarvis-synthesis-glow-card relative flex-1 min-w-0 p-4 sm:p-6 sm:p-7 rounded-2xl sm:rounded-[22px] backdrop-blur-xl transition-all duration-300 overflow-hidden"
+                  className="jarvis-response-card jarvis-synthesis-glow-card relative w-full flex-1 min-w-0 p-4 sm:p-6 sm:p-7 rounded-2xl sm:rounded-[22px] backdrop-blur-xl transition-all duration-300 overflow-hidden"
                 >
                   {/* Subtle Sci-Fi Corner Brackets */}
                   <JarvisCornerBrackets color="cyan" size={16} thickness={2} offset={4} />
