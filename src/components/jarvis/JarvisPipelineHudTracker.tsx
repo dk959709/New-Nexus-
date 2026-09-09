@@ -66,7 +66,7 @@ const CORE_AGENTS: AgentNodeDef[] = [
   {
     id: 'advisor',
     name: 'Advisor',
-    shortLabel: 'ADVISE',
+    shortLabel: 'ADVISOR',
     code: 'ADV-04',
     icon: <Lightbulb size={13} />,
     color: '#facc15',
@@ -165,12 +165,15 @@ export const JarvisPipelineHudTracker: React.FC<JarvisPipelineHudTrackerProps> =
 
   let activeNodes: AgentNodeDef[] = [];
 
+  const hasCoder = steps.some((s) => s?.agentId === 'coder');
+  const hasResearcher = steps.some((s) => s?.agentId === 'researcher');
+
   if (isCodeOnlyPipeline) {
     // 2-agent pipeline: Planner → Coder ONLY
     const plannerNode = CORE_AGENTS.find((a) => a.id === 'planner');
     if (plannerNode) activeNodes.push(plannerNode);
     activeNodes.push(OPTIONAL_AGENTS.coder);
-  } else if (isAutoCodePipeline) {
+  } else if (isAutoCodePipeline && !hasResearcher) {
     // 4-agent pipeline: Planner → Coder → Reviewer → Final Synthesizer
     const pNode = CORE_AGENTS.find((a) => a.id === 'planner');
     const revNode = CORE_AGENTS.find((a) => a.id === 'reviewer');
@@ -179,11 +182,25 @@ export const JarvisPipelineHudTracker: React.FC<JarvisPipelineHudTrackerProps> =
     activeNodes.push(OPTIONAL_AGENTS.coder);
     if (revNode) activeNodes.push(revNode);
     if (sNode) activeNodes.push(sNode);
+  } else if (hasCoder) {
+    // Pipeline with Coder: PLAN → CODE → REVIEW → RSRCH → FACTS → ADVISOR → SYNTH
+    const pNode = CORE_AGENTS.find((a) => a.id === 'planner');
+    const coderNode = OPTIONAL_AGENTS.coder;
+    const revNode = CORE_AGENTS.find((a) => a.id === 'reviewer');
+    const rsrchNode = CORE_AGENTS.find((a) => a.id === 'researcher');
+    const factNode = CORE_AGENTS.find((a) => a.id === 'factChecker');
+    const advNode = CORE_AGENTS.find((a) => a.id === 'advisor');
+    const synthNode = CORE_AGENTS.find((a) => a.id === 'finalSynthesizer');
+
+    if (pNode) activeNodes.push(pNode);
+    if (coderNode) activeNodes.push(coderNode);
+    if (revNode) activeNodes.push(revNode);
+    if (rsrchNode) activeNodes.push(rsrchNode);
+    if (factNode) activeNodes.push(factNode);
+    if (advNode) activeNodes.push(advNode);
+    if (synthNode) activeNodes.push(synthNode);
   } else {
     activeNodes = [...CORE_AGENTS];
-    if (steps.some((s) => s?.agentId === 'coder')) {
-      activeNodes.push(OPTIONAL_AGENTS.coder);
-    }
   }
 
   // 2. Optional agents only added if their respective mode was ON or executed
@@ -236,10 +253,10 @@ export const JarvisPipelineHudTracker: React.FC<JarvisPipelineHudTrackerProps> =
   const hasFailed = steps.some((s) => s?.status === 'failed');
 
   return (
-    <div className="w-full mb-4 group select-none">
+    <div className="w-full mb-4 group select-none jarvis-pipeline-hud-tracker">
       <div
         onClick={onToggleExpand}
-        className="w-full p-2.5 sm:p-3 rounded-2xl cursor-pointer transition-all duration-300 relative overflow-hidden backdrop-blur-md"
+        className="jarvis-pipeline-hud-card w-full p-2.5 sm:p-3 rounded-2xl cursor-pointer transition-all duration-300 relative overflow-hidden backdrop-blur-md"
         style={{
           background: 'linear-gradient(135deg, rgba(6, 18, 36, 0.85) 0%, rgba(10, 16, 44, 0.9) 100%)',
           border: '1px solid rgba(56, 189, 248, 0.3)',
@@ -259,7 +276,7 @@ export const JarvisPipelineHudTracker: React.FC<JarvisPipelineHudTrackerProps> =
         />
 
         {/* Top Header Row of the HUD Bar */}
-        <div className="flex items-center justify-between flex-wrap gap-2 mb-2.5 relative z-10">
+        <div className="jarvis-pipeline-hud-header flex items-center justify-between flex-wrap gap-2 mb-2.5 relative z-10">
           <div className="flex items-center gap-2">
             <div className="w-5 h-5 rounded-md bg-cyan-500/20 border border-cyan-400/40 flex items-center justify-center text-cyan-300 shadow-[0_0_8px_rgba(56,189,248,0.4)]">
               <Layers size={11} />
@@ -298,18 +315,18 @@ export const JarvisPipelineHudTracker: React.FC<JarvisPipelineHudTrackerProps> =
         </div>
 
         {/* Horizontal Node Track Display */}
-        <div className="relative z-10 pt-1 pb-0.5">
+        <div className="jarvis-pipeline-hud-track relative z-10 pt-1 pb-0.5">
           {/* Connecting Track Line behind nodes */}
-          <div className="absolute top-[18px] left-3 right-3 h-[2px] bg-slate-800/80 pointer-events-none rounded-full" />
+          <div className="jarvis-pipeline-hud-line absolute top-[18px] left-3 right-3 h-[2px] bg-slate-800/80 pointer-events-none rounded-full" />
           <div
-            className="absolute top-[18px] left-3 right-3 h-[2px] pointer-events-none rounded-full opacity-60"
+            className="jarvis-pipeline-hud-line-glow absolute top-[18px] left-3 right-3 h-[2px] pointer-events-none rounded-full opacity-60"
             style={{
               background: 'linear-gradient(90deg, rgba(52,211,153,0.5) 0%, rgba(56,189,248,0.5) 30%, rgba(192,132,252,0.5) 60%, rgba(251,113,133,0.5) 100%)',
             }}
           />
 
           {/* Node Grid Layout */}
-          <div className="flex items-center justify-between gap-1 sm:gap-2 overflow-x-auto no-scrollbar py-1">
+          <div className="jarvis-pipeline-hud-nodes flex items-center justify-between gap-1 sm:gap-2 overflow-x-auto no-scrollbar py-1">
             {activeNodes.map((node) => {
               const step = findStep(node.id);
               const status = step?.status || 'skipped';
@@ -321,13 +338,12 @@ export const JarvisPipelineHudTracker: React.FC<JarvisPipelineHudTrackerProps> =
               return (
                 <div
                   key={node.id}
-                  className="flex flex-col items-center gap-1.5 shrink-0 relative z-10 group/node"
-                  style={{ minWidth: '46px' }}
+                  className="jarvis-pipeline-hud-node flex flex-col items-center gap-1.5 shrink-0 sm:min-w-[46px] relative z-10 group/node"
                   title={`${node.name}: ${status.toUpperCase()}${step?.durationMs ? ` (${step.durationMs}ms)` : ''}`}
                 >
                   {/* Visual Node Orb */}
                   <div
-                    className="w-7 h-7 sm:w-8 sm:h-8 rounded-full flex items-center justify-center transition-all duration-300 relative"
+                    className="jarvis-pipeline-hud-orb w-7 h-7 sm:w-8 sm:h-8 rounded-full flex items-center justify-center transition-all duration-300 relative"
                     style={{
                       background: isCompleted
                         ? `linear-gradient(135deg, ${node.color}33 0%, rgba(6, 18, 36, 0.95) 100%)`
@@ -362,7 +378,7 @@ export const JarvisPipelineHudTracker: React.FC<JarvisPipelineHudTrackerProps> =
                     {/* Status Pip Dot */}
                     {isCompleted && (
                       <span
-                        className="absolute -top-0.5 -right-0.5 w-2 h-2 rounded-full border border-slate-950"
+                        className="jarvis-pipeline-hud-pip absolute -top-0.5 -right-0.5 w-2 h-2 rounded-full border border-slate-950"
                         style={{
                           backgroundColor: node.color,
                           boxShadow: `0 0 6px ${node.color}`,
@@ -370,17 +386,17 @@ export const JarvisPipelineHudTracker: React.FC<JarvisPipelineHudTrackerProps> =
                       />
                     )}
                     {isFailed && (
-                      <span className="absolute -top-0.5 -right-0.5 w-2 h-2 rounded-full bg-rose-500 border border-slate-950 shadow-[0_0_6px_#f43f5e]" />
+                      <span className="jarvis-pipeline-hud-pip absolute -top-0.5 -right-0.5 w-2 h-2 rounded-full bg-rose-500 border border-slate-950 shadow-[0_0_6px_#f43f5e]" />
                     )}
 
                     {/* Icon */}
-                    <span className="scale-90 sm:scale-100">{node.icon}</span>
+                    <span className="jarvis-pipeline-hud-icon scale-90 sm:scale-100 flex items-center justify-center">{node.icon}</span>
                   </div>
 
                   {/* Node Label & Code */}
-                  <div className="flex flex-col items-center text-center">
+                  <div className="jarvis-pipeline-hud-label-wrapper flex flex-col items-center text-center">
                     <span
-                      className="text-[9px] sm:text-[10px] font-mono font-bold tracking-tight uppercase"
+                      className="jarvis-pipeline-hud-label text-[9px] sm:text-[10px] font-mono font-bold tracking-tight uppercase"
                       style={{
                         color: isCompleted
                           ? node.color
@@ -393,7 +409,7 @@ export const JarvisPipelineHudTracker: React.FC<JarvisPipelineHudTrackerProps> =
                     >
                       {node.shortLabel}
                     </span>
-                    <span className="text-[8px] font-mono text-slate-500 hidden sm:inline">
+                    <span className="jarvis-pipeline-hud-subtext text-[8px] font-mono text-slate-500 hidden sm:inline">
                       {isCompleted ? (step?.durationMs ? `${step.durationMs}ms` : '✓') : isSkipped ? 'OFF' : status}
                     </span>
                   </div>

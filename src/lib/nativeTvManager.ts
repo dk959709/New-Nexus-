@@ -52,6 +52,7 @@ export interface AndroidTvRemotePluginInterface {
     deviceName?: string;
     model?: string;
     error?: string;
+    errorDetail?: string;
   }>;
   sendKey(options: {
     action: string;
@@ -62,6 +63,7 @@ export interface AndroidTvRemotePluginInterface {
     success: boolean;
     action?: string;
     keyCode?: number;
+    error?: string;
   }>;
   disconnect(): Promise<{ success: boolean }>;
 }
@@ -146,6 +148,7 @@ export async function connectTvNative(
   deviceName?: string;
   model?: string;
   error?: string;
+  errorDetail?: string;
 }> {
   if (!isNativeAndroid()) {
     return {

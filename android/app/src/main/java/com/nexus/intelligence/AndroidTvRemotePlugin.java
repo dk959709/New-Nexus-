@@ -19,6 +19,7 @@ import java.io.OutputStream;
 import java.math.BigInteger;
 
 import dadb.AdbKeyPair;
+import dadb.AdbShellResponse;
 import dadb.AdbShellStream;
 import dadb.Dadb;
 import java.net.InetSocketAddress;
@@ -104,7 +105,7 @@ public class AndroidTvRemotePlugin extends Plugin {
     @PluginMethod
     public void checkStatus(PluginCall call) {
         final JSObject res = new JSObject();
-        final boolean socketAlive = isRemoteSocketAlive() || (activeDadb != null);
+        final boolean socketAlive = isRemoteSocketAlive() || (isTvConnected && activeDadb != null);
         res.put("isConnected", socketAlive);
         res.put("isPaired", getSavedPairedIp() != null);
         res.put("ip", connectedTvIp != null ? connectedTvIp : getSavedPairedIp());
@@ -286,47 +287,114 @@ public class AndroidTvRemotePlugin extends Plugin {
                 try {
                     // If targetPort is 5555 or method is android_tv, perform real authenticated ADB handshake via dadb!
                     if (targetPort == 5555 || (method != null && method.equals("android_tv"))) {
+                        closeRemoteControlSession();
+                        closeAdbSession();
+
                         try {
                             AdbKeyPair keyPair = getOrCreateAdbKeyPair();
-                            Log.d(TAG, "Connecting to Android TV ADB on " + targetIp + ":" + targetPort + " using dadb...");
+                            Log.i(TAG, "Initiating ADB connection & test shell command to " + targetIp + ":" + targetPort + " using dadb...");
 
-                            // If switching devices, close existing dadb session
-                            if (activeDadb != null && (!targetIp.equals(activeDadbIp) || activeDadbPort != targetPort)) {
-                                closeAdbSession();
+                            Dadb dadb = Dadb.create(targetIp, targetPort, keyPair);
+                            String verifiedModel = null;
+                            Exception testException = null;
+
+                            // Test ADB shell connection with a real command (getprop ro.product.model).
+                            // Dadb.create is lazy and does NOT connect immediately. Calling dadb.shell()
+                            // forces the TCP socket to open, executes the A_CNXN handshake, exchanges A_AUTH,
+                            // and sends the RSA public key payload if the TV is not yet authorized.
+                            // That transmission is what displays the "Allow USB/Network debugging?" popup on the TV screen.
+                            try {
+                                AdbShellResponse shellRes = dadb.shell("getprop ro.product.model");
+                                verifiedModel = shellRes.getAllOutput().trim();
+                                Log.i(TAG, "ADB shell test verified successfully! TV model: " + verifiedModel);
+                            } catch (Exception e1) {
+                                testException = e1;
+                                Log.w(TAG, "First ADB test execution failed on " + targetIp + ":" + targetPort + ": " + e1.getMessage());
+
+                                // When dadb connects to an unauthorized TV, it transmits the RSA public key to the TV.
+                                // The TV screen displays the authorization popup. If the user accepts immediately,
+                                // we pause 3.5 seconds and attempt one retry.
+                                String eMsg = e1.getMessage() != null ? e1.getMessage() : "";
+                                boolean likelyAuthChallenge = eMsg.contains("failed") || eMsg.contains("EOF") || eMsg.contains("closed");
+                                if (likelyAuthChallenge) {
+                                    try {
+                                        Log.i(TAG, "Authorization popup dispatched to TV. Pausing 3.5s for user prompt acceptance...");
+                                        Thread.sleep(3500);
+                                        dadb.close();
+                                        dadb = Dadb.create(targetIp, targetPort, keyPair);
+                                        AdbShellResponse retryRes = dadb.shell("getprop ro.product.model");
+                                        verifiedModel = retryRes.getAllOutput().trim();
+                                        testException = null;
+                                        Log.i(TAG, "ADB retry succeeded! TV model: " + verifiedModel);
+                                    } catch (Exception e2) {
+                                        testException = e2;
+                                        Log.w(TAG, "ADB retry also waiting for authorization on " + targetIp + ":" + targetPort + ": " + e2.getMessage());
+                                    }
+                                }
                             }
 
-                            // Dadb.create automatically performs the full ADB protocol handshake:
-                            // Sends A_CNXN, negotiates A_AUTH, transmits the RSA Public Key (A_AUTH_RSAPUBLICKEY),
-                            // and keeps the connection open. If the TV is not yet authorized,
-                            // this immediately triggers the "Allow USB debugging?" dialog on the TV screen.
-                            if (activeDadb == null) {
-                                activeDadb = Dadb.create(targetIp, targetPort, keyPair);
+                            if (verifiedModel != null) {
+                                String finalModel = !verifiedModel.isEmpty() ? verifiedModel : "Android TV";
+                                activeDadb = dadb;
                                 activeDadbIp = targetIp;
                                 activeDadbPort = targetPort;
+                                connectedTvIp = targetIp;
+                                connectedTvPort = targetPort;
+                                connectedTvModel = finalModel;
+                                isTvConnected = true;
+                                savePairedIp(targetIp);
+                                saveTvModel(finalModel);
+
+                                Log.i(TAG, "Android TV ADB connection fully verified and active: " + finalModel + " (" + targetIp + ":" + targetPort + ")");
+
+                                JSObject res = new JSObject();
+                                res.put("success", true);
+                                res.put("isConnected", true);
+                                res.put("isPaired", true);
+                                res.put("ip", targetIp);
+                                res.put("port", targetPort);
+                                res.put("deviceName", finalModel + " (ADB)");
+                                res.put("model", finalModel);
+                                savedCall.resolve(res);
+                                return;
+                            } else {
+                                // Shell command failed: connection was NOT authorized or failed!
+                                closeAdbSession();
+                                isTvConnected = false;
+
+                                String rawError = testException != null ? (testException.getMessage() != null ? testException.getMessage() : testException.toString()) : "Unknown error";
+                                String userFriendlyError;
+
+                                if (rawError.contains("Connection refused")) {
+                                    userFriendlyError = "Connection refused on " + targetIp + ":" + targetPort + ". Please ensure 'Network debugging' (or ADB debugging) is enabled in Developer Options in your TV Settings.";
+                                } else if (rawError.contains("timed out") || rawError.contains("ETIMEDOUT") || rawError.contains("No route")) {
+                                    userFriendlyError = "Connection timed out connecting to " + targetIp + ":" + targetPort + ". Ensure TV is powered on and connected to the same Wi-Fi network.";
+                                } else {
+                                    userFriendlyError = "TV authorization required. An authorization prompt has been sent to your TV screen. Please look at your TV, check 'Always allow from this computer', select OK with your TV remote, and then tap Connect again.";
+                                }
+
+                                Log.w(TAG, "ADB connection not authorized or failed: " + userFriendlyError + " (detail: " + rawError + ")");
+
+                                JSObject res = new JSObject();
+                                res.put("success", false);
+                                res.put("isConnected", false);
+                                res.put("isPaired", false);
+                                res.put("needPairing", true);
+                                res.put("ip", targetIp);
+                                res.put("port", targetPort);
+                                res.put("deviceName", "Android TV (ADB)");
+                                res.put("model", "Android TV");
+                                res.put("error", userFriendlyError);
+                                res.put("errorDetail", rawError);
+                                savedCall.resolve(res);
+                                return;
                             }
 
-                            connectedTvIp = targetIp;
-                            connectedTvPort = targetPort;
-                            connectedTvModel = "Android TV";
-                            isTvConnected = true;
-                            savePairedIp(targetIp);
-                            saveTvModel("Android TV");
-
-                            JSObject res = new JSObject();
-                            res.put("success", true);
-                            res.put("isConnected", true);
-                            res.put("isPaired", true);
-                            res.put("ip", targetIp);
-                            res.put("port", targetPort);
-                            res.put("deviceName", "Android TV (ADB)");
-                            res.put("model", "Android TV");
-                            savedCall.resolve(res);
-                            return;
-
                         } catch (Exception e) {
-                            Log.w(TAG, "dadb connection attempt for " + targetIp + ":" + targetPort + ": " + e.getMessage());
-                            // When dadb connects to an unauthorized TV, it transmits the RSA public key (A_AUTH_RSAPUBLICKEY)
-                            // which triggers the "Allow USB debugging?" dialog on the TV screen.
+                            Log.e(TAG, "Unexpected error establishing ADB connection: " + e.getMessage(), e);
+                            closeAdbSession();
+                            isTvConnected = false;
+
                             JSObject res = new JSObject();
                             res.put("success", false);
                             res.put("isConnected", false);
@@ -336,7 +404,8 @@ public class AndroidTvRemotePlugin extends Plugin {
                             res.put("port", targetPort);
                             res.put("deviceName", "Android TV (ADB)");
                             res.put("model", "Android TV");
-                            res.put("error", "ADB authorization prompt sent to TV screen. Please select 'Always allow' on your TV and press Connect again.");
+                            res.put("error", "ADB connection failed: " + e.getMessage());
+                            res.put("errorDetail", e.toString());
                             savedCall.resolve(res);
                             return;
                         }
@@ -387,7 +456,20 @@ public class AndroidTvRemotePlugin extends Plugin {
             @Override
             public void run() {
                 try {
-                    // 1. Try TLS Remote Control Socket (Port 6466)
+                    // 1. If currently connected via ADB (Port 5555 or activeDadb)
+                    if (activeDadb != null || (connectedTvPort == 5555 && targetIp != null && !targetIp.isEmpty())) {
+                        boolean adbSent = sendAdbKeyWithDadb(targetIp, connectedTvPort == 5555 ? 5555 : (activeDadbPort > 0 ? activeDadbPort : 5555), keyCode);
+                        if (adbSent) {
+                            JSObject res = new JSObject();
+                            res.put("success", true);
+                            res.put("action", action);
+                            res.put("keyCode", keyCode);
+                            savedCall.resolve(res);
+                            return;
+                        }
+                    }
+
+                    // 2. Try TLS Remote Control Socket (Port 6466)
                     if (isRemoteSocketAlive()) {
                         boolean sent = sendRemoteKeyInject(keyCode);
                         if (sent) {
@@ -400,8 +482,8 @@ public class AndroidTvRemotePlugin extends Plugin {
                         }
                     }
 
-                    // 2. If socket not connected, try re-connecting to 6466
-                    if (targetIp != null && !targetIp.isEmpty()) {
+                    // 3. If TLS socket not connected, try re-connecting to 6466 (only if not port 5555)
+                    if (targetIp != null && !targetIp.isEmpty() && connectedTvPort != 5555) {
                         boolean reconnected = connectControlSocketInternal(targetIp, connectedTvPort > 0 ? connectedTvPort : 6466);
                         if (reconnected && isRemoteSocketAlive()) {
                             boolean sent = sendRemoteKeyInject(keyCode);
@@ -416,7 +498,7 @@ public class AndroidTvRemotePlugin extends Plugin {
                         }
                     }
 
-                    // 3. Fallback to Authenticated ADB Socket on Port 5555 via dadb
+                    // 4. Fallback to Authenticated ADB Socket on Port 5555 via dadb
                     if (targetIp != null && !targetIp.isEmpty()) {
                         boolean adbSent = sendAdbKeyWithDadb(targetIp, connectedTvPort > 0 && connectedTvPort != 6466 ? connectedTvPort : 5555, keyCode);
                         if (adbSent) {
@@ -429,7 +511,7 @@ public class AndroidTvRemotePlugin extends Plugin {
                         }
                     }
 
-                    savedCall.reject("Cannot send key: TV is not connected. Check TV screen for debugging prompt or pair your TV.");
+                    savedCall.reject("Cannot send key: TV is not authorized or not connected. Please connect and approve debugging on your TV screen.");
 
                 } catch (Exception e) {
                     Log.e(TAG, "Error sending key command", e);
@@ -443,6 +525,8 @@ public class AndroidTvRemotePlugin extends Plugin {
     public void disconnect(PluginCall call) {
         closeRemoteControlSession();
         closeAdbSession();
+        isTvConnected = false;
+        connectedTvIp = null;
         JSObject res = new JSObject();
         res.put("success", true);
         call.resolve(res);
@@ -464,25 +548,34 @@ public class AndroidTvRemotePlugin extends Plugin {
     }
 
     private synchronized boolean sendAdbKeyWithDadb(String ip, int port, int keyCode) {
-        try {
-            if (activeDadb == null || !ip.equals(activeDadbIp) || activeDadbPort != port) {
-                closeAdbSession();
-                AdbKeyPair keyPair = getOrCreateAdbKeyPair();
-                activeDadb = Dadb.create(ip, port, keyPair);
-                activeDadbIp = ip;
-                activeDadbPort = port;
-            }
+        for (int attempt = 1; attempt <= 2; attempt++) {
+            try {
+                if (activeDadb == null || !ip.equals(activeDadbIp) || activeDadbPort != port) {
+                    closeAdbSession();
+                    AdbKeyPair keyPair = getOrCreateAdbKeyPair();
+                    activeDadb = Dadb.create(ip, port, keyPair);
+                    activeDadbIp = ip;
+                    activeDadbPort = port;
+                }
 
-            // Use dadb's openShell to execute remote control key commands
-            try (AdbShellStream stream = activeDadb.openShell("input keyevent " + keyCode)) {
-                // Key event command dispatched to TV via ADB shell
+                Log.d(TAG, "Dispatching ADB keyevent " + keyCode + " to " + ip + ":" + port + " (attempt " + attempt + ")");
+                AdbShellResponse res = activeDadb.shell("input keyevent " + keyCode);
+                Log.d(TAG, "ADB shell keyevent result: exitCode=" + res.getExitCode() + ", output=" + res.getAllOutput().trim());
+                if (res.getExitCode() == 0) {
+                    isTvConnected = true;
+                    return true;
+                }
+            } catch (Exception e) {
+                Log.w(TAG, "ADB key attempt " + attempt + " failed for " + ip + ":" + port + ": " + e.getMessage());
+                closeAdbSession();
+                isTvConnected = false;
+                if (attempt == 2) {
+                    Log.e(TAG, "All ADB key attempts failed for " + ip + ":" + port, e);
+                    return false;
+                }
             }
-            return true;
-        } catch (Exception e) {
-            Log.e(TAG, "Failed to send ADB key via dadb to " + ip + ":" + port, e);
-            closeAdbSession();
-            return false;
         }
+        return false;
     }
 
     private synchronized void closeAdbSession() {

@@ -539,7 +539,7 @@ export function DevicesPage() {
         } else {
           // ADB (port 5555) or webOS probe
           const adbRes = await connectTvNative(ip, port, tvMethodInput);
-          if (!adbRes.success && !adbRes.isConnected) {
+          if (!adbRes.success || !adbRes.isConnected) {
             setTvTestStatus('failed');
             setTvTestError(
               adbRes.error ||

@@ -2498,6 +2498,113 @@
   }
 
   /* --------------------------------------------------
+     4.5. JARVIS Pipeline HUD Tracker Mobile Responsiveness
+     Prevents 7-agent row (PLAN, CODE, REVIEW, RSRCH, FACTS, ADVISOR, SYNTH)
+     from overflowing or cutting off 'ADVISOR' and 'SYNTH'.
+     Slightly scales icons and text for small screens while enabling
+     smooth horizontal scroll for ultra-compact widths or >7 nodes.
+     -------------------------------------------------- */
+  .jarvis-pipeline-hud-card {
+    padding: 8px 6px !important;
+    border-radius: 14px !important;
+  }
+
+  .jarvis-pipeline-hud-header {
+    margin-bottom: 5px !important;
+    gap: 4px !important;
+  }
+
+  .jarvis-pipeline-hud-header span {
+    font-size: 9.5px !important;
+  }
+
+  .jarvis-pipeline-hud-track {
+    padding-top: 2px !important;
+    padding-bottom: 0px !important;
+  }
+
+  .jarvis-pipeline-hud-line,
+  .jarvis-pipeline-hud-line-glow {
+    top: 13px !important;
+    left: 6px !important;
+    right: 6px !important;
+    height: 1.5px !important;
+  }
+
+  .jarvis-pipeline-hud-nodes {
+    display: flex !important;
+    flex-direction: row !important;
+    align-items: flex-start !important;
+    justify-content: space-between !important;
+    gap: 2px !important;
+    width: 100% !important;
+    max-width: 100% !important;
+    padding: 2px 0 2px 0 !important;
+    overflow-x: auto !important;
+    overflow-y: hidden !important;
+    -webkit-overflow-scrolling: touch !important;
+    scrollbar-width: none !important;
+  }
+
+  .jarvis-pipeline-hud-nodes::-webkit-scrollbar {
+    display: none !important;
+  }
+
+  .jarvis-pipeline-hud-node {
+    min-width: 22px !important;
+    flex: 1 1 0% !important;
+    flex-shrink: 1 !important;
+    gap: 2px !important;
+    padding: 0 !important;
+    box-sizing: border-box !important;
+  }
+
+  .jarvis-pipeline-hud-orb {
+    width: 22px !important;
+    height: 22px !important;
+    min-width: 22px !important;
+    min-height: 22px !important;
+    border-width: 1px !important;
+  }
+
+  .jarvis-pipeline-hud-icon {
+    transform: scale(0.72) !important;
+    display: flex !important;
+    align-items: center !important;
+    justify-content: center !important;
+  }
+
+  .jarvis-pipeline-hud-pip {
+    width: 5px !important;
+    height: 5px !important;
+    top: -1px !important;
+    right: -1px !important;
+  }
+
+  .jarvis-pipeline-hud-label-wrapper {
+    width: 100% !important;
+    max-width: 100% !important;
+    overflow: hidden !important;
+    text-align: center !important;
+  }
+
+  .jarvis-pipeline-hud-label {
+    font-size: 7px !important;
+    line-height: 1 !important;
+    letter-spacing: -0.05em !important;
+    white-space: nowrap !important;
+    overflow: hidden !important;
+    text-overflow: clip !important;
+    display: block !important;
+    width: 100% !important;
+    text-align: center !important;
+  }
+
+  .jarvis-pipeline-hud-subtext {
+    display: none !important;
+  }
+
+  /* --------------------------------------------------
      5. NEXUS AI (AssistantPage) Mobile Responsiveness
      Prevents 'Help me solve a...' being clipped
      -------------------------------------------------- */
