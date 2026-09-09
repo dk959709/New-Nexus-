@@ -1154,19 +1154,14 @@ export function JarvisChat({ config, onOpenSettings }: JarvisChatProps) {
 
                 {/* Response Container */}
                 <div
-                  className="jarvis-response-card relative flex-1 min-w-0 p-5 sm:p-7 rounded-3xl rounded-tl-md backdrop-blur-xl shadow-2xl transition-all duration-300 overflow-hidden"
-                  style={{
-                    background: 'linear-gradient(145deg, rgba(8, 22, 38, 0.92) 0%, rgba(12, 18, 48, 0.96) 100%)',
-                    border: '1.5px solid rgba(97, 215, 201, 0.35)',
-                    boxShadow: '0 16px 48px rgba(0, 0, 0, 0.55), 0 0 28px rgba(97, 215, 201, 0.12)',
-                  }}
+                  className="jarvis-response-card jarvis-synthesis-glow-card relative flex-1 min-w-0 p-4 sm:p-6 sm:p-7 rounded-2xl sm:rounded-[22px] backdrop-blur-xl transition-all duration-300 overflow-hidden"
                 >
                   {/* Subtle Sci-Fi Corner Brackets */}
                   <JarvisCornerBrackets color="cyan" size={16} thickness={2} offset={4} />
                   {/* Response Header & Utilities Bar */}
-                  <div className="jarvis-response-header flex items-center justify-between flex-wrap gap-2 pb-3 mb-4 border-b border-white/10">
-                    <div className="flex items-center gap-2">
-                      <div className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full bg-cyan-500/15 border border-cyan-500/35 text-[10px] font-mono tracking-widest text-cyan-300 font-bold uppercase">
+                  <div className="jarvis-response-header flex items-center justify-between flex-wrap gap-2.5">
+                    <div className="flex items-center gap-2 min-w-0">
+                      <div className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full bg-cyan-500/15 border border-cyan-500/35 text-[10px] font-mono tracking-widest text-cyan-300 font-bold uppercase shadow-[0_0_12px_rgba(97,215,201,0.2)]">
                         <Sparkles size={12} className="text-cyan-400" />
                         <span>JARVIS SYNTHESIS</span>
                       </div>
@@ -1176,12 +1171,12 @@ export function JarvisChat({ config, onOpenSettings }: JarvisChatProps) {
                     </div>
 
                     {/* Action Buttons: Native Speak, Vox Neural TTS Speak, Copy, Save, Delete */}
-                    <div className="jarvis-response-actions flex items-center gap-1.5 flex-wrap">
+                    <div className="jarvis-response-actions flex items-center gap-1 sm:gap-1.5 flex-wrap">
                       {/* Native Browser Speech Button */}
                       <button
                         type="button"
                         onClick={() => toggleSpeak(cleanedAnswer || msg.answer, msg.id)}
-                        className={`p-2 rounded-full transition-all duration-200 flex items-center justify-center ${
+                        className={`p-1.5 sm:p-2 rounded-lg transition-all duration-200 flex items-center justify-center ${
                           speakingId === msg.id
                             ? 'bg-cyan-400 text-slate-950 shadow-[0_0_12px_#61d7c9]'
                             : 'text-slate-300 hover:text-cyan-300 hover:bg-cyan-500/15'
@@ -1196,7 +1191,7 @@ export function JarvisChat({ config, onOpenSettings }: JarvisChatProps) {
                         type="button"
                         onClick={() => handleEdgeTtsSpeak(cleanedAnswer || msg.answer, msg.id)}
                         disabled={edgeTtsLoadingId === msg.id}
-                        className={`p-2 rounded-full transition-all duration-200 flex items-center justify-center ${
+                        className={`p-1.5 sm:p-2 rounded-lg transition-all duration-200 flex items-center justify-center ${
                           edgeTtsPlayingId === msg.id
                             ? 'bg-purple-400 text-slate-950 shadow-[0_0_12px_#c084fc]'
                             : 'text-slate-300 hover:text-purple-300 hover:bg-purple-500/15'
@@ -1223,7 +1218,7 @@ export function JarvisChat({ config, onOpenSettings }: JarvisChatProps) {
                         type="button"
                         onClick={() => handleDownloadAudio(cleanedAnswer || msg.answer, msg.id, msg.query)}
                         disabled={downloadingAudioId === msg.id}
-                        className={`p-2 rounded-full transition-all duration-200 flex items-center justify-center ${
+                        className={`p-1.5 sm:p-2 rounded-lg transition-all duration-200 flex items-center justify-center ${
                           downloadSuccessId === msg.id
                             ? 'bg-emerald-500/25 border border-emerald-400/50 text-emerald-300 shadow-[0_0_12px_rgba(16,185,129,0.4)]'
                             : downloadingAudioId === msg.id
@@ -1250,7 +1245,7 @@ export function JarvisChat({ config, onOpenSettings }: JarvisChatProps) {
                       <button
                         type="button"
                         onClick={() => handleCopy(formatFullPipelineExport(msg), msg.id)}
-                        className="p-2 rounded-full text-slate-300 hover:text-cyan-300 hover:bg-cyan-500/15 transition-colors flex items-center justify-center"
+                        className="p-1.5 sm:p-2 rounded-lg text-slate-300 hover:text-cyan-300 hover:bg-cyan-500/15 transition-colors flex items-center justify-center"
                         title="Copy complete pipeline report"
                       >
                         {copiedId === msg.id ? <Check size={15} className="text-cyan-400" /> : <Copy size={15} />}
@@ -1259,7 +1254,7 @@ export function JarvisChat({ config, onOpenSettings }: JarvisChatProps) {
                       <button
                         type="button"
                         onClick={() => handleSave(msg)}
-                        className={`px-2.5 py-1.5 rounded-full text-xs font-semibold flex items-center gap-1.5 transition-all duration-200 ${
+                        className={`px-2.5 py-1.5 rounded-lg text-xs font-semibold flex items-center gap-1.5 transition-all duration-200 ${
                           recentlySavedId === msg.id
                             ? 'bg-emerald-500/25 border border-emerald-400/50 text-emerald-300 shadow-[0_0_14px_rgba(16,185,129,0.4)]'
                             : savedIds.has(`jarvis-${msg.id}`)
@@ -1289,7 +1284,7 @@ export function JarvisChat({ config, onOpenSettings }: JarvisChatProps) {
                       <button
                         type="button"
                         onClick={() => handleDeleteMessage(msg.id)}
-                        className="p-2 rounded-full text-slate-400 hover:text-rose-400 hover:bg-rose-500/15 transition-colors flex items-center justify-center"
+                        className="p-1.5 sm:p-2 rounded-lg text-slate-400 hover:text-rose-400 hover:bg-rose-500/15 transition-colors flex items-center justify-center"
                         title="Delete inquiry"
                       >
                         <Trash2 size={15} />
