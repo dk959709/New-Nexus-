@@ -20,7 +20,6 @@ import {
   CheckCircle2,
   Bookmark,
   BookmarkCheck,
-  Radio,
   Download,
   Code2,
   FileText,
@@ -28,7 +27,6 @@ import {
   Clipboard,
   FileCode,
   X,
-  Contrast,
 } from 'lucide-react';
 import { storage } from '@/lib/storage';
 import { stripConversationalMetaText, cleanMarkdownForSpeech } from '@/lib/format';
@@ -49,6 +47,10 @@ import { JarvisQuantumOrb } from './JarvisQuantumOrb';
 import { JarvisPipelineHudTracker } from './JarvisPipelineHudTracker';
 import { JarvisTerminalDiagnosticLog } from './JarvisTerminalDiagnosticLog';
 import { JarvisCornerBrackets } from './JarvisCornerBrackets';
+import { JarvisSynthesisThemeToggle } from './JarvisSynthesisThemeToggle';
+import { JarvisEdgeTtsButton } from './JarvisEdgeTtsButton';
+import { useJarvisSynthesisTheme } from '@/hooks/useJarvisSynthesisTheme';
+import { useEdgeTts } from '@/hooks/useEdgeTts';
 import { FormattedText } from './FormattedText';
 import { JarvisDeepResearchMeshAnswers } from './JarvisDeepResearchMeshAnswers';
 import { JarvisFactCheckNotes } from './JarvisFactCheckNotes';
@@ -233,36 +235,33 @@ export function JarvisChat({ config, onOpenSettings }: JarvisChatProps) {
   });
   const [recentlySavedId, setRecentlySavedId] = useState<string | null>(null);
   const [speakingId, setSpeakingId] = useState<string | null>(null);
-  const [edgeTtsLoadingId, setEdgeTtsLoadingId] = useState<string | null>(null);
-  const [edgeTtsPlayingId, setEdgeTtsPlayingId] = useState<string | null>(null);
-  const [downloadingAudioId, setDownloadingAudioId] = useState<string | null>(null);
-  const [downloadSuccessId, setDownloadSuccessId] = useState<string | null>(null);
-  const edgeTtsAudioRef = useRef<HTMLAudioElement | null>(null);
 
-  // JARVIS Synthesis box background theme: 'cyan' (default glow) vs 'black' (flat plain black)
-  const [synthesisTheme, setSynthesisTheme] = useState<'cyan' | 'black'>(() => {
-    try {
-      const saved = localStorage.getItem('jarvis_synthesis_theme');
-      if (saved === 'black' || saved === 'cyan') {
-        return saved;
-      }
-    } catch {
-      // ignore
-    }
-    return 'cyan';
-  });
-
-  const toggleSynthesisTheme = useCallback(() => {
-    setSynthesisTheme((prev) => {
-      const next = prev === 'cyan' ? 'black' : 'cyan';
+  // Clean stop for text-to-speech
+  const stopSpeak = useCallback(() => {
+    if (typeof window !== 'undefined' && 'speechSynthesis' in window) {
       try {
-        localStorage.setItem('jarvis_synthesis_theme', next);
+        window.speechSynthesis.cancel();
       } catch {
-        // ignore
+        // Safe fallback
       }
-      return next;
-    });
+    }
+    utteranceRef.current = null;
+    setSpeakingId(null);
   }, []);
+
+  // Shared Edge TTS Neural Voice & Download Hook
+  const {
+    edgeTtsLoadingId,
+    edgeTtsPlayingId,
+    downloadingAudioId,
+    downloadSuccessId,
+    handleEdgeTtsSpeak,
+    handleDownloadAudio,
+    stopEdgeTts,
+  } = useEdgeTts({ onStopBrowserSpeech: stopSpeak });
+
+  // Shared JARVIS Synthesis box background theme: 'cyan' (default glow) vs 'black' (flat plain black)
+  const { synthesisTheme, toggleSynthesisTheme } = useJarvisSynthesisTheme();
 
   const [synthRawViewMap, setSynthRawViewMap] = useState<Record<string, boolean>>({});
   const [copiedSynthId, setCopiedSynthId] = useState<string | null>(null);
@@ -571,19 +570,6 @@ export function JarvisChat({ config, onOpenSettings }: JarvisChatProps) {
     }
   }, [searchParams, handleSend]);
 
-  // Clean stop for text-to-speech
-  const stopSpeak = useCallback(() => {
-    if (typeof window !== 'undefined' && 'speechSynthesis' in window) {
-      try {
-        window.speechSynthesis.cancel();
-      } catch {
-        // Safe fallback
-      }
-    }
-    utteranceRef.current = null;
-    setSpeakingId(null);
-  }, []);
-
   // Text-To-Speech Synthesis with persistent ref and replay fix
   const toggleSpeak = useCallback(
     (text: string, id: string) => {
@@ -594,6 +580,9 @@ export function JarvisChat({ config, onOpenSettings }: JarvisChatProps) {
         stopSpeak();
         return;
       }
+
+      // Stop any existing Edge TTS playback before starting browser speech
+      stopEdgeTts();
 
       // Stop any existing speech and wake engine up from idle/paused state
       try {
@@ -646,131 +635,8 @@ export function JarvisChat({ config, onOpenSettings }: JarvisChatProps) {
         }
       }, 40);
     },
-    [speakingId, stopSpeak],
+    [speakingId, stopSpeak, stopEdgeTts],
   );
-
-  const handleEdgeTtsSpeak = useCallback(
-    async (text: string, id: string) => {
-      if (edgeTtsPlayingId === id) {
-        if (edgeTtsAudioRef.current) {
-          edgeTtsAudioRef.current.pause();
-          edgeTtsAudioRef.current.currentTime = 0;
-        }
-        setEdgeTtsPlayingId(null);
-        return;
-      }
-
-      stopSpeak();
-      if (edgeTtsAudioRef.current) {
-        edgeTtsAudioRef.current.pause();
-        edgeTtsAudioRef.current = null;
-      }
-
-      const cleanText = cleanMarkdownForSpeech(text);
-
-      if (!cleanText) return;
-
-      setEdgeTtsLoadingId(id);
-      try {
-        const response = await fetch('/api/edge-tts', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({
-            text: cleanText.slice(0, 1500),
-            voice: storage.getEdgeVoice(),
-          }),
-        });
-
-        if (!response.ok) {
-          const data = await response.json().catch(() => ({}));
-          throw new Error(data.error || `Server responded with status ${response.status}`);
-        }
-
-        const blob = await response.blob();
-        const url = URL.createObjectURL(blob);
-
-        const audio = new Audio(url);
-        edgeTtsAudioRef.current = audio;
-
-        audio.onplay = () => {
-          setEdgeTtsPlayingId(id);
-        };
-
-        audio.onended = () => {
-          setEdgeTtsPlayingId(null);
-          edgeTtsAudioRef.current = null;
-          URL.revokeObjectURL(url);
-        };
-
-        audio.onerror = () => {
-          setEdgeTtsPlayingId(null);
-          edgeTtsAudioRef.current = null;
-          URL.revokeObjectURL(url);
-        };
-
-        await audio.play();
-        setEdgeTtsPlayingId(id);
-      } catch (err) {
-        console.error('[JARVIS] Edge TTS generation error:', err);
-        setEdgeTtsPlayingId(null);
-      } finally {
-        setEdgeTtsLoadingId(null);
-      }
-    },
-    [edgeTtsPlayingId, stopSpeak],
-  );
-
-  const handleDownloadAudio = useCallback(
-    async (text: string, id: string, query?: string) => {
-      const cleanText = cleanMarkdownForSpeech(text);
-      if (!cleanText) return;
-
-      setDownloadingAudioId(id);
-      try {
-        const response = await fetch('/api/edge-tts', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({
-            text: cleanText.slice(0, 4000),
-            voice: storage.getEdgeVoice(),
-          }),
-        });
-
-        if (!response.ok) {
-          const data = await response.json().catch(() => ({}));
-          throw new Error(data.error || `Server responded with status ${response.status}`);
-        }
-
-        const blob = await response.blob();
-        const url = URL.createObjectURL(blob);
-
-        const a = document.createElement('a');
-        a.href = url;
-        const safeSlug = query
-          ? query
-              .slice(0, 30)
-              .trim()
-              .replace(/[^a-zA-Z0-9_-]+/g, '_')
-              .toLowerCase()
-          : 'answer';
-        a.download = `nexus_jarvis_${safeSlug}_${Date.now()}.mp3`;
-        document.body.appendChild(a);
-        a.click();
-        document.body.removeChild(a);
-
-        setTimeout(() => URL.revokeObjectURL(url), 2000);
-        setDownloadSuccessId(id);
-        setTimeout(() => setDownloadSuccessId((cur) => (cur === id ? null : cur)), 2500);
-      } catch (err) {
-        console.error('[JARVIS] Audio download error:', err);
-      } finally {
-        setDownloadingAudioId(null);
-      }
-    },
-    [],
-  );
-
-
 
   // Clean up speech synthesis on component unmount
   useEffect(() => {
@@ -781,10 +647,6 @@ export function JarvisChat({ config, onOpenSettings }: JarvisChatProps) {
         } catch {
           // Safe fallback
         }
-      }
-      if (edgeTtsAudioRef.current) {
-        edgeTtsAudioRef.current.pause();
-        edgeTtsAudioRef.current = null;
       }
     };
   }, []);
@@ -1211,31 +1073,11 @@ export function JarvisChat({ config, onOpenSettings }: JarvisChatProps) {
                       </button>
 
                       {/* Edge TTS Neural Audio Button */}
-                      <button
-                        type="button"
+                      <JarvisEdgeTtsButton
+                        isPlaying={edgeTtsPlayingId === msg.id}
+                        isLoading={edgeTtsLoadingId === msg.id}
                         onClick={() => handleEdgeTtsSpeak(cleanedAnswer || msg.answer, msg.id)}
-                        disabled={edgeTtsLoadingId === msg.id}
-                        className={`p-1.5 sm:p-2 rounded-lg transition-all duration-200 flex items-center justify-center ${
-                          edgeTtsPlayingId === msg.id
-                            ? 'bg-purple-400 text-slate-950 shadow-[0_0_12px_#c084fc]'
-                            : 'text-slate-300 hover:text-purple-300 hover:bg-purple-500/15'
-                        }`}
-                        title={
-                          edgeTtsLoadingId === msg.id
-                            ? 'Generating Neural Audio...'
-                            : edgeTtsPlayingId === msg.id
-                            ? 'Stop Edge TTS Audio'
-                            : 'Play Edge TTS Neural Voice'
-                        }
-                      >
-                        {edgeTtsLoadingId === msg.id ? (
-                          <Loader2 size={15} className="animate-spin text-purple-400" />
-                        ) : edgeTtsPlayingId === msg.id ? (
-                          <Radio size={15} className="animate-pulse" />
-                        ) : (
-                          <Radio size={15} />
-                        )}
-                      </button>
+                      />
 
                       {/* Download Audio (Edge TTS MP3) Button */}
                       <button
@@ -1267,23 +1109,10 @@ export function JarvisChat({ config, onOpenSettings }: JarvisChatProps) {
                       </button>
 
                       {/* Theme Toggle Button (Cyan Glow vs Plain Black) */}
-                      <button
-                        type="button"
-                        onClick={toggleSynthesisTheme}
-                        className={`p-1.5 sm:p-2 rounded-lg transition-all duration-200 flex items-center justify-center ${
-                          synthesisTheme === 'black'
-                            ? 'bg-white/15 text-white border border-white/20 shadow-sm hover:bg-white/20'
-                            : 'text-slate-300 hover:text-cyan-300 hover:bg-cyan-500/15'
-                        }`}
-                        title={
-                          synthesisTheme === 'black'
-                            ? 'Theme: Plain Black active (Click to switch to Cyan Glow)'
-                            : 'Theme: Cyan Glow active (Click to switch to Plain Black)'
-                        }
-                        aria-label="Toggle synthesis box theme"
-                      >
-                        <Contrast size={15} />
-                      </button>
+                      <JarvisSynthesisThemeToggle
+                        theme={synthesisTheme}
+                        onToggle={toggleSynthesisTheme}
+                      />
 
                       <button
                         type="button"

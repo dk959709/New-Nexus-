@@ -15,4 +15,6 @@ export { JarvisTerminalDiagnosticLog } from './JarvisTerminalDiagnosticLog';
 export { JarvisCornerBrackets } from './JarvisCornerBrackets';
 export { JarvisDeepResearchMeshAnswers } from './JarvisDeepResearchMeshAnswers';
 export { JarvisFactCheckNotes } from './JarvisFactCheckNotes';
+export { JarvisSynthesisThemeToggle } from './JarvisSynthesisThemeToggle';
+export { JarvisEdgeTtsButton } from './JarvisEdgeTtsButton';
 export { extractFactCheckerNotes } from '@/lib/factCheckerHelper';

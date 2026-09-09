@@ -19,7 +19,12 @@ import {
   JarvisDeepResearchMeshAnswers,
   JarvisImageGallery,
   JarvisFactCheckNotes,
+  JarvisCornerBrackets,
+  JarvisSynthesisThemeToggle,
+  JarvisEdgeTtsButton,
 } from '@/components/jarvis';
+import { useJarvisSynthesisTheme } from '@/hooks/useJarvisSynthesisTheme';
+import { useEdgeTts } from '@/hooks/useEdgeTts';
 import { FormattedText } from '@/components/jarvis/FormattedText';
 import { formatFullPipelineExport } from '@/components/jarvis/formatJarvisPipelineExport';
 import { stripConversationalMetaText } from '@/lib/format';
@@ -37,6 +42,9 @@ export function SavedPage() {
   const [copiedId, setCopiedId] = useState<string | null>(null);
   const [synthRawViewMap, setSynthRawViewMap] = useState<Record<string, boolean>>({});
   const [copiedSynthId, setCopiedSynthId] = useState<string | null>(null);
+
+  const { synthesisTheme, toggleSynthesisTheme } = useJarvisSynthesisTheme();
+  const { edgeTtsLoadingId, edgeTtsPlayingId, handleEdgeTtsSpeak } = useEdgeTts();
 
   const remove = (id: string) => {
     playTapSound();
@@ -340,6 +348,7 @@ export function SavedPage() {
             }
 
             if (isJarvis) {
+              const cleanAnswer = stripConversationalMetaText(answerText);
               const itemQuery = (item.query && item.query.trim()) || (item.title && item.title.trim()) || '';
               let resolvedQuery = itemQuery;
               if (!resolvedQuery || resolvedQuery.toLowerCase() === 'jarvis synthesis' || resolvedQuery.toLowerCase() === 'untitled synthesis') {
@@ -367,12 +376,25 @@ export function SavedPage() {
               return (
                 <div
                   key={item.id}
-                  className="w-full rounded-2xl p-5 sm:p-6 mb-4 bg-gradient-to-b from-[#0c1a26]/90 via-[#07131d]/95 to-[#040a10]/95 border border-cyan-500/30 shadow-[0_4px_24px_rgba(0,0,0,0.4)] backdrop-blur-xl transition-all"
+                  className={`w-full relative rounded-2xl p-5 sm:p-6 mb-4 transition-all duration-300 overflow-hidden ${
+                    synthesisTheme === 'black'
+                      ? 'jarvis-synthesis-black-card'
+                      : 'jarvis-synthesis-glow-card backdrop-blur-xl'
+                  }`}
                 >
+                  {/* Subtle Sci-Fi Corner Brackets */}
+                  <JarvisCornerBrackets
+                    color={synthesisTheme === 'black' ? 'rgba(255, 255, 255, 0.2)' : 'cyan'}
+                    glow={synthesisTheme !== 'black'}
+                    size={16}
+                    thickness={2}
+                    offset={4}
+                  />
+
                   {/* Top Bar */}
-                  <div className="flex items-center justify-between flex-wrap gap-2 pb-3 mb-3 border-b border-cyan-500/20">
+                  <div className="jarvis-response-header flex items-center justify-between flex-wrap gap-2.5 pb-3 mb-3 border-b border-cyan-500/20">
                     <div className="flex items-center gap-2">
-                      <div className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full bg-cyan-500/15 border border-cyan-500/35 text-[10px] font-mono tracking-widest text-cyan-300 font-bold uppercase">
+                      <div className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full bg-cyan-500/15 border border-cyan-500/35 text-[10px] font-mono tracking-widest text-cyan-300 font-bold uppercase shadow-[0_0_12px_rgba(97,215,201,0.2)]">
                         <Sparkles size={12} className="text-cyan-400" />
                         <span>JARVIS SYNTHESIS</span>
                       </div>
@@ -390,11 +412,25 @@ export function SavedPage() {
                       </span>
                     </div>
 
-                    <div className="flex items-center gap-2">
+                    {/* Action Buttons: Edge TTS Speaker, Theme Toggle, Copy, Open in JARVIS, Delete */}
+                    <div className="flex items-center gap-1.5 sm:gap-2 flex-wrap">
+                      {/* Edge TTS Neural Speaker / Listen Button */}
+                      <JarvisEdgeTtsButton
+                        isPlaying={edgeTtsPlayingId === item.id}
+                        isLoading={edgeTtsLoadingId === item.id}
+                        onClick={() => handleEdgeTtsSpeak(cleanAnswer || answerText, item.id)}
+                      />
+
+                      {/* Theme Toggle Button (Cyan Glow vs Plain Black) */}
+                      <JarvisSynthesisThemeToggle
+                        theme={synthesisTheme}
+                        onToggle={toggleSynthesisTheme}
+                      />
+
                       <button
                         type="button"
                         onClick={() => handleCopy(formatFullPipelineExport(item), item.id, item)}
-                        className="px-2.5 py-1 rounded-lg bg-white/5 hover:bg-white/10 border border-white/10 text-xs text-slate-300 hover:text-white flex items-center gap-1.5 transition-all"
+                        className="px-2.5 py-1.5 rounded-lg bg-white/5 hover:bg-white/10 border border-white/10 text-xs text-slate-300 hover:text-white flex items-center gap-1.5 transition-all"
                         title="Copy full synthesis & report"
                       >
                         {copiedId === item.id ? (
@@ -412,7 +448,7 @@ export function SavedPage() {
 
                       <Link
                         to={`/jarvis?q=${encodeURIComponent(displayTitle)}`}
-                        className="px-2.5 py-1 rounded-lg bg-cyan-500/15 hover:bg-cyan-500/25 border border-cyan-500/35 text-xs text-cyan-300 flex items-center gap-1 transition-all"
+                        className="px-2.5 py-1.5 rounded-lg bg-cyan-500/15 hover:bg-cyan-500/25 border border-cyan-500/35 text-xs text-cyan-300 flex items-center gap-1 transition-all"
                         title="Open in JARVIS Workspace"
                       >
                         <span>Open in JARVIS</span>
