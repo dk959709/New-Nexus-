@@ -28,6 +28,7 @@ import {
   Clipboard,
   FileCode,
   X,
+  Contrast,
 } from 'lucide-react';
 import { storage } from '@/lib/storage';
 import { stripConversationalMetaText, cleanMarkdownForSpeech } from '@/lib/format';
@@ -237,6 +238,31 @@ export function JarvisChat({ config, onOpenSettings }: JarvisChatProps) {
   const [downloadingAudioId, setDownloadingAudioId] = useState<string | null>(null);
   const [downloadSuccessId, setDownloadSuccessId] = useState<string | null>(null);
   const edgeTtsAudioRef = useRef<HTMLAudioElement | null>(null);
+
+  // JARVIS Synthesis box background theme: 'cyan' (default glow) vs 'black' (flat plain black)
+  const [synthesisTheme, setSynthesisTheme] = useState<'cyan' | 'black'>(() => {
+    try {
+      const saved = localStorage.getItem('jarvis_synthesis_theme');
+      if (saved === 'black' || saved === 'cyan') {
+        return saved;
+      }
+    } catch {
+      // ignore
+    }
+    return 'cyan';
+  });
+
+  const toggleSynthesisTheme = useCallback(() => {
+    setSynthesisTheme((prev) => {
+      const next = prev === 'cyan' ? 'black' : 'cyan';
+      try {
+        localStorage.setItem('jarvis_synthesis_theme', next);
+      } catch {
+        // ignore
+      }
+      return next;
+    });
+  }, []);
 
   const [synthRawViewMap, setSynthRawViewMap] = useState<Record<string, boolean>>({});
   const [copiedSynthId, setCopiedSynthId] = useState<string | null>(null);
@@ -1142,10 +1168,20 @@ export function JarvisChat({ config, onOpenSettings }: JarvisChatProps) {
               <div className="jarvis-response-row flex items-start w-full">
                 {/* Response Container */}
                 <div
-                  className="jarvis-response-card jarvis-synthesis-glow-card relative w-full flex-1 min-w-0 p-4 sm:p-6 sm:p-7 rounded-2xl sm:rounded-[22px] backdrop-blur-xl transition-all duration-300 overflow-hidden"
+                  className={`jarvis-response-card relative w-full flex-1 min-w-0 p-4 sm:p-6 sm:p-7 rounded-2xl sm:rounded-[22px] transition-all duration-300 overflow-hidden ${
+                    synthesisTheme === 'black'
+                      ? 'jarvis-synthesis-black-card'
+                      : 'jarvis-synthesis-glow-card backdrop-blur-xl'
+                  }`}
                 >
                   {/* Subtle Sci-Fi Corner Brackets */}
-                  <JarvisCornerBrackets color="cyan" size={16} thickness={2} offset={4} />
+                  <JarvisCornerBrackets
+                    color={synthesisTheme === 'black' ? 'rgba(255, 255, 255, 0.2)' : 'cyan'}
+                    glow={synthesisTheme !== 'black'}
+                    size={16}
+                    thickness={2}
+                    offset={4}
+                  />
                   {/* Response Header & Utilities Bar */}
                   <div className="jarvis-response-header flex items-center justify-between flex-wrap gap-2.5">
                     <div className="flex items-center gap-2 min-w-0">
@@ -1158,7 +1194,7 @@ export function JarvisChat({ config, onOpenSettings }: JarvisChatProps) {
                       </span>
                     </div>
 
-                    {/* Action Buttons: Native Speak, Vox Neural TTS Speak, Copy, Save, Delete */}
+                    {/* Action Buttons: Native Speak, Vox Neural TTS Speak, Download, Theme Toggle, Copy, Save, Delete */}
                     <div className="jarvis-response-actions flex items-center gap-1 sm:gap-1.5 flex-wrap">
                       {/* Native Browser Speech Button */}
                       <button
@@ -1228,6 +1264,25 @@ export function JarvisChat({ config, onOpenSettings }: JarvisChatProps) {
                         ) : (
                           <Download size={15} />
                         )}
+                      </button>
+
+                      {/* Theme Toggle Button (Cyan Glow vs Plain Black) */}
+                      <button
+                        type="button"
+                        onClick={toggleSynthesisTheme}
+                        className={`p-1.5 sm:p-2 rounded-lg transition-all duration-200 flex items-center justify-center ${
+                          synthesisTheme === 'black'
+                            ? 'bg-white/15 text-white border border-white/20 shadow-sm hover:bg-white/20'
+                            : 'text-slate-300 hover:text-cyan-300 hover:bg-cyan-500/15'
+                        }`}
+                        title={
+                          synthesisTheme === 'black'
+                            ? 'Theme: Plain Black active (Click to switch to Cyan Glow)'
+                            : 'Theme: Cyan Glow active (Click to switch to Plain Black)'
+                        }
+                        aria-label="Toggle synthesis box theme"
+                      >
+                        <Contrast size={15} />
                       </button>
 
                       <button

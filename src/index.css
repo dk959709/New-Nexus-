@@ -2279,6 +2279,29 @@
   transition: border-color 0.3s ease, box-shadow 0.3s ease;
 }
 
+/* JARVIS Synthesis Theme 2: Plain Black (flat black, minimal glow/border) */
+.jarvis-synthesis-black-card {
+  position: relative;
+  background: #000000 !important;
+  border: 1px solid rgba(255, 255, 255, 0.12) !important;
+  box-shadow: 0 12px 32px rgba(0, 0, 0, 0.85) !important;
+  backdrop-filter: none !important;
+  -webkit-backdrop-filter: none !important;
+  animation: none !important;
+  transition: background-color 0.25s ease, border-color 0.25s ease, box-shadow 0.25s ease;
+}
+
+.jarvis-synthesis-black-card .jarvis-response-header {
+  background: rgba(16, 16, 16, 0.85) !important;
+  border: 1px solid rgba(255, 255, 255, 0.08) !important;
+  box-shadow: none !important;
+}
+
+.jarvis-synthesis-black-card .jarvis-response-header:hover {
+  border-color: rgba(255, 255, 255, 0.16) !important;
+  box-shadow: none !important;
+}
+
 /* Glass-morphic top section behind title and icon row (above nested boxes) */
 .jarvis-response-header {
   position: relative;
