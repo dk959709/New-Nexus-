@@ -814,7 +814,7 @@ export const api = {
 
   async saveCatalogKey(params: {
     id: string;
-    key: string;
+    key?: string;
     name?: string;
     envVar?: string;
     description?: string;
@@ -822,6 +822,7 @@ export const api = {
     baseUrl?: string;
     queryParamName?: string;
     isCustom?: boolean;
+    noAuth?: boolean;
   }): Promise<{ ok: boolean; message: string; item: ApiCatalogItem; data: ApiCatalogItem }> {
     const res = await fetch(`${BASE}/api/catalog/keys`, {
       method: 'POST',

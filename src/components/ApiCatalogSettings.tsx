@@ -65,6 +65,7 @@ export function ApiCatalogSettings() {
     baseUrl: '',
     queryParamName: 'q',
     key: '',
+    noAuth: false,
     description: '',
     docsUrl: '',
     category: 'custom',
@@ -177,10 +178,17 @@ export function ApiCatalogSettings() {
     }
   };
 
+  const isNoAuthPlaceholderVal = (val?: string | null) => {
+    if (!val) return true;
+    const t = val.trim().toLowerCase();
+    return ['', 'none', 'test', 'no_auth', 'noauth', 'no-auth', 'na', 'n/a', 'null', 'empty', 'false', 'free', 'public'].includes(t);
+  };
+
   const handleSaveKey = async (item: ApiCatalogItem) => {
     const rawKey = (keyInputs[item.id] || '').trim();
-    if (!rawKey) {
-      setActionNotice({ id: item.id, type: 'error', message: 'Please enter a valid API key string' });
+    const isNoAuth = item.noAuth || !rawKey || isNoAuthPlaceholderVal(rawKey);
+    if (!isNoAuth && !rawKey) {
+      setActionNotice({ id: item.id, type: 'error', message: 'Please enter a valid API key string (or leave empty for No Auth)' });
       return;
     }
 
@@ -189,7 +197,7 @@ export function ApiCatalogSettings() {
       setActionNotice(null);
       const res = await api.saveCatalogKey({
         id: item.id,
-        key: rawKey,
+        key: isNoAuth ? (rawKey || 'none') : rawKey,
         name: item.name,
         envVar: item.envVar,
         description: item.description,
@@ -197,6 +205,7 @@ export function ApiCatalogSettings() {
         baseUrl: item.baseUrl,
         queryParamName: item.queryParamName,
         isCustom: item.isCustom,
+        noAuth: isNoAuth,
       });
 
       if (res && (res.ok || res.item || res.data)) {
@@ -299,17 +308,18 @@ export function ApiCatalogSettings() {
 
     const rawKeyName = (customForm.envVar || customForm.name).trim();
     const rawVal = customForm.key.trim();
+    const isNoAuth = customForm.noAuth || !rawVal || isNoAuthPlaceholderVal(rawVal);
 
     if (!rawKeyName) {
-      setCustomFormError('Please enter an Environment Variable or Key Name (e.g. WEATHERSTACK_API_KEY)');
+      setCustomFormError('Please enter an Environment Variable or Key Name (e.g. CHUCKNORRIS_API)');
       return;
     }
-    if (!rawVal) {
-      setCustomFormError('Please enter an API Key value');
+    if (!isNoAuth && !rawVal) {
+      setCustomFormError('Please enter an API Key value, or check "No Authentication Required" for free APIs');
       return;
     }
     if (!customForm.baseUrl.trim()) {
-      setCustomFormError('Base URL is required for custom APIs (e.g. https://api.weatherstack.com/current)');
+      setCustomFormError('Base URL is required for custom APIs (e.g. https://api.chucknorris.io/jokes/search)');
       return;
     }
 
@@ -344,7 +354,8 @@ export function ApiCatalogSettings() {
         envVar,
         baseUrl: cleanBaseUrl,
         queryParamName: customForm.queryParamName.trim() || 'q',
-        key: rawVal,
+        key: isNoAuth ? (rawVal || 'none') : rawVal,
+        noAuth: isNoAuth,
         description: customForm.description.trim() || `Custom backend integration for ${finalName}`,
         docsUrl: cleanDocsUrl,
         isCustom: true,
@@ -357,6 +368,7 @@ export function ApiCatalogSettings() {
           baseUrl: '',
           queryParamName: 'q',
           key: '',
+          noAuth: false,
           description: '',
           docsUrl: '',
           category: 'custom',
@@ -665,6 +677,21 @@ export function ApiCatalogSettings() {
                   </button>
                 </div>
               </div>
+            </div>
+
+            {/* No Authentication Required Checkbox */}
+            <div className="flex items-center gap-2 pt-1 px-0.5">
+              <input
+                type="checkbox"
+                id="modal-no-auth"
+                checked={customForm.noAuth}
+                onChange={(e) => setCustomForm((prev) => ({ ...prev, noAuth: e.target.checked }))}
+                className="w-4 h-4 rounded bg-slate-900 border-slate-700 text-cyan-500 focus:ring-cyan-500/20 cursor-pointer"
+              />
+              <label htmlFor="modal-no-auth" className="text-xs font-medium text-slate-300 cursor-pointer select-none flex items-center gap-1.5">
+                <span>No Authentication Required</span>
+                <span className="text-[10px] text-slate-400 font-normal">(for free public APIs like Chuck Norris, Cat Facts, CoinGecko, etc.)</span>
+              </label>
             </div>
 
             {/* Row 2: Base URL | Query Parameter Name */}

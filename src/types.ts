@@ -642,6 +642,7 @@ export interface ApiCatalogItem {
   maskedKey?: string;
   updatedAt?: string;
   isCustom: boolean;
+  noAuth?: boolean;
 }
 
 export interface CustomApiCallResult {

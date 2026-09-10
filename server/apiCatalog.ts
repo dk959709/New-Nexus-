@@ -161,6 +161,29 @@ export const PREDEFINED_CATALOG: CatalogItemDefinition[] = [
   },
 ];
 
+export function isNoAuthPlaceholder(val?: string | null): boolean {
+  if (!val) return true;
+  const t = val.trim().toLowerCase();
+  return (
+    t === '' ||
+    t === 'none' ||
+    t === 'test' ||
+    t === 'no_auth' ||
+    t === 'noauth' ||
+    t === 'no-auth' ||
+    t === 'na' ||
+    t === 'n/a' ||
+    t === 'null' ||
+    t === 'empty' ||
+    t === 'no-key' ||
+    t === 'nokey' ||
+    t === 'false' ||
+    t === 'not_required' ||
+    t === 'public' ||
+    t === 'free'
+  );
+}
+
 interface StoredCatalogRecord {
   id: string;
   name?: string;
@@ -169,6 +192,7 @@ interface StoredCatalogRecord {
   docsUrl?: string;
   baseUrl?: string;
   queryParamName?: string;
+  noAuth?: boolean;
   encryptedKey: string;
   last4: string;
   createdAt: string;
@@ -343,7 +367,8 @@ export function listCatalogItems(): CatalogItemResponse[] {
       }
     }
 
-    const isConnected = Boolean(key && key.trim().length > 0);
+    const isNoAuth = Boolean(record.noAuth || isNoAuthPlaceholder(key));
+    const isConnected = isNoAuth || Boolean(key && key.trim().length > 0);
 
     results.push({
       id,
@@ -356,9 +381,14 @@ export function listCatalogItems(): CatalogItemResponse[] {
       category: 'general',
       status: isConnected ? 'connected' : 'not_configured',
       source,
-      maskedKey: isConnected ? (source === 'env' ? '••••••••••••••••' : maskApiKey(key)) : undefined,
+      maskedKey: isNoAuth
+        ? 'No Auth Required'
+        : isConnected
+        ? (source === 'env' ? '••••••••••••••••' : maskApiKey(key))
+        : undefined,
       updatedAt: record.updatedAt,
       isCustom: true,
+      noAuth: isNoAuth,
     });
   }
 
@@ -367,7 +397,7 @@ export function listCatalogItems(): CatalogItemResponse[] {
 
 export function saveCatalogKeyItem(input: {
   id: string;
-  key: string;
+  key?: string;
   name?: string;
   envVar?: string;
   description?: string;
@@ -375,19 +405,22 @@ export function saveCatalogKeyItem(input: {
   baseUrl?: string;
   queryParamName?: string;
   isCustom?: boolean;
+  noAuth?: boolean;
 }): { success: boolean; item: CatalogItemResponse } {
-  const { id, key } = input;
-  const trimmedKey = key.trim();
-  if (!trimmedKey) {
-    throw new Error('API key value cannot be empty');
+  const { id } = input;
+  const isNoAuth = Boolean(input.noAuth || isNoAuthPlaceholder(input.key));
+  const rawKey = input.key !== undefined ? input.key.trim() : '';
+  if (!isNoAuth && !rawKey) {
+    throw new Error('API key value cannot be empty (or enable "No Authentication Required")');
   }
+
+  const effectiveKey = rawKey || (isNoAuth ? 'none' : '');
+  const encryptedKey = encryptValue(effectiveKey);
+  const now = new Date().toISOString();
 
   const store = loadCatalogStore();
   const existing = store[id] || {};
   const predefined = PREDEFINED_CATALOG.find((p) => p.id === id || p.envVar === id);
-
-  const encryptedKey = encryptValue(trimmedKey);
-  const now = new Date().toISOString();
 
   const record: StoredCatalogRecord = {
     id,
@@ -397,8 +430,9 @@ export function saveCatalogKeyItem(input: {
     docsUrl: input.docsUrl || predefined?.docsUrl || existing.docsUrl || '',
     baseUrl: input.baseUrl !== undefined ? input.baseUrl.trim() : existing.baseUrl,
     queryParamName: input.queryParamName !== undefined ? (input.queryParamName.trim() || 'q') : (existing.queryParamName || 'q'),
+    noAuth: isNoAuth,
     encryptedKey,
-    last4: trimmedKey.slice(-4),
+    last4: isNoAuth ? 'none' : effectiveKey.slice(-4),
     createdAt: existing.createdAt || now,
     updatedAt: now,
     isCustom: Boolean(input.isCustom ?? (!predefined && (existing.isCustom || true))),
@@ -420,9 +454,10 @@ export function saveCatalogKeyItem(input: {
     category: 'general',
     status: 'connected',
     source: 'catalog',
-    maskedKey: maskApiKey(trimmedKey),
+    maskedKey: isNoAuth ? 'No Auth Required' : maskApiKey(effectiveKey),
     updatedAt: now,
     isCustom: Boolean(record.isCustom),
+    noAuth: isNoAuth,
   };
 
   return { success: true, item: updated };
@@ -609,7 +644,7 @@ export async function callCustomApi(
       apiName: rawIdent,
       envVar: '',
       urlCalled: '',
-      error: `Custom API "${rawIdent}" is not registered in the API Catalog. Please register it in Settings > API Catalog with a valid Base URL and API key first.`,
+      error: `Custom API "${rawIdent}" is not registered in the API Catalog. Please register it in Settings > API Catalog with a valid Base URL first.`,
     };
   }
 
@@ -626,15 +661,21 @@ export async function callCustomApi(
     };
   }
 
-  // Get active key (checks process.env then decrypted store key)
   const apiKey = getBackendApiKey(record.envVar || record.id);
-  if (!apiKey || !apiKey.trim()) {
+  const isNoAuth = Boolean(
+    record.noAuth ||
+    !apiKey ||
+    !apiKey.trim() ||
+    isNoAuthPlaceholder(apiKey)
+  );
+
+  if (!isNoAuth && (!apiKey || !apiKey.trim())) {
     return {
       ok: false,
       apiName,
       envVar,
       urlCalled: '',
-      error: `No API key configured for custom API "${apiName}". Please configure an API key in Settings > API Catalog.`,
+      error: `No API key configured for custom API "${apiName}". Please configure an API key or enable "No Authentication Required" in Settings > API Catalog.`,
     };
   }
 
@@ -651,49 +692,69 @@ export async function callCustomApi(
       apiName,
       envVar,
       urlCalled: record.baseUrl,
-      error: `Invalid Base URL format: "${record.baseUrl}". Expected a valid URL (e.g. https://api.weatherstack.com/current).`,
+      error: `Invalid Base URL format: "${record.baseUrl}". Expected a valid URL (e.g. https://api.chucknorris.io/jokes/search).`,
     };
   }
 
-  const queryParamName = (record.queryParamName && record.queryParamName.trim()) || 'q';
+  let queryParamName = (record.queryParamName && record.queryParamName.trim()) || 'q';
+  if (queryParamName === 'q') {
+    if (parsedUrl.hostname.includes('chucknorris.io') || parsedUrl.pathname.includes('/jokes/search')) {
+      queryParamName = 'query';
+    } else {
+      for (const [k] of parsedUrl.searchParams.entries()) {
+        if (/^(query|q|search|term|keyword|text|s)$/i.test(k)) {
+          queryParamName = k;
+          break;
+        }
+      }
+    }
+  }
+
   const queryVal = (queryText || '').trim();
 
-  // Helper to build URL with a specific apiKey param name
+  // Helper to build URL
   const buildUrl = (keyParamName: string | null) => {
     const url = new URL(parsedUrl.toString());
     if (queryVal) {
       url.searchParams.set(queryParamName, queryVal);
     }
-    if (keyParamName) {
+    if (keyParamName && !isNoAuth && apiKey && apiKey.trim()) {
       url.searchParams.set(keyParamName, apiKey.trim());
     }
     return url;
   };
 
   // Helper to mask key in URL for logs/display
-  const maskUrl = (url: URL) => {
-    const copy = new URL(url.toString());
-    for (const p of ['apikey', 'api_key', 'access_key', 'key', 'token', 'auth']) {
-      if (copy.searchParams.has(p)) {
-        copy.searchParams.set(p, '••••••••');
+  const maskUrl = (rawUrl: URL | string) => {
+    try {
+      const copy = new URL(rawUrl.toString());
+      for (const p of ['apikey', 'api_key', 'access_key', 'key', 'token', 'auth', 'secret', 'app_key', 'appid']) {
+        if (copy.searchParams.has(p)) {
+          copy.searchParams.set(p, '••••••••');
+        }
       }
+      if (apiKey && apiKey.trim().length > 2 && !isNoAuth) {
+        for (const [k, v] of copy.searchParams.entries()) {
+          if (v === apiKey.trim() || v.includes(apiKey.trim())) {
+            copy.searchParams.set(k, '••••••••');
+          }
+        }
+      }
+      return copy.toString();
+    } catch {
+      return String(rawUrl);
     }
-    return copy.toString();
   };
 
-  // Try authentication patterns:
-  // 1. apikey= query param (common free API standard)
-  // 2. access_key= (Weatherstack/APILayer standard)
-  // 3. api_key= (OpenWeather/GNews/NASA standard)
-  // 4. key= (Google/WeatherAPI standard)
-  // 5. Authorization header: Bearer <key>
-  const patterns: Array<{ keyParam: string | null; useBearer: boolean }> = [
-    { keyParam: 'apikey', useBearer: false },
-    { keyParam: 'access_key', useBearer: false },
-    { keyParam: 'api_key', useBearer: false },
-    { keyParam: 'key', useBearer: false },
-    { keyParam: null, useBearer: true },
-  ];
+  const patterns: Array<{ keyParam: string | null; useBearer: boolean }> = isNoAuth
+    ? [{ keyParam: null, useBearer: false }]
+    : [
+        { keyParam: 'apikey', useBearer: false },
+        { keyParam: 'access_key', useBearer: false },
+        { keyParam: 'api_key', useBearer: false },
+        { keyParam: 'key', useBearer: false },
+        { keyParam: null, useBearer: true },
+      ];
 
   let lastStatus = 0;
   let lastError = '';
@@ -704,11 +765,13 @@ export async function callCustomApi(
     const targetUrl = buildUrl(pattern.keyParam);
     lastUrl = maskUrl(targetUrl);
 
+    console.log(`[CustomAPI] Outgoing request to: ${lastUrl} (isNoAuth: ${isNoAuth})`);
+
     const headers: Record<string, string> = {
       'Accept': 'application/json, text/plain, */*',
       'User-Agent': 'Nexus-Intelligence/1.0',
     };
-    if (pattern.useBearer) {
+    if (pattern.useBearer && !isNoAuth && apiKey && apiKey.trim()) {
       headers['Authorization'] = `Bearer ${apiKey.trim()}`;
     }
 
@@ -720,24 +783,25 @@ export async function callCustomApi(
       });
 
       lastStatus = response.status;
-
-      // Read response body as text first to handle non-JSON gracefully
       const rawText = await response.text();
       let jsonData: unknown = null;
       try {
         jsonData = JSON.parse(rawText);
       } catch {
-        // Not JSON
         if (!response.ok) {
-          lastError = `API returned HTTP ${response.status}: ${rawText.slice(0, 300) || response.statusText}`;
-          if (response.status === 401 || response.status === 403) continue;
+          const errDetail = `HTTP ${response.status} from ${lastUrl}: ${rawText.slice(0, 300) || response.statusText}`;
+          console.warn(`[CustomAPI] Non-JSON error: ${errDetail}`);
+          if ((response.status === 401 || response.status === 403) && !isNoAuth && i < patterns.length - 1) {
+            lastError = errDetail;
+            continue;
+          }
           return {
             ok: false,
             apiName,
             envVar,
             urlCalled: lastUrl,
             statusCode: response.status,
-            error: `Upstream service returned non-JSON response (HTTP ${response.status}). Preview: ${rawText.slice(0, 200)}`,
+            error: errDetail,
           };
         }
         return {
@@ -753,24 +817,34 @@ export async function callCustomApi(
       const jsonRec = jsonData && typeof jsonData === 'object' ? (jsonData as Record<string, unknown>) : null;
       const jsonErr = jsonRec && typeof jsonRec.error === 'object' ? (jsonRec.error as Record<string, unknown>) : null;
 
-      // Check if JSON indicates an auth error (e.g. Weatherstack returns 200 with { success: false, error: { code: 101, type: "invalid_access_key" } })
       const isAuthError =
-        response.status === 401 ||
-        response.status === 403 ||
-        (jsonRec && jsonRec.success === false && jsonErr && /key|auth|unauthorized|access_key/i.test(String(jsonErr.type || jsonErr.info || '')));
+        !isNoAuth &&
+        (response.status === 401 ||
+         response.status === 403 ||
+         (jsonRec && jsonRec.success === false && jsonErr && /key|auth|unauthorized|access_key/i.test(String(jsonErr.type || jsonErr.info || ''))));
 
       if (isAuthError && i < patterns.length - 1) {
         lastError = (jsonErr && typeof jsonErr.info === 'string' ? jsonErr.info : undefined) || `HTTP ${response.status} Authentication Failure with ${pattern.keyParam || 'Bearer'}`;
-        continue; // Try next authentication pattern
+        continue;
       }
 
       if (!response.ok) {
-        const errorMsg =
+        const detailMsg =
           jsonRec?.message ||
           (jsonErr && jsonErr.info) ||
           jsonRec?.error ||
           jsonRec?.detail ||
-          `Upstream API error (HTTP ${response.status})`;
+          rawText.slice(0, 200) ||
+          `HTTP ${response.status}`;
+
+        const formattedError = `HTTP ${response.status} from ${lastUrl}: ${typeof detailMsg === 'string' ? detailMsg : JSON.stringify(detailMsg)}`;
+        console.warn(`[CustomAPI] Call failed for "${apiName}": ${formattedError}`);
+
+        if ((response.status === 401 || response.status === 403) && !isNoAuth && i < patterns.length - 1) {
+          lastError = formattedError;
+          continue;
+        }
+
         return {
           ok: false,
           apiName,
@@ -778,11 +852,10 @@ export async function callCustomApi(
           urlCalled: lastUrl,
           statusCode: response.status,
           data: jsonData,
-          error: typeof errorMsg === 'string' ? errorMsg : JSON.stringify(errorMsg),
+          error: formattedError,
         };
       }
 
-      // Successful JSON response
       return {
         ok: true,
         apiName,
@@ -794,16 +867,19 @@ export async function callCustomApi(
     } catch (fetchErr: unknown) {
       const errObj = fetchErr instanceof Error ? fetchErr : null;
       if (errObj && (errObj.name === 'TimeoutError' || errObj.name === 'AbortError')) {
+        const timeoutMsg = `Request to ${lastUrl} timed out after 12 seconds. The endpoint may be down or unreachable.`;
+        console.warn(`[CustomAPI] ${timeoutMsg}`);
         return {
           ok: false,
           apiName,
           envVar,
           urlCalled: lastUrl,
-          error: `Request to ${apiName} timed out after 12 seconds. The endpoint may be down or unreachable.`,
+          error: timeoutMsg,
         };
       }
-      lastError = errObj ? errObj.message : String(fetchErr);
-      if (i < patterns.length - 1) continue;
+      lastError = `Failed to connect to ${lastUrl}: ${errObj ? errObj.message : String(fetchErr)}`;
+      console.warn(`[CustomAPI] Connection error: ${lastError}`);
+      if (!isNoAuth && i < patterns.length - 1) continue;
     }
   }
 
@@ -813,7 +889,7 @@ export async function callCustomApi(
     envVar,
     urlCalled: lastUrl,
     statusCode: lastStatus || undefined,
-    error: lastError || 'Failed to establish connection to custom API.',
+    error: lastError || `Failed to establish connection to ${lastUrl}`,
   };
 }
 
@@ -849,16 +925,12 @@ apiCatalogRouter.get('/api/catalog/keys/:id/reveal', (req: Request, res: Respons
       );
     }
 
-    if (!record.encryptedKey) {
+    if (!record.encryptedKey && !record.noAuth) {
       return errorResponse(res, 404, 'No API key configured for this custom service.');
     }
 
     const decrypted = decryptValue(record.encryptedKey);
-    if (!decrypted) {
-      return errorResponse(res, 500, 'Failed to decrypt API key.');
-    }
-
-    return res.json({ ok: true, key: decrypted });
+    return res.json({ ok: true, key: decrypted || 'none' });
   } catch (err) {
     return errorResponse(res, 500, (err as Error).message);
   }
@@ -879,12 +951,13 @@ apiCatalogRouter.post('/api/catalog/custom-call', async (req: Request, res: Resp
 
 apiCatalogRouter.post('/api/catalog/keys', (req: Request, res: Response) => {
   try {
-    const { id, key, name, envVar, description, docsUrl, baseUrl, queryParamName, isCustom } = req.body || {};
+    const { id, key, name, envVar, description, docsUrl, baseUrl, queryParamName, isCustom, noAuth } = req.body || {};
     if (!id || typeof id !== 'string' || !id.trim()) {
       return errorResponse(res, 400, 'API identifier (id) is required.');
     }
-    if (!key || typeof key !== 'string' || !key.trim()) {
-      return errorResponse(res, 400, 'API key value is required.');
+    const isNoAuth = Boolean(noAuth || isNoAuthPlaceholder(key));
+    if (!isNoAuth && (!key || typeof key !== 'string' || !key.trim())) {
+      return errorResponse(res, 400, 'API key value is required (or enable No Authentication Required).');
     }
     if (isCustom && (!baseUrl || typeof baseUrl !== 'string' || !baseUrl.trim())) {
       return errorResponse(res, 400, 'Base URL is required for custom APIs.');
@@ -892,7 +965,7 @@ apiCatalogRouter.post('/api/catalog/keys', (req: Request, res: Response) => {
 
     const result = saveCatalogKeyItem({
       id: id.trim().toLowerCase(),
-      key: key.trim(),
+      key: typeof key === 'string' ? key.trim() : '',
       name: typeof name === 'string' ? name.trim() : undefined,
       envVar: typeof envVar === 'string' ? envVar.trim().toUpperCase() : undefined,
       description: typeof description === 'string' ? description.trim() : undefined,
@@ -900,6 +973,7 @@ apiCatalogRouter.post('/api/catalog/keys', (req: Request, res: Response) => {
       baseUrl: typeof baseUrl === 'string' ? baseUrl.trim() : undefined,
       queryParamName: typeof queryParamName === 'string' ? queryParamName.trim() : undefined,
       isCustom: Boolean(isCustom),
+      noAuth: isNoAuth,
     });
 
     return res.json({ ok: true, data: result.item, item: result.item, message: 'API key securely saved to catalog.' });
