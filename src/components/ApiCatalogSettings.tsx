@@ -116,6 +116,11 @@ export function ApiCatalogSettings() {
   };
 
   const toggleRevealKey = async (item: ApiCatalogItem) => {
+    // Security restriction: Render environment variables must never be revealed
+    if (item.source === 'env' || !item.isCustom) {
+      return;
+    }
+
     const isCurrentlyVisible = Boolean(revealedVisibility[item.id]);
     if (isCurrentlyVisible) {
       setRevealedVisibility((prev) => ({ ...prev, [item.id]: false }));
@@ -145,6 +150,11 @@ export function ApiCatalogSettings() {
   };
 
   const handleCopyKey = async (item: ApiCatalogItem) => {
+    // Security restriction: Render environment variables must never be copied
+    if (item.source === 'env' || !item.isCustom) {
+      return;
+    }
+
     let keyToCopy = revealedKeys[item.id];
     if (!keyToCopy) {
       try {
@@ -846,6 +856,8 @@ export function ApiCatalogSettings() {
           <tbody className="divide-y divide-slate-800/60 text-xs">
             {filteredCatalog.map((item) => {
               const isConnected = item.status === 'connected';
+              const isRenderEnv = item.source === 'env' || !item.isCustom;
+              const isCustomVault = Boolean(item.isCustom && item.source === 'catalog');
               const isRevealed = Boolean(revealedVisibility[item.id]);
               const isRevealing = revealingId === item.id;
               const isTesting = testingId === item.id;
@@ -858,9 +870,9 @@ export function ApiCatalogSettings() {
               // Determine display value
               let displayValue = '••••••••••••••••';
               if (isConnected) {
-                if (isRevealed && revealedKeys[item.id]) {
+                if (isCustomVault && isRevealed && revealedKeys[item.id]) {
                   displayValue = revealedKeys[item.id];
-                } else if (item.maskedKey) {
+                } else if (isCustomVault && item.maskedKey) {
                   displayValue = item.maskedKey;
                 }
               }
@@ -921,8 +933,9 @@ export function ApiCatalogSettings() {
                         {item.envVar}
                       </span>
                       <button
+                        type="button"
                         onClick={() => copyToClipboard(item.envVar, `env-${item.id}`)}
-                        className="text-slate-500 hover:text-cyan-300 p-0.5 transition-colors opacity-0 group-hover:opacity-100"
+                        className="text-slate-500 hover:text-cyan-300 p-0.5 transition-colors opacity-0 group-hover:opacity-100 cursor-pointer"
                         title="Copy variable name"
                       >
                         {isEnvCopied ? <Check size={11} className="text-emerald-400" /> : <Copy size={11} />}
@@ -930,7 +943,7 @@ export function ApiCatalogSettings() {
                     </div>
                   </td>
 
-                  {/* Column 3: Value (Masked with Eye Toggle) */}
+                  {/* Column 3: Value */}
                   <td className="py-3.5 px-4 align-middle">
                     {isEditing ? (
                       <div className="flex items-center gap-1.5">
@@ -955,53 +968,67 @@ export function ApiCatalogSettings() {
                           onClick={() =>
                             setShowKeyInput((prev) => ({ ...prev, [item.id]: !prev[item.id] }))
                           }
-                          className="p-1.5 text-slate-400 hover:text-slate-200"
+                          className="p-1.5 text-slate-400 hover:text-slate-200 cursor-pointer"
                         >
                           {showKeyInput[item.id] ? <EyeOff size={13} /> : <Eye size={13} />}
                         </button>
                         <button
+                          type="button"
                           onClick={() => handleSaveKey(item)}
                           disabled={isSaving || !(keyInputs[item.id] || '').trim()}
-                          className="text-[11px] font-semibold px-2.5 py-1.5 rounded-md bg-cyan-500 text-slate-950 hover:bg-cyan-400 disabled:opacity-40"
+                          className="text-[11px] font-semibold px-2.5 py-1.5 rounded-md bg-cyan-500 text-slate-950 hover:bg-cyan-400 disabled:opacity-40 cursor-pointer"
                         >
                           {isSaving ? '...' : 'Save'}
                         </button>
                         <button
+                          type="button"
                           onClick={() => {
                             setEditingKeyId(null);
                             setKeyInputs((prev) => ({ ...prev, [item.id]: '' }));
                           }}
-                          className="text-[11px] px-2 py-1.5 rounded-md bg-slate-800 text-slate-400 hover:text-slate-200"
+                          className="text-[11px] px-2 py-1.5 rounded-md bg-slate-800 text-slate-400 hover:text-slate-200 cursor-pointer"
                         >
                           Cancel
                         </button>
                       </div>
                     ) : isConnected ? (
-                      <div className="inline-flex items-center gap-2 px-2.5 py-1 rounded-md bg-slate-900/80 border border-slate-800 font-mono text-xs max-w-[280px]">
-                        <span className={`truncate select-all ${isRevealed ? 'text-amber-300 font-mono' : 'text-slate-400'}`}>
-                          {displayValue}
-                        </span>
-                        <button
-                          onClick={() => toggleRevealKey(item)}
-                          disabled={isRevealing}
-                          className="text-slate-400 hover:text-cyan-300 p-0.5 transition-colors flex-shrink-0 ml-auto"
-                          title={isRevealed ? 'Hide API key' : 'Reveal API key'}
-                        >
-                          {isRevealing ? (
-                            <RefreshCw size={12} className="animate-spin text-cyan-400" />
-                          ) : isRevealed ? (
-                            <EyeOff size={12} />
-                          ) : (
-                            <Eye size={12} />
-                          )}
-                        </button>
-                      </div>
+                      isRenderEnv ? (
+                        /* Render Env: Masked display only. Eye/reveal icon is completely removed to prevent key exposure */
+                        <div className="inline-flex items-center px-2.5 py-1 rounded-md bg-slate-900/60 border border-slate-800/80 font-mono text-xs max-w-[280px]">
+                          <span className="text-slate-500 tracking-widest select-none font-mono">
+                            ••••••••••••••••
+                          </span>
+                        </div>
+                      ) : (
+                        /* Custom Local Vault API: User-entered key with eye/reveal toggle */
+                        <div className="inline-flex items-center gap-2 px-2.5 py-1 rounded-md bg-slate-900/80 border border-slate-800 font-mono text-xs max-w-[280px]">
+                          <span className={`truncate select-all ${isRevealed ? 'text-amber-300 font-mono' : 'text-slate-400'}`}>
+                            {displayValue}
+                          </span>
+                          <button
+                            type="button"
+                            onClick={() => toggleRevealKey(item)}
+                            disabled={isRevealing}
+                            className="text-slate-400 hover:text-cyan-300 p-0.5 transition-colors flex-shrink-0 ml-auto cursor-pointer"
+                            title={isRevealed ? 'Hide API key' : 'Reveal API key'}
+                          >
+                            {isRevealing ? (
+                              <RefreshCw size={12} className="animate-spin text-cyan-400" />
+                            ) : isRevealed ? (
+                              <EyeOff size={12} />
+                            ) : (
+                              <Eye size={12} />
+                            )}
+                          </button>
+                        </div>
+                      )
                     ) : (
                       <div className="flex items-center gap-2">
                         <span className="text-slate-500 text-[11px] italic">Not configured</span>
                         <button
+                          type="button"
                           onClick={() => setEditingKeyId(item.id)}
-                          className="text-[11px] font-medium text-cyan-400 hover:text-cyan-300 underline"
+                          className="text-[11px] font-medium text-cyan-400 hover:text-cyan-300 underline cursor-pointer"
                         >
                           + Set Key
                         </button>
@@ -1028,7 +1055,7 @@ export function ApiCatalogSettings() {
                           {item.source === 'env' ? (
                             <span className="text-indigo-400 font-medium">Render Env</span>
                           ) : (
-                            <span className="text-cyan-400 font-medium">Catalog Vault</span>
+                            <span className="text-cyan-400 font-medium">Local Vault</span>
                           )}
                         </span>
                       )}
@@ -1040,9 +1067,10 @@ export function ApiCatalogSettings() {
                     <div className="inline-flex items-center gap-1">
                       {/* Test / Verify Icon Button */}
                       <button
+                        type="button"
                         onClick={() => handleTestKey(item)}
                         disabled={isTesting || !isConnected}
-                        className={`p-1.5 rounded-md border transition-colors ${
+                        className={`p-1.5 rounded-md border transition-colors cursor-pointer ${
                           isConnected
                             ? 'bg-slate-800 text-slate-300 border-slate-700 hover:text-cyan-300 hover:border-cyan-500/50'
                             : 'bg-slate-900 text-slate-600 border-slate-800 cursor-not-allowed'
@@ -1052,43 +1080,50 @@ export function ApiCatalogSettings() {
                         <RefreshCw size={13} className={isTesting ? 'animate-spin text-cyan-400' : ''} />
                       </button>
 
-                      {/* Copy Key Button */}
-                      <button
-                        onClick={() => handleCopyKey(item)}
-                        disabled={!isConnected}
-                        className={`p-1.5 rounded-md border transition-colors ${
-                          isConnected
-                            ? 'bg-slate-800 text-slate-300 border-slate-700 hover:text-cyan-300 hover:border-cyan-500/50'
-                            : 'bg-slate-900 text-slate-600 border-slate-800 cursor-not-allowed'
-                        }`}
-                        title="Copy API key to clipboard"
-                      >
-                        {isCopied ? <Check size={13} className="text-emerald-400" /> : <Copy size={13} />}
-                      </button>
+                      {/* Copy Key Button: STRICTLY REMOVED for Render Env keys; ONLY present for custom Local Vault keys */}
+                      {isCustomVault && (
+                        <button
+                          type="button"
+                          onClick={() => handleCopyKey(item)}
+                          disabled={!isConnected}
+                          className={`p-1.5 rounded-md border transition-colors cursor-pointer ${
+                            isConnected
+                              ? 'bg-slate-800 text-slate-300 border-slate-700 hover:text-cyan-300 hover:border-cyan-500/50'
+                              : 'bg-slate-900 text-slate-600 border-slate-800 cursor-not-allowed'
+                          }`}
+                          title="Copy API key to clipboard"
+                        >
+                          {isCopied ? <Check size={13} className="text-emerald-400" /> : <Copy size={13} />}
+                        </button>
+                      )}
 
-                      {/* Edit / Update Key Button */}
-                      <button
-                        onClick={() => {
-                          setEditingKeyId(isEditing ? null : item.id);
-                        }}
-                        className={`p-1.5 rounded-md border transition-colors ${
-                          isEditing
-                            ? 'bg-cyan-500/20 text-cyan-300 border-cyan-500/50'
-                            : 'bg-slate-800 text-slate-300 border-slate-700 hover:text-cyan-300 hover:border-cyan-500/50'
-                        }`}
-                        title="Edit / Update key"
-                      >
-                        <Edit2 size={13} />
-                      </button>
+                      {/* Edit / Update Key Button: Only for vault items or not-yet-configured items */}
+                      {(!isRenderEnv || !isConnected) && (
+                        <button
+                          type="button"
+                          onClick={() => {
+                            setEditingKeyId(isEditing ? null : item.id);
+                          }}
+                          className={`p-1.5 rounded-md border transition-colors cursor-pointer ${
+                            isEditing
+                              ? 'bg-cyan-500/20 text-cyan-300 border-cyan-500/50'
+                              : 'bg-slate-800 text-slate-300 border-slate-700 hover:text-cyan-300 hover:border-cyan-500/50'
+                          }`}
+                          title="Edit / Update key in vault"
+                        >
+                          <Edit2 size={13} />
+                        </button>
+                      )}
 
                       {/* Delete Button */}
                       <button
+                        type="button"
                         onClick={() => handleDeleteKey(item)}
                         disabled={isSaving || (!item.isCustom && item.source !== 'catalog')}
                         className={`p-1.5 rounded-md border transition-colors ${
                           item.isCustom || item.source === 'catalog'
-                            ? 'bg-slate-800 text-slate-400 border-slate-700 hover:text-rose-400 hover:border-rose-500/50'
-                            : 'bg-slate-900 text-slate-600 border-slate-800 cursor-not-allowed'
+                            ? 'bg-slate-800 text-slate-400 border-slate-700 hover:text-rose-400 hover:border-rose-500/50 cursor-pointer'
+                            : 'bg-slate-900 text-slate-600 border-slate-800 cursor-not-allowed opacity-40'
                         }`}
                         title={
                           item.isCustom || item.source === 'catalog'

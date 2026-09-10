@@ -316,7 +316,8 @@ export function listCatalogItems(): CatalogItemResponse[] {
       category: def.category,
       status: isConnected ? 'connected' : 'not_configured',
       source,
-      maskedKey: isConnected ? maskApiKey(key) : undefined,
+      // Security policy: Never expose any part of Render environment variables
+      maskedKey: isConnected ? (source === 'env' ? '••••••••••••••••' : maskApiKey(key)) : undefined,
       updatedAt: storedRec?.updatedAt,
       isCustom: false,
     });
@@ -355,7 +356,7 @@ export function listCatalogItems(): CatalogItemResponse[] {
       category: 'general',
       status: isConnected ? 'connected' : 'not_configured',
       source,
-      maskedKey: isConnected ? maskApiKey(key) : undefined,
+      maskedKey: isConnected ? (source === 'env' ? '••••••••••••••••' : maskApiKey(key)) : undefined,
       updatedAt: record.updatedAt,
       isCustom: true,
     });
@@ -831,11 +832,33 @@ apiCatalogRouter.get('/api/catalog/keys/:id/reveal', (req: Request, res: Respons
   try {
     const id = req.params.id;
     if (!id) return errorResponse(res, 400, 'ID is required.');
-    const key = getBackendApiKey(id);
-    if (!key) {
-      return errorResponse(res, 404, 'No API key configured for this service.');
+
+    // Security policy: Render environment variables must NEVER leave the server or be revealable
+    const isPredefined = PREDEFINED_CATALOG.some(
+      (p) => p.id === id || p.envVar === id || p.fallbackEnvVars?.includes(id),
+    );
+
+    const store = loadCatalogStore();
+    const record = store[id];
+
+    if (isPredefined || !record || !record.isCustom) {
+      return errorResponse(
+        res,
+        403,
+        'Security policy: Render environment variables cannot be revealed or retrieved from the server.',
+      );
     }
-    return res.json({ ok: true, key });
+
+    if (!record.encryptedKey) {
+      return errorResponse(res, 404, 'No API key configured for this custom service.');
+    }
+
+    const decrypted = decryptValue(record.encryptedKey);
+    if (!decrypted) {
+      return errorResponse(res, 500, 'Failed to decrypt API key.');
+    }
+
+    return res.json({ ok: true, key: decrypted });
   } catch (err) {
     return errorResponse(res, 500, (err as Error).message);
   }
