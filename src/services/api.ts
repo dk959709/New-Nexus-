@@ -862,11 +862,43 @@ export const api = {
     return call(`/api/catalog/keys/${encodeURIComponent(id)}/reveal`);
   },
 
-  callCustomApi(apiName: string, query: string): Promise<CustomApiCallResult> {
-    return call('/api/catalog/custom-call', {
-      method: 'POST',
-      body: JSON.stringify({ api: apiName, query }),
-    });
+  async callCustomApi(apiName: string, query: string): Promise<CustomApiCallResult> {
+    const url = BASE + '/api/catalog/custom-call';
+    try {
+      const res = await fetch(url, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ api: apiName, query }),
+      });
+      const body = (await res.json().catch(() => ({}))) as Record<string, unknown>;
+      if (!res.ok) {
+        return {
+          ok: false,
+          apiName,
+          envVar: '',
+          urlCalled: '',
+          error: (typeof body.error === 'string' && body.error) || (typeof body.message === 'string' && body.message) || `HTTP error ${res.status}`,
+        };
+      }
+      return {
+        ok: body.ok === true,
+        apiName: (typeof body.apiName === 'string' && body.apiName) || apiName,
+        envVar: (typeof body.envVar === 'string' && body.envVar) || '',
+        urlCalled: (typeof body.urlCalled === 'string' && body.urlCalled) || '',
+        statusCode: typeof body.statusCode === 'number' ? body.statusCode : res.status,
+        data: body.data,
+        error: typeof body.error === 'string' ? body.error : undefined,
+      };
+    } catch (err: unknown) {
+      const msg = err instanceof Error ? err.message : String(err);
+      return {
+        ok: false,
+        apiName,
+        envVar: '',
+        urlCalled: '',
+        error: `Failed to invoke custom API: ${msg}`,
+      };
+    }
   },
 };
 
