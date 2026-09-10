@@ -93,7 +93,11 @@ The JARVIS architecture rejects single-prompt hallucination in favor of a rigoro
 
 9. **Image Finder (Agent 11 - Visual Asset Curator)**:
    - **Role**: Gathers high-resolution contextual photography and technical graphics.
-   - **Mechanism**: Queries Pixabay and Wikimedia Commons for royalty-free visual assets matching researched entities, presenting them in an interactive lightbox gallery.`;
+   - **Mechanism**: Queries Pixabay and Wikimedia Commons for royalty-free visual assets matching researched entities, presenting them in an interactive lightbox gallery.
+
+10. **Coder (Agent 10 - Software Engineering Specialist)**:
+    - **Role**: Writes, debugs, and optimizes production-ready code, scripts, and algorithms across multiple programming languages.
+    - **Mechanism**: Triggered automatically for programming-related queries or explicitly via the \`/code\` command. Bypasses the standard research/fact-check/review pipeline for minimal latency, running a lightweight Planner → Coder pipeline that outputs clean code blocks, unit tests where relevant, and brief structural notes.`;
 
   // Section 3: How Researcher Fetches Data
   const researcherText = `### 3. How Researcher Fetches Data — Multi-Tier Retrieval & Fallback Stacks
@@ -754,6 +758,20 @@ End of NEXUS Documentation
                 </div>
                 <p className="text-xs text-slate-400 m-0">
                   Queries high-resolution photography and graphics from Pixabay and Wikimedia Commons, presenting them in an interactive lightbox gallery.
+                </p>
+              </div>
+
+              <div className="p-3.5 rounded-lg bg-slate-950/60 border border-slate-800">
+                <div className="flex items-center justify-between gap-2 mb-1">
+                  <span className="font-semibold text-emerald-400 text-xs sm:text-sm">
+                    10. Coder (Agent 10 - Specialized) — Software Engineering Specialist
+                  </span>
+                  <span className="px-2 py-0.5 rounded text-[10px] bg-emerald-500/15 text-emerald-300 border border-emerald-500/30 font-mono">
+                    Conditional / /code
+                  </span>
+                </div>
+                <p className="text-xs text-slate-400 m-0">
+                  Writes, debugs, and optimizes production-ready code, scripts, and algorithms across multiple programming languages. Triggered automatically for programming-related queries or explicitly via the <code className="text-slate-300">/code</code> command. Bypasses the standard research/fact-check/review pipeline for minimal latency, running a lightweight Planner &rarr; Coder pipeline that outputs clean code blocks, unit tests where relevant, and brief structural notes.
                 </p>
               </div>
             </div>
