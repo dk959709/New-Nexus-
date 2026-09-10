@@ -795,11 +795,24 @@ export const api = {
     });
   },
 
-  getCatalog(): Promise<{ ok: boolean; data: ApiCatalogItem[] }> {
-    return call('/api/catalog');
+  async getCatalog(): Promise<{ ok: boolean; data: ApiCatalogItem[]; apis: ApiCatalogItem[] }> {
+    const res = await fetch(`${BASE}/api/catalog`);
+    const body = (await res.json().catch(() => ({}))) as Record<string, unknown>;
+    const list = (Array.isArray(body)
+      ? body
+      : Array.isArray(body.data)
+      ? body.data
+      : Array.isArray(body.apis)
+      ? body.apis
+      : []) as ApiCatalogItem[];
+    return {
+      ok: body.ok === true || res.ok,
+      data: list,
+      apis: list,
+    };
   },
 
-  saveCatalogKey(params: {
+  async saveCatalogKey(params: {
     id: string;
     key: string;
     name?: string;
@@ -809,11 +822,27 @@ export const api = {
     baseUrl?: string;
     queryParamName?: string;
     isCustom?: boolean;
-  }): Promise<{ ok: boolean; message: string; item: ApiCatalogItem }> {
-    return call('/api/catalog/keys', {
+  }): Promise<{ ok: boolean; message: string; item: ApiCatalogItem; data: ApiCatalogItem }> {
+    const res = await fetch(`${BASE}/api/catalog/keys`, {
       method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify(params),
     });
+    const body = (await res.json().catch(() => ({}))) as Record<string, unknown>;
+    if (!res.ok) {
+      const errMsg =
+        (typeof body.error === 'string' && body.error) ||
+        (typeof body.message === 'string' && body.message) ||
+        `Failed to save API key (HTTP ${res.status})`;
+      throw new Error(errMsg);
+    }
+    const item = (body.item || body.data || body) as ApiCatalogItem;
+    return {
+      ok: body.ok === true || res.ok,
+      message: (typeof body.message === 'string' ? body.message : 'API key securely saved to catalog.'),
+      item,
+      data: item,
+    };
   },
 
   deleteCatalogKey(id: string): Promise<{ ok: boolean; message: string }> {

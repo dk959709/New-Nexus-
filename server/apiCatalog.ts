@@ -821,7 +821,7 @@ export const apiCatalogRouter = Router();
 apiCatalogRouter.get('/api/catalog', (_req: Request, res: Response) => {
   try {
     const items = listCatalogItems();
-    return res.json({ ok: true, apis: items });
+    return res.json({ ok: true, apis: items, data: items });
   } catch (err) {
     return errorResponse(res, 500, (err as Error).message);
   }
@@ -879,7 +879,7 @@ apiCatalogRouter.post('/api/catalog/keys', (req: Request, res: Response) => {
       isCustom: Boolean(isCustom),
     });
 
-    return res.json({ ok: true, data: result.item, message: 'API key securely saved to catalog.' });
+    return res.json({ ok: true, data: result.item, item: result.item, message: 'API key securely saved to catalog.' });
   } catch (err) {
     return errorResponse(res, 500, (err as Error).message);
   }

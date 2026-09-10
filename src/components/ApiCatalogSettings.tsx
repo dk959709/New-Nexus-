@@ -58,6 +58,7 @@ export function ApiCatalogSettings() {
   const [showCustomKeyMask, setShowCustomKeyMask] = useState<boolean>(false);
   const [copiedCustomKey, setCopiedCustomKey] = useState<boolean>(false);
   const [showCustomAdvanced, setShowCustomAdvanced] = useState<boolean>(false);
+  const [customFormError, setCustomFormError] = useState<string | null>(null);
   const [customForm, setCustomForm] = useState({
     name: '',
     envVar: '',
@@ -75,9 +76,14 @@ export function ApiCatalogSettings() {
       setLoading(true);
       setError(null);
       const res = await api.getCatalog();
-      if (res && res.data) {
-        setCatalog(res.data);
-      }
+      const list = Array.isArray(res)
+        ? res
+        : Array.isArray(res?.data)
+        ? res.data
+        : Array.isArray((res as { apis?: ApiCatalogItem[] })?.apis)
+        ? (res as { apis: ApiCatalogItem[] }).apis
+        : [];
+      setCatalog(list);
     } catch (err: unknown) {
       const msg = err instanceof Error ? err.message : 'Failed to load API catalog';
       setError(msg);
@@ -183,7 +189,7 @@ export function ApiCatalogSettings() {
         isCustom: item.isCustom,
       });
 
-      if (res.ok) {
+      if (res && (res.ok || res.item || res.data)) {
         setKeyInputs((prev) => ({ ...prev, [item.id]: '' }));
         setEditingKeyId(null);
         // Cache revealed key locally
@@ -199,7 +205,7 @@ export function ApiCatalogSettings() {
         setActionNotice({
           id: item.id,
           type: 'error',
-          message: res.message || 'Failed to save key',
+          message: res?.message || 'Failed to save key',
         });
       }
     } catch (err: unknown) {
@@ -272,18 +278,39 @@ export function ApiCatalogSettings() {
     }
   };
 
-  const handleAddCustom = async (e: React.FormEvent) => {
-    e.preventDefault();
+  const handleAddCustom = async (e?: React.FormEvent | React.MouseEvent) => {
+    if (e) {
+      e.preventDefault();
+      e.stopPropagation();
+    }
+    if (addingCustom) return;
+
+    setCustomFormError(null);
+
     const rawKeyName = (customForm.envVar || customForm.name).trim();
     const rawVal = customForm.key.trim();
 
-    if (!rawKeyName || !rawVal) {
-      alert('Please provide an Environment Variable / Key Name and an API Key value');
+    if (!rawKeyName) {
+      setCustomFormError('Please enter an Environment Variable or Key Name (e.g. WEATHERSTACK_API_KEY)');
+      return;
+    }
+    if (!rawVal) {
+      setCustomFormError('Please enter an API Key value');
       return;
     }
     if (!customForm.baseUrl.trim()) {
-      alert('Base URL is required for custom APIs (e.g. https://api.weatherstack.com/current)');
+      setCustomFormError('Base URL is required for custom APIs (e.g. https://api.weatherstack.com/current)');
       return;
+    }
+
+    let cleanBaseUrl = customForm.baseUrl.trim();
+    if (!/^https?:\/\//i.test(cleanBaseUrl)) {
+      cleanBaseUrl = 'https://' + cleanBaseUrl;
+    }
+
+    let cleanDocsUrl = customForm.docsUrl.trim();
+    if (cleanDocsUrl && !/^https?:\/\//i.test(cleanDocsUrl)) {
+      cleanDocsUrl = 'https://' + cleanDocsUrl;
     }
 
     const envVar = rawKeyName.toUpperCase().replace(/[^A-Z0-9_]/g, '_');
@@ -305,15 +332,15 @@ export function ApiCatalogSettings() {
         id,
         name: finalName,
         envVar,
-        baseUrl: customForm.baseUrl.trim(),
+        baseUrl: cleanBaseUrl,
         queryParamName: customForm.queryParamName.trim() || 'q',
         key: rawVal,
         description: customForm.description.trim() || `Custom backend integration for ${finalName}`,
-        docsUrl: customForm.docsUrl.trim() || '',
+        docsUrl: cleanDocsUrl,
         isCustom: true,
       });
 
-      if (res.ok) {
+      if (res && (res.ok || res.item || res.data)) {
         setCustomForm({
           name: '',
           envVar: '',
@@ -326,15 +353,27 @@ export function ApiCatalogSettings() {
         });
         setShowCustomAdvanced(false);
         setShowAddCustom(false);
+        setCustomFormError(null);
         setActionNotice({
           type: 'success',
           message: `Custom API "${finalName}" successfully registered and ready for /customapi slash commands!`,
         });
         await fetchCatalog();
+      } else {
+        const errText = res?.message || 'Failed to register custom API';
+        setCustomFormError(errText);
+        setActionNotice({
+          type: 'error',
+          message: errText,
+        });
       }
     } catch (err: unknown) {
       const msg = err instanceof Error ? err.message : 'Failed to register custom API';
-      alert(msg);
+      setCustomFormError(msg);
+      setActionNotice({
+        type: 'error',
+        message: msg,
+      });
     } finally {
       setAddingCustom(false);
     }
@@ -434,8 +473,11 @@ export function ApiCatalogSettings() {
 
           <div className="flex items-center gap-2 flex-shrink-0">
             <button
-              onClick={() => setShowAddCustom(!showAddCustom)}
-              className="inline-flex items-center gap-1.5 text-xs font-semibold px-3 py-2 rounded-lg bg-cyan-500/20 text-cyan-300 border border-cyan-500/40 hover:bg-cyan-500/30 transition-colors"
+              onClick={() => {
+                setShowAddCustom(!showAddCustom);
+                setCustomFormError(null);
+              }}
+              className="inline-flex items-center gap-1.5 text-xs font-semibold px-3 py-2 rounded-lg bg-cyan-500/20 text-cyan-300 border border-cyan-500/40 hover:bg-cyan-500/30 transition-colors cursor-pointer"
             >
               <Plus size={14} />
               Add Custom API
@@ -511,14 +553,34 @@ export function ApiCatalogSettings() {
               </p>
             </div>
             <button
-              onClick={() => setShowAddCustom(false)}
-              className="text-slate-400 hover:text-slate-200 text-xs px-2 py-1"
+              onClick={() => {
+                setShowAddCustom(false);
+                setCustomFormError(null);
+              }}
+              className="text-slate-400 hover:text-slate-200 text-xs px-2 py-1 cursor-pointer"
             >
               Cancel
             </button>
           </div>
 
-          <form onSubmit={handleAddCustom} className="space-y-4">
+          <form onSubmit={handleAddCustom} noValidate className="space-y-4">
+            {/* Inline Error Banner */}
+            {customFormError && (
+              <div className="p-3 rounded-lg bg-rose-950/70 border border-rose-500/50 text-rose-200 text-xs flex items-center justify-between gap-2 shadow-sm">
+                <div className="flex items-center gap-2">
+                  <AlertCircle size={15} className="text-rose-400 flex-shrink-0" />
+                  <span>{customFormError}</span>
+                </div>
+                <button
+                  type="button"
+                  onClick={() => setCustomFormError(null)}
+                  className="text-slate-400 hover:text-slate-200 text-xs px-1 cursor-pointer"
+                >
+                  ✕
+                </button>
+              </div>
+            )}
+
             {/* Row 1: Key | Value (Render Environment Variable Style) */}
             <div className="grid grid-cols-1 md:grid-cols-2 gap-3 items-end">
               <div>
@@ -529,9 +591,11 @@ export function ApiCatalogSettings() {
                   type="text"
                   placeholder="e.g. WEATHERSTACK_API_KEY"
                   value={customForm.envVar}
-                  onChange={(e) => setCustomForm((prev) => ({ ...prev, envVar: e.target.value }))}
+                  onChange={(e) => {
+                    setCustomForm((prev) => ({ ...prev, envVar: e.target.value }));
+                    if (customFormError) setCustomFormError(null);
+                  }}
                   className="w-full text-xs px-3 py-2.5 rounded-lg bg-slate-900 border border-slate-700 text-slate-100 placeholder-slate-500 focus:outline-none focus:border-cyan-400 font-mono tracking-wide"
-                  required
                 />
               </div>
 
@@ -545,15 +609,17 @@ export function ApiCatalogSettings() {
                       type={showCustomKeyMask ? 'text' : 'password'}
                       placeholder="Paste API key value..."
                       value={customForm.key}
-                      onChange={(e) => setCustomForm((prev) => ({ ...prev, key: e.target.value }))}
+                      onChange={(e) => {
+                        setCustomForm((prev) => ({ ...prev, key: e.target.value }));
+                        if (customFormError) setCustomFormError(null);
+                      }}
                       className="w-full text-xs pl-3 pr-8 py-2.5 rounded-lg bg-slate-900 border border-slate-700 text-slate-100 placeholder-slate-500 focus:outline-none focus:border-cyan-400 font-mono"
-                      required
                     />
                     <button
                       type="button"
                       onClick={() => setShowCustomKeyMask(!showCustomKeyMask)}
                       title={showCustomKeyMask ? 'Hide value' : 'Show value'}
-                      className="absolute right-2.5 top-1/2 -translate-y-1/2 text-slate-400 hover:text-slate-200 transition-colors"
+                      className="absolute right-2.5 top-1/2 -translate-y-1/2 text-slate-400 hover:text-slate-200 transition-colors cursor-pointer"
                     >
                       {showCustomKeyMask ? <EyeOff size={14} /> : <Eye size={14} />}
                     </button>
@@ -570,17 +636,20 @@ export function ApiCatalogSettings() {
                     }}
                     disabled={!customForm.key}
                     title="Copy Key Value"
-                    className="p-2.5 rounded-lg bg-slate-900 border border-slate-700 text-slate-300 hover:bg-slate-800 hover:text-cyan-300 hover:border-cyan-500/40 disabled:opacity-40 transition-colors"
+                    className="p-2.5 rounded-lg bg-slate-900 border border-slate-700 text-slate-300 hover:bg-slate-800 hover:text-cyan-300 hover:border-cyan-500/40 disabled:opacity-40 transition-colors cursor-pointer"
                   >
                     {copiedCustomKey ? <Check size={14} className="text-emerald-400" /> : <Copy size={14} />}
                   </button>
 
                   <button
                     type="button"
-                    onClick={() => setCustomForm((prev) => ({ ...prev, key: '' }))}
+                    onClick={() => {
+                      setCustomForm((prev) => ({ ...prev, key: '' }));
+                      if (customFormError) setCustomFormError(null);
+                    }}
                     disabled={!customForm.key}
                     title="Delete Key Value"
-                    className="p-2.5 rounded-lg bg-slate-900 border border-slate-700 text-slate-400 hover:bg-rose-500/10 hover:text-rose-400 hover:border-rose-500/30 disabled:opacity-40 transition-colors"
+                    className="p-2.5 rounded-lg bg-slate-900 border border-slate-700 text-slate-400 hover:bg-rose-500/10 hover:text-rose-400 hover:border-rose-500/30 disabled:opacity-40 transition-colors cursor-pointer"
                   >
                     <Trash2 size={14} />
                   </button>
@@ -595,12 +664,14 @@ export function ApiCatalogSettings() {
                   Base URL (API Endpoint) <span className="text-cyan-400">*</span>
                 </label>
                 <input
-                  type="url"
+                  type="text"
                   placeholder="https://api.weatherstack.com/current"
                   value={customForm.baseUrl}
-                  onChange={(e) => setCustomForm((prev) => ({ ...prev, baseUrl: e.target.value }))}
+                  onChange={(e) => {
+                    setCustomForm((prev) => ({ ...prev, baseUrl: e.target.value }));
+                    if (customFormError) setCustomFormError(null);
+                  }}
                   className="w-full text-xs px-3 py-2.5 rounded-lg bg-slate-900 border border-slate-700 text-slate-100 placeholder-slate-500 focus:outline-none focus:border-cyan-400 font-mono"
-                  required
                 />
               </div>
 
@@ -612,7 +683,10 @@ export function ApiCatalogSettings() {
                   type="text"
                   placeholder="q (default if blank, e.g. 'query', 'search', 'city')"
                   value={customForm.queryParamName}
-                  onChange={(e) => setCustomForm((prev) => ({ ...prev, queryParamName: e.target.value }))}
+                  onChange={(e) => {
+                    setCustomForm((prev) => ({ ...prev, queryParamName: e.target.value }));
+                    if (customFormError) setCustomFormError(null);
+                  }}
                   className="w-full text-xs px-3 py-2.5 rounded-lg bg-slate-900 border border-slate-700 text-slate-100 placeholder-slate-500 focus:outline-none focus:border-cyan-400 font-mono"
                 />
               </div>
@@ -623,7 +697,7 @@ export function ApiCatalogSettings() {
               <button
                 type="button"
                 onClick={() => setShowCustomAdvanced(!showCustomAdvanced)}
-                className="inline-flex items-center gap-1.5 text-xs text-slate-400 hover:text-cyan-300 font-medium transition-colors"
+                className="inline-flex items-center gap-1.5 text-xs text-slate-400 hover:text-cyan-300 font-medium transition-colors cursor-pointer"
               >
                 {showCustomAdvanced ? <ChevronUp size={14} /> : <ChevronDown size={14} />}
                 <span>Advanced Options (Display Name, Description, Docs URL)</span>
@@ -649,7 +723,7 @@ export function ApiCatalogSettings() {
                       Documentation URL (Optional)
                     </label>
                     <input
-                      type="url"
+                      type="text"
                       placeholder="https://weatherstack.com/documentation"
                       value={customForm.docsUrl}
                       onChange={(e) => setCustomForm((prev) => ({ ...prev, docsUrl: e.target.value }))}
@@ -682,15 +756,20 @@ export function ApiCatalogSettings() {
               <div className="flex items-center gap-2 w-full sm:w-auto justify-end">
                 <button
                   type="button"
-                  onClick={() => setShowAddCustom(false)}
-                  className="text-xs px-4 py-2 rounded-lg bg-slate-800 text-slate-300 border border-slate-700 hover:bg-slate-700 transition-colors"
+                  onClick={() => {
+                    setShowAddCustom(false);
+                    setCustomFormError(null);
+                  }}
+                  className="text-xs px-4 py-2 rounded-lg bg-slate-800 text-slate-300 border border-slate-700 hover:bg-slate-700 transition-colors cursor-pointer"
                 >
                   Cancel
                 </button>
                 <button
+                  id="save-custom-api-btn"
                   type="submit"
                   disabled={addingCustom}
-                  className="inline-flex items-center gap-1.5 text-xs font-semibold px-4 py-2 rounded-lg bg-cyan-500 text-slate-950 hover:bg-cyan-400 transition-colors disabled:opacity-50"
+                  onClick={(e) => handleAddCustom(e)}
+                  className="inline-flex items-center gap-1.5 text-xs font-semibold px-4 py-2 rounded-lg bg-cyan-500 text-slate-950 hover:bg-cyan-400 transition-colors disabled:opacity-50 cursor-pointer"
                 >
                   <Lock size={14} />
                   {addingCustom ? 'Encrypting & Saving...' : 'Save & Register Custom API'}
