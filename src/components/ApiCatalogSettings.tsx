@@ -1,6 +1,5 @@
 import { useState, useEffect } from 'react';
 import {
-  Key,
   Shield,
   CheckCircle2,
   AlertCircle,
@@ -10,6 +9,8 @@ import {
   Trash2,
   Eye,
   EyeOff,
+  Copy,
+  Check,
   Globe,
   Newspaper,
   CloudRain,
@@ -18,6 +19,8 @@ import {
   Search,
   Lock,
   Server,
+  Edit2,
+  Terminal,
 } from 'lucide-react';
 import { api } from '@/services/api';
 import type { ApiCatalogItem } from '@/types';
@@ -29,19 +32,32 @@ export function ApiCatalogSettings() {
   const [searchQuery, setSearchQuery] = useState<string>('');
   const [selectedCategory, setSelectedCategory] = useState<string>('all');
 
-  // Input states for updating/entering keys per service ID
+  // Key revealing states
+  const [revealedKeys, setRevealedKeys] = useState<Record<string, string>>({});
+  const [revealedVisibility, setRevealedVisibility] = useState<Record<string, boolean>>({});
+  const [revealingId, setRevealingId] = useState<string | null>(null);
+
+  // Copy indicator state
+  const [copiedId, setCopiedId] = useState<string | null>(null);
+
+  // Inline editing state for updating/setting a key
+  const [editingKeyId, setEditingKeyId] = useState<string | null>(null);
   const [keyInputs, setKeyInputs] = useState<Record<string, string>>({});
-  const [showKey, setShowKey] = useState<Record<string, boolean>>({});
+  const [showKeyInput, setShowKeyInput] = useState<Record<string, boolean>>({});
   const [savingId, setSavingId] = useState<string | null>(null);
+
+  // Testing states
   const [testingId, setTestingId] = useState<string | null>(null);
   const [testResults, setTestResults] = useState<Record<string, { ok: boolean; message: string }>>({});
   const [actionNotice, setActionNotice] = useState<{ id?: string; type: 'success' | 'error'; message: string } | null>(null);
 
-  // Custom API Modal / Accordion state
+  // Custom API Modal state
   const [showAddCustom, setShowAddCustom] = useState<boolean>(false);
   const [customForm, setCustomForm] = useState({
     name: '',
     envVar: '',
+    baseUrl: '',
+    queryParamName: 'q',
     key: '',
     description: '',
     docsUrl: '',
@@ -69,6 +85,77 @@ export function ApiCatalogSettings() {
     fetchCatalog();
   }, []);
 
+  const copyToClipboard = async (text: string, identifier: string) => {
+    try {
+      if (navigator?.clipboard?.writeText) {
+        await navigator.clipboard.writeText(text);
+      } else {
+        const textarea = document.createElement('textarea');
+        textarea.value = text;
+        document.body.appendChild(textarea);
+        textarea.select();
+        document.execCommand('copy');
+        document.body.removeChild(textarea);
+      }
+      setCopiedId(identifier);
+      setTimeout(() => setCopiedId(null), 2000);
+    } catch (err) {
+      console.error('Clipboard copy error:', err);
+    }
+  };
+
+  const toggleRevealKey = async (item: ApiCatalogItem) => {
+    const isCurrentlyVisible = Boolean(revealedVisibility[item.id]);
+    if (isCurrentlyVisible) {
+      setRevealedVisibility((prev) => ({ ...prev, [item.id]: false }));
+      return;
+    }
+
+    // If key not yet fetched, fetch it from the server
+    if (!revealedKeys[item.id]) {
+      try {
+        setRevealingId(item.id);
+        const res = await api.revealCatalogKey(item.id);
+        if (res && res.ok && res.key) {
+          setRevealedKeys((prev) => ({ ...prev, [item.id]: res.key }));
+          setRevealedVisibility((prev) => ({ ...prev, [item.id]: true }));
+        } else {
+          setActionNotice({ id: item.id, type: 'error', message: 'Could not reveal API key.' });
+        }
+      } catch (err: unknown) {
+        const msg = err instanceof Error ? err.message : 'Failed to retrieve key from vault.';
+        setActionNotice({ id: item.id, type: 'error', message: msg });
+      } finally {
+        setRevealingId(null);
+      }
+    } else {
+      setRevealedVisibility((prev) => ({ ...prev, [item.id]: true }));
+    }
+  };
+
+  const handleCopyKey = async (item: ApiCatalogItem) => {
+    let keyToCopy = revealedKeys[item.id];
+    if (!keyToCopy) {
+      try {
+        const res = await api.revealCatalogKey(item.id);
+        if (res && res.ok && res.key) {
+          keyToCopy = res.key;
+          setRevealedKeys((prev) => ({ ...prev, [item.id]: res.key }));
+        }
+      } catch {
+        // Fallback
+      }
+    }
+
+    if (keyToCopy) {
+      await copyToClipboard(keyToCopy, `key-${item.id}`);
+      setActionNotice({ id: item.id, type: 'success', message: `Copied API key for ${item.name} to clipboard!` });
+    } else if (item.maskedKey) {
+      await copyToClipboard(item.maskedKey, `key-${item.id}`);
+      setActionNotice({ id: item.id, type: 'success', message: `Copied masked key string for ${item.name}` });
+    }
+  };
+
   const handleSaveKey = async (item: ApiCatalogItem) => {
     const rawKey = (keyInputs[item.id] || '').trim();
     if (!rawKey) {
@@ -86,13 +173,17 @@ export function ApiCatalogSettings() {
         envVar: item.envVar,
         description: item.description,
         docsUrl: item.docsUrl,
+        baseUrl: item.baseUrl,
+        queryParamName: item.queryParamName,
         isCustom: item.isCustom,
       });
 
       if (res.ok) {
-        // Clear plaintext input after successful save for security
         setKeyInputs((prev) => ({ ...prev, [item.id]: '' }));
-        setShowKey((prev) => ({ ...prev, [item.id]: false }));
+        setEditingKeyId(null);
+        // Cache revealed key locally
+        setRevealedKeys((prev) => ({ ...prev, [item.id]: rawKey }));
+        setRevealedVisibility((prev) => ({ ...prev, [item.id]: false }));
         setActionNotice({
           id: item.id,
           type: 'success',
@@ -115,7 +206,7 @@ export function ApiCatalogSettings() {
   };
 
   const handleDeleteKey = async (item: ApiCatalogItem) => {
-    if (!window.confirm(`Are you sure you want to remove the stored key for ${item.name}?`)) {
+    if (!window.confirm(`Are you sure you want to remove the stored key/record for ${item.name}?`)) {
       return;
     }
 
@@ -124,6 +215,16 @@ export function ApiCatalogSettings() {
       setActionNotice(null);
       const res = await api.deleteCatalogKey(item.id);
       if (res.ok) {
+        setRevealedKeys((prev) => {
+          const c = { ...prev };
+          delete c[item.id];
+          return c;
+        });
+        setRevealedVisibility((prev) => {
+          const c = { ...prev };
+          delete c[item.id];
+          return c;
+        });
         setActionNotice({
           id: item.id,
           type: 'success',
@@ -172,6 +273,10 @@ export function ApiCatalogSettings() {
       alert('Please provide at least a service name and an API key');
       return;
     }
+    if (!customForm.baseUrl.trim()) {
+      alert('Base URL is required for custom APIs (e.g. https://api.weatherstack.com/current)');
+      return;
+    }
 
     const id = customForm.name.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/(^-|-$)/g, '');
     const envVar = customForm.envVar.trim()
@@ -184,6 +289,8 @@ export function ApiCatalogSettings() {
         id,
         name: customForm.name.trim(),
         envVar,
+        baseUrl: customForm.baseUrl.trim(),
+        queryParamName: customForm.queryParamName.trim() || 'q',
         key: customForm.key.trim(),
         description: customForm.description.trim() || `Custom backend integration for ${customForm.name.trim()}`,
         docsUrl: customForm.docsUrl.trim() || '',
@@ -194,6 +301,8 @@ export function ApiCatalogSettings() {
         setCustomForm({
           name: '',
           envVar: '',
+          baseUrl: '',
+          queryParamName: 'q',
           key: '',
           description: '',
           docsUrl: '',
@@ -202,7 +311,7 @@ export function ApiCatalogSettings() {
         setShowAddCustom(false);
         setActionNotice({
           type: 'success',
-          message: `Custom API "${customForm.name.trim()}" successfully registered!`,
+          message: `Custom API "${customForm.name.trim()}" successfully registered and ready for /customapi slash commands!`,
         });
         await fetchCatalog();
       }
@@ -254,7 +363,8 @@ export function ApiCatalogSettings() {
       !searchQuery.trim() ||
       item.name.toLowerCase().includes(searchQuery.toLowerCase()) ||
       item.envVar.toLowerCase().includes(searchQuery.toLowerCase()) ||
-      item.description.toLowerCase().includes(searchQuery.toLowerCase());
+      item.description.toLowerCase().includes(searchQuery.toLowerCase()) ||
+      (item.baseUrl && item.baseUrl.toLowerCase().includes(searchQuery.toLowerCase()));
 
     return matchesCategory && matchesSearch;
   });
@@ -284,7 +394,7 @@ export function ApiCatalogSettings() {
               </span>
             </div>
             <p className="text-xs text-slate-400 max-w-3xl m-0 leading-relaxed">
-              Configure external third-party service credentials (news feeds, web search engines, satellite maps, weather observations, and space telemetry).
+              Manage environment credentials and callable custom endpoints. Configure keys, inspect active values, test connection health, or invoke custom APIs directly via the JARVIS slash command <code className="text-cyan-300 font-mono">/customapi [api] [query]</code>.
             </p>
           </div>
 
@@ -314,12 +424,11 @@ export function ApiCatalogSettings() {
             <div className="font-semibold text-slate-200 flex items-center gap-2">
               <span>Encrypted Local Vault Storage (AES-256-GCM)</span>
               <span className="text-[10px] px-1.5 py-0.5 rounded bg-emerald-500/10 text-emerald-400 border border-emerald-500/30 font-mono">
-                Isolated from Render Env
+                Render Safe & Isolated
               </span>
             </div>
             <p className="text-slate-400 text-[11px] m-0">
-              Keys added through this interface are written to an encrypted server config vault (<code>data/api_catalog.json</code>).
-              Runtime resolution follows a strict priority order: <strong>1. System Environment (Render)</strong> takes primary precedence; if not set, <strong>2. Local Vault Storage</strong> is resolved. Render environment variables remain untouched.
+              Keys added through this table are encrypted into local vault storage (<code>data/api_catalog.json</code>). Runtime lookups resolve <strong>1. System Environment (Render)</strong> first, falling back to <strong>2. Local Vault</strong>. Render variables are never modified or overwritten.
             </p>
           </div>
         </div>
@@ -347,7 +456,7 @@ export function ApiCatalogSettings() {
         </div>
       )}
 
-      {/* Custom API Modal / Collapse Form */}
+      {/* Custom API Modal / Form */}
       {showAddCustom && (
         <section
           style={{
@@ -360,7 +469,7 @@ export function ApiCatalogSettings() {
         >
           <div className="flex items-center justify-between">
             <h3 className="text-sm font-semibold text-cyan-300 flex items-center gap-2 m-0">
-              <Plus size={16} /> Register Custom Backend API
+              <Plus size={16} /> Register Callable Custom API
             </h3>
             <button
               onClick={() => setShowAddCustom(false)}
@@ -377,7 +486,7 @@ export function ApiCatalogSettings() {
               </label>
               <input
                 type="text"
-                placeholder="e.g. SerpApi, Wolfram Alpha, Finnhub"
+                placeholder="e.g. Weatherstack, SerpApi, Wolfram Alpha"
                 value={customForm.name}
                 onChange={(e) => setCustomForm({ ...customForm, name: e.target.value })}
                 className="w-full text-xs px-3 py-2 rounded-lg bg-slate-900 border border-slate-700 text-slate-100 placeholder-slate-500 focus:outline-none focus:border-cyan-400"
@@ -391,7 +500,7 @@ export function ApiCatalogSettings() {
               </label>
               <input
                 type="text"
-                placeholder="e.g. SERPAPI_API_KEY (optional, auto-generated if blank)"
+                placeholder="e.g. WEATHERSTACK_API_KEY (optional, auto-generated if blank)"
                 value={customForm.envVar}
                 onChange={(e) => setCustomForm({ ...customForm, envVar: e.target.value })}
                 className="w-full text-xs px-3 py-2 rounded-lg bg-slate-900 border border-slate-700 text-slate-100 placeholder-slate-500 focus:outline-none focus:border-cyan-400 font-mono"
@@ -400,11 +509,44 @@ export function ApiCatalogSettings() {
 
             <div>
               <label className="block text-[11px] font-medium text-slate-300 mb-1">
+                Base URL (API Endpoint) *
+              </label>
+              <input
+                type="url"
+                placeholder="https://api.weatherstack.com/current"
+                value={customForm.baseUrl}
+                onChange={(e) => setCustomForm({ ...customForm, baseUrl: e.target.value })}
+                className="w-full text-xs px-3 py-2 rounded-lg bg-slate-900 border border-slate-700 text-slate-100 placeholder-slate-500 focus:outline-none focus:border-cyan-400 font-mono"
+                required
+              />
+              <p className="text-[10px] text-slate-500 mt-1">
+                The actual GET endpoint to query when invoking this API.
+              </p>
+            </div>
+
+            <div>
+              <label className="block text-[11px] font-medium text-slate-300 mb-1">
+                Query Parameter Name
+              </label>
+              <input
+                type="text"
+                placeholder="q (defaults to 'q' if left blank, e.g. 'query', 'search')"
+                value={customForm.queryParamName}
+                onChange={(e) => setCustomForm({ ...customForm, queryParamName: e.target.value })}
+                className="w-full text-xs px-3 py-2 rounded-lg bg-slate-900 border border-slate-700 text-slate-100 placeholder-slate-500 focus:outline-none focus:border-cyan-400 font-mono"
+              />
+              <p className="text-[10px] text-slate-500 mt-1">
+                The URL query parameter used for search terms (e.g. ?query=London or ?q=London).
+              </p>
+            </div>
+
+            <div>
+              <label className="block text-[11px] font-medium text-slate-300 mb-1">
                 API Key Value *
               </label>
               <input
                 type="password"
-                placeholder="Paste API secret or credential string"
+                placeholder="Paste API secret / access key credential"
                 value={customForm.key}
                 onChange={(e) => setCustomForm({ ...customForm, key: e.target.value })}
                 className="w-full text-xs px-3 py-2 rounded-lg bg-slate-900 border border-slate-700 text-slate-100 placeholder-slate-500 focus:outline-none focus:border-cyan-400 font-mono"
@@ -418,7 +560,7 @@ export function ApiCatalogSettings() {
               </label>
               <input
                 type="url"
-                placeholder="https://provider.com/api-keys"
+                placeholder="https://weatherstack.com/documentation"
                 value={customForm.docsUrl}
                 onChange={(e) => setCustomForm({ ...customForm, docsUrl: e.target.value })}
                 className="w-full text-xs px-3 py-2 rounded-lg bg-slate-900 border border-slate-700 text-slate-100 placeholder-slate-500 focus:outline-none focus:border-cyan-400"
@@ -431,29 +573,35 @@ export function ApiCatalogSettings() {
               </label>
               <input
                 type="text"
-                placeholder="Brief summary of how this backend service is leveraged"
+                placeholder="Brief summary of data provided by this endpoint"
                 value={customForm.description}
                 onChange={(e) => setCustomForm({ ...customForm, description: e.target.value })}
                 className="w-full text-xs px-3 py-2 rounded-lg bg-slate-900 border border-slate-700 text-slate-100 placeholder-slate-500 focus:outline-none focus:border-cyan-400"
               />
             </div>
 
-            <div className="md:col-span-2 flex justify-end gap-2 pt-2">
-              <button
-                type="button"
-                onClick={() => setShowAddCustom(false)}
-                className="text-xs px-4 py-2 rounded-lg bg-slate-800 text-slate-300 border border-slate-700 hover:bg-slate-700"
-              >
-                Cancel
-              </button>
-              <button
-                type="submit"
-                disabled={addingCustom}
-                className="inline-flex items-center gap-1.5 text-xs font-semibold px-4 py-2 rounded-lg bg-cyan-500 text-slate-950 hover:bg-cyan-400 transition-colors disabled:opacity-50"
-              >
-                <Lock size={14} />
-                {addingCustom ? 'Encrypting & Saving...' : 'Save Custom API to Vault'}
-              </button>
+            <div className="md:col-span-2 flex items-center justify-between pt-2 border-t border-slate-800">
+              <div className="flex items-center gap-1.5 text-[11px] text-cyan-400">
+                <Terminal size={13} />
+                <span>Callable via: <code>/customapi {customForm.name ? customForm.name.toLowerCase().replace(/[^a-z0-9]+/g, '-') : '[api_name]'} [query]</code></span>
+              </div>
+              <div className="flex items-center gap-2">
+                <button
+                  type="button"
+                  onClick={() => setShowAddCustom(false)}
+                  className="text-xs px-4 py-2 rounded-lg bg-slate-800 text-slate-300 border border-slate-700 hover:bg-slate-700"
+                >
+                  Cancel
+                </button>
+                <button
+                  type="submit"
+                  disabled={addingCustom}
+                  className="inline-flex items-center gap-1.5 text-xs font-semibold px-4 py-2 rounded-lg bg-cyan-500 text-slate-950 hover:bg-cyan-400 transition-colors disabled:opacity-50"
+                >
+                  <Lock size={14} />
+                  {addingCustom ? 'Encrypting & Saving...' : 'Save & Register Custom API'}
+                </button>
+              </div>
             </div>
           </form>
         </section>
@@ -477,11 +625,11 @@ export function ApiCatalogSettings() {
           ))}
         </div>
 
-        <div className="relative w-full sm:w-64">
+        <div className="relative w-full sm:w-72">
           <Search size={14} className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-500" />
           <input
             type="text"
-            placeholder="Search APIs by name or env..."
+            placeholder="Search APIs by name, env, endpoint..."
             value={searchQuery}
             onChange={(e) => setSearchQuery(e.target.value)}
             className="w-full text-xs pl-8 pr-3 py-2 rounded-lg bg-slate-900/80 border border-slate-800 text-slate-200 placeholder-slate-500 focus:outline-none focus:border-cyan-500"
@@ -510,206 +658,298 @@ export function ApiCatalogSettings() {
         </div>
       )}
 
-      {/* Card-based List of APIs */}
-      <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-        {filteredCatalog.map((item) => {
-          const isConnected = item.status === 'connected';
-          const isSaving = savingId === item.id;
-          const isTesting = testingId === item.id;
-          const testRes = testResults[item.id];
-          const isVisible = showKey[item.id];
+      {/* PART 1: Clean Table Layout (Render Environment Variables Table Style) */}
+      <div className="overflow-x-auto rounded-xl border border-slate-800/80 bg-slate-950/60 shadow-lg">
+        <table className="w-full text-left border-collapse min-w-[780px]">
+          <thead>
+            <tr className="bg-slate-900/90 text-[11px] font-semibold text-slate-400 uppercase tracking-wider border-b border-slate-800">
+              <th className="py-3 px-4 w-[25%]">Service Name</th>
+              <th className="py-3 px-4 w-[22%]">Environment Variable</th>
+              <th className="py-3 px-4 w-[28%]">Value</th>
+              <th className="py-3 px-4 w-[12%]">Status</th>
+              <th className="py-3 px-4 w-[13%] text-right">Actions</th>
+            </tr>
+          </thead>
+          <tbody className="divide-y divide-slate-800/60 text-xs">
+            {filteredCatalog.map((item) => {
+              const isConnected = item.status === 'connected';
+              const isRevealed = Boolean(revealedVisibility[item.id]);
+              const isRevealing = revealingId === item.id;
+              const isTesting = testingId === item.id;
+              const isSaving = savingId === item.id;
+              const isEditing = editingKeyId === item.id;
+              const testRes = testResults[item.id];
+              const isCopied = copiedId === `key-${item.id}`;
+              const isEnvCopied = copiedId === `env-${item.id}`;
 
-          return (
-            <div
-              key={item.id}
-              className="flex flex-col justify-between p-5 rounded-xl transition-all"
-              style={{
-                background: 'rgba(14,31,39,0.7)',
-                border: isConnected
-                  ? '1px solid rgba(97,215,201,0.25)'
-                  : '1px solid var(--line)',
-                boxShadow: isConnected ? '0 4px 20px -8px rgba(97,215,201,0.1)' : 'none',
-              }}
-            >
-              {/* Card Header: Icon, Name, Category, Status Badge */}
-              <div>
-                <div className="flex items-start justify-between gap-3 mb-2.5">
-                  <div className="flex items-center gap-2.5">
-                    <div className="p-2 rounded-lg bg-slate-900 border border-slate-800 flex items-center justify-center">
-                      {getCategoryIcon(item.category)}
-                    </div>
-                    <div>
-                      <div className="flex items-center gap-2">
-                        <h4 className="text-sm font-semibold text-slate-100 m-0">
-                          {item.name}
-                        </h4>
-                        {item.isCustom && (
-                          <span className="text-[10px] px-1.5 py-0.2 rounded bg-indigo-500/10 text-indigo-300 border border-indigo-500/30">
-                            Custom
+              // Determine display value
+              let displayValue = '••••••••••••••••';
+              if (isConnected) {
+                if (isRevealed && revealedKeys[item.id]) {
+                  displayValue = revealedKeys[item.id];
+                } else if (item.maskedKey) {
+                  displayValue = item.maskedKey;
+                }
+              }
+
+              return (
+                <tr
+                  key={item.id}
+                  className="hover:bg-slate-900/40 transition-colors group"
+                >
+                  {/* Column 1: Service Name */}
+                  <td className="py-3.5 px-4 align-middle">
+                    <div className="flex items-start gap-2.5">
+                      <div className="p-1.5 rounded-md bg-slate-900 border border-slate-800 flex-shrink-0 mt-0.5">
+                        {getCategoryIcon(item.category)}
+                      </div>
+                      <div className="min-w-0">
+                        <div className="flex items-center gap-1.5 flex-wrap">
+                          <span className="font-semibold text-slate-200">
+                            {item.name}
+                          </span>
+                          {item.isCustom && (
+                            <span className="text-[10px] px-1.5 py-0.2 rounded font-mono font-medium bg-indigo-500/15 text-indigo-300 border border-indigo-500/30">
+                              Custom
+                            </span>
+                          )}
+                          {item.docsUrl && (
+                            <a
+                              href={item.docsUrl}
+                              target="_blank"
+                              rel="noopener noreferrer"
+                              className="text-slate-500 hover:text-cyan-400 transition-colors inline-flex items-center"
+                              title="Open Documentation"
+                            >
+                              <ExternalLink size={11} />
+                            </a>
+                          )}
+                        </div>
+                        {item.baseUrl ? (
+                          <span
+                            className="font-mono text-[10px] text-slate-500 truncate block max-w-[240px] mt-0.5"
+                            title={item.baseUrl}
+                          >
+                            {item.baseUrl}
+                          </span>
+                        ) : (
+                          <span className="text-[11px] text-slate-500 line-clamp-1 mt-0.5 max-w-[240px]">
+                            {item.description}
                           </span>
                         )}
                       </div>
-                      <div className="flex items-center gap-1.5 mt-0.5">
-                        <span className="text-[11px] font-mono text-cyan-400/90 font-medium">
-                          {item.envVar}
-                        </span>
-                        {item.docsUrl && (
-                          <a
-                            href={item.docsUrl}
-                            target="_blank"
-                            rel="noopener noreferrer"
-                            className="text-slate-500 hover:text-cyan-400 transition-colors"
-                            title="Open provider docs / get API key"
-                          >
-                            <ExternalLink size={12} />
-                          </a>
-                        )}
+                    </div>
+                  </td>
+
+                  {/* Column 2: Environment Variable */}
+                  <td className="py-3.5 px-4 align-middle font-mono">
+                    <div className="flex items-center gap-1.5">
+                      <span className="text-xs text-cyan-400/95 font-medium tracking-wide">
+                        {item.envVar}
+                      </span>
+                      <button
+                        onClick={() => copyToClipboard(item.envVar, `env-${item.id}`)}
+                        className="text-slate-500 hover:text-cyan-300 p-0.5 transition-colors opacity-0 group-hover:opacity-100"
+                        title="Copy variable name"
+                      >
+                        {isEnvCopied ? <Check size={11} className="text-emerald-400" /> : <Copy size={11} />}
+                      </button>
+                    </div>
+                  </td>
+
+                  {/* Column 3: Value (Masked with Eye Toggle) */}
+                  <td className="py-3.5 px-4 align-middle">
+                    {isEditing ? (
+                      <div className="flex items-center gap-1.5">
+                        <input
+                          type={showKeyInput[item.id] ? 'text' : 'password'}
+                          placeholder={isConnected ? 'Update API key...' : 'Paste API key...'}
+                          value={keyInputs[item.id] || ''}
+                          onChange={(e) =>
+                            setKeyInputs({ ...keyInputs, [item.id]: e.target.value })
+                          }
+                          onKeyDown={(e) => {
+                            if (e.key === 'Enter') {
+                              e.preventDefault();
+                              handleSaveKey(item);
+                            }
+                          }}
+                          className="w-full text-xs px-2.5 py-1.5 rounded-md bg-slate-900 border border-cyan-500/50 text-slate-100 placeholder-slate-500 focus:outline-none font-mono"
+                          autoFocus
+                        />
+                        <button
+                          type="button"
+                          onClick={() =>
+                            setShowKeyInput((prev) => ({ ...prev, [item.id]: !prev[item.id] }))
+                          }
+                          className="p-1.5 text-slate-400 hover:text-slate-200"
+                        >
+                          {showKeyInput[item.id] ? <EyeOff size={13} /> : <Eye size={13} />}
+                        </button>
+                        <button
+                          onClick={() => handleSaveKey(item)}
+                          disabled={isSaving || !(keyInputs[item.id] || '').trim()}
+                          className="text-[11px] font-semibold px-2.5 py-1.5 rounded-md bg-cyan-500 text-slate-950 hover:bg-cyan-400 disabled:opacity-40"
+                        >
+                          {isSaving ? '...' : 'Save'}
+                        </button>
+                        <button
+                          onClick={() => {
+                            setEditingKeyId(null);
+                            setKeyInputs((prev) => ({ ...prev, [item.id]: '' }));
+                          }}
+                          className="text-[11px] px-2 py-1.5 rounded-md bg-slate-800 text-slate-400 hover:text-slate-200"
+                        >
+                          Cancel
+                        </button>
                       </div>
-                    </div>
-                  </div>
-
-                  {/* Status Badge */}
-                  <div className="flex flex-col items-end gap-1">
-                    {isConnected ? (
-                      <span className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-[11px] font-semibold bg-emerald-500/15 text-emerald-400 border border-emerald-500/30">
-                        <span className="w-1.5 h-1.5 rounded-full bg-emerald-400 animate-pulse" />
-                        Connected
-                      </span>
+                    ) : isConnected ? (
+                      <div className="inline-flex items-center gap-2 px-2.5 py-1 rounded-md bg-slate-900/80 border border-slate-800 font-mono text-xs max-w-[280px]">
+                        <span className={`truncate select-all ${isRevealed ? 'text-amber-300 font-mono' : 'text-slate-400'}`}>
+                          {displayValue}
+                        </span>
+                        <button
+                          onClick={() => toggleRevealKey(item)}
+                          disabled={isRevealing}
+                          className="text-slate-400 hover:text-cyan-300 p-0.5 transition-colors flex-shrink-0 ml-auto"
+                          title={isRevealed ? 'Hide API key' : 'Reveal API key'}
+                        >
+                          {isRevealing ? (
+                            <RefreshCw size={12} className="animate-spin text-cyan-400" />
+                          ) : isRevealed ? (
+                            <EyeOff size={12} />
+                          ) : (
+                            <Eye size={12} />
+                          )}
+                        </button>
+                      </div>
                     ) : (
-                      <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[11px] font-medium bg-slate-800/80 text-slate-400 border border-slate-700/60">
-                        Not Configured
-                      </span>
+                      <div className="flex items-center gap-2">
+                        <span className="text-slate-500 text-[11px] italic">Not configured</span>
+                        <button
+                          onClick={() => setEditingKeyId(item.id)}
+                          className="text-[11px] font-medium text-cyan-400 hover:text-cyan-300 underline"
+                        >
+                          + Set Key
+                        </button>
+                      </div>
                     )}
+                  </td>
 
-                    {/* Source Indicator */}
-                    {isConnected && (
-                      <span className="text-[10px] text-slate-400">
-                        Source:{' '}
-                        <strong className="text-slate-300">
-                          {item.source === 'env'
-                            ? 'Render Env'
-                            : item.source === 'catalog'
-                              ? 'Catalog Vault'
-                              : 'System'}
-                        </strong>
-                      </span>
-                    )}
-                  </div>
-                </div>
+                  {/* Column 4: Status & Source Badge */}
+                  <td className="py-3.5 px-4 align-middle">
+                    <div className="flex flex-col items-start gap-1">
+                      {isConnected ? (
+                        <span className="inline-flex items-center gap-1.5 px-2 py-0.5 rounded-full text-[10px] font-semibold bg-emerald-500/10 text-emerald-400 border border-emerald-500/20">
+                          <span className="w-1.5 h-1.5 rounded-full bg-emerald-400 animate-pulse" />
+                          Connected
+                        </span>
+                      ) : (
+                        <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-medium bg-slate-800/80 text-slate-400 border border-slate-700/60">
+                          Not Configured
+                        </span>
+                      )}
 
-                {/* Description */}
-                <p className="text-xs text-slate-400 m-0 line-clamp-2 leading-relaxed mb-3">
-                  {item.description}
-                </p>
-
-                {/* Masked Key Display if Connected */}
-                {item.maskedKey && (
-                  <div className="mb-3 p-2 rounded-lg bg-slate-950/60 border border-slate-800/80 flex items-center justify-between text-xs">
-                    <div className="flex items-center gap-2">
-                      <Key size={13} className="text-cyan-400" />
-                      <span className="text-slate-400 text-[11px]">Active Key:</span>
-                      <span className="font-mono text-cyan-300 font-semibold tracking-wider">
-                        {item.maskedKey}
-                      </span>
+                      {isConnected && (
+                        <span className="text-[10px] text-slate-500">
+                          {item.source === 'env' ? (
+                            <span className="text-indigo-400 font-medium">Render Env</span>
+                          ) : (
+                            <span className="text-cyan-400 font-medium">Catalog Vault</span>
+                          )}
+                        </span>
+                      )}
                     </div>
-                    {item.source === 'catalog' && (
+                  </td>
+
+                  {/* Column 5: Actions (Test, Copy, Edit, Delete) */}
+                  <td className="py-3.5 px-4 align-middle text-right">
+                    <div className="inline-flex items-center gap-1">
+                      {/* Test / Verify Icon Button */}
+                      <button
+                        onClick={() => handleTestKey(item)}
+                        disabled={isTesting || !isConnected}
+                        className={`p-1.5 rounded-md border transition-colors ${
+                          isConnected
+                            ? 'bg-slate-800 text-slate-300 border-slate-700 hover:text-cyan-300 hover:border-cyan-500/50'
+                            : 'bg-slate-900 text-slate-600 border-slate-800 cursor-not-allowed'
+                        }`}
+                        title={isConnected ? 'Test connection health & verify key' : 'Configure key first to test'}
+                      >
+                        <RefreshCw size={13} className={isTesting ? 'animate-spin text-cyan-400' : ''} />
+                      </button>
+
+                      {/* Copy Key Button */}
+                      <button
+                        onClick={() => handleCopyKey(item)}
+                        disabled={!isConnected}
+                        className={`p-1.5 rounded-md border transition-colors ${
+                          isConnected
+                            ? 'bg-slate-800 text-slate-300 border-slate-700 hover:text-cyan-300 hover:border-cyan-500/50'
+                            : 'bg-slate-900 text-slate-600 border-slate-800 cursor-not-allowed'
+                        }`}
+                        title="Copy API key to clipboard"
+                      >
+                        {isCopied ? <Check size={13} className="text-emerald-400" /> : <Copy size={13} />}
+                      </button>
+
+                      {/* Edit / Update Key Button */}
+                      <button
+                        onClick={() => {
+                          setEditingKeyId(isEditing ? null : item.id);
+                        }}
+                        className={`p-1.5 rounded-md border transition-colors ${
+                          isEditing
+                            ? 'bg-cyan-500/20 text-cyan-300 border-cyan-500/50'
+                            : 'bg-slate-800 text-slate-300 border-slate-700 hover:text-cyan-300 hover:border-cyan-500/50'
+                        }`}
+                        title="Edit / Update key"
+                      >
+                        <Edit2 size={13} />
+                      </button>
+
+                      {/* Delete Button */}
                       <button
                         onClick={() => handleDeleteKey(item)}
-                        disabled={isSaving}
-                        className="text-slate-500 hover:text-rose-400 p-1 transition-colors"
-                        title="Delete key from local vault"
+                        disabled={isSaving || (!item.isCustom && item.source !== 'catalog')}
+                        className={`p-1.5 rounded-md border transition-colors ${
+                          item.isCustom || item.source === 'catalog'
+                            ? 'bg-slate-800 text-slate-400 border-slate-700 hover:text-rose-400 hover:border-rose-500/50'
+                            : 'bg-slate-900 text-slate-600 border-slate-800 cursor-not-allowed'
+                        }`}
+                        title={
+                          item.isCustom || item.source === 'catalog'
+                            ? 'Delete key/record from local vault'
+                            : 'System predefined key in Render env (cannot be deleted from vault)'
+                        }
                       >
                         <Trash2 size={13} />
                       </button>
+                    </div>
+
+                    {/* Inline Test Result Toast if present */}
+                    {testRes && (
+                      <div
+                        className={`mt-2 p-1.5 rounded text-[10px] text-left inline-flex items-center gap-1.5 border max-w-xs ${
+                          testRes.ok
+                            ? 'bg-emerald-950/50 border-emerald-500/30 text-emerald-300'
+                            : 'bg-rose-950/50 border-rose-500/30 text-rose-300'
+                        }`}
+                      >
+                        {testRes.ok ? (
+                          <CheckCircle2 size={11} className="text-emerald-400 flex-shrink-0" />
+                        ) : (
+                          <AlertCircle size={11} className="text-rose-400 flex-shrink-0" />
+                        )}
+                        <span className="truncate">{testRes.message}</span>
+                      </div>
                     )}
-                  </div>
-                )}
-              </div>
-
-              {/* Card Footer: Key Input, Save Button, Test Connection Button */}
-              <div className="pt-3 border-t border-slate-800/60 space-y-2">
-                <div className="flex items-center gap-2">
-                  <div className="relative flex-1">
-                    <input
-                      type={isVisible ? 'text' : 'password'}
-                      placeholder={isConnected ? 'Update / replace API key...' : 'Paste API key here...'}
-                      value={keyInputs[item.id] || ''}
-                      onChange={(e) =>
-                        setKeyInputs({ ...keyInputs, [item.id]: e.target.value })
-                      }
-                      onKeyDown={(e) => {
-                        if (e.key === 'Enter') {
-                          e.preventDefault();
-                          handleSaveKey(item);
-                        }
-                      }}
-                      className="w-full text-xs px-3 py-1.5 pr-8 rounded-lg bg-slate-950/70 border border-slate-800 text-slate-100 placeholder-slate-500 focus:outline-none focus:border-cyan-500 font-mono"
-                    />
-                    <button
-                      type="button"
-                      onClick={() =>
-                        setShowKey((prev) => ({ ...prev, [item.id]: !prev[item.id] }))
-                      }
-                      className="absolute right-2 top-1/2 -translate-y-1/2 text-slate-500 hover:text-slate-300"
-                    >
-                      {isVisible ? <EyeOff size={13} /> : <Eye size={13} />}
-                    </button>
-                  </div>
-
-                  <button
-                    onClick={() => handleSaveKey(item)}
-                    disabled={isSaving || !(keyInputs[item.id] || '').trim()}
-                    className="text-xs font-semibold px-3 py-1.5 rounded-lg bg-cyan-500 text-slate-950 hover:bg-cyan-400 transition-colors disabled:opacity-40 disabled:hover:bg-cyan-500 flex-shrink-0"
-                  >
-                    {isSaving ? 'Saving...' : 'Save Key'}
-                  </button>
-                </div>
-
-                {/* Test Connection and Verification Button */}
-                <div className="flex items-center justify-between gap-2 pt-1">
-                  <button
-                    onClick={() => handleTestKey(item)}
-                    disabled={isTesting}
-                    className="inline-flex items-center gap-1.5 text-[11px] font-medium text-slate-400 hover:text-cyan-300 transition-colors disabled:opacity-50"
-                  >
-                    <RefreshCw size={12} className={isTesting ? 'animate-spin text-cyan-400' : ''} />
-                    {isTesting ? 'Testing Connection...' : 'Test Connection / Verify'}
-                  </button>
-
-                  {item.docsUrl && (
-                    <a
-                      href={item.docsUrl}
-                      target="_blank"
-                      rel="noopener noreferrer"
-                      className="text-[11px] text-cyan-400/80 hover:text-cyan-300 hover:underline inline-flex items-center gap-1"
-                    >
-                      Get Key
-                      <ExternalLink size={10} />
-                    </a>
-                  )}
-                </div>
-
-                {/* Inline Test Result */}
-                {testRes && (
-                  <div
-                    className={`mt-2 p-2 rounded-lg text-[11px] flex items-center gap-2 border ${
-                      testRes.ok
-                        ? 'bg-emerald-950/40 border-emerald-500/30 text-emerald-300'
-                        : 'bg-rose-950/40 border-rose-500/30 text-rose-300'
-                    }`}
-                  >
-                    {testRes.ok ? (
-                      <CheckCircle2 size={13} className="text-emerald-400 flex-shrink-0" />
-                    ) : (
-                      <AlertCircle size={13} className="text-rose-400 flex-shrink-0" />
-                    )}
-                    <span className="truncate">{testRes.message}</span>
-                  </div>
-                )}
-              </div>
-            </div>
-          );
-        })}
+                  </td>
+                </tr>
+              );
+            })}
+          </tbody>
+        </table>
       </div>
 
       {filteredCatalog.length === 0 && !loading && (

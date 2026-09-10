@@ -1151,9 +1151,31 @@ export function stripCodePrefix(text: string): string {
   return text.trim().replace(/^\/code\s*/i, '').trim().replace(/^["'`<]+|[>"'`]+$/g, '').trim();
 }
 
+export function isCustomApiCommand(text: string): boolean {
+  if (!text || typeof text !== 'string') return false;
+  return /^\/customapi(?:\s+|$)/i.test(text.trim());
+}
+
+export function parseCustomApiCommand(text: string): { apiName: string; customQuery: string } | null {
+  if (!text || typeof text !== 'string') return null;
+  const match = text.trim().match(/^\/customapi\s+([^\s]+)(?:\s+(.*))?$/i);
+  if (!match) return null;
+  return {
+    apiName: match[1].trim(),
+    customQuery: (match[2] || '').trim(),
+  };
+}
+
+export function stripCustomApiPrefix(text: string): string {
+  if (!text || typeof text !== 'string') return text;
+  const parsed = parseCustomApiCommand(text);
+  if (!parsed) return text.trim().replace(/^\/customapi\s*/i, '').trim();
+  return parsed.customQuery ? `${parsed.apiName} ${parsed.customQuery}` : parsed.apiName;
+}
+
 export function isCodingQuery(text: string): boolean {
   if (!text || typeof text !== 'string') return false;
-  if (isWebFetchQuery(text) || isSearchOverrideQuery(text) || isCodeSlashCommand(text)) return false;
+  if (isWebFetchQuery(text) || isSearchOverrideQuery(text) || isCodeSlashCommand(text) || isCustomApiCommand(text)) return false;
 
   const trimmed = text.trim();
   const lower = trimmed.toLowerCase();
@@ -2293,6 +2315,7 @@ Please perform your specialized processing for this inquiry. Provide clear, conc
     if (!text || typeof text !== 'string') return false;
     if (isWebFetchQuery(text)) return false;
     if (isSearchOverrideQuery(text)) return false;
+    if (isCustomApiCommand(text)) return false;
     const lower = text.toLowerCase().trim().replace(/[?!.,]+$/g, '');
     return (
       /\b(?:compare|comar|comparing|comparison between|diff|difference between)\s+(?:me|myself|i|us|you and me|me and you)\b/i.test(lower) ||
@@ -2310,6 +2333,7 @@ Please perform your specialized processing for this inquiry. Provide clear, conc
     if (!text || typeof text !== 'string') return false;
     if (isWebFetchQuery(text)) return false;
     if (isSearchOverrideQuery(text)) return false;
+    if (isCustomApiCommand(text)) return false;
     const lower = text.toLowerCase().trim().replace(/[?!.,]+$/g, '');
     return (
       /^(hi|hello|hey|greetings|howdy|good (morning|afternoon|evening))\b/i.test(lower) ||
@@ -2606,7 +2630,28 @@ CRITICAL RULES:
         }
       }
 
-      if (isWebFetchQuery(query)) {
+      if (isCustomApiCommand(query)) {
+        const parsedCmd = parseCustomApiCommand(query);
+        const apiTarget = parsedCmd?.apiName || 'custom API';
+        const queryTerm = parsedCmd?.customQuery || '';
+        plannerOutput.needsResearch = false;
+        plannerOutput.needsResearchQuery = '';
+        plannerOutput.needsWikipedia = false;
+        plannerOutput.wikipediaQuery = '';
+        plannerOutput.needsWikidata = false;
+        plannerOutput.wikidataQuery = '';
+        plannerOutput.needsKnowledgeAgent = false;
+        plannerOutput.needsReview = false;
+        plannerOutput.needsFactCheck = false;
+        plannerOutput.needsDiagram = false;
+        plannerOutput.needsChart = false;
+        plannerOutput.needsImage = false;
+        plannerOutput.task = queryTerm ? `Query ${apiTarget} for "${queryTerm}"` : `Query ${apiTarget}`;
+        plannerOutput.plan = [
+          `Invoke custom backend API "${apiTarget}" directly with query parameters`,
+          'Synthesize structured JSON response into a clear, readable answer',
+        ];
+      } else if (isWebFetchQuery(query)) {
         const targetUrl = extractWebFetchUrl(query);
         plannerOutput.needsResearch = false;
         plannerOutput.needsResearchQuery = '';
@@ -2689,7 +2734,28 @@ CRITICAL RULES:
         usedFallback: planRes.usedFallback,
       });
     } else {
-      if (isWebFetchQuery(query)) {
+      if (isCustomApiCommand(query)) {
+        const parsedCmd = parseCustomApiCommand(query);
+        const apiTarget = parsedCmd?.apiName || 'custom API';
+        const queryTerm = parsedCmd?.customQuery || '';
+        plannerOutput.needsResearch = false;
+        plannerOutput.needsResearchQuery = '';
+        plannerOutput.needsWikipedia = false;
+        plannerOutput.wikipediaQuery = '';
+        plannerOutput.needsWikidata = false;
+        plannerOutput.wikidataQuery = '';
+        plannerOutput.needsKnowledgeAgent = false;
+        plannerOutput.needsReview = false;
+        plannerOutput.needsFactCheck = false;
+        plannerOutput.needsDiagram = false;
+        plannerOutput.needsChart = false;
+        plannerOutput.needsImage = false;
+        plannerOutput.task = queryTerm ? `Query ${apiTarget} for "${queryTerm}"` : `Query ${apiTarget}`;
+        plannerOutput.plan = [
+          `Invoke custom backend API "${apiTarget}" directly with query parameters`,
+          'Synthesize structured JSON response into a clear, readable answer',
+        ];
+      } else if (isWebFetchQuery(query)) {
         const targetUrl = extractWebFetchUrl(query);
         plannerOutput.needsResearch = false;
         plannerOutput.needsResearchQuery = '';
@@ -2750,6 +2816,27 @@ CRITICAL RULES:
         rawOutput: fallbackJson,
       });
     }
+  } else if (isCustomApiCommand(query)) {
+    const parsedCmd = parseCustomApiCommand(query);
+    const apiTarget = parsedCmd?.apiName || 'custom API';
+    const queryTerm = parsedCmd?.customQuery || '';
+    plannerOutput.needsResearch = false;
+    plannerOutput.needsResearchQuery = '';
+    plannerOutput.needsWikipedia = false;
+    plannerOutput.wikipediaQuery = '';
+    plannerOutput.needsWikidata = false;
+    plannerOutput.wikidataQuery = '';
+    plannerOutput.needsKnowledgeAgent = false;
+    plannerOutput.needsReview = false;
+    plannerOutput.needsFactCheck = false;
+    plannerOutput.needsDiagram = false;
+    plannerOutput.needsChart = false;
+    plannerOutput.needsImage = false;
+    plannerOutput.task = queryTerm ? `Query ${apiTarget} for "${queryTerm}"` : `Query ${apiTarget}`;
+    plannerOutput.plan = [
+      `Invoke custom backend API "${apiTarget}" directly with query parameters`,
+      'Synthesize structured JSON response into a clear, readable answer',
+    ];
   } else if (isWebFetchQuery(query)) {
     const targetUrl = extractWebFetchUrl(query);
     plannerOutput.needsResearch = false;
@@ -2782,8 +2869,8 @@ CRITICAL RULES:
     plannerOutput.task = stripSearchOverridePrefix(query) || 'Web search';
   }
 
-  // Strict enforcement: Wikidata and Wikipedia must NEVER be triggered for /search and /web commands
-  if (isWebFetchQuery(query)) {
+  // Strict enforcement: Wikidata and Wikipedia must NEVER be triggered for /customapi, /search, and /web commands
+  if (isCustomApiCommand(query) || isWebFetchQuery(query)) {
     plannerOutput.needsResearch = false;
     plannerOutput.needsResearchQuery = '';
     plannerOutput.needsWikipedia = false;
@@ -2873,14 +2960,23 @@ CRITICAL RULES:
     return /\b(weather|temperature|forecast|rain|raining|snow|snowing|precipitation|wind speed|humidity|degrees)\b/i.test(lower);
   };
 
+  const isCustomApi = isCustomApiCommand(query);
+  const customApiParsed = isCustomApi ? parseCustomApiCommand(query) : null;
   const isWebFetch = isWebFetchQuery(query);
   const targetWebUrl = isWebFetch ? extractWebFetchUrl(query) : '';
   const isSearchOverride = isSearchOverrideQuery(query);
-  const strippedQuery = isWebFetch ? targetWebUrl : isSearchOverride ? stripSearchOverridePrefix(query) : query;
+  const strippedQuery = isCustomApi
+    ? (customApiParsed ? `${customApiParsed.apiName} ${customApiParsed.customQuery}`.trim() : query)
+    : isWebFetch
+      ? targetWebUrl
+      : isSearchOverride
+        ? stripSearchOverridePrefix(query)
+        : query;
   const combinedQueryText = `${strippedQuery} ${plannerOutput.task || ''}`;
 
   // Strict enforcement: When inquiry is weather-related or Planner flagged needsWeather
   const isWeatherQuery =
+    !isCustomApi &&
     !isWebFetch &&
     !isSearchOverride &&
     (Boolean(plannerOutput.needsWeather) || isWeatherInquiry(combinedQueryText));
@@ -2901,18 +2997,19 @@ CRITICAL RULES:
     }
   }
 
-  const isProductLineupQuery = !isWebFetch && isProductLineupInquiry(combinedQueryText);
-  const isNewsQuery = !isWebFetch && !isProductLineupQuery && !isWeatherQuery && isNewsInquiry(combinedQueryText);
-  const isWorldNews = !isWebFetch && !isProductLineupQuery && !isWeatherQuery && isWorldNewsInquiry(combinedQueryText);
-  const isPersonalQuery = !isWebFetch && !isSearchOverride && (isPersonalOrHumanAiComparison(query) || isPersonalOrHumanAiComparison(combinedQueryText));
-  const isSelfQuery = !isWebFetch && !isSearchOverride && (isSelfReferentialInquiry(query) || isSelfReferentialInquiry(combinedQueryText));
+  const isProductLineupQuery = !isCustomApi && !isWebFetch && isProductLineupInquiry(combinedQueryText);
+  const isNewsQuery = !isCustomApi && !isWebFetch && !isProductLineupQuery && !isWeatherQuery && isNewsInquiry(combinedQueryText);
+  const isWorldNews = !isCustomApi && !isWebFetch && !isProductLineupQuery && !isWeatherQuery && isWorldNewsInquiry(combinedQueryText);
+  const isPersonalQuery = !isCustomApi && !isWebFetch && !isSearchOverride && (isPersonalOrHumanAiComparison(query) || isPersonalOrHumanAiComparison(combinedQueryText));
+  const isSelfQuery = !isCustomApi && !isWebFetch && !isSearchOverride && (isSelfReferentialInquiry(query) || isSelfReferentialInquiry(combinedQueryText));
 
-  const isCodeCommand = isCodeSlashCommand(query);
+  const isCodeCommand = !isCustomApi && isCodeSlashCommand(query);
   const isCoderToggleEnabled =
     coderMode !== undefined
       ? coderMode
       : Boolean(agentConfigs.coder && agentConfigs.coder.enabled !== false);
   const isAutoCode =
+    !isCustomApi &&
     !isCodeCommand &&
     isCoderToggleEnabled &&
     (Boolean(plannerOutput.needsCode) || isCodingQuery(query) || isCodingQuery(plannerOutput.task));
@@ -2920,8 +3017,10 @@ CRITICAL RULES:
   // Determine which downstream agents are required.
   // When isCodeCommand is true: Planner -> Coder ONLY.
   // When isAutoCode is true: Planner -> Coder -> Reviewer -> Final Synthesizer.
-  // Researcher and Fact Checker are bypassed for both coding pipelines.
+  // When isCustomApi is true: Planner -> Custom API Runner -> Final Synthesizer.
+  // Researcher and Fact Checker are bypassed for custom API and coding pipelines.
   const shouldResearch =
+    !isCustomApi &&
     !isCodeCommand &&
     !isAutoCode &&
     !isWebFetch &&
@@ -2942,6 +3041,7 @@ CRITICAL RULES:
   let needsWikipediaFallback = false;
 
   const shouldFactCheck =
+    !isCustomApi &&
     !isCodeCommand &&
     !isAutoCode &&
     !isWebFetch &&
@@ -2950,6 +3050,7 @@ CRITICAL RULES:
     (deepResearch || (shouldResearch && Boolean(plannerOutput.needsFactCheck)));
 
   const shouldReview =
+    !isCustomApi &&
     !isCodeCommand &&
     !isWebFetch &&
     !isSearchOverride &&
@@ -3081,6 +3182,110 @@ CRITICAL RULES:
         error: webFetchError,
         outputPreview: JSON.stringify({ error: webFetchError, url: targetWebUrl }, null, 2),
         rawOutput: JSON.stringify({ error: webFetchError, url: targetWebUrl }, null, 2),
+      });
+    }
+  }
+
+  // ==========================================
+  // STEP 1.55: ⚡ CUSTOM API RUNNER (for /customapi [api] [query])
+  // ==========================================
+  let customApiData: {
+    apiName: string;
+    envVar?: string;
+    query: string;
+    urlCalled: string;
+    statusCode?: number;
+    data: unknown;
+  } | null = null;
+  let customApiError = '';
+
+  if (isCustomApi && customApiParsed) {
+    const { apiName, customQuery } = customApiParsed;
+    console.log(`[JARVIS Orchestrator] STEP 1.55: customApiRunner triggered for API "${apiName}", query: "${customQuery}"`);
+    const customApiStart = Date.now();
+    updateStep({
+      agentId: 'customApiRunner',
+      name: `Custom API: ${apiName}`,
+      icon: 'Server',
+      status: 'running',
+      providerName: 'Custom API Dispatcher',
+      model: apiName,
+      summary: customQuery
+        ? `Invoking ${apiName} endpoint with parameter "${customQuery}"...`
+        : `Invoking ${apiName} endpoint...`,
+    });
+
+    try {
+      const res = await api.callCustomApi(apiName, customQuery);
+      const customApiDuration = Date.now() - customApiStart;
+      if (res && res.ok && res.data !== undefined) {
+        customApiData = {
+          apiName: res.apiName || apiName,
+          envVar: res.envVar,
+          query: customQuery,
+          urlCalled: res.urlCalled || 'https://api.catalog',
+          statusCode: res.statusCode || 200,
+          data: res.data,
+        };
+
+        sourcesCollected.push({
+          title: `${res.apiName || apiName} API`,
+          url: res.urlCalled || 'https://api.catalog',
+          domain: (() => {
+            try {
+              return new URL(res.urlCalled).hostname;
+            } catch {
+              return 'custom-api';
+            }
+          })(),
+          description: `Direct JSON payload returned by ${res.apiName || apiName} for query "${customQuery}"`,
+        });
+
+        const formattedOutput = typeof res.data === 'string' ? res.data : JSON.stringify(res.data, null, 2);
+        updateStep({
+          agentId: 'customApiRunner',
+          name: `Custom API: ${res.apiName || apiName}`,
+          icon: 'Server',
+          status: 'completed',
+          providerName: 'Custom API Dispatcher',
+          model: res.apiName || apiName,
+          durationMs: customApiDuration,
+          summary: `Successfully retrieved JSON response from ${res.apiName || apiName} (HTTP ${res.statusCode || 200}).`,
+          outputPreview: formattedOutput.slice(0, 1500),
+          rawOutput: formattedOutput,
+        });
+      } else {
+        customApiError = res?.error || `Failed to execute custom API "${apiName}"`;
+        const customApiDuration = Date.now() - customApiStart;
+        updateStep({
+          agentId: 'customApiRunner',
+          name: `Custom API: ${apiName}`,
+          icon: 'Server',
+          status: 'failed',
+          providerName: 'Custom API Dispatcher',
+          model: apiName,
+          durationMs: customApiDuration,
+          summary: `Custom API error: ${customApiError}`,
+          error: customApiError,
+          outputPreview: JSON.stringify({ error: customApiError, api: apiName, query: customQuery }, null, 2),
+          rawOutput: JSON.stringify({ error: customApiError, api: apiName, query: customQuery }, null, 2),
+        });
+      }
+    } catch (err: unknown) {
+      const customApiDuration = Date.now() - customApiStart;
+      customApiError = err instanceof Error ? err.message : String(err);
+      updateStep({
+        agentId: 'customApiRunner',
+        name: `Custom API: ${apiName}`,
+        icon: 'Server',
+        status: 'failed',
+        providerName: 'Custom API Dispatcher',
+        model: apiName,
+        durationMs: customApiDuration,
+        summary: `Custom API exception: ${customApiError}`,
+        error: customApiError,
+        outputPreview: JSON.stringify({ error: customApiError, api: apiName, query: customQuery }, null, 2),
+        rawOutput: JSON.stringify({ error: customApiError, api: apiName, query: customQuery }, null, 2),
       });
     }
   }
@@ -4787,9 +4992,39 @@ DIRECT WEBPAGE ERROR DIRECTIVES:
 - Do NOT invent, speculate, or fabricate any contents about what might be on this page.`)
       : '';
 
+    const customApiContextBlock = isCustomApi
+      ? (customApiData
+        ? `\n\n[CUSTOM API RESPONSE DATA - ${customApiData.apiName}]:
+Target API: ${customApiData.apiName}
+Endpoint URL Called: ${customApiData.urlCalled}
+Query Parameter: "${customApiData.query}"
+HTTP Status Code: ${customApiData.statusCode || 200}
+Raw JSON Response:
+${JSON.stringify(customApiData.data, null, 2)}
+
+CUSTOM API SYNTHESIS DIRECTIVES:
+- Provide a clear, natural-language, comprehensive summary and readable answer based directly on the returned custom API data above.
+- Organize key values, data fields, statuses, records, or entities cleanly using structured markdown tables, bullet points, or intuitive sections.
+- Transform technical keys or timestamps into human-readable descriptions.
+- Cite the source [${customApiData.apiName} API](${customApiData.urlCalled}).`
+        : `\n\n[CUSTOM API INVOCATION FAILED]:
+Target API: ${customApiParsed?.apiName || 'Unknown Custom API'}
+Query Parameter: "${customApiParsed?.customQuery || ''}"
+Failure Reason: ${customApiError || 'API request could not be completed.'}
+
+CUSTOM API ERROR DIRECTIVES:
+- Clearly state that the custom API call for "${customApiParsed?.apiName || 'custom API'}" failed.
+- Report the specific error: "${customApiError || 'Failed to connect'}".
+- Provide clear troubleshooting steps:
+  1. Check Settings > API Catalog to verify that "${customApiParsed?.apiName || 'this API'}" is registered and its API key is configured.
+  2. Confirm the Base URL is accurate and points to an active endpoint.
+  3. Ensure the Query Parameter Name matches what the API expects (e.g. 'q', 'query').
+- Do NOT invent or hallucinate data that wasn't returned.`)
+      : '';
+
     const rawSynthesizerContext = `Current date and time: ${currentDateTime}
 User Query: "${strippedQuery}"
-${webFetchContextBlock}
+${webFetchContextBlock}${customApiContextBlock}
 Planner Guidance: ${plannerPlanText}
 ${advisorOutput ? `Advisor Conceptual Analysis & Technical Comparison (General Knowledge):\n${advisorOutput}\n` : ''}
 ${wikidataReportSection ? `[WIKIDATA INTELLIGENCE & REQUIRED REPORT SECTION]:\n${wikidataReportSection}\n\nCRITICAL REPORT REQUIREMENT: Because Wikidata was queried, your report output MUST include a section titled exactly:\n=== WIKIDATA ===\nfollowed by the Wikidata result details (or "no entry found" if no entry was found).\n\n` : ''}${wikipediaArticleSummary ? `[WIKIPEDIA GROUNDING & ENCYCLOPEDIC INTELLIGENCE]:\n${wikipediaArticleSummary}\n\n(SYNTHESIS MANDATE: Naturally blend this authoritative Wikipedia encyclopedic knowledge directly into your main synthesized prose. DO NOT output any visible "=== WIKIPEDIA ===" section header in your response; cite the Wikipedia source using standard bracket notation [1] from the sources list below.)\n\n` : ''}${factsContextBlock}${plausibleUnconfirmedList.length > 0 ? `Fact-Checker Plausible Unconfirmed Details (CRITICAL - INCLUDE WITH NATURAL HEDGE/CAVEAT, e.g. "reportedly exists/released, based on a single source, not independently confirmed" - DO NOT OMIT DATES, TIERS, OR PLAUSIBLE CLAIMS):\n${plausibleUnconfirmedList.map((p) => `- ${p}`).join('\n')}\n` : ''}${fabricatedList.length > 0 ? `Fact-Checker Fabricated/Contradicted Items (HARD EXCLUSION - DO NOT MENTION IN FINAL SYNTHESIS):\n${fabricatedList.map((fb) => `- ${fb}`).join('\n')}\n` : ''}${generalIssuesList.length > 0 ? `Fact-Checker Identified Issues (Exclude only specific invalid claims; do NOT discard other valid qualifying candidates):\n${generalIssuesList.map((i) => `- ${i}`).join('\n')}\n` : ''}${reviewerMissingList.length > 0 ? `Reviewer Missing Context Suggestions (Advisory):\n${reviewerMissingList.map((m) => `- ${m}`).join('\n')}\n` : ''}${reviewerIssuesList.length > 0 ? `Reviewer Flagged Issues & Scope Critique (Advisory - exclude only specific problematic items, preserve and synthesize all other valid candidates):\n${reviewerIssuesList.map((iss) => `- ${iss}`).join('\n')}\n` : ''}${reviewerRecommendation ? `Reviewer Actionable Guidance & Candidate Priority (Advisory ranking guidance):\n${reviewerRecommendation}\n` : ''}[SYNTHESIS MANDATE]: If any specific candidates were flagged or excluded by Fact-Checker or Reviewer, synthesize all remaining verified, valid candidates into the final answer. Only state that verified news/data is unavailable if ALL candidates are completely unusable or no verified data exists.

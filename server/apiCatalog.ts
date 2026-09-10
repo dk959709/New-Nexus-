@@ -167,6 +167,8 @@ interface StoredCatalogRecord {
   envVar?: string;
   description?: string;
   docsUrl?: string;
+  baseUrl?: string;
+  queryParamName?: string;
   encryptedKey: string;
   last4: string;
   createdAt: string;
@@ -260,6 +262,8 @@ export interface CatalogItemResponse {
   fallbackEnvVars?: string[];
   description: string;
   docsUrl: string;
+  baseUrl?: string;
+  queryParamName?: string;
   category: string;
   status: 'connected' | 'not_configured';
   source: 'env' | 'catalog' | 'none';
@@ -307,6 +311,8 @@ export function listCatalogItems(): CatalogItemResponse[] {
       fallbackEnvVars: def.fallbackEnvVars,
       description: def.description,
       docsUrl: def.docsUrl,
+      baseUrl: storedRec?.baseUrl,
+      queryParamName: storedRec?.queryParamName || 'q',
       category: def.category,
       status: isConnected ? 'connected' : 'not_configured',
       source,
@@ -344,6 +350,8 @@ export function listCatalogItems(): CatalogItemResponse[] {
       envVar: record.envVar || `${id.toUpperCase()}_API_KEY`,
       description: record.description || 'Custom configured service API.',
       docsUrl: record.docsUrl || '',
+      baseUrl: record.baseUrl,
+      queryParamName: record.queryParamName || 'q',
       category: 'general',
       status: isConnected ? 'connected' : 'not_configured',
       source,
@@ -363,6 +371,8 @@ export function saveCatalogKeyItem(input: {
   envVar?: string;
   description?: string;
   docsUrl?: string;
+  baseUrl?: string;
+  queryParamName?: string;
   isCustom?: boolean;
 }): { success: boolean; item: CatalogItemResponse } {
   const { id, key } = input;
@@ -384,6 +394,8 @@ export function saveCatalogKeyItem(input: {
     envVar: input.envVar || predefined?.envVar || existing.envVar || `${id.toUpperCase()}_API_KEY`,
     description: input.description || predefined?.description || existing.description || '',
     docsUrl: input.docsUrl || predefined?.docsUrl || existing.docsUrl || '',
+    baseUrl: input.baseUrl !== undefined ? input.baseUrl.trim() : existing.baseUrl,
+    queryParamName: input.queryParamName !== undefined ? (input.queryParamName.trim() || 'q') : (existing.queryParamName || 'q'),
     encryptedKey,
     last4: trimmedKey.slice(-4),
     createdAt: existing.createdAt || now,
@@ -402,6 +414,8 @@ export function saveCatalogKeyItem(input: {
     envVar: record.envVar || id,
     description: record.description || '',
     docsUrl: record.docsUrl || '',
+    baseUrl: record.baseUrl,
+    queryParamName: record.queryParamName || 'q',
     category: 'general',
     status: 'connected',
     source: 'catalog',
@@ -514,12 +528,292 @@ export async function testServiceApiKey(id: string): Promise<{ success: boolean;
       return { success: false, message: `Exa returned HTTP ${res.status}.` };
     }
 
+    // Check if custom or stored record has a configured Base URL to test
+    const store = loadCatalogStore();
+    const storedRec = store[id] || store[normalized] || Object.values(store).find((r) => r.envVar?.toLowerCase() === normalized || r.name?.toLowerCase() === normalized);
+    if (storedRec && storedRec.baseUrl) {
+      const testCall = await callCustomApi(id, 'test');
+      if (testCall.ok) {
+        return { success: true, message: `Connection to ${storedRec.name || id} verified successfully (HTTP ${testCall.statusCode || 200})!` };
+      }
+      return { success: false, message: testCall.error || `HTTP ${testCall.statusCode} from ${storedRec.name || id}` };
+    }
+
     // Default generic test
     return { success: true, message: 'Key is formatted and securely stored in catalog.' };
   } catch (err) {
     const msg = err instanceof Error ? err.message : String(err);
     return { success: false, message: `Connection test error: ${msg}` };
   }
+}
+
+export interface CustomApiCallResult {
+  ok: boolean;
+  apiName: string;
+  envVar: string;
+  urlCalled: string;
+  statusCode?: number;
+  data?: unknown;
+  error?: string;
+}
+
+/**
+ * Generic execution engine for Custom APIs registered in the catalog
+ * Appends query parameters, attempts common API key authentication patterns,
+ * and returns parsed JSON results.
+ */
+export async function callCustomApi(
+  envIdentifier: string,
+  queryText: string,
+): Promise<CustomApiCallResult> {
+  if (!envIdentifier || typeof envIdentifier !== 'string' || !envIdentifier.trim()) {
+    return {
+      ok: false,
+      apiName: '',
+      envVar: '',
+      urlCalled: '',
+      error: 'Missing custom API identifier.',
+    };
+  }
+
+  const rawIdent = envIdentifier.trim();
+  const lowerIdent = rawIdent.toLowerCase();
+  const slugIdent = lowerIdent.replace(/[^a-z0-9]/g, '');
+
+  const store = loadCatalogStore();
+
+  // Find matching record in catalog store
+  let record: StoredCatalogRecord | undefined;
+  for (const [id, r] of Object.entries(store)) {
+    const rId = id.toLowerCase();
+    const rName = (r.name || '').toLowerCase();
+    const rEnv = (r.envVar || '').toLowerCase();
+    const rSlug = rName.replace(/[^a-z0-9]/g, '');
+
+    if (
+      rId === lowerIdent ||
+      rName === lowerIdent ||
+      rEnv === lowerIdent ||
+      (slugIdent && rSlug === slugIdent) ||
+      rId.replace(/[^a-z0-9]/g, '') === slugIdent
+    ) {
+      record = r;
+      break;
+    }
+  }
+
+  if (!record) {
+    return {
+      ok: false,
+      apiName: rawIdent,
+      envVar: '',
+      urlCalled: '',
+      error: `Custom API "${rawIdent}" is not registered in the API Catalog. Please register it in Settings > API Catalog with a valid Base URL and API key first.`,
+    };
+  }
+
+  const apiName = record.name || record.id;
+  const envVar = record.envVar || `${record.id.toUpperCase()}_API_KEY`;
+
+  if (!record.baseUrl || !record.baseUrl.trim()) {
+    return {
+      ok: false,
+      apiName,
+      envVar,
+      urlCalled: '',
+      error: `Custom API "${apiName}" does not have a Base URL configured. Please configure its Base URL in Settings > API Catalog.`,
+    };
+  }
+
+  // Get active key (checks process.env then decrypted store key)
+  const apiKey = getBackendApiKey(record.envVar || record.id);
+  if (!apiKey || !apiKey.trim()) {
+    return {
+      ok: false,
+      apiName,
+      envVar,
+      urlCalled: '',
+      error: `No API key configured for custom API "${apiName}". Please configure an API key in Settings > API Catalog.`,
+    };
+  }
+
+  let parsedUrl: URL;
+  try {
+    let cleanBaseUrl = record.baseUrl.trim();
+    if (!/^https?:\/\//i.test(cleanBaseUrl)) {
+      cleanBaseUrl = `https://${cleanBaseUrl}`;
+    }
+    parsedUrl = new URL(cleanBaseUrl);
+  } catch {
+    return {
+      ok: false,
+      apiName,
+      envVar,
+      urlCalled: record.baseUrl,
+      error: `Invalid Base URL format: "${record.baseUrl}". Expected a valid URL (e.g. https://api.weatherstack.com/current).`,
+    };
+  }
+
+  const queryParamName = (record.queryParamName && record.queryParamName.trim()) || 'q';
+  const queryVal = (queryText || '').trim();
+
+  // Helper to build URL with a specific apiKey param name
+  const buildUrl = (keyParamName: string | null) => {
+    const url = new URL(parsedUrl.toString());
+    if (queryVal) {
+      url.searchParams.set(queryParamName, queryVal);
+    }
+    if (keyParamName) {
+      url.searchParams.set(keyParamName, apiKey.trim());
+    }
+    return url;
+  };
+
+  // Helper to mask key in URL for logs/display
+  const maskUrl = (url: URL) => {
+    const copy = new URL(url.toString());
+    for (const p of ['apikey', 'api_key', 'access_key', 'key', 'token', 'auth']) {
+      if (copy.searchParams.has(p)) {
+        copy.searchParams.set(p, '••••••••');
+      }
+    }
+    return copy.toString();
+  };
+
+  // Try authentication patterns:
+  // 1. apikey= query param (common free API standard)
+  // 2. access_key= (Weatherstack/APILayer standard)
+  // 3. api_key= (OpenWeather/GNews/NASA standard)
+  // 4. key= (Google/WeatherAPI standard)
+  // 5. Authorization header: Bearer <key>
+  const patterns: Array<{ keyParam: string | null; useBearer: boolean }> = [
+    { keyParam: 'apikey', useBearer: false },
+    { keyParam: 'access_key', useBearer: false },
+    { keyParam: 'api_key', useBearer: false },
+    { keyParam: 'key', useBearer: false },
+    { keyParam: null, useBearer: true },
+  ];
+
+  let lastStatus = 0;
+  let lastError = '';
+  let lastUrl = '';
+
+  for (let i = 0; i < patterns.length; i++) {
+    const pattern = patterns[i];
+    const targetUrl = buildUrl(pattern.keyParam);
+    lastUrl = maskUrl(targetUrl);
+
+    const headers: Record<string, string> = {
+      'Accept': 'application/json, text/plain, */*',
+      'User-Agent': 'Nexus-Intelligence/1.0',
+    };
+    if (pattern.useBearer) {
+      headers['Authorization'] = `Bearer ${apiKey.trim()}`;
+    }
+
+    try {
+      const response = await fetch(targetUrl.toString(), {
+        method: 'GET',
+        headers,
+        signal: AbortSignal.timeout(12000),
+      });
+
+      lastStatus = response.status;
+
+      // Read response body as text first to handle non-JSON gracefully
+      const rawText = await response.text();
+      let jsonData: unknown = null;
+      try {
+        jsonData = JSON.parse(rawText);
+      } catch {
+        // Not JSON
+        if (!response.ok) {
+          lastError = `API returned HTTP ${response.status}: ${rawText.slice(0, 300) || response.statusText}`;
+          if (response.status === 401 || response.status === 403) continue;
+          return {
+            ok: false,
+            apiName,
+            envVar,
+            urlCalled: lastUrl,
+            statusCode: response.status,
+            error: `Upstream service returned non-JSON response (HTTP ${response.status}). Preview: ${rawText.slice(0, 200)}`,
+          };
+        }
+        return {
+          ok: true,
+          apiName,
+          envVar,
+          urlCalled: lastUrl,
+          statusCode: response.status,
+          data: { rawResponse: rawText.slice(0, 10000) },
+        };
+      }
+
+      const jsonRec = jsonData && typeof jsonData === 'object' ? (jsonData as Record<string, unknown>) : null;
+      const jsonErr = jsonRec && typeof jsonRec.error === 'object' ? (jsonRec.error as Record<string, unknown>) : null;
+
+      // Check if JSON indicates an auth error (e.g. Weatherstack returns 200 with { success: false, error: { code: 101, type: "invalid_access_key" } })
+      const isAuthError =
+        response.status === 401 ||
+        response.status === 403 ||
+        (jsonRec && jsonRec.success === false && jsonErr && /key|auth|unauthorized|access_key/i.test(String(jsonErr.type || jsonErr.info || '')));
+
+      if (isAuthError && i < patterns.length - 1) {
+        lastError = (jsonErr && typeof jsonErr.info === 'string' ? jsonErr.info : undefined) || `HTTP ${response.status} Authentication Failure with ${pattern.keyParam || 'Bearer'}`;
+        continue; // Try next authentication pattern
+      }
+
+      if (!response.ok) {
+        const errorMsg =
+          jsonRec?.message ||
+          (jsonErr && jsonErr.info) ||
+          jsonRec?.error ||
+          jsonRec?.detail ||
+          `Upstream API error (HTTP ${response.status})`;
+        return {
+          ok: false,
+          apiName,
+          envVar,
+          urlCalled: lastUrl,
+          statusCode: response.status,
+          data: jsonData,
+          error: typeof errorMsg === 'string' ? errorMsg : JSON.stringify(errorMsg),
+        };
+      }
+
+      // Successful JSON response
+      return {
+        ok: true,
+        apiName,
+        envVar,
+        urlCalled: lastUrl,
+        statusCode: response.status,
+        data: jsonData,
+      };
+    } catch (fetchErr: unknown) {
+      const errObj = fetchErr instanceof Error ? fetchErr : null;
+      if (errObj && (errObj.name === 'TimeoutError' || errObj.name === 'AbortError')) {
+        return {
+          ok: false,
+          apiName,
+          envVar,
+          urlCalled: lastUrl,
+          error: `Request to ${apiName} timed out after 12 seconds. The endpoint may be down or unreachable.`,
+        };
+      }
+      lastError = errObj ? errObj.message : String(fetchErr);
+      if (i < patterns.length - 1) continue;
+    }
+  }
+
+  return {
+    ok: false,
+    apiName,
+    envVar,
+    urlCalled: lastUrl,
+    statusCode: lastStatus || undefined,
+    error: lastError || 'Failed to establish connection to custom API.',
+  };
 }
 
 export const apiCatalogRouter = Router();
@@ -533,14 +827,44 @@ apiCatalogRouter.get('/api/catalog', (_req: Request, res: Response) => {
   }
 });
 
+apiCatalogRouter.get('/api/catalog/keys/:id/reveal', (req: Request, res: Response) => {
+  try {
+    const id = req.params.id;
+    if (!id) return errorResponse(res, 400, 'ID is required.');
+    const key = getBackendApiKey(id);
+    if (!key) {
+      return errorResponse(res, 404, 'No API key configured for this service.');
+    }
+    return res.json({ ok: true, key });
+  } catch (err) {
+    return errorResponse(res, 500, (err as Error).message);
+  }
+});
+
+apiCatalogRouter.post('/api/catalog/custom-call', async (req: Request, res: Response) => {
+  try {
+    const { api, query } = req.body || {};
+    if (!api || typeof api !== 'string') {
+      return errorResponse(res, 400, 'API identifier (api) is required.');
+    }
+    const result = await callCustomApi(api, typeof query === 'string' ? query : '');
+    return res.json(result);
+  } catch (err) {
+    return errorResponse(res, 500, (err as Error).message);
+  }
+});
+
 apiCatalogRouter.post('/api/catalog/keys', (req: Request, res: Response) => {
   try {
-    const { id, key, name, envVar, description, docsUrl, isCustom } = req.body || {};
+    const { id, key, name, envVar, description, docsUrl, baseUrl, queryParamName, isCustom } = req.body || {};
     if (!id || typeof id !== 'string' || !id.trim()) {
       return errorResponse(res, 400, 'API identifier (id) is required.');
     }
     if (!key || typeof key !== 'string' || !key.trim()) {
       return errorResponse(res, 400, 'API key value is required.');
+    }
+    if (isCustom && (!baseUrl || typeof baseUrl !== 'string' || !baseUrl.trim())) {
+      return errorResponse(res, 400, 'Base URL is required for custom APIs.');
     }
 
     const result = saveCatalogKeyItem({
@@ -550,6 +874,8 @@ apiCatalogRouter.post('/api/catalog/keys', (req: Request, res: Response) => {
       envVar: typeof envVar === 'string' ? envVar.trim().toUpperCase() : undefined,
       description: typeof description === 'string' ? description.trim() : undefined,
       docsUrl: typeof docsUrl === 'string' ? docsUrl.trim() : undefined,
+      baseUrl: typeof baseUrl === 'string' ? baseUrl.trim() : undefined,
+      queryParamName: typeof queryParamName === 'string' ? queryParamName.trim() : undefined,
       isCustom: Boolean(isCustom),
     });
 

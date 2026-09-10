@@ -23,6 +23,7 @@ import type {
   NetworkInfo,
   NetworkScanResult,
   ApiCatalogItem,
+  CustomApiCallResult,
 } from '@/types';
 import { storage } from '@/lib/storage';
 import { searchWikipedia, getWikipediaSummary, wikipediaToSearchResult, formatWikipediaForReport } from './wikipedia';
@@ -805,6 +806,8 @@ export const api = {
     envVar?: string;
     description?: string;
     docsUrl?: string;
+    baseUrl?: string;
+    queryParamName?: string;
     isCustom?: boolean;
   }): Promise<{ ok: boolean; message: string; item: ApiCatalogItem }> {
     return call('/api/catalog/keys', {
@@ -822,6 +825,17 @@ export const api = {
   testCatalogKey(id: string): Promise<{ ok: boolean; message: string }> {
     return call(`/api/catalog/test/${encodeURIComponent(id)}`, {
       method: 'POST',
+    });
+  },
+
+  revealCatalogKey(id: string): Promise<{ ok: boolean; key: string }> {
+    return call(`/api/catalog/keys/${encodeURIComponent(id)}/reveal`);
+  },
+
+  callCustomApi(apiName: string, query: string): Promise<CustomApiCallResult> {
+    return call('/api/catalog/custom-call', {
+      method: 'POST',
+      body: JSON.stringify({ api: apiName, query }),
     });
   },
 };

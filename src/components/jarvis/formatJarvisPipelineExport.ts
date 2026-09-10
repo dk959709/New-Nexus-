@@ -1037,6 +1037,15 @@ function formatAgentStep(step: JarvisExecutionStep): string {
     return lines.join('\n').trim();
   }
 
+  // 3.9. Custom API Runner Agent
+  if (step.agentId === 'customApiRunner') {
+    const lines: string[] = [`=== ${agentTitle} ===`];
+    if (step.summary) lines.push(`Execution Summary: ${step.summary}`);
+    lines.push('Direct API Payload:');
+    lines.push(raw || step.outputPreview || 'Custom API executed.');
+    return lines.join('\n').trim();
+  }
+
   // 4. Reviewer Agent
   if (step.agentId === 'reviewer') {
     let recommendation = 'Proceed with comprehensive synthesis.';

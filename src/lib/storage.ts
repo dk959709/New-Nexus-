@@ -62,6 +62,14 @@ Set needsKnowledgeAgent to false for all other query types, including: time-sens
   4. Set needsReview: false (skip Reviewer).
   5. Set needsFactCheck: false (skip Fact Checker to maintain a direct, fast fetch-and-synthesize pipeline).
   6. In "task", set "Direct Web Fetch: [URL]".
+- EXPLICIT "/customapi" DIRECT API INVOCATION COMMAND:
+  If the query begins with the explicit slash command prefix "/customapi" (e.g. "/customapi my-weather-api London", "/customapi news-hub tech", "/customapi coin-api btc"):
+  1. Set needsResearch: false and needsResearchQuery: "" (skip standard search engines).
+  2. Set needsWikipedia: false and needsWikidata: false (skip Wikipedia and Wikidata lookups).
+  3. Set needsKnowledgeAgent: false (skip Advisor).
+  4. Set needsReview: false (skip Reviewer).
+  5. Set needsFactCheck: false (skip Fact Checker to maintain a direct, fast custom API execution pipeline).
+  6. In "task", set "Query custom API [api_name] for [query]".
 - EXPLICIT "/search" OVERRIDE COMMAND:
   If the query begins with the explicit slash command prefix "/search" (e.g. "/search what is AI", "/search latest iPhone price", "/search black hole"):
   1. Set needsResearch: true (always force a real live web search, regardless of what the rest of the query looks like).

@@ -634,12 +634,24 @@ export interface ApiCatalogItem {
   fallbackEnvVars?: string[];
   description: string;
   docsUrl: string;
+  baseUrl?: string;
+  queryParamName?: string;
   category: string;
   status: 'connected' | 'not_configured';
   source: 'env' | 'catalog' | 'none';
   maskedKey?: string;
   updatedAt?: string;
   isCustom: boolean;
+}
+
+export interface CustomApiCallResult {
+  ok: boolean;
+  apiName: string;
+  envVar: string;
+  urlCalled: string;
+  statusCode?: number;
+  data?: unknown;
+  error?: string;
 }
 
 

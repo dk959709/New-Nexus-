@@ -20,6 +20,7 @@ import {
   Lightbulb,
   RotateCcw,
   Search,
+  Server,
   ShieldCheck,
   Sparkles,
   Zap,
@@ -88,6 +89,17 @@ const AGENT_THEMES: Record<string, AgentTheme> = {
     badgeBg: 'rgba(34, 211, 238, 0.15)',
     accentGlow: 'rgba(34, 211, 238, 0.3)',
     icon: <Globe size={18} className="text-cyan-400" />,
+  },
+  customApiRunner: {
+    title: 'CUSTOM API // ENDPOINT EXECUTION',
+    subtitle: 'Direct Parameterized REST API Query & Payload Extraction',
+    border: 'rgba(56, 189, 248, 0.45)',
+    bg: 'linear-gradient(150deg, rgba(8, 28, 44, 0.92) 0%, rgba(6, 18, 30, 0.96) 100%)',
+    headerBg: 'rgba(12, 38, 58, 0.65)',
+    text: '#38bdf8',
+    badgeBg: 'rgba(56, 189, 248, 0.15)',
+    accentGlow: 'rgba(56, 189, 248, 0.3)',
+    icon: <Server size={18} className="text-sky-400" />,
   },
   advisor: {
     title: 'ADVISOR // COMPARATIVE & CONCEPTUAL ANALYSIS',
@@ -1059,6 +1071,15 @@ function formatAgentContentToMarkdown(step: JarvisExecutionStep): {
       md += `#### 📄 Content Excerpt:\n${preview}\n`;
     }
 
+    return { formatted: md, isStructuredJson: true, raw };
+  }
+
+  // 4.6 CUSTOM API RUNNER AGENT
+  if (step.agentId === 'customApiRunner') {
+    const rawContent = raw || step.outputPreview || step.summary || 'Custom API executed.';
+    let md = `### ⚡ Custom API // Direct Endpoint Execution\n`;
+    if (step.summary) md += `**Execution:** ${step.summary}\n\n`;
+    md += `#### 📦 Response Data:\n\`\`\`json\n${rawContent}\n\`\`\``;
     return { formatted: md, isStructuredJson: true, raw };
   }
 

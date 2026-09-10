@@ -16,6 +16,7 @@ import {
   Check,
   AlertTriangle,
   RotateCcw,
+  Server,
 } from 'lucide-react';
 import { JarvisCornerBrackets } from './JarvisCornerBrackets';
 import type { JarvisMessage } from '@/types';
@@ -29,6 +30,7 @@ const AGENT_ICONS: Record<string, React.ReactNode> = {
   planner: <Compass size={14} className="text-emerald-400" />,
   researcher: <Globe2 size={14} className="text-[#d99b64]" />,
   webFetcher: <Globe2 size={14} className="text-cyan-400" />,
+  customApiRunner: <Server size={14} className="text-sky-400" />,
   factChecker: <ShieldCheck size={14} className="text-purple-400" />,
   advisor: <Lightbulb size={14} className="text-amber-400" />,
   reviewer: <ScanEye size={14} className="text-amber-400" />,
@@ -43,6 +45,7 @@ const AGENT_ROLE_DESCRIPTIONS: Record<string, string> = {
   planner: 'Decomposes inquiry & constructs execution topology',
   researcher: 'Gathers multi-source intelligence & verifiable facts',
   webFetcher: 'Fetches and parses raw webpage HTML directly',
+  customApiRunner: 'Direct REST API execution & parameterized retrieval',
   factChecker: 'Audits claims, detects anomalies & verifies truth',
   advisor: 'Evaluates trade-offs, comparisons & verified verdicts',
   reviewer: 'Conducts quality critique, tone balance & rigor audit',
@@ -83,6 +86,13 @@ const AGENT_THEMES: Record<
     text: '#22d3ee',
     glow: 'rgba(34, 211, 238, 0.25)',
     badgeBg: 'rgba(34, 211, 238, 0.18)',
+  },
+  customApiRunner: {
+    border: 'rgba(56, 189, 248, 0.4)',
+    bg: 'rgba(56, 189, 248, 0.08)',
+    text: '#38bdf8',
+    glow: 'rgba(56, 189, 248, 0.25)',
+    badgeBg: 'rgba(56, 189, 248, 0.18)',
   },
   factChecker: {
     border: 'rgba(192, 132, 252, 0.4)',
