@@ -103,6 +103,12 @@ Set needsKnowledgeAgent to false for all other query types, including: time-sens
      - /customapi [api_name] [query] (Direct Custom API Execution)
      - /code [prompt] (High-Speed 2-Agent Coding Pipeline)
      When planning for self-referential or capabilities inquiries, ensure the plan directs the Final Synthesizer to explain the agent pipeline AND include a section detailing these 4 slash commands with one-line descriptions and examples.
+- USER ATTACHED CONTEXT FILES & FILE-ANALYSIS TASKS (CRITICAL):
+  If the inquiry includes attached context files (indicated by "## User Attached Context Files:" or "### Attachment [N]"):
+  1. Recognize this primarily as a direct file-analysis and document processing task (e.g. "Tell about this file", "Summarize this", "Explain this code", "Review this document").
+  2. Set needsResearch: false, needsResearchQuery: "", needsWeather: false, weatherLocation: "", needsWikipedia: false, needsWikidata: false, needsFactCheck: false.
+  3. The Final Synthesizer will directly review and synthesize the analysis based on the attached file content provided in the prompt.
+  4. Set needsWeather: true or needsResearch: true ONLY if the user's explicit question specifically asks for external web search or live weather data in addition to the attached file.
 - CRITICAL - CODING & PROGRAMMING INQUIRIES:
   If the query is a programming request, code generation, script creation, algorithm implementation, bug fixing, debugging, refactoring, or software engineering task (e.g. "write a function", "write a script", "fix this bug", "debug this", "create a program", "how do I code", pasted code blocks, or programming language names + write/create/build/fix verbs):
   1. Set needsCode: true.
@@ -892,6 +898,7 @@ export const storage = {
             !stored.agents.planner.systemPrompt.includes('EXPLICIT "/search" OVERRIDE COMMAND') ||
             !stored.agents.planner.systemPrompt.includes('SEARCH INTENT DISTINCTION: PRODUCT/MODEL LINEUP VS RECENT NEWS') ||
             !stored.agents.planner.systemPrompt.includes('Available Slash Commands') ||
+            !stored.agents.planner.systemPrompt.includes('USER ATTACHED CONTEXT FILES & FILE-ANALYSIS TASKS') ||
             !stored.agents.planner.systemPrompt.includes('task: a concise goal statement, under 15 words.')
               ? DEFAULT_AGENT_SYSTEM_PROMPTS.planner
               : stored.agents.planner.systemPrompt,

@@ -285,3 +285,50 @@ export function formatPromptWithAttachments(
 
   return `Please review, analyze, and process the attached files:\n\n${fileSections}`;
 }
+
+/**
+ * Detects whether the prompt contains attached context files
+ */
+export function hasPromptAttachments(query: string): boolean {
+  if (!query || typeof query !== 'string') return false;
+  return (
+    query.includes('## User Attached Context Files:') ||
+    query.includes('### Attachment [') ||
+    query.startsWith('Please review, analyze, and process the attached files:')
+  );
+}
+
+/**
+ * Extracts the raw user question from a formatted prompt containing attached files
+ */
+export function extractUserQueryWithoutAttachments(query: string): string {
+  if (!query || typeof query !== 'string') return '';
+  if (!hasPromptAttachments(query)) return query.trim();
+
+  if (query.includes('\n\n---\n## User Attached Context Files:')) {
+    return query.split('\n\n---\n## User Attached Context Files:')[0].trim();
+  }
+  if (query.includes('## User Attached Context Files:')) {
+    return query.split('## User Attached Context Files:')[0].trim();
+  }
+  if (query.startsWith('Please review, analyze, and process the attached files:')) {
+    return '';
+  }
+  return query.trim();
+}
+
+/**
+ * Determines whether the user's question explicitly asks for external web/weather research in addition to the file
+ */
+export function isExplicitOutsideResearchQuery(userQueryOnly: string): boolean {
+  if (!userQueryOnly || typeof userQueryOnly !== 'string') return false;
+  const lower = userQueryOnly.toLowerCase().trim();
+  if (lower.startsWith('/search') || lower.startsWith('/web') || lower.startsWith('/customapi')) {
+    return true;
+  }
+  // Check for explicit requests to search online/web or check external weather/news
+  return (
+    /\b(?:search(?:ing)?\s+(?:the\s+)?(?:web|internet|google|online|for)|google\s+this|look\s*up\s+online|find\s+(?:online|on the web|latest news))\b/i.test(lower) ||
+    /\b(?:what(?:'s|\s+is)\s+the\s+weather|current\s+weather|weather\s+in|forecast\s+for|is\s+it\s+raining\s+in)\b/i.test(lower)
+  );
+}

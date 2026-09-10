@@ -16,6 +16,11 @@ import {
 import { stripConversationalMetaText } from '@/lib/format';
 import { logToJarvisTerminal } from '@/lib/jarvisTerminalLogger';
 import { formatCandidateBullet } from '@/lib/factFormatter';
+import {
+  hasPromptAttachments,
+  extractUserQueryWithoutAttachments,
+  isExplicitOutsideResearchQuery,
+} from '@/services/jarvisAttachmentService';
 import type {
   AIProviderConfig,
   AISource,
@@ -2346,9 +2351,21 @@ Please perform your specialized processing for this inquiry. Provide clear, conc
   // ==========================================
   // STEP 1: 🧭 PLANNER
   // ==========================================
+  const promptHasAttachments = hasPromptAttachments(query);
+  const userExtractedQuery = extractUserQueryWithoutAttachments(query);
+  const isExplicitOutside = isExplicitOutsideResearchQuery(userExtractedQuery);
+  const isPureFileAnalysis = promptHasAttachments && !isExplicitOutside;
+
   let plannerOutput: JarvisPlannerOutput = {
-    task: query,
-    plan: ['Synthesize accurate response directly.'],
+    task: isPureFileAnalysis
+      ? (userExtractedQuery ? `Analyze attached file: ${userExtractedQuery}` : 'Analyze attached context files')
+      : query,
+    plan: isPureFileAnalysis
+      ? [
+          'Examine attached file structure and context',
+          'Synthesize comprehensive analysis from file content',
+        ]
+      : ['Synthesize accurate response directly.'],
     needsCode: false,
     needsResearch: false,
     needsResearchQuery: '',
@@ -2384,6 +2401,22 @@ Please perform your specialized processing for this inquiry. Provide clear, conc
 
     // Prepend real-time current date and time
     activePrompt = `Current date and time: ${currentDateTime}\n\n${activePrompt}`;
+
+    // Explicitly inject Attached Files state so Planner knows to perform direct file analysis without outside web/weather searches
+    const attachedFilesNotice = isPureFileAnalysis
+      ? `\n\n[SYSTEM CONTEXT: USER ATTACHED CONTEXT FILES DETECTED (FILE-ANALYSIS TASK)]
+- The user has attached one or more context files to this inquiry.
+- User request: "${userExtractedQuery || 'Review and analyze attached files'}".
+- FILE ANALYSIS DIRECTIVES:
+  1. Set "needsResearch": false and "needsResearchQuery": "". (Do NOT search the external web).
+  2. Set "needsWeather": false and "weatherLocation": "". (Do NOT query live weather APIs).
+  3. Set "needsWikipedia": false, "wikipediaQuery": "", "needsWikidata": false, "wikidataQuery": "".
+  4. Set "needsFactCheck": false.
+  5. In "task", summarize the file analysis objective (e.g. "${userExtractedQuery ? `Analyze attached file: ${userExtractedQuery}` : 'Analyze attached context files'}").
+  6. In "plan", outline examining the attached file structure and synthesizing the comprehensive response.`
+      : '';
+
+    activePrompt += attachedFilesNotice;
 
     // Explicitly inject current Diagram Mode state so Planner's decision is context-aware
     const diagramModeNotice = diagramMode
@@ -2460,7 +2493,8 @@ CRITICAL RULES:
 3. When needsWikipedia is true, "wikipediaQuery" MUST be the clean, concise subject/title (e.g. for "tell about brawl stars game", wikipediaQuery MUST be "Brawl Stars"). If needsWikipedia is false, set it to "".
 4. When needsWikidata is true, "wikidataQuery" MUST be the clean entity name. If needsWikidata is false, set it to "".
 5. When needsWeather is true, set "weatherLocation" to the target city or location name (e.g. for "weather in Paris", weatherLocation MUST be "Paris"). If no specific location is mentioned, set it to "". When needsWeather is false, set it to "".
-6. When needsWeather is true, always set needsResearch: false, needsWikipedia: false, and needsWikidata: false (the system directly routes to the dedicated Live Weather API without general web search).`;
+6. When needsWeather is true, always set needsResearch: false, needsWikipedia: false, and needsWikidata: false (the system directly routes to the dedicated Live Weather API without general web search).
+7. When user attached context files are present without an explicit request for live outside web or weather data, this is a pure File Analysis task: always set needsResearch: false, needsResearchQuery: "", needsWeather: false, weatherLocation: "", needsWikipedia: false, needsWikidata: false.`;
 
     let planRes: { ok: boolean; text: string; error?: string; providerName: string; model: string; usedFallback?: boolean };
     let duration = 0;
@@ -2715,6 +2749,26 @@ CRITICAL RULES:
             'Deliver comprehensive capabilities overview.'
           ];
         }
+      } else if (isPureFileAnalysis) {
+        plannerOutput.needsResearch = false;
+        plannerOutput.needsResearchQuery = '';
+        plannerOutput.needsWeather = false;
+        plannerOutput.weatherLocation = '';
+        plannerOutput.needsWikipedia = false;
+        plannerOutput.wikipediaQuery = '';
+        plannerOutput.needsWikidata = false;
+        plannerOutput.wikidataQuery = '';
+        plannerOutput.needsKnowledgeAgent = false;
+        plannerOutput.needsFactCheck = false;
+        if (!plannerOutput.task || plannerOutput.task === query || plannerOutput.task.includes('## User Attached Context Files')) {
+          plannerOutput.task = userExtractedQuery ? `Analyze attached file: ${userExtractedQuery}` : 'Analyze attached context files';
+        }
+        if (!Array.isArray(plannerOutput.plan) || plannerOutput.plan.length === 0 || (plannerOutput.plan.length === 1 && plannerOutput.plan[0] === 'Synthesize accurate response directly.')) {
+          plannerOutput.plan = [
+            'Inspect attached file structure, context, and syntax',
+            'Synthesize comprehensive analysis from file content via Final Synthesizer'
+          ];
+        }
       }
       if (!diagramMode) {
         plannerOutput.needsDiagram = false;
@@ -2791,6 +2845,26 @@ CRITICAL RULES:
         plannerOutput.needsReview = false;
         plannerOutput.needsFactCheck = true;
         plannerOutput.task = stripSearchOverridePrefix(query) || 'Web search';
+      } else if (isPureFileAnalysis) {
+        plannerOutput.needsResearch = false;
+        plannerOutput.needsResearchQuery = '';
+        plannerOutput.needsWeather = false;
+        plannerOutput.weatherLocation = '';
+        plannerOutput.needsWikipedia = false;
+        plannerOutput.wikipediaQuery = '';
+        plannerOutput.needsWikidata = false;
+        plannerOutput.wikidataQuery = '';
+        plannerOutput.needsKnowledgeAgent = false;
+        plannerOutput.needsReview = false;
+        plannerOutput.needsFactCheck = false;
+        plannerOutput.needsDiagram = false;
+        plannerOutput.needsChart = false;
+        plannerOutput.needsImage = false;
+        plannerOutput.task = userExtractedQuery ? `Analyze attached file: ${userExtractedQuery}` : 'Analyze attached context files';
+        plannerOutput.plan = [
+          'Inspect attached file structure and context',
+          'Synthesize comprehensive analysis from file content via Final Synthesizer',
+        ];
       }
       if (plannerOutput.needsResearch && !plannerOutput.needsResearchQuery) {
         const { cleanedSearchQuery } = extractTopicKeywords(strippedQuery, plannerOutput.task);
@@ -2873,6 +2947,26 @@ CRITICAL RULES:
     plannerOutput.needsReview = false;
     plannerOutput.needsFactCheck = true;
     plannerOutput.task = stripSearchOverridePrefix(query) || 'Web search';
+  } else if (isPureFileAnalysis) {
+    plannerOutput.needsResearch = false;
+    plannerOutput.needsResearchQuery = '';
+    plannerOutput.needsWeather = false;
+    plannerOutput.weatherLocation = '';
+    plannerOutput.needsWikipedia = false;
+    plannerOutput.wikipediaQuery = '';
+    plannerOutput.needsWikidata = false;
+    plannerOutput.wikidataQuery = '';
+    plannerOutput.needsKnowledgeAgent = false;
+    plannerOutput.needsReview = false;
+    plannerOutput.needsFactCheck = false;
+    plannerOutput.needsDiagram = false;
+    plannerOutput.needsChart = false;
+    plannerOutput.needsImage = false;
+    plannerOutput.task = userExtractedQuery ? `Analyze attached file: ${userExtractedQuery}` : 'Analyze attached context files';
+    plannerOutput.plan = [
+      'Inspect attached file structure and context',
+      'Synthesize comprehensive analysis from file content via Final Synthesizer',
+    ];
   }
 
   // Strict enforcement: Wikidata and Wikipedia must NEVER be triggered for /customapi, /search, and /web commands
@@ -2892,6 +2986,16 @@ CRITICAL RULES:
     plannerOutput.wikipediaQuery = '';
     plannerOutput.needsWikidata = false;
     plannerOutput.wikidataQuery = '';
+  } else if (isPureFileAnalysis) {
+    plannerOutput.needsResearch = false;
+    plannerOutput.needsResearchQuery = '';
+    plannerOutput.needsWeather = false;
+    plannerOutput.weatherLocation = '';
+    plannerOutput.needsWikipedia = false;
+    plannerOutput.wikipediaQuery = '';
+    plannerOutput.needsWikidata = false;
+    plannerOutput.wikidataQuery = '';
+    plannerOutput.needsFactCheck = false;
   }
 
   // Standalone whole-word matching for news inquiries (excludes technical terms like 'electrical current' and product lineup inquiries)
@@ -2980,12 +3084,18 @@ CRITICAL RULES:
         : query;
   const combinedQueryText = `${strippedQuery} ${plannerOutput.task || ''}`;
 
+  // For intent checks, when files are attached, use the user's specific request and task rather than raw attached file content
+  const textForIntentCheck = promptHasAttachments
+    ? `${userExtractedQuery} ${plannerOutput.task || ''}`.trim()
+    : combinedQueryText;
+
   // Strict enforcement: When inquiry is weather-related or Planner flagged needsWeather
   const isWeatherQuery =
     !isCustomApi &&
     !isWebFetch &&
     !isSearchOverride &&
-    (Boolean(plannerOutput.needsWeather) || isWeatherInquiry(combinedQueryText));
+    !isPureFileAnalysis &&
+    (Boolean(plannerOutput.needsWeather) || isWeatherInquiry(textForIntentCheck));
 
   if (isWeatherQuery) {
     plannerOutput.needsWeather = true;
@@ -2999,15 +3109,15 @@ CRITICAL RULES:
     plannerOutput.needsChart = false;
     plannerOutput.needsImage = false;
     if (!plannerOutput.weatherLocation) {
-      plannerOutput.weatherLocation = extractWeatherLocation(strippedQuery, plannerOutput.weatherLocation);
+      plannerOutput.weatherLocation = extractWeatherLocation(textForIntentCheck, plannerOutput.weatherLocation);
     }
   }
 
-  const isProductLineupQuery = !isCustomApi && !isWebFetch && isProductLineupInquiry(combinedQueryText);
-  const isNewsQuery = !isCustomApi && !isWebFetch && !isProductLineupQuery && !isWeatherQuery && isNewsInquiry(combinedQueryText);
-  const isWorldNews = !isCustomApi && !isWebFetch && !isProductLineupQuery && !isWeatherQuery && isWorldNewsInquiry(combinedQueryText);
-  const isPersonalQuery = !isCustomApi && !isWebFetch && !isSearchOverride && (isPersonalOrHumanAiComparison(query) || isPersonalOrHumanAiComparison(combinedQueryText));
-  const isSelfQuery = !isCustomApi && !isWebFetch && !isSearchOverride && (isSelfReferentialInquiry(query) || isSelfReferentialInquiry(combinedQueryText));
+  const isProductLineupQuery = !isCustomApi && !isWebFetch && !isPureFileAnalysis && isProductLineupInquiry(textForIntentCheck);
+  const isNewsQuery = !isCustomApi && !isWebFetch && !isProductLineupQuery && !isWeatherQuery && !isPureFileAnalysis && isNewsInquiry(textForIntentCheck);
+  const isWorldNews = !isCustomApi && !isWebFetch && !isProductLineupQuery && !isWeatherQuery && !isPureFileAnalysis && isWorldNewsInquiry(textForIntentCheck);
+  const isPersonalQuery = !isCustomApi && !isWebFetch && !isSearchOverride && !isPureFileAnalysis && (isPersonalOrHumanAiComparison(query) || isPersonalOrHumanAiComparison(combinedQueryText));
+  const isSelfQuery = !isCustomApi && !isWebFetch && !isSearchOverride && !isPureFileAnalysis && (isSelfReferentialInquiry(query) || isSelfReferentialInquiry(combinedQueryText));
 
   const isCodeCommand = !isCustomApi && isCodeSlashCommand(query);
   const isCoderToggleEnabled =
@@ -3032,6 +3142,7 @@ CRITICAL RULES:
     !isWebFetch &&
     !isPersonalQuery &&
     !isSelfQuery &&
+    !isPureFileAnalysis &&
     agentConfigs.researcher.enabled &&
     (isSearchOverride ||
       deepResearch ||
