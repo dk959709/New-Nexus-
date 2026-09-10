@@ -21,6 +21,8 @@ import {
   Server,
   Edit2,
   Terminal,
+  ChevronDown,
+  ChevronUp,
 } from 'lucide-react';
 import { api } from '@/services/api';
 import type { ApiCatalogItem } from '@/types';
@@ -53,6 +55,9 @@ export function ApiCatalogSettings() {
 
   // Custom API Modal state
   const [showAddCustom, setShowAddCustom] = useState<boolean>(false);
+  const [showCustomKeyMask, setShowCustomKeyMask] = useState<boolean>(false);
+  const [copiedCustomKey, setCopiedCustomKey] = useState<boolean>(false);
+  const [showCustomAdvanced, setShowCustomAdvanced] = useState<boolean>(false);
   const [customForm, setCustomForm] = useState({
     name: '',
     envVar: '',
@@ -269,8 +274,11 @@ export function ApiCatalogSettings() {
 
   const handleAddCustom = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!customForm.name.trim() || !customForm.key.trim()) {
-      alert('Please provide at least a service name and an API key');
+    const rawKeyName = (customForm.envVar || customForm.name).trim();
+    const rawVal = customForm.key.trim();
+
+    if (!rawKeyName || !rawVal) {
+      alert('Please provide an Environment Variable / Key Name and an API Key value');
       return;
     }
     if (!customForm.baseUrl.trim()) {
@@ -278,21 +286,29 @@ export function ApiCatalogSettings() {
       return;
     }
 
-    const id = customForm.name.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/(^-|-$)/g, '');
-    const envVar = customForm.envVar.trim()
-      ? customForm.envVar.trim().toUpperCase().replace(/[^A-Z0-9_]/g, '_')
-      : `${id.toUpperCase().replace(/-/g, '_')}_API_KEY`;
+    const envVar = rawKeyName.toUpperCase().replace(/[^A-Z0-9_]/g, '_');
+    let finalName = customForm.name.trim();
+    if (!finalName) {
+      finalName = envVar
+        .replace(/_API_KEY$|_KEY$|_SECRET$|_TOKEN$/i, '')
+        .replace(/_/g, ' ')
+        .toLowerCase()
+        .replace(/\b\w/g, (c) => c.toUpperCase())
+        .trim() || envVar;
+    }
+
+    const id = finalName.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/(^-|-$)/g, '') || envVar.toLowerCase().replace(/_/g, '-');
 
     try {
       setAddingCustom(true);
       const res = await api.saveCatalogKey({
         id,
-        name: customForm.name.trim(),
+        name: finalName,
         envVar,
         baseUrl: customForm.baseUrl.trim(),
         queryParamName: customForm.queryParamName.trim() || 'q',
-        key: customForm.key.trim(),
-        description: customForm.description.trim() || `Custom backend integration for ${customForm.name.trim()}`,
+        key: rawVal,
+        description: customForm.description.trim() || `Custom backend integration for ${finalName}`,
         docsUrl: customForm.docsUrl.trim() || '',
         isCustom: true,
       });
@@ -308,10 +324,11 @@ export function ApiCatalogSettings() {
           docsUrl: '',
           category: 'custom',
         });
+        setShowCustomAdvanced(false);
         setShowAddCustom(false);
         setActionNotice({
           type: 'success',
-          message: `Custom API "${customForm.name.trim()}" successfully registered and ready for /customapi slash commands!`,
+          message: `Custom API "${finalName}" successfully registered and ready for /customapi slash commands!`,
         });
         await fetchCatalog();
       }
@@ -370,6 +387,23 @@ export function ApiCatalogSettings() {
   });
 
   const connectedCount = catalog.filter((i) => i.status === 'connected').length;
+
+  const targetApiId = (() => {
+    if (customForm.name.trim()) {
+      return customForm.name.trim().toLowerCase().replace(/[^a-z0-9]+/g, '-');
+    }
+    const keyRef = customForm.envVar.trim();
+    if (keyRef) {
+      return (
+        keyRef
+          .replace(/_API_KEY$|_KEY$|_SECRET$|_TOKEN$/i, '')
+          .replace(/_/g, '-')
+          .toLowerCase()
+          .replace(/[^a-z0-9-]+/g, '') || 'api-name'
+      );
+    }
+    return '[api_name]';
+  })();
 
   return (
     <div className="space-y-6">
@@ -467,129 +501,189 @@ export function ApiCatalogSettings() {
           }}
           className="space-y-4 shadow-xl"
         >
-          <div className="flex items-center justify-between">
-            <h3 className="text-sm font-semibold text-cyan-300 flex items-center gap-2 m-0">
-              <Plus size={16} /> Register Callable Custom API
-            </h3>
+          <div className="flex items-center justify-between pb-3 border-b border-slate-800">
+            <div>
+              <h3 className="text-sm font-semibold text-slate-100 flex items-center gap-2 m-0">
+                <Plus size={16} className="text-cyan-400" /> Register Custom API
+              </h3>
+              <p className="text-[11px] text-slate-400 m-0 mt-0.5">
+                Add an environment variable key and configure an endpoint to invoke via JARVIS.
+              </p>
+            </div>
             <button
               onClick={() => setShowAddCustom(false)}
-              className="text-slate-400 hover:text-slate-200 text-xs"
+              className="text-slate-400 hover:text-slate-200 text-xs px-2 py-1"
             >
               Cancel
             </button>
           </div>
 
-          <form onSubmit={handleAddCustom} className="grid grid-cols-1 md:grid-cols-2 gap-4">
-            <div>
-              <label className="block text-[11px] font-medium text-slate-300 mb-1">
-                Service / Provider Name *
-              </label>
-              <input
-                type="text"
-                placeholder="e.g. Weatherstack, SerpApi, Wolfram Alpha"
-                value={customForm.name}
-                onChange={(e) => setCustomForm({ ...customForm, name: e.target.value })}
-                className="w-full text-xs px-3 py-2 rounded-lg bg-slate-900 border border-slate-700 text-slate-100 placeholder-slate-500 focus:outline-none focus:border-cyan-400"
-                required
-              />
+          <form onSubmit={handleAddCustom} className="space-y-4">
+            {/* Row 1: Key | Value (Render Environment Variable Style) */}
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-3 items-end">
+              <div>
+                <label className="block text-[11px] font-semibold text-slate-300 mb-1.5 uppercase tracking-wider">
+                  Environment Variable / Key Name <span className="text-cyan-400">*</span>
+                </label>
+                <input
+                  type="text"
+                  placeholder="e.g. WEATHERSTACK_API_KEY"
+                  value={customForm.envVar}
+                  onChange={(e) => setCustomForm((prev) => ({ ...prev, envVar: e.target.value }))}
+                  className="w-full text-xs px-3 py-2.5 rounded-lg bg-slate-900 border border-slate-700 text-slate-100 placeholder-slate-500 focus:outline-none focus:border-cyan-400 font-mono tracking-wide"
+                  required
+                />
+              </div>
+
+              <div>
+                <label className="block text-[11px] font-semibold text-slate-300 mb-1.5 uppercase tracking-wider">
+                  Value <span className="text-cyan-400">*</span>
+                </label>
+                <div className="flex items-center gap-1.5">
+                  <div className="relative flex-1">
+                    <input
+                      type={showCustomKeyMask ? 'text' : 'password'}
+                      placeholder="Paste API key value..."
+                      value={customForm.key}
+                      onChange={(e) => setCustomForm((prev) => ({ ...prev, key: e.target.value }))}
+                      className="w-full text-xs pl-3 pr-8 py-2.5 rounded-lg bg-slate-900 border border-slate-700 text-slate-100 placeholder-slate-500 focus:outline-none focus:border-cyan-400 font-mono"
+                      required
+                    />
+                    <button
+                      type="button"
+                      onClick={() => setShowCustomKeyMask(!showCustomKeyMask)}
+                      title={showCustomKeyMask ? 'Hide value' : 'Show value'}
+                      className="absolute right-2.5 top-1/2 -translate-y-1/2 text-slate-400 hover:text-slate-200 transition-colors"
+                    >
+                      {showCustomKeyMask ? <EyeOff size={14} /> : <Eye size={14} />}
+                    </button>
+                  </div>
+
+                  <button
+                    type="button"
+                    onClick={() => {
+                      if (customForm.key) {
+                        navigator.clipboard.writeText(customForm.key);
+                        setCopiedCustomKey(true);
+                        setTimeout(() => setCopiedCustomKey(false), 1500);
+                      }
+                    }}
+                    disabled={!customForm.key}
+                    title="Copy Key Value"
+                    className="p-2.5 rounded-lg bg-slate-900 border border-slate-700 text-slate-300 hover:bg-slate-800 hover:text-cyan-300 hover:border-cyan-500/40 disabled:opacity-40 transition-colors"
+                  >
+                    {copiedCustomKey ? <Check size={14} className="text-emerald-400" /> : <Copy size={14} />}
+                  </button>
+
+                  <button
+                    type="button"
+                    onClick={() => setCustomForm((prev) => ({ ...prev, key: '' }))}
+                    disabled={!customForm.key}
+                    title="Delete Key Value"
+                    className="p-2.5 rounded-lg bg-slate-900 border border-slate-700 text-slate-400 hover:bg-rose-500/10 hover:text-rose-400 hover:border-rose-500/30 disabled:opacity-40 transition-colors"
+                  >
+                    <Trash2 size={14} />
+                  </button>
+                </div>
+              </div>
             </div>
 
-            <div>
-              <label className="block text-[11px] font-medium text-slate-300 mb-1">
-                Environment Variable Identifier
-              </label>
-              <input
-                type="text"
-                placeholder="e.g. WEATHERSTACK_API_KEY (optional, auto-generated if blank)"
-                value={customForm.envVar}
-                onChange={(e) => setCustomForm({ ...customForm, envVar: e.target.value })}
-                className="w-full text-xs px-3 py-2 rounded-lg bg-slate-900 border border-slate-700 text-slate-100 placeholder-slate-500 focus:outline-none focus:border-cyan-400 font-mono"
-              />
+            {/* Row 2: Base URL | Query Parameter Name */}
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-3 items-end">
+              <div>
+                <label className="block text-[11px] font-semibold text-slate-300 mb-1.5 uppercase tracking-wider">
+                  Base URL (API Endpoint) <span className="text-cyan-400">*</span>
+                </label>
+                <input
+                  type="url"
+                  placeholder="https://api.weatherstack.com/current"
+                  value={customForm.baseUrl}
+                  onChange={(e) => setCustomForm((prev) => ({ ...prev, baseUrl: e.target.value }))}
+                  className="w-full text-xs px-3 py-2.5 rounded-lg bg-slate-900 border border-slate-700 text-slate-100 placeholder-slate-500 focus:outline-none focus:border-cyan-400 font-mono"
+                  required
+                />
+              </div>
+
+              <div>
+                <label className="block text-[11px] font-semibold text-slate-300 mb-1.5 uppercase tracking-wider">
+                  Query Parameter Name
+                </label>
+                <input
+                  type="text"
+                  placeholder="q (default if blank, e.g. 'query', 'search', 'city')"
+                  value={customForm.queryParamName}
+                  onChange={(e) => setCustomForm((prev) => ({ ...prev, queryParamName: e.target.value }))}
+                  className="w-full text-xs px-3 py-2.5 rounded-lg bg-slate-900 border border-slate-700 text-slate-100 placeholder-slate-500 focus:outline-none focus:border-cyan-400 font-mono"
+                />
+              </div>
             </div>
 
-            <div>
-              <label className="block text-[11px] font-medium text-slate-300 mb-1">
-                Base URL (API Endpoint) *
-              </label>
-              <input
-                type="url"
-                placeholder="https://api.weatherstack.com/current"
-                value={customForm.baseUrl}
-                onChange={(e) => setCustomForm({ ...customForm, baseUrl: e.target.value })}
-                className="w-full text-xs px-3 py-2 rounded-lg bg-slate-900 border border-slate-700 text-slate-100 placeholder-slate-500 focus:outline-none focus:border-cyan-400 font-mono"
-                required
-              />
-              <p className="text-[10px] text-slate-500 mt-1">
-                The actual GET endpoint to query when invoking this API.
-              </p>
+            {/* Optional Advanced Expandable Section */}
+            <div className="pt-1">
+              <button
+                type="button"
+                onClick={() => setShowCustomAdvanced(!showCustomAdvanced)}
+                className="inline-flex items-center gap-1.5 text-xs text-slate-400 hover:text-cyan-300 font-medium transition-colors"
+              >
+                {showCustomAdvanced ? <ChevronUp size={14} /> : <ChevronDown size={14} />}
+                <span>Advanced Options (Display Name, Description, Docs URL)</span>
+              </button>
+
+              {showCustomAdvanced && (
+                <div className="mt-3 p-3.5 rounded-lg bg-slate-900/60 border border-slate-800 grid grid-cols-1 md:grid-cols-2 gap-3">
+                  <div>
+                    <label className="block text-[11px] font-medium text-slate-300 mb-1">
+                      Service Display Name (Optional)
+                    </label>
+                    <input
+                      type="text"
+                      placeholder="e.g. Weatherstack (auto-derived from key if blank)"
+                      value={customForm.name}
+                      onChange={(e) => setCustomForm((prev) => ({ ...prev, name: e.target.value }))}
+                      className="w-full text-xs px-3 py-2 rounded-lg bg-slate-950 border border-slate-700 text-slate-100 placeholder-slate-500 focus:outline-none focus:border-cyan-400"
+                    />
+                  </div>
+
+                  <div>
+                    <label className="block text-[11px] font-medium text-slate-300 mb-1">
+                      Documentation URL (Optional)
+                    </label>
+                    <input
+                      type="url"
+                      placeholder="https://weatherstack.com/documentation"
+                      value={customForm.docsUrl}
+                      onChange={(e) => setCustomForm((prev) => ({ ...prev, docsUrl: e.target.value }))}
+                      className="w-full text-xs px-3 py-2 rounded-lg bg-slate-950 border border-slate-700 text-slate-100 placeholder-slate-500 focus:outline-none focus:border-cyan-400 font-mono"
+                    />
+                  </div>
+
+                  <div className="md:col-span-2">
+                    <label className="block text-[11px] font-medium text-slate-300 mb-1">
+                      Description & Purpose (Optional)
+                    </label>
+                    <input
+                      type="text"
+                      placeholder="e.g. Real-time global weather and historical forecasts"
+                      value={customForm.description}
+                      onChange={(e) => setCustomForm((prev) => ({ ...prev, description: e.target.value }))}
+                      className="w-full text-xs px-3 py-2 rounded-lg bg-slate-950 border border-slate-700 text-slate-100 placeholder-slate-500 focus:outline-none focus:border-cyan-400"
+                    />
+                  </div>
+                </div>
+              )}
             </div>
 
-            <div>
-              <label className="block text-[11px] font-medium text-slate-300 mb-1">
-                Query Parameter Name
-              </label>
-              <input
-                type="text"
-                placeholder="q (defaults to 'q' if left blank, e.g. 'query', 'search')"
-                value={customForm.queryParamName}
-                onChange={(e) => setCustomForm({ ...customForm, queryParamName: e.target.value })}
-                className="w-full text-xs px-3 py-2 rounded-lg bg-slate-900 border border-slate-700 text-slate-100 placeholder-slate-500 focus:outline-none focus:border-cyan-400 font-mono"
-              />
-              <p className="text-[10px] text-slate-500 mt-1">
-                The URL query parameter used for search terms (e.g. ?query=London or ?q=London).
-              </p>
-            </div>
-
-            <div>
-              <label className="block text-[11px] font-medium text-slate-300 mb-1">
-                API Key Value *
-              </label>
-              <input
-                type="password"
-                placeholder="Paste API secret / access key credential"
-                value={customForm.key}
-                onChange={(e) => setCustomForm({ ...customForm, key: e.target.value })}
-                className="w-full text-xs px-3 py-2 rounded-lg bg-slate-900 border border-slate-700 text-slate-100 placeholder-slate-500 focus:outline-none focus:border-cyan-400 font-mono"
-                required
-              />
-            </div>
-
-            <div>
-              <label className="block text-[11px] font-medium text-slate-300 mb-1">
-                Documentation or Dashboard URL
-              </label>
-              <input
-                type="url"
-                placeholder="https://weatherstack.com/documentation"
-                value={customForm.docsUrl}
-                onChange={(e) => setCustomForm({ ...customForm, docsUrl: e.target.value })}
-                className="w-full text-xs px-3 py-2 rounded-lg bg-slate-900 border border-slate-700 text-slate-100 placeholder-slate-500 focus:outline-none focus:border-cyan-400"
-              />
-            </div>
-
-            <div className="md:col-span-2">
-              <label className="block text-[11px] font-medium text-slate-300 mb-1">
-                Description & Purpose
-              </label>
-              <input
-                type="text"
-                placeholder="Brief summary of data provided by this endpoint"
-                value={customForm.description}
-                onChange={(e) => setCustomForm({ ...customForm, description: e.target.value })}
-                className="w-full text-xs px-3 py-2 rounded-lg bg-slate-900 border border-slate-700 text-slate-100 placeholder-slate-500 focus:outline-none focus:border-cyan-400"
-              />
-            </div>
-
-            <div className="md:col-span-2 flex items-center justify-between pt-2 border-t border-slate-800">
+            {/* Form Footer */}
+            <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3 pt-3 border-t border-slate-800">
               <div className="flex items-center gap-1.5 text-[11px] text-cyan-400">
                 <Terminal size={13} />
-                <span>Callable via: <code>/customapi {customForm.name ? customForm.name.toLowerCase().replace(/[^a-z0-9]+/g, '-') : '[api_name]'} [query]</code></span>
+                <span>Callable via: <code>/customapi {targetApiId} [query]</code></span>
               </div>
-              <div className="flex items-center gap-2">
+              <div className="flex items-center gap-2 w-full sm:w-auto justify-end">
                 <button
                   type="button"
                   onClick={() => setShowAddCustom(false)}
-                  className="text-xs px-4 py-2 rounded-lg bg-slate-800 text-slate-300 border border-slate-700 hover:bg-slate-700"
+                  className="text-xs px-4 py-2 rounded-lg bg-slate-800 text-slate-300 border border-slate-700 hover:bg-slate-700 transition-colors"
                 >
                   Cancel
                 </button>

@@ -4,6 +4,7 @@ import {
   Bot,
   CheckCircle2,
   Film,
+  HelpCircle,
   Info,
   Palette,
   Send,
@@ -14,6 +15,7 @@ import {
 import { Link, useSearchParams } from 'react-router-dom';
 import { AIProvidersSettings } from '@/components/AIProvidersSettings';
 import { ApiCatalogSettings } from '@/components/ApiCatalogSettings';
+import { HelpSettings } from '@/components/HelpSettings';
 import { WallpaperSelector } from '@/components/WallpaperSelector';
 import { api } from '@/services/api';
 import { storage } from '@/lib/storage';
@@ -31,6 +33,7 @@ type SettingsCategory =
   | 'notifications'
   | 'ai'
   | 'api-catalog'
+  | 'help'
   | 'media-backend'
   | 'privacy'
   | 'about';
@@ -403,6 +406,36 @@ export function SettingsPage() {
         </button>
 
         <button
+          onClick={() => switchCategory('help')}
+          className={activeCategory === 'help' ? 'selected' : ''}
+          style={{
+            display: 'inline-flex',
+            alignItems: 'center',
+            gap: '8px',
+            padding: '9px 16px',
+            borderRadius: '8px',
+            border: `1px solid ${
+              activeCategory === 'help'
+                ? 'var(--accent)'
+                : 'rgba(165,207,214,0.18)'
+            }`,
+            background:
+              activeCategory === 'help'
+                ? 'rgba(97,215,201,0.15)'
+                : 'rgba(14,31,39,0.6)',
+            color: activeCategory === 'help' ? 'var(--accent)' : 'var(--muted)',
+            fontWeight: 600,
+            fontSize: '13px',
+            cursor: 'pointer',
+            whiteSpace: 'nowrap',
+            boxShadow:
+              activeCategory === 'help' ? '0 0 12px rgba(97,215,201,0.2)' : 'none',
+          }}
+        >
+          <HelpCircle size={16} /> 📚 Help
+        </button>
+
+        <button
           onClick={() => switchCategory('media-backend')}
           className={activeCategory === 'media-backend' ? 'selected' : ''}
           style={{
@@ -494,6 +527,9 @@ export function SettingsPage() {
 
         {/* ⚡ API Catalog Category */}
         {activeCategory === 'api-catalog' && <ApiCatalogSettings />}
+
+        {/* 📚 Help & Documentation Category */}
+        {activeCategory === 'help' && <HelpSettings />}
 
         {/* 🎬 Media Backends Category */}
         {activeCategory === 'media-backend' && <MediaBackendSettings />}
