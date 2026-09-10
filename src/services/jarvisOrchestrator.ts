@@ -2334,6 +2334,7 @@ Please perform your specialized processing for this inquiry. Provide clear, conc
     if (isWebFetchQuery(text)) return false;
     if (isSearchOverrideQuery(text)) return false;
     if (isCustomApiCommand(text)) return false;
+    if (isCodeSlashCommand(text)) return false;
     const lower = text.toLowerCase().trim().replace(/[?!.,]+$/g, '');
     return (
       /^(hi|hello|hey|greetings|howdy|good (morning|afternoon|evening))\b/i.test(lower) ||
@@ -5063,6 +5064,15 @@ ${sourcesListText}${customInsightsBlock}${personalIdentityDirective}${architectu
         ? sCfg.systemPrompt.trim()
         : defaultSysPrompt;
 
+    if (!isSelfOrArchitectureQuery) {
+      // Ensure no architecture or slash commands prompt text leaks into system prompt for regular queries or commands (/web, /customapi, /search, /code, research)
+      activeSysPrompt = activeSysPrompt
+        .replace(/-?\s*JARVIS MULTI-AGENT ARCHITECTURE[\s\S]*?(?=\n- [A-Z]|\n\n\[|\n\n---|$)/gi, '')
+        .replace(/\[JARVIS MULTI-AGENT ARCHITECTURE[\s\S]*?(?=\n\n|$)/gi, '')
+        .replace(/###\s*(?:Available|Dedicated)\s*Slash Commands[\s\S]*?(?=\n###|\n\n|$)/gi, '')
+        .replace(/REQUIRED SLASH COMMANDS SECTION:?[\s\S]*?(?=\n- [A-Z]|\n\n\[|\n\n---|$)/gi, '');
+    }
+
     // Apply template variable substitution to system prompt & user context
     activeSysPrompt = applyTemplateVariables(activeSysPrompt, synthReplacements);
 
@@ -5166,6 +5176,10 @@ Please combine the Coder's code and the Reviewer's feedback into a clean, well-f
       });
       if (isAutoCode && coderOutput) {
         finalAnswer = coderOutput;
+      } else if (isWebFetch && webFetchData) {
+        finalAnswer = `### Webpage Summary: ${webFetchData.title}\n\n${webFetchData.textContent.slice(0, 1500)}`;
+      } else if (isCustomApi && customApiData) {
+        finalAnswer = `### Custom API Response: ${customApiData.apiName}\n\n\`\`\`json\n${JSON.stringify(customApiData.data, null, 2)}\n\`\`\``;
       } else if (researcherOutput.facts.length > 0) {
         finalAnswer = `### Key Intelligence & Findings\n\n${researcherOutput.facts.map((f) => `- ${f}`).join('\n')}`;
       } else if (factCheckOutput.verified.length > 0) {
