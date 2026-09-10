@@ -2328,7 +2328,7 @@ Please perform your specialized processing for this inquiry. Provide clear, conc
     );
   };
 
-  // Helper to detect self-referential / meta / greeting inquiries about JARVIS itself
+  // Helper to detect genuine self-referential / meta / greeting inquiries about JARVIS itself
   const isSelfReferentialInquiry = (text: string): boolean => {
     if (!text || typeof text !== 'string') return false;
     if (isWebFetchQuery(text)) return false;
@@ -2337,9 +2337,7 @@ Please perform your specialized processing for this inquiry. Provide clear, conc
     const lower = text.toLowerCase().trim().replace(/[?!.,]+$/g, '');
     return (
       /^(hi|hello|hey|greetings|howdy|good (morning|afternoon|evening))\b/i.test(lower) ||
-      /\b(what (can|do) you do|what are your capabilities|who are you|what is your name|how do you work|tell me about yourself|what is jarvis|what can jarvis do|who made you|are you an ai|help me|how many agents|what agents|what are your agents|list (your )?agents|who are your agents|your architecture|how does jarvis work|how does your system work|explain your agents|how many ai agents|agent architecture)\b/i.test(lower) ||
-      /\b(?:how many|what|list|explain|describe|who are)\s+(?:the\s+)?agents\b/i.test(lower) ||
-      /\b(?:agent|agents|architecture)\s+(?:breakdown|overview|pipeline|capabilities)\b/i.test(lower) ||
+      /\b(what (can|do) you do|what are your capabilities|who are you|what is your name|how do you work|tell me about yourself|what is jarvis|what can jarvis do|who made you|are you an ai|help me)\b/i.test(lower) ||
       isPersonalOrHumanAiComparison(text)
     );
   };
@@ -4951,11 +4949,12 @@ Output strictly valid JSON matching this schema:
       : '';
 
     const isSelfOrArchitectureQuery =
-      isSelfQuery ||
-      isSelfReferentialInquiry(query) ||
-      /\b(agents?|architecture|capabilities|what can you do|who are you|how many agents|what agents|list (your )?agents|who are your agents|explain your agents|describe your agents|how do you work)\b/i.test(query) ||
-      /\b(?:how many|what|list|explain|describe|who are)\s+(?:the\s+)?(?:ai\s+)?agents\b/i.test(query) ||
-      /\b(?:agent|agents|architecture)\s+(?:breakdown|overview|pipeline|capabilities|topology)\b/i.test(query);
+      !isCustomApi &&
+      !isWebFetch &&
+      !isSearchOverride &&
+      !isCodeCommand &&
+      (isSelfQuery || isSelfReferentialInquiry(query)) &&
+      !isPersonalOrHumanAiComparison(query);
 
     const architectureReferenceDirective = isSelfOrArchitectureQuery && !isPersonalOrHumanAiComparison(query)
       ? `\n\n[JARVIS MULTI-AGENT ARCHITECTURE & SLASH COMMANDS REFERENCE]:
