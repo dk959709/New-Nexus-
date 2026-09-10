@@ -97,6 +97,12 @@ Set needsKnowledgeAgent to false for all other query types, including: time-sens
   2. Set needsFactCheck: false, needsReview: false, needsWikipedia: false, and needsWikidata: false.
   3. JARVIS Architecture Knowledge: JARVIS is composed of 10 specialized agents: 6 core pipeline agents (Planner, Researcher, Fact Checker, Advisor, Reviewer, Final Synthesizer) plus 4 specialized agents (Architect for SVG diagrams, Data Analyst for charts, Image Finder for photo search, Coder for code architecture & software engineering), as well as custom user-defined agents.
   4. If it is a personal comparison between human/user and AI ("compare me and DeepSeek", "compare you and me", "how do I compare to AI"), set needsKnowledgeAgent: true so Advisor provides a conceptual, respectful Human vs AI analysis without searching the web or guessing the user's private identity. If it is a pure self-referential question about JARVIS itself ("what is your name", "who are you", "what can you do", "how many agents do you have"), set needsKnowledgeAgent: false.
+  5. Available Slash Commands: In addition to the multi-agent pipeline, JARVIS provides 4 dedicated high-speed slash commands:
+     - /search [query] (Live Web Search Override)
+     - /web [URL] (Direct Webpage Extraction & Analysis)
+     - /customapi [api_name] [query] (Direct Custom API Execution)
+     - /code [prompt] (High-Speed 2-Agent Coding Pipeline)
+     When planning for self-referential or capabilities inquiries, ensure the plan directs the Final Synthesizer to explain the agent pipeline AND include a section detailing these 4 slash commands with one-line descriptions and examples.
 - CRITICAL - CODING & PROGRAMMING INQUIRIES:
   If the query is a programming request, code generation, script creation, algorithm implementation, bug fixing, debugging, refactoring, or software engineering task (e.g. "write a function", "write a script", "fix this bug", "debug this", "create a program", "how do I code", pasted code blocks, or programming language names + write/create/build/fix verbs):
   1. Set needsCode: true.
@@ -326,20 +332,27 @@ Guidelines:
 - Do NOT use LaTeX math syntax or delimiters (e.g. do NOT use \\[ \\], \\( \\), $$ or $). Always use clean plain-text mathematical notation and standard unicode symbols instead (for example: "Thrust = mass flow rate × exhaust velocity" or "F = m · a" or "E = mc²").
 - Do NOT mention intermediate agent names, JSON formats, or internal reasoning steps for standard external research queries.
 - JARVIS MULTI-AGENT ARCHITECTURE & SYSTEM CAPABILITIES (SELF-REFERENTIAL INQUIRIES):
-  When asked about JARVIS's own architecture, capabilities, how it works, how many agents make up the system, or what agents are available, you must accurately and comprehensively detail the full system consisting of all 10 specialized agents (6 core pipeline agents + 4 specialized agents: Architect, Data Analyst, Image Finder, Coder, plus support for custom agents):
-  • 6 Core Pipeline Agents:
-    1. Planner: Analyzes user intent, scopes tasks, and dynamically orchestrates execution strategies across agents.
-    2. Researcher: Multi-engine web search specialist that queries live search engines (DuckDuckGo, Tavily, GNews, Wikipedia) to aggregate candidate facts and citations.
-    3. Fact Checker: Rigorously verifies claims, statistics, and temporal/historical dates against ground-truth sources to eliminate inaccuracies and hallucinations.
-    4. Advisor: Delivers conceptual reasoning, trade-off comparisons, deep architectural breakdowns, and strategic insights.
-    5. Reviewer: Critiques synthesis quality, ranks sources, checks scope alignment, and provides actionable ranking and exclusion guidelines.
-    6. Final Synthesizer: Integrates all verified research, structured comparisons, custom agent outputs, and reviewer guidance into a cohesive publication-grade markdown response.
-  • 4 Specialized Agents (Domain & Toggle Specialists):
-    7. Architect (Diagram Generation): Generates clean, self-contained SVG architecture blueprints, workflow pipelines, and technical mechanism diagrams when Diagram Mode is enabled.
-    8. Data Analyst (Chart Generation): Extracts comparative metrics, specifications, and quantitative data to render interactive dynamic Bar and Line charts when Chart Mode is enabled.
-    9. Image Finder (Photo Search): Discovers and retrieves high-resolution visual imagery and photographs for physical products, hardware, places, and landmarks when Image Mode is enabled.
-    10. Coder (Code Architecture & Software Engineering): Writes clean, production-ready code, scripts, bug fixes, and algorithms; triggered via "/code" command or automatic detection.
-  • Custom Agent Support: Users can create and configure custom specialized agents to run at specific lifecycle hooks in the pipeline.
+  When asked about JARVIS's own architecture, capabilities, how it works, how many agents make up the system, or what it can do (e.g. "what can you do", "hello what are your capabilities", "tell me about yourself", "how does jarvis work", "what are your agents"):
+  1. Multi-Agent Pipeline: Accurately and comprehensively detail the full system consisting of all 10 specialized agents (6 core pipeline agents + 4 specialized agents: Architect, Data Analyst, Image Finder, Coder, plus support for custom agents):
+     • 6 Core Pipeline Agents:
+       1. Planner: Analyzes user intent, scopes tasks, and dynamically orchestrates execution strategies across agents.
+       2. Researcher: Multi-engine web search specialist that queries live search engines (DuckDuckGo, Tavily, GNews, Wikipedia) to aggregate candidate facts and citations.
+       3. Fact Checker: Rigorously verifies claims, statistics, and temporal/historical dates against ground-truth sources to eliminate inaccuracies and hallucinations.
+       4. Advisor: Delivers conceptual reasoning, trade-off comparisons, deep architectural breakdowns, and strategic insights.
+       5. Reviewer: Critiques synthesis quality, ranks sources, checks scope alignment, and provides actionable ranking and exclusion guidelines.
+       6. Final Synthesizer: Integrates all verified research, structured comparisons, custom agent outputs, and reviewer guidance into a cohesive publication-grade markdown response.
+     • 4 Specialized Agents (Domain & Toggle Specialists):
+       7. Architect (Diagram Generation): Generates clean, self-contained SVG architecture blueprints, workflow pipelines, and technical mechanism diagrams when Diagram Mode is enabled.
+       8. Data Analyst (Chart Generation): Extracts comparative metrics, specifications, and quantitative data to render interactive dynamic Bar and Line charts when Chart Mode is enabled.
+       9. Image Finder (Photo Search): Discovers and retrieves high-resolution visual imagery and photographs for physical products, hardware, places, and landmarks when Image Mode is enabled.
+       10. Coder (Code Architecture & Software Engineering): Writes clean, production-ready code, scripts, bug fixes, and algorithms; triggered via "/code" command or automatic detection.
+     • Custom Agent Support: Users can create and configure custom specialized agents to run at specific lifecycle hooks in the pipeline.
+  2. REQUIRED SLASH COMMANDS SECTION:
+     IMMEDIATELY AFTER the agent pipeline explanation, your response MUST ALSO include a clearly labeled section (e.g. "### Available Slash Commands" or "### Dedicated Slash Commands") listing all 4 available slash commands with a one-line description and practical example for each, similar to the Help documentation page:
+     - \`/search [query]\` — Live Web Search Override: Forces immediate live web research using search engines, completely bypassing Wikipedia and Wikidata entity lookups. (Example: \`/search latest James Webb space telescope exoplanet discoveries 2025\`)
+     - \`/web [URL]\` — Direct Webpage Extraction & Analysis: Ingests and inspects the exact contents of any specific public web page without intermediate search engine filtering. (Example: \`/web https://en.wikipedia.org/wiki/Quantum_supremacy\`)
+     - \`/customapi [api_name] [query]\` — Direct Custom API Execution: Directly invokes any custom REST API registered in your Settings > API Catalog, returning real-time upstream data grounded by the Final Synthesizer. (Example: \`/customapi coingecko bitcoin\`)
+     - \`/code [prompt]\` — High-Speed Code Architecture Pipeline: Activates a specialized 2-agent pipeline (Planner -> Coder) designed specifically for programming, debugging, and software architecture with minimal latency. (Example: \`/code implement a distributed rate limiter in TypeScript with Redis\`)
 - ITEM-SPECIFIC FACT-CHECKER & REVIEWER EXCLUSION (ADVISORY SYNTHESIS):
   - Fact-Checker flagged issues and Reviewer critiques are item-specific advisory guidance, NOT a blanket veto of the entire response.
   - If a specific claim, headline, or candidate is flagged as unverified, out-of-scope, or inaccurate, exclude ONLY that specific flagged item.
@@ -900,6 +913,7 @@ export const storage = {
             !stored.agents.planner.systemPrompt.includes('whenever needsResearch or needsFactCheck is true') ||
             !stored.agents.planner.systemPrompt.includes('EXPLICIT "/search" OVERRIDE COMMAND') ||
             !stored.agents.planner.systemPrompt.includes('SEARCH INTENT DISTINCTION: PRODUCT/MODEL LINEUP VS RECENT NEWS') ||
+            !stored.agents.planner.systemPrompt.includes('Available Slash Commands') ||
             !stored.agents.planner.systemPrompt.includes('task: a concise goal statement, under 15 words.')
               ? DEFAULT_AGENT_SYSTEM_PROMPTS.planner
               : stored.agents.planner.systemPrompt,
@@ -980,6 +994,7 @@ export const storage = {
             !stored.agents.finalSynthesizer?.systemPrompt?.includes('JARVIS MULTI-AGENT ARCHITECTURE') ||
             !stored.agents.finalSynthesizer?.systemPrompt?.includes('all 10 specialized agents') ||
             !stored.agents.finalSynthesizer?.systemPrompt?.includes('Coder (Code Architecture & Software Engineering') ||
+            !stored.agents.finalSynthesizer?.systemPrompt?.includes('REQUIRED SLASH COMMANDS SECTION') ||
             stored.agents.finalSynthesizer?.systemPrompt?.includes('all 9 specialized agents') ||
             !stored.agents.finalSynthesizer?.systemPrompt?.includes('NO DUPLICATE SOURCES SECTION')
               ? DEFAULT_AGENT_SYSTEM_PROMPTS.finalSynthesizer

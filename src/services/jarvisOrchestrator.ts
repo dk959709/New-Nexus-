@@ -2709,6 +2709,13 @@ CRITICAL RULES:
         plannerOutput.needsDiagram = false;
         plannerOutput.needsChart = false;
         plannerOutput.needsImage = false;
+        if (!plannerOutput.plan || plannerOutput.plan.length === 0 || (plannerOutput.plan.length === 1 && plannerOutput.plan[0] === 'Synthesize accurate response directly.')) {
+          plannerOutput.plan = [
+            'Detail the 10-agent cognitive architecture and multi-agent pipeline.',
+            'Present available slash commands (/search, /web, /customapi, /code) with descriptions and examples.',
+            'Deliver comprehensive capabilities overview.'
+          ];
+        }
       }
       if (!diagramMode) {
         plannerOutput.needsDiagram = false;
@@ -4951,7 +4958,7 @@ Output strictly valid JSON matching this schema:
       /\b(?:agent|agents|architecture)\s+(?:breakdown|overview|pipeline|capabilities|topology)\b/i.test(query);
 
     const architectureReferenceDirective = isSelfOrArchitectureQuery && !isPersonalOrHumanAiComparison(query)
-      ? `\n\n[JARVIS MULTI-AGENT ARCHITECTURE REFERENCE]:
+      ? `\n\n[JARVIS MULTI-AGENT ARCHITECTURE & SLASH COMMANDS REFERENCE]:
 JARVIS is a multi-agent AI intelligence platform composed of 10 specialized agents:
 • 6 Core Pipeline Agents:
   1. Planner (Query analysis, task scoping, and dynamic agent orchestration)
@@ -4966,7 +4973,27 @@ JARVIS is a multi-agent AI intelligence platform composed of 10 specialized agen
   9. Image Finder (Real-world product, landmark, and photographic image retrieval via Image Mode)
   10. Coder (Code Architecture & Software Engineering — writes clean, production-ready code, scripts, bug fixes, and algorithms; triggered via "/code" command or automatic detection)
 • Custom Agents: Support for user-defined custom specialized agents.
-When answering questions about JARVIS's architecture, agent count, or capabilities, describe all 10 agents comprehensively.`
+
+• Dedicated Slash Commands (High-speed pipeline routing):
+JARVIS also includes dedicated slash commands that allow users to override normal planning and directly steer the pipeline:
+  1. \`/search [query]\` — Live Web Search Override: Forces immediate live web research using search engines, completely bypassing Wikipedia and Wikidata entity lookups.
+     Example: \`/search latest James Webb space telescope exoplanet discoveries 2025\`
+  2. \`/web [URL]\` — Direct Webpage Extraction & Analysis: Ingests and inspects the exact contents of any specific public web page without intermediate search engine filtering.
+     Example: \`/web https://en.wikipedia.org/wiki/Quantum_supremacy\`
+  3. \`/customapi [api_name] [query]\` — Direct Custom API Execution: Directly invokes any custom REST API registered in your Settings > API Catalog, returning real-time upstream data grounded by the Final Synthesizer.
+     Example: \`/customapi coingecko bitcoin\`
+  4. \`/code [prompt]\` — High-Speed Code Architecture Pipeline: Activates a specialized 2-agent pipeline (Planner -> Coder) designed specifically for programming, debugging, and software architecture with minimal latency.
+     Example: \`/code implement a distributed rate limiter in TypeScript with Redis\`
+
+CRITICAL CAPABILITY & SELF-DESCRIPTION SYNTHESIS MANDATE:
+When answering self-referential questions like "what can you do", "hello what are your capabilities", "how do you work", or questions about JARVIS's agents, capabilities, or system features:
+1. Explain the multi-agent cognitive pipeline and describe all 10 agents comprehensively.
+2. IMMEDIATELY AFTER the agent pipeline explanation, you MUST include a dedicated section titled "### Available Slash Commands" (or "### Dedicated Slash Commands") listing all 4 slash commands:
+   - \`/search [query]\` with a one-line description and example
+   - \`/web [URL]\` with a one-line description and example
+   - \`/customapi [api_name] [query]\` with a one-line description and example
+   - \`/code [prompt]\` with a one-line description and example
+Keep the existing agent pipeline explanation intact, and add this slash commands section right after it.`
       : '';
 
     const webFetchContextBlock = isWebFetch
@@ -5146,6 +5173,30 @@ Please combine the Coder's code and the Reviewer's feedback into a clean, well-f
         finalAnswer = `### Verified Claims\n\n${factCheckOutput.verified.map((v) => `- ${v}`).join('\n')}`;
       } else if (customAgentOutputs.length > 0) {
         finalAnswer = customAgentOutputs.map((c) => `### ${c.name}\n\n${c.output}`).join('\n\n');
+      } else if (isSelfQuery || isSelfReferentialInquiry(query)) {
+        finalAnswer = `### NEXUS / JARVIS Cognitive Matrix & Capabilities
+
+JARVIS is a multi-agent AI intelligence platform composed of 10 specialized neural agents:
+
+#### Core Pipeline Agents
+1. **Planner**: Analyzes query intent, scopes tasks, and dynamically orchestrates execution strategies across agents.
+2. **Researcher**: Multi-engine live search specialist that queries search engines, news feeds, and encyclopedias.
+3. **Fact Checker**: Validates claims, statistics, and historical/release dates against ground-truth sources.
+4. **Advisor**: Delivers conceptual reasoning, trade-off comparisons, and deep architectural insights.
+5. **Reviewer**: Evaluates synthesis quality, ranks sources, and enforces scope alignment.
+6. **Final Synthesizer**: Integrates verified research and structured comparisons into a definitive publication-grade response.
+
+#### Specialized Domain Agents
+7. **Architect**: Generates interactive SVG architecture blueprints and workflow diagrams in Diagram Mode.
+8. **Data Analyst**: Extracts comparative metrics to render dynamic charts in Chart Mode.
+9. **Image Finder**: Discovers and retrieves high-resolution visual imagery in Image Mode.
+10. **Coder**: Writes clean, production-ready code, scripts, bug fixes, and algorithms.
+
+### Available Slash Commands
+- \`/search [query]\` — Forces immediate live web research using search engines, completely bypassing Wikipedia and Wikidata entity lookups. (Example: \`/search latest James Webb space telescope exoplanet discoveries 2025\`)
+- \`/web [URL]\` — Ingests and inspects the exact contents of any specific public web page without intermediate search engine filtering. (Example: \`/web https://en.wikipedia.org/wiki/Quantum_supremacy\`)
+- \`/customapi [api_name] [query]\` — Directly invokes any custom REST API registered in your Settings > API Catalog, returning real-time upstream data grounded by the Final Synthesizer. (Example: \`/customapi coingecko bitcoin\`)
+- \`/code [prompt]\` — Activates a specialized 2-agent pipeline (Planner -> Coder) designed specifically for programming, debugging, and software architecture with minimal latency. (Example: \`/code implement a distributed rate limiter in TypeScript with Redis\`)`;
       } else {
         finalAnswer = `### Intelligence Summary: ${query}\n\nProcessed query through the multi-agent pipeline. Provider failover completed across configured channels.`;
       }
