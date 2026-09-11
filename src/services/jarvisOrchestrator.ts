@@ -21,6 +21,7 @@ import {
   extractUserQueryWithoutAttachments,
   isExplicitOutsideResearchQuery,
 } from '@/services/jarvisAttachmentService';
+import { searchDocumentLibrary } from '@/services/documentLibraryService';
 import type {
   AIProviderConfig,
   AISource,
@@ -33,6 +34,7 @@ import type {
   JarvisSystemConfig,
   SearchResult,
   WikidataEntity,
+  DocumentRetrievalResult,
 } from '@/types';
 
 export interface JarvisExecutionResult {
@@ -42,6 +44,7 @@ export interface JarvisExecutionResult {
   diagramSvg?: string;
   chartData?: JarvisChartData | null;
   images?: JarvisImageResult[];
+  retrievedDocChunks?: DocumentRetrievalResult[];
   error?: string;
 }
 
@@ -1939,6 +1942,12 @@ export async function runJarvisPipeline(
   onStepUpdate?: StepUpdateCallback,
   userTimeZone?: string,
   coderMode?: boolean,
+  documentRagOptions?: {
+    enabled: boolean;
+    mode?: 'all' | 'specific';
+    selectedDocId?: string;
+    selectedDocName?: string;
+  },
 ): Promise<JarvisExecutionResult> {
   // Safely resolve and validate user's local timezone with fallback to Europe/London
   let effectiveTimeZone = 'Europe/London';
@@ -3173,6 +3182,112 @@ CRITICAL RULES:
     !isSearchOverride &&
     agentConfigs.reviewer.enabled &&
     (isAutoCode || deepResearch || Boolean(plannerOutput.needsReview));
+
+  // ==========================================
+  // STEP 1.4: 📚 DOCUMENT LIBRARY (VECTOR MEMORY / RAG)
+  // ==========================================
+  let retrievedDocChunks: DocumentRetrievalResult[] = [];
+  let documentRagContextBlock = '';
+
+  if (documentRagOptions?.enabled) {
+    const cleanSearchQuery = extractUserQueryWithoutAttachments(query) || query;
+    const targetLabel =
+      documentRagOptions.mode === 'specific'
+        ? (documentRagOptions.selectedDocName ? `"${documentRagOptions.selectedDocName}"` : 'selected document')
+        : 'all active library documents';
+
+    const ragStart = Date.now();
+    updateStep({
+      agentId: 'doc_rag' as unknown as JarvisAgentId,
+      name: 'Document Library (RAG)',
+      icon: '📚',
+      status: 'running',
+      providerName: 'Vector Memory Store',
+      model: 'hybrid-dense-bm25',
+      summary: `Searching ${targetLabel} for semantic matches...`,
+    });
+
+    try {
+      retrievedDocChunks = await searchDocumentLibrary(cleanSearchQuery, {
+        mode: documentRagOptions.mode,
+        selectedDocId: documentRagOptions.selectedDocId,
+        topK: 6,
+      });
+
+      const ragDuration = Date.now() - ragStart;
+      if (retrievedDocChunks && retrievedDocChunks.length > 0) {
+        documentRagContextBlock = `\n\n[PRIVATE DOCUMENT LIBRARY (VECTOR MEMORY) - VERIFIED RETRIEVED EXCERPTS]:
+The user has enabled Document Library (RAG) search across ${targetLabel}.
+Below are the verified semantic excerpts retrieved directly from their private document(s):
+
+${retrievedDocChunks
+  .map(
+    (c, idx) =>
+      `--- EXCERPT ${idx + 1} [Document: "${c.docName}", Chunk #${c.chunkIndex + 1}, Relevance: ${Math.round(c.score * 100)}%] ---\n"${c.text}"\n`,
+  )
+  .join('\n')}
+
+CRITICAL RAG SYNTHESIS & CITATION DIRECTIVES:
+1. Ground your answers strictly in these private document excerpts.
+2. ALWAYS cite the specific document name(s) (e.g. "[Document: ${retrievedDocChunks[0]?.docName || 'filename'}]") for every factual point, data figure, or claim derived from these documents.
+3. If the excerpts answer the user's inquiry, provide a direct, comprehensive, structured answer based on them.
+4. If the excerpts do not contain sufficient information, state clearly that according to the indexed document(s), this information was not found.`;
+
+        for (const c of retrievedDocChunks) {
+          if (!sourcesCollected.some((s) => s.title === c.docName && s.domain === 'Document Library')) {
+            sourcesCollected.push({
+              title: c.docName,
+              url: `#doc-${c.docId}`,
+              domain: 'Document Library',
+              snippet: c.text.slice(0, 160) + '...',
+            });
+          }
+        }
+
+        updateStep({
+          agentId: 'doc_rag' as unknown as JarvisAgentId,
+          name: 'Document Library (RAG)',
+          icon: '📚',
+          status: 'completed',
+          providerName: 'Vector Memory Store',
+          model: 'hybrid-dense-bm25',
+          durationMs: ragDuration,
+          summary: `Retrieved ${retrievedDocChunks.length} relevant vector chunk${retrievedDocChunks.length === 1 ? '' : 's'} from ${targetLabel}.`,
+          outputPreview: retrievedDocChunks
+            .map((c) => `[${c.docName} #chunk${c.chunkIndex + 1} (${Math.round(c.score * 100)}% match)]:\n${c.text.slice(0, 180)}...`)
+            .join('\n\n'),
+          rawOutput: JSON.stringify(retrievedDocChunks, null, 2),
+        });
+      } else {
+        documentRagContextBlock = `\n\n[PRIVATE DOCUMENT LIBRARY (VECTOR MEMORY)]:
+Document search was performed for query: "${cleanSearchQuery}" across ${targetLabel}, but no matching vector chunks exceeded the relevance threshold.`;
+
+        updateStep({
+          agentId: 'doc_rag' as unknown as JarvisAgentId,
+          name: 'Document Library (RAG)',
+          icon: '📚',
+          status: 'completed',
+          providerName: 'Vector Memory Store',
+          model: 'hybrid-dense-bm25',
+          durationMs: ragDuration,
+          summary: `No matching chunks found in ${targetLabel}.`,
+        });
+      }
+    } catch (ragErr) {
+      console.warn('[DocLibrary RAG] Vector search error:', ragErr);
+      const ragDuration = Date.now() - ragStart;
+      updateStep({
+        agentId: 'doc_rag' as unknown as JarvisAgentId,
+        name: 'Document Library (RAG)',
+        icon: '📚',
+        status: 'completed',
+        providerName: 'Vector Memory Store',
+        model: 'hybrid-dense-bm25',
+        durationMs: ragDuration,
+        summary: 'Vector retrieval fallback active.',
+      });
+    }
+  }
 
   // ==========================================
   // STEP 1.5: 🌐 WEB FETCHER (for /web [URL])
@@ -5162,7 +5277,7 @@ CUSTOM API ERROR DIRECTIVES:
 
     const rawSynthesizerContext = `Current date and time: ${currentDateTime}
 User Query: "${strippedQuery}"
-${webFetchContextBlock}${customApiContextBlock}
+${webFetchContextBlock}${customApiContextBlock}${documentRagContextBlock}
 Planner Guidance: ${plannerPlanText}
 ${advisorOutput ? `Advisor Conceptual Analysis & Technical Comparison (General Knowledge):\n${advisorOutput}\n` : ''}
 ${wikidataReportSection ? `[WIKIDATA INTELLIGENCE & REQUIRED REPORT SECTION]:\n${wikidataReportSection}\n\nCRITICAL REPORT REQUIREMENT: Because Wikidata was queried, your report output MUST include a section titled exactly:\n=== WIKIDATA ===\nfollowed by the Wikidata result details (or "no entry found" if no entry was found).\n\n` : ''}${wikipediaArticleSummary ? `[WIKIPEDIA GROUNDING & ENCYCLOPEDIC INTELLIGENCE]:\n${wikipediaArticleSummary}\n\n(SYNTHESIS MANDATE: Naturally blend this authoritative Wikipedia encyclopedic knowledge directly into your main synthesized prose. DO NOT output any visible "=== WIKIPEDIA ===" section header in your response; cite the Wikipedia source using standard bracket notation [1] from the sources list below.)\n\n` : ''}${factsContextBlock}${plausibleUnconfirmedList.length > 0 ? `Fact-Checker Plausible Unconfirmed Details (CRITICAL - INCLUDE WITH NATURAL HEDGE/CAVEAT, e.g. "reportedly exists/released, based on a single source, not independently confirmed" - DO NOT OMIT DATES, TIERS, OR PLAUSIBLE CLAIMS):\n${plausibleUnconfirmedList.map((p) => `- ${p}`).join('\n')}\n` : ''}${fabricatedList.length > 0 ? `Fact-Checker Fabricated/Contradicted Items (HARD EXCLUSION - DO NOT MENTION IN FINAL SYNTHESIS):\n${fabricatedList.map((fb) => `- ${fb}`).join('\n')}\n` : ''}${generalIssuesList.length > 0 ? `Fact-Checker Identified Issues (Exclude only specific invalid claims; do NOT discard other valid qualifying candidates):\n${generalIssuesList.map((i) => `- ${i}`).join('\n')}\n` : ''}${reviewerMissingList.length > 0 ? `Reviewer Missing Context Suggestions (Advisory):\n${reviewerMissingList.map((m) => `- ${m}`).join('\n')}\n` : ''}${reviewerIssuesList.length > 0 ? `Reviewer Flagged Issues & Scope Critique (Advisory - exclude only specific problematic items, preserve and synthesize all other valid candidates):\n${reviewerIssuesList.map((iss) => `- ${iss}`).join('\n')}\n` : ''}${reviewerRecommendation ? `Reviewer Actionable Guidance & Candidate Priority (Advisory ranking guidance):\n${reviewerRecommendation}\n` : ''}[SYNTHESIS MANDATE]: If any specific candidates were flagged or excluded by Fact-Checker or Reviewer, synthesize all remaining verified, valid candidates into the final answer. Only state that verified news/data is unavailable if ALL candidates are completely unusable or no verified data exists.
@@ -5747,5 +5862,6 @@ JARVIS is a multi-agent AI intelligence platform composed of 10 specialized neur
     diagramSvg,
     chartData,
     images: retrievedImages,
+    retrievedDocChunks: retrievedDocChunks && retrievedDocChunks.length > 0 ? retrievedDocChunks : undefined,
   };
 }

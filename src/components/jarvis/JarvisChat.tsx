@@ -27,6 +27,7 @@ import {
   Clipboard,
   FileCode,
   X,
+  BookOpen,
 } from 'lucide-react';
 import { storage } from '@/lib/storage';
 import { stripConversationalMetaText, cleanMarkdownForSpeech } from '@/lib/format';
@@ -62,6 +63,8 @@ import type {
   JarvisMessage,
   JarvisSystemConfig,
   SavedItem,
+  DocumentItem,
+  DocumentRetrievalResult,
 } from '@/types';
 
 const JarvisSvgDiagram = lazy(() =>
@@ -221,6 +224,46 @@ export function JarvisChat({ config, onOpenSettings }: JarvisChatProps) {
       setCoderMode(config.coderModeDefault);
     }
   }, [config.agents?.coder?.enabled, config.coderModeDefault]);
+
+  const [searchMyDocs, setSearchMyDocs] = useState<boolean>(() => {
+    try {
+      const rag = storage.getRagSettings();
+      return rag.enabledByDefault ?? false;
+    } catch {
+      return false;
+    }
+  });
+  const [docSearchMode, setDocSearchMode] = useState<'all' | 'specific'>(() => {
+    try {
+      const rag = storage.getRagSettings();
+      return rag.defaultSearchMode ?? 'all';
+    } catch {
+      return 'all';
+    }
+  });
+  const [selectedDocId, setSelectedDocId] = useState<string>('');
+  const [availableDocs, setAvailableDocs] = useState<DocumentItem[]>(() => {
+    try {
+      return storage.getStoredDocuments();
+    } catch {
+      return [];
+    }
+  });
+
+  const refreshAvailableDocs = useCallback(() => {
+    try {
+      setAvailableDocs(storage.getStoredDocuments());
+    } catch {
+      // ignore
+    }
+  }, []);
+
+  useEffect(() => {
+    refreshAvailableDocs();
+    const handleStorageChange = () => refreshAvailableDocs();
+    window.addEventListener('storage', handleStorageChange);
+    return () => window.removeEventListener('storage', handleStorageChange);
+  }, [refreshAvailableDocs]);
   const [messages, setMessages] = useState<JarvisMessage[]>(() => {
     const stored = storage.getJarvisMessages();
     return [...stored].sort((a, b) => a.timestamp - b.timestamp);
@@ -485,6 +528,7 @@ export function JarvisChat({ config, onOpenSettings }: JarvisChatProps) {
           },
         };
 
+        const selectedDocObj = availableDocs.find((d) => d.id === selectedDocId);
         const result = await runJarvisPipeline(
           fullPipelinePrompt,
           effectiveConfig,
@@ -505,6 +549,12 @@ export function JarvisChat({ config, onOpenSettings }: JarvisChatProps) {
           },
           userTimeZone,
           coderMode,
+          {
+            enabled: searchMyDocs,
+            mode: docSearchMode,
+            selectedDocId: docSearchMode === 'specific' ? selectedDocId : undefined,
+            selectedDocName: docSearchMode === 'specific' ? selectedDocObj?.name : undefined,
+          },
         );
 
         const completedMessage: JarvisMessage = {
@@ -518,6 +568,11 @@ export function JarvisChat({ config, onOpenSettings }: JarvisChatProps) {
           imageMode,
           coderMode,
           attachments: currentAttachments.length > 0 ? currentAttachments : undefined,
+          searchMyDocs: searchMyDocs,
+          docSearchMode: searchMyDocs ? docSearchMode : undefined,
+          searchedDocumentId: searchMyDocs && docSearchMode === 'specific' ? selectedDocId : undefined,
+          searchedDocumentName: searchMyDocs && docSearchMode === 'specific' ? selectedDocObj?.name : undefined,
+          retrievedDocChunks: result.retrievedDocChunks,
           steps: result.steps,
           sources: result.sources,
           diagramSvg: result.diagramSvg,
@@ -1345,6 +1400,34 @@ export function JarvisChat({ config, onOpenSettings }: JarvisChatProps) {
                     </Suspense>
                   )}
 
+                  {/* Retrieved Vector Memory Documents (RAG) */}
+                  {msg.retrievedDocChunks && msg.retrievedDocChunks.length > 0 && (
+                    <div className="mt-5 pt-3 border-t border-purple-500/20 flex flex-col gap-2">
+                      <div className="text-[11px] font-mono tracking-wider text-purple-300 uppercase font-bold flex items-center gap-1.5">
+                        <BookOpen size={12} className="text-purple-400" />
+                        <span>RETRIEVED VECTOR MEMORY CHUNKS ({msg.retrievedDocChunks.length}):</span>
+                      </div>
+                      <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
+                        {msg.retrievedDocChunks.map((chunk, i) => (
+                          <div
+                            key={i}
+                            className="p-2.5 rounded-xl bg-purple-950/30 border border-purple-500/30 text-xs font-mono text-slate-300 flex flex-col gap-1"
+                          >
+                            <div className="flex items-center justify-between text-[11px] font-bold text-purple-300">
+                              <span className="truncate">📄 {chunk.docName} (Chunk #{chunk.chunkIndex + 1})</span>
+                              <span className="text-[10px] px-1.5 py-0.5 rounded-full bg-purple-500/20 border border-purple-500/40 text-purple-200">
+                                {Math.round(chunk.score * 100)}% match
+                              </span>
+                            </div>
+                            <p className="text-[11px] font-sans text-slate-400 line-clamp-3 leading-relaxed">
+                              "{chunk.text}"
+                            </p>
+                          </div>
+                        ))}
+                      </div>
+                    </div>
+                  )}
+
                   {/* Cited Sources (Rounded Colorful Tags) */}
                   {msg.sources && msg.sources.length > 0 && (
                     <div className="mt-6 pt-4 border-t border-white/10 flex flex-col gap-2">
@@ -1756,6 +1839,82 @@ export function JarvisChat({ config, onOpenSettings }: JarvisChatProps) {
                   <span>CODER</span>
                 </span>
               </label>
+
+              {/* Search My Documents (RAG) Colorful Pill Switch */}
+              <div className="relative flex items-center gap-1.5">
+                <label
+                  className="jarvis-mode-toggle inline-flex items-center gap-2 px-3 py-1.5 rounded-full cursor-pointer transition-all duration-200 border"
+                  style={{
+                    background: searchMyDocs
+                      ? 'linear-gradient(135deg, rgba(168,85,247,0.22) 0%, rgba(139,92,246,0.18) 100%)'
+                      : 'rgba(255,255,255,0.03)',
+                    borderColor: searchMyDocs ? 'rgba(168,85,247,0.55)' : 'rgba(255,255,255,0.1)',
+                    boxShadow: searchMyDocs ? '0 0 14px rgba(168,85,247,0.3)' : 'none',
+                  }}
+                  title={
+                    availableDocs.length === 0
+                      ? 'Upload documents in Settings > Document Library to search vector memory'
+                      : searchMyDocs
+                      ? `Searching ${docSearchMode === 'specific' && selectedDocId ? (availableDocs.find(d => d.id === selectedDocId)?.name || 'selected document') : 'all indexed library documents'}`
+                      : 'Enable Document Library (Vector Memory / RAG) search'
+                  }
+                >
+                  <input
+                    type="checkbox"
+                    checked={searchMyDocs}
+                    onChange={(e) => setSearchMyDocs(e.target.checked)}
+                    className="hidden"
+                  />
+                  <div
+                    className={`w-7 h-3.5 rounded-full transition-colors relative flex items-center p-0.5 ${
+                      searchMyDocs ? 'bg-purple-400' : 'bg-slate-700'
+                    }`}
+                  >
+                    <div
+                      className={`w-2.5 h-2.5 rounded-full bg-slate-950 transition-transform duration-200 ${
+                        searchMyDocs ? 'translate-x-3.5' : 'translate-x-0'
+                      }`}
+                    />
+                  </div>
+                  <span
+                    className={`text-[11px] font-bold font-mono tracking-wide flex items-center gap-1.5 ${
+                      searchMyDocs ? 'text-purple-300' : 'text-slate-400'
+                    }`}
+                  >
+                    <span>📚</span>
+                    <span>SEARCH MY DOCS</span>
+                    {availableDocs.length > 0 && (
+                      <span className="text-[9px] px-1.5 py-0.2 rounded-full bg-purple-500/20 text-purple-300 border border-purple-500/30">
+                        {availableDocs.filter(d => d.includeInSearches).length}
+                      </span>
+                    )}
+                  </span>
+                </label>
+
+                {/* Document Selector Dropdown if specific search or multiple docs */}
+                {searchMyDocs && availableDocs.length > 0 && (
+                  <select
+                    value={docSearchMode === 'specific' ? selectedDocId : 'all'}
+                    onChange={(e) => {
+                      if (e.target.value === 'all') {
+                        setDocSearchMode('all');
+                        setSelectedDocId('');
+                      } else {
+                        setDocSearchMode('specific');
+                        setSelectedDocId(e.target.value);
+                      }
+                    }}
+                    className="bg-slate-900/90 text-purple-300 text-[11px] font-mono border border-purple-500/30 rounded-full px-2.5 py-1 focus:outline-none focus:border-purple-400 max-w-[140px] truncate cursor-pointer"
+                  >
+                    <option value="all">All Docs ({availableDocs.filter(d => d.includeInSearches).length})</option>
+                    {availableDocs.map((doc) => (
+                      <option key={doc.id} value={doc.id}>
+                        📄 {doc.name.length > 16 ? doc.name.slice(0, 14) + '...' : doc.name}
+                      </option>
+                    ))}
+                  </select>
+                )}
+              </div>
 
               {/* Attachment & Clipboard Menu Trigger "+" */}
               <div className="relative" ref={attachMenuRef}>

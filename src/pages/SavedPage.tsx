@@ -213,12 +213,12 @@ export function SavedPage() {
               return (
                 <div
                   key={item.id}
-                  className="w-full rounded-2xl p-5 sm:p-6 mb-4 bg-gradient-to-b from-[#181104]/90 via-[#0e0c06]/95 to-[#050402]/95 border border-amber-500/35 shadow-[0_4px_24px_rgba(0,0,0,0.5)] backdrop-blur-xl transition-all"
+                  className="w-full rounded-2xl p-5 sm:p-6 mb-5 bg-gradient-to-b from-[#181104]/85 via-[#0e0c06]/90 to-[#050402]/95 border border-amber-500/25 shadow-[0_8px_32px_-4px_rgba(0,0,0,0.55),0_0_18px_rgba(245,158,11,0.12),inset_0_1px_0_rgba(255,255,255,0.06)] backdrop-blur-xl transition-all"
                 >
                   {/* Top Bar */}
-                  <div className="flex items-center justify-between flex-wrap gap-2 pb-3 mb-3 border-b border-amber-500/20">
+                  <div className="flex items-center justify-between flex-wrap gap-2 pb-3 mb-3 border-b border-amber-500/15">
                     <div className="flex items-center gap-2">
-                      <div className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full bg-amber-500/15 border border-amber-500/35 text-[10px] font-mono tracking-widest text-amber-300 font-bold uppercase">
+                      <div className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full bg-amber-500/15 border border-amber-500/30 text-[10px] font-mono tracking-widest text-amber-300 font-bold uppercase backdrop-blur-sm">
                         <Layers size={12} className="text-amber-400" />
                         <span>ARCHITECT BLUEPRINT</span>
                       </div>
@@ -239,7 +239,7 @@ export function SavedPage() {
                     <div className="flex items-center gap-2">
                       <Link
                         to={`/jarvis?q=${encodeURIComponent(item.title)}`}
-                        className="px-2.5 py-1 rounded-lg bg-amber-500/15 hover:bg-amber-500/25 border border-amber-500/35 text-xs text-amber-300 flex items-center gap-1 transition-all"
+                        className="px-2.5 py-1 rounded-lg bg-amber-500/15 hover:bg-amber-500/25 border border-amber-500/30 text-xs text-amber-300 flex items-center gap-1 transition-all backdrop-blur-sm"
                         title="Open in JARVIS Workspace"
                       >
                         <span>Open in JARVIS</span>
@@ -259,7 +259,7 @@ export function SavedPage() {
                   </div>
 
                   {/* Title */}
-                  <h2 className="text-base sm:text-lg font-bold text-white mb-2 leading-snug">
+                  <h2 className="text-base sm:text-lg font-bold text-white mb-2 leading-snug tracking-tight">
                     {item.title}
                   </h2>
 
@@ -282,12 +282,12 @@ export function SavedPage() {
               return (
                 <div
                   key={item.id}
-                  className="w-full rounded-2xl p-5 sm:p-6 mb-4 bg-gradient-to-b from-[#081828]/90 via-[#0a122e]/95 to-[#040814]/95 border border-sky-500/35 shadow-[0_4px_24px_rgba(0,0,0,0.5)] backdrop-blur-xl transition-all"
+                  className="w-full rounded-2xl p-5 sm:p-6 mb-5 bg-gradient-to-b from-[#081828]/85 via-[#0a122e]/90 to-[#040814]/95 border border-sky-500/25 shadow-[0_8px_32px_-4px_rgba(0,0,0,0.55),0_0_18px_rgba(56,189,248,0.12),inset_0_1px_0_rgba(255,255,255,0.06)] backdrop-blur-xl transition-all"
                 >
                   {/* Top Bar */}
-                  <div className="flex items-center justify-between flex-wrap gap-2 pb-3 mb-3 border-b border-sky-500/20">
+                  <div className="flex items-center justify-between flex-wrap gap-2 pb-3 mb-3 border-b border-sky-500/15">
                     <div className="flex items-center gap-2">
-                      <div className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full bg-sky-500/15 border border-sky-500/35 text-[10px] font-mono tracking-widest text-sky-300 font-bold uppercase">
+                      <div className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full bg-sky-500/15 border border-sky-500/30 text-[10px] font-mono tracking-widest text-sky-300 font-bold uppercase backdrop-blur-sm">
                         <BarChart3 size={12} className="text-sky-400" />
                         <span>DATA ANALYST CHART</span>
                       </div>
@@ -308,7 +308,7 @@ export function SavedPage() {
                     <div className="flex items-center gap-2">
                       <Link
                         to={`/jarvis?q=${encodeURIComponent(item.title)}`}
-                        className="px-2.5 py-1 rounded-lg bg-sky-500/15 hover:bg-sky-500/25 border border-sky-500/35 text-xs text-sky-300 flex items-center gap-1 transition-all"
+                        className="px-2.5 py-1 rounded-lg bg-sky-500/15 hover:bg-sky-500/25 border border-sky-500/30 text-xs text-sky-300 flex items-center gap-1 transition-all backdrop-blur-sm"
                         title="Open in JARVIS Workspace"
                       >
                         <span>Open in JARVIS</span>
@@ -328,7 +328,7 @@ export function SavedPage() {
                   </div>
 
                   {/* Title */}
-                  <h2 className="text-base sm:text-lg font-bold text-white mb-2 leading-snug">
+                  <h2 className="text-base sm:text-lg font-bold text-white mb-2 leading-snug tracking-tight">
                     {item.title}
                   </h2>
 

@@ -304,6 +304,11 @@ export interface JarvisMessage {
   images?: JarvisImageResult[];
   coderMode?: boolean;
   attachments?: JarvisAttachedFile[];
+  searchMyDocs?: boolean;
+  docSearchMode?: 'all' | 'specific';
+  searchedDocumentId?: string;
+  searchedDocumentName?: string;
+  retrievedDocChunks?: DocumentRetrievalResult[];
   steps: JarvisExecutionStep[];
   sources?: AISource[];
   error?: string;
@@ -654,6 +659,65 @@ export interface CustomApiCallResult {
   data?: unknown;
   error?: string;
 }
+
+// ==========================================
+// DOCUMENT LIBRARY & RAG VECTOR MEMORY TYPES
+// ==========================================
+
+export type DocumentType = 'pdf' | 'txt' | 'csv' | 'docx' | string;
+
+export interface DocumentChunk {
+  id: string;
+  docId: string;
+  docName: string;
+  chunkIndex: number;
+  text: string;
+  embedding?: number[];
+  charCount: number;
+}
+
+export interface LibraryDocument {
+  id: string;
+  name: string;
+  size: number; // in bytes
+  type: DocumentType;
+  uploadedAt: number; // timestamp ms
+  enabledForJarvis: boolean; // toggle 'Include in JARVIS searches'
+  chunkCount: number;
+  charCount: number;
+  status: 'indexed' | 'indexing' | 'error';
+  errorMessage?: string;
+  previewSnippet?: string;
+  chunks?: DocumentChunk[];
+}
+
+export interface DocumentLibraryState {
+  documents: LibraryDocument[];
+  chunks?: DocumentChunk[];
+}
+
+export interface DocumentRagSettings {
+  enabled: boolean;
+  mode: 'all' | 'specific';
+  selectedDocId?: string;
+}
+
+export interface DocumentRetrievalResult {
+  docId: string;
+  docName: string;
+  chunkId: string;
+  chunkIndex: number;
+  text: string;
+  score: number;
+}
+
+export interface DocumentLibraryStats {
+  totalDocuments: number;
+  totalChunks: number;
+  totalSizeBytes: number;
+  activeDocuments: number;
+}
+
 
 
 

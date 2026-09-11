@@ -60,133 +60,133 @@ const AGENT_THEMES: Record<string, AgentTheme> = {
   planner: {
     title: 'PLANNER // STRATEGIC DECOMPOSITION',
     subtitle: 'Autonomous Task Scoping, Multi-Step Architecture & Directives',
-    border: 'rgba(97, 215, 201, 0.45)',
-    bg: 'linear-gradient(150deg, rgba(8, 28, 36, 0.9) 0%, rgba(5, 18, 24, 0.95) 100%)',
-    headerBg: 'rgba(12, 38, 48, 0.6)',
+    border: 'rgba(97, 215, 201, 0.22)',
+    bg: 'linear-gradient(150deg, rgba(8, 28, 36, 0.88) 0%, rgba(5, 18, 24, 0.94) 100%)',
+    headerBg: 'linear-gradient(135deg, rgba(8, 32, 52, 0.6) 0%, rgba(12, 38, 48, 0.55) 100%)',
     text: '#61d7c9',
-    badgeBg: 'rgba(97, 215, 201, 0.15)',
-    accentGlow: 'rgba(97, 215, 201, 0.3)',
+    badgeBg: 'rgba(97, 215, 201, 0.12)',
+    accentGlow: 'rgba(97, 215, 201, 0.18)',
     icon: <Brain size={18} className="text-cyan-400" />,
   },
   researcher: {
     title: 'RESEARCHER // EMPIRICAL INTELLIGENCE',
     subtitle: 'Real-time Web Search, Multi-Engine Retrieval & Fact Extraction',
-    border: 'rgba(180, 115, 60, 0.5)',
-    bg: 'linear-gradient(150deg, rgba(38, 22, 12, 0.92) 0%, rgba(24, 14, 8, 0.96) 100%)',
-    headerBg: 'rgba(54, 28, 14, 0.65)',
+    border: 'rgba(217, 155, 100, 0.24)',
+    bg: 'linear-gradient(150deg, rgba(38, 22, 12, 0.9) 0%, rgba(24, 14, 8, 0.95) 100%)',
+    headerBg: 'linear-gradient(135deg, rgba(48, 24, 12, 0.6) 0%, rgba(32, 16, 8, 0.55) 100%)',
     text: '#d99b64',
-    badgeBg: 'rgba(180, 115, 60, 0.18)',
-    accentGlow: 'rgba(180, 115, 60, 0.35)',
+    badgeBg: 'rgba(180, 115, 60, 0.15)',
+    accentGlow: 'rgba(180, 115, 60, 0.2)',
     icon: <Search size={18} className="text-amber-500" />,
   },
   webFetcher: {
     title: 'WEB FETCHER // DIRECT PAGE EXTRACTION',
     subtitle: 'Raw HTML Content Retrieval, Text Extraction & Structure Parsing',
-    border: 'rgba(34, 211, 238, 0.45)',
-    bg: 'linear-gradient(150deg, rgba(8, 32, 40, 0.9) 0%, rgba(5, 20, 26, 0.95) 100%)',
-    headerBg: 'rgba(12, 44, 56, 0.6)',
+    border: 'rgba(34, 211, 238, 0.22)',
+    bg: 'linear-gradient(150deg, rgba(8, 32, 40, 0.88) 0%, rgba(5, 20, 26, 0.94) 100%)',
+    headerBg: 'linear-gradient(135deg, rgba(8, 36, 48, 0.6) 0%, rgba(6, 24, 34, 0.55) 100%)',
     text: '#22d3ee',
-    badgeBg: 'rgba(34, 211, 238, 0.15)',
-    accentGlow: 'rgba(34, 211, 238, 0.3)',
+    badgeBg: 'rgba(34, 211, 238, 0.12)',
+    accentGlow: 'rgba(34, 211, 238, 0.18)',
     icon: <Globe size={18} className="text-cyan-400" />,
   },
   customApiRunner: {
     title: 'CUSTOM API // ENDPOINT EXECUTION',
     subtitle: 'Direct Parameterized REST API Query & Payload Extraction',
-    border: 'rgba(56, 189, 248, 0.45)',
-    bg: 'linear-gradient(150deg, rgba(8, 28, 44, 0.92) 0%, rgba(6, 18, 30, 0.96) 100%)',
-    headerBg: 'rgba(12, 38, 58, 0.65)',
+    border: 'rgba(56, 189, 248, 0.22)',
+    bg: 'linear-gradient(150deg, rgba(8, 28, 44, 0.9) 0%, rgba(6, 18, 30, 0.95) 100%)',
+    headerBg: 'linear-gradient(135deg, rgba(8, 30, 48, 0.6) 0%, rgba(6, 20, 36, 0.55) 100%)',
     text: '#38bdf8',
-    badgeBg: 'rgba(56, 189, 248, 0.15)',
-    accentGlow: 'rgba(56, 189, 248, 0.3)',
+    badgeBg: 'rgba(56, 189, 248, 0.12)',
+    accentGlow: 'rgba(56, 189, 248, 0.18)',
     icon: <Server size={18} className="text-sky-400" />,
   },
   advisor: {
     title: 'ADVISOR // COMPARATIVE & CONCEPTUAL ANALYSIS',
     subtitle: 'Reasoned Trade-Offs, Comparison Tables, ASCII Blueprints & Verdicts',
-    border: 'rgba(250, 204, 21, 0.45)',
-    bg: 'linear-gradient(150deg, rgba(34, 28, 8, 0.9) 0%, rgba(22, 18, 5, 0.95) 100%)',
-    headerBg: 'rgba(50, 40, 12, 0.6)',
+    border: 'rgba(250, 204, 21, 0.22)',
+    bg: 'linear-gradient(150deg, rgba(34, 28, 8, 0.88) 0%, rgba(22, 18, 5, 0.94) 100%)',
+    headerBg: 'linear-gradient(135deg, rgba(42, 34, 10, 0.6) 0%, rgba(28, 22, 6, 0.55) 100%)',
     text: '#facc15',
-    badgeBg: 'rgba(250, 204, 21, 0.15)',
-    accentGlow: 'rgba(250, 204, 21, 0.3)',
+    badgeBg: 'rgba(250, 204, 21, 0.12)',
+    accentGlow: 'rgba(250, 204, 21, 0.18)',
     icon: <Lightbulb size={18} className="text-amber-400" />,
   },
   factChecker: {
     title: 'FACT CHECKER // INTEGRITY & ACCURACY AUDIT',
     subtitle: 'Cross-Verification, Anomaly Detection & Grounded Claim Scrutiny',
-    border: 'rgba(192, 132, 252, 0.45)',
-    bg: 'linear-gradient(150deg, rgba(28, 14, 48, 0.92) 0%, rgba(16, 8, 30, 0.96) 100%)',
-    headerBg: 'rgba(42, 18, 70, 0.65)',
+    border: 'rgba(192, 132, 252, 0.22)',
+    bg: 'linear-gradient(150deg, rgba(28, 14, 48, 0.9) 0%, rgba(16, 8, 30, 0.95) 100%)',
+    headerBg: 'linear-gradient(135deg, rgba(36, 16, 58, 0.6) 0%, rgba(24, 10, 40, 0.55) 100%)',
     text: '#c084fc',
-    badgeBg: 'rgba(192, 132, 252, 0.15)',
-    accentGlow: 'rgba(192, 132, 252, 0.35)',
+    badgeBg: 'rgba(192, 132, 252, 0.12)',
+    accentGlow: 'rgba(192, 132, 252, 0.2)',
     icon: <ShieldCheck size={18} className="text-purple-400" />,
   },
   reviewer: {
     title: 'REVIEWER // QUALITY ASSURANCE',
     subtitle: 'Synthesis Critique, Structural Nuance & Completeness Evaluation',
-    border: 'rgba(52, 211, 153, 0.45)',
-    bg: 'linear-gradient(150deg, rgba(6, 32, 24, 0.9) 0%, rgba(4, 20, 16, 0.95) 100%)',
-    headerBg: 'rgba(10, 48, 36, 0.6)',
+    border: 'rgba(52, 211, 153, 0.22)',
+    bg: 'linear-gradient(150deg, rgba(6, 32, 24, 0.88) 0%, rgba(4, 20, 16, 0.94) 100%)',
+    headerBg: 'linear-gradient(135deg, rgba(8, 38, 28, 0.6) 0%, rgba(6, 26, 18, 0.55) 100%)',
     text: '#34d399',
-    badgeBg: 'rgba(52, 211, 153, 0.15)',
-    accentGlow: 'rgba(52, 211, 153, 0.3)',
+    badgeBg: 'rgba(52, 211, 153, 0.12)',
+    accentGlow: 'rgba(52, 211, 153, 0.18)',
     icon: <Check size={18} className="text-emerald-400" />,
   },
   architect: {
     title: 'ARCHITECT // SYSTEM BLUEPRINT DESIGNER',
     subtitle: 'High-Level Technical Architecture & Diagram Specification',
-    border: 'rgba(251, 146, 60, 0.45)',
-    bg: 'linear-gradient(150deg, rgba(36, 18, 8, 0.9) 0%, rgba(24, 12, 5, 0.95) 100%)',
-    headerBg: 'rgba(54, 26, 12, 0.6)',
+    border: 'rgba(251, 146, 60, 0.22)',
+    bg: 'linear-gradient(150deg, rgba(36, 18, 8, 0.88) 0%, rgba(24, 12, 5, 0.94) 100%)',
+    headerBg: 'linear-gradient(135deg, rgba(46, 22, 10, 0.6) 0%, rgba(30, 14, 6, 0.55) 100%)',
     text: '#fb923c',
-    badgeBg: 'rgba(251, 146, 60, 0.15)',
-    accentGlow: 'rgba(251, 146, 60, 0.3)',
+    badgeBg: 'rgba(251, 146, 60, 0.12)',
+    accentGlow: 'rgba(251, 146, 60, 0.18)',
     icon: <Layers size={18} className="text-orange-400" />,
   },
   dataAnalyst: {
     title: 'DATA ANALYST // STATISTICAL DECOMPOSITION',
     subtitle: 'Quantitative Metrics Extraction & Data Structuring',
-    border: 'rgba(244, 114, 182, 0.45)',
-    bg: 'linear-gradient(150deg, rgba(36, 10, 24, 0.9) 0%, rgba(24, 6, 16, 0.95) 100%)',
-    headerBg: 'rgba(54, 14, 36, 0.6)',
+    border: 'rgba(244, 114, 182, 0.22)',
+    bg: 'linear-gradient(150deg, rgba(36, 10, 24, 0.88) 0%, rgba(24, 6, 16, 0.94) 100%)',
+    headerBg: 'linear-gradient(135deg, rgba(42, 12, 30, 0.6) 0%, rgba(28, 8, 20, 0.55) 100%)',
     text: '#f472b6',
-    badgeBg: 'rgba(244, 114, 182, 0.15)',
-    accentGlow: 'rgba(244, 114, 182, 0.3)',
+    badgeBg: 'rgba(244, 114, 182, 0.12)',
+    accentGlow: 'rgba(244, 114, 182, 0.18)',
     icon: <Sparkles size={18} className="text-pink-400" />,
   },
   coder: {
     title: 'CODER // SOFTWARE ARCHITECTURE & IMPLEMENTATION',
     subtitle: 'Production-Grade Code, Scripts, Bug Fixes & Algorithmic Engineering',
-    border: 'rgba(59, 130, 246, 0.45)',
-    bg: 'linear-gradient(150deg, rgba(10, 25, 47, 0.92) 0%, rgba(6, 16, 32, 0.96) 100%)',
-    headerBg: 'rgba(15, 38, 70, 0.65)',
+    border: 'rgba(96, 165, 250, 0.22)',
+    bg: 'linear-gradient(150deg, rgba(10, 25, 47, 0.9) 0%, rgba(6, 16, 32, 0.95) 100%)',
+    headerBg: 'linear-gradient(135deg, rgba(12, 30, 58, 0.6) 0%, rgba(8, 20, 42, 0.55) 100%)',
     text: '#60a5fa',
-    badgeBg: 'rgba(59, 130, 246, 0.18)',
-    accentGlow: 'rgba(59, 130, 246, 0.35)',
+    badgeBg: 'rgba(59, 130, 246, 0.14)',
+    accentGlow: 'rgba(59, 130, 246, 0.2)',
     icon: <Code2 size={18} className="text-blue-400" />,
   },
   critic: {
     title: 'CRITIC // DEVIL\'S ADVOCATE & STRESS TEST',
     subtitle: 'Counter-Hypothesis Generation & Edge-Case Probing',
-    border: 'rgba(251, 113, 133, 0.45)',
-    bg: 'linear-gradient(150deg, rgba(36, 8, 14, 0.9) 0%, rgba(24, 5, 10, 0.95) 100%)',
-    headerBg: 'rgba(54, 12, 22, 0.6)',
+    border: 'rgba(251, 113, 133, 0.22)',
+    bg: 'linear-gradient(150deg, rgba(36, 8, 14, 0.88) 0%, rgba(24, 5, 10, 0.94) 100%)',
+    headerBg: 'linear-gradient(135deg, rgba(44, 12, 18, 0.6) 0%, rgba(28, 8, 12, 0.55) 100%)',
     text: '#fb7185',
-    badgeBg: 'rgba(251, 113, 133, 0.15)',
-    accentGlow: 'rgba(251, 113, 133, 0.3)',
+    badgeBg: 'rgba(251, 113, 133, 0.12)',
+    accentGlow: 'rgba(251, 113, 133, 0.18)',
     icon: <HelpCircle size={18} className="text-rose-400" />,
   },
   finalSynthesizer: {
     title: 'SYNTHESIZER // COMPREHENSIVE COMPILATION',
     subtitle: 'Overarching Unified Synthesis & Multi-Agent Harmonization',
-    border: 'rgba(168, 85, 247, 0.45)',
-    bg: 'linear-gradient(150deg, rgba(32, 10, 48, 0.9) 0%, rgba(20, 6, 32, 0.95) 100%)',
-    headerBg: 'rgba(48, 16, 72, 0.6)',
+    border: 'rgba(168, 85, 247, 0.22)',
+    bg: 'linear-gradient(150deg, rgba(32, 10, 48, 0.88) 0%, rgba(20, 6, 32, 0.94) 100%)',
+    headerBg: 'linear-gradient(135deg, rgba(38, 14, 58, 0.6) 0%, rgba(24, 8, 38, 0.55) 100%)',
     text: '#c084fc',
-    badgeBg: 'rgba(168, 85, 247, 0.15)',
-    accentGlow: 'rgba(168, 85, 247, 0.3)',
+    badgeBg: 'rgba(168, 85, 247, 0.12)',
+    accentGlow: 'rgba(168, 85, 247, 0.18)',
     icon: <Zap size={18} className="text-purple-400" />,
   },
 };
@@ -1915,9 +1915,9 @@ export const JarvisDeepResearchMeshAnswers: React.FC<JarvisDeepResearchMeshAnswe
   return (
     <div className="mb-6 flex flex-col gap-4">
       {/* Individual Agent Answers Section Banner */}
-      <div className="relative p-3 sm:p-4 rounded-2xl bg-slate-950/80 border border-cyan-500/30 flex items-center justify-between flex-wrap gap-2 shadow-lg backdrop-blur-md">
+      <div className="relative p-3 sm:p-4 rounded-2xl bg-slate-950/70 border border-cyan-500/20 flex items-center justify-between flex-wrap gap-2 shadow-[0_8px_32px_-4px_rgba(0,0,0,0.5),0_0_18px_rgba(97,215,201,0.08)] backdrop-blur-md">
         <div className="flex items-center gap-2.5">
-          <div className="w-8 h-8 rounded-xl bg-cyan-500/20 border border-cyan-400/40 flex items-center justify-center text-cyan-300 shadow-[0_0_12px_rgba(97,215,201,0.3)]">
+          <div className="w-8 h-8 rounded-xl bg-cyan-500/15 border border-cyan-400/30 flex items-center justify-center text-cyan-300 shadow-[0_0_12px_rgba(97,215,201,0.25)] backdrop-blur-sm">
             <Layers size={17} />
           </div>
           <div>
@@ -1927,7 +1927,7 @@ export const JarvisDeepResearchMeshAnswers: React.FC<JarvisDeepResearchMeshAnswe
                   ? 'DEEP RESEARCH // AGENT MESH FULL ANSWERS'
                   : 'MULTI-AGENT INTELLIGENCE // INDIVIDUAL AGENT ANSWERS'}
               </span>
-              <span className="px-2 py-0.5 rounded-full text-[10px] font-mono font-black bg-cyan-500/20 border border-cyan-400/40 text-cyan-300">
+              <span className="px-2 py-0.5 rounded-full text-[10px] font-mono font-bold bg-cyan-500/15 border border-cyan-400/30 text-cyan-300">
                 {agentSteps.length} AGENTS COMPLETED
               </span>
             </div>
@@ -1939,7 +1939,7 @@ export const JarvisDeepResearchMeshAnswers: React.FC<JarvisDeepResearchMeshAnswe
           </div>
         </div>
 
-        <div className="flex items-center gap-1.5 text-[10px] font-mono text-cyan-400/80 bg-cyan-950/40 px-2.5 py-1 rounded-full border border-cyan-500/20">
+        <div className="flex items-center gap-1.5 text-[10px] font-mono text-cyan-400/90 bg-cyan-950/50 px-2.5 py-1 rounded-full border border-cyan-500/20 backdrop-blur-sm">
           <Sparkles size={11} className="text-cyan-400" />
           <span>FULL PIPELINE TRANSPARENCY</span>
         </div>
@@ -1951,12 +1951,12 @@ export const JarvisDeepResearchMeshAnswers: React.FC<JarvisDeepResearchMeshAnswe
           const theme = AGENT_THEMES[step.agentId] || {
             title: `${step.name.toUpperCase()} // AUTONOMOUS AGENT`,
             subtitle: 'Independent Agent Execution Node',
-            border: 'rgba(148, 163, 184, 0.45)',
-            bg: 'linear-gradient(150deg, rgba(15, 23, 42, 0.9) 0%, rgba(8, 14, 28, 0.95) 100%)',
-            headerBg: 'rgba(30, 41, 59, 0.6)',
+            border: 'rgba(148, 163, 184, 0.22)',
+            bg: 'linear-gradient(150deg, rgba(15, 23, 42, 0.88) 0%, rgba(8, 14, 28, 0.94) 100%)',
+            headerBg: 'linear-gradient(135deg, rgba(30, 41, 59, 0.6) 0%, rgba(15, 23, 42, 0.55) 100%)',
             text: '#94a3b8',
-            badgeBg: 'rgba(148, 163, 184, 0.15)',
-            accentGlow: 'rgba(148, 163, 184, 0.25)',
+            badgeBg: 'rgba(148, 163, 184, 0.12)',
+            accentGlow: 'rgba(148, 163, 184, 0.18)',
             icon: <Bot size={18} className="text-slate-300" />,
           };
 
@@ -1966,16 +1966,18 @@ export const JarvisDeepResearchMeshAnswers: React.FC<JarvisDeepResearchMeshAnswe
           return (
             <div
               key={`${step.agentId}-${idx}`}
-              className="relative rounded-2xl overflow-hidden border transition-all duration-300 shadow-xl"
+              className="relative rounded-2xl overflow-hidden border transition-all duration-300"
               style={{
                 background: theme.bg,
                 borderColor: theme.border,
-                boxShadow: `0 8px 32px rgba(0, 0, 0, 0.45), 0 0 20px ${theme.accentGlow}`,
+                boxShadow: `0 10px 32px -4px rgba(0, 0, 0, 0.48), 0 0 18px ${theme.accentGlow}, inset 0 1px 0 rgba(255, 255, 255, 0.06)`,
+                backdropFilter: 'blur(16px)',
+                WebkitBackdropFilter: 'blur(16px)',
               }}
             >
               {/* Agent Card Header */}
               <div
-                className="px-4 py-3 border-b flex items-center justify-between flex-wrap gap-2"
+                className="px-4 py-3 border-b flex items-center justify-between flex-wrap gap-2 backdrop-blur-md"
                 style={{
                   background: theme.headerBg,
                   borderColor: theme.border,
@@ -1984,10 +1986,11 @@ export const JarvisDeepResearchMeshAnswers: React.FC<JarvisDeepResearchMeshAnswe
                 {/* Left: Agent Icon & Title */}
                 <div className="flex items-center gap-2.5 min-w-0">
                   <div
-                    className="w-8 h-8 rounded-xl flex items-center justify-center shrink-0 shadow-inner"
+                    className="w-8 h-8 rounded-xl flex items-center justify-center shrink-0 backdrop-blur-sm"
                     style={{
-                      background: 'rgba(4, 12, 24, 0.85)',
-                      border: `1.5px solid ${theme.text}`,
+                      background: 'rgba(4, 12, 24, 0.75)',
+                      border: `1px solid ${theme.border}`,
+                      boxShadow: `0 0 10px ${theme.accentGlow}`,
                     }}
                   >
                     {theme.icon}
@@ -2001,22 +2004,22 @@ export const JarvisDeepResearchMeshAnswers: React.FC<JarvisDeepResearchMeshAnswe
                       >
                         {theme.title}
                       </span>
-                      <span className="px-2 py-0.5 rounded text-[10px] font-mono bg-black/60 border border-white/10 text-slate-300">
+                      <span className="px-2 py-0.5 rounded text-[10px] font-mono bg-black/40 border border-white/10 text-slate-300 backdrop-blur-sm">
                         {step.providerName}/{step.model}
                       </span>
                       {step.usedFallback && (
-                        <span className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded-full bg-amber-500/20 border border-amber-400/40 text-amber-300 text-[10px] font-mono">
+                        <span className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded-full bg-amber-500/20 border border-amber-400/30 text-amber-300 text-[10px] font-mono">
                           <RotateCcw size={9} />
                           <span>FAILOVER</span>
                         </span>
                       )}
                       {step.agentId === 'researcher' && step.searchSource && (
-                        <span className="px-2 py-0.5 rounded text-[10px] font-mono bg-amber-950/60 border border-amber-600/40 text-amber-300">
+                        <span className="px-2 py-0.5 rounded text-[10px] font-mono bg-amber-950/60 border border-amber-600/30 text-amber-300 backdrop-blur-sm">
                           via {step.searchSource}
                         </span>
                       )}
                     </div>
-                    <p className="text-[11px] text-slate-400 m-0 hidden sm:block">
+                    <p className="text-[11px] text-slate-300/80 m-0 hidden sm:block">
                       {theme.subtitle}
                     </p>
                   </div>
@@ -2025,7 +2028,7 @@ export const JarvisDeepResearchMeshAnswers: React.FC<JarvisDeepResearchMeshAnswe
                 {/* Right: Timer + Raw Toggle + Copy Button */}
                 <div className="flex items-center gap-1.5 shrink-0">
                   {step.durationMs !== undefined && step.durationMs !== null && (
-                    <span className="font-mono text-[11px] text-slate-300 px-2 py-1 rounded bg-black/50 border border-white/10 flex items-center gap-1">
+                    <span className="font-mono text-[11px] text-slate-300 px-2 py-1 rounded bg-black/40 border border-white/10 flex items-center gap-1 backdrop-blur-sm">
                       <Clock size={11} className="text-cyan-400" />
                       <span>{step.durationMs}ms</span>
                     </span>
@@ -2035,7 +2038,7 @@ export const JarvisDeepResearchMeshAnswers: React.FC<JarvisDeepResearchMeshAnswe
                     <button
                       type="button"
                       onClick={() => toggleRawView(idx)}
-                      className="px-2 py-1 rounded text-xs font-mono flex items-center gap-1 bg-black/50 border border-white/15 text-slate-300 hover:text-white hover:border-white/30 transition-all"
+                      className="px-2 py-1 rounded text-xs font-mono flex items-center gap-1 bg-black/40 border border-white/15 text-slate-300 hover:text-white hover:border-white/30 backdrop-blur-sm transition-all"
                       title={isShowingRaw ? 'Switch to Formatted View' : 'Switch to Raw JSON View'}
                     >
                       {isShowingRaw ? (

@@ -9,6 +9,8 @@ import type {
   MultiChatSystemConfig,
   MultiChatMessage,
   MultiChatPersonaConfig,
+  LibraryDocument,
+  DocumentRagSettings,
 } from '@/types';
 
 const KEYS = {
@@ -23,6 +25,8 @@ const KEYS = {
   multiChatConfig: 'nexus-multichat-config-v1',
   multiChatMessages: 'nexus-multichat-messages-v1',
   multiChatMemories: 'nexus-multichat-memories-v1',
+  documentLibrary: 'nexus-document-library-v1',
+  documentRagSettings: 'nexus-document-rag-settings-v1',
 } as const;
 
 export const DEFAULT_AGENT_SYSTEM_PROMPTS: Record<string, string> = {
@@ -1204,5 +1208,28 @@ export const storage = {
     cfg.responseLanguage = updated;
     this.saveMultiChatConfig(cfg);
     return updated;
+  },
+
+  // ==========================================
+  // DOCUMENT LIBRARY & RAG VECTOR MEMORY
+  // ==========================================
+
+  getDocumentLibrary(): LibraryDocument[] {
+    return read<LibraryDocument[]>(KEYS.documentLibrary, []);
+  },
+
+  saveDocumentLibrary(documents: LibraryDocument[]): void {
+    write(KEYS.documentLibrary, documents);
+  },
+
+  getDocumentRagSettings(): DocumentRagSettings {
+    return read<DocumentRagSettings>(KEYS.documentRagSettings, {
+      enabled: false,
+      mode: 'all',
+    });
+  },
+
+  saveDocumentRagSettings(settings: DocumentRagSettings): void {
+    write(KEYS.documentRagSettings, settings);
   },
 };
