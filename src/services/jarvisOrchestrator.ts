@@ -20,6 +20,7 @@ import {
   hasPromptAttachments,
   extractUserQueryWithoutAttachments,
   isExplicitOutsideResearchQuery,
+  isExplicitOutsideDocumentQuery,
 } from '@/services/jarvisAttachmentService';
 import { searchDocumentLibrary } from '@/services/documentLibraryService';
 import type {
@@ -2365,16 +2366,27 @@ Please perform your specialized processing for this inquiry. Provide clear, conc
   const isExplicitOutside = isExplicitOutsideResearchQuery(userExtractedQuery);
   const isPureFileAnalysis = promptHasAttachments && !isExplicitOutside;
 
+  const isDocRagActive = Boolean(documentRagOptions?.enabled);
+  const isExplicitOutsideDocResearch = isDocRagActive && isExplicitOutsideDocumentQuery(userExtractedQuery || query);
+  const isPureDocRagQuery = isDocRagActive && !isExplicitOutsideDocResearch;
+
   let plannerOutput: JarvisPlannerOutput = {
     task: isPureFileAnalysis
       ? (userExtractedQuery ? `Analyze attached file: ${userExtractedQuery}` : 'Analyze attached context files')
-      : query,
+      : isPureDocRagQuery
+        ? (userExtractedQuery ? `Search Document Library: ${userExtractedQuery}` : 'Search Document Library')
+        : query,
     plan: isPureFileAnalysis
       ? [
           'Examine attached file structure and context',
           'Synthesize comprehensive analysis from file content',
         ]
-      : ['Synthesize accurate response directly.'],
+      : isPureDocRagQuery
+        ? [
+            'Query Document Library vector store for verified semantic matches',
+            'Synthesize grounded answer from private document excerpts',
+          ]
+        : ['Synthesize accurate response directly.'],
     needsCode: false,
     needsResearch: false,
     needsResearchQuery: '',
@@ -2426,6 +2438,20 @@ Please perform your specialized processing for this inquiry. Provide clear, conc
       : '';
 
     activePrompt += attachedFilesNotice;
+
+    // Explicitly inject Document Library (Search My Docs) state so Planner knows to query private document vector store without outside web/weather searches
+    const docLibraryNotice = isPureDocRagQuery
+      ? `\n\n[SYSTEM CONTEXT: DOCUMENT LIBRARY ("SEARCH MY DOCS") IS ENABLED (ON)]
+- The user has enabled "Search My Documents" (Document Library RAG).
+- Target document scope: ${documentRagOptions?.mode === 'specific' && documentRagOptions?.selectedDocName ? `"${documentRagOptions.selectedDocName}"` : 'All Active Document Library Documents'}.
+- DOCUMENT LIBRARY QUERY DIRECTIVES:
+  1. Set "needsResearch": false and "needsResearchQuery": "". (Do NOT trigger general web search — rely solely on the user's private Document Library to keep responses fast, focused, and token-efficient).
+  2. Set "needsFactCheck": false, "needsWeather": false, "weatherLocation": "", "needsWikipedia": false, "wikipediaQuery": "", "needsWikidata": false, "wikidataQuery": "", and "needsKnowledgeAgent": false.
+  3. In "task", summarize the document retrieval objective (e.g. "${userExtractedQuery ? `Search Document Library: ${userExtractedQuery}` : 'Search Document Library'}").
+  4. In "plan", outline querying the Document Library vector store for semantic matches and synthesizing the response from private document excerpts.`
+      : '';
+
+    activePrompt += docLibraryNotice;
 
     // Explicitly inject current Diagram Mode state so Planner's decision is context-aware
     const diagramModeNotice = diagramMode
@@ -2503,7 +2529,8 @@ CRITICAL RULES:
 4. When needsWikidata is true, "wikidataQuery" MUST be the clean entity name. If needsWikidata is false, set it to "".
 5. When needsWeather is true, set "weatherLocation" to the target city or location name (e.g. for "weather in Paris", weatherLocation MUST be "Paris"). If no specific location is mentioned, set it to "". When needsWeather is false, set it to "".
 6. When needsWeather is true, always set needsResearch: false, needsWikipedia: false, and needsWikidata: false (the system directly routes to the dedicated Live Weather API without general web search).
-7. When user attached context files are present without an explicit request for live outside web or weather data, this is a pure File Analysis task: always set needsResearch: false, needsResearchQuery: "", needsWeather: false, weatherLocation: "", needsWikipedia: false, needsWikidata: false.`;
+7. When user attached context files are present without an explicit request for live outside web or weather data, this is a pure File Analysis task: always set needsResearch: false, needsResearchQuery: "", needsWeather: false, weatherLocation: "", needsWikipedia: false, needsWikidata: false.
+8. When "Search My Documents" (Document Library RAG) is active without an explicit request for external web or online data, always set needsResearch: false, needsResearchQuery: "", needsFactCheck: false, needsWikipedia: false, needsWikidata: false, needsWeather: false, and needsKnowledgeAgent: false.`;
 
     let planRes: { ok: boolean; text: string; error?: string; providerName: string; model: string; usedFallback?: boolean };
     let duration = 0;
@@ -2778,6 +2805,26 @@ CRITICAL RULES:
             'Synthesize comprehensive analysis from file content via Final Synthesizer'
           ];
         }
+      } else if (isPureDocRagQuery) {
+        plannerOutput.needsResearch = false;
+        plannerOutput.needsResearchQuery = '';
+        plannerOutput.needsWeather = false;
+        plannerOutput.weatherLocation = '';
+        plannerOutput.needsWikipedia = false;
+        plannerOutput.wikipediaQuery = '';
+        plannerOutput.needsWikidata = false;
+        plannerOutput.wikidataQuery = '';
+        plannerOutput.needsKnowledgeAgent = false;
+        plannerOutput.needsFactCheck = false;
+        if (!plannerOutput.task || plannerOutput.task === query || plannerOutput.task.includes('## User Attached Context Files')) {
+          plannerOutput.task = userExtractedQuery ? `Search Document Library: ${userExtractedQuery}` : 'Search Document Library';
+        }
+        if (!Array.isArray(plannerOutput.plan) || plannerOutput.plan.length === 0 || (plannerOutput.plan.length === 1 && plannerOutput.plan[0] === 'Synthesize accurate response directly.')) {
+          plannerOutput.plan = [
+            'Query Document Library vector store for semantic matches',
+            'Synthesize grounded answer from private document excerpts',
+          ];
+        }
       }
       if (!diagramMode) {
         plannerOutput.needsDiagram = false;
@@ -2873,6 +2920,26 @@ CRITICAL RULES:
         plannerOutput.plan = [
           'Inspect attached file structure and context',
           'Synthesize comprehensive analysis from file content via Final Synthesizer',
+        ];
+      } else if (isPureDocRagQuery) {
+        plannerOutput.needsResearch = false;
+        plannerOutput.needsResearchQuery = '';
+        plannerOutput.needsWeather = false;
+        plannerOutput.weatherLocation = '';
+        plannerOutput.needsWikipedia = false;
+        plannerOutput.wikipediaQuery = '';
+        plannerOutput.needsWikidata = false;
+        plannerOutput.wikidataQuery = '';
+        plannerOutput.needsKnowledgeAgent = false;
+        plannerOutput.needsReview = false;
+        plannerOutput.needsFactCheck = false;
+        plannerOutput.needsDiagram = false;
+        plannerOutput.needsChart = false;
+        plannerOutput.needsImage = false;
+        plannerOutput.task = userExtractedQuery ? `Search Document Library: ${userExtractedQuery}` : 'Search Document Library';
+        plannerOutput.plan = [
+          'Query Document Library vector store for semantic matches',
+          'Synthesize grounded answer from private document excerpts',
         ];
       }
       if (plannerOutput.needsResearch && !plannerOutput.needsResearchQuery) {
@@ -2976,6 +3043,26 @@ CRITICAL RULES:
       'Inspect attached file structure and context',
       'Synthesize comprehensive analysis from file content via Final Synthesizer',
     ];
+  } else if (isPureDocRagQuery) {
+    plannerOutput.needsResearch = false;
+    plannerOutput.needsResearchQuery = '';
+    plannerOutput.needsWeather = false;
+    plannerOutput.weatherLocation = '';
+    plannerOutput.needsWikipedia = false;
+    plannerOutput.wikipediaQuery = '';
+    plannerOutput.needsWikidata = false;
+    plannerOutput.wikidataQuery = '';
+    plannerOutput.needsKnowledgeAgent = false;
+    plannerOutput.needsReview = false;
+    plannerOutput.needsFactCheck = false;
+    plannerOutput.needsDiagram = false;
+    plannerOutput.needsChart = false;
+    plannerOutput.needsImage = false;
+    plannerOutput.task = userExtractedQuery ? `Search Document Library: ${userExtractedQuery}` : 'Search Document Library';
+    plannerOutput.plan = [
+      'Query Document Library vector store for semantic matches',
+      'Synthesize grounded answer from private document excerpts',
+    ];
   }
 
   // Strict enforcement: Wikidata and Wikipedia must NEVER be triggered for /customapi, /search, and /web commands
@@ -3005,6 +3092,17 @@ CRITICAL RULES:
     plannerOutput.needsWikidata = false;
     plannerOutput.wikidataQuery = '';
     plannerOutput.needsFactCheck = false;
+  } else if (isPureDocRagQuery) {
+    plannerOutput.needsResearch = false;
+    plannerOutput.needsResearchQuery = '';
+    plannerOutput.needsWeather = false;
+    plannerOutput.weatherLocation = '';
+    plannerOutput.needsWikipedia = false;
+    plannerOutput.wikipediaQuery = '';
+    plannerOutput.needsWikidata = false;
+    plannerOutput.wikidataQuery = '';
+    plannerOutput.needsFactCheck = false;
+    plannerOutput.needsKnowledgeAgent = false;
   }
 
   // Standalone whole-word matching for news inquiries (excludes technical terms like 'electrical current' and product lineup inquiries)
@@ -3104,6 +3202,7 @@ CRITICAL RULES:
     !isWebFetch &&
     !isSearchOverride &&
     !isPureFileAnalysis &&
+    !isPureDocRagQuery &&
     (Boolean(plannerOutput.needsWeather) || isWeatherInquiry(textForIntentCheck));
 
   if (isWeatherQuery) {
@@ -3122,11 +3221,11 @@ CRITICAL RULES:
     }
   }
 
-  const isProductLineupQuery = !isCustomApi && !isWebFetch && !isPureFileAnalysis && isProductLineupInquiry(textForIntentCheck);
-  const isNewsQuery = !isCustomApi && !isWebFetch && !isProductLineupQuery && !isWeatherQuery && !isPureFileAnalysis && isNewsInquiry(textForIntentCheck);
-  const isWorldNews = !isCustomApi && !isWebFetch && !isProductLineupQuery && !isWeatherQuery && !isPureFileAnalysis && isWorldNewsInquiry(textForIntentCheck);
-  const isPersonalQuery = !isCustomApi && !isWebFetch && !isSearchOverride && !isPureFileAnalysis && (isPersonalOrHumanAiComparison(query) || isPersonalOrHumanAiComparison(combinedQueryText));
-  const isSelfQuery = !isCustomApi && !isWebFetch && !isSearchOverride && !isPureFileAnalysis && (isSelfReferentialInquiry(query) || isSelfReferentialInquiry(combinedQueryText));
+  const isProductLineupQuery = !isCustomApi && !isWebFetch && !isPureFileAnalysis && !isPureDocRagQuery && isProductLineupInquiry(textForIntentCheck);
+  const isNewsQuery = !isCustomApi && !isWebFetch && !isProductLineupQuery && !isWeatherQuery && !isPureFileAnalysis && !isPureDocRagQuery && isNewsInquiry(textForIntentCheck);
+  const isWorldNews = !isCustomApi && !isWebFetch && !isProductLineupQuery && !isWeatherQuery && !isPureFileAnalysis && !isPureDocRagQuery && isWorldNewsInquiry(textForIntentCheck);
+  const isPersonalQuery = !isCustomApi && !isWebFetch && !isSearchOverride && !isPureFileAnalysis && !isPureDocRagQuery && (isPersonalOrHumanAiComparison(query) || isPersonalOrHumanAiComparison(combinedQueryText));
+  const isSelfQuery = !isCustomApi && !isWebFetch && !isSearchOverride && !isPureFileAnalysis && !isPureDocRagQuery && (isSelfReferentialInquiry(query) || isSelfReferentialInquiry(combinedQueryText));
 
   const isCodeCommand = !isCustomApi && isCodeSlashCommand(query);
   const isCoderToggleEnabled =
@@ -3143,8 +3242,9 @@ CRITICAL RULES:
   // When isCodeCommand is true: Planner -> Coder ONLY.
   // When isAutoCode is true: Planner -> Coder -> Reviewer -> Final Synthesizer.
   // When isCustomApi is true: Planner -> Custom API Runner -> Final Synthesizer.
-  // Researcher and Fact Checker are bypassed for custom API and coding pipelines.
-  const shouldResearch =
+  // When isPureDocRagQuery is true: Planner -> Document Library (RAG) -> Final Synthesizer.
+  // Researcher and Fact Checker are bypassed for custom API, pure doc search, and coding pipelines.
+  let shouldResearch =
     !isCustomApi &&
     !isCodeCommand &&
     !isAutoCode &&
@@ -3152,6 +3252,7 @@ CRITICAL RULES:
     !isPersonalQuery &&
     !isSelfQuery &&
     !isPureFileAnalysis &&
+    !isPureDocRagQuery &&
     agentConfigs.researcher.enabled &&
     (isSearchOverride ||
       deepResearch ||
@@ -3166,20 +3267,22 @@ CRITICAL RULES:
   let wikipediaArticleSummary = '';
   let needsWikipediaFallback = false;
 
-  const shouldFactCheck =
+  let shouldFactCheck =
     !isCustomApi &&
     !isCodeCommand &&
     !isAutoCode &&
     !isWebFetch &&
     !isWeatherQuery &&
+    !isPureDocRagQuery &&
     agentConfigs.factChecker.enabled &&
     (deepResearch || (shouldResearch && Boolean(plannerOutput.needsFactCheck)));
 
-  const shouldReview =
+  let shouldReview =
     !isCustomApi &&
     !isCodeCommand &&
     !isWebFetch &&
     !isSearchOverride &&
+    !isPureDocRagQuery &&
     agentConfigs.reviewer.enabled &&
     (isAutoCode || deepResearch || Boolean(plannerOutput.needsReview));
 
@@ -3286,6 +3389,24 @@ Document search was performed for query: "${cleanSearchQuery}" across ${targetLa
         durationMs: ragDuration,
         summary: 'Vector retrieval fallback active.',
       });
+    }
+
+    // When Document Library (RAG) is active, bypass general web research, fact-checking, and advisor passes
+    // unless the user's phrasing explicitly asked for external web/weather research.
+    if (!isExplicitOutsideDocResearch) {
+      shouldResearch = false;
+      plannerOutput.needsResearch = false;
+      plannerOutput.needsResearchQuery = '';
+      plannerOutput.needsWikipedia = false;
+      plannerOutput.wikipediaQuery = '';
+      plannerOutput.needsWikidata = false;
+      plannerOutput.wikidataQuery = '';
+      plannerOutput.needsWeather = false;
+      plannerOutput.weatherLocation = '';
+      plannerOutput.needsFactCheck = false;
+      plannerOutput.needsKnowledgeAgent = false;
+      shouldFactCheck = false;
+      shouldReview = false;
     }
   }
 
@@ -4411,7 +4532,9 @@ Document search was performed for query: "${cleanSearchQuery}" across ${targetLa
       status: 'skipped',
       providerName: agentConfigs.researcher.providerId,
       model: agentConfigs.researcher.modelId,
-      summary: 'Research skipped based on task profile.',
+      summary: isPureDocRagQuery
+        ? 'Web research skipped (Document Library RAG active).'
+        : 'Research skipped based on task profile.',
     });
   }
 
@@ -4681,7 +4804,9 @@ Document search was performed for query: "${cleanSearchQuery}" across ${targetLa
       status: 'skipped',
       providerName: agentConfigs.factChecker.providerId,
       model: agentConfigs.factChecker.modelId,
-      summary: 'Fact checking not required for this query.',
+      summary: isPureDocRagQuery
+        ? 'Fact checking skipped for private document retrieval.'
+        : 'Fact checking not required for this query.',
     });
   }
 
@@ -4692,6 +4817,7 @@ Document search was performed for query: "${cleanSearchQuery}" across ${targetLa
   const shouldRunAdvisor =
     !isCodeCommand &&
     !isAutoCode &&
+    !isPureDocRagQuery &&
     agentConfigs.advisor &&
     agentConfigs.advisor.enabled !== false &&
     Boolean(plannerOutput.needsKnowledgeAgent);
@@ -4794,7 +4920,9 @@ Document search was performed for query: "${cleanSearchQuery}" across ${targetLa
       status: 'skipped',
       providerName: agentConfigs.advisor?.providerId || 'existing',
       model: agentConfigs.advisor?.modelId || 'deepseek/deepseek-chat',
-      summary: 'Comparative knowledge analysis not required for this query.',
+      summary: isPureDocRagQuery
+        ? 'Advisor bypassed for document retrieval.'
+        : 'Comparative knowledge analysis not required for this query.',
     });
   }
 
@@ -4964,7 +5092,11 @@ Output strictly valid JSON matching this schema:
       status: 'skipped',
       providerName: agentConfigs.reviewer.providerId,
       model: agentConfigs.reviewer.modelId,
-      summary: isCodeCommand ? 'Bypassed for lightweight /code pipeline.' : 'Deep critique review bypassed for speed.',
+      summary: isCodeCommand
+        ? 'Bypassed for lightweight /code pipeline.'
+        : isPureDocRagQuery
+          ? 'Reviewer bypassed for fast document retrieval.'
+          : 'Deep critique review bypassed for speed.',
     });
   }
 

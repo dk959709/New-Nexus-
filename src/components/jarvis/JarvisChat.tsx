@@ -616,7 +616,22 @@ export function JarvisChat({ config, onOpenSettings }: JarvisChatProps) {
         setCurrentRunningMessageId(null);
       }
     },
-    [query, isRunning, deepResearch, diagramMode, chartMode, imageMode, coderMode, attachedFiles, config, activeSteps],
+    [
+      query,
+      isRunning,
+      deepResearch,
+      diagramMode,
+      chartMode,
+      imageMode,
+      coderMode,
+      searchMyDocs,
+      docSearchMode,
+      selectedDocId,
+      availableDocs,
+      attachedFiles,
+      config,
+      activeSteps,
+    ],
   );
 
   useEffect(() => {

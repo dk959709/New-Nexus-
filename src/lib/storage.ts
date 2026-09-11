@@ -113,6 +113,11 @@ Set needsKnowledgeAgent to false for all other query types, including: time-sens
   2. Set needsResearch: false, needsResearchQuery: "", needsWeather: false, weatherLocation: "", needsWikipedia: false, needsWikidata: false, needsFactCheck: false.
   3. The Final Synthesizer will directly review and synthesize the analysis based on the attached file content provided in the prompt.
   4. Set needsWeather: true or needsResearch: true ONLY if the user's explicit question specifically asks for external web search or live weather data in addition to the attached file.
+- DOCUMENT LIBRARY / "SEARCH MY DOCS" DIRECTIVES (CRITICAL):
+  When the user has "Search My Documents" (Document Library RAG) enabled:
+  1. Default to needsResearch: false, needsResearchQuery: "", needsFactCheck: false, needsWikipedia: false, needsWikidata: false, needsWeather: false, weatherLocation: "", and needsKnowledgeAgent: false.
+  2. Rely solely on the private Document Library vector store to answer document-related inquiries quickly, accurately, and token-efficiently without invoking unrelated web search.
+  3. Set needsResearch: true ONLY if the user's phrasing explicitly asks for outside/web info or online comparison in addition to their documents (e.g., 'compare this to what is online', 'search my docs AND the web', or '/search ...').
 - CRITICAL - CODING & PROGRAMMING INQUIRIES:
   If the query is a programming request, code generation, script creation, algorithm implementation, bug fixing, debugging, refactoring, or software engineering task (e.g. "write a function", "write a script", "fix this bug", "debug this", "create a program", "how do I code", pasted code blocks, or programming language names + write/create/build/fix verbs):
   1. Set needsCode: true.
@@ -903,6 +908,7 @@ export const storage = {
             !stored.agents.planner.systemPrompt.includes('SEARCH INTENT DISTINCTION: PRODUCT/MODEL LINEUP VS RECENT NEWS') ||
             !stored.agents.planner.systemPrompt.includes('Available Slash Commands') ||
             !stored.agents.planner.systemPrompt.includes('USER ATTACHED CONTEXT FILES & FILE-ANALYSIS TASKS') ||
+            !stored.agents.planner.systemPrompt.includes('DOCUMENT LIBRARY / "SEARCH MY DOCS" DIRECTIVES') ||
             !stored.agents.planner.systemPrompt.includes('task: a concise goal statement, under 15 words.')
               ? DEFAULT_AGENT_SYSTEM_PROMPTS.planner
               : stored.agents.planner.systemPrompt,

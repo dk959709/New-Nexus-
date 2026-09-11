@@ -318,7 +318,7 @@ export function extractUserQueryWithoutAttachments(query: string): string {
 }
 
 /**
- * Determines whether the user's question explicitly asks for external web/weather research in addition to the file
+ * Determines whether the user's question explicitly asks for external web/weather research in addition to the file or private documents
  */
 export function isExplicitOutsideResearchQuery(userQueryOnly: string): boolean {
   if (!userQueryOnly || typeof userQueryOnly !== 'string') return false;
@@ -326,9 +326,17 @@ export function isExplicitOutsideResearchQuery(userQueryOnly: string): boolean {
   if (lower.startsWith('/search') || lower.startsWith('/web') || lower.startsWith('/customapi')) {
     return true;
   }
-  // Check for explicit requests to search online/web or check external weather/news
+  // Check for explicit requests to search online/web, check external weather/news, or compare with internet/web
   return (
-    /\b(?:search(?:ing)?\s+(?:the\s+)?(?:web|internet|google|online|for)|google\s+this|look\s*up\s+online|find\s+(?:online|on the web|latest news))\b/i.test(lower) ||
+    /\b(?:search(?:ing)?\s+(?:the\s+)?(?:web|internet|google|online)|google\s+this|look\s*up\s+online|find\s+(?:online|on the web|latest news)|check\s+(?:the\s+)?(?:web|online)|compare\s+(?:this\s+)?(?:to|with)\s+(?:what'?s\s+)?(?:online|on the web|the internet)|docs?\s+and\s+(?:the\s+)?(?:web|online|internet)|web\s+and\s+(?:the\s+)?docs?|search\s+(?:the\s+)?web\s+too|search\s+online\s+as\s+well)\b/i.test(lower) ||
     /\b(?:what(?:'s|\s+is)\s+the\s+weather|current\s+weather|weather\s+in|forecast\s+for|is\s+it\s+raining\s+in)\b/i.test(lower)
   );
 }
+
+/**
+ * Determines whether the user's question explicitly asks for outside/web info when Document Library (RAG) is enabled
+ */
+export function isExplicitOutsideDocumentQuery(userQueryOnly: string): boolean {
+  return isExplicitOutsideResearchQuery(userQueryOnly);
+}
+
