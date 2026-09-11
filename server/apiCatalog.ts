@@ -73,13 +73,14 @@ export function decryptValue(cipherPayload: string): string | null {
   }
 }
 
-export function maskApiKey(key: string): string {
+export function maskApiKey(key: string | undefined): string {
+  if (!key) return '(not configured)';
   const trimmed = key.trim();
-  if (!trimmed) return '';
-  if (trimmed.length <= 4) return '••••' + trimmed;
+  if (!trimmed) return '(empty)';
+  if (trimmed.length <= 4) return '••••' + trimmed + ` (len: ${trimmed.length})`;
   const last4 = trimmed.slice(-4);
-  const maskLen = Math.min(12, Math.max(4, trimmed.length - 4));
-  return '•'.repeat(maskLen) + last4;
+  const maskLen = Math.min(8, Math.max(4, trimmed.length - 4));
+  return '•'.repeat(maskLen) + last4 + ` (len: ${trimmed.length})`;
 }
 
 export interface CatalogItemDefinition {
@@ -277,6 +278,61 @@ export function getBackendApiKey(envVarOrId: string): string | undefined {
   }
 
   return undefined;
+}
+
+/**
+ * Runtime lookup with source details (Render process.env vs API Catalog Store)
+ */
+export function getBackendApiKeyDetail(envVarOrId: string): { key: string | undefined; source: string; masked: string } {
+  if (!envVarOrId) return { key: undefined, source: 'none', masked: '(not configured)' };
+  const target = envVarOrId.trim();
+
+  // 1. Direct process.env check by envVar name
+  if (process.env[target] && process.env[target]!.trim()) {
+    const k = process.env[target]!.trim();
+    return { key: k, source: `process.env.${target}`, masked: maskApiKey(k) };
+  }
+
+  // Check known predefined mapping
+  const def = PREDEFINED_CATALOG.find(
+    (item) => item.id === target || item.envVar === target || item.fallbackEnvVars?.includes(target),
+  );
+
+  if (def) {
+    if (process.env[def.envVar] && process.env[def.envVar]!.trim()) {
+      const k = process.env[def.envVar]!.trim();
+      return { key: k, source: `process.env.${def.envVar}`, masked: maskApiKey(k) };
+    }
+    if (def.fallbackEnvVars) {
+      for (const fallback of def.fallbackEnvVars) {
+        if (process.env[fallback] && process.env[fallback]!.trim()) {
+          const k = process.env[fallback]!.trim();
+          return { key: k, source: `process.env.${fallback}`, masked: maskApiKey(k) };
+        }
+      }
+    }
+  }
+
+  // 2. Fall back to secure UI-saved storage layer
+  const store = loadCatalogStore();
+  let record = store[target];
+  if (!record && def) {
+    record = store[def.id] || store[def.envVar];
+  }
+  if (!record) {
+    const matched = Object.values(store).find((r) => r.envVar === target);
+    if (matched) record = matched;
+  }
+
+  if (record && record.encryptedKey) {
+    const decrypted = decryptValue(record.encryptedKey);
+    if (decrypted && decrypted.trim()) {
+      const k = decrypted.trim();
+      return { key: k, source: `API Catalog Store (${record.id || record.envVar})`, masked: maskApiKey(k) };
+    }
+  }
+
+  return { key: undefined, source: 'not found in env or catalog', masked: '(not configured)' };
 }
 
 export interface CatalogItemResponse {
@@ -493,13 +549,24 @@ export async function testServiceApiKey(id: string): Promise<{ success: boolean;
   const normalized = id.toLowerCase();
   try {
     if (normalized === 'gnews' || normalized === 'gnews_api_key') {
+      const masked = maskApiKey(key);
       const res = await fetch(`https://gnews.io/api/v4/top-headlines?category=general&max=1&apikey=${key}`, {
         signal: AbortSignal.timeout(6000),
       });
-      if (res.ok) return { success: true, message: 'GNews API connection verified successfully!' };
-      if (res.status === 401 || res.status === 403) return { success: false, message: 'Invalid GNews API Key (401/403).' };
-      if (res.status === 429) return { success: true, message: 'Valid key, but daily rate limit reached (100 req/day).' };
-      return { success: false, message: `GNews returned HTTP ${res.status}.` };
+      if (res.ok) {
+        console.log(`[ApiCatalog GNews Test] Success (HTTP 200) [Key: ${masked}]`);
+        return { success: true, message: `GNews API connection verified successfully! [Key: ${masked}]` };
+      }
+      let bodyText = '';
+      try {
+        bodyText = await res.text();
+      } catch {
+        bodyText = '';
+      }
+      console.warn(`[ApiCatalog GNews Test Failed] HTTP ${res.status}: ${bodyText} [Key: ${masked}]`);
+      if (res.status === 401 || res.status === 403) return { success: false, message: `Invalid GNews API Key (HTTP ${res.status}): ${bodyText || 'Unauthorized'} [Key: ${masked}]` };
+      if (res.status === 429) return { success: true, message: `Valid key, but daily rate limit reached (HTTP 429): ${bodyText || '100 req/day'} [Key: ${masked}]` };
+      return { success: false, message: `GNews returned HTTP ${res.status}: ${bodyText || res.statusText} [Key: ${masked}]` };
     }
 
     if (normalized === 'newsdata' || normalized === 'newsdata_api_key') {

@@ -1,7 +1,7 @@
 import { Router } from 'express';
 import { z } from 'zod';
 import { errorResponse, domainOf } from '../shared.js';
-import { getBackendApiKey } from '../apiCatalog.js';
+import { getBackendApiKey, getBackendApiKeyDetail } from '../apiCatalog.js';
 
 export const WIKIPEDIA_USER_AGENT = 'NEXUS-Intelligence/1.0 (https://nexus.app; contact: dk959709@gmail.com)';
 
@@ -670,8 +670,11 @@ export async function fetchGNewsArticles(options: FetchGNewsOptions = {}): Promi
   totalArticles: number;
   category: string;
 }> {
-  const apiKey = getBackendApiKey('GNEWS_API_KEY');
+  const keyDetail = getBackendApiKeyDetail('GNEWS_API_KEY');
+  const apiKey = keyDetail.key;
+
   if (!apiKey || !apiKey.trim()) {
+    console.warn(`[GNews] Fetch aborted: GNEWS_API_KEY is not configured (Source: ${keyDetail.source}, Masked: ${keyDetail.masked})`);
     throw new Error('GNEWS_API_KEY is not configured in server environment or API catalog');
   }
 
@@ -689,33 +692,69 @@ export async function fetchGNewsArticles(options: FetchGNewsOptions = {}): Promi
     url = `https://gnews.io/api/v4/search?q=${encodeURIComponent(cleanTopic)}&lang=${lang}&country=${country}&max=${max}&apikey=${apiKey.trim()}`;
   }
 
-  const res = await fetch(url, {
-    headers: {
-      'User-Agent': 'NEXUS-Intelligence/1.0',
-    },
-  });
+  const maskedUrl = url.replace(apiKey.trim(), keyDetail.masked);
+  console.log(`[GNews API Call Attempt] URL: ${maskedUrl} | Source: ${keyDetail.source} | Key: ${keyDetail.masked}`);
 
-  if (res.status === 401 || res.status === 403) {
-    throw new Error('GNews API Key is invalid or unauthorized');
+  let res: Response;
+  try {
+    res = await fetch(url, {
+      headers: {
+        'User-Agent': 'NEXUS-Intelligence/1.0',
+      },
+    });
+  } catch (netErr) {
+    const networkError = netErr as Error;
+    console.error(`[GNews Network Failure] Failed to reach gnews.io: ${networkError.message} | URL: ${maskedUrl} | Key: ${keyDetail.masked}`);
+    throw new Error(`GNews Network Error: ${networkError.message} [Key: ${keyDetail.masked}]`);
   }
-  if (res.status === 429) {
-    throw new Error('GNews API daily request limit reached (100 requests/day limit on free tier)');
-  }
+
   if (!res.ok) {
-    let errorDetail = `GNews API returned HTTP ${res.status}`;
+    let rawBody = '';
+    let parsedErrors: string[] = [];
     try {
-      const errJson = (await res.json()) as { errors?: string[] | string };
-      if (errJson.errors) {
-        errorDetail += `: ${Array.isArray(errJson.errors) ? errJson.errors.join(', ') : errJson.errors}`;
+      rawBody = await res.text();
+      try {
+        const parsed = JSON.parse(rawBody) as { errors?: string[] | string; error?: string; message?: string };
+        if (Array.isArray(parsed.errors)) {
+          parsedErrors = parsed.errors;
+        } else if (typeof parsed.errors === 'string') {
+          parsedErrors = [parsed.errors];
+        } else if (typeof parsed.error === 'string') {
+          parsedErrors = [parsed.error];
+        } else if (typeof parsed.message === 'string') {
+          parsedErrors = [parsed.message];
+        }
+      } catch {
+        // Not JSON
       }
     } catch {
-      // ignore
+      rawBody = '(unable to read response body)';
     }
-    throw new Error(errorDetail);
+
+    const errorSummary = parsedErrors.length > 0 ? parsedErrors.join(' | ') : rawBody.trim() || res.statusText || 'Unknown error';
+    const detailedLog = `[GNews HTTP Error ${res.status}] ${res.statusText} -> Error: ${errorSummary} | URL: ${maskedUrl} | Key: ${keyDetail.masked} | Raw Body: ${rawBody}`;
+    console.error(detailedLog);
+
+    if (res.status === 401 || res.status === 403) {
+      throw new Error(`GNews API Key is invalid or unauthorized (HTTP ${res.status}: ${errorSummary}) [Key: ${keyDetail.masked}]`);
+    }
+    if (res.status === 429) {
+      throw new Error(`GNews API daily request limit reached (HTTP 429: ${errorSummary}) [Key: ${keyDetail.masked}]`);
+    }
+
+    throw new Error(`GNews API failed with HTTP ${res.status} (${res.statusText}): ${errorSummary} [Key: ${keyDetail.masked}]`);
   }
 
-  const data = (await res.json()) as GNewsResponse;
+  let data: GNewsResponse;
+  try {
+    data = (await res.json()) as GNewsResponse;
+  } catch (jsonErr) {
+    console.error(`[GNews Parse Error] Failed to parse JSON response: ${(jsonErr as Error).message} | URL: ${maskedUrl} | Key: ${keyDetail.masked}`);
+    throw new Error(`GNews JSON parse error: ${(jsonErr as Error).message} [Key: ${keyDetail.masked}]`);
+  }
+
   const rawArticles = data.articles || [];
+  console.log(`[GNews Success] HTTP 200 OK -> Retrieved ${rawArticles.length} articles (total: ${data.totalArticles || rawArticles.length}) | Key: ${keyDetail.masked}`);
 
   const articles: SearchResult[] = rawArticles.map((art) => {
     const rawPublisher = art.source?.name?.trim() || '';
@@ -900,9 +939,9 @@ export async function searchProvider(input: z.infer<typeof searchSchema>): Promi
       if (gnews.articles.length > 0) {
         return { results: gnews.articles, searchSource: 'GNews API' };
       }
-      console.log('[searchProvider] GNews API error: Zero articles returned');
+      console.log('[searchProvider] GNews returned 0 articles -> Falling back to NewsData.io');
     } catch (err) {
-      console.log(`[searchProvider] GNews API error: ${(err as Error).message}`);
+      console.log(`[searchProvider] GNews error (${(err as Error).message}) -> Falling back to NewsData.io`);
     }
 
     // 2. Second Fallback: NewsData.io
@@ -2175,12 +2214,12 @@ export function createSearchRouter(deps: SearchRouterDependencies = {}) {
           hasNewsDataKey: Boolean(getBackendApiKey('NEWSDATA_API_KEY')),
         });
       }
-      gnewsError = 'GNews returned zero articles.';
-      console.warn('[Live News Page GNews]:', gnewsError);
+      gnewsError = 'GNews returned zero articles for the requested parameters.';
+      console.warn('[Live News Page]: GNews returned 0 articles -> Falling back to NewsData.io');
     } catch (error) {
       const err = error as Error;
       gnewsError = err.message || 'GNews request failed.';
-      console.warn('[Live News Page GNews Error]:', gnewsError);
+      console.warn(`[Live News Page]: GNews failed (${gnewsError}) -> Falling back to NewsData.io`);
     }
 
     // 2. Second Fallback: NewsData.io
