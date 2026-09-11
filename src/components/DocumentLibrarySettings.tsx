@@ -12,14 +12,13 @@ import {
   RefreshCw,
   Eye,
   X,
-  FileCode,
-  FileSpreadsheet,
-  FileType,
   Sparkles,
-  Check,
   ChevronDown,
   ChevronUp,
   HardDrive,
+  Laptop,
+  ShieldCheck,
+  AlertTriangle,
 } from 'lucide-react';
 import {
   getLibraryDocuments,
@@ -28,9 +27,10 @@ import {
   deleteDocumentFromLibrary,
   formatDocumentSize,
   getDocumentTypeBadge,
-  SUPPORTED_DOCUMENT_EXTENSIONS,
   searchDocumentLibrary,
+  MAX_TOTAL_LIBRARY_BYTES,
 } from '@/services/documentLibraryService';
+import { isIndexedDbAvailable } from '@/services/documentIndexedDb';
 import type { LibraryDocument, DocumentLibraryStats, DocumentRetrievalResult } from '@/types';
 
 export const DocumentLibrarySettings: React.FC = () => {
@@ -46,13 +46,13 @@ export const DocumentLibrarySettings: React.FC = () => {
   const [uploadProgressMsg, setUploadProgressMsg] = useState('');
   const [error, setError] = useState<string | null>(null);
   const [successMsg, setSuccessMsg] = useState<string | null>(null);
+  const [isIdbSupported, setIsIdbSupported] = useState<boolean>(true);
 
   // Search & Filter within library
   const [searchFilter, setSearchFilter] = useState('');
   const [typeFilter, setTypeFilter] = useState<string>('all');
 
   // Preview & Inspect Modal
-  const [previewDoc, setPreviewDoc] = useState<LibraryDocument | null>(null);
   const [expandedDocId, setExpandedDocId] = useState<string | null>(null);
 
   // Delete confirmation
@@ -71,11 +71,14 @@ export const DocumentLibrarySettings: React.FC = () => {
     try {
       setLoading(true);
       setError(null);
+      const supported = isIndexedDbAvailable();
+      setIsIdbSupported(supported);
+
       const data = await getLibraryDocuments();
       setDocuments(data.documents);
       setStats(data.stats);
     } catch (err: unknown) {
-      const msg = err instanceof Error ? err.message : 'Failed to load documents';
+      const msg = err instanceof Error ? err.message : 'Failed to load documents from device storage';
       setError(msg);
     } finally {
       setLoading(false);
@@ -89,6 +92,12 @@ export const DocumentLibrarySettings: React.FC = () => {
   // Handle file upload
   const handleFileUpload = async (files: FileList | null) => {
     if (!files || files.length === 0) return;
+
+    if (!isIndexedDbAvailable()) {
+      setError(
+        'IndexedDB is not supported or is restricted in your browser. Document storage may be transient.',
+      );
+    }
 
     setError(null);
     setSuccessMsg(null);
@@ -117,7 +126,9 @@ export const DocumentLibrarySettings: React.FC = () => {
 
     if (successCount > 0) {
       setSuccessMsg(
-        `Successfully indexed ${successCount} document${successCount > 1 ? 's' : ''} into Vector Memory.`,
+        `Successfully saved and indexed ${successCount} document${
+          successCount > 1 ? 's' : ''
+        } into your browser's IndexedDB Vector Vault.`,
       );
       setTimeout(() => setSuccessMsg(null), 5000);
       await loadData();
@@ -146,7 +157,6 @@ export const DocumentLibrarySettings: React.FC = () => {
       await toggleDocumentInclusion(doc.id, nextState);
     } catch (err) {
       console.error('Failed to toggle doc inclusion:', err);
-      // Revert on error
       await loadData();
     }
   };
@@ -155,11 +165,12 @@ export const DocumentLibrarySettings: React.FC = () => {
     if (!docToDelete) return;
     try {
       const id = docToDelete.id;
+      const name = docToDelete.name;
       setDocToDelete(null);
       setDocuments((prev) => prev.filter((d) => d.id !== id));
       await deleteDocumentFromLibrary(id);
       await loadData();
-      setSuccessMsg(`Document "${docToDelete.name}" removed from library.`);
+      setSuccessMsg(`Document "${name}" removed from device storage.`);
       setTimeout(() => setSuccessMsg(null), 4000);
     } catch (err: unknown) {
       const msg = err instanceof Error ? err.message : 'Failed to delete document';
@@ -217,16 +228,26 @@ export const DocumentLibrarySettings: React.FC = () => {
     return matchesSearch && matchesType;
   });
 
-  // Calculate storage percentage (e.g. out of 50MB quota display)
-  const MAX_STORAGE_BYTES = 50 * 1024 * 1024; // 50MB nominal
+  // Calculate storage percentage (50MB library limit)
   const storagePercentage = Math.min(
-    Math.round((stats.totalSizeBytes / MAX_STORAGE_BYTES) * 100),
+    Math.round((stats.totalSizeBytes / MAX_TOTAL_LIBRARY_BYTES) * 100),
     100,
   );
 
   return (
     <div className="space-y-6 pb-12">
-      {/* Header Info & RAG Overview */}
+      {/* Browser / IndexedDB Compatibility Warning if restricted */}
+      {!isIdbSupported && (
+        <div className="p-4 rounded-2xl border border-amber-500/30 bg-amber-500/10 text-amber-200 text-sm flex items-start gap-3">
+          <AlertTriangle className="w-5 h-5 flex-shrink-0 text-amber-400 mt-0.5" />
+          <div className="flex-1">
+            <strong className="font-semibold block text-amber-300">IndexedDB Storage Notice</strong>
+            Your browser does not support or has restricted IndexedDB. Stored documents will only persist in temporary memory during this session.
+          </div>
+        </div>
+      )}
+
+      {/* Header Info & Device Storage Overview */}
       <div className="rounded-2xl border border-white/10 bg-slate-900/50 p-6 backdrop-blur-md shadow-lg shadow-black/20 relative overflow-hidden">
         <div className="absolute top-0 right-0 -mt-8 -mr-8 w-64 h-64 bg-cyan-500/10 rounded-full blur-3xl pointer-events-none" />
         <div className="flex flex-col md:flex-row md:items-center justify-between gap-4 relative z-10">
@@ -235,14 +256,17 @@ export const DocumentLibrarySettings: React.FC = () => {
               <BookOpen className="w-6 h-6" />
             </div>
             <div>
-              <h2 className="text-xl font-semibold text-white tracking-wide flex items-center gap-2">
-                Document Library
-                <span className="text-xs px-2.5 py-0.5 rounded-full bg-cyan-500/20 text-cyan-300 border border-cyan-500/30 font-mono">
-                  Vector Memory (RAG)
+              <div className="flex items-center gap-2 flex-wrap">
+                <h2 className="text-xl font-semibold text-white tracking-wide">
+                  Document Library
+                </h2>
+                <span className="text-xs px-2.5 py-0.5 rounded-full bg-cyan-500/20 text-cyan-300 border border-cyan-500/30 font-mono flex items-center gap-1">
+                  <Laptop className="w-3 h-3 text-cyan-400" />
+                  Local Device Storage (IndexedDB)
                 </span>
-              </h2>
-              <p className="text-sm text-slate-400 mt-1 max-w-2xl">
-                Upload your private documents (PDF, TXT, CSV, DOCX). Files are automatically split into semantic chunks, vectorized with embeddings, and seamlessly searched by JARVIS when the &apos;Search My Documents&apos; toggle is active.
+              </div>
+              <p className="text-sm text-slate-400 mt-1.5 max-w-2xl leading-relaxed">
+                Upload private documents (PDF, TXT, CSV, DOCX). Files are parsed into semantic chunks and saved <strong className="text-slate-200">directly to this browser&apos;s IndexedDB on your device</strong>. Documents persist across restarts on this machine, but do not sync to external servers or other devices.
               </p>
             </div>
           </div>
@@ -251,11 +275,19 @@ export const DocumentLibrarySettings: React.FC = () => {
             onClick={loadData}
             disabled={loading}
             className="flex items-center gap-2 px-3.5 py-2 rounded-xl border border-white/10 bg-slate-800/80 hover:bg-slate-700/80 text-xs font-medium text-slate-300 hover:text-white transition-all self-start md:self-auto"
-            title="Refresh library"
+            title="Refresh local database"
           >
             <RefreshCw className={`w-3.5 h-3.5 ${loading ? 'animate-spin' : ''}`} />
-            Sync Storage
+            Refresh Device Vault
           </button>
+        </div>
+
+        {/* Local Storage Privacy & Device Isolation Notice */}
+        <div className="mt-4 p-3 rounded-xl bg-slate-950/40 border border-cyan-500/20 flex items-center gap-3 text-xs text-slate-300">
+          <ShieldCheck className="w-4 h-4 text-cyan-400 flex-shrink-0" />
+          <span>
+            <strong className="text-cyan-300">Device Privacy:</strong> Documents are stored exclusively in your browser&apos;s local IndexedDB. They never reside on server disks, and won&apos;t appear if you switch browsers or devices.
+          </span>
         </div>
 
         {/* Storage Metrics Row */}
@@ -282,13 +314,13 @@ export const DocumentLibrarySettings: React.FC = () => {
 
           <div className="p-3.5 rounded-xl bg-slate-800/40 border border-white/5">
             <div className="flex items-center justify-between text-xs text-slate-400 mb-1">
-              <span>Storage Used</span>
+              <span>Device Storage</span>
               <HardDrive className="w-3.5 h-3.5 text-slate-400" />
             </div>
             <div className="text-lg font-bold text-white font-mono">
               {formatDocumentSize(stats.totalSizeBytes)}
             </div>
-            <div className="text-[11px] text-slate-400 mt-0.5">Local Persistent Vault</div>
+            <div className="text-[11px] text-slate-400 mt-0.5">IndexedDB Vault</div>
           </div>
 
           <div className="p-3.5 rounded-xl bg-slate-800/40 border border-white/5">
@@ -298,23 +330,29 @@ export const DocumentLibrarySettings: React.FC = () => {
             </div>
             <div className="text-lg font-bold text-emerald-400 font-mono flex items-center gap-1.5">
               <span className="w-2 h-2 rounded-full bg-emerald-400 animate-pulse" />
-              Online
+              IndexedDB Ready
             </div>
-            <div className="text-[11px] text-slate-400 mt-0.5">Hybrid Cosine + BM25</div>
+            <div className="text-[11px] text-slate-400 mt-0.5">Hybrid Dense + TF-IDF</div>
           </div>
         </div>
 
         {/* Storage Bar Indicator */}
         <div className="mt-4 pt-4 border-t border-white/5">
           <div className="flex items-center justify-between text-xs text-slate-400 mb-1.5 font-mono">
-            <span>Library Storage Capacity</span>
+            <span>Library Device Quota (50 MB Max Limit)</span>
             <span>
               {formatDocumentSize(stats.totalSizeBytes)} / 50 MB ({storagePercentage}%)
             </span>
           </div>
           <div className="w-full h-1.5 rounded-full bg-slate-800 overflow-hidden border border-white/5">
             <div
-              className="h-full bg-gradient-to-r from-cyan-500 to-emerald-400 rounded-full transition-all duration-500"
+              className={`h-full rounded-full transition-all duration-500 ${
+                storagePercentage > 90
+                  ? 'bg-rose-500'
+                  : storagePercentage > 70
+                  ? 'bg-amber-400'
+                  : 'bg-gradient-to-r from-cyan-500 to-emerald-400'
+              }`}
               style={{ width: `${Math.max(storagePercentage, stats.totalDocuments > 0 ? 3 : 0)}%` }}
             />
           </div>
@@ -358,7 +396,7 @@ export const DocumentLibrarySettings: React.FC = () => {
           ref={fileInputRef}
           type="file"
           multiple
-          accept=".pdf,.txt,.csv,.docx,.doc,.md,.json"
+          accept=".pdf,.txt,.csv,.docx,.doc,.md,.json,.log"
           onChange={(e) => handleFileUpload(e.target.files)}
           className="hidden"
         />
@@ -374,16 +412,16 @@ export const DocumentLibrarySettings: React.FC = () => {
 
           <div>
             <h3 className="text-base font-semibold text-white">
-              {uploading ? 'Ingesting & Indexing Document...' : 'Upload Document to Vector Memory'}
+              {uploading ? 'Ingesting & Indexing to Device Storage...' : 'Upload Document to Device Vector Memory'}
             </h3>
             <p className="text-xs text-slate-400 mt-1">
               {uploading
-                ? uploadProgressMsg || 'Extracting text and generating embeddings...'
-                : 'Drag & drop files here or click to browse (PDF, TXT, CSV, DOCX)'}
+                ? uploadProgressMsg || 'Extracting text and saving to IndexedDB...'
+                : 'Drag & drop files here or click to browse (PDF, TXT, CSV, DOCX, MD)'}
             </p>
           </div>
 
-          <div className="flex items-center gap-2 mt-2">
+          <div className="flex items-center gap-2 mt-2 flex-wrap justify-center">
             <span className="text-[11px] px-2.5 py-1 rounded-lg bg-rose-500/10 text-rose-400 border border-rose-500/20">
               PDF
             </span>
@@ -394,9 +432,9 @@ export const DocumentLibrarySettings: React.FC = () => {
               CSV
             </span>
             <span className="text-[11px] px-2.5 py-1 rounded-lg bg-amber-500/10 text-amber-400 border border-amber-500/20">
-              TXT
+              TXT / MD
             </span>
-            <span className="text-[11px] text-slate-500 ml-1">Up to 50 MB / file</span>
+            <span className="text-[11px] text-slate-500 ml-1">Up to 50 MB / file • Stored on this device only</span>
           </div>
         </div>
       </div>
@@ -422,7 +460,7 @@ export const DocumentLibrarySettings: React.FC = () => {
           )}
         </div>
 
-        <div className="flex items-center gap-1.5 p-1 rounded-xl bg-slate-900/60 border border-white/10">
+        <div className="flex items-center gap-1.5 p-1 rounded-xl bg-slate-900/60 border border-white/10 overflow-x-auto">
           {(['all', 'pdf', 'docx', 'csv', 'txt'] as const).map((t) => (
             <button
               key={t}
@@ -444,7 +482,7 @@ export const DocumentLibrarySettings: React.FC = () => {
         {loading ? (
           <div className="p-12 text-center rounded-2xl border border-white/5 bg-slate-900/30">
             <RefreshCw className="w-6 h-6 animate-spin text-cyan-400 mx-auto mb-2" />
-            <div className="text-sm text-slate-400">Loading Document Library...</div>
+            <div className="text-sm text-slate-400">Loading IndexedDB Vault...</div>
           </div>
         ) : filteredDocuments.length === 0 ? (
           <div className="p-12 text-center rounded-2xl border border-white/5 bg-slate-900/30">
@@ -452,12 +490,12 @@ export const DocumentLibrarySettings: React.FC = () => {
             <h4 className="text-base font-medium text-slate-300">
               {searchFilter || typeFilter !== 'all'
                 ? 'No documents match the current filter.'
-                : 'No documents in your library yet.'}
+                : 'No documents stored on this device yet.'}
             </h4>
             <p className="text-xs text-slate-500 mt-1 max-w-sm mx-auto">
               {searchFilter || typeFilter !== 'all'
                 ? 'Try clearing the search query or selecting All formats.'
-                : 'Upload your first PDF, DOCX, CSV, or TXT file above to build your private AI vector memory.'}
+                : 'Upload your first PDF, DOCX, CSV, or TXT file above to build your private on-device vector memory.'}
             </p>
           </div>
         ) : (
@@ -564,7 +602,7 @@ export const DocumentLibrarySettings: React.FC = () => {
                     <button
                       onClick={() => setDocToDelete(doc)}
                       className="p-2 rounded-xl text-slate-500 hover:text-rose-400 hover:bg-rose-500/10 border border-transparent hover:border-rose-500/20 transition-all"
-                      title="Delete document"
+                      title="Delete document from device"
                     >
                       <Trash2 className="w-4 h-4" />
                     </button>
@@ -576,7 +614,7 @@ export const DocumentLibrarySettings: React.FC = () => {
                   <div className="px-5 pb-4 pt-2 border-t border-white/5 bg-slate-950/40 text-xs text-slate-400">
                     <div className="font-mono text-[11px] text-slate-500 mb-1 flex items-center gap-1.5">
                       <Eye className="w-3 h-3 text-cyan-400" />
-                      Extracted Text Snippet:
+                      Extracted Text Snippet (Device Memory):
                     </div>
                     <p className="bg-slate-900/60 p-3 rounded-xl border border-white/5 font-sans leading-relaxed text-slate-300">
                       &quot;{doc.previewSnippet}&quot;
@@ -589,17 +627,17 @@ export const DocumentLibrarySettings: React.FC = () => {
         )}
       </div>
 
-      {/* Semantic Retrieval Sandbox (Test your RAG index) */}
+      {/* Semantic Retrieval Sandbox (Test your IndexedDB vector memory) */}
       {documents.length > 0 && (
         <div className="mt-8 rounded-2xl border border-white/10 bg-slate-900/40 p-6 backdrop-blur-md">
           <div className="flex items-center gap-2 mb-2">
             <Sparkles className="w-4 h-4 text-cyan-400" />
             <h3 className="text-sm font-semibold text-white">
-              Test Semantic Vector Retrieval (Sandbox)
+              Test Semantic Vector Retrieval (IndexedDB Sandbox)
             </h3>
           </div>
           <p className="text-xs text-slate-400 mb-4">
-            Type any question or phrase below to test which vector chunks are retrieved from your active documents in real time.
+            Type any question or phrase below to test which vector chunks are retrieved directly from your device&apos;s IndexedDB in real time.
           </p>
 
           <form onSubmit={handleTestSearch} className="flex gap-2">
@@ -623,7 +661,7 @@ export const DocumentLibrarySettings: React.FC = () => {
           {testResults && (
             <div className="mt-4 space-y-2">
               <div className="text-xs font-mono text-cyan-400">
-                Found {testResults.length} matching chunk{testResults.length === 1 ? '' : 's'}:
+                Found {testResults.length} matching chunk{testResults.length === 1 ? '' : 's'} on device:
               </div>
               {testResults.length === 0 ? (
                 <div className="p-3 rounded-xl bg-slate-950/40 text-xs text-slate-400 border border-white/5">
@@ -662,10 +700,10 @@ export const DocumentLibrarySettings: React.FC = () => {
               <h3 className="text-base font-semibold text-white">Delete Document</h3>
             </div>
             <p className="text-sm text-slate-300 mb-2">
-              Are you sure you want to remove <strong className="text-white">&quot;{docToDelete.name}&quot;</strong> from your Document Library?
+              Are you sure you want to remove <strong className="text-white">&quot;{docToDelete.name}&quot;</strong> from this device?
             </p>
             <p className="text-xs text-slate-400 mb-6">
-              All indexed vector embeddings and semantic chunks for this document will be permanently deleted from the vector memory store.
+              All indexed vector embeddings and semantic chunks for this document will be permanently deleted from your browser&apos;s local IndexedDB.
             </p>
 
             <div className="flex items-center justify-end gap-3">
@@ -679,7 +717,7 @@ export const DocumentLibrarySettings: React.FC = () => {
                 onClick={confirmDelete}
                 className="px-4 py-2 rounded-xl text-xs font-semibold text-white bg-rose-600 hover:bg-rose-500 transition-all shadow-lg shadow-rose-600/30"
               >
-                Delete Document
+                Delete from Device
               </button>
             </div>
           </div>

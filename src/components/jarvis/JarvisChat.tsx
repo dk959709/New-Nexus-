@@ -39,6 +39,7 @@ import {
   formatPromptWithAttachments,
   UNSUPPORTED_FILE_ERROR_MESSAGE,
 } from '@/services/jarvisAttachmentService';
+import { getLibraryDocuments } from '@/services/documentLibraryService';
 
 import { JarvisHudHeader } from './JarvisHudHeader';
 import { JarvisCoreVisualizer } from './JarvisCoreVisualizer';
@@ -63,8 +64,7 @@ import type {
   JarvisMessage,
   JarvisSystemConfig,
   SavedItem,
-  DocumentItem,
-  DocumentRetrievalResult,
+  LibraryDocument,
 } from '@/types';
 
 const JarvisSvgDiagram = lazy(() =>
@@ -242,9 +242,9 @@ export function JarvisChat({ config, onOpenSettings }: JarvisChatProps) {
     }
   });
   const [selectedDocId, setSelectedDocId] = useState<string>('');
-  const [availableDocs, setAvailableDocs] = useState<DocumentItem[]>(() => {
+  const [availableDocs, setAvailableDocs] = useState<LibraryDocument[]>(() => {
     try {
-      return storage.getStoredDocuments();
+      return storage.getDocumentLibrary();
     } catch {
       return [];
     }
@@ -252,9 +252,13 @@ export function JarvisChat({ config, onOpenSettings }: JarvisChatProps) {
 
   const refreshAvailableDocs = useCallback(() => {
     try {
-      setAvailableDocs(storage.getStoredDocuments());
+      getLibraryDocuments().then((res) => {
+        setAvailableDocs(res.documents);
+      }).catch(() => {
+        setAvailableDocs(storage.getDocumentLibrary());
+      });
     } catch {
-      // ignore
+      setAvailableDocs(storage.getDocumentLibrary());
     }
   }, []);
 
@@ -1885,7 +1889,7 @@ export function JarvisChat({ config, onOpenSettings }: JarvisChatProps) {
                     <span>SEARCH MY DOCS</span>
                     {availableDocs.length > 0 && (
                       <span className="text-[9px] px-1.5 py-0.2 rounded-full bg-purple-500/20 text-purple-300 border border-purple-500/30">
-                        {availableDocs.filter(d => d.includeInSearches).length}
+                        {availableDocs.filter(d => d.enabledForJarvis).length}
                       </span>
                     )}
                   </span>
@@ -1906,7 +1910,7 @@ export function JarvisChat({ config, onOpenSettings }: JarvisChatProps) {
                     }}
                     className="bg-slate-900/90 text-purple-300 text-[11px] font-mono border border-purple-500/30 rounded-full px-2.5 py-1 focus:outline-none focus:border-purple-400 max-w-[140px] truncate cursor-pointer"
                   >
-                    <option value="all">All Docs ({availableDocs.filter(d => d.includeInSearches).length})</option>
+                    <option value="all">All Docs ({availableDocs.filter(d => d.enabledForJarvis).length})</option>
                     {availableDocs.map((doc) => (
                       <option key={doc.id} value={doc.id}>
                         📄 {doc.name.length > 16 ? doc.name.slice(0, 14) + '...' : doc.name}
