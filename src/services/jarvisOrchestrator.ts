@@ -4480,6 +4480,20 @@ Document search was performed for query: "${cleanSearchQuery}" across ${targetLa
         });
       }
 
+      let rawJsonOutput = '';
+      if (researchRes.text) {
+        try {
+          const cleanedText = researchRes.text.trim().replace(/^```(?:json)?\s*/i, '').replace(/\s*```$/, '').trim();
+          const parsed = JSON.parse(cleanedText);
+          rawJsonOutput = JSON.stringify(parsed, null, 2);
+        } catch {
+          rawJsonOutput = '';
+        }
+      }
+      if (!rawJsonOutput) {
+        rawJsonOutput = JSON.stringify(researcherOutput, null, 2);
+      }
+
       updateStep({
         agentId: 'researcher',
         name: rCfg.name,
@@ -4490,7 +4504,7 @@ Document search was performed for query: "${cleanSearchQuery}" across ${targetLa
         durationMs: duration,
         summary: `Gathered ${researcherOutput.facts.length} core facts and ${sourcesCollected.length} references.`,
         outputPreview: JSON.stringify(researcherOutput, null, 2),
-        rawOutput: researchRes.text || JSON.stringify(researcherOutput, null, 2),
+        rawOutput: rawJsonOutput,
         usedFallback: researchRes.usedFallback,
         searchSource,
       });
@@ -4508,6 +4522,22 @@ Document search was performed for query: "${cleanSearchQuery}" across ${targetLa
         }
       }
 
+      const fallbackJsonString = JSON.stringify(
+        {
+          candidates: researcherOutput.candidates || [],
+          facts: researcherOutput.facts || [],
+          sources: sourcesCollected.map((s, idx) => ({
+            index: idx + 1,
+            title: s.title,
+            url: s.url,
+            domain: s.domain,
+            publishedAt: s.date || null,
+          })),
+        },
+        null,
+        2,
+      );
+
       updateStep({
         agentId: 'researcher',
         name: rCfg.name,
@@ -4520,6 +4550,8 @@ Document search was performed for query: "${cleanSearchQuery}" across ${targetLa
           researcherOutput.facts.length > 0
             ? `Recovered ${researcherOutput.facts.length} core facts from live search sources.`
             : 'Researcher failed.',
+        outputPreview: fallbackJsonString,
+        rawOutput: fallbackJsonString,
         error: researchRes.error || 'Researcher failed.',
         searchSource,
       });

@@ -988,7 +988,49 @@ function formatAgentContentToMarkdown(step: JarvisExecutionStep): {
       }
     }
 
-    return { formatted: md.trim(), isStructuredJson: true, raw };
+    // Ensure raw JSON view has the full, pristine structured JSON response
+    let rawJsonOutput = '';
+    if (parsed && typeof parsed === 'object') {
+      rawJsonOutput = JSON.stringify(parsed, null, 2);
+    } else if (step.rawOutput) {
+      const p = parseAgentJson(step.rawOutput);
+      if (p.isJson && p.parsed) {
+        rawJsonOutput = JSON.stringify(p.parsed, null, 2);
+      }
+    }
+    if (!rawJsonOutput && step.outputPreview) {
+      const p = parseAgentJson(step.outputPreview);
+      if (p.isJson && p.parsed) {
+        rawJsonOutput = JSON.stringify(p.parsed, null, 2);
+      }
+    }
+    if (!rawJsonOutput && (resData.candidates.length > 0 || resData.sources.length > 0)) {
+      rawJsonOutput = JSON.stringify(
+        {
+          candidates: resData.candidates.map((c) => ({
+            title: c.title,
+            fact: c.fact,
+            sourceIndex: c.sourceIndex,
+            domain: c.domain,
+            eventDate: c.eventDate,
+            publishedAt: c.publishedAt,
+            confirmedBy: c.confirmedBy || [],
+            url: c.url,
+            category: c.category,
+          })),
+          sources: resData.sources,
+          insights: resData.insights.length > 0 ? resData.insights : undefined,
+          context: resData.context || undefined,
+        },
+        null,
+        2,
+      );
+    }
+    if (!rawJsonOutput) {
+      rawJsonOutput = typeof raw === 'string' && raw.trim() ? raw : (step.outputPreview || step.summary || '');
+    }
+
+    return { formatted: md.trim(), isStructuredJson: true, raw: rawJsonOutput };
   }
 
   // 4. REVIEWER AGENT
