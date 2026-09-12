@@ -1,4 +1,5 @@
 import React, { useState, useEffect, useRef } from 'react';
+import { Link } from 'react-router-dom';
 import {
   Terminal,
   RefreshCw,
@@ -6,9 +7,11 @@ import {
   Zap,
   Trash2,
   Check,
+  Settings as SettingsIcon,
 } from 'lucide-react';
 import { NexusWorldMapTelemetry } from './NexusWorldMapTelemetry';
 import { formatTemp } from '@/lib/format';
+import { playTapSound } from '@/lib/audio';
 import { api } from '@/services/api';
 import type { WeatherData, Settings } from '@/types';
 import { JARVIS_TERMINAL_STORAGE_KEY, JARVIS_TERMINAL_EVENT } from '@/lib/jarvisTerminalLogger';
@@ -399,6 +402,21 @@ export function NexusTerminalOutput({
               </div>
             )}
           </div>
+
+          {/* Settings & Intelligence Shortcut Button */}
+          <Link
+            to="/settings"
+            onClick={() => {
+              if (settings?.sound !== false) {
+                playTapSound();
+              }
+            }}
+            title="Settings & Intelligence"
+            aria-label="Settings & Intelligence"
+            className="flex items-center justify-center p-1.5 rounded-lg bg-slate-950/90 border border-slate-700/60 hover:border-cyan-400/60 text-slate-400 hover:text-cyan-300 hover:bg-cyan-500/10 hover:shadow-[0_0_12px_rgba(34,211,238,0.25)] transition-all select-none active:scale-95 cursor-pointer group"
+          >
+            <SettingsIcon size={13} className="transition-transform duration-300 group-hover:rotate-45" />
+          </Link>
 
           {/* 3 macOS / Terminal dots */}
           <div className="flex items-center gap-1.5 pl-1">
