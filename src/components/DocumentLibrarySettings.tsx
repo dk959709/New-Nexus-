@@ -867,8 +867,13 @@ export const DocumentLibrarySettings: React.FC = () => {
 
       {/* Paste from Clipboard Preview Modal */}
       {isPasteModalOpen && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center p-2 sm:p-4 bg-black/80 backdrop-blur-sm animate-in fade-in overflow-y-auto">
-          <div className="w-full max-w-[92vw] sm:max-w-2xl rounded-2xl border border-cyan-500/30 bg-slate-900 p-4 sm:p-6 shadow-2xl shadow-cyan-950/50 flex flex-col max-h-[92dvh] sm:max-h-[88vh] overflow-hidden">
+        <div
+          onClick={(e) => {
+            if (e.target === e.currentTarget) handleCancelPasteModal();
+          }}
+          className="fixed inset-0 z-50 flex items-center justify-center p-3 sm:p-6 bg-black/80 backdrop-blur-sm animate-in fade-in overflow-y-auto"
+        >
+          <div className="relative w-full max-w-[92vw] sm:max-w-xl md:max-w-2xl mx-auto my-auto rounded-2xl border border-cyan-500/30 bg-slate-900 p-4 sm:p-6 shadow-2xl shadow-cyan-950/50 flex flex-col max-h-[92dvh] sm:max-h-[88vh] overflow-hidden">
             {/* Modal Header */}
             <div className="flex-shrink-0 flex items-start sm:items-center justify-between pb-3 sm:pb-4 border-b border-white/10 gap-2">
               <div className="flex items-center gap-2.5 sm:gap-3 min-w-0">
