@@ -867,30 +867,30 @@ export const DocumentLibrarySettings: React.FC = () => {
 
       {/* Paste from Clipboard Preview Modal */}
       {isPasteModalOpen && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/75 backdrop-blur-sm animate-in fade-in">
-          <div className="w-full max-w-2xl rounded-2xl border border-cyan-500/30 bg-slate-900 p-6 shadow-2xl shadow-cyan-950/50 flex flex-col max-h-[90vh]">
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-2 sm:p-4 bg-black/80 backdrop-blur-sm animate-in fade-in overflow-y-auto">
+          <div className="w-full max-w-[92vw] sm:max-w-2xl rounded-2xl border border-cyan-500/30 bg-slate-900 p-4 sm:p-6 shadow-2xl shadow-cyan-950/50 flex flex-col max-h-[92dvh] sm:max-h-[88vh] overflow-hidden">
             {/* Modal Header */}
-            <div className="flex items-center justify-between pb-4 border-b border-white/10">
-              <div className="flex items-center gap-3">
-                <div className="p-2.5 rounded-xl bg-cyan-500/10 border border-cyan-500/30 text-cyan-400">
-                  <Clipboard className="w-5 h-5" />
+            <div className="flex-shrink-0 flex items-start sm:items-center justify-between pb-3 sm:pb-4 border-b border-white/10 gap-2">
+              <div className="flex items-center gap-2.5 sm:gap-3 min-w-0">
+                <div className="p-2 sm:p-2.5 rounded-xl bg-cyan-500/10 border border-cyan-500/30 text-cyan-400 flex-shrink-0">
+                  <Clipboard className="w-4 h-4 sm:w-5 h-5" />
                 </div>
-                <div>
-                  <h3 className="text-base font-semibold text-white flex items-center gap-2">
-                    Paste from Clipboard
+                <div className="min-w-0">
+                  <h3 className="text-sm sm:text-base font-semibold text-white flex items-center gap-2 flex-wrap">
+                    <span>Paste from Clipboard</span>
                     <span className="text-[10px] font-mono px-2 py-0.5 rounded-md bg-amber-500/10 text-amber-400 border border-amber-500/30 font-semibold">
                       TXT
                     </span>
                   </h3>
-                  <p className="text-xs text-slate-400 mt-0.5">
-                    Preview and confirm text before indexing into on-device vector memory.
+                  <p className="text-[11px] sm:text-xs text-slate-400 mt-0.5 truncate sm:whitespace-normal">
+                    Edit or trim text before indexing into on-device vector memory.
                   </p>
                 </div>
               </div>
               <button
                 type="button"
                 onClick={handleCancelPasteModal}
-                className="p-1.5 rounded-lg text-slate-400 hover:text-white hover:bg-slate-800 transition-all"
+                className="p-1.5 rounded-lg text-slate-400 hover:text-white hover:bg-slate-800 transition-all flex-shrink-0"
                 title="Close"
               >
                 <X className="w-4 h-4" />
@@ -898,57 +898,61 @@ export const DocumentLibrarySettings: React.FC = () => {
             </div>
 
             {/* Target Document Info */}
-            <div className="mt-4 px-3.5 py-2.5 rounded-xl bg-slate-950/60 border border-white/5 flex items-center justify-between text-xs">
-              <div className="flex items-center gap-2 font-mono text-slate-300">
-                <FileText className="w-3.5 h-3.5 text-cyan-400" />
-                <span className="text-slate-400">Target Document:</span>
-                <span className="text-cyan-300 font-semibold">{pastedFileName}</span>
+            <div className="flex-shrink-0 mt-3 px-3 py-2 rounded-xl bg-slate-950/60 border border-white/5 flex flex-wrap sm:flex-nowrap items-center justify-between gap-2 text-xs">
+              <div className="flex items-center gap-2 font-mono text-slate-300 min-w-0">
+                <FileText className="w-3.5 h-3.5 text-cyan-400 flex-shrink-0" />
+                <span className="text-slate-400 flex-shrink-0">Target:</span>
+                <span className="text-cyan-300 font-semibold truncate max-w-[170px] sm:max-w-xs">
+                  {pastedFileName}
+                </span>
               </div>
-              <span className="text-[11px] font-mono text-slate-400">
+              <span className="text-[11px] font-mono text-slate-400 flex-shrink-0">
                 {formatDocumentSize(new Blob([pastedTextContent]).size)}
               </span>
             </div>
 
-            {/* Read-Only Preview Textarea */}
-            <div className="mt-3 flex-1 min-h-0 flex flex-col">
-              <label className="text-[11px] font-mono text-slate-400 mb-1.5 flex items-center justify-between">
-                <span>Pasted Text Content (Read-Only Preview):</span>
-                <span className="text-cyan-300 font-semibold">{pastedTextContent.length.toLocaleString()} characters</span>
-              </label>
+            {/* Editable Preview Textarea with Live Character Count */}
+            <div className="mt-2.5 sm:mt-3 flex-1 min-h-[140px] sm:min-h-[180px] flex flex-col overflow-hidden">
+              <div className="flex-shrink-0 text-[11px] font-mono text-slate-400 mb-1.5 flex items-center justify-between flex-wrap gap-1">
+                <span>Text Content (Editable):</span>
+                <span className="text-cyan-300 font-semibold">
+                  {pastedTextContent.length.toLocaleString()} chars
+                </span>
+              </div>
               <textarea
-                readOnly
                 value={pastedTextContent}
-                className="w-full h-64 p-3.5 rounded-xl bg-slate-950/80 border border-white/10 text-slate-200 font-mono text-xs leading-relaxed focus:outline-none resize-none overflow-y-auto"
-                placeholder="Pasted clipboard content..."
+                onChange={(e) => setPastedTextContent(e.target.value)}
+                className="w-full flex-1 min-h-[120px] sm:min-h-[180px] p-3 sm:p-3.5 rounded-xl bg-slate-950/80 border border-white/10 text-slate-200 font-mono text-xs leading-relaxed focus:outline-none focus:ring-1 focus:ring-cyan-500/50 focus:border-cyan-500/60 resize-none overflow-y-auto"
+                placeholder="Paste or type document content here..."
               />
             </div>
 
             {/* Quota & Size Warning */}
             {new Blob([pastedTextContent]).size > MAX_FILE_SIZE_BYTES ? (
-              <div className="mt-3 p-3.5 rounded-xl bg-rose-500/10 border border-rose-500/30 text-rose-300 text-xs flex items-start gap-2.5">
+              <div className="flex-shrink-0 mt-2.5 sm:mt-3 p-3 rounded-xl bg-rose-500/10 border border-rose-500/30 text-rose-300 text-xs flex items-start gap-2.5">
                 <AlertCircle className="w-4 h-4 text-rose-400 flex-shrink-0 mt-0.5" />
                 <div>
                   <strong className="block font-semibold text-rose-300">50 MB File Quota Exceeded</strong>
-                  Pasted text size is {formatDocumentSize(new Blob([pastedTextContent]).size)}, which exceeds the maximum allowed 50 MB per document limit. Please trim or split the content.
+                  Pasted text size is {formatDocumentSize(new Blob([pastedTextContent]).size)}, which exceeds the 50 MB per document limit. Please trim content.
                 </div>
               </div>
             ) : stats.totalSizeBytes + new Blob([pastedTextContent]).size > MAX_TOTAL_LIBRARY_BYTES ? (
-              <div className="mt-3 p-3.5 rounded-xl bg-rose-500/10 border border-rose-500/30 text-rose-300 text-xs flex items-start gap-2.5">
+              <div className="flex-shrink-0 mt-2.5 sm:mt-3 p-3 rounded-xl bg-rose-500/10 border border-rose-500/30 text-rose-300 text-xs flex items-start gap-2.5">
                 <AlertCircle className="w-4 h-4 text-rose-400 flex-shrink-0 mt-0.5" />
                 <div>
                   <strong className="block font-semibold text-rose-300">Library Storage Quota Exceeded</strong>
-                  Adding this text ({formatDocumentSize(new Blob([pastedTextContent]).size)}) exceeds your total 50 MB library storage capacity. Please remove unused documents.
+                  Adding this text ({formatDocumentSize(new Blob([pastedTextContent]).size)}) exceeds total 50 MB library capacity. Please remove unused documents.
                 </div>
               </div>
             ) : (
-              <div className="mt-3 px-3 py-2 rounded-xl bg-cyan-500/5 border border-cyan-500/10 text-[11px] text-slate-400 flex items-center justify-between font-mono">
+              <div className="flex-shrink-0 mt-2.5 sm:mt-3 px-3 py-2 rounded-xl bg-cyan-500/5 border border-cyan-500/10 text-[11px] text-slate-400 flex items-center justify-between font-mono flex-wrap gap-1">
                 <span>Estimated Vector Chunks: ~{Math.max(1, Math.ceil(pastedTextContent.length / 750))}</span>
-                <span>Pipeline: Semantic Chunking + Dense/TF-IDF Embeddings</span>
+                <span>Target: Local IndexedDB</span>
               </div>
             )}
 
             {/* Modal Actions */}
-            <div className="flex items-center justify-end gap-3 mt-5 pt-4 border-t border-white/10">
+            <div className="flex-shrink-0 flex items-center justify-end gap-2 sm:gap-3 mt-3 sm:mt-4 pt-3 sm:pt-4 border-t border-white/10">
               <button
                 type="button"
                 onClick={handleCancelPasteModal}
@@ -961,16 +965,16 @@ export const DocumentLibrarySettings: React.FC = () => {
                 <button
                   type="button"
                   disabled
-                  className="px-5 py-2 rounded-xl text-xs font-semibold text-rose-300 bg-rose-500/20 border border-rose-500/30 cursor-not-allowed opacity-75"
+                  className="px-4 sm:px-5 py-2 rounded-xl text-xs font-semibold text-rose-300 bg-rose-500/20 border border-rose-500/30 cursor-not-allowed opacity-75"
                 >
-                  Quota Limit Exceeded
+                  Quota Exceeded
                 </button>
               ) : (
                 <button
                   type="button"
                   onClick={handleConfirmPaste}
                   disabled={uploading || !pastedTextContent.trim()}
-                  className="px-5 py-2 rounded-xl text-xs font-semibold text-slate-950 bg-cyan-500 hover:bg-cyan-400 transition-all shadow-lg shadow-cyan-500/20 disabled:opacity-50 disabled:cursor-not-allowed flex items-center gap-2"
+                  className="px-4 sm:px-5 py-2 rounded-xl text-xs font-semibold text-slate-950 bg-cyan-500 hover:bg-cyan-400 transition-all shadow-lg shadow-cyan-500/20 disabled:opacity-50 disabled:cursor-not-allowed flex items-center gap-2"
                 >
                   <CheckCircle2 className="w-3.5 h-3.5" />
                   Confirm &amp; Add
