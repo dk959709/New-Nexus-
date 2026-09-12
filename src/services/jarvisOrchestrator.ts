@@ -3910,150 +3910,8 @@ Document search was performed for query: "${cleanSearchQuery}" across ${targetLa
         }
       }
 
-      // 2. When Planner detects a news/current-events query, Researcher attempts GNews API first, then NewsData.io, then Google News RSS
-      else if (isNewsQuery) {
-        let newsSucceeded = false;
-        const targetNewsQuery = isWorldNews ? undefined : (plannerResearchQuery || cleanedSearchQuery || strippedQuery);
-        let gnewsRes: Awaited<ReturnType<typeof api.news>> | null = null;
-
-        // Layer 1: Attempt GNews API (Primary)
-        try {
-          console.log('[JARVIS Researcher] Attempting primary GNews API for news query:', strippedQuery, 'isWorldNews:', isWorldNews);
-          gnewsRes = await api.news({
-            query: targetNewsQuery,
-            category: isWorldNews ? 'world' : 'general',
-          });
-          console.log('[JARVIS Researcher] RAW DATA USED (DEBUG) - GNews Response:', JSON.stringify(gnewsRes, null, 2));
-
-          if (
-            gnewsRes &&
-            Array.isArray(gnewsRes.data) &&
-            gnewsRes.data.length > 0 &&
-            !gnewsRes.isFallback &&
-            gnewsRes.provider === 'gnews'
-          ) {
-            searchResults = gnewsRes.data;
-            searchSource = 'GNews API';
-            newsSucceeded = true;
-            console.log('[JARVIS Researcher] News source used: GNews');
-            logToJarvisTerminal(`Using GNews API (${searchResults.length} result${searchResults.length === 1 ? '' : 's'})`);
-
-            if (deepResearch && searchResults.length < 14) {
-              try {
-                const rssQuery = isWorldNews ? 'latest world news' : (plannerResearchQuery || cleanedSearchQuery || strippedQuery);
-                const extraNews = await api.newsRss(rssQuery);
-                if (Array.isArray(extraNews) && extraNews.length > 0) {
-                  const existingUrls = new Set(searchResults.map((r) => (r.url || '').toLowerCase()));
-                  extraNews.forEach((item) => {
-                    if (item && item.url && !existingUrls.has(item.url.toLowerCase())) {
-                      existingUrls.add(item.url.toLowerCase());
-                      searchResults.push(item);
-                    }
-                  });
-                  console.log(`[JARVIS Researcher] Deep Research supplemented news pool to ${searchResults.length} articles`);
-                }
-              } catch (e) {
-                console.warn('[JARVIS Researcher] Supplemental RSS news fetch error in Deep Research mode:', e);
-              }
-            }
-          } else if (
-            gnewsRes &&
-            Array.isArray(gnewsRes.data) &&
-            gnewsRes.data.length > 0 &&
-            gnewsRes.provider === 'newsdata'
-          ) {
-            searchResults = gnewsRes.data;
-            searchSource = 'NewsData.io (fallback)';
-            newsSucceeded = true;
-            console.log('[JARVIS Researcher] News source used: NewsData.io (via API fallback)');
-            logToJarvisTerminal(`Using NewsData.io fallback (${searchResults.length} result${searchResults.length === 1 ? '' : 's'})`);
-          } else {
-            const specificError =
-              gnewsRes?.error ||
-              (gnewsRes?.isFallback ? 'GNews fallback triggered (missing key or API limit)' : '') ||
-              (!gnewsRes?.data || gnewsRes.data.length === 0 ? 'Zero articles returned by GNews' : 'GNews request failed');
-            console.log(`[JARVIS Researcher] GNews API error: ${specificError}`);
-          }
-        } catch (err) {
-          const errMsg = err instanceof Error ? err.message : String(err);
-          console.log(`[JARVIS Researcher] GNews API error: ${errMsg}`);
-          console.warn('[JARVIS Researcher] GNews API attempt encountered an error:', err);
-        }
-
-        // Layer 2: NewsData.io fallback (if not already satisfied)
-        if (!newsSucceeded) {
-          logToJarvisTerminal('GNews failed, falling back to NewsData.io', 'info');
-          try {
-            console.log('[JARVIS Researcher] Attempting NewsData.io fallback for news query:', targetNewsQuery);
-            const newsdataRes = await api.newsNewsData({
-              query: targetNewsQuery,
-              category: isWorldNews ? 'world' : 'general',
-            });
-            console.log('[JARVIS Researcher] RAW DATA USED (DEBUG) - NewsData.io Response:', JSON.stringify(newsdataRes, null, 2));
-
-            if (Array.isArray(newsdataRes) && newsdataRes.length > 0) {
-              searchResults = newsdataRes;
-              searchSource = 'NewsData.io (fallback)';
-              newsSucceeded = true;
-              console.log('[JARVIS Researcher] News source used: NewsData.io');
-              logToJarvisTerminal(`Using NewsData.io fallback (${searchResults.length} result${searchResults.length === 1 ? '' : 's'})`);
-
-              if (deepResearch && searchResults.length < 14) {
-                try {
-                  const rssQuery = isWorldNews ? 'latest world news' : (plannerResearchQuery || cleanedSearchQuery || strippedQuery);
-                  const extraNews = await api.newsRss(rssQuery);
-                  if (Array.isArray(extraNews) && extraNews.length > 0) {
-                    const existingUrls = new Set(searchResults.map((r) => (r.url || '').toLowerCase()));
-                    extraNews.forEach((item) => {
-                      if (item && item.url && !existingUrls.has(item.url.toLowerCase())) {
-                        existingUrls.add(item.url.toLowerCase());
-                        searchResults.push(item);
-                      }
-                    });
-                  }
-                } catch (e) {
-                  console.warn('[JARVIS Researcher] Supplemental RSS news fetch error in Deep Research mode:', e);
-                }
-              }
-            } else {
-              console.log('[JARVIS Researcher] NewsData.io returned 0 results');
-            }
-          } catch (ndErr) {
-            const errMsg = ndErr instanceof Error ? ndErr.message : String(ndErr);
-            console.warn('[JARVIS Researcher] NewsData.io fallback error:', errMsg);
-          }
-        }
-
-        // Layer 3: Automatic fallback to Google News RSS (Final fallback)
-        if (!newsSucceeded) {
-          logToJarvisTerminal('NewsData.io failed or unavailable, falling back to Google News RSS', 'warning');
-          try {
-            const rssQuery = isWorldNews ? 'latest world news' : (plannerResearchQuery || cleanedSearchQuery || strippedQuery);
-            console.log('[JARVIS Researcher] Falling back to Google News RSS for news query:', rssQuery);
-
-            if (gnewsRes && gnewsRes.provider === 'google_rss' && Array.isArray(gnewsRes.data) && gnewsRes.data.length > 0) {
-              searchResults = gnewsRes.data;
-              searchSource = 'Google News RSS (fallback)';
-              console.log('[JARVIS Researcher] News source used: Google RSS (from API fallback)');
-              logToJarvisTerminal(`Using Google News RSS (${searchResults.length} result${searchResults.length === 1 ? '' : 's'})`);
-            } else {
-              const liveNewsRes = await api.newsRss(rssQuery);
-              console.log('[JARVIS Researcher] RAW DATA USED (DEBUG) - News RSS Response:', JSON.stringify(liveNewsRes, null, 2));
-              if (Array.isArray(liveNewsRes) && liveNewsRes.length > 0) {
-                searchResults = liveNewsRes;
-                searchSource = 'Google News RSS (fallback)';
-                console.log('[JARVIS Researcher] News source used: Google RSS (fallback)');
-                logToJarvisTerminal(`Using Google News RSS (${searchResults.length} result${searchResults.length === 1 ? '' : 's'})`);
-              } else {
-                logToJarvisTerminal('Google News RSS returned 0 results, falling back to general search', 'warning');
-              }
-            }
-          } catch (err) {
-            console.warn('[JARVIS Researcher] Google News RSS fallback failed, falling back to general search:', err);
-            logToJarvisTerminal('Google News RSS failed, falling back to general search', 'warning');
-          }
-        }
-      }
+      // 2. News/Current-events queries now route directly through the unified Tavily-backed search pipeline below (with category: 'NEWS' and topic: 'news')
+      // Note: Legacy GNews and NewsData functions remain completely intact in the codebase.
 
       // 3. AI-Decided or Product-Lineup Wikidata / Wikipedia Lookup for factual/encyclopedic context (Works in both Deep Research ON and OFF)
       // Note: Wikidata and Wikipedia must NEVER be triggered in /search or /web commands.
@@ -4208,14 +4066,13 @@ Document search was performed for query: "${cleanSearchQuery}" across ${targetLa
         console.log('[JARVIS Researcher] needsWikipedia and needsWikidata are false. Skipping Wikipedia/Wikidata lookup to save tokens.');
       }
 
-      // 4. General / Factual Search (Tavily with DuckDuckGo fallback in backend)
+      // 4. General & News Search (Tavily with Exa AI & DuckDuckGo fallback in backend)
       // Only executed if:
-      // - It is not weather/news (handled above)
+      // - It is not weather (weather is handled above)
       // - AND needsResearch is true (or deepResearch or isSearchOverride)
       // When needsWikipedia or needsWikidata is true and needsResearch is false, general web search is SKIPPED.
       const shouldRunWebSearch =
         !isWeatherQuery &&
-        !isNewsQuery &&
         (isSearchOverride || deepResearch || Boolean(plannerOutput.needsResearch));
 
       if (shouldRunWebSearch && searchResults.length === 0) {
@@ -4265,7 +4122,8 @@ Document search was performed for query: "${cleanSearchQuery}" across ${targetLa
         }
 
         try {
-          const searchRes = await api.search(effectiveSearchQuery, undefined, undefined, deepResearch ? 16 : 15);
+          const searchCategory = isNewsQuery ? 'NEWS' : undefined;
+          const searchRes = await api.search(effectiveSearchQuery, searchCategory, undefined, deepResearch ? 16 : 15);
           let rawResults: SearchResult[] = [];
           let sourceLabel = 'Tavily API';
           let fallbackOccurred = false;
@@ -4288,7 +4146,7 @@ Document search was performed for query: "${cleanSearchQuery}" across ${targetLa
                   ? plannerResearchQuery
                   : `${strippedQuery} in-depth analysis`;
               console.log('[JARVIS Researcher] Deep Research: performing secondary query for richer source pool:', secondaryQuery);
-              const secondaryRes = await api.search(secondaryQuery, undefined, undefined, 16);
+              const secondaryRes = await api.search(secondaryQuery, searchCategory, undefined, 16);
               let secondaryList: SearchResult[] = [];
               if (Array.isArray(secondaryRes)) {
                 secondaryList = secondaryRes;
