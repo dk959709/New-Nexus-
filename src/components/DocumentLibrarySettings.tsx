@@ -19,6 +19,7 @@ import {
   Laptop,
   ShieldCheck,
   AlertTriangle,
+  Clipboard,
 } from 'lucide-react';
 import {
   getLibraryDocuments,
@@ -28,10 +29,22 @@ import {
   formatDocumentSize,
   getDocumentTypeBadge,
   searchDocumentLibrary,
+  MAX_FILE_SIZE_BYTES,
   MAX_TOTAL_LIBRARY_BYTES,
 } from '@/services/documentLibraryService';
 import { isIndexedDbAvailable } from '@/services/documentIndexedDb';
 import type { LibraryDocument, DocumentLibraryStats, DocumentRetrievalResult } from '@/types';
+
+function generatePastedTextFileName(): string {
+  const now = new Date();
+  const pad = (n: number) => n.toString().padStart(2, '0');
+  const dd = pad(now.getDate());
+  const mm = pad(now.getMonth() + 1);
+  const yyyy = now.getFullYear();
+  const hh = pad(now.getHours());
+  const min = pad(now.getMinutes());
+  return `Pasted-Text-${dd}-${mm}-${yyyy}-${hh}${min}.txt`;
+}
 
 export const DocumentLibrarySettings: React.FC = () => {
   const [documents, setDocuments] = useState<LibraryDocument[]>([]);
@@ -47,6 +60,12 @@ export const DocumentLibrarySettings: React.FC = () => {
   const [error, setError] = useState<string | null>(null);
   const [successMsg, setSuccessMsg] = useState<string | null>(null);
   const [isIdbSupported, setIsIdbSupported] = useState<boolean>(true);
+
+  // Paste from Clipboard Preview Modal state
+  const [isPasteModalOpen, setIsPasteModalOpen] = useState(false);
+  const [pastedTextContent, setPastedTextContent] = useState('');
+  const [pastedFileName, setPastedFileName] = useState('');
+  const [pasteReading, setPasteReading] = useState(false);
 
   // Search & Filter within library
   const [searchFilter, setSearchFilter] = useState('');
@@ -140,6 +159,96 @@ export const DocumentLibrarySettings: React.FC = () => {
 
     if (fileInputRef.current) {
       fileInputRef.current.value = '';
+    }
+  };
+
+  // Handle Clipboard Paste trigger
+  const handlePasteFromClipboard = async () => {
+    setError(null);
+    setPasteReading(true);
+    try {
+      if (!navigator.clipboard || !navigator.clipboard.readText) {
+        setError("Couldn't read clipboard — check browser permissions");
+        return;
+      }
+      const text = await navigator.clipboard.readText();
+      if (!text || !text.trim()) {
+        setError('Clipboard is empty.');
+        return;
+      }
+      const fileName = generatePastedTextFileName();
+      setPastedFileName(fileName);
+      setPastedTextContent(text);
+      setIsPasteModalOpen(true);
+    } catch (err: unknown) {
+      console.error('Failed to read clipboard:', err);
+      setError("Couldn't read clipboard — check browser permissions");
+    } finally {
+      setPasteReading(false);
+    }
+  };
+
+  const handleCancelPasteModal = () => {
+    setIsPasteModalOpen(false);
+    setPastedTextContent('');
+    setPastedFileName('');
+  };
+
+  const handleConfirmPaste = async () => {
+    if (!pastedTextContent.trim()) {
+      setError('Pasted text is empty.');
+      setIsPasteModalOpen(false);
+      return;
+    }
+
+    const textBlob = new Blob([pastedTextContent], { type: 'text/plain' });
+    const textBytes = textBlob.size;
+
+    if (textBytes > MAX_FILE_SIZE_BYTES) {
+      setError(`Pasted text exceeds the 50 MB per-document limit (${formatDocumentSize(textBytes)}).`);
+      return;
+    }
+
+    if (stats.totalSizeBytes + textBytes > MAX_TOTAL_LIBRARY_BYTES) {
+      setError(
+        `Total library storage capacity exceeded (50 MB max). Current: ${formatDocumentSize(
+          stats.totalSizeBytes,
+        )}, adding this text requires ${formatDocumentSize(textBytes)}. Please remove unused documents.`,
+      );
+      return;
+    }
+
+    const fileName = pastedFileName || generatePastedTextFileName();
+    const virtualFile = new File([textBlob], fileName, {
+      type: 'text/plain',
+      lastModified: Date.now(),
+    });
+
+    setIsPasteModalOpen(false);
+    setError(null);
+    setSuccessMsg(null);
+    setUploading(true);
+    setUploadProgressMsg(`Processing ${fileName}...`);
+
+    try {
+      await uploadDocumentToLibrary(virtualFile, (msg) => {
+        setUploadProgressMsg(`${fileName}: ${msg}`);
+      });
+      setSuccessMsg(
+        `Successfully saved and indexed "${fileName}" (${formatDocumentSize(
+          textBytes,
+        )}) into your browser's IndexedDB Vector Vault.`,
+      );
+      setTimeout(() => setSuccessMsg(null), 5000);
+      await loadData();
+    } catch (err: unknown) {
+      const msg = err instanceof Error ? err.message : 'Upload failed';
+      setError(`${fileName}: ${msg}`);
+    } finally {
+      setUploading(false);
+      setUploadProgressMsg('');
+      setPastedTextContent('');
+      setPastedFileName('');
     }
   };
 
@@ -380,62 +489,94 @@ export const DocumentLibrarySettings: React.FC = () => {
         </div>
       )}
 
-      {/* Upload Zone */}
-      <div
-        onDragOver={handleDragOver}
-        onDragLeave={handleDragLeave}
-        onDrop={handleDrop}
-        onClick={() => !uploading && fileInputRef.current?.click()}
-        className={`relative rounded-2xl border-2 border-dashed transition-all duration-200 p-8 text-center cursor-pointer ${
-          isDragging
-            ? 'border-cyan-400 bg-cyan-500/10'
-            : 'border-white/10 hover:border-cyan-500/40 bg-slate-900/40 hover:bg-slate-900/60'
-        } ${uploading ? 'pointer-events-none opacity-80' : ''}`}
-      >
-        <input
-          ref={fileInputRef}
-          type="file"
-          multiple
-          accept=".pdf,.txt,.csv,.docx,.doc,.md,.json,.log"
-          onChange={(e) => handleFileUpload(e.target.files)}
-          className="hidden"
-        />
+      {/* Upload Zone & Action Buttons */}
+      <div className="grid grid-cols-1 lg:grid-cols-4 gap-3">
+        {/* Main Drag & Drop Zone */}
+        <div
+          onDragOver={handleDragOver}
+          onDragLeave={handleDragLeave}
+          onDrop={handleDrop}
+          onClick={() => !uploading && fileInputRef.current?.click()}
+          className={`lg:col-span-3 relative rounded-2xl border-2 border-dashed transition-all duration-200 p-6 sm:p-8 text-center cursor-pointer ${
+            isDragging
+              ? 'border-cyan-400 bg-cyan-500/10'
+              : 'border-white/10 hover:border-cyan-500/40 bg-slate-900/40 hover:bg-slate-900/60'
+          } ${uploading ? 'pointer-events-none opacity-80' : ''}`}
+        >
+          <input
+            ref={fileInputRef}
+            type="file"
+            multiple
+            accept=".pdf,.txt,.csv,.docx,.doc,.md,.json,.log"
+            onChange={(e) => handleFileUpload(e.target.files)}
+            className="hidden"
+          />
 
-        <div className="flex flex-col items-center justify-center gap-3">
-          <div className="p-4 rounded-2xl bg-gradient-to-br from-cyan-500/20 to-indigo-500/20 border border-cyan-500/30 text-cyan-300 shadow-inner">
-            {uploading ? (
-              <RefreshCw className="w-8 h-8 animate-spin text-cyan-400" />
+          <div className="flex flex-col items-center justify-center gap-2.5">
+            <div className="p-3.5 rounded-2xl bg-gradient-to-br from-cyan-500/20 to-indigo-500/20 border border-cyan-500/30 text-cyan-300 shadow-inner">
+              {uploading ? (
+                <RefreshCw className="w-7 h-7 animate-spin text-cyan-400" />
+              ) : (
+                <Upload className="w-7 h-7 text-cyan-400" />
+              )}
+            </div>
+
+            <div>
+              <h3 className="text-base font-semibold text-white">
+                {uploading ? 'Ingesting & Indexing to Device Storage...' : 'Upload Document to Device Vector Memory'}
+              </h3>
+              <p className="text-xs text-slate-400 mt-1">
+                {uploading
+                  ? uploadProgressMsg || 'Extracting text and saving to IndexedDB...'
+                  : 'Drag & drop files here or click to browse (PDF, TXT, CSV, DOCX, MD)'}
+              </p>
+            </div>
+
+            <div className="flex items-center gap-2 mt-1.5 flex-wrap justify-center">
+              <span className="text-[11px] px-2.5 py-0.5 rounded-lg bg-rose-500/10 text-rose-400 border border-rose-500/20">
+                PDF
+              </span>
+              <span className="text-[11px] px-2.5 py-0.5 rounded-lg bg-blue-500/10 text-blue-400 border border-blue-500/20">
+                DOCX
+              </span>
+              <span className="text-[11px] px-2.5 py-0.5 rounded-lg bg-emerald-500/10 text-emerald-400 border border-emerald-500/20">
+                CSV
+              </span>
+              <span className="text-[11px] px-2.5 py-0.5 rounded-lg bg-amber-500/10 text-amber-400 border border-amber-500/20">
+                TXT / MD
+              </span>
+              <span className="text-[11px] text-slate-500 ml-1">Up to 50 MB / file • Stored on this device only</span>
+            </div>
+          </div>
+        </div>
+
+        {/* Paste from Clipboard Action Card */}
+        <div className="lg:col-span-1 flex flex-col justify-between p-5 rounded-2xl border border-cyan-500/20 bg-slate-900/50 hover:bg-slate-900/70 backdrop-blur-sm transition-all text-center">
+          <div className="flex flex-col items-center gap-2">
+            <div className="p-3.5 rounded-2xl bg-cyan-500/10 border border-cyan-500/30 text-cyan-300">
+              <Clipboard className="w-6 h-6 text-cyan-400" />
+            </div>
+            <div>
+              <h4 className="text-sm font-semibold text-white">Paste Raw Text</h4>
+              <p className="text-xs text-slate-400 mt-1 leading-relaxed">
+                Add text from your clipboard without saving a file first.
+              </p>
+            </div>
+          </div>
+
+          <button
+            type="button"
+            onClick={handlePasteFromClipboard}
+            disabled={uploading || pasteReading}
+            className="mt-4 w-full py-2.5 px-3.5 rounded-xl bg-cyan-500 hover:bg-cyan-400 text-slate-950 font-semibold text-xs tracking-wide flex items-center justify-center gap-2 transition-all shadow-lg shadow-cyan-500/20 hover:shadow-cyan-500/40 disabled:opacity-50 disabled:cursor-not-allowed"
+          >
+            {pasteReading ? (
+              <RefreshCw className="w-3.5 h-3.5 animate-spin" />
             ) : (
-              <Upload className="w-8 h-8 text-cyan-400" />
+              <Clipboard className="w-3.5 h-3.5" />
             )}
-          </div>
-
-          <div>
-            <h3 className="text-base font-semibold text-white">
-              {uploading ? 'Ingesting & Indexing to Device Storage...' : 'Upload Document to Device Vector Memory'}
-            </h3>
-            <p className="text-xs text-slate-400 mt-1">
-              {uploading
-                ? uploadProgressMsg || 'Extracting text and saving to IndexedDB...'
-                : 'Drag & drop files here or click to browse (PDF, TXT, CSV, DOCX, MD)'}
-            </p>
-          </div>
-
-          <div className="flex items-center gap-2 mt-2 flex-wrap justify-center">
-            <span className="text-[11px] px-2.5 py-1 rounded-lg bg-rose-500/10 text-rose-400 border border-rose-500/20">
-              PDF
-            </span>
-            <span className="text-[11px] px-2.5 py-1 rounded-lg bg-blue-500/10 text-blue-400 border border-blue-500/20">
-              DOCX
-            </span>
-            <span className="text-[11px] px-2.5 py-1 rounded-lg bg-emerald-500/10 text-emerald-400 border border-emerald-500/20">
-              CSV
-            </span>
-            <span className="text-[11px] px-2.5 py-1 rounded-lg bg-amber-500/10 text-amber-400 border border-amber-500/20">
-              TXT / MD
-            </span>
-            <span className="text-[11px] text-slate-500 ml-1">Up to 50 MB / file • Stored on this device only</span>
-          </div>
+            Paste from Clipboard
+          </button>
         </div>
       </div>
 
@@ -719,6 +860,122 @@ export const DocumentLibrarySettings: React.FC = () => {
               >
                 Delete from Device
               </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Paste from Clipboard Preview Modal */}
+      {isPasteModalOpen && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/75 backdrop-blur-sm animate-in fade-in">
+          <div className="w-full max-w-2xl rounded-2xl border border-cyan-500/30 bg-slate-900 p-6 shadow-2xl shadow-cyan-950/50 flex flex-col max-h-[90vh]">
+            {/* Modal Header */}
+            <div className="flex items-center justify-between pb-4 border-b border-white/10">
+              <div className="flex items-center gap-3">
+                <div className="p-2.5 rounded-xl bg-cyan-500/10 border border-cyan-500/30 text-cyan-400">
+                  <Clipboard className="w-5 h-5" />
+                </div>
+                <div>
+                  <h3 className="text-base font-semibold text-white flex items-center gap-2">
+                    Paste from Clipboard
+                    <span className="text-[10px] font-mono px-2 py-0.5 rounded-md bg-amber-500/10 text-amber-400 border border-amber-500/30 font-semibold">
+                      TXT
+                    </span>
+                  </h3>
+                  <p className="text-xs text-slate-400 mt-0.5">
+                    Preview and confirm text before indexing into on-device vector memory.
+                  </p>
+                </div>
+              </div>
+              <button
+                type="button"
+                onClick={handleCancelPasteModal}
+                className="p-1.5 rounded-lg text-slate-400 hover:text-white hover:bg-slate-800 transition-all"
+                title="Close"
+              >
+                <X className="w-4 h-4" />
+              </button>
+            </div>
+
+            {/* Target Document Info */}
+            <div className="mt-4 px-3.5 py-2.5 rounded-xl bg-slate-950/60 border border-white/5 flex items-center justify-between text-xs">
+              <div className="flex items-center gap-2 font-mono text-slate-300">
+                <FileText className="w-3.5 h-3.5 text-cyan-400" />
+                <span className="text-slate-400">Target Document:</span>
+                <span className="text-cyan-300 font-semibold">{pastedFileName}</span>
+              </div>
+              <span className="text-[11px] font-mono text-slate-400">
+                {formatDocumentSize(new Blob([pastedTextContent]).size)}
+              </span>
+            </div>
+
+            {/* Read-Only Preview Textarea */}
+            <div className="mt-3 flex-1 min-h-0 flex flex-col">
+              <label className="text-[11px] font-mono text-slate-400 mb-1.5 flex items-center justify-between">
+                <span>Pasted Text Content (Read-Only Preview):</span>
+                <span className="text-cyan-300 font-semibold">{pastedTextContent.length.toLocaleString()} characters</span>
+              </label>
+              <textarea
+                readOnly
+                value={pastedTextContent}
+                className="w-full h-64 p-3.5 rounded-xl bg-slate-950/80 border border-white/10 text-slate-200 font-mono text-xs leading-relaxed focus:outline-none resize-none overflow-y-auto"
+                placeholder="Pasted clipboard content..."
+              />
+            </div>
+
+            {/* Quota & Size Warning */}
+            {new Blob([pastedTextContent]).size > MAX_FILE_SIZE_BYTES ? (
+              <div className="mt-3 p-3.5 rounded-xl bg-rose-500/10 border border-rose-500/30 text-rose-300 text-xs flex items-start gap-2.5">
+                <AlertCircle className="w-4 h-4 text-rose-400 flex-shrink-0 mt-0.5" />
+                <div>
+                  <strong className="block font-semibold text-rose-300">50 MB File Quota Exceeded</strong>
+                  Pasted text size is {formatDocumentSize(new Blob([pastedTextContent]).size)}, which exceeds the maximum allowed 50 MB per document limit. Please trim or split the content.
+                </div>
+              </div>
+            ) : stats.totalSizeBytes + new Blob([pastedTextContent]).size > MAX_TOTAL_LIBRARY_BYTES ? (
+              <div className="mt-3 p-3.5 rounded-xl bg-rose-500/10 border border-rose-500/30 text-rose-300 text-xs flex items-start gap-2.5">
+                <AlertCircle className="w-4 h-4 text-rose-400 flex-shrink-0 mt-0.5" />
+                <div>
+                  <strong className="block font-semibold text-rose-300">Library Storage Quota Exceeded</strong>
+                  Adding this text ({formatDocumentSize(new Blob([pastedTextContent]).size)}) exceeds your total 50 MB library storage capacity. Please remove unused documents.
+                </div>
+              </div>
+            ) : (
+              <div className="mt-3 px-3 py-2 rounded-xl bg-cyan-500/5 border border-cyan-500/10 text-[11px] text-slate-400 flex items-center justify-between font-mono">
+                <span>Estimated Vector Chunks: ~{Math.max(1, Math.ceil(pastedTextContent.length / 750))}</span>
+                <span>Pipeline: Semantic Chunking + Dense/TF-IDF Embeddings</span>
+              </div>
+            )}
+
+            {/* Modal Actions */}
+            <div className="flex items-center justify-end gap-3 mt-5 pt-4 border-t border-white/10">
+              <button
+                type="button"
+                onClick={handleCancelPasteModal}
+                className="px-4 py-2 rounded-xl text-xs font-medium text-slate-400 hover:text-white bg-slate-800/80 hover:bg-slate-700/80 border border-white/5 transition-all"
+              >
+                Cancel
+              </button>
+              {new Blob([pastedTextContent]).size > MAX_FILE_SIZE_BYTES ||
+              stats.totalSizeBytes + new Blob([pastedTextContent]).size > MAX_TOTAL_LIBRARY_BYTES ? (
+                <button
+                  type="button"
+                  disabled
+                  className="px-5 py-2 rounded-xl text-xs font-semibold text-rose-300 bg-rose-500/20 border border-rose-500/30 cursor-not-allowed opacity-75"
+                >
+                  Quota Limit Exceeded
+                </button>
+              ) : (
+                <button
+                  type="button"
+                  onClick={handleConfirmPaste}
+                  disabled={uploading || !pastedTextContent.trim()}
+                  className="px-5 py-2 rounded-xl text-xs font-semibold text-slate-950 bg-cyan-500 hover:bg-cyan-400 transition-all shadow-lg shadow-cyan-500/20 disabled:opacity-50 disabled:cursor-not-allowed flex items-center gap-2"
+                >
+                  <CheckCircle2 className="w-3.5 h-3.5" />
+                  Confirm &amp; Add
+                </button>
+              )}
             </div>
           </div>
         </div>
