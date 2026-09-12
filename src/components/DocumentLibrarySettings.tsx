@@ -1,4 +1,5 @@
 import React, { useState, useEffect, useRef } from 'react';
+import { createPortal } from 'react-dom';
 import {
   FileText,
   Upload,
@@ -832,12 +833,29 @@ export const DocumentLibrarySettings: React.FC = () => {
         </div>
       )}
 
-      {/* Delete Confirmation Modal */}
-      {docToDelete && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/70 backdrop-blur-sm animate-in fade-in">
-          <div className="w-full max-w-md rounded-2xl border border-rose-500/30 bg-slate-900 p-6 shadow-2xl shadow-rose-950/50">
+      {/* Delete Confirmation Modal - Portaled to document.body */}
+      {docToDelete && typeof document !== 'undefined' && createPortal(
+        <div
+          id="nexus-doc-delete-modal-overlay"
+          onClick={(e) => {
+            if (e.target === e.currentTarget) setDocToDelete(null);
+          }}
+          className="fixed inset-0 z-[99999] flex items-center justify-center p-4 bg-black/80 backdrop-blur-md animate-in fade-in"
+          style={{
+            position: 'fixed',
+            top: 0,
+            left: 0,
+            right: 0,
+            bottom: 0,
+            width: '100vw',
+            height: '100vh',
+            margin: 0,
+            boxSizing: 'border-box',
+          }}
+        >
+          <div className="relative w-full max-w-md mx-auto my-auto rounded-2xl border border-rose-500/30 bg-slate-900 p-6 shadow-2xl shadow-rose-950/50">
             <div className="flex items-center gap-3 text-rose-400 mb-3">
-              <AlertCircle className="w-6 h-6" />
+              <AlertCircle className="w-6 h-6 flex-shrink-0" />
               <h3 className="text-base font-semibold text-white">Delete Document</h3>
             </div>
             <p className="text-sm text-slate-300 mb-2">
@@ -862,18 +880,37 @@ export const DocumentLibrarySettings: React.FC = () => {
               </button>
             </div>
           </div>
-        </div>
+        </div>,
+        document.body
       )}
 
-      {/* Paste from Clipboard Preview Modal */}
-      {isPasteModalOpen && (
+      {/* Paste from Clipboard Preview Modal - Portaled to document.body */}
+      {isPasteModalOpen && typeof document !== 'undefined' && createPortal(
         <div
+          id="nexus-clipboard-paste-modal-overlay"
           onClick={(e) => {
             if (e.target === e.currentTarget) handleCancelPasteModal();
           }}
-          className="fixed inset-0 z-50 flex items-center justify-center p-3 sm:p-6 bg-black/80 backdrop-blur-sm animate-in fade-in overflow-y-auto"
+          className="fixed inset-0 z-[99999] flex items-center justify-center p-3 sm:p-6 bg-black/85 backdrop-blur-md animate-in fade-in overflow-y-auto"
+          style={{
+            position: 'fixed',
+            top: 0,
+            left: 0,
+            right: 0,
+            bottom: 0,
+            width: '100vw',
+            height: '100vh',
+            margin: 0,
+            boxSizing: 'border-box',
+          }}
         >
-          <div className="relative w-full max-w-[92vw] sm:max-w-xl md:max-w-2xl mx-auto my-auto rounded-2xl border border-cyan-500/30 bg-slate-900 p-4 sm:p-6 shadow-2xl shadow-cyan-950/50 flex flex-col max-h-[92dvh] sm:max-h-[88vh] overflow-hidden">
+          <div
+            id="nexus-clipboard-paste-modal-card"
+            className="relative w-full max-w-[92vw] sm:max-w-xl md:max-w-2xl mx-auto my-auto rounded-2xl border border-cyan-500/30 bg-slate-900 p-4 sm:p-6 shadow-2xl shadow-cyan-950/50 flex flex-col max-h-[92dvh] sm:max-h-[88vh] overflow-hidden"
+            style={{
+              boxSizing: 'border-box',
+            }}
+          >
             {/* Modal Header */}
             <div className="flex-shrink-0 flex items-start sm:items-center justify-between pb-3 sm:pb-4 border-b border-white/10 gap-2">
               <div className="flex items-center gap-2.5 sm:gap-3 min-w-0">
@@ -987,7 +1024,8 @@ export const DocumentLibrarySettings: React.FC = () => {
               )}
             </div>
           </div>
-        </div>
+        </div>,
+        document.body
       )}
     </div>
   );
