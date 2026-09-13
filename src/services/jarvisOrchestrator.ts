@@ -4570,20 +4570,33 @@ Document search was performed for query: "${cleanSearchQuery}" across ${targetLa
 
     const strippedCodeOnlineQuery = stripCodeOnlinePrefix(query);
     const defaultPromptTemplate = DEFAULT_AGENT_SYSTEM_PROMPTS.coder;
-    const coderSysPrompt = coderCfg.systemPrompt || defaultPromptTemplate;
+    const baseCoderSysPrompt = coderCfg.systemPrompt || defaultPromptTemplate;
 
-    const researchContextBlock =
-      researcherOutput.facts && researcherOutput.facts.length > 0
-        ? `\n\n[LIVE ONLINE RESEARCH FINDINGS & DOCUMENTATION]:\n${researcherOutput.facts.map((f, i) => `${i + 1}. ${f}`).join('\n')}`
-        : sourcesCollected.length > 0
-          ? `\n\n[LIVE ONLINE RESEARCH SOURCES]:\n${sourcesCollected.map((s, i) => `${i + 1}. [${s.title}] (${s.url}): ${s.description || ''}`).join('\n')}`
-          : '';
+    // Strict priority rule injected ONLY for /codeonline pipeline
+    const coderSysPrompt = `${baseCoderSysPrompt}
+
+CRITICAL RULE: You have been given live research findings above, dated today. These findings are more current and accurate than your own training data, which may be outdated. If ANY part of the research findings conflicts with what you'd normally write from memory (library syntax, API methods, config file structure, import statements, deprecated features, etc.), you MUST follow the research findings exactly, not your training data. Do NOT mix old and new syntax in the same file. If the research findings don't cover a specific detail, you may use your best judgment, but always double-check it doesn't contradict anything mentioned in the research.`;
+
+    const factsList = researcherOutput.facts && researcherOutput.facts.length > 0
+      ? researcherOutput.facts.map((f, i) => `${i + 1}. ${f}`).join('\n')
+      : '';
+
+    const sourcesList = sourcesCollected && sourcesCollected.length > 0
+      ? sourcesCollected.map((s, i) => `[Source ${i + 1}] ${s.title} (${s.url}):\n${s.description || s.snippet || 'No snippet available'}`).join('\n\n')
+      : '';
+
+    const fullResearchText = [
+      factsList ? `Core Verified Facts & Syntax Rules:\n${factsList}` : '',
+      sourcesList ? `Verified Online Documentation & Code References:\n${sourcesList}` : '',
+    ].filter(Boolean).join('\n\n') || 'No external live research findings were retrieved.';
+
+    const researchContextBlock = `\n\n=== LIVE RESEARCH FINDINGS (as of today) ===\n${fullResearchText}\n=== END RESEARCH FINDINGS ===`;
 
     const coderRes = await callAgent('coder', [
       { role: 'system', content: coderSysPrompt },
       {
         role: 'user',
-        content: `Target Coding Task: "${strippedCodeOnlineQuery}"\nPlanner Scoped Objective: "${plannerOutput.task || strippedCodeOnlineQuery}"\nExecution Plan:\n${Array.isArray(plannerOutput.plan) ? plannerOutput.plan.map((p, i) => `${i + 1}. ${p}`).join('\n') : plannerOutput.task}${researchContextBlock}\n\nBased on the latest live online research findings, API documentation, and requirements above, please generate a complete, up-to-date, well-commented, production-ready code solution with clear explanations.`,
+        content: `Target Coding Task: "${strippedCodeOnlineQuery}"\nPlanner Scoped Objective: "${plannerOutput.task || strippedCodeOnlineQuery}"\nExecution Plan:\n${Array.isArray(plannerOutput.plan) ? plannerOutput.plan.map((p, i) => `${i + 1}. ${p}`).join('\n') : plannerOutput.task}${researchContextBlock}\n\nBased on the latest live online research findings, API documentation, and requirements above, please generate a complete, up-to-date, well-commented, production-ready code solution with clear explanations. Remember to strictly follow the live research findings whenever there is a syntax or version conflict with older patterns.`,
       },
     ]);
 
