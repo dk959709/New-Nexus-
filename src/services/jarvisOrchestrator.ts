@@ -4379,6 +4379,14 @@ Document search was performed for query: "${cleanSearchQuery}" across ${targetLa
 4. DETAIL RETENTION: Do not compress or truncate findings into brief generic notes. Provide rich, concrete factual detail for each of the 12-15 candidates so downstream agents have maximum raw material for deep synthesis.`;
     }
 
+    if (isCodeOnline) {
+      activePrompt += `\n\n[CODEONLINE MODE DIRECTIVE - OFFICIAL SOURCE PRIORITY]:
+1. PRIORITIZE OFFICIAL SOURCES: When researching a library, framework, or programming tool, strongly prioritize official documentation websites, the official GitHub repository/organization, and official release notes or changelogs over personal blogs, unofficial tutorials, or random individual example/demo repositories.
+2. FLAG SOURCE QUALITY: For each finding, note in the "domain" or fact text whether the source is official (e.g. the library's own docs site or its GitHub org) or unofficial (personal blog, random repo, forum post).
+3. PREFER RECENT & VERSION-MATCHED INFO: When multiple sources conflict, prefer the one that most explicitly matches the exact version requested in the query, and prefer official sources when there's any conflict between an official and unofficial source.
+4. ONLY fall back to unofficial sources (blogs, individual repos) if no official documentation or repository result is available for the requested library/version.`;
+    }
+
     if (activePrompt.includes('{searchSnippets}')) {
       activePrompt = activePrompt.replace(
         '{searchSnippets}',
