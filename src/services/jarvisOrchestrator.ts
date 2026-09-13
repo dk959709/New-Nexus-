@@ -4585,12 +4585,19 @@ Document search was performed for query: "${cleanSearchQuery}" across ${targetLa
 
 CRITICAL RULE: You have been given live research findings above, dated today. These findings are more current and accurate than your own training data, which may be outdated. If ANY part of the research findings conflicts with what you'd normally write from memory (library syntax, API methods, config file structure, import statements, deprecated features, etc.), you MUST follow the research findings exactly, not your training data. Do NOT mix old and new syntax in the same file. If the research findings don't cover a specific detail, you may use your best judgment, but always double-check it doesn't contradict anything mentioned in the research.
 
+If private document excerpts are provided above, treat them as HIGHEST PRIORITY context — even above the live web research findings — since they represent the user's own project-specific requirements, standards, or custom documentation. Blend relevant details from these private documents into your code output. If the private documents don't cover something needed, fall back to the live web research findings instead.
+
 SCOPE RELEVANCE RULE: When research findings or sources reference a specific third-party platform, product, SaaS, or company-specific SDK (e.g. Shopify, Stripe, Firebase, AWS-specific services, or any named commercial platform) that the user's original request did NOT explicitly mention or ask for, do NOT import, reference, or use that platform's packages, SDKs, API keys, or platform-specific components in your generated code. Only borrow the GENERIC, library-level patterns (e.g. general routing syntax, general project structure) from such sources, and strip out anything tied specifically to that unrelated third-party platform. Build a plain, standalone implementation using only the library/framework the user actually requested, with no unrelated platform dependencies, unless the user explicitly named that platform in their request.
 
 PACKAGE NAME CONSISTENCY RULE (STRICT ENFORCEMENT): 
 ⚠️ SPECIFIC KNOWN ERROR TO AVOID: You have a strong tendency, from old training habits, to import from 'react-router-dom' even when React Router v7 is requested. THIS IS WRONG. In React Router v7, the correct package name for imports is 'react-router' (NOT 'react-router-dom'). If the user's request involves React Router v7 (or 'latest React Router', or you install the 'react-router' package), then EVERY SINGLE import statement in EVERY file you generate MUST use 'react-router' — never 'react-router-dom'. Before writing your final answer, scan through every import line you have written. If you find even ONE line containing the text 'react-router-dom' anywhere in a project that installs or uses React Router v7, you MUST correct it to 'react-router' before outputting your answer. This applies to ALL hooks, components, and utilities you import (Outlet, Link, NavLink, useLoaderData, useParams, useRouteError, createBrowserRouter, RouterProvider, etc.) — all of these come from 'react-router' in v7, not 'react-router-dom'.
 
 This same strict self-check applies generally to ANY other library with a similar version-based package rename: always match the install command's exact package name in every import statement, with zero exceptions, and double-check specifically for old/legacy package names before finalizing your answer.`;
+
+    const docLibraryBlock =
+      documentRagOptions?.enabled && retrievedDocChunks && retrievedDocChunks.length > 0
+        ? `\n\n=== USER'S PRIVATE DOCUMENT LIBRARY (uploaded by user, may contain project-specific standards, custom API docs, or style guides) ===\n${retrievedDocChunks.map((c, idx) => `--- EXCERPT ${idx + 1} [Document: "${c.docName}", Chunk #${c.chunkIndex + 1}, Relevance: ${Math.round(c.score * 100)}%] ---\n${c.text}`).join('\n\n')}\n=== END PRIVATE DOCUMENT EXCERPTS ===`
+        : '';
 
     const factsList = researcherOutput.facts && researcherOutput.facts.length > 0
       ? researcherOutput.facts.map((f, i) => `${i + 1}. ${f}`).join('\n')
@@ -4611,7 +4618,7 @@ This same strict self-check applies generally to ANY other library with a simila
       { role: 'system', content: coderSysPrompt },
       {
         role: 'user',
-        content: `Target Coding Task: "${strippedCodeOnlineQuery}"\nPlanner Scoped Objective: "${plannerOutput.task || strippedCodeOnlineQuery}"\nExecution Plan:\n${Array.isArray(plannerOutput.plan) ? plannerOutput.plan.map((p, i) => `${i + 1}. ${p}`).join('\n') : plannerOutput.task}${researchContextBlock}\n\nBased on the latest live online research findings, API documentation, and requirements above, please generate a complete, up-to-date, well-commented, production-ready code solution with clear explanations. Remember to strictly follow the live research findings whenever there is a syntax or version conflict with older patterns.`,
+        content: `Target Coding Task: "${strippedCodeOnlineQuery}"\nPlanner Scoped Objective: "${plannerOutput.task || strippedCodeOnlineQuery}"\nExecution Plan:\n${Array.isArray(plannerOutput.plan) ? plannerOutput.plan.map((p, i) => `${i + 1}. ${p}`).join('\n') : plannerOutput.task}${docLibraryBlock}${researchContextBlock}\n\nBased on the latest live online research findings, private document excerpts (if provided), API documentation, and requirements above, please generate a complete, up-to-date, well-commented, production-ready code solution with clear explanations. Remember to strictly follow the live research findings and private documents whenever there is a syntax or version conflict with older patterns.`,
       },
     ]);
 
