@@ -238,6 +238,8 @@ export interface JarvisPlannerOutput {
   plan: string[];
   needsResearch: boolean;
   needsResearchQuery: string;
+  needsNews?: boolean;
+  needsNewsQuery?: string;
   needsKnowledgeAgent?: boolean;
   needsFactCheck: boolean;
   needsReview: boolean;

@@ -152,7 +152,15 @@ NEXUS includes dedicated slash commands that allow users to override normal plan
 - **Pipeline Behavior**: Bypasses research, fact-checking, and synthesis overhead to produce production-ready code, unit tests, and structural notes with minimal latency.
 - **Example**:
   \`/code implement a distributed rate limiter in TypeScript with Redis\`
-  \`/code write a Python script to monitor SSL certificate expirations\``;
+  \`/code write a Python script to monitor SSL certificate expirations\`
+
+#### 5. \`/codeonline [prompt]\` — Live Research-Grounded Code Pipeline
+- **What it does**: Activates a specialized 3-agent pipeline (Planner -> Researcher -> Coder) that executes real-time web research for the latest APIs, documentation, SDKs, and libraries before generating production code.
+- **Pipeline Behavior**: Forces \`needsResearch: true\`, retrieves live online documentation via Tavily, and injects verified research findings and code references directly into the Coder agent. Bypasses fact-checking, reviews, and general synthesis overhead.
+- **Example**:
+  \`/codeonline build a Next.js 15 app using Server Actions and Auth.js v5\`
+  \`/codeonline implement OpenAI Assistants API with streaming in Python 3.12\`
+  \`/codeonline create a Tailwind v4 custom theme with color variables\``;
 
   // Section 5: API Catalog
   const apiCatalogText = `### 5. API Catalog — Credential Architecture & Custom API Registration

@@ -1160,6 +1160,16 @@ export function stripCodePrefix(text: string): string {
   return text.trim().replace(/^\/code\s*/i, '').trim().replace(/^["'`<]+|[>"'`]+$/g, '').trim();
 }
 
+export function isCodeOnlineCommand(text: string): boolean {
+  if (!text || typeof text !== 'string') return false;
+  return /^\/codeonline(?:\s+|$)/i.test(text.trim());
+}
+
+export function stripCodeOnlinePrefix(text: string): string {
+  if (!text || typeof text !== 'string') return text;
+  return text.trim().replace(/^\/codeonline\s*/i, '').trim().replace(/^["'`<]+|[>"'`]+$/g, '').trim();
+}
+
 export function isCustomApiCommand(text: string): boolean {
   if (!text || typeof text !== 'string') return false;
   return /^\/customapi(?:\s+|$)/i.test(text.trim());
@@ -1184,7 +1194,7 @@ export function stripCustomApiPrefix(text: string): string {
 
 export function isCodingQuery(text: string): boolean {
   if (!text || typeof text !== 'string') return false;
-  if (isWebFetchQuery(text) || isSearchOverrideQuery(text) || isCodeSlashCommand(text) || isCustomApiCommand(text)) return false;
+  if (isWebFetchQuery(text) || isSearchOverrideQuery(text) || isCodeSlashCommand(text) || isCodeOnlineCommand(text) || isCustomApiCommand(text)) return false;
 
   const trimmed = text.trim();
   const lower = trimmed.toLowerCase();
@@ -2390,6 +2400,8 @@ Please perform your specialized processing for this inquiry. Provide clear, conc
     needsCode: false,
     needsResearch: false,
     needsResearchQuery: '',
+    needsNews: false,
+    needsNewsQuery: '',
     needsKnowledgeAgent: false,
     needsFactCheck: false,
     needsReview: false,
@@ -2507,8 +2519,10 @@ You are the JARVIS Planner. You MUST output ONLY a valid JSON object strictly ma
   "task": string (concise goal statement under 15 words),
   "plan": string[] (2-4 short steps),
   "needsCode": boolean (true if inquiry is a coding, programming, bug fixing, or software engineering task),
-  "needsResearch": boolean,
+  "needsResearch": boolean (true for general factual knowledge, technical research, documentation lookups, or encyclopedic research queries),
   "needsResearchQuery": string (MANDATORY: clean, specific search phrase focusing strictly on the actual topic without conversational filler or full questions if needsResearch is true, or empty string "" if false),
+  "needsNews": boolean (true ONLY for current events, breaking news, latest headlines, recent announcements, or 'what happened today/recently' news queries),
+  "needsNewsQuery": string (MANDATORY: clean, specific news search phrase if needsNews is true, or empty string "" if false),
   "needsKnowledgeAgent": boolean,
   "needsFactCheck": boolean,
   "needsReview": boolean,
@@ -2523,19 +2537,55 @@ You are the JARVIS Planner. You MUST output ONLY a valid JSON object strictly ma
   "weatherLocation": string (clean city or location name if mentioned, or empty string "" if not mentioned)
 }
 CRITICAL RULES:
-1. Under NO circumstance should "needsResearchQuery", "wikipediaQuery", "wikidataQuery", or "weatherLocation" be omitted from the JSON output. All four string keys MUST always be present in the returned JSON object.
+1. Under NO circumstance should "needsResearchQuery", "needsNewsQuery", "wikipediaQuery", "wikidataQuery", or "weatherLocation" be omitted from the JSON output. All string keys MUST always be present in the returned JSON object.
 2. When needsResearch is true, "needsResearchQuery" MUST be a clean, specific search phrase (not the full raw user question) that the Researcher agent should use for its web search — strip out conversational words, filler ("Is this true?", "Tell me about"), punctuation, and focus only on the actual topic being researched (e.g. for "This is true? Rich HTML can carry hidden dangerous code...", needsResearchQuery MUST be "HTML security risks hidden code tracking scripts"). If needsResearch is false, set it to "".
-3. When needsWikipedia is true, "wikipediaQuery" MUST be the clean, concise subject/title (e.g. for "tell about brawl stars game", wikipediaQuery MUST be "Brawl Stars"). If needsWikipedia is false, set it to "".
-4. When needsWikidata is true, "wikidataQuery" MUST be the clean entity name. If needsWikidata is false, set it to "".
-5. When needsWeather is true, set "weatherLocation" to the target city or location name (e.g. for "weather in Paris", weatherLocation MUST be "Paris"). If no specific location is mentioned, set it to "". When needsWeather is false, set it to "".
-6. When needsWeather is true, always set needsResearch: false, needsWikipedia: false, and needsWikidata: false (the system directly routes to the dedicated Live Weather API without general web search).
-7. When user attached context files are present without an explicit request for live outside web or weather data, this is a pure File Analysis task: always set needsResearch: false, needsResearchQuery: "", needsWeather: false, weatherLocation: "", needsWikipedia: false, needsWikidata: false.
-8. When "Search My Documents" (Document Library RAG) is active without an explicit request for external web or online data, always set needsResearch: false, needsResearchQuery: "", needsFactCheck: false, needsWikipedia: false, needsWikidata: false, needsWeather: false, and needsKnowledgeAgent: false.`;
+3. When needsNews is true (for current events, breaking news, latest updates), set "needsNewsQuery" to the clean news search phrase. If needsNews is false, set it to "".
+4. When needsWikipedia is true, "wikipediaQuery" MUST be the clean, concise subject/title (e.g. for "tell about brawl stars game", wikipediaQuery MUST be "Brawl Stars"). If needsWikipedia is false, set it to "".
+5. When needsWikidata is true, "wikidataQuery" MUST be the clean entity name. If needsWikidata is false, set it to "".
+6. When needsWeather is true, set "weatherLocation" to the target city or location name (e.g. for "weather in Paris", weatherLocation MUST be "Paris"). If no specific location is mentioned, set it to "". When needsWeather is false, set it to "".
+7. When needsWeather is true, always set needsResearch: false, needsNews: false, needsWikipedia: false, and needsWikidata: false (the system directly routes to the dedicated Live Weather API without general web search).
+8. When user attached context files are present without an explicit request for live outside web or weather data, this is a pure File Analysis task: always set needsResearch: false, needsResearchQuery: "", needsNews: false, needsNewsQuery: "", needsWeather: false, weatherLocation: "", needsWikipedia: false, needsWikidata: false.
+9. When "Search My Documents" (Document Library RAG) is active without an explicit request for external web or online data, always set needsResearch: false, needsResearchQuery: "", needsNews: false, needsNewsQuery: "", needsFactCheck: false, needsWikipedia: false, needsWikidata: false, needsWeather: false, and needsKnowledgeAgent: false.`;
 
     let planRes: { ok: boolean; text: string; error?: string; providerName: string; model: string; usedFallback?: boolean };
     let duration = 0;
 
-    if (isCodeSlashCommand(query)) {
+    if (isCodeOnlineCommand(query)) {
+      const stripped = stripCodeOnlinePrefix(query);
+      const { cleanedSearchQuery } = extractTopicKeywords(stripped);
+      plannerOutput = {
+        task: `Research & generate code solution: ${stripped}`,
+        plan: [
+          'Research online documentation, updated syntax, library APIs, and latest implementations',
+          'Synthesize technical findings and analyze code architecture',
+          'Generate clean, up-to-date, production-ready code solution via Coder',
+        ],
+        needsCode: true,
+        needsResearch: true,
+        needsResearchQuery: cleanedSearchQuery || stripped,
+        needsNews: false,
+        needsNewsQuery: '',
+        needsWikipedia: false,
+        wikipediaQuery: '',
+        needsWikidata: false,
+        wikidataQuery: '',
+        needsWeather: false,
+        weatherLocation: '',
+        needsKnowledgeAgent: false,
+        needsReview: false,
+        needsFactCheck: false,
+        needsDiagram: false,
+        needsChart: false,
+        needsImage: false,
+      };
+      duration = 5;
+      planRes = {
+        ok: true,
+        text: JSON.stringify(plannerOutput, null, 2),
+        providerName: 'Internal Router',
+        model: 'codeonline-pipeline',
+      };
+    } else if (isCodeSlashCommand(query)) {
       const stripped = stripCodePrefix(query);
       plannerOutput = {
         task: `Generate code solution: ${stripped}`,
@@ -2546,6 +2596,8 @@ CRITICAL RULES:
         needsCode: true,
         needsResearch: false,
         needsResearchQuery: '',
+        needsNews: false,
+        needsNewsQuery: '',
         needsWikipedia: false,
         wikipediaQuery: '',
         needsWikidata: false,
@@ -2584,6 +2636,8 @@ CRITICAL RULES:
           needsCode: false,
           needsResearch: false,
           needsResearchQuery: '',
+          needsNews: false,
+          needsNewsQuery: '',
           needsFactCheck: false,
           needsReview: false,
           needsDiagram: false,
@@ -2613,6 +2667,17 @@ CRITICAL RULES:
         }
       } else {
         plannerOutput.needsResearchQuery = '';
+      }
+      plannerOutput.needsNews = Boolean(plannerOutput.needsNews);
+      if (plannerOutput.needsNews) {
+        if (typeof plannerOutput.needsNewsQuery === 'string' && plannerOutput.needsNewsQuery.trim()) {
+          plannerOutput.needsNewsQuery = plannerOutput.needsNewsQuery.trim();
+        } else {
+          const { cleanedSearchQuery } = extractTopicKeywords(strippedQuery, plannerOutput.task);
+          plannerOutput.needsNewsQuery = cleanedSearchQuery || strippedQuery;
+        }
+      } else {
+        plannerOutput.needsNewsQuery = '';
       }
       plannerOutput.needsKnowledgeAgent = Boolean(plannerOutput.needsKnowledgeAgent);
       plannerOutput.needsWikipedia = Boolean(plannerOutput.needsWikipedia);
@@ -2647,7 +2712,31 @@ CRITICAL RULES:
         plannerOutput.weatherLocation = '';
       }
 
-      if (isCodeSlashCommand(query)) {
+      if (isCodeOnlineCommand(query)) {
+        const stripped = stripCodeOnlinePrefix(query);
+        const { cleanedSearchQuery } = extractTopicKeywords(stripped);
+        plannerOutput.task = `Research & generate code solution: ${stripped}`;
+        plannerOutput.plan = [
+          'Research online documentation, updated syntax, library APIs, and latest implementations',
+          'Synthesize technical findings and analyze code architecture',
+          'Generate clean, up-to-date, production-ready code solution via Coder',
+        ];
+        plannerOutput.needsCode = true;
+        plannerOutput.needsResearch = true;
+        plannerOutput.needsResearchQuery = cleanedSearchQuery || stripped;
+        plannerOutput.needsNews = false;
+        plannerOutput.needsNewsQuery = '';
+        plannerOutput.needsWikipedia = false;
+        plannerOutput.wikipediaQuery = '';
+        plannerOutput.needsWikidata = false;
+        plannerOutput.wikidataQuery = '';
+        plannerOutput.needsKnowledgeAgent = false;
+        plannerOutput.needsReview = false;
+        plannerOutput.needsFactCheck = false;
+        plannerOutput.needsDiagram = false;
+        plannerOutput.needsChart = false;
+        plannerOutput.needsImage = false;
+      } else if (isCodeSlashCommand(query)) {
         const stripped = stripCodePrefix(query);
         plannerOutput.task = `Generate code solution: ${stripped}`;
         plannerOutput.plan = [
@@ -2657,6 +2746,8 @@ CRITICAL RULES:
         plannerOutput.needsCode = true;
         plannerOutput.needsResearch = false;
         plannerOutput.needsResearchQuery = '';
+        plannerOutput.needsNews = false;
+        plannerOutput.needsNewsQuery = '';
         plannerOutput.needsWikipedia = false;
         plannerOutput.wikipediaQuery = '';
         plannerOutput.needsWikidata = false;
@@ -3227,7 +3318,8 @@ CRITICAL RULES:
   const isPersonalQuery = !isCustomApi && !isWebFetch && !isSearchOverride && !isPureFileAnalysis && !isPureDocRagQuery && (isPersonalOrHumanAiComparison(query) || isPersonalOrHumanAiComparison(combinedQueryText));
   const isSelfQuery = !isCustomApi && !isWebFetch && !isSearchOverride && !isPureFileAnalysis && !isPureDocRagQuery && (isSelfReferentialInquiry(query) || isSelfReferentialInquiry(combinedQueryText));
 
-  const isCodeCommand = !isCustomApi && isCodeSlashCommand(query);
+  const isCodeOnline = !isCustomApi && isCodeOnlineCommand(query);
+  const isCodeCommand = !isCustomApi && !isCodeOnline && isCodeSlashCommand(query);
   const isCoderToggleEnabled =
     coderMode !== undefined
       ? coderMode
@@ -3235,15 +3327,17 @@ CRITICAL RULES:
   const isAutoCode =
     !isCustomApi &&
     !isCodeCommand &&
+    !isCodeOnline &&
     isCoderToggleEnabled &&
     (Boolean(plannerOutput.needsCode) || isCodingQuery(query) || isCodingQuery(plannerOutput.task));
 
   // Determine which downstream agents are required.
+  // When isCodeOnline is true: Planner -> Researcher -> Coder ONLY.
   // When isCodeCommand is true: Planner -> Coder ONLY.
   // When isAutoCode is true: Planner -> Coder -> Reviewer -> Final Synthesizer.
   // When isCustomApi is true: Planner -> Custom API Runner -> Final Synthesizer.
   // When isPureDocRagQuery is true: Planner -> Document Library (RAG) -> Final Synthesizer.
-  // Researcher and Fact Checker are bypassed for custom API, pure doc search, and coding pipelines.
+  // Researcher and Fact Checker are bypassed for custom API, pure doc search, and offline coding pipelines.
   let shouldResearch =
     !isCustomApi &&
     !isCodeCommand &&
@@ -3254,8 +3348,10 @@ CRITICAL RULES:
     !isPureFileAnalysis &&
     !isPureDocRagQuery &&
     agentConfigs.researcher.enabled &&
-    (isSearchOverride ||
+    (isCodeOnline ||
+      isSearchOverride ||
       deepResearch ||
+      Boolean(plannerOutput.needsNews) ||
       Boolean(plannerOutput.needsResearch) ||
       Boolean(plannerOutput.needsWikipedia) ||
       Boolean(plannerOutput.needsWikidata) ||
@@ -3270,6 +3366,7 @@ CRITICAL RULES:
   let shouldFactCheck =
     !isCustomApi &&
     !isCodeCommand &&
+    !isCodeOnline &&
     !isAutoCode &&
     !isWebFetch &&
     !isWeatherQuery &&
@@ -3280,6 +3377,7 @@ CRITICAL RULES:
   let shouldReview =
     !isCustomApi &&
     !isCodeCommand &&
+    !isCodeOnline &&
     !isWebFetch &&
     !isSearchOverride &&
     !isPureDocRagQuery &&
@@ -3648,7 +3746,7 @@ Document search was performed for query: "${cleanSearchQuery}" across ${targetLa
   // ==========================================
   let coderOutput = '';
 
-  if (isCodeCommand || isAutoCode) {
+  if ((isCodeCommand || isAutoCode) && !isCodeOnline) {
     const coderCfg = agentConfigs.coder || {
       id: 'coder',
       name: 'Coder',
@@ -3756,8 +3854,8 @@ Document search was performed for query: "${cleanSearchQuery}" across ${targetLa
         images: [],
       };
     }
-  } else {
-    // Coding agent skipped for non-coding task
+  } else if (!isCodeOnline) {
+    // Coding agent skipped for non-coding task (deferred for /codeonline pipeline)
     const coderCfg = agentConfigs.coder;
     if (coderCfg) {
       updateStep({
@@ -3914,8 +4012,8 @@ Document search was performed for query: "${cleanSearchQuery}" across ${targetLa
       // Note: Legacy GNews and NewsData functions remain completely intact in the codebase.
 
       // 3. AI-Decided or Product-Lineup Wikidata / Wikipedia Lookup for factual/encyclopedic context (Works in both Deep Research ON and OFF)
-      // Note: Wikidata and Wikipedia must NEVER be triggered in /search or /web commands.
-      if (!isSearchOverride && !isWebFetch && (plannerOutput.needsWikipedia || plannerOutput.needsWikidata || isProductLineupQuery) && !isWeatherQuery && !isNewsQuery) {
+      // Note: Wikidata and Wikipedia must NEVER be triggered in /search, /web, or /codeonline commands.
+      if (!isSearchOverride && !isWebFetch && !isCodeOnline && (plannerOutput.needsWikipedia || plannerOutput.needsWikidata || isProductLineupQuery) && !isWeatherQuery && !isNewsQuery && !plannerOutput.needsNews) {
         console.log(`[JARVIS Researcher] Executing encyclopedic lookup for query: "${strippedQuery}" (needsWikipedia: ${plannerOutput.needsWikipedia}, wikipediaQuery: "${plannerOutput.wikipediaQuery}", needsWikidata: ${plannerOutput.needsWikidata}, isProductLineup: ${isProductLineupQuery})...`);
 
         // Step 3A: Wikidata Lookup (when needsWikidata is true)
@@ -4060,8 +4158,8 @@ Document search was performed for query: "${cleanSearchQuery}" across ${targetLa
             }
           }
         }
-      } else if (isSearchOverride || isWebFetch) {
-        console.log('[JARVIS Researcher] /search or /web command detected. Skipping Wikipedia and Wikidata lookups.');
+      } else if (isSearchOverride || isWebFetch || isCodeOnline) {
+        console.log('[JARVIS Researcher] /search, /web, or /codeonline command detected. Skipping Wikipedia and Wikidata lookups.');
       } else if (!plannerOutput.needsWikipedia && !plannerOutput.needsWikidata && !isProductLineupQuery) {
         console.log('[JARVIS Researcher] needsWikipedia and needsWikidata are false. Skipping Wikipedia/Wikidata lookup to save tokens.');
       }
@@ -4069,11 +4167,11 @@ Document search was performed for query: "${cleanSearchQuery}" across ${targetLa
       // 4. General & News Search (Tavily with Exa AI & DuckDuckGo fallback in backend)
       // Only executed if:
       // - It is not weather (weather is handled above)
-      // - AND needsResearch is true (or deepResearch or isSearchOverride)
+      // - AND needsResearch is true (or deepResearch, isCodeOnline, isSearchOverride, or needsNews)
       // When needsWikipedia or needsWikidata is true and needsResearch is false, general web search is SKIPPED.
       const shouldRunWebSearch =
         !isWeatherQuery &&
-        (isSearchOverride || deepResearch || Boolean(plannerOutput.needsResearch));
+        (isCodeOnline || isSearchOverride || deepResearch || Boolean(plannerOutput.needsNews) || Boolean(plannerOutput.needsResearch));
 
       if (shouldRunWebSearch && searchResults.length === 0) {
         const currentDateStr = new Date().toLocaleDateString('en-US', { month: 'long', day: 'numeric', year: 'numeric' });
@@ -4083,6 +4181,7 @@ Document search was performed for query: "${cleanSearchQuery}" across ${targetLa
         );
 
         let effectiveSearchQuery = '';
+        const isNewsSearch = Boolean(plannerOutput.needsNews) || isNewsQuery;
         if (isProductLineupQuery) {
           // For product/model lineup queries: specifically target official product/model listing and documentation pages
           const queryWithoutPunctuation = (plannerResearchQuery || cleanedSearchQuery || strippedQuery).replace(/[^\w\s-]/g, ' ').replace(/\s+/g, ' ').trim();
@@ -4101,12 +4200,13 @@ Document search was performed for query: "${cleanSearchQuery}" across ${targetLa
           }
 
           effectiveSearchQuery = `${brandPrefix}${queryWithoutPunctuation} models list current lineup overview official documentation`;
-        } else if (isNewsQuery) {
+        } else if (isNewsSearch) {
+          const newsQueryText = plannerOutput.needsNewsQuery || plannerResearchQuery || cleanedSearchQuery || strippedQuery;
           effectiveSearchQuery = isWorldNews
             ? `top world breaking news headlines today ${currentDateStr}`
-            : `world news today ${currentDateStr} ${plannerResearchQuery || cleanedSearchQuery || strippedQuery}`;
+            : `world news today ${currentDateStr} ${newsQueryText}`;
         } else {
-          // General / Factual Search: Prioritize clean, specific search phrase from Planner
+          // General / Factual / CodeOnline Search: Prioritize clean, specific search phrase from Planner
           effectiveSearchQuery = plannerResearchQuery || (isSearchOverride ? (cleanedSearchQuery || strippedQuery) : (cleanedSearchQuery || strippedQuery));
         }
 
@@ -4122,7 +4222,7 @@ Document search was performed for query: "${cleanSearchQuery}" across ${targetLa
         }
 
         try {
-          const searchCategory = isNewsQuery ? 'NEWS' : undefined;
+          const searchCategory = isNewsSearch ? 'NEWS' : undefined;
           const searchRes = await api.search(effectiveSearchQuery, searchCategory, undefined, deepResearch ? 16 : 15);
           let rawResults: SearchResult[] = [];
           let sourceLabel = 'Tavily API';
@@ -4434,6 +4534,126 @@ Document search was performed for query: "${cleanSearchQuery}" across ${targetLa
   );
   for (const cAgent of parallelResearchAgents) {
     await executeCustomAgent(cAgent);
+  }
+
+  // ==========================================
+  // STEP 2.5: 💻 CODER AGENT (for /codeonline pipeline)
+  // Pipeline: Planner -> Researcher -> Coder ONLY
+  // ==========================================
+  if (isCodeOnline) {
+    const coderCfg = agentConfigs.coder || {
+      id: 'coder',
+      name: 'Coder',
+      role: 'Code Architecture & Software Engineering',
+      description: 'Writes clean, production-ready code, scripts, bug fixes, and algorithms.',
+      icon: '💻',
+      providerId: 'existing',
+      modelId: 'deepseek/deepseek-chat',
+      enabled: true,
+      maxTokens: 3000,
+      enableFailover: false,
+    };
+    const provInfo = resolveProviderConfig(coderCfg);
+    const start = Date.now();
+
+    storage.addJarvisQueryLog('Coder online agent activated - generating up-to-date code with live research context', 'ai');
+
+    updateStep({
+      agentId: 'coder',
+      name: coderCfg.name || 'Coder',
+      icon: coderCfg.icon || '💻',
+      status: 'running',
+      providerName: provInfo.provider?.name || 'Primary',
+      model: provInfo.model,
+      summary: 'Synthesizing live research into production code implementation...',
+    });
+
+    const strippedCodeOnlineQuery = stripCodeOnlinePrefix(query);
+    const defaultPromptTemplate = DEFAULT_AGENT_SYSTEM_PROMPTS.coder;
+    const coderSysPrompt = coderCfg.systemPrompt || defaultPromptTemplate;
+
+    const researchContextBlock =
+      researcherOutput.facts && researcherOutput.facts.length > 0
+        ? `\n\n[LIVE ONLINE RESEARCH FINDINGS & DOCUMENTATION]:\n${researcherOutput.facts.map((f, i) => `${i + 1}. ${f}`).join('\n')}`
+        : sourcesCollected.length > 0
+          ? `\n\n[LIVE ONLINE RESEARCH SOURCES]:\n${sourcesCollected.map((s, i) => `${i + 1}. [${s.title}] (${s.url}): ${s.description || ''}`).join('\n')}`
+          : '';
+
+    const coderRes = await callAgent('coder', [
+      { role: 'system', content: coderSysPrompt },
+      {
+        role: 'user',
+        content: `Target Coding Task: "${strippedCodeOnlineQuery}"\nPlanner Scoped Objective: "${plannerOutput.task || strippedCodeOnlineQuery}"\nExecution Plan:\n${Array.isArray(plannerOutput.plan) ? plannerOutput.plan.map((p, i) => `${i + 1}. ${p}`).join('\n') : plannerOutput.task}${researchContextBlock}\n\nBased on the latest live online research findings, API documentation, and requirements above, please generate a complete, up-to-date, well-commented, production-ready code solution with clear explanations.`,
+      },
+    ]);
+
+    const duration = Date.now() - start;
+    let coderOnlineOutput = '';
+
+    if (coderRes.ok && coderRes.text) {
+      coderOnlineOutput = coderRes.text;
+      updateStep({
+        agentId: 'coder',
+        name: coderCfg.name || 'Coder',
+        icon: coderCfg.icon || '💻',
+        status: 'completed',
+        providerName: coderRes.providerName,
+        model: coderRes.model,
+        durationMs: duration,
+        summary: 'Up-to-date code implementation completed using live research.',
+        outputPreview: coderOnlineOutput,
+        rawOutput: coderOnlineOutput,
+        usedFallback: coderRes.usedFallback,
+      });
+    } else {
+      coderOnlineOutput = `// Code generation encountered an issue:\n// ${coderRes.error || 'Failed to generate code.'}\n// Query: ${strippedCodeOnlineQuery}`;
+      updateStep({
+        agentId: 'coder',
+        name: coderCfg.name || 'Coder',
+        icon: coderCfg.icon || '💻',
+        status: 'failed',
+        providerName: coderRes.providerName,
+        model: coderRes.model,
+        durationMs: duration,
+        error: coderRes.error || 'Coder execution failed.',
+        outputPreview: coderOnlineOutput,
+        rawOutput: coderOnlineOutput,
+      });
+    }
+
+    // Mark FactChecker, Advisor, Reviewer, FinalSynthesizer, Architect, DataAnalyst, ImageFinder as skipped:
+    const skipIds: JarvisAgentId[] = [
+      'factChecker',
+      'advisor',
+      'reviewer',
+      'finalSynthesizer',
+      'architect',
+      'dataAnalyst',
+      'imageFinder',
+    ];
+    skipIds.forEach((id) => {
+      const aCfg = agentConfigs[id as keyof typeof agentConfigs];
+      if (aCfg) {
+        updateStep({
+          agentId: id,
+          name: aCfg.name,
+          icon: aCfg.icon,
+          status: 'skipped',
+          providerName: aCfg.providerId,
+          model: aCfg.modelId,
+          summary: 'Bypassed for lightweight /codeonline pipeline (Planner -> Researcher -> Coder).',
+        });
+      }
+    });
+
+    return {
+      answer: coderOnlineOutput,
+      steps,
+      sources: sourcesCollected,
+      diagramSvg: null,
+      chartData: null,
+      images: [],
+    };
   }
 
   // ==========================================
