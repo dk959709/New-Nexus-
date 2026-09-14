@@ -2521,7 +2521,7 @@ You are the JARVIS Planner. You MUST output ONLY a valid JSON object strictly ma
   "needsCode": boolean (true if inquiry is a coding, programming, bug fixing, or software engineering task),
   "needsResearch": boolean (true for general factual knowledge, technical research, documentation lookups, or encyclopedic research queries),
   "needsResearchQuery": string (MANDATORY: clean, specific search phrase focusing strictly on the actual topic without conversational filler or full questions if needsResearch is true, or empty string "" if false),
-  "needsNews": boolean (true ONLY for current events, breaking news, latest headlines, recent announcements, or 'what happened today/recently' news queries),
+  "needsNews": boolean (true ONLY for current events, breaking news, latest headlines, or 'what happened today' news queries. Do NOT set true for 'latest updates', technical updates, product updates, or general updates — those belong to needsResearch: true),
   "needsNewsQuery": string (MANDATORY: clean, specific news search phrase if needsNews is true, or empty string "" if false),
   "needsKnowledgeAgent": boolean,
   "needsFactCheck": boolean,
@@ -2539,7 +2539,7 @@ You are the JARVIS Planner. You MUST output ONLY a valid JSON object strictly ma
 CRITICAL RULES:
 1. Under NO circumstance should "needsResearchQuery", "needsNewsQuery", "wikipediaQuery", "wikidataQuery", or "weatherLocation" be omitted from the JSON output. All string keys MUST always be present in the returned JSON object.
 2. When needsResearch is true, "needsResearchQuery" MUST be a clean, specific search phrase (not the full raw user question) that the Researcher agent should use for its web search — strip out conversational words, filler ("Is this true?", "Tell me about"), punctuation, and focus only on the actual topic being researched (e.g. for "This is true? Rich HTML can carry hidden dangerous code...", needsResearchQuery MUST be "HTML security risks hidden code tracking scripts"). If needsResearch is false, set it to "".
-3. When needsNews is true (for current events, breaking news, latest updates), set "needsNewsQuery" to the clean news search phrase. If needsNews is false, set it to "".
+3. When needsNews is true (for current events, breaking news, latest headlines — NOT general 'latest updates' or technical updates), set "needsNewsQuery" to the clean news search phrase. If needsNews is false, set it to "".
 4. When needsWikipedia is true, "wikipediaQuery" MUST be the clean, concise subject/title (e.g. for "tell about brawl stars game", wikipediaQuery MUST be "Brawl Stars"). If needsWikipedia is false, set it to "".
 5. When needsWikidata is true, "wikidataQuery" MUST be the clean entity name. If needsWikidata is false, set it to "".
 6. When needsWeather is true, set "weatherLocation" to the target city or location name (e.g. for "weather in Paris", weatherLocation MUST be "Paris"). If no specific location is mentioned, set it to "". When needsWeather is false, set it to "".
@@ -3196,6 +3196,16 @@ CRITICAL RULES:
     plannerOutput.needsKnowledgeAgent = false;
   }
 
+  // Helper to detect if a query is asking for "latest updates" or general topic updates without explicitly requesting news
+  const isLatestUpdatesInquiry = (text: string): boolean => {
+    const lower = text.toLowerCase();
+    // Exclude if explicitly asking for news/breaking/headlines
+    if (/\b(news|headlines?|breaking\s+news)\b/i.test(lower)) {
+      return false;
+    }
+    return /\b(latest|recent|current|new|newest)\s+updates?\b/i.test(lower) || /\bupdates?\b/i.test(lower);
+  };
+
   // Standalone whole-word matching for news inquiries (excludes technical terms like 'electrical current' and product lineup inquiries)
   const isNewsInquiry = (text: string): boolean => {
     const lower = text.toLowerCase();
@@ -3205,6 +3215,10 @@ CRITICAL RULES:
     }
     // Exclude technical/scientific phrases with "current" (e.g. electrical current, alternating current, direct current, ocean currents)
     if (/\b(electric|electrical|alternating|direct|ocean|water|eddy|fluid|flow|air|convection)\s+current\b/i.test(lower) || /\bcurrents\b/i.test(lower)) {
+      return false;
+    }
+    // Exclude "latest updates" and general update inquiries when not explicitly asking for news
+    if (isLatestUpdatesInquiry(text)) {
       return false;
     }
     // Match explicit news keywords
@@ -3218,7 +3232,7 @@ CRITICAL RULES:
     if (/\b(happening|developments|events)\b/i.test(lower) && /\b(with|in|at|for|around)\b/i.test(lower)) {
       return true;
     }
-    return (/\b(latest|current|recent)\b/i.test(lower) && /\b(news|happenings?|stories|events?|updates?|controversy|controversies|lawsuits?)\b/i.test(lower));
+    return (/\b(latest|current|recent)\b/i.test(lower) && /\b(news|happenings?|stories|events?|controversy|controversies|lawsuits?)\b/i.test(lower));
   };
 
   const isWorldNewsInquiry = (text: string): boolean => {
@@ -3313,10 +3327,23 @@ CRITICAL RULES:
   }
 
   const isProductLineupQuery = !isCustomApi && !isWebFetch && !isPureFileAnalysis && !isPureDocRagQuery && isProductLineupInquiry(textForIntentCheck);
-  const isNewsQuery = !isCustomApi && !isWebFetch && !isProductLineupQuery && !isWeatherQuery && !isPureFileAnalysis && !isPureDocRagQuery && isNewsInquiry(textForIntentCheck);
-  const isWorldNews = !isCustomApi && !isWebFetch && !isProductLineupQuery && !isWeatherQuery && !isPureFileAnalysis && !isPureDocRagQuery && isWorldNewsInquiry(textForIntentCheck);
+  const isLatestUpdatesQuery = !isCustomApi && !isWebFetch && !isPureFileAnalysis && !isPureDocRagQuery && isLatestUpdatesInquiry(textForIntentCheck);
+  const isNewsQuery = !isCustomApi && !isWebFetch && !isProductLineupQuery && !isLatestUpdatesQuery && !isWeatherQuery && !isPureFileAnalysis && !isPureDocRagQuery && isNewsInquiry(textForIntentCheck);
+  const isWorldNews = !isCustomApi && !isWebFetch && !isProductLineupQuery && !isLatestUpdatesQuery && !isWeatherQuery && !isPureFileAnalysis && !isPureDocRagQuery && isWorldNewsInquiry(textForIntentCheck);
   const isPersonalQuery = !isCustomApi && !isWebFetch && !isSearchOverride && !isPureFileAnalysis && !isPureDocRagQuery && (isPersonalOrHumanAiComparison(query) || isPersonalOrHumanAiComparison(combinedQueryText));
   const isSelfQuery = !isCustomApi && !isWebFetch && !isSearchOverride && !isPureFileAnalysis && !isPureDocRagQuery && (isSelfReferentialInquiry(query) || isSelfReferentialInquiry(combinedQueryText));
+
+  if (isLatestUpdatesQuery) {
+    plannerOutput.needsNews = false;
+    plannerOutput.needsNewsQuery = '';
+    if (!isWeatherQuery && !isPureFileAnalysis && !isPureDocRagQuery) {
+      plannerOutput.needsResearch = true;
+      if (!plannerOutput.needsResearchQuery) {
+        const { cleanedSearchQuery } = extractTopicKeywords(strippedQuery, plannerOutput.task);
+        plannerOutput.needsResearchQuery = cleanedSearchQuery || strippedQuery;
+      }
+    }
+  }
 
   const isCodeOnline = !isCustomApi && isCodeOnlineCommand(query);
   const isCodeCommand = !isCustomApi && !isCodeOnline && isCodeSlashCommand(query);
@@ -4181,7 +4208,7 @@ Document search was performed for query: "${cleanSearchQuery}" across ${targetLa
         );
 
         let effectiveSearchQuery = '';
-        const isNewsSearch = Boolean(plannerOutput.needsNews) || isNewsQuery;
+        const isNewsSearch = !isLatestUpdatesQuery && (Boolean(plannerOutput.needsNews) || isNewsQuery);
         if (isProductLineupQuery) {
           // For product/model lineup queries: specifically target official product/model listing and documentation pages
           const queryWithoutPunctuation = (plannerResearchQuery || cleanedSearchQuery || strippedQuery).replace(/[^\w\s-]/g, ' ').replace(/\s+/g, ' ').trim();
