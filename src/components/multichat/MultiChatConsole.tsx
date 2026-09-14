@@ -924,6 +924,13 @@ export function MultiChatConsole({ config, onNavigateToSettings }: MultiChatCons
       transcriptLines.push(`### 👤 USER INQUIRY (${new Date(msg.timestamp).toLocaleTimeString()})`);
       transcriptLines.push(msg.query);
       transcriptLines.push('');
+
+      // WHAT'S MISSING #1: Document Lens indicator
+      if (msg.docChunks && msg.docChunks.length > 0) {
+        transcriptLines.push(`📖 Doc Lens: ${msg.docChunks.length} excerpts retrieved from Document Library`);
+        transcriptLines.push('');
+      }
+
       for (const resp of msg.responses) {
         transcriptLines.push(`#### ${resp.icon} ${resp.name} [${resp.toneBadge || 'Persona'}]`);
         const text = getPersonaCleanText(resp);
@@ -935,6 +942,20 @@ export function MultiChatConsole({ config, onNavigateToSettings }: MultiChatCons
           transcriptLines.push('*[Processing...]*');
         }
         transcriptLines.push('');
+
+        // WHAT'S MISSING #2: 1-on-1 Persona Branch threads
+        if (resp.branches && resp.branches.length > 0) {
+          resp.branches.forEach((b, bIdx) => {
+            transcriptLines.push(`    ↳ 1-on-1 Branch with ${resp.name} (${bIdx + 1})`);
+            transcriptLines.push(`    YOU → ${resp.name}: ${b.query}`);
+            const branchText = b.response ? getPersonaCleanText(b.response) : b.text || '';
+            const cleanBranchText =
+              branchText ||
+              (b.response?.status === 'failed' ? `*[Error: ${b.response?.error || 'Failed to generate'}]*` : '');
+            transcriptLines.push(`    ${resp.name}: ${cleanBranchText}`);
+            transcriptLines.push('');
+          });
+        }
       }
       transcriptLines.push('---');
       transcriptLines.push('');
