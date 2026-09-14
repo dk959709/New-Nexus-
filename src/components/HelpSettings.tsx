@@ -25,6 +25,7 @@ import {
   Brain,
   Key,
   Clock,
+  Database,
 } from 'lucide-react';
 import { copyToClipboard } from '@/lib/clipboard';
 import { playTapSound } from '@/lib/audio';
@@ -44,12 +45,13 @@ export function HelpSettings() {
   // Section 1: Overview
   const overviewText = `### 1. Overview — What NEXUS Is & Main Features
 
-**NEXUS Intelligence** is an enterprise-grade multi-agent autonomous AI workstation, neural research lab, and real-time telemetry matrix. At its core, NEXUS coordinates specialized artificial intelligence agents through the **JARVIS Autonomous Multi-Agent Cognitive Matrix**, bridging high-level reasoning with live web groundings, encyclopedic knowledge graphs, hardware controls, and multi-provider language models.
+**NEXUS Intelligence** is an enterprise-grade multi-agent autonomous AI workstation, neural research lab, and real-time telemetry matrix. At its core, NEXUS coordinates specialized artificial intelligence agents through the **JARVIS Autonomous Multi-Agent Cognitive Matrix**, bridging high-level reasoning with live web groundings, encyclopedic knowledge graphs, on-device vector document vaults (RAG), hardware controls, and multi-provider language models.
 
 #### Key Platform Capabilities:
-- **JARVIS Multi-Agent Matrix**: Sequential and parallel cognitive pipelines uniting 9+ specialized agents (Planning, Research, Fact-Checking, Strategic Advisory, Audit Review, Final Synthesis, System Architecture, Data Analysis, and Media Discovery) with full source attribution.
+- **JARVIS Multi-Agent Matrix**: Sequential and parallel cognitive pipelines uniting 10+ specialized agents (Planning, Research, Fact-Checking, Strategic Advisory, Audit Review, Final Synthesis, System Architecture, Data Analysis, Media Discovery, and Fast/Online Coding) with full source attribution.
 - **Multi-Provider Neural Backbone**: Native configuration support for 10+ major AI providers including OpenAI, Anthropic Claude, Google Gemini, Groq (Llama 3), Mistral, Perplexity, OpenRouter, Cloudflare Workers AI, and custom OpenAI-compatible endpoints with automated runtime failover.
 - **Real-Time Multimodal Web Retrieval**: High-speed live search over Tavily, resilient 3-tier news fallback chains, Wikipedia REST extracts, Wikidata knowledge graphs, and Pixabay visual assets.
+- **On-Device Document Library & Semantic Vector RAG**: Secure, privacy-first local IndexedDB vector vault supporting PDF, DOCX, TXT, CSV, MD, JSON, and pasted text with semantic chunking, cosine similarity search, custom renaming, in-place text editing with instant re-indexing, and automated JARVIS synthesis grounding.
 - **Hybrid Credential Architecture**: Seamless two-tier credential resolution combining container-level host environment variables (Render) with an encrypted AES-256 local vault (\`data/api_catalog.json\`).
 - **Telemetry & Peripheral Hardware Bridges**: Real-time atmospheric weather tracking (OpenWeatherMap), NASA deep space intelligence (APOD & Near-Earth Object Asteroid radar), ADB-over-Network Smart TV remote controller, and autonomous Telegram Bot synchronization.
 - **Diagnostic Transparency & Export Engine**: Real-time streaming diagnostic logs, interactive SVG system diagrams, tabular Recharts analytics, and single-click Markdown / rich HTML clipboard exports.`;
@@ -61,11 +63,11 @@ The JARVIS architecture rejects single-prompt hallucination in favor of a rigoro
 
 1. **Planner (Agent 1 - Cognitive Orchestrator)**:
    - **Role**: Dissects the user's prompt, classifies intent, and compiles an atomic execution plan.
-   - **Mechanism**: Dynamically flags pipeline requirements (\`needsResearch\`, \`needsWikipedia\`, \`needsWikidata\`, \`needsFactCheck\`, \`needsKnowledgeAgent\`, \`needsReview\`, \`needsCoder\`, \`needsArchitect\`, \`needsDataAnalyst\`, \`needsImageFinder\`). It sanitizes raw search queries, extracts target entities, and detects explicit command overrides.
+   - **Mechanism**: Dynamically flags pipeline requirements (\`needsResearch\`, \`needsWikipedia\`, \`needsWikidata\`, \`needsFactCheck\`, \`needsKnowledgeAgent\`, \`needsReview\`, \`needsCoder\`, \`needsCodeOnline\`, \`needsArchitect\`, \`needsDataAnalyst\`, \`needsImageFinder\`, \`documentRagOptions\`). It sanitizes raw search queries, extracts target entities, and detects explicit command overrides.
 
 2. **Researcher (Agent 2 - Information Retrieval Engine)**:
    - **Role**: Executes multi-source web, news, and knowledge-base data gathering.
-   - **Mechanism**: Queries Tavily for semantic web results, triggers the 3-tier news fallback stack for timely coverage, and queries Wikipedia/Wikidata for foundational definitions and structured properties. Deduplicates results and compiles verified source citations.
+   - **Mechanism**: Queries Tavily for semantic web results, triggers the 3-tier news fallback stack for timely coverage, and queries Wikipedia/Wikidata for foundational definitions and structured properties. For \`/codeonline\` pipelines, strictly prioritizes official developer documentation, official source repositories, and framework release notes over personal blogs. Deduplicates results and compiles verified source citations.
 
 3. **Fact Checker (Agent 3 - Autonomous Truth & Consistency Auditor)**:
    - **Role**: Rigorously evaluates research claims against authoritative sources to prevent hallucinations.
@@ -81,7 +83,7 @@ The JARVIS architecture rejects single-prompt hallucination in favor of a rigoro
 
 6. **Final Synthesizer (Agent 5 - Unified Intelligence Voice)**:
    - **Role**: Transforms raw analytical outputs into a cohesive, publication-grade intelligence briefing.
-   - **Mechanism**: Crafts clean Markdown reports structured with executive summaries, analytical deep dives, formatted comparison tables, structured bullet points, and inline superscript citations linking back to original sources.
+   - **Mechanism**: Crafts clean Markdown reports structured with executive summaries, analytical deep dives, formatted comparison tables, structured bullet points, and inline superscript citations linking back to original sources. Seamlessly incorporates retrieved semantic chunks from the on-device Document Library when "Search My Docs" is active.
 
 7. **Architect (Agent 8 - Specialized System Designer)**:
    - **Role**: Generates software architectures, infrastructure blueprints, and visual diagrams.
@@ -96,26 +98,32 @@ The JARVIS architecture rejects single-prompt hallucination in favor of a rigoro
    - **Mechanism**: Queries Pixabay and Wikimedia Commons for royalty-free visual assets matching researched entities, presenting them in an interactive lightbox gallery.
 
 10. **Coder (Agent 10 - Software Engineering Specialist)**:
-    - **Role**: Writes, debugs, and optimizes production-ready code, scripts, and algorithms across multiple programming languages.
-    - **Mechanism**: Triggered automatically for programming-related queries or explicitly via the \`/code\` command. Bypasses the standard research/fact-check/review pipeline for minimal latency, running a lightweight Planner → Coder pipeline that outputs clean code blocks, unit tests where relevant, and brief structural notes.`;
+    - **Role**: Writes, debugs, and optimizes production-ready code, scripts, and algorithms across modern tech stacks.
+    - **Mechanism**:
+      - **Standard Mode (\`/code\`)**: Fast 2-agent pipeline (Planner → Coder) bypassing research overhead for immediate code output.
+      - **Live Research Mode (\`/codeonline\`)**: Specialized 3-agent pipeline (Planner → Researcher → Coder) that executes real-time web research and injects fresh official documentation directly into the Coder's prompt. Enforces strict live research prioritization over model training biases, package name consistency (matching \`npm install\` packages with exact runtime \`import\` specifiers), scope relevance isolation, and on-device Document Library RAG context injection.`;
 
   // Section 3: How Researcher Fetches Data
   const researcherText = `### 3. How Researcher Fetches Data — Multi-Tier Retrieval & Fallback Stacks
 
 The Researcher agent operates on a layered, fail-safe data pipeline designed for high availability and zero-downtime information retrieval:
 
-#### A. The Resilient 3-Tier News Fallback Chain
+#### A. Intelligent Search vs. News Routing
+- **Analytical & Live Inquiries**: Queries mentioning *"latest updates"*, *"recent developments"*, or specific technical updates automatically route to live semantic search engines (Tavily / DuckDuckGo) with \`needsResearch: true\` and \`needsNews: false\` to retrieve comprehensive technical context rather than transient news headlines.
+- **Explicit Breaking News**: Queries explicitly requesting news headlines or breaking stories activate the 3-tier news fallback chain.
+
+#### B. The Resilient 3-Tier News Fallback Chain
 To guarantee real-time news retrieval even during third-party service outages or quota exhaustion:
 1. **Tier 1 — GNews API**: The system first attempts to query \`https://gnews.io/api/v4/search\` using \`GNEWS_API_KEY\`. GNews provides high-quality, international, categorized headlines with publication timestamps and publisher metadata.
 2. **Tier 2 — NewsData.io Fallback**: If GNews is unconfigured, rate-limited (HTTP 429), or encounters an error, the pipeline immediately cascades to \`https://newsdata.io/api/1/news\` via \`NEWSDATA_API_KEY\`, ensuring multi-lingual redundancy.
 3. **Tier 3 — Google News RSS Scraper**: If both commercial API keys are unavailable, depleted, or fail, the system automatically falls back to parsing the Google News RSS feed (\`https://news.google.com/rss/search?q={query}\`) on the fly. This guarantees that news queries ALWAYS return real-time headlines with zero API key dependencies.
 
-#### B. Tavily Semantic Web Search
+#### C. Tavily Semantic Web Search & Official Docs Prioritization
 - Serves as the primary engine for deep web intelligence and extraction via \`TAVILY_API_KEY\`.
 - Executes semantic queries, crawls relevant web pages, extracts raw text passages, summarizes findings, and provides canonical source domain citations.
 - When Tavily is not configured, the engine seamlessly falls back to DuckDuckGo HTML parsing and encyclopedic synthesis.
 
-#### C. Wikipedia & Wikidata Knowledge Graph Lookups
+#### D. Wikipedia & Wikidata Knowledge Graph Lookups
 - **Wikipedia REST API**: Targets canonical summaries from \`https://en.wikipedia.org/api/rest_v1/page/summary/{title}\` with automated fallback to the MediaWiki Action API (\`action=query&prop=extracts\`) for authoritative definitions, entity summaries, and official titles.
 - **Wikidata Semantic Entities**: Queries \`https://www.wikidata.org/wiki/Special:EntityData/{QID}.json\` to extract structured properties (founding dates, coordinates, parent organizations, headquarters, identifiers).
 - **Intelligent Suppression**: The Planner automatically sets \`needsWikipedia: false\` and \`needsWikidata: false\` during explicit \`/search\`, \`/web\`, and \`/customapi\` commands to eliminate redundant overhead and maximize response speed.`;
@@ -148,7 +156,7 @@ NEXUS includes dedicated slash commands that allow users to override normal plan
   \`/customapi news-hub artificial intelligence\`
 
 #### 4. \`/code [prompt]\` — High-Speed Code Architecture Pipeline
-- **What it does**: Activates a specialized 2-agent pipeline (Planner -> Coder) designed specifically for programming, debugging, and software architecture.
+- **What it does**: Activates a specialized 2-agent pipeline (Planner -> Coder) designed specifically for fast programming, debugging, and software architecture.
 - **Pipeline Behavior**: Bypasses research, fact-checking, and synthesis overhead to produce production-ready code, unit tests, and structural notes with minimal latency.
 - **Example**:
   \`/code implement a distributed rate limiter in TypeScript with Redis\`
@@ -156,7 +164,11 @@ NEXUS includes dedicated slash commands that allow users to override normal plan
 
 #### 5. \`/codeonline [prompt]\` — Live Research-Grounded Code Pipeline
 - **What it does**: Activates a specialized 3-agent pipeline (Planner -> Researcher -> Coder) that executes real-time web research for the latest APIs, documentation, SDKs, and libraries before generating production code.
-- **Pipeline Behavior**: Forces \`needsResearch: true\`, retrieves live online documentation via Tavily, and injects verified research findings and code references directly into the Coder agent. Bypasses fact-checking, reviews, and general synthesis overhead.
+- **Pipeline Rules & Behaviors**:
+  - **Live Research Prioritization**: The Coder agent strictly prioritizes the Researcher's live findings over its own internal training knowledge whenever there is a syntax or version conflict (e.g. Tailwind v4 @import syntax over v3 @tailwind directives).
+  - **Package Name Consistency Rule**: Strictly ensures that package names in installation commands match the exact runtime import specifiers used in code (e.g., \`npm install react-router\` with \`import { ... } from 'react-router'\`, never importing from legacy \`react-router-dom\`).
+  - **Scope Relevance Rule**: Strips unrelated third-party platform code found in sample repositories that the user never asked for.
+  - **Document Library RAG Support**: When "Search My Docs" is enabled, retrieved local document chunks from your on-device library are injected directly into the Coder's prompt alongside live web findings.
 - **Example**:
   \`/codeonline build a Next.js 15 app using Server Actions and Auth.js v5\`
   \`/codeonline implement OpenAI Assistants API with streaming in Python 3.12\`
@@ -316,6 +328,32 @@ The **Telegram Bot** bridge (/telegram or Settings > Telegram) transforms NEXUS 
 - **ISS Overhead Radar Alert**: Calculates Great Circle orbital distance and alerts you when the International Space Station passes within 500 km of your latitude/longitude.
 - **Interactive Quick-Reply Keyboard**: Attaches inline action buttons (Weather, Search, Space, News) beneath bot responses for instant one-tap navigation.`;
 
+  // Section 11: Document Library
+  const documentLibraryText = `### 11. Document Library & On-Device Vector Vault (RAG)
+
+The **Document Library** (Settings > 📚 Document Library) is NEXUS's local, privacy-first vector knowledge vault and Retrieval-Augmented Generation (RAG) engine running entirely within your browser's IndexedDB database.
+
+#### A. Architecture & Storage Guarantees
+- **100% Client-Side Privacy**: Documents, parsed text, and vector chunks are saved strictly inside your local browser's IndexedDB (\`nexus_document_library\`). No document files are ever uploaded or stored on external backend servers.
+- **Capacity & Quotas**: Supports up to 50 MB total library storage and 50 MB per document, backed by live capacity meters.
+- **Supported Formats**: Ingests PDF documents (\`.pdf\`), Microsoft Word files (\`.docx\`), Plain Text (\`.txt\`), CSV datasets (\`.csv\`), Markdown (\`.md\`), JSON (\`.json\`), Log files (\`.log\`), and direct raw clipboard text.
+
+#### B. Semantic Chunking & Vector Search Engine
+- **Text Extraction & Segmentation**: Automatically parses incoming documents into semantic chunks (~750 characters with overlapping boundaries) to preserve context.
+- **Vector Embeddings**: Calculates high-dimensional vector embeddings stored alongside chunks in IndexedDB.
+- **Cosine Similarity Retrieval**: Executes client-side cosine similarity vector scoring to find the top most relevant chunks for any natural language query in milliseconds.
+
+#### C. RAG Integration in JARVIS & /codeonline
+- **"Search My Docs" Toggle**: When enabled during JARVIS inquiries, relevant document chunks are automatically retrieved and injected into the Final Synthesizer's prompt with explicit document citations (\`[Document: '...']\`).
+- **/codeonline Integration**: When coding with live research, retrieved chunks from your local technical docs are seamlessly combined with live web research findings to guide the Coder agent.
+
+#### D. Document Management Features
+- **Inclusion Toggle**: Selectively toggle individual documents on/off to control which files participate in JARVIS searches.
+- **Quick Preview**: View extracted text snippets directly in the document list without opening external viewers.
+- **Rename**: Click the pencil icon to assign custom display names to any document (updates citations while preserving internal IDs and upload timestamps).
+- **In-Place Edit & Re-Index**: For text documents and pasted notes, click **Edit** to modify full text in-browser. Saving automatically re-segments, re-indexes vectors, and atomically replaces old chunks in IndexedDB.
+- **Interactive Search Sandbox**: Test your library retrieval with live search queries and similarity score diagnostics directly inside the settings panel.`;
+
   const sections: DocSection[] = [
     {
       id: 'overview',
@@ -340,7 +378,7 @@ The **Telegram Bot** bridge (/telegram or Settings > Telegram) transforms NEXUS 
     },
     {
       id: 'commands',
-      title: 'Slash Commands (/search, /web, /customapi, /code)',
+      title: 'Slash Commands (/search, /web, /customapi, /code, /codeonline)',
       badge: 'Pipeline Steering',
       icon: Terminal,
       text: slashCommandsText,
@@ -387,6 +425,13 @@ The **Telegram Bot** bridge (/telegram or Settings > Telegram) transforms NEXUS 
       icon: Send,
       text: telegramBotText,
     },
+    {
+      id: 'document-library',
+      title: 'Document Library & Vector Vault (RAG)',
+      badge: 'On-Device RAG',
+      icon: Database,
+      text: documentLibraryText,
+    },
   ];
 
   const fullDocumentationText = `# NEXUS INTELLIGENCE & JARVIS SYSTEM DOCUMENTATION
@@ -431,6 +476,10 @@ ${devicesText}
 --------------------------------------------------------------------------------
 
 ${telegramBotText}
+
+--------------------------------------------------------------------------------
+
+${documentLibraryText}
 
 ================================================================================
 End of NEXUS Documentation
@@ -995,6 +1044,22 @@ End of NEXUS Documentation
                 </p>
                 <div className="text-[11px] text-slate-300 font-mono bg-slate-900 px-2.5 py-1.5 rounded border border-slate-800">
                   <span className="text-slate-500">Example:</span> /code write a TypeScript debounce function with cancellation
+                </div>
+              </div>
+
+              {/* Command 5 */}
+              <div className="p-3.5 rounded-lg bg-slate-950/80 border border-slate-800">
+                <div className="flex flex-wrap items-center justify-between gap-2 mb-2">
+                  <div className="font-mono text-cyan-300 font-semibold text-xs sm:text-sm bg-cyan-950/60 px-2 py-0.5 rounded border border-cyan-800/40">
+                    /codeonline [prompt]
+                  </div>
+                  <span className="text-[11px] text-emerald-400 font-medium">3-Agent Live Research Coding Pipeline</span>
+                </div>
+                <p className="text-xs text-slate-400 m-0 mb-2">
+                  Executes real-time research for up-to-date APIs/libraries before writing code (Planner &rarr; Researcher &rarr; Coder). Strictly prioritizes live research over training data, enforces exact package name matching, isolates scope, and integrates with Document Library RAG.
+                </p>
+                <div className="text-[11px] text-slate-300 font-mono bg-slate-900 px-2.5 py-1.5 rounded border border-slate-800">
+                  <span className="text-slate-500">Example:</span> /codeonline build a Next.js 15 app with Server Actions and Auth.js v5
                 </div>
               </div>
             </div>
@@ -1616,6 +1681,92 @@ End of NEXUS Documentation
                 </div>
                 <p className="text-[12px] text-slate-400 m-0 leading-relaxed">
                   Monitors real-time ISS orbital tracks and notifies you when the space station is within 500 km. Automatically attaches inline keyboard buttons (Weather, Search, Space, News) to bot responses for 1-tap navigation.
+                </p>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        {/* Section 11: Document Library & On-Device Vector Vault (RAG) */}
+        <div
+          id="doc-document-library"
+          className="rounded-xl border border-slate-800 bg-slate-900/60 p-6 shadow-md backdrop-blur-sm transition-colors hover:border-slate-700/80"
+        >
+          <div className="flex items-start justify-between gap-4 pb-4 border-b border-slate-800">
+            <div className="flex items-center gap-3">
+              <div className="p-2.5 rounded-lg bg-cyan-500/10 border border-cyan-500/30 text-cyan-400">
+                <Database size={20} />
+              </div>
+              <div>
+                <h3 className="text-base font-semibold text-slate-100 flex items-center gap-2">
+                  <span>11. Document Library &amp; On-Device Vector Vault (RAG)</span>
+                  <span className="text-[11px] font-mono font-normal text-cyan-400 bg-cyan-950/80 px-2 py-0.5 rounded border border-cyan-800/60">
+                    On-Device RAG
+                  </span>
+                </h3>
+                <p className="text-xs text-slate-400 mt-0.5">
+                  Privacy-first local IndexedDB vector storage, semantic search, in-place text editing, and JARVIS RAG synthesis
+                </p>
+              </div>
+            </div>
+            <button
+              onClick={() => handleCopySection('document-library', documentLibraryText)}
+              className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-medium border border-slate-700 bg-slate-800/80 text-slate-300 hover:text-white hover:bg-slate-700 transition-colors shrink-0"
+              title="Copy this section's markdown"
+            >
+              {copiedSection === 'document-library' ? (
+                <>
+                  <Check size={13} className="text-emerald-400" />
+                  <span className="text-emerald-400 font-mono text-[11px]">Copied</span>
+                </>
+              ) : (
+                <>
+                  <Copy size={13} />
+                  <span>Copy</span>
+                </>
+              )}
+            </button>
+          </div>
+
+          <div className="mt-5 space-y-4 text-xs sm:text-sm text-slate-300 leading-relaxed">
+            <p>
+              The <strong className="text-slate-100">Document Library</strong> (Settings &gt; 📚 Document Library) allows users to build a personal, local vector knowledge vault. All files, embeddings, and chunks are saved strictly in your browser&apos;s IndexedDB (<code className="text-cyan-300">nexus_document_library</code>) with 100% privacy and zero server-side file uploads.
+            </p>
+
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-3.5">
+              <div className="p-3.5 rounded-lg bg-slate-950/80 border border-slate-800 space-y-1.5">
+                <div className="font-semibold text-cyan-300 text-xs flex items-center gap-1.5">
+                  <ShieldCheck size={14} /> 100% Local Browser Vector Vault
+                </div>
+                <p className="text-xs text-slate-400 m-0">
+                  Ingests PDF, DOCX, TXT, CSV, MD, JSON, LOG, and pasted clipboard notes up to 50 MB total. Automatically splits documents into ~750 character overlapping semantic chunks and computes embeddings for fast cosine similarity lookup.
+                </p>
+              </div>
+
+              <div className="p-3.5 rounded-lg bg-slate-950/80 border border-slate-800 space-y-1.5">
+                <div className="font-semibold text-cyan-300 text-xs flex items-center gap-1.5">
+                  <Sliders size={14} /> Document Management (Rename &amp; In-Place Edit)
+                </div>
+                <p className="text-xs text-slate-400 m-0">
+                  Includes full inclusion toggles, quick text previews, custom display renaming (updates citations while preserving internal IDs/timestamps), and in-place full text editing with automated re-chunking and vector re-indexing.
+                </p>
+              </div>
+
+              <div className="p-3.5 rounded-lg bg-slate-950/80 border border-slate-800 space-y-1.5">
+                <div className="font-semibold text-cyan-300 text-xs flex items-center gap-1.5">
+                  <Layers size={14} /> JARVIS &amp; /codeonline RAG Grounding
+                </div>
+                <p className="text-xs text-slate-400 m-0">
+                  When &quot;Search My Docs&quot; is active, matching semantic chunks are injected directly into the Final Synthesizer and the /codeonline Coder agent with verified <code className="text-slate-300">[Document: &apos;...&apos;]</code> citations.
+                </p>
+              </div>
+
+              <div className="p-3.5 rounded-lg bg-slate-950/80 border border-slate-800 space-y-1.5">
+                <div className="font-semibold text-cyan-300 text-xs flex items-center gap-1.5">
+                  <Search size={14} /> Interactive Vector Search Sandbox
+                </div>
+                <p className="text-xs text-slate-400 m-0">
+                  Test library vector retrieval directly inside Settings &gt; Document Library with real-time similarity score match meters and instant chunk inspections.
                 </p>
               </div>
             </div>
