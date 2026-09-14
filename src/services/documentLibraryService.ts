@@ -9,6 +9,9 @@ import {
   updateDocumentInclusionInDb,
   deleteDocumentFromIndexedDb,
   calculateDocumentStats,
+  getDocumentByIdFromDb,
+  updateDocumentNameInDb,
+  replaceDocumentAndChunksInDb,
 } from './documentIndexedDb';
 import type {
   LibraryDocument,
@@ -349,6 +352,7 @@ export async function uploadDocumentToLibrary(
     charCount: textContent.length,
     status: 'indexed',
     previewSnippet: textContent.slice(0, 240).replace(/\s+/g, ' ').trim() + (textContent.length > 240 ? '...' : ''),
+    fullText: textContent,
   };
 
   onProgress?.('Storing in device IndexedDB vault...');
@@ -363,6 +367,142 @@ export async function uploadDocumentToLibrary(
   }
 
   return newDoc;
+}
+
+/**
+ * Rename a document's custom display name in IndexedDB and local storage cache
+ */
+export async function renameDocumentInLibrary(
+  id: string,
+  newName: string,
+): Promise<LibraryDocument> {
+  const trimmed = newName.trim();
+  const currentDocs = await getIndexedDbDocuments();
+  const existingDoc = currentDocs.find((d) => d.id === id);
+  if (!existingDoc) {
+    throw new Error('Document not found in storage.');
+  }
+
+  if (!trimmed || trimmed === existingDoc.name) {
+    return existingDoc;
+  }
+
+  await updateDocumentNameInDb(id, trimmed);
+
+  const updatedDoc: LibraryDocument = {
+    ...existingDoc,
+    name: trimmed,
+  };
+
+  try {
+    const updated = currentDocs.map((d) => (d.id === id ? updatedDoc : d));
+    storage.saveDocumentLibrary(updated);
+  } catch {
+    // ignore
+  }
+
+  return updatedDoc;
+}
+
+/**
+ * Retrieve the full original text of a document from IndexedDB
+ */
+export async function getDocumentFullText(id: string): Promise<string> {
+  const doc = await getDocumentByIdFromDb(id);
+  if (doc?.fullText) {
+    return doc.fullText;
+  }
+
+  const chunks = await getIndexedDbChunks(id);
+  if (chunks.length === 0) {
+    return doc?.previewSnippet || '';
+  }
+  if (chunks.length === 1) {
+    return chunks[0].text;
+  }
+
+  // De-duplicate or join chunks sequentially
+  return chunks.map((c) => c.text).join('\n\n');
+}
+
+/**
+ * Re-process, re-chunk, and re-index an edited text document into IndexedDB
+ */
+export async function updateDocumentContent(
+  id: string,
+  newText: string,
+  onProgress?: (msg: string) => void,
+): Promise<LibraryDocument> {
+  const cleanText = newText.trim();
+  if (!cleanText) {
+    throw new Error('Document text cannot be empty.');
+  }
+
+  const currentDocs = await getIndexedDbDocuments();
+  const existingDoc = currentDocs.find((d) => d.id === id);
+  if (!existingDoc) {
+    throw new Error('Document not found in device storage.');
+  }
+
+  const textBlob = new Blob([cleanText], { type: 'text/plain' });
+  const newSize = textBlob.size;
+
+  if (newSize > MAX_FILE_SIZE_BYTES) {
+    throw new Error(
+      `Edited text exceeds the 50 MB per-document limit (${formatDocumentSize(newSize)}).`,
+    );
+  }
+
+  const otherDocsBytes = currentDocs
+    .filter((d) => d.id !== id)
+    .reduce((acc, d) => acc + (d.size || 0), 0);
+
+  if (otherDocsBytes + newSize > MAX_TOTAL_LIBRARY_BYTES) {
+    throw new Error(
+      `Total library storage capacity exceeded (50 MB max). Adding this edited content requires ${formatDocumentSize(
+        otherDocsBytes + newSize,
+      )}. Please remove unused documents.`,
+    );
+  }
+
+  onProgress?.('Segmenting updated text into semantic chunks...');
+  const rawChunks = chunkTextLocally(cleanText, id, existingDoc.name);
+
+  if (rawChunks.length === 0) {
+    throw new Error('Document produced 0 text chunks. Ensure the text contains readable content.');
+  }
+
+  onProgress?.('Computing vector embeddings...');
+  const chunkTexts = rawChunks.map((c) => c.text);
+  const embeddings = await fetchEmbeddingsFromServer(chunkTexts);
+
+  const processedChunks: DocumentChunk[] = rawChunks.map((chunk, idx) => ({
+    ...chunk,
+    embedding: embeddings[idx],
+  }));
+
+  const updatedDoc: LibraryDocument = {
+    ...existingDoc,
+    size: newSize,
+    chunkCount: processedChunks.length,
+    charCount: cleanText.length,
+    status: 'indexed',
+    previewSnippet:
+      cleanText.slice(0, 240).replace(/\s+/g, ' ').trim() + (cleanText.length > 240 ? '...' : ''),
+    fullText: cleanText,
+  };
+
+  onProgress?.('Updating device IndexedDB vault...');
+  await replaceDocumentAndChunksInDb(updatedDoc, processedChunks);
+
+  try {
+    const updated = currentDocs.map((d) => (d.id === id ? updatedDoc : d));
+    storage.saveDocumentLibrary(updated);
+  } catch {
+    // ignore
+  }
+
+  return updatedDoc;
 }
 
 /**

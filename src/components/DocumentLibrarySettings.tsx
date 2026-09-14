@@ -21,6 +21,8 @@ import {
   ShieldCheck,
   AlertTriangle,
   Clipboard,
+  Pencil,
+  Edit3,
 } from 'lucide-react';
 import {
   getLibraryDocuments,
@@ -30,6 +32,9 @@ import {
   formatDocumentSize,
   getDocumentTypeBadge,
   searchDocumentLibrary,
+  renameDocumentInLibrary,
+  getDocumentFullText,
+  updateDocumentContent,
   MAX_FILE_SIZE_BYTES,
   MAX_TOTAL_LIBRARY_BYTES,
 } from '@/services/documentLibraryService';
@@ -77,6 +82,18 @@ export const DocumentLibrarySettings: React.FC = () => {
 
   // Delete confirmation
   const [docToDelete, setDocToDelete] = useState<LibraryDocument | null>(null);
+
+  // Rename Document Modal state
+  const [docToRename, setDocToRename] = useState<LibraryDocument | null>(null);
+  const [renameInput, setRenameInput] = useState('');
+  const [renaming, setRenaming] = useState(false);
+
+  // Edit Text Document Modal state
+  const [docToEdit, setDocToEdit] = useState<LibraryDocument | null>(null);
+  const [editTextContent, setEditTextContent] = useState('');
+  const [editLoading, setEditLoading] = useState(false);
+  const [editSaving, setEditSaving] = useState(false);
+  const [editProgressMsg, setEditProgressMsg] = useState('');
 
   // Quick Semantic Search Sandbox inside Settings
   const [testQuery, setTestQuery] = useState('');
@@ -285,6 +302,127 @@ export const DocumentLibrarySettings: React.FC = () => {
     } catch (err: unknown) {
       const msg = err instanceof Error ? err.message : 'Failed to delete document';
       setError(msg);
+    }
+  };
+
+  const isEditableDoc = (doc: LibraryDocument): boolean => {
+    const ext = (doc.name.split('.').pop() || doc.type || '').toLowerCase().replace(/^\./, '');
+    return ext === 'txt' || ext === 'text';
+  };
+
+  const handleOpenRename = (doc: LibraryDocument) => {
+    setDocToRename(doc);
+    setRenameInput(doc.name);
+  };
+
+  const handleCancelRename = () => {
+    setDocToRename(null);
+    setRenameInput('');
+  };
+
+  const handleConfirmRename = async (e?: React.FormEvent) => {
+    if (e) e.preventDefault();
+    if (!docToRename) return;
+
+    const trimmed = renameInput.trim();
+    if (!trimmed || trimmed === docToRename.name) {
+      setDocToRename(null);
+      setRenameInput('');
+      return;
+    }
+
+    try {
+      setRenaming(true);
+      const oldName = docToRename.name;
+      const updated = await renameDocumentInLibrary(docToRename.id, trimmed);
+      setDocuments((prev) => prev.map((d) => (d.id === docToRename.id ? updated : d)));
+      setDocToRename(null);
+      setRenameInput('');
+      setSuccessMsg(`Document renamed from "${oldName}" to "${trimmed}".`);
+      setTimeout(() => setSuccessMsg(null), 4000);
+    } catch (err: unknown) {
+      const msg = err instanceof Error ? err.message : 'Failed to rename document';
+      setError(msg);
+    } finally {
+      setRenaming(false);
+    }
+  };
+
+  const handleOpenEdit = async (doc: LibraryDocument) => {
+    setDocToEdit(doc);
+    setEditLoading(true);
+    setEditTextContent('');
+    setError(null);
+    try {
+      const fullText = await getDocumentFullText(doc.id);
+      setEditTextContent(fullText || doc.previewSnippet || '');
+    } catch (err: unknown) {
+      console.error('Failed to load document text for editing:', err);
+      setEditTextContent(doc.previewSnippet || '');
+    } finally {
+      setEditLoading(false);
+    }
+  };
+
+  const handleCancelEdit = () => {
+    setDocToEdit(null);
+    setEditTextContent('');
+    setEditProgressMsg('');
+  };
+
+  const handleConfirmEdit = async () => {
+    if (!docToEdit) return;
+    if (!editTextContent.trim()) {
+      setError('Document text cannot be empty.');
+      return;
+    }
+
+    const textBlob = new Blob([editTextContent], { type: 'text/plain' });
+    const textBytes = textBlob.size;
+
+    if (textBytes > MAX_FILE_SIZE_BYTES) {
+      setError(`Edited text exceeds the 50 MB per-document limit (${formatDocumentSize(textBytes)}).`);
+      return;
+    }
+
+    const otherDocsBytes = documents
+      .filter((d) => d.id !== docToEdit.id)
+      .reduce((acc, d) => acc + (d.size || 0), 0);
+
+    if (otherDocsBytes + textBytes > MAX_TOTAL_LIBRARY_BYTES) {
+      setError(
+        `Total library storage capacity exceeded (50 MB max). Adding this edited content requires ${formatDocumentSize(
+          otherDocsBytes + textBytes,
+        )}. Please remove unused documents.`,
+      );
+      return;
+    }
+
+    setEditSaving(true);
+    setEditProgressMsg('Re-processing semantic vector chunks...');
+    setError(null);
+
+    try {
+      const updated = await updateDocumentContent(docToEdit.id, editTextContent, (msg) => {
+        setEditProgressMsg(msg);
+      });
+
+      setDocToEdit(null);
+      setEditTextContent('');
+      setEditProgressMsg('');
+      await loadData();
+      setSuccessMsg(
+        `Successfully updated and re-indexed "${updated.name}" (${formatDocumentSize(
+          updated.size,
+        )}, ${updated.chunkCount} vector chunks) into IndexedDB.`,
+      );
+      setTimeout(() => setSuccessMsg(null), 5000);
+    } catch (err: unknown) {
+      const msg = err instanceof Error ? err.message : 'Failed to update document content';
+      setError(msg);
+    } finally {
+      setEditSaving(false);
+      setEditProgressMsg('');
     }
   };
 
@@ -688,7 +826,7 @@ export const DocumentLibrarySettings: React.FC = () => {
                         )}
                       </div>
 
-                      <div className="flex items-center gap-3 text-xs text-slate-400 mt-1 font-mono">
+                      <div className="flex items-center gap-2 sm:gap-3 text-xs text-slate-400 mt-1 font-mono flex-wrap">
                         <span>{formatDocumentSize(doc.size)}</span>
                         <span>•</span>
                         <span>{uploadDate}</span>
@@ -696,11 +834,36 @@ export const DocumentLibrarySettings: React.FC = () => {
                           <>
                             <span>•</span>
                             <button
+                              type="button"
                               onClick={() => setExpandedDocId(isExpanded ? null : doc.id)}
-                              className="text-cyan-400 hover:text-cyan-300 flex items-center gap-1"
+                              className="text-cyan-400 hover:text-cyan-300 flex items-center gap-1 transition-colors"
                             >
                               {isExpanded ? 'Hide Preview' : 'Quick Preview'}
                               {isExpanded ? <ChevronUp className="w-3 h-3" /> : <ChevronDown className="w-3 h-3" />}
+                            </button>
+                          </>
+                        )}
+                        <span>•</span>
+                        <button
+                          type="button"
+                          onClick={() => handleOpenRename(doc)}
+                          className="text-cyan-400 hover:text-cyan-300 flex items-center gap-1 transition-colors"
+                          title="Rename document display name"
+                        >
+                          <Pencil className="w-3 h-3" />
+                          Rename
+                        </button>
+                        {isEditableDoc(doc) && (
+                          <>
+                            <span>•</span>
+                            <button
+                              type="button"
+                              onClick={() => handleOpenEdit(doc)}
+                              className="text-cyan-400 hover:text-cyan-300 flex items-center gap-1 transition-colors"
+                              title="Edit text content and re-index"
+                            >
+                              <Edit3 className="w-3 h-3" />
+                              Edit
                             </button>
                           </>
                         )}
@@ -1022,6 +1185,236 @@ export const DocumentLibrarySettings: React.FC = () => {
                   Confirm &amp; Add
                 </button>
               )}
+            </div>
+          </div>
+        </div>,
+        document.body
+      )}
+
+      {/* Rename Document Modal - Portaled to document.body */}
+      {docToRename && typeof document !== 'undefined' && createPortal(
+        <div
+          id="nexus-doc-rename-modal-overlay"
+          onClick={(e) => {
+            if (e.target === e.currentTarget && !renaming) handleCancelRename();
+          }}
+          className="fixed inset-0 z-[99999] flex items-center justify-center p-4 bg-black/80 backdrop-blur-md animate-in fade-in"
+          style={{
+            position: 'fixed',
+            top: 0,
+            left: 0,
+            right: 0,
+            bottom: 0,
+            width: '100vw',
+            height: '100vh',
+            margin: 0,
+            boxSizing: 'border-box',
+          }}
+        >
+          <div className="relative w-full max-w-md mx-auto my-auto rounded-2xl border border-cyan-500/30 bg-slate-900 p-6 shadow-2xl shadow-cyan-950/50">
+            <div className="flex items-center justify-between pb-3 border-b border-white/10 mb-4">
+              <div className="flex items-center gap-2.5 text-cyan-400">
+                <div className="p-2 rounded-xl bg-cyan-500/10 border border-cyan-500/30">
+                  <Pencil className="w-4 h-4" />
+                </div>
+                <h3 className="text-base font-semibold text-white">Rename Document</h3>
+              </div>
+              <button
+                type="button"
+                onClick={handleCancelRename}
+                disabled={renaming}
+                className="p-1.5 rounded-lg text-slate-400 hover:text-white hover:bg-slate-800 transition-all disabled:opacity-50"
+                title="Close"
+              >
+                <X className="w-4 h-4" />
+              </button>
+            </div>
+
+            <p className="text-xs text-slate-400 mb-3">
+              Set a custom display name for this document. If left blank or cancelled, the current name will remain unchanged.
+            </p>
+
+            <form onSubmit={handleConfirmRename} className="space-y-4">
+              <div>
+                <label className="block text-[11px] font-mono text-slate-400 mb-1.5">
+                  Display Name:
+                </label>
+                <input
+                  type="text"
+                  autoFocus
+                  value={renameInput}
+                  onChange={(e) => setRenameInput(e.target.value)}
+                  placeholder={docToRename.name}
+                  disabled={renaming}
+                  className="w-full px-3.5 py-2.5 rounded-xl bg-slate-950/80 border border-white/10 text-sm text-white placeholder-slate-500 focus:outline-none focus:ring-1 focus:ring-cyan-500/50 focus:border-cyan-500/60 font-mono disabled:opacity-50"
+                  onKeyDown={(e) => {
+                    if (e.key === 'Escape' && !renaming) handleCancelRename();
+                  }}
+                />
+              </div>
+
+              <div className="flex items-center justify-end gap-3 pt-2 border-t border-white/5">
+                <button
+                  type="button"
+                  onClick={handleCancelRename}
+                  disabled={renaming}
+                  className="px-4 py-2 rounded-xl text-xs font-medium text-slate-400 hover:text-white bg-slate-800/80 hover:bg-slate-700/80 border border-white/5 transition-all disabled:opacity-50"
+                >
+                  Cancel
+                </button>
+                <button
+                  type="submit"
+                  disabled={renaming}
+                  className="px-4 py-2 rounded-xl text-xs font-semibold text-slate-950 bg-cyan-500 hover:bg-cyan-400 transition-all shadow-lg shadow-cyan-500/20 disabled:opacity-50 flex items-center gap-1.5"
+                >
+                  {renaming ? <RefreshCw className="w-3.5 h-3.5 animate-spin" /> : <CheckCircle2 className="w-3.5 h-3.5" />}
+                  Save Name
+                </button>
+              </div>
+            </form>
+          </div>
+        </div>,
+        document.body
+      )}
+
+      {/* Edit Content Modal - Portaled to document.body */}
+      {docToEdit && typeof document !== 'undefined' && createPortal(
+        <div
+          id="nexus-doc-edit-modal-overlay"
+          onClick={(e) => {
+            if (e.target === e.currentTarget && !editSaving) handleCancelEdit();
+          }}
+          className="fixed inset-0 z-[99999] flex items-center justify-center p-3 sm:p-6 bg-black/85 backdrop-blur-md animate-in fade-in overflow-y-auto"
+          style={{
+            position: 'fixed',
+            top: 0,
+            left: 0,
+            right: 0,
+            bottom: 0,
+            width: '100vw',
+            height: '100vh',
+            margin: 0,
+            boxSizing: 'border-box',
+          }}
+        >
+          <div
+            id="nexus-doc-edit-modal-card"
+            className="relative w-full max-w-[92vw] sm:max-w-xl md:max-w-2xl mx-auto my-auto rounded-2xl border border-cyan-500/30 bg-slate-900 p-4 sm:p-6 shadow-2xl shadow-cyan-950/50 flex flex-col max-h-[92dvh] sm:max-h-[88vh] overflow-hidden"
+            style={{
+              boxSizing: 'border-box',
+            }}
+          >
+            {/* Modal Header */}
+            <div className="flex-shrink-0 flex items-start sm:items-center justify-between pb-3 sm:pb-4 border-b border-white/10 gap-2">
+              <div className="flex items-center gap-2.5 sm:gap-3 min-w-0">
+                <div className="p-2 sm:p-2.5 rounded-xl bg-cyan-500/10 border border-cyan-500/30 text-cyan-400 flex-shrink-0">
+                  <Edit3 className="w-4 h-4 sm:w-5 h-5" />
+                </div>
+                <div className="min-w-0">
+                  <h3 className="text-sm sm:text-base font-semibold text-white flex items-center gap-2 flex-wrap">
+                    <span>Edit Document Content</span>
+                    <span className="text-[10px] font-mono px-2 py-0.5 rounded-md bg-amber-500/10 text-amber-400 border border-amber-500/30 font-semibold">
+                      TXT
+                    </span>
+                  </h3>
+                  <p className="text-[11px] sm:text-xs text-slate-400 mt-0.5 truncate sm:whitespace-normal">
+                    Modify text and re-index semantic vector chunks into on-device IndexedDB.
+                  </p>
+                </div>
+              </div>
+              <button
+                type="button"
+                onClick={handleCancelEdit}
+                disabled={editSaving}
+                className="p-1.5 rounded-lg text-slate-400 hover:text-white hover:bg-slate-800 transition-all flex-shrink-0 disabled:opacity-50"
+                title="Close"
+              >
+                <X className="w-4 h-4" />
+              </button>
+            </div>
+
+            {/* Target Document Info */}
+            <div className="flex-shrink-0 mt-3 px-3 py-2 rounded-xl bg-slate-950/60 border border-white/5 flex flex-wrap sm:flex-nowrap items-center justify-between gap-2 text-xs">
+              <div className="flex items-center gap-2 font-mono text-slate-300 min-w-0">
+                <FileText className="w-3.5 h-3.5 text-cyan-400 flex-shrink-0" />
+                <span className="text-slate-400 flex-shrink-0">Document:</span>
+                <span className="text-cyan-300 font-semibold truncate max-w-[170px] sm:max-w-xs">
+                  {docToEdit.name}
+                </span>
+              </div>
+              <span className="text-[11px] font-mono text-slate-400 flex-shrink-0">
+                {formatDocumentSize(new Blob([editTextContent]).size)}
+              </span>
+            </div>
+
+            {/* Editable Textarea */}
+            <div className="mt-2.5 sm:mt-3 flex-1 min-h-[140px] sm:min-h-[180px] flex flex-col overflow-hidden">
+              <div className="flex-shrink-0 text-[11px] font-mono text-slate-400 mb-1.5 flex items-center justify-between flex-wrap gap-1">
+                <span>Text Content (Editable):</span>
+                <span className="text-cyan-300 font-semibold">
+                  {editTextContent.length.toLocaleString()} chars
+                </span>
+              </div>
+              {editLoading ? (
+                <div className="w-full flex-1 min-h-[120px] sm:min-h-[180px] p-6 rounded-xl bg-slate-950/80 border border-white/10 flex flex-col items-center justify-center gap-2 text-slate-400">
+                  <RefreshCw className="w-5 h-5 animate-spin text-cyan-400" />
+                  <span className="text-xs">Loading document text...</span>
+                </div>
+              ) : (
+                <textarea
+                  value={editTextContent}
+                  onChange={(e) => setEditTextContent(e.target.value)}
+                  disabled={editSaving}
+                  className="w-full flex-1 min-h-[120px] sm:min-h-[180px] p-3 sm:p-3.5 rounded-xl bg-slate-950/80 border border-white/10 text-slate-200 font-mono text-xs leading-relaxed focus:outline-none focus:ring-1 focus:ring-cyan-500/50 focus:border-cyan-500/60 resize-none overflow-y-auto disabled:opacity-60"
+                  placeholder="Document text content..."
+                />
+              )}
+            </div>
+
+            {/* Quota & Processing Status */}
+            {editSaving ? (
+              <div className="flex-shrink-0 mt-2.5 sm:mt-3 p-3 rounded-xl bg-cyan-500/10 border border-cyan-500/30 text-cyan-300 text-xs flex items-center gap-2.5">
+                <RefreshCw className="w-4 h-4 animate-spin text-cyan-400 flex-shrink-0" />
+                <span>{editProgressMsg || 'Re-processing and re-indexing into IndexedDB...'}</span>
+              </div>
+            ) : new Blob([editTextContent]).size > MAX_FILE_SIZE_BYTES ? (
+              <div className="flex-shrink-0 mt-2.5 sm:mt-3 p-3 rounded-xl bg-rose-500/10 border border-rose-500/30 text-rose-300 text-xs flex items-start gap-2.5">
+                <AlertCircle className="w-4 h-4 text-rose-400 flex-shrink-0 mt-0.5" />
+                <div>
+                  <strong className="block font-semibold text-rose-300">50 MB File Quota Exceeded</strong>
+                  Edited text size is {formatDocumentSize(new Blob([editTextContent]).size)}, which exceeds 50 MB per document limit.
+                </div>
+              </div>
+            ) : (
+              <div className="flex-shrink-0 mt-2.5 sm:mt-3 px-3 py-2 rounded-xl bg-cyan-500/5 border border-cyan-500/10 text-[11px] text-slate-400 flex items-center justify-between font-mono flex-wrap gap-1">
+                <span>Estimated Vector Chunks: ~{Math.max(1, Math.ceil(editTextContent.length / 750))}</span>
+                <span>Target: Local IndexedDB</span>
+              </div>
+            )}
+
+            {/* Modal Actions */}
+            <div className="flex-shrink-0 flex items-center justify-end gap-2 sm:gap-3 mt-3 sm:mt-4 pt-3 sm:pt-4 border-t border-white/10">
+              <button
+                type="button"
+                onClick={handleCancelEdit}
+                disabled={editSaving}
+                className="px-4 py-2 rounded-xl text-xs font-medium text-slate-400 hover:text-white bg-slate-800/80 hover:bg-slate-700/80 border border-white/5 transition-all disabled:opacity-50"
+              >
+                Cancel
+              </button>
+              <button
+                type="button"
+                onClick={handleConfirmEdit}
+                disabled={editSaving || editLoading || !editTextContent.trim() || new Blob([editTextContent]).size > MAX_FILE_SIZE_BYTES}
+                className="px-4 sm:px-5 py-2 rounded-xl text-xs font-semibold text-slate-950 bg-cyan-500 hover:bg-cyan-400 transition-all shadow-lg shadow-cyan-500/20 disabled:opacity-50 disabled:cursor-not-allowed flex items-center gap-2"
+              >
+                {editSaving ? (
+                  <RefreshCw className="w-3.5 h-3.5 animate-spin" />
+                ) : (
+                  <CheckCircle2 className="w-3.5 h-3.5" />
+                )}
+                Save &amp; Re-index
+              </button>
             </div>
           </div>
         </div>,

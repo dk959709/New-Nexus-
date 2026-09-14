@@ -218,6 +218,141 @@ export async function saveDocumentToIndexedDb(
 }
 
 /**
+ * Get a single document by ID from IndexedDB
+ */
+export async function getDocumentByIdFromDb(id: string): Promise<LibraryDocument | undefined> {
+  try {
+    const db = await getDocumentDb();
+    return new Promise<LibraryDocument | undefined>((resolve, reject) => {
+      const tx = db.transaction([STORE_DOCS], 'readonly');
+      const store = tx.objectStore(STORE_DOCS);
+      const req = store.get(id);
+      req.onsuccess = () => resolve(req.result as LibraryDocument | undefined);
+      req.onerror = () => reject(req.error || new Error('Failed to fetch document.'));
+    });
+  } catch {
+    return memoryFallback.docs.get(id);
+  }
+}
+
+/**
+ * Update document display name in IndexedDB across document record and chunks
+ */
+export async function updateDocumentNameInDb(docId: string, newName: string): Promise<void> {
+  try {
+    const db = await getDocumentDb();
+    return new Promise<void>((resolve, reject) => {
+      const tx = db.transaction([STORE_DOCS, STORE_CHUNKS], 'readwrite');
+      const docStore = tx.objectStore(STORE_DOCS);
+      const chunkStore = tx.objectStore(STORE_CHUNKS);
+
+      const getReq = docStore.get(docId);
+      getReq.onsuccess = () => {
+        const doc = getReq.result as LibraryDocument | undefined;
+        if (doc) {
+          doc.name = newName;
+          docStore.put(doc);
+        }
+      };
+
+      const chunkIndex = chunkStore.index('docId');
+      const cursorReq = chunkIndex.openCursor(IDBKeyRange.only(docId));
+      cursorReq.onsuccess = () => {
+        const cursor = cursorReq.result;
+        if (cursor) {
+          const chunk = cursor.value as DocumentChunk;
+          chunk.docName = newName;
+          cursor.update(chunk);
+          cursor.continue();
+        }
+      };
+
+      tx.oncomplete = () => resolve();
+      tx.onerror = () => reject(tx.error || new Error('Failed to update document name in IndexedDB.'));
+    });
+  } catch (err) {
+    const doc = memoryFallback.docs.get(docId);
+    if (doc) {
+      doc.name = newName;
+    }
+    for (const chunk of memoryFallback.chunks.values()) {
+      if (chunk.docId === docId) {
+        chunk.docName = newName;
+      }
+    }
+    console.warn('[IndexedDB] Rename in memory fallback:', err);
+  }
+}
+
+/**
+ * Replace document content and re-indexed chunks atomically in IndexedDB
+ */
+export async function replaceDocumentAndChunksInDb(
+  doc: LibraryDocument,
+  newChunks: DocumentChunk[],
+): Promise<void> {
+  try {
+    const db = await getDocumentDb();
+    return new Promise<void>((resolve, reject) => {
+      const tx = db.transaction([STORE_DOCS, STORE_CHUNKS], 'readwrite');
+
+      tx.oncomplete = () => {
+        resolve();
+      };
+
+      tx.onerror = () => {
+        const err = tx.error;
+        if (err && (err.name === 'QuotaExceededError' || err.message?.includes('quota'))) {
+          reject(
+            new Error(
+              'Device storage quota exceeded for IndexedDB. Please remove unused documents to free up space.',
+            ),
+          );
+        } else {
+          reject(err || new Error('Failed to update document in IndexedDB.'));
+        }
+      };
+
+      const docStore = tx.objectStore(STORE_DOCS);
+      const chunkStore = tx.objectStore(STORE_CHUNKS);
+
+      // 1. Put updated doc record
+      docStore.put(doc);
+
+      // 2. Delete all existing chunks for this docId, then insert new chunks
+      const chunkIndex = chunkStore.index('docId');
+      const cursorReq = chunkIndex.openKeyCursor(IDBKeyRange.only(doc.id));
+      cursorReq.onsuccess = () => {
+        const cursor = cursorReq.result;
+        if (cursor) {
+          chunkStore.delete(cursor.primaryKey);
+          cursor.continue();
+        } else {
+          // Finished deleting old chunks; insert new chunks
+          for (const chunk of newChunks) {
+            chunkStore.put(chunk);
+          }
+        }
+      };
+    });
+  } catch (err: unknown) {
+    memoryFallback.docs.set(doc.id, doc);
+    for (const [chunkId, chunk] of Array.from(memoryFallback.chunks.entries())) {
+      if (chunk.docId === doc.id) {
+        memoryFallback.chunks.delete(chunkId);
+      }
+    }
+    for (const chunk of newChunks) {
+      memoryFallback.chunks.set(chunk.id, chunk);
+    }
+    if (err instanceof Error && err.name === 'QuotaExceededError') {
+      throw new Error('Device storage quota exceeded for IndexedDB. Please free up space.');
+    }
+    console.warn('[IndexedDB] Updated in memory fallback:', err);
+  }
+}
+
+/**
  * Toggle document enabled state in IndexedDB
  */
 export async function updateDocumentInclusionInDb(

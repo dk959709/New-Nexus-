@@ -690,6 +690,7 @@ export interface LibraryDocument {
   status: 'indexed' | 'indexing' | 'error';
   errorMessage?: string;
   previewSnippet?: string;
+  fullText?: string;
   chunks?: DocumentChunk[];
 }
 
