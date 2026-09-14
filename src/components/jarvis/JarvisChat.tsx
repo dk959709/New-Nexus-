@@ -1903,7 +1903,7 @@ export function JarvisChat({ config, onOpenSettings }: JarvisChatProps) {
                     <span>📚</span>
                     <span>SEARCH MY DOCS</span>
                     {availableDocs.length > 0 && (
-                      <span className="text-[9px] px-1.5 py-0.2 rounded-full bg-purple-500/20 text-purple-300 border border-purple-500/30">
+                      <span className="text-[9px] px-1.5 py-0.5 rounded-full bg-purple-500/20 text-purple-300 border border-purple-500/30">
                         {availableDocs.filter(d => d.enabledForJarvis).length}
                       </span>
                     )}
@@ -2064,7 +2064,7 @@ export function JarvisChat({ config, onOpenSettings }: JarvisChatProps) {
                 >
                   <Trash2 size={13} className="text-rose-400" />
                   <span>Clear</span>
-                  <span className="px-1.5 py-0.2 rounded-full bg-rose-500/30 text-[10px] font-mono">
+                  <span className="px-1.5 py-0.5 rounded-full bg-rose-500/30 text-[10px] font-mono">
                     {messages.length}
                   </span>
                 </button>

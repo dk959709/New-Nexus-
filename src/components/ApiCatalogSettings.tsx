@@ -921,7 +921,7 @@ export function ApiCatalogSettings() {
                             {item.name}
                           </span>
                           {item.isCustom && (
-                            <span className="text-[10px] px-1.5 py-0.2 rounded font-mono font-medium bg-indigo-500/15 text-indigo-300 border border-indigo-500/30">
+                            <span className="text-[10px] px-1.5 py-0.5 rounded font-mono font-medium bg-indigo-500/15 text-indigo-300 border border-indigo-500/30">
                               Custom
                             </span>
                           )}

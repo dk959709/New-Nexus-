@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useRef } from 'react';
+import React, { useState, useEffect, useRef, useMemo } from 'react';
 import {
   Send,
   Trash2,
@@ -24,16 +24,28 @@ import {
   Search,
   Radio,
   CornerDownLeft,
+  CornerDownRight,
+  MessageSquareQuote,
+  Play,
+  Pause,
+  BookOpen,
+  ChevronLeft,
+  ChevronRight,
 } from 'lucide-react';
 import { storage } from '@/lib/storage';
 import { copyToClipboard } from '@/lib/clipboard';
 import { cleanMarkdownForSpeech } from '@/lib/format';
 import { FormattedText } from '@/components/jarvis/FormattedText';
-import { executeMultiChatTurn, getPersonaCleanText } from '@/services/multiChatOrchestrator';
+import {
+  executeMultiChatTurn,
+  executePersonaBranch,
+  getPersonaCleanText,
+} from '@/services/multiChatOrchestrator';
 import type {
   MultiChatMessage,
   MultiChatSystemConfig,
   MultiChatPersonaResponse,
+  MultiChatPersonaId,
 } from '@/types';
 
 interface MultiChatConsoleProps {
@@ -42,6 +54,17 @@ interface MultiChatConsoleProps {
 }
 
 type ViewMode = 'unified' | 'tabs' | 'grid';
+
+interface PodcastTrack {
+  msgId: string;
+  personaId: MultiChatPersonaId;
+  name: string;
+  icon: string;
+  accentColor: string;
+  toneBadge?: string;
+  text: string;
+  query: string;
+}
 
 const PROMPT_CATEGORIES = [
   {
@@ -95,6 +118,40 @@ export function MultiChatConsole({ config, onNavigateToSettings }: MultiChatCons
   const [selectedPersonaTab, setSelectedPersonaTab] = useState<Record<string, string>>({});
   const [showQuickPrompts, setShowQuickPrompts] = useState(false);
 
+  // FEATURE 1: 1-ON-1 PERSONA BRANCHING STATES
+  const [activeBranchCardKey, setActiveBranchCardKey] = useState<string | null>(null);
+  const [branchDraftInputs, setBranchDraftInputs] = useState<Record<string, string>>({});
+  const [branchLoadingKey, setBranchLoadingKey] = useState<string | null>(null);
+
+  // FEATURE 2: DOCUMENT LENS STATES
+  const [docLensEnabled, setDocLensEnabled] = useState<boolean>(() => {
+    try {
+      return localStorage.getItem('nexus_multichat_doclens') === 'true';
+    } catch {
+      return false;
+    }
+  });
+  const [expandedDocMsgId, setExpandedDocMsgId] = useState<string | null>(null);
+
+  // FEATURE 3: PODCAST MODE STATES
+  const [isPodcastActive, setIsPodcastActive] = useState(false);
+  const [podcastPlaying, setPodcastPlaying] = useState(false);
+  const [podcastTrackIndex, setPodcastTrackIndex] = useState(0);
+  const [podcastPlaybackRate, setPodcastPlaybackRate] = useState<number>(1.0);
+  const podcastAudioRef = useRef<HTMLAudioElement | null>(null);
+
+  const toggleDocLens = () => {
+    setDocLensEnabled((prev) => {
+      const next = !prev;
+      try {
+        localStorage.setItem('nexus_multichat_doclens', String(next));
+      } catch (err) {
+        console.warn('Could not persist Doc Lens preference:', err);
+      }
+      return next;
+    });
+  };
+
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const inputRef = useRef<HTMLTextAreaElement>(null);
   const edgeTtsAudioRef = useRef<HTMLAudioElement | null>(null);
@@ -105,11 +162,16 @@ export function MultiChatConsole({ config, onNavigateToSettings }: MultiChatCons
       edgeTtsAudioRef.current.pause();
       edgeTtsAudioRef.current = null;
     }
+    if (podcastAudioRef.current) {
+      podcastAudioRef.current.pause();
+      podcastAudioRef.current = null;
+    }
     if (typeof window !== 'undefined' && 'speechSynthesis' in window) {
       window.speechSynthesis.cancel();
     }
     setPlayingAudioKey(null);
     setEdgeTtsLoadingId(null);
+    setPodcastPlaying(false);
   };
 
   // Delete message box (reused by both manual Delete button and auto-cleanup):
@@ -193,6 +255,7 @@ export function MultiChatConsole({ config, onNavigateToSettings }: MultiChatCons
       query: textToSend,
       timestamp: Date.now(),
       responses: initialResponses,
+      docLensEnabled: docLensEnabled,
     };
 
     const updatedMessages = [...messages, newMessage];
@@ -200,12 +263,13 @@ export function MultiChatConsole({ config, onNavigateToSettings }: MultiChatCons
     storage.saveMultiChatMessages(updatedMessages);
 
     try {
-      await executeMultiChatTurn({
+      const turnResult = await executeMultiChatTurn({
         query: textToSend,
         conversationHistory: messages,
         config,
         permanentMemories: storage.getMultiChatMemories(),
         responseLanguage: config.responseLanguage ?? storage.getMultiChatResponseLanguage(),
+        enableDocLens: docLensEnabled,
         onPersonaUpdate: (updatedResp) => {
           setMessages((prev) => {
             const next = prev.map((msg) => {
@@ -220,6 +284,18 @@ export function MultiChatConsole({ config, onNavigateToSettings }: MultiChatCons
           });
         },
       });
+
+      if (turnResult?.docChunks && turnResult.docChunks.length > 0) {
+        setMessages((prev) => {
+          const next = prev.map((msg) =>
+            msg.id === messageId
+              ? { ...msg, docChunks: turnResult.docChunks, docLensEnabled: true }
+              : msg,
+          );
+          storage.saveMultiChatMessages(next);
+          return next;
+        });
+      }
 
       // Auto-cleanup: ONLY AFTER all 3 persona responses are fully received and saved,
       // check if total message count > 20, and automatically delete the oldest message(s)
@@ -242,6 +318,245 @@ export function MultiChatConsole({ config, onNavigateToSettings }: MultiChatCons
         inputRef.current?.focus();
       }, 100);
     }
+  };
+
+  // FEATURE 1: 1-ON-1 PERSONA BRANCHING HANDLERS
+  const handleSendBranch = async (msg: MultiChatMessage, personaId: MultiChatPersonaId) => {
+    const cardKey = `${msg.id}_${personaId}`;
+    const draftText = (branchDraftInputs[cardKey] || '').trim();
+    if (!draftText || branchLoadingKey) return;
+
+    setBranchLoadingKey(cardKey);
+    try {
+      const branchTurn = await executePersonaBranch({
+        message: msg,
+        targetPersonaId: personaId,
+        branchQuery: draftText,
+        conversationHistory: messages,
+        config,
+        permanentMemories: storage.getMultiChatMemories(),
+        responseLanguage: config.responseLanguage ?? storage.getMultiChatResponseLanguage(),
+      });
+
+      setMessages((prev) => {
+        const next = prev.map((m) => {
+          if (m.id !== msg.id) return m;
+          const nextResponses = m.responses.map((r) => {
+            if (r.personaId !== personaId) return r;
+            const currentBranches = r.branches || [];
+            return {
+              ...r,
+              branches: [...currentBranches, branchTurn],
+            };
+          });
+          return { ...m, responses: nextResponses };
+        });
+        storage.saveMultiChatMessages(next);
+        return next;
+      });
+
+      // Clear input
+      setBranchDraftInputs((prev) => {
+        const next = { ...prev };
+        delete next[cardKey];
+        return next;
+      });
+    } catch (err) {
+      console.error('[MultiChat] Branch execution failed:', err);
+    } finally {
+      setBranchLoadingKey(null);
+    }
+  };
+
+  const handleDeleteBranch = (
+    msgId: string,
+    personaId: MultiChatPersonaId,
+    branchTurnId: string,
+  ) => {
+    setMessages((prev) => {
+      const next = prev.map((m) => {
+        if (m.id !== msgId) return m;
+        const nextResponses = m.responses.map((r) => {
+          if (r.personaId !== personaId) return r;
+          return {
+            ...r,
+            branches: (r.branches || []).filter((b) => b.id !== branchTurnId),
+          };
+        });
+        return { ...m, responses: nextResponses };
+      });
+      storage.saveMultiChatMessages(next);
+      return next;
+    });
+  };
+
+  // FEATURE 3: PODCAST MODE PLAYLIST & ENGINE
+  const podcastTracks: PodcastTrack[] = useMemo(() => {
+    const tracks: PodcastTrack[] = [];
+    for (const msg of messages) {
+      for (const resp of msg.responses) {
+        if (resp.status === 'completed' && getPersonaCleanText(resp).trim().length > 0) {
+          tracks.push({
+            msgId: msg.id,
+            personaId: resp.personaId,
+            name: resp.name,
+            icon: resp.icon,
+            accentColor: resp.accentColor,
+            toneBadge: resp.toneBadge,
+            text: getPersonaCleanText(resp),
+            query: msg.query,
+          });
+        }
+      }
+    }
+    return tracks;
+  }, [messages]);
+
+  const currentPodcastTrack = podcastTracks[podcastTrackIndex] || null;
+
+  const playPodcastTrackAtIndex = async (index: number) => {
+    if (index < 0 || index >= podcastTracks.length) {
+      stopAudio();
+      setIsPodcastActive(false);
+      return;
+    }
+
+    stopAudio();
+    setPodcastTrackIndex(index);
+    setIsPodcastActive(true);
+    setPodcastPlaying(true);
+
+    const track = podcastTracks[index];
+    const cleanText = cleanMarkdownForSpeech(track.text);
+    if (!cleanText) {
+      playPodcastTrackAtIndex(index + 1);
+      return;
+    }
+
+    const voice = getPersonaVoice(track.personaId);
+    const spokenIntro = `${track.name}. `;
+    const fullTextToSpeak = `${spokenIntro}${cleanText}`.slice(0, 3500);
+
+    try {
+      const response = await fetch('/api/edge-tts', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          text: fullTextToSpeak,
+          voice,
+        }),
+      });
+
+      if (!response.ok) {
+        throw new Error(`Podcast TTS error: ${response.status}`);
+      }
+
+      const blob = await response.blob();
+      const url = URL.createObjectURL(blob);
+      const audio = new Audio(url);
+      podcastAudioRef.current = audio;
+      audio.playbackRate = podcastPlaybackRate;
+
+      audio.onplay = () => {
+        setPodcastPlaying(true);
+      };
+
+      audio.onended = () => {
+        URL.revokeObjectURL(url);
+        podcastAudioRef.current = null;
+        if (index + 1 < podcastTracks.length) {
+          playPodcastTrackAtIndex(index + 1);
+        } else {
+          setPodcastPlaying(false);
+        }
+      };
+
+      audio.onerror = () => {
+        URL.revokeObjectURL(url);
+        podcastAudioRef.current = null;
+        setPodcastPlaying(false);
+      };
+
+      await audio.play();
+    } catch (err) {
+      console.warn('[MultiChat] Podcast Edge TTS fallback to local speech:', err);
+      if (typeof window !== 'undefined' && 'speechSynthesis' in window) {
+        window.speechSynthesis.cancel();
+        const utterance = new SpeechSynthesisUtterance(fullTextToSpeak);
+        utterance.rate = podcastPlaybackRate;
+        utterance.pitch =
+          track.personaId === 'orbit' ? 1.1 : track.personaId === 'cosmos' ? 0.9 : 1.0;
+        utterance.onend = () => {
+          if (index + 1 < podcastTracks.length) {
+            playPodcastTrackAtIndex(index + 1);
+          } else {
+            setPodcastPlaying(false);
+          }
+        };
+        utterance.onerror = () => setPodcastPlaying(false);
+        setPodcastPlaying(true);
+        window.speechSynthesis.speak(utterance);
+      } else {
+        setPodcastPlaying(false);
+      }
+    }
+  };
+
+  const handleStartPodcast = (startMsgId?: string) => {
+    if (podcastTracks.length === 0) {
+      alert('No completed persona responses available yet. Broadcast a query to start podcast playback!');
+      return;
+    }
+    let startIdx = 0;
+    if (startMsgId) {
+      const foundIdx = podcastTracks.findIndex((t) => t.msgId === startMsgId);
+      if (foundIdx !== -1) startIdx = foundIdx;
+    }
+    setIsPodcastActive(true);
+    playPodcastTrackAtIndex(startIdx);
+  };
+
+  const handleTogglePodcastPlayPause = () => {
+    if (podcastPlaying) {
+      if (podcastAudioRef.current) {
+        podcastAudioRef.current.pause();
+      }
+      if (typeof window !== 'undefined' && 'speechSynthesis' in window) {
+        window.speechSynthesis.pause();
+      }
+      setPodcastPlaying(false);
+    } else {
+      if (podcastAudioRef.current) {
+        podcastAudioRef.current.play();
+        setPodcastPlaying(true);
+      } else if (
+        typeof window !== 'undefined' &&
+        'speechSynthesis' in window &&
+        window.speechSynthesis.paused
+      ) {
+        window.speechSynthesis.resume();
+        setPodcastPlaying(true);
+      } else {
+        playPodcastTrackAtIndex(podcastTrackIndex);
+      }
+    }
+  };
+
+  const handleNextPodcastTrack = () => {
+    if (podcastTrackIndex + 1 < podcastTracks.length) {
+      playPodcastTrackAtIndex(podcastTrackIndex + 1);
+    }
+  };
+
+  const handlePrevPodcastTrack = () => {
+    if (podcastTrackIndex > 0) {
+      playPodcastTrackAtIndex(podcastTrackIndex - 1);
+    }
+  };
+
+  const handleExitPodcast = () => {
+    stopAudio();
+    setIsPodcastActive(false);
   };
 
   const handleKeyDown = (e: React.KeyboardEvent<HTMLTextAreaElement>) => {
@@ -679,7 +994,49 @@ export function MultiChatConsole({ config, onNavigateToSettings }: MultiChatCons
         </div>
 
         {/* Right: View Mode Toggle & Utility Controls */}
-        <div className="flex items-center gap-2 ml-auto">
+        <div className="flex items-center gap-2 ml-auto flex-wrap">
+          {/* Document Lens RAG Toggle Button */}
+          <button
+            type="button"
+            onClick={() => setDocLensEnabled(!docLensEnabled)}
+            className={`flex items-center gap-1.5 px-2.5 py-1 rounded-xl text-xs font-semibold transition-all border shadow-sm ${
+              docLensEnabled
+                ? 'bg-amber-500/20 text-amber-300 border-amber-500/40 shadow-amber-500/10'
+                : 'bg-white/5 text-slate-400 hover:text-slate-200 border-white/10 hover:border-white/20'
+            }`}
+            title={
+              docLensEnabled
+                ? 'Document Lens is active: Persona responses ground themselves in your Document Library'
+                : 'Enable Document Lens to let personas retrieve relevant knowledge from your Document Library'
+            }
+          >
+            <BookOpen size={13} className={docLensEnabled ? 'text-amber-400' : 'text-slate-400'} />
+            <span className="hidden sm:inline">Doc Lens</span>
+            {docLensEnabled && (
+              <span className="w-1.5 h-1.5 rounded-full bg-amber-400 animate-pulse" />
+            )}
+          </button>
+
+          {/* Podcast Mode Player Trigger */}
+          {podcastTracks.length > 0 && (
+            <button
+              type="button"
+              onClick={isPodcastActive ? handleTogglePodcastPlayPause : () => handleStartPodcast()}
+              className={`flex items-center gap-1.5 px-2.5 py-1 rounded-xl text-xs font-bold transition-all border shadow-sm ${
+                isPodcastActive
+                  ? 'bg-indigo-500/25 text-indigo-200 border-indigo-400/50 shadow-indigo-500/20'
+                  : 'bg-indigo-950/40 text-indigo-300 hover:text-indigo-100 border-indigo-500/30 hover:bg-indigo-900/50'
+              }`}
+              title="Sequential multi-speaker audio playback across all persona responses"
+            >
+              <Radio size={13} className={isPodcastActive && podcastPlaying ? 'text-indigo-400 animate-pulse' : 'text-indigo-400'} />
+              <span>{isPodcastActive && podcastPlaying ? 'Podcast Playing' : '🎙️ Podcast'}</span>
+              <span className="text-[10px] font-mono px-1 rounded bg-indigo-500/20">
+                {podcastTracks.length}
+              </span>
+            </button>
+          )}
+
           {/* View Mode Switcher */}
           <div className="flex items-center p-1 rounded-xl bg-black/40 border border-white/10 text-xs">
             <button
@@ -725,6 +1082,46 @@ export function MultiChatConsole({ config, onNavigateToSettings }: MultiChatCons
             </button>
           </div>
 
+          {/* FEATURE 2: DOCUMENT LENS TOGGLE BUTTON */}
+          <button
+            type="button"
+            onClick={toggleDocLens}
+            className={`p-1.5 sm:px-2.5 sm:py-1 rounded-xl border text-xs font-semibold flex items-center gap-1.5 transition-all ${
+              docLensEnabled
+                ? 'bg-amber-500/20 text-amber-300 border-amber-500/50 shadow-sm shadow-amber-500/20'
+                : 'bg-white/5 border-white/10 hover:bg-amber-500/10 text-slate-300 hover:text-amber-300'
+            }`}
+            title="Toggle Document Lens: Grounds all 3 personas on your uploaded Document Library embeddings with persona-specific extraction"
+          >
+            <BookOpen size={13} className={docLensEnabled ? 'text-amber-400' : 'text-slate-400'} />
+            <span className="hidden sm:inline">Doc Lens</span>
+            <span
+              className={`w-1.5 h-1.5 rounded-full ${
+                docLensEnabled ? 'bg-amber-400 animate-pulse' : 'bg-slate-500'
+              }`}
+            />
+          </button>
+
+          {/* FEATURE 3: PODCAST MODE BUTTON */}
+          {podcastTracks.length > 0 && (
+            <button
+              type="button"
+              onClick={handleStartPodcast}
+              className={`p-1.5 sm:px-2.5 sm:py-1 rounded-xl border text-xs font-semibold flex items-center gap-1.5 transition-all ${
+                isPodcastActive
+                  ? 'bg-indigo-500/30 text-indigo-200 border-indigo-500/50 shadow-sm shadow-indigo-500/25'
+                  : 'bg-indigo-950/40 border-indigo-500/30 hover:bg-indigo-900/50 text-indigo-300 hover:text-white'
+              }`}
+              title="Play entire multi-persona conversation as an audio podcast"
+            >
+              <Play size={13} className="text-indigo-400 fill-indigo-400" />
+              <span className="hidden sm:inline">Podcast</span>
+              <span className="px-1.5 py-0.5 rounded-full bg-indigo-500/30 text-[10px] font-mono text-indigo-200">
+                {podcastTracks.length}
+              </span>
+            </button>
+          )}
+
           {/* Export & Clear */}
           {messages.length > 0 && (
             <button
@@ -747,7 +1144,7 @@ export function MultiChatConsole({ config, onNavigateToSettings }: MultiChatCons
             >
               <Trash2 size={13} className="text-rose-400" />
               <span className="hidden sm:inline">Clear Chat</span>
-              <span className="px-1.5 py-0.2 rounded-full bg-rose-500/30 text-[10px] font-mono">
+              <span className="px-1.5 py-0.5 rounded-full bg-rose-500/30 text-[10px] font-mono">
                 {messages.length}
               </span>
             </button>
@@ -764,6 +1161,118 @@ export function MultiChatConsole({ config, onNavigateToSettings }: MultiChatCons
           </button>
         </div>
       </div>
+
+      {/* FEATURE 3: PODCAST MODE FLOATING STUDIO PLAYER */}
+      {isPodcastActive && currentPodcastTrack && (
+        <div className="sticky top-2 z-40 p-3.5 rounded-2xl bg-gradient-to-r from-slate-950 via-indigo-950/90 to-slate-950 border border-indigo-500/40 shadow-2xl shadow-indigo-950/50 backdrop-blur-2xl animate-in fade-in slide-in-from-top-2 duration-200">
+          <div className="flex items-center justify-between gap-3 flex-wrap">
+            {/* Track Info */}
+            <div className="flex items-center gap-3 min-w-0">
+              <div
+                className="w-10 h-10 rounded-xl grid place-items-center text-xl shrink-0 shadow-md"
+                style={{
+                  background: `${currentPodcastTrack.accentColor}25`,
+                  border: `1px solid ${currentPodcastTrack.accentColor}50`,
+                }}
+              >
+                {currentPodcastTrack.icon}
+              </div>
+
+              <div className="flex flex-col min-w-0">
+                <div className="flex items-center gap-2">
+                  <span
+                    className="font-bold text-sm tracking-tight"
+                    style={{ color: currentPodcastTrack.accentColor }}
+                  >
+                    {currentPodcastTrack.name}
+                  </span>
+                  <span className="text-[10px] font-mono px-2 py-0.5 rounded-full bg-indigo-500/20 text-indigo-300 border border-indigo-500/30">
+                    Track {podcastTrackIndex + 1} of {podcastTracks.length}
+                  </span>
+                  {podcastPlaying && (
+                    <span className="flex items-end gap-0.5 h-3">
+                      <span className="w-0.5 h-3 bg-indigo-400 animate-pulse rounded-full" />
+                      <span className="w-0.5 h-2 bg-indigo-400 animate-pulse rounded-full" style={{ animationDelay: '100ms' }} />
+                      <span className="w-0.5 h-3 bg-indigo-400 animate-pulse rounded-full" style={{ animationDelay: '200ms' }} />
+                    </span>
+                  )}
+                </div>
+                <p className="text-xs text-slate-300 truncate max-w-md">
+                  In response to: "{currentPodcastTrack.query}"
+                </p>
+              </div>
+            </div>
+
+            {/* Controls */}
+            <div className="flex items-center gap-2 ml-auto">
+              {/* Playback speed selector */}
+              <div className="flex items-center p-0.5 rounded-lg bg-black/40 border border-white/10 text-[11px] font-mono">
+                {[1, 1.25, 1.5].map((speed) => (
+                  <button
+                    key={speed}
+                    type="button"
+                    onClick={() => {
+                      setPodcastPlaybackRate(speed);
+                      if (podcastAudioRef.current) {
+                        podcastAudioRef.current.playbackRate = speed;
+                      }
+                    }}
+                    className={`px-2 py-0.5 rounded transition-colors ${
+                      podcastPlaybackRate === speed
+                        ? 'bg-indigo-500/30 text-indigo-200 font-bold'
+                        : 'text-slate-400 hover:text-white'
+                    }`}
+                  >
+                    {speed}x
+                  </button>
+                ))}
+              </div>
+
+              {/* Prev Track */}
+              <button
+                type="button"
+                onClick={handlePrevPodcastTrack}
+                disabled={podcastTrackIndex === 0}
+                className="p-1.5 rounded-xl bg-white/5 hover:bg-white/10 disabled:opacity-40 text-slate-300 hover:text-white transition-all border border-white/10"
+                title="Previous response"
+              >
+                <ChevronLeft size={16} />
+              </button>
+
+              {/* Play/Pause */}
+              <button
+                type="button"
+                onClick={handleTogglePodcastPlayPause}
+                className="p-2 rounded-xl bg-indigo-600 hover:bg-indigo-500 text-white shadow-lg shadow-indigo-600/30 transition-all font-bold"
+                title={podcastPlaying ? 'Pause podcast' : 'Play podcast'}
+              >
+                {podcastPlaying ? <Pause size={16} /> : <Play size={16} className="ml-0.5" />}
+              </button>
+
+              {/* Next Track */}
+              <button
+                type="button"
+                onClick={handleNextPodcastTrack}
+                disabled={podcastTrackIndex >= podcastTracks.length - 1}
+                className="p-1.5 rounded-xl bg-white/5 hover:bg-white/10 disabled:opacity-40 text-slate-300 hover:text-white transition-all border border-white/10"
+                title="Next response"
+              >
+                <ChevronRight size={16} />
+              </button>
+
+              {/* Exit Podcast */}
+              <button
+                type="button"
+                onClick={handleExitPodcast}
+                className="p-1.5 rounded-xl bg-white/5 hover:bg-rose-500/20 text-slate-400 hover:text-rose-300 transition-all border border-white/10 hover:border-rose-500/30 ml-1"
+                title="Close podcast player"
+              >
+                <X size={16} />
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
 
       {/* Main Chat Conversation Thread */}
       <div className="flex flex-col gap-6 flex-1 pb-4">
@@ -1055,6 +1564,47 @@ export function MultiChatConsole({ config, onNavigateToSettings }: MultiChatCons
                           </div>
                         </div>
 
+                        {/* Document Lens Excerpts Section (if active for this turn) */}
+                        {msg.docChunks && msg.docChunks.length > 0 && (
+                          <div className="px-4 py-2 bg-amber-950/20 border-b border-amber-500/20 flex flex-col gap-1.5">
+                            <div className="flex items-center justify-between">
+                              <div className="flex items-center gap-1.5 text-xs text-amber-300 font-medium">
+                                <BookOpen size={13} className="text-amber-400 shrink-0" />
+                                <span>Doc Lens: {msg.docChunks.length} excerpts retrieved from Document Library</span>
+                              </div>
+                              <button
+                                type="button"
+                                onClick={() =>
+                                  setExpandedDocMsgId(expandedDocMsgId === msg.id ? null : msg.id)
+                                }
+                                className="text-[11px] font-mono text-amber-400 hover:text-amber-200 underline shrink-0"
+                              >
+                                {expandedDocMsgId === msg.id ? 'Hide Excerpts' : 'View Excerpts'}
+                              </button>
+                            </div>
+                            {expandedDocMsgId === msg.id && (
+                              <div className="flex flex-col gap-1.5 mt-1 max-h-48 overflow-y-auto pr-1">
+                                {msg.docChunks.map((chunk, cIdx) => (
+                                  <div
+                                    key={cIdx}
+                                    className="p-2 rounded-lg bg-black/40 border border-amber-500/20 text-xs"
+                                  >
+                                    <div className="flex items-center justify-between text-[11px] font-mono text-amber-400/90 mb-1">
+                                      <span className="font-bold truncate">{chunk.documentName}</span>
+                                      <span className="text-[10px] text-slate-400">
+                                        {Math.round(chunk.similarityScore * 100)}% match
+                                      </span>
+                                    </div>
+                                    <p className="text-slate-300 text-[11px] line-clamp-3 leading-relaxed font-mono">
+                                      {chunk.chunkText}
+                                    </p>
+                                  </div>
+                                ))}
+                              </div>
+                            )}
+                          </div>
+                        )}
+
                         {msg.responses
                           .filter((resp) => activeTab === 'all' || activeTab === resp.personaId)
                           .map((resp) => {
@@ -1062,6 +1612,8 @@ export function MultiChatConsole({ config, onNavigateToSettings }: MultiChatCons
                             const isPlayingThis = playingAudioKey === personaKey;
                             const isCopied = copiedId === personaKey;
                             const displayText = getPersonaCleanText(resp);
+                            const isBranchOpen = activeBranchCardKey === personaKey;
+                            const branches = resp.branches || [];
 
                             return (
                               <div
@@ -1122,10 +1674,27 @@ export function MultiChatConsole({ config, onNavigateToSettings }: MultiChatCons
                                     </div>
                                   </div>
 
-                                  {/* Right: Audio TTS & Copy Controls */}
+                                  {/* Right: Audio TTS, Branch Reply & Copy Controls */}
                                   <div className="flex items-center gap-1.5 shrink-0">
                                     {resp.status === 'completed' && displayText && (
                                       <>
+                                        {/* 1-on-1 Reply Button */}
+                                        <button
+                                          type="button"
+                                          onClick={() =>
+                                            setActiveBranchCardKey(isBranchOpen ? null : personaKey)
+                                          }
+                                          className={`px-2 py-1 rounded-lg text-xs font-semibold flex items-center gap-1.5 transition-all border ${
+                                            isBranchOpen
+                                              ? 'bg-cyan-500/20 text-cyan-200 border-cyan-400/50'
+                                              : 'bg-black/30 text-slate-300 hover:text-white border-white/10 hover:border-white/20'
+                                          }`}
+                                          title={`Reply directly to ${resp.name} (1-on-1 thread)`}
+                                        >
+                                          <MessageSquareQuote size={13} style={{ color: resp.accentColor }} />
+                                          <span className="text-[11px] font-mono hidden sm:inline">Reply</span>
+                                        </button>
+
                                         {/* Individual Listen Button */}
                                         <button
                                           type="button"
@@ -1221,7 +1790,7 @@ export function MultiChatConsole({ config, onNavigateToSettings }: MultiChatCons
                                 </div>
 
                                 {/* Persona Answer Body */}
-                                <div className="p-4 sm:p-6 flex flex-col">
+                                <div className="p-4 sm:p-6 flex flex-col gap-4">
                                   {resp.status === 'running' && (
                                     <div className="flex items-center gap-3 py-3" style={{ color: resp.accentColor }}>
                                       <div className="flex items-center gap-1.5 px-3 py-1.5 rounded-full bg-white/5 border border-white/10">
@@ -1265,6 +1834,133 @@ export function MultiChatConsole({ config, onNavigateToSettings }: MultiChatCons
                                   {resp.status === 'completed' && displayText && (
                                     <div className="prose prose-invert max-w-none text-slate-100 text-[14.5px] leading-relaxed">
                                       <FormattedText content={displayText} />
+                                    </div>
+                                  )}
+
+                                  {/* FEATURE 1: 1-ON-1 PERSONA NESTED BRANCH THREAD */}
+                                  {branches.length > 0 && (
+                                    <div className="mt-2 flex flex-col gap-3 pl-3 sm:pl-5 border-l-2 border-dashed" style={{ borderColor: `${resp.accentColor}40` }}>
+                                      <div className="text-[11px] font-mono font-bold flex items-center gap-1.5" style={{ color: resp.accentColor }}>
+                                        <CornerDownRight size={12} />
+                                        <span>1-on-1 Branch with {resp.name} ({branches.length})</span>
+                                      </div>
+
+                                      {branches.map((b) => (
+                                        <div key={b.id} className="flex flex-col gap-2 rounded-2xl bg-black/40 border border-white/10 p-3.5 shadow-md">
+                                          {/* Branch User Query */}
+                                          <div className="flex items-center justify-between text-xs text-slate-300">
+                                            <span className="font-semibold text-cyan-300 font-mono text-[11px]">
+                                              YOU ➔ {resp.name}:
+                                            </span>
+                                            <div className="flex items-center gap-1">
+                                              <span className="text-[10px] font-mono text-slate-400">
+                                                {new Date(b.timestamp).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
+                                              </span>
+                                              <button
+                                                type="button"
+                                                onClick={() => handleDeleteBranch(msg.id, resp.personaId, b.id)}
+                                                className="p-1 rounded text-slate-400 hover:text-rose-400 transition-colors"
+                                                title="Delete this branch turn"
+                                              >
+                                                <Trash2 size={11} />
+                                              </button>
+                                            </div>
+                                          </div>
+                                          <p className="text-xs text-slate-200 font-medium pl-2 border-l border-cyan-500/30">
+                                            {b.query}
+                                          </p>
+
+                                          {/* Branch Persona Response */}
+                                          <div className="mt-1 pt-2 border-t border-white/5 flex flex-col gap-1.5">
+                                            <div className="flex items-center justify-between">
+                                              <span className="text-[11px] font-bold font-mono" style={{ color: resp.accentColor }}>
+                                                {resp.icon} {resp.name}:
+                                              </span>
+                                              <button
+                                                type="button"
+                                                onClick={() => handleToggleAudio(b.text, `b_${b.id}`, resp.personaId)}
+                                                className="p-1 rounded bg-white/5 hover:bg-white/10 text-slate-300 text-[10px] font-mono flex items-center gap-1"
+                                                title="Listen to branch response"
+                                              >
+                                                <Volume2 size={10} />
+                                                <span>Listen</span>
+                                              </button>
+                                            </div>
+                                            <div className="prose prose-invert prose-xs text-slate-200 text-xs leading-relaxed">
+                                              <FormattedText content={b.text} />
+                                            </div>
+                                          </div>
+                                        </div>
+                                      ))}
+                                    </div>
+                                  )}
+
+                                  {/* Inline 1-on-1 Reply Box */}
+                                  {isBranchOpen && (
+                                    <div className="mt-2 p-3 rounded-2xl bg-black/60 border border-cyan-500/30 flex flex-col gap-2 shadow-lg animate-in fade-in slide-in-from-top-1 duration-150">
+                                      <div className="flex items-center justify-between text-xs">
+                                        <span className="font-mono font-bold flex items-center gap-1" style={{ color: resp.accentColor }}>
+                                          <MessageSquareQuote size={12} />
+                                          Direct Reply to {resp.name}
+                                        </span>
+                                        <button
+                                          type="button"
+                                          onClick={() => setActiveBranchCardKey(null)}
+                                          className="text-slate-400 hover:text-white text-xs"
+                                        >
+                                          <X size={13} />
+                                        </button>
+                                      </div>
+
+                                      <textarea
+                                        rows={2}
+                                        value={branchDraftInputs[personaKey] || ''}
+                                        onChange={(e) =>
+                                          setBranchDraftInputs((prev) => ({
+                                            ...prev,
+                                            [personaKey]: e.target.value,
+                                          }))
+                                        }
+                                        placeholder={`Ask ${resp.name} a direct follow-up question...`}
+                                        className="w-full rounded-xl bg-slate-950/80 border border-white/10 p-2.5 text-xs text-slate-100 placeholder-slate-500 focus:outline-none focus:border-cyan-500/50 resize-none font-normal"
+                                        onKeyDown={(e) => {
+                                          if (e.key === 'Enter' && !e.shiftKey) {
+                                            e.preventDefault();
+                                            handleSendBranch(msg, resp.personaId);
+                                          }
+                                        }}
+                                      />
+
+                                      <div className="flex items-center justify-end gap-2">
+                                        <button
+                                          type="button"
+                                          onClick={() => setActiveBranchCardKey(null)}
+                                          className="px-2.5 py-1 rounded-lg text-xs text-slate-400 hover:text-white"
+                                        >
+                                          Cancel
+                                        </button>
+                                        <button
+                                          type="button"
+                                          onClick={() => handleSendBranch(msg, resp.personaId)}
+                                          disabled={
+                                            !(branchDraftInputs[personaKey] || '').trim() ||
+                                            branchLoadingKey === personaKey
+                                          }
+                                          className="px-3 py-1 rounded-lg text-xs font-bold bg-cyan-600 hover:bg-cyan-500 disabled:opacity-40 text-white flex items-center gap-1.5 shadow-sm"
+                                        >
+                                          {branchLoadingKey === personaKey ? (
+                                            <>
+                                              <Loader2 size={12} className="animate-spin" />
+                                              <span>Sending...</span>
+                                            </>
+                                          ) : (
+                                            <>
+                                              <Send size={11} />
+                                              <span>Send 1-on-1</span>
+                                            </>
+                                          )}
+                                        </button>
+                                      </div>
                                     </div>
                                   )}
                                 </div>
@@ -1435,6 +2131,24 @@ export function MultiChatConsole({ config, onNavigateToSettings }: MultiChatCons
                                   <div className="flex items-center gap-1">
                                     {resp.status === 'completed' && displayText && (
                                       <>
+                                        {/* 1-on-1 Reply Button */}
+                                        <button
+                                          type="button"
+                                          onClick={() =>
+                                            setActiveBranchCardKey(
+                                              activeBranchCardKey === personaKey ? null : personaKey
+                                            )
+                                          }
+                                          className={`p-1.5 rounded transition-colors ${
+                                            activeBranchCardKey === personaKey
+                                              ? 'bg-cyan-500/30 text-cyan-200'
+                                              : 'bg-black/40 text-slate-400 hover:text-white'
+                                          }`}
+                                          title={`Reply directly to ${resp.name}`}
+                                        >
+                                          <MessageSquareQuote size={12} style={{ color: resp.accentColor }} />
+                                        </button>
+
                                         {/* Individual Listen Button */}
                                         <button
                                           type="button"
@@ -1503,7 +2217,7 @@ export function MultiChatConsole({ config, onNavigateToSettings }: MultiChatCons
                                 </div>
 
                               {/* Persona Mini Body */}
-                              <div className="p-3.5 flex-1 flex flex-col text-xs">
+                              <div className="p-3.5 flex-1 flex flex-col gap-2.5 text-xs">
                                 {resp.status === 'running' && (
                                   <div className="py-6 flex flex-col items-center justify-center gap-2" style={{ color: resp.accentColor }}>
                                     <Loader2 size={18} className="animate-spin" />
@@ -1527,6 +2241,65 @@ export function MultiChatConsole({ config, onNavigateToSettings }: MultiChatCons
                                 {resp.status === 'completed' && displayText && (
                                   <div className="prose prose-invert prose-xs max-w-none text-slate-200 text-xs leading-relaxed">
                                     <FormattedText content={displayText} />
+                                  </div>
+                                )}
+
+                                {/* Grid Nested Branches */}
+                                {resp.branches && resp.branches.length > 0 && (
+                                  <div className="mt-2 flex flex-col gap-2 pl-2 border-l-2 border-dashed" style={{ borderColor: `${resp.accentColor}40` }}>
+                                    {resp.branches.map((b) => (
+                                      <div key={b.id} className="p-2 rounded-xl bg-black/50 border border-white/10 flex flex-col gap-1 text-[11px]">
+                                        <div className="flex items-center justify-between text-cyan-300 font-mono text-[10px]">
+                                          <span>YOU ➔ {resp.name}:</span>
+                                          <button
+                                            type="button"
+                                            onClick={() => handleDeleteBranch(msg.id, resp.personaId, b.id)}
+                                            className="text-slate-400 hover:text-rose-400"
+                                          >
+                                            <Trash2 size={10} />
+                                          </button>
+                                        </div>
+                                        <p className="text-slate-200 font-medium">{b.query}</p>
+                                        <div className="mt-1 pt-1 border-t border-white/5 text-slate-300">
+                                          <FormattedText content={b.text} />
+                                        </div>
+                                      </div>
+                                    ))}
+                                  </div>
+                                )}
+
+                                {/* Grid Inline 1-on-1 Reply */}
+                                {activeBranchCardKey === personaKey && (
+                                  <div className="mt-2 p-2 rounded-xl bg-black/70 border border-cyan-500/30 flex flex-col gap-1.5">
+                                    <textarea
+                                      rows={2}
+                                      value={branchDraftInputs[personaKey] || ''}
+                                      onChange={(e) =>
+                                        setBranchDraftInputs((prev) => ({
+                                          ...prev,
+                                          [personaKey]: e.target.value,
+                                        }))
+                                      }
+                                      placeholder={`Follow up with ${resp.name}...`}
+                                      className="w-full rounded-lg bg-slate-950 border border-white/10 p-2 text-xs text-white placeholder-slate-500 focus:outline-none focus:border-cyan-500 resize-none"
+                                    />
+                                    <div className="flex items-center justify-end gap-1.5">
+                                      <button
+                                        type="button"
+                                        onClick={() => setActiveBranchCardKey(null)}
+                                        className="px-2 py-0.5 text-[10px] text-slate-400"
+                                      >
+                                        Cancel
+                                      </button>
+                                      <button
+                                        type="button"
+                                        onClick={() => handleSendBranch(msg, resp.personaId)}
+                                        disabled={!(branchDraftInputs[personaKey] || '').trim() || branchLoadingKey === personaKey}
+                                        className="px-2.5 py-1 text-[10px] font-bold bg-cyan-600 hover:bg-cyan-500 rounded text-white"
+                                      >
+                                        Send
+                                      </button>
+                                    </div>
                                   </div>
                                 )}
                               </div>
@@ -1622,7 +2395,7 @@ export function MultiChatConsole({ config, onNavigateToSettings }: MultiChatCons
                   <span className="text-[11px] font-mono font-bold tracking-wider uppercase">
                     MULTI SEARCH
                   </span>
-                  <span className="inline-flex items-center gap-1 text-[9.5px] font-mono px-1.5 py-0.2 rounded bg-emerald-500/15 text-emerald-300 border border-emerald-500/30 font-semibold">
+                  <span className="inline-flex items-center gap-1 text-[9.5px] font-mono px-1.5 py-0.5 rounded bg-emerald-500/15 text-emerald-300 border border-emerald-500/30 font-semibold">
                     <span className="w-1.5 h-1.5 rounded-full bg-emerald-400 animate-ping" />
                     LIVE MESH
                   </span>
@@ -1668,7 +2441,7 @@ export function MultiChatConsole({ config, onNavigateToSettings }: MultiChatCons
                   >
                     <Trash2 size={12} className="text-rose-400" />
                     <span className="hidden sm:inline">Clear</span>
-                    <span className="px-1.5 py-0.2 rounded-full bg-rose-500/30 text-[10px] font-mono">
+                    <span className="px-1.5 py-0.5 rounded-full bg-rose-500/30 text-[10px] font-mono">
                       {messages.length}
                     </span>
                   </button>

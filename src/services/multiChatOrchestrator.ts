@@ -1,11 +1,14 @@
 import { storage } from '@/lib/storage';
 import { api } from '@/services/api';
+import { searchDocumentLibrary } from '@/services/documentLibraryService';
 import type {
   AIProviderConfig,
   MultiChatMessage,
   MultiChatPersonaConfig,
   MultiChatPersonaResponse,
   MultiChatSystemConfig,
+  MultiChatBranchTurn,
+  DocumentRetrievalResult,
 } from '@/types';
 
 /**
@@ -160,7 +163,7 @@ export function isMetaReasoningLine(line: string): boolean {
 
   // Standalone draft markers (e.g. "Draft 1:", "**Draft 2**:", "Initial Draft:")
   if (
-    /^\s*(?:\*\*)?(?:Draft\s*\d*|Initial\s*Draft|First\s*Draft|Second\s*Draft|Third\s*Draft|Revised\s*Draft|Final\s*Draft)(?:\*\*)?\s*[-:—]?\s*$/i.test(
+    /^\s*(?:\*\*)?(?:Draft\s*\d*|Initial\s*Draft|First\s*Draft|Second\s*Draft|Third\s*Draft|Revised\s*Draft|Final\s*Draft)(?:\*\*)?\s*(?::|-|—)?\s*$/i.test(
       trimmed,
     )
   ) {
@@ -169,7 +172,7 @@ export function isMetaReasoningLine(line: string): boolean {
 
   // Check and constraint headers (e.g. "Word count check: ...", "Format check: ...", "Refine against constraints: ...")
   if (
-    /^\s*(?:\*\*)?(?:Word\s*count(?:\s*check)?|Length\s*check|Token\s*count|Count|Format(?:ting)?(?:\s*check)?|Style(?:\s*check)?|Tone(?:\s*check)?|Persona(?:\s*check)?|Refin(?:e|ing|ed)?(?:\s*against)?\s*constraints?|Constraint(?:\s*check)?|Constraints?|Check(?:ing)?(?:\s*against)?\s*constraints?|Brevity(?:\s*check)?|Rule(?:\s*check)?|Sanity\s*check|Self-critique|Critique|Self-correction|Correction|Adjustment|Revision|Evaluation|Final\s*check|Polish|Final\s*Polish)(?:\*\*)?\s*[-:—]?/i.test(
+    /^\s*(?:\*\*)?(?:Word\s*count(?:\s*check)?|Length\s*check|Token\s*count|Count|Format(?:ting)?(?:\s*check)?|Style(?:\s*check)?|Tone(?:\s*check)?|Persona(?:\s*check)?|Refin(?:e|ing|ed)?(?:\s*against)?\s*constraints?|Constraint(?:\s*check)?|Constraints?|Check(?:ing)?(?:\s*against)?\s*constraints?|Brevity(?:\s*check)?|Rule(?:\s*check)?|Sanity\s*check|Self-critique|Critique|Self-correction|Correction|Adjustment|Revision|Evaluation|Final\s*check|Polish|Final\s*Polish)(?:\*\*)?\s*(?::|-|—)?/i.test(
       trimmed,
     )
   ) {
@@ -241,12 +244,12 @@ export function cleanPersonaPrefix(text: string, personaName: string): string {
   let res = text.trim();
   const escapedName = personaName.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
   const nameRegex = new RegExp(
-    `^(?:\\[?${escapedName}\\]?|\\*\\*${escapedName}\\*\\*|\\(${escapedName}\\))\\s*[-:—]\\s*`,
+    `^(?:\\[?${escapedName}\\]?|\\*\\*${escapedName}\\*\\*|\\(${escapedName}\\))\\s*(?::|-|—)\\s*`,
     'i',
   );
   res = res.replace(nameRegex, '');
   res = res.replace(
-    /^(?:\[?(?:NOVA|ORBIT|COSMOS)\]?|\*\*(?:NOVA|ORBIT|COSMOS)\*\*|\((?:NOVA|ORBIT|COSMOS)\))\s*[-:—]\s*/i,
+    /^(?:\[?(?:NOVA|ORBIT|COSMOS)\]?|\*\*(?:NOVA|ORBIT|COSMOS)\*\*|\((?:NOVA|ORBIT|COSMOS)\))\s*(?::|-|—)\s*/i,
     '',
   );
   return res.trim();
@@ -300,14 +303,14 @@ export function sanitizePersonaOutput(text: string, personaName: string): string
   // 3. Strip preambles like "Here's a thinking process:", "Thinking Process:", etc.
   cleaned = cleaned
     .replace(
-      /^(?:Here(?:\x27s|\x20is)\s+(?:a\s+)?(?:thinking|thought|reasoning)\s+process\s*[-:—]?|Thinking\s+Process\s*[-:—]?|Internal\s+Reasoning\s*[-:—]?|Reasoning\s*Process\s*[-:—]?|Reasoning\s*[-:—]?|Thought\s*Process\s*[-:—]?|Thought\s*[-:—]?|Analysis\s*[-:—]?)\s*/i,
+      /^(?:Here(?:\x27s|\x20is)\s+(?:a\s+)?(?:thinking|thought|reasoning)\s+process\s*(?::|-|—)?|Thinking\s+Process\s*(?::|-|—)?|Internal\s+Reasoning\s*(?::|-|—)?|Reasoning\s*Process\s*(?::|-|—)?|Reasoning\s*(?::|-|—)?|Thought\s*Process\s*(?::|-|—)?|Thought\s*(?::|-|—)?|Analysis\s*(?::|-|—)?)\s*/i,
       '',
     )
     .trim();
 
   // 4. Check for explicit final answer marker at or near the end (e.g. "Final Answer: ...", "Final Response: ...")
   const answerMarker = cleaned.match(
-    /(?:^|\n)\s*(?:\*\*)?(?:Final\s+Answer|Final\s+Response|Clean\s+Answer|Final\s+Output|Actual\s+Response)\s*(?:\*\*)?\s*[-:—]\s*([\s\S]+)$/i,
+    /(?:^|\n)\s*(?:\*\*)?(?:Final\s+Answer|Final\s+Response|Clean\s+Answer|Final\s+Output|Actual\s+Response)\s*(?:\*\*)?\s*(?::|-|—)\s*([\s\S]+)$/i,
   );
   if (answerMarker && answerMarker[1]) {
     const candidate = answerMarker[1].trim();
@@ -320,7 +323,7 @@ export function sanitizePersonaOutput(text: string, personaName: string): string
   // If multiple drafts are present, extract the contents of the LAST draft
   const draftMatches = Array.from(
     cleaned.matchAll(
-      /(?:^|\n)\s*(?:\*\*)?Draft\s*\d*(?:\*\*)?\s*[-:—]?\s*([\s\S]*?)(?=(?:\n\s*(?:\*\*)?Draft\s*\d*(?:\*\*)?\s*[-:—]|\n\s*(?:\*\*)?Final\s*(?:Answer|Response)|$))/gi,
+      /(?:^|\n)\s*(?:\*\*)?Draft\s*\d*(?:\*\*)?\s*(?::|-|—)?\s*([\s\S]*?)(?=(?:\n\s*(?:\*\*)?Draft\s*\d*(?:\*\*)?\s*(?::|-|—)|\n\s*(?:\*\*)?Final\s*(?:Answer|Response)|$))/gi,
     ),
   );
   if (draftMatches.length > 0) {
@@ -349,7 +352,7 @@ export function sanitizePersonaOutput(text: string, personaName: string): string
     // Check if line begins with a draft prefix like "Draft 1: Hello." or "Draft 2: State your query."
     line = line
       .replace(
-        /^(?:\*\*)?(?:Draft\s*\d*|Initial\s*Draft|First\s*Draft|Second\s*Draft|Third\s*Draft|Revised\s*Draft|Final\s*Draft)\s*(?:\*\*)?\s*[-:—]?\s*/i,
+        /^(?:\*\*)?(?:Draft\s*\d*|Initial\s*Draft|First\s*Draft|Second\s*Draft|Third\s*Draft|Revised\s*Draft|Final\s*Draft)\s*(?:\*\*)?\s*(?::|-|—)?\s*/i,
         '',
       )
       .trim();
@@ -357,7 +360,7 @@ export function sanitizePersonaOutput(text: string, personaName: string): string
     // Check if line begins with final answer marker like "Final Answer: Hello."
     line = line
       .replace(
-        /^(?:\*\*)?(?:Final\s+Answer|Final\s+Response|Clean\s+Answer|Response|Answer)\s*(?:\*\*)?\s*[-:—]?\s*/i,
+        /^(?:\*\*)?(?:Final\s+Answer|Final\s+Response|Clean\s+Answer|Response|Answer)\s*(?:\*\*)?\s*(?::|-|—)?\s*/i,
         '',
       )
       .trim();
@@ -440,7 +443,7 @@ export function extractFinalAnswerFromReasoning(
 
   // 1. Look for explicit final answer marker
   const answerMarker = trimmed.match(
-    /(?:^|\n)\s*(?:\*\*)?(?:Final\s+Answer|Final\s+Response|Clean\s+Answer|Final\s+Output|Actual\s+Response)\s*(?:\*\*)?\s*[-:—]\s*([\s\S]+)$/i,
+    /(?:^|\n)\s*(?:\*\*)?(?:Final\s+Answer|Final\s+Response|Clean\s+Answer|Final\s+Output|Actual\s+Response)\s*(?:\*\*)?\s*(?::|-|—)\s*([\s\S]+)$/i,
   );
   if (answerMarker && answerMarker[1]) {
     const candidate = sanitizePersonaOutput(answerMarker[1], personaName);
@@ -452,7 +455,7 @@ export function extractFinalAnswerFromReasoning(
   // 2. Look for Draft blocks (take the last draft)
   const draftMatches = Array.from(
     trimmed.matchAll(
-      /(?:^|\n)\s*(?:\*\*)?Draft\s*\d*(?:\*\*)?\s*[-:—]?\s*([\s\S]*?)(?=(?:\n\s*(?:\*\*)?Draft\s*\d*(?:\*\*)?\s*[-:—]|\n\s*(?:\*\*)?Final\s*(?:Answer|Response)|$))/gi,
+      /(?:^|\n)\s*(?:\*\*)?Draft\s*\d*(?:\*\*)?\s*(?::|-|—)?\s*([\s\S]*?)(?=(?:\n\s*(?:\*\*)?Draft\s*\d*(?:\*\*)?\s*(?::|-|—)|\n\s*(?:\*\*)?Final\s*(?:Answer|Response)|$))/gi,
     ),
   );
   if (draftMatches.length > 0) {
@@ -502,7 +505,7 @@ export function extractFinalAnswerFromReasoning(
     // Strip leading draft or answer labels if present
     seg = seg
       .replace(
-        /^(?:\*\*)?(?:Draft\s*\d*|Initial\s*Draft|Revised\s*Draft|Final\s*Draft|Final\s*Answer|Response)\s*(?:\*\*)?\s*[-:—]?\s*/i,
+        /^(?:\*\*)?(?:Draft\s*\d*|Initial\s*Draft|Revised\s*Draft|Final\s*Draft|Final\s*Answer|Response)\s*(?:\*\*)?\s*(?::|-|—)?\s*/i,
         '',
       )
       .trim();
@@ -843,6 +846,41 @@ export function detectQueryLengthIntent(query: string): QueryLengthProfile {
 }
 
 /**
+ * Builds Persona-Specific Document Lens directive
+ */
+export function buildPersonaDocLensDirective(
+  personaId: string,
+  chunks: DocumentRetrievalResult[]
+): string {
+  if (!chunks || chunks.length === 0) return '';
+  
+  const docExcerptsText = chunks
+    .map(
+      (c, i) =>
+        `[EXCERPT ${i + 1} - From "${c.docName}" (Relevance: ${Math.round(c.score * 100)}%)]:\n"${c.text.trim()}"`
+    )
+    .join('\n\n');
+
+  let lensGuidance = '';
+  if (personaId === 'nova') {
+    lensGuidance = `[PERSONA DOCUMENT LENS — NOVA: ARCHITECTURAL & FACTUAL PRECISION]:
+- You are analyzing the user's private Document Library through NOVA's precision analytical lens.
+- Extract exact numbers, metrics, architectural decisions, and verbatim specifications.
+- Include concise inline citations like [Document: "${chunks[0]?.docName || 'Document'}"] when citing facts.`;
+  } else if (personaId === 'orbit') {
+    lensGuidance = `[PERSONA DOCUMENT LENS — ORBIT: PRACTICAL UTILITY & CREATIVE SPARKS]:
+- You are analyzing the user's private Document Library through ORBIT's high-energy, creative lens.
+- Highlight the most practical takeaways, real-world analogies, actionable bullet points, and punchy advice with emojis!`;
+  } else {
+    lensGuidance = `[PERSONA DOCUMENT LENS — COSMOS: HOLISTIC & STRATEGIC WISDOM]:
+- You are analyzing the user's private Document Library through COSMOS's philosophical and long-term lens.
+- Reflect on the underlying principles, strategic implications, second-order effects, and mindful wisdom behind the document excerpts.`;
+  }
+
+  return `\n\n=== VERIFIED ON-DEVICE DOCUMENT LIBRARY EXCERPTS ===\n${docExcerptsText}\n====================================================\n${lensGuidance}`;
+}
+
+/**
  * Executes a single persona call
  */
 export async function executeSinglePersona(
@@ -852,6 +890,7 @@ export async function executeSinglePersona(
   priorTurnResponses: PriorPersonaTurnAnswer[] = [],
   permanentMemories?: string[],
   responseLanguage?: string,
+  documentChunks?: DocumentRetrievalResult[],
 ): Promise<MultiChatPersonaResponse> {
   const startTime = Date.now();
   const baseResponse: MultiChatPersonaResponse = {
@@ -897,6 +936,11 @@ export async function executeSinglePersona(
       const memoryBlock = validMemories.map((m) => `- ${m}`).join('\n');
       systemContent = `Known facts about the user:\n${memoryBlock}\n\n${persona.systemPrompt}`;
     }
+  }
+
+  // Inject Document Lens excerpts if available
+  if (documentChunks && documentChunks.length > 0) {
+    systemContent += buildPersonaDocLensDirective(persona.id, documentChunks);
   }
 
   // Inject chosen response language instruction
@@ -1051,8 +1095,180 @@ export async function executeSinglePersona(
 }
 
 /**
+ * Executes a 1-on-1 Persona Branch reply.
+ * This runs ONLY the selected persona in an isolated 1-on-1 thread without broadcasting to others.
+ */
+export async function executePersonaBranch({
+  persona,
+  branchQuery,
+  parentMessageQuery,
+  parentPersonaResponse,
+  priorBranchTurns = [],
+  conversationHistory = [],
+  permanentMemories,
+  responseLanguage,
+  documentChunks,
+}: {
+  persona: MultiChatPersonaConfig;
+  branchQuery: string;
+  parentMessageQuery: string;
+  parentPersonaResponse: MultiChatPersonaResponse;
+  priorBranchTurns?: MultiChatBranchTurn[];
+  conversationHistory?: MultiChatMessage[];
+  permanentMemories?: string[];
+  responseLanguage?: string;
+  documentChunks?: DocumentRetrievalResult[];
+}): Promise<MultiChatBranchTurn> {
+  const startTime = Date.now();
+  const branchTurnId = `branch_${Date.now()}_${Math.random().toString(36).substring(2, 7)}`;
+
+  const lengthProfile = detectQueryLengthIntent(branchQuery);
+  const targetTokens = Math.max(persona.maxTokens || 350, lengthProfile.minTokens);
+
+  const primary = resolvePersonaProviderConfig(persona, false, targetTokens);
+  let fallbackConfig: AIProviderConfig | null = null;
+  if (persona.enableFailover && persona.fallbackProviderId) {
+    const fb = resolvePersonaProviderConfig(persona, true, targetTokens);
+    if (!fb.error && fb.provider) {
+      fallbackConfig = fb.provider;
+    }
+  }
+
+  // Base system prompt + memories
+  const memoriesToInject = permanentMemories ?? storage.getMultiChatMemories();
+  let systemContent = persona.systemPrompt;
+  if (memoriesToInject && memoriesToInject.length > 0) {
+    const validMemories = memoriesToInject.map((m) => m.trim()).filter(Boolean);
+    if (validMemories.length > 0) {
+      const memoryBlock = validMemories.map((m) => `- ${m}`).join('\n');
+      systemContent = `Known facts about the user:\n${memoryBlock}\n\n${persona.systemPrompt}`;
+    }
+  }
+
+  // Inject Document Lens if provided
+  if (documentChunks && documentChunks.length > 0) {
+    systemContent += buildPersonaDocLensDirective(persona.id, documentChunks);
+  }
+
+  // Response language
+  const rawLang = responseLanguage ?? storage.getMultiChatResponseLanguage();
+  const lang = (typeof rawLang === 'string' && rawLang.trim()) ? rawLang.trim() : 'English';
+  if (lang) {
+    systemContent += `\n\nRespond only in: ${lang}. Maintain your persona style in 1-on-1 conversation.`;
+  }
+
+  systemContent += `\n\n[1-ON-1 PERSONA BRANCHING MODE]:
+- You are in a direct 1-on-1 thread with the user regarding your previous response.
+- Answer directly in your authentic persona voice (${persona.name}) without referencing other personas.`;
+
+  // Build message history: prior broad history (last 6) + parent turn + prior branch turns
+  const historyMessages = buildMultiChatHistoryMessages(conversationHistory, 6, persona.id);
+
+  const branchThreadMessages: Array<{ role: 'user' | 'assistant'; content: string }> = [
+    { role: 'user', content: parentMessageQuery },
+    { role: 'assistant', content: getPersonaCleanText(parentPersonaResponse) },
+  ];
+
+  for (const b of priorBranchTurns) {
+    branchThreadMessages.push({ role: 'user', content: b.query });
+    branchThreadMessages.push({ role: 'assistant', content: getPersonaCleanText(b.response) });
+  }
+
+  const messages: Array<{ role: 'system' | 'user' | 'assistant'; content: string }> = [
+    { role: 'system', content: systemContent },
+    ...historyMessages,
+    ...branchThreadMessages,
+    { role: 'user', content: branchQuery.trim() },
+  ];
+
+  try {
+    const res = await api.jarvisAgentCall({
+      agentId: `multichat_branch_${persona.id}`,
+      messages,
+      providerConfig: primary.provider,
+      fallbackConfig,
+      enableFailover: Boolean(persona.enableFailover),
+      temperature: persona.id === 'orbit' ? 0.7 : persona.id === 'cosmos' ? 0.5 : 0.2,
+      maxTokens: Math.max(persona.maxTokens || 350, lengthProfile.minTokens, 500),
+      timeoutMs: 40000,
+    });
+
+    const durationMs = Date.now() - startTime;
+
+    if (res.ok && (res.content || res.text || res.reasoning)) {
+      const cleanText = extractCleanPersonaResponse(
+        {
+          content: res.content,
+          reasoning: res.reasoning,
+          text: res.text,
+        },
+        persona.name,
+        branchQuery,
+      );
+      return {
+        id: branchTurnId,
+        query: branchQuery.trim(),
+        timestamp: Date.now(),
+        response: {
+          personaId: persona.id,
+          name: persona.name,
+          icon: persona.icon,
+          accentColor: persona.accentColor,
+          toneBadge: persona.toneBadge,
+          text: cleanText,
+          content: cleanText,
+          reasoning: res.reasoning,
+          status: 'completed',
+          model: res.model || primary.model,
+          providerName: res.providerName || primary.provider?.name || 'Configured AI',
+          durationMs,
+        },
+      };
+    } else {
+      return {
+        id: branchTurnId,
+        query: branchQuery.trim(),
+        timestamp: Date.now(),
+        response: {
+          personaId: persona.id,
+          name: persona.name,
+          icon: persona.icon,
+          accentColor: persona.accentColor,
+          toneBadge: persona.toneBadge,
+          text: '',
+          status: 'failed',
+          error: res.error || 'Failed to generate branch response.',
+          model: res.model || primary.model,
+          providerName: res.providerName || primary.provider?.name,
+          durationMs,
+        },
+      };
+    }
+  } catch (err: unknown) {
+    const durationMs = Date.now() - startTime;
+    return {
+      id: branchTurnId,
+      query: branchQuery.trim(),
+      timestamp: Date.now(),
+      response: {
+        personaId: persona.id,
+        name: persona.name,
+        icon: persona.icon,
+        accentColor: persona.accentColor,
+        toneBadge: persona.toneBadge,
+        text: '',
+        status: 'failed',
+        error: err instanceof Error ? err.message : String(err),
+        durationMs,
+      },
+    };
+  }
+}
+
+/**
  * Runs a Multi Chat turn across all enabled personas in SEQUENCE (NOVA -> ORBIT -> COSMOS).
  * Each subsequent persona receives what prior personas answered in THIS turn as additional context.
+ * If enableDocLens is true, retrieves on-device document chunks and injects tailored lenses into each persona.
  */
 export async function executeMultiChatTurn({
   query,
@@ -1061,6 +1277,7 @@ export async function executeMultiChatTurn({
   onPersonaUpdate,
   permanentMemories,
   responseLanguage,
+  enableDocLens = false,
 }: {
   query: string;
   conversationHistory: MultiChatMessage[];
@@ -1068,7 +1285,8 @@ export async function executeMultiChatTurn({
   onPersonaUpdate?: (response: MultiChatPersonaResponse) => void;
   permanentMemories?: string[];
   responseLanguage?: string;
-}): Promise<MultiChatPersonaResponse[]> {
+  enableDocLens?: boolean;
+}): Promise<{ responses: MultiChatPersonaResponse[]; docChunks?: DocumentRetrievalResult[] }> {
   const activeMemories = permanentMemories ?? storage.getMultiChatMemories();
   const activeLanguage = responseLanguage ?? config.responseLanguage ?? storage.getMultiChatResponseLanguage();
   const personas = Object.values(config.personas);
@@ -1076,6 +1294,17 @@ export async function executeMultiChatTurn({
 
   if (enabledPersonas.length === 0) {
     throw new Error('All personas are currently disabled. Please enable at least one persona in Agent Configurations.');
+  }
+
+  // Retrieve Document Library Chunks if Document Lens is enabled
+  let retrievedChunks: DocumentRetrievalResult[] = [];
+  if (enableDocLens) {
+    try {
+      retrievedChunks = await searchDocumentLibrary(query, { mode: 'all', topK: 4 });
+    } catch {
+      // Fallback gracefully if search fails
+      retrievedChunks = [];
+    }
   }
 
   // Enforce connected sequential order: NOVA -> ORBIT -> COSMOS
@@ -1127,6 +1356,7 @@ export async function executeMultiChatTurn({
       [...turnContext],
       activeMemories,
       activeLanguage,
+      retrievedChunks,
     );
 
     results.push(result);
@@ -1143,5 +1373,5 @@ export async function executeMultiChatTurn({
     }
   }
 
-  return results;
+  return { responses: results, docChunks: retrievedChunks };
 }

@@ -153,7 +153,7 @@ export function JarvisChartCard({ id, chartData, title, onSaveChange }: JarvisCh
               <span className="text-[10px] font-mono tracking-widest text-sky-300 uppercase font-bold">
                 DATA ANALYST VISUALIZATION
               </span>
-              <span className="px-2 py-0.2 rounded-full bg-sky-500/20 border border-sky-400/30 text-sky-200 text-[10px] font-mono">
+              <span className="px-2 py-0.5 rounded-full bg-sky-500/20 border border-sky-400/30 text-sky-200 text-[10px] font-mono">
                 {validSeries.length} {validSeries.length === 1 ? 'Series' : 'Series'} • {labelsCount} Points
               </span>
             </div>

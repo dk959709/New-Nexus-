@@ -298,7 +298,7 @@ export function extractChartDataFromMarkdownTable(
       .slice(1)
       .filter((row) => {
         const withoutPipes = row.replace(/[|\s]/g, '');
-        return !/^[-:]+$/.test(withoutPipes);
+        return !/^[:-]+$/.test(withoutPipes);
       })
       .map((row) =>
         row
@@ -306,7 +306,7 @@ export function extractChartDataFromMarkdownTable(
           .map((c) => c.trim())
           .filter((_, idx, arr) => idx > 0 && idx < arr.length - 1),
       )
-      .filter((row) => row.length >= 2 && !row.every((c) => /^[-:]+$/.test(c.replace(/[*_`]/g, ''))));
+      .filter((row) => row.length >= 2 && !row.every((c) => /^[:-]+$/.test(c.replace(/[*_`]/g, ''))));
 
     if (rawHeaderCells.length < 2 || dataRows.length < 1) continue;
 
@@ -403,7 +403,7 @@ export function extractChartDataFromBulletPoints(
       const num = parseCellNumber(clause);
       if (num !== null) {
         let metricName = clause.replace(/([+-]?\d{1,3}(?:,\d{3})*(?:\.\d+)?|[+-]?\d+(?:\.\d+)?)/g, '').replace(/[*_`]/g, '').trim();
-        metricName = metricName.replace(/^[-:\s]+/, '').replace(/[-:\s]+$/, '');
+        metricName = metricName.replace(/^[:\s-]+/, '').replace(/[:\s-]+$/, '');
         if (!metricName) metricName = 'Value';
         specs[metricName] = num;
       }

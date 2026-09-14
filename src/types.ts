@@ -341,6 +341,13 @@ export interface MultiChatSystemConfig {
   responseLanguage?: string;
 }
 
+export interface MultiChatBranchTurn {
+  id: string;
+  query: string;
+  timestamp: number;
+  response: MultiChatPersonaResponse;
+}
+
 export interface MultiChatPersonaResponse {
   personaId: MultiChatPersonaId;
   name: string;
@@ -355,6 +362,7 @@ export interface MultiChatPersonaResponse {
   model?: string;
   providerName?: string;
   durationMs?: number;
+  branches?: MultiChatBranchTurn[];
 }
 
 export interface MultiChatMessage {
@@ -362,6 +370,8 @@ export interface MultiChatMessage {
   query: string;
   timestamp: number;
   responses: MultiChatPersonaResponse[];
+  docChunks?: DocumentRetrievalResult[];
+  docLensEnabled?: boolean;
 }
 
 export interface Settings {
