@@ -39,41 +39,33 @@ export function MultiChatPage() {
           justifyContent: 'space-between',
           alignItems: 'center',
           flexWrap: 'wrap',
-          gap: '16px',
+          gap: '12px',
           paddingBottom: '14px',
         }}
       >
-        <div>
-          <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
+        <div className="min-w-0 max-w-full">
+          <div className="flex items-center gap-2 sm:gap-3">
             <div
+              className="w-7 h-7 sm:w-9 sm:h-9 rounded-lg sm:rounded-[10px] shrink-0 grid place-items-center"
               style={{
-                width: '36px',
-                height: '36px',
-                borderRadius: '10px',
                 background: 'linear-gradient(135deg, rgba(97,215,201,0.25) 0%, rgba(129,140,248,0.25) 100%)',
                 border: '1px solid rgba(97,215,201,0.4)',
-                display: 'grid',
-                placeItems: 'center',
                 boxShadow: '0 0 16px rgba(97,215,201,0.25)',
               }}
             >
-              <MessagesSquare size={20} className="text-accent" />
+              <MessagesSquare size={16} className="text-accent sm:w-5 sm:h-5" />
             </div>
-            <div>
-              <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
-                <h1 style={{ margin: 0, fontSize: '26px', fontWeight: 900, letterSpacing: '-0.03em', color: '#fff' }}>
+            <div className="min-w-0">
+              <div className="flex items-center gap-1.5 sm:gap-2.5 flex-wrap sm:flex-nowrap">
+                <h1 className="m-0 text-lg sm:text-2xl md:text-[26px] font-black tracking-tight text-white leading-tight">
                   Multi Chat
                 </h1>
                 <span
+                  className="text-[9px] sm:text-[11px] font-mono px-1.5 py-0.5 sm:px-2 sm:py-0.5 rounded-md font-bold whitespace-nowrap"
                   style={{
-                    fontSize: '11px',
-                    fontFamily: 'DM Mono',
-                    padding: '3px 8px',
-                    borderRadius: '6px',
                     background: 'rgba(97,215,201,0.15)',
                     color: 'var(--accent)',
                     border: '1px solid rgba(97,215,201,0.3)',
-                    fontWeight: 700,
                   }}
                 >
                   3-PERSONA COGNITIVE PANEL
@@ -81,64 +73,43 @@ export function MultiChatPage() {
               </div>
             </div>
           </div>
-          <p style={{ margin: '6px 0 0', color: 'var(--muted)', fontSize: '13px' }}>
+          <p className="mt-1 sm:mt-1.5 text-[11px] sm:text-[13px] text-slate-400 line-clamp-1 sm:line-clamp-none">
             Connected Multi-Agent Dialogue: NOVA 🧠 (Researcher) → ORBIT 😎 (Buddy) → COSMOS 🧘 (Mentor)
           </p>
         </div>
 
         {/* Tab Controls (Chat Console vs Agent Configurations) */}
         <div
+          className="flex p-1 rounded-xl gap-1 w-full sm:w-auto"
           style={{
-            display: 'flex',
-            padding: '4px',
             background: 'rgba(6,16,24,0.7)',
             border: '1px solid rgba(165,207,214,0.18)',
-            borderRadius: '12px',
-            gap: '4px',
           }}
         >
           <button
             type="button"
             onClick={() => setActiveTab('chat')}
+            className="flex-1 sm:flex-none inline-flex items-center justify-center gap-1.5 px-3 py-1.5 sm:px-4 sm:py-2 rounded-lg text-xs sm:text-[13px] font-bold border-none cursor-pointer transition-all"
             style={{
-              display: 'inline-flex',
-              alignItems: 'center',
-              gap: '6px',
-              padding: '8px 16px',
-              borderRadius: '8px',
-              fontSize: '13px',
-              fontWeight: 700,
-              border: 'none',
-              cursor: 'pointer',
               background: activeTab === 'chat' ? 'var(--accent)' : 'transparent',
               color: activeTab === 'chat' ? '#04121a' : 'var(--muted)',
-              transition: 'all 0.2s ease',
             }}
           >
-            <MessageSquare size={14} />
-            Chat Console
+            <MessageSquare size={13} className="sm:w-3.5 sm:h-3.5" />
+            <span>Chat Console</span>
           </button>
 
           <button
             type="button"
             onClick={() => setActiveTab('settings')}
+            className="flex-1 sm:flex-none inline-flex items-center justify-center gap-1.5 px-3 py-1.5 sm:px-4 sm:py-2 rounded-lg text-xs sm:text-[13px] font-bold border-none cursor-pointer transition-all"
             style={{
-              display: 'inline-flex',
-              alignItems: 'center',
-              gap: '6px',
-              padding: '8px 16px',
-              borderRadius: '8px',
-              fontSize: '13px',
-              fontWeight: 700,
-              border: 'none',
-              cursor: 'pointer',
               background: activeTab === 'settings' ? 'var(--accent)' : 'transparent',
               color: activeTab === 'settings' ? '#04121a' : 'var(--muted)',
-              transition: 'all 0.2s ease',
             }}
           >
-            <Sliders size={14} />
-            Agent Configurations
+            <Sliders size={13} className="sm:w-3.5 sm:h-3.5" />
+            <span>Agent Configurations</span>
           </button>
         </div>
       </div>

@@ -603,8 +603,14 @@ export function MultiChatConsole({ config, onNavigateToSettings }: MultiChatCons
   // Copies all persona responses together as one formatted text block:
   // === NOVA ===
   // [nova's answer]
+  //
+  //   ↳ 1-on-1 Branch with NOVA (1)
+  //   YOU → NOVA: [user's follow-up]
+  //   NOVA: [persona's reply]
+  //
   // === ORBIT ===
   // [orbit's answer]
+  //
   // === COSMOS ===
   // [cosmos's answer]
   const handleCopyCombined = async (msg: MultiChatMessage) => {
@@ -616,7 +622,22 @@ export function MultiChatConsole({ config, onNavigateToSettings }: MultiChatCons
     const formattedBlock = completedResponses
       .map((r) => {
         const answer = getPersonaCleanText(r);
-        return `=== ${r.name.toUpperCase()} ===\n${answer}`;
+        let block = `=== ${r.name.toUpperCase()} ===\n${answer}`;
+
+        if (r.branches && r.branches.length > 0) {
+          const branchBlocks = r.branches
+            .map((b, bIdx) => {
+              const branchText = b.response ? getPersonaCleanText(b.response) : b.text || '';
+              const cleanBranchText =
+                branchText ||
+                (b.response?.status === 'failed' ? `*[Error: ${b.response?.error || 'Failed to generate'}]*` : '');
+              return `  ↳ 1-on-1 Branch with ${r.name} (${bIdx + 1})\n  YOU → ${r.name}: ${b.query}\n  ${r.name}: ${cleanBranchText}`;
+            })
+            .join('\n\n');
+          block += `\n\n${branchBlocks}`;
+        }
+
+        return block;
       })
       .join('\n\n');
 
@@ -983,15 +1004,15 @@ export function MultiChatConsole({ config, onNavigateToSettings }: MultiChatCons
   return (
     <div className="flex flex-col gap-5 w-full max-w-5xl mx-auto min-h-[calc(100vh-220px)]">
       {/* Sleek Chat Room Top Header Bar */}
-      <div className="flex flex-wrap items-center justify-between gap-3 px-4 py-3 rounded-2xl bg-slate-950/80 backdrop-blur-xl border border-white/10 shadow-lg shadow-black/40">
+      <div className="flex flex-wrap items-center justify-between gap-2 sm:gap-3 px-3 sm:px-4 py-2 sm:py-3 rounded-2xl bg-slate-950/80 backdrop-blur-xl border border-white/10 shadow-lg shadow-black/40">
         {/* Left: Chat room status & active personas */}
-        <div className="flex items-center flex-wrap gap-2.5">
-          <div className="flex items-center gap-2 px-2.5 py-1 rounded-full bg-cyan-500/10 border border-cyan-500/25">
+        <div className="flex items-center flex-wrap gap-1.5 sm:gap-2.5">
+          <div className="flex items-center gap-1.5 sm:gap-2 px-2 sm:px-2.5 py-0.5 sm:py-1 rounded-full bg-cyan-500/10 border border-cyan-500/25">
             <span className="relative flex h-2 w-2">
               <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-cyan-400 opacity-75" />
               <span className="relative inline-flex rounded-full h-2 w-2 bg-cyan-500" />
             </span>
-            <span className="text-[11px] font-mono font-bold tracking-wide text-cyan-300">
+            <span className="text-[10px] sm:text-[11px] font-mono font-bold tracking-wide text-cyan-300">
               MULTI-AGENT CHANNEL
             </span>
           </div>
@@ -999,11 +1020,11 @@ export function MultiChatConsole({ config, onNavigateToSettings }: MultiChatCons
           <div className="h-4 w-px bg-white/10 hidden sm:block" />
 
           {/* Persona quick chips */}
-          <div className="flex items-center gap-1.5 flex-wrap">
+          <div className="flex items-center gap-1 sm:gap-1.5 flex-wrap">
             {Object.values(config.personas).map((persona) => (
               <div
                 key={persona.id}
-                className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-xl text-xs font-medium transition-all"
+                className="inline-flex items-center gap-1 sm:gap-1.5 px-2 sm:px-2.5 py-0.5 sm:py-1 rounded-xl text-[11px] sm:text-xs font-medium transition-all"
                 style={{
                   background: persona.enabled ? `${persona.accentColor}15` : 'rgba(255,255,255,0.03)',
                   border: `1px solid ${persona.enabled ? persona.accentColor + '40' : 'rgba(255,255,255,0.08)'}`,
@@ -1013,7 +1034,7 @@ export function MultiChatConsole({ config, onNavigateToSettings }: MultiChatCons
                 title={`${persona.name} (${persona.toneBadge})`}
               >
                 <span>{persona.icon}</span>
-                <span className="font-bold text-[12px]">{persona.name}</span>
+                <span className="font-bold text-[11px] sm:text-[12px]">{persona.name}</span>
                 <span className="text-[10px] font-mono opacity-70 hidden md:inline">
                   {persona.toneBadge}
                 </span>
@@ -1023,99 +1044,12 @@ export function MultiChatConsole({ config, onNavigateToSettings }: MultiChatCons
         </div>
 
         {/* Right: View Mode Toggle & Utility Controls */}
-        <div className="flex items-center gap-2 ml-auto flex-wrap">
+        <div className="flex items-center gap-1.5 sm:gap-2 ml-auto flex-wrap">
           {/* Document Lens RAG Toggle Button */}
           <button
             type="button"
-            onClick={() => setDocLensEnabled(!docLensEnabled)}
-            className={`flex items-center gap-1.5 px-2.5 py-1 rounded-xl text-xs font-semibold transition-all border shadow-sm ${
-              docLensEnabled
-                ? 'bg-amber-500/20 text-amber-300 border-amber-500/40 shadow-amber-500/10'
-                : 'bg-white/5 text-slate-400 hover:text-slate-200 border-white/10 hover:border-white/20'
-            }`}
-            title={
-              docLensEnabled
-                ? 'Document Lens is active: Persona responses ground themselves in your Document Library'
-                : 'Enable Document Lens to let personas retrieve relevant knowledge from your Document Library'
-            }
-          >
-            <BookOpen size={13} className={docLensEnabled ? 'text-amber-400' : 'text-slate-400'} />
-            <span className="hidden sm:inline">Doc Lens</span>
-            {docLensEnabled && (
-              <span className="w-1.5 h-1.5 rounded-full bg-amber-400 animate-pulse" />
-            )}
-          </button>
-
-          {/* Podcast Mode Player Trigger */}
-          {podcastTracks.length > 0 && (
-            <button
-              type="button"
-              onClick={isPodcastActive ? handleTogglePodcastPlayPause : () => handleStartPodcast()}
-              className={`flex items-center gap-1.5 px-2.5 py-1 rounded-xl text-xs font-bold transition-all border shadow-sm ${
-                isPodcastActive
-                  ? 'bg-indigo-500/25 text-indigo-200 border-indigo-400/50 shadow-indigo-500/20'
-                  : 'bg-indigo-950/40 text-indigo-300 hover:text-indigo-100 border-indigo-500/30 hover:bg-indigo-900/50'
-              }`}
-              title="Sequential multi-speaker audio playback across all persona responses"
-            >
-              <Radio size={13} className={isPodcastActive && podcastPlaying ? 'text-indigo-400 animate-pulse' : 'text-indigo-400'} />
-              <span>{isPodcastActive && podcastPlaying ? 'Podcast Playing' : '🎙️ Podcast'}</span>
-              <span className="text-[10px] font-mono px-1 rounded bg-indigo-500/20">
-                {podcastTracks.length}
-              </span>
-            </button>
-          )}
-
-          {/* View Mode Switcher */}
-          <div className="flex items-center p-1 rounded-xl bg-black/40 border border-white/10 text-xs">
-            <button
-              type="button"
-              onClick={() => setViewMode('unified')}
-              className={`flex items-center gap-1.5 px-2.5 py-1 rounded-lg font-medium transition-all ${
-                viewMode === 'unified'
-                  ? 'bg-cyan-500/20 text-cyan-300 shadow-sm border border-cyan-500/30'
-                  : 'text-slate-400 hover:text-slate-200'
-              }`}
-              title="Streamlined conversational card feed"
-            >
-              <Layers size={13} />
-              <span className="hidden sm:inline">Stream</span>
-            </button>
-
-            <button
-              type="button"
-              onClick={() => setViewMode('tabs')}
-              className={`flex items-center gap-1.5 px-2.5 py-1 rounded-lg font-medium transition-all ${
-                viewMode === 'tabs'
-                  ? 'bg-cyan-500/20 text-cyan-300 shadow-sm border border-cyan-500/30'
-                  : 'text-slate-400 hover:text-slate-200'
-              }`}
-              title="Filter by persona tabs"
-            >
-              <ListFilter size={13} />
-              <span className="hidden sm:inline">Persona Tabs</span>
-            </button>
-
-            <button
-              type="button"
-              onClick={() => setViewMode('grid')}
-              className={`flex items-center gap-1.5 px-2.5 py-1 rounded-lg font-medium transition-all ${
-                viewMode === 'grid'
-                  ? 'bg-cyan-500/20 text-cyan-300 shadow-sm border border-cyan-500/30'
-                  : 'text-slate-400 hover:text-slate-200'
-              }`}
-              title="Compare side-by-side in multi-column grid"
-            >
-              <Columns size={13} />
-              <span className="hidden sm:inline">Split</span>
-            </button>
-          </div>
-
-          {/* FEATURE 2: DOCUMENT LENS TOGGLE BUTTON */}
-          <button
-            type="button"
             onClick={toggleDocLens}
-            className={`p-1.5 sm:px-2.5 sm:py-1 rounded-xl border text-xs font-semibold flex items-center gap-1.5 transition-all ${
+            className={`p-1.5 sm:px-2.5 sm:py-1 rounded-xl border text-xs font-semibold flex items-center gap-1 sm:gap-1.5 transition-all min-h-[36px] sm:min-h-0 ${
               docLensEnabled
                 ? 'bg-amber-500/20 text-amber-300 border-amber-500/50 shadow-sm shadow-amber-500/20'
                 : 'bg-white/5 border-white/10 hover:bg-amber-500/10 text-slate-300 hover:text-amber-300'
@@ -1131,32 +1065,81 @@ export function MultiChatConsole({ config, onNavigateToSettings }: MultiChatCons
             />
           </button>
 
-          {/* FEATURE 3: PODCAST MODE BUTTON */}
+          {/* Podcast Mode Button */}
           {podcastTracks.length > 0 && (
             <button
               type="button"
-              onClick={handleStartPodcast}
-              className={`p-1.5 sm:px-2.5 sm:py-1 rounded-xl border text-xs font-semibold flex items-center gap-1.5 transition-all ${
+              onClick={isPodcastActive ? handleTogglePodcastPlayPause : () => handleStartPodcast()}
+              className={`p-1.5 sm:px-2.5 sm:py-1 rounded-xl border text-xs font-semibold flex items-center gap-1 sm:gap-1.5 transition-all min-h-[36px] sm:min-h-0 ${
                 isPodcastActive
                   ? 'bg-indigo-500/30 text-indigo-200 border-indigo-500/50 shadow-sm shadow-indigo-500/25'
                   : 'bg-indigo-950/40 border-indigo-500/30 hover:bg-indigo-900/50 text-indigo-300 hover:text-white'
               }`}
               title="Play entire multi-persona conversation as an audio podcast"
             >
-              <Play size={13} className="text-indigo-400 fill-indigo-400" />
-              <span className="hidden sm:inline">Podcast</span>
+              {isPodcastActive ? (
+                <Radio size={13} className={podcastPlaying ? 'text-indigo-400 animate-pulse' : 'text-indigo-400'} />
+              ) : (
+                <Play size={13} className="text-indigo-400 fill-indigo-400" />
+              )}
+              <span className="hidden sm:inline">{isPodcastActive && podcastPlaying ? 'Playing' : 'Podcast'}</span>
               <span className="px-1.5 py-0.5 rounded-full bg-indigo-500/30 text-[10px] font-mono text-indigo-200">
                 {podcastTracks.length}
               </span>
             </button>
           )}
 
+          {/* View Mode Switcher */}
+          <div className="flex items-center p-0.5 sm:p-1 rounded-xl bg-black/40 border border-white/10 text-xs">
+            <button
+              type="button"
+              onClick={() => setViewMode('unified')}
+              className={`flex items-center gap-1 sm:gap-1.5 px-2 sm:px-2.5 py-1 rounded-lg font-medium transition-all min-h-[34px] sm:min-h-0 ${
+                viewMode === 'unified'
+                  ? 'bg-cyan-500/20 text-cyan-300 shadow-sm border border-cyan-500/30'
+                  : 'text-slate-400 hover:text-slate-200'
+              }`}
+              title="Streamlined conversational card feed"
+            >
+              <Layers size={13} />
+              <span className="hidden sm:inline">Stream</span>
+            </button>
+
+            <button
+              type="button"
+              onClick={() => setViewMode('tabs')}
+              className={`flex items-center gap-1 sm:gap-1.5 px-2 sm:px-2.5 py-1 rounded-lg font-medium transition-all min-h-[34px] sm:min-h-0 ${
+                viewMode === 'tabs'
+                  ? 'bg-cyan-500/20 text-cyan-300 shadow-sm border border-cyan-500/30'
+                  : 'text-slate-400 hover:text-slate-200'
+              }`}
+              title="Filter by persona tabs"
+            >
+              <ListFilter size={13} />
+              <span className="hidden sm:inline">Persona Tabs</span>
+            </button>
+
+            <button
+              type="button"
+              onClick={() => setViewMode('grid')}
+              className={`flex items-center gap-1 sm:gap-1.5 px-2 sm:px-2.5 py-1 rounded-lg font-medium transition-all min-h-[34px] sm:min-h-0 ${
+                viewMode === 'grid'
+                  ? 'bg-cyan-500/20 text-cyan-300 shadow-sm border border-cyan-500/30'
+                  : 'text-slate-400 hover:text-slate-200'
+              }`}
+              title="Compare side-by-side in multi-column grid"
+            >
+              <Columns size={13} />
+              <span className="hidden sm:inline">Split</span>
+            </button>
+          </div>
+
           {/* Export & Clear */}
           {messages.length > 0 && (
             <button
               type="button"
               onClick={handleExportTranscript}
-              className="p-1.5 sm:px-2.5 sm:py-1 rounded-xl bg-white/5 border border-white/10 hover:bg-white/10 text-slate-300 hover:text-white transition-all text-xs font-medium flex items-center gap-1.5"
+              className="p-1.5 sm:px-2.5 sm:py-1 rounded-xl bg-white/5 border border-white/10 hover:bg-white/10 text-slate-300 hover:text-white transition-all text-xs font-medium flex items-center gap-1 sm:gap-1.5 min-h-[36px] sm:min-h-0"
               title="Export complete conversation transcript"
             >
               <Share2 size={13} />
@@ -1168,7 +1151,7 @@ export function MultiChatConsole({ config, onNavigateToSettings }: MultiChatCons
             <button
               type="button"
               onClick={() => setShowClearModal(true)}
-              className="p-1.5 sm:px-3 sm:py-1.5 rounded-xl bg-rose-500/10 border border-rose-500/30 hover:bg-rose-500/20 hover:border-rose-400/60 text-rose-300 transition-all text-xs font-bold flex items-center gap-1.5 shadow-sm"
+              className="p-1.5 sm:px-3 sm:py-1.5 rounded-xl bg-rose-500/10 border border-rose-500/30 hover:bg-rose-500/20 hover:border-rose-400/60 text-rose-300 transition-all text-xs font-bold flex items-center gap-1 sm:gap-1.5 shadow-sm min-h-[36px] sm:min-h-0"
               title="Clear Multi Chat conversation history and reset memory"
             >
               <Trash2 size={13} className="text-rose-400" />
@@ -1182,7 +1165,7 @@ export function MultiChatConsole({ config, onNavigateToSettings }: MultiChatCons
           <button
             type="button"
             onClick={onNavigateToSettings}
-            className="p-1.5 sm:px-2.5 sm:py-1 rounded-xl bg-cyan-500/15 border border-cyan-500/30 hover:bg-cyan-500/25 text-cyan-300 transition-all text-xs font-semibold flex items-center gap-1.5"
+            className="p-1.5 sm:px-2.5 sm:py-1 rounded-xl bg-cyan-500/15 border border-cyan-500/30 hover:bg-cyan-500/25 text-cyan-300 transition-all text-xs font-semibold flex items-center gap-1 sm:gap-1.5 min-h-[36px] sm:min-h-0"
             title="Configure persona prompts, models & temperatures"
           >
             <Sliders size={13} />
@@ -1651,13 +1634,13 @@ export function MultiChatConsole({ config, onNavigateToSettings }: MultiChatCons
                               >
                                 {/* Persona Chat Header Bar */}
                                 <div
-                                  className="flex items-center justify-between px-4 sm:px-5 py-3 border-b border-white/5"
+                                  className="flex items-center justify-between px-3 sm:px-5 py-2.5 sm:py-3 border-b border-white/5 gap-2"
                                   style={{ background: `${resp.accentColor}08` }}
                                 >
                                   {/* Left: Avatar + Identity */}
-                                  <div className="flex items-center gap-2.5 min-w-0">
+                                  <div className="flex items-center gap-2 sm:gap-2.5 min-w-0 flex-1">
                                     <div
-                                      className="w-8 h-8 rounded-xl grid place-items-center text-lg shrink-0 shadow-sm"
+                                      className="w-7 h-7 sm:w-8 sm:h-8 rounded-xl grid place-items-center text-base sm:text-lg shrink-0 shadow-sm"
                                       style={{
                                         background: `${resp.accentColor}20`,
                                         border: `1px solid ${resp.accentColor}45`,
@@ -1666,9 +1649,9 @@ export function MultiChatConsole({ config, onNavigateToSettings }: MultiChatCons
                                       {resp.icon}
                                     </div>
 
-                                    <div className="flex items-center gap-2 flex-wrap min-w-0">
+                                    <div className="flex items-center gap-1.5 sm:gap-2 flex-wrap min-w-0">
                                       <span
-                                        className="font-bold text-sm tracking-tight"
+                                        className="font-bold text-xs sm:text-sm tracking-tight shrink-0"
                                         style={{ color: resp.accentColor }}
                                       >
                                         {resp.name}
@@ -1676,7 +1659,7 @@ export function MultiChatConsole({ config, onNavigateToSettings }: MultiChatCons
 
                                       {resp.toneBadge && (
                                         <span
-                                          className="text-[10px] font-mono px-2 py-0.5 rounded-full font-semibold"
+                                          className="text-[9px] sm:text-[10px] font-mono px-1.5 sm:px-2 py-0.5 rounded-full font-semibold whitespace-nowrap shrink-0"
                                           style={{
                                             background: `${resp.accentColor}18`,
                                             color: resp.accentColor,
@@ -1688,7 +1671,7 @@ export function MultiChatConsole({ config, onNavigateToSettings }: MultiChatCons
                                       )}
 
                                       {resp.durationMs && resp.status === 'completed' && (
-                                        <span className="text-[10px] font-mono text-slate-500 flex items-center gap-1">
+                                        <span className="text-[9px] sm:text-[10px] font-mono text-slate-500 flex items-center gap-1 whitespace-nowrap shrink-0">
                                           <Clock size={10} />
                                           {(resp.durationMs / 1000).toFixed(1)}s
                                         </span>
@@ -1704,7 +1687,7 @@ export function MultiChatConsole({ config, onNavigateToSettings }: MultiChatCons
                                   </div>
 
                                   {/* Right: Audio TTS, Branch Reply & Copy Controls */}
-                                  <div className="flex items-center gap-1.5 shrink-0">
+                                  <div className="flex items-center gap-1 sm:gap-1.5 shrink-0">
                                     {resp.status === 'completed' && displayText && (
                                       <>
                                         {/* 1-on-1 Reply Button */}
@@ -1713,7 +1696,7 @@ export function MultiChatConsole({ config, onNavigateToSettings }: MultiChatCons
                                           onClick={() =>
                                             setActiveBranchCardKey(isBranchOpen ? null : personaKey)
                                           }
-                                          className={`px-2 py-1 rounded-lg text-xs font-semibold flex items-center gap-1.5 transition-all border ${
+                                          className={`p-1.5 sm:px-2 sm:py-1 rounded-lg text-xs font-semibold flex items-center gap-1 sm:gap-1.5 transition-all border min-h-[32px] sm:min-h-0 ${
                                             isBranchOpen
                                               ? 'bg-cyan-500/20 text-cyan-200 border-cyan-400/50'
                                               : 'bg-black/30 text-slate-300 hover:text-white border-white/10 hover:border-white/20'
@@ -1728,7 +1711,7 @@ export function MultiChatConsole({ config, onNavigateToSettings }: MultiChatCons
                                         <button
                                           type="button"
                                           onClick={() => handleToggleAudio(displayText, personaKey, resp.personaId)}
-                                          className={`px-2 py-1 rounded-lg text-xs font-medium flex items-center gap-1.5 transition-all border ${
+                                          className={`p-1.5 sm:px-2 sm:py-1 rounded-lg text-xs font-medium flex items-center gap-1 sm:gap-1.5 transition-all border min-h-[32px] sm:min-h-0 ${
                                             isPlayingThis
                                               ? 'bg-cyan-500/20 text-cyan-300 border-cyan-500/40 shadow-sm'
                                               : edgeTtsLoadingId === personaKey
@@ -2158,13 +2141,13 @@ export function MultiChatConsole({ config, onNavigateToSettings }: MultiChatCons
                                   className="p-3 border-b border-white/5 flex items-center justify-between"
                                   style={{ background: `${resp.accentColor}10` }}
                                 >
-                                  <div className="flex items-center gap-2 min-w-0">
-                                    <span className="text-base">{resp.icon}</span>
-                                    <div>
-                                      <h4 className="text-xs font-bold leading-tight" style={{ color: resp.accentColor }}>
+                                  <div className="flex items-center gap-2 min-w-0 flex-1">
+                                    <span className="text-base shrink-0">{resp.icon}</span>
+                                    <div className="min-w-0 flex-1">
+                                      <h4 className="text-xs font-bold leading-tight truncate" style={{ color: resp.accentColor }}>
                                         {resp.name}
                                       </h4>
-                                      <span className="text-[10px] font-mono text-slate-400">
+                                      <span className="text-[10px] font-mono text-slate-400 block truncate">
                                         {resp.toneBadge}
                                       </span>
                                     </div>
