@@ -1098,21 +1098,14 @@ export async function executeSinglePersona(
  * Executes a 1-on-1 Persona Branch reply.
  * This runs ONLY the selected persona in an isolated 1-on-1 thread without broadcasting to others.
  */
-export async function executePersonaBranch({
-  persona,
-  branchQuery,
-  parentMessageQuery,
-  parentPersonaResponse,
-  priorBranchTurns = [],
-  conversationHistory = [],
-  permanentMemories,
-  responseLanguage,
-  documentChunks,
-}: {
-  persona: MultiChatPersonaConfig;
+export async function executePersonaBranch(args: {
+  persona?: MultiChatPersonaConfig;
+  targetPersonaId?: MultiChatPersonaId;
+  message?: MultiChatMessage;
+  config?: MultiChatSystemConfig;
   branchQuery: string;
-  parentMessageQuery: string;
-  parentPersonaResponse: MultiChatPersonaResponse;
+  parentMessageQuery?: string;
+  parentPersonaResponse?: MultiChatPersonaResponse;
   priorBranchTurns?: MultiChatBranchTurn[];
   conversationHistory?: MultiChatMessage[];
   permanentMemories?: string[];
@@ -1121,6 +1114,68 @@ export async function executePersonaBranch({
 }): Promise<MultiChatBranchTurn> {
   const startTime = Date.now();
   const branchTurnId = `branch_${Date.now()}_${Math.random().toString(36).substring(2, 7)}`;
+  const branchQuery = (args.branchQuery || '').trim();
+
+  // Resolve target persona config flexibly
+  let persona = args.persona;
+  if (!persona && args.targetPersonaId && args.config?.personas) {
+    persona = args.config.personas[args.targetPersonaId];
+  }
+  if (!persona && args.targetPersonaId) {
+    const storedCfg = storage.getMultiChatConfig();
+    persona = storedCfg.personas?.[args.targetPersonaId];
+  }
+  if (!persona && args.message && args.targetPersonaId) {
+    const resp = args.message.responses.find((r) => r.personaId === args.targetPersonaId);
+    if (resp) {
+      const storedCfg = storage.getMultiChatConfig();
+      persona = storedCfg.personas?.[args.targetPersonaId] || {
+        id: resp.personaId,
+        name: resp.name,
+        role: 'AI Specialist',
+        description: 'Specialized Multi-Chat Agent',
+        icon: resp.icon || '🤖',
+        toneBadge: resp.toneBadge || 'Specialist',
+        accentColor: resp.accentColor || '#06b6d4',
+        providerId: 'gemini',
+        modelId: 'gemini-2.5-flash',
+        enabled: true,
+        maxTokens: 500,
+        systemPrompt: `You are ${resp.name}, a helpful AI assistant.`,
+      };
+    }
+  }
+
+  if (!persona) {
+    const fallbackId = args.targetPersonaId || 'nova';
+    const storedCfg = storage.getMultiChatConfig();
+    persona = storedCfg.personas?.[fallbackId] || {
+      id: fallbackId,
+      name: fallbackId.toUpperCase(),
+      role: 'Specialist',
+      description: 'AI Persona',
+      icon: '✨',
+      toneBadge: 'Assistant',
+      accentColor: '#06b6d4',
+      providerId: 'gemini',
+      modelId: 'gemini-2.5-flash',
+      enabled: true,
+      maxTokens: 500,
+      systemPrompt: 'You are an intelligent AI specialist in a 1-on-1 conversation.',
+    };
+  }
+
+  // Resolve parent message and parent response
+  const parentMessageQuery = args.parentMessageQuery || args.message?.query || 'Context inquiry';
+  const parentPersonaResponse =
+    args.parentPersonaResponse ||
+    (args.message?.responses
+      ? args.message.responses.find((r) => r.personaId === persona?.id) || args.message.responses[0]
+      : undefined);
+
+  const priorBranchTurns = args.priorBranchTurns || parentPersonaResponse?.branches || [];
+  const conversationHistory = args.conversationHistory || [];
+  const documentChunks = args.documentChunks || args.message?.docChunks || [];
 
   const lengthProfile = detectQueryLengthIntent(branchQuery);
   const targetTokens = Math.max(persona.maxTokens || 350, lengthProfile.minTokens);
@@ -1135,7 +1190,7 @@ export async function executePersonaBranch({
   }
 
   // Base system prompt + memories
-  const memoriesToInject = permanentMemories ?? storage.getMultiChatMemories();
+  const memoriesToInject = args.permanentMemories ?? storage.getMultiChatMemories();
   let systemContent = persona.systemPrompt;
   if (memoriesToInject && memoriesToInject.length > 0) {
     const validMemories = memoriesToInject.map((m) => m.trim()).filter(Boolean);
@@ -1151,8 +1206,8 @@ export async function executePersonaBranch({
   }
 
   // Response language
-  const rawLang = responseLanguage ?? storage.getMultiChatResponseLanguage();
-  const lang = (typeof rawLang === 'string' && rawLang.trim()) ? rawLang.trim() : 'English';
+  const rawLang = args.responseLanguage ?? storage.getMultiChatResponseLanguage();
+  const lang = typeof rawLang === 'string' && rawLang.trim() ? rawLang.trim() : 'English';
   if (lang) {
     systemContent += `\n\nRespond only in: ${lang}. Maintain your persona style in 1-on-1 conversation.`;
   }
@@ -1166,12 +1221,16 @@ export async function executePersonaBranch({
 
   const branchThreadMessages: Array<{ role: 'user' | 'assistant'; content: string }> = [
     { role: 'user', content: parentMessageQuery },
-    { role: 'assistant', content: getPersonaCleanText(parentPersonaResponse) },
+    {
+      role: 'assistant',
+      content: parentPersonaResponse ? getPersonaCleanText(parentPersonaResponse) : 'Initial persona response',
+    },
   ];
 
   for (const b of priorBranchTurns) {
     branchThreadMessages.push({ role: 'user', content: b.query });
-    branchThreadMessages.push({ role: 'assistant', content: getPersonaCleanText(b.response) });
+    const bText = b.response ? getPersonaCleanText(b.response) : b.text || '';
+    branchThreadMessages.push({ role: 'assistant', content: bText });
   }
 
   const messages: Array<{ role: 'system' | 'user' | 'assistant'; content: string }> = [
@@ -1208,6 +1267,7 @@ export async function executePersonaBranch({
       return {
         id: branchTurnId,
         query: branchQuery.trim(),
+        text: cleanText,
         timestamp: Date.now(),
         response: {
           personaId: persona.id,
@@ -1225,9 +1285,11 @@ export async function executePersonaBranch({
         },
       };
     } else {
+      const errMsg = res.error || 'Failed to generate branch response.';
       return {
         id: branchTurnId,
         query: branchQuery.trim(),
+        text: errMsg,
         timestamp: Date.now(),
         response: {
           personaId: persona.id,
@@ -1235,9 +1297,9 @@ export async function executePersonaBranch({
           icon: persona.icon,
           accentColor: persona.accentColor,
           toneBadge: persona.toneBadge,
-          text: '',
+          text: errMsg,
           status: 'failed',
-          error: res.error || 'Failed to generate branch response.',
+          error: errMsg,
           model: res.model || primary.model,
           providerName: res.providerName || primary.provider?.name,
           durationMs,
@@ -1246,9 +1308,11 @@ export async function executePersonaBranch({
     }
   } catch (err: unknown) {
     const durationMs = Date.now() - startTime;
+    const errMsg = err instanceof Error ? err.message : String(err);
     return {
       id: branchTurnId,
       query: branchQuery.trim(),
+      text: errMsg,
       timestamp: Date.now(),
       response: {
         personaId: persona.id,
@@ -1256,9 +1320,9 @@ export async function executePersonaBranch({
         icon: persona.icon,
         accentColor: persona.accentColor,
         toneBadge: persona.toneBadge,
-        text: '',
+        text: errMsg,
         status: 'failed',
-        error: err instanceof Error ? err.message : String(err),
+        error: errMsg,
         durationMs,
       },
     };

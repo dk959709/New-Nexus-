@@ -326,16 +326,24 @@ export function MultiChatConsole({ config, onNavigateToSettings }: MultiChatCons
     const draftText = (branchDraftInputs[cardKey] || '').trim();
     if (!draftText || branchLoadingKey) return;
 
+    const persona = config.personas?.[personaId] || storage.getMultiChatConfig().personas?.[personaId];
+    const parentResponse = msg.responses.find((r) => r.personaId === personaId);
+
     setBranchLoadingKey(cardKey);
     try {
       const branchTurn = await executePersonaBranch({
-        message: msg,
+        persona,
         targetPersonaId: personaId,
+        message: msg,
         branchQuery: draftText,
+        parentMessageQuery: msg.query,
+        parentPersonaResponse: parentResponse,
+        priorBranchTurns: parentResponse?.branches || [],
         conversationHistory: messages,
         config,
         permanentMemories: storage.getMultiChatMemories(),
         responseLanguage: config.responseLanguage ?? storage.getMultiChatResponseLanguage(),
+        documentChunks: msg.docChunks,
       });
 
       setMessages((prev) => {
@@ -1845,53 +1853,66 @@ export function MultiChatConsole({ config, onNavigateToSettings }: MultiChatCons
                                         <span>1-on-1 Branch with {resp.name} ({branches.length})</span>
                                       </div>
 
-                                      {branches.map((b) => (
-                                        <div key={b.id} className="flex flex-col gap-2 rounded-2xl bg-black/40 border border-white/10 p-3.5 shadow-md">
-                                          {/* Branch User Query */}
-                                          <div className="flex items-center justify-between text-xs text-slate-300">
-                                            <span className="font-semibold text-cyan-300 font-mono text-[11px]">
-                                              YOU ➔ {resp.name}:
-                                            </span>
-                                            <div className="flex items-center gap-1">
-                                              <span className="text-[10px] font-mono text-slate-400">
-                                                {new Date(b.timestamp).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
+                                      {branches.map((b) => {
+                                        const branchText = b.response?.text || b.text || (b.response?.status === 'failed' ? (b.response?.error || 'Failed to generate response') : '');
+                                        const isBranchFailed = b.response?.status === 'failed';
+                                        return (
+                                          <div key={b.id} className="flex flex-col gap-2 rounded-2xl bg-black/40 border border-white/10 p-3.5 shadow-md">
+                                            {/* Branch User Query */}
+                                            <div className="flex items-center justify-between text-xs text-slate-300">
+                                              <span className="font-semibold text-cyan-300 font-mono text-[11px]">
+                                                YOU ➔ {resp.name}:
                                               </span>
-                                              <button
-                                                type="button"
-                                                onClick={() => handleDeleteBranch(msg.id, resp.personaId, b.id)}
-                                                className="p-1 rounded text-slate-400 hover:text-rose-400 transition-colors"
-                                                title="Delete this branch turn"
-                                              >
-                                                <Trash2 size={11} />
-                                              </button>
+                                              <div className="flex items-center gap-1">
+                                                <span className="text-[10px] font-mono text-slate-400">
+                                                  {new Date(b.timestamp).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
+                                                </span>
+                                                <button
+                                                  type="button"
+                                                  onClick={() => handleDeleteBranch(msg.id, resp.personaId, b.id)}
+                                                  className="p-1 rounded text-slate-400 hover:text-rose-400 transition-colors"
+                                                  title="Delete this branch turn"
+                                                >
+                                                  <Trash2 size={11} />
+                                                </button>
+                                              </div>
                                             </div>
-                                          </div>
-                                          <p className="text-xs text-slate-200 font-medium pl-2 border-l border-cyan-500/30">
-                                            {b.query}
-                                          </p>
+                                            <p className="text-xs text-slate-200 font-medium pl-2 border-l border-cyan-500/30">
+                                              {b.query}
+                                            </p>
 
-                                          {/* Branch Persona Response */}
-                                          <div className="mt-1 pt-2 border-t border-white/5 flex flex-col gap-1.5">
-                                            <div className="flex items-center justify-between">
-                                              <span className="text-[11px] font-bold font-mono" style={{ color: resp.accentColor }}>
-                                                {resp.icon} {resp.name}:
-                                              </span>
-                                              <button
-                                                type="button"
-                                                onClick={() => handleToggleAudio(b.text, `b_${b.id}`, resp.personaId)}
-                                                className="p-1 rounded bg-white/5 hover:bg-white/10 text-slate-300 text-[10px] font-mono flex items-center gap-1"
-                                                title="Listen to branch response"
-                                              >
-                                                <Volume2 size={10} />
-                                                <span>Listen</span>
-                                              </button>
-                                            </div>
-                                            <div className="prose prose-invert prose-xs text-slate-200 text-xs leading-relaxed">
-                                              <FormattedText content={b.text} />
+                                            {/* Branch Persona Response */}
+                                            <div className="mt-1 pt-2 border-t border-white/5 flex flex-col gap-1.5">
+                                              <div className="flex items-center justify-between">
+                                                <span className="text-[11px] font-bold font-mono" style={{ color: resp.accentColor }}>
+                                                  {resp.icon} {resp.name}:
+                                                </span>
+                                                {!isBranchFailed && branchText && (
+                                                  <button
+                                                    type="button"
+                                                    onClick={() => handleToggleAudio(branchText, `b_${b.id}`, resp.personaId)}
+                                                    className="p-1 rounded bg-white/5 hover:bg-white/10 text-slate-300 text-[10px] font-mono flex items-center gap-1"
+                                                    title="Listen to branch response"
+                                                  >
+                                                    <Volume2 size={10} />
+                                                    <span>Listen</span>
+                                                  </button>
+                                                )}
+                                              </div>
+                                              {isBranchFailed ? (
+                                                <div className="flex items-center gap-2 p-2 rounded-lg bg-rose-500/10 border border-rose-500/20 text-rose-300 text-xs font-mono">
+                                                  <AlertCircle size={13} className="shrink-0" />
+                                                  <span>{b.response?.error || 'Branch request failed'}</span>
+                                                </div>
+                                              ) : (
+                                                <div className="prose prose-invert prose-xs text-slate-200 text-xs leading-relaxed">
+                                                  <FormattedText content={branchText} />
+                                                </div>
+                                              )}
                                             </div>
                                           </div>
-                                        </div>
-                                      ))}
+                                        );
+                                      })}
                                     </div>
                                   )}
 
@@ -2247,24 +2268,36 @@ export function MultiChatConsole({ config, onNavigateToSettings }: MultiChatCons
                                 {/* Grid Nested Branches */}
                                 {resp.branches && resp.branches.length > 0 && (
                                   <div className="mt-2 flex flex-col gap-2 pl-2 border-l-2 border-dashed" style={{ borderColor: `${resp.accentColor}40` }}>
-                                    {resp.branches.map((b) => (
-                                      <div key={b.id} className="p-2 rounded-xl bg-black/50 border border-white/10 flex flex-col gap-1 text-[11px]">
-                                        <div className="flex items-center justify-between text-cyan-300 font-mono text-[10px]">
-                                          <span>YOU ➔ {resp.name}:</span>
-                                          <button
-                                            type="button"
-                                            onClick={() => handleDeleteBranch(msg.id, resp.personaId, b.id)}
-                                            className="text-slate-400 hover:text-rose-400"
-                                          >
-                                            <Trash2 size={10} />
-                                          </button>
+                                    {resp.branches.map((b) => {
+                                      const branchText = b.response?.text || b.text || (b.response?.status === 'failed' ? (b.response?.error || 'Failed') : '');
+                                      const isBranchFailed = b.response?.status === 'failed';
+                                      return (
+                                        <div key={b.id} className="p-2 rounded-xl bg-black/50 border border-white/10 flex flex-col gap-1 text-[11px]">
+                                          <div className="flex items-center justify-between text-cyan-300 font-mono text-[10px]">
+                                            <span>YOU ➔ {resp.name}:</span>
+                                            <button
+                                              type="button"
+                                              onClick={() => handleDeleteBranch(msg.id, resp.personaId, b.id)}
+                                              className="text-slate-400 hover:text-rose-400"
+                                              title="Delete branch turn"
+                                            >
+                                              <Trash2 size={10} />
+                                            </button>
+                                          </div>
+                                          <p className="text-slate-200 font-medium">{b.query}</p>
+                                          <div className="mt-1 pt-1 border-t border-white/5 text-slate-300">
+                                            {isBranchFailed ? (
+                                              <div className="text-rose-400 text-[10px] font-mono flex items-center gap-1">
+                                                <AlertCircle size={10} />
+                                                <span>{b.response?.error || 'Failed'}</span>
+                                              </div>
+                                            ) : (
+                                              <FormattedText content={branchText} />
+                                            )}
+                                          </div>
                                         </div>
-                                        <p className="text-slate-200 font-medium">{b.query}</p>
-                                        <div className="mt-1 pt-1 border-t border-white/5 text-slate-300">
-                                          <FormattedText content={b.text} />
-                                        </div>
-                                      </div>
-                                    ))}
+                                      );
+                                    })}
                                   </div>
                                 )}
 

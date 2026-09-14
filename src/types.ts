@@ -346,6 +346,7 @@ export interface MultiChatBranchTurn {
   query: string;
   timestamp: number;
   response: MultiChatPersonaResponse;
+  text?: string;
 }
 
 export interface MultiChatPersonaResponse {
