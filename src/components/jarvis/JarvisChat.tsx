@@ -29,7 +29,7 @@ import {
   X,
   BookOpen,
 } from 'lucide-react';
-import { storage } from '@/lib/storage';
+import { storage, DEFAULT_JARVIS_CONFIG } from '@/lib/storage';
 import { stripConversationalMetaText, cleanMarkdownForSpeech } from '@/lib/format';
 import { runJarvisPipeline } from '@/services/jarvisOrchestrator';
 import {

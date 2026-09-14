@@ -1,5 +1,5 @@
 import { api } from '@/services/api';
-import { storage, DEFAULT_AGENT_SYSTEM_PROMPTS } from '@/lib/storage';
+import { storage, DEFAULT_AGENT_SYSTEM_PROMPTS, DEFAULT_JARVIS_CONFIG } from '@/lib/storage';
 import { getLocation } from '@/services/location';
 import {
   searchWikipedia,
@@ -2380,6 +2380,19 @@ Please perform your specialized processing for this inquiry. Provide clear, conc
   const isExplicitOutsideDocResearch = isDocRagActive && isExplicitOutsideDocumentQuery(userExtractedQuery || query);
   const isPureDocRagQuery = isDocRagActive && !isExplicitOutsideDocResearch;
 
+  const isCustomApi = isCustomApiCommand(query);
+  const customApiParsed = isCustomApi ? parseCustomApiCommand(query) : null;
+  const isWebFetch = isWebFetchQuery(query);
+  const targetWebUrl = isWebFetch ? extractWebFetchUrl(query) : '';
+  const isSearchOverride = isSearchOverrideQuery(query);
+  const strippedQuery = isCustomApi
+    ? (customApiParsed ? `${customApiParsed.apiName} ${customApiParsed.customQuery}`.trim() : query)
+    : isWebFetch
+      ? targetWebUrl
+      : isSearchOverride
+        ? stripSearchOverridePrefix(query)
+        : query;
+
   let plannerOutput: JarvisPlannerOutput = {
     task: isPureFileAnalysis
       ? (userExtractedQuery ? `Analyze attached file: ${userExtractedQuery}` : 'Analyze attached context files')
@@ -3282,18 +3295,6 @@ CRITICAL RULES:
     return /\b(weather|temperature|forecast|rain|raining|snow|snowing|precipitation|wind speed|humidity|degrees)\b/i.test(lower);
   };
 
-  const isCustomApi = isCustomApiCommand(query);
-  const customApiParsed = isCustomApi ? parseCustomApiCommand(query) : null;
-  const isWebFetch = isWebFetchQuery(query);
-  const targetWebUrl = isWebFetch ? extractWebFetchUrl(query) : '';
-  const isSearchOverride = isSearchOverrideQuery(query);
-  const strippedQuery = isCustomApi
-    ? (customApiParsed ? `${customApiParsed.apiName} ${customApiParsed.customQuery}`.trim() : query)
-    : isWebFetch
-      ? targetWebUrl
-      : isSearchOverride
-        ? stripSearchOverridePrefix(query)
-        : query;
   const combinedQueryText = `${strippedQuery} ${plannerOutput.task || ''}`;
 
   // For intent checks, when files are attached, use the user's specific request and task rather than raw attached file content
