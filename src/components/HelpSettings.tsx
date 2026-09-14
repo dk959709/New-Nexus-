@@ -63,7 +63,7 @@ The JARVIS architecture rejects single-prompt hallucination in favor of a rigoro
 
 1. **Planner (Agent 1 - Cognitive Orchestrator)**:
    - **Role**: Dissects the user's prompt, classifies intent, and compiles an atomic execution plan.
-   - **Mechanism**: Dynamically flags pipeline requirements (\`needsResearch\`, \`needsWikipedia\`, \`needsWikidata\`, \`needsFactCheck\`, \`needsKnowledgeAgent\`, \`needsReview\`, \`needsCoder\`, \`needsCodeOnline\`, \`needsArchitect\`, \`needsDataAnalyst\`, \`needsImageFinder\`, \`documentRagOptions\`). It sanitizes raw search queries, extracts target entities, and detects explicit command overrides.
+   - **Mechanism**: Dynamically flags pipeline requirements (\`needsResearch\`, \`needsWikipedia\`, \`needsWikidata\`, \`needsFactCheck\`, \`needsKnowledgeAgent\`, \`needsReview\`, \`needsDiagram\`, \`needsChart\`, \`needsImage\`), and separately detects coding requests via the isCodingQuery() function or explicit /code and /codeonline slash commands (not a Planner JSON flag). It sanitizes raw search queries, extracts target entities, and detects explicit command overrides.
 
 2. **Researcher (Agent 2 - Information Retrieval Engine)**:
    - **Role**: Executes multi-source web, news, and knowledge-base data gathering.
@@ -702,7 +702,7 @@ End of NEXUS Documentation
                   </span>
                 </div>
                 <p className="text-xs text-slate-400 m-0">
-                  Deconstructs query intent, builds atomic execution tasks, detects slash command bypasses, and toggles downstream agent flags (<code className="text-slate-300">needsResearch</code>, <code className="text-slate-300">needsWikipedia</code>, <code className="text-slate-300">needsFactCheck</code>, <code className="text-slate-300">needsReview</code>, <code className="text-slate-300">needsCoder</code>, <code className="text-slate-300">needsArchitect</code>).
+                  Deconstructs query intent, builds atomic execution tasks, detects slash command bypasses, and toggles downstream agent flags (<code className="text-slate-300">needsResearch</code>, <code className="text-slate-300">needsWikipedia</code>, <code className="text-slate-300">needsFactCheck</code>, <code className="text-slate-300">needsReview</code>, <code className="text-slate-300">needsDiagram</code>, <code className="text-slate-300">needsChart</code>, <code className="text-slate-300">needsImage</code>).
                 </p>
               </div>
 
