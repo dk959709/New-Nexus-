@@ -170,12 +170,13 @@ export interface AIProvidersState {
   providers: AIProviderConfig[];
 }
 
-export type ImageRequestType = 'get' | 'post';
+export type ImageRequestType = 'get' | 'post' | 'sdk';
 
 export interface ImageProviderConfig {
   id: string;
   name: string;
   url: string;
+  model?: string;
   requestType?: ImageRequestType;
   keyStrategy: KeyStrategy;
   preferredKeyId?: string;
@@ -244,6 +245,8 @@ export interface JarvisImageResult {
   thumbnailUrl?: string;
   source?: string;
   description?: string;
+  imageType?: 'real' | 'ai';
+  label?: string;
 }
 
 export interface JarvisAgentConfig {

@@ -1,5 +1,5 @@
 import { api } from '@/services/api';
-import { storage, DEFAULT_AGENT_SYSTEM_PROMPTS, DEFAULT_JARVIS_CONFIG } from '@/lib/storage';
+import { storage, DEFAULT_AGENT_SYSTEM_PROMPTS, DEFAULT_JARVIS_CONFIG, DEFAULT_IMAGE_PROVIDERS } from '@/lib/storage';
 import { getLocation } from '@/services/location';
 import {
   searchWikipedia,
@@ -23,6 +23,7 @@ import {
   isExplicitOutsideDocumentQuery,
 } from '@/services/jarvisAttachmentService';
 import { searchDocumentLibrary } from '@/services/documentLibraryService';
+import { generatePuterImage, DEFAULT_PUTER_MODEL } from '@/services/puterImageService';
 import type {
   AIProviderConfig,
   AISource,
@@ -243,6 +244,139 @@ export async function fetchJarvisRealImages(
   }
 
   return results;
+}
+
+/**
+ * Synthesizes an AI-generated image of the requested topic using the user's
+ * currently active Image AI Provider (Pollinations GET, Hugging Face POST, etc.).
+ */
+export async function generateJarvisAiImage(
+  prompt: string,
+): Promise<JarvisImageResult | null> {
+  const cleanPrompt = prompt.trim();
+  if (!cleanPrompt) return null;
+
+  try {
+    const activeProvider = storage.getActiveImageProvider() || DEFAULT_IMAGE_PROVIDERS[0];
+    if (!activeProvider) return null;
+
+    if (activeProvider.requestType === 'sdk') {
+      try {
+        const puterResult = await generatePuterImage(cleanPrompt, activeProvider.model || DEFAULT_PUTER_MODEL);
+        if (puterResult?.url) {
+          return {
+            title: cleanPrompt,
+            url: puterResult.url,
+            thumbnailUrl: puterResult.url,
+            domain: activeProvider.name || 'Puter.js',
+            source: '🎨 AI Generated',
+            imageType: 'ai',
+            label: '🎨 AI Generated',
+            author: activeProvider.name,
+            description: `Generated using Puter.js (${puterResult.model}).`,
+          };
+        }
+      } catch (sdkErr) {
+        console.warn('[JARVIS Image Finder] Puter SDK generation failed, falling back to Pollinations GET:', sdkErr);
+      }
+    }
+
+    const isPost =
+      activeProvider.requestType === 'post' ||
+      activeProvider.url.toLowerCase().includes('huggingface') ||
+      activeProvider.url.toLowerCase().includes('hf-inference');
+
+    const seed = Math.floor(Math.random() * 1000000);
+
+    // Resolve active API key if configured
+    let apiKey = '';
+    if (activeProvider.keys && activeProvider.keys.length > 0) {
+      if (activeProvider.keyStrategy === 'manual' && activeProvider.preferredKeyId) {
+        apiKey = activeProvider.keys.find((k) => k.id === activeProvider.preferredKeyId)?.key?.trim() || '';
+      }
+      if (!apiKey) {
+        const valid = activeProvider.keys.filter((k) => k.key && k.key.trim().length > 0);
+        const healthy = valid.find((k) => k.status === 'healthy') || valid[0];
+        apiKey = healthy?.key?.trim() || '';
+      }
+    }
+
+    if (isPost) {
+      try {
+        const controller = new AbortController();
+        const timeoutId = setTimeout(() => controller.abort(), 20000);
+
+        const response = await fetch(activeProvider.url.trim(), {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+            ...(apiKey ? { Authorization: `Bearer ${apiKey}` } : {}),
+          },
+          body: JSON.stringify({ inputs: cleanPrompt }),
+          signal: controller.signal,
+          mode: 'cors',
+        });
+        clearTimeout(timeoutId);
+
+        if (response.ok) {
+          const blob = await response.blob();
+          const base64Data = await new Promise<string>((resolve, reject) => {
+            const reader = new FileReader();
+            reader.onloadend = () => resolve(reader.result as string);
+            reader.onerror = reject;
+            reader.readAsDataURL(blob);
+          });
+
+          return {
+            title: cleanPrompt,
+            url: base64Data,
+            thumbnailUrl: base64Data,
+            domain: activeProvider.name || 'AI Generator',
+            source: '🎨 AI Generated',
+            imageType: 'ai',
+            label: '🎨 AI Generated',
+            author: activeProvider.name,
+            description: `Generated using ${activeProvider.name} neural visual engine.`,
+          };
+        }
+      } catch (postErr) {
+        console.warn('[JARVIS Image Finder] POST AI generation failed, falling back to Pollinations GET:', postErr);
+      }
+    }
+
+    // Default Pollinations GET generation
+    const base = (activeProvider.requestType === 'get' && activeProvider.url
+      ? activeProvider.url
+      : 'https://image.pollinations.ai/prompt/'
+    ).trim().replace(/\/+$/, '');
+
+    const encodedPrompt = encodeURIComponent(cleanPrompt);
+    const params = new URLSearchParams({
+      width: '1024',
+      height: '1024',
+      seed: String(seed),
+      nologo: 'true',
+    });
+    if (apiKey) {
+      params.append('key', apiKey);
+    }
+    const fullUrl = `${base}/${encodedPrompt}?${params.toString()}`;
+
+    return {
+      title: cleanPrompt,
+      url: fullUrl,
+      thumbnailUrl: fullUrl,
+      domain: activeProvider.name || 'Pollinations AI',
+      source: '🎨 AI Generated',
+      imageType: 'ai',
+      label: '🎨 AI Generated',
+      author: activeProvider.name || 'Pollinations',
+      description: `Synthesized with ${activeProvider.name || 'Pollinations'} neural visual model.`,
+    };
+  } catch (err) {
+    console.warn('[JARVIS Image Finder] AI Image synthesis error:', err);
+    return null;
+  }
 }
 
 function parseCellNumber(val: unknown): number | null {
@@ -6087,17 +6221,53 @@ JARVIS is a multi-agent AI intelligence platform composed of 10 specialized neur
         .trim();
     }
 
-    console.log(`[JARVIS Image Finder] Executing NEXUS image search for: "${searchQuery}"`);
+    console.log(`[JARVIS Image Finder] Executing parallel real photo retrieval & AI synthesis for: "${searchQuery}"`);
     try {
-      retrievedImages = await fetchJarvisRealImages(searchQuery);
+      // Execute both real photo search via Wikipedia/Wikimedia AND AI generation via active Image AI provider in parallel
+      const [realPhotosResult, aiImageResult] = await Promise.allSettled([
+        fetchJarvisRealImages(searchQuery, 1),
+        generateJarvisAiImage(searchQuery),
+      ]);
+
+      const realPhotos = realPhotosResult.status === 'fulfilled' ? realPhotosResult.value : [];
+      const aiImage = aiImageResult.status === 'fulfilled' ? aiImageResult.value : null;
+
+      const realPhoto = realPhotos[0]
+        ? {
+            ...realPhotos[0],
+            imageType: 'real' as const,
+            label: '📷 Real Photo (Wikipedia)',
+            source: '📷 Real Photo (Wikipedia)',
+          }
+        : null;
+
+      retrievedImages = [];
+      if (realPhoto) {
+        retrievedImages.push(realPhoto);
+      }
+      if (aiImage) {
+        retrievedImages.push(aiImage);
+      }
     } catch (fetchErr) {
-      console.warn('[JARVIS Image Finder] Image retrieval failed:', fetchErr);
+      console.warn('[JARVIS Image Finder] Image retrieval/generation failed:', fetchErr);
     }
 
-    console.log(`[JARVIS Image Finder] Retrieved ${retrievedImages.length} real photo(s).`);
+    console.log(`[JARVIS Image Finder] Retrieved ${retrievedImages.length} image visual(s) (Real + AI).`);
     console.groupEnd();
 
     if (retrievedImages.length > 0) {
+      const hasReal = retrievedImages.some((img) => img.imageType === 'real');
+      const hasAi = retrievedImages.some((img) => img.imageType === 'ai');
+
+      let stepSummary = `Retrieved visuals for "${searchQuery}".`;
+      if (hasReal && hasAi) {
+        stepSummary = `Retrieved Real Photo (Wikipedia) and synthesized AI Generated visual for "${searchQuery}".`;
+      } else if (hasAi) {
+        stepSummary = `Synthesized AI Generated visual for "${searchQuery}" (no Wikipedia photo found).`;
+      } else if (hasReal) {
+        stepSummary = `Retrieved Real Photo (Wikipedia) for "${searchQuery}".`;
+      }
+
       updateStep({
         agentId: 'imageFinder',
         name: ifCfg.name || 'Image Finder',
@@ -6106,23 +6276,25 @@ JARVIS is a multi-agent AI intelligence platform composed of 10 specialized neur
         providerName: ifRes.providerName,
         model: ifRes.model,
         durationMs: duration,
-        summary: `Retrieved ${retrievedImages.length} real photo${retrievedImages.length > 1 ? 's' : ''} for "${searchQuery}".`,
+        summary: stepSummary,
         outputPreview: JSON.stringify(
           retrievedImages.map((img) => ({
+            label: img.label || img.source,
             title: img.title,
             domain: img.domain,
             url: img.url,
-            author: img.author,
+            imageType: img.imageType,
           })),
           null,
           2,
         ),
         rawOutput: JSON.stringify(
           retrievedImages.map((img) => ({
+            label: img.label || img.source,
             title: img.title,
             domain: img.domain,
             url: img.url,
-            author: img.author,
+            imageType: img.imageType,
           })),
           null,
           2,
@@ -6138,7 +6310,7 @@ JARVIS is a multi-agent AI intelligence platform composed of 10 specialized neur
         providerName: ifRes.providerName,
         model: ifRes.model,
         durationMs: duration,
-        summary: `No high-confidence real photos found for "${searchQuery}".`,
+        summary: `No visual assets found or generated for "${searchQuery}".`,
       });
     }
   }

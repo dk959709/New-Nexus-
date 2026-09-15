@@ -22,6 +22,7 @@ import type {
 } from '@/types';
 import { storage } from '@/lib/storage';
 import { api } from '@/services/api';
+import { loadPuterScript, PUTER_IMAGE_MODELS, DEFAULT_PUTER_MODEL } from '@/services/puterImageService';
 
 function maskKey(key: string): string {
   if (!key) return '';
@@ -231,7 +232,9 @@ export function AIProvidersSettings() {
       setFormError('Please enter a Provider Name');
       return;
     }
-    if (!editingImageProvider.url.trim()) {
+
+    const isSdk = editingImageProvider.requestType === 'sdk';
+    if (!isSdk && !editingImageProvider.url.trim()) {
       setFormError('Please enter an API URL');
       return;
     }
@@ -244,8 +247,9 @@ export function AIProvidersSettings() {
         key: k.key.trim(),
       }));
 
-    const finalKeys: AIKeyItem[] =
-      cleanedKeys.length > 0
+    const finalKeys: AIKeyItem[] = isSdk
+      ? []
+      : cleanedKeys.length > 0
         ? cleanedKeys
         : [
             {
@@ -259,7 +263,12 @@ export function AIProvidersSettings() {
     const finalProvider: ImageProviderConfig = {
       ...editingImageProvider,
       name: editingImageProvider.name.trim(),
-      url: editingImageProvider.url.trim(),
+      url: isSdk
+        ? (editingImageProvider.url?.trim() || 'https://js.puter.com/v2/')
+        : editingImageProvider.url.trim(),
+      model: isSdk
+        ? (editingImageProvider.model || DEFAULT_PUTER_MODEL)
+        : editingImageProvider.model,
       requestType: editingImageProvider.requestType || 'get',
       keys: finalKeys,
     };
@@ -742,6 +751,30 @@ export function AIProvidersSettings() {
       ...prev,
       [provider.id]: { ok: false, message: 'Testing image endpoint...' },
     }));
+
+    if (provider.requestType === 'sdk') {
+      try {
+        const puter = await loadPuterScript();
+        if (puter?.ai?.txt2img) {
+          setProviderTestResults((prev) => ({
+            ...prev,
+            [provider.id]: { ok: true, message: `✓ Puter.js SDK ready (${provider.model || 'SD3 Medium'})` },
+          }));
+        } else {
+          throw new Error('Puter SDK loaded but txt2img is unavailable');
+        }
+      } catch (err: unknown) {
+        const errorMsg = err instanceof Error ? err.message : String(err);
+        setProviderTestResults((prev) => ({
+          ...prev,
+          [provider.id]: { ok: false, message: `✕ SDK Error: ${errorMsg}` },
+        }));
+      } finally {
+        setTestingProviderId(null);
+        setImageProvidersState(storage.getImageProvidersState());
+      }
+      return;
+    }
 
     const validKeys = provider.keys.filter((k) => k.key && k.key.trim().length > 0);
     const keyToTest = validKeys.length > 0 ? validKeys[0].key.trim() : '';
@@ -1381,38 +1414,69 @@ export function AIProvidersSettings() {
                         fontSize: '10px',
                         padding: '2px 8px',
                         borderRadius: '12px',
-                        background: p.requestType === 'post' ? 'rgba(168,85,247,0.18)' : 'rgba(236,72,153,0.15)',
-                        color: p.requestType === 'post' ? '#c084fc' : '#f472b6',
+                        background:
+                          p.requestType === 'sdk'
+                            ? 'rgba(56,189,248,0.18)'
+                            : p.requestType === 'post'
+                            ? 'rgba(168,85,247,0.18)'
+                            : 'rgba(236,72,153,0.15)',
+                        color:
+                          p.requestType === 'sdk'
+                            ? '#38bdf8'
+                            : p.requestType === 'post'
+                            ? '#c084fc'
+                            : '#f472b6',
                         fontWeight: 600,
                       }}
                     >
-                      {p.requestType === 'post' ? 'POST / JSON' : 'GET / URL'}
+                      {p.requestType === 'sdk'
+                        ? 'JS SDK / Puter'
+                        : p.requestType === 'post'
+                        ? 'POST / JSON'
+                        : 'GET / URL'}
                     </span>
-                    <span
-                      style={{
-                        fontSize: '10px',
-                        padding: '2px 8px',
-                        borderRadius: '12px',
-                        background: 'rgba(236,72,153,0.15)',
-                        color: '#f472b6',
-                        fontWeight: 600,
-                      }}
-                    >
-                      {p.keys.length} API {p.keys.length === 1 ? 'Key' : 'Keys'}
-                    </span>
-                    <span
-                      style={{
-                        fontSize: '10px',
-                        padding: '2px 8px',
-                        borderRadius: '12px',
-                        background: 'rgba(147,197,253,0.15)',
-                        color: '#93c5fd',
-                        fontWeight: 500,
-                        textTransform: 'capitalize',
-                      }}
-                    >
-                      Strategy: {p.keyStrategy.replace('_', ' ')}
-                    </span>
+                    {p.requestType === 'sdk' ? (
+                      <span
+                        style={{
+                          fontSize: '10px',
+                          padding: '2px 8px',
+                          borderRadius: '12px',
+                          background: 'rgba(56,189,248,0.15)',
+                          color: '#38bdf8',
+                          fontWeight: 600,
+                        }}
+                      >
+                        Free Guest Sessions (No Key)
+                      </span>
+                    ) : (
+                      <>
+                        <span
+                          style={{
+                            fontSize: '10px',
+                            padding: '2px 8px',
+                            borderRadius: '12px',
+                            background: 'rgba(236,72,153,0.15)',
+                            color: '#f472b6',
+                            fontWeight: 600,
+                          }}
+                        >
+                          {p.keys.length} API {p.keys.length === 1 ? 'Key' : 'Keys'}
+                        </span>
+                        <span
+                          style={{
+                            fontSize: '10px',
+                            padding: '2px 8px',
+                            borderRadius: '12px',
+                            background: 'rgba(147,197,253,0.15)',
+                            color: '#93c5fd',
+                            fontWeight: 500,
+                            textTransform: 'capitalize',
+                          }}
+                        >
+                          Strategy: {p.keyStrategy.replace('_', ' ')}
+                        </span>
+                      </>
+                    )}
                     {isActive && (
                       <span
                         style={{
@@ -1437,7 +1501,15 @@ export function AIProvidersSettings() {
                       fontFamily: 'DM Mono, monospace',
                     }}
                   >
-                    Base URL: <span style={{ color: '#fff' }}>{p.url}</span>
+                    {p.requestType === 'sdk' ? (
+                      <>
+                        Model: <span style={{ color: '#38bdf8' }}>{p.model || DEFAULT_PUTER_MODEL}</span>
+                      </>
+                    ) : (
+                      <>
+                        Base URL: <span style={{ color: '#fff' }}>{p.url}</span>
+                      </>
+                    )}
                   </p>
 
                   <div
@@ -1449,23 +1521,31 @@ export function AIProvidersSettings() {
                       fontSize: '11px',
                     }}
                   >
-                    {healthyKeys > 0 && (
-                      <span style={{ color: '#34d399', display: 'flex', alignItems: 'center', gap: '3px' }}>
-                        🟢 {healthyKeys} Healthy
+                    {p.requestType === 'sdk' ? (
+                      <span style={{ color: '#38bdf8', display: 'flex', alignItems: 'center', gap: '4px' }}>
+                        ⚡ Free Unlimited Client-Side SDK
                       </span>
-                    )}
-                    {cooldownKeys > 0 && (
-                      <span style={{ color: '#fbbf24', display: 'flex', alignItems: 'center', gap: '3px' }}>
-                        🟡 {cooldownKeys} Rate Limited
-                      </span>
-                    )}
-                    {invalidKeys > 0 && (
-                      <span style={{ color: '#f87171', display: 'flex', alignItems: 'center', gap: '3px' }}>
-                        🔴 {invalidKeys} Invalid
-                      </span>
-                    )}
-                    {healthyKeys === 0 && cooldownKeys === 0 && invalidKeys === 0 && (
-                      <span style={{ color: 'var(--muted)' }}>⚪ Untested Keys</span>
+                    ) : (
+                      <>
+                        {healthyKeys > 0 && (
+                          <span style={{ color: '#34d399', display: 'flex', alignItems: 'center', gap: '3px' }}>
+                            🟢 {healthyKeys} Healthy
+                          </span>
+                        )}
+                        {cooldownKeys > 0 && (
+                          <span style={{ color: '#fbbf24', display: 'flex', alignItems: 'center', gap: '3px' }}>
+                            🟡 {cooldownKeys} Rate Limited
+                          </span>
+                        )}
+                        {invalidKeys > 0 && (
+                          <span style={{ color: '#f87171', display: 'flex', alignItems: 'center', gap: '3px' }}>
+                            🔴 {invalidKeys} Invalid
+                          </span>
+                        )}
+                        {healthyKeys === 0 && cooldownKeys === 0 && invalidKeys === 0 && (
+                          <span style={{ color: 'var(--muted)' }}>⚪ Untested Keys</span>
+                        )}
+                      </>
                     )}
                   </div>
 
@@ -1762,6 +1842,23 @@ export function AIProvidersSettings() {
               >
                 🤗 Hugging Face
               </button>
+              <button
+                type="button"
+                onClick={() => {
+                  setEditingImageProvider({
+                    ...editingImageProvider,
+                    name: 'Puter',
+                    url: 'https://js.puter.com/v2/',
+                    requestType: 'sdk',
+                    model: 'stabilityai/stable-diffusion-3-medium',
+                    keys: [],
+                  });
+                }}
+                className="secondary-button"
+                style={{ fontSize: '11px', padding: '4px 10px', borderRadius: '5px', borderColor: 'rgba(56,189,248,0.3)', color: '#38bdf8' }}
+              >
+                ⚡ Puter (Free Unlimited)
+              </button>
             </div>
           )}
 
@@ -1982,12 +2079,12 @@ export function AIProvidersSettings() {
                 >
                   Request Type
                 </label>
-                <div className="segmented-control" style={{ display: 'flex', width: '100%' }}>
+                <div className="segmented-control" style={{ display: 'flex', width: '100%', flexWrap: 'wrap' }}>
                   <button
                     type="button"
                     className={(!editingImageProvider.requestType || editingImageProvider.requestType === 'get') ? 'selected' : ''}
                     onClick={() => setEditingImageProvider({ ...editingImageProvider, requestType: 'get' })}
-                    style={{ flex: 1, fontSize: '11px', padding: '9px 8px', justifyContent: 'center' }}
+                    style={{ flex: 1, minWidth: '95px', fontSize: '11px', padding: '9px 6px', justifyContent: 'center' }}
                   >
                     GET / URL-based
                   </button>
@@ -1995,73 +2092,149 @@ export function AIProvidersSettings() {
                     type="button"
                     className={editingImageProvider.requestType === 'post' ? 'selected' : ''}
                     onClick={() => setEditingImageProvider({ ...editingImageProvider, requestType: 'post' })}
-                    style={{ flex: 1, fontSize: '11px', padding: '9px 8px', justifyContent: 'center' }}
+                    style={{ flex: 1, minWidth: '95px', fontSize: '11px', padding: '9px 6px', justifyContent: 'center' }}
                   >
                     POST / JSON-based
                   </button>
+                  <button
+                    type="button"
+                    className={editingImageProvider.requestType === 'sdk' ? 'selected' : ''}
+                    onClick={() =>
+                      setEditingImageProvider({
+                        ...editingImageProvider,
+                        requestType: 'sdk',
+                        model: editingImageProvider.model || DEFAULT_PUTER_MODEL,
+                        url: editingImageProvider.url || 'https://js.puter.com/v2/',
+                        keys: [],
+                      })
+                    }
+                    style={{ flex: 1, minWidth: '130px', fontSize: '11px', padding: '9px 6px', justifyContent: 'center' }}
+                  >
+                    JS SDK / Library-Based
+                  </button>
                 </div>
                 <p style={{ margin: '5px 0 0', fontSize: '11px', color: 'var(--muted)' }}>
-                  {editingImageProvider.requestType === 'post'
+                  {editingImageProvider.requestType === 'sdk'
+                    ? 'Puter.js client library: Direct in-browser JavaScript SDK with free temporary guest sessions.'
+                    : editingImageProvider.requestType === 'post'
                     ? 'Hugging Face style: POST with Bearer token header & {"inputs": "<prompt>"}.'
                     : 'Pollinations style: Direct URL with path & query params.'}
                 </p>
               </div>
 
-              <div style={{ gridColumn: '1 / -1' }}>
-                <label
-                  style={{
-                    display: 'block',
-                    fontSize: '12px',
-                    fontWeight: 600,
-                    color: 'var(--text)',
-                    marginBottom: '6px',
-                  }}
-                >
-                  API URL (Image Generation Endpoint)
-                </label>
-                <input
-                  type="text"
-                  placeholder="https://image.pollinations.ai/prompt/"
-                  value={editingImageProvider.url}
-                  onChange={(e) =>
-                    setEditingImageProvider({ ...editingImageProvider, url: e.target.value })
-                  }
-                  style={{
-                    width: '100%',
-                    boxSizing: 'border-box',
-                    background: 'rgba(10,22,28,0.8)',
-                    border: '1px solid var(--line)',
-                    borderRadius: '8px',
-                    padding: '10px 12px',
-                    color: '#fff',
-                    fontSize: '13px',
-                    outline: 'none',
-                    fontFamily: 'DM Mono, monospace',
-                  }}
-                />
-                <p style={{ margin: '5px 0 0', fontSize: '11px', color: 'var(--muted)' }}>
-                  {editingImageProvider.requestType === 'post'
-                    ? 'Endpoint to which JSON POST requests are sent with Authorization header.'
-                    : 'Prompts and API key parameters (e.g. ?key=...) are dynamically appended.'}
-                </p>
-              </div>
+              {editingImageProvider.requestType === 'sdk' ? (
+                <div style={{ gridColumn: '1 / -1', display: 'grid', gap: '14px' }}>
+                  <div>
+                    <label
+                      style={{
+                        display: 'block',
+                        fontSize: '12px',
+                        fontWeight: 600,
+                        color: 'var(--text)',
+                        marginBottom: '6px',
+                      }}
+                    >
+                      Puter Model Selection
+                    </label>
+                    <select
+                      value={editingImageProvider.model || DEFAULT_PUTER_MODEL}
+                      onChange={(e) =>
+                        setEditingImageProvider({ ...editingImageProvider, model: e.target.value })
+                      }
+                      style={{
+                        width: '100%',
+                        boxSizing: 'border-box',
+                        background: 'rgba(10,22,28,0.8)',
+                        border: '1px solid var(--line)',
+                        borderRadius: '8px',
+                        padding: '10px 12px',
+                        color: '#fff',
+                        fontSize: '13px',
+                        outline: 'none',
+                      }}
+                    >
+                      {PUTER_IMAGE_MODELS.map((m) => (
+                        <option key={m.id} value={m.id}>
+                          {m.name} ({m.id})
+                        </option>
+                      ))}
+                    </select>
+                  </div>
+
+                  <div
+                    style={{
+                      padding: '12px 14px',
+                      borderRadius: '8px',
+                      background: 'rgba(56,189,248,0.1)',
+                      border: '1px solid rgba(56,189,248,0.3)',
+                      color: '#7dd3fc',
+                      fontSize: '12px',
+                      lineHeight: '1.5',
+                    }}
+                  >
+                    ⚡ <strong>Automatic Free Guest Sessions:</strong> Puter loads in-browser via Puter.js SDK. No API URL, endpoint configuration, or API key needed from the user.
+                  </div>
+                </div>
+              ) : (
+                <div style={{ gridColumn: '1 / -1' }}>
+                  <label
+                    style={{
+                      display: 'block',
+                      fontSize: '12px',
+                      fontWeight: 600,
+                      color: 'var(--text)',
+                      marginBottom: '6px',
+                    }}
+                  >
+                    API URL (Image Generation Endpoint)
+                  </label>
+                  <input
+                    type="text"
+                    placeholder="https://image.pollinations.ai/prompt/"
+                    value={editingImageProvider.url}
+                    onChange={(e) =>
+                      setEditingImageProvider({ ...editingImageProvider, url: e.target.value })
+                    }
+                    style={{
+                      width: '100%',
+                      boxSizing: 'border-box',
+                      background: 'rgba(10,22,28,0.8)',
+                      border: '1px solid var(--line)',
+                      borderRadius: '8px',
+                      padding: '10px 12px',
+                      color: '#fff',
+                      fontSize: '13px',
+                      outline: 'none',
+                      fontFamily: 'DM Mono, monospace',
+                    }}
+                  />
+                  <p style={{ margin: '5px 0 0', fontSize: '11px', color: 'var(--muted)' }}>
+                    {editingImageProvider.requestType === 'post'
+                      ? 'Endpoint to which JSON POST requests are sent with Authorization header.'
+                      : 'Prompts and API key parameters (e.g. ?key=...) are dynamically appended.'}
+                  </p>
+                </div>
+              )}
             </div>
           )}
 
-          {/* Key Strategy Selector */}
-          <div
-            style={{
-              padding: '16px',
-              borderRadius: '10px',
-              background: 'rgba(10,22,28,0.5)',
-              border: '1px solid var(--line)',
-              display: 'flex',
-              justifyContent: 'space-between',
-              alignItems: 'center',
-              flexWrap: 'wrap',
-              gap: '12px',
-            }}
-          >
+          {/* Key Strategy Selector & Configured Keys (Hidden for JS SDK) */}
+          {!(providerType === 'image' && editingImageProvider?.requestType === 'sdk') && (
+            <>
+              {/* Key Strategy Selector */}
+              <div
+                style={{
+                  padding: '16px',
+                  borderRadius: '10px',
+                  background: 'rgba(10,22,28,0.5)',
+                  border: '1px solid var(--line)',
+                  display: 'flex',
+                  justifyContent: 'space-between',
+                  alignItems: 'center',
+                  flexWrap: 'wrap',
+                  gap: '12px',
+                }}
+              >
             <div>
               <h4 style={{ margin: 0, fontSize: '13px', fontWeight: 600 }}>
                 API Key Strategy
@@ -2412,8 +2585,10 @@ export function AIProvidersSettings() {
               })}
             </div>
           </div>
+        </>
+      )}
 
-          {/* Form Action Buttons */}
+      {/* Form Action Buttons */}
           <div
             style={{
               display: 'flex',

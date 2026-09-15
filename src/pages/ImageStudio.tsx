@@ -27,6 +27,11 @@ import {
   deleteGeneratedImageFromIndexedDb,
   clearAllGeneratedImagesFromIndexedDb,
 } from '@/services/imageIndexedDb';
+import {
+  generatePuterImage,
+  resetPuterSession,
+  DEFAULT_PUTER_MODEL,
+} from '@/services/puterImageService';
 import type { ImageProviderConfig, ImageProvidersState, GeneratedImageItem } from '@/types';
 
 const SAMPLE_PROMPTS = [
@@ -72,6 +77,15 @@ export function ImageStudio() {
   const [currentImage, setCurrentImage] = useState<GeneratedImageItem | null>(null);
   const [history, setHistory] = useState<GeneratedImageItem[]>([]);
   const [fullscreenImage, setFullscreenImage] = useState<GeneratedImageItem | null>(null);
+  const [hasDismissedPuterNotice, setHasDismissedPuterNotice] = useState<boolean>(() => {
+    try {
+      return localStorage.getItem('nexus_seen_puter_notice') === 'true';
+    } catch {
+      return false;
+    }
+  });
+  const [isResettingSession, setIsResettingSession] = useState(false);
+  const [sessionResetMessage, setSessionResetMessage] = useState<string | null>(null);
 
   // Sync provider list on mount / tab focus
   useEffect(() => {
@@ -228,15 +242,22 @@ export function ImageStudio() {
     const ratio = ASPECT_RATIOS[selectedRatioIndex] || ASPECT_RATIOS[0];
     const currentSeed = seed;
 
+    const isSdk = activeProvider.requestType === 'sdk';
     const isPost =
-      activeProvider.requestType === 'post' ||
-      activeProvider.url.toLowerCase().includes('huggingface') ||
-      activeProvider.url.toLowerCase().includes('hf-inference');
+      !isSdk &&
+      (activeProvider.requestType === 'post' ||
+        activeProvider.url.toLowerCase().includes('huggingface') ||
+        activeProvider.url.toLowerCase().includes('hf-inference'));
 
     try {
       let finalImageUrl = '';
 
-      if (isPost) {
+      if (isSdk) {
+        // Puter.js in-browser SDK generation with free guest session
+        const selectedModel = activeProvider.model || DEFAULT_PUTER_MODEL;
+        const puterResult = await generatePuterImage(promptToUse, selectedModel);
+        finalImageUrl = puterResult.url;
+      } else if (isPost) {
         const apiKey = getResolvedApiKey(activeProvider);
         const controller = new AbortController();
         const timeoutId = setTimeout(() => controller.abort(), 45000);
@@ -357,6 +378,23 @@ export function ImageStudio() {
     } finally {
       setLoading(false);
       setLoadingPhase('idle');
+    }
+  };
+
+  // Reset Puter guest session if requested or encountered error
+  const handleResetPuterSession = async () => {
+    try {
+      setIsResettingSession(true);
+      playTapSound();
+      await resetPuterSession();
+      setError(null);
+      setSessionResetMessage('Puter guest session was reset. Click Generate to start a clean new session.');
+      setTimeout(() => setSessionResetMessage(null), 6000);
+    } catch (resetErr) {
+      console.error('[ImageStudio] Failed to reset Puter session:', resetErr);
+      setError('Could not reset Puter session. Please refresh the page.');
+    } finally {
+      setIsResettingSession(false);
     }
   };
 
@@ -589,10 +627,66 @@ export function ImageStudio() {
             >
               {imageProvidersState.providers.map((p) => (
                 <option key={p.id} value={p.id}>
-                  🎨 {p.name} — {p.requestType === 'post' ? 'POST/JSON' : 'GET/URL'} ({p.url.replace(/^https?:\/\//, '').slice(0, 32)}...)
+                  🎨 {p.name} — {p.requestType === 'sdk' ? `JS SDK (${p.model || 'Auto'})` : p.requestType === 'post' ? 'POST/JSON' : 'GET/URL'}
                 </option>
               ))}
             </select>
+
+            {/* Puter.js Guest Mode Welcome Card */}
+            {activeProvider?.requestType === 'sdk' && !hasDismissedPuterNotice && (
+              <div
+                style={{
+                  marginTop: '12px',
+                  padding: '14px 16px',
+                  borderRadius: '10px',
+                  background: 'linear-gradient(135deg, rgba(14,165,233,0.18) 0%, rgba(2,132,199,0.08) 100%)',
+                  border: '1px solid rgba(56,189,248,0.35)',
+                  display: 'flex',
+                  justifyContent: 'space-between',
+                  alignItems: 'center',
+                  flexWrap: 'wrap',
+                  gap: '12px',
+                }}
+              >
+                <div style={{ display: 'flex', alignItems: 'center', gap: '10px', minWidth: '220px', flex: 1 }}>
+                  <span style={{ fontSize: '20px' }}>⚡</span>
+                  <div>
+                    <div style={{ fontSize: '13px', fontWeight: 600, color: '#38bdf8' }}>
+                      Image generation is powered by Puter — no signup needed for basic use
+                    </div>
+                    <div style={{ fontSize: '11px', color: 'rgba(255,255,255,0.7)', marginTop: '2px' }}>
+                      Active Model: <strong style={{ color: '#fff' }}>{activeProvider.model || DEFAULT_PUTER_MODEL}</strong> (Free Unlimited Guest Session)
+                    </div>
+                  </div>
+                </div>
+                <button
+                  type="button"
+                  onClick={() => {
+                    setHasDismissedPuterNotice(true);
+                    try {
+                      localStorage.setItem('nexus_seen_puter_notice', 'true');
+                    } catch {
+                      // ignore localStorage errors
+                    }
+                  }}
+                  style={{
+                    padding: '7px 14px',
+                    borderRadius: '7px',
+                    background: '#0284c7',
+                    color: '#fff',
+                    border: 0,
+                    fontSize: '12px',
+                    fontWeight: 600,
+                    cursor: 'pointer',
+                    display: 'inline-flex',
+                    alignItems: 'center',
+                    gap: '4px',
+                  }}
+                >
+                  <Check size={13} /> Continue with Puter
+                </button>
+              </div>
+            )}
           </div>
 
           {/* Prompt Input Box */}
@@ -926,6 +1020,27 @@ export function ImageStudio() {
             </label>
           </div>
 
+          {/* Puter Session Reset Notice */}
+          {sessionResetMessage && (
+            <div
+              style={{
+                padding: '10px 14px',
+                borderRadius: '8px',
+                background: 'rgba(56,189,248,0.15)',
+                border: '1px solid rgba(56,189,248,0.35)',
+                color: '#38bdf8',
+                fontSize: '12px',
+                fontWeight: 600,
+                display: 'flex',
+                alignItems: 'center',
+                gap: '8px',
+              }}
+            >
+              <Check size={15} />
+              <span>{sessionResetMessage}</span>
+            </div>
+          )}
+
           {/* Error Banner */}
           {error && (
             <div
@@ -938,12 +1053,39 @@ export function ImageStudio() {
                 fontSize: '12px',
                 fontWeight: 600,
                 display: 'flex',
+                justifyContent: 'space-between',
                 alignItems: 'center',
+                flexWrap: 'wrap',
                 gap: '8px',
               }}
             >
-              <AlertCircle size={15} />
-              <span>{error}</span>
+              <div style={{ display: 'flex', alignItems: 'center', gap: '8px', flex: 1, minWidth: '200px' }}>
+                <AlertCircle size={15} />
+                <span>{error}</span>
+              </div>
+              {(activeProvider?.requestType === 'sdk' || error.toLowerCase().includes('puter') || error.toLowerCase().includes('session')) && (
+                <button
+                  type="button"
+                  onClick={handleResetPuterSession}
+                  disabled={isResettingSession}
+                  style={{
+                    padding: '5px 12px',
+                    borderRadius: '6px',
+                    background: 'rgba(56,189,248,0.2)',
+                    border: '1px solid rgba(56,189,248,0.4)',
+                    color: '#38bdf8',
+                    fontSize: '11px',
+                    fontWeight: 600,
+                    cursor: isResettingSession ? 'not-allowed' : 'pointer',
+                    display: 'inline-flex',
+                    alignItems: 'center',
+                    gap: '5px',
+                  }}
+                >
+                  <RotateCw size={12} className={isResettingSession ? 'animate-spin' : ''} />
+                  {isResettingSession ? 'Resetting...' : 'Reset Session'}
+                </button>
+              )}
             </div>
           )}
 
