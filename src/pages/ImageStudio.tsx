@@ -58,6 +58,73 @@ const ASPECT_RATIOS = [
   { label: '3:2 Photo', width: 1200, height: 800, icon: '▰' },
 ];
 
+interface ReferenceImageDetails {
+  isDataUrl: boolean;
+  mimeType: string;
+  byteSize: number;
+  formattedSize: string;
+  blob?: Blob;
+  file?: File;
+  rawUrl?: string;
+  base64Only?: string;
+}
+
+function parseReferenceImageData(
+  dataUrlOrUrl: string,
+  fileName?: string | null
+): ReferenceImageDetails {
+  if (dataUrlOrUrl.startsWith('data:')) {
+    const commaIndex = dataUrlOrUrl.indexOf(',');
+    const header = commaIndex !== -1 ? dataUrlOrUrl.slice(0, commaIndex) : 'data:image/png;base64';
+    const base64Str = commaIndex !== -1 ? dataUrlOrUrl.slice(commaIndex + 1) : dataUrlOrUrl;
+
+    const mimeMatch = header.match(/^data:([^;]+)/);
+    const mimeType = mimeMatch ? mimeMatch[1] : 'image/png';
+
+    try {
+      const binaryStr = atob(base64Str);
+      const len = binaryStr.length;
+      const u8arr = new Uint8Array(len);
+      for (let i = 0; i < len; i++) {
+        u8arr[i] = binaryStr.charCodeAt(i);
+      }
+      const blob = new Blob([u8arr], { type: mimeType });
+      const ext = mimeType.split('/')[1]?.replace('jpeg', 'jpg') || 'png';
+      const name = fileName || `reference_image.${ext}`;
+      const file = new File([blob], name, { type: mimeType });
+
+      return {
+        isDataUrl: true,
+        mimeType,
+        byteSize: len,
+        formattedSize:
+          len > 1024 * 1024
+            ? `${(len / (1024 * 1024)).toFixed(2)} MB`
+            : `${(len / 1024).toFixed(2)} KB`,
+        blob,
+        file,
+        base64Only: base64Str,
+      };
+    } catch {
+      return {
+        isDataUrl: true,
+        mimeType,
+        byteSize: base64Str.length,
+        formattedSize: `${(base64Str.length / 1024).toFixed(2)} KB (raw base64)`,
+        base64Only: base64Str,
+      };
+    }
+  }
+
+  return {
+    isDataUrl: false,
+    mimeType: 'image/remote-url',
+    byteSize: dataUrlOrUrl.length,
+    formattedSize: `${dataUrlOrUrl.length} chars (remote URL)`,
+    rawUrl: dataUrlOrUrl,
+  };
+}
+
 export function ImageStudio() {
   const [prompt, setPrompt] = useState('');
   const [imageProvidersState, setImageProvidersState] = useState<ImageProvidersState>(() =>
@@ -421,30 +488,81 @@ export function ImageStudio() {
             reader.readAsDataURL(blob);
           });
         finalImageUrl = await blobToDataUrl(imageBlob);
-      } else if (referenceImage && modelType === 'kontext') {
-        // Pollinations image editing API with reference image & prompt as edit instructions
-        const base = activeProvider.url.trim().replace(/\/+$/, '');
-        const endpoint = `${base}/prompt/${encodeURIComponent(promptToUse)}`;
+      } else if (referenceImage && (modelType === 'kontext' || isPollinations)) {
+        // Pollinations OpenAI-compatible image editing API (/v1/images/edits)
+        const providerUrl = (activeProvider.url || '').trim();
+        let endpoint = 'https://gen.pollinations.ai/v1/images/edits';
+        if (providerUrl.includes('/v1/images/edits')) {
+          endpoint = providerUrl;
+        } else if (providerUrl.includes('gen.pollinations.ai')) {
+          endpoint = `${providerUrl.replace(/\/+$/, '')}/v1/images/edits`;
+        } else if (
+          providerUrl &&
+          !providerUrl.includes('image.pollinations.ai') &&
+          !providerUrl.includes('pollinations.ai/prompt')
+        ) {
+          endpoint = providerUrl.endsWith('/edits')
+            ? providerUrl
+            : `${providerUrl.replace(/\/+$/, '')}/v1/images/edits`;
+        }
+
         const apiKey = getResolvedApiKey(activeProvider);
+        const imgDetails = parseReferenceImageData(referenceImage, referenceImageName);
+
+        // Required Console Logging: Show reference image data size, format, and transport details
+        console.group('%c[Pollinations kontext img2img] Request Dispatch', 'color: #38bdf8; font-weight: bold;');
+        console.log('Target Endpoint:', endpoint);
+        console.log('Model:', 'kontext');
+        console.log('Prompt:', promptToUse);
+        console.log('Reference Image Format:', imgDetails.mimeType);
+        console.log('Reference Image Data Size:', imgDetails.formattedSize);
+        console.log('Reference Image Byte Count:', imgDetails.byteSize, 'bytes');
+        console.log('Is Base64 Data URL:', imgDetails.isDataUrl);
+        console.log('File Name Attached:', referenceImageName || 'reference_image.png');
+        console.log('Output Dimensions:', `${ratio.width}x${ratio.height}`);
+        console.log('Seed:', currentSeed);
+        console.log('Has API Key / Bearer Auth:', Boolean(apiKey));
+        console.groupEnd();
 
         const controller = new AbortController();
         const timeoutId = setTimeout(() => controller.abort(), 60000);
 
+        // Construct Multipart FormData with attached reference image file/blob
+        const formData = new FormData();
+        formData.append('prompt', promptToUse);
+        formData.append('model', 'kontext');
+        formData.append('size', `${ratio.width}x${ratio.height}`);
+        formData.append('response_format', 'b64_json');
+        if (currentSeed !== undefined) {
+          formData.append('seed', String(currentSeed));
+        }
+        if (nologo) {
+          formData.append('nologo', 'true');
+        }
+
+        if (imgDetails.file) {
+          formData.append('image', imgDetails.file);
+        } else if (imgDetails.blob) {
+          formData.append('image', imgDetails.blob, referenceImageName || 'reference_image.png');
+        } else if (imgDetails.rawUrl) {
+          formData.append('image', imgDetails.rawUrl);
+        } else {
+          formData.append('image', referenceImage);
+        }
+
+        const headers: Record<string, string> = {};
+        if (apiKey) {
+          headers['Authorization'] = `Bearer ${apiKey}`;
+        }
+
+        console.log(
+          `[Pollinations kontext] Transmitting multipart/form-data payload with reference image (${imgDetails.formattedSize}) to ${endpoint}...`
+        );
+
         const response = await fetch(endpoint, {
           method: 'POST',
-          headers: {
-            'Content-Type': 'application/json',
-            ...(apiKey ? { Authorization: `Bearer ${apiKey}` } : {}),
-          },
-          body: JSON.stringify({
-            prompt: promptToUse,
-            model: 'kontext',
-            image: referenceImage,
-            width: ratio.width,
-            height: ratio.height,
-            seed: currentSeed,
-            nologo,
-          }),
+          headers,
+          body: formData,
           signal: controller.signal,
           mode: 'cors',
         });
@@ -454,22 +572,68 @@ export function ImageStudio() {
           let errDetail = '';
           try {
             const errJson = await response.json();
-            errDetail = errJson?.error || errJson?.message || JSON.stringify(errJson);
+            errDetail =
+              errJson?.error?.message ||
+              errJson?.message ||
+              errJson?.error ||
+              JSON.stringify(errJson);
           } catch {
             errDetail = `HTTP ${response.status}: ${response.statusText}`;
+          }
+          console.error('[Pollinations kontext] Error response from server:', response.status, errDetail);
+
+          if (response.status === 401 || errDetail.toLowerCase().includes('api key')) {
+            throw new Error(
+              `Pollinations image editing requires an API key (${errDetail}). You can obtain a free key at https://enter.pollinations.ai/keys and add it in Settings -> AI Providers -> Pollinations. Or switch to Puter (FLUX Kontext Pro) for free in-browser guest editing.`
+            );
           }
           throw new Error(`Pollinations editing failed (${response.status}): ${errDetail}`);
         }
 
-        const imageBlob = await response.blob();
-        const blobToDataUrl = (blob: Blob): Promise<string> =>
-          new Promise((resolve, reject) => {
-            const reader = new FileReader();
-            reader.onloadend = () => resolve(reader.result as string);
-            reader.onerror = reject;
-            reader.readAsDataURL(blob);
+        const contentType = response.headers.get('content-type') || '';
+        console.log(`[Pollinations kontext] Received successful response (${response.status}), Content-Type: ${contentType}`);
+
+        if (contentType.includes('application/json')) {
+          const json = await response.json();
+          console.log('[Pollinations kontext] Parsed JSON response:', {
+            hasData: Boolean(json?.data),
+            dataLength: json?.data?.length,
+            hasB64: Boolean(json?.data?.[0]?.b64_json),
+            hasUrl: Boolean(json?.data?.[0]?.url),
           });
-        finalImageUrl = await blobToDataUrl(imageBlob);
+
+          const item = json?.data?.[0];
+          if (item?.b64_json) {
+            finalImageUrl = item.b64_json.startsWith('data:')
+              ? item.b64_json
+              : `data:image/png;base64,${item.b64_json}`;
+          } else if (item?.url) {
+            finalImageUrl = item.url;
+          } else if (json?.url) {
+            finalImageUrl = json.url;
+          } else if (json?.image) {
+            finalImageUrl = json.image.startsWith('data:')
+              ? json.image
+              : `data:image/png;base64,${json.image}`;
+          } else {
+            throw new Error('Pollinations returned JSON without an edited image result.');
+          }
+        } else {
+          // Binary image response
+          const imageBlob = await response.blob();
+          const blobToDataUrl = (blob: Blob): Promise<string> =>
+            new Promise((resolve, reject) => {
+              const reader = new FileReader();
+              reader.onloadend = () => resolve(reader.result as string);
+              reader.onerror = reject;
+              reader.readAsDataURL(blob);
+            });
+          finalImageUrl = await blobToDataUrl(imageBlob);
+        }
+
+        console.log(
+          `[Pollinations kontext] Successfully received edited image result (${finalImageUrl.slice(0, 40)}...)`
+        );
       } else {
         // Standard text-to-image synthesis
         const generatedUrl = buildGenerationUrl(promptToUse, activeProvider, {

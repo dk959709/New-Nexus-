@@ -318,9 +318,27 @@ export async function generatePuterImage(
     };
 
     if (referenceImage && referenceImage.trim()) {
-      options.image = referenceImage.trim();
-      options.input_image = referenceImage.trim();
-      options.source_image = referenceImage.trim();
+      const ref = referenceImage.trim();
+      options.image = ref;
+      options.input_image = ref;
+      options.source_image = ref;
+
+      const isDataUrl = ref.startsWith('data:');
+      const mimeMatch = isDataUrl ? ref.match(/^data:([^;]+)/) : null;
+      const mimeType = mimeMatch ? mimeMatch[1] : (isDataUrl ? 'image/png' : 'remote-url');
+      const approxByteSize = isDataUrl ? Math.round((ref.length - (ref.indexOf(',') + 1)) * 0.75) : ref.length;
+      const formattedSize = approxByteSize > 1024 * 1024
+        ? `${(approxByteSize / (1024 * 1024)).toFixed(2)} MB`
+        : `${(approxByteSize / 1024).toFixed(2)} KB`;
+
+      console.group('%c[Puter Image Studio: img2img] Reference Image Attached', 'color: #a855f7; font-weight: bold;');
+      console.log('Model:', selectedModel);
+      console.log('Prompt:', cleanPrompt);
+      console.log('Format:', mimeType);
+      console.log('Data Size:', formattedSize);
+      console.log('Byte Size:', approxByteSize, 'bytes');
+      console.log('Is Data URL:', isDataUrl);
+      console.groupEnd();
     }
 
     let result: HTMLImageElement | string | { src?: string; url?: string };
