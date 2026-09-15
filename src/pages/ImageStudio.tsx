@@ -14,22 +14,18 @@ import {
   Maximize2,
   X,
   Layers,
+  Trash2,
+  Database,
 } from 'lucide-react';
 import { storage } from '@/lib/storage';
 import { playTapSound } from '@/lib/audio';
-import type { ImageProviderConfig, ImageProvidersState } from '@/types';
-
-interface GeneratedImageItem {
-  id: string;
-  url: string;
-  prompt: string;
-  providerName: string;
-  width: number;
-  height: number;
-  seed: number;
-  model?: string;
-  timestamp: number;
-}
+import {
+  getStoredGeneratedImages,
+  saveGeneratedImageToIndexedDb,
+  deleteGeneratedImageFromIndexedDb,
+  clearAllGeneratedImagesFromIndexedDb,
+} from '@/services/imageIndexedDb';
+import type { ImageProviderConfig, ImageProvidersState, GeneratedImageItem } from '@/types';
 
 const SAMPLE_PROMPTS = [
   'Futuristic cyberpunk metropolis bathed in neon rain, volumetric fog, octane render 8k',
@@ -80,6 +76,26 @@ export function ImageStudio() {
       setSelectedProviderId(fresh.activeProviderId || fresh.providers[0]?.id || '');
     }
   }, [selectedProviderId]);
+
+  // Restore persistent generated images history from IndexedDB on page load
+  useEffect(() => {
+    let isMounted = true;
+    const loadStoredHistory = async () => {
+      try {
+        const stored = await getStoredGeneratedImages();
+        if (isMounted && stored && stored.length > 0) {
+          setHistory(stored);
+          setCurrentImage((prev) => prev || stored[0]);
+        }
+      } catch (err) {
+        console.warn('[ImageStudio] Failed to load image history from IndexedDB:', err);
+      }
+    };
+    loadStoredHistory();
+    return () => {
+      isMounted = false;
+    };
+  }, []);
 
   const activeProvider: ImageProviderConfig | undefined =
     imageProvidersState.providers.find((p) => p.id === selectedProviderId) ||
@@ -216,7 +232,14 @@ export function ImageStudio() {
         }
 
         const imageBlob = await response.blob();
-        finalImageUrl = URL.createObjectURL(imageBlob);
+        const blobToDataUrl = (blob: Blob): Promise<string> =>
+          new Promise((resolve, reject) => {
+            const reader = new FileReader();
+            reader.onloadend = () => resolve(reader.result as string);
+            reader.onerror = reject;
+            reader.readAsDataURL(blob);
+          });
+        finalImageUrl = await blobToDataUrl(imageBlob);
       } else {
         const generatedUrl = buildGenerationUrl(promptToUse, activeProvider, {
           width: ratio.width,
@@ -252,8 +275,9 @@ export function ImageStudio() {
       }
 
       const newItem: GeneratedImageItem = {
-        id: `img_${Date.now()}`,
+        id: `img_${Date.now()}_${Math.random().toString(36).slice(2, 7)}`,
         url: finalImageUrl,
+        imageData: finalImageUrl,
         prompt: promptToUse,
         providerName: activeProvider.name,
         width: ratio.width,
@@ -263,8 +287,15 @@ export function ImageStudio() {
         timestamp: Date.now(),
       };
 
+      // Persist permanently in IndexedDB
+      try {
+        await saveGeneratedImageToIndexedDb(newItem);
+      } catch (saveErr) {
+        console.warn('[ImageStudio] Error saving to IndexedDB:', saveErr);
+      }
+
       setCurrentImage(newItem);
-      setHistory((prev) => [newItem, ...prev.filter((item) => item.url !== newItem.url)].slice(0, 12));
+      setHistory((prev) => [newItem, ...prev.filter((item) => item.id !== newItem.id)]);
 
       // Auto-advance seed for next generation
       setSeed(Math.floor(Math.random() * 1000000));
@@ -273,6 +304,42 @@ export function ImageStudio() {
       setError(msg);
     } finally {
       setLoading(false);
+    }
+  };
+
+  // Clear all generation history from IndexedDB
+  const handleClearHistory = async () => {
+    if (history.length === 0) return;
+    const confirmed = window.confirm(
+      'Are you sure you want to clear your generation history? This will permanently delete all saved images from storage.'
+    );
+    if (!confirmed) return;
+
+    playTapSound();
+    try {
+      await clearAllGeneratedImagesFromIndexedDb();
+      setHistory([]);
+      setCurrentImage(null);
+    } catch (err) {
+      console.error('[ImageStudio] Failed to clear image history:', err);
+    }
+  };
+
+  // Delete an individual image from IndexedDB
+  const handleDeleteImage = async (e: React.MouseEvent, id: string) => {
+    e.stopPropagation();
+    playTapSound();
+    try {
+      await deleteGeneratedImageFromIndexedDb(id);
+      setHistory((prev) => {
+        const updated = prev.filter((item) => item.id !== id);
+        if (currentImage?.id === id) {
+          setCurrentImage(updated[0] || null);
+        }
+        return updated;
+      });
+    } catch (err) {
+      console.error('[ImageStudio] Failed to delete image from IndexedDB:', err);
     }
   };
 
@@ -286,7 +353,7 @@ export function ImageStudio() {
         item.prompt.slice(0, 32).replace(/[^a-zA-Z0-9_-]/g, '_') || 'generated_image';
       const fileName = `nexus_${sanitized}_${item.seed}.jpg`;
 
-      if (item.url.startsWith('blob:')) {
+      if (item.url.startsWith('blob:') || item.url.startsWith('data:')) {
         const a = document.createElement('a');
         a.href = item.url;
         a.download = fileName;
@@ -1011,7 +1078,7 @@ export function ImageStudio() {
             )}
           </div>
 
-          {/* Session History Gallery */}
+          {/* Session History Gallery (IndexedDB Persistent) */}
           {history.length > 0 && (
             <div
               style={{
@@ -1023,14 +1090,69 @@ export function ImageStudio() {
                 gap: '12px',
               }}
             >
-              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-                <span style={{ fontSize: '12px', fontWeight: 600, color: 'var(--text)' }}>
-                  Recent Generations ({history.length})
-                </span>
-                <span style={{ fontSize: '11px', color: 'var(--muted)' }}>Click to reload</span>
+              <div
+                style={{
+                  display: 'flex',
+                  justifyContent: 'space-between',
+                  alignItems: 'center',
+                  flexWrap: 'wrap',
+                  gap: '8px',
+                }}
+              >
+                <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                  <span style={{ fontSize: '12px', fontWeight: 600, color: 'var(--text)' }}>
+                    Recent Generations ({history.length})
+                  </span>
+                  <span
+                    style={{
+                      fontSize: '10px',
+                      color: 'var(--muted)',
+                      background: 'rgba(255,255,255,0.06)',
+                      padding: '2px 7px',
+                      borderRadius: '10px',
+                      display: 'inline-flex',
+                      alignItems: 'center',
+                      gap: '4px',
+                    }}
+                  >
+                    <Database size={10} style={{ color: '#34d399' }} /> IndexedDB
+                  </span>
+                </div>
+
+                <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                  <span style={{ fontSize: '11px', color: 'var(--muted)' }}>Click to view</span>
+                  <button
+                    id="clear-image-history-btn"
+                    type="button"
+                    onClick={handleClearHistory}
+                    className="secondary-button"
+                    style={{
+                      fontSize: '11px',
+                      padding: '4px 10px',
+                      borderRadius: '6px',
+                      display: 'inline-flex',
+                      alignItems: 'center',
+                      gap: '5px',
+                      color: '#f87171',
+                      borderColor: 'rgba(248,113,113,0.3)',
+                      cursor: 'pointer',
+                    }}
+                    title="Delete all saved generations from IndexedDB"
+                  >
+                    <Trash2 size={12} /> Clear History
+                  </button>
+                </div>
               </div>
 
-              <div style={{ display: 'flex', gap: '10px', overflowX: 'auto', paddingBottom: '6px' }}>
+              <div
+                style={{
+                  display: 'flex',
+                  gap: '10px',
+                  overflowX: 'auto',
+                  paddingBottom: '8px',
+                  paddingTop: '2px',
+                }}
+              >
                 {history.map((item) => (
                   <div
                     key={item.id}
@@ -1039,22 +1161,49 @@ export function ImageStudio() {
                       playTapSound();
                     }}
                     style={{
-                      width: '80px',
-                      height: '80px',
+                      position: 'relative',
+                      width: '84px',
+                      height: '84px',
                       borderRadius: '8px',
                       overflow: 'hidden',
                       flexShrink: 0,
                       cursor: 'pointer',
-                      border: `2px solid ${currentImage?.id === item.id ? '#f472b6' : 'transparent'}`,
-                      boxShadow: '0 4px 12px rgba(0,0,0,0.3)',
+                      border: `2px solid ${currentImage?.id === item.id ? '#f472b6' : 'rgba(255,255,255,0.1)'}`,
+                      boxShadow: currentImage?.id === item.id ? '0 0 12px rgba(244,114,182,0.4)' : '0 4px 12px rgba(0,0,0,0.3)',
+                      transition: 'all 0.15s ease',
                     }}
-                    title={item.prompt}
+                    title={`"${item.prompt}" — ${item.providerName} (Seed: ${item.seed})`}
                   >
                     <img
                       src={item.url}
                       alt={item.prompt}
                       style={{ width: '100%', height: '100%', objectFit: 'cover' }}
+                      loading="lazy"
                     />
+
+                    {/* Single image delete button */}
+                    <button
+                      type="button"
+                      onClick={(e) => handleDeleteImage(e, item.id)}
+                      style={{
+                        position: 'absolute',
+                        top: '3px',
+                        right: '3px',
+                        width: '18px',
+                        height: '18px',
+                        borderRadius: '4px',
+                        background: 'rgba(0,0,0,0.7)',
+                        border: 'none',
+                        color: 'rgba(255,255,255,0.8)',
+                        display: 'grid',
+                        placeItems: 'center',
+                        cursor: 'pointer',
+                        padding: 0,
+                      }}
+                      title="Delete this image"
+                    >
+                      <X size={11} />
+                    </button>
                   </div>
                 ))}
               </div>

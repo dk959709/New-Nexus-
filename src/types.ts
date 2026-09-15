@@ -188,6 +188,19 @@ export interface ImageProvidersState {
   providers: ImageProviderConfig[];
 }
 
+export interface GeneratedImageItem {
+  id: string;
+  url: string;
+  imageData?: string;
+  prompt: string;
+  providerName: string;
+  width: number;
+  height: number;
+  seed: number;
+  model?: string;
+  timestamp: number;
+}
+
 export type JarvisAgentId =
   | 'planner'
   | 'researcher'
