@@ -2412,7 +2412,7 @@ export function MultiChatConsole({ config, onNavigateToSettings }: MultiChatCons
         {/* Upgraded Cybernetic Search Input Dock */}
         <div className="relative p-[1.5px] rounded-3xl bg-gradient-to-r from-cyan-500/50 via-teal-400/40 to-indigo-500/50 shadow-[0_16px_50px_rgba(0,0,0,0.85),0_0_30px_rgba(6,182,212,0.15)] focus-within:shadow-[0_20px_60px_rgba(0,0,0,0.95),0_0_45px_rgba(6,182,212,0.3)] transition-all duration-300">
           {/* Inner Card */}
-          <div className="rounded-[22px] bg-gradient-to-b from-slate-950/95 via-slate-950/98 to-black/95 backdrop-blur-3xl p-3 sm:p-4 flex flex-col gap-2.5 relative overflow-hidden">
+          <div className="rounded-[22px] bg-gradient-to-b from-slate-950/95 via-slate-950/98 to-black/95 backdrop-blur-3xl p-2.5 sm:p-4 flex flex-col gap-2 sm:gap-2.5 relative overflow-hidden">
             {/* Cyber Reticle Markers in 4 Corners */}
             <div className="absolute top-2 left-2.5 w-2 h-2 border-t-2 border-l-2 border-cyan-400/50 pointer-events-none rounded-tl-sm" />
             <div className="absolute top-2 right-2.5 w-2 h-2 border-t-2 border-r-2 border-cyan-400/50 pointer-events-none rounded-tr-sm" />
@@ -2427,12 +2427,12 @@ export function MultiChatConsole({ config, onNavigateToSettings }: MultiChatCons
             <div className="relative z-10 flex items-center justify-between gap-2 px-1 flex-wrap">
               {/* Left: Search Mode Badge */}
               <div className="flex items-center gap-2">
-                <div className="flex items-center gap-1.5 px-2.5 py-1 rounded-xl bg-cyan-950/60 border border-cyan-500/30 text-cyan-300 shadow-sm shadow-cyan-950/30">
-                  <Search size={12} className="text-cyan-400 animate-pulse" />
-                  <span className="text-[11px] font-mono font-bold tracking-wider uppercase">
+                <div className="flex items-center gap-1.5 px-2 sm:px-2.5 py-0.5 sm:py-1 rounded-xl bg-cyan-950/60 border border-cyan-500/30 text-cyan-300 shadow-sm shadow-cyan-950/30 shrink-0">
+                  <Search size={11} className="text-cyan-400 sm:w-3 sm:h-3 animate-pulse shrink-0" />
+                  <span className="text-[10px] sm:text-[11px] font-mono font-bold tracking-wider uppercase whitespace-nowrap">
                     MULTI SEARCH
                   </span>
-                  <span className="inline-flex items-center gap-1 text-[9.5px] font-mono px-1.5 py-0.5 rounded bg-emerald-500/15 text-emerald-300 border border-emerald-500/30 font-semibold">
+                  <span className="inline-flex items-center gap-1 text-[9px] sm:text-[9.5px] font-mono px-1.5 py-0.5 rounded bg-emerald-500/15 text-emerald-300 border border-emerald-500/30 font-semibold whitespace-nowrap shadow-sm shadow-emerald-500/10">
                     <span className="w-1.5 h-1.5 rounded-full bg-emerald-400 animate-ping" />
                     LIVE MESH
                   </span>
@@ -2500,10 +2500,10 @@ export function MultiChatConsole({ config, onNavigateToSettings }: MultiChatCons
             </div>
 
             {/* Core Search Textarea Recessed Box */}
-            <div className="relative z-10 flex items-start bg-slate-900/80 hover:bg-slate-900/95 border border-white/10 focus-within:border-cyan-400/60 focus-within:bg-slate-900 focus-within:ring-2 focus-within:ring-cyan-500/20 rounded-2xl p-2.5 sm:p-3 gap-3 transition-all duration-200 shadow-inner group">
+            <div className="relative z-10 flex items-start bg-slate-900/80 hover:bg-slate-900/95 border border-white/10 focus-within:border-cyan-400/60 focus-within:bg-slate-900 focus-within:ring-2 focus-within:ring-cyan-500/20 rounded-2xl p-2 sm:p-3 gap-2 sm:gap-3 transition-all duration-200 shadow-inner group">
               {/* Futuristic Search Lens Icon */}
-              <div className="w-8 h-8 rounded-xl bg-cyan-500/10 border border-cyan-500/25 grid place-items-center text-cyan-400 shrink-0 mt-0.5 group-focus-within:bg-cyan-500/20 group-focus-within:border-cyan-400/50 group-focus-within:shadow-[0_0_12px_rgba(6,182,212,0.35)] transition-all">
-                <Search size={15} />
+              <div className="w-7 h-7 sm:w-8 sm:h-8 rounded-lg sm:rounded-xl bg-cyan-500/10 border border-cyan-500/25 grid place-items-center text-cyan-400 shrink-0 mt-0.5 group-focus-within:bg-cyan-500/20 group-focus-within:border-cyan-400/50 group-focus-within:shadow-[0_0_12px_rgba(6,182,212,0.35)] transition-all">
+                <Search size={14} className="sm:w-[15px] sm:h-[15px]" />
               </div>
 
               {/* Textarea */}
@@ -2514,9 +2514,9 @@ export function MultiChatConsole({ config, onNavigateToSettings }: MultiChatCons
                   value={inputText}
                   onChange={(e) => setInputText(e.target.value)}
                   onKeyDown={handleKeyDown}
-                  placeholder="Search or broadcast query to NOVA, ORBIT & COSMOS... (Shift + Enter for newline)"
+                  placeholder="Ask NOVA, ORBIT & COSMOS... (Shift + Enter for newline)"
                   disabled={isGenerating}
-                  className="w-full bg-transparent text-white placeholder-slate-500 text-sm sm:text-[14.5px] focus:outline-none resize-none leading-relaxed transition-all min-h-[50px] pr-8 font-sans"
+                  className="w-full bg-transparent text-white placeholder-slate-500 text-xs sm:text-[14.5px] focus:outline-none resize-none leading-relaxed transition-all min-h-[38px] sm:min-h-[50px] py-1 sm:py-0 pr-6 sm:pr-8 font-sans"
                 />
                 {inputText && (
                   <button
@@ -2535,7 +2535,7 @@ export function MultiChatConsole({ config, onNavigateToSettings }: MultiChatCons
                 type="button"
                 onClick={() => handleSend()}
                 disabled={isGenerating || !inputText.trim()}
-                className={`h-[48px] px-4 sm:px-5 rounded-xl flex items-center justify-center gap-2 font-black text-xs sm:text-sm tracking-wider uppercase transition-all shrink-0 ${
+                className={`h-[38px] sm:h-[48px] px-3 sm:px-5 rounded-xl flex items-center justify-center gap-1.5 sm:gap-2 font-black text-xs sm:text-sm tracking-wider uppercase transition-all shrink-0 ${
                   isGenerating || !inputText.trim()
                     ? 'bg-white/5 text-slate-600 border border-white/5 cursor-not-allowed'
                     : 'bg-gradient-to-r from-cyan-400 via-teal-300 to-emerald-400 hover:from-cyan-300 hover:to-teal-200 text-slate-950 shadow-[0_0_24px_rgba(6,182,212,0.45)] hover:shadow-[0_0_32px_rgba(6,182,212,0.65)] active:scale-95 cursor-pointer font-extrabold'
@@ -2543,30 +2543,30 @@ export function MultiChatConsole({ config, onNavigateToSettings }: MultiChatCons
               >
                 {isGenerating ? (
                   <>
-                    <Loader2 size={16} className="animate-spin text-cyan-400" />
+                    <Loader2 size={15} className="animate-spin text-cyan-400 sm:w-4 sm:h-4" />
                     <span className="hidden sm:inline font-mono text-xs">Scanning...</span>
                   </>
                 ) : (
                   <>
                     <Radio size={14} className="text-slate-950 hidden sm:inline animate-pulse" />
                     <span>Broadcast</span>
-                    <Send size={14} className="text-slate-950" />
+                    <Send size={13} className="text-slate-950 sm:w-3.5 sm:h-3.5" />
                   </>
                 )}
               </button>
             </div>
 
             {/* Quick Query Modifiers Toolbar & Command Help */}
-            <div className="relative z-10 flex items-center justify-between gap-2 pt-0.5 px-1 flex-wrap text-xs">
+            <div className="relative z-10 flex items-center justify-between gap-2 pt-0.5 px-0.5 sm:px-1 flex-wrap text-xs">
               {/* Query Modifier Chips */}
-              <div className="flex items-center gap-1.5 flex-wrap">
-                <span className="text-[10px] font-mono text-slate-500 font-bold uppercase">
+              <div className="flex items-center gap-1.5 overflow-x-auto no-scrollbar sm:overflow-visible sm:flex-wrap max-w-full pb-0.5 sm:pb-0">
+                <span className="text-[10px] font-mono text-slate-500 font-bold uppercase shrink-0">
                   Filters:
                 </span>
                 <button
                   type="button"
                   onClick={() => applyQueryModifier('[Deep Analysis]:')}
-                  className="px-2 py-0.5 rounded-lg bg-white/5 hover:bg-cyan-500/15 border border-white/10 hover:border-cyan-500/35 text-[11px] font-medium text-slate-300 hover:text-cyan-300 transition-all flex items-center gap-1"
+                  className="px-2 py-0.5 rounded-lg bg-white/5 hover:bg-cyan-500/15 border border-white/10 hover:border-cyan-500/35 text-[11px] font-medium text-slate-300 hover:text-cyan-300 transition-all flex items-center gap-1 shrink-0 whitespace-nowrap"
                   title="Prefix query with deep analysis request"
                 >
                   <span>🔬</span>
@@ -2575,7 +2575,7 @@ export function MultiChatConsole({ config, onNavigateToSettings }: MultiChatCons
                 <button
                   type="button"
                   onClick={() => applyQueryModifier('[Fast Summary]:')}
-                  className="px-2 py-0.5 rounded-lg bg-white/5 hover:bg-teal-500/15 border border-white/10 hover:border-teal-500/35 text-[11px] font-medium text-slate-300 hover:text-teal-300 transition-all flex items-center gap-1"
+                  className="px-2 py-0.5 rounded-lg bg-white/5 hover:bg-teal-500/15 border border-white/10 hover:border-teal-500/35 text-[11px] font-medium text-slate-300 hover:text-teal-300 transition-all flex items-center gap-1 shrink-0 whitespace-nowrap"
                   title="Prefix query with fast summary request"
                 >
                   <span>⚡</span>
@@ -2584,7 +2584,7 @@ export function MultiChatConsole({ config, onNavigateToSettings }: MultiChatCons
                 <button
                   type="button"
                   onClick={() => applyQueryModifier('[Compare & Contrast]:')}
-                  className="px-2 py-0.5 rounded-lg bg-white/5 hover:bg-indigo-500/15 border border-white/10 hover:border-indigo-500/35 text-[11px] font-medium text-slate-300 hover:text-indigo-300 transition-all flex items-center gap-1 hidden sm:flex"
+                  className="px-2 py-0.5 rounded-lg bg-white/5 hover:bg-indigo-500/15 border border-white/10 hover:border-indigo-500/35 text-[11px] font-medium text-slate-300 hover:text-indigo-300 transition-all flex items-center gap-1 shrink-0 whitespace-nowrap"
                   title="Prefix query with compare & contrast request"
                 >
                   <span>⚖️</span>
@@ -2593,7 +2593,7 @@ export function MultiChatConsole({ config, onNavigateToSettings }: MultiChatCons
                 <button
                   type="button"
                   onClick={() => applyQueryModifier('[Brainstorm]:')}
-                  className="px-2 py-0.5 rounded-lg bg-white/5 hover:bg-amber-500/15 border border-white/10 hover:border-amber-500/35 text-[11px] font-medium text-slate-300 hover:text-amber-300 transition-all flex items-center gap-1 hidden md:flex"
+                  className="px-2 py-0.5 rounded-lg bg-white/5 hover:bg-amber-500/15 border border-white/10 hover:border-amber-500/35 text-[11px] font-medium text-slate-300 hover:text-amber-300 transition-all flex items-center gap-1 shrink-0 whitespace-nowrap"
                   title="Prefix query with brainstorm request"
                 >
                   <span>💡</span>
@@ -2602,9 +2602,9 @@ export function MultiChatConsole({ config, onNavigateToSettings }: MultiChatCons
               </div>
 
               {/* Shortcut Command Hints */}
-              <div className="flex items-center gap-1.5 text-[10.5px] font-mono text-slate-500 ml-auto">
-                <span className="hidden sm:inline flex items-center gap-1">
-                  <CornerDownLeft size={11} className="text-cyan-400" />
+              <div className="flex items-center gap-1.5 text-[9.5px] sm:text-[10.5px] font-mono text-slate-500 ml-auto shrink-0">
+                <span className="flex items-center gap-1">
+                  <CornerDownLeft size={10} className="text-cyan-400 sm:w-[11px] sm:h-[11px]" />
                   <span>Enter to broadcast</span>
                 </span>
               </div>
