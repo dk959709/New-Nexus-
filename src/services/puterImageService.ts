@@ -186,7 +186,6 @@ export async function loadPuterScript(
     const script = document.createElement('script');
     script.src = 'https://js.puter.com/v2/';
     script.async = true;
-    script.crossOrigin = 'anonymous';
 
     const nowIso = new Date().toISOString();
     latestPuterDebugInfo.scriptAppended = true;
