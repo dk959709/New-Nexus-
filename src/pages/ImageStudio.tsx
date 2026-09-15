@@ -30,6 +30,8 @@ import {
 import {
   generatePuterImage,
   resetPuterSession,
+  getPuterDebugInfo,
+  PuterDebugInfo,
   DEFAULT_PUTER_MODEL,
 } from '@/services/puterImageService';
 import type { ImageProviderConfig, ImageProvidersState, GeneratedImageItem } from '@/types';
@@ -86,6 +88,8 @@ export function ImageStudio() {
   });
   const [isResettingSession, setIsResettingSession] = useState(false);
   const [sessionResetMessage, setSessionResetMessage] = useState<string | null>(null);
+  const [puterDebugInfo, setPuterDebugInfo] = useState<PuterDebugInfo | null>(null);
+  const [showPuterDebug, setShowPuterDebug] = useState(true);
 
   // Sync provider list on mount / tab focus
   useEffect(() => {
@@ -375,6 +379,9 @@ export function ImageStudio() {
     } catch (err: unknown) {
       const msg = err instanceof Error ? err.message : String(err);
       console.error('[ImageStudio: Generation Failed]', msg, err);
+      if (activeProvider.requestType === 'sdk') {
+        setPuterDebugInfo(getPuterDebugInfo());
+      }
       setError(msg);
     } finally {
       setLoading(false);
@@ -1086,6 +1093,70 @@ export function ImageStudio() {
                   <RotateCw size={12} className={isResettingSession ? 'animate-spin' : ''} />
                   {isResettingSession ? 'Resetting...' : 'Reset Session'}
                 </button>
+              )}
+            </div>
+          )}
+
+          {/* Collapsible Puter Debug Info in Image Studio */}
+          {activeProvider?.requestType === 'sdk' && puterDebugInfo && (
+            <div
+              style={{
+                padding: '10px 14px',
+                borderRadius: '8px',
+                background: 'rgba(15,23,42,0.85)',
+                border: '1px solid rgba(56,189,248,0.25)',
+                fontSize: '11px',
+                fontFamily: 'monospace',
+                color: '#94a3b8',
+              }}
+            >
+              <div
+                onClick={() => setShowPuterDebug(!showPuterDebug)}
+                style={{
+                  display: 'flex',
+                  alignItems: 'center',
+                  justifyContent: 'space-between',
+                  cursor: 'pointer',
+                  userSelect: 'none',
+                  color: '#38bdf8',
+                  fontWeight: 600,
+                }}
+              >
+                <span>🔍 Puter SDK Debug Info</span>
+                <span style={{ fontSize: '10px' }}>{showPuterDebug ? '▲ Hide' : '▼ Show'}</span>
+              </div>
+              {showPuterDebug && (
+                <div style={{ marginTop: '8px', display: 'flex', flexDirection: 'column', gap: '3px' }}>
+                  <div>
+                    • Script Appended: <span style={{ color: puterDebugInfo.scriptAppended ? '#34d399' : '#f87171' }}>{String(puterDebugInfo.scriptAppended)}</span>
+                    {puterDebugInfo.scriptAppendedAt && <span style={{ color: '#64748b', marginLeft: '4px' }}>({puterDebugInfo.scriptAppendedAt.split('T')[1]?.slice(0, 8)})</span>}
+                  </div>
+                  <div>
+                    • Onload Fired: <span style={{ color: puterDebugInfo.onloadFired ? '#34d399' : '#f87171' }}>{String(puterDebugInfo.onloadFired)}</span>
+                    {puterDebugInfo.onloadFiredAt && <span style={{ color: '#64748b', marginLeft: '4px' }}>({puterDebugInfo.onloadFiredAt.split('T')[1]?.slice(0, 8)})</span>}
+                  </div>
+                  <div>
+                    • Onerror Fired: <span style={{ color: puterDebugInfo.onerrorFired ? '#f87171' : '#34d399' }}>{String(puterDebugInfo.onerrorFired)}</span>
+                    {puterDebugInfo.onerrorDetails && <span style={{ color: '#f87171', marginLeft: '4px' }}>({puterDebugInfo.onerrorDetails})</span>}
+                  </div>
+                  <div>
+                    • typeof window.puter: <span style={{ color: '#fff' }}>"{puterDebugInfo.typeofWindowPuter}"</span>
+                  </div>
+                  <div>
+                    • typeof window.puter?.ai: <span style={{ color: '#fff' }}>"{puterDebugInfo.typeofWindowPuterAi}"</span>
+                  </div>
+                  <div>
+                    • typeof window.puter?.ai?.txt2img: <span style={{ color: puterDebugInfo.typeofWindowPuterAiTxt2img === 'function' ? '#34d399' : '#f87171' }}>"{puterDebugInfo.typeofWindowPuterAiTxt2img}"</span>
+                  </div>
+                  <div>
+                    • window.puter Keys: <span style={{ color: '#38bdf8', wordBreak: 'break-all' }}>{JSON.stringify(puterDebugInfo.windowPuterTopLevelKeys)}</span>
+                  </div>
+                  {puterDebugInfo.error && (
+                    <div style={{ color: '#f87171', marginTop: '2px' }}>
+                      • Error: {puterDebugInfo.error}
+                    </div>
+                  )}
+                </div>
               )}
             </div>
           )}

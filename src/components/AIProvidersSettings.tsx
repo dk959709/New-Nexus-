@@ -24,6 +24,8 @@ import { storage } from '@/lib/storage';
 import { api } from '@/services/api';
 import {
   loadPuterScript,
+  getPuterDebugInfo,
+  PuterDebugInfo,
   PUTER_IMAGE_MODELS,
   DEFAULT_PUTER_MODEL,
   PUTER_TIMEOUT_ERROR_MESSAGE,
@@ -60,6 +62,8 @@ export function AIProvidersSettings() {
   const [providerTestResults, setProviderTestResults] = useState<
     Record<string, { ok: boolean; message: string }>
   >({});
+  const [puterDebugInfo, setPuterDebugInfo] = useState<PuterDebugInfo | null>(null);
+  const [showPuterDebug, setShowPuterDebug] = useState(true);
   const [deletingProvider, setDeletingProvider] = useState<{
     id: string;
     name: string;
@@ -760,6 +764,8 @@ export function AIProvidersSettings() {
     if (provider.requestType === 'sdk') {
       try {
         const puter = await loadPuterScript(15000);
+        const debug = getPuterDebugInfo();
+        setPuterDebugInfo(debug);
         if (puter?.ai?.txt2img) {
           setProviderTestResults((prev) => ({
             ...prev,
@@ -770,6 +776,8 @@ export function AIProvidersSettings() {
         }
       } catch (err: unknown) {
         const errorMsg = err instanceof Error ? err.message : String(err);
+        const debug = getPuterDebugInfo();
+        setPuterDebugInfo(debug);
         console.error('[AIProvidersSettings: Test Puter SDK] Error:', errorMsg);
         setProviderTestResults((prev) => ({
           ...prev,
@@ -1570,6 +1578,71 @@ export function AIProvidersSettings() {
                       }}
                     >
                       {testResult.message}
+                    </div>
+                  )}
+
+                  {/* Collapsible Puter Debug Info */}
+                  {p.requestType === 'sdk' && puterDebugInfo && (
+                    <div
+                      style={{
+                        marginTop: '10px',
+                        padding: '8px 10px',
+                        borderRadius: '8px',
+                        background: 'rgba(15,23,42,0.7)',
+                        border: '1px solid rgba(56,189,248,0.25)',
+                        fontSize: '11px',
+                        fontFamily: 'monospace',
+                        color: '#94a3b8',
+                      }}
+                    >
+                      <div
+                        onClick={() => setShowPuterDebug(!showPuterDebug)}
+                        style={{
+                          display: 'flex',
+                          alignItems: 'center',
+                          justifyContent: 'space-between',
+                          cursor: 'pointer',
+                          userSelect: 'none',
+                          color: '#38bdf8',
+                          fontWeight: 600,
+                        }}
+                      >
+                        <span>🔍 Puter SDK Debug Info</span>
+                        <span style={{ fontSize: '10px' }}>{showPuterDebug ? '▲ Hide' : '▼ Show'}</span>
+                      </div>
+                      {showPuterDebug && (
+                        <div style={{ marginTop: '6px', display: 'flex', flexDirection: 'column', gap: '3px' }}>
+                          <div>
+                            • Script Appended: <span style={{ color: puterDebugInfo.scriptAppended ? '#34d399' : '#f87171' }}>{String(puterDebugInfo.scriptAppended)}</span>
+                            {puterDebugInfo.scriptAppendedAt && <span style={{ color: '#64748b', marginLeft: '4px' }}>({puterDebugInfo.scriptAppendedAt.split('T')[1]?.slice(0, 8)})</span>}
+                          </div>
+                          <div>
+                            • Onload Fired: <span style={{ color: puterDebugInfo.onloadFired ? '#34d399' : '#f87171' }}>{String(puterDebugInfo.onloadFired)}</span>
+                            {puterDebugInfo.onloadFiredAt && <span style={{ color: '#64748b', marginLeft: '4px' }}>({puterDebugInfo.onloadFiredAt.split('T')[1]?.slice(0, 8)})</span>}
+                          </div>
+                          <div>
+                            • Onerror Fired: <span style={{ color: puterDebugInfo.onerrorFired ? '#f87171' : '#34d399' }}>{String(puterDebugInfo.onerrorFired)}</span>
+                            {puterDebugInfo.onerrorDetails && <span style={{ color: '#f87171', marginLeft: '4px' }}>({puterDebugInfo.onerrorDetails})</span>}
+                          </div>
+                          <div>
+                            • typeof window.puter: <span style={{ color: '#fff' }}>"{puterDebugInfo.typeofWindowPuter}"</span>
+                          </div>
+                          <div>
+                            • typeof window.puter?.ai: <span style={{ color: '#fff' }}>"{puterDebugInfo.typeofWindowPuterAi}"</span>
+                          </div>
+                          <div>
+                            • typeof window.puter?.ai?.txt2img: <span style={{ color: puterDebugInfo.typeofWindowPuterAiTxt2img === 'function' ? '#34d399' : '#f87171' }}>"{puterDebugInfo.typeofWindowPuterAiTxt2img}"</span>
+                          </div>
+                          <div>
+                            • window.puter Keys: <span style={{ color: '#38bdf8', wordBreak: 'break-all' }}>{JSON.stringify(puterDebugInfo.windowPuterTopLevelKeys)}</span>
+                          </div>
+                          {puterDebugInfo.error && (
+                            <div style={{ color: '#f87171', marginTop: '2px' }}>
+                              • Error: {puterDebugInfo.error}
+                            </div>
+                          )}
+                        </div>
+                      )}
                     </div>
                   )}
                 </div>
