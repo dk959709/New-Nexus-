@@ -16,8 +16,10 @@ import {
   Layers,
   Trash2,
   Database,
+  Wand2,
 } from 'lucide-react';
 import { storage } from '@/lib/storage';
+import { api } from '@/services/api';
 import { playTapSound } from '@/lib/audio';
 import {
   getStoredGeneratedImages,
@@ -57,10 +59,13 @@ export function ImageStudio() {
   const [selectedRatioIndex, setSelectedRatioIndex] = useState(0);
   const [modelType, setModelType] = useState('flux');
   const [seed, setSeed] = useState<number>(() => Math.floor(Math.random() * 1000000));
-  const [enhance, setEnhance] = useState(false);
+  const [quickEnhance, setQuickEnhance] = useState(false);
+  const [smartAiEnhance, setSmartAiEnhance] = useState(false);
   const [nologo, setNologo] = useState(true);
 
   const [loading, setLoading] = useState(false);
+  const [loadingPhase, setLoadingPhase] = useState<'idle' | 'enhancing' | 'generating'>('idle');
+  const [lastEnhancedPrompt, setLastEnhancedPrompt] = useState<string | null>(null);
   const [downloading, setDownloading] = useState(false);
   const [copiedUrl, setCopiedUrl] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -119,7 +124,7 @@ export function ImageStudio() {
     (
       promptText: string,
       provider: ImageProviderConfig,
-      opts: { width: number; height: number; seed: number; model?: string; enhance?: boolean; nologo?: boolean }
+      opts: { width: number; height: number; seed: number; model?: string; quickEnhance?: boolean; nologo?: boolean }
     ) => {
       const base = provider.url.trim().replace(/\/+$/, '');
       const encodedPrompt = encodeURIComponent(promptText.trim());
@@ -141,7 +146,7 @@ export function ImageStudio() {
       if (opts.model && opts.model !== 'default') {
         params.append('model', opts.model);
       }
-      if (opts.enhance) {
+      if (opts.quickEnhance) {
         params.append('enhance', 'true');
       }
       if (opts.nologo) {
@@ -158,10 +163,10 @@ export function ImageStudio() {
     [getResolvedApiKey]
   );
 
-  // Generate Image Handler
+  // Generate Image Handler with Smart AI Enhance & Quick Enhance support
   const handleGenerate = async (overridePrompt?: string) => {
-    const promptToUse = (overridePrompt ?? prompt).trim();
-    if (!promptToUse) {
+    const rawInputPrompt = (overridePrompt ?? prompt).trim();
+    if (!rawInputPrompt) {
       setError('Please enter a description for your image.');
       return;
     }
@@ -175,6 +180,51 @@ export function ImageStudio() {
     setError(null);
     setLoading(true);
 
+    let promptToUse = rawInputPrompt;
+    let enhancedPromptUsed: string | undefined = undefined;
+
+    // Phase 1: Smart AI Enhance (if enabled)
+    if (smartAiEnhance) {
+      setLoadingPhase('enhancing');
+      try {
+        const activeAiProvider = storage.getActiveAIProvider();
+        const enhanceRes = await api.jarvisAgentCall({
+          agentId: 'image-prompt-enhancer',
+          messages: [
+            {
+              role: 'system',
+              content:
+                'Fix any spelling/grammar mistakes in this image prompt, and rewrite it to be more vivid and descriptive for an AI image generator, while keeping the original meaning and subject. Return ONLY the improved prompt text, nothing else.',
+            },
+            {
+              role: 'user',
+              content: rawInputPrompt,
+            },
+          ],
+          providerConfig: activeAiProvider,
+          temperature: 0.7,
+          maxTokens: 350,
+          timeoutMs: 25000,
+        });
+
+        if (enhanceRes?.ok && enhanceRes.text && enhanceRes.text.trim().length > 0) {
+          let cleaned = enhanceRes.text.trim();
+          // Remove surrounding markdown quotes or prefixes if returned by LLM
+          cleaned = cleaned.replace(/^["'“”]+|["'“”]+$/g, '').trim();
+          cleaned = cleaned.replace(/^(?:Enhanced prompt|Improved prompt|Rewritten prompt|Prompt):\s*/i, '').trim();
+          if (cleaned.length > 0) {
+            promptToUse = cleaned;
+            enhancedPromptUsed = cleaned;
+            setLastEnhancedPrompt(cleaned);
+          }
+        }
+      } catch (enhanceErr) {
+        console.warn('[ImageStudio] Smart AI Enhance failed, proceeding with original prompt:', enhanceErr);
+      }
+    }
+
+    // Phase 2: Image Generation
+    setLoadingPhase('generating');
     const ratio = ASPECT_RATIOS[selectedRatioIndex] || ASPECT_RATIOS[0];
     const currentSeed = seed;
 
@@ -246,7 +296,7 @@ export function ImageStudio() {
           height: ratio.height,
           seed: currentSeed,
           model: modelType,
-          enhance,
+          quickEnhance,
           nologo,
         });
 
@@ -279,6 +329,8 @@ export function ImageStudio() {
         url: finalImageUrl,
         imageData: finalImageUrl,
         prompt: promptToUse,
+        originalPrompt: enhancedPromptUsed ? rawInputPrompt : undefined,
+        enhancedPrompt: enhancedPromptUsed,
         providerName: activeProvider.name,
         width: ratio.width,
         height: ratio.height,
@@ -304,6 +356,7 @@ export function ImageStudio() {
       setError(msg);
     } finally {
       setLoading(false);
+      setLoadingPhase('idle');
     }
   };
 
@@ -603,6 +656,68 @@ export function ImageStudio() {
                 {prompt.length} chars
               </span>
             </div>
+
+            {/* Smart AI Enhanced Prompt Banner (if generated with Smart AI) */}
+            {lastEnhancedPrompt && (
+              <div
+                style={{
+                  marginTop: '10px',
+                  padding: '10px 12px',
+                  borderRadius: '8px',
+                  background: 'linear-gradient(135deg, rgba(236,72,153,0.12) 0%, rgba(168,85,247,0.12) 100%)',
+                  border: '1px solid rgba(236,72,153,0.3)',
+                  display: 'grid',
+                  gap: '6px',
+                }}
+              >
+                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                  <span style={{ fontSize: '11px', fontWeight: 700, color: '#f472b6', display: 'inline-flex', alignItems: 'center', gap: '5px' }}>
+                    <Wand2 size={12} /> Enhanced prompt used by AI:
+                  </span>
+                  <div style={{ display: 'flex', gap: '6px' }}>
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setPrompt(lastEnhancedPrompt);
+                        playTapSound();
+                      }}
+                      style={{
+                        background: 'rgba(255,255,255,0.08)',
+                        border: '1px solid rgba(255,255,255,0.15)',
+                        borderRadius: '4px',
+                        color: '#fff',
+                        fontSize: '10px',
+                        padding: '2px 6px',
+                        cursor: 'pointer',
+                      }}
+                    >
+                      Use in editor
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => {
+                        navigator.clipboard.writeText(lastEnhancedPrompt);
+                        playTapSound();
+                      }}
+                      style={{
+                        background: 'rgba(255,255,255,0.08)',
+                        border: '1px solid rgba(255,255,255,0.15)',
+                        borderRadius: '4px',
+                        color: '#fff',
+                        fontSize: '10px',
+                        padding: '2px 6px',
+                        cursor: 'pointer',
+                      }}
+                    >
+                      Copy
+                    </button>
+                  </div>
+                </div>
+                <p style={{ margin: 0, fontSize: '12px', color: 'var(--text)', lineHeight: 1.4, fontStyle: 'italic' }}>
+                  "{lastEnhancedPrompt}"
+                </p>
+              </div>
+            )}
           </div>
 
           {/* Sample Prompts Pills */}
@@ -747,16 +862,59 @@ export function ImageStudio() {
           </div>
 
           {/* Options Toggles */}
-          <div style={{ display: 'flex', gap: '16px', flexWrap: 'wrap' }}>
-            <label style={{ display: 'inline-flex', alignItems: 'center', gap: '6px', fontSize: '12px', color: 'var(--text)', cursor: 'pointer' }}>
+          <div style={{ display: 'flex', gap: '16px', flexWrap: 'wrap', alignItems: 'center' }}>
+            {/* Quick Enhance Toggle */}
+            <label
+              title="Adds generic aesthetic and quality enhancer keywords to the generator request"
+              style={{ display: 'inline-flex', alignItems: 'center', gap: '6px', fontSize: '12px', color: 'var(--text)', cursor: 'pointer' }}
+            >
               <input
                 type="checkbox"
-                checked={enhance}
-                onChange={(e) => setEnhance(e.target.checked)}
+                checked={quickEnhance}
+                onChange={(e) => {
+                  const val = e.target.checked;
+                  setQuickEnhance(val);
+                  if (val) setSmartAiEnhance(false);
+                }}
                 style={{ accentColor: '#f472b6' }}
               />
-              Auto-Enhance Prompt
+              Quick Enhance
             </label>
+
+            {/* Smart AI Enhance Toggle (Mutually exclusive with Quick Enhance) */}
+            <label
+              title="Sends prompt to active NEXUS AI model to fix grammar and rewrite into vivid, high-fidelity scene descriptions"
+              style={{ display: 'inline-flex', alignItems: 'center', gap: '6px', fontSize: '12px', color: 'var(--text)', cursor: 'pointer' }}
+            >
+              <input
+                type="checkbox"
+                checked={smartAiEnhance}
+                onChange={(e) => {
+                  const val = e.target.checked;
+                  setSmartAiEnhance(val);
+                  if (val) setQuickEnhance(false);
+                }}
+                style={{ accentColor: '#a855f7' }}
+              />
+              <span style={{ display: 'inline-flex', alignItems: 'center', gap: '5px' }}>
+                <Wand2 size={13} style={{ color: '#c084fc' }} /> Smart AI Enhance
+                <span
+                  style={{
+                    fontSize: '10px',
+                    fontWeight: 600,
+                    background: 'rgba(168,85,247,0.2)',
+                    color: '#c084fc',
+                    padding: '1px 6px',
+                    borderRadius: '4px',
+                    border: '1px solid rgba(168,85,247,0.35)',
+                  }}
+                >
+                  AI Rewrite
+                </span>
+              </span>
+            </label>
+
+            {/* Clean Render */}
             <label style={{ display: 'inline-flex', alignItems: 'center', gap: '6px', fontSize: '12px', color: 'var(--text)', cursor: 'pointer' }}>
               <input
                 type="checkbox"
@@ -817,9 +975,15 @@ export function ImageStudio() {
             }}
           >
             {loading ? (
-              <>
-                <RotateCw size={17} className="animate-spin" /> Synthesizing Image...
-              </>
+              loadingPhase === 'enhancing' ? (
+                <>
+                  <Wand2 size={17} className="animate-spin" /> Refining with AI...
+                </>
+              ) : (
+                <>
+                  <RotateCw size={17} className="animate-spin" /> Synthesizing Image...
+                </>
+              )
             ) : (
               <>
                 <Sparkles size={17} /> Generate Image
@@ -876,21 +1040,27 @@ export function ImageStudio() {
                     width: '60px',
                     height: '60px',
                     borderRadius: '50%',
-                    background: 'rgba(236,72,153,0.15)',
-                    border: '2px solid #ec4899',
+                    background: loadingPhase === 'enhancing' ? 'rgba(168,85,247,0.15)' : 'rgba(236,72,153,0.15)',
+                    border: `2px solid ${loadingPhase === 'enhancing' ? '#a855f7' : '#ec4899'}`,
                     display: 'grid',
                     placeItems: 'center',
-                    color: '#f472b6',
+                    color: loadingPhase === 'enhancing' ? '#c084fc' : '#f472b6',
                   }}
                 >
-                  <RotateCw size={28} className="animate-spin" />
+                  {loadingPhase === 'enhancing' ? (
+                    <Wand2 size={28} className="animate-spin" />
+                  ) : (
+                    <RotateCw size={28} className="animate-spin" />
+                  )}
                 </div>
                 <div style={{ textAlign: 'center' }}>
                   <h4 style={{ margin: 0, fontSize: '15px', fontWeight: 600, color: '#fff' }}>
-                    Generating Neural Visuals...
+                    {loadingPhase === 'enhancing' ? '✨ Refining Prompt with Smart AI...' : 'Generating Neural Visuals...'}
                   </h4>
                   <p style={{ margin: '4px 0 0', fontSize: '12px', color: 'var(--muted)' }}>
-                    Communicating with {activeProvider?.name || 'Image Provider'} endpoint.
+                    {loadingPhase === 'enhancing'
+                      ? 'NEXUS AI text model is enhancing description depth, lighting, and vocabulary...'
+                      : `Communicating with ${activeProvider?.name || 'Image Provider'} endpoint.`}
                   </p>
                 </div>
               </div>
@@ -949,12 +1119,42 @@ export function ImageStudio() {
                     borderRadius: '8px',
                     background: 'rgba(10,22,28,0.6)',
                     border: '1px solid var(--line)',
+                    display: 'grid',
+                    gap: '6px',
                   }}
                 >
+                  {currentImage.enhancedPrompt && (
+                    <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
+                      <span
+                        style={{
+                          fontSize: '10px',
+                          fontWeight: 700,
+                          background: 'rgba(168,85,247,0.2)',
+                          color: '#c084fc',
+                          padding: '2px 6px',
+                          borderRadius: '4px',
+                          border: '1px solid rgba(168,85,247,0.35)',
+                          display: 'inline-flex',
+                          alignItems: 'center',
+                          gap: '4px',
+                        }}
+                      >
+                        <Wand2 size={10} /> Smart AI Enhanced
+                      </span>
+                    </div>
+                  )}
+
                   <p style={{ margin: 0, fontSize: '12px', color: '#fff', lineHeight: 1.5 }}>
                     "{currentImage.prompt}"
                   </p>
-                  <div style={{ display: 'flex', gap: '12px', marginTop: '6px', fontSize: '10px', color: 'var(--muted)' }}>
+
+                  {currentImage.originalPrompt && currentImage.originalPrompt !== currentImage.prompt && (
+                    <p style={{ margin: 0, fontSize: '11px', color: 'var(--muted)', fontStyle: 'italic' }}>
+                      Original: "{currentImage.originalPrompt}"
+                    </p>
+                  )}
+
+                  <div style={{ display: 'flex', gap: '12px', marginTop: '2px', fontSize: '10px', color: 'var(--muted)', flexWrap: 'wrap' }}>
                     <span>Provider: {currentImage.providerName}</span>
                     <span>Model: {currentImage.model || 'flux'}</span>
                     <span>Seed: {currentImage.seed}</span>
@@ -1181,6 +1381,26 @@ export function ImageStudio() {
                       loading="lazy"
                     />
 
+                    {/* AI Enhanced icon tag */}
+                    {item.enhancedPrompt && (
+                      <div
+                        style={{
+                          position: 'absolute',
+                          bottom: '3px',
+                          left: '3px',
+                          background: 'rgba(168,85,247,0.85)',
+                          borderRadius: '3px',
+                          padding: '1px 3px',
+                          color: '#fff',
+                          display: 'grid',
+                          placeItems: 'center',
+                        }}
+                        title="Smart AI Enhanced prompt"
+                      >
+                        <Wand2 size={9} />
+                      </div>
+                    )}
+
                     {/* Single image delete button */}
                     <button
                       type="button"
@@ -1263,15 +1483,42 @@ export function ImageStudio() {
               alt={fullscreenImage.prompt}
               style={{
                 maxWidth: '90vw',
-                maxHeight: '80vh',
+                maxHeight: '76vh',
                 borderRadius: '12px',
                 objectFit: 'contain',
                 boxShadow: '0 16px 48px rgba(0,0,0,0.8)',
               }}
             />
-            <p style={{ marginTop: '12px', color: '#fff', fontSize: '13px', textAlign: 'center', maxWidth: '600px' }}>
-              {fullscreenImage.prompt}
-            </p>
+            <div style={{ marginTop: '14px', textAlign: 'center', maxWidth: '680px', display: 'grid', gap: '4px' }}>
+              {fullscreenImage.enhancedPrompt && (
+                <div>
+                  <span
+                    style={{
+                      fontSize: '10px',
+                      fontWeight: 700,
+                      background: 'rgba(168,85,247,0.25)',
+                      color: '#c084fc',
+                      padding: '2px 7px',
+                      borderRadius: '4px',
+                      border: '1px solid rgba(168,85,247,0.4)',
+                      display: 'inline-flex',
+                      alignItems: 'center',
+                      gap: '4px',
+                    }}
+                  >
+                    <Wand2 size={10} /> Smart AI Enhanced Prompt
+                  </span>
+                </div>
+              )}
+              <p style={{ margin: 0, color: '#fff', fontSize: '13px', lineHeight: 1.5 }}>
+                "{fullscreenImage.prompt}"
+              </p>
+              {fullscreenImage.originalPrompt && fullscreenImage.originalPrompt !== fullscreenImage.prompt && (
+                <p style={{ margin: 0, color: 'var(--muted)', fontSize: '11px', fontStyle: 'italic' }}>
+                  Original: "{fullscreenImage.originalPrompt}"
+                </p>
+              )}
+            </div>
           </div>
         </div>
       )}

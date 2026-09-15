@@ -193,6 +193,8 @@ export interface GeneratedImageItem {
   url: string;
   imageData?: string;
   prompt: string;
+  originalPrompt?: string;
+  enhancedPrompt?: string;
   providerName: string;
   width: number;
   height: number;
