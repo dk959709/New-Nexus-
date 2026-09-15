@@ -1304,6 +1304,26 @@ export function stripCodeOnlinePrefix(text: string): string {
   return text.trim().replace(/^\/codeonline\s*/i, '').trim().replace(/^["'`<]+|[>"'`]+$/g, '').trim();
 }
 
+export function isImageSlashCommand(text: string): boolean {
+  if (!text || typeof text !== 'string') return false;
+  return /^\/image(?:\s+|$)/i.test(text.trim());
+}
+
+export function stripImagePrefix(text: string): string {
+  if (!text || typeof text !== 'string') return text;
+  return text.trim().replace(/^\/image\s*/i, '').trim().replace(/^["'`<]+|[>"'`]+$/g, '').trim();
+}
+
+export function isImageAiSlashCommand(text: string): boolean {
+  if (!text || typeof text !== 'string') return false;
+  return /^\/imageai(?:\s+|$)/i.test(text.trim());
+}
+
+export function stripImageAiPrefix(text: string): string {
+  if (!text || typeof text !== 'string') return text;
+  return text.trim().replace(/^\/imageai\s*/i, '').trim().replace(/^["'`<]+|[>"'`]+$/g, '').trim();
+}
+
 export function isCustomApiCommand(text: string): boolean {
   if (!text || typeof text !== 'string') return false;
   return /^\/customapi(?:\s+|$)/i.test(text.trim());
@@ -2494,6 +2514,8 @@ Please perform your specialized processing for this inquiry. Provide clear, conc
     if (isSearchOverrideQuery(text)) return false;
     if (isCustomApiCommand(text)) return false;
     if (isCodeSlashCommand(text)) return false;
+    if (isImageSlashCommand(text)) return false;
+    if (isImageAiSlashCommand(text)) return false;
     const lower = text.toLowerCase().trim().replace(/[?!.,]+$/g, '');
     return (
       /^(hi|hello|hey|greetings|howdy|good (morning|afternoon|evening))\b/i.test(lower) ||
@@ -2519,13 +2541,19 @@ Please perform your specialized processing for this inquiry. Provide clear, conc
   const isWebFetch = isWebFetchQuery(query);
   const targetWebUrl = isWebFetch ? extractWebFetchUrl(query) : '';
   const isSearchOverride = isSearchOverrideQuery(query);
+  const isImageSlash = isImageSlashCommand(query);
+  const isImageAiSlash = isImageAiSlashCommand(query);
   const strippedQuery = isCustomApi
     ? (customApiParsed ? `${customApiParsed.apiName} ${customApiParsed.customQuery}`.trim() : query)
     : isWebFetch
       ? targetWebUrl
       : isSearchOverride
         ? stripSearchOverridePrefix(query)
-        : query;
+        : isImageSlash
+          ? stripImagePrefix(query)
+          : isImageAiSlash
+            ? stripImageAiPrefix(query)
+            : query;
 
   let plannerOutput: JarvisPlannerOutput = {
     task: isPureFileAnalysis
@@ -2765,6 +2793,73 @@ CRITICAL RULES:
         providerName: 'Internal Router',
         model: 'code-pipeline',
       };
+    } else if (isImageSlashCommand(query)) {
+      const stripped = stripImagePrefix(query);
+      plannerOutput = {
+        task: `Retrieve photos and synthesize visual for: ${stripped}`,
+        plan: [
+          'Search Wikipedia and Wikimedia Commons for verified authentic real-world photos',
+          'Synthesize high-fidelity AI generated image visual via active Image AI Provider',
+          'Provide summary and visual presentation for query',
+        ],
+        needsCode: false,
+        needsResearch: false,
+        needsResearchQuery: '',
+        needsNews: false,
+        needsNewsQuery: '',
+        needsWikipedia: false,
+        wikipediaQuery: '',
+        needsWikidata: false,
+        wikidataQuery: '',
+        needsWeather: false,
+        weatherLocation: '',
+        needsKnowledgeAgent: false,
+        needsReview: false,
+        needsFactCheck: false,
+        needsDiagram: false,
+        needsChart: false,
+        needsImage: true,
+      };
+      duration = 5;
+      planRes = {
+        ok: true,
+        text: JSON.stringify(plannerOutput, null, 2),
+        providerName: 'Internal Router',
+        model: 'image-pipeline',
+      };
+    } else if (isImageAiSlashCommand(query)) {
+      const stripped = stripImageAiPrefix(query);
+      plannerOutput = {
+        task: `Generate AI visual for: ${stripped}`,
+        plan: [
+          'Synthesize high-fidelity AI generated image visual via active Image AI Provider',
+          'Provide concise synthesis description and prompt details',
+        ],
+        needsCode: false,
+        needsResearch: false,
+        needsResearchQuery: '',
+        needsNews: false,
+        needsNewsQuery: '',
+        needsWikipedia: false,
+        wikipediaQuery: '',
+        needsWikidata: false,
+        wikidataQuery: '',
+        needsWeather: false,
+        weatherLocation: '',
+        needsKnowledgeAgent: false,
+        needsReview: false,
+        needsFactCheck: false,
+        needsDiagram: false,
+        needsChart: false,
+        needsImage: true,
+      };
+      duration = 5;
+      planRes = {
+        ok: true,
+        text: JSON.stringify(plannerOutput, null, 2),
+        providerName: 'Internal Router',
+        model: 'imageai-pipeline',
+      };
     } else {
       const pStart = Date.now();
       planRes = await callAgent('planner', [
@@ -2905,6 +3000,51 @@ CRITICAL RULES:
         plannerOutput.needsDiagram = false;
         plannerOutput.needsChart = false;
         plannerOutput.needsImage = false;
+      } else if (isImageSlashCommand(query)) {
+        const stripped = stripImagePrefix(query);
+        plannerOutput.task = `Retrieve photos and synthesize visual for: ${stripped}`;
+        plannerOutput.plan = [
+          'Search Wikipedia and Wikimedia Commons for verified authentic real-world photos',
+          'Synthesize high-fidelity AI generated image visual via active Image AI Provider',
+          'Provide summary and visual presentation for query',
+        ];
+        plannerOutput.needsCode = false;
+        plannerOutput.needsResearch = false;
+        plannerOutput.needsResearchQuery = '';
+        plannerOutput.needsNews = false;
+        plannerOutput.needsNewsQuery = '';
+        plannerOutput.needsWikipedia = false;
+        plannerOutput.wikipediaQuery = '';
+        plannerOutput.needsWikidata = false;
+        plannerOutput.wikidataQuery = '';
+        plannerOutput.needsKnowledgeAgent = false;
+        plannerOutput.needsReview = false;
+        plannerOutput.needsFactCheck = false;
+        plannerOutput.needsDiagram = false;
+        plannerOutput.needsChart = false;
+        plannerOutput.needsImage = true;
+      } else if (isImageAiSlashCommand(query)) {
+        const stripped = stripImageAiPrefix(query);
+        plannerOutput.task = `Generate AI visual for: ${stripped}`;
+        plannerOutput.plan = [
+          'Synthesize high-fidelity AI generated image visual via active Image AI Provider',
+          'Provide concise synthesis description and prompt details',
+        ];
+        plannerOutput.needsCode = false;
+        plannerOutput.needsResearch = false;
+        plannerOutput.needsResearchQuery = '';
+        plannerOutput.needsNews = false;
+        plannerOutput.needsNewsQuery = '';
+        plannerOutput.needsWikipedia = false;
+        plannerOutput.wikipediaQuery = '';
+        plannerOutput.needsWikidata = false;
+        plannerOutput.wikidataQuery = '';
+        plannerOutput.needsKnowledgeAgent = false;
+        plannerOutput.needsReview = false;
+        plannerOutput.needsFactCheck = false;
+        plannerOutput.needsDiagram = false;
+        plannerOutput.needsChart = false;
+        plannerOutput.needsImage = true;
       } else {
         const isCoderToggleEnabled =
           coderMode !== undefined
@@ -6159,11 +6299,13 @@ JARVIS is a multi-agent AI intelligence platform composed of 10 specialized neur
   }
 
   // ==========================================
-  // STEP 8: 🖼️ IMAGE FINDER (Real Photo Sourcing)
+  // STEP 8: 🖼️ IMAGE FINDER (Real Photo Sourcing & AI Image Synthesis)
   // ==========================================
   let retrievedImages: JarvisImageResult[] = [];
 
   const hasImageIntent =
+    isImageSlash ||
+    isImageAiSlash ||
     Boolean(plannerOutput.needsImage) ||
     /\b(iphone|galaxy|samsung|pixel|apple|google|phone|smartphone|laptop|macbook|gpu|cpu|camera|sensor|car|ev|tesla|vehicle|telescope|building|architecture|animal|space|galaxy|nebula|planet|star|device|hardware|product|look|photo|image|picture|what does|show me)\b/i.test(
       query,
@@ -6171,7 +6313,7 @@ JARVIS is a multi-agent AI intelligence platform composed of 10 specialized neur
     query.length > 20;
 
   const shouldImageFinder =
-    imageMode &&
+    (imageMode || isImageSlash || isImageAiSlash) &&
     hasImageIntent &&
     agentConfigs.imageFinder &&
     agentConfigs.imageFinder.enabled !== false;
@@ -6190,63 +6332,102 @@ JARVIS is a multi-agent AI intelligence platform composed of 10 specialized neur
       model: provInfo.model,
     });
 
-    const defaultPromptTemplate = DEFAULT_AGENT_SYSTEM_PROMPTS.imageFinder;
-    const activePrompt = (ifCfg.systemPrompt || defaultPromptTemplate)
-      .replace('{task}', plannerOutput.task || query);
-
-    console.group(`[JARVIS Image Finder] Formulating Image Search Query for: "${query}"`);
-    console.log(`[JARVIS Image Finder] Active Prompt:`, activePrompt);
-
-    const ifRes = await callAgent('imageFinder', [
-      {
-        role: 'system',
-        content:
-          'You are the JARVIS Image Finder agent. Output ONLY a valid JSON object with {"searchQuery": "short specific search query"}. Do not include markdown or explanations.',
-      },
-      { role: 'user', content: activePrompt },
-    ]);
-
-    const duration = Date.now() - start;
-    console.log(`[JARVIS Image Finder] Raw Output (${ifRes.model || 'AI'}):`, ifRes.text || ifRes.error);
-
     let searchQuery = '';
-    if (ifRes.ok && ifRes.text) {
-      searchQuery = extractImageQueryFromText(ifRes.text) || '';
-    }
-    if (!searchQuery) {
-      // Fallback: clean the query of question/command phrases
-      searchQuery = (plannerOutput.task || query)
-        .replace(/^(what is|what does|show me|photos of|pictures of|images of|a photo of|an image of|compare)\s+/i, '')
-        .replace(/\b(look like|look|specs|specifications)\b/i, '')
-        .trim();
-    }
+    let ifRes: AgentResult = {
+      ok: true,
+      text: '',
+      providerName: provInfo.provider?.name || 'Primary',
+      model: provInfo.model,
+    };
 
-    console.log(`[JARVIS Image Finder] Executing parallel real photo retrieval & AI synthesis for: "${searchQuery}"`);
-    try {
-      // Execute both real photo search via Wikipedia/Wikimedia AND AI generation via active Image AI provider in parallel
-      const [realPhotosResult, aiImageResult] = await Promise.allSettled([
-        fetchJarvisRealImages(searchQuery, 1),
-        generateJarvisAiImage(searchQuery),
+    if (isImageSlash) {
+      searchQuery = stripImagePrefix(query).trim();
+      ifRes = {
+        ok: true,
+        text: JSON.stringify({ searchQuery }),
+        providerName: 'Internal Router',
+        model: 'image-finder',
+      };
+    } else if (isImageAiSlash) {
+      searchQuery = stripImageAiPrefix(query).trim();
+      ifRes = {
+        ok: true,
+        text: JSON.stringify({ searchQuery }),
+        providerName: 'Internal Router',
+        model: 'image-ai-synthesis',
+      };
+    } else {
+      const defaultPromptTemplate = DEFAULT_AGENT_SYSTEM_PROMPTS.imageFinder;
+      const activePrompt = (ifCfg.systemPrompt || defaultPromptTemplate)
+        .replace('{task}', plannerOutput.task || query);
+
+      console.group(`[JARVIS Image Finder] Formulating Image Search Query for: "${query}"`);
+      console.log(`[JARVIS Image Finder] Active Prompt:`, activePrompt);
+
+      ifRes = await callAgent('imageFinder', [
+        {
+          role: 'system',
+          content:
+            'You are the JARVIS Image Finder agent. Output ONLY a valid JSON object with {"searchQuery": "short specific search query"}. Do not include markdown or explanations.',
+        },
+        { role: 'user', content: activePrompt },
       ]);
 
-      const realPhotos = realPhotosResult.status === 'fulfilled' ? realPhotosResult.value : [];
-      const aiImage = aiImageResult.status === 'fulfilled' ? aiImageResult.value : null;
+      console.log(`[JARVIS Image Finder] Raw Output (${ifRes.model || 'AI'}):`, ifRes.text || ifRes.error);
 
-      const realPhoto = realPhotos[0]
-        ? {
-            ...realPhotos[0],
-            imageType: 'real' as const,
-            label: '📷 Real Photo (Wikipedia)',
-            source: '📷 Real Photo (Wikipedia)',
-          }
-        : null;
-
-      retrievedImages = [];
-      if (realPhoto) {
-        retrievedImages.push(realPhoto);
+      if (ifRes.ok && ifRes.text) {
+        searchQuery = extractImageQueryFromText(ifRes.text) || '';
       }
-      if (aiImage) {
-        retrievedImages.push(aiImage);
+      if (!searchQuery) {
+        // Fallback: clean the query of question/command phrases
+        searchQuery = (plannerOutput.task || query)
+          .replace(/^(what is|what does|show me|photos of|pictures of|images of|a photo of|an image of|compare)\s+/i, '')
+          .replace(/\b(look like|look|specs|specifications)\b/i, '')
+          .trim();
+      }
+    }
+
+    const duration = Date.now() - start;
+
+    console.log(`[JARVIS Image Finder] Executing image generation/retrieval (isImageAiSlash=${isImageAiSlash}, isImageSlash=${isImageSlash}) for: "${searchQuery}"`);
+    try {
+      if (isImageAiSlash) {
+        // ONLY AI-generated image (skip Wikipedia search entirely)
+        const aiImageResult = await Promise.resolve(generateJarvisAiImage(searchQuery)).catch((err) => {
+          console.warn('[JARVIS Image Finder] AI image generation failed:', err);
+          return null;
+        });
+
+        retrievedImages = [];
+        if (aiImageResult) {
+          retrievedImages.push(aiImageResult);
+        }
+      } else {
+        // Dual behavior: real photo search via Wikipedia/Wikimedia AND AI generation via active Image AI provider in parallel
+        const [realPhotosResult, aiImageResult] = await Promise.allSettled([
+          fetchJarvisRealImages(searchQuery, 1),
+          generateJarvisAiImage(searchQuery),
+        ]);
+
+        const realPhotos = realPhotosResult.status === 'fulfilled' ? realPhotosResult.value : [];
+        const aiImage = aiImageResult.status === 'fulfilled' ? aiImageResult.value : null;
+
+        const realPhoto = realPhotos[0]
+          ? {
+              ...realPhotos[0],
+              imageType: 'real' as const,
+              label: '📷 Real Photo (Wikipedia)',
+              source: '📷 Real Photo (Wikipedia)',
+            }
+          : null;
+
+        retrievedImages = [];
+        if (realPhoto) {
+          retrievedImages.push(realPhoto);
+        }
+        if (aiImage) {
+          retrievedImages.push(aiImage);
+        }
       }
     } catch (fetchErr) {
       console.warn('[JARVIS Image Finder] Image retrieval/generation failed:', fetchErr);
@@ -6263,7 +6444,9 @@ JARVIS is a multi-agent AI intelligence platform composed of 10 specialized neur
       if (hasReal && hasAi) {
         stepSummary = `Retrieved Real Photo (Wikipedia) and synthesized AI Generated visual for "${searchQuery}".`;
       } else if (hasAi) {
-        stepSummary = `Synthesized AI Generated visual for "${searchQuery}" (no Wikipedia photo found).`;
+        stepSummary = isImageAiSlash
+          ? `Synthesized AI Generated visual for "${searchQuery}".`
+          : `Synthesized AI Generated visual for "${searchQuery}" (no Wikipedia photo found).`;
       } else if (hasReal) {
         stepSummary = `Retrieved Real Photo (Wikipedia) for "${searchQuery}".`;
       }

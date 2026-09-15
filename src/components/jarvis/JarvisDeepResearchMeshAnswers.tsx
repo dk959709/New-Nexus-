@@ -15,6 +15,7 @@ import {
   FileText,
   Globe,
   HelpCircle,
+  Image,
   Info,
   Layers,
   Lightbulb,
@@ -166,6 +167,17 @@ const AGENT_THEMES: Record<string, AgentTheme> = {
     badgeBg: 'rgba(59, 130, 246, 0.14)',
     accentGlow: 'rgba(59, 130, 246, 0.2)',
     icon: <Code2 size={18} className="text-blue-400" />,
+  },
+  imageFinder: {
+    title: 'IMAGE FINDER // VISUAL SYNTHESIS & REAL PHOTO SOURCING',
+    subtitle: 'Authentic Photo Discovery & Multi-Provider Generative AI Image Synthesis',
+    border: 'rgba(236, 72, 153, 0.25)',
+    bg: 'linear-gradient(150deg, rgba(38, 12, 30, 0.9) 0%, rgba(20, 6, 18, 0.95) 100%)',
+    headerBg: 'linear-gradient(135deg, rgba(48, 16, 38, 0.6) 0%, rgba(30, 8, 24, 0.55) 100%)',
+    text: '#f472b6',
+    badgeBg: 'rgba(236, 72, 153, 0.14)',
+    accentGlow: 'rgba(236, 72, 153, 0.2)',
+    icon: <Image size={18} className="text-pink-400" />,
   },
   critic: {
     title: 'CRITIC // DEVIL\'S ADVOCATE & STRESS TEST',
@@ -1122,6 +1134,29 @@ function formatAgentContentToMarkdown(step: JarvisExecutionStep): {
     let md = `### ⚡ Custom API // Direct Endpoint Execution\n`;
     if (step.summary) md += `**Execution:** ${step.summary}\n\n`;
     md += `#### 📦 Response Data:\n\`\`\`json\n${rawContent}\n\`\`\``;
+    return { formatted: md, isStructuredJson: true, raw };
+  }
+
+  // 4.7 IMAGE FINDER AGENT (Real Photos + AI Visuals)
+  if (step.agentId === 'imageFinder') {
+    let md = `### 🖼️ IMAGE FINDER // SOURCED & SYNTHESIZED VISUALS\n\n`;
+    if (step.summary) md += `**Summary:** ${step.summary}\n\n`;
+
+    if (Array.isArray(parsed) && parsed.length > 0) {
+      (parsed as Record<string, unknown>[]).forEach((img, idx: number) => {
+        const label = (img.label as string) || (img.imageType === 'real' ? '📷 Real Photo (Wikipedia)' : '✨ AI Generated Visual');
+        const title = (img.title as string) || `Visual ${idx + 1}`;
+        const source = img.domain ? `Source: ${img.domain}` : '';
+        md += `#### ${idx + 1}. ${label}\n`;
+        if (title) md += `**Title:** ${title} ${source ? `(${source})` : ''}\n\n`;
+        if (img.url) {
+          md += `![${title}](${img.url})\n\n`;
+        }
+      });
+    } else if (raw) {
+      md += `${raw}\n`;
+    }
+
     return { formatted: md, isStructuredJson: true, raw };
   }
 
