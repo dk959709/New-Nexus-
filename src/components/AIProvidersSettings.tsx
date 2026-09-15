@@ -9,12 +9,16 @@ import {
   Cpu,
   Layers,
   Key,
+  Image as ImageIcon,
 } from 'lucide-react';
 import type {
   AIProviderConfig,
+  ImageProviderConfig,
   AIKeyItem,
   AIProvidersState,
+  ImageProvidersState,
   KeyHealthStatus,
+  AIProviderType,
 } from '@/types';
 import { storage } from '@/lib/storage';
 import { api } from '@/services/api';
@@ -32,8 +36,15 @@ export function AIProvidersSettings() {
   const [providersState, setProvidersState] = useState<AIProvidersState>(() =>
     storage.getAIProvidersState()
   );
+  const [imageProvidersState, setImageProvidersState] = useState<ImageProvidersState>(() =>
+    storage.getImageProvidersState()
+  );
+
   const [isEditing, setIsEditing] = useState(false);
+  const [providerType, setProviderType] = useState<AIProviderType>('text');
   const [editingProvider, setEditingProvider] = useState<AIProviderConfig | null>(null);
+  const [editingImageProvider, setEditingImageProvider] = useState<ImageProviderConfig | null>(null);
+
   const [showKeySecretMap, setShowKeySecretMap] = useState<Record<string, boolean>>({});
   const [testingKeyId, setTestingKeyId] = useState<string | null>(null);
   const [keyTestResults, setKeyTestResults] = useState<
@@ -43,7 +54,11 @@ export function AIProvidersSettings() {
   const [providerTestResults, setProviderTestResults] = useState<
     Record<string, { ok: boolean; message: string }>
   >({});
-  const [deletingProvider, setDeletingProvider] = useState<{ id: string; name: string } | null>(null);
+  const [deletingProvider, setDeletingProvider] = useState<{
+    id: string;
+    name: string;
+    type: AIProviderType;
+  } | null>(null);
   const [notificationMessage, setNotificationMessage] = useState<string | null>(null);
   const [formError, setFormError] = useState<string | null>(null);
 
@@ -53,50 +68,87 @@ export function AIProvidersSettings() {
     storage.saveAIProvidersState(newState);
   };
 
-
+  const updateImageProvidersState = (newState: ImageProvidersState) => {
+    setImageProvidersState(newState);
+    storage.saveImageProvidersState(newState);
+  };
 
   // Open modal/editor for a new provider
-  const handleAddNew = () => {
-    const newId = `provider_${Date.now()}`;
-    const initialKeyId = `key_${Date.now()}_1`;
-    setEditingProvider({
-      id: newId,
-      name: '',
-      url: 'https://openrouter.ai/api/v1/chat/completions',
-      model: 'deepseek/deepseek-chat',
-      maxTokens: 128,
-      keyStrategy: 'failover',
-      keys: [
-        {
-          id: initialKeyId,
-          key: '',
-          label: 'API Key 1',
-          status: 'untested',
+  const handleAddNew = (type: AIProviderType = 'text') => {
+    setProviderType(type);
+    if (type === 'text') {
+      const newId = `provider_${Date.now()}`;
+      const initialKeyId = `key_${Date.now()}_1`;
+      setEditingProvider({
+        id: newId,
+        name: '',
+        url: 'https://openrouter.ai/api/v1/chat/completions',
+        model: 'deepseek/deepseek-chat',
+        maxTokens: 128,
+        keyStrategy: 'failover',
+        keys: [
+          {
+            id: initialKeyId,
+            key: '',
+            label: 'API Key 1',
+            status: 'untested',
+          },
+        ],
+        capabilities: {
+          text: true,
+          tools: true,
+          web: true,
+          wikipedia: true,
+          memory: true,
         },
-      ],
-      capabilities: {
-        text: true,
-        tools: true,
-        web: true,
-        wikipedia: true,
-        memory: true,
-      },
-    });
+      });
+      setEditingImageProvider(null);
+    } else {
+      const newId = `img_provider_${Date.now()}`;
+      const initialKeyId = `img_key_${Date.now()}_1`;
+      setEditingImageProvider({
+        id: newId,
+        name: '',
+        url: 'https://image.pollinations.ai/prompt/',
+        keyStrategy: 'failover',
+        keys: [
+          {
+            id: initialKeyId,
+            key: '',
+            label: 'API Key 1',
+            status: 'untested',
+          },
+        ],
+      });
+      setEditingProvider(null);
+    }
     setKeyTestResults({});
     setFormError(null);
     setIsEditing(true);
   };
 
-  // Open editor for an existing provider
+  // Open editor for an existing text provider
   const handleEdit = (provider: AIProviderConfig) => {
+    setProviderType('text');
     setEditingProvider(JSON.parse(JSON.stringify(provider)));
+    setEditingImageProvider(null);
     setKeyTestResults({});
     setFormError(null);
     setIsEditing(true);
   };
 
-  // Save provider
-  const handleSaveProvider = () => {
+  // Open editor for an existing image provider
+  const handleEditImageProvider = (provider: ImageProviderConfig) => {
+    setProviderType('image');
+    setEditingImageProvider(JSON.parse(JSON.stringify(provider)));
+    setEditingProvider(null);
+    setKeyTestResults({});
+    setFormError(null);
+    setIsEditing(true);
+  };
+
+  // Save Text Provider
+  const handleSaveTextProvider = () => {
     if (!editingProvider) return;
     setFormError(null);
 
@@ -118,35 +170,44 @@ export function AIProvidersSettings() {
       .map((k, idx) => ({
         ...k,
         label: k.label?.trim() || `API Key ${idx + 1}`,
+        key: k.key.trim(),
       }));
 
-    if (cleanedKeys.length === 0) {
-      setFormError('Please configure at least one API Key for this provider.');
-      return;
-    }
+    const finalKeys: AIKeyItem[] =
+      cleanedKeys.length > 0
+        ? cleanedKeys
+        : [
+            {
+              id: `key_${Date.now()}`,
+              key: '',
+              label: 'API Key 1',
+              status: 'untested',
+            },
+          ];
 
     const finalProvider: AIProviderConfig = {
       ...editingProvider,
       name: editingProvider.name.trim(),
       url: editingProvider.url.trim(),
       model: editingProvider.model.trim(),
-      keys: cleanedKeys,
+      keys: finalKeys,
     };
 
     const existingIndex = providersState.providers.findIndex(
       (p) => p.id === finalProvider.id
     );
-
     let updatedList: AIProviderConfig[];
+
     if (existingIndex >= 0) {
-      updatedList = [...providersState.providers];
-      updatedList[existingIndex] = finalProvider;
+      updatedList = providersState.providers.map((p) =>
+        p.id === finalProvider.id ? finalProvider : p
+      );
     } else {
       updatedList = [...providersState.providers, finalProvider];
     }
 
     const newState: AIProvidersState = {
-      ...providersState,
+      activeProviderId: providersState.activeProviderId,
       providers: updatedList,
     };
 
@@ -160,10 +221,148 @@ export function AIProvidersSettings() {
     }, 3000);
   };
 
-  // Initiate Delete provider flow (shows confirmation dialog)
-  const handleDeleteProvider = (id: string, name: string) => {
+  // Save Image Provider
+  const handleSaveImageProvider = () => {
+    if (!editingImageProvider) return;
+    setFormError(null);
+
+    if (!editingImageProvider.name.trim()) {
+      setFormError('Please enter a Provider Name');
+      return;
+    }
+    if (!editingImageProvider.url.trim()) {
+      setFormError('Please enter an API URL');
+      return;
+    }
+
+    const cleanedKeys = editingImageProvider.keys
+      .filter((k) => k.key.trim().length > 0)
+      .map((k, idx) => ({
+        ...k,
+        label: k.label?.trim() || `API Key ${idx + 1}`,
+        key: k.key.trim(),
+      }));
+
+    const finalKeys: AIKeyItem[] =
+      cleanedKeys.length > 0
+        ? cleanedKeys
+        : [
+            {
+              id: `img_key_${Date.now()}`,
+              key: '',
+              label: 'API Key 1',
+              status: 'untested',
+            },
+          ];
+
+    const finalProvider: ImageProviderConfig = {
+      ...editingImageProvider,
+      name: editingImageProvider.name.trim(),
+      url: editingImageProvider.url.trim(),
+      keys: finalKeys,
+    };
+
+    const existingIndex = imageProvidersState.providers.findIndex(
+      (p) => p.id === finalProvider.id
+    );
+    let updatedList: ImageProviderConfig[];
+
+    if (existingIndex >= 0) {
+      updatedList = imageProvidersState.providers.map((p) =>
+        p.id === finalProvider.id ? finalProvider : p
+      );
+    } else {
+      updatedList = [...imageProvidersState.providers, finalProvider];
+    }
+
+    const newState: ImageProvidersState = {
+      activeProviderId: imageProvidersState.activeProviderId || finalProvider.id,
+      providers: updatedList,
+    };
+
+    updateImageProvidersState(newState);
+    setIsEditing(false);
+    setEditingImageProvider(null);
+    setFormError(null);
+    setNotificationMessage(`Image Provider "${finalProvider.name}" saved.`);
+    setTimeout(() => {
+      setNotificationMessage(null);
+    }, 3000);
+  };
+
+  // Unified Save handler based on active providerType
+  const handleSave = () => {
+    if (providerType === 'text') {
+      handleSaveTextProvider();
+    } else {
+      handleSaveImageProvider();
+    }
+  };
+
+  // Switch Provider Type within form
+  const handleSwitchType = (newType: AIProviderType) => {
+    setProviderType(newType);
+    setFormError(null);
+    if (newType === 'text') {
+      if (!editingProvider) {
+        setEditingProvider({
+          id: editingImageProvider?.id.startsWith('img_')
+            ? editingImageProvider.id.replace('img_', 'provider_')
+            : `provider_${Date.now()}`,
+          name: editingImageProvider?.name || '',
+          url: 'https://openrouter.ai/api/v1/chat/completions',
+          model: 'deepseek/deepseek-chat',
+          maxTokens: 128,
+          keyStrategy: editingImageProvider?.keyStrategy || 'failover',
+          keys:
+            editingImageProvider?.keys && editingImageProvider.keys.length > 0
+              ? editingImageProvider.keys
+              : [
+                  {
+                    id: `key_${Date.now()}_1`,
+                    key: '',
+                    label: 'API Key 1',
+                    status: 'untested',
+                  },
+                ],
+          capabilities: {
+            text: true,
+            tools: true,
+            web: true,
+            wikipedia: true,
+            memory: true,
+          },
+        });
+      }
+    } else {
+      if (!editingImageProvider) {
+        setEditingImageProvider({
+          id: editingProvider?.id.startsWith('provider_')
+            ? editingProvider.id.replace('provider_', 'img_provider_')
+            : `img_provider_${Date.now()}`,
+          name: editingProvider?.name || '',
+          url: 'https://image.pollinations.ai/prompt/',
+          keyStrategy: editingProvider?.keyStrategy || 'failover',
+          keys:
+            editingProvider?.keys && editingProvider.keys.length > 0
+              ? editingProvider.keys
+              : [
+                  {
+                    id: `img_key_${Date.now()}_1`,
+                    key: '',
+                    label: 'API Key 1',
+                    status: 'untested',
+                  },
+                ],
+        });
+      }
+    }
+  };
+
+  // Initiate Delete provider flow
+  const handleDeleteProvider = (id: string, name: string, type: AIProviderType = 'text') => {
     if (id === 'existing') return;
-    setDeletingProvider({ id, name });
+    setDeletingProvider({ id, name, type });
   };
 
   // Confirm provider deletion
@@ -173,75 +372,140 @@ export function AIProvidersSettings() {
       return;
     }
 
-    const targetId = deletingProvider.id;
-    const filtered = providersState.providers.filter((p) => p.id !== targetId);
-    const newActive =
-      providersState.activeProviderId === targetId ? 'existing' : providersState.activeProviderId;
+    const { id: targetId, type } = deletingProvider;
 
-    const newState: AIProvidersState = {
-      activeProviderId: newActive,
-      providers: filtered,
-    };
+    if (type === 'text') {
+      const filtered = providersState.providers.filter((p) => p.id !== targetId);
+      const newActive =
+        providersState.activeProviderId === targetId ? 'existing' : providersState.activeProviderId;
 
-    updateProvidersState(newState);
+      const newState: AIProvidersState = {
+        activeProviderId: newActive,
+        providers: filtered,
+      };
+
+      updateProvidersState(newState);
+    } else {
+      const filtered = imageProvidersState.providers.filter((p) => p.id !== targetId);
+      const newActive =
+        imageProvidersState.activeProviderId === targetId
+          ? filtered[0]?.id || ''
+          : imageProvidersState.activeProviderId;
+
+      const newState: ImageProvidersState = {
+        activeProviderId: newActive,
+        providers: filtered,
+      };
+
+      updateImageProvidersState(newState);
+    }
+
     setDeletingProvider(null);
 
     // If editing this provider, close editor
-    if (editingProvider && editingProvider.id === targetId) {
+    if (
+      (type === 'text' && editingProvider && editingProvider.id === targetId) ||
+      (type === 'image' && editingImageProvider && editingImageProvider.id === targetId)
+    ) {
       setIsEditing(false);
       setEditingProvider(null);
+      setEditingImageProvider(null);
       setFormError(null);
     }
 
-    setNotificationMessage('AI provider deleted.');
+    setNotificationMessage(
+      type === 'text' ? 'AI text provider deleted.' : 'Image AI provider deleted.'
+    );
     setTimeout(() => {
       setNotificationMessage(null);
     }, 3500);
   };
 
-  // Switch active provider
-  const handleSelectActive = (id: string) => {
+  // Switch active text provider
+  const handleSelectActiveText = (id: string) => {
     updateProvidersState({
       ...providersState,
       activeProviderId: id,
     });
   };
 
+  // Switch active image provider
+  const handleSelectActiveImage = (id: string) => {
+    updateImageProvidersState({
+      ...imageProvidersState,
+      activeProviderId: id,
+    });
+  };
+
   // Add key to currently editing provider
   const handleAddKeyToEditing = () => {
-    if (!editingProvider) return;
-    const newKeyId = `key_${Date.now()}_${editingProvider.keys.length + 1}`;
-    setEditingProvider({
-      ...editingProvider,
-      keys: [
-        ...editingProvider.keys,
-        {
-          id: newKeyId,
-          key: '',
-          label: `API Key ${editingProvider.keys.length + 1}`,
-          status: 'untested',
-        },
-      ],
-    });
+    if (providerType === 'text') {
+      if (!editingProvider) return;
+      const newKeyId = `key_${Date.now()}_${editingProvider.keys.length + 1}`;
+      setEditingProvider({
+        ...editingProvider,
+        keys: [
+          ...editingProvider.keys,
+          {
+            id: newKeyId,
+            key: '',
+            label: `API Key ${editingProvider.keys.length + 1}`,
+            status: 'untested',
+          },
+        ],
+      });
+    } else {
+      if (!editingImageProvider) return;
+      const newKeyId = `img_key_${Date.now()}_${editingImageProvider.keys.length + 1}`;
+      setEditingImageProvider({
+        ...editingImageProvider,
+        keys: [
+          ...editingImageProvider.keys,
+          {
+            id: newKeyId,
+            key: '',
+            label: `API Key ${editingImageProvider.keys.length + 1}`,
+            status: 'untested',
+          },
+        ],
+      });
+    }
   };
 
   // Remove key from editing provider
   const handleRemoveKeyFromEditing = (keyId: string) => {
-    if (!editingProvider) return;
-    if (editingProvider.keys.length <= 1) {
-      alert('A provider must have at least one API Key.');
-      return;
+    if (providerType === 'text') {
+      if (!editingProvider) return;
+      if (editingProvider.keys.length <= 1) {
+        alert('A provider must have at least one API Key slot.');
+        return;
+      }
+      const filtered = editingProvider.keys.filter((k) => k.id !== keyId);
+      setEditingProvider({
+        ...editingProvider,
+        keys: filtered,
+        preferredKeyId:
+          editingProvider.preferredKeyId === keyId ? undefined : editingProvider.preferredKeyId,
+      });
+    } else {
+      if (!editingImageProvider) return;
+      if (editingImageProvider.keys.length <= 1) {
+        alert('A provider must have at least one API Key slot.');
+        return;
+      }
+      const filtered = editingImageProvider.keys.filter((k) => k.id !== keyId);
+      setEditingImageProvider({
+        ...editingImageProvider,
+        keys: filtered,
+        preferredKeyId:
+          editingImageProvider.preferredKeyId === keyId
+            ? undefined
+            : editingImageProvider.preferredKeyId,
+      });
     }
-    const filtered = editingProvider.keys.filter((k) => k.id !== keyId);
-    setEditingProvider({
-      ...editingProvider,
-      keys: filtered,
-      preferredKeyId:
-        editingProvider.preferredKeyId === keyId ? undefined : editingProvider.preferredKeyId,
-    });
   };
 
-  // Test individual key
+  // Test individual text key
   const handleTestKey = async (keyItem: AIKeyItem, url: string, model: string) => {
     if (!keyItem.key.trim()) {
       setKeyTestResults((prev) => ({
@@ -314,7 +578,86 @@ export function AIProvidersSettings() {
     }
   };
 
-  // Test full provider connection
+  // Test individual image key
+  const handleTestImageKey = async (keyItem: AIKeyItem, url: string) => {
+    setTestingKeyId(keyItem.id);
+    setKeyTestResults((prev) => ({
+      ...prev,
+      [keyItem.id]: { ok: false, message: 'Verifying endpoint & key...' },
+    }));
+
+    try {
+      const base = url.trim().replace(/\/+$/, '');
+      const testUrl = `${base}/${encodeURIComponent('ping_test')}${
+        keyItem.key.trim()
+          ? `?key=${encodeURIComponent(keyItem.key.trim())}&width=64&height=64&nologo=true`
+          : '?width=64&height=64&nologo=true'
+      }`;
+
+      const controller = new AbortController();
+      const timeoutId = setTimeout(() => controller.abort(), 10000);
+
+      const resp = await fetch(testUrl, {
+        method: 'GET',
+        signal: controller.signal,
+        mode: 'cors',
+      });
+      clearTimeout(timeoutId);
+
+      if (resp.ok || (resp.status >= 200 && resp.status < 400)) {
+        setKeyTestResults((prev) => ({
+          ...prev,
+          [keyItem.id]: { ok: true, message: '✓ Key valid & endpoint responded' },
+        }));
+        if (editingImageProvider) {
+          setEditingImageProvider({
+            ...editingImageProvider,
+            keys: editingImageProvider.keys.map((k) =>
+              k.id === keyItem.id
+                ? { ...k, status: 'healthy', lastTested: Date.now(), lastError: undefined }
+                : k
+            ),
+          });
+        }
+      } else {
+        const errorMsg = `HTTP ${resp.status}: ${resp.statusText || 'Error'}`;
+        const statusType: KeyHealthStatus = resp.status === 429 ? 'cooldown' : 'invalid';
+        setKeyTestResults((prev) => ({
+          ...prev,
+          [keyItem.id]: { ok: false, message: `✕ ${errorMsg}` },
+        }));
+        if (editingImageProvider) {
+          setEditingImageProvider({
+            ...editingImageProvider,
+            keys: editingImageProvider.keys.map((k) =>
+              k.id === keyItem.id
+                ? {
+                    ...k,
+                    status: statusType,
+                    lastTested: Date.now(),
+                    lastError: errorMsg,
+                  }
+                : k
+            ),
+          });
+        }
+      }
+    } catch (err: unknown) {
+      const msg = err instanceof Error ? err.message : String(err);
+      const isTimeout = msg.includes('aborted') || msg.includes('Timeout');
+      setKeyTestResults((prev) => ({
+        ...prev,
+        [keyItem.id]: {
+          ok: false,
+          message: isTimeout ? '✕ Request timed out' : `✕ Connection failed: ${msg}`,
+        },
+      }));
+    } finally {
+      setTestingKeyId(null);
+    }
+  };
+
+  // Test full text provider connection
   const handleTestProvider = async (provider: AIProviderConfig) => {
     if (provider.keys.length === 0) return;
     setTestingProviderId(provider.id);
@@ -351,7 +694,6 @@ export function AIProvidersSettings() {
       }
     }
 
-    // Refresh state from storage
     setProvidersState(storage.getAIProvidersState());
 
     if (anySuccess) {
@@ -367,6 +709,89 @@ export function AIProvidersSettings() {
     }
     setTestingProviderId(null);
   };
+
+  // Test full image provider connection
+  const handleTestImageProvider = async (provider: ImageProviderConfig) => {
+    setTestingProviderId(provider.id);
+    setProviderTestResults((prev) => ({
+      ...prev,
+      [provider.id]: { ok: false, message: 'Testing image endpoint...' },
+    }));
+
+    const validKeys = provider.keys.filter((k) => k.key && k.key.trim().length > 0);
+    const keyToTest = validKeys.length > 0 ? validKeys[0].key.trim() : '';
+
+    try {
+      const base = provider.url.trim().replace(/\/+$/, '');
+      const testUrl = `${base}/${encodeURIComponent('ping_test')}${
+        keyToTest
+          ? `?key=${encodeURIComponent(keyToTest)}&width=64&height=64&nologo=true`
+          : '?width=64&height=64&nologo=true'
+      }`;
+
+      const controller = new AbortController();
+      const timeoutId = setTimeout(() => controller.abort(), 10000);
+
+      const resp = await fetch(testUrl, {
+        method: 'GET',
+        signal: controller.signal,
+        mode: 'cors',
+      });
+      clearTimeout(timeoutId);
+
+      if (resp.ok || (resp.status >= 200 && resp.status < 400)) {
+        setProviderTestResults((prev) => ({
+          ...prev,
+          [provider.id]: { ok: true, message: '✓ Image endpoint verified and responsive' },
+        }));
+        if (validKeys.length > 0) {
+          storage.updateImageKeyHealth(provider.id, validKeys[0].id, 'healthy');
+        }
+      } else {
+        const errorText = `HTTP ${resp.status}: ${resp.statusText || 'Error'}`;
+        setProviderTestResults((prev) => ({
+          ...prev,
+          [provider.id]: { ok: false, message: `✕ Test failed: ${errorText}` },
+        }));
+        if (validKeys.length > 0) {
+          storage.updateImageKeyHealth(
+            provider.id,
+            validKeys[0].id,
+            resp.status === 429 ? 'cooldown' : 'invalid',
+            errorText
+          );
+        }
+      }
+    } catch (err: unknown) {
+      const errorMsg = err instanceof Error ? err.message : String(err);
+      setProviderTestResults((prev) => ({
+        ...prev,
+        [provider.id]: { ok: false, message: `✕ Test failed: ${errorMsg}` },
+      }));
+      if (validKeys.length > 0) {
+        storage.updateImageKeyHealth(provider.id, validKeys[0].id, 'invalid', errorMsg);
+      }
+    } finally {
+      setTestingProviderId(null);
+      setImageProvidersState(storage.getImageProvidersState());
+    }
+  };
+
+  // Helper variables for editing active provider
+  const currentEditingKeys =
+    providerType === 'text'
+      ? editingProvider?.keys || []
+      : editingImageProvider?.keys || [];
+
+  const currentStrategy =
+    providerType === 'text'
+      ? editingProvider?.keyStrategy || 'failover'
+      : editingImageProvider?.keyStrategy || 'failover';
+
+  const currentPreferredKeyId =
+    providerType === 'text'
+      ? editingProvider?.preferredKeyId
+      : editingImageProvider?.preferredKeyId;
 
   return (
     <div className="ai-providers-container" style={{ display: 'grid', gap: '24px', position: 'relative' }}>
@@ -398,27 +823,25 @@ export function AIProvidersSettings() {
             onClick={() => setNotificationMessage(null)}
             style={{
               background: 'transparent',
-              border: 'none',
+              border: 0,
               color: '#34d399',
               cursor: 'pointer',
-              fontSize: '16px',
-              padding: 0,
-              lineHeight: 1,
+              fontSize: '14px',
+              padding: '0 4px',
             }}
           >
-            ×
+            ✕
           </button>
         </div>
       )}
 
-      {/* Active AI Provider Selector Header */}
-      <section
-        className="setting-row"
+      {/* SECTION 1: Active Text AI Provider Overview */}
+      <div
         style={{
-          background: 'linear-gradient(135deg, rgba(14,33,42,0.7) 0%, rgba(20,24,48,0.75) 100%)',
-          border: '1px solid var(--line-strong)',
+          padding: '20px',
           borderRadius: '12px',
-          padding: '22px',
+          background: 'linear-gradient(135deg, rgba(14,31,39,0.7) 0%, rgba(20,28,48,0.7) 100%)',
+          border: '1px solid var(--line)',
           display: 'flex',
           justifyContent: 'space-between',
           alignItems: 'center',
@@ -427,49 +850,32 @@ export function AIProvidersSettings() {
         }}
       >
         <div>
-          <div style={{ display: 'flex', alignItems: 'center', gap: '8px', marginBottom: '6px' }}>
-            <span
-              style={{
-                display: 'inline-flex',
-                alignItems: 'center',
-                justifyContent: 'center',
-                width: '26px',
-                height: '26px',
-                borderRadius: '6px',
-                background: 'rgba(97,215,201,0.15)',
-                color: 'var(--accent)',
-              }}
-            >
-              <Cpu size={16} />
-            </span>
-            <h2 style={{ margin: 0, fontSize: '17px', letterSpacing: '-0.02em' }}>
-              Active AI Provider
-            </h2>
+          <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+            <Cpu size={18} style={{ color: 'var(--accent)' }} />
+            <h3 style={{ margin: 0, fontSize: '15px', fontWeight: 600 }}>Active Chat AI Provider</h3>
           </div>
-          <p style={{ margin: 0, color: 'var(--muted)', fontSize: '13px' }}>
-            Currently powering NEXUS Smart Answers, Assistant Chat, and shared Knowledge tools.
+          <p style={{ margin: '4px 0 0', fontSize: '12px', color: 'var(--muted)' }}>
+            Selected provider handles multi-turn chat, JARVIS sub-agents, and knowledge synthesis.
           </p>
         </div>
 
         <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
           <select
+            id="active-ai-provider-select"
             value={providersState.activeProviderId}
-            onChange={(e) => handleSelectActive(e.target.value)}
-            aria-label="Active AI Provider"
+            onChange={(e) => handleSelectActiveText(e.target.value)}
             style={{
               background: 'rgba(10,22,28,0.85)',
               color: '#fff',
-              border: '1px solid var(--accent)',
-              padding: '9px 14px',
+              border: '1px solid var(--line)',
+              padding: '8px 12px',
               borderRadius: '8px',
               fontSize: '13px',
-              fontWeight: 600,
-              outline: 'none',
-              cursor: 'pointer',
-              boxShadow: '0 0 12px rgba(97,215,201,0.2)',
+              fontWeight: 500,
+              minWidth: '220px',
             }}
           >
-            <option value="existing">🧠 Existing AI (Built-in / Protected)</option>
+            <option value="existing">🧠 Existing AI (Built-in DeepSeek / Default)</option>
             {providersState.providers.map((p) => (
               <option key={p.id} value={p.id}>
                 🔵 {p.name} ({p.model})
@@ -477,56 +883,54 @@ export function AIProvidersSettings() {
             ))}
           </select>
         </div>
-      </section>
+      </div>
 
-
-
-      {/* Provider Cards List */}
-      <div>
+      {/* SECTION 2: Text AI Providers List */}
+      <div style={{ display: 'grid', gap: '16px' }}>
         <div
           style={{
             display: 'flex',
             justifyContent: 'space-between',
             alignItems: 'center',
-            marginBottom: '16px',
+            flexWrap: 'wrap',
+            gap: '12px',
           }}
         >
           <div>
-            <h3 style={{ margin: 0, fontSize: '16px', color: 'var(--text)' }}>
-              Your AI Providers
+            <h3 style={{ margin: 0, fontSize: '16px', fontWeight: 600, display: 'flex', alignItems: 'center', gap: '8px' }}>
+              <Layers size={17} style={{ color: 'var(--accent)' }} /> Text AI Providers
             </h3>
-            <p style={{ margin: '4px 0 0', fontSize: '12px', color: 'var(--muted)' }}>
-              Add multiple API keys with auto-failover, round-robin rotation, and full NEXUS tool
-              integration.
+            <p style={{ margin: '2px 0 0', fontSize: '12px', color: 'var(--muted)' }}>
+              LLM endpoints for conversational AI, agentic reasoning, and tools.
             </p>
           </div>
 
           {!isEditing && (
             <button
-              onClick={handleAddNew}
+              onClick={() => handleAddNew('text')}
               className="secondary-button"
               style={{
                 display: 'inline-flex',
                 alignItems: 'center',
                 gap: '6px',
-                padding: '9px 16px',
+                padding: '8px 14px',
                 borderRadius: '8px',
                 fontWeight: 600,
-                fontSize: '13px',
+                fontSize: '12px',
                 cursor: 'pointer',
               }}
             >
-              <Plus size={16} /> Add AI Provider
+              <Plus size={15} /> Add Text Provider
             </button>
           )}
         </div>
 
-        {/* List of Provider Cards */}
-        <div style={{ display: 'grid', gap: '14px' }}>
-          {/* Card 1: Protected Existing AI */}
+        {/* Text Provider Cards */}
+        <div style={{ display: 'grid', gap: '12px' }}>
+          {/* Default Built-in Card */}
           <div
             style={{
-              padding: '20px',
+              padding: '18px 20px',
               borderRadius: '12px',
               border: `1px solid ${
                 providersState.activeProviderId === 'existing'
@@ -551,7 +955,7 @@ export function AIProvidersSettings() {
             <div>
               <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
                 <span style={{ fontSize: '18px' }}>🧠</span>
-                <h4 style={{ margin: 0, fontSize: '16px', fontWeight: 600 }}>Existing AI</h4>
+                <h4 style={{ margin: 0, fontSize: '15px', fontWeight: 600 }}>Existing AI</h4>
                 <span
                   style={{
                     fontSize: '10px',
@@ -583,7 +987,7 @@ export function AIProvidersSettings() {
               </div>
               <p
                 style={{
-                  margin: '6px 0 0',
+                  margin: '4px 0 0',
                   color: 'var(--muted)',
                   fontSize: '12px',
                   fontFamily: 'DM Mono, monospace',
@@ -591,20 +995,6 @@ export function AIProvidersSettings() {
               >
                 Model: Built-in DeepSeek / OpenRouter Fallback
               </p>
-              <div
-                style={{
-                  display: 'flex',
-                  gap: '12px',
-                  marginTop: '8px',
-                  fontSize: '11px',
-                  color: 'var(--muted)',
-                }}
-              >
-                <span>✓ Web Grounding</span>
-                <span>✓ Wikipedia Knowledge</span>
-                <span>✓ Weather & Space Tools</span>
-                <span>✓ Smart Memory</span>
-              </div>
             </div>
 
             <div>
@@ -612,8 +1002,8 @@ export function AIProvidersSettings() {
                 <button
                   disabled
                   style={{
-                    padding: '8px 16px',
-                    borderRadius: '8px',
+                    padding: '7px 14px',
+                    borderRadius: '7px',
                     background: 'rgba(97,215,201,0.2)',
                     color: 'var(--accent)',
                     border: '1px solid var(--accent)',
@@ -626,11 +1016,11 @@ export function AIProvidersSettings() {
                 </button>
               ) : (
                 <button
-                  onClick={() => handleSelectActive('existing')}
+                  onClick={() => handleSelectActiveText('existing')}
                   className="secondary-button"
                   style={{
-                    padding: '8px 16px',
-                    borderRadius: '8px',
+                    padding: '7px 14px',
+                    borderRadius: '7px',
                     fontSize: '12px',
                     fontWeight: 600,
                     cursor: 'pointer',
@@ -642,6 +1032,7 @@ export function AIProvidersSettings() {
             </div>
           </div>
 
+          {/* Configured Text Providers Cards */}
           {providersState.providers.map((p) => {
             const isActive = providersState.activeProviderId === p.id;
             const healthyKeys = p.keys.filter((k) => k.status === 'healthy').length;
@@ -653,7 +1044,7 @@ export function AIProvidersSettings() {
               <div
                 key={p.id}
                 style={{
-                  padding: '20px',
+                  padding: '18px 20px',
                   borderRadius: '12px',
                   border: `1px solid ${
                     isActive ? 'var(--accent)' : 'rgba(165,207,214,0.18)'
@@ -672,7 +1063,7 @@ export function AIProvidersSettings() {
                 <div>
                   <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
                     <span style={{ fontSize: '18px' }}>🔵</span>
-                    <h4 style={{ margin: 0, fontSize: '16px', fontWeight: 600 }}>{p.name}</h4>
+                    <h4 style={{ margin: 0, fontSize: '15px', fontWeight: 600 }}>{p.name}</h4>
                     <span
                       style={{
                         fontSize: '10px',
@@ -716,7 +1107,7 @@ export function AIProvidersSettings() {
 
                   <p
                     style={{
-                      margin: '6px 0 0',
+                      margin: '4px 0 0',
                       color: 'var(--muted)',
                       fontSize: '12px',
                       fontFamily: 'DM Mono, monospace',
@@ -734,7 +1125,7 @@ export function AIProvidersSettings() {
                       display: 'flex',
                       alignItems: 'center',
                       gap: '12px',
-                      marginTop: '8px',
+                      marginTop: '6px',
                       fontSize: '11px',
                     }}
                   >
@@ -761,7 +1152,7 @@ export function AIProvidersSettings() {
                   {testResult && (
                     <div
                       style={{
-                        marginTop: '8px',
+                        marginTop: '6px',
                         fontSize: '11px',
                         color: testResult.ok ? '#34d399' : '#f87171',
                         fontWeight: 500,
@@ -777,7 +1168,7 @@ export function AIProvidersSettings() {
                     <button
                       disabled
                       style={{
-                        padding: '8px 14px',
+                        padding: '7px 12px',
                         borderRadius: '7px',
                         background: 'rgba(97,215,201,0.2)',
                         color: 'var(--accent)',
@@ -791,10 +1182,10 @@ export function AIProvidersSettings() {
                     </button>
                   ) : (
                     <button
-                      onClick={() => handleSelectActive(p.id)}
+                      onClick={() => handleSelectActiveText(p.id)}
                       className="secondary-button"
                       style={{
-                        padding: '8px 14px',
+                        padding: '7px 12px',
                         borderRadius: '7px',
                         fontSize: '12px',
                         fontWeight: 600,
@@ -810,7 +1201,7 @@ export function AIProvidersSettings() {
                     disabled={testingProviderId === p.id}
                     className="secondary-button"
                     style={{
-                      padding: '8px 12px',
+                      padding: '7px 11px',
                       borderRadius: '7px',
                       fontSize: '12px',
                       display: 'inline-flex',
@@ -830,7 +1221,7 @@ export function AIProvidersSettings() {
                     onClick={() => handleEdit(p)}
                     className="secondary-button"
                     style={{
-                      padding: '8px 12px',
+                      padding: '7px 11px',
                       borderRadius: '7px',
                       fontSize: '12px',
                       display: 'inline-flex',
@@ -843,9 +1234,9 @@ export function AIProvidersSettings() {
                   </button>
 
                   <button
-                    onClick={() => handleDeleteProvider(p.id, p.name)}
+                    onClick={() => handleDeleteProvider(p.id, p.name, 'text')}
                     style={{
-                      padding: '8px 10px',
+                      padding: '7px 10px',
                       borderRadius: '7px',
                       background: 'rgba(237,139,139,0.1)',
                       border: '1px solid rgba(237,139,139,0.3)',
@@ -855,75 +1246,353 @@ export function AIProvidersSettings() {
                     }}
                     title="Delete provider"
                   >
-                    <Trash2 size={14} />
+                    <Trash2 size={13} />
                   </button>
                 </div>
               </div>
             );
           })}
         </div>
-
-        {/* Add Provider Button at the Bottom */}
-        {!isEditing && (
-          <div style={{ marginTop: '16px' }}>
-            <button
-              onClick={handleAddNew}
-              className="secondary-button"
-              style={{
-                width: '100%',
-                padding: '14px',
-                borderRadius: '10px',
-                borderStyle: 'dashed',
-                display: 'flex',
-                alignItems: 'center',
-                justifyContent: 'center',
-                gap: '8px',
-                fontWeight: 600,
-                fontSize: '13px',
-                cursor: 'pointer',
-              }}
-            >
-              <Plus size={16} /> ＋ Add AI Provider
-            </button>
-          </div>
-        )}
       </div>
 
-      {/* Add / Edit AI Provider Modal / Form */}
-      {isEditing && editingProvider && (
+      {/* SECTION 3: Image AI Providers Section */}
+      <div style={{ display: 'grid', gap: '16px', marginTop: '8px' }}>
+        <div
+          style={{
+            display: 'flex',
+            justifyContent: 'space-between',
+            alignItems: 'center',
+            flexWrap: 'wrap',
+            gap: '12px',
+          }}
+        >
+          <div>
+            <h3 style={{ margin: 0, fontSize: '16px', fontWeight: 600, display: 'flex', alignItems: 'center', gap: '8px' }}>
+              <ImageIcon size={17} style={{ color: '#ec4899' }} /> Image AI Providers
+            </h3>
+            <p style={{ margin: '2px 0 0', fontSize: '12px', color: 'var(--muted)' }}>
+              Generative image endpoints (Pollinations, SD, Flux, etc.) with automatic key failover for Image Studio.
+            </p>
+          </div>
+
+          {!isEditing && (
+            <button
+              onClick={() => handleAddNew('image')}
+              className="secondary-button"
+              style={{
+                display: 'inline-flex',
+                alignItems: 'center',
+                gap: '6px',
+                padding: '8px 14px',
+                borderRadius: '8px',
+                fontWeight: 600,
+                fontSize: '12px',
+                cursor: 'pointer',
+                borderColor: 'rgba(236,72,153,0.3)',
+                color: '#f472b6',
+              }}
+            >
+              <Plus size={15} /> Add Image Provider
+            </button>
+          )}
+        </div>
+
+        {/* Image Provider Cards */}
+        <div style={{ display: 'grid', gap: '12px' }}>
+          {imageProvidersState.providers.map((p) => {
+            const isActive = imageProvidersState.activeProviderId === p.id;
+            const healthyKeys = p.keys.filter((k) => k.status === 'healthy').length;
+            const cooldownKeys = p.keys.filter((k) => k.status === 'cooldown').length;
+            const invalidKeys = p.keys.filter((k) => k.status === 'invalid').length;
+            const testResult = providerTestResults[p.id];
+
+            return (
+              <div
+                key={p.id}
+                style={{
+                  padding: '18px 20px',
+                  borderRadius: '12px',
+                  border: `1px solid ${
+                    isActive ? 'rgba(236,72,153,0.8)' : 'rgba(165,207,214,0.18)'
+                  }`,
+                  background: isActive
+                    ? 'linear-gradient(135deg, rgba(38,14,32,0.7) 0%, rgba(20,24,48,0.7) 100%)'
+                    : 'linear-gradient(135deg, rgba(14,31,39,0.55) 0%, rgba(18,22,40,0.55) 100%)',
+                  boxShadow: isActive ? '0 0 16px rgba(236,72,153,0.18)' : 'none',
+                  display: 'flex',
+                  justifyContent: 'space-between',
+                  alignItems: 'center',
+                  flexWrap: 'wrap',
+                  gap: '14px',
+                }}
+              >
+                <div>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                    <span style={{ fontSize: '18px' }}>🎨</span>
+                    <h4 style={{ margin: 0, fontSize: '15px', fontWeight: 600 }}>{p.name}</h4>
+                    <span
+                      style={{
+                        fontSize: '10px',
+                        padding: '2px 8px',
+                        borderRadius: '12px',
+                        background: 'rgba(236,72,153,0.15)',
+                        color: '#f472b6',
+                        fontWeight: 600,
+                      }}
+                    >
+                      {p.keys.length} API {p.keys.length === 1 ? 'Key' : 'Keys'}
+                    </span>
+                    <span
+                      style={{
+                        fontSize: '10px',
+                        padding: '2px 8px',
+                        borderRadius: '12px',
+                        background: 'rgba(147,197,253,0.15)',
+                        color: '#93c5fd',
+                        fontWeight: 500,
+                        textTransform: 'capitalize',
+                      }}
+                    >
+                      Strategy: {p.keyStrategy.replace('_', ' ')}
+                    </span>
+                    {isActive && (
+                      <span
+                        style={{
+                          fontSize: '10px',
+                          padding: '2px 8px',
+                          borderRadius: '12px',
+                          background: 'rgba(52,211,153,0.2)',
+                          color: '#34d399',
+                          fontWeight: 600,
+                        }}
+                      >
+                        Active Image Provider
+                      </span>
+                    )}
+                  </div>
+
+                  <p
+                    style={{
+                      margin: '4px 0 0',
+                      color: 'var(--muted)',
+                      fontSize: '12px',
+                      fontFamily: 'DM Mono, monospace',
+                    }}
+                  >
+                    Base URL: <span style={{ color: '#fff' }}>{p.url}</span>
+                  </p>
+
+                  <div
+                    style={{
+                      display: 'flex',
+                      alignItems: 'center',
+                      gap: '12px',
+                      marginTop: '6px',
+                      fontSize: '11px',
+                    }}
+                  >
+                    {healthyKeys > 0 && (
+                      <span style={{ color: '#34d399', display: 'flex', alignItems: 'center', gap: '3px' }}>
+                        🟢 {healthyKeys} Healthy
+                      </span>
+                    )}
+                    {cooldownKeys > 0 && (
+                      <span style={{ color: '#fbbf24', display: 'flex', alignItems: 'center', gap: '3px' }}>
+                        🟡 {cooldownKeys} Rate Limited
+                      </span>
+                    )}
+                    {invalidKeys > 0 && (
+                      <span style={{ color: '#f87171', display: 'flex', alignItems: 'center', gap: '3px' }}>
+                        🔴 {invalidKeys} Invalid
+                      </span>
+                    )}
+                    {healthyKeys === 0 && cooldownKeys === 0 && invalidKeys === 0 && (
+                      <span style={{ color: 'var(--muted)' }}>⚪ Untested Keys</span>
+                    )}
+                  </div>
+
+                  {testResult && (
+                    <div
+                      style={{
+                        marginTop: '6px',
+                        fontSize: '11px',
+                        color: testResult.ok ? '#34d399' : '#f87171',
+                        fontWeight: 500,
+                      }}
+                    >
+                      {testResult.message}
+                    </div>
+                  )}
+                </div>
+
+                <div style={{ display: 'flex', alignItems: 'center', gap: '8px', flexWrap: 'wrap' }}>
+                  {isActive ? (
+                    <button
+                      disabled
+                      style={{
+                        padding: '7px 12px',
+                        borderRadius: '7px',
+                        background: 'rgba(236,72,153,0.2)',
+                        color: '#f472b6',
+                        border: '1px solid #ec4899',
+                        fontSize: '12px',
+                        fontWeight: 600,
+                        cursor: 'default',
+                      }}
+                    >
+                      Active
+                    </button>
+                  ) : (
+                    <button
+                      onClick={() => handleSelectActiveImage(p.id)}
+                      className="secondary-button"
+                      style={{
+                        padding: '7px 12px',
+                        borderRadius: '7px',
+                        fontSize: '12px',
+                        fontWeight: 600,
+                        cursor: 'pointer',
+                      }}
+                    >
+                      Use
+                    </button>
+                  )}
+
+                  <button
+                    onClick={() => handleTestImageProvider(p)}
+                    disabled={testingProviderId === p.id}
+                    className="secondary-button"
+                    style={{
+                      padding: '7px 11px',
+                      borderRadius: '7px',
+                      fontSize: '12px',
+                      display: 'inline-flex',
+                      alignItems: 'center',
+                      gap: '4px',
+                      cursor: 'pointer',
+                    }}
+                  >
+                    <RotateCw
+                      size={13}
+                      className={testingProviderId === p.id ? 'animate-spin' : ''}
+                    />
+                    Test
+                  </button>
+
+                  <button
+                    onClick={() => handleEditImageProvider(p)}
+                    className="secondary-button"
+                    style={{
+                      padding: '7px 11px',
+                      borderRadius: '7px',
+                      fontSize: '12px',
+                      display: 'inline-flex',
+                      alignItems: 'center',
+                      gap: '4px',
+                      cursor: 'pointer',
+                    }}
+                  >
+                    <Edit2 size={13} /> Edit
+                  </button>
+
+                  <button
+                    onClick={() => handleDeleteProvider(p.id, p.name, 'image')}
+                    style={{
+                      padding: '7px 10px',
+                      borderRadius: '7px',
+                      background: 'rgba(237,139,139,0.1)',
+                      border: '1px solid rgba(237,139,139,0.3)',
+                      color: 'var(--danger)',
+                      fontSize: '12px',
+                      cursor: 'pointer',
+                    }}
+                    title="Delete image provider"
+                  >
+                    <Trash2 size={13} />
+                  </button>
+                </div>
+              </div>
+            );
+          })}
+        </div>
+      </div>
+
+      {/* SECTION 4: Add / Edit AI Provider Modal / Form */}
+      {isEditing && (
         <div
           style={{
             marginTop: '10px',
             padding: '24px',
             borderRadius: '14px',
-            border: '1px solid var(--accent)',
-            background: 'linear-gradient(135deg, rgba(12,26,34,0.92) 0%, rgba(18,22,46,0.95) 100%)',
-            boxShadow: '0 8px 32px rgba(0,0,0,0.5), 0 0 20px rgba(97,215,201,0.2)',
+            border: `1px solid ${providerType === 'image' ? '#ec4899' : 'var(--accent)'}`,
+            background: 'linear-gradient(135deg, rgba(12,26,34,0.95) 0%, rgba(18,22,46,0.98) 100%)',
+            boxShadow:
+              providerType === 'image'
+                ? '0 8px 32px rgba(0,0,0,0.5), 0 0 20px rgba(236,72,153,0.2)'
+                : '0 8px 32px rgba(0,0,0,0.5), 0 0 20px rgba(97,215,201,0.2)',
             display: 'grid',
             gap: '20px',
           }}
         >
+          {/* Header & Provider Type Switcher */}
           <div
             style={{
               display: 'flex',
               justifyContent: 'space-between',
               alignItems: 'center',
               borderBottom: '1px solid var(--line)',
-              paddingBottom: '14px',
+              paddingBottom: '16px',
+              flexWrap: 'wrap',
+              gap: '14px',
             }}
           >
             <div>
               <h3 style={{ margin: 0, fontSize: '18px', fontWeight: 600, color: 'var(--text)' }}>
-                {providersState.providers.some((p) => p.id === editingProvider.id)
-                  ? 'Edit AI Provider'
-                  : 'Add AI Provider'}
+                {providerType === 'text'
+                  ? editingProvider && providersState.providers.some((p) => p.id === editingProvider.id)
+                    ? 'Edit Text AI Provider'
+                    : 'Add Text AI Provider'
+                  : editingImageProvider && imageProvidersState.providers.some((p) => p.id === editingImageProvider.id)
+                  ? 'Edit Image AI Provider'
+                  : 'Add Image AI Provider'}
               </h3>
               <p style={{ margin: '4px 0 0', fontSize: '12px', color: 'var(--muted)' }}>
-                Configure endpoint URL, model, and multiple API keys for automatic failover & rotation.
+                {providerType === 'text'
+                  ? 'Configure endpoint URL, model, and multiple API keys for automatic failover & rotation.'
+                  : 'Configure base image generation endpoint URL and API keys with automatic failover.'}
               </p>
             </div>
 
+            {/* Provider Type Selector */}
+            <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+              <span style={{ fontSize: '12px', fontWeight: 600, color: 'var(--muted)' }}>
+                Provider Type:
+              </span>
+              <div className="segmented-control" style={{ display: 'inline-flex' }}>
+                <button
+                  type="button"
+                  className={providerType === 'text' ? 'selected' : ''}
+                  onClick={() => handleSwitchType('text')}
+                  style={{ display: 'inline-flex', alignItems: 'center', gap: '5px' }}
+                >
+                  <Layers size={13} /> Text
+                </button>
+                <button
+                  type="button"
+                  className={providerType === 'image' ? 'selected' : ''}
+                  onClick={() => handleSwitchType('image')}
+                  style={{ display: 'inline-flex', alignItems: 'center', gap: '5px' }}
+                >
+                  <ImageIcon size={13} /> Image
+                </button>
+              </div>
+            </div>
+          </div>
+
+          {/* Quick Presets for Text vs Image */}
+          {providerType === 'text' && editingProvider && (
             <div style={{ display: 'flex', gap: '8px', flexWrap: 'wrap' }}>
+              <span style={{ fontSize: '11px', color: 'var(--muted)', alignSelf: 'center' }}>Presets:</span>
               <button
                 type="button"
                 onClick={() => {
@@ -1000,7 +1669,27 @@ export function AIProvidersSettings() {
                 Groq
               </button>
             </div>
-          </div>
+          )}
+
+          {providerType === 'image' && editingImageProvider && (
+            <div style={{ display: 'flex', gap: '8px', flexWrap: 'wrap', alignItems: 'center' }}>
+              <span style={{ fontSize: '11px', color: 'var(--muted)' }}>Presets:</span>
+              <button
+                type="button"
+                onClick={() => {
+                  setEditingImageProvider({
+                    ...editingImageProvider,
+                    name: 'Pollinations',
+                    url: 'https://image.pollinations.ai/prompt/',
+                  });
+                }}
+                className="secondary-button"
+                style={{ fontSize: '11px', padding: '4px 10px', borderRadius: '5px', borderColor: 'rgba(236,72,153,0.3)', color: '#f472b6' }}
+              >
+                🎨 Pollinations AI
+              </button>
+            </div>
+          )}
 
           {/* Form Error Banner */}
           {formError && (
@@ -1019,155 +1708,232 @@ export function AIProvidersSettings() {
             </div>
           )}
 
-          {/* Form Fields: Provider Name, API URL, Model */}
-          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(240px, 1fr))', gap: '16px' }}>
-            <div>
-              <label
-                style={{
-                  display: 'block',
-                  fontSize: '12px',
-                  fontWeight: 600,
-                  color: 'var(--text)',
-                  marginBottom: '6px',
-                }}
-              >
-                Provider Name
-              </label>
-              <input
-                type="text"
-                placeholder="e.g. My DeepSeek, OpenRouter, Gemini"
-                value={editingProvider.name}
-                onChange={(e) =>
-                  setEditingProvider({ ...editingProvider, name: e.target.value })
-                }
-                style={{
-                  width: '100%',
-                  boxSizing: 'border-box',
-                  background: 'rgba(10,22,28,0.8)',
-                  border: '1px solid var(--line)',
-                  borderRadius: '8px',
-                  padding: '10px 12px',
-                  color: '#fff',
-                  fontSize: '13px',
-                  outline: 'none',
-                }}
-              />
-            </div>
+          {/* Form Fields: Text Mode */}
+          {providerType === 'text' && editingProvider && (
+            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(240px, 1fr))', gap: '16px' }}>
+              <div>
+                <label
+                  style={{
+                    display: 'block',
+                    fontSize: '12px',
+                    fontWeight: 600,
+                    color: 'var(--text)',
+                    marginBottom: '6px',
+                  }}
+                >
+                  Provider Name
+                </label>
+                <input
+                  type="text"
+                  placeholder="e.g. My DeepSeek, OpenRouter, Gemini"
+                  value={editingProvider.name}
+                  onChange={(e) =>
+                    setEditingProvider({ ...editingProvider, name: e.target.value })
+                  }
+                  style={{
+                    width: '100%',
+                    boxSizing: 'border-box',
+                    background: 'rgba(10,22,28,0.8)',
+                    border: '1px solid var(--line)',
+                    borderRadius: '8px',
+                    padding: '10px 12px',
+                    color: '#fff',
+                    fontSize: '13px',
+                    outline: 'none',
+                  }}
+                />
+              </div>
 
-            <div>
-              <label
-                style={{
-                  display: 'block',
-                  fontSize: '12px',
-                  fontWeight: 600,
-                  color: 'var(--text)',
-                  marginBottom: '6px',
-                }}
-              >
-                API URL
-              </label>
-              <input
-                type="text"
-                placeholder="https://openrouter.ai/api/v1/chat/completions"
-                value={editingProvider.url}
-                onChange={(e) =>
-                  setEditingProvider({ ...editingProvider, url: e.target.value })
-                }
-                style={{
-                  width: '100%',
-                  boxSizing: 'border-box',
-                  background: 'rgba(10,22,28,0.8)',
-                  border: '1px solid var(--line)',
-                  borderRadius: '8px',
-                  padding: '10px 12px',
-                  color: '#fff',
-                  fontSize: '13px',
-                  outline: 'none',
-                  fontFamily: 'DM Mono, monospace',
-                }}
-              />
-              <p style={{ margin: '5px 0 0', fontSize: '11px', color: 'var(--muted)' }}>
-                Direct endpoints require chat completions path (e.g. <code>.../v1/chat/completions</code> or <code>.../workers-ai/chat/completions</code>). Base URLs are normalized automatically.
-              </p>
-            </div>
+              <div>
+                <label
+                  style={{
+                    display: 'block',
+                    fontSize: '12px',
+                    fontWeight: 600,
+                    color: 'var(--text)',
+                    marginBottom: '6px',
+                  }}
+                >
+                  API URL
+                </label>
+                <input
+                  type="text"
+                  placeholder="https://openrouter.ai/api/v1/chat/completions"
+                  value={editingProvider.url}
+                  onChange={(e) =>
+                    setEditingProvider({ ...editingProvider, url: e.target.value })
+                  }
+                  style={{
+                    width: '100%',
+                    boxSizing: 'border-box',
+                    background: 'rgba(10,22,28,0.8)',
+                    border: '1px solid var(--line)',
+                    borderRadius: '8px',
+                    padding: '10px 12px',
+                    color: '#fff',
+                    fontSize: '13px',
+                    outline: 'none',
+                    fontFamily: 'DM Mono, monospace',
+                  }}
+                />
+                <p style={{ margin: '5px 0 0', fontSize: '11px', color: 'var(--muted)' }}>
+                  Direct endpoints require chat completions path (e.g. <code>.../v1/chat/completions</code>).
+                </p>
+              </div>
 
-            <div>
-              <label
-                style={{
-                  display: 'block',
-                  fontSize: '12px',
-                  fontWeight: 600,
-                  color: 'var(--text)',
-                  marginBottom: '6px',
-                }}
-              >
-                Model ID
-              </label>
-              <input
-                type="text"
-                placeholder="e.g. deepseek/deepseek-chat, gpt-4o, etc."
-                value={editingProvider.model}
-                onChange={(e) =>
-                  setEditingProvider({ ...editingProvider, model: e.target.value })
-                }
-                style={{
-                  width: '100%',
-                  boxSizing: 'border-box',
-                  background: 'rgba(10,22,28,0.8)',
-                  border: '1px solid var(--line)',
-                  borderRadius: '8px',
-                  padding: '10px 12px',
-                  color: '#fff',
-                  fontSize: '13px',
-                  outline: 'none',
-                  fontFamily: 'DM Mono, monospace',
-                }}
-              />
-            </div>
+              <div>
+                <label
+                  style={{
+                    display: 'block',
+                    fontSize: '12px',
+                    fontWeight: 600,
+                    color: 'var(--text)',
+                    marginBottom: '6px',
+                  }}
+                >
+                  Model ID
+                </label>
+                <input
+                  type="text"
+                  placeholder="e.g. deepseek/deepseek-chat, gpt-4o, etc."
+                  value={editingProvider.model}
+                  onChange={(e) =>
+                    setEditingProvider({ ...editingProvider, model: e.target.value })
+                  }
+                  style={{
+                    width: '100%',
+                    boxSizing: 'border-box',
+                    background: 'rgba(10,22,28,0.8)',
+                    border: '1px solid var(--line)',
+                    borderRadius: '8px',
+                    padding: '10px 12px',
+                    color: '#fff',
+                    fontSize: '13px',
+                    outline: 'none',
+                    fontFamily: 'DM Mono, monospace',
+                  }}
+                />
+              </div>
 
-            <div>
-              <label
-                style={{
-                  display: 'block',
-                  fontSize: '12px',
-                  fontWeight: 600,
-                  color: 'var(--text)',
-                  marginBottom: '6px',
-                }}
-              >
-                Max Output Tokens
-              </label>
-              <input
-                type="number"
-                min={16}
-                max={4096}
-                placeholder="128"
-                value={editingProvider.maxTokens ?? 128}
-                onChange={(e) => {
-                  const val = parseInt(e.target.value, 10);
-                  setEditingProvider({
-                    ...editingProvider,
-                    maxTokens: isNaN(val) ? 128 : Math.max(16, Math.min(4096, val)),
-                  });
-                }}
-                style={{
-                  width: '100%',
-                  boxSizing: 'border-box',
-                  background: 'rgba(10,22,28,0.8)',
-                  border: '1px solid var(--line)',
-                  borderRadius: '8px',
-                  padding: '10px 12px',
-                  color: '#fff',
-                  fontSize: '13px',
-                  outline: 'none',
-                  fontFamily: 'DM Mono, monospace',
-                }}
-              />
-              <span style={{ fontSize: '11px', color: 'var(--muted)', display: 'block', marginTop: '4px' }}>
-                Default: 128 (keeps credit consumption low).
-              </span>
+              <div>
+                <label
+                  style={{
+                    display: 'block',
+                    fontSize: '12px',
+                    fontWeight: 600,
+                    color: 'var(--text)',
+                    marginBottom: '6px',
+                  }}
+                >
+                  Max Output Tokens
+                </label>
+                <input
+                  type="number"
+                  min={16}
+                  max={4096}
+                  placeholder="128"
+                  value={editingProvider.maxTokens ?? 128}
+                  onChange={(e) => {
+                    const val = parseInt(e.target.value, 10);
+                    setEditingProvider({
+                      ...editingProvider,
+                      maxTokens: isNaN(val) ? 128 : Math.max(16, Math.min(4096, val)),
+                    });
+                  }}
+                  style={{
+                    width: '100%',
+                    boxSizing: 'border-box',
+                    background: 'rgba(10,22,28,0.8)',
+                    border: '1px solid var(--line)',
+                    borderRadius: '8px',
+                    padding: '10px 12px',
+                    color: '#fff',
+                    fontSize: '13px',
+                    outline: 'none',
+                    fontFamily: 'DM Mono, monospace',
+                  }}
+                />
+                <span style={{ fontSize: '11px', color: 'var(--muted)', display: 'block', marginTop: '4px' }}>
+                  Default: 128.
+                </span>
+              </div>
             </div>
-          </div>
+          )}
+
+          {/* Form Fields: Simplified Image Mode */}
+          {providerType === 'image' && editingImageProvider && (
+            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(280px, 1fr))', gap: '16px' }}>
+              <div>
+                <label
+                  style={{
+                    display: 'block',
+                    fontSize: '12px',
+                    fontWeight: 600,
+                    color: 'var(--text)',
+                    marginBottom: '6px',
+                  }}
+                >
+                  Provider Name
+                </label>
+                <input
+                  type="text"
+                  placeholder="e.g. Pollinations, Stable Diffusion, Custom Image API"
+                  value={editingImageProvider.name}
+                  onChange={(e) =>
+                    setEditingImageProvider({ ...editingImageProvider, name: e.target.value })
+                  }
+                  style={{
+                    width: '100%',
+                    boxSizing: 'border-box',
+                    background: 'rgba(10,22,28,0.8)',
+                    border: '1px solid var(--line)',
+                    borderRadius: '8px',
+                    padding: '10px 12px',
+                    color: '#fff',
+                    fontSize: '13px',
+                    outline: 'none',
+                  }}
+                />
+              </div>
+
+              <div>
+                <label
+                  style={{
+                    display: 'block',
+                    fontSize: '12px',
+                    fontWeight: 600,
+                    color: 'var(--text)',
+                    marginBottom: '6px',
+                  }}
+                >
+                  API URL (Base Image Generation Endpoint)
+                </label>
+                <input
+                  type="text"
+                  placeholder="https://image.pollinations.ai/prompt/"
+                  value={editingImageProvider.url}
+                  onChange={(e) =>
+                    setEditingImageProvider({ ...editingImageProvider, url: e.target.value })
+                  }
+                  style={{
+                    width: '100%',
+                    boxSizing: 'border-box',
+                    background: 'rgba(10,22,28,0.8)',
+                    border: '1px solid var(--line)',
+                    borderRadius: '8px',
+                    padding: '10px 12px',
+                    color: '#fff',
+                    fontSize: '13px',
+                    outline: 'none',
+                    fontFamily: 'DM Mono, monospace',
+                  }}
+                />
+                <p style={{ margin: '5px 0 0', fontSize: '11px', color: 'var(--muted)' }}>
+                  Prompts and API key parameters (e.g. <code>?key=...</code>) are dynamically appended.
+                </p>
+              </div>
+            </div>
+          )}
 
           {/* Key Strategy Selector */}
           <div
@@ -1196,42 +1962,56 @@ export function AIProvidersSettings() {
               <div className="segmented-control">
                 <button
                   type="button"
-                  className={editingProvider.keyStrategy === 'failover' ? 'selected' : ''}
-                  onClick={() =>
-                    setEditingProvider({ ...editingProvider, keyStrategy: 'failover' })
-                  }
+                  className={currentStrategy === 'failover' ? 'selected' : ''}
+                  onClick={() => {
+                    if (providerType === 'text' && editingProvider) {
+                      setEditingProvider({ ...editingProvider, keyStrategy: 'failover' });
+                    } else if (providerType === 'image' && editingImageProvider) {
+                      setEditingImageProvider({ ...editingImageProvider, keyStrategy: 'failover' });
+                    }
+                  }}
                 >
                   Automatic Failover
                 </button>
                 <button
                   type="button"
-                  className={editingProvider.keyStrategy === 'round_robin' ? 'selected' : ''}
-                  onClick={() =>
-                    setEditingProvider({ ...editingProvider, keyStrategy: 'round_robin' })
-                  }
+                  className={currentStrategy === 'round_robin' ? 'selected' : ''}
+                  onClick={() => {
+                    if (providerType === 'text' && editingProvider) {
+                      setEditingProvider({ ...editingProvider, keyStrategy: 'round_robin' });
+                    } else if (providerType === 'image' && editingImageProvider) {
+                      setEditingImageProvider({ ...editingImageProvider, keyStrategy: 'round_robin' });
+                    }
+                  }}
                 >
                   Round Robin
                 </button>
                 <button
                   type="button"
-                  className={editingProvider.keyStrategy === 'manual' ? 'selected' : ''}
-                  onClick={() =>
-                    setEditingProvider({ ...editingProvider, keyStrategy: 'manual' })
-                  }
+                  className={currentStrategy === 'manual' ? 'selected' : ''}
+                  onClick={() => {
+                    if (providerType === 'text' && editingProvider) {
+                      setEditingProvider({ ...editingProvider, keyStrategy: 'manual' });
+                    } else if (providerType === 'image' && editingImageProvider) {
+                      setEditingImageProvider({ ...editingImageProvider, keyStrategy: 'manual' });
+                    }
+                  }}
                 >
                   Manual
                 </button>
               </div>
 
-              {editingProvider.keyStrategy === 'manual' && (
+              {currentStrategy === 'manual' && (
                 <select
-                  value={editingProvider.preferredKeyId || ''}
-                  onChange={(e) =>
-                    setEditingProvider({
-                      ...editingProvider,
-                      preferredKeyId: e.target.value || undefined,
-                    })
-                  }
+                  value={currentPreferredKeyId || ''}
+                  onChange={(e) => {
+                    const val = e.target.value || undefined;
+                    if (providerType === 'text' && editingProvider) {
+                      setEditingProvider({ ...editingProvider, preferredKeyId: val });
+                    } else if (providerType === 'image' && editingImageProvider) {
+                      setEditingImageProvider({ ...editingImageProvider, preferredKeyId: val });
+                    }
+                  }}
                   style={{
                     background: 'rgba(14,31,39,0.8)',
                     color: '#fff',
@@ -1242,7 +2022,7 @@ export function AIProvidersSettings() {
                   }}
                 >
                   <option value="">Select Preferred Key</option>
-                  {editingProvider.keys.map((k, i) => (
+                  {currentEditingKeys.map((k, i) => (
                     <option key={k.id} value={k.id}>
                       {k.label || `Key ${i + 1}`} ({maskKey(k.key)})
                     </option>
@@ -1252,7 +2032,7 @@ export function AIProvidersSettings() {
             </div>
           </div>
 
-          {/* Multiple API Keys Section */}
+          {/* Configured API Keys Management Section */}
           <div>
             <div
               style={{
@@ -1273,7 +2053,7 @@ export function AIProvidersSettings() {
                     gap: '6px',
                   }}
                 >
-                  <Key size={15} /> Configured API Keys ({editingProvider.keys.length})
+                  <Key size={15} /> Configured API Keys ({currentEditingKeys.length})
                 </h4>
                 <p style={{ margin: '2px 0 0', fontSize: '11px', color: 'var(--muted)' }}>
                   Add multiple API keys to this provider pool. Keys are securely stored and masked.
@@ -1300,7 +2080,7 @@ export function AIProvidersSettings() {
 
             {/* List of keys inputs */}
             <div style={{ display: 'grid', gap: '10px' }}>
-              {editingProvider.keys.map((keyItem, index) => {
+              {currentEditingKeys.map((keyItem, index) => {
                 const isRevealed = Boolean(showKeySecretMap[keyItem.id]);
                 const isTesting = testingKeyId === keyItem.id;
                 const testResult = keyTestResults[keyItem.id];
@@ -1332,12 +2112,21 @@ export function AIProvidersSettings() {
                         value={keyItem.label || ''}
                         onChange={(e) => {
                           const val = e.target.value;
-                          setEditingProvider({
-                            ...editingProvider,
-                            keys: editingProvider.keys.map((k) =>
-                              k.id === keyItem.id ? { ...k, label: val } : k
-                            ),
-                          });
+                          if (providerType === 'text' && editingProvider) {
+                            setEditingProvider({
+                              ...editingProvider,
+                              keys: editingProvider.keys.map((k) =>
+                                k.id === keyItem.id ? { ...k, label: val } : k
+                              ),
+                            });
+                          } else if (providerType === 'image' && editingImageProvider) {
+                            setEditingImageProvider({
+                              ...editingImageProvider,
+                              keys: editingImageProvider.keys.map((k) =>
+                                k.id === keyItem.id ? { ...k, label: val } : k
+                              ),
+                            });
+                          }
                         }}
                         style={{
                           width: '110px',
@@ -1363,18 +2152,29 @@ export function AIProvidersSettings() {
                       >
                         <input
                           type={isRevealed ? 'text' : 'password'}
-                          placeholder="sk-..."
+                          placeholder={providerType === 'image' ? 'Pollinations API Key / Token (optional for basic tier)' : 'sk-...'}
                           value={keyItem.key}
                           onChange={(e) => {
                             const val = e.target.value;
-                            setEditingProvider({
-                              ...editingProvider,
-                              keys: editingProvider.keys.map((k) =>
-                                k.id === keyItem.id
-                                  ? { ...k, key: val, status: 'untested' }
-                                  : k
-                              ),
-                            });
+                            if (providerType === 'text' && editingProvider) {
+                              setEditingProvider({
+                                ...editingProvider,
+                                keys: editingProvider.keys.map((k) =>
+                                  k.id === keyItem.id
+                                    ? { ...k, key: val, status: 'untested' }
+                                    : k
+                                ),
+                              });
+                            } else if (providerType === 'image' && editingImageProvider) {
+                              setEditingImageProvider({
+                                ...editingImageProvider,
+                                keys: editingImageProvider.keys.map((k) =>
+                                  k.id === keyItem.id
+                                    ? { ...k, key: val, status: 'untested' }
+                                    : k
+                                ),
+                              });
+                            }
                           }}
                           style={{
                             width: '100%',
@@ -1439,52 +2239,55 @@ export function AIProvidersSettings() {
                       {/* Test Key Button */}
                       <button
                         type="button"
-                        onClick={() =>
-                          handleTestKey(keyItem, editingProvider.url, editingProvider.model)
-                        }
-                        disabled={isTesting || !keyItem.key.trim()}
+                        onClick={() => {
+                          if (providerType === 'text' && editingProvider) {
+                            handleTestKey(keyItem, editingProvider.url, editingProvider.model);
+                          } else if (providerType === 'image' && editingImageProvider) {
+                            handleTestImageKey(keyItem, editingImageProvider.url);
+                          }
+                        }}
+                        disabled={isTesting}
                         className="secondary-button"
                         style={{
                           padding: '6px 12px',
                           borderRadius: '6px',
                           fontSize: '11px',
-                          cursor: 'pointer',
                           display: 'inline-flex',
                           alignItems: 'center',
                           gap: '4px',
+                          cursor: 'pointer',
                         }}
                       >
                         <RotateCw size={12} className={isTesting ? 'animate-spin' : ''} />
-                        Test
+                        {isTesting ? 'Testing' : 'Test Key'}
                       </button>
 
                       {/* Delete Key Button */}
-                      <button
-                        type="button"
-                        onClick={() => handleRemoveKeyFromEditing(keyItem.id)}
-                        disabled={editingProvider.keys.length <= 1}
-                        style={{
-                          background: 'rgba(237,139,139,0.1)',
-                          border: '1px solid rgba(237,139,139,0.2)',
-                          color: 'var(--danger)',
-                          padding: '6px 8px',
-                          borderRadius: '6px',
-                          cursor:
-                            editingProvider.keys.length <= 1 ? 'not-allowed' : 'pointer',
-                          opacity: editingProvider.keys.length <= 1 ? 0.4 : 1,
-                        }}
-                        title="Delete key"
-                      >
-                        <Trash2 size={13} />
-                      </button>
+                      {currentEditingKeys.length > 1 && (
+                        <button
+                          type="button"
+                          onClick={() => handleRemoveKeyFromEditing(keyItem.id)}
+                          style={{
+                            background: 'none',
+                            border: 0,
+                            color: 'var(--danger)',
+                            cursor: 'pointer',
+                            padding: '4px',
+                          }}
+                          title="Remove key"
+                        >
+                          <Trash2 size={14} />
+                        </button>
+                      )}
                     </div>
 
-                    {/* Test result message */}
+                    {/* Test result display */}
                     {testResult && (
                       <div
                         style={{
                           fontSize: '11px',
                           color: testResult.ok ? '#34d399' : '#f87171',
+                          fontWeight: 500,
                           paddingLeft: '4px',
                         }}
                       >
@@ -1497,138 +2300,30 @@ export function AIProvidersSettings() {
             </div>
           </div>
 
-          {/* Capabilities */}
-          <div
-            style={{
-              padding: '14px',
-              borderRadius: '8px',
-              background: 'rgba(10,22,28,0.4)',
-              border: '1px solid var(--line)',
-            }}
-          >
-            <h4 style={{ margin: '0 0 8px', fontSize: '12px', color: 'var(--muted)' }}>
-              NEXUS Shared Capabilities Enabled:
-            </h4>
-            <div style={{ display: 'flex', gap: '16px', flexWrap: 'wrap', fontSize: '11px' }}>
-              <label style={{ display: 'flex', alignItems: 'center', gap: '6px', color: '#fff' }}>
-                <input
-                  type="checkbox"
-                  checked={editingProvider.capabilities.text}
-                  onChange={(e) =>
-                    setEditingProvider({
-                      ...editingProvider,
-                      capabilities: { ...editingProvider.capabilities, text: e.target.checked },
-                    })
-                  }
-                />
-                Text Generation
-              </label>
-              <label style={{ display: 'flex', alignItems: 'center', gap: '6px', color: '#fff' }}>
-                <input
-                  type="checkbox"
-                  checked={editingProvider.capabilities.tools}
-                  onChange={(e) =>
-                    setEditingProvider({
-                      ...editingProvider,
-                      capabilities: { ...editingProvider.capabilities, tools: e.target.checked },
-                    })
-                  }
-                />
-                Tool Context Layer
-              </label>
-              <label style={{ display: 'flex', alignItems: 'center', gap: '6px', color: '#fff' }}>
-                <input
-                  type="checkbox"
-                  checked={editingProvider.capabilities.web}
-                  onChange={(e) =>
-                    setEditingProvider({
-                      ...editingProvider,
-                      capabilities: { ...editingProvider.capabilities, web: e.target.checked },
-                    })
-                  }
-                />
-                Web & News Grounding
-              </label>
-              <label style={{ display: 'flex', alignItems: 'center', gap: '6px', color: '#fff' }}>
-                <input
-                  type="checkbox"
-                  checked={editingProvider.capabilities.wikipedia}
-                  onChange={(e) =>
-                    setEditingProvider({
-                      ...editingProvider,
-                      capabilities: {
-                        ...editingProvider.capabilities,
-                        wikipedia: e.target.checked,
-                      },
-                    })
-                  }
-                />
-                Wikipedia Reference
-              </label>
-              <label style={{ display: 'flex', alignItems: 'center', gap: '6px', color: '#fff' }}>
-                <input
-                  type="checkbox"
-                  checked={editingProvider.capabilities.memory}
-                  onChange={(e) =>
-                    setEditingProvider({
-                      ...editingProvider,
-                      capabilities: { ...editingProvider.capabilities, memory: e.target.checked },
-                    })
-                  }
-                />
-                Shared Smart Memory
-              </label>
-            </div>
-          </div>
-
-          {/* Form Actions */}
+          {/* Form Action Buttons */}
           <div
             style={{
               display: 'flex',
               justifyContent: 'flex-end',
-              alignItems: 'center',
               gap: '12px',
               borderTop: '1px solid var(--line)',
               paddingTop: '16px',
             }}
           >
-            {providersState.providers.some((p) => p.id === editingProvider.id) && (
-              <button
-                type="button"
-                onClick={() => handleDeleteProvider(editingProvider.id, editingProvider.name)}
-                style={{
-                  padding: '10px 18px',
-                  borderRadius: '8px',
-                  background: 'rgba(237,139,139,0.1)',
-                  border: '1px solid rgba(237,139,139,0.3)',
-                  color: 'var(--danger)',
-                  fontSize: '13px',
-                  fontWeight: 600,
-                  cursor: 'pointer',
-                  marginRight: 'auto',
-                  display: 'inline-flex',
-                  alignItems: 'center',
-                  gap: '6px',
-                }}
-              >
-                <Trash2 size={14} /> Delete Provider
-              </button>
-            )}
-
             <button
               type="button"
               onClick={() => {
                 setIsEditing(false);
                 setEditingProvider(null);
+                setEditingImageProvider(null);
                 setFormError(null);
               }}
+              className="secondary-button"
               style={{
-                padding: '10px 18px',
+                padding: '9px 18px',
                 borderRadius: '8px',
-                background: 'rgba(255,255,255,0.05)',
-                border: '1px solid var(--line)',
-                color: 'var(--muted)',
                 fontSize: '13px',
+                fontWeight: 500,
                 cursor: 'pointer',
               }}
             >
@@ -1637,17 +2332,23 @@ export function AIProvidersSettings() {
 
             <button
               type="button"
-              onClick={handleSaveProvider}
+              onClick={handleSave}
               style={{
-                padding: '10px 22px',
+                padding: '9px 22px',
                 borderRadius: '8px',
-                background: 'var(--accent)',
-                color: '#071016',
+                background: providerType === 'image' ? '#ec4899' : 'var(--accent)',
+                color: '#0a161c',
                 border: 'none',
-                fontWeight: 700,
                 fontSize: '13px',
+                fontWeight: 700,
                 cursor: 'pointer',
-                boxShadow: '0 0 16px rgba(97,215,201,0.4)',
+                display: 'inline-flex',
+                alignItems: 'center',
+                gap: '6px',
+                boxShadow:
+                  providerType === 'image'
+                    ? '0 0 16px rgba(236,72,153,0.4)'
+                    : '0 0 16px rgba(97,215,201,0.4)',
               }}
             >
               Save Provider
@@ -1656,42 +2357,17 @@ export function AIProvidersSettings() {
         </div>
       )}
 
-      {/* Shared NEXUS Tool System Architecture Diagram */}
-      <section
-        style={{
-          padding: '20px',
-          borderRadius: '12px',
-          background: 'rgba(10,22,28,0.4)',
-          border: '1px solid var(--line)',
-        }}
-      >
-        <div style={{ display: 'flex', alignItems: 'center', gap: '8px', marginBottom: '10px' }}>
-          <Layers size={16} color="var(--accent)" />
-          <h4 style={{ margin: 0, fontSize: '13px', fontWeight: 600, color: 'var(--text)' }}>
-            NEXUS Shared Architecture
-          </h4>
-        </div>
-        <p style={{ margin: 0, fontSize: '12px', color: 'var(--muted)', lineHeight: 1.6 }}>
-          All configured AI providers act as interchangeable neural engines plugged directly into
-          the centralized <b>NEXUS Tool Layer</b>. Whether using the protected Existing AI or custom
-          endpoints, your requests automatically receive compact verified intelligence from{' '}
-          <b>Web Search</b>, <b>Wikipedia</b>, <b>Atmospheric Weather</b>, <b>NASA Space Data</b>,{' '}
-          <b>Live News</b>, and <b>Smart Memory</b>.
-        </p>
-      </section>
-
-      {/* Delete Provider Confirmation Dialog */}
+      {/* Delete Confirmation Modal */}
       {deletingProvider && (
         <div
           id="delete-provider-modal-backdrop"
           style={{
             position: 'fixed',
             inset: 0,
-            background: 'rgba(0, 0, 0, 0.75)',
+            background: 'rgba(0,0,0,0.75)',
             backdropFilter: 'blur(4px)',
-            display: 'flex',
-            alignItems: 'center',
-            justifyContent: 'center',
+            display: 'grid',
+            placeItems: 'center',
             zIndex: 9999,
             padding: '20px',
           }}
@@ -1754,7 +2430,7 @@ export function AIProvidersSettings() {
                     lineHeight: 1.5,
                   }}
                 >
-                  This will remove this AI provider and its configured API keys.
+                  This will remove this {deletingProvider.type === 'image' ? 'Image AI' : 'Text AI'} provider and its configured API keys.
                 </p>
               </div>
             </div>

@@ -142,6 +142,8 @@ export interface AIKeyItem {
   cooldownUntil?: number;
 }
 
+export type AIProviderType = 'text' | 'image';
+
 export interface AIProviderCapabilities {
   text: boolean;
   tools: boolean;
@@ -166,6 +168,21 @@ export interface AIProviderConfig {
 export interface AIProvidersState {
   activeProviderId: string;
   providers: AIProviderConfig[];
+}
+
+export interface ImageProviderConfig {
+  id: string;
+  name: string;
+  url: string;
+  keyStrategy: KeyStrategy;
+  preferredKeyId?: string;
+  keys: AIKeyItem[];
+  isDefault?: boolean;
+}
+
+export interface ImageProvidersState {
+  activeProviderId: string;
+  providers: ImageProviderConfig[];
 }
 
 export type JarvisAgentId =

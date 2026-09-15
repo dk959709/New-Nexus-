@@ -3,6 +3,8 @@ import type {
   Settings,
   AIProvidersState,
   AIProviderConfig,
+  ImageProvidersState,
+  ImageProviderConfig,
   KeyHealthStatus,
   JarvisSystemConfig,
   JarvisMessage,
@@ -19,6 +21,7 @@ const KEYS = {
   settings: 'nexus-settings',
   locations: 'nexus-locations',
   aiProviders: 'nexus-ai-providers',
+  imageProviders: 'nexus-image-providers',
   jarvisConfig: 'nexus-jarvis-config-v1',
   jarvisMessages: 'nexus-jarvis-messages-v1',
   edgeVoice: 'nexus-edge-voice-v1',
@@ -28,6 +31,24 @@ const KEYS = {
   documentLibrary: 'nexus-document-library-v1',
   documentRagSettings: 'nexus-document-rag-settings-v1',
 } as const;
+
+export const DEFAULT_IMAGE_PROVIDERS: ImageProviderConfig[] = [
+  {
+    id: 'pollinations_default',
+    name: 'Pollinations',
+    url: 'https://image.pollinations.ai/prompt/',
+    keyStrategy: 'failover',
+    keys: [
+      {
+        id: 'pollinations_key_1',
+        key: '',
+        label: 'Pollinations API Key',
+        status: 'untested',
+      },
+    ],
+    isDefault: true,
+  },
+];
 
 export const DEFAULT_AGENT_SYSTEM_PROMPTS: Record<string, string> = {
   planner: `You are the PLANNER agent of JARVIS, a multi-AI intelligence system.
@@ -849,6 +870,53 @@ export const storage = {
 
     state.providers[providerIndex] = { ...provider, keys: updatedKeys };
     this.saveAIProvidersState(state);
+  },
+
+  getImageProvidersState(): ImageProvidersState {
+    const defaultState: ImageProvidersState = {
+      activeProviderId: 'pollinations_default',
+      providers: DEFAULT_IMAGE_PROVIDERS,
+    };
+    const loaded = read<ImageProvidersState>(KEYS.imageProviders, defaultState);
+    if (!loaded.providers || loaded.providers.length === 0) {
+      return defaultState;
+    }
+    return loaded;
+  },
+
+  saveImageProvidersState(state: ImageProvidersState): void {
+    write(KEYS.imageProviders, state);
+  },
+
+  getActiveImageProvider(): ImageProviderConfig | null {
+    const state = this.getImageProvidersState();
+    if (!state.activeProviderId) {
+      return state.providers[0] || null;
+    }
+    return state.providers.find((p) => p.id === state.activeProviderId) || state.providers[0] || null;
+  },
+
+  updateImageKeyHealth(providerId: string, keyId: string, status: KeyHealthStatus, errorMsg?: string): void {
+    const state = this.getImageProvidersState();
+    const providerIndex = state.providers.findIndex((p) => p.id === providerId);
+    if (providerIndex === -1) return;
+
+    const provider = state.providers[providerIndex];
+    const updatedKeys = provider.keys.map((k) => {
+      if (k.id === keyId) {
+        return {
+          ...k,
+          status,
+          lastTested: Date.now(),
+          lastError: errorMsg,
+          cooldownUntil: status === 'cooldown' ? Date.now() + 60000 : undefined,
+        };
+      }
+      return k;
+    });
+
+    state.providers[providerIndex] = { ...provider, keys: updatedKeys };
+    this.saveImageProvidersState(state);
   },
 
 
