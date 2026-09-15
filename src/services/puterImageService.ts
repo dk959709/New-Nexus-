@@ -343,12 +343,58 @@ export async function generatePuterImage(
       model: selectedModel,
     };
   } catch (err: unknown) {
-    const errorMsg = err instanceof Error ? err.message : String(err);
+    console.error('[Puter AI: Raw Error]', err);
+
+    let errorMsg = '';
+    if (err instanceof Error && err.message && err.message !== '[object Object]') {
+      errorMsg = err.message;
+    } else if (typeof err === 'object' && err !== null) {
+      const e = err as Record<string, unknown>;
+      if (typeof e.message === 'string' && e.message && e.message !== '[object Object]') {
+        errorMsg = e.message;
+      } else if (typeof e.error === 'string' && e.error) {
+        errorMsg = e.error;
+      } else if (typeof e.error === 'object' && e.error !== null) {
+        const nested = e.error as Record<string, unknown>;
+        if (typeof nested.message === 'string' && nested.message) {
+          errorMsg = nested.message;
+        } else if (typeof nested.code === 'string' && nested.code) {
+          errorMsg = `Code: ${nested.code}`;
+        } else {
+          try {
+            errorMsg = JSON.stringify(e.error);
+          } catch {
+            errorMsg = '';
+          }
+        }
+      } else if (typeof e.statusText === 'string' && e.statusText) {
+        errorMsg = e.statusText;
+      } else {
+        try {
+          const stringified = JSON.stringify(err);
+          if (stringified && stringified !== '{}' && stringified !== '[]') {
+            errorMsg = stringified;
+          }
+        } catch {
+          errorMsg = '';
+        }
+      }
+    } else if (typeof err === 'string' && err.trim()) {
+      errorMsg = err;
+    }
+
+    if (!errorMsg || errorMsg === '[object Object]') {
+      errorMsg = 'Puter image synthesis failed (unknown SDK error)';
+    }
+
+    latestPuterDebugInfo.error = errorMsg;
+    getPuterDebugInfo();
+
     console.error('[Puter AI: Image Generation] Synthesis failure:', errorMsg);
     if (errorMsg.includes('timed out') || errorMsg.includes('not respond in time')) {
       throw new Error(PUTER_TIMEOUT_ERROR_MESSAGE);
     }
-    throw new Error(errorMsg || 'Puter image synthesis failed');
+    throw new Error(errorMsg);
   }
 }
 
