@@ -79,23 +79,32 @@ export async function loadPuterScript(
     // Check if script element is already added to DOM
     const existing = document.querySelector<HTMLScriptElement>('script[src*="js.puter.com"]');
     if (existing) {
+      console.log('[Puter AI: Script Load] Existing <script src*="js.puter.com"> found in DOM.');
       if (window.puter?.ai?.txt2img) {
+        console.log('[Puter AI: Script Load] window.puter.ai.txt2img already ready on existing script.');
         cleanupAndResolve(window.puter);
         return;
       }
       existing.addEventListener('load', () => {
+        console.log('[Puter AI: Script Load] existing script onload event fired!');
+        console.log('[Puter AI: Script Load] window.puter content:', window.puter);
+        console.log('[Puter AI: Script Load] typeof window.puter:', typeof window.puter);
+        console.log('[Puter AI: Script Load] typeof window.puter?.ai:', typeof window.puter?.ai);
+        console.log('[Puter AI: Script Load] typeof window.puter?.ai?.txt2img:', typeof window.puter?.ai?.txt2img);
         if (window.puter?.ai?.txt2img || window.puter) {
           cleanupAndResolve(window.puter);
         } else {
           cleanupAndReject(new Error('Puter SDK script loaded but window.puter object is missing'));
         }
       });
-      existing.addEventListener('error', () => {
+      existing.addEventListener('error', (evt) => {
+        console.error('[Puter AI: Script Load] existing script onerror event fired!', evt);
         cleanupAndReject(new Error('Failed to load Puter.js from https://js.puter.com/v2/'));
       });
       // Periodic check for window.puter readiness
       const interval = setInterval(() => {
         if (window.puter?.ai?.txt2img) {
+          console.log('[Puter AI: Script Load] window.puter.ai.txt2img detected via interval check on existing script!');
           clearInterval(interval);
           cleanupAndResolve(window.puter);
         }
@@ -109,11 +118,20 @@ export async function loadPuterScript(
     script.async = true;
     script.crossOrigin = 'anonymous';
 
+    console.log('[Puter AI: Script Load] Appending <script> to document.head at:', new Date().toISOString(), 'src:', script.src);
+
     script.onload = () => {
+      console.log('[Puter AI: Script Load] script.onload event fired successfully!');
+      console.log('[Puter AI: Script Load] window.puter content:', window.puter);
+      console.log('[Puter AI: Script Load] typeof window.puter:', typeof window.puter);
+      console.log('[Puter AI: Script Load] typeof window.puter?.ai:', typeof window.puter?.ai);
+      console.log('[Puter AI: Script Load] typeof window.puter?.ai?.txt2img:', typeof window.puter?.ai?.txt2img);
+
       if (window.puter?.ai?.txt2img || window.puter) {
         cleanupAndResolve(window.puter);
       } else {
         setTimeout(() => {
+          console.log('[Puter AI: Script Load +300ms fallback] typeof window.puter:', typeof window.puter, 'window.puter?.ai?.txt2img:', typeof window.puter?.ai?.txt2img);
           if (window.puter?.ai?.txt2img || window.puter) {
             cleanupAndResolve(window.puter);
           } else {
@@ -123,11 +141,13 @@ export async function loadPuterScript(
       }
     };
 
-    script.onerror = () => {
+    script.onerror = (evt) => {
+      console.error('[Puter AI: Script Load] script.onerror event fired!', evt);
       cleanupAndReject(new Error('Failed to fetch Puter.js from https://js.puter.com/v2/'));
     };
 
     document.head.appendChild(script);
+    console.log('[Puter AI: Script Load] document.head.appendChild(script) executed.');
   });
 
   // Strict timeout protection for the entire script load process
