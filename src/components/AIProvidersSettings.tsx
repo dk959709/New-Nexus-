@@ -22,7 +22,12 @@ import type {
 } from '@/types';
 import { storage } from '@/lib/storage';
 import { api } from '@/services/api';
-import { loadPuterScript, PUTER_IMAGE_MODELS, DEFAULT_PUTER_MODEL } from '@/services/puterImageService';
+import {
+  loadPuterScript,
+  PUTER_IMAGE_MODELS,
+  DEFAULT_PUTER_MODEL,
+  PUTER_TIMEOUT_ERROR_MESSAGE,
+} from '@/services/puterImageService';
 
 function maskKey(key: string): string {
   if (!key) return '';
@@ -754,7 +759,7 @@ export function AIProvidersSettings() {
 
     if (provider.requestType === 'sdk') {
       try {
-        const puter = await loadPuterScript();
+        const puter = await loadPuterScript(15000);
         if (puter?.ai?.txt2img) {
           setProviderTestResults((prev) => ({
             ...prev,
@@ -765,9 +770,15 @@ export function AIProvidersSettings() {
         }
       } catch (err: unknown) {
         const errorMsg = err instanceof Error ? err.message : String(err);
+        console.error('[AIProvidersSettings: Test Puter SDK] Error:', errorMsg);
         setProviderTestResults((prev) => ({
           ...prev,
-          [provider.id]: { ok: false, message: `✕ SDK Error: ${errorMsg}` },
+          [provider.id]: {
+            ok: false,
+            message: errorMsg.includes('not respond in time')
+              ? `✕ ${PUTER_TIMEOUT_ERROR_MESSAGE}`
+              : `✕ SDK Error: ${errorMsg}`,
+          },
         }));
       } finally {
         setTestingProviderId(null);

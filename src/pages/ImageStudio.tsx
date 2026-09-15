@@ -374,6 +374,7 @@ export function ImageStudio() {
       setSeed(Math.floor(Math.random() * 1000000));
     } catch (err: unknown) {
       const msg = err instanceof Error ? err.message : String(err);
+      console.error('[ImageStudio: Generation Failed]', msg, err);
       setError(msg);
     } finally {
       setLoading(false);
