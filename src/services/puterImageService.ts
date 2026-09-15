@@ -3,9 +3,10 @@
 
 export const PUTER_IMAGE_MODELS = [
   { id: 'stabilityai/stable-diffusion-3-medium', name: 'Stability AI Stable Diffusion 3 Medium' },
+  { id: 'black-forest-labs/flux-kontext-pro', name: 'Black Forest Labs FLUX Kontext Pro (Image Edit)' },
+  { id: 'google/gemini-2.5-flash-image', name: 'Google Gemini 2.5 Flash Image (Image Edit)' },
   { id: 'openai/gpt-image-2', name: 'OpenAI GPT Image 2' },
   { id: 'google/gemini-3-pro-image-preview', name: 'Google Gemini 3 Pro Image Preview' },
-  { id: 'google/gemini-2.5-flash-image', name: 'Google Gemini 2.5 Flash Image' },
   { id: 'black-forest-labs/flux-2-pro', name: 'Black Forest Labs FLUX 2 Pro' },
   { id: 'x-ai/grok-imagine-image', name: 'xAI Grok Imagine Image' },
 ];
@@ -24,6 +25,11 @@ declare global {
       ai?: {
         txt2img: (
           prompt: string,
+          options?: { model?: string; image?: string; [key: string]: unknown }
+        ) => Promise<HTMLImageElement | string | { src?: string; url?: string }>;
+        img2img?: (
+          prompt: string,
+          image: string,
           options?: { model?: string; [key: string]: unknown }
         ) => Promise<HTMLImageElement | string | { src?: string; url?: string }>;
       };
@@ -276,6 +282,7 @@ export async function checkPuterAuth(): Promise<boolean> {
 export async function generatePuterImage(
   prompt: string,
   model?: string,
+  referenceImage?: string,
   timeoutMs: number = PUTER_GENERATE_TIMEOUT_MS
 ): Promise<{ url: string; prompt: string; model: string }> {
   const cleanPrompt = prompt.trim();
@@ -306,9 +313,22 @@ export async function generatePuterImage(
 
   // Step 2: Generation with race timeout
   const generationTask = async (): Promise<string> => {
-    const result = await puter.ai!.txt2img(cleanPrompt, {
+    const options: Record<string, unknown> = {
       model: selectedModel,
-    });
+    };
+
+    if (referenceImage && referenceImage.trim()) {
+      options.image = referenceImage.trim();
+      options.input_image = referenceImage.trim();
+      options.source_image = referenceImage.trim();
+    }
+
+    let result: HTMLImageElement | string | { src?: string; url?: string };
+    if (referenceImage && typeof puter.ai?.img2img === 'function') {
+      result = await puter.ai.img2img(cleanPrompt, referenceImage.trim(), options);
+    } else {
+      result = await puter.ai!.txt2img(cleanPrompt, options);
+    }
 
     let finalSrc = '';
     if (typeof result === 'string') {

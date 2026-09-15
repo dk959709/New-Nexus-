@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback } from 'react';
+import { useState, useEffect, useCallback, useRef } from 'react';
 import { Link } from 'react-router-dom';
 import {
   Image as ImageIcon,
@@ -17,6 +17,10 @@ import {
   Trash2,
   Database,
   Wand2,
+  UploadCloud,
+  ImagePlus,
+  ArrowRightLeft,
+  Columns,
 } from 'lucide-react';
 import { storage } from '@/lib/storage';
 import { api } from '@/services/api';
@@ -33,6 +37,7 @@ import {
   getPuterDebugInfo,
   PuterDebugInfo,
   DEFAULT_PUTER_MODEL,
+  PUTER_IMAGE_MODELS,
 } from '@/services/puterImageService';
 import type { ImageProviderConfig, ImageProvidersState, GeneratedImageItem } from '@/types';
 
@@ -91,6 +96,19 @@ export function ImageStudio() {
   const [puterDebugInfo, setPuterDebugInfo] = useState<PuterDebugInfo | null>(null);
   const [showPuterDebug, setShowPuterDebug] = useState(true);
 
+  // Image editing (img2img) state
+  const [referenceImage, setReferenceImage] = useState<string | null>(null);
+  const [referenceImageName, setReferenceImageName] = useState<string | null>(null);
+  const [referenceImageSize, setReferenceImageSize] = useState<number | null>(null);
+  const [isDraggingImage, setIsDraggingImage] = useState(false);
+  const [comparisonLayout, setComparisonLayout] = useState<'side-by-side' | 'result-only'>('side-by-side');
+  const [puterSelectedModel, setPuterSelectedModel] = useState<string>(() => {
+    const fresh = storage.getImageProvidersState();
+    const curP = fresh.providers.find((p) => p.id === fresh.activeProviderId);
+    return curP?.model || DEFAULT_PUTER_MODEL;
+  });
+  const fileInputRef = useRef<HTMLInputElement>(null);
+
   // Sync provider list on mount / tab focus
   useEffect(() => {
     const fresh = storage.getImageProvidersState();
@@ -99,6 +117,14 @@ export function ImageStudio() {
       setSelectedProviderId(fresh.activeProviderId || fresh.providers[0]?.id || '');
     }
   }, [selectedProviderId]);
+
+  // Sync Puter model when active provider changes
+  useEffect(() => {
+    const cur = imageProvidersState.providers.find((p) => p.id === selectedProviderId);
+    if (cur?.requestType === 'sdk' && cur.model) {
+      setPuterSelectedModel(cur.model);
+    }
+  }, [selectedProviderId, imageProvidersState]);
 
   // Restore persistent generated images history from IndexedDB on page load
   useEffect(() => {
@@ -123,6 +149,72 @@ export function ImageStudio() {
   const activeProvider: ImageProviderConfig | undefined =
     imageProvidersState.providers.find((p) => p.id === selectedProviderId) ||
     imageProvidersState.providers[0];
+
+  const isSdk = activeProvider?.requestType === 'sdk';
+  const isPost =
+    !isSdk &&
+    (activeProvider?.requestType === 'post' ||
+      activeProvider?.url?.toLowerCase().includes('huggingface') ||
+      activeProvider?.name?.toLowerCase().includes('hugging'));
+  const isPollinations = !isSdk && !isPost;
+
+  const pollinationsProvider = imageProvidersState.providers.find(
+    (p) => p.requestType !== 'sdk' && p.requestType !== 'post' && !p.url.toLowerCase().includes('huggingface')
+  );
+  const puterProvider = imageProvidersState.providers.find((p) => p.requestType === 'sdk');
+
+  // Handle image file upload for img2img editing
+  const handleImageFile = (file: File) => {
+    if (!file.type.startsWith('image/')) {
+      setError('Please upload a valid image file (PNG, JPG, WebP).');
+      return;
+    }
+    if (file.size > 15 * 1024 * 1024) {
+      setError('Image file is too large (maximum size is 15 MB).');
+      return;
+    }
+
+    const reader = new FileReader();
+    reader.onload = () => {
+      const result = reader.result as string;
+      setReferenceImage(result);
+      setReferenceImageName(file.name);
+      setReferenceImageSize(file.size);
+      setError(null);
+      playTapSound();
+
+      // If Pollinations is selected, auto-select 'kontext' for image editing
+      if (isPollinations) {
+        setModelType('kontext');
+      }
+      // If Puter is selected, ensure an editing-capable model is selected
+      if (activeProvider?.requestType === 'sdk') {
+        if (
+          puterSelectedModel !== 'black-forest-labs/flux-kontext-pro' &&
+          puterSelectedModel !== 'google/gemini-2.5-flash-image'
+        ) {
+          setPuterSelectedModel('black-forest-labs/flux-kontext-pro');
+        }
+      }
+    };
+    reader.onerror = () => {
+      setError('Failed to read image file. Please try another image.');
+    };
+    reader.readAsDataURL(file);
+  };
+
+  const handleClearReferenceImage = () => {
+    playTapSound();
+    setReferenceImage(null);
+    setReferenceImageName(null);
+    setReferenceImageSize(null);
+    if (fileInputRef.current) {
+      fileInputRef.current.value = '';
+    }
+    if (modelType === 'kontext') {
+      setModelType('flux');
+    }
+  };
 
   // Resolve active API key for the selected provider
   const getResolvedApiKey = useCallback((provider: ImageProviderConfig): string => {
@@ -253,13 +345,27 @@ export function ImageStudio() {
         activeProvider.url.toLowerCase().includes('huggingface') ||
         activeProvider.url.toLowerCase().includes('hf-inference'));
 
+    // Check: Hugging Face does not support image editing
+    if (isPost && referenceImage) {
+      setError(
+        "Hugging Face's current model does not support image editing (img2img). Please switch to Pollinations (using the 'kontext' model) or Puter (using FLUX Kontext Pro or Gemini 2.5 Flash Image) to edit your reference image."
+      );
+      setLoading(false);
+      setLoadingPhase('idle');
+      return;
+    }
+
     try {
       let finalImageUrl = '';
 
       if (isSdk) {
         // Puter.js in-browser SDK generation with free guest session
-        const selectedModel = activeProvider.model || DEFAULT_PUTER_MODEL;
-        const puterResult = await generatePuterImage(promptToUse, selectedModel);
+        // Pass reference image to Puter's editing-capable call when present
+        const selectedModel =
+          puterSelectedModel ||
+          activeProvider.model ||
+          (referenceImage ? 'black-forest-labs/flux-kontext-pro' : DEFAULT_PUTER_MODEL);
+        const puterResult = await generatePuterImage(promptToUse, selectedModel, referenceImage || undefined);
         finalImageUrl = puterResult.url;
       } else if (isPost) {
         const apiKey = getResolvedApiKey(activeProvider);
@@ -315,7 +421,57 @@ export function ImageStudio() {
             reader.readAsDataURL(blob);
           });
         finalImageUrl = await blobToDataUrl(imageBlob);
+      } else if (referenceImage && modelType === 'kontext') {
+        // Pollinations image editing API with reference image & prompt as edit instructions
+        const base = activeProvider.url.trim().replace(/\/+$/, '');
+        const endpoint = `${base}/prompt/${encodeURIComponent(promptToUse)}`;
+        const apiKey = getResolvedApiKey(activeProvider);
+
+        const controller = new AbortController();
+        const timeoutId = setTimeout(() => controller.abort(), 60000);
+
+        const response = await fetch(endpoint, {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+            ...(apiKey ? { Authorization: `Bearer ${apiKey}` } : {}),
+          },
+          body: JSON.stringify({
+            prompt: promptToUse,
+            model: 'kontext',
+            image: referenceImage,
+            width: ratio.width,
+            height: ratio.height,
+            seed: currentSeed,
+            nologo,
+          }),
+          signal: controller.signal,
+          mode: 'cors',
+        });
+        clearTimeout(timeoutId);
+
+        if (!response.ok) {
+          let errDetail = '';
+          try {
+            const errJson = await response.json();
+            errDetail = errJson?.error || errJson?.message || JSON.stringify(errJson);
+          } catch {
+            errDetail = `HTTP ${response.status}: ${response.statusText}`;
+          }
+          throw new Error(`Pollinations editing failed (${response.status}): ${errDetail}`);
+        }
+
+        const imageBlob = await response.blob();
+        const blobToDataUrl = (blob: Blob): Promise<string> =>
+          new Promise((resolve, reject) => {
+            const reader = new FileReader();
+            reader.onloadend = () => resolve(reader.result as string);
+            reader.onerror = reject;
+            reader.readAsDataURL(blob);
+          });
+        finalImageUrl = await blobToDataUrl(imageBlob);
       } else {
+        // Standard text-to-image synthesis
         const generatedUrl = buildGenerationUrl(promptToUse, activeProvider, {
           width: ratio.width,
           height: ratio.height,
@@ -352,9 +508,13 @@ export function ImageStudio() {
       // Determine the real model used for this generation
       let actualModelUsed = modelType;
       if (isSdk) {
-        actualModelUsed = activeProvider.model || DEFAULT_PUTER_MODEL;
+        actualModelUsed =
+          puterSelectedModel ||
+          activeProvider.model ||
+          (referenceImage ? 'black-forest-labs/flux-kontext-pro' : DEFAULT_PUTER_MODEL);
       } else if (isPost) {
-        actualModelUsed = activeProvider.model || (activeProvider.url.split('/').filter(Boolean).pop()) || 'Hugging Face Model';
+        actualModelUsed =
+          activeProvider.model || (activeProvider.url.split('/').filter(Boolean).pop()) || 'Hugging Face Model';
       } else {
         actualModelUsed = modelType;
       }
@@ -363,6 +523,8 @@ export function ImageStudio() {
         id: `img_${Date.now()}_${Math.random().toString(36).slice(2, 7)}`,
         url: finalImageUrl,
         imageData: finalImageUrl,
+        referenceImageUrl: referenceImage || undefined,
+        isEdit: Boolean(referenceImage),
         prompt: promptToUse,
         originalPrompt: enhancedPromptUsed ? rawInputPrompt : undefined,
         enhancedPrompt: enhancedPromptUsed,
@@ -504,6 +666,21 @@ export function ImageStudio() {
     setCopiedUrl(true);
     playTapSound();
     setTimeout(() => setCopiedUrl(false), 2000);
+  };
+
+  // Set current image as reference image for next edit
+  const handleUseAsReference = (url: string) => {
+    setReferenceImage(url);
+    setReferenceImageName('Previous Generation');
+    setReferenceImageSize(null);
+    if (activeProvider?.requestType === 'sdk' || selectedProviderId === 'puter-official') {
+      setPuterSelectedModel('black-forest-labs/flux-kontext-pro');
+    } else {
+      setModelType('kontext');
+    }
+    setError(null);
+    playTapSound();
+    window.scrollTo({ top: 120, behavior: 'smooth' });
   };
 
   const handleSurpriseMe = () => {
@@ -707,11 +884,357 @@ export function ImageStudio() {
             )}
           </div>
 
+          {/* Reference Image (img2img / Image Editing Dropzone) */}
+          <div>
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '8px' }}>
+              <label style={{ fontSize: '12px', fontWeight: 600, color: 'var(--text)', display: 'flex', alignItems: 'center', gap: '6px' }}>
+                <ImagePlus size={14} style={{ color: '#ec4899' }} /> Reference Image (Image Editing / img2img)
+              </label>
+              {referenceImage && (
+                <button
+                  type="button"
+                  onClick={handleClearReferenceImage}
+                  style={{
+                    background: 'none',
+                    border: 0,
+                    color: '#f87171',
+                    fontSize: '11px',
+                    fontWeight: 600,
+                    cursor: 'pointer',
+                    display: 'inline-flex',
+                    alignItems: 'center',
+                    gap: '4px',
+                    padding: '2px 6px',
+                  }}
+                >
+                  <X size={12} /> Clear Reference
+                </button>
+              )}
+            </div>
+
+            {!referenceImage ? (
+              /* Dropzone for Uploading Reference Image */
+              <div
+                onDragOver={(e) => {
+                  e.preventDefault();
+                  setIsDraggingImage(true);
+                }}
+                onDragLeave={(e) => {
+                  e.preventDefault();
+                  setIsDraggingImage(false);
+                }}
+                onDrop={(e) => {
+                  e.preventDefault();
+                  setIsDraggingImage(false);
+                  if (e.dataTransfer.files && e.dataTransfer.files.length > 0) {
+                    handleImageFile(e.dataTransfer.files[0]);
+                  }
+                }}
+                onClick={() => fileInputRef.current?.click()}
+                style={{
+                  position: 'relative',
+                  borderRadius: '12px',
+                  border: `2px dashed ${isDraggingImage ? '#ec4899' : 'rgba(255,255,255,0.15)'}`,
+                  background: isDraggingImage ? 'rgba(236,72,153,0.1)' : 'rgba(10,22,28,0.5)',
+                  padding: '16px 14px',
+                  textAlign: 'center',
+                  cursor: 'pointer',
+                  transition: 'all 0.2s ease',
+                }}
+              >
+                <input
+                  ref={fileInputRef}
+                  type="file"
+                  accept="image/png,image/jpeg,image/webp,image/jpg,image/gif"
+                  onChange={(e) => {
+                    if (e.target.files && e.target.files[0]) {
+                      handleImageFile(e.target.files[0]);
+                    }
+                  }}
+                  style={{ display: 'none' }}
+                />
+
+                <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: '8px' }}>
+                  <div
+                    style={{
+                      padding: '10px',
+                      borderRadius: '12px',
+                      background: 'rgba(236,72,153,0.15)',
+                      border: '1px solid rgba(236,72,153,0.3)',
+                      color: '#f472b6',
+                      display: 'grid',
+                      placeItems: 'center',
+                    }}
+                  >
+                    <UploadCloud size={20} />
+                  </div>
+
+                  <div>
+                    <div style={{ fontSize: '13px', fontWeight: 600, color: '#fff' }}>
+                      Upload Reference Image
+                    </div>
+                    <div style={{ fontSize: '11px', color: 'var(--muted)', marginTop: '2px' }}>
+                      Drag & drop an image here or click to browse (PNG, JPG, WebP up to 15 MB)
+                    </div>
+                  </div>
+
+                  <div style={{ display: 'flex', gap: '6px', alignItems: 'center', flexWrap: 'wrap', justifyContent: 'center', marginTop: '2px' }}>
+                    <button
+                      type="button"
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        fileInputRef.current?.click();
+                      }}
+                      style={{
+                        fontSize: '11px',
+                        fontWeight: 600,
+                        padding: '4px 10px',
+                        borderRadius: '6px',
+                        background: 'rgba(236,72,153,0.2)',
+                        border: '1px solid rgba(236,72,153,0.4)',
+                        color: '#f472b6',
+                        cursor: 'pointer',
+                        display: 'inline-flex',
+                        alignItems: 'center',
+                        gap: '4px',
+                      }}
+                    >
+                      <ImagePlus size={12} /> Choose Image
+                    </button>
+                    <span style={{ fontSize: '10px', color: 'var(--muted)' }}>
+                      Optional • Enables before/after edit comparison
+                    </span>
+                  </div>
+                </div>
+              </div>
+            ) : (
+              /* Reference Image Loaded Card */
+              <div
+                style={{
+                  position: 'relative',
+                  borderRadius: '12px',
+                  border: '1px solid rgba(236,72,153,0.4)',
+                  background: 'linear-gradient(135deg, rgba(236,72,153,0.08) 0%, rgba(168,85,247,0.08) 100%)',
+                  padding: '12px 14px',
+                  display: 'flex',
+                  alignItems: 'center',
+                  justifyContent: 'space-between',
+                  gap: '12px',
+                  flexWrap: 'wrap',
+                }}
+              >
+                <input
+                  ref={fileInputRef}
+                  type="file"
+                  accept="image/png,image/jpeg,image/webp,image/jpg,image/gif"
+                  onChange={(e) => {
+                    if (e.target.files && e.target.files[0]) {
+                      handleImageFile(e.target.files[0]);
+                    }
+                  }}
+                  style={{ display: 'none' }}
+                />
+
+                <div style={{ display: 'flex', alignItems: 'center', gap: '12px', minWidth: '180px' }}>
+                  <div
+                    style={{
+                      width: '56px',
+                      height: '56px',
+                      borderRadius: '8px',
+                      overflow: 'hidden',
+                      border: '1px solid rgba(236,72,153,0.35)',
+                      background: '#071116',
+                      flexShrink: 0,
+                    }}
+                  >
+                    <img
+                      src={referenceImage}
+                      alt="Reference Preview"
+                      style={{ width: '100%', height: '100%', objectFit: 'cover' }}
+                    />
+                  </div>
+
+                  <div>
+                    <div style={{ display: 'flex', alignItems: 'center', gap: '6px', flexWrap: 'wrap' }}>
+                      <span
+                        style={{
+                          fontSize: '10px',
+                          fontWeight: 700,
+                          background: 'rgba(236,72,153,0.2)',
+                          color: '#f472b6',
+                          padding: '2px 6px',
+                          borderRadius: '4px',
+                          border: '1px solid rgba(236,72,153,0.35)',
+                          display: 'inline-flex',
+                          alignItems: 'center',
+                          gap: '4px',
+                        }}
+                      >
+                        <Sparkles size={10} /> Reference Image Loaded
+                      </span>
+                      <span style={{ fontSize: '10px', color: '#a855f7', fontWeight: 600 }}>
+                        Editing Mode Active
+                      </span>
+                    </div>
+                    <div
+                      style={{
+                        fontSize: '12px',
+                        fontWeight: 600,
+                        color: '#fff',
+                        marginTop: '3px',
+                        maxWidth: '220px',
+                        overflow: 'hidden',
+                        textOverflow: 'ellipsis',
+                        whiteSpace: 'nowrap',
+                      }}
+                      title={referenceImageName || 'Uploaded image'}
+                    >
+                      {referenceImageName || 'Uploaded Reference'}
+                    </div>
+                    {referenceImageSize && (
+                      <div style={{ fontSize: '10px', color: 'var(--muted)', marginTop: '1px' }}>
+                        {(referenceImageSize / (1024 * 1024)).toFixed(2)} MB
+                      </div>
+                    )}
+                  </div>
+                </div>
+
+                <div style={{ display: 'flex', gap: '8px', alignItems: 'center' }}>
+                  <button
+                    type="button"
+                    onClick={() => fileInputRef.current?.click()}
+                    style={{
+                      padding: '5px 10px',
+                      borderRadius: '6px',
+                      background: 'rgba(255,255,255,0.08)',
+                      border: '1px solid rgba(255,255,255,0.15)',
+                      color: '#fff',
+                      fontSize: '11px',
+                      cursor: 'pointer',
+                    }}
+                  >
+                    Replace
+                  </button>
+                  <button
+                    type="button"
+                    onClick={handleClearReferenceImage}
+                    style={{
+                      padding: '5px 10px',
+                      borderRadius: '6px',
+                      background: 'rgba(248,113,113,0.15)',
+                      border: '1px solid rgba(248,113,113,0.3)',
+                      color: '#f87171',
+                      fontSize: '11px',
+                      cursor: 'pointer',
+                      display: 'inline-flex',
+                      alignItems: 'center',
+                      gap: '4px',
+                    }}
+                    title="Remove reference image"
+                  >
+                    <X size={12} /> Remove
+                  </button>
+                </div>
+              </div>
+            )}
+
+            {/* Hugging Face Not Supported Warning with Quick-Switch buttons */}
+            {isPost && referenceImage && (
+              <div
+                style={{
+                  marginTop: '10px',
+                  padding: '12px 14px',
+                  borderRadius: '10px',
+                  background: 'rgba(245,158,11,0.12)',
+                  border: '1px solid rgba(245,158,11,0.35)',
+                  display: 'grid',
+                  gap: '8px',
+                }}
+              >
+                <div style={{ display: 'flex', alignItems: 'flex-start', gap: '8px' }}>
+                  <AlertCircle size={16} style={{ color: '#fbbf24', flexShrink: 0, marginTop: '2px' }} />
+                  <div>
+                    <div style={{ fontSize: '12px', fontWeight: 700, color: '#fbbf24' }}>
+                      Hugging Face Does Not Support Image Editing
+                    </div>
+                    <div style={{ fontSize: '11px', color: '#fde68a', lineHeight: 1.4, marginTop: '2px' }}>
+                      The current Hugging Face text-to-image model does not support reference image (img2img) editing.
+                      Please switch to <strong>Pollinations</strong> (using the <em>kontext</em> model) or <strong>Puter</strong> (using <em>FLUX Kontext Pro</em> or <em>Gemini 2.5 Flash</em>) instead.
+                    </div>
+                  </div>
+                </div>
+
+                <div style={{ display: 'flex', gap: '8px', flexWrap: 'wrap', marginTop: '2px' }}>
+                  {pollinationsProvider && (
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setSelectedProviderId(pollinationsProvider.id);
+                        setModelType('kontext');
+                        setError(null);
+                        playTapSound();
+                      }}
+                      style={{
+                        padding: '6px 12px',
+                        borderRadius: '6px',
+                        background: '#ec4899',
+                        color: '#fff',
+                        border: 0,
+                        fontSize: '11px',
+                        fontWeight: 600,
+                        cursor: 'pointer',
+                        display: 'inline-flex',
+                        alignItems: 'center',
+                        gap: '5px',
+                      }}
+                    >
+                      <Sparkles size={12} /> Switch to Pollinations (kontext)
+                    </button>
+                  )}
+                  {puterProvider && (
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setSelectedProviderId(puterProvider.id);
+                        setPuterSelectedModel('black-forest-labs/flux-kontext-pro');
+                        setError(null);
+                        playTapSound();
+                      }}
+                      style={{
+                        padding: '6px 12px',
+                        borderRadius: '6px',
+                        background: '#0284c7',
+                        color: '#fff',
+                        border: 0,
+                        fontSize: '11px',
+                        fontWeight: 600,
+                        cursor: 'pointer',
+                        display: 'inline-flex',
+                        alignItems: 'center',
+                        gap: '5px',
+                      }}
+                    >
+                      <Check size={12} /> Switch to Puter (FLUX Kontext Pro)
+                    </button>
+                  )}
+                </div>
+              </div>
+            )}
+          </div>
+
           {/* Prompt Input Box */}
           <div>
             <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '8px' }}>
               <label style={{ fontSize: '12px', fontWeight: 600, color: 'var(--text)', display: 'flex', alignItems: 'center', gap: '6px' }}>
-                <Sparkles size={14} style={{ color: 'var(--accent)' }} /> Image Description / Prompt
+                {referenceImage ? (
+                  <>
+                    <Wand2 size={14} style={{ color: '#ec4899' }} /> Edit Instructions (img2img Mode)
+                  </>
+                ) : (
+                  <>
+                    <Sparkles size={14} style={{ color: 'var(--accent)' }} /> Image Description / Prompt
+                  </>
+                )}
               </label>
               <button
                 type="button"
@@ -736,7 +1259,11 @@ export function ImageStudio() {
             <textarea
               id="image-prompt-textarea"
               rows={4}
-              placeholder="Describe the image you want to generate in detail (e.g. A futuristic cybernetic city floating in the clouds at sunset, volumetric lighting, 8k render)..."
+              placeholder={
+                referenceImage
+                  ? "Describe what to edit or change in the reference image (e.g. 'Turn into a futuristic cyberpunk painting with neon lighting', 'Change background to sunset beach', 'Add glowing golden armor and helmet')..."
+                  : "Describe the image you want to generate in detail (e.g. A futuristic cybernetic city floating in the clouds at sunset, volumetric lighting, 8k render)..."
+              }
               value={prompt}
               onChange={(e) => setPrompt(e.target.value)}
               onKeyDown={(e) => {
@@ -909,32 +1436,36 @@ export function ImageStudio() {
 
           {/* Generation Parameters Row */}
           <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(140px, 1fr))', gap: '12px' }}>
-            {/* Model selector (for Pollinations / URL based generation, or display active provider model) */}
+            {/* Model selector (for Puter SDK, Hugging Face, or Pollinations Engine) */}
             {activeProvider?.requestType === 'sdk' ? (
               <div>
                 <label style={{ fontSize: '11px', fontWeight: 600, color: 'var(--muted)', display: 'block', marginBottom: '4px' }}>
-                  Puter SDK Model
+                  Puter Model {referenceImage ? '(Editing Capable)' : ''}
                 </label>
-                <div
+                <select
+                  value={puterSelectedModel}
+                  onChange={(e) => {
+                    setPuterSelectedModel(e.target.value);
+                    playTapSound();
+                  }}
                   style={{
                     width: '100%',
-                    boxSizing: 'border-box',
-                    background: 'rgba(56,189,248,0.08)',
-                    border: '1px solid rgba(56,189,248,0.25)',
+                    background: 'rgba(10,22,28,0.85)',
+                    border: '1px solid rgba(56,189,248,0.35)',
                     borderRadius: '6px',
                     padding: '7px 8px',
                     color: '#38bdf8',
                     fontSize: '11px',
-                    fontWeight: 600,
-                    fontFamily: 'DM Mono, monospace',
-                    overflow: 'hidden',
-                    textOverflow: 'ellipsis',
-                    whiteSpace: 'nowrap',
+                    fontWeight: 500,
+                    outline: 'none',
                   }}
-                  title={activeProvider.model || DEFAULT_PUTER_MODEL}
                 >
-                  ⚡ {activeProvider.model || DEFAULT_PUTER_MODEL}
-                </div>
+                  {PUTER_IMAGE_MODELS.map((m) => (
+                    <option key={m.id} value={m.id}>
+                      {m.name}
+                    </option>
+                  ))}
+                </select>
               </div>
             ) : activeProvider?.requestType === 'post' ? (
               <div>
@@ -981,6 +1512,9 @@ export function ImageStudio() {
                     outline: 'none',
                   }}
                 >
+                  {referenceImage && (
+                    <option value="kontext">kontext (Image Edit / img2img)</option>
+                  )}
                   <option value="flux">Flux (High Detail)</option>
                   <option value="turbo">Turbo (Ultra Fast)</option>
                   <option value="default">Default Provider Model</option>
@@ -1259,9 +1793,14 @@ export function ImageStudio() {
                 </>
               ) : (
                 <>
-                  <RotateCw size={17} className="animate-spin" /> Synthesizing Image...
+                  <RotateCw size={17} className="animate-spin" />{' '}
+                  {referenceImage ? 'Synthesizing Edited Image...' : 'Synthesizing Image...'}
                 </>
               )
+            ) : referenceImage ? (
+              <>
+                <Wand2 size={17} /> Edit Image (img2img)
+              </>
             ) : (
               <>
                 <Sparkles size={17} /> Generate Image
@@ -1284,15 +1823,86 @@ export function ImageStudio() {
               gap: '16px',
             }}
           >
-            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-              <h3 style={{ margin: 0, fontSize: '15px', fontWeight: 600, display: 'flex', alignItems: 'center', gap: '6px' }}>
-                <ImageIcon size={16} style={{ color: '#f472b6' }} /> Output Canvas
-              </h3>
-              {currentImage && (
-                <span style={{ fontSize: '11px', color: 'var(--muted)', fontFamily: 'DM Mono, monospace' }}>
-                  {currentImage.width}×{currentImage.height} · Seed {currentImage.seed}
-                </span>
-              )}
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: '10px' }}>
+              <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
+                <h3 style={{ margin: 0, fontSize: '15px', fontWeight: 600, display: 'flex', alignItems: 'center', gap: '6px' }}>
+                  <ImageIcon size={16} style={{ color: '#f472b6' }} /> Output Canvas
+                </h3>
+                {currentImage?.referenceImageUrl && (
+                  <span
+                    style={{
+                      fontSize: '10px',
+                      fontWeight: 700,
+                      background: 'rgba(236,72,153,0.18)',
+                      color: '#f472b6',
+                      padding: '2px 7px',
+                      borderRadius: '4px',
+                      border: '1px solid rgba(236,72,153,0.35)',
+                      display: 'inline-flex',
+                      alignItems: 'center',
+                      gap: '4px',
+                    }}
+                  >
+                    <ArrowRightLeft size={10} /> Before & After
+                  </span>
+                )}
+              </div>
+
+              <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                {currentImage?.referenceImageUrl && (
+                  <div style={{ display: 'flex', background: 'rgba(0,0,0,0.4)', borderRadius: '6px', padding: '2px', border: '1px solid var(--line)' }}>
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setComparisonLayout('side-by-side');
+                        playTapSound();
+                      }}
+                      style={{
+                        background: comparisonLayout === 'side-by-side' ? 'rgba(236,72,153,0.3)' : 'transparent',
+                        color: comparisonLayout === 'side-by-side' ? '#fff' : 'var(--muted)',
+                        border: 0,
+                        borderRadius: '4px',
+                        padding: '3px 8px',
+                        fontSize: '10px',
+                        fontWeight: 600,
+                        cursor: 'pointer',
+                        display: 'inline-flex',
+                        alignItems: 'center',
+                        gap: '4px',
+                      }}
+                    >
+                      <Columns size={11} /> Side-by-Side
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setComparisonLayout('result-only');
+                        playTapSound();
+                      }}
+                      style={{
+                        background: comparisonLayout === 'result-only' ? 'rgba(236,72,153,0.3)' : 'transparent',
+                        color: comparisonLayout === 'result-only' ? '#fff' : 'var(--muted)',
+                        border: 0,
+                        borderRadius: '4px',
+                        padding: '3px 8px',
+                        fontSize: '10px',
+                        fontWeight: 600,
+                        cursor: 'pointer',
+                        display: 'inline-flex',
+                        alignItems: 'center',
+                        gap: '4px',
+                      }}
+                    >
+                      <ImageIcon size={11} /> Result Only
+                    </button>
+                  </div>
+                )}
+                {currentImage && (
+                  <span style={{ fontSize: '11px', color: 'var(--muted)', fontFamily: 'DM Mono, monospace' }}>
+                    {currentImage.width}×{currentImage.height} · Seed {currentImage.seed}
+                  </span>
+                )}
+              </div>
             </div>
 
             {/* Display Area: Loading vs Rendered vs Empty */}
@@ -1344,51 +1954,170 @@ export function ImageStudio() {
               </div>
             ) : currentImage ? (
               <div style={{ display: 'grid', gap: '14px' }}>
-                {/* Image Container */}
-                <div
-                  style={{
-                    position: 'relative',
-                    borderRadius: '12px',
-                    overflow: 'hidden',
-                    background: '#071116',
-                    border: '1px solid rgba(236,72,153,0.3)',
-                    boxShadow: '0 8px 30px rgba(0,0,0,0.5)',
-                  }}
-                >
-                  <img
-                    src={currentImage.url}
-                    alt={currentImage.prompt}
-                    style={{
-                      width: '100%',
-                      height: 'auto',
-                      maxHeight: '520px',
-                      objectFit: 'contain',
-                      display: 'block',
-                      margin: '0 auto',
-                    }}
-                  />
+                {/* Image Container: Side-by-Side Comparison vs Single View */}
+                {currentImage.referenceImageUrl && comparisonLayout === 'side-by-side' ? (
+                  <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(240px, 1fr))', gap: '14px' }}>
+                    {/* Before: Reference Image */}
+                    <div
+                      style={{
+                        borderRadius: '12px',
+                        overflow: 'hidden',
+                        background: '#071116',
+                        border: '1px solid rgba(255,255,255,0.12)',
+                        boxShadow: '0 4px 20px rgba(0,0,0,0.4)',
+                        display: 'flex',
+                        flexDirection: 'column',
+                      }}
+                    >
+                      <div
+                        style={{
+                          padding: '8px 12px',
+                          background: 'rgba(255,255,255,0.04)',
+                          borderBottom: '1px solid rgba(255,255,255,0.08)',
+                          fontSize: '11px',
+                          fontWeight: 700,
+                          color: 'var(--muted)',
+                          display: 'flex',
+                          alignItems: 'center',
+                          justifyContent: 'space-between',
+                        }}
+                      >
+                        <span style={{ display: 'inline-flex', alignItems: 'center', gap: '5px' }}>
+                          <ImagePlus size={13} style={{ color: '#94a3b8' }} /> BEFORE (Original Reference)
+                        </span>
+                        <span style={{ fontSize: '10px', opacity: 0.7 }}>Input</span>
+                      </div>
+                      <div style={{ position: 'relative', flex: 1, display: 'grid', placeItems: 'center', minHeight: '260px', maxHeight: '480px', overflow: 'hidden', background: '#050c10' }}>
+                        <img
+                          src={currentImage.referenceImageUrl}
+                          alt="Reference Before"
+                          style={{
+                            width: '100%',
+                            height: '100%',
+                            maxHeight: '480px',
+                            objectFit: 'contain',
+                            display: 'block',
+                          }}
+                        />
+                      </div>
+                    </div>
 
-                  {/* Expand button overlay */}
-                  <button
-                    type="button"
-                    onClick={() => setFullscreenImage(currentImage)}
+                    {/* After: AI Edited Result */}
+                    <div
+                      style={{
+                        borderRadius: '12px',
+                        overflow: 'hidden',
+                        background: '#071116',
+                        border: '1px solid rgba(236,72,153,0.45)',
+                        boxShadow: '0 8px 30px rgba(236,72,153,0.15)',
+                        display: 'flex',
+                        flexDirection: 'column',
+                        position: 'relative',
+                      }}
+                    >
+                      <div
+                        style={{
+                          padding: '8px 12px',
+                          background: 'rgba(236,72,153,0.12)',
+                          borderBottom: '1px solid rgba(236,72,153,0.3)',
+                          fontSize: '11px',
+                          fontWeight: 700,
+                          color: '#f472b6',
+                          display: 'flex',
+                          alignItems: 'center',
+                          justifyContent: 'space-between',
+                        }}
+                      >
+                        <span style={{ display: 'inline-flex', alignItems: 'center', gap: '5px' }}>
+                          <Sparkles size={13} style={{ color: '#f472b6' }} /> AFTER (AI Edited Result)
+                        </span>
+                        <span style={{ fontSize: '10px', background: 'rgba(236,72,153,0.25)', padding: '1px 5px', borderRadius: '4px' }}>
+                          {currentImage.model || 'kontext'}
+                        </span>
+                      </div>
+                      <div style={{ position: 'relative', flex: 1, display: 'grid', placeItems: 'center', minHeight: '260px', maxHeight: '480px', overflow: 'hidden', background: '#050c10' }}>
+                        <img
+                          src={currentImage.url}
+                          alt={currentImage.prompt}
+                          style={{
+                            width: '100%',
+                            height: '100%',
+                            maxHeight: '480px',
+                            objectFit: 'contain',
+                            display: 'block',
+                          }}
+                        />
+
+                        {/* Expand button overlay */}
+                        <button
+                          type="button"
+                          onClick={() => setFullscreenImage(currentImage)}
+                          style={{
+                            position: 'absolute',
+                            top: '10px',
+                            right: '10px',
+                            background: 'rgba(0,0,0,0.65)',
+                            backdropFilter: 'blur(4px)',
+                            border: '1px solid rgba(255,255,255,0.2)',
+                            borderRadius: '6px',
+                            padding: '6px',
+                            color: '#fff',
+                            cursor: 'pointer',
+                          }}
+                          title="Fullscreen View"
+                        >
+                          <Maximize2 size={16} />
+                        </button>
+                      </div>
+                    </div>
+                  </div>
+                ) : (
+                  /* Single Image View */
+                  <div
                     style={{
-                      position: 'absolute',
-                      top: '12px',
-                      right: '12px',
-                      background: 'rgba(0,0,0,0.65)',
-                      backdropFilter: 'blur(4px)',
-                      border: '1px solid rgba(255,255,255,0.2)',
-                      borderRadius: '6px',
-                      padding: '6px',
-                      color: '#fff',
-                      cursor: 'pointer',
+                      position: 'relative',
+                      borderRadius: '12px',
+                      overflow: 'hidden',
+                      background: '#071116',
+                      border: '1px solid rgba(236,72,153,0.3)',
+                      boxShadow: '0 8px 30px rgba(0,0,0,0.5)',
                     }}
-                    title="Fullscreen View"
                   >
-                    <Maximize2 size={16} />
-                  </button>
-                </div>
+                    <img
+                      src={currentImage.url}
+                      alt={currentImage.prompt}
+                      style={{
+                        width: '100%',
+                        height: 'auto',
+                        maxHeight: '520px',
+                        objectFit: 'contain',
+                        display: 'block',
+                        margin: '0 auto',
+                      }}
+                    />
+
+                    {/* Expand button overlay */}
+                    <button
+                      type="button"
+                      onClick={() => setFullscreenImage(currentImage)}
+                      style={{
+                        position: 'absolute',
+                        top: '12px',
+                        right: '12px',
+                        background: 'rgba(0,0,0,0.65)',
+                        backdropFilter: 'blur(4px)',
+                        border: '1px solid rgba(255,255,255,0.2)',
+                        borderRadius: '6px',
+                        padding: '6px',
+                        color: '#fff',
+                        cursor: 'pointer',
+                      }}
+                      title="Fullscreen View"
+                    >
+                      <Maximize2 size={16} />
+                    </button>
+                  </div>
+                )}
 
                 {/* Prompt Caption & Meta */}
                 <div
@@ -1401,8 +2130,26 @@ export function ImageStudio() {
                     gap: '6px',
                   }}
                 >
-                  {currentImage.enhancedPrompt && (
-                    <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: '6px', flexWrap: 'wrap' }}>
+                    {currentImage.isEdit && (
+                      <span
+                        style={{
+                          fontSize: '10px',
+                          fontWeight: 700,
+                          background: 'rgba(236,72,153,0.2)',
+                          color: '#f472b6',
+                          padding: '2px 6px',
+                          borderRadius: '4px',
+                          border: '1px solid rgba(236,72,153,0.35)',
+                          display: 'inline-flex',
+                          alignItems: 'center',
+                          gap: '4px',
+                        }}
+                      >
+                        <Wand2 size={10} /> Image Edit (img2img)
+                      </span>
+                    )}
+                    {currentImage.enhancedPrompt && (
                       <span
                         style={{
                           fontSize: '10px',
@@ -1417,10 +2164,10 @@ export function ImageStudio() {
                           gap: '4px',
                         }}
                       >
-                        <Wand2 size={10} /> Smart AI Enhanced
+                        <Sparkles size={10} /> Smart AI Enhanced
                       </span>
-                    </div>
-                  )}
+                    )}
+                  </div>
 
                   <p style={{ margin: 0, fontSize: '12px', color: '#fff', lineHeight: 1.5 }}>
                     "{currentImage.prompt}"
@@ -1436,6 +2183,7 @@ export function ImageStudio() {
                     <span>Provider: {currentImage.providerName}</span>
                     <span>Model: {currentImage.model || 'flux'}</span>
                     <span>Seed: {currentImage.seed}</span>
+                    {currentImage.isEdit && <span>Mode: img2img Editing</span>}
                   </div>
                 </div>
 
@@ -1449,7 +2197,7 @@ export function ImageStudio() {
                     disabled={downloading}
                     style={{
                       flex: 1,
-                      minWidth: '160px',
+                      minWidth: '150px',
                       padding: '11px 18px',
                       borderRadius: '8px',
                       background: 'linear-gradient(135deg, rgba(52,211,153,0.9) 0%, rgba(16,185,129,0.9) 100%)',
@@ -1476,12 +2224,34 @@ export function ImageStudio() {
                     )}
                   </button>
 
+                  {/* Use this output as reference for next edit */}
+                  <button
+                    type="button"
+                    onClick={() => handleUseAsReference(currentImage.url)}
+                    className="secondary-button"
+                    style={{
+                      padding: '11px 14px',
+                      borderRadius: '8px',
+                      fontSize: '12px',
+                      fontWeight: 600,
+                      display: 'inline-flex',
+                      alignItems: 'center',
+                      gap: '5px',
+                      cursor: 'pointer',
+                      borderColor: 'rgba(236,72,153,0.35)',
+                      color: '#f472b6',
+                    }}
+                    title="Load this result as the reference image to edit it further"
+                  >
+                    <Wand2 size={14} /> Edit This
+                  </button>
+
                   <button
                     type="button"
                     onClick={() => handleCopyUrl(currentImage.url)}
                     className="secondary-button"
                     style={{
-                      padding: '11px 16px',
+                      padding: '11px 14px',
                       borderRadius: '8px',
                       fontSize: '12px',
                       fontWeight: 600,
@@ -1659,8 +2429,31 @@ export function ImageStudio() {
                       loading="lazy"
                     />
 
+                    {/* Image Edit tag */}
+                    {(item.isEdit || item.referenceImageUrl) && (
+                      <div
+                        style={{
+                          position: 'absolute',
+                          bottom: '3px',
+                          left: '3px',
+                          background: 'rgba(236,72,153,0.9)',
+                          borderRadius: '3px',
+                          padding: '1px 4px',
+                          color: '#fff',
+                          fontSize: '8px',
+                          fontWeight: 700,
+                          display: 'inline-flex',
+                          alignItems: 'center',
+                          gap: '2px',
+                        }}
+                        title="Image Edit (img2img)"
+                      >
+                        <Wand2 size={8} /> Edit
+                      </div>
+                    )}
+
                     {/* AI Enhanced icon tag */}
-                    {item.enhancedPrompt && (
+                    {item.enhancedPrompt && !(item.isEdit || item.referenceImageUrl) && (
                       <div
                         style={{
                           position: 'absolute',

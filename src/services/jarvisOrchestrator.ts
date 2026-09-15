@@ -1306,22 +1306,22 @@ export function stripCodeOnlinePrefix(text: string): string {
 
 export function isImageSlashCommand(text: string): boolean {
   if (!text || typeof text !== 'string') return false;
-  return /^\/image(?:\s+|$)/i.test(text.trim());
+  return /^\/(?:image|images)(?:\s+|$)/i.test(text.trim());
 }
 
 export function stripImagePrefix(text: string): string {
   if (!text || typeof text !== 'string') return text;
-  return text.trim().replace(/^\/image\s*/i, '').trim().replace(/^["'`<]+|[>"'`]+$/g, '').trim();
+  return text.trim().replace(/^\/(?:image|images)\s*/i, '').trim().replace(/^["'`<]+|[>"'`]+$/g, '').trim();
 }
 
 export function isImageAiSlashCommand(text: string): boolean {
   if (!text || typeof text !== 'string') return false;
-  return /^\/imageai(?:\s+|$)/i.test(text.trim());
+  return /^\/(?:imageai|imagesai|image_ai|images_ai)(?:\s+|$)/i.test(text.trim());
 }
 
 export function stripImageAiPrefix(text: string): string {
   if (!text || typeof text !== 'string') return text;
-  return text.trim().replace(/^\/imageai\s*/i, '').trim().replace(/^["'`<]+|[>"'`]+$/g, '').trim();
+  return text.trim().replace(/^\/(?:imageai|imagesai|image_ai|images_ai)\s*/i, '').trim().replace(/^["'`<]+|[>"'`]+$/g, '').trim();
 }
 
 export function isCustomApiCommand(text: string): boolean {
@@ -2800,7 +2800,7 @@ CRITICAL RULES:
         plan: [
           'Search Wikipedia and Wikimedia Commons for verified authentic real-world photos',
           'Synthesize high-fidelity AI generated image visual via active Image AI Provider',
-          'Provide summary and visual presentation for query',
+          'Present visual image card(s) with concise caption',
         ],
         needsCode: false,
         needsResearch: false,
@@ -2833,7 +2833,7 @@ CRITICAL RULES:
         task: `Generate AI visual for: ${stripped}`,
         plan: [
           'Synthesize high-fidelity AI generated image visual via active Image AI Provider',
-          'Provide concise synthesis description and prompt details',
+          'Present visual image card(s) with concise caption',
         ],
         needsCode: false,
         needsResearch: false,
@@ -3006,7 +3006,7 @@ CRITICAL RULES:
         plannerOutput.plan = [
           'Search Wikipedia and Wikimedia Commons for verified authentic real-world photos',
           'Synthesize high-fidelity AI generated image visual via active Image AI Provider',
-          'Provide summary and visual presentation for query',
+          'Present visual image card(s) with concise caption',
         ];
         plannerOutput.needsCode = false;
         plannerOutput.needsResearch = false;
@@ -3028,7 +3028,7 @@ CRITICAL RULES:
         plannerOutput.task = `Generate AI visual for: ${stripped}`;
         plannerOutput.plan = [
           'Synthesize high-fidelity AI generated image visual via active Image AI Provider',
-          'Provide concise synthesis description and prompt details',
+          'Present visual image card(s) with concise caption',
         ];
         plannerOutput.needsCode = false;
         plannerOutput.needsResearch = false;
@@ -5557,8 +5557,10 @@ Output strictly valid JSON matching this schema:
         ca.pipelinePosition === 'extra_step' ||
         !ca.pipelinePosition),
   );
-  for (const cAgent of preSynthCustomAgents) {
-    await executeCustomAgent(cAgent);
+  if (!isImageSlash && !isImageAiSlash) {
+    for (const cAgent of preSynthCustomAgents) {
+      await executeCustomAgent(cAgent);
+    }
   }
 
   // ==========================================
@@ -5566,7 +5568,24 @@ Output strictly valid JSON matching this schema:
   // ==========================================
   let finalAnswer = '';
 
-  if (agentConfigs.finalSynthesizer.enabled) {
+  if (isImageSlash || isImageAiSlash) {
+    const strippedPrompt = isImageSlash
+      ? stripImagePrefix(query)
+      : stripImageAiPrefix(query);
+    finalAnswer = `Here's your image for: "${strippedPrompt}"`;
+    const sCfg = agentConfigs.finalSynthesizer;
+    if (sCfg) {
+      updateStep({
+        agentId: 'finalSynthesizer',
+        name: sCfg.name || 'Final Synthesizer',
+        icon: sCfg.icon || '✨',
+        status: 'skipped',
+        providerName: sCfg.providerId,
+        model: sCfg.modelId,
+        summary: 'Final Synthesizer bypassed for image command — displaying image cards with direct caption.',
+      });
+    }
+  } else if (agentConfigs.finalSynthesizer.enabled) {
     const sCfg = agentConfigs.finalSynthesizer;
     const provInfo = resolveProviderConfig(sCfg);
     const start = Date.now();
@@ -6022,11 +6041,13 @@ JARVIS is a multi-agent AI intelligence platform composed of 10 specialized neur
   }
 
   // Execute post-synthesizer custom agents if any (e.g. after_synthesizer)
-  const postSynthCustomAgents = customAgents.filter(
-    (ca) => ca.enabled && ca.pipelinePosition === 'after_synthesizer',
-  );
-  for (const cAgent of postSynthCustomAgents) {
-    await executeCustomAgent(cAgent);
+  if (!isImageSlash && !isImageAiSlash) {
+    const postSynthCustomAgents = customAgents.filter(
+      (ca) => ca.enabled && ca.pipelinePosition === 'after_synthesizer',
+    );
+    for (const cAgent of postSynthCustomAgents) {
+      await executeCustomAgent(cAgent);
+    }
   }
 
   // ==========================================
@@ -6042,6 +6063,8 @@ JARVIS is a multi-agent AI intelligence platform composed of 10 specialized neur
     query.length > 20;
 
   const shouldArchitect =
+    !isImageSlash &&
+    !isImageAiSlash &&
     diagramMode &&
     hasDiagramIntent &&
     agentConfigs.architect &&
@@ -6157,6 +6180,8 @@ JARVIS is a multi-agent AI intelligence platform composed of 10 specialized neur
     query.length > 20;
 
   const shouldDataAnalyst =
+    !isImageSlash &&
+    !isImageAiSlash &&
     chartMode &&
     hasNumericIntent &&
     agentConfigs.dataAnalyst &&

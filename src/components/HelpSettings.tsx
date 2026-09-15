@@ -174,20 +174,20 @@ NEXUS includes dedicated slash commands that allow users to override normal plan
   \`/codeonline implement OpenAI Assistants API with streaming in Python 3.12\`
   \`/codeonline create a Tailwind v4 custom theme with color variables\`
 
-#### 6. \`/image [description]\` — Direct Image Finder (Dual Photo & AI Visual)
+#### 6. \`/image [description]\` (or \`/images\`) — Direct Image Finder (Dual Photo & AI Visual)
 - **What it does**: Directly invokes the Image Finder agent's dual visual sourcing behavior, discovering real-world Wikipedia/Wikimedia photos alongside high-fidelity AI-generated visuals side by side.
-- **Pipeline Behavior**: Skips the Planner's normal multi-step routing for ultra-fast response time, executing parallel Wikipedia image discovery and AI image synthesis via your currently active Image AI Provider.
+- **Pipeline Behavior**: Bypasses the Final Synthesizer agent, Deep Research Mesh, and QA steps entirely for maximum speed. Directly outputs high-resolution image cards with a concise caption like \`Here's your image for: "<prompt>"\` without redundant paragraphs, comparison tables, or bracketed text.
 - **Example**:
   \`/image Tokyo skyline at dusk\`
   \`/image James Webb Space Telescope deep field galaxy\`
   \`/image Cyberpunk hovercar in neon rain\`
 
-#### 7. \`/imageai [description]\` — Direct AI Image Synthesis
+#### 7. \`/imageai [description]\` (or \`/imagesai\`) — Direct AI Image Synthesis
 - **What it does**: Directly triggers AI image generation using the active Image AI Provider (Pollinations, Hugging Face, or Puter.js), skipping Wikipedia photo search entirely.
-- **Pipeline Behavior**: Bypasses the Planner and Wikipedia search to immediately generate and render a high-fidelity AI visual card with raw metadata inspectability.
+- **Pipeline Behavior**: Bypasses the Final Synthesizer and external research steps to instantly generate and render high-fidelity AI visual cards with a simple direct caption and inspectable metadata.
 - **Example**:
   \`/imageai isometric futuristic laboratory with glowing blue crystals\`
-  \`/imageai photorealistic portrait of an astronaut on Mars\``;
+  \`/imagesai photorealistic portrait of an astronaut on Mars\``;
 
   // Section 5: API Catalog
   const apiCatalogText = `### 5. API Catalog — Credential Architecture & Custom API Registration

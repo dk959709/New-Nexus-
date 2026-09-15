@@ -31,7 +31,11 @@ import {
 } from 'lucide-react';
 import { storage, DEFAULT_JARVIS_CONFIG } from '@/lib/storage';
 import { stripConversationalMetaText, cleanMarkdownForSpeech } from '@/lib/format';
-import { runJarvisPipeline } from '@/services/jarvisOrchestrator';
+import {
+  runJarvisPipeline,
+  isImageSlashCommand,
+  isImageAiSlashCommand,
+} from '@/services/jarvisOrchestrator';
 import {
   validateAttachmentFile,
   processAttachedFile,
@@ -1281,9 +1285,11 @@ export function JarvisChat({ config, onOpenSettings }: JarvisChatProps) {
                     const rawContent = synthStep?.rawOutput || msg.answer;
                     const rawText = typeof rawContent === 'object' ? JSON.stringify(rawContent, null, 2) : String(rawContent || '');
 
+                    const isImageCmd = isImageSlashCommand(msg.query) || isImageAiSlashCommand(msg.query);
+
                     return (
                       <div className="jarvis-synthesis-body prose prose-invert max-w-none text-slate-100 leading-relaxed text-sm sm:text-base">
-                        {(msg.deepResearch || (msg.steps && msg.steps.some((s) => s.status === 'completed' && s.agentId !== 'finalSynthesizer'))) && (
+                        {!isImageCmd && (msg.deepResearch || (msg.steps && msg.steps.some((s) => s.status === 'completed' && s.agentId !== 'finalSynthesizer'))) && (
                           <div className="jarvis-synthesis-header flex items-center justify-between flex-wrap gap-2 mb-3 pt-3 border-t border-purple-500/30">
                             <div className="jarvis-synthesis-badge inline-flex items-center gap-1.5 px-3 py-1 rounded-full bg-purple-500/20 border border-purple-400/40 text-xs font-mono font-bold text-purple-300 shadow-[0_0_10px_rgba(192,132,252,0.2)]">
                               <Zap size={13} className="text-purple-400" />

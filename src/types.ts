@@ -193,6 +193,8 @@ export interface GeneratedImageItem {
   id: string;
   url: string;
   imageData?: string;
+  referenceImageUrl?: string;
+  isEdit?: boolean;
   prompt: string;
   originalPrompt?: string;
   enhancedPrompt?: string;
