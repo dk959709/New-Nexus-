@@ -349,6 +349,16 @@ export function ImageStudio() {
         finalImageUrl = generatedUrl;
       }
 
+      // Determine the real model used for this generation
+      let actualModelUsed = modelType;
+      if (isSdk) {
+        actualModelUsed = activeProvider.model || DEFAULT_PUTER_MODEL;
+      } else if (isPost) {
+        actualModelUsed = activeProvider.model || (activeProvider.url.split('/').filter(Boolean).pop()) || 'Hugging Face Model';
+      } else {
+        actualModelUsed = modelType;
+      }
+
       const newItem: GeneratedImageItem = {
         id: `img_${Date.now()}_${Math.random().toString(36).slice(2, 7)}`,
         url: finalImageUrl,
@@ -360,7 +370,7 @@ export function ImageStudio() {
         width: ratio.width,
         height: ratio.height,
         seed: currentSeed,
-        model: modelType,
+        model: actualModelUsed,
         timestamp: Date.now(),
       };
 
@@ -899,30 +909,84 @@ export function ImageStudio() {
 
           {/* Generation Parameters Row */}
           <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(140px, 1fr))', gap: '12px' }}>
-            {/* Model selector */}
-            <div>
-              <label style={{ fontSize: '11px', fontWeight: 600, color: 'var(--muted)', display: 'block', marginBottom: '4px' }}>
-                Engine Model
-              </label>
-              <select
-                value={modelType}
-                onChange={(e) => setModelType(e.target.value)}
-                style={{
-                  width: '100%',
-                  background: 'rgba(10,22,28,0.8)',
-                  border: '1px solid var(--line)',
-                  borderRadius: '6px',
-                  padding: '7px 8px',
-                  color: '#fff',
-                  fontSize: '12px',
-                  outline: 'none',
-                }}
-              >
-                <option value="flux">Flux (High Detail)</option>
-                <option value="turbo">Turbo (Ultra Fast)</option>
-                <option value="default">Default Provider Model</option>
-              </select>
-            </div>
+            {/* Model selector (for Pollinations / URL based generation, or display active provider model) */}
+            {activeProvider?.requestType === 'sdk' ? (
+              <div>
+                <label style={{ fontSize: '11px', fontWeight: 600, color: 'var(--muted)', display: 'block', marginBottom: '4px' }}>
+                  Puter SDK Model
+                </label>
+                <div
+                  style={{
+                    width: '100%',
+                    boxSizing: 'border-box',
+                    background: 'rgba(56,189,248,0.08)',
+                    border: '1px solid rgba(56,189,248,0.25)',
+                    borderRadius: '6px',
+                    padding: '7px 8px',
+                    color: '#38bdf8',
+                    fontSize: '11px',
+                    fontWeight: 600,
+                    fontFamily: 'DM Mono, monospace',
+                    overflow: 'hidden',
+                    textOverflow: 'ellipsis',
+                    whiteSpace: 'nowrap',
+                  }}
+                  title={activeProvider.model || DEFAULT_PUTER_MODEL}
+                >
+                  ⚡ {activeProvider.model || DEFAULT_PUTER_MODEL}
+                </div>
+              </div>
+            ) : activeProvider?.requestType === 'post' ? (
+              <div>
+                <label style={{ fontSize: '11px', fontWeight: 600, color: 'var(--muted)', display: 'block', marginBottom: '4px' }}>
+                  Inference Model
+                </label>
+                <div
+                  style={{
+                    width: '100%',
+                    boxSizing: 'border-box',
+                    background: 'rgba(168,85,247,0.08)',
+                    border: '1px solid rgba(168,85,247,0.25)',
+                    borderRadius: '6px',
+                    padding: '7px 8px',
+                    color: '#c084fc',
+                    fontSize: '11px',
+                    fontWeight: 600,
+                    fontFamily: 'DM Mono, monospace',
+                    overflow: 'hidden',
+                    textOverflow: 'ellipsis',
+                    whiteSpace: 'nowrap',
+                  }}
+                  title={activeProvider.model || activeProvider.url}
+                >
+                  HF: {activeProvider.model || (activeProvider.url.split('/').filter(Boolean).pop()) || 'Default'}
+                </div>
+              </div>
+            ) : (
+              <div>
+                <label style={{ fontSize: '11px', fontWeight: 600, color: 'var(--muted)', display: 'block', marginBottom: '4px' }}>
+                  Engine Model
+                </label>
+                <select
+                  value={modelType}
+                  onChange={(e) => setModelType(e.target.value)}
+                  style={{
+                    width: '100%',
+                    background: 'rgba(10,22,28,0.8)',
+                    border: '1px solid var(--line)',
+                    borderRadius: '6px',
+                    padding: '7px 8px',
+                    color: '#fff',
+                    fontSize: '12px',
+                    outline: 'none',
+                  }}
+                >
+                  <option value="flux">Flux (High Detail)</option>
+                  <option value="turbo">Turbo (Ultra Fast)</option>
+                  <option value="default">Default Provider Model</option>
+                </select>
+              </div>
+            )}
 
             {/* Seed control */}
             <div>
