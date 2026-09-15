@@ -110,6 +110,7 @@ export function AIProvidersSettings() {
         id: newId,
         name: '',
         url: 'https://image.pollinations.ai/prompt/',
+        requestType: 'get',
         keyStrategy: 'failover',
         keys: [
           {
@@ -259,6 +260,7 @@ export function AIProvidersSettings() {
       ...editingImageProvider,
       name: editingImageProvider.name.trim(),
       url: editingImageProvider.url.trim(),
+      requestType: editingImageProvider.requestType || 'get',
       keys: finalKeys,
     };
 
@@ -342,6 +344,7 @@ export function AIProvidersSettings() {
             : `img_provider_${Date.now()}`,
           name: editingProvider?.name || '',
           url: 'https://image.pollinations.ai/prompt/',
+          requestType: 'get',
           keyStrategy: editingProvider?.keyStrategy || 'failover',
           keys:
             editingProvider?.keys && editingProvider.keys.length > 0
@@ -587,27 +590,49 @@ export function AIProvidersSettings() {
     }));
 
     try {
-      const base = url.trim().replace(/\/+$/, '');
-      const testUrl = `${base}/${encodeURIComponent('ping_test')}${
-        keyItem.key.trim()
-          ? `?key=${encodeURIComponent(keyItem.key.trim())}&width=64&height=64&nologo=true`
-          : '?width=64&height=64&nologo=true'
-      }`;
+      const isPost =
+        editingImageProvider?.requestType === 'post' ||
+        url.toLowerCase().includes('huggingface') ||
+        url.toLowerCase().includes('hf-inference');
 
       const controller = new AbortController();
-      const timeoutId = setTimeout(() => controller.abort(), 10000);
+      const timeoutId = setTimeout(() => controller.abort(), 12000);
 
-      const resp = await fetch(testUrl, {
-        method: 'GET',
-        signal: controller.signal,
-        mode: 'cors',
-      });
+      let resp: Response;
+      if (isPost) {
+        resp = await fetch(url.trim(), {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+            ...(keyItem.key.trim() ? { Authorization: `Bearer ${keyItem.key.trim()}` } : {}),
+          },
+          body: JSON.stringify({ inputs: 'A simple geometric icon test' }),
+          signal: controller.signal,
+          mode: 'cors',
+        });
+      } else {
+        const base = url.trim().replace(/\/+$/, '');
+        const testUrl = `${base}/${encodeURIComponent('ping_test')}${
+          keyItem.key.trim()
+            ? `?key=${encodeURIComponent(keyItem.key.trim())}&width=64&height=64&nologo=true`
+            : '?width=64&height=64&nologo=true'
+        }`;
+        resp = await fetch(testUrl, {
+          method: 'GET',
+          signal: controller.signal,
+          mode: 'cors',
+        });
+      }
       clearTimeout(timeoutId);
 
-      if (resp.ok || (resp.status >= 200 && resp.status < 400)) {
+      // Status 200 or 503 (HF model loading means credentials are valid)
+      if (resp.ok || resp.status === 503 || (resp.status >= 200 && resp.status < 400)) {
+        const msg = resp.status === 503
+          ? '✓ Key valid (Model currently loading on HF)'
+          : '✓ Key valid & endpoint responded';
         setKeyTestResults((prev) => ({
           ...prev,
-          [keyItem.id]: { ok: true, message: '✓ Key valid & endpoint responded' },
+          [keyItem.id]: { ok: true, message: msg },
         }));
         if (editingImageProvider) {
           setEditingImageProvider({
@@ -722,27 +747,48 @@ export function AIProvidersSettings() {
     const keyToTest = validKeys.length > 0 ? validKeys[0].key.trim() : '';
 
     try {
-      const base = provider.url.trim().replace(/\/+$/, '');
-      const testUrl = `${base}/${encodeURIComponent('ping_test')}${
-        keyToTest
-          ? `?key=${encodeURIComponent(keyToTest)}&width=64&height=64&nologo=true`
-          : '?width=64&height=64&nologo=true'
-      }`;
+      const isPost =
+        provider.requestType === 'post' ||
+        provider.url.toLowerCase().includes('huggingface') ||
+        provider.url.toLowerCase().includes('hf-inference');
 
       const controller = new AbortController();
-      const timeoutId = setTimeout(() => controller.abort(), 10000);
+      const timeoutId = setTimeout(() => controller.abort(), 12000);
 
-      const resp = await fetch(testUrl, {
-        method: 'GET',
-        signal: controller.signal,
-        mode: 'cors',
-      });
+      let resp: Response;
+      if (isPost) {
+        resp = await fetch(provider.url.trim(), {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+            ...(keyToTest ? { Authorization: `Bearer ${keyToTest}` } : {}),
+          },
+          body: JSON.stringify({ inputs: 'A simple geometric icon test' }),
+          signal: controller.signal,
+          mode: 'cors',
+        });
+      } else {
+        const base = provider.url.trim().replace(/\/+$/, '');
+        const testUrl = `${base}/${encodeURIComponent('ping_test')}${
+          keyToTest
+            ? `?key=${encodeURIComponent(keyToTest)}&width=64&height=64&nologo=true`
+            : '?width=64&height=64&nologo=true'
+        }`;
+        resp = await fetch(testUrl, {
+          method: 'GET',
+          signal: controller.signal,
+          mode: 'cors',
+        });
+      }
       clearTimeout(timeoutId);
 
-      if (resp.ok || (resp.status >= 200 && resp.status < 400)) {
+      if (resp.ok || resp.status === 503 || (resp.status >= 200 && resp.status < 400)) {
+        const successMsg = resp.status === 503
+          ? '✓ Endpoint reachable (Model currently loading on HF)'
+          : '✓ Image endpoint verified and responsive';
         setProviderTestResults((prev) => ({
           ...prev,
-          [provider.id]: { ok: true, message: '✓ Image endpoint verified and responsive' },
+          [provider.id]: { ok: true, message: successMsg },
         }));
         if (validKeys.length > 0) {
           storage.updateImageKeyHealth(provider.id, validKeys[0].id, 'healthy');
@@ -1335,6 +1381,18 @@ export function AIProvidersSettings() {
                         fontSize: '10px',
                         padding: '2px 8px',
                         borderRadius: '12px',
+                        background: p.requestType === 'post' ? 'rgba(168,85,247,0.18)' : 'rgba(236,72,153,0.15)',
+                        color: p.requestType === 'post' ? '#c084fc' : '#f472b6',
+                        fontWeight: 600,
+                      }}
+                    >
+                      {p.requestType === 'post' ? 'POST / JSON' : 'GET / URL'}
+                    </span>
+                    <span
+                      style={{
+                        fontSize: '10px',
+                        padding: '2px 8px',
+                        borderRadius: '12px',
                         background: 'rgba(236,72,153,0.15)',
                         color: '#f472b6',
                         fontWeight: 600,
@@ -1681,12 +1739,28 @@ export function AIProvidersSettings() {
                     ...editingImageProvider,
                     name: 'Pollinations',
                     url: 'https://image.pollinations.ai/prompt/',
+                    requestType: 'get',
                   });
                 }}
                 className="secondary-button"
                 style={{ fontSize: '11px', padding: '4px 10px', borderRadius: '5px', borderColor: 'rgba(236,72,153,0.3)', color: '#f472b6' }}
               >
                 🎨 Pollinations AI
+              </button>
+              <button
+                type="button"
+                onClick={() => {
+                  setEditingImageProvider({
+                    ...editingImageProvider,
+                    name: 'Hugging Face',
+                    url: 'https://router.huggingface.co/hf-inference/models/stabilityai/stable-diffusion-3-medium-diffusers',
+                    requestType: 'post',
+                  });
+                }}
+                className="secondary-button"
+                style={{ fontSize: '11px', padding: '4px 10px', borderRadius: '5px', borderColor: 'rgba(251,191,36,0.3)', color: '#fbbf24' }}
+              >
+                🤗 Hugging Face
               </button>
             </div>
           )}
@@ -1877,7 +1951,7 @@ export function AIProvidersSettings() {
                 </label>
                 <input
                   type="text"
-                  placeholder="e.g. Pollinations, Stable Diffusion, Custom Image API"
+                  placeholder="e.g. Pollinations, Hugging Face, Custom Image API"
                   value={editingImageProvider.name}
                   onChange={(e) =>
                     setEditingImageProvider({ ...editingImageProvider, name: e.target.value })
@@ -1906,7 +1980,44 @@ export function AIProvidersSettings() {
                     marginBottom: '6px',
                   }}
                 >
-                  API URL (Base Image Generation Endpoint)
+                  Request Type
+                </label>
+                <div className="segmented-control" style={{ display: 'flex', width: '100%' }}>
+                  <button
+                    type="button"
+                    className={(!editingImageProvider.requestType || editingImageProvider.requestType === 'get') ? 'selected' : ''}
+                    onClick={() => setEditingImageProvider({ ...editingImageProvider, requestType: 'get' })}
+                    style={{ flex: 1, fontSize: '11px', padding: '9px 8px', justifyContent: 'center' }}
+                  >
+                    GET / URL-based
+                  </button>
+                  <button
+                    type="button"
+                    className={editingImageProvider.requestType === 'post' ? 'selected' : ''}
+                    onClick={() => setEditingImageProvider({ ...editingImageProvider, requestType: 'post' })}
+                    style={{ flex: 1, fontSize: '11px', padding: '9px 8px', justifyContent: 'center' }}
+                  >
+                    POST / JSON-based
+                  </button>
+                </div>
+                <p style={{ margin: '5px 0 0', fontSize: '11px', color: 'var(--muted)' }}>
+                  {editingImageProvider.requestType === 'post'
+                    ? 'Hugging Face style: POST with Bearer token header & {"inputs": "<prompt>"}.'
+                    : 'Pollinations style: Direct URL with path & query params.'}
+                </p>
+              </div>
+
+              <div style={{ gridColumn: '1 / -1' }}>
+                <label
+                  style={{
+                    display: 'block',
+                    fontSize: '12px',
+                    fontWeight: 600,
+                    color: 'var(--text)',
+                    marginBottom: '6px',
+                  }}
+                >
+                  API URL (Image Generation Endpoint)
                 </label>
                 <input
                   type="text"
@@ -1929,7 +2040,9 @@ export function AIProvidersSettings() {
                   }}
                 />
                 <p style={{ margin: '5px 0 0', fontSize: '11px', color: 'var(--muted)' }}>
-                  Prompts and API key parameters (e.g. <code>?key=...</code>) are dynamically appended.
+                  {editingImageProvider.requestType === 'post'
+                    ? 'Endpoint to which JSON POST requests are sent with Authorization header.'
+                    : 'Prompts and API key parameters (e.g. ?key=...) are dynamically appended.'}
                 </p>
               </div>
             </div>

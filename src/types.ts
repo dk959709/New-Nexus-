@@ -170,10 +170,13 @@ export interface AIProvidersState {
   providers: AIProviderConfig[];
 }
 
+export type ImageRequestType = 'get' | 'post';
+
 export interface ImageProviderConfig {
   id: string;
   name: string;
   url: string;
+  requestType?: ImageRequestType;
   keyStrategy: KeyStrategy;
   preferredKeyId?: string;
   keys: AIKeyItem[];

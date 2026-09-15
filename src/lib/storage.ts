@@ -37,6 +37,7 @@ export const DEFAULT_IMAGE_PROVIDERS: ImageProviderConfig[] = [
     id: 'pollinations_default',
     name: 'Pollinations',
     url: 'https://image.pollinations.ai/prompt/',
+    requestType: 'get',
     keyStrategy: 'failover',
     keys: [
       {

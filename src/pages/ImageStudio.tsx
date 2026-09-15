@@ -162,40 +162,98 @@ export function ImageStudio() {
     const ratio = ASPECT_RATIOS[selectedRatioIndex] || ASPECT_RATIOS[0];
     const currentSeed = seed;
 
-    const imageUrl = buildGenerationUrl(promptToUse, activeProvider, {
-      width: ratio.width,
-      height: ratio.height,
-      seed: currentSeed,
-      model: modelType,
-      enhance,
-      nologo,
-    });
+    const isPost =
+      activeProvider.requestType === 'post' ||
+      activeProvider.url.toLowerCase().includes('huggingface') ||
+      activeProvider.url.toLowerCase().includes('hf-inference');
 
     try {
-      // Preload image to verify successful rendering
-      await new Promise<void>((resolve, reject) => {
-        const img = new Image();
-        const timeout = setTimeout(() => {
-          img.src = '';
-          reject(new Error('Image generation timed out after 30 seconds.'));
-        }, 30000);
+      let finalImageUrl = '';
 
-        img.onload = () => {
-          clearTimeout(timeout);
-          resolve();
-        };
+      if (isPost) {
+        const apiKey = getResolvedApiKey(activeProvider);
+        const controller = new AbortController();
+        const timeoutId = setTimeout(() => controller.abort(), 45000);
 
-        img.onerror = () => {
-          clearTimeout(timeout);
-          reject(new Error('Failed to load image from provider. Please verify endpoint or API key.'));
-        };
+        const response = await fetch(activeProvider.url.trim(), {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+            ...(apiKey ? { Authorization: `Bearer ${apiKey}` } : {}),
+          },
+          body: JSON.stringify({ inputs: promptToUse }),
+          signal: controller.signal,
+          mode: 'cors',
+        });
+        clearTimeout(timeoutId);
 
-        img.src = imageUrl;
-      });
+        if (!response.ok) {
+          let errDetail = '';
+          try {
+            const errJson = await response.json();
+            errDetail = errJson?.error || errJson?.message || JSON.stringify(errJson);
+          } catch {
+            try {
+              errDetail = await response.text();
+            } catch {
+              errDetail = `HTTP ${response.status}: ${response.statusText}`;
+            }
+          }
+
+          if (response.status === 503) {
+            throw new Error(
+              `Model is currently warming up on Hugging Face (${errDetail || 'Estimated time ~20s'}). Please click Generate again in a few moments.`
+            );
+          } else if (response.status === 401 || response.status === 403) {
+            throw new Error(
+              `Authentication Error (${response.status}): ${errDetail || 'Invalid API key or unauthorized request.'}`
+            );
+          } else {
+            throw new Error(
+              `Provider returned error (${response.status}): ${errDetail || response.statusText}`
+            );
+          }
+        }
+
+        const imageBlob = await response.blob();
+        finalImageUrl = URL.createObjectURL(imageBlob);
+      } else {
+        const generatedUrl = buildGenerationUrl(promptToUse, activeProvider, {
+          width: ratio.width,
+          height: ratio.height,
+          seed: currentSeed,
+          model: modelType,
+          enhance,
+          nologo,
+        });
+
+        // Preload image to verify successful rendering
+        await new Promise<void>((resolve, reject) => {
+          const img = new Image();
+          const timeout = setTimeout(() => {
+            img.src = '';
+            reject(new Error('Image generation timed out after 30 seconds.'));
+          }, 30000);
+
+          img.onload = () => {
+            clearTimeout(timeout);
+            resolve();
+          };
+
+          img.onerror = () => {
+            clearTimeout(timeout);
+            reject(new Error('Failed to load image from provider. Please verify endpoint or API key.'));
+          };
+
+          img.src = generatedUrl;
+        });
+
+        finalImageUrl = generatedUrl;
+      }
 
       const newItem: GeneratedImageItem = {
         id: `img_${Date.now()}`,
-        url: imageUrl,
+        url: finalImageUrl,
         prompt: promptToUse,
         providerName: activeProvider.name,
         width: ratio.width,
@@ -223,21 +281,33 @@ export function ImageStudio() {
     try {
       setDownloading(true);
       playTapSound();
-      const response = await fetch(item.url, { mode: 'cors' });
-      if (!response.ok) {
-        throw new Error(`Failed to fetch image: ${response.status}`);
-      }
-      const blob = await response.blob();
-      const blobUrl = URL.createObjectURL(blob);
-      const a = document.createElement('a');
-      a.href = blobUrl;
+
       const sanitized =
         item.prompt.slice(0, 32).replace(/[^a-zA-Z0-9_-]/g, '_') || 'generated_image';
-      a.download = `nexus_${sanitized}_${item.seed}.jpg`;
-      document.body.appendChild(a);
-      a.click();
-      document.body.removeChild(a);
-      URL.revokeObjectURL(blobUrl);
+      const fileName = `nexus_${sanitized}_${item.seed}.jpg`;
+
+      if (item.url.startsWith('blob:')) {
+        const a = document.createElement('a');
+        a.href = item.url;
+        a.download = fileName;
+        document.body.appendChild(a);
+        a.click();
+        document.body.removeChild(a);
+      } else {
+        const response = await fetch(item.url, { mode: 'cors' });
+        if (!response.ok) {
+          throw new Error(`Failed to fetch image: ${response.status}`);
+        }
+        const blob = await response.blob();
+        const blobUrl = URL.createObjectURL(blob);
+        const a = document.createElement('a');
+        a.href = blobUrl;
+        a.download = fileName;
+        document.body.appendChild(a);
+        a.click();
+        document.body.removeChild(a);
+        URL.revokeObjectURL(blobUrl);
+      }
     } catch {
       // Fallback for CORS-restricted downloads
       const a = document.createElement('a');
@@ -399,7 +469,7 @@ export function ImageStudio() {
             >
               {imageProvidersState.providers.map((p) => (
                 <option key={p.id} value={p.id}>
-                  🎨 {p.name} ({p.url.replace(/^https?:\/\//, '').slice(0, 32)})
+                  🎨 {p.name} — {p.requestType === 'post' ? 'POST/JSON' : 'GET/URL'} ({p.url.replace(/^https?:\/\//, '').slice(0, 32)}...)
                 </option>
               ))}
             </select>
