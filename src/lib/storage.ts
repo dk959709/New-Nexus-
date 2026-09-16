@@ -13,6 +13,9 @@ import type {
   MultiChatPersonaConfig,
   LibraryDocument,
   DocumentRagSettings,
+  ParallaxSystemConfig,
+  ParallaxAgentConfig,
+  ParallaxSession,
 } from '@/types';
 
 const KEYS = {
@@ -30,7 +33,276 @@ const KEYS = {
   multiChatMemories: 'nexus-multichat-memories-v1',
   documentLibrary: 'nexus-document-library-v1',
   documentRagSettings: 'nexus-document-rag-settings-v1',
+  parallaxConfig: 'nexus-parallax-config-v1',
+  parallaxSessions: 'nexus-parallax-sessions-v1',
 } as const;
+
+export const DEFAULT_PARALLAX_AGENTS: Record<string, ParallaxAgentConfig> = {
+  veritas: {
+    id: 'veritas',
+    name: 'VERITAS',
+    initials: 'VE',
+    role: 'Fact-based, skeptical analysis',
+    accentColor: '#06b6d4',
+    hasToolAccess: true,
+    providerId: 'existing',
+    modelId: 'deepseek/deepseek-chat',
+    enabled: true,
+    systemInstruction: 'Provide fact-based, rigorous skeptical analysis. Scrutinize claims, question unverified assumptions, and state verifiable realities.',
+    maxTokens: 100,
+  },
+  aurora: {
+    id: 'aurora',
+    name: 'AURORA',
+    initials: 'AU',
+    role: 'Optimistic, opportunity-focused',
+    accentColor: '#f59e0b',
+    hasToolAccess: false,
+    providerId: 'existing',
+    modelId: 'deepseek/deepseek-chat',
+    enabled: true,
+    systemInstruction: 'Highlight emerging possibilities, creative upsides, human flourishing, and constructive avenues for progress.',
+    maxTokens: 100,
+  },
+  chronos: {
+    id: 'chronos',
+    name: 'CHRONOS',
+    initials: 'CH',
+    role: 'Historical context & precedent',
+    accentColor: '#a8a29e',
+    hasToolAccess: false,
+    providerId: 'existing',
+    modelId: 'deepseek/deepseek-chat',
+    enabled: true,
+    systemInstruction: 'Ground the topic in historical precedents, recurring civilizational cycles, and lessons learned from past centuries.',
+    maxTokens: 100,
+  },
+  axiom: {
+    id: 'axiom',
+    name: 'AXIOM',
+    initials: 'AX',
+    role: 'Pure logic & scientific reasoning',
+    accentColor: '#10b981',
+    hasToolAccess: false,
+    providerId: 'existing',
+    modelId: 'deepseek/deepseek-chat',
+    enabled: true,
+    systemInstruction: 'Apply first-principles logic, empirical rigor, deductive reasoning, and falsifiable scientific frameworks.',
+    maxTokens: 100,
+  },
+  echo: {
+    id: 'echo',
+    name: 'ECHO',
+    initials: 'EC',
+    role: 'Public/social sentiment',
+    accentColor: '#3b82f6',
+    hasToolAccess: false,
+    providerId: 'existing',
+    modelId: 'deepseek/deepseek-chat',
+    enabled: true,
+    systemInstruction: 'Reflect raw public consensus, viral cultural discussions, populist perceptions, and everyday human sentiment.',
+    maxTokens: 100,
+  },
+  ledger: {
+    id: 'ledger',
+    name: 'LEDGER',
+    initials: 'LE',
+    role: 'Business & financial angle',
+    accentColor: '#84cc16',
+    hasToolAccess: false,
+    providerId: 'existing',
+    modelId: 'deepseek/deepseek-chat',
+    enabled: true,
+    systemInstruction: 'Analyze economic incentives, capital flow, unit costs, profit margins, and commercial viability.',
+    maxTokens: 100,
+  },
+  socrates: {
+    id: 'socrates',
+    name: 'SOCRATES',
+    initials: 'SO',
+    role: 'Deep philosophical questioning',
+    accentColor: '#8b5cf6',
+    hasToolAccess: false,
+    providerId: 'existing',
+    modelId: 'deepseek/deepseek-chat',
+    enabled: true,
+    systemInstruction: 'Interrogate foundational assumptions with incisive philosophical questions that dissect definitions, intent, and meaning.',
+    maxTokens: 100,
+  },
+  pixel: {
+    id: 'pixel',
+    name: 'PIXEL',
+    initials: 'PI',
+    role: 'Creative/artistic perspective',
+    accentColor: '#ec4899',
+    hasToolAccess: false,
+    providerId: 'existing',
+    modelId: 'deepseek/deepseek-chat',
+    enabled: true,
+    systemInstruction: 'Examine aesthetic beauty, narrative symbolism, artistic expression, and emotional resonance in human culture.',
+    maxTokens: 100,
+  },
+  vanguard: {
+    id: 'vanguard',
+    name: 'VANGUARD',
+    initials: 'VA',
+    role: 'Bold, contrarian pushback',
+    accentColor: '#ef4444',
+    hasToolAccess: false,
+    providerId: 'existing',
+    modelId: 'deepseek/deepseek-chat',
+    enabled: true,
+    systemInstruction: 'Deliver provocative contrarian pushback against prevailing consensus, pointing out blind spots and polite orthodoxies.',
+    maxTokens: 100,
+  },
+  harmony: {
+    id: 'harmony',
+    name: 'HARMONY',
+    initials: 'HA',
+    role: 'Ethical & ontological concerns',
+    accentColor: '#14b8a6',
+    hasToolAccess: false,
+    providerId: 'existing',
+    modelId: 'deepseek/deepseek-chat',
+    enabled: true,
+    systemInstruction: 'Champion ethical imperatives, societal equity, ecological preservation, and human dignity.',
+    maxTokens: 100,
+  },
+  cipher: {
+    id: 'cipher',
+    name: 'CIPHER',
+    initials: 'CI',
+    role: 'Technical/engineering lens',
+    accentColor: '#0ea5e9',
+    hasToolAccess: false,
+    providerId: 'existing',
+    modelId: 'deepseek/deepseek-chat',
+    enabled: true,
+    systemInstruction: 'Evaluate system architecture, computational constraints, engineering bottlenecks, and technical execution realities.',
+    maxTokens: 100,
+  },
+  nomad: {
+    id: 'nomad',
+    name: 'NOMAD',
+    initials: 'NO',
+    role: 'Global/cultural viewpoint',
+    accentColor: '#f97316',
+    hasToolAccess: false,
+    providerId: 'existing',
+    modelId: 'deepseek/deepseek-chat',
+    enabled: true,
+    systemInstruction: 'Provide diverse, cross-cultural, geopolitical perspectives outside western or localized echo chambers.',
+    maxTokens: 100,
+  },
+  sentinel: {
+    id: 'sentinel',
+    name: 'SENTINEL',
+    initials: 'SE',
+    role: 'Risk & security-focused',
+    accentColor: '#e11d48',
+    hasToolAccess: false,
+    providerId: 'existing',
+    modelId: 'deepseek/deepseek-chat',
+    enabled: true,
+    systemInstruction: 'Identify threat vectors, systemic vulnerabilities, catastrophic tail risks, and defensive safeguards.',
+    maxTokens: 100,
+  },
+  lumen: {
+    id: 'lumen',
+    name: 'LUMEN',
+    initials: 'LU',
+    role: 'Simplifies for a general audience',
+    accentColor: '#eab308',
+    hasToolAccess: false,
+    providerId: 'existing',
+    modelId: 'deepseek/deepseek-chat',
+    enabled: true,
+    systemInstruction: 'Demystify complexity with clear, relatable, everyday analogies that anyone can immediately grasp.',
+    maxTokens: 100,
+  },
+  catalyst: {
+    id: 'catalyst',
+    name: 'CATALYST',
+    initials: 'CA',
+    role: 'Future trends & innovation',
+    accentColor: '#a855f7',
+    hasToolAccess: false,
+    providerId: 'existing',
+    modelId: 'deepseek/deepseek-chat',
+    enabled: true,
+    systemInstruction: 'Anticipate second-order innovations, disruptive paradigm shifts, and radical future horizons.',
+    maxTokens: 100,
+  },
+  gravity: {
+    id: 'gravity',
+    name: 'GRAVITY',
+    initials: 'GR',
+    role: 'Grounded, practical realism',
+    accentColor: '#64748b',
+    hasToolAccess: false,
+    providerId: 'existing',
+    modelId: 'deepseek/deepseek-chat',
+    enabled: true,
+    systemInstruction: 'Inject unvarnished practical reality: supply chain logistics, bureaucratic friction, and human inertia.',
+    maxTokens: 100,
+  },
+  mosaic: {
+    id: 'mosaic',
+    name: 'MOSAIC',
+    initials: 'MO',
+    role: 'Connects unrelated ideas together',
+    accentColor: '#2dd4bf',
+    hasToolAccess: false,
+    providerId: 'existing',
+    modelId: 'deepseek/deepseek-chat',
+    enabled: true,
+    systemInstruction: 'Form unexpected cross-disciplinary bridges linking disparate fields like biology, architecture, music, and economics.',
+    maxTokens: 100,
+  },
+  oracle: {
+    id: 'oracle',
+    name: 'ORACLE',
+    initials: 'OR',
+    role: 'Bold predictions',
+    accentColor: '#6366f1',
+    hasToolAccess: false,
+    providerId: 'existing',
+    modelId: 'deepseek/deepseek-chat',
+    enabled: true,
+    systemInstruction: 'Issue decisive, high-conviction predictions about future timelines and transformative outcomes.',
+    maxTokens: 100,
+  },
+  ember: {
+    id: 'ember',
+    name: 'EMBER',
+    initials: 'EM',
+    role: 'Passionate, emotionally driven take',
+    accentColor: '#f43f5e',
+    hasToolAccess: false,
+    providerId: 'existing',
+    modelId: 'deepseek/deepseek-chat',
+    enabled: true,
+    systemInstruction: 'Deliver a passionate, emotionally resonant take reflecting raw human vulnerability, passion, and moral urgency.',
+    maxTokens: 100,
+  },
+  nexus9: {
+    id: 'nexus9',
+    name: 'NEXUS-9',
+    initials: 'N9',
+    role: 'Neutral synthesizer/summarizer',
+    accentColor: '#67e8f9',
+    hasToolAccess: false,
+    providerId: 'existing',
+    modelId: 'deepseek/deepseek-chat',
+    enabled: true,
+    systemInstruction: 'Operate as an objective, balanced synthesizer reconciling competing viewpoints and mapping the crux of the debate.',
+    maxTokens: 100,
+  },
+};
+
+export const DEFAULT_PARALLAX_CONFIG: ParallaxSystemConfig = {
+  agents: DEFAULT_PARALLAX_AGENTS,
+};
 
 export const DEFAULT_IMAGE_PROVIDERS: ImageProviderConfig[] = [
   {
@@ -1312,5 +1584,73 @@ export const storage = {
 
   saveDocumentRagSettings(settings: DocumentRagSettings): void {
     write(KEYS.documentRagSettings, settings);
+  },
+
+  // ==========================================
+  // PARALLAX 20-AGENT SWARM
+  // ==========================================
+
+  getParallaxConfig(): ParallaxSystemConfig {
+    const stored = read<Partial<ParallaxSystemConfig> | null>(KEYS.parallaxConfig, null);
+    if (!stored || !stored.agents) {
+      return DEFAULT_PARALLAX_CONFIG;
+    }
+
+    const mergedAgents: Record<string, ParallaxAgentConfig> = {};
+    const defaultKeys = Object.keys(DEFAULT_PARALLAX_AGENTS);
+
+    for (const key of defaultKeys) {
+      const def = DEFAULT_PARALLAX_AGENTS[key];
+      const custom = stored.agents[key];
+      if (custom) {
+        mergedAgents[key] = {
+          ...def,
+          ...custom,
+          name: def.name,
+          initials: def.initials,
+          accentColor: def.accentColor,
+          hasToolAccess: def.hasToolAccess, // enforce strictly in code
+        };
+      } else {
+        mergedAgents[key] = { ...def };
+      }
+    }
+
+    return { agents: mergedAgents };
+  },
+
+  saveParallaxConfig(config: ParallaxSystemConfig): void {
+    write(KEYS.parallaxConfig, config);
+  },
+
+  resetParallaxConfig(): ParallaxSystemConfig {
+    write(KEYS.parallaxConfig, DEFAULT_PARALLAX_CONFIG);
+    return DEFAULT_PARALLAX_CONFIG;
+  },
+
+  updateParallaxAgent(id: string, updates: Partial<ParallaxAgentConfig>): ParallaxSystemConfig {
+    const current = this.getParallaxConfig();
+    if (current.agents[id]) {
+      current.agents[id] = {
+        ...current.agents[id],
+        ...updates,
+      };
+      this.saveParallaxConfig(current);
+    }
+    return current;
+  },
+
+  getParallaxSessions(): ParallaxSession[] {
+    return read<ParallaxSession[]>(KEYS.parallaxSessions, []);
+  },
+
+  saveParallaxSession(session: ParallaxSession): void {
+    const list = this.getParallaxSessions();
+    const updated = [session, ...list.filter((s) => s.id !== session.id)].slice(0, 20);
+    write(KEYS.parallaxSessions, updated);
+  },
+
+  clearParallaxSessions(): void {
+    write(KEYS.parallaxSessions, []);
   },
 };

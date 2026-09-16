@@ -7,6 +7,7 @@ import { HomePage, SearchPage, WeatherPage, SettingsPage, VoiceAI, ImageStudio }
 import { AssistantPage } from '@/pages/AssistantPage';
 import { JarvisPage } from '@/pages/JarvisPage';
 import { MultiChatPage } from '@/pages/MultiChatPage';
+import { ParallaxPage } from '@/pages/ParallaxPage';
 
 const SpacePage = lazy(() => import('@/pages/SpacePage').then((m) => ({ default: m.SpacePage })));
 const MapPage = lazy(() => import('@/pages/MapPage').then((m) => ({ default: m.MapPage })));
@@ -33,6 +34,7 @@ export default function App() {
             <Route path="/" element={<HomePage />} />
             <Route path="/jarvis" element={<JarvisPage />} />
             <Route path="/multi-chat" element={<MultiChatPage />} />
+            <Route path="/parallax" element={<ParallaxPage />} />
             <Route path="/search" element={<SearchPage />} />
             <Route path="/assistant" element={<AssistantPage />} />
             <Route path="/voice-ai" element={<VoiceAI />} />

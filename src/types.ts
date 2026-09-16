@@ -415,6 +415,82 @@ export interface MultiChatMessage {
   docLensEnabled?: boolean;
 }
 
+export type ParallaxAgentId =
+  | 'veritas'
+  | 'aurora'
+  | 'chronos'
+  | 'axiom'
+  | 'echo'
+  | 'ledger'
+  | 'socrates'
+  | 'pixel'
+  | 'vanguard'
+  | 'harmony'
+  | 'cipher'
+  | 'nomad'
+  | 'sentinel'
+  | 'lumen'
+  | 'catalyst'
+  | 'gravity'
+  | 'mosaic'
+  | 'oracle'
+  | 'ember'
+  | 'nexus9'
+  | string;
+
+export interface ParallaxAgentConfig {
+  id: ParallaxAgentId;
+  name: string;
+  initials: string;
+  role: string;
+  accentColor: string;
+  hasToolAccess?: boolean; // true ONLY for 'veritas' in Round 1
+  providerId: string;
+  modelId: string;
+  enabled: boolean;
+  systemInstruction: string;
+  maxTokens: number;
+}
+
+export interface ParallaxSystemConfig {
+  agents: Record<string, ParallaxAgentConfig>;
+}
+
+export interface ParallaxMessage {
+  id: string;
+  agentId: string;
+  agentName: string;
+  initials: string;
+  accentColor: string;
+  round: 1 | 2 | 3;
+  text: string;
+  timestamp: number;
+  toolUsed?: {
+    tool: 'search' | 'weather' | 'time';
+    query?: string;
+    fact?: string;
+  };
+  durationMs?: number;
+  model?: string;
+  providerName?: string;
+}
+
+export interface ParallaxSummary {
+  verdict: string;
+  highlights: string[];
+  consensusLean: string;
+  totalContributions: number;
+}
+
+export interface ParallaxSession {
+  id: string;
+  topic: string;
+  timestamp: number;
+  roundsCompleted: number;
+  messages: ParallaxMessage[];
+  summary?: ParallaxSummary;
+}
+
 export interface Settings {
   theme: ThemeMode;
   temperature: TemperatureUnit;

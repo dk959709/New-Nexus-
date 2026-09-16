@@ -12,4 +12,5 @@ export { JarvisPage } from './JarvisPage';
 export { TelegramPage } from './TelegramPage';
 export { VoiceAI } from './VoiceAI';
 export { ImageStudio } from './ImageStudio';
+export { ParallaxPage } from './ParallaxPage';
 
