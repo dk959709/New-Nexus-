@@ -281,8 +281,12 @@ export async function generateJarvisAiImage(
       }
     }
 
+    const isCloudflare =
+      activeProvider.url.toLowerCase().includes('cloudflare') ||
+      (activeProvider.name && activeProvider.name.toLowerCase().includes('cloudflare'));
     const isPost =
       activeProvider.requestType === 'post' ||
+      isCloudflare ||
       activeProvider.url.toLowerCase().includes('huggingface') ||
       activeProvider.url.toLowerCase().includes('hf-inference');
 
@@ -306,38 +310,77 @@ export async function generateJarvisAiImage(
         const controller = new AbortController();
         const timeoutId = setTimeout(() => controller.abort(), 20000);
 
+        const requestBody = isCloudflare
+          ? JSON.stringify({ prompt: cleanPrompt })
+          : JSON.stringify({ inputs: cleanPrompt, prompt: cleanPrompt });
+
         const response = await fetch(activeProvider.url.trim(), {
           method: 'POST',
           headers: {
             'Content-Type': 'application/json',
             ...(apiKey ? { Authorization: `Bearer ${apiKey}` } : {}),
           },
-          body: JSON.stringify({ inputs: cleanPrompt }),
+          body: requestBody,
           signal: controller.signal,
           mode: 'cors',
         });
         clearTimeout(timeoutId);
 
         if (response.ok) {
-          const blob = await response.blob();
-          const base64Data = await new Promise<string>((resolve, reject) => {
-            const reader = new FileReader();
-            reader.onloadend = () => resolve(reader.result as string);
-            reader.onerror = reject;
-            reader.readAsDataURL(blob);
-          });
+          let base64Data = '';
+          const contentType = (response.headers.get('content-type') || '').toLowerCase();
 
-          return {
-            title: cleanPrompt,
-            url: base64Data,
-            thumbnailUrl: base64Data,
-            domain: activeProvider.name || 'AI Generator',
-            source: '🎨 AI Generated',
-            imageType: 'ai',
-            label: '🎨 AI Generated',
-            author: activeProvider.name,
-            description: `Generated using ${activeProvider.name} neural visual engine.`,
-          };
+          if (contentType.includes('application/json') || contentType.includes('+json')) {
+            const json = await response.json();
+            const rawB64 =
+              json?.result?.image ||
+              json?.image ||
+              (Array.isArray(json?.data) && json.data[0]?.b64_json) ||
+              (typeof json?.result === 'string' ? json.result : null);
+            if (rawB64 && typeof rawB64 === 'string') {
+              base64Data = rawB64.startsWith('data:') ? rawB64 : `data:image/png;base64,${rawB64.trim()}`;
+            }
+          } else {
+            const blob = await response.blob();
+            if (blob.type.includes('json')) {
+              try {
+                const text = await blob.text();
+                const json = JSON.parse(text);
+                const rawB64 =
+                  json?.result?.image ||
+                  json?.image ||
+                  (Array.isArray(json?.data) && json.data[0]?.b64_json);
+                if (rawB64 && typeof rawB64 === 'string') {
+                  base64Data = rawB64.startsWith('data:') ? rawB64 : `data:image/png;base64,${rawB64.trim()}`;
+                }
+              } catch {
+                // Not JSON, continue with blob reader
+              }
+            }
+
+            if (!base64Data) {
+              base64Data = await new Promise<string>((resolve, reject) => {
+                const reader = new FileReader();
+                reader.onloadend = () => resolve(reader.result as string);
+                reader.onerror = reject;
+                reader.readAsDataURL(blob);
+              });
+            }
+          }
+
+          if (base64Data) {
+            return {
+              title: cleanPrompt,
+              url: base64Data,
+              thumbnailUrl: base64Data,
+              domain: activeProvider.name || 'AI Generator',
+              source: '🎨 AI Generated',
+              imageType: 'ai',
+              label: '🎨 AI Generated',
+              author: activeProvider.name,
+              description: `Generated using ${activeProvider.name} neural visual engine.`,
+            };
+          }
         }
       } catch (postErr) {
         console.warn('[JARVIS Image Finder] POST AI generation failed, falling back to Pollinations GET:', postErr);

@@ -237,11 +237,17 @@ export function ImageStudio() {
     !isSdk &&
     (activeProvider?.requestType === 'post' ||
       activeProvider?.url?.toLowerCase().includes('huggingface') ||
-      activeProvider?.name?.toLowerCase().includes('hugging'));
+      activeProvider?.url?.toLowerCase().includes('cloudflare') ||
+      activeProvider?.name?.toLowerCase().includes('hugging') ||
+      activeProvider?.name?.toLowerCase().includes('cloudflare'));
   const isPollinations = !isSdk && !isPost;
 
   const pollinationsProvider = imageProvidersState.providers.find(
-    (p) => p.requestType !== 'sdk' && p.requestType !== 'post' && !p.url.toLowerCase().includes('huggingface')
+    (p) =>
+      p.requestType !== 'sdk' &&
+      p.requestType !== 'post' &&
+      !p.url.toLowerCase().includes('huggingface') &&
+      !p.url.toLowerCase().includes('cloudflare')
   );
   const puterProvider = imageProvidersState.providers.find((p) => p.requestType === 'sdk');
 
@@ -489,12 +495,23 @@ export function ImageStudio() {
       !isSdk &&
       (activeProvider.requestType === 'post' ||
         activeProvider.url.toLowerCase().includes('huggingface') ||
-        activeProvider.url.toLowerCase().includes('hf-inference'));
+        activeProvider.url.toLowerCase().includes('hf-inference') ||
+        activeProvider.url.toLowerCase().includes('cloudflare') ||
+        activeProvider.name.toLowerCase().includes('cloudflare'));
 
-    // Check: Hugging Face does not support image editing
+    // Check: Cloudflare / Hugging Face POST providers do not support direct img2img editing
     if (isPost && referenceImage) {
       setError(
-        "Hugging Face's current model does not support image editing (img2img). Please switch to Pollinations (using the 'kontext' model) or Puter (using FLUX Kontext Pro or Gemini 2.5 Flash Image) to edit your reference image."
+        `${activeProvider.name} does not support image editing (img2img). Please switch to Pollinations (using the 'kontext' model) or Puter (using FLUX Kontext Pro or Gemini 2.5 Flash Image) to edit your reference image.`
+      );
+      setLoading(false);
+      setLoadingPhase('idle');
+      return;
+    }
+
+    if (isPost && activeProvider.url.includes('YOUR_ACCOUNT_ID')) {
+      setError(
+        "Please replace 'YOUR_ACCOUNT_ID' in your Cloudflare provider settings with your actual Cloudflare Account ID (Settings -> AI Providers)."
       );
       setLoading(false);
       setLoadingPhase('idle');
@@ -514,7 +531,10 @@ export function ImageStudio() {
         const puterResult = await generatePuterImage(promptToUse, selectedModel, referenceImage || undefined);
         finalImageUrl = puterResult.url;
       } else if (isPost) {
-        // Hugging Face POST inference with automatic key failover
+        // POST inference (Cloudflare Workers AI or Hugging Face) with automatic key failover
+        const isCloudflare =
+          activeProvider.url.toLowerCase().includes('cloudflare') ||
+          activeProvider.name.toLowerCase().includes('cloudflare');
         const candidateKeys = getProviderKeyCandidates(activeProvider);
         let lastError: Error | null = null;
 
@@ -522,7 +542,7 @@ export function ImageStudio() {
           const candidate = candidateKeys[attemptIndex];
           const keyIdx = candidate.originalIndex >= 0 ? candidate.originalIndex : 0;
           console.group(
-            `%c[ImageStudio Failover] [Hugging Face] Attempting Generation (Key Index: ${keyIdx})`,
+            `%c[ImageStudio Failover] [${activeProvider.name}] Attempting Generation (Key Index: ${keyIdx})`,
             'color: #38bdf8; font-weight: bold;'
           );
           console.log('Provider:', activeProvider.name);
@@ -536,13 +556,17 @@ export function ImageStudio() {
           const timeoutId = setTimeout(() => controller.abort(), 45000);
 
           try {
+            const requestPayload = isCloudflare
+              ? { prompt: promptToUse }
+              : { inputs: promptToUse, prompt: promptToUse };
+
             const response = await fetch(activeProvider.url.trim(), {
               method: 'POST',
               headers: {
                 'Content-Type': 'application/json',
                 ...(candidate.key ? { Authorization: `Bearer ${candidate.key}` } : {}),
               },
-              body: JSON.stringify({ inputs: promptToUse }),
+              body: JSON.stringify(requestPayload),
               signal: controller.signal,
               mode: 'cors',
             });
@@ -552,7 +576,11 @@ export function ImageStudio() {
               let errDetail = '';
               try {
                 const errJson = await response.json();
-                errDetail = errJson?.error || errJson?.message || JSON.stringify(errJson);
+                errDetail =
+                  (Array.isArray(errJson?.errors) && errJson.errors[0]?.message) ||
+                  errJson?.error ||
+                  errJson?.message ||
+                  JSON.stringify(errJson);
               } catch {
                 try {
                   errDetail = await response.text();
@@ -576,7 +604,7 @@ export function ImageStudio() {
                 );
 
                 console.warn(
-                  `%c[ImageStudio Failover] [Hugging Face] Key index ${keyIdx} (${candidate.label}) encountered ${isRateLimit ? 'Rate-Limit (HTTP 429)' : `Auth-Failure (HTTP ${response.status})`}: "${errDetail}". ${attemptIndex < candidateKeys.length - 1 ? `Automatically retrying with next available key index ${candidateKeys[attemptIndex + 1].originalIndex}...` : 'All available keys exhausted.'}`,
+                  `%c[ImageStudio Failover] [${activeProvider.name}] Key index ${keyIdx} (${candidate.label}) encountered ${isRateLimit ? 'Rate-Limit (HTTP 429)' : `Auth-Failure (HTTP ${response.status})`}: "${errDetail}". ${attemptIndex < candidateKeys.length - 1 ? `Automatically retrying with next available key index ${candidateKeys[attemptIndex + 1].originalIndex}...` : 'All available keys exhausted.'}`,
                   'color: #f59e0b; font-weight: bold;'
                 );
 
@@ -593,7 +621,7 @@ export function ImageStudio() {
 
               if (response.status === 503) {
                 throw new Error(
-                  `Model is currently warming up on Hugging Face (${errDetail || 'Estimated time ~20s'}). Please click Generate again in a few moments.`
+                  `Model is currently warming up on ${activeProvider.name} (${errDetail || 'Estimated time ~20s'}). Please click Generate again in a few moments.`
                 );
               } else if (response.status === 401 || response.status === 403) {
                 throw new Error(
@@ -608,19 +636,65 @@ export function ImageStudio() {
 
             markKeyHealth(activeProvider.id, candidate, 'healthy');
             console.log(
-              `%c[ImageStudio Failover] [Hugging Face] Key index ${keyIdx} (${candidate.label}) succeeded! Marked healthy.`,
+              `%c[ImageStudio Failover] [${activeProvider.name}] Key index ${keyIdx} (${candidate.label}) succeeded! Marked healthy.`,
               'color: #34d399; font-weight: bold;'
             );
 
-            const imageBlob = await response.blob();
-            const blobToDataUrl = (blob: Blob): Promise<string> =>
-              new Promise((resolve, reject) => {
-                const reader = new FileReader();
-                reader.onloadend = () => resolve(reader.result as string);
-                reader.onerror = reject;
-                reader.readAsDataURL(blob);
-              });
-            finalImageUrl = await blobToDataUrl(imageBlob);
+            // Handle both Cloudflare Workers AI JSON format (result.image base64) and Hugging Face raw binary blob format
+            const contentType = (response.headers.get('content-type') || '').toLowerCase();
+            if (contentType.includes('application/json') || contentType.includes('+json')) {
+              const json = await response.json();
+              const rawB64 =
+                json?.result?.image ||
+                json?.image ||
+                (Array.isArray(json?.data) && json.data[0]?.b64_json) ||
+                (Array.isArray(json?.images) && json.images[0]) ||
+                (Array.isArray(json?.result) && json.result[0]) ||
+                (typeof json?.result === 'string' ? json.result : null);
+
+              if (rawB64 && typeof rawB64 === 'string') {
+                finalImageUrl = rawB64.startsWith('data:')
+                  ? rawB64
+                  : `data:image/png;base64,${rawB64.trim()}`;
+              } else if (json?.success === false || (Array.isArray(json?.errors) && json.errors.length > 0)) {
+                const errMsg = json.errors?.[0]?.message || json.errors?.[0] || json.error || 'Cloudflare returned an error';
+                throw new Error(typeof errMsg === 'string' ? errMsg : JSON.stringify(errMsg));
+              } else {
+                throw new Error('Cloudflare JSON response did not contain an image field (expected result.image).');
+              }
+            } else {
+              // Raw binary blob (Hugging Face / direct binary stream)
+              const imageBlob = await response.blob();
+              if (imageBlob.type.includes('json')) {
+                try {
+                  const text = await imageBlob.text();
+                  const json = JSON.parse(text);
+                  const rawB64 =
+                    json?.result?.image ||
+                    json?.image ||
+                    (Array.isArray(json?.data) && json.data[0]?.b64_json);
+                  if (rawB64 && typeof rawB64 === 'string') {
+                    finalImageUrl = rawB64.startsWith('data:')
+                      ? rawB64
+                      : `data:image/png;base64,${rawB64.trim()}`;
+                  }
+                } catch {
+                  // Not JSON, continue with blob reader
+                }
+              }
+
+              if (!finalImageUrl) {
+                const blobToDataUrl = (blob: Blob): Promise<string> =>
+                  new Promise((resolve, reject) => {
+                    const reader = new FileReader();
+                    reader.onloadend = () => resolve(reader.result as string);
+                    reader.onerror = reject;
+                    reader.readAsDataURL(blob);
+                  });
+                finalImageUrl = await blobToDataUrl(imageBlob);
+              }
+            }
+
             lastError = null;
             break;
           } catch (fetchErr: unknown) {
@@ -638,7 +712,7 @@ export function ImageStudio() {
                 errMsg
               );
               console.warn(
-                `%c[ImageStudio Failover] [Hugging Face] Exception on key index ${keyIdx} (${candidate.label}): "${errMsg}". Failing over to next key index ${candidateKeys[attemptIndex + 1].originalIndex}...`,
+                `%c[ImageStudio Failover] [${activeProvider.name}] Exception on key index ${keyIdx} (${candidate.label}): "${errMsg}". Failing over to next key index ${candidateKeys[attemptIndex + 1].originalIndex}...`,
                 'color: #f59e0b; font-weight: bold;'
               );
               setFailoverNotice(
@@ -1045,7 +1119,9 @@ export function ImageStudio() {
           (referenceImage ? 'black-forest-labs/flux-kontext-pro' : DEFAULT_PUTER_MODEL);
       } else if (isPost) {
         actualModelUsed =
-          activeProvider.model || (activeProvider.url.split('/').filter(Boolean).pop()) || 'Hugging Face Model';
+          activeProvider.model ||
+          (activeProvider.url.split('/').filter(Boolean).pop()) ||
+          (activeProvider.name.toLowerCase().includes('cloudflare') ? '@cf/black-forest-labs/flux-1-schnell' : 'POST Inference Model');
       } else {
         actualModelUsed = modelType;
       }
@@ -2039,7 +2115,7 @@ export function ImageStudio() {
                   }}
                   title={activeProvider.model || activeProvider.url}
                 >
-                  HF: {activeProvider.model || (activeProvider.url.split('/').filter(Boolean).pop()) || 'Default'}
+                  {activeProvider.name.toLowerCase().includes('cloudflare') ? 'CF' : activeProvider.name.toLowerCase().includes('hugging') ? 'HF' : 'POST'}: {activeProvider.model || (activeProvider.url.split('/').filter(Boolean).pop()) || 'Default'}
                 </div>
               </div>
             ) : (

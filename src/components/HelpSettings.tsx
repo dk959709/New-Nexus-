@@ -183,7 +183,7 @@ NEXUS includes dedicated slash commands that allow users to override normal plan
   \`/image Cyberpunk hovercar in neon rain\`
 
 #### 7. \`/imageai [description]\` (or \`/imagesai\`) — Direct AI Image Synthesis
-- **What it does**: Directly triggers AI image generation using the active Image AI Provider (Pollinations, Hugging Face, or Puter.js), skipping Wikipedia photo search entirely.
+- **What it does**: Directly triggers AI image generation using the active Image AI Provider (Pollinations, Hugging Face, Puter.js, or Cloudflare Workers AI), skipping Wikipedia photo search entirely.
 - **Pipeline Behavior**: Bypasses the Final Synthesizer and external research steps to instantly generate and render high-fidelity AI visual cards with a simple direct caption and inspectable metadata.
 - **Example**:
   \`/imageai isometric futuristic laboratory with glowing blue crystals\`

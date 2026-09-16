@@ -248,6 +248,11 @@ export function AIProvidersSettings() {
       return;
     }
 
+    if (!isSdk && editingImageProvider.url.includes('YOUR_ACCOUNT_ID')) {
+      setFormError("Please replace 'YOUR_ACCOUNT_ID' in the API URL with your actual Cloudflare Account ID.");
+      return;
+    }
+
     const cleanedKeys = editingImageProvider.keys
       .filter((k) => k.key.trim().length > 0)
       .map((k, idx) => ({
@@ -795,27 +800,44 @@ export function AIProvidersSettings() {
       return;
     }
 
+    if (provider.url.includes('YOUR_ACCOUNT_ID')) {
+      setProviderTestResults((prev) => ({
+        ...prev,
+        [provider.id]: { ok: false, message: "✕ Please replace 'YOUR_ACCOUNT_ID' in the API URL with your actual Cloudflare Account ID." },
+      }));
+      setTestingProviderId(null);
+      return;
+    }
+
     const validKeys = provider.keys.filter((k) => k.key && k.key.trim().length > 0);
     const keyToTest = validKeys.length > 0 ? validKeys[0].key.trim() : '';
 
     try {
+      const isCloudflare =
+        provider.url.toLowerCase().includes('cloudflare') ||
+        provider.name.toLowerCase().includes('cloudflare');
       const isPost =
         provider.requestType === 'post' ||
+        isCloudflare ||
         provider.url.toLowerCase().includes('huggingface') ||
         provider.url.toLowerCase().includes('hf-inference');
 
       const controller = new AbortController();
-      const timeoutId = setTimeout(() => controller.abort(), 12000);
+      const timeoutId = setTimeout(() => controller.abort(), 15000);
 
       let resp: Response;
       if (isPost) {
+        const testPayload = isCloudflare
+          ? { prompt: 'A simple geometric test icon' }
+          : { inputs: 'A simple geometric icon test', prompt: 'A simple geometric test icon' };
+
         resp = await fetch(provider.url.trim(), {
           method: 'POST',
           headers: {
             'Content-Type': 'application/json',
             ...(keyToTest ? { Authorization: `Bearer ${keyToTest}` } : {}),
           },
-          body: JSON.stringify({ inputs: 'A simple geometric icon test' }),
+          body: JSON.stringify(testPayload),
           signal: controller.signal,
           mode: 'cors',
         });
@@ -835,9 +857,28 @@ export function AIProvidersSettings() {
       clearTimeout(timeoutId);
 
       if (resp.ok || resp.status === 503 || (resp.status >= 200 && resp.status < 400)) {
-        const successMsg = resp.status === 503
+        const contentType = (resp.headers.get('content-type') || '').toLowerCase();
+        let successMsg = resp.status === 503
           ? '✓ Endpoint reachable (Model currently loading on HF)'
           : '✓ Image endpoint verified and responsive';
+
+        if (contentType.includes('application/json')) {
+          try {
+            const json = await resp.clone().json();
+            if (json?.success === false || (Array.isArray(json?.errors) && json.errors.length > 0)) {
+              const errDetail = json.errors?.[0]?.message || json.errors?.[0] || json.error || 'API returned error';
+              throw new Error(String(errDetail));
+            }
+            if (json?.result?.image) {
+              successMsg = '✓ Cloudflare Workers AI verified (image base64 returned)';
+            }
+          } catch (jsonErr) {
+            if (jsonErr instanceof Error && !jsonErr.message.includes('JSON')) {
+              throw jsonErr;
+            }
+          }
+        }
+
         setProviderTestResults((prev) => ({
           ...prev,
           [provider.id]: { ok: true, message: successMsg },
@@ -846,7 +887,14 @@ export function AIProvidersSettings() {
           storage.updateImageKeyHealth(provider.id, validKeys[0].id, 'healthy');
         }
       } else {
-        const errorText = `HTTP ${resp.status}: ${resp.statusText || 'Error'}`;
+        let errDetail = '';
+        try {
+          const errJson = await resp.json();
+          errDetail = (Array.isArray(errJson?.errors) && errJson.errors[0]?.message) || errJson?.error || errJson?.message || '';
+        } catch {
+          // ignore
+        }
+        const errorText = errDetail ? `HTTP ${resp.status}: ${errDetail}` : `HTTP ${resp.status}: ${resp.statusText || 'Error'}`;
         setProviderTestResults((prev) => ({
           ...prev,
           [provider.id]: { ok: false, message: `✕ Test failed: ${errorText}` },
@@ -1943,6 +1991,38 @@ export function AIProvidersSettings() {
               >
                 ⚡ Puter (Free Unlimited)
               </button>
+              <button
+                type="button"
+                onClick={() => {
+                  setEditingImageProvider({
+                    ...editingImageProvider,
+                    name: 'Cloudflare Workers AI',
+                    url: 'https://api.cloudflare.com/client/v4/accounts/YOUR_ACCOUNT_ID/ai/run/@cf/black-forest-labs/flux-1-schnell',
+                    requestType: 'post',
+                    model: '@cf/black-forest-labs/flux-1-schnell',
+                    keys:
+                      editingImageProvider.keys && editingImageProvider.keys.length > 0
+                        ? editingImageProvider.keys.map((k, idx) => ({
+                            ...k,
+                            label: k.label && !k.label.includes('API Key') && !k.label.includes('Pollinations') && !k.label.includes('Hugging')
+                              ? k.label
+                              : `Cloudflare API Token ${idx + 1}`,
+                          }))
+                        : [
+                            {
+                              id: `cf_key_${Date.now()}`,
+                              label: 'Cloudflare API Token',
+                              key: '',
+                              status: 'untested',
+                            },
+                          ],
+                  });
+                }}
+                className="secondary-button"
+                style={{ fontSize: '11px', padding: '4px 10px', borderRadius: '5px', borderColor: 'rgba(249,115,22,0.35)', color: '#fb923c' }}
+              >
+                ☁️ Cloudflare Workers AI
+              </button>
             </div>
           )}
 
@@ -2132,7 +2212,7 @@ export function AIProvidersSettings() {
                 </label>
                 <input
                   type="text"
-                  placeholder="e.g. Pollinations, Hugging Face, Custom Image API"
+                  placeholder="e.g. Pollinations, Hugging Face, Cloudflare Workers AI, Custom Image API"
                   value={editingImageProvider.name}
                   onChange={(e) =>
                     setEditingImageProvider({ ...editingImageProvider, name: e.target.value })
@@ -2201,7 +2281,9 @@ export function AIProvidersSettings() {
                   {editingImageProvider.requestType === 'sdk'
                     ? 'Puter.js client library: Direct in-browser JavaScript SDK with free temporary guest sessions.'
                     : editingImageProvider.requestType === 'post'
-                    ? 'Hugging Face style: POST with Bearer token header & {"inputs": "<prompt>"}.'
+                    ? (editingImageProvider.url?.toLowerCase().includes('cloudflare') || editingImageProvider.name?.toLowerCase().includes('cloudflare')
+                        ? 'Cloudflare Workers AI style: POST with Bearer token & {"prompt": "<prompt>"}.'
+                        : 'POST/JSON-Based: POST with Bearer token & {"inputs": "<prompt>"} or {"prompt": "<prompt>"} (Hugging Face, Cloudflare, or custom REST APIs).')
                     : 'Pollinations style: Direct URL with path & query params.'}
                 </p>
               </div>
@@ -2274,7 +2356,11 @@ export function AIProvidersSettings() {
                   </label>
                   <input
                     type="text"
-                    placeholder="https://image.pollinations.ai/prompt/"
+                    placeholder={
+                      editingImageProvider.requestType === 'post'
+                        ? 'https://api.cloudflare.com/client/v4/accounts/YOUR_ACCOUNT_ID/ai/run/@cf/black-forest-labs/flux-1-schnell'
+                        : 'https://image.pollinations.ai/prompt/'
+                    }
                     value={editingImageProvider.url}
                     onChange={(e) =>
                       setEditingImageProvider({ ...editingImageProvider, url: e.target.value })
@@ -2294,9 +2380,27 @@ export function AIProvidersSettings() {
                   />
                   <p style={{ margin: '5px 0 0', fontSize: '11px', color: 'var(--muted)' }}>
                     {editingImageProvider.requestType === 'post'
-                      ? 'Endpoint to which JSON POST requests are sent with Authorization header.'
+                      ? (editingImageProvider.url?.toLowerCase().includes('cloudflare') || editingImageProvider.name?.toLowerCase().includes('cloudflare')
+                          ? 'Cloudflare Workers AI endpoint. Replace YOUR_ACCOUNT_ID with your actual Cloudflare Account ID.'
+                          : 'Endpoint to which JSON POST requests are sent with Authorization header.')
                       : 'Prompts and API key parameters (e.g. ?key=...) are dynamically appended.'}
                   </p>
+                  {editingImageProvider.url.includes('YOUR_ACCOUNT_ID') && (
+                    <div
+                      style={{
+                        marginTop: '8px',
+                        padding: '10px 12px',
+                        borderRadius: '8px',
+                        background: 'rgba(249,115,22,0.12)',
+                        border: '1px solid rgba(249,115,22,0.35)',
+                        color: '#fdba74',
+                        fontSize: '12px',
+                        lineHeight: 1.5,
+                      }}
+                    >
+                      ⚠️ <strong>Action Required:</strong> Please replace <code>YOUR_ACCOUNT_ID</code> in the API URL with your actual Cloudflare account ID before saving. Enter your Cloudflare API Token in the Bearer token API key field below.
+                    </div>
+                  )}
                 </div>
               )}
             </div>
@@ -2522,7 +2626,16 @@ export function AIProvidersSettings() {
                       >
                         <input
                           type={isRevealed ? 'text' : 'password'}
-                          placeholder={providerType === 'image' ? 'Pollinations API Key / Token (optional for basic tier)' : 'sk-...'}
+                          placeholder={
+                            providerType === 'image'
+                              ? editingImageProvider?.url?.toLowerCase().includes('cloudflare') ||
+                                editingImageProvider?.name?.toLowerCase().includes('cloudflare')
+                                ? 'Cloudflare API Token (Bearer token)'
+                                : editingImageProvider?.requestType === 'post'
+                                ? 'Bearer API Key / Token'
+                                : 'Pollinations API Key / Token (optional for basic tier)'
+                              : 'sk-...'
+                          }
                           value={keyItem.key}
                           onChange={(e) => {
                             const val = e.target.value;
