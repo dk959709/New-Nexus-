@@ -133,6 +133,24 @@ export interface ParallaxRunOptions {
   signal?: AbortSignal;
 }
 
+function abortableSleep(ms: number, signal?: AbortSignal): Promise<void> {
+  return new Promise((resolve, reject) => {
+    if (signal?.aborted) {
+      reject(new Error('Swarm aborted'));
+      return;
+    }
+    const timer = setTimeout(() => {
+      signal?.removeEventListener('abort', onAbort);
+      resolve();
+    }, ms);
+    const onAbort = () => {
+      clearTimeout(timer);
+      reject(new Error('Swarm aborted'));
+    };
+    signal?.addEventListener('abort', onAbort, { once: true });
+  });
+}
+
 /**
  * Cleans up raw LLM output to keep it strictly punchy (1-2 sentences).
  */
@@ -220,6 +238,7 @@ Keep your reaction strictly 1 to 2 sharp sentences.`;
       temperature: 0.75,
       maxTokens: 90,
       timeoutMs: 14000,
+      signal,
     });
 
     const rawText = response.text || response.content || '';
@@ -519,7 +538,7 @@ export async function runParallaxSwarm(options: ParallaxRunOptions): Promise<voi
 
         // Brief natural pause between batches for smooth streaming visual rhythm
         if (i + BATCH_SIZE < enabledAgents.length) {
-          await new Promise((resolve) => setTimeout(resolve, 350));
+          await abortableSleep(350, signal);
         }
       }
 
@@ -528,8 +547,13 @@ export async function runParallaxSwarm(options: ParallaxRunOptions): Promise<voi
       // Brief breather between rounds
       if (roundNum < 3) {
         onStatusUpdate?.(`Round ${currentRound} complete. Transitioning to Round ${currentRound + 1}...`);
-        await new Promise((resolve) => setTimeout(resolve, 800));
+        await abortableSleep(800, signal);
       }
+    }
+
+    if (signal?.aborted) {
+      onStatusUpdate?.('Swarm stopped early by user.');
+      return;
     }
 
     // -------------------------------------------------------------
@@ -553,7 +577,7 @@ export async function runParallaxSwarm(options: ParallaxRunOptions): Promise<voi
     onComplete?.(summary, allMessages);
   } catch (err: unknown) {
     if (signal?.aborted) {
-      onStatusUpdate?.('Parallax swarm cancelled.');
+      onStatusUpdate?.('Swarm stopped early by user.');
       return;
     }
     console.error('[Parallax] Swarm execution error:', err);

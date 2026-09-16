@@ -349,6 +349,7 @@ export const api = {
     temperature?: number;
     maxTokens?: number;
     timeoutMs?: number;
+    signal?: AbortSignal;
   }): Promise<{
     ok: boolean;
     text?: string;
@@ -359,6 +360,7 @@ export const api = {
     usedFallback?: boolean;
     error?: string;
   }> {
+    const { signal, ...bodyPayload } = payload;
     return call<{
       ok: boolean;
       text?: string;
@@ -370,7 +372,8 @@ export const api = {
       error?: string;
     }>('/api/jarvis/agent-call', {
       method: 'POST',
-      body: JSON.stringify(payload),
+      body: JSON.stringify(bodyPayload),
+      signal,
     });
   },
 

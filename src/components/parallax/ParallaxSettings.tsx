@@ -1,14 +1,19 @@
-import React, { useState } from 'react';
+import React, { useState, useRef, useEffect } from 'react';
 import {
   RotateCcw,
   Check,
   Search,
   Shield,
   Layers,
+  Volume2,
+  Play,
+  Square,
 } from 'lucide-react';
 import { storage, DEFAULT_PARALLAX_AGENTS } from '@/lib/storage';
 import type { ParallaxSystemConfig, ParallaxAgentConfig, AIProvidersState } from '@/types';
 import { ParallaxAgentAvatar } from './ParallaxAgentIcon';
+import { EDGE_VOICES } from '@/data/edgeVoices';
+import { getParallaxAgentVoice } from '@/data/parallaxVoices';
 
 interface ParallaxSettingsProps {
   config: ParallaxSystemConfig;
@@ -20,6 +25,17 @@ export const ParallaxSettings: React.FC<ParallaxSettingsProps> = ({ config, onCo
   const [filterQuery, setFilterQuery] = useState('');
   const [saveToast, setSaveToast] = useState<string | null>(null);
   const [confirmResetAll, setConfirmResetAll] = useState(false);
+  const [testingVoiceAgentId, setTestingVoiceAgentId] = useState<string | null>(null);
+  const audioRef = useRef<HTMLAudioElement | null>(null);
+
+  useEffect(() => {
+    return () => {
+      if (audioRef.current) {
+        audioRef.current.pause();
+        audioRef.current = null;
+      }
+    };
+  }, []);
 
   const agentsList = Object.values(config.agents || DEFAULT_PARALLAX_AGENTS);
   const enabledCount = agentsList.filter((a) => a.enabled !== false).length;
@@ -28,6 +44,60 @@ export const ParallaxSettings: React.FC<ParallaxSettingsProps> = ({ config, onCo
   const showFeedback = (msg: string) => {
     setSaveToast(msg);
     setTimeout(() => setSaveToast(null), 3000);
+  };
+
+  const handleTestVoice = async (agent: ParallaxAgentConfig) => {
+    if (testingVoiceAgentId === agent.id) {
+      if (audioRef.current) {
+        audioRef.current.pause();
+        audioRef.current = null;
+      }
+      setTestingVoiceAgentId(null);
+      return;
+    }
+
+    try {
+      if (audioRef.current) {
+        audioRef.current.pause();
+        audioRef.current = null;
+      }
+      setTestingVoiceAgentId(agent.id);
+      const targetVoice = agent.voice || getParallaxAgentVoice(agent.id);
+      const testText = `Greetings, I am ${agent.name}. My focus is ${agent.role.toLowerCase()}.`;
+
+      const response = await fetch('/api/edge-tts', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          text: testText,
+          voice: targetVoice,
+        }),
+      });
+
+      if (!response.ok) {
+        throw new Error(`TTS failed with status ${response.status}`);
+      }
+
+      const blob = await response.blob();
+      const url = URL.createObjectURL(blob);
+      const audio = new Audio(url);
+      audioRef.current = audio;
+
+      audio.onended = () => {
+        setTestingVoiceAgentId(null);
+        URL.revokeObjectURL(url);
+      };
+      audio.onerror = () => {
+        setTestingVoiceAgentId(null);
+        URL.revokeObjectURL(url);
+      };
+
+      await audio.play();
+    } catch (err) {
+      console.error('Test voice error:', err);
+      setTestingVoiceAgentId(null);
+      showFeedback(`Voice test failed: ${err instanceof Error ? err.message : 'Network error'}`);
+    }
   };
 
   const handleUpdateAgent = (id: string, updates: Partial<ParallaxAgentConfig>) => {
@@ -499,6 +569,73 @@ export const ParallaxSettings: React.FC<ParallaxSettingsProps> = ({ config, onCo
                     }}
                   />
                 </div>
+              </div>
+
+              {/* Edge TTS Neural Voice Selector */}
+              <div style={{ marginTop: '2px' }}>
+                <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '3px' }}>
+                  <label
+                    style={{
+                      display: 'flex',
+                      alignItems: 'center',
+                      gap: '4px',
+                      fontSize: '10px',
+                      fontFamily: 'DM Mono, monospace',
+                      color: '#94a3b8',
+                      fontWeight: 600,
+                    }}
+                  >
+                    <Volume2 size={11} color="var(--accent, #61d7c9)" />
+                    EDGE TTS NEURAL VOICE:
+                  </label>
+                  <button
+                    type="button"
+                    onClick={() => handleTestVoice(agent)}
+                    style={{
+                      fontSize: '10px',
+                      color: testingVoiceAgentId === agent.id ? '#10b981' : '#38bdf8',
+                      background: 'transparent',
+                      border: 'none',
+                      cursor: 'pointer',
+                      display: 'flex',
+                      alignItems: 'center',
+                      gap: '3px',
+                      padding: '2px 6px',
+                      borderRadius: '4px',
+                    }}
+                    title="Preview speech audio with this voice"
+                  >
+                    {testingVoiceAgentId === agent.id ? (
+                      <>
+                        <Square size={10} /> Stop Preview
+                      </>
+                    ) : (
+                      <>
+                        <Play size={10} /> Test Voice
+                      </>
+                    )}
+                  </button>
+                </div>
+                <select
+                  value={agent.voice || getParallaxAgentVoice(agent.id)}
+                  onChange={(e) => handleUpdateAgent(agent.id, { voice: e.target.value })}
+                  style={{
+                    width: '100%',
+                    padding: '6px 8px',
+                    borderRadius: '6px',
+                    background: 'rgba(6, 16, 24, 0.85)',
+                    border: '1px solid rgba(165, 207, 214, 0.2)',
+                    color: '#e2e8f0',
+                    fontSize: '11px',
+                    outline: 'none',
+                  }}
+                >
+                  {EDGE_VOICES.map((v) => (
+                    <option key={v.id} value={v.id}>
+                      {v.name} ({v.gender}, {v.language})
+                    </option>
+                  ))}
+                </select>
               </div>
             </div>
           );

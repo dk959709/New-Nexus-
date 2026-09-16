@@ -12,6 +12,7 @@ import {
   Compass,
 } from 'lucide-react';
 import type { ParallaxSummary, ParallaxMessage } from '@/types';
+import { formatFullParallaxTranscript } from '@/data/parallaxVoices';
 
 interface ParallaxSummaryCardProps {
   summary: ParallaxSummary;
@@ -32,18 +33,7 @@ export const ParallaxSummaryCard: React.FC<ParallaxSummaryCardProps> = ({
   const [expandedTranscript, setExpandedTranscript] = useState(false);
 
   const handleCopyTranscript = () => {
-    let text = `=== PARALLAX SWARM TRANSCRIPT ===\nTopic: ${topic}\nConsensus Lean: ${summary.consensusLean}\nVerdict: ${summary.verdict}\n\nKey Highlights:\n`;
-    for (const hl of summary.highlights) {
-      text += `• ${hl}\n`;
-    }
-    text += `\n--- ROUND-BY-ROUND TRANSCRIPT ---\n`;
-    for (let r = 1; r <= 3; r++) {
-      text += `\n[ROUND ${r}]\n`;
-      const roundMsgs = allMessages.filter((m) => m.round === r);
-      for (const m of roundMsgs) {
-        text += `${m.agentName}: "${m.text}"\n`;
-      }
-    }
+    const text = formatFullParallaxTranscript(topic, allMessages, summary);
     navigator.clipboard.writeText(text);
     setCopied(true);
     setTimeout(() => setCopied(false), 2500);
@@ -156,7 +146,7 @@ export const ParallaxSummaryCard: React.FC<ParallaxSummaryCardProps> = ({
             className="hover:border-[#61d7c9] hover:text-white"
           >
             {copied ? <Check size={14} /> : <Copy size={14} />}
-            {copied ? 'Copied Transcript!' : 'Copy Transcript'}
+            {copied ? 'Copied Full Swarm!' : 'Copy Full Swarm'}
           </button>
 
           {onRerun && (

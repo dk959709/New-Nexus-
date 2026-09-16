@@ -450,6 +450,7 @@ export interface ParallaxAgentConfig {
   enabled: boolean;
   systemInstruction: string;
   maxTokens: number;
+  voice?: string; // Edge TTS neural voice ID
 }
 
 export interface ParallaxSystemConfig {

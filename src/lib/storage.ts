@@ -17,6 +17,7 @@ import type {
   ParallaxAgentConfig,
   ParallaxSession,
 } from '@/types';
+import { DEFAULT_PARALLAX_VOICES } from '@/data/parallaxVoices';
 
 const KEYS = {
   searches: 'nexus-searches',
@@ -50,6 +51,7 @@ export const DEFAULT_PARALLAX_AGENTS: Record<string, ParallaxAgentConfig> = {
     enabled: true,
     systemInstruction: 'Provide fact-based, rigorous skeptical analysis. Scrutinize claims, question unverified assumptions, and state verifiable realities.',
     maxTokens: 100,
+    voice: DEFAULT_PARALLAX_VOICES.veritas,
   },
   aurora: {
     id: 'aurora',
@@ -63,6 +65,7 @@ export const DEFAULT_PARALLAX_AGENTS: Record<string, ParallaxAgentConfig> = {
     enabled: true,
     systemInstruction: 'Highlight emerging possibilities, creative upsides, human flourishing, and constructive avenues for progress.',
     maxTokens: 100,
+    voice: DEFAULT_PARALLAX_VOICES.aurora,
   },
   chronos: {
     id: 'chronos',
@@ -76,6 +79,7 @@ export const DEFAULT_PARALLAX_AGENTS: Record<string, ParallaxAgentConfig> = {
     enabled: true,
     systemInstruction: 'Ground the topic in historical precedents, recurring civilizational cycles, and lessons learned from past centuries.',
     maxTokens: 100,
+    voice: DEFAULT_PARALLAX_VOICES.chronos,
   },
   axiom: {
     id: 'axiom',
@@ -89,6 +93,7 @@ export const DEFAULT_PARALLAX_AGENTS: Record<string, ParallaxAgentConfig> = {
     enabled: true,
     systemInstruction: 'Apply first-principles logic, empirical rigor, deductive reasoning, and falsifiable scientific frameworks.',
     maxTokens: 100,
+    voice: DEFAULT_PARALLAX_VOICES.axiom,
   },
   echo: {
     id: 'echo',
@@ -102,6 +107,7 @@ export const DEFAULT_PARALLAX_AGENTS: Record<string, ParallaxAgentConfig> = {
     enabled: true,
     systemInstruction: 'Reflect raw public consensus, viral cultural discussions, populist perceptions, and everyday human sentiment.',
     maxTokens: 100,
+    voice: DEFAULT_PARALLAX_VOICES.echo,
   },
   ledger: {
     id: 'ledger',
@@ -115,6 +121,7 @@ export const DEFAULT_PARALLAX_AGENTS: Record<string, ParallaxAgentConfig> = {
     enabled: true,
     systemInstruction: 'Analyze economic incentives, capital flow, unit costs, profit margins, and commercial viability.',
     maxTokens: 100,
+    voice: DEFAULT_PARALLAX_VOICES.ledger,
   },
   socrates: {
     id: 'socrates',
@@ -128,6 +135,7 @@ export const DEFAULT_PARALLAX_AGENTS: Record<string, ParallaxAgentConfig> = {
     enabled: true,
     systemInstruction: 'Interrogate foundational assumptions with incisive philosophical questions that dissect definitions, intent, and meaning.',
     maxTokens: 100,
+    voice: DEFAULT_PARALLAX_VOICES.socrates,
   },
   pixel: {
     id: 'pixel',
@@ -141,6 +149,7 @@ export const DEFAULT_PARALLAX_AGENTS: Record<string, ParallaxAgentConfig> = {
     enabled: true,
     systemInstruction: 'Examine aesthetic beauty, narrative symbolism, artistic expression, and emotional resonance in human culture.',
     maxTokens: 100,
+    voice: DEFAULT_PARALLAX_VOICES.pixel,
   },
   vanguard: {
     id: 'vanguard',
@@ -154,6 +163,7 @@ export const DEFAULT_PARALLAX_AGENTS: Record<string, ParallaxAgentConfig> = {
     enabled: true,
     systemInstruction: 'Deliver provocative contrarian pushback against prevailing consensus, pointing out blind spots and polite orthodoxies.',
     maxTokens: 100,
+    voice: DEFAULT_PARALLAX_VOICES.vanguard,
   },
   harmony: {
     id: 'harmony',
@@ -167,6 +177,7 @@ export const DEFAULT_PARALLAX_AGENTS: Record<string, ParallaxAgentConfig> = {
     enabled: true,
     systemInstruction: 'Champion ethical imperatives, societal equity, ecological preservation, and human dignity.',
     maxTokens: 100,
+    voice: DEFAULT_PARALLAX_VOICES.harmony,
   },
   cipher: {
     id: 'cipher',
@@ -180,6 +191,7 @@ export const DEFAULT_PARALLAX_AGENTS: Record<string, ParallaxAgentConfig> = {
     enabled: true,
     systemInstruction: 'Evaluate system architecture, computational constraints, engineering bottlenecks, and technical execution realities.',
     maxTokens: 100,
+    voice: DEFAULT_PARALLAX_VOICES.cipher,
   },
   nomad: {
     id: 'nomad',
@@ -193,6 +205,7 @@ export const DEFAULT_PARALLAX_AGENTS: Record<string, ParallaxAgentConfig> = {
     enabled: true,
     systemInstruction: 'Provide diverse, cross-cultural, geopolitical perspectives outside western or localized echo chambers.',
     maxTokens: 100,
+    voice: DEFAULT_PARALLAX_VOICES.nomad,
   },
   sentinel: {
     id: 'sentinel',
@@ -206,6 +219,7 @@ export const DEFAULT_PARALLAX_AGENTS: Record<string, ParallaxAgentConfig> = {
     enabled: true,
     systemInstruction: 'Identify threat vectors, systemic vulnerabilities, catastrophic tail risks, and defensive safeguards.',
     maxTokens: 100,
+    voice: DEFAULT_PARALLAX_VOICES.sentinel,
   },
   lumen: {
     id: 'lumen',
@@ -219,6 +233,7 @@ export const DEFAULT_PARALLAX_AGENTS: Record<string, ParallaxAgentConfig> = {
     enabled: true,
     systemInstruction: 'Demystify complexity with clear, relatable, everyday analogies that anyone can immediately grasp.',
     maxTokens: 100,
+    voice: DEFAULT_PARALLAX_VOICES.lumen,
   },
   catalyst: {
     id: 'catalyst',
@@ -232,6 +247,7 @@ export const DEFAULT_PARALLAX_AGENTS: Record<string, ParallaxAgentConfig> = {
     enabled: true,
     systemInstruction: 'Anticipate second-order innovations, disruptive paradigm shifts, and radical future horizons.',
     maxTokens: 100,
+    voice: DEFAULT_PARALLAX_VOICES.catalyst,
   },
   gravity: {
     id: 'gravity',
@@ -245,6 +261,7 @@ export const DEFAULT_PARALLAX_AGENTS: Record<string, ParallaxAgentConfig> = {
     enabled: true,
     systemInstruction: 'Inject unvarnished practical reality: supply chain logistics, bureaucratic friction, and human inertia.',
     maxTokens: 100,
+    voice: DEFAULT_PARALLAX_VOICES.gravity,
   },
   mosaic: {
     id: 'mosaic',
@@ -258,6 +275,7 @@ export const DEFAULT_PARALLAX_AGENTS: Record<string, ParallaxAgentConfig> = {
     enabled: true,
     systemInstruction: 'Form unexpected cross-disciplinary bridges linking disparate fields like biology, architecture, music, and economics.',
     maxTokens: 100,
+    voice: DEFAULT_PARALLAX_VOICES.mosaic,
   },
   oracle: {
     id: 'oracle',
@@ -271,6 +289,7 @@ export const DEFAULT_PARALLAX_AGENTS: Record<string, ParallaxAgentConfig> = {
     enabled: true,
     systemInstruction: 'Issue decisive, high-conviction predictions about future timelines and transformative outcomes.',
     maxTokens: 100,
+    voice: DEFAULT_PARALLAX_VOICES.oracle,
   },
   ember: {
     id: 'ember',
@@ -284,6 +303,7 @@ export const DEFAULT_PARALLAX_AGENTS: Record<string, ParallaxAgentConfig> = {
     enabled: true,
     systemInstruction: 'Deliver a passionate, emotionally resonant take reflecting raw human vulnerability, passion, and moral urgency.',
     maxTokens: 100,
+    voice: DEFAULT_PARALLAX_VOICES.ember,
   },
   nexus9: {
     id: 'nexus9',
@@ -297,6 +317,7 @@ export const DEFAULT_PARALLAX_AGENTS: Record<string, ParallaxAgentConfig> = {
     enabled: true,
     systemInstruction: 'Operate as an objective, balanced synthesizer reconciling competing viewpoints and mapping the crux of the debate.',
     maxTokens: 100,
+    voice: DEFAULT_PARALLAX_VOICES.nexus9,
   },
 };
 
@@ -1610,6 +1631,7 @@ export const storage = {
           initials: def.initials,
           accentColor: def.accentColor,
           hasToolAccess: def.hasToolAccess, // enforce strictly in code
+          voice: custom.voice || def.voice,
         };
       } else {
         mergedAgents[key] = { ...def };
