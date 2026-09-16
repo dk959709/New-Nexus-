@@ -174,7 +174,7 @@ function cleanReactionText(raw: string, agentName: string): string {
 }
 
 /**
- * Executes a single agent reaction turn.
+ * Executes a single agent reaction turn with ultra-compact token footprint.
  */
 async function executeAgentTurn(
   agent: ParallaxAgentConfig,
@@ -185,42 +185,36 @@ async function executeAgentTurn(
   signal?: AbortSignal,
 ): Promise<ParallaxMessage> {
   const startTime = Date.now();
-  const { provider, model } = resolveParallaxProviderConfig(agent, 95);
+  const { provider, model } = resolveParallaxProviderConfig(agent, 75);
 
-  const systemPrompt = `You are ${agent.name}, one of 20 distinct AI personas in the fast-paced PARALLAX Swarm Discussion.
-YOUR ARCHETYPE: ${agent.role}
-CORE INSTRUCTION: ${agent.systemInstruction}
-
-CRITICAL RULES:
-- Output EXACTLY 1 or 2 concise, highly punchy sentences.
-- Never exceed 45 words.
-- Do NOT introduce yourself, do NOT say "As ${agent.name}", and do NOT repeat your name.
-- Speak directly and decisively in your persona's distinctive voice.`;
+  // Compact, high-signal system prompt (~35-45 tokens)
+  const systemPrompt = `Persona: ${agent.name} (${agent.role}). ${agent.systemInstruction}
+Constraint: Exactly 1-2 punchy sentences (<40 words). Speak directly; no greeting, no intro, no self-naming.`;
 
   let userPrompt = '';
 
   if (round === 1) {
-    userPrompt = `TOPIC: "${topic}"`;
-    // VERITAS ONLY in Round 1
     if (agent.id === 'veritas' && veritasFact) {
-      userPrompt += `\n\n[VERIFIED DATA VIA LIVE TOOL]: "${veritasFact.fact}" (Source: ${veritasFact.source})\nIncorporate or critically scrutinize this verifiable fact in your 1-2 sentence response.`;
+      userPrompt = `Topic: "${topic}"\n[VERIFIED DATA]: "${veritasFact.fact}" (Source: ${veritasFact.source})\nProvide your initial 1-2 sentence perspective incorporating this fact.`;
     } else {
-      userPrompt += `\n\nProvide your initial 1-2 sentence perspective on this topic based on your archetype.`;
+      userPrompt = `Topic: "${topic}"\nProvide your initial 1-2 sentence perspective on this topic based on your archetype.`;
     }
   } else {
-    // Rounds 2 & 3: Topic + rotating sample of 2-3 previous replies
+    // Rounds 2 & 3: ONLY topic + compact rotating sample of 2-3 previous replies (NO accumulated history)
     const peerBullets = peersSample
-      .map((p) => `- [${p.agentName}]: "${p.text}"`)
+      .slice(0, 3)
+      .map((p) => {
+        const text = p.text.length > 140 ? p.text.slice(0, 137) + '…' : p.text;
+        return `• ${p.agentName}: "${text}"`;
+      })
       .join('\n');
 
-    userPrompt = `TOPIC: "${topic}"
+    const action =
+      round === 2
+        ? 'React to these peer views in 1-2 sharp sentences'
+        : 'Deliver your final 1-2 sentence synthesis';
 
-SELECT STATEMENTS FROM PEERS IN PREVIOUS ROUND:
-${peerBullets}
-
-YOUR TASK:
-React to these peer viewpoints or synthesize them with the topic through your unique lens (${agent.name} - ${agent.role}).
-Keep your reaction strictly 1 to 2 sharp sentences.`;
+    userPrompt = `Topic: "${topic}"\n\nPeer points from Round ${round - 1}:\n${peerBullets}\n\n${action} as ${agent.name}.`;
   }
 
   try {
@@ -236,7 +230,7 @@ Keep your reaction strictly 1 to 2 sharp sentences.`;
       ],
       providerConfig: provider,
       temperature: 0.75,
-      maxTokens: 90,
+      maxTokens: 75,
       timeoutMs: 14000,
       signal,
     });
@@ -325,6 +319,7 @@ function getFallbackReaction(agent: ParallaxAgentConfig, round: number, topic: s
 
 /**
  * Generates the Parallax Summary after Round 3 completes.
+ * Sends a condensed set of 6-8 notable contrasting quotes (strictly under 400 tokens input).
  */
 export async function generateParallaxSummary(
   topic: string,
@@ -337,40 +332,50 @@ export async function generateParallaxSummary(
     agentMap.set(m.agentName, list);
   }
 
-  // Find high-contrast agent quotes
-  const aurora = agentMap.get('AURORA')?.[0]?.text || 'optimistic possibilities exist';
-  const vanguard = agentMap.get('VANGUARD')?.[1]?.text || agentMap.get('VANGUARD')?.[0]?.text || 'skeptical friction persists';
-  const socrates = agentMap.get('SOCRATES')?.[1]?.text || agentMap.get('SOCRATES')?.[0]?.text || 'fundamental assumptions need interrogation';
-  const axiom = agentMap.get('AXIOM')?.[1]?.text || agentMap.get('AXIOM')?.[0]?.text || 'logical principles dictate limits';
-  const veritas = agentMap.get('VERITAS')?.[0]?.text || 'empirical facts remain essential';
-  const gravity = agentMap.get('GRAVITY')?.[2]?.text || agentMap.get('GRAVITY')?.[1]?.text || 'operational friction governs reality';
+  // Curate key contrasting perspectives across diverse archetypes
+  const notableAgents = ['AURORA', 'VANGUARD', 'SOCRATES', 'AXIOM', 'VERITAS', 'GRAVITY', 'HARMONY', 'LEDGER'];
+  const excerpts: string[] = [];
 
-  // Fast synthesis via LLM
+  for (const name of notableAgents) {
+    const msgs = agentMap.get(name);
+    if (msgs && msgs.length > 0) {
+      const target = msgs[msgs.length - 1];
+      const trimmed = target.text.length > 135 ? target.text.slice(0, 132) + '…' : target.text;
+      excerpts.push(`• ${name} (R${target.round}): "${trimmed}"`);
+    }
+  }
+
+  // Fallback if custom agent IDs were used: pick 6 evenly spaced samples
+  if (excerpts.length === 0 && allMessages.length > 0) {
+    const step = Math.max(1, Math.floor(allMessages.length / 6));
+    for (let i = 0; i < allMessages.length && excerpts.length < 6; i += step) {
+      const m = allMessages[i];
+      const trimmed = m.text.length > 135 ? m.text.slice(0, 132) + '…' : m.text;
+      excerpts.push(`• ${m.agentName} (R${m.round}): "${trimmed}"`);
+    }
+  }
+
+  // Fast synthesis via LLM with strictly bounded input (~300-380 tokens)
   try {
-    const prompt = `You are the synthesis engine for PARALLAX, a 20-agent swarm intelligence discussion.
-TOPIC: "${topic}"
-TOTAL REPLIES: ${allMessages.length} (3 rounds)
+    const prompt = `Synthesize this 20-agent PARALLAX swarm discussion on "${topic}".
+Total messages: ${allMessages.length} across 3 rounds.
 
-AGENT EXCERPTS:
-- AURORA: "${aurora}"
-- VANGUARD: "${vanguard}"
-- SOCRATES: "${socrates}"
-- AXIOM: "${axiom}"
-- VERITAS: "${veritas}"
-- GRAVITY: "${gravity}"
+Key contrasting quotes:
+${excerpts.join('\n')}
 
-Generate a JSON object with:
-1. "verdict": exactly ONE crisp, objective sentence summarizing the swarm's overall consensus or lean on "${topic}".
-2. "consensusLean": 2-4 words characterizing the dominant direction (e.g. "Cautiously Optimistic", "Pragmatically Skeptical", "Deeply Polarized", "Techno-Realistic").
-3. "highlights": array of exactly 4 concise bullet points describing key tensions or clashes between specific agents (e.g. "VANGUARD contested AURORA's optimistic outlook...", "SOCRATES and AXIOM clashed over fundamental definitions...", etc.).
-
-Output ONLY valid JSON.`;
+Generate a JSON object:
+{
+  "verdict": "One crisp objective sentence summarizing swarm consensus or lean on ${topic}.",
+  "consensusLean": "2-4 words (e.g. Cautiously Optimistic, Pragmatically Skeptical, Deeply Polarized, Techno-Realistic)",
+  "highlights": ["Clash or tension bullet 1", "Clash or tension bullet 2", "Clash or tension bullet 3", "Clash or tension bullet 4"]
+}
+Output valid JSON only.`;
 
     const res = await api.jarvisAgentCall({
       agentId: 'parallax_synthesizer',
       messages: [{ role: 'user', content: prompt }],
       temperature: 0.5,
-      maxTokens: 350,
+      maxTokens: 280,
       timeoutMs: 12000,
     });
 

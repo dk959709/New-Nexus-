@@ -965,13 +965,10 @@ export const ParallaxPage: React.FC = () => {
               background: 'rgba(4, 12, 18, 0.95)',
               border: '1px solid rgba(97, 215, 201, 0.25)',
               boxShadow: '0 8px 32px rgba(0, 0, 0, 0.5)',
-              padding: '20px',
               minHeight: '380px',
-              maxHeight: '650px',
+              maxHeight: '680px',
               overflowY: 'auto',
-              display: 'flex',
-              flexDirection: 'column',
-              gap: '24px',
+              position: 'relative',
             }}
           >
             {messages.length === 0 && !isRunning ? (
@@ -979,7 +976,7 @@ export const ParallaxPage: React.FC = () => {
                 style={{
                   margin: 'auto',
                   textAlign: 'center',
-                  padding: '40px 20px',
+                  padding: '60px 20px',
                   color: '#94a3b8',
                 }}
               >
@@ -993,18 +990,24 @@ export const ParallaxPage: React.FC = () => {
               </div>
             ) : (
               <>
-                {/* Swarm Live Feed Control Bar */}
+                {/* Compact Sticky Swarm Feed Toolbar */}
                 <div
                   id="parallax-feed-toolbar"
                   style={{
+                    position: 'sticky',
+                    top: 0,
+                    zIndex: 30,
+                    background: 'rgba(4, 12, 18, 0.96)',
+                    backdropFilter: 'blur(16px)',
+                    WebkitBackdropFilter: 'blur(16px)',
+                    borderBottom: '1px solid rgba(97, 215, 201, 0.25)',
+                    padding: '10px 16px',
                     display: 'flex',
                     alignItems: 'center',
                     justifyContent: 'space-between',
                     flexWrap: 'wrap',
-                    gap: '10px',
-                    paddingBottom: '14px',
-                    borderBottom: '1px solid rgba(97, 215, 201, 0.25)',
-                    marginBottom: '4px',
+                    gap: '8px',
+                    boxShadow: '0 4px 20px rgba(0, 0, 0, 0.45)',
                   }}
                 >
                   <div style={{ display: 'flex', alignItems: 'center', gap: '8px', flexWrap: 'wrap' }}>
@@ -1059,7 +1062,11 @@ export const ParallaxPage: React.FC = () => {
                   </div>
 
                   {/* Actions: Stop Swarm (if running), Copy Full Swarm, Listen to Full Swarm, Download MP3 */}
-                  <div style={{ display: 'flex', alignItems: 'center', gap: '8px', flexWrap: 'wrap' }}>
+                  <div
+                    id="parallax-feed-actions-cluster"
+                    style={{ display: 'flex', alignItems: 'center', gap: '6px', flexWrap: 'wrap' }}
+                    className="w-full sm:w-auto justify-start sm:justify-end"
+                  >
                     {/* Live Stop Swarm Button in Feed Toolbar */}
                     {isRunning && (
                       <button
@@ -1068,7 +1075,7 @@ export const ParallaxPage: React.FC = () => {
                         onClick={handleStopSwarm}
                         title="Immediately halt the running swarm and retain completed messages"
                         style={{
-                          padding: '6px 14px',
+                          padding: '6px 12px',
                           borderRadius: '8px',
                           background: 'linear-gradient(135deg, rgba(239, 68, 68, 0.3) 0%, rgba(185, 28, 28, 0.4) 100%)',
                           border: '1.5px solid rgba(239, 68, 68, 0.7)',
@@ -1081,6 +1088,7 @@ export const ParallaxPage: React.FC = () => {
                           gap: '5px',
                           transition: 'all 0.15s ease',
                           boxShadow: '0 0 12px rgba(239, 68, 68, 0.25)',
+                          whiteSpace: 'nowrap',
                         }}
                         className="hover:bg-red-900/60 hover:text-white active:scale-95"
                       >
@@ -1108,8 +1116,9 @@ export const ParallaxPage: React.FC = () => {
                         alignItems: 'center',
                         gap: '5px',
                         transition: 'all 0.15s ease',
+                        whiteSpace: 'nowrap',
                       }}
-                      className="hover:border-[#61d7c9] hover:text-white"
+                      className="hover:border-[#61d7c9] hover:text-white active:scale-95"
                     >
                       {copiedSwarmTranscript ? <Check size={13} /> : <Copy size={13} />}
                       <span>{copiedSwarmTranscript ? 'Copied Full Swarm!' : 'Copy Full Swarm'}</span>
@@ -1137,8 +1146,9 @@ export const ParallaxPage: React.FC = () => {
                         alignItems: 'center',
                         gap: '5px',
                         transition: 'all 0.15s ease',
+                        whiteSpace: 'nowrap',
                       }}
-                      className="hover:border-[#61d7c9] hover:brightness-110"
+                      className="hover:border-[#61d7c9] hover:brightness-110 active:scale-95"
                     >
                       {loadingAudioKey === 'full_swarm' ? (
                         <Loader2 size={13} className="animate-spin text-cyan-400" />
@@ -1178,8 +1188,9 @@ export const ParallaxPage: React.FC = () => {
                         alignItems: 'center',
                         gap: '5px',
                         transition: 'all 0.15s ease',
+                        whiteSpace: 'nowrap',
                       }}
-                      className="hover:border-[#61d7c9] hover:text-white"
+                      className="hover:border-[#61d7c9] hover:text-white active:scale-95"
                     >
                       {isDownloadingSwarmMp3 ? (
                         <Loader2 size={13} className="animate-spin text-cyan-400" />
@@ -1191,7 +1202,17 @@ export const ParallaxPage: React.FC = () => {
                   </div>
                 </div>
 
-                {/* RENDER BY ROUND WITH INLINE CURATION (first 4-5 inline, rest collapsed) */}
+                {/* Scrollable Deliberation Content */}
+                <div
+                  id="parallax-feed-content"
+                  style={{
+                    padding: '16px 20px 24px 20px',
+                    display: 'flex',
+                    flexDirection: 'column',
+                    gap: '24px',
+                  }}
+                >
+                  {/* RENDER BY ROUND WITH INLINE CURATION (first 4-5 inline, rest collapsed) */}
                 {[1, 2, 3].map((roundNum) => {
                   const roundMsgs = messages.filter((m) => m.round === roundNum);
                   if (roundMsgs.length === 0) return null;
@@ -1599,9 +1620,10 @@ export const ParallaxPage: React.FC = () => {
                 )}
 
                 <div ref={feedEndRef} />
-              </>
-            )}
-          </div>
+              </div>
+            </>
+          )}
+        </div>
         </div>
       )}
     </div>

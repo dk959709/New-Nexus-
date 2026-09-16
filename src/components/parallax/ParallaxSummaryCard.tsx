@@ -69,135 +69,201 @@ export const ParallaxSummaryCard: React.FC<ParallaxSummaryCardProps> = ({
 
       {/* Header Banner */}
       <div
+        id="parallax-summary-header"
         style={{
-          display: 'flex',
-          alignItems: 'center',
-          justifyContent: 'space-between',
-          flexWrap: 'wrap',
-          gap: '12px',
           borderBottom: '1px solid rgba(97, 215, 201, 0.2)',
           paddingBottom: '16px',
-          marginBottom: '18px',
+          marginBottom: '20px',
+          display: 'flex',
+          flexDirection: 'column',
+          gap: '14px',
         }}
       >
-        <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
-          <div
-            style={{
-              width: '40px',
-              height: '40px',
-              borderRadius: '12px',
-              background: 'linear-gradient(135deg, rgba(6, 182, 212, 0.25) 0%, rgba(97, 215, 201, 0.35) 100%)',
-              border: '1.5px solid rgba(97, 215, 201, 0.6)',
-              display: 'grid',
-              placeItems: 'center',
-              color: '#61d7c9',
-              boxShadow: '0 0 16px rgba(97, 215, 201, 0.3)',
-            }}
-          >
-            <Trophy size={20} />
-          </div>
-          <div>
-            <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
-              <span style={{ fontSize: '16px', fontWeight: 800, color: '#fff', letterSpacing: '-0.01em' }}>
-                PARALLAX SYNTHESIS REPORT
-              </span>
-              <span
-                style={{
-                  fontSize: '11px',
-                  fontFamily: 'DM Mono, monospace',
-                  padding: '2px 8px',
-                  borderRadius: '999px',
-                  background: 'rgba(6, 182, 212, 0.2)',
-                  color: '#38bdf8',
-                  border: '1px solid rgba(6, 182, 212, 0.4)',
-                  fontWeight: 700,
-                }}
-              >
-                3 ROUNDS COMPLETE • AUTO-STOPPED
-              </span>
+        {/* Title + Action Buttons Row */}
+        <div
+          style={{
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'space-between',
+            flexWrap: 'wrap',
+            gap: '12px',
+          }}
+        >
+          {/* Title and Badge */}
+          <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
+            <div
+              style={{
+                width: '42px',
+                height: '42px',
+                minWidth: '42px',
+                borderRadius: '12px',
+                background: 'linear-gradient(135deg, rgba(6, 182, 212, 0.25) 0%, rgba(97, 215, 201, 0.35) 100%)',
+                border: '1.5px solid rgba(97, 215, 201, 0.6)',
+                display: 'grid',
+                placeItems: 'center',
+                color: '#61d7c9',
+                boxShadow: '0 0 16px rgba(97, 215, 201, 0.3)',
+              }}
+            >
+              <Trophy size={22} />
             </div>
-            <div style={{ display: 'flex', alignItems: 'center', gap: '8px', marginTop: '3px' }}>
-              <span style={{ fontSize: '12px', color: '#94a3b8' }}>Topic:</span>
-              <span style={{ fontSize: '13px', color: '#e2e8f0', fontWeight: 600 }}>&ldquo;{topic}&rdquo;</span>
+            <div>
+              <div style={{ display: 'flex', alignItems: 'center', gap: '8px', flexWrap: 'wrap' }}>
+                <span style={{ fontSize: '16px', fontWeight: 800, color: '#fff', letterSpacing: '-0.01em' }}>
+                  PARALLAX SYNTHESIS REPORT
+                </span>
+                <span
+                  style={{
+                    fontSize: '11px',
+                    fontFamily: 'DM Mono, monospace',
+                    padding: '2px 8px',
+                    borderRadius: '999px',
+                    background: 'rgba(6, 182, 212, 0.2)',
+                    color: '#38bdf8',
+                    border: '1px solid rgba(6, 182, 212, 0.4)',
+                    fontWeight: 700,
+                    whiteSpace: 'nowrap',
+                  }}
+                >
+                  3 ROUNDS COMPLETE • AUTO-STOPPED
+                </span>
+              </div>
             </div>
           </div>
-        </div>
 
-        {/* Action buttons */}
-        <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
-          <button
-            id="parallax-copy-transcript-btn"
-            type="button"
-            onClick={handleCopyTranscript}
+          {/* Action buttons: Copy Full Swarm / Re-run / New Swarm */}
+          <div
+            id="parallax-summary-actions"
             style={{
-              padding: '7px 14px',
-              borderRadius: '8px',
-              background: 'rgba(15, 23, 42, 0.8)',
-              border: '1px solid rgba(97, 215, 201, 0.3)',
-              color: copied ? '#61d7c9' : '#cbd5e1',
-              fontSize: '12px',
-              fontWeight: 600,
-              cursor: 'pointer',
               display: 'flex',
               alignItems: 'center',
-              gap: '6px',
-              transition: 'all 0.15s ease',
+              gap: '8px',
+              flexWrap: 'wrap',
             }}
-            className="hover:border-[#61d7c9] hover:text-white"
+            className="w-full sm:w-auto justify-start sm:justify-end"
           >
-            {copied ? <Check size={14} /> : <Copy size={14} />}
-            {copied ? 'Copied Full Swarm!' : 'Copy Full Swarm'}
-          </button>
-
-          {onRerun && (
             <button
-              id="parallax-rerun-btn"
+              id="parallax-copy-transcript-btn"
               type="button"
-              onClick={onRerun}
+              onClick={handleCopyTranscript}
+              title="Copy complete transcript including all rounds and summary"
               style={{
-                padding: '7px 14px',
+                padding: '8px 14px',
                 borderRadius: '8px',
-                background: 'rgba(15, 23, 42, 0.8)',
-                border: '1px solid rgba(165, 207, 214, 0.25)',
-                color: '#cbd5e1',
+                background: copied ? 'rgba(16, 185, 129, 0.2)' : 'rgba(15, 23, 42, 0.8)',
+                border: `1px solid ${copied ? '#10b981' : 'rgba(97, 215, 201, 0.3)'}`,
+                color: copied ? '#61d7c9' : '#cbd5e1',
                 fontSize: '12px',
                 fontWeight: 600,
                 cursor: 'pointer',
                 display: 'flex',
                 alignItems: 'center',
                 gap: '6px',
+                transition: 'all 0.15s ease',
+                whiteSpace: 'nowrap',
               }}
-              className="hover:border-[#61d7c9] hover:text-white"
+              className="hover:border-[#61d7c9] hover:text-white active:scale-95"
             >
-              <RotateCcw size={14} />
-              Re-run
+              {copied ? <Check size={14} /> : <Copy size={14} />}
+              {copied ? 'Copied Full Swarm!' : 'Copy Full Swarm'}
             </button>
-          )}
 
-          {onNewTopic && (
-            <button
-              id="parallax-new-topic-btn"
-              type="button"
-              onClick={onNewTopic}
-              style={{
-                padding: '7px 14px',
-                borderRadius: '8px',
-                background: 'linear-gradient(135deg, #06b6d4 0%, #0891b2 100%)',
-                border: 'none',
-                color: '#fff',
-                fontSize: '12px',
-                fontWeight: 700,
-                cursor: 'pointer',
-                display: 'flex',
-                alignItems: 'center',
-                gap: '6px',
-              }}
-              className="hover:opacity-90"
-            >
-              <Sparkles size={14} />
-              New Swarm
-            </button>
-          )}
+            {onRerun && (
+              <button
+                id="parallax-rerun-btn"
+                type="button"
+                onClick={onRerun}
+                title="Restart swarm deliberation on this topic"
+                style={{
+                  padding: '8px 14px',
+                  borderRadius: '8px',
+                  background: 'rgba(15, 23, 42, 0.8)',
+                  border: '1px solid rgba(165, 207, 214, 0.25)',
+                  color: '#cbd5e1',
+                  fontSize: '12px',
+                  fontWeight: 600,
+                  cursor: 'pointer',
+                  display: 'flex',
+                  alignItems: 'center',
+                  gap: '6px',
+                  transition: 'all 0.15s ease',
+                  whiteSpace: 'nowrap',
+                }}
+                className="hover:border-[#61d7c9] hover:text-white active:scale-95"
+              >
+                <RotateCcw size={14} />
+                Re-run
+              </button>
+            )}
+
+            {onNewTopic && (
+              <button
+                id="parallax-new-topic-btn"
+                type="button"
+                onClick={onNewTopic}
+                title="Clear current topic and start a fresh deliberation"
+                style={{
+                  padding: '8px 14px',
+                  borderRadius: '8px',
+                  background: 'linear-gradient(135deg, #06b6d4 0%, #0891b2 100%)',
+                  border: 'none',
+                  color: '#fff',
+                  fontSize: '12px',
+                  fontWeight: 700,
+                  cursor: 'pointer',
+                  display: 'flex',
+                  alignItems: 'center',
+                  gap: '6px',
+                  boxShadow: '0 0 16px rgba(6, 182, 212, 0.35)',
+                  whiteSpace: 'nowrap',
+                  transition: 'all 0.15s ease',
+                }}
+                className="hover:opacity-90 active:scale-95"
+              >
+                <Sparkles size={14} />
+                New Swarm
+              </button>
+            )}
+          </div>
+        </div>
+
+        {/* Dedicated Topic Box — Clean, spacious, completely separated from the buttons */}
+        <div
+          id="parallax-summary-topic-banner"
+          style={{
+            padding: '10px 14px',
+            borderRadius: '10px',
+            background: 'rgba(6, 18, 28, 0.7)',
+            border: '1px solid rgba(97, 215, 201, 0.22)',
+            display: 'flex',
+            alignItems: 'baseline',
+            gap: '8px',
+            flexWrap: 'wrap',
+          }}
+        >
+          <span
+            style={{
+              fontSize: '11px',
+              fontFamily: 'DM Mono, monospace',
+              color: '#61d7c9',
+              fontWeight: 700,
+              letterSpacing: '0.05em',
+              whiteSpace: 'nowrap',
+            }}
+          >
+            TOPIC:
+          </span>
+          <span
+            style={{
+              fontSize: '13px',
+              color: '#f1f5f9',
+              fontWeight: 600,
+              lineHeight: 1.5,
+              wordBreak: 'break-word',
+            }}
+          >
+            &ldquo;{topic}&rdquo;
+          </span>
         </div>
       </div>
 
@@ -409,6 +475,118 @@ export const ParallaxSummaryCard: React.FC<ParallaxSummaryCardProps> = ({
             })}
           </div>
         )}
+      </div>
+
+      {/* Footer Quick Actions for bottom access */}
+      <div
+        id="parallax-summary-footer-actions"
+        style={{
+          marginTop: '24px',
+          paddingTop: '16px',
+          borderTop: '1px solid rgba(97, 215, 201, 0.2)',
+          display: 'flex',
+          alignItems: 'center',
+          justifyContent: 'space-between',
+          flexWrap: 'wrap',
+          gap: '12px',
+        }}
+      >
+        <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+          <Sparkles size={15} color="#61d7c9" />
+          <span style={{ fontSize: '12px', color: '#94a3b8', fontFamily: 'DM Mono, monospace' }}>
+            Deliberation complete • {allMessages.length} total messages
+          </span>
+        </div>
+
+        <div
+          style={{
+            display: 'flex',
+            alignItems: 'center',
+            gap: '8px',
+            flexWrap: 'wrap',
+          }}
+          className="w-full sm:w-auto justify-start sm:justify-end"
+        >
+          <button
+            type="button"
+            onClick={handleCopyTranscript}
+            title="Copy complete transcript including all rounds and summary"
+            style={{
+              padding: '8px 14px',
+              borderRadius: '8px',
+              background: copied ? 'rgba(16, 185, 129, 0.2)' : 'rgba(15, 23, 42, 0.8)',
+              border: `1px solid ${copied ? '#10b981' : 'rgba(97, 215, 201, 0.3)'}`,
+              color: copied ? '#61d7c9' : '#cbd5e1',
+              fontSize: '12px',
+              fontWeight: 600,
+              cursor: 'pointer',
+              display: 'flex',
+              alignItems: 'center',
+              gap: '6px',
+              transition: 'all 0.15s ease',
+              whiteSpace: 'nowrap',
+            }}
+            className="hover:border-[#61d7c9] hover:text-white active:scale-95"
+          >
+            {copied ? <Check size={14} /> : <Copy size={14} />}
+            {copied ? 'Copied Full Swarm!' : 'Copy Full Swarm'}
+          </button>
+
+          {onRerun && (
+            <button
+              type="button"
+              onClick={onRerun}
+              title="Restart swarm deliberation on this topic"
+              style={{
+                padding: '8px 14px',
+                borderRadius: '8px',
+                background: 'rgba(15, 23, 42, 0.8)',
+                border: '1px solid rgba(165, 207, 214, 0.25)',
+                color: '#cbd5e1',
+                fontSize: '12px',
+                fontWeight: 600,
+                cursor: 'pointer',
+                display: 'flex',
+                alignItems: 'center',
+                gap: '6px',
+                transition: 'all 0.15s ease',
+                whiteSpace: 'nowrap',
+              }}
+              className="hover:border-[#61d7c9] hover:text-white active:scale-95"
+            >
+              <RotateCcw size={14} />
+              Re-run
+            </button>
+          )}
+
+          {onNewTopic && (
+            <button
+              type="button"
+              onClick={onNewTopic}
+              title="Clear current topic and start a fresh deliberation"
+              style={{
+                padding: '8px 14px',
+                borderRadius: '8px',
+                background: 'linear-gradient(135deg, #06b6d4 0%, #0891b2 100%)',
+                border: 'none',
+                color: '#fff',
+                fontSize: '12px',
+                fontWeight: 700,
+                cursor: 'pointer',
+                display: 'flex',
+                alignItems: 'center',
+                gap: '6px',
+                boxShadow: '0 0 16px rgba(6, 182, 212, 0.35)',
+                whiteSpace: 'nowrap',
+                transition: 'all 0.15s ease',
+              }}
+              className="hover:opacity-90 active:scale-95"
+            >
+              <Sparkles size={14} />
+              New Swarm
+            </button>
+          )}
+        </div>
       </div>
     </div>
   );
