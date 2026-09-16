@@ -556,11 +556,18 @@ export function ImageStudio() {
           const timeoutId = setTimeout(() => controller.abort(), 45000);
 
           try {
+            const targetFetchUrl = isCloudflare ? '/api/proxy/cloudflare-image' : activeProvider.url.trim();
             const requestPayload = isCloudflare
-              ? { prompt: promptToUse }
+              ? {
+                  prompt: promptToUse,
+                  url: activeProvider.url.trim(),
+                  model: activeProvider.model,
+                  apiToken: candidate.key,
+                  apiKey: candidate.key,
+                }
               : { inputs: promptToUse, prompt: promptToUse };
 
-            const response = await fetch(activeProvider.url.trim(), {
+            const response = await fetch(targetFetchUrl, {
               method: 'POST',
               headers: {
                 'Content-Type': 'application/json',

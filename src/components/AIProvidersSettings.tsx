@@ -827,11 +827,18 @@ export function AIProvidersSettings() {
 
       let resp: Response;
       if (isPost) {
+        const testTargetUrl = isCloudflare ? '/api/proxy/cloudflare-image' : provider.url.trim();
         const testPayload = isCloudflare
-          ? { prompt: 'A simple geometric test icon' }
+          ? {
+              prompt: 'A simple geometric test icon',
+              url: provider.url.trim(),
+              model: provider.model,
+              apiKey: keyToTest,
+              apiToken: keyToTest,
+            }
           : { inputs: 'A simple geometric icon test', prompt: 'A simple geometric test icon' };
 
-        resp = await fetch(provider.url.trim(), {
+        resp = await fetch(testTargetUrl, {
           method: 'POST',
           headers: {
             'Content-Type': 'application/json',

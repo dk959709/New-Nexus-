@@ -1553,6 +1553,161 @@ async function startServer() {
     return { answer: res.answer || 'I could not process that request.' };
   });
 
+  // Cloudflare Workers AI Image Generation Proxy (Bypasses browser CORS restrictions)
+  app.post('/api/proxy/cloudflare-image', async (req: Request, res: Response) => {
+    try {
+      const {
+        prompt: rawPrompt,
+        inputs: rawInputs,
+        accountId: rawAccountId,
+        apiToken: rawApiToken,
+        apiKey: rawApiKey,
+        key: rawKey,
+        url: rawUrl,
+        model: rawModel,
+      } = req.body || {};
+
+      const prompt = (rawPrompt || rawInputs || '').trim();
+      if (!prompt) {
+        return errorResponse(res, 400, 'Prompt is required.');
+      }
+
+      // Extract auth token from body or Authorization header
+      const authHeader = req.headers.authorization;
+      const bearerToken = authHeader && authHeader.startsWith('Bearer ') ? authHeader.slice(7).trim() : '';
+      const apiToken = (rawApiToken || rawApiKey || rawKey || bearerToken || '').trim();
+
+      if (!apiToken) {
+        return errorResponse(res, 401, 'Cloudflare API Token is required.');
+      }
+
+      // Determine target URL and Account ID
+      let targetUrl = (rawUrl || '').trim();
+      let accountId = (rawAccountId || '').trim();
+
+      if (!accountId && targetUrl) {
+        const match = targetUrl.match(/accounts\/([a-zA-Z0-9_-]+)/);
+        if (match && match[1] && match[1] !== 'YOUR_ACCOUNT_ID') {
+          accountId = match[1];
+        }
+      }
+
+      if (targetUrl.includes('YOUR_ACCOUNT_ID') && accountId) {
+        targetUrl = targetUrl.replace('YOUR_ACCOUNT_ID', accountId);
+      }
+
+      if (!targetUrl || targetUrl.includes('YOUR_ACCOUNT_ID')) {
+        if (!accountId) {
+          return errorResponse(
+            res,
+            400,
+            "Cloudflare Account ID is missing. Please replace 'YOUR_ACCOUNT_ID' with your actual Cloudflare Account ID in Settings.",
+          );
+        }
+        const modelName = (rawModel || '@cf/black-forest-labs/flux-1-schnell').trim();
+        targetUrl = `https://api.cloudflare.com/client/v4/accounts/${accountId}/ai/run/${modelName}`;
+      }
+
+      const cfController = new AbortController();
+      const cfTimeout = setTimeout(() => cfController.abort(), 60000);
+
+      const cfRes = await fetch(targetUrl, {
+        method: 'POST',
+        headers: {
+          Authorization: `Bearer ${apiToken}`,
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({ prompt }),
+        signal: cfController.signal,
+      });
+      clearTimeout(cfTimeout);
+
+      const contentType = (cfRes.headers.get('content-type') || '').toLowerCase();
+
+      if (!cfRes.ok) {
+        let errMessage = `Cloudflare API returned HTTP ${cfRes.status}`;
+        try {
+          if (contentType.includes('application/json') || contentType.includes('+json')) {
+            const errJson = (await cfRes.json()) as { errors?: Array<{ message?: string }>; error?: string; message?: string };
+            const firstErr = Array.isArray(errJson?.errors) && errJson.errors[0]?.message;
+            errMessage = firstErr || errJson?.error || errJson?.message || JSON.stringify(errJson);
+          } else {
+            const text = await cfRes.text();
+            if (text) errMessage = text.slice(0, 300);
+          }
+        } catch {
+          // ignore error parsing
+        }
+
+        return res.status(cfRes.status >= 400 && cfRes.status < 600 ? cfRes.status : 502).json({
+          success: false,
+          error: errMessage,
+          status: cfRes.status,
+        });
+      }
+
+      if (contentType.includes('application/json') || contentType.includes('+json')) {
+        const json = (await cfRes.json()) as {
+          success?: boolean;
+          errors?: Array<{ message?: string }>;
+          result?: { image?: string } | string;
+          image?: string;
+          data?: Array<{ b64_json?: string }>;
+        };
+
+        if (json?.success === false || (Array.isArray(json?.errors) && json.errors.length > 0)) {
+          const errMsg = json.errors?.[0]?.message || 'Cloudflare error';
+          return res.status(400).json({ success: false, error: errMsg });
+        }
+
+        const rawB64 =
+          (typeof json?.result === 'object' && json?.result?.image) ||
+          (typeof json?.result === 'string' && json.result) ||
+          json?.image ||
+          (Array.isArray(json?.data) && json.data[0]?.b64_json) ||
+          null;
+
+        if (!rawB64 || typeof rawB64 !== 'string') {
+          return res.status(502).json({
+            success: false,
+            error: 'Cloudflare response did not contain a valid image payload (expected result.image).',
+          });
+        }
+
+        const dataUrl = rawB64.startsWith('data:') ? rawB64 : `data:image/png;base64,${rawB64.trim()}`;
+        return res.json({
+          success: true,
+          result: { image: rawB64 },
+          image: dataUrl,
+          dataUrl,
+        });
+      } else {
+        // Raw image binary stream
+        const arrayBuffer = await cfRes.arrayBuffer();
+        const buffer = Buffer.from(arrayBuffer);
+        const mime = contentType.startsWith('image/') ? contentType : 'image/png';
+        const base64 = buffer.toString('base64');
+        const dataUrl = `data:${mime};base64,${base64}`;
+
+        return res.json({
+          success: true,
+          result: { image: base64 },
+          image: dataUrl,
+          dataUrl,
+        });
+      }
+    } catch (err: unknown) {
+      const errObj = err as Error;
+      const isAbort = errObj.name === 'AbortError' || errObj.message?.includes('aborted');
+      return res.status(isAbort ? 504 : 500).json({
+        success: false,
+        error: isAbort
+          ? 'Cloudflare Workers AI request timed out after 60 seconds.'
+          : errObj.message || 'Failed to proxy request to Cloudflare Workers AI.',
+      });
+    }
+  });
+
 
   app.post('/api/ai/answer', async (req, res) => {
     const parsed = z

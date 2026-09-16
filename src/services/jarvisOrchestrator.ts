@@ -308,13 +308,20 @@ export async function generateJarvisAiImage(
     if (isPost) {
       try {
         const controller = new AbortController();
-        const timeoutId = setTimeout(() => controller.abort(), 20000);
+        const timeoutId = setTimeout(() => controller.abort(), 25000);
 
+        const targetFetchUrl = isCloudflare ? '/api/proxy/cloudflare-image' : activeProvider.url.trim();
         const requestBody = isCloudflare
-          ? JSON.stringify({ prompt: cleanPrompt })
+          ? JSON.stringify({
+              prompt: cleanPrompt,
+              url: activeProvider.url.trim(),
+              model: activeProvider.model,
+              apiKey,
+              apiToken: apiKey,
+            })
           : JSON.stringify({ inputs: cleanPrompt, prompt: cleanPrompt });
 
-        const response = await fetch(activeProvider.url.trim(), {
+        const response = await fetch(targetFetchUrl, {
           method: 'POST',
           headers: {
             'Content-Type': 'application/json',
