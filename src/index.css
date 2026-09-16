@@ -3632,6 +3632,548 @@
   }
 }
 
+/* =========================================================
+   PARALLAX SWARM MATRIX - DEDICATED MOBILE RESPONSIVENESS
+   Strictly scoped to screens <= 640px. Desktop (>640px) remains unchanged.
+   ========================================================= */
+@media (max-width: 640px) {
+  #parallax-page {
+    padding: 10px 8px calc(85px + env(safe-area-inset-bottom, 0px)) !important;
+    max-width: 100% !important;
+    box-sizing: border-box !important;
+    overflow-x: hidden !important;
+  }
+
+  /* HUD Header */
+  #parallax-header {
+    padding: 12px 14px !important;
+    gap: 10px !important;
+    border-radius: 12px !important;
+    margin-bottom: 14px !important;
+  }
+
+  #parallax-header h1 {
+    font-size: 17px !important;
+    letter-spacing: -0.01em !important;
+  }
+
+  #parallax-header p,
+  .parallax-hud-subtitle {
+    font-size: 11px !important;
+    line-height: 1.35 !important;
+    margin-top: 2px !important;
+  }
+
+  .parallax-hud-icon {
+    width: 36px !important;
+    height: 36px !important;
+    min-width: 36px !important;
+    border-radius: 10px !important;
+  }
+  .parallax-hud-icon svg {
+    width: 18px !important;
+    height: 18px !important;
+  }
+
+  .parallax-hud-version {
+    font-size: 9.5px !important;
+    padding: 1px 5px !important;
+  }
+
+  #parallax-round-indicator,
+  .parallax-round-pill {
+    padding: 4px 9px !important;
+    font-size: 10px !important;
+    gap: 5px !important;
+  }
+
+  .parallax-agents-pill {
+    padding: 4px 8px !important;
+    font-size: 10px !important;
+  }
+
+  /* Tabs Navigation Bar */
+  #parallax-tabs-nav {
+    display: flex !important;
+    gap: 4px !important;
+    padding-bottom: 8px !important;
+    margin-bottom: 14px !important;
+    overflow-x: auto !important;
+    -webkit-overflow-scrolling: touch !important;
+    scrollbar-width: none !important;
+    width: 100% !important;
+  }
+  #parallax-tabs-nav::-webkit-scrollbar {
+    display: none !important;
+  }
+
+  #parallax-tabs-nav button {
+    padding: 6px 10px !important;
+    font-size: 11.5px !important;
+    border-radius: 8px !important;
+    white-space: nowrap !important;
+    flex-shrink: 0 !important;
+    gap: 5px !important;
+  }
+  #parallax-tabs-nav button svg {
+    width: 13px !important;
+    height: 13px !important;
+  }
+
+  /* Topic Input & Presets Bar */
+  #parallax-input-container,
+  .parallax-topic-container {
+    padding: 12px 14px !important;
+    border-radius: 12px !important;
+  }
+
+  .parallax-input-row {
+    flex-direction: column !important;
+    align-items: stretch !important;
+    gap: 8px !important;
+  }
+
+  #parallax-topic-input,
+  .parallax-topic-input {
+    font-size: 13px !important;
+    padding: 10px 12px !important;
+    border-radius: 10px !important;
+    width: 100% !important;
+    box-sizing: border-box !important;
+    line-height: 1.4 !important;
+  }
+
+  #parallax-start-swarm-btn,
+  #parallax-stop-swarm-btn {
+    width: 100% !important;
+    justify-content: center !important;
+    padding: 10px 16px !important;
+    font-size: 13px !important;
+    border-radius: 10px !important;
+    min-height: 42px !important;
+  }
+
+  .parallax-popular-topics {
+    gap: 5px !important;
+    margin-top: 10px !important;
+  }
+
+  .parallax-popular-topics span {
+    font-size: 9.5px !important;
+  }
+
+  .parallax-popular-topics button {
+    font-size: 10px !important;
+    padding: 3px 8px !important;
+    border-radius: 999px !important;
+    line-height: 1.2 !important;
+  }
+
+  /* Swarm Status Bar */
+  #parallax-status-bar,
+  .parallax-status-bar {
+    padding: 8px 12px !important;
+    font-size: 11px !important;
+    flex-direction: column !important;
+    align-items: flex-start !important;
+    gap: 6px !important;
+    border-radius: 10px !important;
+  }
+
+  /* Deliberation Protocol Chronology Tracker */
+  #parallax-round-tracker,
+  #parallax-round-stepper-tracker,
+  .parallax-round-stepper-tracker {
+    padding: 10px 12px !important;
+    border-radius: 12px !important;
+    gap: 8px !important;
+  }
+
+  .parallax-tracker-header {
+    gap: 6px !important;
+  }
+
+  .parallax-tracker-title {
+    font-size: 10px !important;
+  }
+
+  .parallax-tracker-badge {
+    font-size: 8.5px !important;
+    padding: 1px 4px !important;
+  }
+
+  .parallax-tracker-grid {
+    grid-template-columns: 1fr !important;
+    gap: 6px !important;
+  }
+
+  .parallax-tracker-card {
+    padding: 8px 10px !important;
+    border-radius: 8px !important;
+  }
+
+  .parallax-tracker-step-title {
+    font-size: 11px !important;
+  }
+
+  .parallax-tracker-step-desc {
+    font-size: 10px !important;
+    line-height: 1.35 !important;
+  }
+
+  /* Swarm Constellation Radar & Matrix */
+  #parallax-swarm-constellation,
+  #parallax-swarm-constellation-container,
+  .parallax-swarm-constellation-container {
+    padding: 10px 12px !important;
+    border-radius: 12px !important;
+  }
+
+  .parallax-constellation-header {
+    flex-direction: column !important;
+    align-items: flex-start !important;
+    gap: 8px !important;
+  }
+
+  .parallax-constellation-title {
+    font-size: 12px !important;
+  }
+
+  .parallax-constellation-desc {
+    font-size: 10px !important;
+    line-height: 1.35 !important;
+  }
+
+  .parallax-constellation-controls {
+    width: 100% !important;
+    justify-content: space-between !important;
+    gap: 6px !important;
+  }
+
+  .parallax-constellation-modes {
+    flex: 1 !important;
+    display: flex !important;
+  }
+
+  .parallax-constellation-modes button {
+    flex: 1 !important;
+    padding: 4px 6px !important;
+    font-size: 9.5px !important;
+    text-align: center !important;
+    white-space: nowrap !important;
+  }
+
+  .parallax-radar-svg {
+    max-height: 240px !important;
+    width: 100% !important;
+  }
+
+  .parallax-quadrant-grid {
+    grid-template-columns: 1fr !important;
+    gap: 8px !important;
+    padding: 10px 6px !important;
+    min-height: auto !important;
+  }
+
+  .parallax-quadrant-axis-label {
+    display: none !important;
+  }
+
+  .parallax-quadrant-box {
+    padding: 8px !important;
+    border-radius: 8px !important;
+  }
+
+  .parallax-quadrant-title {
+    font-size: 10px !important;
+    margin-bottom: 4px !important;
+  }
+
+  .parallax-telemetry-grid {
+    grid-template-columns: 1fr !important;
+    gap: 8px !important;
+  }
+
+  .parallax-telemetry-card {
+    padding: 10px 12px !important;
+  }
+
+  /* Real-Time Audio Visualizer HUD */
+  #parallax-audio-visualizer-bar {
+    padding: 8px 12px !important;
+    border-radius: 10px !important;
+    gap: 8px !important;
+  }
+
+  .parallax-audio-identity {
+    min-width: 0 !important;
+    flex: 1 1 auto !important;
+    gap: 8px !important;
+  }
+
+  .parallax-audio-speaker-title {
+    font-size: 11px !important;
+  }
+
+  .parallax-audio-subtext {
+    font-size: 9.5px !important;
+  }
+
+  .parallax-audio-waveform {
+    padding: 4px 8px !important;
+    gap: 2px !important;
+  }
+
+  .parallax-audio-controls {
+    margin-left: auto !important;
+  }
+
+  .parallax-audio-controls button {
+    padding: 4px 8px !important;
+    font-size: 10px !important;
+  }
+
+  /* Deliberation Feed Container & Toolbar */
+  #parallax-live-feed-container {
+    border-radius: 12px !important;
+  }
+
+  #parallax-feed-toolbar {
+    padding: 8px 10px !important;
+    gap: 8px !important;
+  }
+
+  .parallax-feed-header-left {
+    width: 100% !important;
+    justify-content: space-between !important;
+    gap: 6px !important;
+  }
+
+  .parallax-feed-title {
+    font-size: 12px !important;
+  }
+
+  .parallax-feed-subtitle {
+    display: none !important;
+  }
+
+  .parallax-feed-actions {
+    width: 100% !important;
+    justify-content: flex-start !important;
+    flex-wrap: wrap !important;
+    gap: 5px !important;
+  }
+
+  .parallax-feed-actions button {
+    padding: 4px 8px !important;
+    font-size: 10px !important;
+    border-radius: 6px !important;
+    gap: 4px !important;
+  }
+
+  #parallax-feed-filter-bar,
+  .parallax-feed-filters {
+    gap: 3px !important;
+    font-size: 9.5px !important;
+    margin-top: 4px !important;
+  }
+
+  #parallax-feed-filter-bar button {
+    padding: 2px 6px !important;
+    font-size: 9.5px !important;
+    border-radius: 4px !important;
+  }
+
+  #parallax-feed-content {
+    padding: 10px 8px 16px !important;
+    gap: 16px !important;
+  }
+
+  /* YouTube Chat Style Message Stream */
+  .parallax-message-item {
+    padding: 7px 8px !important;
+    gap: 8px !important;
+    border-radius: 8px !important;
+  }
+
+  .parallax-agent-name {
+    font-size: 11px !important;
+  }
+
+  .parallax-mood-badge {
+    font-size: 11px !important;
+  }
+
+  .parallax-meta-badge {
+    font-size: 8.5px !important;
+    padding: 1px 4px !important;
+  }
+
+  .parallax-tool-badge {
+    font-size: 8.5px !important;
+    padding: 1px 4px !important;
+  }
+
+  .parallax-voice-btn {
+    font-size: 9px !important;
+    padding: 1px 5px !important;
+    border-radius: 4px !important;
+  }
+
+  .parallax-timestamp {
+    font-size: 9px !important;
+  }
+
+  .parallax-message-text {
+    font-size: 12px !important;
+    line-height: 1.45 !important;
+  }
+
+  .parallax-verified-fact {
+    font-size: 10px !important;
+    padding: 3px 6px !important;
+    margin-top: 3px !important;
+    line-height: 1.35 !important;
+  }
+
+  .parallax-round-divider {
+    gap: 6px !important;
+    margin-bottom: 8px !important;
+    padding-bottom: 6px !important;
+  }
+
+  .parallax-round-pill {
+    font-size: 9.5px !important;
+    padding: 2px 6px !important;
+  }
+
+  .parallax-round-hint {
+    display: none !important;
+  }
+
+  .parallax-round-replies {
+    font-size: 10px !important;
+  }
+
+  .parallax-toggle-round-btn {
+    padding: 6px 10px !important;
+    font-size: 11px !important;
+    border-radius: 6px !important;
+  }
+
+  /* Synthesis Summary Report */
+  #parallax-summary-card {
+    padding: 12px 14px !important;
+    border-radius: 12px !important;
+    margin: 12px 0 16px !important;
+  }
+
+  .parallax-summary-icon {
+    width: 34px !important;
+    height: 34px !important;
+    min-width: 34px !important;
+    border-radius: 8px !important;
+  }
+  .parallax-summary-icon svg {
+    width: 17px !important;
+    height: 17px !important;
+  }
+
+  .parallax-summary-title {
+    font-size: 13.5px !important;
+  }
+
+  .parallax-summary-pill {
+    font-size: 9px !important;
+    padding: 1px 6px !important;
+  }
+
+  #parallax-summary-actions {
+    width: 100% !important;
+    justify-content: flex-start !important;
+    gap: 6px !important;
+    margin-top: 4px !important;
+  }
+
+  #parallax-summary-actions button {
+    flex: 1 1 auto !important;
+    padding: 6px 10px !important;
+    font-size: 11px !important;
+    justify-content: center !important;
+    border-radius: 6px !important;
+  }
+
+  .parallax-consensus-lean-box {
+    padding: 10px 12px !important;
+    border-radius: 10px !important;
+    margin-bottom: 12px !important;
+  }
+
+  .parallax-consensus-lean-text {
+    font-size: 12px !important;
+    line-height: 1.45 !important;
+  }
+
+  .parallax-metrics-grid {
+    grid-template-columns: 1fr !important;
+    gap: 8px !important;
+    margin-bottom: 12px !important;
+  }
+
+  .parallax-summary-subgrid {
+    grid-template-columns: 1fr !important;
+    gap: 10px !important;
+  }
+
+  .parallax-summary-section-title {
+    font-size: 11px !important;
+    margin-bottom: 6px !important;
+  }
+
+  .parallax-summary-item-text {
+    font-size: 11.5px !important;
+    line-height: 1.4 !important;
+  }
+
+  /* Agent Configurations Tab */
+  #parallax-settings-container {
+    gap: 14px !important;
+  }
+
+  #parallax-settings-summary-banner {
+    padding: 12px 14px !important;
+    border-radius: 12px !important;
+    flex-direction: column !important;
+    align-items: flex-start !important;
+    gap: 10px !important;
+  }
+
+  .parallax-settings-title {
+    font-size: 13px !important;
+  }
+
+  .parallax-settings-grid {
+    grid-template-columns: 1fr !important;
+    gap: 10px !important;
+  }
+
+  .parallax-agent-card {
+    padding: 12px !important;
+    border-radius: 10px !important;
+  }
+
+  /* Past Swarms Archive Tab */
+  #parallax-archive-tab .parallax-archive-grid {
+    grid-template-columns: 1fr !important;
+    gap: 10px !important;
+  }
+
+  #parallax-archive-tab .parallax-archive-card {
+    padding: 12px !important;
+    border-radius: 10px !important;
+  }
+}
+
 
 
 

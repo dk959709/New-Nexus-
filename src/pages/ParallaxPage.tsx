@@ -23,6 +23,10 @@ import { runParallaxSwarm } from '@/services/parallaxOrchestrator';
 import { ParallaxSummaryCard } from '@/components/parallax/ParallaxSummaryCard';
 import { ParallaxSettings } from '@/components/parallax/ParallaxSettings';
 import { ParallaxAgentAvatar } from '@/components/parallax/ParallaxAgentIcon';
+import { ParallaxSwarmConstellation } from '@/components/parallax/ParallaxSwarmConstellation';
+import { AGENT_QUADRANTS } from '@/data/parallaxQuadrants';
+import { ParallaxRoundTracker } from '@/components/parallax/ParallaxRoundTracker';
+import { ParallaxAudioVisualizer } from '@/components/parallax/ParallaxAudioVisualizer';
 import { getParallaxAgentVoice, formatFullParallaxTranscript } from '@/data/parallaxVoices';
 import { cleanMarkdownForSpeech } from '@/lib/format';
 import type {
@@ -51,6 +55,11 @@ export const ParallaxPage: React.FC = () => {
   const [statusText, setStatusText] = useState<string>('Ready to mobilize 20-agent swarm.');
   const [errorText, setErrorText] = useState<string | null>(null);
   const [wasStoppedEarly, setWasStoppedEarly] = useState<boolean>(false);
+
+  // Graphics & Filter state
+  const [selectedAgentFilter, setSelectedAgentFilter] = useState<string | null>(null);
+  const [roundFilter, setRoundFilter] = useState<'all' | 1 | 2 | 3>('all');
+  const [groupFilter, setGroupFilter] = useState<'all' | 'optimists' | 'realists' | 'ethicists' | 'visionaries' | 'anchors' | 'facts'>('all');
 
   // Per-round expand states for curated viewing
   const [expandedRounds, setExpandedRounds] = useState<Record<number, boolean>>({
@@ -528,6 +537,13 @@ export const ParallaxPage: React.FC = () => {
 
   const enabledAgentsCount = Object.values(config.agents || {}).filter((a) => a.enabled !== false).length;
 
+  const activeSpeakingAgent =
+    playingAudioKey && playingAudioKey !== 'full_swarm'
+      ? messages.find((m) => m.id === playingAudioKey) || null
+      : isRunning && messages.length > 0
+      ? messages[messages.length - 1]
+      : null;
+
   return (
     <div
       id="parallax-page"
@@ -984,7 +1000,7 @@ export const ParallaxPage: React.FC = () => {
             }}
           >
             {/* Input Row */}
-            <div style={{ display: 'flex', gap: '10px', alignItems: 'center' }}>
+            <div className="parallax-input-row" style={{ display: 'flex', gap: '10px', alignItems: 'center' }}>
               <input
                 id="parallax-topic-input"
                 type="text"
@@ -1071,7 +1087,7 @@ export const ParallaxPage: React.FC = () => {
             </div>
 
             {/* Starter Presets */}
-            <div style={{ marginTop: '12px', display: 'flex', alignItems: 'center', gap: '8px', flexWrap: 'wrap' }}>
+            <div className="parallax-popular-topics" style={{ marginTop: '12px', display: 'flex', alignItems: 'center', gap: '8px', flexWrap: 'wrap' }}>
               <span style={{ fontSize: '11px', fontFamily: 'DM Mono, monospace', color: '#94a3b8', fontWeight: 600 }}>
                 POPULAR TOPICS:
               </span>
@@ -1150,6 +1166,55 @@ export const ParallaxPage: React.FC = () => {
             </div>
           )}
 
+          {/* Interactive 3-Round Timeline Graphics */}
+          <ParallaxRoundTracker
+            currentRound={currentRound}
+            isRunning={isRunning}
+            isComplete={Boolean(summary)}
+            wasStoppedEarly={wasStoppedEarly}
+            messages={messages}
+          />
+
+          {/* Dynamic 20-Persona Swarm Constellation Radar & Ideology Matrix */}
+          <ParallaxSwarmConstellation
+            agents={config.agents}
+            messages={messages}
+            currentRound={currentRound}
+            isRunning={isRunning}
+            activeSpeakingAgentId={activeSpeakingAgent?.agentId}
+            selectedAgentId={selectedAgentFilter}
+            onSelectAgent={(agentId) => setSelectedAgentFilter(agentId)}
+            topic={currentTopic || topicInput}
+          />
+
+          {/* Real-time Audio Waveform Visualizer HUD */}
+          {(playingAudioKey || loadingAudioKey) && (
+            <ParallaxAudioVisualizer
+              isPlaying={Boolean(playingAudioKey)}
+              activeKey={playingAudioKey || loadingAudioKey}
+              activeAgentName={
+                playingAudioKey === 'full_swarm' || loadingAudioKey === 'full_swarm'
+                  ? 'Full Swarm Deliberation'
+                  : activeSpeakingAgent?.agentName || 'Swarm Speaker'
+              }
+              activeAgentId={activeSpeakingAgent?.agentId}
+              accentColor={activeSpeakingAgent?.accentColor || '#61d7c9'}
+              voiceName={
+                activeSpeakingAgent
+                  ? config.agents[activeSpeakingAgent.agentId]?.voice || getParallaxAgentVoice(activeSpeakingAgent.agentId)
+                  : undefined
+              }
+              progressText={
+                fullSwarmProgress
+                  ? `Turn ${fullSwarmProgress.current} / ${fullSwarmProgress.total}`
+                  : loadingAudioKey
+                  ? 'Synthesizing voice...'
+                  : undefined
+              }
+              onStop={stopAllAudio}
+            />
+          )}
+
           {/* Live YouTube-Style Swarm Feed */}
           <div
             id="parallax-live-feed-container"
@@ -1196,83 +1261,111 @@ export const ParallaxPage: React.FC = () => {
                     borderBottom: '1px solid rgba(97, 215, 201, 0.25)',
                     padding: '10px 16px',
                     display: 'flex',
-                    alignItems: 'center',
-                    justifyContent: 'space-between',
-                    flexWrap: 'wrap',
-                    gap: '8px',
+                    flexDirection: 'column',
+                    gap: '10px',
                     boxShadow: '0 4px 20px rgba(0, 0, 0, 0.45)',
                   }}
                 >
-                  <div style={{ display: 'flex', alignItems: 'center', gap: '8px', flexWrap: 'wrap' }}>
-                    <span style={{ fontSize: '13px', fontWeight: 700, color: '#f1f5f9', letterSpacing: '-0.01em' }}>
-                      Deliberation Feed
-                    </span>
-                    <span
-                      style={{
-                        fontSize: '11px',
-                        fontFamily: 'DM Mono, monospace',
-                        padding: '2px 8px',
-                        borderRadius: '999px',
-                        background: 'rgba(6, 182, 212, 0.15)',
-                        color: '#61d7c9',
-                        border: '1px solid rgba(6, 182, 212, 0.35)',
-                        fontWeight: 700,
-                      }}
-                    >
-                      {messages.length} messages
-                    </span>
-                    {wasStoppedEarly && (
+                  <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', flexWrap: 'wrap', gap: '8px' }}>
+                    <div style={{ display: 'flex', alignItems: 'center', gap: '8px', flexWrap: 'wrap' }}>
+                      <span style={{ fontSize: '13px', fontWeight: 700, color: '#f1f5f9', letterSpacing: '-0.01em' }}>
+                        Deliberation Feed
+                      </span>
                       <span
                         style={{
                           fontSize: '11px',
                           fontFamily: 'DM Mono, monospace',
                           padding: '2px 8px',
                           borderRadius: '999px',
-                          background: 'rgba(244, 63, 94, 0.15)',
-                          color: '#fb7185',
-                          border: '1px solid rgba(244, 63, 94, 0.4)',
+                          background: 'rgba(6, 182, 212, 0.15)',
+                          color: '#61d7c9',
+                          border: '1px solid rgba(6, 182, 212, 0.35)',
                           fontWeight: 700,
                         }}
                       >
-                        Swarm stopped early by user
+                        {messages.length} messages
                       </span>
-                    )}
-                    {fullSwarmProgress && (
-                      <span
-                        style={{
-                          fontSize: '11px',
-                          color: '#38bdf8',
-                          fontFamily: 'DM Mono, monospace',
-                          display: 'flex',
-                          alignItems: 'center',
-                          gap: '5px',
-                        }}
-                      >
-                        <Loader2 size={12} className="animate-spin" />
-                        Synthesizing audio: {fullSwarmProgress.current} / {fullSwarmProgress.total}
-                      </span>
-                    )}
-                  </div>
+                      {wasStoppedEarly && (
+                        <span
+                          style={{
+                            fontSize: '11px',
+                            fontFamily: 'DM Mono, monospace',
+                            padding: '2px 8px',
+                            borderRadius: '999px',
+                            background: 'rgba(244, 63, 94, 0.15)',
+                            color: '#fb7185',
+                            border: '1px solid rgba(244, 63, 94, 0.4)',
+                            fontWeight: 700,
+                          }}
+                        >
+                          Swarm stopped early by user
+                        </span>
+                      )}
+                      {fullSwarmProgress && (
+                        <span
+                          style={{
+                            fontSize: '11px',
+                            color: '#38bdf8',
+                            fontFamily: 'DM Mono, monospace',
+                            display: 'flex',
+                            alignItems: 'center',
+                            gap: '5px',
+                          }}
+                        >
+                          <Loader2 size={12} className="animate-spin" />
+                          Synthesizing audio: {fullSwarmProgress.current} / {fullSwarmProgress.total}
+                        </span>
+                      )}
+                    </div>
 
-                  {/* Actions: Stop Swarm (if running), Copy Full Swarm, Listen to Full Swarm, Download MP3 */}
-                  <div
-                    id="parallax-feed-actions-cluster"
-                    style={{ display: 'flex', alignItems: 'center', gap: '6px', flexWrap: 'wrap' }}
-                    className="w-full sm:w-auto justify-start sm:justify-end"
-                  >
-                    {/* Live Stop Swarm Button in Feed Toolbar */}
-                    {isRunning && (
+                    {/* Actions: Stop Swarm (if running), Copy Full Swarm, Listen to Full Swarm, Download MP3 */}
+                    <div
+                      id="parallax-feed-actions-cluster"
+                      style={{ display: 'flex', alignItems: 'center', gap: '6px', flexWrap: 'wrap' }}
+                      className="w-full sm:w-auto justify-start sm:justify-end"
+                    >
+                      {/* Live Stop Swarm Button in Feed Toolbar */}
+                      {isRunning && (
+                        <button
+                          id="parallax-feed-stop-swarm-btn"
+                          type="button"
+                          onClick={handleStopSwarm}
+                          title="Immediately halt the running swarm and retain completed messages"
+                          style={{
+                            padding: '6px 12px',
+                            borderRadius: '8px',
+                            background: 'linear-gradient(135deg, rgba(239, 68, 68, 0.3) 0%, rgba(185, 28, 28, 0.4) 100%)',
+                            border: '1.5px solid rgba(239, 68, 68, 0.7)',
+                            color: '#fecdd3',
+                            fontSize: '11px',
+                            fontWeight: 700,
+                            cursor: 'pointer',
+                            display: 'flex',
+                            alignItems: 'center',
+                            gap: '5px',
+                            transition: 'all 0.15s ease',
+                            boxShadow: '0 0 12px rgba(239, 68, 68, 0.25)',
+                            whiteSpace: 'nowrap',
+                          }}
+                          className="hover:bg-red-900/60 hover:text-white active:scale-95"
+                        >
+                          <Square size={11} fill="currentColor" />
+                          <span>Stop Swarm</span>
+                        </button>
+                      )}
+
+                      {/* Copy Full Swarm Button */}
                       <button
-                        id="parallax-feed-stop-swarm-btn"
+                        id="parallax-copy-full-swarm-btn"
                         type="button"
-                        onClick={handleStopSwarm}
-                        title="Immediately halt the running swarm and retain completed messages"
+                        onClick={handleCopyFullSwarm}
+                        title="Copy complete transcript including all rounds and summary"
                         style={{
                           padding: '6px 12px',
                           borderRadius: '8px',
-                          background: 'linear-gradient(135deg, rgba(239, 68, 68, 0.3) 0%, rgba(185, 28, 28, 0.4) 100%)',
-                          border: '1.5px solid rgba(239, 68, 68, 0.7)',
-                          color: '#fecdd3',
+                          background: copiedSwarmTranscript ? 'rgba(16, 185, 129, 0.2)' : 'rgba(15, 23, 42, 0.8)',
+                          border: `1px solid ${copiedSwarmTranscript ? '#10b981' : 'rgba(97, 215, 201, 0.3)'}`,
+                          color: copiedSwarmTranscript ? '#10b981' : '#cbd5e1',
                           fontSize: '11px',
                           fontWeight: 700,
                           cursor: 'pointer',
@@ -1280,118 +1373,200 @@ export const ParallaxPage: React.FC = () => {
                           alignItems: 'center',
                           gap: '5px',
                           transition: 'all 0.15s ease',
-                          boxShadow: '0 0 12px rgba(239, 68, 68, 0.25)',
                           whiteSpace: 'nowrap',
                         }}
-                        className="hover:bg-red-900/60 hover:text-white active:scale-95"
+                        className="hover:border-[#61d7c9] hover:text-white active:scale-95"
                       >
-                        <Square size={11} fill="currentColor" />
-                        <span>Stop Swarm</span>
+                        {copiedSwarmTranscript ? <Check size={13} /> : <Copy size={13} />}
+                        <span>{copiedSwarmTranscript ? 'Copied Full Swarm!' : 'Copy Full Swarm'}</span>
                       </button>
-                    )}
 
-                    {/* Copy Full Swarm Button */}
-                    <button
-                      id="parallax-copy-full-swarm-btn"
-                      type="button"
-                      onClick={handleCopyFullSwarm}
-                      title="Copy complete transcript including all rounds and summary"
-                      style={{
-                        padding: '6px 12px',
-                        borderRadius: '8px',
-                        background: copiedSwarmTranscript ? 'rgba(16, 185, 129, 0.2)' : 'rgba(15, 23, 42, 0.8)',
-                        border: `1px solid ${copiedSwarmTranscript ? '#10b981' : 'rgba(97, 215, 201, 0.3)'}`,
-                        color: copiedSwarmTranscript ? '#10b981' : '#cbd5e1',
-                        fontSize: '11px',
-                        fontWeight: 700,
-                        cursor: 'pointer',
-                        display: 'flex',
-                        alignItems: 'center',
-                        gap: '5px',
-                        transition: 'all 0.15s ease',
-                        whiteSpace: 'nowrap',
-                      }}
-                      className="hover:border-[#61d7c9] hover:text-white active:scale-95"
-                    >
-                      {copiedSwarmTranscript ? <Check size={13} /> : <Copy size={13} />}
-                      <span>{copiedSwarmTranscript ? 'Copied Full Swarm!' : 'Copy Full Swarm'}</span>
-                    </button>
+                      {/* Listen to Full Swarm Button */}
+                      <button
+                        id="parallax-listen-full-swarm-btn"
+                        type="button"
+                        onClick={handleListenToFullSwarm}
+                        disabled={loadingAudioKey === 'full_swarm' && !fullSwarmProgress}
+                        title={playingAudioKey === 'full_swarm' ? 'Stop audio' : 'Listen to all 20 agents back-to-back'}
+                        style={{
+                          padding: '6px 12px',
+                          borderRadius: '8px',
+                          background: playingAudioKey === 'full_swarm'
+                            ? 'rgba(16, 185, 129, 0.2)'
+                            : 'linear-gradient(135deg, rgba(6, 182, 212, 0.2) 0%, rgba(97, 215, 201, 0.25) 100%)',
+                          border: `1px solid ${playingAudioKey === 'full_swarm' ? '#10b981' : 'rgba(97, 215, 201, 0.5)'}`,
+                          color: playingAudioKey === 'full_swarm' ? '#4ade80' : '#61d7c9',
+                          fontSize: '11px',
+                          fontWeight: 700,
+                          cursor: 'pointer',
+                          display: 'flex',
+                          alignItems: 'center',
+                          gap: '5px',
+                          transition: 'all 0.15s ease',
+                          whiteSpace: 'nowrap',
+                        }}
+                        className="hover:border-[#61d7c9] hover:brightness-110 active:scale-95"
+                      >
+                        {loadingAudioKey === 'full_swarm' ? (
+                          <Loader2 size={13} className="animate-spin text-cyan-400" />
+                        ) : playingAudioKey === 'full_swarm' ? (
+                          <Square size={12} fill="currentColor" />
+                        ) : (
+                          <Play size={12} fill="currentColor" />
+                        )}
+                        <span>
+                          {loadingAudioKey === 'full_swarm'
+                            ? fullSwarmProgress
+                              ? `Synthesizing (${fullSwarmProgress.current}/${fullSwarmProgress.total})...`
+                              : 'Synthesizing...'
+                            : playingAudioKey === 'full_swarm'
+                            ? 'Stop Deliberation'
+                            : 'Listen to Full Swarm'}
+                        </span>
+                      </button>
 
-                    {/* Listen to Full Swarm Button */}
-                    <button
-                      id="parallax-listen-full-swarm-btn"
-                      type="button"
-                      onClick={handleListenToFullSwarm}
-                      disabled={loadingAudioKey === 'full_swarm' && !fullSwarmProgress}
-                      title={playingAudioKey === 'full_swarm' ? 'Stop audio' : 'Listen to all 20 agents back-to-back'}
-                      style={{
-                        padding: '6px 12px',
-                        borderRadius: '8px',
-                        background: playingAudioKey === 'full_swarm'
-                          ? 'rgba(16, 185, 129, 0.2)'
-                          : 'linear-gradient(135deg, rgba(6, 182, 212, 0.2) 0%, rgba(97, 215, 201, 0.25) 100%)',
-                        border: `1px solid ${playingAudioKey === 'full_swarm' ? '#10b981' : 'rgba(97, 215, 201, 0.5)'}`,
-                        color: playingAudioKey === 'full_swarm' ? '#4ade80' : '#61d7c9',
-                        fontSize: '11px',
-                        fontWeight: 700,
-                        cursor: 'pointer',
-                        display: 'flex',
-                        alignItems: 'center',
-                        gap: '5px',
-                        transition: 'all 0.15s ease',
-                        whiteSpace: 'nowrap',
-                      }}
-                      className="hover:border-[#61d7c9] hover:brightness-110 active:scale-95"
-                    >
-                      {loadingAudioKey === 'full_swarm' ? (
-                        <Loader2 size={13} className="animate-spin text-cyan-400" />
-                      ) : playingAudioKey === 'full_swarm' ? (
-                        <Square size={12} fill="currentColor" />
-                      ) : (
-                        <Play size={12} fill="currentColor" />
+                      {/* Download as MP3 Button */}
+                      <button
+                        id="parallax-download-swarm-mp3-btn"
+                        type="button"
+                        onClick={handleDownloadSwarmMp3}
+                        disabled={isDownloadingSwarmMp3}
+                        title="Stitch and download all 20 agents as a contiguous MP3"
+                        style={{
+                          padding: '6px 12px',
+                          borderRadius: '8px',
+                          background: 'rgba(15, 23, 42, 0.8)',
+                          border: '1px solid rgba(165, 207, 214, 0.25)',
+                          color: '#cbd5e1',
+                          fontSize: '11px',
+                          fontWeight: 700,
+                          cursor: isDownloadingSwarmMp3 ? 'not-allowed' : 'pointer',
+                          display: 'flex',
+                          alignItems: 'center',
+                          gap: '5px',
+                          transition: 'all 0.15s ease',
+                          whiteSpace: 'nowrap',
+                        }}
+                        className="hover:border-[#61d7c9] hover:text-white active:scale-95"
+                      >
+                        {isDownloadingSwarmMp3 ? (
+                          <Loader2 size={13} className="animate-spin text-cyan-400" />
+                        ) : (
+                          <Download size={13} />
+                        )}
+                        <span>{isDownloadingSwarmMp3 ? 'Exporting MP3...' : 'Download MP3'}</span>
+                      </button>
+                    </div>
+                  </div>
+
+                  {/* UI Filter Toolbar: Filter by Round, Cluster, or Specific Agent */}
+                  <div
+                    id="parallax-feed-filter-bar"
+                    style={{
+                      display: 'flex',
+                      alignItems: 'center',
+                      justifyContent: 'space-between',
+                      flexWrap: 'wrap',
+                      gap: '8px',
+                      paddingTop: '6px',
+                      borderTop: '1px solid rgba(165, 207, 214, 0.1)',
+                      fontSize: '11px',
+                      fontFamily: 'DM Mono, monospace',
+                    }}
+                  >
+                    {/* Round Filter Pills */}
+                    <div className="parallax-filter-row" style={{ display: 'flex', alignItems: 'center', gap: '4px', flexWrap: 'wrap' }}>
+                      <span style={{ color: '#64748b', marginRight: '4px' }}>Round:</span>
+                      {(['all', 1, 2, 3] as const).map((r) => (
+                        <button
+                          key={r}
+                          id={`parallax-filter-round-${r}`}
+                          type="button"
+                          onClick={() => setRoundFilter(r)}
+                          style={{
+                            padding: '2px 8px',
+                            borderRadius: '6px',
+                            background: roundFilter === r ? 'rgba(6, 182, 212, 0.25)' : 'rgba(15, 23, 42, 0.6)',
+                            border: `1px solid ${roundFilter === r ? '#06b6d4' : 'rgba(165, 207, 214, 0.15)'}`,
+                            color: roundFilter === r ? '#61d7c9' : '#94a3b8',
+                            fontSize: '10px',
+                            cursor: 'pointer',
+                            fontWeight: roundFilter === r ? 700 : 500,
+                          }}
+                        >
+                          {r === 'all' ? 'All (3 Rounds)' : `R${r}`}
+                        </button>
+                      ))}
+                    </div>
+
+                    {/* Cluster / Ideology Filter Pills */}
+                    <div className="parallax-group-filter" style={{ display: 'flex', alignItems: 'center', gap: '4px', flexWrap: 'wrap' }}>
+                      <span style={{ color: '#64748b', marginRight: '4px' }}>Cluster:</span>
+                      {[
+                        { key: 'all', label: 'All' },
+                        { key: 'optimists', label: 'Optimists' },
+                        { key: 'realists', label: 'Realists' },
+                        { key: 'ethicists', label: 'Ethicists' },
+                        { key: 'visionaries', label: 'Visionaries' },
+                        { key: 'anchors', label: 'Anchors' },
+                        { key: 'facts', label: 'Facts' },
+                      ].map((item) => (
+                        <button
+                          key={item.key}
+                          id={`parallax-filter-group-${item.key}`}
+                          type="button"
+                          onClick={() => setGroupFilter(item.key as 'all' | 'optimists' | 'realists' | 'ethicists' | 'visionaries' | 'anchors' | 'facts')}
+                          style={{
+                            padding: '2px 8px',
+                            borderRadius: '6px',
+                            background: groupFilter === item.key ? 'rgba(97, 215, 201, 0.25)' : 'rgba(15, 23, 42, 0.6)',
+                            border: `1px solid ${groupFilter === item.key ? '#61d7c9' : 'rgba(165, 207, 214, 0.15)'}`,
+                            color: groupFilter === item.key ? '#61d7c9' : '#94a3b8',
+                            fontSize: '10px',
+                            cursor: 'pointer',
+                            fontWeight: groupFilter === item.key ? 700 : 500,
+                          }}
+                        >
+                          {item.label}
+                        </button>
+                      ))}
+
+                      {/* Selected Agent Active Filter Tag */}
+                      {selectedAgentFilter && (
+                        <div
+                          style={{
+                            display: 'flex',
+                            alignItems: 'center',
+                            gap: '4px',
+                            background: 'rgba(6, 182, 212, 0.2)',
+                            border: '1px solid #06b6d4',
+                            borderRadius: '999px',
+                            padding: '2px 8px',
+                            color: '#61d7c9',
+                            fontWeight: 700,
+                            fontSize: '10px',
+                          }}
+                        >
+                          <span>{config.agents[selectedAgentFilter]?.name || selectedAgentFilter}</span>
+                          <button
+                            type="button"
+                            title="Clear agent filter"
+                            onClick={() => setSelectedAgentFilter(null)}
+                            style={{
+                              background: 'transparent',
+                              border: 'none',
+                              color: '#fff',
+                              cursor: 'pointer',
+                              padding: 0,
+                              fontSize: '11px',
+                              lineHeight: 1,
+                            }}
+                          >
+                            ✕
+                          </button>
+                        </div>
                       )}
-                      <span>
-                        {loadingAudioKey === 'full_swarm'
-                          ? fullSwarmProgress
-                            ? `Synthesizing (${fullSwarmProgress.current}/${fullSwarmProgress.total})...`
-                            : 'Synthesizing...'
-                          : playingAudioKey === 'full_swarm'
-                          ? 'Stop Deliberation'
-                          : 'Listen to Full Swarm'}
-                      </span>
-                    </button>
-
-                    {/* Download as MP3 Button */}
-                    <button
-                      id="parallax-download-swarm-mp3-btn"
-                      type="button"
-                      onClick={handleDownloadSwarmMp3}
-                      disabled={isDownloadingSwarmMp3}
-                      title="Stitch and download all 20 agents as a contiguous MP3"
-                      style={{
-                        padding: '6px 12px',
-                        borderRadius: '8px',
-                        background: 'rgba(15, 23, 42, 0.8)',
-                        border: '1px solid rgba(165, 207, 214, 0.25)',
-                        color: '#cbd5e1',
-                        fontSize: '11px',
-                        fontWeight: 700,
-                        cursor: isDownloadingSwarmMp3 ? 'not-allowed' : 'pointer',
-                        display: 'flex',
-                        alignItems: 'center',
-                        gap: '5px',
-                        transition: 'all 0.15s ease',
-                        whiteSpace: 'nowrap',
-                      }}
-                      className="hover:border-[#61d7c9] hover:text-white active:scale-95"
-                    >
-                      {isDownloadingSwarmMp3 ? (
-                        <Loader2 size={13} className="animate-spin text-cyan-400" />
-                      ) : (
-                        <Download size={13} />
-                      )}
-                      <span>{isDownloadingSwarmMp3 ? 'Exporting MP3...' : 'Download MP3'}</span>
-                    </button>
+                    </div>
                   </div>
                 </div>
 
@@ -1406,8 +1581,23 @@ export const ParallaxPage: React.FC = () => {
                   }}
                 >
                   {/* RENDER BY ROUND WITH INLINE CURATION (first 4-5 inline, rest collapsed) */}
-                {[1, 2, 3].map((roundNum) => {
-                  const roundMsgs = messages.filter((m) => m.round === roundNum);
+                {([1, 2, 3] as const).map((roundNum) => {
+                  if (roundFilter !== 'all' && roundFilter !== roundNum) return null;
+
+                  const roundMsgs = messages.filter((m) => {
+                    if (m.round !== roundNum) return false;
+                    if (selectedAgentFilter && m.agentId !== selectedAgentFilter) return false;
+                    if (groupFilter !== 'all') {
+                      if (groupFilter === 'facts') {
+                        if (!m.toolUsed) return false;
+                      } else {
+                        const q = AGENT_QUADRANTS[m.agentId]?.quadrant;
+                        if (q !== groupFilter) return false;
+                      }
+                    }
+                    return true;
+                  });
+
                   if (roundMsgs.length === 0) return null;
 
                   const isExpanded = Boolean(expandedRounds[roundNum]);
@@ -1419,6 +1609,7 @@ export const ParallaxPage: React.FC = () => {
                     <div key={roundNum} id={`parallax-round-section-${roundNum}`}>
                       {/* Round Header Divider */}
                       <div
+                        className="parallax-round-divider"
                         style={{
                           display: 'flex',
                           alignItems: 'center',
@@ -1466,7 +1657,7 @@ export const ParallaxPage: React.FC = () => {
                         {visibleMsgs.map((msg) => (
                           <div
                             key={msg.id}
-                            className="transition-all duration-200"
+                            className="parallax-message-item transition-all duration-200"
                             style={{
                               display: 'flex',
                               alignItems: 'flex-start',
@@ -1498,6 +1689,7 @@ export const ParallaxPage: React.FC = () => {
                                 }}
                               >
                                 <span
+                                  className="parallax-agent-name"
                                   style={{
                                     fontSize: '12px',
                                     fontWeight: 800,
@@ -1617,7 +1809,7 @@ export const ParallaxPage: React.FC = () => {
                                       fontWeight: 600,
                                       transition: 'all 0.15s ease',
                                     }}
-                                    className="hover:text-[#61d7c9] hover:border-[#61d7c9]"
+                                    className="parallax-voice-btn hover:text-[#61d7c9] hover:border-[#61d7c9]"
                                   >
                                     {loadingAudioKey === msg.id ? (
                                       <Loader2 size={10} className="animate-spin text-cyan-400" />
@@ -1651,6 +1843,7 @@ export const ParallaxPage: React.FC = () => {
                               </div>
 
                               <p
+                                className="parallax-message-text"
                                 style={{
                                   margin: 0,
                                   fontSize: '13px',
@@ -1665,6 +1858,7 @@ export const ParallaxPage: React.FC = () => {
                               {/* Tool snippet preview if used */}
                               {msg.toolUsed && (
                                 <div
+                                  className="parallax-verified-fact"
                                   style={{
                                     marginTop: '4px',
                                     padding: '4px 8px',

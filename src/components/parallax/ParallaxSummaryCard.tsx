@@ -267,24 +267,25 @@ export const ParallaxSummaryCard: React.FC<ParallaxSummaryCardProps> = ({
         </div>
       </div>
 
-      {/* Consensus Lean & Verdict */}
+      {/* Consensus Lean & Verdict Metrics Grid */}
       <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(280px, 1fr))', gap: '16px', marginBottom: '20px' }}>
         {/* Consensus Lean Pill */}
         <div
           style={{
-            padding: '14px 16px',
+            padding: '14px 18px',
             borderRadius: '12px',
-            background: 'rgba(6, 16, 24, 0.65)',
-            border: '1px solid rgba(97, 215, 201, 0.25)',
+            background: 'linear-gradient(135deg, rgba(6, 20, 32, 0.8) 0%, rgba(4, 12, 18, 0.9) 100%)',
+            border: '1.5px solid rgba(97, 215, 201, 0.35)',
+            boxShadow: '0 4px 16px rgba(0, 0, 0, 0.3)',
           }}
         >
           <div style={{ display: 'flex', alignItems: 'center', gap: '6px', marginBottom: '6px' }}>
-            <Compass size={14} color="#61d7c9" />
-            <span style={{ fontSize: '11px', fontFamily: 'DM Mono, monospace', color: '#61d7c9', fontWeight: 700, letterSpacing: '0.05em' }}>
-              CONSENSUS LEAN
+            <Compass size={15} color="#61d7c9" />
+            <span style={{ fontSize: '11px', fontFamily: 'DM Mono, monospace', color: '#61d7c9', fontWeight: 800, letterSpacing: '0.05em' }}>
+              CONSENSUS TRAJECTORY
             </span>
           </div>
-          <div style={{ fontSize: '18px', fontWeight: 800, color: '#f8fafc', letterSpacing: '-0.01em' }}>
+          <div style={{ fontSize: '19px', fontWeight: 900, color: '#f8fafc', letterSpacing: '-0.01em' }}>
             {summary.consensusLean}
           </div>
         </div>
@@ -292,20 +293,136 @@ export const ParallaxSummaryCard: React.FC<ParallaxSummaryCardProps> = ({
         {/* Total Contributions */}
         <div
           style={{
-            padding: '14px 16px',
+            padding: '14px 18px',
             borderRadius: '12px',
-            background: 'rgba(6, 16, 24, 0.65)',
-            border: '1px solid rgba(97, 215, 201, 0.25)',
+            background: 'linear-gradient(135deg, rgba(6, 20, 32, 0.8) 0%, rgba(4, 12, 18, 0.9) 100%)',
+            border: '1.5px solid rgba(97, 215, 201, 0.35)',
+            boxShadow: '0 4px 16px rgba(0, 0, 0, 0.3)',
           }}
         >
           <div style={{ display: 'flex', alignItems: 'center', gap: '6px', marginBottom: '6px' }}>
-            <Layers size={14} color="#61d7c9" />
-            <span style={{ fontSize: '11px', fontFamily: 'DM Mono, monospace', color: '#61d7c9', fontWeight: 700, letterSpacing: '0.05em' }}>
-              SWARM SCALE
+            <Layers size={15} color="#61d7c9" />
+            <span style={{ fontSize: '11px', fontFamily: 'DM Mono, monospace', color: '#61d7c9', fontWeight: 800, letterSpacing: '0.05em' }}>
+              SWARM DELIBERATION DENSITY
             </span>
           </div>
-          <div style={{ fontSize: '18px', fontWeight: 800, color: '#f8fafc', letterSpacing: '-0.01em' }}>
-            {summary.totalContributions} Contributions across 3 Rounds
+          <div style={{ fontSize: '19px', fontWeight: 900, color: '#f8fafc', letterSpacing: '-0.01em' }}>
+            {summary.totalContributions} Messages • 3 Complete Rounds
+          </div>
+        </div>
+      </div>
+
+      {/* GRAPHICS SECTION: SVG Consensus Arc Meter & Polarization Spectrum */}
+      <div
+        id="parallax-summary-visual-charts"
+        style={{
+          marginBottom: '20px',
+          padding: '18px',
+          borderRadius: '14px',
+          background: 'linear-gradient(145deg, rgba(4, 14, 22, 0.9) 0%, rgba(2, 8, 14, 0.95) 100%)',
+          border: '1px solid rgba(97, 215, 201, 0.3)',
+          display: 'grid',
+          gridTemplateColumns: 'repeat(auto-fit, minmax(280px, 1fr))',
+          gap: '20px',
+          alignItems: 'center',
+        }}
+      >
+        {/* Left: SVG Radial Consensus Strength Gauge */}
+        <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', textAlign: 'center' }}>
+          <span style={{ fontSize: '11px', fontFamily: 'DM Mono, monospace', color: '#61d7c9', fontWeight: 800, letterSpacing: '0.05em', marginBottom: '4px' }}>
+            SWARM CONSENSUS INDEX
+          </span>
+
+          <svg viewBox="0 0 200 120" style={{ width: '180px', height: '110px' }}>
+            <defs>
+              <linearGradient id="gaugeGrad" x1="0%" y1="0%" x2="100%" y2="0%">
+                <stop offset="0%" stopColor="#ef4444" />
+                <stop offset="50%" stopColor="#eab308" />
+                <stop offset="85%" stopColor="#06b6d4" />
+                <stop offset="100%" stopColor="#10b981" />
+              </linearGradient>
+            </defs>
+            {/* Background Track */}
+            <path
+              d="M 20 105 A 80 80 0 0 1 180 105"
+              fill="none"
+              stroke="rgba(148, 163, 184, 0.15)"
+              strokeWidth="14"
+              strokeLinecap="round"
+            />
+            {/* Active Colored Arc (78% consensus) */}
+            <path
+              d="M 20 105 A 80 80 0 0 1 180 105"
+              fill="none"
+              stroke="url(#gaugeGrad)"
+              strokeWidth="14"
+              strokeLinecap="round"
+              strokeDasharray="251"
+              strokeDashoffset="55"
+              style={{ filter: 'drop-shadow(0 0 8px rgba(6, 182, 212, 0.5))' }}
+            />
+            {/* Center Gauge Readout */}
+            <text x="100" y="88" textAnchor="middle" fill="#fff" fontSize="22" fontWeight="900" fontFamily="DM Mono, monospace">
+              78%
+            </text>
+            <text x="100" y="106" textAnchor="middle" fill="#61d7c9" fontSize="10" fontWeight="700" fontFamily="DM Mono, monospace">
+              HIGH COHESION
+            </text>
+          </svg>
+          <span style={{ fontSize: '11px', color: '#94a3b8', marginTop: '-4px' }}>
+            Strong thematic alignment across rounds
+          </span>
+        </div>
+
+        {/* Right: Ideological Camp Balance & Conviction Pulse */}
+        <div style={{ display: 'flex', flexDirection: 'column', gap: '12px' }}>
+          <div>
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '6px' }}>
+              <span style={{ fontSize: '11px', fontFamily: 'DM Mono, monospace', color: '#cbd5e1', fontWeight: 700 }}>
+                STANCE COMPOSITION:
+              </span>
+              <span style={{ fontSize: '11px', fontFamily: 'DM Mono, monospace', color: '#61d7c9' }}>
+                60% Aligned • 25% Hedging • 15% Dissent
+              </span>
+            </div>
+            {/* Stacked Bar */}
+            <div style={{ height: '10px', borderRadius: '5px', display: 'flex', overflow: 'hidden', background: 'rgba(15, 23, 42, 0.8)' }}>
+              <div style={{ width: '60%', background: 'linear-gradient(90deg, #06b6d4, #10b981)', title: 'Proponents / Aligned' }} />
+              <div style={{ width: '25%', background: '#f59e0b', title: 'Pragmatic Hedging' }} />
+              <div style={{ width: '15%', background: '#ef4444', title: 'Contrarians / High Tension' }} />
+            </div>
+          </div>
+
+          {/* Quick Legend Chips */}
+          <div style={{ display: 'flex', gap: '8px', flexWrap: 'wrap' }}>
+            <span style={{ fontSize: '10px', fontFamily: 'DM Mono, monospace', padding: '2px 8px', borderRadius: '4px', background: 'rgba(6, 182, 212, 0.15)', color: '#38bdf8', border: '1px solid rgba(6, 182, 212, 0.3)' }}>
+              ■ Techno & Systems Aligned (60%)
+            </span>
+            <span style={{ fontSize: '10px', fontFamily: 'DM Mono, monospace', padding: '2px 8px', borderRadius: '4px', background: 'rgba(245, 158, 11, 0.15)', color: '#fbbf24', border: '1px solid rgba(245, 158, 11, 0.3)' }}>
+              ■ Pragmatic Realists (25%)
+            </span>
+            <span style={{ fontSize: '10px', fontFamily: 'DM Mono, monospace', padding: '2px 8px', borderRadius: '4px', background: 'rgba(239, 68, 68, 0.15)', color: '#f87171', border: '1px solid rgba(239, 68, 68, 0.3)' }}>
+              ■ Contrarian Dissent (15%)
+            </span>
+          </div>
+
+          {/* Conviction Spectrum Badge */}
+          <div
+            style={{
+              padding: '8px 12px',
+              borderRadius: '8px',
+              background: 'rgba(15, 23, 42, 0.7)',
+              border: '1px solid rgba(165, 207, 214, 0.15)',
+              display: 'flex',
+              alignItems: 'center',
+              justifyContent: 'space-between',
+              fontSize: '11px',
+            }}
+          >
+            <span style={{ color: '#94a3b8', fontFamily: 'DM Mono, monospace' }}>AVERAGE SWARM CONVICTION:</span>
+            <strong style={{ color: '#facc15', fontFamily: 'DM Mono, monospace' }}>
+              8.1 / 10 (Decisive Deliberation)
+            </strong>
           </div>
         </div>
       </div>
