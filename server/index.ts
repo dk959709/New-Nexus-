@@ -10,6 +10,7 @@ import { resolve } from 'node:path';
 import os from 'node:os';
 import { z } from 'zod';
 import { GoogleGenAI } from '@google/genai';
+import { MsEdgeTTS, OUTPUT_FORMAT } from 'msedge-tts';
 
 import { errorResponse, domainOf, normalizeProviderUrl } from './shared.js';
 import {
@@ -1648,6 +1649,124 @@ async function startServer() {
 
 
 
+  // Synthesizes text to MP3 Buffer using pure Node.js msedge-tts with chunking and voice fallbacks
+  async function synthesizeEdgeSpeechBuffer(rawText: string, requestedVoice?: string): Promise<Buffer> {
+    const voice = (typeof requestedVoice === 'string' && requestedVoice.trim())
+      ? requestedVoice.trim()
+      : 'en-US-AriaNeural';
+
+    const cleanText = rawText.trim();
+    if (!cleanText) {
+      throw new Error('Empty text provided for TTS');
+    }
+
+    const synthesizeSingleChunk = async (chunkText: string, v: string): Promise<Buffer> => {
+      const tts = new MsEdgeTTS();
+      await tts.setMetadata(v, OUTPUT_FORMAT.AUDIO_24KHZ_48KBITRATE_MONO_MP3);
+      const { audioStream } = tts.toStream(chunkText);
+      const chunks: Buffer[] = [];
+
+      return new Promise<Buffer>((resolve, reject) => {
+        const timer = setTimeout(() => {
+          try {
+            tts.close();
+          } catch {
+            // ignore close error
+          }
+          reject(new Error(`TTS timeout for voice ${v}`));
+        }, 30000);
+
+        audioStream.on('data', (c: Buffer) => chunks.push(c));
+        audioStream.on('end', () => {
+          clearTimeout(timer);
+          try {
+            tts.close();
+          } catch {
+            // ignore close error
+          }
+          const result = Buffer.concat(chunks);
+          if (result.length === 0) {
+            reject(new Error('Empty audio stream received'));
+          } else {
+            resolve(result);
+          }
+        });
+        audioStream.on('error', (err) => {
+          clearTimeout(timer);
+          try {
+            tts.close();
+          } catch {
+            // ignore close error
+          }
+          reject(err);
+        });
+      });
+    };
+
+    const tryChunkWithVoiceFallback = async (chunkText: string): Promise<Buffer> => {
+      try {
+        return await synthesizeSingleChunk(chunkText, voice);
+      } catch (err) {
+        console.warn(`[EdgeTTS] Voice "${voice}" failed, falling back to en-US-JennyNeural:`, err);
+        try {
+          return await synthesizeSingleChunk(chunkText, 'en-US-JennyNeural');
+        } catch {
+          return await synthesizeSingleChunk(chunkText, 'en-US-AriaNeural');
+        }
+      }
+    };
+
+    if (cleanText.length <= 2500) {
+      return await tryChunkWithVoiceFallback(cleanText);
+    }
+
+    // Split text exceeding 2500 characters
+    const textChunks: string[] = [];
+    let rem = cleanText;
+    while (rem.length > 0) {
+      if (rem.length <= 2500) {
+        textChunks.push(rem);
+        break;
+      }
+      let sliceEnd = -1;
+      const windowText = rem.slice(0, 2500);
+      const puncMatches = Array.from(windowText.matchAll(/[.!?;\n]\s+/g));
+      if (puncMatches.length > 0) {
+        const lastMatch = puncMatches[puncMatches.length - 1];
+        if (lastMatch.index !== undefined && lastMatch.index > 800) {
+          sliceEnd = lastMatch.index + lastMatch[0].length;
+        }
+      }
+      if (sliceEnd === -1) {
+        const commaMatches = Array.from(windowText.matchAll(/[,:]\s+/g));
+        if (commaMatches.length > 0) {
+          const lastComma = commaMatches[commaMatches.length - 1];
+          if (lastComma.index !== undefined && lastComma.index > 800) {
+            sliceEnd = lastComma.index + lastComma[0].length;
+          }
+        }
+      }
+      if (sliceEnd === -1) {
+        const lastSpace = windowText.lastIndexOf(' ');
+        if (lastSpace > 800) {
+          sliceEnd = lastSpace + 1;
+        } else {
+          sliceEnd = 2500;
+        }
+      }
+      const chunk = rem.slice(0, sliceEnd).trim();
+      if (chunk) textChunks.push(chunk);
+      rem = rem.slice(sliceEnd).trim();
+    }
+
+    const chunkBuffers: Buffer[] = [];
+    for (const c of textChunks) {
+      const b = await tryChunkWithVoiceFallback(c);
+      chunkBuffers.push(b);
+    }
+    return Buffer.concat(chunkBuffers);
+  }
+
   async function executeEdgeTts({
     text,
     voice = 'en-US-AriaNeural',
@@ -1718,7 +1837,7 @@ async function startServer() {
         if (response.ok) {
           const arrayBuffer = await response.arrayBuffer();
           const base64Audio = Buffer.from(arrayBuffer).toString('base64');
-          console.log('[EDGE-TTS] success');
+          console.log('[EDGE-TTS] success via Azure REST');
           return {
             ok: true,
             status: 200,
@@ -1756,12 +1875,28 @@ async function startServer() {
           error: 'Invalid TTS request',
         };
       } catch (err: unknown) {
-        console.warn('[EDGE-TTS] Azure REST error, falling back to Hugging Face:', err);
+        console.warn('[EDGE-TTS] Azure REST error, falling back to MsEdgeTTS:', err);
       }
     }
 
-    // Fallback to python edge-tts CLI tool if Azure credentials are missing or REST call failed
-    console.log('[EDGE-TTS] Azure credentials not found or request failed. Falling back to python edge-tts.');
+    // High-performance fallback to pure Node.js MsEdgeTTS
+    console.log('[EDGE-TTS] Synthesizing speech with pure Node.js MsEdgeTTS...');
+    try {
+      const audioBuffer = await synthesizeEdgeSpeechBuffer(trimmedText, targetVoice);
+      const base64Audio = audioBuffer.toString('base64');
+      console.log('[EDGE-TTS] success via MsEdgeTTS');
+      return {
+        ok: true,
+        status: 200,
+        audioUrl: `data:audio/mp3;base64,${base64Audio}`,
+        mimeType: 'audio/mp3',
+        model: targetVoice,
+      };
+    } catch (err: unknown) {
+      console.warn('[EDGE-TTS] MsEdgeTTS synthesis error:', err);
+    }
+
+    // CLI fallback as tertiary option if present
     try {
       const tmpDir = os.tmpdir();
       const tmpFilePath = resolve(tmpDir, `edge_tts_${Date.now()}_${Math.random().toString(36).substring(2, 8)}.mp3`);
@@ -1784,7 +1919,7 @@ async function startServer() {
           ], { timeout: timeoutMs });
           success = true;
         } catch {
-          // failed
+          // ignore
         }
       }
 
@@ -1793,7 +1928,7 @@ async function startServer() {
         try {
           fs.unlinkSync(tmpFilePath);
         } catch {
-          // ignore cleanup error
+          // ignore
         }
         const base64Audio = Buffer.from(arrayBuffer).toString('base64');
         console.log('[EDGE-TTS] success via CLI fallback');
@@ -1806,7 +1941,7 @@ async function startServer() {
         };
       }
     } catch (err: unknown) {
-      console.warn('[EDGE-TTS] fallback error:', err);
+      console.warn('[EDGE-TTS] CLI fallback error:', err);
     }
 
     return {
@@ -1829,7 +1964,7 @@ async function startServer() {
     });
   }
 
-  // POST /api/edge-tts (Microsoft Edge TTS Python CLI wrapper with chunking support)
+  // POST /api/edge-tts (Microsoft Edge TTS pure Node.js synthesis)
   app.post('/api/edge-tts', async (req, res) => {
     try {
       const { text, voice } = req.body || {};
@@ -1837,134 +1972,60 @@ async function startServer() {
         return res.status(400).json({ error: 'Missing or invalid text parameter' });
       }
 
-      const selectedVoice = (typeof voice === 'string' && voice.trim()) ? voice.trim() : 'en-US-AriaNeural';
-      const tmpDir = os.tmpdir();
-      const tmpFilePath = resolve(tmpDir, `edge_tts_${Date.now()}_${Math.random().toString(36).substring(2, 8)}.mp3`);
-      const execFileAsync = promisify(execFile);
-
-      // Helper to synthesize single chunk
-      const synthesizeChunk = async (chunkText: string, outPath: string) => {
-        try {
-          await execFileAsync('edge-tts', [
-            '--text', chunkText.trim(),
-            '--voice', selectedVoice,
-            '--write-media', outPath
-          ], { timeout: 45000 });
-          return true;
-        } catch (e1: unknown) {
-          try {
-            await execFileAsync('python3', [
-              '-m', 'edge_tts',
-              '--text', chunkText.trim(),
-              '--voice', selectedVoice,
-              '--write-media', outPath
-            ], { timeout: 45000 });
-            return true;
-          } catch (e2: unknown) {
-            const m2 = e2 instanceof Error ? e2.message : String(e2);
-            const m1 = e1 instanceof Error ? e1.message : String(e1);
-            throw new Error(m2 || m1 || 'Failed to execute edge-tts python tool');
-          }
-        }
-      };
-
-      const rawText = text.trim();
-      if (rawText.length <= 2500) {
-        await synthesizeChunk(rawText, tmpFilePath);
-      } else {
-        // Split into chunks under 2500 characters
-        const chunks: string[] = [];
-        let rem = rawText;
-        while (rem.length > 0) {
-          if (rem.length <= 2500) {
-            chunks.push(rem);
-            break;
-          }
-          let sliceEnd = -1;
-          const windowText = rem.slice(0, 2500);
-          const puncMatches = Array.from(windowText.matchAll(/[.!?;\n]\s+/g));
-          if (puncMatches.length > 0) {
-            const lastMatch = puncMatches[puncMatches.length - 1];
-            if (lastMatch.index !== undefined && lastMatch.index > 800) {
-              sliceEnd = lastMatch.index + lastMatch[0].length;
-            }
-          }
-          if (sliceEnd === -1) {
-            const commaMatches = Array.from(windowText.matchAll(/[,:]\s+/g));
-            if (commaMatches.length > 0) {
-              const lastComma = commaMatches[commaMatches.length - 1];
-              if (lastComma.index !== undefined && lastComma.index > 800) {
-                sliceEnd = lastComma.index + lastComma[0].length;
-              }
-            }
-          }
-          if (sliceEnd === -1) {
-            const lastSpace = windowText.lastIndexOf(' ');
-            if (lastSpace > 800) {
-              sliceEnd = lastSpace + 1;
-            } else {
-              sliceEnd = 2500;
-            }
-          }
-          const chunk = rem.slice(0, sliceEnd).trim();
-          if (chunk) chunks.push(chunk);
-          rem = rem.slice(sliceEnd).trim();
-        }
-
-        const chunkFiles: string[] = [];
-        try {
-          for (let i = 0; i < chunks.length; i++) {
-            const chunkPath = resolve(tmpDir, `edge_chunk_${Date.now()}_${i}_${Math.random().toString(36).substring(2, 6)}.mp3`);
-            await synthesizeChunk(chunks[i], chunkPath);
-            chunkFiles.push(chunkPath);
-          }
-
-          // Stitch chunks into main output file
-          const buffers = chunkFiles.map(f => fs.readFileSync(f));
-          fs.writeFileSync(tmpFilePath, Buffer.concat(buffers));
-        } finally {
-          // Clean up chunk files
-          for (const cf of chunkFiles) {
-            try {
-              if (fs.existsSync(cf)) fs.unlinkSync(cf);
-            } catch {
-              // ignore cleanup
-            }
-          }
-        }
-      }
-
-      if (!fs.existsSync(tmpFilePath)) {
-        return res.status(500).json({ error: 'TTS generation failed: output file not created' });
-      }
+      const audioBuffer = await synthesizeEdgeSpeechBuffer(text, voice);
 
       res.setHeader('Content-Type', 'audio/mpeg');
       res.setHeader('Content-Disposition', 'inline; filename="speech.mp3"');
-
-      const stream = fs.createReadStream(tmpFilePath);
-      stream.on('error', (err) => {
-        console.error('[API /api/edge-tts] Stream error:', err);
-        if (!res.headersSent) {
-          res.status(500).json({ error: 'Failed to stream audio file' });
-        }
-        try {
-          if (fs.existsSync(tmpFilePath)) fs.unlinkSync(tmpFilePath);
-        } catch {
-          // ignore cleanup error
-        }
-      });
-
-      stream.on('end', () => {
-        try {
-          if (fs.existsSync(tmpFilePath)) fs.unlinkSync(tmpFilePath);
-        } catch {
-          // ignore cleanup error
-        }
-      });
-
-      stream.pipe(res);
+      res.setHeader('Content-Length', audioBuffer.length);
+      return res.send(audioBuffer);
     } catch (err: unknown) {
       console.error('[POST /api/edge-tts] Exception:', err);
+      const errMsg = err instanceof Error ? err.message : String(err);
+      return res.status(500).json({ error: errMsg || 'Internal server error' });
+    }
+  });
+
+  // POST /api/edge-tts/batch (Synthesizes multiple agent dialogue turns into a contiguous MP3)
+  app.post('/api/edge-tts/batch', async (req, res) => {
+    try {
+      const { items } = req.body || {};
+      if (!Array.isArray(items) || items.length === 0) {
+        return res.status(400).json({ error: 'Missing items array' });
+      }
+
+      const safeItems = items.slice(0, 100);
+      const audioBuffers: Buffer[] = [];
+      const concurrency = 4;
+
+      for (let i = 0; i < safeItems.length; i += concurrency) {
+        const slice = safeItems.slice(i, i + concurrency);
+        const slicePromises = slice.map(async (item: { text?: string; voice?: string }) => {
+          const itemText = (typeof item.text === 'string') ? item.text.trim() : '';
+          if (!itemText) return null;
+          try {
+            return await synthesizeEdgeSpeechBuffer(itemText, item.voice);
+          } catch (itemErr) {
+            console.warn(`[Batch TTS] Item synthesis error:`, itemErr);
+            return null;
+          }
+        });
+        const sliceResults = await Promise.all(slicePromises);
+        for (const b of sliceResults) {
+          if (b && b.length > 0) audioBuffers.push(b);
+        }
+      }
+
+      if (audioBuffers.length === 0) {
+        return res.status(500).json({ error: 'No audio could be synthesized for batch' });
+      }
+
+      const combined = Buffer.concat(audioBuffers);
+      res.setHeader('Content-Type', 'audio/mpeg');
+      res.setHeader('Content-Disposition', 'attachment; filename="parallax_swarm.mp3"');
+      res.setHeader('Content-Length', combined.length);
+      return res.send(combined);
+    } catch (err: unknown) {
+      console.error('[POST /api/edge-tts/batch] Exception:', err);
       const errMsg = err instanceof Error ? err.message : String(err);
       return res.status(500).json({ error: errMsg || 'Internal server error' });
     }

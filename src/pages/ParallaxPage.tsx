@@ -72,6 +72,7 @@ export const ParallaxPage: React.FC = () => {
   const [isDownloadingSwarmMp3, setIsDownloadingSwarmMp3] = useState(false);
   const [copiedSwarmTranscript, setCopiedSwarmTranscript] = useState(false);
   const audioRef = useRef<HTMLAudioElement | null>(null);
+  const swarmPlaybackCancelledRef = useRef<boolean>(false);
 
   const abortControllerRef = useRef<AbortController | null>(null);
   const feedEndRef = useRef<HTMLDivElement | null>(null);
@@ -80,6 +81,7 @@ export const ParallaxPage: React.FC = () => {
   // Cleanup audio & network abort on unmount
   useEffect(() => {
     return () => {
+      swarmPlaybackCancelledRef.current = true;
       if (audioRef.current) {
         audioRef.current.pause();
         audioRef.current = null;
@@ -91,9 +93,13 @@ export const ParallaxPage: React.FC = () => {
   }, []);
 
   const stopAllAudio = () => {
+    swarmPlaybackCancelledRef.current = true;
     if (audioRef.current) {
       audioRef.current.pause();
       audioRef.current = null;
+    }
+    if (typeof window !== 'undefined' && 'speechSynthesis' in window) {
+      window.speechSynthesis.cancel();
     }
     setPlayingAudioKey(null);
     setLoadingAudioKey(null);
@@ -177,8 +183,9 @@ export const ParallaxPage: React.FC = () => {
 
     if (messages.length === 0) return;
     stopAllAudio();
+    swarmPlaybackCancelledRef.current = false;
 
-    // If already pre-rendered stitched blob
+    // If already pre-rendered stitched blob, play immediately
     if (stitchedSwarmBlob) {
       const url = URL.createObjectURL(stitchedSwarmBlob);
       const audio = new Audio(url);
@@ -198,122 +205,215 @@ export const ParallaxPage: React.FC = () => {
         audioRef.current = null;
         URL.revokeObjectURL(url);
       };
-      await audio.play();
+      try {
+        await audio.play();
+      } catch (err) {
+        console.warn('[Parallax] Playback error on cached stitched blob:', err);
+        setPlayingAudioKey(null);
+      }
       return;
     }
 
+    // Otherwise, stream message-by-message sequentially so audio begins playing in < 1 second!
     setLoadingAudioKey('full_swarm');
-    try {
-      const audioBlobs: Blob[] = [];
-      const total = messages.length;
-      setFullSwarmProgress({ current: 0, total });
+    setFullSwarmProgress({ current: 1, total: messages.length });
 
-      for (let i = 0; i < messages.length; i++) {
-        const msg = messages[i];
-        setFullSwarmProgress({ current: i + 1, total });
+    const audioBlobs: Blob[] = [];
 
-        const rawText = msg.text;
-        const cleanText = cleanMarkdownForSpeech(rawText);
-        if (!cleanText) continue;
+    // Helper to fetch audio blob for a single message
+    const fetchBlobForMessage = async (msg: ParallaxMessage): Promise<Blob | null> => {
+      const rawClean = cleanMarkdownForSpeech(msg.text);
+      if (!rawClean) return null;
+      const spokenIntro = `${msg.agentName} in round ${msg.round}. `;
+      const fullSpeechText = cleanMarkdownForSpeech(spokenIntro + rawClean);
+      const voice = config.agents[msg.agentId]?.voice || getParallaxAgentVoice(msg.agentId);
 
-        const spokenIntro = `${msg.agentName} in round ${msg.round}. `;
-        const voice = config.agents[msg.agentId]?.voice || getParallaxAgentVoice(msg.agentId);
-
+      try {
         const response = await fetch('/api/edge-tts', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({
-            text: cleanMarkdownForSpeech(spokenIntro + cleanText).slice(0, 3500),
+            text: fullSpeechText.slice(0, 3500),
             voice,
           }),
         });
+        if (response.ok) {
+          return await response.blob();
+        }
+      } catch (e) {
+        console.warn(`[Parallax] Speech fetch failed for ${msg.agentName}:`, e);
+      }
+      return null;
+    };
 
-        if (!response.ok) {
-          throw new Error(`Edge TTS failed for ${msg.agentName}: ${response.status}`);
+    try {
+      // Pre-fetch cache: stores promises for upcoming audio chunks
+      const prefetchPromises = new Map<number, Promise<Blob | null>>();
+
+      // Kick off prefetch for message 0 and message 1
+      if (messages[0]) prefetchPromises.set(0, fetchBlobForMessage(messages[0]));
+      if (messages[1]) prefetchPromises.set(1, fetchBlobForMessage(messages[1]));
+
+      for (let i = 0; i < messages.length; i++) {
+        if (swarmPlaybackCancelledRef.current) break;
+
+        const msg = messages[i];
+        setFullSwarmProgress({ current: i + 1, total: messages.length });
+
+        // Trigger pre-fetch for i + 2 while i is preparing / playing
+        if (i + 2 < messages.length && !prefetchPromises.has(i + 2)) {
+          prefetchPromises.set(i + 2, fetchBlobForMessage(messages[i + 2]));
         }
 
-        const blob = await response.blob();
+        // Await blob for current message
+        const currentPromise = prefetchPromises.get(i) || fetchBlobForMessage(msg);
+        const blob = await currentPromise;
+
+        if (swarmPlaybackCancelledRef.current) break;
+
+        if (!blob) {
+          // If fetch failed, skip gracefully to next agent so listening continues
+          continue;
+        }
+
         audioBlobs.push(blob);
+
+        // Play current agent's audio
+        await new Promise<void>((resolve) => {
+          if (swarmPlaybackCancelledRef.current) {
+            resolve();
+            return;
+          }
+
+          const url = URL.createObjectURL(blob);
+          const audio = new Audio(url);
+          audioRef.current = audio;
+
+          audio.onplay = () => {
+            setLoadingAudioKey(null);
+            setPlayingAudioKey('full_swarm');
+          };
+
+          const handleFinish = () => {
+            URL.revokeObjectURL(url);
+            audioRef.current = null;
+            resolve();
+          };
+
+          audio.onended = handleFinish;
+          audio.onerror = handleFinish;
+
+          audio.play().catch((playErr) => {
+            console.warn('[Parallax] Play error for chunk:', playErr);
+            handleFinish();
+          });
+        });
+
+        if (swarmPlaybackCancelledRef.current) break;
       }
 
-      if (audioBlobs.length === 0) {
-        throw new Error('No audio was generated');
+      // If deliberation finished naturally and collected blobs, cache stitched blob
+      if (!swarmPlaybackCancelledRef.current && audioBlobs.length > 0) {
+        const stitched = new Blob(audioBlobs, { type: 'audio/mpeg' });
+        setStitchedSwarmBlob(stitched);
       }
-
-      const stitched = new Blob(audioBlobs, { type: 'audio/mpeg' });
-      setStitchedSwarmBlob(stitched);
-
-      const url = URL.createObjectURL(stitched);
-      const audio = new Audio(url);
-      audioRef.current = audio;
-
-      audio.onplay = () => {
-        setPlayingAudioKey('full_swarm');
+    } catch (err) {
+      console.error('[Parallax] Full swarm playback error:', err);
+    } finally {
+      if (!swarmPlaybackCancelledRef.current) {
+        setPlayingAudioKey(null);
         setLoadingAudioKey(null);
         setFullSwarmProgress(null);
-      };
-      audio.onended = () => {
-        setPlayingAudioKey(null);
-        audioRef.current = null;
-        URL.revokeObjectURL(url);
-      };
-      audio.onerror = () => {
-        setPlayingAudioKey(null);
-        audioRef.current = null;
-        URL.revokeObjectURL(url);
-      };
-      await audio.play();
-    } catch (err) {
-      console.error('[Parallax] Listen to Full Swarm error:', err);
-      setPlayingAudioKey(null);
-      setLoadingAudioKey(null);
-      setFullSwarmProgress(null);
+      }
     }
   };
 
-  // Download entire deliberation as a single high-quality MP3 file
+  // Download entire deliberation as a single high-quality contiguous MP3 file
   const handleDownloadSwarmMp3 = async () => {
     if (messages.length === 0) return;
     setIsDownloadingSwarmMp3(true);
     try {
       let blobToDownload = stitchedSwarmBlob;
+
       if (!blobToDownload) {
-        const audioBlobs: Blob[] = [];
-        const total = messages.length;
-        setFullSwarmProgress({ current: 0, total });
+        setFullSwarmProgress({ current: 0, total: messages.length });
 
-        for (let i = 0; i < messages.length; i++) {
-          const msg = messages[i];
-          setFullSwarmProgress({ current: i + 1, total });
+        // 1. Fast server-side batch synthesis
+        try {
+          const items = messages
+            .map((msg) => {
+              const rawClean = cleanMarkdownForSpeech(msg.text);
+              if (!rawClean) return null;
+              const spokenIntro = `${msg.agentName} in round ${msg.round}. `;
+              const fullSpeechText = cleanMarkdownForSpeech(spokenIntro + rawClean);
+              const voice = config.agents[msg.agentId]?.voice || getParallaxAgentVoice(msg.agentId);
+              return {
+                text: fullSpeechText.slice(0, 3500),
+                voice,
+              };
+            })
+            .filter((item): item is { text: string; voice: string } => item !== null && item.text.trim().length > 0);
 
-          const rawText = msg.text;
-          const cleanText = cleanMarkdownForSpeech(rawText);
-          if (!cleanText) continue;
+          if (items.length > 0) {
+            const response = await fetch('/api/edge-tts/batch', {
+              method: 'POST',
+              headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify({ items }),
+            });
 
-          const spokenIntro = `${msg.agentName} in round ${msg.round}. `;
-          const voice = config.agents[msg.agentId]?.voice || getParallaxAgentVoice(msg.agentId);
-
-          const response = await fetch('/api/edge-tts', {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({
-              text: cleanMarkdownForSpeech(spokenIntro + cleanText).slice(0, 3500),
-              voice,
-            }),
-          });
-
-          if (!response.ok) {
-            throw new Error(`Edge TTS download failed for ${msg.agentName}: ${response.status}`);
+            if (response.ok) {
+              blobToDownload = await response.blob();
+              setStitchedSwarmBlob(blobToDownload);
+            }
           }
-
-          const b = await response.blob();
-          audioBlobs.push(b);
+        } catch (batchErr) {
+          console.warn('[Parallax] Batch endpoint error, trying fallback:', batchErr);
         }
 
-        if (audioBlobs.length === 0) throw new Error('No audio generated');
-        blobToDownload = new Blob(audioBlobs, { type: 'audio/mpeg' });
-        setStitchedSwarmBlob(blobToDownload);
-        setFullSwarmProgress(null);
+        // 2. Sequential fallback if batch did not produce blob
+        if (!blobToDownload) {
+          const audioBlobs: Blob[] = [];
+          const total = messages.length;
+
+          for (let i = 0; i < messages.length; i++) {
+            const msg = messages[i];
+            setFullSwarmProgress({ current: i + 1, total });
+
+            const rawClean = cleanMarkdownForSpeech(msg.text);
+            if (!rawClean) continue;
+
+            const spokenIntro = `${msg.agentName} in round ${msg.round}. `;
+            const fullSpeechText = cleanMarkdownForSpeech(spokenIntro + rawClean);
+            const voice = config.agents[msg.agentId]?.voice || getParallaxAgentVoice(msg.agentId);
+
+            try {
+              const response = await fetch('/api/edge-tts', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({
+                  text: fullSpeechText.slice(0, 3500),
+                  voice,
+                }),
+              });
+
+              if (response.ok) {
+                const b = await response.blob();
+                audioBlobs.push(b);
+              }
+            } catch (chunkErr) {
+              console.warn(`[Parallax] Chunk download failed for ${msg.agentName}:`, chunkErr);
+            }
+          }
+
+          if (audioBlobs.length > 0) {
+            blobToDownload = new Blob(audioBlobs, { type: 'audio/mpeg' });
+            setStitchedSwarmBlob(blobToDownload);
+          }
+        }
+      }
+
+      if (!blobToDownload) {
+        throw new Error('No audio could be compiled for download');
       }
 
       const url = URL.createObjectURL(blobToDownload);
@@ -328,12 +428,12 @@ export const ParallaxPage: React.FC = () => {
       document.body.appendChild(a);
       a.click();
       document.body.removeChild(a);
-      setTimeout(() => URL.revokeObjectURL(url), 2000);
+      setTimeout(() => URL.revokeObjectURL(url), 3000);
     } catch (err) {
       console.error('[Parallax] Download swarm MP3 error:', err);
-      setFullSwarmProgress(null);
     } finally {
       setIsDownloadingSwarmMp3(false);
+      setFullSwarmProgress(null);
     }
   };
 
