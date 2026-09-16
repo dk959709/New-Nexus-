@@ -39,7 +39,21 @@ import {
   DEFAULT_PUTER_MODEL,
   PUTER_IMAGE_MODELS,
 } from '@/services/puterImageService';
-import type { ImageProviderConfig, ImageProvidersState, GeneratedImageItem } from '@/types';
+import type {
+  ImageProviderConfig,
+  ImageProvidersState,
+  GeneratedImageItem,
+  KeyHealthStatus,
+} from '@/types';
+
+export interface KeyCandidate {
+  id: string;
+  key: string;
+  label: string;
+  status: KeyHealthStatus;
+  originalIndex: number;
+  cooldownUntil?: number;
+}
 
 const SAMPLE_PROMPTS = [
   'Futuristic cyberpunk metropolis bathed in neon rain, volumetric fog, octane render 8k',
@@ -144,6 +158,7 @@ export function ImageStudio() {
 
   const [loading, setLoading] = useState(false);
   const [loadingPhase, setLoadingPhase] = useState<'idle' | 'enhancing' | 'generating'>('idle');
+  const [failoverNotice, setFailoverNotice] = useState<string | null>(null);
   const [lastEnhancedPrompt, setLastEnhancedPrompt] = useState<string | null>(null);
   const [downloading, setDownloading] = useState(false);
   const [copiedUrl, setCopiedUrl] = useState(false);
@@ -283,31 +298,94 @@ export function ImageStudio() {
     }
   };
 
-  // Resolve active API key for the selected provider
-  const getResolvedApiKey = useCallback((provider: ImageProviderConfig): string => {
-    if (!provider.keys || provider.keys.length === 0) return '';
-    if (provider.keyStrategy === 'manual' && provider.preferredKeyId) {
-      const preferred = provider.keys.find((k) => k.id === provider.preferredKeyId);
-      if (preferred?.key) return preferred.key.trim();
+  // Return all candidate keys for the provider, prioritized according to strategy (failover, manual, round_robin)
+  const getProviderKeyCandidates = useCallback((provider: ImageProviderConfig): KeyCandidate[] => {
+    if (!provider.keys || provider.keys.length === 0) {
+      return [{ id: 'default', key: '', label: 'Default / Unauthenticated', status: 'untested', originalIndex: -1 }];
     }
-    const valid = provider.keys.filter((k) => k.key && k.key.trim().length > 0);
-    if (valid.length === 0) return '';
-    const healthy = valid.find((k) => k.status === 'healthy') || valid[0];
-    return healthy.key.trim();
+
+    const valid = provider.keys
+      .map((k, idx) => ({
+        id: k.id,
+        key: (k.key || '').trim(),
+        label: k.label || `Key ${idx + 1}`,
+        status: k.status,
+        originalIndex: idx,
+        cooldownUntil: k.cooldownUntil,
+      }))
+      .filter((k) => k.key.length > 0);
+
+    if (valid.length === 0) {
+      return [{ id: 'default', key: '', label: 'Default / Unauthenticated', status: 'untested', originalIndex: -1 }];
+    }
+
+    // Manual strategy: place preferred key first, then remaining valid keys in original order
+    if (provider.keyStrategy === 'manual' && provider.preferredKeyId) {
+      const preferred = valid.find((k) => k.id === provider.preferredKeyId);
+      if (preferred) {
+        const remaining = valid.filter((k) => k.id !== provider.preferredKeyId);
+        return [preferred, ...remaining];
+      }
+    }
+
+    // Failover strategy: prioritize healthy and untested keys first, then expired cooldown, then active cooldown, then invalid
+    const now = Date.now();
+    const sorted = [...valid].sort((a, b) => {
+      const getPriority = (k: typeof a) => {
+        if (k.status === 'healthy') return 1;
+        if (k.status === 'untested') return 2;
+        if (k.status === 'cooldown' && k.cooldownUntil && k.cooldownUntil <= now) return 3;
+        if (k.status === 'cooldown') return 4;
+        if (k.status === 'invalid') return 5;
+        return 2;
+      };
+      const pDiff = getPriority(a) - getPriority(b);
+      if (pDiff !== 0) return pDiff;
+      return a.originalIndex - b.originalIndex;
+    });
+
+    return sorted;
   }, []);
+
+  // Resolve active API key for the selected provider (picks highest-priority candidate)
+  const getResolvedApiKey = useCallback(
+    (provider: ImageProviderConfig): string => {
+      const candidates = getProviderKeyCandidates(provider);
+      return candidates[0]?.key || '';
+    },
+    [getProviderKeyCandidates]
+  );
+
+  // Update key health in storage and refresh local state
+  const markKeyHealth = useCallback(
+    (providerId: string, candidate: KeyCandidate, status: KeyHealthStatus, errorMsg?: string) => {
+      if (!candidate.id || candidate.id === 'default') return;
+      storage.updateImageKeyHealth(providerId, candidate.id, status, errorMsg);
+      setImageProvidersState(storage.getImageProvidersState());
+    },
+    []
+  );
 
   // Build the generation URL
   const buildGenerationUrl = useCallback(
     (
       promptText: string,
       provider: ImageProviderConfig,
-      opts: { width: number; height: number; seed: number; model?: string; quickEnhance?: boolean; nologo?: boolean }
+      opts: {
+        width: number;
+        height: number;
+        seed: number;
+        model?: string;
+        quickEnhance?: boolean;
+        nologo?: boolean;
+        apiKey?: string;
+      }
     ) => {
       const base = provider.url.trim().replace(/\/+$/, '');
       const encodedPrompt = encodeURIComponent(promptText.trim());
       let fullUrl = `${base}/${encodedPrompt}`;
 
-      const key = getResolvedApiKey(provider);
+      const key = opts.apiKey !== undefined ? opts.apiKey : getResolvedApiKey(provider);
       const params = new URLSearchParams();
 
       if (key) {
@@ -355,6 +433,7 @@ export function ImageStudio() {
 
     playTapSound();
     setError(null);
+    setFailoverNotice(null);
     setLoading(true);
 
     let promptToUse = rawInputPrompt;
@@ -435,61 +514,147 @@ export function ImageStudio() {
         const puterResult = await generatePuterImage(promptToUse, selectedModel, referenceImage || undefined);
         finalImageUrl = puterResult.url;
       } else if (isPost) {
-        const apiKey = getResolvedApiKey(activeProvider);
-        const controller = new AbortController();
-        const timeoutId = setTimeout(() => controller.abort(), 45000);
+        // Hugging Face POST inference with automatic key failover
+        const candidateKeys = getProviderKeyCandidates(activeProvider);
+        let lastError: Error | null = null;
 
-        const response = await fetch(activeProvider.url.trim(), {
-          method: 'POST',
-          headers: {
-            'Content-Type': 'application/json',
-            ...(apiKey ? { Authorization: `Bearer ${apiKey}` } : {}),
-          },
-          body: JSON.stringify({ inputs: promptToUse }),
-          signal: controller.signal,
-          mode: 'cors',
-        });
-        clearTimeout(timeoutId);
+        for (let attemptIndex = 0; attemptIndex < candidateKeys.length; attemptIndex++) {
+          const candidate = candidateKeys[attemptIndex];
+          const keyIdx = candidate.originalIndex >= 0 ? candidate.originalIndex : 0;
+          console.group(
+            `%c[ImageStudio Failover] [Hugging Face] Attempting Generation (Key Index: ${keyIdx})`,
+            'color: #38bdf8; font-weight: bold;'
+          );
+          console.log('Provider:', activeProvider.name);
+          console.log('Key Index Used:', keyIdx);
+          console.log('Key Label:', candidate.label);
+          console.log('Key ID:', candidate.id);
+          console.log('Attempt:', `${attemptIndex + 1} of ${candidateKeys.length}`);
+          console.groupEnd();
 
-        if (!response.ok) {
-          let errDetail = '';
+          const controller = new AbortController();
+          const timeoutId = setTimeout(() => controller.abort(), 45000);
+
           try {
-            const errJson = await response.json();
-            errDetail = errJson?.error || errJson?.message || JSON.stringify(errJson);
-          } catch {
-            try {
-              errDetail = await response.text();
-            } catch {
-              errDetail = `HTTP ${response.status}: ${response.statusText}`;
-            }
-          }
+            const response = await fetch(activeProvider.url.trim(), {
+              method: 'POST',
+              headers: {
+                'Content-Type': 'application/json',
+                ...(candidate.key ? { Authorization: `Bearer ${candidate.key}` } : {}),
+              },
+              body: JSON.stringify({ inputs: promptToUse }),
+              signal: controller.signal,
+              mode: 'cors',
+            });
+            clearTimeout(timeoutId);
 
-          if (response.status === 503) {
-            throw new Error(
-              `Model is currently warming up on Hugging Face (${errDetail || 'Estimated time ~20s'}). Please click Generate again in a few moments.`
+            if (!response.ok) {
+              let errDetail = '';
+              try {
+                const errJson = await response.json();
+                errDetail = errJson?.error || errJson?.message || JSON.stringify(errJson);
+              } catch {
+                try {
+                  errDetail = await response.text();
+                } catch {
+                  errDetail = `HTTP ${response.status}: ${response.statusText}`;
+                }
+              }
+
+              const isRateLimit = response.status === 429 || /rate[- ]?limit|too many requests|quota/i.test(errDetail);
+              const isAuthFailure =
+                response.status === 401 ||
+                response.status === 403 ||
+                /unauthori[zs]ed|invalid.*key|authentication/i.test(errDetail);
+
+              if (isRateLimit || isAuthFailure) {
+                markKeyHealth(
+                  activeProvider.id,
+                  candidate,
+                  isRateLimit ? 'cooldown' : 'invalid',
+                  errDetail || (isRateLimit ? 'Rate limit exceeded (HTTP 429)' : `Auth error (${response.status})`)
+                );
+
+                console.warn(
+                  `%c[ImageStudio Failover] [Hugging Face] Key index ${keyIdx} (${candidate.label}) encountered ${isRateLimit ? 'Rate-Limit (HTTP 429)' : `Auth-Failure (HTTP ${response.status})`}: "${errDetail}". ${attemptIndex < candidateKeys.length - 1 ? `Automatically retrying with next available key index ${candidateKeys[attemptIndex + 1].originalIndex}...` : 'All available keys exhausted.'}`,
+                  'color: #f59e0b; font-weight: bold;'
+                );
+
+                if (attemptIndex < candidateKeys.length - 1) {
+                  setFailoverNotice(
+                    `Key #${keyIdx + 1} (${candidate.label}) hit ${isRateLimit ? 'Rate-Limit (429)' : 'Auth error'}. Failing over to Key #${candidateKeys[attemptIndex + 1].originalIndex + 1}...`
+                  );
+                  lastError = new Error(
+                    `Key index ${keyIdx} failed (${response.status}): ${errDetail || response.statusText}`
+                  );
+                  continue;
+                }
+              }
+
+              if (response.status === 503) {
+                throw new Error(
+                  `Model is currently warming up on Hugging Face (${errDetail || 'Estimated time ~20s'}). Please click Generate again in a few moments.`
+                );
+              } else if (response.status === 401 || response.status === 403) {
+                throw new Error(
+                  `Authentication Error (${response.status}): ${errDetail || 'Invalid API key or unauthorized request.'}`
+                );
+              } else {
+                throw new Error(
+                  `Provider returned error (${response.status}): ${errDetail || response.statusText}`
+                );
+              }
+            }
+
+            markKeyHealth(activeProvider.id, candidate, 'healthy');
+            console.log(
+              `%c[ImageStudio Failover] [Hugging Face] Key index ${keyIdx} (${candidate.label}) succeeded! Marked healthy.`,
+              'color: #34d399; font-weight: bold;'
             );
-          } else if (response.status === 401 || response.status === 403) {
-            throw new Error(
-              `Authentication Error (${response.status}): ${errDetail || 'Invalid API key or unauthorized request.'}`
-            );
-          } else {
-            throw new Error(
-              `Provider returned error (${response.status}): ${errDetail || response.statusText}`
-            );
+
+            const imageBlob = await response.blob();
+            const blobToDataUrl = (blob: Blob): Promise<string> =>
+              new Promise((resolve, reject) => {
+                const reader = new FileReader();
+                reader.onloadend = () => resolve(reader.result as string);
+                reader.onerror = reject;
+                reader.readAsDataURL(blob);
+              });
+            finalImageUrl = await blobToDataUrl(imageBlob);
+            lastError = null;
+            break;
+          } catch (fetchErr: unknown) {
+            clearTimeout(timeoutId);
+            const errObj = fetchErr instanceof Error ? fetchErr : new Error(String(fetchErr));
+            lastError = errObj;
+            const errMsg = errObj.message;
+            const isAuthOrRate = /429|401|403|rate[- ]?limit|unauthori[zs]ed|api key/i.test(errMsg);
+
+            if (isAuthOrRate && attemptIndex < candidateKeys.length - 1) {
+              markKeyHealth(
+                activeProvider.id,
+                candidate,
+                /429|rate/i.test(errMsg) ? 'cooldown' : 'invalid',
+                errMsg
+              );
+              console.warn(
+                `%c[ImageStudio Failover] [Hugging Face] Exception on key index ${keyIdx} (${candidate.label}): "${errMsg}". Failing over to next key index ${candidateKeys[attemptIndex + 1].originalIndex}...`,
+                'color: #f59e0b; font-weight: bold;'
+              );
+              setFailoverNotice(
+                `Key #${keyIdx + 1} (${candidate.label}) error. Failing over to Key #${candidateKeys[attemptIndex + 1].originalIndex + 1}...`
+              );
+              continue;
+            }
+            throw fetchErr;
           }
         }
 
-        const imageBlob = await response.blob();
-        const blobToDataUrl = (blob: Blob): Promise<string> =>
-          new Promise((resolve, reject) => {
-            const reader = new FileReader();
-            reader.onloadend = () => resolve(reader.result as string);
-            reader.onerror = reject;
-            reader.readAsDataURL(blob);
-          });
-        finalImageUrl = await blobToDataUrl(imageBlob);
+        if (!finalImageUrl && lastError) {
+          throw lastError;
+        }
       } else if (referenceImage && (modelType === 'kontext' || isPollinations)) {
-        // Pollinations OpenAI-compatible image editing API (/v1/images/edits)
+        // Pollinations OpenAI-compatible image editing API (/v1/images/edits) with automatic key failover
         const providerUrl = (activeProvider.url || '').trim();
         let endpoint = 'https://gen.pollinations.ai/v1/images/edits';
         if (providerUrl.includes('/v1/images/edits')) {
@@ -506,11 +671,10 @@ export function ImageStudio() {
             : `${providerUrl.replace(/\/+$/, '')}/v1/images/edits`;
         }
 
-        const apiKey = getResolvedApiKey(activeProvider);
+        const candidateKeys = getProviderKeyCandidates(activeProvider);
         const imgDetails = parseReferenceImageData(referenceImage, referenceImageName);
 
-        // Required Console Logging: Show reference image data size, format, and transport details
-        console.group('%c[Pollinations kontext img2img] Request Dispatch', 'color: #38bdf8; font-weight: bold;');
+        console.group('%c[Pollinations kontext img2img] Request Setup', 'color: #38bdf8; font-weight: bold;');
         console.log('Target Endpoint:', endpoint);
         console.log('Model:', 'kontext');
         console.log('Prompt:', promptToUse);
@@ -521,152 +685,355 @@ export function ImageStudio() {
         console.log('File Name Attached:', referenceImageName || 'reference_image.png');
         console.log('Output Dimensions:', `${ratio.width}x${ratio.height}`);
         console.log('Seed:', currentSeed);
-        console.log('Has API Key / Bearer Auth:', Boolean(apiKey));
+        console.log('Available Candidate Keys:', candidateKeys.length);
         console.groupEnd();
 
-        const controller = new AbortController();
-        const timeoutId = setTimeout(() => controller.abort(), 60000);
+        let lastError: Error | null = null;
 
-        // Construct Multipart FormData with attached reference image file/blob
-        const formData = new FormData();
-        formData.append('prompt', promptToUse);
-        formData.append('model', 'kontext');
-        formData.append('size', `${ratio.width}x${ratio.height}`);
-        formData.append('response_format', 'b64_json');
-        if (currentSeed !== undefined) {
-          formData.append('seed', String(currentSeed));
-        }
-        if (nologo) {
-          formData.append('nologo', 'true');
-        }
+        for (let attemptIndex = 0; attemptIndex < candidateKeys.length; attemptIndex++) {
+          const candidate = candidateKeys[attemptIndex];
+          const keyIdx = candidate.originalIndex >= 0 ? candidate.originalIndex : 0;
+          console.group(
+            `%c[ImageStudio Failover] [Pollinations kontext] Attempting Request (Key Index: ${keyIdx})`,
+            'color: #38bdf8; font-weight: bold;'
+          );
+          console.log('Provider:', activeProvider.name);
+          console.log('Key Index Used:', keyIdx);
+          console.log('Key Label:', candidate.label);
+          console.log('Key ID:', candidate.id);
+          console.log('Has Key Value:', Boolean(candidate.key));
+          console.log('Attempt:', `${attemptIndex + 1} of ${candidateKeys.length}`);
+          console.groupEnd();
 
-        if (imgDetails.file) {
-          formData.append('image', imgDetails.file);
-        } else if (imgDetails.blob) {
-          formData.append('image', imgDetails.blob, referenceImageName || 'reference_image.png');
-        } else if (imgDetails.rawUrl) {
-          formData.append('image', imgDetails.rawUrl);
-        } else {
-          formData.append('image', referenceImage);
-        }
+          const controller = new AbortController();
+          const timeoutId = setTimeout(() => controller.abort(), 60000);
 
-        const headers: Record<string, string> = {};
-        if (apiKey) {
-          headers['Authorization'] = `Bearer ${apiKey}`;
-        }
+          // Construct Multipart FormData with attached reference image file/blob
+          const formData = new FormData();
+          formData.append('prompt', promptToUse);
+          formData.append('model', 'kontext');
+          formData.append('size', `${ratio.width}x${ratio.height}`);
+          formData.append('response_format', 'b64_json');
+          if (currentSeed !== undefined) {
+            formData.append('seed', String(currentSeed));
+          }
+          if (nologo) {
+            formData.append('nologo', 'true');
+          }
 
-        console.log(
-          `[Pollinations kontext] Transmitting multipart/form-data payload with reference image (${imgDetails.formattedSize}) to ${endpoint}...`
-        );
+          if (imgDetails.file) {
+            formData.append('image', imgDetails.file);
+          } else if (imgDetails.blob) {
+            formData.append('image', imgDetails.blob, referenceImageName || 'reference_image.png');
+          } else if (imgDetails.rawUrl) {
+            formData.append('image', imgDetails.rawUrl);
+          } else {
+            formData.append('image', referenceImage);
+          }
 
-        const response = await fetch(endpoint, {
-          method: 'POST',
-          headers,
-          body: formData,
-          signal: controller.signal,
-          mode: 'cors',
-        });
-        clearTimeout(timeoutId);
+          const headers: Record<string, string> = {};
+          if (candidate.key) {
+            headers['Authorization'] = `Bearer ${candidate.key}`;
+          }
 
-        if (!response.ok) {
-          let errDetail = '';
           try {
-            const errJson = await response.json();
-            errDetail =
-              errJson?.error?.message ||
-              errJson?.message ||
-              errJson?.error ||
-              JSON.stringify(errJson);
-          } catch {
-            errDetail = `HTTP ${response.status}: ${response.statusText}`;
-          }
-          console.error('[Pollinations kontext] Error response from server:', response.status, errDetail);
-
-          if (response.status === 401 || errDetail.toLowerCase().includes('api key')) {
-            throw new Error(
-              `Pollinations image editing requires an API key (${errDetail}). You can obtain a free key at https://enter.pollinations.ai/keys and add it in Settings -> AI Providers -> Pollinations. Or switch to Puter (FLUX Kontext Pro) for free in-browser guest editing.`
+            console.log(
+              `[Pollinations kontext] Transmitting payload with key index ${keyIdx} (${candidate.label}) to ${endpoint}...`
             );
+
+            const response = await fetch(endpoint, {
+              method: 'POST',
+              headers,
+              body: formData,
+              signal: controller.signal,
+              mode: 'cors',
+            });
+            clearTimeout(timeoutId);
+
+            if (!response.ok) {
+              let errDetail = '';
+              try {
+                const errJson = await response.json();
+                errDetail =
+                  errJson?.error?.message ||
+                  errJson?.message ||
+                  errJson?.error ||
+                  JSON.stringify(errJson);
+              } catch {
+                errDetail = `HTTP ${response.status}: ${response.statusText}`;
+              }
+              console.error('[Pollinations kontext] Error response from server:', response.status, errDetail);
+
+              const isRateLimit = response.status === 429 || /rate[- ]?limit|too many requests|quota/i.test(errDetail);
+              const isAuthFailure =
+                response.status === 401 ||
+                response.status === 403 ||
+                errDetail.toLowerCase().includes('api key') ||
+                /unauthori[zs]ed|invalid.*key|authentication/i.test(errDetail);
+
+              if (isRateLimit || isAuthFailure) {
+                markKeyHealth(
+                  activeProvider.id,
+                  candidate,
+                  isRateLimit ? 'cooldown' : 'invalid',
+                  errDetail || (isRateLimit ? 'Rate limit exceeded (HTTP 429)' : `Auth error (${response.status})`)
+                );
+
+                console.warn(
+                  `%c[ImageStudio Failover] [Pollinations kontext] Key index ${keyIdx} (${candidate.label}) encountered ${isRateLimit ? 'Rate-Limit (HTTP 429)' : `Auth-Failure (HTTP ${response.status})`}: "${errDetail}". ${attemptIndex < candidateKeys.length - 1 ? `Automatically retrying with next available key index ${candidateKeys[attemptIndex + 1].originalIndex}...` : 'All available keys exhausted.'}`,
+                  'color: #f59e0b; font-weight: bold;'
+                );
+
+                if (attemptIndex < candidateKeys.length - 1) {
+                  setFailoverNotice(
+                    `Key #${keyIdx + 1} (${candidate.label}) hit ${isRateLimit ? 'Rate-Limit (429)' : 'Auth error'}. Failing over to Key #${candidateKeys[attemptIndex + 1].originalIndex + 1}...`
+                  );
+                  lastError = new Error(
+                    `Key index ${keyIdx} failed (${response.status}): ${errDetail}`
+                  );
+                  continue;
+                }
+              }
+
+              if (response.status === 401 || errDetail.toLowerCase().includes('api key')) {
+                throw new Error(
+                  `Pollinations image editing requires an API key (${errDetail}). You can obtain a free key at https://enter.pollinations.ai/keys and add it in Settings -> AI Providers -> Pollinations. Or switch to Puter (FLUX Kontext Pro) for free in-browser guest editing.`
+                );
+              }
+              throw new Error(`Pollinations editing failed (${response.status}): ${errDetail}`);
+            }
+
+            // Success!
+            markKeyHealth(activeProvider.id, candidate, 'healthy');
+            console.log(
+              `%c[ImageStudio Failover] [Pollinations kontext] Key index ${keyIdx} (${candidate.label}) succeeded! Marked healthy.`,
+              'color: #34d399; font-weight: bold;'
+            );
+
+            const contentType = response.headers.get('content-type') || '';
+            console.log(`[Pollinations kontext] Received response (${response.status}), Content-Type: ${contentType}`);
+
+            if (contentType.includes('application/json')) {
+              const json = await response.json();
+              const item = json?.data?.[0];
+              if (item?.b64_json) {
+                finalImageUrl = item.b64_json.startsWith('data:')
+                  ? item.b64_json
+                  : `data:image/png;base64,${item.b64_json}`;
+              } else if (item?.url) {
+                finalImageUrl = item.url;
+              } else if (json?.url) {
+                finalImageUrl = json.url;
+              } else if (json?.image) {
+                finalImageUrl = json.image.startsWith('data:')
+                  ? json.image
+                  : `data:image/png;base64,${json.image}`;
+              } else {
+                throw new Error('Pollinations returned JSON without an edited image result.');
+              }
+            } else {
+              // Binary image response
+              const imageBlob = await response.blob();
+              const blobToDataUrl = (blob: Blob): Promise<string> =>
+                new Promise((resolve, reject) => {
+                  const reader = new FileReader();
+                  reader.onloadend = () => resolve(reader.result as string);
+                  reader.onerror = reject;
+                  reader.readAsDataURL(blob);
+                });
+              finalImageUrl = await blobToDataUrl(imageBlob);
+            }
+
+            lastError = null;
+            break;
+          } catch (pollErr: unknown) {
+            clearTimeout(timeoutId);
+            const errObj = pollErr instanceof Error ? pollErr : new Error(String(pollErr));
+            lastError = errObj;
+            const errMsg = errObj.message;
+            const isAuthOrRate = /429|401|403|rate[- ]?limit|unauthori[zs]ed|api key/i.test(errMsg);
+
+            if (isAuthOrRate && attemptIndex < candidateKeys.length - 1) {
+              markKeyHealth(
+                activeProvider.id,
+                candidate,
+                /429|rate/i.test(errMsg) ? 'cooldown' : 'invalid',
+                errMsg
+              );
+              console.warn(
+                `%c[ImageStudio Failover] [Pollinations kontext] Exception on key index ${keyIdx} (${candidate.label}): "${errMsg}". Failing over to next key index ${candidateKeys[attemptIndex + 1].originalIndex}...`,
+                'color: #f59e0b; font-weight: bold;'
+              );
+              setFailoverNotice(
+                `Key #${keyIdx + 1} (${candidate.label}) error. Failing over to Key #${candidateKeys[attemptIndex + 1].originalIndex + 1}...`
+              );
+              continue;
+            }
+            throw pollErr;
           }
-          throw new Error(`Pollinations editing failed (${response.status}): ${errDetail}`);
         }
 
-        const contentType = response.headers.get('content-type') || '';
-        console.log(`[Pollinations kontext] Received successful response (${response.status}), Content-Type: ${contentType}`);
+        if (!finalImageUrl && lastError) {
+          throw lastError;
+        }
+      } else {
+        // Standard text-to-image synthesis with automatic key failover
+        const candidateKeys = getProviderKeyCandidates(activeProvider);
+        let lastError: Error | null = null;
 
-        if (contentType.includes('application/json')) {
-          const json = await response.json();
-          console.log('[Pollinations kontext] Parsed JSON response:', {
-            hasData: Boolean(json?.data),
-            dataLength: json?.data?.length,
-            hasB64: Boolean(json?.data?.[0]?.b64_json),
-            hasUrl: Boolean(json?.data?.[0]?.url),
+        for (let attemptIndex = 0; attemptIndex < candidateKeys.length; attemptIndex++) {
+          const candidate = candidateKeys[attemptIndex];
+          const keyIdx = candidate.originalIndex >= 0 ? candidate.originalIndex : 0;
+          console.group(
+            `%c[ImageStudio Failover] [Standard Gen] Attempting Request (Key Index: ${keyIdx})`,
+            'color: #38bdf8; font-weight: bold;'
+          );
+          console.log('Provider:', activeProvider.name);
+          console.log('Key Index Used:', keyIdx);
+          console.log('Key Label:', candidate.label);
+          console.log('Key ID:', candidate.id);
+          console.log('Has Key Value:', Boolean(candidate.key));
+          console.log('Attempt:', `${attemptIndex + 1} of ${candidateKeys.length}`);
+          console.groupEnd();
+
+          const generatedUrl = buildGenerationUrl(promptToUse, activeProvider, {
+            width: ratio.width,
+            height: ratio.height,
+            seed: currentSeed,
+            model: modelType,
+            quickEnhance,
+            nologo,
+            apiKey: candidate.key,
           });
 
-          const item = json?.data?.[0];
-          if (item?.b64_json) {
-            finalImageUrl = item.b64_json.startsWith('data:')
-              ? item.b64_json
-              : `data:image/png;base64,${item.b64_json}`;
-          } else if (item?.url) {
-            finalImageUrl = item.url;
-          } else if (json?.url) {
-            finalImageUrl = json.url;
-          } else if (json?.image) {
-            finalImageUrl = json.image.startsWith('data:')
-              ? json.image
-              : `data:image/png;base64,${json.image}`;
-          } else {
-            throw new Error('Pollinations returned JSON without an edited image result.');
-          }
-        } else {
-          // Binary image response
-          const imageBlob = await response.blob();
-          const blobToDataUrl = (blob: Blob): Promise<string> =>
-            new Promise((resolve, reject) => {
-              const reader = new FileReader();
-              reader.onloadend = () => resolve(reader.result as string);
-              reader.onerror = reject;
-              reader.readAsDataURL(blob);
+          try {
+            // First perform a fetch test to verify endpoint responsiveness and check for HTTP 429/401/403
+            let fetchFailedStatus: number | null = null;
+            let fetchErrMsg = '';
+
+            try {
+              const fetchController = new AbortController();
+              const fetchTimeout = setTimeout(() => fetchController.abort(), 35000);
+              const testRes = await fetch(generatedUrl, {
+                method: 'GET',
+                signal: fetchController.signal,
+                mode: 'cors',
+              });
+              clearTimeout(fetchTimeout);
+
+              if (!testRes.ok) {
+                fetchFailedStatus = testRes.status;
+                try {
+                  const errJson = await testRes.json();
+                  fetchErrMsg = errJson?.error || errJson?.message || JSON.stringify(errJson);
+                } catch {
+                  try {
+                    fetchErrMsg = await testRes.text();
+                  } catch {
+                    fetchErrMsg = `HTTP ${testRes.status}: ${testRes.statusText}`;
+                  }
+                }
+              }
+            } catch (netErr: unknown) {
+              if (netErr instanceof Error && netErr.name === 'AbortError') {
+                throw new Error('Image generation timed out after 35 seconds.');
+              }
+              // If CORS blocks GET fetch directly, proceed to preloading with Image()
+            }
+
+            if (fetchFailedStatus !== null) {
+              const isRateLimit = fetchFailedStatus === 429 || /rate[- ]?limit|too many requests|quota/i.test(fetchErrMsg);
+              const isAuthFailure =
+                fetchFailedStatus === 401 ||
+                fetchFailedStatus === 403 ||
+                /unauthori[zs]ed|invalid.*key|authentication/i.test(fetchErrMsg);
+
+              if (isRateLimit || isAuthFailure) {
+                markKeyHealth(
+                  activeProvider.id,
+                  candidate,
+                  isRateLimit ? 'cooldown' : 'invalid',
+                  fetchErrMsg || (isRateLimit ? 'Rate limit exceeded (HTTP 429)' : `Auth error (${fetchFailedStatus})`)
+                );
+
+                console.warn(
+                  `%c[ImageStudio Failover] [Standard Gen] Key index ${keyIdx} (${candidate.label}) encountered ${isRateLimit ? 'Rate-Limit (HTTP 429)' : `Auth-Failure (HTTP ${fetchFailedStatus})`}: "${fetchErrMsg}". ${attemptIndex < candidateKeys.length - 1 ? `Automatically retrying with next available key index ${candidateKeys[attemptIndex + 1].originalIndex}...` : 'All available keys exhausted.'}`,
+                  'color: #f59e0b; font-weight: bold;'
+                );
+
+                if (attemptIndex < candidateKeys.length - 1) {
+                  setFailoverNotice(
+                    `Key #${keyIdx + 1} (${candidate.label}) hit ${isRateLimit ? 'Rate-Limit (429)' : 'Auth error'}. Failing over to Key #${candidateKeys[attemptIndex + 1].originalIndex + 1}...`
+                  );
+                  lastError = new Error(
+                    `Key index ${keyIdx} failed (${fetchFailedStatus}): ${fetchErrMsg}`
+                  );
+                  continue;
+                }
+              }
+              throw new Error(`Provider returned error (${fetchFailedStatus}): ${fetchErrMsg}`);
+            }
+
+            // Preload image to verify successful rendering
+            await new Promise<void>((resolve, reject) => {
+              const img = new Image();
+              const timeout = setTimeout(() => {
+                img.src = '';
+                reject(new Error('Image generation timed out after 30 seconds.'));
+              }, 30000);
+
+              img.onload = () => {
+                clearTimeout(timeout);
+                resolve();
+              };
+
+              img.onerror = () => {
+                clearTimeout(timeout);
+                reject(new Error('Failed to load image from provider. Please verify endpoint or API key.'));
+              };
+
+              img.src = generatedUrl;
             });
-          finalImageUrl = await blobToDataUrl(imageBlob);
+
+            markKeyHealth(activeProvider.id, candidate, 'healthy');
+            console.log(
+              `%c[ImageStudio Failover] [Standard Gen] Key index ${keyIdx} (${candidate.label}) succeeded! Marked healthy.`,
+              'color: #34d399; font-weight: bold;'
+            );
+
+            finalImageUrl = generatedUrl;
+            lastError = null;
+            break;
+          } catch (genErr: unknown) {
+            const errObj = genErr instanceof Error ? genErr : new Error(String(genErr));
+            lastError = errObj;
+            const errMsg = errObj.message;
+            const isAuthOrRate = /429|401|403|rate[- ]?limit|unauthori[zs]ed|api key/i.test(errMsg);
+
+            if (isAuthOrRate && attemptIndex < candidateKeys.length - 1) {
+              markKeyHealth(
+                activeProvider.id,
+                candidate,
+                /429|rate/i.test(errMsg) ? 'cooldown' : 'invalid',
+                errMsg
+              );
+              console.warn(
+                `%c[ImageStudio Failover] [Standard Gen] Key index ${keyIdx} (${candidate.label}) failed: "${errMsg}". Failing over to next key index ${candidateKeys[attemptIndex + 1].originalIndex}...`,
+                'color: #f59e0b; font-weight: bold;'
+              );
+              setFailoverNotice(
+                `Key #${keyIdx + 1} (${candidate.label}) failed. Failing over to Key #${candidateKeys[attemptIndex + 1].originalIndex + 1}...`
+              );
+              continue;
+            }
+
+            throw genErr;
+          }
         }
 
-        console.log(
-          `[Pollinations kontext] Successfully received edited image result (${finalImageUrl.slice(0, 40)}...)`
-        );
-      } else {
-        // Standard text-to-image synthesis
-        const generatedUrl = buildGenerationUrl(promptToUse, activeProvider, {
-          width: ratio.width,
-          height: ratio.height,
-          seed: currentSeed,
-          model: modelType,
-          quickEnhance,
-          nologo,
-        });
-
-        // Preload image to verify successful rendering
-        await new Promise<void>((resolve, reject) => {
-          const img = new Image();
-          const timeout = setTimeout(() => {
-            img.src = '';
-            reject(new Error('Image generation timed out after 30 seconds.'));
-          }, 30000);
-
-          img.onload = () => {
-            clearTimeout(timeout);
-            resolve();
-          };
-
-          img.onerror = () => {
-            clearTimeout(timeout);
-            reject(new Error('Failed to load image from provider. Please verify endpoint or API key.'));
-          };
-
-          img.src = generatedUrl;
-        });
-
-        finalImageUrl = generatedUrl;
+        if (!finalImageUrl && lastError) {
+          throw lastError;
+        }
       }
 
       // Determine the real model used for this generation
@@ -722,6 +1089,7 @@ export function ImageStudio() {
     } finally {
       setLoading(false);
       setLoadingPhase('idle');
+      setFailoverNotice(null);
     }
   };
 
@@ -962,9 +1330,26 @@ export function ImageStudio() {
                 <Layers size={14} style={{ color: '#f472b6' }} /> Image Provider
               </label>
               {activeProvider && (
-                <span style={{ fontSize: '11px', color: 'var(--muted)', fontFamily: 'DM Mono, monospace' }}>
-                  {activeProvider.keys?.length || 0} API {activeProvider.keys?.length === 1 ? 'Key' : 'Keys'}
-                </span>
+                <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                  <span
+                    style={{
+                      fontSize: '10px',
+                      padding: '2px 7px',
+                      borderRadius: '4px',
+                      background: activeProvider.keyStrategy === 'failover' ? 'rgba(59,130,246,0.18)' : 'rgba(255,255,255,0.08)',
+                      color: activeProvider.keyStrategy === 'failover' ? '#93c5fd' : 'var(--muted)',
+                      fontWeight: 600,
+                      textTransform: 'capitalize',
+                      fontFamily: 'DM Mono, monospace',
+                      border: activeProvider.keyStrategy === 'failover' ? '1px solid rgba(59,130,246,0.3)' : '1px solid rgba(255,255,255,0.1)',
+                    }}
+                  >
+                    Strategy: {activeProvider.keyStrategy.replace('_', ' ')}
+                  </span>
+                  <span style={{ fontSize: '11px', color: 'var(--muted)', fontFamily: 'DM Mono, monospace' }}>
+                    {activeProvider.keys?.length || 0} API {activeProvider.keys?.length === 1 ? 'Key' : 'Keys'}
+                  </span>
+                </div>
               )}
             </div>
 
@@ -2109,10 +2494,17 @@ export function ImageStudio() {
                   <h4 style={{ margin: 0, fontSize: '15px', fontWeight: 600, color: '#fff' }}>
                     {loadingPhase === 'enhancing' ? '✨ Refining Prompt with Smart AI...' : 'Generating Neural Visuals...'}
                   </h4>
-                  <p style={{ margin: '4px 0 0', fontSize: '12px', color: 'var(--muted)' }}>
+                  <p
+                    style={{
+                      margin: '4px 0 0',
+                      fontSize: '12px',
+                      color: failoverNotice ? '#f59e0b' : 'var(--muted)',
+                      fontWeight: failoverNotice ? 600 : 400,
+                    }}
+                  >
                     {loadingPhase === 'enhancing'
                       ? 'NEXUS AI text model is enhancing description depth, lighting, and vocabulary...'
-                      : `Communicating with ${activeProvider?.name || 'Image Provider'} endpoint.`}
+                      : failoverNotice || `Communicating with ${activeProvider?.name || 'Image Provider'} endpoint.`}
                   </p>
                 </div>
               </div>
