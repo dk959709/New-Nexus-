@@ -62,6 +62,7 @@ export const ParallaxPage: React.FC = () => {
   // Config & Session state
   const [config, setConfig] = useState<ParallaxSystemConfig>(() => storage.getParallaxConfig());
   const [sessions, setSessions] = useState<ParallaxSession[]>(() => storage.getParallaxSessions());
+  const [confirmDeleteId, setConfirmDeleteId] = useState<string | null>(null);
 
   // Audio & TTS synthesis state
   const [playingAudioKey, setPlayingAudioKey] = useState<string | null>(null); // message.id or 'full_swarm'
@@ -674,11 +675,12 @@ export const ParallaxPage: React.FC = () => {
             </h3>
             {sessions.length > 0 && (
               <button
+                id="parallax-clear-archive-btn"
                 type="button"
                 onClick={() => {
                   storage.clearParallaxSessions();
                   setSessions([]);
-                  setSelectedArchivedSession(null);
+                  setConfirmDeleteId(null);
                 }}
                 style={{
                   padding: '6px 12px',
@@ -717,6 +719,7 @@ export const ParallaxPage: React.FC = () => {
               {sessions.map((sess) => (
                 <div
                   key={sess.id}
+                  id={`parallax-saved-swarm-${sess.id}`}
                   style={{
                     padding: '16px',
                     borderRadius: '12px',
@@ -740,34 +743,124 @@ export const ParallaxPage: React.FC = () => {
                       <strong style={{ color: '#61d7c9' }}>Lean:</strong> {sess.summary.consensusLean}
                     </div>
                   )}
-                  <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginTop: '4px' }}>
+                  <div
+                    style={{
+                      display: 'flex',
+                      alignItems: 'center',
+                      justifyContent: 'space-between',
+                      marginTop: '4px',
+                      flexWrap: 'wrap',
+                      gap: '8px',
+                    }}
+                  >
                     <span style={{ fontSize: '11px', color: '#94a3b8', fontFamily: 'DM Mono, monospace' }}>
                       {sess.messages.length} messages (3 rounds)
                     </span>
-                    <button
-                      type="button"
-                      onClick={() => {
-                        stopAllAudio();
-                        setStitchedSwarmBlob(null);
-                        setMessages(sess.messages);
-                        setSummary(sess.summary || null);
-                        setWasStoppedEarly(false);
-                        setCurrentTopic(sess.topic);
-                        setActiveTab('feed');
-                      }}
-                      style={{
-                        padding: '5px 12px',
-                        borderRadius: '6px',
-                        background: 'rgba(6, 182, 212, 0.2)',
-                        border: '1px solid rgba(6, 182, 212, 0.4)',
-                        color: '#61d7c9',
-                        fontSize: '11px',
-                        fontWeight: 700,
-                        cursor: 'pointer',
-                      }}
-                    >
-                      Load in Feed
-                    </button>
+
+                    {confirmDeleteId === sess.id ? (
+                      <div
+                        id={`confirm-delete-swarm-prompt-${sess.id}`}
+                        style={{
+                          display: 'flex',
+                          alignItems: 'center',
+                          gap: '6px',
+                          background: 'rgba(239, 68, 68, 0.15)',
+                          border: '1px solid rgba(239, 68, 68, 0.4)',
+                          borderRadius: '6px',
+                          padding: '3px 8px',
+                        }}
+                      >
+                        <span style={{ fontSize: '11px', color: '#fca5a5', fontWeight: 600 }}>
+                          Delete this swarm discussion?
+                        </span>
+                        <button
+                          id={`confirm-delete-yes-${sess.id}`}
+                          type="button"
+                          onClick={() => {
+                            storage.deleteParallaxSession(sess.id);
+                            setSessions(storage.getParallaxSessions());
+                            setConfirmDeleteId(null);
+                          }}
+                          style={{
+                            padding: '2px 7px',
+                            borderRadius: '4px',
+                            background: '#ef4444',
+                            border: 'none',
+                            color: '#fff',
+                            fontSize: '11px',
+                            fontWeight: 700,
+                            cursor: 'pointer',
+                          }}
+                        >
+                          Delete
+                        </button>
+                        <button
+                          id={`confirm-delete-cancel-${sess.id}`}
+                          type="button"
+                          onClick={() => setConfirmDeleteId(null)}
+                          style={{
+                            padding: '2px 6px',
+                            borderRadius: '4px',
+                            background: 'rgba(255, 255, 255, 0.1)',
+                            border: '1px solid rgba(255, 255, 255, 0.2)',
+                            color: '#cbd5e1',
+                            fontSize: '11px',
+                            cursor: 'pointer',
+                          }}
+                        >
+                          Cancel
+                        </button>
+                      </div>
+                    ) : (
+                      <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                        <button
+                          type="button"
+                          onClick={() => {
+                            stopAllAudio();
+                            setStitchedSwarmBlob(null);
+                            setMessages(sess.messages);
+                            setSummary(sess.summary || null);
+                            setWasStoppedEarly(false);
+                            setCurrentTopic(sess.topic);
+                            setActiveTab('feed');
+                          }}
+                          style={{
+                            padding: '5px 12px',
+                            borderRadius: '6px',
+                            background: 'rgba(6, 182, 212, 0.2)',
+                            border: '1px solid rgba(6, 182, 212, 0.4)',
+                            color: '#61d7c9',
+                            fontSize: '11px',
+                            fontWeight: 700,
+                            cursor: 'pointer',
+                          }}
+                        >
+                          Load in Feed
+                        </button>
+                        <button
+                          id={`delete-individual-swarm-${sess.id}`}
+                          type="button"
+                          title="Delete this swarm discussion"
+                          aria-label="Delete this swarm discussion"
+                          onClick={() => setConfirmDeleteId(sess.id)}
+                          style={{
+                            padding: '5px 8px',
+                            borderRadius: '6px',
+                            background: 'rgba(239, 68, 68, 0.12)',
+                            border: '1px solid rgba(239, 68, 68, 0.3)',
+                            color: '#f87171',
+                            fontSize: '11px',
+                            cursor: 'pointer',
+                            display: 'flex',
+                            alignItems: 'center',
+                            justifyContent: 'center',
+                            transition: 'all 0.15s ease',
+                          }}
+                        >
+                          <Trash2 size={13} />
+                        </button>
+                      </div>
+                    )}
                   </div>
                 </div>
               ))}
@@ -1310,9 +1403,21 @@ export const ParallaxPage: React.FC = () => {
                                     fontWeight: 800,
                                     color: msg.accentColor,
                                     fontFamily: 'DM Mono, monospace',
+                                    display: 'inline-flex',
+                                    alignItems: 'center',
+                                    gap: '5px',
                                   }}
                                 >
                                   {msg.agentName}
+                                  {msg.mood && (
+                                    <span
+                                      id={`parallax-msg-mood-${msg.id}`}
+                                      title={`Tone: ${msg.mood}`}
+                                      style={{ fontSize: '13px', lineHeight: 1, userSelect: 'none' }}
+                                    >
+                                      {msg.mood}
+                                    </span>
+                                  )}
                                 </span>
 
                                 <span
@@ -1327,6 +1432,44 @@ export const ParallaxPage: React.FC = () => {
                                 >
                                   R{msg.round}
                                 </span>
+
+                                {msg.conviction !== undefined && (
+                                  <span
+                                    id={`parallax-conviction-badge-${msg.id}`}
+                                    title={`Conviction: ${msg.conviction}/10`}
+                                    style={{
+                                      fontSize: '10px',
+                                      fontFamily: 'DM Mono, monospace',
+                                      padding: '1px 6px',
+                                      borderRadius: '4px',
+                                      background:
+                                        msg.conviction >= 8
+                                          ? 'rgba(239, 68, 68, 0.15)'
+                                          : msg.conviction >= 5
+                                          ? 'rgba(234, 179, 8, 0.15)'
+                                          : 'rgba(59, 130, 246, 0.15)',
+                                      color:
+                                        msg.conviction >= 8
+                                          ? '#f87171'
+                                          : msg.conviction >= 5
+                                          ? '#facc15'
+                                          : '#60a5fa',
+                                      border: `1px solid ${
+                                        msg.conviction >= 8
+                                          ? 'rgba(239, 68, 68, 0.3)'
+                                          : msg.conviction >= 5
+                                          ? 'rgba(234, 179, 8, 0.3)'
+                                          : 'rgba(59, 130, 246, 0.3)'
+                                      }`,
+                                      fontWeight: 600,
+                                      display: 'inline-flex',
+                                      alignItems: 'center',
+                                      gap: '2px',
+                                    }}
+                                  >
+                                    Conviction: {msg.conviction}/10
+                                  </span>
+                                )}
 
                                 {msg.toolUsed && (
                                   <span

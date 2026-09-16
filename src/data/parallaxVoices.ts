@@ -35,10 +35,39 @@ export function getParallaxAgentVoice(agentId?: string, configuredVoice?: string
   return DEFAULT_PARALLAX_VOICES[cleanId] || 'en-US-JennyNeural';
 }
 
+const AGENT_ROLES: Record<string, string> = {
+  veritas: 'Fact-based, skeptical analysis',
+  aurora: 'Optimistic, opportunity-focused',
+  chronos: 'Historical context & precedent',
+  socrates: 'First-principles philosophical questioning',
+  axiom: 'Pure mathematical & deductive logic',
+  vanguard: 'Contrarian, stress-tests consensus',
+  solon: 'Governance, ethics & institutional trust',
+  nexus: 'Complex systems & second-order effects',
+  pixel: 'Design, aesthetic & cultural culture',
+  ledger: 'Economic incentives & financial realism',
+  cipher: 'Cybersecurity, risk & adversarial threat',
+  gaia: 'Ecological & planetary boundary impacts',
+  nova: 'Exponential tech & radical disruption',
+  harmony: 'Diplomatic, consensus-building mediation',
+  zeno: 'Paradox analysis & theoretical limits',
+  atlas: 'Geopolitical & global macro strategy',
+  pulse: 'High-frequency market sentiment',
+  zephyr: 'Anthropological & human empathy',
+  kairos: 'Tactical execution & immediate timing',
+  orion: 'Deep-time cosmic & existential outlook',
+};
+
+const ROUND_TITLES: Record<number, string> = {
+  1: 'ROUND 1: INDEPENDENT OPENING ASSESSMENTS',
+  2: 'ROUND 2: CROSS-EXAMINATION & CRITICAL REBUTTALS',
+  3: 'ROUND 3: CONVERGENCE & FINAL SYNTHESIS',
+};
+
 /**
  * Universal Formatted Transcript for Parallax Swarm:
- * Topic, then each round labeled (Round 1/2/3), each agent's name and message in order,
- * followed by the Parallax Summary (verdict, lean, highlights) at the end.
+ * Cleanly spaced export format with comprehensive metadata, session and individual
+ * date/time stamps, generous spacing between agent answers, and structured synthesis.
  */
 export function formatFullParallaxTranscript(
   topic: string,
@@ -46,34 +75,124 @@ export function formatFullParallaxTranscript(
   summary?: ParallaxSummary | null
 ): string {
   const cleanTopic = topic.trim() || 'Untitled Deliberation';
-  let output = `=== PARALLAX 20-AGENT SWARM DELIBERATION ===\n\n`;
-  output += `TOPIC: ${cleanTopic}\n\n`;
+
+  // Session date & time stamps
+  const sessionTs = messages[0]?.timestamp || Date.now();
+  const sessionDate = new Date(sessionTs);
+  const formattedDate = sessionDate.toLocaleDateString('en-US', {
+    weekday: 'long',
+    year: 'numeric',
+    month: 'long',
+    day: 'numeric',
+  });
+  const formattedTime = sessionDate.toLocaleTimeString('en-US', {
+    hour: '2-digit',
+    minute: '2-digit',
+    second: '2-digit',
+    hour12: true,
+  });
+
+  const divider = '='.repeat(80);
+  const subDivider = '-'.repeat(80);
+
+  let output = `${divider}\n`;
+  output += `PARALLAX 20-AGENT SWARM DELIBERATION TRANSCRIPT\n`;
+  output += `${divider}\n`;
+  output += `TOPIC       : "${cleanTopic}"\n`;
+  output += `DATE        : ${formattedDate}\n`;
+  output += `TIME        : ${formattedTime}\n`;
+  output += `SCALE       : 20 Autonomous Personas • 3 Rounds • ${messages.length} Total Contributions\n`;
+  output += `${divider}\n\n\n`;
 
   for (let r = 1; r <= 3; r++) {
-    output += `--- ROUND ${r} ---\n`;
+    const roundTitle = ROUND_TITLES[r] || `ROUND ${r}`;
+    output += `${divider}\n`;
+    output += `${roundTitle}\n`;
+    output += `${divider}\n\n`;
+
     const roundMsgs = messages.filter((m) => m.round === r);
     if (roundMsgs.length === 0) {
-      output += `(No responses recorded for Round ${r})\n\n`;
+      output += `(No agent responses recorded for Round ${r})\n\n\n`;
       continue;
     }
-    for (const m of roundMsgs) {
-      const toolNote = m.toolUsed ? ` [Verified Fact: ${m.toolUsed.query || 'Search'}]` : '';
-      output += `${m.agentName}${toolNote}: "${m.text}"\n`;
+
+    for (let idx = 0; idx < roundMsgs.length; idx++) {
+      const m = roundMsgs[idx];
+      const indexStr = String(idx + 1).padStart(2, '0');
+      const cleanId = (m.agentId || '').toLowerCase().replace(/[^a-z0-9]/g, '');
+      const role = AGENT_ROLES[cleanId] || '';
+      const moodStr = m.mood ? `  ${m.mood}` : '';
+      const roleStr = role ? ` (${role})` : '';
+
+      // Agent Header
+      output += `[#${indexStr}] ${m.agentName}${moodStr}${roleStr}\n`;
+
+      // Date & Time + Conviction + Tool Meta
+      const metaTokens: string[] = [];
+
+      if (m.timestamp) {
+        const mDate = new Date(m.timestamp);
+        if (!isNaN(mDate.getTime())) {
+          const tStr = mDate.toLocaleTimeString('en-US', {
+            hour: '2-digit',
+            minute: '2-digit',
+            second: '2-digit',
+            hour12: true,
+          });
+          const dStr = mDate.toLocaleDateString('en-US', {
+            year: 'numeric',
+            month: 'short',
+            day: 'numeric',
+          });
+          metaTokens.push(`Time: ${tStr}`);
+          metaTokens.push(`Date: ${dStr}`);
+        }
+      }
+
+      if (m.conviction !== undefined) {
+        metaTokens.push(`Conviction: ${m.conviction}/10`);
+      }
+
+      if (m.toolUsed) {
+        const queryOrFact = m.toolUsed.query || 'Verified Live Fact';
+        metaTokens.push(`Live Tool: ${queryOrFact}`);
+      }
+
+      if (metaTokens.length > 0) {
+        output += `${metaTokens.join('  •  ')}\n`;
+      }
+
+      // Empty gap line before the agent's answer
+      output += `\n"${m.text}"\n\n`;
+
+      // Gap & divider between agent answers (only between items)
+      if (idx < roundMsgs.length - 1) {
+        output += `${subDivider}\n\n`;
+      }
     }
-    output += '\n';
+
+    output += `\n\n`;
   }
 
   if (summary) {
-    output += `--- PARALLAX SUMMARY ---\n`;
-    output += `Verdict: ${summary.verdict}\n`;
-    output += `Consensus Lean: ${summary.consensusLean}\n\n`;
+    output += `${divider}\n`;
+    output += `PARALLAX SWARM SYNTHESIS REPORT\n`;
+    output += `${divider}\n\n`;
+
+    output += `CONSENSUS LEAN:\n${summary.consensusLean}\n\n`;
+    output += `SYNTHESIS VERDICT:\n${summary.verdict}\n\n`;
+
     if (summary.highlights && summary.highlights.length > 0) {
-      output += `Key Highlights:\n`;
+      output += `KEY DELIBERATION HIGHLIGHTS:\n`;
       for (const hl of summary.highlights) {
         output += `• ${hl}\n`;
       }
-      output += '\n';
+      output += `\n`;
     }
+
+    output += `${divider}\n`;
+    output += `END OF PARALLAX DELIBERATION TRANSCRIPT\n`;
+    output += `${divider}\n`;
   }
 
   return output.trim();

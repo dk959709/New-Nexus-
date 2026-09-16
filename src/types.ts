@@ -474,6 +474,8 @@ export interface ParallaxMessage {
   durationMs?: number;
   model?: string;
   providerName?: string;
+  conviction?: number;
+  mood?: string;
 }
 
 export interface ParallaxSummary {

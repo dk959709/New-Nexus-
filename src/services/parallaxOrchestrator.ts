@@ -173,6 +173,74 @@ function cleanReactionText(raw: string, agentName: string): string {
   return text || 'No reaction recorded.';
 }
 
+const DEFAULT_AGENT_METRICS: Record<string, { conviction: number; mood: string }> = {
+  vanguard: { conviction: 9, mood: '🔥' },
+  aurora: { conviction: 8, mood: '✨' },
+  socrates: { conviction: 6, mood: '🤔' },
+  gravity: { conviction: 4, mood: '🧊' },
+  veritas: { conviction: 9, mood: '🔍' },
+  axiom: { conviction: 8, mood: '📐' },
+  echo: { conviction: 6, mood: '🗣️' },
+  ledger: { conviction: 7, mood: '📊' },
+  pixel: { conviction: 7, mood: '🎨' },
+  harmony: { conviction: 7, mood: '🕊️' },
+  solon: { conviction: 8, mood: '⚖️' },
+  cipher: { conviction: 8, mood: '🛡️' },
+  nexus: { conviction: 8, mood: '🧠' },
+  zeno: { conviction: 5, mood: '⏳' },
+  pulse: { conviction: 8, mood: '⚡' },
+  kairos: { conviction: 7, mood: '🎯' },
+  atlas: { conviction: 6, mood: '🌐' },
+  zephyr: { conviction: 6, mood: '🌪️' },
+  nova: { conviction: 9, mood: '💥' },
+  orion: { conviction: 7, mood: '🔭' },
+};
+
+/**
+ * Extracts compact conviction score (1-10) and mood emoji [score|emoji] appended to response.
+ */
+function parseConvictionAndMood(raw: string, agentId: string): {
+  cleanText: string;
+  conviction: number;
+  mood: string;
+} {
+  const fallback = DEFAULT_AGENT_METRICS[agentId.toLowerCase()] || { conviction: 7, mood: '⚡' };
+  let conviction = fallback.conviction;
+  let mood = fallback.mood;
+  let text = raw.trim();
+
+  // Pattern: [9|🔥] or [8 | 🤔] or [10|⚡] or [4, 🧊]
+  const tagMatch = text.match(/\[\s*(\d{1,2})\s*[/|,;]\s*([^\]]+?)\s*\]/u);
+  if (tagMatch) {
+    const parsedScore = parseInt(tagMatch[1], 10);
+    if (!isNaN(parsedScore)) {
+      conviction = Math.min(10, Math.max(1, parsedScore));
+    }
+    const parsedMood = tagMatch[2].trim();
+    if (parsedMood) {
+      mood = parsedMood;
+    }
+    text = text.replace(tagMatch[0], '').trim();
+  } else {
+    // Check separate score: [9/10] or [9]
+    const scoreMatch = text.match(/\[\s*(\d{1,2})(?:\s*\/\s*10)?\s*\]/);
+    if (scoreMatch) {
+      const parsedScore = parseInt(scoreMatch[1], 10);
+      if (parsedScore >= 1 && parsedScore <= 10) {
+        conviction = parsedScore;
+      }
+      text = text.replace(scoreMatch[0], '').trim();
+    }
+    // Check separate emoji
+    const emojiMatch = text.match(/([\p{Emoji_Presentation}\p{Extended_Pictographic}])/u);
+    if (emojiMatch) {
+      mood = emojiMatch[1];
+    }
+  }
+
+  return { cleanText: text, conviction, mood };
+}
+
 /**
  * Executes a single agent reaction turn with ultra-compact token footprint.
  */
@@ -185,11 +253,11 @@ async function executeAgentTurn(
   signal?: AbortSignal,
 ): Promise<ParallaxMessage> {
   const startTime = Date.now();
-  const { provider, model } = resolveParallaxProviderConfig(agent, 75);
+  const { provider, model } = resolveParallaxProviderConfig(agent, 80);
 
-  // Compact, high-signal system prompt (~35-45 tokens)
+  // Compact, high-signal system prompt with lightweight conviction & mood request (~45 tokens)
   const systemPrompt = `Persona: ${agent.name} (${agent.role}). ${agent.systemInstruction}
-Constraint: Exactly 1-2 punchy sentences (<40 words). Speak directly; no greeting, no intro, no self-naming.`;
+Constraint: Exactly 1-2 punchy sentences (<40 words). Speak directly; no greeting, no intro, no self-naming. End with [conviction 1-10|mood emoji] (e.g. [9|🔥]).`;
 
   let userPrompt = '';
 
@@ -230,13 +298,14 @@ Constraint: Exactly 1-2 punchy sentences (<40 words). Speak directly; no greetin
       ],
       providerConfig: provider,
       temperature: 0.75,
-      maxTokens: 75,
+      maxTokens: 80,
       timeoutMs: 14000,
       signal,
     });
 
     const rawText = response.text || response.content || '';
-    const cleaned = cleanReactionText(rawText, agent.name);
+    const { cleanText: rawWithoutMeta, conviction, mood } = parseConvictionAndMood(rawText, agent.id);
+    const cleaned = cleanReactionText(rawWithoutMeta, agent.name);
 
     return {
       id: `plx_${agent.id}_r${round}_${Date.now()}_${Math.random().toString(36).slice(2, 6)}`,
@@ -246,6 +315,8 @@ Constraint: Exactly 1-2 punchy sentences (<40 words). Speak directly; no greetin
       accentColor: agent.accentColor,
       round,
       text: cleaned,
+      conviction,
+      mood,
       timestamp: Date.now(),
       durationMs: Date.now() - startTime,
       model: response.model || model,
@@ -266,6 +337,7 @@ Constraint: Exactly 1-2 punchy sentences (<40 words). Speak directly; no greetin
 
     // Graceful fallback reaction reflecting the agent's core disposition
     const fallbackText = getFallbackReaction(agent, round, topic);
+    const fallbackMeta = DEFAULT_AGENT_METRICS[agent.id.toLowerCase()] || { conviction: 7, mood: '⚡' };
     return {
       id: `plx_${agent.id}_r${round}_fallback_${Date.now()}`,
       agentId: agent.id,
@@ -274,6 +346,8 @@ Constraint: Exactly 1-2 punchy sentences (<40 words). Speak directly; no greetin
       accentColor: agent.accentColor,
       round,
       text: fallbackText,
+      conviction: fallbackMeta.conviction,
+      mood: fallbackMeta.mood,
       timestamp: Date.now(),
       durationMs: Date.now() - startTime,
       model: model || 'fallback',

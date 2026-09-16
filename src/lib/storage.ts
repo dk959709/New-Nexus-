@@ -1675,4 +1675,10 @@ export const storage = {
   clearParallaxSessions(): void {
     write(KEYS.parallaxSessions, []);
   },
+
+  deleteParallaxSession(id: string): void {
+    const list = this.getParallaxSessions();
+    const updated = list.filter((s) => s.id !== id);
+    write(KEYS.parallaxSessions, updated);
+  },
 };
