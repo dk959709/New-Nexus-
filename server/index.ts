@@ -1553,7 +1553,7 @@ async function startServer() {
     return { answer: res.answer || 'I could not process that request.' };
   });
 
-  // Cloudflare Workers AI Image Generation Proxy (Bypasses browser CORS restrictions)
+  // Cloudflare Workers AI Image Generation & Editing Proxy (Bypasses browser CORS restrictions)
   app.post('/api/proxy/cloudflare-image', async (req: Request, res: Response) => {
     try {
       const {
@@ -1565,11 +1565,24 @@ async function startServer() {
         key: rawKey,
         url: rawUrl,
         model: rawModel,
+        image_b64: rawImageB64,
+        referenceImage: rawReferenceImage,
+        image: rawImage,
+        strength: rawStrength,
+        guidance: rawGuidance,
+        num_steps: rawNumSteps,
       } = req.body || {};
 
       const prompt = (rawPrompt || rawInputs || '').trim();
       if (!prompt) {
         return errorResponse(res, 400, 'Prompt is required.');
+      }
+
+      // Extract raw base64 reference image for img2img if present
+      const rawImageInput = (rawImageB64 || rawReferenceImage || rawImage || '').trim();
+      let cleanImageB64 = '';
+      if (rawImageInput) {
+        cleanImageB64 = rawImageInput.replace(/^data:image\/[a-zA-Z0-9+.-]+;base64,/, '').trim();
       }
 
       // Extract auth token from body or Authorization header
@@ -1596,6 +1609,24 @@ async function startServer() {
         targetUrl = targetUrl.replace('YOUR_ACCOUNT_ID', accountId);
       }
 
+      // Determine model name - auto switch to img2img model when reference image is present
+      let modelName = (rawModel || '').trim();
+      if (cleanImageB64 && (!modelName || modelName.includes('flux') || modelName.includes('schnell'))) {
+        modelName = '@cf/runwayml/stable-diffusion-v1-5-img2img';
+      }
+      if (!modelName) {
+        modelName = cleanImageB64
+          ? '@cf/runwayml/stable-diffusion-v1-5-img2img'
+          : '@cf/black-forest-labs/flux-1-schnell';
+      }
+
+      // If target URL contains a model path and img2img image is present, ensure targetUrl uses the img2img model
+      if (targetUrl && cleanImageB64) {
+        if (targetUrl.includes('/ai/run/@cf/black-forest-labs/flux-1-schnell') || (!targetUrl.includes('img2img') && targetUrl.includes('/ai/run/'))) {
+          targetUrl = targetUrl.replace(/\/ai\/run\/.*$/, `/ai/run/${modelName}`);
+        }
+      }
+
       if (!targetUrl || targetUrl.includes('YOUR_ACCOUNT_ID')) {
         if (!accountId) {
           return errorResponse(
@@ -1604,8 +1635,15 @@ async function startServer() {
             "Cloudflare Account ID is missing. Please replace 'YOUR_ACCOUNT_ID' with your actual Cloudflare Account ID in Settings.",
           );
         }
-        const modelName = (rawModel || '@cf/black-forest-labs/flux-1-schnell').trim();
         targetUrl = `https://api.cloudflare.com/client/v4/accounts/${accountId}/ai/run/${modelName}`;
+      }
+
+      const cfRequestBody: Record<string, unknown> = { prompt };
+      if (cleanImageB64) {
+        cfRequestBody.image_b64 = cleanImageB64;
+        if (typeof rawStrength === 'number') cfRequestBody.strength = rawStrength;
+        if (typeof rawGuidance === 'number') cfRequestBody.guidance = rawGuidance;
+        if (typeof rawNumSteps === 'number') cfRequestBody.num_steps = rawNumSteps;
       }
 
       const cfController = new AbortController();
@@ -1617,7 +1655,7 @@ async function startServer() {
           Authorization: `Bearer ${apiToken}`,
           'Content-Type': 'application/json',
         },
-        body: JSON.stringify({ prompt }),
+        body: JSON.stringify(cfRequestBody),
         signal: cfController.signal,
       });
       clearTimeout(cfTimeout);

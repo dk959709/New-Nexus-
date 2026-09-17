@@ -233,13 +233,18 @@ export function ImageStudio() {
     imageProvidersState.providers[0];
 
   const isSdk = activeProvider?.requestType === 'sdk';
+  const isCloudflare = Boolean(
+    activeProvider &&
+      !isSdk &&
+      (activeProvider.url?.toLowerCase().includes('cloudflare') ||
+        activeProvider.name?.toLowerCase().includes('cloudflare'))
+  );
   const isPost =
     !isSdk &&
     (activeProvider?.requestType === 'post' ||
       activeProvider?.url?.toLowerCase().includes('huggingface') ||
-      activeProvider?.url?.toLowerCase().includes('cloudflare') ||
-      activeProvider?.name?.toLowerCase().includes('hugging') ||
-      activeProvider?.name?.toLowerCase().includes('cloudflare'));
+      isCloudflare ||
+      activeProvider?.name?.toLowerCase().includes('hugging'));
   const isPollinations = !isSdk && !isPost;
 
   const pollinationsProvider = imageProvidersState.providers.find(
@@ -248,6 +253,11 @@ export function ImageStudio() {
       p.requestType !== 'post' &&
       !p.url.toLowerCase().includes('huggingface') &&
       !p.url.toLowerCase().includes('cloudflare')
+  );
+  const cloudflareProvider = imageProvidersState.providers.find(
+    (p) =>
+      p.requestType !== 'sdk' &&
+      (p.url.toLowerCase().includes('cloudflare') || p.name.toLowerCase().includes('cloudflare'))
   );
   const puterProvider = imageProvidersState.providers.find((p) => p.requestType === 'sdk');
 
@@ -491,18 +501,22 @@ export function ImageStudio() {
     const currentSeed = seed;
 
     const isSdk = activeProvider.requestType === 'sdk';
+    const isCloudflare =
+      !isSdk &&
+      (activeProvider.url.toLowerCase().includes('cloudflare') ||
+        activeProvider.name.toLowerCase().includes('cloudflare'));
     const isPost =
       !isSdk &&
       (activeProvider.requestType === 'post' ||
         activeProvider.url.toLowerCase().includes('huggingface') ||
         activeProvider.url.toLowerCase().includes('hf-inference') ||
-        activeProvider.url.toLowerCase().includes('cloudflare') ||
-        activeProvider.name.toLowerCase().includes('cloudflare'));
+        isCloudflare ||
+        activeProvider.name.toLowerCase().includes('hugging'));
 
-    // Check: Cloudflare / Hugging Face POST providers do not support direct img2img editing
-    if (isPost && referenceImage) {
+    // Check: Non-img2img POST providers (e.g. Hugging Face) do not support direct img2img editing
+    if (isPost && !isCloudflare && referenceImage) {
       setError(
-        `${activeProvider.name} does not support image editing (img2img). Please switch to Pollinations (using the 'kontext' model) or Puter (using FLUX Kontext Pro or Gemini 2.5 Flash Image) to edit your reference image.`
+        `${activeProvider.name} does not support image editing (img2img). Please switch to Cloudflare, Pollinations (using the 'kontext' model), or Puter (using FLUX Kontext Pro or Gemini 2.5 Flash Image) to edit your reference image.`
       );
       setLoading(false);
       setLoadingPhase('idle');
@@ -532,9 +546,6 @@ export function ImageStudio() {
         finalImageUrl = puterResult.url;
       } else if (isPost) {
         // POST inference (Cloudflare Workers AI or Hugging Face) with automatic key failover
-        const isCloudflare =
-          activeProvider.url.toLowerCase().includes('cloudflare') ||
-          activeProvider.name.toLowerCase().includes('cloudflare');
         const candidateKeys = getProviderKeyCandidates(activeProvider);
         let lastError: Error | null = null;
 
@@ -561,7 +572,11 @@ export function ImageStudio() {
               ? {
                   prompt: promptToUse,
                   url: activeProvider.url.trim(),
-                  model: activeProvider.model,
+                  model: referenceImage
+                    ? '@cf/runwayml/stable-diffusion-v1-5-img2img'
+                    : (activeProvider.model || '@cf/black-forest-labs/flux-1-schnell'),
+                  image_b64: referenceImage || undefined,
+                  referenceImage: referenceImage || undefined,
                   apiToken: candidate.key,
                   apiKey: candidate.key,
                 }
@@ -1125,10 +1140,18 @@ export function ImageStudio() {
           activeProvider.model ||
           (referenceImage ? 'black-forest-labs/flux-kontext-pro' : DEFAULT_PUTER_MODEL);
       } else if (isPost) {
-        actualModelUsed =
-          activeProvider.model ||
-          (activeProvider.url.split('/').filter(Boolean).pop()) ||
-          (activeProvider.name.toLowerCase().includes('cloudflare') ? '@cf/black-forest-labs/flux-1-schnell' : 'POST Inference Model');
+        if (isCloudflare) {
+          actualModelUsed = referenceImage
+            ? '@cf/runwayml/stable-diffusion-v1-5-img2img'
+            : activeProvider.model ||
+              (activeProvider.url.split('/').filter(Boolean).pop()) ||
+              '@cf/black-forest-labs/flux-1-schnell';
+        } else {
+          actualModelUsed =
+            activeProvider.model ||
+            (activeProvider.url.split('/').filter(Boolean).pop()) ||
+            'POST Inference Model';
+        }
       } else {
         actualModelUsed = modelType;
       }
@@ -1770,8 +1793,8 @@ export function ImageStudio() {
               </div>
             )}
 
-            {/* Hugging Face Not Supported Warning with Quick-Switch buttons */}
-            {isPost && referenceImage && (
+            {/* Non-img2img Provider (e.g. Hugging Face) Not Supported Warning with Quick-Switch buttons */}
+            {isPost && !isCloudflare && referenceImage && (
               <div
                 style={{
                   marginTop: '10px',
@@ -1787,16 +1810,41 @@ export function ImageStudio() {
                   <AlertCircle size={16} style={{ color: '#fbbf24', flexShrink: 0, marginTop: '2px' }} />
                   <div>
                     <div style={{ fontSize: '12px', fontWeight: 700, color: '#fbbf24' }}>
-                      Hugging Face Does Not Support Image Editing
+                      {activeProvider?.name || 'Provider'} Does Not Support Image Editing
                     </div>
                     <div style={{ fontSize: '11px', color: '#fde68a', lineHeight: 1.4, marginTop: '2px' }}>
-                      The current Hugging Face text-to-image model does not support reference image (img2img) editing.
-                      Please switch to <strong>Pollinations</strong> (using the <em>kontext</em> model) or <strong>Puter</strong> (using <em>FLUX Kontext Pro</em> or <em>Gemini 2.5 Flash</em>) instead.
+                      The current {activeProvider?.name || 'selected'} text-to-image model does not support reference image (img2img) editing.
+                      Please switch to <strong>Cloudflare</strong> (using <em>SD 1.5 img2img</em>), <strong>Pollinations</strong> (using the <em>kontext</em> model), or <strong>Puter</strong> (using <em>FLUX Kontext Pro</em> or <em>Gemini 2.5 Flash</em>) instead.
                     </div>
                   </div>
                 </div>
 
                 <div style={{ display: 'flex', gap: '8px', flexWrap: 'wrap', marginTop: '2px' }}>
+                  {cloudflareProvider && (
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setSelectedProviderId(cloudflareProvider.id);
+                        setError(null);
+                        playTapSound();
+                      }}
+                      style={{
+                        padding: '6px 12px',
+                        borderRadius: '6px',
+                        background: '#f97316',
+                        color: '#fff',
+                        border: 0,
+                        fontSize: '11px',
+                        fontWeight: 600,
+                        cursor: 'pointer',
+                        display: 'inline-flex',
+                        alignItems: 'center',
+                        gap: '5px',
+                      }}
+                    >
+                      <Sparkles size={12} /> Switch to Cloudflare (SD 1.5 img2img)
+                    </button>
+                  )}
                   {pollinationsProvider && (
                     <button
                       type="button"
@@ -1850,6 +1898,32 @@ export function ImageStudio() {
                     </button>
                   )}
                 </div>
+              </div>
+            )}
+
+            {/* Cloudflare img2img Active Indicator */}
+            {isCloudflare && referenceImage && (
+              <div
+                style={{
+                  marginTop: '10px',
+                  padding: '8px 12px',
+                  borderRadius: '8px',
+                  background: 'rgba(249,115,22,0.12)',
+                  border: '1px solid rgba(249,115,22,0.3)',
+                  display: 'flex',
+                  alignItems: 'center',
+                  gap: '8px',
+                  fontSize: '11px',
+                  color: '#fdba74',
+                }}
+              >
+                <Sparkles size={14} style={{ color: '#f97316', flexShrink: 0 }} />
+                <span>
+                  <strong>Cloudflare img2img Mode:</strong> Automatically routing edit instructions to{' '}
+                  <code style={{ fontFamily: 'DM Mono, monospace', background: 'rgba(0,0,0,0.3)', padding: '1px 5px', borderRadius: '4px', color: '#fed7aa' }}>
+                    @cf/runwayml/stable-diffusion-v1-5-img2img
+                  </code>
+                </span>
               </div>
             )}
           </div>
@@ -2122,7 +2196,13 @@ export function ImageStudio() {
                   }}
                   title={activeProvider.model || activeProvider.url}
                 >
-                  {activeProvider.name.toLowerCase().includes('cloudflare') ? 'CF' : activeProvider.name.toLowerCase().includes('hugging') ? 'HF' : 'POST'}: {activeProvider.model || (activeProvider.url.split('/').filter(Boolean).pop()) || 'Default'}
+                  {isCloudflare
+                    ? referenceImage
+                      ? 'CF: @cf/runwayml/stable-diffusion-v1-5-img2img (img2img)'
+                      : `CF: ${activeProvider.model || (activeProvider.url.split('/').filter(Boolean).pop()) || '@cf/black-forest-labs/flux-1-schnell'}`
+                    : activeProvider.name.toLowerCase().includes('hugging')
+                    ? `HF: ${activeProvider.model || (activeProvider.url.split('/').filter(Boolean).pop()) || 'Default'}`
+                    : `POST: ${activeProvider.model || (activeProvider.url.split('/').filter(Boolean).pop()) || 'Default'}`}
                 </div>
               </div>
             ) : (
