@@ -3209,7 +3209,7 @@ CRITICAL RULES:
         if (!plannerOutput.plan || plannerOutput.plan.length === 0 || (plannerOutput.plan.length === 1 && plannerOutput.plan[0] === 'Synthesize accurate response directly.')) {
           plannerOutput.plan = [
             'Detail the 10-agent cognitive architecture and multi-agent pipeline.',
-            'Present available slash commands (/search, /web, /customapi, /code) with descriptions and examples.',
+            'Present available slash commands (/search, /web, /customapi, /code, /image, /imagesai) with descriptions and examples.',
             'Deliver comprehensive capabilities overview.'
           ];
         }
@@ -5844,7 +5844,7 @@ JARVIS is a multi-agent AI intelligence platform composed of 10 specialized agen
 • 4 Specialized Domain & Toggle-Based Agents:
   7. Architect (Interactive SVG diagram, workflow pipeline, and architecture blueprint generation via Diagram Mode)
   8. Data Analyst (Quantitative metric extraction and interactive Bar/Line chart generation via Chart Mode)
-  9. Image Finder (Real-world product, landmark, and photographic image retrieval via Image Mode)
+  9. Image Finder: Retrieves real photographic imagery from Wikipedia/Wikimedia AND generates an AI visual for the same topic, shown side by side.
   10. Coder (Code Architecture & Software Engineering — writes clean, production-ready code, scripts, bug fixes, and algorithms; triggered via "/code" command or automatic detection)
 • Custom Agents: Support for user-defined custom specialized agents.
 
@@ -5858,15 +5858,21 @@ JARVIS also includes dedicated slash commands that allow users to override norma
      Example: \`/customapi coingecko bitcoin\`
   4. \`/code [prompt]\` — High-Speed Code Architecture Pipeline: Activates a specialized 2-agent pipeline (Planner -> Coder) designed specifically for programming, debugging, and software architecture with minimal latency.
      Example: \`/code implement a distributed rate limiter in TypeScript with Redis\`
+  5. \`/image [prompt]\` — Instantly shows a real photo + AI-generated image for the topic, bypassing the full research pipeline for speed.
+     Example: \`/image northern lights\`
+  6. \`/imagesai [prompt]\` — Generates an AI image only (skips the real-photo search), for fastest results.
+     Example: \`/imagesai a dragon made of glass\`
 
 CRITICAL CAPABILITY & SELF-DESCRIPTION SYNTHESIS MANDATE:
 When answering self-referential questions like "what can you do", "hello what are your capabilities", "how do you work", or questions about JARVIS's agents, capabilities, or system features:
 1. Explain the multi-agent cognitive pipeline and describe all 10 agents comprehensively.
-2. IMMEDIATELY AFTER the agent pipeline explanation, you MUST include a dedicated section titled "### Available Slash Commands" (or "### Dedicated Slash Commands") listing all 4 slash commands:
+2. IMMEDIATELY AFTER the agent pipeline explanation, you MUST include a dedicated section titled "### Available Slash Commands" (or "### Dedicated Slash Commands") listing the slash commands:
    - \`/search [query]\` with a one-line description and example
    - \`/web [URL]\` with a one-line description and example
    - \`/customapi [api_name] [query]\` with a one-line description and example
    - \`/code [prompt]\` with a one-line description and example
+   - \`/image [prompt]\` with a one-line description and example
+   - \`/imagesai [prompt]\` with a one-line description and example
 Keep the existing agent pipeline explanation intact, and add this slash commands section right after it.`
       : '';
 
@@ -6076,14 +6082,16 @@ JARVIS is a multi-agent AI intelligence platform composed of 10 specialized neur
 #### Specialized Domain Agents
 7. **Architect**: Generates interactive SVG architecture blueprints and workflow diagrams in Diagram Mode.
 8. **Data Analyst**: Extracts comparative metrics to render dynamic charts in Chart Mode.
-9. **Image Finder**: Discovers and retrieves high-resolution visual imagery in Image Mode.
+9. **Image Finder**: Retrieves real photographic imagery from Wikipedia/Wikimedia AND generates an AI visual for the same topic, shown side by side.
 10. **Coder**: Writes clean, production-ready code, scripts, bug fixes, and algorithms.
 
 ### Available Slash Commands
 - \`/search [query]\` — Forces immediate live web research using search engines, completely bypassing Wikipedia and Wikidata entity lookups. (Example: \`/search latest James Webb space telescope exoplanet discoveries 2025\`)
 - \`/web [URL]\` — Ingests and inspects the exact contents of any specific public web page without intermediate search engine filtering. (Example: \`/web https://en.wikipedia.org/wiki/Quantum_supremacy\`)
 - \`/customapi [api_name] [query]\` — Directly invokes any custom REST API registered in your Settings > API Catalog, returning real-time upstream data grounded by the Final Synthesizer. (Example: \`/customapi coingecko bitcoin\`)
-- \`/code [prompt]\` — Activates a specialized 2-agent pipeline (Planner -> Coder) designed specifically for programming, debugging, and software architecture with minimal latency. (Example: \`/code implement a distributed rate limiter in TypeScript with Redis\`)`;
+- \`/code [prompt]\` — Activates a specialized 2-agent pipeline (Planner -> Coder) designed specifically for programming, debugging, and software architecture with minimal latency. (Example: \`/code implement a distributed rate limiter in TypeScript with Redis\`)
+- \`/image [prompt]\` — Instantly shows a real photo + AI-generated image for the topic, bypassing the full research pipeline for speed. (Example: \`/image northern lights\`)
+- \`/imagesai [prompt]\` — Generates an AI image only (skips the real-photo search), for fastest results. (Example: \`/imagesai a dragon made of glass\`)`;
       } else {
         finalAnswer = `### Intelligence Summary: ${query}\n\nProcessed query through the multi-agent pipeline. Provider failover completed across configured channels.`;
       }

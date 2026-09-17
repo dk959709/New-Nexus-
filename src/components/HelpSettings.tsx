@@ -1077,6 +1077,38 @@ End of NEXUS Documentation
                   <span className="text-slate-500">Example:</span> /codeonline build a Next.js 15 app with Server Actions and Auth.js v5
                 </div>
               </div>
+
+              {/* Command 6 */}
+              <div className="p-3.5 rounded-lg bg-slate-950/80 border border-slate-800">
+                <div className="flex flex-wrap items-center justify-between gap-2 mb-2">
+                  <div className="font-mono text-cyan-300 font-semibold text-xs sm:text-sm bg-cyan-950/60 px-2 py-0.5 rounded border border-cyan-800/40">
+                    /image [prompt]
+                  </div>
+                  <span className="text-[11px] text-pink-400 font-medium">Dual Real Photo + AI Visual</span>
+                </div>
+                <p className="text-xs text-slate-400 m-0 mb-2">
+                  Instantly shows a real photo + AI-generated image for the topic, bypassing the full research pipeline for speed.
+                </p>
+                <div className="text-[11px] text-slate-300 font-mono bg-slate-900 px-2.5 py-1.5 rounded border border-slate-800">
+                  <span className="text-slate-500">Example:</span> /image northern lights
+                </div>
+              </div>
+
+              {/* Command 7 */}
+              <div className="p-3.5 rounded-lg bg-slate-950/80 border border-slate-800">
+                <div className="flex flex-wrap items-center justify-between gap-2 mb-2">
+                  <div className="font-mono text-cyan-300 font-semibold text-xs sm:text-sm bg-cyan-950/60 px-2 py-0.5 rounded border border-cyan-800/40">
+                    /imagesai [prompt]
+                  </div>
+                  <span className="text-[11px] text-fuchsia-400 font-medium">Direct AI Image Only</span>
+                </div>
+                <p className="text-xs text-slate-400 m-0 mb-2">
+                  Generates an AI image only (skips the real-photo search), for fastest results.
+                </p>
+                <div className="text-[11px] text-slate-300 font-mono bg-slate-900 px-2.5 py-1.5 rounded border border-slate-800">
+                  <span className="text-slate-500">Example:</span> /imagesai a dragon made of glass
+                </div>
+              </div>
             </div>
           </div>
         </div>

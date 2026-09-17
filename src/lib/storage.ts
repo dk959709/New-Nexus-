@@ -417,15 +417,17 @@ Set needsKnowledgeAgent to false for all other query types, including: time-sens
   If the query asks about JARVIS's own name, identity, architecture, how many agents it has, what agents make up the system, its capabilities, features, what it can do, how it works, gives conversational greetings (e.g. "hello", "hi", "what is your name", "who are you", "what can you do", "what are your capabilities", "how many agents", "what agents do you have", "how do you work", "what is jarvis", "tell me about yourself", "help me"), OR asks to compare an AI/JARVIS with the user personally (e.g. "compare me and DeepSeek", "comar me and DeepSeek", "compare you and me", "what do you think of me", "how do I compare to AI", "compare me with AI", "how am I different from ChatGPT"):
   1. Set needsResearch: false, needsResearchQuery: "", needsNews: false, and needsNewsQuery: "" (DO NOT trigger Researcher to search the web for the literal words "me", "myself", "I", "you", or the user as a searchable entity under any circumstance, and do not search external web for JARVIS's internal architecture).
   2. Set needsFactCheck: false, needsReview: false, needsWikipedia: false, and needsWikidata: false.
-  3. JARVIS Architecture Knowledge: JARVIS is composed of 10 specialized agents: 6 core pipeline agents (Planner, Researcher, Fact Checker, Advisor, Reviewer, Final Synthesizer) plus 4 specialized agents (Architect for SVG diagrams, Data Analyst for charts, Image Finder for photo search, Coder for code architecture & software engineering), as well as custom user-defined agents.
+  3. JARVIS Architecture Knowledge: JARVIS is composed of 10 specialized agents: 6 core pipeline agents (Planner, Researcher, Fact Checker, Advisor, Reviewer, Final Synthesizer) plus 4 specialized agents (Architect for SVG diagrams, Data Analyst for charts, Image Finder: Retrieves real photographic imagery from Wikipedia/Wikimedia AND generates an AI visual for the same topic, shown side by side, Coder for code architecture & software engineering), as well as custom user-defined agents.
   4. If it is a personal comparison between human/user and AI ("compare me and DeepSeek", "compare you and me", "how do I compare to AI"), set needsKnowledgeAgent: true so Advisor provides a conceptual, respectful Human vs AI analysis without searching the web or guessing the user's private identity. If it is a pure self-referential question about JARVIS itself ("what is your name", "who are you", "what can you do", "how many agents do you have"), set needsKnowledgeAgent: false.
-  5. Available Slash Commands: In addition to the multi-agent pipeline, JARVIS provides 5 dedicated slash commands:
+  5. Available Slash Commands: In addition to the multi-agent pipeline, JARVIS provides dedicated slash commands:
      - /search [query] (Live Web Search Override)
      - /web [URL] (Direct Webpage Extraction & Analysis)
      - /customapi [api_name] [query] (Direct Custom API Execution)
      - /code [prompt] (High-Speed 2-Agent Coding Pipeline)
      - /codeonline [prompt] (Online Research + Code Generation Pipeline: Planner -> Researcher -> Coder)
-     When planning for self-referential or capabilities inquiries, ensure the plan directs the Final Synthesizer to explain the agent pipeline AND include a section detailing these 5 slash commands with one-line descriptions and examples.
+     - /image [prompt] (Instantly shows a real photo + AI-generated image for the topic, bypassing the full research pipeline for speed. Example: /image northern lights)
+     - /imagesai [prompt] (Generates an AI image only (skips the real-photo search), for fastest results. Example: /imagesai a dragon made of glass)
+     When planning for self-referential or capabilities inquiries, ensure the plan directs the Final Synthesizer to explain the agent pipeline AND include a section detailing these slash commands with one-line descriptions and examples.
 - USER ATTACHED CONTEXT FILES & FILE-ANALYSIS TASKS (CRITICAL):
   If the inquiry includes attached context files (indicated by "## User Attached Context Files:" or "### Attachment [N]"):
   1. Recognize this primarily as a direct file-analysis and document processing task (e.g. "Tell about this file", "Summarize this", "Explain this code", "Review this document").
@@ -908,7 +910,7 @@ export const DEFAULT_JARVIS_CONFIG: JarvisSystemConfig = {
       id: 'imageFinder',
       name: 'Image Finder',
       role: 'Visual Photo Sourcing & Image Querying',
-      description: 'Identifies visual photo requirements and generates targeted photographic search queries to retrieve real images.',
+      description: 'Retrieves real photographic imagery from Wikipedia/Wikimedia AND generates an AI visual for the same topic, shown side by side.',
       icon: '🖼️',
       providerId: 'existing',
       modelId: 'deepseek/deepseek-chat',
