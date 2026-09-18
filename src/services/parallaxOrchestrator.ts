@@ -80,45 +80,155 @@ export function resolveParallaxProviderConfig(
 }
 
 /**
- * VERITAS EXCEPTION:
- * In Round 1 only, VERITAS gets exactly ONE tool call to search for a real-time fact.
- * No other agent gets tool access. VERITAS does not get tool access in Rounds 2 or 3.
+ * Cleanly normalizes search source labels returned from server/routes/search.ts.
  */
-export async function fetchVeritasFact(topic: string): Promise<{ fact: string; source: string; query: string } | null> {
+export function formatSearchSourceLabel(source?: string): string {
+  if (!source) return 'Live Web';
+  const lower = source.toLowerCase();
+  if (lower.includes('tavily')) return 'Tavily';
+  if (lower.includes('exa')) return 'Exa AI';
+  if (lower.includes('duckduckgo') || lower.includes('ddg')) return 'DuckDuckGo';
+  if (lower.includes('wikipedia') || lower.includes('wiki')) return 'Wikipedia';
+  if (lower.includes('gnews')) return 'GNews';
+  if (lower.includes('newsdata')) return 'NewsData';
+  if (lower.includes('google news')) return 'Google News';
+  return source.replace(/\s+fallback/i, '').replace(/\s+api/i, '').trim() || 'Live Web';
+}
+
+export interface VeritasGroundingData {
+  results: Array<{ title: string; url: string; description?: string; domain?: string }>;
+  searchSource: string;
+  query: string;
+  formattedGrounding: string;
+  sourcesCount: number;
+  topFactSnippet: string;
+  failed: boolean;
+}
+
+/**
+ * VERITAS LIVE SEARCH GROUNDING:
+ * Executed exactly ONCE per debate before Round 1 begins.
+ * Uses the existing internal search route in server/routes/search.ts with the full fallback chain:
+ * Tavily → Exa AI → DuckDuckGo → Wikipedia, requesting max_results: 10.
+ * Injects grounding into VERITAS only. If all fallbacks fail, fails gracefully without blocking.
+ */
+export async function fetchVeritasGrounding(
+  topic: string,
+  signal?: AbortSignal,
+): Promise<VeritasGroundingData> {
+  console.log(`[Parallax Veritas] Querying live search for topic: "${topic}" (max_results: 10)...`);
+
+  let rawResults: Array<{ title: string; url: string; description?: string; domain?: string }> = [];
+  let sourceLabel = 'Tavily';
+
   try {
-    const searchRes = await api.search(topic, 'ALL', 1, 3);
-    if (searchRes && searchRes.length > 0) {
-      const top = searchRes.find((r) => r.snippet && r.snippet.trim().length > 15) || searchRes[0];
-      const snippet = (top.snippet || top.title || '').replace(/\s+/g, ' ').trim();
-      if (snippet) {
-        return {
-          fact: snippet.length > 180 ? snippet.slice(0, 180) + '...' : snippet,
-          source: top.url || top.title || 'Live Web Search',
-          query: topic,
-        };
+    if (signal?.aborted) throw new Error('Search aborted');
+
+    // Call existing internal search function used by Researcher agent (server/routes/search.ts)
+    const searchRes = await api.search(topic, 'ALL', 1, 10);
+
+    if (Array.isArray(searchRes) && searchRes.length > 0) {
+      rawResults = searchRes.slice(0, 10);
+      const resMeta = searchRes as typeof searchRes & { searchSource?: string };
+      if (resMeta.searchSource) {
+        sourceLabel = formatSearchSourceLabel(resMeta.searchSource);
+      }
+    } else {
+      console.warn(`[Parallax Veritas] Search returned 0 results for "${topic}". Checking direct Wikipedia fallback...`);
+      try {
+        const wiki = await api.searchWikipedia(topic, 5);
+        if (wiki && wiki.length > 0) {
+          rawResults = wiki.map((w) => ({
+            title: w.title,
+            url: `https://en.wikipedia.org/wiki/${encodeURIComponent(w.title)}`,
+            description: (w.snippet || '').replace(/<[^>]*>?/gm, '').trim(),
+            domain: 'wikipedia.org',
+          }));
+          sourceLabel = 'Wikipedia';
+        }
+      } catch (wikiErr) {
+        console.warn('[Parallax Veritas] Wikipedia safety fallback failed:', wikiErr);
       }
     }
   } catch (err) {
-    console.warn('[Parallax] Veritas search tool query failed, checking wiki:', err);
-  }
-
-  try {
-    const wiki = await api.searchWikipedia(topic, 1);
-    if (wiki && wiki.length > 0 && wiki[0].snippet) {
-      const cleaned = wiki[0].snippet.replace(/<[^>]*>?/gm, '').trim();
-      if (cleaned) {
-        return {
-          fact: cleaned.length > 180 ? cleaned.slice(0, 180) + '...' : cleaned,
-          source: `Wikipedia: ${wiki[0].title}`,
-          query: topic,
-        };
+    if (signal?.aborted) throw err;
+    console.warn('[Parallax Veritas] Live search error, checking Wikipedia fallback:', err);
+    try {
+      const wiki = await api.searchWikipedia(topic, 5);
+      if (wiki && wiki.length > 0) {
+        rawResults = wiki.map((w) => ({
+          title: w.title,
+          url: `https://en.wikipedia.org/wiki/${encodeURIComponent(w.title)}`,
+          description: (w.snippet || '').replace(/<[^>]*>?/gm, '').trim(),
+          domain: 'wikipedia.org',
+        }));
+        sourceLabel = 'Wikipedia';
       }
+    } catch {
+      // Non-fatal
     }
-  } catch {
-    // Non-fatal
   }
 
-  return null;
+  // Graceful fallback: If all fallbacks returned 0 results, mark failed and allow VERITAS to proceed using training knowledge
+  if (rawResults.length === 0) {
+    console.warn(`[Parallax Veritas] All search fallbacks returned 0 results for "${topic}". Gracefully falling back to training knowledge.`);
+    return {
+      results: [],
+      searchSource: 'No results found',
+      query: topic,
+      formattedGrounding: '',
+      sourcesCount: 0,
+      topFactSnippet: 'No live search results returned across fallback providers.',
+      failed: true,
+    };
+  }
+
+  // Format the 10 sources into clear grounding context for VERITAS's prompt
+  const formattedGrounding = rawResults
+    .map((r, idx) => {
+      const title = (r.title || 'Untitled Source').trim();
+      let domain = r.domain;
+      if (!domain && r.url) {
+        try {
+          domain = new URL(r.url).hostname;
+        } catch {
+          domain = 'web';
+        }
+      }
+      const snippet = (r.description || '').replace(/\s+/g, ' ').trim();
+      return `[${idx + 1}] "${title}" (${domain || 'web'})\n    ${snippet.slice(0, 220)}`;
+    })
+    .join('\n');
+
+  // Extract top fact snippet for UI preview badge
+  const top = rawResults.find((r) => r.description && r.description.trim().length > 20) || rawResults[0];
+  const snippet = (top?.description || top?.title || '').replace(/\s+/g, ' ').trim();
+  const topFactSnippet = snippet.length > 180 ? snippet.slice(0, 177) + '...' : snippet;
+
+  console.log(`[Parallax Veritas] Live search grounding successful: ${rawResults.length} sources via ${sourceLabel}`);
+
+  return {
+    results: rawResults,
+    searchSource: sourceLabel,
+    query: topic,
+    formattedGrounding,
+    sourcesCount: rawResults.length,
+    topFactSnippet,
+    failed: false,
+  };
+}
+
+/**
+ * Backwards-compatible helper for single fact retrieval.
+ */
+export async function fetchVeritasFact(topic: string): Promise<{ fact: string; source: string; query: string } | null> {
+  const grounding = await fetchVeritasGrounding(topic);
+  if (grounding.failed || !grounding.topFactSnippet) return null;
+  return {
+    fact: grounding.topFactSnippet,
+    source: grounding.searchSource,
+    query: grounding.query,
+  };
 }
 
 export interface ParallaxRunOptions {
@@ -178,7 +288,7 @@ const DEFAULT_AGENT_METRICS: Record<string, { conviction: number; mood: string }
   aurora: { conviction: 8, mood: '✨' },
   socrates: { conviction: 6, mood: '🤔' },
   gravity: { conviction: 4, mood: '🧊' },
-  veritas: { conviction: 9, mood: '🔍' },
+  veritas: { conviction: 9, mood: '🧠' },
   axiom: { conviction: 8, mood: '📐' },
   echo: { conviction: 6, mood: '🗣️' },
   ledger: { conviction: 7, mood: '📊' },
@@ -249,7 +359,7 @@ async function executeAgentTurn(
   round: 1 | 2 | 3,
   topic: string,
   peersSample: ParallaxMessage[],
-  veritasFact: { fact: string; source: string; query: string } | null,
+  veritasGrounding: VeritasGroundingData | null,
   signal?: AbortSignal,
 ): Promise<ParallaxMessage> {
   const startTime = Date.now();
@@ -262,8 +372,14 @@ Constraint: Exactly 1-2 punchy sentences (<40 words). Speak directly; no greetin
   let userPrompt = '';
 
   if (round === 1) {
-    if (agent.id === 'veritas' && veritasFact) {
-      userPrompt = `Topic: "${topic}"\n[VERIFIED DATA]: "${veritasFact.fact}" (Source: ${veritasFact.source})\nProvide your initial 1-2 sentence perspective incorporating this fact.`;
+    if (agent.id === 'veritas') {
+      if (veritasGrounding && !veritasGrounding.failed && veritasGrounding.formattedGrounding) {
+        // Grounding context injected into VERITAS only
+        userPrompt = `Topic: "${topic}"\n\nHere are real, current search results on this topic:\n${veritasGrounding.formattedGrounding}\n\nUse these facts to inform your fact-based, skeptical analysis. Provide your initial 1-2 sentence perspective on this topic based on your archetype.`;
+      } else {
+        // Graceful failure fallback prompt if search returned 0 results
+        userPrompt = `Topic: "${topic}"\n\n[Live Search Notice: Current search fallbacks returned no recent results. Rely on your rigorous training knowledge and first principles.]\nProvide your initial 1-2 sentence perspective on this topic based on your fact-based, skeptical analysis.`;
+      }
     } else {
       userPrompt = `Topic: "${topic}"\nProvide your initial 1-2 sentence perspective on this topic based on your archetype.`;
     }
@@ -322,11 +438,17 @@ Constraint: Exactly 1-2 punchy sentences (<40 words). Speak directly; no greetin
       model: response.model || model,
       providerName: response.providerName || provider?.name || 'Built-in AI',
       toolUsed:
-        round === 1 && agent.id === 'veritas' && veritasFact
+        round === 1 && agent.id === 'veritas' && veritasGrounding
           ? {
               tool: 'search',
-              query: veritasFact.query,
-              fact: veritasFact.fact,
+              query: veritasGrounding.query,
+              fact: veritasGrounding.topFactSnippet,
+              searchSource: veritasGrounding.searchSource,
+              sourcesCount: veritasGrounding.sourcesCount,
+              failed: veritasGrounding.failed,
+              statusLabel: veritasGrounding.failed
+                ? '⚠️ No results found'
+                : `✅ ${veritasGrounding.searchSource}`,
             }
           : undefined,
     };
@@ -353,11 +475,17 @@ Constraint: Exactly 1-2 punchy sentences (<40 words). Speak directly; no greetin
       model: model || 'fallback',
       providerName: 'Local Mesh',
       toolUsed:
-        round === 1 && agent.id === 'veritas' && veritasFact
+        round === 1 && agent.id === 'veritas' && veritasGrounding
           ? {
               tool: 'search',
-              query: veritasFact.query,
-              fact: veritasFact.fact,
+              query: veritasGrounding.query,
+              fact: veritasGrounding.topFactSnippet,
+              searchSource: veritasGrounding.searchSource,
+              sourcesCount: veritasGrounding.sourcesCount,
+              failed: veritasGrounding.failed,
+              statusLabel: veritasGrounding.failed
+                ? '⚠️ No results found'
+                : `✅ ${veritasGrounding.searchSource}`,
             }
           : undefined,
     };
@@ -524,6 +652,23 @@ export async function runParallaxSwarm(options: ParallaxRunOptions): Promise<voi
 
   try {
     // -------------------------------------------------------------
+    // LIVE WEB SEARCH GROUNDING FOR VERITAS
+    // Only search once per debate, before Round 1 begins.
+    // Injects 10 grounding sources into VERITAS only (not the other 19 personas).
+    // -------------------------------------------------------------
+    let veritasGrounding: VeritasGroundingData | null = null;
+    const veritasAgent = enabledAgents.find((a) => a.id === 'veritas');
+    if (veritasAgent) {
+      onStatusUpdate?.('Initializing Parallax: Grounding VERITAS with live search (Tavily → Exa → DuckDuckGo → Wikipedia)...');
+      veritasGrounding = await fetchVeritasGrounding(topic, signal);
+      if (veritasGrounding.failed) {
+        onStatusUpdate?.('Live Search: Fallbacks returned 0 results. VERITAS proceeding with internal training baselines.');
+      } else {
+        onStatusUpdate?.(`Live Search: Successfully grounded VERITAS via ${veritasGrounding.searchSource} (${veritasGrounding.sourcesCount} sources).`);
+      }
+    }
+
+    // -------------------------------------------------------------
     // STRICT ROUND CAP: Exactly 3 rounds (1, 2, 3)
     // -------------------------------------------------------------
     for (let roundNum = 1; roundNum <= 3; roundNum++) {
@@ -537,16 +682,6 @@ export async function runParallaxSwarm(options: ParallaxRunOptions): Promise<voi
       onStatusUpdate?.(`Round ${currentRound} of 3: Mobilizing ${enabledAgents.length} agents...`);
 
       const roundMessages: ParallaxMessage[] = [];
-
-      // ROUND 1: VERITAS gets ONE tool call to live search
-      let veritasFact: { fact: string; source: string; query: string } | null = null;
-      if (currentRound === 1) {
-        const veritasAgent = enabledAgents.find((a) => a.id === 'veritas');
-        if (veritasAgent) {
-          onStatusUpdate?.('Round 1 of 3: VERITAS querying real-time verification tool...');
-          veritasFact = await fetchVeritasFact(topic);
-        }
-      }
 
       // Execute agents in controlled batches of 4 for a responsive, live YouTube-feed streaming cadence
       const BATCH_SIZE = 4;
@@ -591,15 +726,17 @@ export async function runParallaxSwarm(options: ParallaxRunOptions): Promise<voi
             }
           }
 
-          // In Round 1, ONLY VERITAS gets the tool fact. In Rounds 2 & 3, tool access is strictly null.
-          const factForAgent = currentRound === 1 && agent.id === 'veritas' ? veritasFact : null;
+          // In Round 1, ONLY VERITAS gets the live search grounding.
+          // In Rounds 2 & 3, tool access is strictly null (do not re-search).
+          // All other 19 personas get null across all rounds.
+          const groundingForAgent = currentRound === 1 && agent.id === 'veritas' ? veritasGrounding : null;
 
           const msg = await executeAgentTurn(
             agent,
             currentRound,
             topic,
             peersSample,
-            factForAgent,
+            groundingForAgent,
             signal,
           );
 

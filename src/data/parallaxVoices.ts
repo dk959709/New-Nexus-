@@ -120,12 +120,21 @@ export function formatFullParallaxTranscript(
       const m = roundMsgs[idx];
       const indexStr = String(idx + 1).padStart(2, '0');
       const cleanId = (m.agentId || '').toLowerCase().replace(/[^a-z0-9]/g, '');
-      const role = AGENT_ROLES[cleanId] || '';
-      const moodStr = m.mood ? `  ${m.mood}` : '';
+      const role = AGENT_ROLES[cleanId] || (cleanId === 'veritas' ? 'Fact-based, skeptical analysis' : '');
+      const moodStr = cleanId === 'veritas' ? '  🧠' : (m.mood ? `  ${m.mood}` : '');
       const roleStr = role ? ` (${role})` : '';
 
-      // Agent Header
-      output += `[#${indexStr}] ${m.agentName}${moodStr}${roleStr}\n`;
+      let liveSearchBadge = '';
+      if (m.toolUsed) {
+        if (m.toolUsed.failed) {
+          liveSearchBadge = ' [Live Search: ⚠️ No results found]';
+        } else {
+          liveSearchBadge = ` [Live Search: ✅ ${m.toolUsed.searchSource || 'Tavily'}]`;
+        }
+      }
+
+      // Agent Header: e.g. [#01] VERITAS  🧠 (Fact-based, skeptical analysis) [Live Search: ✅ Tavily]
+      output += `[#${indexStr}] ${m.agentName}${moodStr}${roleStr}${liveSearchBadge}\n`;
 
       // Date & Time + Conviction + Tool Meta
       const metaTokens: string[] = [];
@@ -154,8 +163,11 @@ export function formatFullParallaxTranscript(
       }
 
       if (m.toolUsed) {
-        const queryOrFact = m.toolUsed.query || 'Verified Live Fact';
-        metaTokens.push(`Live Tool: ${queryOrFact}`);
+        if (m.toolUsed.failed) {
+          metaTokens.push(`Live Tool: [Live Search: ⚠️ No results found for "${m.toolUsed.query || ''}"]`);
+        } else {
+          metaTokens.push(`Live Tool: [Live Search: ✅ ${m.toolUsed.searchSource || 'Live Web'} • ${m.toolUsed.sourcesCount ?? 1} sources for "${m.toolUsed.query || ''}"]`);
+        }
       }
 
       if (metaTokens.length > 0) {

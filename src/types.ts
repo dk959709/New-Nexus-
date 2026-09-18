@@ -472,6 +472,10 @@ export interface ParallaxMessage {
     tool: 'search' | 'weather' | 'time';
     query?: string;
     fact?: string;
+    searchSource?: string;
+    sourcesCount?: number;
+    failed?: boolean;
+    statusLabel?: string;
   };
   durationMs?: number;
   model?: string;

@@ -11,6 +11,7 @@ import {
   Trash2,
   Info,
   Search,
+  AlertCircle,
   Volume2,
   Play,
   Download,
@@ -1701,16 +1702,45 @@ export const ParallaxPage: React.FC = () => {
                                   }}
                                 >
                                   {msg.agentName}
-                                  {msg.mood && (
+                                  {msg.agentId === 'veritas' ? (
                                     <span
                                       id={`parallax-msg-mood-${msg.id}`}
-                                      title={`Tone: ${msg.mood}`}
+                                      title="Veritas: Fact-based, skeptical analysis"
                                       style={{ fontSize: '13px', lineHeight: 1, userSelect: 'none' }}
                                     >
-                                      {msg.mood}
+                                      🧠
                                     </span>
+                                  ) : (
+                                    msg.mood && (
+                                      <span
+                                        id={`parallax-msg-mood-${msg.id}`}
+                                        title={`Tone: ${msg.mood}`}
+                                        style={{ fontSize: '13px', lineHeight: 1, userSelect: 'none' }}
+                                      >
+                                        {msg.mood}
+                                      </span>
+                                    )
                                   )}
                                 </span>
+
+                                {/* Persona description / role tag */}
+                                {msg.agentId === 'veritas' ? (
+                                  <span
+                                    className="text-slate-400 font-sans hidden sm:inline"
+                                    style={{ fontSize: '11px', color: '#94a3b8' }}
+                                  >
+                                    (Fact-based, skeptical analysis)
+                                  </span>
+                                ) : (
+                                  config.agents[msg.agentId]?.role && (
+                                    <span
+                                      className="text-slate-400 font-sans hidden md:inline"
+                                      style={{ fontSize: '11px', color: '#94a3b8' }}
+                                    >
+                                      ({config.agents[msg.agentId].role})
+                                    </span>
+                                  )
+                                )}
 
                                 <span
                                   style={{
@@ -1765,21 +1795,37 @@ export const ParallaxPage: React.FC = () => {
 
                                 {msg.toolUsed && (
                                   <span
-                                    title={`Fact: ${msg.toolUsed.fact}`}
+                                    id={`parallax-tool-badge-${msg.id}`}
+                                    title={
+                                      msg.toolUsed.failed
+                                        ? 'Live search returned 0 results across fallbacks; reasoned via baseline knowledge'
+                                        : `Live Search grounded via ${msg.toolUsed.searchSource || 'Live Web'}${msg.toolUsed.sourcesCount ? ` (${msg.toolUsed.sourcesCount} sources)` : ''}`
+                                    }
                                     style={{
                                       fontSize: '10px',
-                                      padding: '1px 6px',
+                                      fontFamily: 'DM Mono, monospace',
+                                      padding: '1px 7px',
                                       borderRadius: '4px',
-                                      background: 'rgba(6, 182, 212, 0.2)',
-                                      color: '#38bdf8',
-                                      border: '1px solid rgba(6, 182, 212, 0.4)',
-                                      display: 'flex',
+                                      background: msg.toolUsed.failed ? 'rgba(234, 179, 8, 0.15)' : 'rgba(6, 182, 212, 0.18)',
+                                      color: msg.toolUsed.failed ? '#fbbf24' : '#38bdf8',
+                                      border: `1px solid ${msg.toolUsed.failed ? 'rgba(234, 179, 8, 0.35)' : 'rgba(6, 182, 212, 0.4)'}`,
+                                      display: 'inline-flex',
                                       alignItems: 'center',
-                                      gap: '3px',
+                                      gap: '4px',
+                                      fontWeight: 600,
                                     }}
                                   >
-                                    <Search size={10} />
-                                    Fact Injected
+                                    {msg.toolUsed.failed ? (
+                                      <>
+                                        <AlertCircle size={10} />
+                                        <span>[Live Search: ⚠️ No results found]</span>
+                                      </>
+                                    ) : (
+                                      <>
+                                        <Search size={10} />
+                                        <span>[Live Search: ✅ {msg.toolUsed.searchSource || 'Tavily'}]</span>
+                                      </>
+                                    )}
                                   </span>
                                 )}
 
@@ -1860,18 +1906,27 @@ export const ParallaxPage: React.FC = () => {
                                 <div
                                   className="parallax-verified-fact"
                                   style={{
-                                    marginTop: '4px',
-                                    padding: '4px 8px',
+                                    marginTop: '6px',
+                                    padding: '5px 10px',
                                     borderRadius: '6px',
-                                    background: 'rgba(6, 182, 212, 0.08)',
-                                    border: '1px solid rgba(6, 182, 212, 0.2)',
+                                    background: msg.toolUsed.failed ? 'rgba(234, 179, 8, 0.08)' : 'rgba(6, 182, 212, 0.08)',
+                                    border: `1px solid ${msg.toolUsed.failed ? 'rgba(234, 179, 8, 0.25)' : 'rgba(6, 182, 212, 0.2)'}`,
                                     fontSize: '11px',
-                                    color: '#94a3b8',
-                                    fontStyle: 'italic',
+                                    color: '#cbd5e1',
+                                    fontStyle: 'normal',
                                   }}
                                 >
-                                  🔍 <strong style={{ color: '#38bdf8' }}>Verified Tool Data:</strong> &ldquo;
-                                  {msg.toolUsed.fact}&rdquo;
+                                  {msg.toolUsed.failed ? (
+                                    <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
+                                      <span style={{ color: '#fbbf24', fontWeight: 600 }}>⚠️ Live Search Notice:</span>
+                                      <span style={{ color: '#94a3b8' }}>All search fallbacks returned 0 results for &ldquo;{msg.toolUsed.query}&rdquo;. VERITAS formulated this assessment using internal knowledge baselines.</span>
+                                    </div>
+                                  ) : (
+                                    <div>
+                                      🔍 <strong style={{ color: '#38bdf8' }}>Live Grounding ({msg.toolUsed.searchSource || 'Live Web'}{msg.toolUsed.sourcesCount ? ` • ${msg.toolUsed.sourcesCount} sources` : ''}):</strong>{' '}
+                                      <span style={{ color: '#94a3b8', fontStyle: 'italic' }}>&ldquo;{msg.toolUsed.fact}&rdquo;</span>
+                                    </div>
+                                  )}
                                 </div>
                               )}
                             </div>

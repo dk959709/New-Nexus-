@@ -576,8 +576,21 @@ export const ParallaxSummaryCard: React.FC<ParallaxSummaryCardProps> = ({
                             {m.agentName}
                           </span>
                           {m.toolUsed && (
-                            <span style={{ fontSize: '10px', color: '#38bdf8', background: 'rgba(6, 182, 212, 0.2)', padding: '1px 6px', borderRadius: '4px' }}>
-                              🔍 Verified Fact Used
+                            <span
+                              style={{
+                                fontSize: '10px',
+                                color: m.toolUsed.failed ? '#fbbf24' : '#38bdf8',
+                                background: m.toolUsed.failed ? 'rgba(234, 179, 8, 0.15)' : 'rgba(6, 182, 212, 0.2)',
+                                border: `1px solid ${m.toolUsed.failed ? 'rgba(234, 179, 8, 0.3)' : 'rgba(6, 182, 212, 0.4)'}`,
+                                padding: '1px 6px',
+                                borderRadius: '4px',
+                                fontFamily: 'DM Mono, monospace',
+                                fontWeight: 600,
+                              }}
+                            >
+                              {m.toolUsed.failed
+                                ? '[Live Search: ⚠️ No results]'
+                                : `[Live Search: ✅ ${m.toolUsed.searchSource || 'Tavily'}]`}
                             </span>
                           )}
                         </div>
