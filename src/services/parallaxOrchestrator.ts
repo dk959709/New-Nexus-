@@ -6,6 +6,8 @@ import type {
   ParallaxMessage,
   ParallaxSummary,
   ParallaxSystemConfig,
+  ParallaxToolRawPayload,
+  ParallaxToolRawResult,
 } from '@/types';
 
 /**
@@ -96,7 +98,7 @@ export function formatSearchSourceLabel(source?: string): string {
 }
 
 export interface VeritasGroundingData {
-  results: Array<{ title: string; url: string; description?: string; domain?: string }>;
+  results: ParallaxToolRawResult[];
   searchSource: string;
   query: string;
   formattedGrounding: string;
@@ -105,6 +107,7 @@ export interface VeritasGroundingData {
   committedFact: string; // The single verified grounding fact committed to before Round 1
   round1Statement?: string; // Stated position in Round 1 to ensure R2 & R3 consistency
   failed: boolean;
+  rawPayload?: ParallaxToolRawPayload;
 }
 
 /**
@@ -120,7 +123,7 @@ export async function fetchVeritasGrounding(
 ): Promise<VeritasGroundingData> {
   console.log(`[Parallax Veritas] Querying live search for topic: "${topic}" (max_results: 10)...`);
 
-  let rawResults: Array<{ title: string; url: string; description?: string; domain?: string }> = [];
+  let rawResults: Array<{ title?: string; url?: string; description?: string; snippet?: string; content?: string; domain?: string; date?: string }> = [];
   let sourceLabel = 'Tavily';
 
   try {
@@ -171,9 +174,25 @@ export async function fetchVeritasGrounding(
     }
   }
 
+  // Map all raw search results to clean structure capturing all 10 sources
+  const mappedRawResults: ParallaxToolRawResult[] = rawResults.map((r) => ({
+    title: (r.title || 'Untitled Source').trim(),
+    url: r.url || '',
+    snippet: (r.description || r.snippet || r.content || '').replace(/\s+/g, ' ').trim(),
+    ...(r.domain ? { domain: r.domain } : {}),
+    ...(r.date ? { date: r.date } : {}),
+  }));
+
   // Graceful fallback: If all fallbacks returned 0 results, mark failed and allow VERITAS to proceed using training knowledge
-  if (rawResults.length === 0) {
+  if (mappedRawResults.length === 0) {
     console.warn(`[Parallax Veritas] All search fallbacks returned 0 results for "${topic}". Gracefully falling back to training knowledge.`);
+    const failedPayload: ParallaxToolRawPayload = {
+      query: topic,
+      searchSource: 'None',
+      committedFact: '',
+      resultsCount: 0,
+      rawResults: [],
+    };
     return {
       results: [],
       searchSource: 'No results found',
@@ -183,13 +202,14 @@ export async function fetchVeritasGrounding(
       topFactSnippet: 'No live search results returned across fallback providers.',
       committedFact: '',
       failed: true,
+      rawPayload: failedPayload,
     };
   }
 
   // Format the 10 sources into clear grounding context for VERITAS's prompt
-  const formattedGrounding = rawResults
+  const formattedGrounding = mappedRawResults
     .map((r, idx) => {
-      const title = (r.title || 'Untitled Source').trim();
+      const title = r.title;
       let domain = r.domain;
       if (!domain && r.url) {
         try {
@@ -198,14 +218,14 @@ export async function fetchVeritasGrounding(
           domain = 'web';
         }
       }
-      const snippet = (r.description || '').replace(/\s+/g, ' ').trim();
+      const snippet = r.snippet || '';
       return `[${idx + 1}] "${title}" (${domain || 'web'})\n    ${snippet.slice(0, 220)}`;
     })
     .join('\n');
 
   // 1. Initial heuristic candidate for committed fact
-  const topCandidate = rawResults.find((r) => r.description && r.description.trim().length > 30) || rawResults[0];
-  const rawSnippet = (topCandidate?.description || topCandidate?.title || '').replace(/\s+/g, ' ').trim();
+  const topCandidate = mappedRawResults.find((r) => r.snippet && r.snippet.trim().length > 30) || mappedRawResults[0];
+  const rawSnippet = (topCandidate?.snippet || topCandidate?.title || '').replace(/\s+/g, ' ').trim();
   let committedFact = rawSnippet.length > 180 ? rawSnippet.slice(0, 177) + '…' : rawSnippet;
 
   // 2. Extract and commit to ONE specific verified fact via active AI provider before Round 1
@@ -214,28 +234,27 @@ export async function fetchVeritasGrounding(
     const sysConfig = storage.getParallaxConfig();
     const allAgents = Object.values(sysConfig.agents || DEFAULT_PARALLAX_AGENTS);
     const veritasAgent = allAgents.find((a) => a.id === 'veritas') || DEFAULT_PARALLAX_AGENTS.veritas;
-    const { provider } = resolveParallaxProviderConfig(veritasAgent, 100);
+    const { provider } = resolveParallaxProviderConfig(veritasAgent, 70);
 
-    const factExtractPrompt = `You are VERITAS's empirical fact commitment engine.
+    // Use top 4 sources with concise snippets to keep prompt lean (~160 tokens)
+    const topSources = mappedRawResults.slice(0, 4);
+    const compactSources = topSources
+      .map((r, idx) => `[${idx + 1}] "${r.title}" (${r.domain || 'web'}): ${(r.snippet || '').slice(0, 120)}`)
+      .join('\n');
+
+    const factExtractPrompt = `Empirical Fact Extraction:
 Topic: "${topic}"
+Sources:
+${compactSources}
 
-Search Results (${rawResults.length} sources via ${sourceLabel}):
-${formattedGrounding}
-
-TASK:
-Synthesize the search sources above and commit to EXACTLY ONE definitive, verified fact or empirical summary that directly answers the topic (e.g. "Winner: X, Race/Event: Y, Date: Z", or key verified metric/outcome).
-
-MANDATORY RULES:
-1. Commit to ONE specific factual outcome. Do NOT waffle, generalize, or list multiple contradictory winners/claims as equally valid.
-2. If the search results themselves are genuinely conflicting or report contradictory winners/outcomes, explicitly state that conflict right here in one crisp sentence (e.g. "Sources conflict: Source A reports X won in [year], while Source B reports Y won in [year]").
-3. Maximum 1-2 concise sentences (<40 words). No greeting, no conversational preamble. Output ONLY the committed fact statement.`;
+TASK: Synthesize the sources above and commit to EXACTLY ONE verified fact statement (1-2 sentences, <35 words) answering the topic. No conversational preamble.`;
 
     const factRes = await api.jarvisAgentCall({
       agentId: 'veritas_fact_committer',
       messages: [{ role: 'user', content: factExtractPrompt }],
       providerConfig: provider,
       temperature: 0.1,
-      maxTokens: 90,
+      maxTokens: 70,
       timeoutMs: 9000,
       signal,
     });
@@ -248,17 +267,26 @@ MANDATORY RULES:
     console.warn('[Parallax Veritas] AI fact commitment call had error, using deterministic snippet fallback:', extractErr);
   }
 
-  console.log(`[Parallax Veritas] Live search grounding successful: ${rawResults.length} sources via ${sourceLabel}. Committed Fact: "${committedFact}"`);
+  console.log(`[Parallax Veritas] Live search grounding successful: ${mappedRawResults.length} sources via ${sourceLabel}. Committed Fact: "${committedFact}"`);
+
+  const rawPayload: ParallaxToolRawPayload = {
+    query: topic,
+    searchSource: sourceLabel,
+    committedFact,
+    resultsCount: mappedRawResults.length,
+    rawResults: mappedRawResults,
+  };
 
   return {
-    results: rawResults,
+    results: mappedRawResults,
     searchSource: sourceLabel,
     query: topic,
     formattedGrounding,
-    sourcesCount: rawResults.length,
+    sourcesCount: mappedRawResults.length,
     topFactSnippet: committedFact,
     committedFact,
     failed: false,
+    rawPayload,
   };
 }
 
@@ -282,9 +310,168 @@ export interface ParallaxRunOptions {
   onRoundStart?: (round: 1 | 2 | 3) => void;
   onRoundComplete?: (round: 1 | 2 | 3, roundMessages: ParallaxMessage[]) => void;
   onStatusUpdate?: (status: string) => void;
+  onDynamicPersonasCreated?: (personas: ParallaxAgentConfig[]) => void;
   onComplete?: (summary: ParallaxSummary, allMessages: ParallaxMessage[]) => void;
   onError?: (error: string) => void;
   signal?: AbortSignal;
+}
+
+const DYNAMIC_SPECIALIST_PALETTES = [
+  { color: '#10b981', voice: 'en-US-BrianNeural' }, // Emerald
+  { color: '#8b5cf6', voice: 'en-GB-RyanNeural' },  // Violet
+  { color: '#f59e0b', voice: 'en-US-AriaNeural' },  // Amber
+  { color: '#06b6d4', voice: 'en-AU-WilliamNeural' }, // Cyan
+  { color: '#ec4899', voice: 'en-GB-SoniaNeural' },  // Pink
+  { color: '#3b82f6', voice: 'en-CA-ClaraNeural' },  // Blue
+  { color: '#14b8a6', voice: 'en-US-JennyNeural' },  // Teal
+];
+
+/**
+ * Dynamic Temporary Persona Creation for Parallax Swarm:
+ * Analyzes the debate topic against the existing 20-persona roster traits and roles.
+ * If genuinely relevant specialist expertise is missing, generates 0-5 new temporary personas
+ * specifically for that debate.
+ *
+ * Constraints:
+ * 1. Most everyday topics return 0 personas (no expertise gap).
+ * 2. Only creates 1-5 personas if there is a genuine professional/scientific domain gap.
+ * 3. Temporary only: never saved to persistent storage or parallaxVoices.ts.
+ */
+export async function analyzeTopicAndCreateTemporaryPersonas(
+  topic: string,
+  existingAgents: ParallaxAgentConfig[],
+  signal?: AbortSignal,
+): Promise<ParallaxAgentConfig[]> {
+  // =========================================================================
+  // TOPIC-ANALYSIS SPECIALIST CHECK (Pre-Round 1 only, executed once):
+  // Evaluates the topic against the core roster for acute domain gaps.
+  // ISOLATION MANDATE:
+  // - This context is used strictly ONCE before Round 1.
+  // - It is NEVER passed into individual persona round prompts or memory.
+  // - Generates 0-5 temporary personas (0 for everyday/general topics).
+  // Total call input: ~180-220 tokens. Max output tokens: 250.
+  // =========================================================================
+  const rosterSummary = existingAgents
+    .map((a) => `${a.name} (${a.role})`)
+    .join(', ');
+
+  const prompt = `Topic: "${topic}"
+Core Swarm Roster: ${rosterSummary}
+
+TASK: Decide if this topic demands 1-5 temporary specialist personas due to an acute domain expertise gap absent from the roster.
+RULE: Everyday, technology, philosophical, business, and social topics already have full coverage across core personas. Return 0 specialists: {"personas": []}.
+Only create 1-5 personas if deep specialized domain expertise is missing (e.g., surgical medicine, constitutional jurisprudence, aerospace dynamics).
+
+Output valid JSON only:
+{
+  "gapAnalysis": "1-sentence assessment",
+  "personas": [
+    {
+      "id": "slug",
+      "name": "NAME",
+      "emoji": "✨",
+      "role": "Specialist Role",
+      "systemInstruction": "Analytical domain priorities in 1-2 sentences."
+    }
+  ]
+}`;
+
+  const baseAgent = existingAgents[0] || DEFAULT_PARALLAX_AGENTS.veritas;
+  const { provider } = resolveParallaxProviderConfig(baseAgent, 250);
+
+  try {
+    console.log(`[Parallax Dynamic Personas] Analyzing topic for specialist expertise gaps: "${topic}"...`);
+    const res = await api.jarvisAgentCall({
+      agentId: 'parallax_persona_architect',
+      messages: [
+        {
+          role: 'system',
+          content: 'You are the PARALLAX Swarm Specialist Architect. You analyze debate topics and identify if genuine domain specialist personas are needed. You output strictly JSON.',
+        },
+        { role: 'user', content: prompt },
+      ],
+      providerConfig: provider,
+      temperature: 0.2,
+      maxTokens: 250,
+      timeoutMs: 16000,
+      signal,
+    });
+
+    const rawText = (res.text || res.content || '').trim();
+    const cleanJsonText = rawText.replace(/^```[a-z]*\s*/i, '').replace(/\s*```$/, '').trim();
+    const jsonMatch = cleanJsonText.match(/\{[\s\S]*\}/);
+    if (!jsonMatch) {
+      console.log('[Parallax Dynamic Personas] No valid JSON returned, proceeding with 0 temporary personas.');
+      return [];
+    }
+
+    const parsed = JSON.parse(jsonMatch[0]);
+    console.log(`[Parallax Dynamic Personas] Gap analysis verdict: "${parsed.gapAnalysis || 'Evaluated'}"`);
+
+    if (!Array.isArray(parsed.personas) || parsed.personas.length === 0) {
+      console.log(`[Parallax Dynamic Personas] No expertise gap detected for "${topic}". Proceeding with core 20 personas.`);
+      return [];
+    }
+
+    // Cap strictly at 0-5 new temporary personas
+    const rawList = parsed.personas.slice(0, 5);
+    const existingIds = new Set(existingAgents.map((a) => a.id.toLowerCase()));
+    const existingNames = new Set(existingAgents.map((a) => a.name.toUpperCase()));
+
+    const temporaryPersonas: ParallaxAgentConfig[] = [];
+
+    rawList.forEach((item: Record<string, unknown>, idx: number) => {
+      if (!item || typeof item !== 'object') return;
+      let rawId = typeof item.id === 'string' ? item.id.toLowerCase().replace(/[^a-z0-9]/g, '') : `spec_${idx + 1}`;
+      if (!rawId || existingIds.has(rawId)) {
+        rawId = `${rawId}_spec_${idx + 1}`;
+      }
+      existingIds.add(rawId);
+
+      let rawName = typeof item.name === 'string' ? item.name.toUpperCase().replace(/[^A-Z0-9-]/g, '').trim() : `SPECIALIST-${idx + 1}`;
+      if (!rawName || existingNames.has(rawName)) {
+        rawName = `${rawName}-${idx + 1}`;
+      }
+      existingNames.add(rawName);
+
+      const emoji = typeof item.emoji === 'string' && item.emoji.trim() ? item.emoji.trim() : '✨';
+      const role = typeof item.role === 'string' && item.role.trim() ? item.role.trim() : 'Domain Specialist';
+      const systemInstruction = typeof item.systemInstruction === 'string' && item.systemInstruction.trim()
+        ? item.systemInstruction.trim()
+        : `Apply rigorous domain-specific analysis from the perspective of a ${role}.`;
+
+      const palette = DYNAMIC_SPECIALIST_PALETTES[idx % DYNAMIC_SPECIALIST_PALETTES.length];
+      const initials = rawName.replace(/[^A-Z]/g, '').slice(0, 2) || 'SP';
+
+      temporaryPersonas.push({
+        id: rawId,
+        name: rawName,
+        initials,
+        role,
+        accentColor: palette.color,
+        hasToolAccess: false,
+        providerId: baseAgent.providerId || 'existing',
+        modelId: baseAgent.modelId || 'deepseek/deepseek-chat',
+        enabled: true,
+        systemInstruction,
+        maxTokens: 100,
+        voice: palette.voice,
+        isDynamic: true,
+        mood: emoji,
+      });
+    });
+
+    console.log(
+      `[Parallax Dynamic Personas] Successfully generated ${temporaryPersonas.length} temporary specialist personas for debate:`,
+      temporaryPersonas.map((p) => `${p.name} ${p.mood} (${p.role})`),
+    );
+
+    return temporaryPersonas;
+  } catch (err) {
+    if (signal?.aborted) throw err;
+    console.warn('[Parallax Dynamic Personas] AI persona analysis error, continuing with core roster:', err);
+    return [];
+  }
 }
 
 function abortableSleep(ms: number, signal?: AbortSignal): Promise<void> {
@@ -353,14 +540,14 @@ const DEFAULT_AGENT_METRICS: Record<string, { conviction: number; mood: string }
 /**
  * Extracts compact conviction score (1-10) and mood emoji [score|emoji] appended to response.
  */
-function parseConvictionAndMood(raw: string, agentId: string): {
+function parseConvictionAndMood(raw: string, agentId: string, defaultMood?: string): {
   cleanText: string;
   conviction: number;
   mood: string;
 } {
-  const fallback = DEFAULT_AGENT_METRICS[agentId.toLowerCase()] || { conviction: 7, mood: '⚡' };
+  const fallback = DEFAULT_AGENT_METRICS[agentId.toLowerCase()] || { conviction: 7, mood: defaultMood || '⚡' };
   let conviction = fallback.conviction;
-  let mood = fallback.mood;
+  let mood = defaultMood || fallback.mood;
   let text = raw.trim();
 
   // Pattern: [9|🔥] or [8 | 🤔] or [10|⚡] or [4, 🧊]
@@ -409,38 +596,50 @@ async function executeAgentTurn(
   const startTime = Date.now();
   const { provider, model } = resolveParallaxProviderConfig(agent, 80);
 
-  // Compact, high-signal system prompt with lightweight conviction & mood request (~45 tokens)
+  // Compact, high-signal system prompt with lightweight conviction & mood request (~40 tokens)
   const systemPrompt = `Persona: ${agent.name} (${agent.role}). ${agent.systemInstruction}
 Constraint: Exactly 1-2 punchy sentences (<40 words). Speak directly; no greeting, no intro, no self-naming. End with [conviction 1-10|mood emoji] (e.g. [9|🔥]).`;
 
   let userPrompt = '';
 
   if (round === 1) {
+    // =========================================================================
+    // ROUND 1 CONTEXT:
+    // Only includes:
+    // 1. System prompt: Persona identity, role, instruction, length constraint (~40 tokens)
+    // 2. User prompt: The debate topic + 1-sentence opening instruction (~30 tokens)
+    // Total Round 1 input: ~70-80 tokens per agent.
+    // Intentionally EXCLUDED to prevent token bloat:
+    // - Full 20-persona swarm roster lists or trait summaries
+    // - Pre-round topic analysis / gap check reasoning
+    // - Dynamic specialist metadata or flags
+    // - Raw search engine dumps (VERITAS receives ONLY its 1-sentence committed fact)
+    // =========================================================================
     if (agent.id === 'veritas') {
       if (veritasGrounding && !veritasGrounding.failed && veritasGrounding.committedFact) {
-        // Grounding context injected into VERITAS only
-        userPrompt = `Topic: "${topic}"
-
-[COMMITTED VERIFIED GROUNDING FACT]:
-"${veritasGrounding.committedFact}"
-
-Supporting search sources (${veritasGrounding.sourcesCount} sources via ${veritasGrounding.searchSource}):
-${veritasGrounding.formattedGrounding}
-
-Instruction: Ground your initial 1-2 sentence perspective strictly on the COMMITTED VERIFIED GROUNDING FACT above. Commit to this specific outcome as your baseline. If the search results themselves are genuinely conflicting or ambiguous, state that ambiguity explicitly ONCE right now. Speak with empirical precision as VERITAS.`;
+        userPrompt = `Topic: "${topic}"\n\n[Verified Grounding Fact (${veritasGrounding.searchSource})]:\n"${veritasGrounding.committedFact}"\n\nState your opening 1-2 sentence perspective grounded strictly on this verified fact as VERITAS.`;
       } else {
-        // Graceful failure fallback prompt if search returned 0 results
-        userPrompt = `Topic: "${topic}"\n\n[Live Search Notice: Current search fallbacks returned no recent results. Rely on your rigorous training knowledge and first principles.]\nProvide your initial 1-2 sentence perspective on this topic based on your fact-based, skeptical analysis.`;
+        userPrompt = `Topic: "${topic}"\n\nProvide your initial 1-2 sentence perspective on this topic based on your fact-based, skeptical analysis as VERITAS.`;
       }
     } else {
       userPrompt = `Topic: "${topic}"\nProvide your initial 1-2 sentence perspective on this topic based on your archetype.`;
     }
   } else {
-    // Rounds 2 & 3:
+    // =========================================================================
+    // ROUNDS 2 & 3 CONTEXT:
+    // Only includes:
+    // 1. System prompt: Persona identity, role, instruction, length constraint (~40 tokens)
+    // 2. User prompt: Topic + capped sample of 2 peer quotes (<=115 chars each) + 1-sentence action (~75-90 tokens)
+    // Total Round 2/3 input: ~115-135 tokens per agent.
+    // Intentionally EXCLUDED to prevent token bloat:
+    // - Full transcripts of prior rounds (strictly capped at 2 peer quotes)
+    // - Long quotes (strictly truncated to 115 characters)
+    // - Swarm roster lists or specialist metadata
+    // =========================================================================
     const peerBullets = peersSample
-      .slice(0, 3)
+      .slice(0, 2) // Strictly capped at 2 peer quotes (keeps prompt under ~130 tokens)
       .map((p) => {
-        const text = p.text.length > 140 ? p.text.slice(0, 137) + '…' : p.text;
+        const text = p.text.length > 115 ? p.text.slice(0, 112) + '…' : p.text;
         return `• ${p.agentName}: "${text}"`;
       })
       .join('\n');
@@ -451,23 +650,7 @@ Instruction: Ground your initial 1-2 sentence perspective strictly on the COMMIT
         : 'Deliver your final 1-2 sentence synthesis';
 
     if (agent.id === 'veritas' && veritasGrounding && !veritasGrounding.failed && veritasGrounding.committedFact) {
-      // INJECT THE COMMITTED FACT INTO VERITAS FOR ROUNDS 2 AND 3 (NO raw results, preserving absolute consistency)
-      const prevStance = veritasGrounding.round1Statement
-        ? `\nYour Round 1 stated position: "${veritasGrounding.round1Statement}"`
-        : '';
-
-      userPrompt = `Topic: "${topic}"
-
-[YOUR COMMITTED VERIFIED FACT - DO NOT CONTRADICT OR ALTER]:
-"${veritasGrounding.committedFact}"${prevStance}
-
-CRITICAL CONSISTENCY MANDATE FOR VERITAS:
-You MUST stay completely consistent with your committed verified fact above and your Round 1 stated position. Do NOT cite a different winner, date, race, or outcome. Do NOT re-interpret or alter the facts. If you noted an ambiguity or conflict in Round 1, maintain that exact same stated ambiguity.
-
-Peer points from Round ${round - 1}:
-${peerBullets}
-
-${action} as VERITAS, strictly upholding your committed verified fact.`;
+      userPrompt = `Topic: "${topic}"\n\n[Committed Verified Fact]: "${veritasGrounding.committedFact}"\n\nPeer points from Round ${round - 1}:\n${peerBullets}\n\n${action} as VERITAS, upholding your verified fact.`;
     } else {
       userPrompt = `Topic: "${topic}"\n\nPeer points from Round ${round - 1}:\n${peerBullets}\n\n${action} as ${agent.name}.`;
     }
@@ -492,7 +675,7 @@ ${action} as VERITAS, strictly upholding your committed verified fact.`;
     });
 
     const rawText = response.text || response.content || '';
-    const { cleanText: rawWithoutMeta, conviction, mood } = parseConvictionAndMood(rawText, agent.id);
+    const { cleanText: rawWithoutMeta, conviction, mood } = parseConvictionAndMood(rawText, agent.id, agent.mood);
     const cleaned = cleanReactionText(rawWithoutMeta, agent.name);
 
     return {
@@ -504,7 +687,10 @@ ${action} as VERITAS, strictly upholding your committed verified fact.`;
       round,
       text: cleaned,
       conviction,
-      mood,
+      mood: mood || agent.mood,
+      isDynamic: Boolean(agent.isDynamic),
+      role: agent.role,
+      voice: agent.voice,
       timestamp: Date.now(),
       durationMs: Date.now() - startTime,
       model: response.model || model,
@@ -521,6 +707,9 @@ ${action} as VERITAS, strictly upholding your committed verified fact.`;
               statusLabel: veritasGrounding.failed
                 ? '⚠️ No results found'
                 : `✅ ${veritasGrounding.searchSource}`,
+              committedFact: veritasGrounding.committedFact,
+              rawResults: veritasGrounding.results,
+              rawPayload: veritasGrounding.rawPayload,
             }
           : undefined,
     };
@@ -541,7 +730,10 @@ ${action} as VERITAS, strictly upholding your committed verified fact.`;
       round,
       text: fallbackText,
       conviction: fallbackMeta.conviction,
-      mood: fallbackMeta.mood,
+      mood: agent.mood || fallbackMeta.mood,
+      isDynamic: Boolean(agent.isDynamic),
+      role: agent.role,
+      voice: agent.voice,
       timestamp: Date.now(),
       durationMs: Date.now() - startTime,
       model: model || 'fallback',
@@ -558,6 +750,9 @@ ${action} as VERITAS, strictly upholding your committed verified fact.`;
               statusLabel: veritasGrounding.failed
                 ? '⚠️ No results found'
                 : `✅ ${veritasGrounding.searchSource}`,
+              committedFact: veritasGrounding.committedFact,
+              rawResults: veritasGrounding.results,
+              rawPayload: veritasGrounding.rawPayload,
             }
           : undefined,
     };
@@ -568,6 +763,9 @@ ${action} as VERITAS, strictly upholding your committed verified fact.`;
  * Intelligent persona fallbacks in case of network timeouts.
  */
 function getFallbackReaction(agent: ParallaxAgentConfig, round: number, topic: string): string {
+  if (agent.isDynamic) {
+    return `From the specialized lens of ${agent.role}, addressing "${topic}" requires examining critical domain realities that broader consensus often overlooks.`;
+  }
   const name = agent.name;
   if (name === 'VERITAS') return `Empirical verification is vital for "${topic}", yet verifiable baseline datasets remain scarce.`;
   if (name === 'AURORA') return `Despite early frictions, this unlocks unprecedented creative upside and collective human potential.`;
@@ -633,6 +831,13 @@ function buildDynamicFallbackSummary(
     highlights.push(`${m.agentName} delivered their closing synthesis: "${snippet}"`);
   }
 
+  // If dynamic specialists participated, ensure their contribution is highlighted
+  const dynamicMsg = allMessages.find((m) => m.isDynamic);
+  if (dynamicMsg) {
+    const snippet = dynamicMsg.text.length > 130 ? dynamicMsg.text.slice(0, 127) + '…' : dynamicMsg.text;
+    highlights.push(`${dynamicMsg.agentName} (${dynamicMsg.role || 'Specialist'}) contributed targeted domain analysis: "${snippet}"`);
+  }
+
   // Ensure at least 4 highlights from real messages in the debate
   let idx = 0;
   while (highlights.length < 4 && idx < allMessages.length) {
@@ -655,50 +860,65 @@ function buildDynamicFallbackSummary(
 
 /**
  * Generates the Parallax Summary after Round 3 completes.
- * Sends real quotes from Rounds 1, 2, and 3 to ensure highlights reflect the actual debate transcript.
+ * Sends curated representative quotes from Rounds 1, 2, and 3 to ensure highlights reflect the actual debate transcript.
  */
 export async function generateParallaxSummary(
   topic: string,
   allMessages: ParallaxMessage[],
 ): Promise<ParallaxSummary> {
+  // =========================================================================
+  // SYNTHESIS REPORT CONTEXT:
+  // Only includes:
+  // 1. Topic definition + total message count.
+  // 2. Curated representative excerpts: exactly 6 concise quotes (2 per round, <=110 chars each)
+  //    plus at most 1 specialist quote if dynamic specialists participated.
+  // Total Synthesis input tokens: ~550-680 tokens. Max output tokens: 350.
+  // Intentionally EXCLUDED to prevent token bloat:
+  // - Full raw transcript of all 60+ contributions.
+  // - Uncut persona speeches or system prompt repetitions.
+  // =========================================================================
   const round1Msgs = allMessages.filter((m) => m.round === 1);
   const round2Msgs = allMessages.filter((m) => m.round === 2);
   const round3Msgs = allMessages.filter((m) => m.round === 3);
 
   const excerpts: string[] = [];
 
-  // 1. Round 1 opening stances (VERITAS first if present, then diverse initial angles)
+  // 1. Round 1: 2 representative opening positions (VERITAS fact first if present, + 1 diverse angle)
   const r1Veritas = round1Msgs.find((m) => m.agentId === 'veritas');
   if (r1Veritas) {
-    const trimmed = r1Veritas.text.length > 150 ? r1Veritas.text.slice(0, 147) + '…' : r1Veritas.text;
+    const trimmed = r1Veritas.text.length > 110 ? r1Veritas.text.slice(0, 107) + '…' : r1Veritas.text;
     excerpts.push(`• [Round 1 Opening Fact] VERITAS: "${trimmed}"`);
   }
-  for (const m of round1Msgs.filter((m) => m.agentId !== 'veritas').slice(0, 3)) {
-    const trimmed = m.text.length > 140 ? m.text.slice(0, 137) + '…' : m.text;
-    excerpts.push(`• [Round 1 Opening] ${m.agentName}: "${trimmed}"`);
+  const r1Others = round1Msgs.filter((m) => m.agentId !== 'veritas');
+  if (r1Others.length > 0) {
+    const other = r1Others[0];
+    const trimmed = other.text.length > 110 ? other.text.slice(0, 107) + '…' : other.text;
+    excerpts.push(`• [Round 1 Opening] ${other.agentName}: "${trimmed}"`);
   }
 
-  // 2. Round 2 cross-debate clashes and friction
-  for (const m of round2Msgs.slice(0, 4)) {
-    const trimmed = m.text.length > 140 ? m.text.slice(0, 137) + '…' : m.text;
+  // 2. Round 2: 2 representative cross-debate rebuttal/friction excerpts
+  for (const m of round2Msgs.slice(0, 2)) {
+    const trimmed = m.text.length > 110 ? m.text.slice(0, 107) + '…' : m.text;
     excerpts.push(`• [Round 2 Rebuttal] ${m.agentName}: "${trimmed}"`);
   }
 
-  // 3. Round 3 final stances and conclusions
-  const r3Veritas = round3Msgs.find((m) => m.agentId === 'veritas');
-  if (r3Veritas) {
-    const trimmed = r3Veritas.text.length > 140 ? r3Veritas.text.slice(0, 137) + '…' : r3Veritas.text;
-    excerpts.push(`• [Round 3 Final Stance] VERITAS: "${trimmed}"`);
-  }
-  for (const m of round3Msgs.filter((m) => m.agentId !== 'veritas').slice(0, 3)) {
-    const trimmed = m.text.length > 140 ? m.text.slice(0, 137) + '…' : m.text;
+  // 3. Round 3: 2 representative final synthesis/conclusion excerpts
+  for (const m of round3Msgs.slice(0, 2)) {
+    const trimmed = m.text.length > 110 ? m.text.slice(0, 107) + '…' : m.text;
     excerpts.push(`• [Round 3 Conclusion] ${m.agentName}: "${trimmed}"`);
   }
 
-  // Supplement if fewer than 6 collected
-  if (excerpts.length < 6 && allMessages.length > 0) {
-    for (const m of allMessages.slice(0, 8)) {
-      const trimmed = m.text.length > 140 ? m.text.slice(0, 137) + '…' : m.text;
+  // 4. Dynamic specialist: At most 1 representative quote if dynamic personas participated
+  const dynamicMsg = allMessages.find((m) => m.isDynamic);
+  if (dynamicMsg) {
+    const trimmed = dynamicMsg.text.length > 110 ? dynamicMsg.text.slice(0, 107) + '…' : dynamicMsg.text;
+    excerpts.push(`• [Round ${dynamicMsg.round} Specialist] ${dynamicMsg.agentName} (${dynamicMsg.role || 'Specialist'}): "${trimmed}"`);
+  }
+
+  // Fallback: If somehow fewer than 4 excerpts collected, fill up to 4
+  if (excerpts.length < 4 && allMessages.length > 0) {
+    for (const m of allMessages.slice(0, 4)) {
+      const trimmed = m.text.length > 110 ? m.text.slice(0, 107) + '…' : m.text;
       const str = `• [Round ${m.round}] ${m.agentName}: "${trimmed}"`;
       if (!excerpts.includes(str)) {
         excerpts.push(str);
@@ -706,33 +926,31 @@ export async function generateParallaxSummary(
     }
   }
 
-  // DEBUG CONSOLE LOG: Exact transcript content passed to the synthesizer
   console.log(
-    `[Parallax Synthesizer] Generating final summary report for topic: "${topic}". Input transcript excerpts (${excerpts.length} quotes from Rounds 1-3):\n${excerpts.join('\n')}`,
+    `[Parallax Synthesizer] Generating summary report for: "${topic}". Input excerpts (${excerpts.length} quotes):\n${excerpts.join('\n')}`,
   );
 
-  const prompt = `Synthesize this 20-agent PARALLAX swarm debate on the topic: "${topic}".
-Total messages recorded: ${allMessages.length} across Rounds 1, 2, and 3.
+  const prompt = `Synthesize this PARALLAX swarm debate on the topic: "${topic}" (${allMessages.length} total contributions).
 
-Actual debate transcript quotes:
+Representative excerpts from Rounds 1-3:
 ${excerpts.join('\n')}
 
 Instructions:
-1. Base your synthesis ENTIRELY on what the personas above actually argued regarding "${topic}".
-2. In "highlights", write 4 concise bullet points (1 sentence each). Every highlight MUST explicitly cite specific persona names and their actual claims/tensions from the transcript quotes above (e.g. "VERITAS grounded the debate with verified data on [fact], while [AgentName] contested that [claim]"). Never output generic platitudes.
-3. In "verdict", write 1 objective sentence summarizing the swarm's actual final consensus, balance of evidence, or division on "${topic}".
-4. In "consensusLean", provide a 2-4 word descriptor of the swarm's collective alignment (e.g. "Empirically Grounded Lean", "Cautiously Split", "Factually Polarized", "Strong Skepticism").
+1. Base synthesis strictly on the persona claims above.
+2. In "highlights", write 4 concise bullet points (1 sentence each) citing specific personas and their arguments.
+3. In "verdict", write 1 objective sentence summarizing the swarm's actual final consensus or division.
+4. In "consensusLean", provide a 2-4 word descriptor (e.g. "Empirically Grounded Lean", "Cautiously Split", "Factually Polarized").
 
 Output JSON format only:
 {
-  "verdict": "One crisp objective sentence summarizing swarm consensus on ${topic}.",
+  "verdict": "One crisp objective sentence summarizing swarm consensus.",
   "consensusLean": "2-4 words",
   "highlights": ["Highlight 1", "Highlight 2", "Highlight 3", "Highlight 4"]
 }`;
 
   const sysConfig = storage.getParallaxConfig();
   const allAgents = Object.values(sysConfig.agents || DEFAULT_PARALLAX_AGENTS);
-  const { provider } = resolveParallaxProviderConfig(allAgents[0] || DEFAULT_PARALLAX_AGENTS.veritas, 700);
+  const { provider } = resolveParallaxProviderConfig(allAgents[0] || DEFAULT_PARALLAX_AGENTS.veritas, 350);
 
   try {
     const res = await api.jarvisAgentCall({
@@ -746,8 +964,8 @@ Output JSON format only:
       ],
       providerConfig: provider,
       temperature: 0.3,
-      maxTokens: 600,
-      timeoutMs: 25000,
+      maxTokens: 350,
+      timeoutMs: 22000,
     });
 
     const text = (res.text || res.content || '').trim();
@@ -829,6 +1047,31 @@ export async function runParallaxSwarm(options: ParallaxRunOptions): Promise<voi
     }
 
     // -------------------------------------------------------------
+    // DYNAMIC TEMPORARY PERSONA CREATION (0-5 SPECIALISTS)
+    // Analyzes the debate topic and existing roster.
+    // If a genuine domain gap exists, generates 1-5 temporary specialists.
+    // Otherwise returns 0 personas. Not saved to permanent storage.
+    // -------------------------------------------------------------
+    let dynamicAgents: ParallaxAgentConfig[] = [];
+    try {
+      onStatusUpdate?.('Analyzing debate topic for specialist domain expertise gaps...');
+      dynamicAgents = await analyzeTopicAndCreateTemporaryPersonas(topic, enabledAgents, signal);
+      if (dynamicAgents.length > 0) {
+        const names = dynamicAgents.map((p) => `${p.name} ${p.mood || ''} (${p.role})`).join(', ');
+        onStatusUpdate?.(
+          `Topic analysis: Identified expertise gap. Mobilized ${dynamicAgents.length} specialist personas: ${names}`,
+        );
+        options.onDynamicPersonasCreated?.(dynamicAgents);
+      } else {
+        onStatusUpdate?.('Topic analysis complete: Roster coverage optimal (0 temporary personas added).');
+      }
+    } catch (dynamicErr) {
+      console.warn('[Parallax Dynamic Personas] Persona analysis error, proceeding with core roster:', dynamicErr);
+    }
+
+    const debateAgents: ParallaxAgentConfig[] = [...enabledAgents, ...dynamicAgents];
+
+    // -------------------------------------------------------------
     // STRICT ROUND CAP: Exactly 3 rounds (1, 2, 3)
     // -------------------------------------------------------------
     for (let roundNum = 1; roundNum <= 3; roundNum++) {
@@ -839,21 +1082,21 @@ export async function runParallaxSwarm(options: ParallaxRunOptions): Promise<voi
 
       const currentRound = roundNum as 1 | 2 | 3;
       onRoundStart?.(currentRound);
-      onStatusUpdate?.(`Round ${currentRound} of 3: Mobilizing ${enabledAgents.length} agents...`);
+      onStatusUpdate?.(`Round ${currentRound} of 3: Mobilizing ${debateAgents.length} agents...`);
 
       const roundMessages: ParallaxMessage[] = [];
 
       // Execute agents in controlled batches of 4 for a responsive, live YouTube-feed streaming cadence
       const BATCH_SIZE = 4;
-      for (let i = 0; i < enabledAgents.length; i += BATCH_SIZE) {
+      for (let i = 0; i < debateAgents.length; i += BATCH_SIZE) {
         if (signal?.aborted) {
           onStatusUpdate?.('Parallax swarm stopped by user.');
           return;
         }
 
-        const batch = enabledAgents.slice(i, i + BATCH_SIZE);
+        const batch = debateAgents.slice(i, i + BATCH_SIZE);
         onStatusUpdate?.(
-          `Round ${currentRound} of 3: Streaming agent inputs (${Math.min(i + BATCH_SIZE, enabledAgents.length)}/${enabledAgents.length})...`,
+          `Round ${currentRound} of 3: Streaming agent inputs (${Math.min(i + BATCH_SIZE, debateAgents.length)}/${debateAgents.length})...`,
         );
 
         const batchPromises = batch.map(async (agent, batchIdx) => {
@@ -867,20 +1110,17 @@ export async function runParallaxSwarm(options: ParallaxRunOptions): Promise<voi
 
             if (prevRoundMsgs.length > 0) {
               const N = prevRoundMsgs.length;
-              // Deterministic rotating sampling with high diversity
+              // Deterministic rotating sampling with high diversity (strictly 2 peer views)
               const offset1 = currentRound === 2 ? 3 : 5;
               const offset2 = currentRound === 2 ? 7 : 11;
-              const offset3 = currentRound === 2 ? 13 : 17;
 
               const idx1 = (globalIdx + offset1) % N;
               const idx2 = (globalIdx + offset2) % N;
-              const idx3 = (globalIdx + offset3) % N;
 
               const s1 = prevRoundMsgs[idx1];
               const s2 = prevRoundMsgs[idx2];
-              const s3 = prevRoundMsgs[idx3];
 
-              peersSample = [s1, s2, s3].filter(
+              peersSample = [s1, s2].filter(
                 (p, pIdx, self) => p && self.findIndex((x) => x?.agentId === p?.agentId) === pIdx && p.agentId !== agent.id,
               );
             }
@@ -918,7 +1158,7 @@ export async function runParallaxSwarm(options: ParallaxRunOptions): Promise<voi
         }
 
         // Brief natural pause between batches for smooth streaming visual rhythm
-        if (i + BATCH_SIZE < enabledAgents.length) {
+        if (i + BATCH_SIZE < debateAgents.length) {
           await abortableSleep(350, signal);
         }
       }

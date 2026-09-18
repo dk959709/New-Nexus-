@@ -18,6 +18,8 @@ import {
   Copy,
   Check,
   Loader2,
+  Code2,
+  FileText,
 } from 'lucide-react';
 import { storage } from '@/lib/storage';
 import { runParallaxSwarm } from '@/services/parallaxOrchestrator';
@@ -81,8 +83,38 @@ export const ParallaxPage: React.FC = () => {
   const [stitchedSwarmBlob, setStitchedSwarmBlob] = useState<Blob | null>(null);
   const [isDownloadingSwarmMp3, setIsDownloadingSwarmMp3] = useState(false);
   const [copiedSwarmTranscript, setCopiedSwarmTranscript] = useState(false);
+  const [rawJsonOpenMap, setRawJsonOpenMap] = useState<Record<string, boolean>>({});
+  const [copiedRawJsonId, setCopiedRawJsonId] = useState<string | null>(null);
+  const [dynamicPersonas, setDynamicPersonas] = useState<ParallaxAgentConfig[]>([]);
   const audioRef = useRef<HTMLAudioElement | null>(null);
   const swarmPlaybackCancelledRef = useRef<boolean>(false);
+
+  const toggleRawJsonView = (msgId: string) => {
+    setRawJsonOpenMap((prev) => ({
+      ...prev,
+      [msgId]: !prev[msgId],
+    }));
+  };
+
+  const handleCopyRawJson = async (jsonString: string, msgId: string, e: React.MouseEvent) => {
+    e.stopPropagation();
+    try {
+      if (navigator.clipboard && navigator.clipboard.writeText) {
+        await navigator.clipboard.writeText(jsonString);
+      } else {
+        const textarea = document.createElement('textarea');
+        textarea.value = jsonString;
+        document.body.appendChild(textarea);
+        textarea.select();
+        document.execCommand('copy');
+        document.body.removeChild(textarea);
+      }
+      setCopiedRawJsonId(msgId);
+      setTimeout(() => setCopiedRawJsonId(null), 2000);
+    } catch (err) {
+      console.warn('Failed to copy raw JSON:', err);
+    }
+  };
 
   const abortControllerRef = useRef<AbortController | null>(null);
   const feedEndRef = useRef<HTMLDivElement | null>(null);
@@ -130,7 +162,7 @@ export const ParallaxPage: React.FC = () => {
 
     setLoadingAudioKey(msg.id);
     try {
-      const voice = config.agents[msg.agentId]?.voice || getParallaxAgentVoice(msg.agentId);
+      const voice = msg.voice || config.agents[msg.agentId]?.voice || getParallaxAgentVoice(msg.agentId);
       const response = await fetch('/api/edge-tts', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
@@ -236,7 +268,7 @@ export const ParallaxPage: React.FC = () => {
       if (!rawClean) return null;
       const spokenIntro = `${msg.agentName} in round ${msg.round}. `;
       const fullSpeechText = cleanMarkdownForSpeech(spokenIntro + rawClean);
-      const voice = config.agents[msg.agentId]?.voice || getParallaxAgentVoice(msg.agentId);
+      const voice = msg.voice || config.agents[msg.agentId]?.voice || getParallaxAgentVoice(msg.agentId);
 
       try {
         const response = await fetch('/api/edge-tts', {
@@ -356,7 +388,7 @@ export const ParallaxPage: React.FC = () => {
               if (!rawClean) return null;
               const spokenIntro = `${msg.agentName} in round ${msg.round}. `;
               const fullSpeechText = cleanMarkdownForSpeech(spokenIntro + rawClean);
-              const voice = config.agents[msg.agentId]?.voice || getParallaxAgentVoice(msg.agentId);
+              const voice = msg.voice || config.agents[msg.agentId]?.voice || getParallaxAgentVoice(msg.agentId);
               return {
                 text: fullSpeechText.slice(0, 3500),
                 voice,
@@ -394,7 +426,7 @@ export const ParallaxPage: React.FC = () => {
 
             const spokenIntro = `${msg.agentName} in round ${msg.round}. `;
             const fullSpeechText = cleanMarkdownForSpeech(spokenIntro + rawClean);
-            const voice = config.agents[msg.agentId]?.voice || getParallaxAgentVoice(msg.agentId);
+            const voice = msg.voice || config.agents[msg.agentId]?.voice || getParallaxAgentVoice(msg.agentId);
 
             try {
               const response = await fetch('/api/edge-tts', {
@@ -487,6 +519,7 @@ export const ParallaxPage: React.FC = () => {
     setSummary(null);
     setWasStoppedEarly(false);
     setMessages([]);
+    setDynamicPersonas([]);
     setCurrentTopic(targetTopic);
     setIsRunning(true);
     setCurrentRound(1);
@@ -503,6 +536,9 @@ export const ParallaxPage: React.FC = () => {
       signal: controller.signal,
       onRoundStart: (r) => {
         setCurrentRound(r);
+      },
+      onDynamicPersonasCreated: (personas) => {
+        setDynamicPersonas(personas);
       },
       onMessage: (msg) => {
         setMessages((prev) => [...prev, msg]);
@@ -537,6 +573,7 @@ export const ParallaxPage: React.FC = () => {
   };
 
   const enabledAgentsCount = Object.values(config.agents || {}).filter((a) => a.enabled !== false).length;
+  const dynamicPersonasCount = dynamicPersonas.length || new Set(messages.filter((m) => m.isDynamic).map((m) => m.agentId)).size;
 
   const activeSpeakingAgent =
     playingAudioKey && playingAudioKey !== 'full_swarm'
@@ -677,9 +714,29 @@ export const ParallaxPage: React.FC = () => {
               fontSize: '12px',
               fontFamily: 'DM Mono, monospace',
               color: '#94a3b8',
+              display: 'flex',
+              alignItems: 'center',
+              gap: '6px',
             }}
           >
             <strong style={{ color: '#61d7c9' }}>{enabledAgentsCount}</strong>/20 Personas
+            {dynamicPersonasCount > 0 && (
+              <span
+                id="parallax-dynamic-count-badge"
+                style={{
+                  color: '#c084fc',
+                  background: 'rgba(192, 132, 252, 0.15)',
+                  padding: '1px 7px',
+                  borderRadius: '999px',
+                  fontSize: '11px',
+                  border: '1px solid rgba(192, 132, 252, 0.3)',
+                  fontWeight: 600,
+                }}
+                title="Dynamically generated topic specialists active"
+              >
+                +{dynamicPersonasCount} Specialist{dynamicPersonasCount > 1 ? 's' : ''}
+              </span>
+            )}
           </div>
         </div>
       </div>
@@ -1732,14 +1789,25 @@ export const ParallaxPage: React.FC = () => {
                                     (Fact-based, skeptical analysis)
                                   </span>
                                 ) : (
-                                  config.agents[msg.agentId]?.role && (
+                                  (msg.role || config.agents[msg.agentId]?.role) && (
                                     <span
                                       className="text-slate-400 font-sans hidden md:inline"
                                       style={{ fontSize: '11px', color: '#94a3b8' }}
                                     >
-                                      ({config.agents[msg.agentId].role})
+                                      ({msg.role || config.agents[msg.agentId]?.role})
                                     </span>
                                   )
+                                )}
+
+                                {/* Dynamically Generated Badge */}
+                                {msg.isDynamic && (
+                                  <span
+                                    id={`parallax-dynamic-badge-${msg.id}`}
+                                    className="px-1.5 py-0.5 rounded text-[10px] font-mono font-medium tracking-tight bg-purple-500/20 text-purple-300 border border-purple-500/35 inline-flex items-center gap-1 shadow-sm"
+                                    title="Dynamically generated specialist persona for this debate only"
+                                  >
+                                    <span>[Dynamically Generated]</span>
+                                  </span>
                                 )}
 
                                 <span
@@ -1829,6 +1897,60 @@ export const ParallaxPage: React.FC = () => {
                                   </span>
                                 )}
 
+                                {/* Raw JSON view & Copy toggle for VERITAS (Round 1 grounding telemetry) */}
+                                {msg.round === 1 && msg.agentId === 'veritas' && msg.toolUsed && (
+                                  <div className="inline-flex items-center gap-1.5 shrink-0 not-prose">
+                                    <button
+                                      id={`parallax-raw-json-btn-${msg.id}`}
+                                      type="button"
+                                      onClick={() => toggleRawJsonView(msg.id)}
+                                      className="px-2 py-0.5 rounded text-[10px] font-mono flex items-center gap-1 bg-black/40 border border-white/15 text-slate-300 hover:text-white hover:border-white/30 backdrop-blur-sm transition-all cursor-pointer"
+                                      title={rawJsonOpenMap[msg.id] ? 'Switch to Formatted View' : 'Switch to Raw JSON View'}
+                                    >
+                                      {rawJsonOpenMap[msg.id] ? (
+                                        <>
+                                          <FileText size={11} className="text-cyan-300" />
+                                          <span>Formatted</span>
+                                        </>
+                                      ) : (
+                                        <>
+                                          <Code2 size={11} className="text-cyan-300" />
+                                          <span>Raw JSON</span>
+                                        </>
+                                      )}
+                                    </button>
+
+                                    <button
+                                      id={`parallax-copy-json-btn-${msg.id}`}
+                                      type="button"
+                                      onClick={(e) => {
+                                        const payload = {
+                                          query: msg.toolUsed?.query || msg.toolUsed?.rawPayload?.query || currentTopic,
+                                          searchSource: msg.toolUsed?.searchSource || msg.toolUsed?.rawPayload?.searchSource || 'Tavily',
+                                          committedFact: msg.toolUsed?.committedFact || msg.toolUsed?.rawPayload?.committedFact || msg.toolUsed?.fact || '',
+                                          resultsCount: msg.toolUsed?.rawResults?.length ?? msg.toolUsed?.rawPayload?.resultsCount ?? msg.toolUsed?.sourcesCount ?? 0,
+                                          rawResults: msg.toolUsed?.rawResults || msg.toolUsed?.rawPayload?.rawResults || [],
+                                        };
+                                        handleCopyRawJson(JSON.stringify(payload, null, 2), msg.id, e);
+                                      }}
+                                      className="p-1 rounded text-slate-300 hover:text-white hover:bg-white/10 active:scale-95 transition-all flex items-center gap-1 text-[10px] font-mono bg-black/40 border border-white/10 cursor-pointer"
+                                      title="Copy raw search JSON"
+                                    >
+                                      {copiedRawJsonId === msg.id ? (
+                                        <>
+                                          <Check size={11} className="text-emerald-400" />
+                                          <span className="text-emerald-300 text-[9px]">Copied</span>
+                                        </>
+                                      ) : (
+                                        <>
+                                          <Copy size={11} />
+                                          <span className="text-[9px] hidden sm:inline">Copy</span>
+                                        </>
+                                      )}
+                                    </button>
+                                  </div>
+                                )}
+
                                 <div style={{ marginLeft: 'auto', display: 'flex', alignItems: 'center', gap: '8px' }}>
                                   {/* Speaker / Voice Playback Button */}
                                   <button
@@ -1838,7 +1960,7 @@ export const ParallaxPage: React.FC = () => {
                                     title={
                                       playingAudioKey === msg.id
                                         ? 'Stop voice playback'
-                                        : `Listen to ${msg.agentName} (${config.agents[msg.agentId]?.voice || getParallaxAgentVoice(msg.agentId)})`
+                                        : `Listen to ${msg.agentName} (${msg.voice || config.agents[msg.agentId]?.voice || getParallaxAgentVoice(msg.agentId)})`
                                     }
                                     style={{
                                       display: 'flex',
@@ -1929,6 +2051,60 @@ export const ParallaxPage: React.FC = () => {
                                   )}
                                 </div>
                               )}
+
+                              {/* Collapsible Raw JSON Telemetry View for VERITAS */}
+                              {msg.round === 1 && msg.agentId === 'veritas' && msg.toolUsed && rawJsonOpenMap[msg.id] && (() => {
+                                const payload = {
+                                  query: msg.toolUsed.query || msg.toolUsed.rawPayload?.query || currentTopic,
+                                  searchSource: msg.toolUsed.searchSource || msg.toolUsed.rawPayload?.searchSource || 'Tavily',
+                                  committedFact: msg.toolUsed.committedFact || msg.toolUsed.rawPayload?.committedFact || msg.toolUsed.fact || '',
+                                  resultsCount: msg.toolUsed.rawResults?.length ?? msg.toolUsed.rawPayload?.resultsCount ?? msg.toolUsed.sourcesCount ?? 0,
+                                  rawResults: msg.toolUsed.rawResults || msg.toolUsed.rawPayload?.rawResults || [],
+                                };
+                                const jsonStr = JSON.stringify(payload, null, 2);
+
+                                return (
+                                  <div
+                                    id={`parallax-raw-json-panel-${msg.id}`}
+                                    className="mt-2.5 rounded-xl bg-black/80 border border-cyan-500/30 p-3 overflow-hidden shadow-2xl backdrop-blur-md transition-all"
+                                  >
+                                    <div className="flex items-center justify-between pb-2 mb-2 border-b border-white/10 text-[11px] font-mono">
+                                      <div className="flex items-center gap-2 text-slate-300">
+                                        <Code2 size={12} className="text-cyan-400" />
+                                        <span className="text-cyan-300 font-semibold">VERITAS GROUNDING TELEMETRY (RAW JSON)</span>
+                                        <span className="text-slate-600">•</span>
+                                        <span className="text-slate-400 text-[10px]">
+                                          {payload.searchSource} ({payload.resultsCount} raw sources)
+                                        </span>
+                                      </div>
+                                      <button
+                                        type="button"
+                                        onClick={(e) => handleCopyRawJson(jsonStr, msg.id, e)}
+                                        className="px-2 py-0.5 rounded text-[10px] font-mono flex items-center gap-1 bg-white/5 border border-white/10 text-slate-300 hover:text-white hover:bg-white/10 active:scale-95 transition-all cursor-pointer"
+                                        title="Copy raw JSON"
+                                      >
+                                        {copiedRawJsonId === msg.id ? (
+                                          <>
+                                            <Check size={11} className="text-emerald-400" />
+                                            <span className="text-emerald-300">Copied</span>
+                                          </>
+                                        ) : (
+                                          <>
+                                            <Copy size={11} />
+                                            <span>Copy JSON</span>
+                                          </>
+                                        )}
+                                      </button>
+                                    </div>
+
+                                    <div className="rounded-lg bg-black/60 border border-white/10 p-3 overflow-x-auto max-h-[360px] overflow-y-auto">
+                                      <pre className="font-mono text-xs text-cyan-200 leading-relaxed whitespace-pre-wrap break-words m-0 select-text">
+                                        {jsonStr}
+                                      </pre>
+                                    </div>
+                                  </div>
+                                );
+                              })()}
                             </div>
                           </div>
                         ))}

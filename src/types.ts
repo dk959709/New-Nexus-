@@ -453,10 +453,30 @@ export interface ParallaxAgentConfig {
   systemInstruction: string;
   maxTokens: number;
   voice?: string; // Edge TTS neural voice ID
+  isDynamic?: boolean;
+  mood?: string;
 }
 
 export interface ParallaxSystemConfig {
   agents: Record<string, ParallaxAgentConfig>;
+}
+
+export interface ParallaxToolRawResult {
+  title: string;
+  url: string;
+  snippet?: string;
+  content?: string;
+  description?: string;
+  domain?: string;
+  date?: string;
+}
+
+export interface ParallaxToolRawPayload {
+  query: string;
+  searchSource: string;
+  committedFact: string;
+  resultsCount: number;
+  rawResults: ParallaxToolRawResult[];
 }
 
 export interface ParallaxMessage {
@@ -476,12 +496,18 @@ export interface ParallaxMessage {
     sourcesCount?: number;
     failed?: boolean;
     statusLabel?: string;
+    committedFact?: string;
+    rawResults?: ParallaxToolRawResult[];
+    rawPayload?: ParallaxToolRawPayload;
   };
   durationMs?: number;
   model?: string;
   providerName?: string;
   conviction?: number;
   mood?: string;
+  isDynamic?: boolean;
+  role?: string;
+  voice?: string;
 }
 
 export interface ParallaxSummary {

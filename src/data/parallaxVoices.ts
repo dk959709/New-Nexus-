@@ -95,13 +95,20 @@ export function formatFullParallaxTranscript(
   const divider = '='.repeat(80);
   const subDivider = '-'.repeat(80);
 
+  const uniqueAgents = new Set(messages.map((m) => m.agentId)).size;
+  const dynamicCount = new Set(messages.filter((m) => m.isDynamic).map((m) => m.agentId)).size;
+  const coreCount = uniqueAgents - dynamicCount;
+  const scaleLine = dynamicCount > 0
+    ? `SCALE       : ${uniqueAgents} Autonomous Personas (${coreCount} Core + ${dynamicCount} Dynamic Specialists) • 3 Rounds • ${messages.length} Total Contributions\n`
+    : `SCALE       : 20 Autonomous Personas • 3 Rounds • ${messages.length} Total Contributions\n`;
+
   let output = `${divider}\n`;
-  output += `PARALLAX 20-AGENT SWARM DELIBERATION TRANSCRIPT\n`;
+  output += `PARALLAX SWARM DELIBERATION TRANSCRIPT\n`;
   output += `${divider}\n`;
   output += `TOPIC       : "${cleanTopic}"\n`;
   output += `DATE        : ${formattedDate}\n`;
   output += `TIME        : ${formattedTime}\n`;
-  output += `SCALE       : 20 Autonomous Personas • 3 Rounds • ${messages.length} Total Contributions\n`;
+  output += scaleLine;
   output += `${divider}\n\n\n`;
 
   for (let r = 1; r <= 3; r++) {
@@ -120,9 +127,10 @@ export function formatFullParallaxTranscript(
       const m = roundMsgs[idx];
       const indexStr = String(idx + 1).padStart(2, '0');
       const cleanId = (m.agentId || '').toLowerCase().replace(/[^a-z0-9]/g, '');
-      const role = AGENT_ROLES[cleanId] || (cleanId === 'veritas' ? 'Fact-based, skeptical analysis' : '');
-      const moodStr = cleanId === 'veritas' ? '  🧠' : (m.mood ? `  ${m.mood}` : '');
+      const role = m.role || AGENT_ROLES[cleanId] || (cleanId === 'veritas' ? 'Fact-based, skeptical analysis' : '');
+      const moodStr = cleanId === 'veritas' ? ' 🧠' : (m.mood ? ` ${m.mood.trim()}` : '');
       const roleStr = role ? ` (${role})` : '';
+      const dynamicBadge = m.isDynamic ? ' [Dynamically Generated]' : '';
 
       let liveSearchBadge = '';
       if (m.toolUsed) {
@@ -133,8 +141,8 @@ export function formatFullParallaxTranscript(
         }
       }
 
-      // Agent Header: e.g. [#01] VERITAS  🧠 (Fact-based, skeptical analysis) [Live Search: ✅ Tavily]
-      output += `[#${indexStr}] ${m.agentName}${moodStr}${roleStr}${liveSearchBadge}\n`;
+      // Agent Header: e.g. [#21] CLINICUS 🩺 (Clinical Ethics Specialist) [Dynamically Generated]
+      output += `[#${indexStr}] ${m.agentName}${moodStr}${roleStr}${dynamicBadge}${liveSearchBadge}\n`;
 
       // Date & Time + Conviction + Tool Meta
       const metaTokens: string[] = [];

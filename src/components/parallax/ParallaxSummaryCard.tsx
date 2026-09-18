@@ -10,6 +10,8 @@ import {
   Layers,
   MessageSquare,
   Compass,
+  Code2,
+  FileText,
 } from 'lucide-react';
 import type { ParallaxSummary, ParallaxMessage } from '@/types';
 import { formatFullParallaxTranscript } from '@/data/parallaxVoices';
@@ -31,6 +33,35 @@ export const ParallaxSummaryCard: React.FC<ParallaxSummaryCardProps> = ({
 }) => {
   const [copied, setCopied] = useState(false);
   const [expandedTranscript, setExpandedTranscript] = useState(false);
+  const [rawJsonOpenMap, setRawJsonOpenMap] = useState<Record<string, boolean>>({});
+  const [copiedRawJsonId, setCopiedRawJsonId] = useState<string | null>(null);
+
+  const toggleRawJsonView = (msgId: string) => {
+    setRawJsonOpenMap((prev) => ({
+      ...prev,
+      [msgId]: !prev[msgId],
+    }));
+  };
+
+  const handleCopyRawJson = async (jsonString: string, msgId: string, e: React.MouseEvent) => {
+    e.stopPropagation();
+    try {
+      if (navigator.clipboard && navigator.clipboard.writeText) {
+        await navigator.clipboard.writeText(jsonString);
+      } else {
+        const textarea = document.createElement('textarea');
+        textarea.value = jsonString;
+        document.body.appendChild(textarea);
+        textarea.select();
+        document.execCommand('copy');
+        document.body.removeChild(textarea);
+      }
+      setCopiedRawJsonId(msgId);
+      setTimeout(() => setCopiedRawJsonId(null), 2000);
+    } catch (err) {
+      console.warn('Failed to copy raw JSON:', err);
+    }
+  };
 
   const handleCopyTranscript = () => {
     const text = formatFullParallaxTranscript(topic, allMessages, summary);
@@ -571,10 +602,32 @@ export const ParallaxSummaryCard: React.FC<ParallaxSummaryCardProps> = ({
                           gap: '3px',
                         }}
                       >
-                        <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                        <div style={{ display: 'flex', alignItems: 'center', gap: '8px', flexWrap: 'wrap' }}>
                           <span style={{ fontSize: '11px', fontWeight: 800, color: m.accentColor, fontFamily: 'DM Mono, monospace' }}>
                             {m.agentName}
                           </span>
+                          {m.mood && (
+                            <span style={{ fontSize: '12px' }}>{m.mood}</span>
+                          )}
+                          {m.role && (
+                            <span style={{ fontSize: '10px', color: '#94a3b8' }}>({m.role})</span>
+                          )}
+                          {m.isDynamic && (
+                            <span
+                              style={{
+                                fontSize: '9px',
+                                fontFamily: 'DM Mono, monospace',
+                                fontWeight: 600,
+                                padding: '1px 5px',
+                                borderRadius: '4px',
+                                background: 'rgba(168, 85, 247, 0.2)',
+                                color: '#d8b4fe',
+                                border: '1px solid rgba(168, 85, 247, 0.4)',
+                              }}
+                            >
+                              [Dynamically Generated]
+                            </span>
+                          )}
                           {m.toolUsed && (
                             <span
                               style={{
@@ -593,10 +646,85 @@ export const ParallaxSummaryCard: React.FC<ParallaxSummaryCardProps> = ({
                                 : `[Live Search: ✅ ${m.toolUsed.searchSource || 'Tavily'}]`}
                             </span>
                           )}
+                          {m.round === 1 && m.agentId === 'veritas' && m.toolUsed && (
+                            <div className="inline-flex items-center gap-1.5 ml-1">
+                              <button
+                                type="button"
+                                onClick={() => toggleRawJsonView(m.id)}
+                                className="px-1.5 py-0.5 rounded text-[10px] font-mono flex items-center gap-1 bg-black/40 border border-white/15 text-slate-300 hover:text-white cursor-pointer"
+                                title={rawJsonOpenMap[m.id] ? 'Switch to Formatted' : 'Raw JSON'}
+                              >
+                                {rawJsonOpenMap[m.id] ? (
+                                  <>
+                                    <FileText size={10} className="text-cyan-300" />
+                                    <span>Formatted</span>
+                                  </>
+                                ) : (
+                                  <>
+                                    <Code2 size={10} className="text-cyan-300" />
+                                    <span>Raw JSON</span>
+                                  </>
+                                )}
+                              </button>
+                              <button
+                                type="button"
+                                onClick={(e) => {
+                                  const payload = {
+                                    query: m.toolUsed?.query || m.toolUsed?.rawPayload?.query || topic,
+                                    searchSource: m.toolUsed?.searchSource || m.toolUsed?.rawPayload?.searchSource || 'Tavily',
+                                    committedFact: m.toolUsed?.committedFact || m.toolUsed?.rawPayload?.committedFact || m.toolUsed?.fact || '',
+                                    resultsCount: m.toolUsed?.rawResults?.length ?? m.toolUsed?.rawPayload?.resultsCount ?? m.toolUsed?.sourcesCount ?? 0,
+                                    rawResults: m.toolUsed?.rawResults || m.toolUsed?.rawPayload?.rawResults || [],
+                                  };
+                                  handleCopyRawJson(JSON.stringify(payload, null, 2), m.id, e);
+                                }}
+                                className="p-1 rounded text-slate-300 hover:text-white hover:bg-white/10 active:scale-95 transition-all flex items-center gap-1 text-[10px] font-mono bg-black/40 border border-white/10 cursor-pointer"
+                                title="Copy raw search JSON"
+                              >
+                                {copiedRawJsonId === m.id ? (
+                                  <>
+                                    <Check size={10} className="text-emerald-400" />
+                                    <span className="text-emerald-300 text-[9px]">Copied</span>
+                                  </>
+                                ) : (
+                                  <>
+                                    <Copy size={10} />
+                                  </>
+                                )}
+                              </button>
+                            </div>
+                          )}
                         </div>
                         <p style={{ margin: 0, fontSize: '13px', color: '#e2e8f0', lineHeight: 1.45 }}>
                           {m.text}
                         </p>
+                        {m.round === 1 && m.agentId === 'veritas' && m.toolUsed && rawJsonOpenMap[m.id] && (() => {
+                          const payload = {
+                            query: m.toolUsed.query || m.toolUsed.rawPayload?.query || topic,
+                            searchSource: m.toolUsed.searchSource || m.toolUsed.rawPayload?.searchSource || 'Tavily',
+                            committedFact: m.toolUsed.committedFact || m.toolUsed.rawPayload?.committedFact || m.toolUsed.fact || '',
+                            resultsCount: m.toolUsed.rawResults?.length ?? m.toolUsed.rawPayload?.resultsCount ?? m.toolUsed.sourcesCount ?? 0,
+                            rawResults: m.toolUsed.rawResults || m.toolUsed.rawPayload?.rawResults || [],
+                          };
+                          const jsonStr = JSON.stringify(payload, null, 2);
+                          return (
+                            <div className="mt-2 rounded-lg bg-black/80 border border-cyan-500/30 p-2 text-[11px] font-mono">
+                              <div className="flex items-center justify-between pb-1 mb-1 border-b border-white/10">
+                                <span className="text-cyan-300 font-semibold">VERITAS GROUNDING (RAW JSON)</span>
+                                <button
+                                  type="button"
+                                  onClick={(e) => handleCopyRawJson(jsonStr, m.id, e)}
+                                  className="px-1.5 py-0.5 rounded text-[10px] bg-white/5 border border-white/10 text-slate-300 hover:text-white"
+                                >
+                                  {copiedRawJsonId === m.id ? 'Copied' : 'Copy JSON'}
+                                </button>
+                              </div>
+                              <pre className="text-cyan-200 text-[11px] max-h-[220px] overflow-auto whitespace-pre-wrap select-text m-0">
+                                {jsonStr}
+                              </pre>
+                            </div>
+                          );
+                        })()}
                       </div>
                     ))}
                   </div>
