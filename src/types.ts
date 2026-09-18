@@ -344,6 +344,8 @@ export interface JarvisMessage {
   chartData?: JarvisChartData | null;
   imageMode?: boolean;
   images?: JarvisImageResult[];
+  promptImageVariations?: string[];
+  promptImageRoughIdea?: string;
   coderMode?: boolean;
   attachments?: JarvisAttachedFile[];
   searchMyDocs?: boolean;

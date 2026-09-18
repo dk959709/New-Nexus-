@@ -1,5 +1,5 @@
 import { useState, useEffect, useRef, useCallback, lazy, Suspense } from 'react';
-import { useSearchParams } from 'react-router-dom';
+import { useSearchParams, useNavigate } from 'react-router-dom';
 import {
   Send,
   Loader2,
@@ -35,6 +35,9 @@ import {
   runJarvisPipeline,
   isImageSlashCommand,
   isImageAiSlashCommand,
+  isPromptImageSlashCommand,
+  stripPromptImagePrefix,
+  extractPromptImageVariations,
 } from '@/services/jarvisOrchestrator';
 import {
   validateAttachmentFile,
@@ -55,6 +58,7 @@ import { JarvisTerminalDiagnosticLog } from './JarvisTerminalDiagnosticLog';
 import { JarvisCornerBrackets } from './JarvisCornerBrackets';
 import { JarvisSynthesisThemeToggle } from './JarvisSynthesisThemeToggle';
 import { JarvisEdgeTtsButton } from './JarvisEdgeTtsButton';
+import { JarvisPromptImageCard } from './JarvisPromptImageCard';
 import { useJarvisSynthesisTheme } from '@/hooks/useJarvisSynthesisTheme';
 import { useEdgeTts } from '@/hooks/useEdgeTts';
 import { FormattedText } from './FormattedText';
@@ -168,6 +172,7 @@ const QUICK_PROMPT_PILLS = [
 
 export function JarvisChat({ config, onOpenSettings }: JarvisChatProps) {
   const [searchParams] = useSearchParams();
+  const navigate = useNavigate();
   const [query, setQuery] = useState('');
   const [deepResearch, setDeepResearch] = useState(() => {
     const deepParam = searchParams.get('deep');
@@ -586,6 +591,8 @@ export function JarvisChat({ config, onOpenSettings }: JarvisChatProps) {
           diagramSvg: result.diagramSvg,
           chartData: result.chartData,
           images: result.images,
+          promptImageVariations: result.promptImageVariations,
+          promptImageRoughIdea: result.promptImageRoughIdea,
           error: result.error,
         };
 
@@ -1397,6 +1404,44 @@ export function JarvisChat({ config, onOpenSettings }: JarvisChatProps) {
                       />
                     </Suspense>
                   )}
+
+                  {/* 🎨 Interactive 5-Prompt Image Variations Card */}
+                  {(() => {
+                    const isPromptImg =
+                      isPromptImageSlashCommand(msg.query) ||
+                      (msg.promptImageVariations && msg.promptImageVariations.length > 0);
+                    if (!isPromptImg) return null;
+
+                    const roughIdea =
+                      msg.promptImageRoughIdea ||
+                      stripPromptImagePrefix(msg.query) ||
+                      'creative visual';
+                    const variations =
+                      msg.promptImageVariations && msg.promptImageVariations.length > 0
+                        ? msg.promptImageVariations
+                        : extractPromptImageVariations(msg.answer, roughIdea);
+
+                    return (
+                      <JarvisPromptImageCard
+                        id={`prompt-image-card-${msg.id}`}
+                        roughIdea={roughIdea}
+                        variations={variations}
+                        onUseInChat={(promptText, mode) => {
+                          if (mode === 'imagesai') {
+                            handleSend(`/imagesai ${promptText}`);
+                          } else {
+                            handleSend(`/image ${promptText}`);
+                          }
+                        }}
+                        onOpenImageStudio={(promptText) => {
+                          navigate(`/image-studio?prompt=${encodeURIComponent(promptText)}`);
+                        }}
+                        onGenerateMore={(idea) => {
+                          handleSend(`/promptimage ${idea}`);
+                        }}
+                      />
+                    );
+                  })()}
 
                   {/* SVG Architectural Blueprint Diagram */}
                   {msg.diagramSvg && (

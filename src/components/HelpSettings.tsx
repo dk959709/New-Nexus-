@@ -187,7 +187,14 @@ NEXUS includes dedicated slash commands that allow users to override normal plan
 - **Pipeline Behavior**: Bypasses the Final Synthesizer and external research steps to instantly generate and render high-fidelity AI visual cards with a simple direct caption and inspectable metadata.
 - **Example**:
   \`/imageai isometric futuristic laboratory with glowing blue crystals\`
-  \`/imagesai photorealistic portrait of an astronaut on Mars\``;
+  \`/imagesai photorealistic portrait of an astronaut on Mars\`
+
+#### 8. \`/promptimage [rough idea]\` — Instant AI Image Prompt Synthesizer
+- **What it does**: Bypasses the full research pipeline and makes a single call to your active text AI model to generate exactly 5 distinct, highly detailed, vivid image generation prompt variations exploring different angles, styles, and mood focuses.
+- **Interactive Actions**: Displays an interactive card for each prompt with one-click "Use This Prompt" (clipboard copy), "Image Studio" jump with preloaded prompt, "/imagesai" instant AI generation, and a "🔄 Generate 5 More" button to produce fresh variations.
+- **Example**:
+  \`/promptimage a dragon made of stained glass\`
+  \`/promptimage futuristic coffee shop in Tokyo at night\``;
 
   // Section 5: API Catalog
   const apiCatalogText = `### 5. API Catalog — Credential Architecture & Custom API Registration
@@ -1107,6 +1114,22 @@ End of NEXUS Documentation
                 </p>
                 <div className="text-[11px] text-slate-300 font-mono bg-slate-900 px-2.5 py-1.5 rounded border border-slate-800">
                   <span className="text-slate-500">Example:</span> /imagesai a dragon made of glass
+                </div>
+              </div>
+
+              {/* Command 8 */}
+              <div className="p-3.5 rounded-lg bg-slate-950/80 border border-slate-800">
+                <div className="flex flex-wrap items-center justify-between gap-2 mb-2">
+                  <div className="font-mono text-cyan-300 font-semibold text-xs sm:text-sm bg-cyan-950/60 px-2 py-0.5 rounded border border-cyan-800/40">
+                    /promptimage [rough idea]
+                  </div>
+                  <span className="text-[11px] text-pink-400 font-medium">5 Prompt Variations Generator</span>
+                </div>
+                <p className="text-xs text-slate-400 m-0 mb-2">
+                  Generates 5 distinct, highly detailed image generation prompt variations with interactive copy and one-click Image Studio actions.
+                </p>
+                <div className="text-[11px] text-slate-300 font-mono bg-slate-900 px-2.5 py-1.5 rounded border border-slate-800">
+                  <span className="text-slate-500">Example:</span> /promptimage a dragon made of stained glass
                 </div>
               </div>
             </div>

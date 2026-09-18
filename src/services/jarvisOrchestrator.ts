@@ -47,6 +47,8 @@ export interface JarvisExecutionResult {
   chartData?: JarvisChartData | null;
   images?: JarvisImageResult[];
   retrievedDocChunks?: DocumentRetrievalResult[];
+  promptImageVariations?: string[];
+  promptImageRoughIdea?: string;
   error?: string;
 }
 
@@ -1374,6 +1376,67 @@ export function stripImageAiPrefix(text: string): string {
   return text.trim().replace(/^\/(?:imageai|imagesai|image_ai|images_ai)\s*/i, '').trim().replace(/^["'`<]+|[>"'`]+$/g, '').trim();
 }
 
+export function isPromptImageSlashCommand(text: string): boolean {
+  if (!text || typeof text !== 'string') return false;
+  return /^\/(?:promptimage|promptimages|prompt_image|prompt_images|promptimg)(?:\s+|$)/i.test(text.trim());
+}
+
+export function stripPromptImagePrefix(text: string): string {
+  if (!text || typeof text !== 'string') return text;
+  return text.trim().replace(/^\/(?:promptimage|promptimages|prompt_image|prompt_images|promptimg)\s*/i, '').trim().replace(/^["'`<]+|[>"'`]+$/g, '').trim();
+}
+
+export function generateFallbackPromptVariations(roughIdea: string): string[] {
+  const idea = (roughIdea || '').trim() || 'futuristic cosmic concept';
+  return [
+    `Hyperrealistic cinematic 8k photo of ${idea}, dramatic volumetric god rays, detailed natural lighting, rich photorealistic textures, masterwork photography, shot on 35mm lens.`,
+    `Vibrant digital concept art of ${idea}, dynamic composition, intricate fine details, glowing ethereal ambient atmosphere, trending on ArtStation.`,
+    `Moody cyberpunk dark aesthetic depiction of ${idea}, vivid neon rim lighting, reflections on wet asphalt, octane render, ultra-detailed.`,
+    `Minimalist elegant vector illustration of ${idea}, clean geometric lines, pastel color palette, sleek modern graphic design aesthetic.`,
+    `Surrealist ethereal fantasy painting of ${idea}, swirling mystical stardust, celestial cosmic lighting, soft dreamlike bokeh, studio quality.`
+  ];
+}
+
+export function extractPromptImageVariations(text: string, fallbackIdea: string): string[] {
+  if (!text || typeof text !== 'string') return generateFallbackPromptVariations(fallbackIdea);
+
+  const lines = text.split(/\r?\n/);
+  const results: string[] = [];
+
+  for (const rawLine of lines) {
+    const line = rawLine.trim();
+    if (!line) continue;
+    // Match numbered list like "1. ...", "1) ...", "1: ...", "- ...", "* ..."
+    const numMatch = line.match(/^(?:(?:\d+[.):]|#{1,2}\s*\d+[.):]?|[-*])\s*)(.*)$/);
+    if (numMatch && numMatch[1]) {
+      let content = numMatch[1].trim();
+      // Remove enclosing quotes
+      content = content.replace(/^["'`]|["'`]$/g, '').trim();
+      if (content.length > 10) {
+        results.push(content);
+      }
+    }
+  }
+
+  // If line matching gave at least 3 variations, take up to 5
+  if (results.length >= 3) {
+    return results.slice(0, 5);
+  }
+
+  // Fallback: try paragraph split
+  const paragraphs = text
+    .split(/\n\n+/)
+    .map((p) => p.replace(/^(?:(?:\d+[.):]|[-*])\s*)/, '').trim().replace(/^["'`]|["'`]$/g, ''))
+    .filter((p) => p.length > 15 && !p.toLowerCase().startsWith('here are') && !p.toLowerCase().startsWith('the user gave') && !p.toLowerCase().startsWith('###'));
+
+  if (paragraphs.length >= 3) {
+    return paragraphs.slice(0, 5);
+  }
+
+  // Otherwise return generated fallback variations
+  return generateFallbackPromptVariations(fallbackIdea);
+}
+
 export function isCustomApiCommand(text: string): boolean {
   if (!text || typeof text !== 'string') return false;
   return /^\/customapi(?:\s+|$)/i.test(text.trim());
@@ -1398,7 +1461,7 @@ export function stripCustomApiPrefix(text: string): string {
 
 export function isCodingQuery(text: string): boolean {
   if (!text || typeof text !== 'string') return false;
-  if (isWebFetchQuery(text) || isSearchOverrideQuery(text) || isCodeSlashCommand(text) || isCodeOnlineCommand(text) || isCustomApiCommand(text)) return false;
+  if (isWebFetchQuery(text) || isSearchOverrideQuery(text) || isCodeSlashCommand(text) || isCodeOnlineCommand(text) || isCustomApiCommand(text) || isPromptImageSlashCommand(text)) return false;
 
   const trimmed = text.trim();
   const lower = trimmed.toLowerCase();
@@ -2566,6 +2629,7 @@ Please perform your specialized processing for this inquiry. Provide clear, conc
     if (isCodeSlashCommand(text)) return false;
     if (isImageSlashCommand(text)) return false;
     if (isImageAiSlashCommand(text)) return false;
+    if (isPromptImageSlashCommand(text)) return false;
     const lower = text.toLowerCase().trim().replace(/[?!.,]+$/g, '');
     return (
       /^(hi|hello|hey|greetings|howdy|good (morning|afternoon|evening))\b/i.test(lower) ||
@@ -2593,6 +2657,8 @@ Please perform your specialized processing for this inquiry. Provide clear, conc
   const isSearchOverride = isSearchOverrideQuery(query);
   const isImageSlash = isImageSlashCommand(query);
   const isImageAiSlash = isImageAiSlashCommand(query);
+  const isPromptImageSlash = isPromptImageSlashCommand(query);
+  const promptImageIdea = isPromptImageSlash ? stripPromptImagePrefix(query) : '';
   const strippedQuery = isCustomApi
     ? (customApiParsed ? `${customApiParsed.apiName} ${customApiParsed.customQuery}`.trim() : query)
     : isWebFetch
@@ -2603,7 +2669,9 @@ Please perform your specialized processing for this inquiry. Provide clear, conc
           ? stripImagePrefix(query)
           : isImageAiSlash
             ? stripImageAiPrefix(query)
-            : query;
+            : isPromptImageSlash
+              ? promptImageIdea
+              : query;
 
   let plannerOutput: JarvisPlannerOutput = {
     task: isPureFileAnalysis
@@ -2910,6 +2978,40 @@ CRITICAL RULES:
         providerName: 'Internal Router',
         model: 'imageai-pipeline',
       };
+    } else if (isPromptImageSlashCommand(query)) {
+      const stripped = stripPromptImagePrefix(query);
+      plannerOutput = {
+        task: `Generate 5 image prompt variations for: ${stripped || 'creative visual'}`,
+        plan: [
+          'Analyze creative image concept, aesthetic angles, and visual elements',
+          'Generate exactly 5 distinct, highly detailed, vivid image-generation prompt variations',
+          'Format interactive prompt cards with one-click Image Studio launch and instant image generation',
+        ],
+        needsCode: false,
+        needsResearch: false,
+        needsResearchQuery: '',
+        needsNews: false,
+        needsNewsQuery: '',
+        needsWikipedia: false,
+        wikipediaQuery: '',
+        needsWikidata: false,
+        wikidataQuery: '',
+        needsWeather: false,
+        weatherLocation: '',
+        needsKnowledgeAgent: false,
+        needsReview: false,
+        needsFactCheck: false,
+        needsDiagram: false,
+        needsChart: false,
+        needsImage: false,
+      };
+      duration = 5;
+      planRes = {
+        ok: true,
+        text: JSON.stringify(plannerOutput, null, 2),
+        providerName: 'Internal Router',
+        model: 'promptimage-pipeline',
+      };
     } else {
       const pStart = Date.now();
       planRes = await callAgent('planner', [
@@ -3095,6 +3197,29 @@ CRITICAL RULES:
         plannerOutput.needsDiagram = false;
         plannerOutput.needsChart = false;
         plannerOutput.needsImage = true;
+      } else if (isPromptImageSlashCommand(query)) {
+        const stripped = stripPromptImagePrefix(query);
+        plannerOutput.task = `Generate 5 image prompt variations for: ${stripped || 'creative visual'}`;
+        plannerOutput.plan = [
+          'Analyze creative image concept, aesthetic angles, and visual elements',
+          'Generate exactly 5 distinct, highly detailed, vivid image-generation prompt variations',
+          'Format interactive prompt cards with one-click Image Studio launch and instant image generation',
+        ];
+        plannerOutput.needsCode = false;
+        plannerOutput.needsResearch = false;
+        plannerOutput.needsResearchQuery = '';
+        plannerOutput.needsNews = false;
+        plannerOutput.needsNewsQuery = '';
+        plannerOutput.needsWikipedia = false;
+        plannerOutput.wikipediaQuery = '';
+        plannerOutput.needsWikidata = false;
+        plannerOutput.wikidataQuery = '';
+        plannerOutput.needsKnowledgeAgent = false;
+        plannerOutput.needsReview = false;
+        plannerOutput.needsFactCheck = false;
+        plannerOutput.needsDiagram = false;
+        plannerOutput.needsChart = false;
+        plannerOutput.needsImage = false;
       } else {
         const isCoderToggleEnabled =
           coderMode !== undefined
@@ -3699,6 +3824,7 @@ CRITICAL RULES:
     !isSelfQuery &&
     !isPureFileAnalysis &&
     !isPureDocRagQuery &&
+    !isPromptImageSlash &&
     agentConfigs.researcher.enabled &&
     (isCodeOnline ||
       isSearchOverride ||
@@ -3723,6 +3849,7 @@ CRITICAL RULES:
     !isWebFetch &&
     !isWeatherQuery &&
     !isPureDocRagQuery &&
+    !isPromptImageSlash &&
     agentConfigs.factChecker.enabled &&
     (deepResearch || (shouldResearch && Boolean(plannerOutput.needsFactCheck)));
 
@@ -3733,6 +3860,7 @@ CRITICAL RULES:
     !isWebFetch &&
     !isSearchOverride &&
     !isPureDocRagQuery &&
+    !isPromptImageSlash &&
     agentConfigs.reviewer.enabled &&
     (isAutoCode || deepResearch || Boolean(plannerOutput.needsReview));
 
@@ -5607,7 +5735,7 @@ Output strictly valid JSON matching this schema:
         ca.pipelinePosition === 'extra_step' ||
         !ca.pipelinePosition),
   );
-  if (!isImageSlash && !isImageAiSlash) {
+  if (!isImageSlash && !isImageAiSlash && !isPromptImageSlash) {
     for (const cAgent of preSynthCustomAgents) {
       await executeCustomAgent(cAgent);
     }
@@ -5617,6 +5745,8 @@ Output strictly valid JSON matching this schema:
   // STEP 5: ✨ FINAL SYNTHESIZER
   // ==========================================
   let finalAnswer = '';
+  let promptImageVariationsResult: string[] | undefined = undefined;
+  let promptImageRoughIdeaResult: string | undefined = undefined;
 
   if (isImageSlash || isImageAiSlash) {
     const strippedPrompt = isImageSlash
@@ -5635,6 +5765,60 @@ Output strictly valid JSON matching this schema:
         summary: 'Final Synthesizer bypassed for image command — displaying image cards with direct caption.',
       });
     }
+  } else if (isPromptImageSlash) {
+    const roughIdea = stripPromptImagePrefix(query).trim() || 'creative concept';
+    const sCfg = agentConfigs.finalSynthesizer || agentConfigs.planner;
+    const provInfo = resolveProviderConfig(sCfg);
+    const start = Date.now();
+
+    updateStep({
+      agentId: 'finalSynthesizer',
+      name: 'Image Prompt Synthesizer',
+      icon: '🎨',
+      status: 'running',
+      providerName: provInfo.provider?.name || 'Primary Text AI',
+      model: provInfo.model,
+      summary: `Generating 5 vivid prompt variations for "${roughIdea}"...`,
+    });
+
+    const promptInstruction = `The user gave a rough image idea: '${roughIdea}'. Generate exactly 5 distinct, highly detailed, vivid image-generation prompt variations based on this idea — each should explore a different angle, style, mood, or detail focus, while staying true to the core idea. Return them as a numbered list of 5 prompts only, no extra commentary.`;
+
+    let promptAiRes = await callAgent(
+      'finalSynthesizer',
+      [{ role: 'user', content: promptInstruction }],
+      1500,
+    );
+
+    if (!promptAiRes.ok || !promptAiRes.text?.trim()) {
+      promptAiRes = await callAgent(
+        'planner',
+        [{ role: 'user', content: promptInstruction }],
+        1500,
+      );
+    }
+
+    const generatedText = promptAiRes.ok && promptAiRes.text?.trim() ? promptAiRes.text.trim() : '';
+    const variations = extractPromptImageVariations(generatedText, roughIdea);
+    promptImageVariationsResult = variations;
+    promptImageRoughIdeaResult = roughIdea;
+
+    finalAnswer = `### 🎨 5 Image Prompt Variations: "${roughIdea}"\n\nHere are 5 distinct, highly detailed prompt variations crafted for your idea:\n\n` +
+      variations.map((v, i) => `${i + 1}. ${v}`).join('\n\n');
+
+    const duration = Date.now() - start;
+    updateStep({
+      agentId: 'finalSynthesizer',
+      name: 'Image Prompt Synthesizer',
+      icon: '🎨',
+      status: 'completed',
+      providerName: promptAiRes.providerName || provInfo.provider?.name || 'Primary Text AI',
+      model: promptAiRes.model || provInfo.model,
+      durationMs: duration,
+      summary: `Generated 5 distinct prompt variations for "${roughIdea}".`,
+      outputPreview: variations.slice(0, 2).join(' | '),
+      rawOutput: finalAnswer,
+      usedFallback: promptAiRes.usedFallback,
+    });
   } else if (agentConfigs.finalSynthesizer.enabled) {
     const sCfg = agentConfigs.finalSynthesizer;
     const provInfo = resolveProviderConfig(sCfg);
@@ -5863,6 +6047,9 @@ JARVIS also includes dedicated slash commands that allow users to override norma
   6. \`/imagesai [prompt]\` — Generates an AI image only (skips the real-photo search), for fastest results.
      Example: \`/imagesai a dragon made of glass\`
 
+   7. \`/promptimage [rough idea]\` — Instant AI Image Prompt Synthesizer: Generates 5 distinct, highly detailed image generation prompt variations with one-click Image Studio actions.
+      Example: \`/promptimage a mechanical dragon made of stained glass\`
+
 CRITICAL CAPABILITY & SELF-DESCRIPTION SYNTHESIS MANDATE:
 When answering self-referential questions like "what can you do", "hello what are your capabilities", "how do you work", or questions about JARVIS's agents, capabilities, or system features:
 1. Explain the multi-agent cognitive pipeline and describe all 10 agents comprehensively.
@@ -5873,6 +6060,7 @@ When answering self-referential questions like "what can you do", "hello what ar
    - \`/code [prompt]\` with a one-line description and example
    - \`/image [prompt]\` with a one-line description and example
    - \`/imagesai [prompt]\` with a one-line description and example
+   - \`/promptimage [rough idea]\` with a one-line description and example
 Keep the existing agent pipeline explanation intact, and add this slash commands section right after it.`
       : '';
 
@@ -6091,7 +6279,8 @@ JARVIS is a multi-agent AI intelligence platform composed of 10 specialized neur
 - \`/customapi [api_name] [query]\` — Directly invokes any custom REST API registered in your Settings > API Catalog, returning real-time upstream data grounded by the Final Synthesizer. (Example: \`/customapi coingecko bitcoin\`)
 - \`/code [prompt]\` — Activates a specialized 2-agent pipeline (Planner -> Coder) designed specifically for programming, debugging, and software architecture with minimal latency. (Example: \`/code implement a distributed rate limiter in TypeScript with Redis\`)
 - \`/image [prompt]\` — Instantly shows a real photo + AI-generated image for the topic, bypassing the full research pipeline for speed. (Example: \`/image northern lights\`)
-- \`/imagesai [prompt]\` — Generates an AI image only (skips the real-photo search), for fastest results. (Example: \`/imagesai a dragon made of glass\`)`;
+- \`/imagesai [prompt]\` — Generates an AI image only (skips the real-photo search), for fastest results. (Example: \`/imagesai a dragon made of glass\`)
+- \`/promptimage [rough idea]\` — Generates 5 distinct, highly detailed image generation prompt variations with interactive copy and one-click Image Studio actions. (Example: \`/promptimage a dragon made of stained glass\`)`;
       } else {
         finalAnswer = `### Intelligence Summary: ${query}\n\nProcessed query through the multi-agent pipeline. Provider failover completed across configured channels.`;
       }
@@ -6099,7 +6288,7 @@ JARVIS is a multi-agent AI intelligence platform composed of 10 specialized neur
   }
 
   // Execute post-synthesizer custom agents if any (e.g. after_synthesizer)
-  if (!isImageSlash && !isImageAiSlash) {
+  if (!isImageSlash && !isImageAiSlash && !isPromptImageSlash) {
     const postSynthCustomAgents = customAgents.filter(
       (ca) => ca.enabled && ca.pipelinePosition === 'after_synthesizer',
     );
@@ -6123,6 +6312,7 @@ JARVIS is a multi-agent AI intelligence platform composed of 10 specialized neur
   const shouldArchitect =
     !isImageSlash &&
     !isImageAiSlash &&
+    !isPromptImageSlash &&
     diagramMode &&
     hasDiagramIntent &&
     agentConfigs.architect &&
@@ -6240,6 +6430,7 @@ JARVIS is a multi-agent AI intelligence platform composed of 10 specialized neur
   const shouldDataAnalyst =
     !isImageSlash &&
     !isImageAiSlash &&
+    !isPromptImageSlash &&
     chartMode &&
     hasNumericIntent &&
     agentConfigs.dataAnalyst &&
@@ -6387,15 +6578,17 @@ JARVIS is a multi-agent AI intelligence platform composed of 10 specialized neur
   let retrievedImages: JarvisImageResult[] = [];
 
   const hasImageIntent =
-    isImageSlash ||
-    isImageAiSlash ||
-    Boolean(plannerOutput.needsImage) ||
-    /\b(iphone|galaxy|samsung|pixel|apple|google|phone|smartphone|laptop|macbook|gpu|cpu|camera|sensor|car|ev|tesla|vehicle|telescope|building|architecture|animal|space|galaxy|nebula|planet|star|device|hardware|product|look|photo|image|picture|what does|show me)\b/i.test(
-      query,
-    ) ||
-    query.length > 20;
+    !isPromptImageSlash &&
+    (isImageSlash ||
+      isImageAiSlash ||
+      Boolean(plannerOutput.needsImage) ||
+      /\b(iphone|galaxy|samsung|pixel|apple|google|phone|smartphone|laptop|macbook|gpu|cpu|camera|sensor|car|ev|tesla|vehicle|telescope|building|architecture|animal|space|galaxy|nebula|planet|star|device|hardware|product|look|photo|image|picture|what does|show me)\b/i.test(
+        query,
+      ) ||
+      query.length > 20);
 
   const shouldImageFinder =
+    !isPromptImageSlash &&
     (imageMode || isImageSlash || isImageAiSlash) &&
     hasImageIntent &&
     agentConfigs.imageFinder &&
@@ -6606,5 +6799,7 @@ JARVIS is a multi-agent AI intelligence platform composed of 10 specialized neur
     chartData,
     images: retrievedImages,
     retrievedDocChunks: retrievedDocChunks && retrievedDocChunks.length > 0 ? retrievedDocChunks : undefined,
+    promptImageVariations: promptImageVariationsResult,
+    promptImageRoughIdea: promptImageRoughIdeaResult,
   };
 }

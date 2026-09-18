@@ -1,5 +1,5 @@
 import { useState, useEffect, useCallback, useRef } from 'react';
-import { Link } from 'react-router-dom';
+import { Link, useSearchParams } from 'react-router-dom';
 import {
   Image as ImageIcon,
   Sparkles,
@@ -140,7 +140,8 @@ function parseReferenceImageData(
 }
 
 export function ImageStudio() {
-  const [prompt, setPrompt] = useState('');
+  const [searchParams] = useSearchParams();
+  const [prompt, setPrompt] = useState(() => searchParams.get('prompt') || '');
   const [imageProvidersState, setImageProvidersState] = useState<ImageProvidersState>(() =>
     storage.getImageProvidersState()
   );
@@ -207,6 +208,14 @@ export function ImageStudio() {
       setPuterSelectedModel(cur.model);
     }
   }, [selectedProviderId, imageProvidersState]);
+
+  // Sync prompt from URL search parameters if passed
+  useEffect(() => {
+    const paramPrompt = searchParams.get('prompt');
+    if (paramPrompt) {
+      setPrompt(paramPrompt);
+    }
+  }, [searchParams]);
 
   // Restore persistent generated images history from IndexedDB on page load
   useEffect(() => {
