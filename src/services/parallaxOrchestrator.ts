@@ -102,6 +102,8 @@ export interface VeritasGroundingData {
   formattedGrounding: string;
   sourcesCount: number;
   topFactSnippet: string;
+  committedFact: string; // The single verified grounding fact committed to before Round 1
+  round1Statement?: string; // Stated position in Round 1 to ensure R2 & R3 consistency
   failed: boolean;
 }
 
@@ -179,6 +181,7 @@ export async function fetchVeritasGrounding(
       formattedGrounding: '',
       sourcesCount: 0,
       topFactSnippet: 'No live search results returned across fallback providers.',
+      committedFact: '',
       failed: true,
     };
   }
@@ -200,12 +203,52 @@ export async function fetchVeritasGrounding(
     })
     .join('\n');
 
-  // Extract top fact snippet for UI preview badge
-  const top = rawResults.find((r) => r.description && r.description.trim().length > 20) || rawResults[0];
-  const snippet = (top?.description || top?.title || '').replace(/\s+/g, ' ').trim();
-  const topFactSnippet = snippet.length > 180 ? snippet.slice(0, 177) + '...' : snippet;
+  // 1. Initial heuristic candidate for committed fact
+  const topCandidate = rawResults.find((r) => r.description && r.description.trim().length > 30) || rawResults[0];
+  const rawSnippet = (topCandidate?.description || topCandidate?.title || '').replace(/\s+/g, ' ').trim();
+  let committedFact = rawSnippet.length > 180 ? rawSnippet.slice(0, 177) + '…' : rawSnippet;
 
-  console.log(`[Parallax Veritas] Live search grounding successful: ${rawResults.length} sources via ${sourceLabel}`);
+  // 2. Extract and commit to ONE specific verified fact via active AI provider before Round 1
+  try {
+    if (signal?.aborted) throw new Error('Search aborted');
+    const sysConfig = storage.getParallaxConfig();
+    const allAgents = Object.values(sysConfig.agents || DEFAULT_PARALLAX_AGENTS);
+    const veritasAgent = allAgents.find((a) => a.id === 'veritas') || DEFAULT_PARALLAX_AGENTS.veritas;
+    const { provider } = resolveParallaxProviderConfig(veritasAgent, 100);
+
+    const factExtractPrompt = `You are VERITAS's empirical fact commitment engine.
+Topic: "${topic}"
+
+Search Results (${rawResults.length} sources via ${sourceLabel}):
+${formattedGrounding}
+
+TASK:
+Synthesize the search sources above and commit to EXACTLY ONE definitive, verified fact or empirical summary that directly answers the topic (e.g. "Winner: X, Race/Event: Y, Date: Z", or key verified metric/outcome).
+
+MANDATORY RULES:
+1. Commit to ONE specific factual outcome. Do NOT waffle, generalize, or list multiple contradictory winners/claims as equally valid.
+2. If the search results themselves are genuinely conflicting or report contradictory winners/outcomes, explicitly state that conflict right here in one crisp sentence (e.g. "Sources conflict: Source A reports X won in [year], while Source B reports Y won in [year]").
+3. Maximum 1-2 concise sentences (<40 words). No greeting, no conversational preamble. Output ONLY the committed fact statement.`;
+
+    const factRes = await api.jarvisAgentCall({
+      agentId: 'veritas_fact_committer',
+      messages: [{ role: 'user', content: factExtractPrompt }],
+      providerConfig: provider,
+      temperature: 0.1,
+      maxTokens: 90,
+      timeoutMs: 9000,
+      signal,
+    });
+
+    const candidate = cleanReactionText(factRes.text || factRes.content || '', 'VERITAS');
+    if (candidate && candidate.length > 15 && !candidate.toLowerCase().includes('error')) {
+      committedFact = candidate;
+    }
+  } catch (extractErr) {
+    console.warn('[Parallax Veritas] AI fact commitment call had error, using deterministic snippet fallback:', extractErr);
+  }
+
+  console.log(`[Parallax Veritas] Live search grounding successful: ${rawResults.length} sources via ${sourceLabel}. Committed Fact: "${committedFact}"`);
 
   return {
     results: rawResults,
@@ -213,7 +256,8 @@ export async function fetchVeritasGrounding(
     query: topic,
     formattedGrounding,
     sourcesCount: rawResults.length,
-    topFactSnippet,
+    topFactSnippet: committedFact,
+    committedFact,
     failed: false,
   };
 }
@@ -373,9 +417,17 @@ Constraint: Exactly 1-2 punchy sentences (<40 words). Speak directly; no greetin
 
   if (round === 1) {
     if (agent.id === 'veritas') {
-      if (veritasGrounding && !veritasGrounding.failed && veritasGrounding.formattedGrounding) {
+      if (veritasGrounding && !veritasGrounding.failed && veritasGrounding.committedFact) {
         // Grounding context injected into VERITAS only
-        userPrompt = `Topic: "${topic}"\n\nHere are real, current search results on this topic:\n${veritasGrounding.formattedGrounding}\n\nUse these facts to inform your fact-based, skeptical analysis. Provide your initial 1-2 sentence perspective on this topic based on your archetype.`;
+        userPrompt = `Topic: "${topic}"
+
+[COMMITTED VERIFIED GROUNDING FACT]:
+"${veritasGrounding.committedFact}"
+
+Supporting search sources (${veritasGrounding.sourcesCount} sources via ${veritasGrounding.searchSource}):
+${veritasGrounding.formattedGrounding}
+
+Instruction: Ground your initial 1-2 sentence perspective strictly on the COMMITTED VERIFIED GROUNDING FACT above. Commit to this specific outcome as your baseline. If the search results themselves are genuinely conflicting or ambiguous, state that ambiguity explicitly ONCE right now. Speak with empirical precision as VERITAS.`;
       } else {
         // Graceful failure fallback prompt if search returned 0 results
         userPrompt = `Topic: "${topic}"\n\n[Live Search Notice: Current search fallbacks returned no recent results. Rely on your rigorous training knowledge and first principles.]\nProvide your initial 1-2 sentence perspective on this topic based on your fact-based, skeptical analysis.`;
@@ -384,7 +436,7 @@ Constraint: Exactly 1-2 punchy sentences (<40 words). Speak directly; no greetin
       userPrompt = `Topic: "${topic}"\nProvide your initial 1-2 sentence perspective on this topic based on your archetype.`;
     }
   } else {
-    // Rounds 2 & 3: ONLY topic + compact rotating sample of 2-3 previous replies (NO accumulated history)
+    // Rounds 2 & 3:
     const peerBullets = peersSample
       .slice(0, 3)
       .map((p) => {
@@ -398,7 +450,27 @@ Constraint: Exactly 1-2 punchy sentences (<40 words). Speak directly; no greetin
         ? 'React to these peer views in 1-2 sharp sentences'
         : 'Deliver your final 1-2 sentence synthesis';
 
-    userPrompt = `Topic: "${topic}"\n\nPeer points from Round ${round - 1}:\n${peerBullets}\n\n${action} as ${agent.name}.`;
+    if (agent.id === 'veritas' && veritasGrounding && !veritasGrounding.failed && veritasGrounding.committedFact) {
+      // INJECT THE COMMITTED FACT INTO VERITAS FOR ROUNDS 2 AND 3 (NO raw results, preserving absolute consistency)
+      const prevStance = veritasGrounding.round1Statement
+        ? `\nYour Round 1 stated position: "${veritasGrounding.round1Statement}"`
+        : '';
+
+      userPrompt = `Topic: "${topic}"
+
+[YOUR COMMITTED VERIFIED FACT - DO NOT CONTRADICT OR ALTER]:
+"${veritasGrounding.committedFact}"${prevStance}
+
+CRITICAL CONSISTENCY MANDATE FOR VERITAS:
+You MUST stay completely consistent with your committed verified fact above and your Round 1 stated position. Do NOT cite a different winner, date, race, or outcome. Do NOT re-interpret or alter the facts. If you noted an ambiguity or conflict in Round 1, maintain that exact same stated ambiguity.
+
+Peer points from Round ${round - 1}:
+${peerBullets}
+
+${action} as VERITAS, strictly upholding your committed verified fact.`;
+    } else {
+      userPrompt = `Topic: "${topic}"\n\nPeer points from Round ${round - 1}:\n${peerBullets}\n\n${action} as ${agent.name}.`;
+    }
   }
 
   try {
@@ -438,11 +510,11 @@ Constraint: Exactly 1-2 punchy sentences (<40 words). Speak directly; no greetin
       model: response.model || model,
       providerName: response.providerName || provider?.name || 'Built-in AI',
       toolUsed:
-        round === 1 && agent.id === 'veritas' && veritasGrounding
+        agent.id === 'veritas' && veritasGrounding
           ? {
               tool: 'search',
               query: veritasGrounding.query,
-              fact: veritasGrounding.topFactSnippet,
+              fact: veritasGrounding.committedFact || veritasGrounding.topFactSnippet,
               searchSource: veritasGrounding.searchSource,
               sourcesCount: veritasGrounding.sourcesCount,
               failed: veritasGrounding.failed,
@@ -475,11 +547,11 @@ Constraint: Exactly 1-2 punchy sentences (<40 words). Speak directly; no greetin
       model: model || 'fallback',
       providerName: 'Local Mesh',
       toolUsed:
-        round === 1 && agent.id === 'veritas' && veritasGrounding
+        agent.id === 'veritas' && veritasGrounding
           ? {
               tool: 'search',
               query: veritasGrounding.query,
-              fact: veritasGrounding.topFactSnippet,
+              fact: veritasGrounding.committedFact || veritasGrounding.topFactSnippet,
               searchSource: veritasGrounding.searchSource,
               sourcesCount: veritasGrounding.sourcesCount,
               failed: veritasGrounding.failed,
@@ -520,96 +592,184 @@ function getFallbackReaction(agent: ParallaxAgentConfig, round: number, topic: s
 }
 
 /**
+ * Dynamic fallback synthesis derived strictly from actual messages in the debate transcript.
+ * Guarantees highlights and persona claims match the real session, even if the LLM call times out.
+ */
+function buildDynamicFallbackSummary(
+  topic: string,
+  allMessages: ParallaxMessage[],
+): ParallaxSummary {
+  const round1Msgs = allMessages.filter((m) => m.round === 1);
+  const round2Msgs = allMessages.filter((m) => m.round === 2);
+  const round3Msgs = allMessages.filter((m) => m.round === 3);
+
+  const veritasMsg = allMessages.find((m) => m.agentId === 'veritas');
+  const highlights: string[] = [];
+
+  if (veritasMsg) {
+    const snippet = veritasMsg.text.length > 130 ? veritasMsg.text.slice(0, 127) + '…' : veritasMsg.text;
+    highlights.push(`VERITAS anchored the deliberation with verified facts: "${snippet}"`);
+  } else if (round1Msgs.length > 0) {
+    const m = round1Msgs[0];
+    const snippet = m.text.length > 130 ? m.text.slice(0, 127) + '…' : m.text;
+    highlights.push(`${m.agentName} framed the initial perspective in Round 1: "${snippet}"`);
+  }
+
+  if (round2Msgs.length > 0) {
+    const m = round2Msgs[0];
+    const snippet = m.text.length > 130 ? m.text.slice(0, 127) + '…' : m.text;
+    highlights.push(`${m.agentName} challenged peer perspectives in Round 2: "${snippet}"`);
+  }
+
+  if (round2Msgs.length > 1) {
+    const m = round2Msgs[1];
+    const snippet = m.text.length > 130 ? m.text.slice(0, 127) + '…' : m.text;
+    highlights.push(`${m.agentName} emphasized core tensions: "${snippet}"`);
+  }
+
+  if (round3Msgs.length > 0) {
+    const m = round3Msgs[round3Msgs.length - 1];
+    const snippet = m.text.length > 130 ? m.text.slice(0, 127) + '…' : m.text;
+    highlights.push(`${m.agentName} delivered their closing synthesis: "${snippet}"`);
+  }
+
+  // Ensure at least 4 highlights from real messages in the debate
+  let idx = 0;
+  while (highlights.length < 4 && idx < allMessages.length) {
+    const candidate = allMessages[idx];
+    const snippet = candidate.text.length > 130 ? candidate.text.slice(0, 127) + '…' : candidate.text;
+    const highlightStr = `${candidate.agentName} (R${candidate.round}): "${snippet}"`;
+    if (!highlights.some((h) => h.includes(candidate.agentName))) {
+      highlights.push(highlightStr);
+    }
+    idx++;
+  }
+
+  return {
+    verdict: `Deliberation on "${topic}" concluded with ${allMessages.length} contributions across 3 rounds, balancing empirical verification against contrasting multi-agent perspectives.`,
+    consensusLean: 'Pragmatic Tension',
+    highlights: highlights.slice(0, 5),
+    totalContributions: allMessages.length,
+  };
+}
+
+/**
  * Generates the Parallax Summary after Round 3 completes.
- * Sends a condensed set of 6-8 notable contrasting quotes (strictly under 400 tokens input).
+ * Sends real quotes from Rounds 1, 2, and 3 to ensure highlights reflect the actual debate transcript.
  */
 export async function generateParallaxSummary(
   topic: string,
   allMessages: ParallaxMessage[],
 ): Promise<ParallaxSummary> {
-  const agentMap = new Map<string, ParallaxMessage[]>();
-  for (const m of allMessages) {
-    const list = agentMap.get(m.agentName) || [];
-    list.push(m);
-    agentMap.set(m.agentName, list);
-  }
+  const round1Msgs = allMessages.filter((m) => m.round === 1);
+  const round2Msgs = allMessages.filter((m) => m.round === 2);
+  const round3Msgs = allMessages.filter((m) => m.round === 3);
 
-  // Curate key contrasting perspectives across diverse archetypes
-  const notableAgents = ['AURORA', 'VANGUARD', 'SOCRATES', 'AXIOM', 'VERITAS', 'GRAVITY', 'HARMONY', 'LEDGER'];
   const excerpts: string[] = [];
 
-  for (const name of notableAgents) {
-    const msgs = agentMap.get(name);
-    if (msgs && msgs.length > 0) {
-      const target = msgs[msgs.length - 1];
-      const trimmed = target.text.length > 135 ? target.text.slice(0, 132) + '…' : target.text;
-      excerpts.push(`• ${name} (R${target.round}): "${trimmed}"`);
+  // 1. Round 1 opening stances (VERITAS first if present, then diverse initial angles)
+  const r1Veritas = round1Msgs.find((m) => m.agentId === 'veritas');
+  if (r1Veritas) {
+    const trimmed = r1Veritas.text.length > 150 ? r1Veritas.text.slice(0, 147) + '…' : r1Veritas.text;
+    excerpts.push(`• [Round 1 Opening Fact] VERITAS: "${trimmed}"`);
+  }
+  for (const m of round1Msgs.filter((m) => m.agentId !== 'veritas').slice(0, 3)) {
+    const trimmed = m.text.length > 140 ? m.text.slice(0, 137) + '…' : m.text;
+    excerpts.push(`• [Round 1 Opening] ${m.agentName}: "${trimmed}"`);
+  }
+
+  // 2. Round 2 cross-debate clashes and friction
+  for (const m of round2Msgs.slice(0, 4)) {
+    const trimmed = m.text.length > 140 ? m.text.slice(0, 137) + '…' : m.text;
+    excerpts.push(`• [Round 2 Rebuttal] ${m.agentName}: "${trimmed}"`);
+  }
+
+  // 3. Round 3 final stances and conclusions
+  const r3Veritas = round3Msgs.find((m) => m.agentId === 'veritas');
+  if (r3Veritas) {
+    const trimmed = r3Veritas.text.length > 140 ? r3Veritas.text.slice(0, 137) + '…' : r3Veritas.text;
+    excerpts.push(`• [Round 3 Final Stance] VERITAS: "${trimmed}"`);
+  }
+  for (const m of round3Msgs.filter((m) => m.agentId !== 'veritas').slice(0, 3)) {
+    const trimmed = m.text.length > 140 ? m.text.slice(0, 137) + '…' : m.text;
+    excerpts.push(`• [Round 3 Conclusion] ${m.agentName}: "${trimmed}"`);
+  }
+
+  // Supplement if fewer than 6 collected
+  if (excerpts.length < 6 && allMessages.length > 0) {
+    for (const m of allMessages.slice(0, 8)) {
+      const trimmed = m.text.length > 140 ? m.text.slice(0, 137) + '…' : m.text;
+      const str = `• [Round ${m.round}] ${m.agentName}: "${trimmed}"`;
+      if (!excerpts.includes(str)) {
+        excerpts.push(str);
+      }
     }
   }
 
-  // Fallback if custom agent IDs were used: pick 6 evenly spaced samples
-  if (excerpts.length === 0 && allMessages.length > 0) {
-    const step = Math.max(1, Math.floor(allMessages.length / 6));
-    for (let i = 0; i < allMessages.length && excerpts.length < 6; i += step) {
-      const m = allMessages[i];
-      const trimmed = m.text.length > 135 ? m.text.slice(0, 132) + '…' : m.text;
-      excerpts.push(`• ${m.agentName} (R${m.round}): "${trimmed}"`);
-    }
-  }
+  // DEBUG CONSOLE LOG: Exact transcript content passed to the synthesizer
+  console.log(
+    `[Parallax Synthesizer] Generating final summary report for topic: "${topic}". Input transcript excerpts (${excerpts.length} quotes from Rounds 1-3):\n${excerpts.join('\n')}`,
+  );
 
-  // Fast synthesis via LLM with strictly bounded input (~300-380 tokens)
-  try {
-    const prompt = `Synthesize this 20-agent PARALLAX swarm discussion on "${topic}".
-Total messages: ${allMessages.length} across 3 rounds.
+  const prompt = `Synthesize this 20-agent PARALLAX swarm debate on the topic: "${topic}".
+Total messages recorded: ${allMessages.length} across Rounds 1, 2, and 3.
 
-Key contrasting quotes:
+Actual debate transcript quotes:
 ${excerpts.join('\n')}
 
-Generate a JSON object:
-{
-  "verdict": "One crisp objective sentence summarizing swarm consensus or lean on ${topic}.",
-  "consensusLean": "2-4 words (e.g. Cautiously Optimistic, Pragmatically Skeptical, Deeply Polarized, Techno-Realistic)",
-  "highlights": ["Clash or tension bullet 1", "Clash or tension bullet 2", "Clash or tension bullet 3", "Clash or tension bullet 4"]
-}
-Output valid JSON only.`;
+Instructions:
+1. Base your synthesis ENTIRELY on what the personas above actually argued regarding "${topic}".
+2. In "highlights", write 4 concise bullet points (1 sentence each). Every highlight MUST explicitly cite specific persona names and their actual claims/tensions from the transcript quotes above (e.g. "VERITAS grounded the debate with verified data on [fact], while [AgentName] contested that [claim]"). Never output generic platitudes.
+3. In "verdict", write 1 objective sentence summarizing the swarm's actual final consensus, balance of evidence, or division on "${topic}".
+4. In "consensusLean", provide a 2-4 word descriptor of the swarm's collective alignment (e.g. "Empirically Grounded Lean", "Cautiously Split", "Factually Polarized", "Strong Skepticism").
 
+Output JSON format only:
+{
+  "verdict": "One crisp objective sentence summarizing swarm consensus on ${topic}.",
+  "consensusLean": "2-4 words",
+  "highlights": ["Highlight 1", "Highlight 2", "Highlight 3", "Highlight 4"]
+}`;
+
+  const sysConfig = storage.getParallaxConfig();
+  const allAgents = Object.values(sysConfig.agents || DEFAULT_PARALLAX_AGENTS);
+  const { provider } = resolveParallaxProviderConfig(allAgents[0] || DEFAULT_PARALLAX_AGENTS.veritas, 700);
+
+  try {
     const res = await api.jarvisAgentCall({
       agentId: 'parallax_synthesizer',
-      messages: [{ role: 'user', content: prompt }],
-      temperature: 0.5,
-      maxTokens: 280,
-      timeoutMs: 12000,
+      messages: [
+        {
+          role: 'system',
+          content: 'You are the PARALLAX Debate Synthesizer. You produce strictly grounded JSON summaries based exclusively on provided debate transcripts.',
+        },
+        { role: 'user', content: prompt },
+      ],
+      providerConfig: provider,
+      temperature: 0.3,
+      maxTokens: 600,
+      timeoutMs: 25000,
     });
 
     const text = (res.text || res.content || '').trim();
-    const jsonMatch = text.match(/\{[\s\S]*\}/);
+    const cleanJsonText = text.replace(/^```[a-z]*\s*/i, '').replace(/\s*```$/, '').trim();
+    const jsonMatch = cleanJsonText.match(/\{[\s\S]*\}/);
     if (jsonMatch) {
       const parsed = JSON.parse(jsonMatch[0]);
-      if (parsed.verdict && Array.isArray(parsed.highlights)) {
+      if (parsed.verdict && Array.isArray(parsed.highlights) && parsed.highlights.length > 0) {
         return {
           verdict: parsed.verdict,
           highlights: parsed.highlights.slice(0, 5),
-          consensusLean: parsed.consensusLean || 'Dynamic Equilibrium',
+          consensusLean: parsed.consensusLean || 'Deliberative Consensus',
           totalContributions: allMessages.length,
         };
       }
     }
   } catch (err) {
-    console.warn('[Parallax] LLM summary synthesis had error, using deterministic synthesis:', err);
+    console.warn('[Parallax Synthesizer] LLM summary synthesis had error, using dynamic transcript synthesis:', err);
   }
 
-  // Deterministic high-quality fallback synthesis
-  return {
-    verdict: `The swarm converged on cautious pragmatism, balancing high-upside innovation against stubborn logistical and ethical realities.`,
-    consensusLean: 'Pragmatically Polarized',
-    highlights: [
-      `VANGUARD vigorously challenged AURORA's optimism, warning against uncritical groupthink on adoption curves.`,
-      `SOCRATES and AXIOM clashed on whether mathematical rigor or philosophical intent should guide governance.`,
-      `VERITAS anchored the debate with empirical verification, while ECHO reflected sharp public skepticism.`,
-      `LEDGER scrutinized economic margins and unit capital, meeting pushback from HARMONY's ethical considerations.`,
-    ],
-    totalContributions: allMessages.length,
-  };
+  // Fallback derived dynamically from actual debate messages (never generic or unrelated)
+  return buildDynamicFallbackSummary(topic, allMessages);
 }
 
 /**
@@ -726,10 +886,11 @@ export async function runParallaxSwarm(options: ParallaxRunOptions): Promise<voi
             }
           }
 
-          // In Round 1, ONLY VERITAS gets the live search grounding.
-          // In Rounds 2 & 3, tool access is strictly null (do not re-search).
-          // All other 19 personas get null across all rounds.
-          const groundingForAgent = currentRound === 1 && agent.id === 'veritas' ? veritasGrounding : null;
+          // ONLY VERITAS receives the live search grounding data (never the other 19 personas).
+          // In Round 1: Receives the raw 10 sources + committed verified fact.
+          // In Rounds 2 & 3: Receives ONLY the committed verified fact (never re-searching),
+          // with strict instructions to remain consistent with its stated fact.
+          const groundingForAgent = agent.id === 'veritas' ? veritasGrounding : null;
 
           const msg = await executeAgentTurn(
             agent,
@@ -747,6 +908,10 @@ export async function runParallaxSwarm(options: ParallaxRunOptions): Promise<voi
 
         for (const msg of batchResults) {
           if (signal?.aborted) return;
+          // Capture VERITAS's Round 1 statement to ensure absolute consistency in Rounds 2 & 3
+          if (currentRound === 1 && msg.agentId === 'veritas' && veritasGrounding) {
+            veritasGrounding.round1Statement = msg.text;
+          }
           roundMessages.push(msg);
           allMessages.push(msg);
           onMessage(msg);
