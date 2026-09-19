@@ -1153,12 +1153,14 @@ export const storage = {
     const provider = state.providers[providerIndex];
     const updatedKeys = provider.keys.map((k) => {
       if (k.id === keyId) {
+        const isCredit = Boolean(errorMsg && /credit|payment|afford|balance/i.test(errorMsg));
+        const cooldownDuration = isCredit ? 300000 : 60000;
         return {
           ...k,
           status,
           lastTested: Date.now(),
           lastError: errorMsg,
-          cooldownUntil: status === 'cooldown' ? Date.now() + 60000 : undefined,
+          cooldownUntil: status === 'cooldown' ? Date.now() + cooldownDuration : undefined,
         };
       }
       return k;
@@ -1200,12 +1202,14 @@ export const storage = {
     const provider = state.providers[providerIndex];
     const updatedKeys = provider.keys.map((k) => {
       if (k.id === keyId) {
+        const isCredit = Boolean(errorMsg && /credit|payment|afford|balance/i.test(errorMsg));
+        const cooldownDuration = isCredit ? 300000 : 60000;
         return {
           ...k,
           status,
           lastTested: Date.now(),
           lastError: errorMsg,
-          cooldownUntil: status === 'cooldown' ? Date.now() + 60000 : undefined,
+          cooldownUntil: status === 'cooldown' ? Date.now() + cooldownDuration : undefined,
         };
       }
       return k;

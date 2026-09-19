@@ -588,7 +588,7 @@ async function executeAiWithProviderOrFallback({
   lastError: string;
   lastStatus: number;
 } | null> {
-  const effectiveMaxTokens =
+  let effectiveMaxTokens =
     maxTokens && maxTokens > 0
       ? maxTokens
       : providerConfig?.maxTokens && providerConfig.maxTokens > 0
@@ -716,6 +716,8 @@ async function executeAiWithProviderOrFallback({
 
   let lastFailedError = '';
   let lastFailedStatus = 500;
+  const keyFailureHistory: string[] = [];
+  const retriedKeysWithBudget = new Set<string>();
 
   // Attempt each key in ordered sequence (Automatic Multi-Key Failover)
   for (let i = 0; i < executionKeyList.length; i++) {
@@ -723,7 +725,7 @@ async function executeAiWithProviderOrFallback({
     const keyVal = keyItem.key.trim();
     const keyLabel = keyItem.label || `Key #${i + 1}`;
 
-    const result = await executeProviderChatRequest({
+    let result = await executeProviderChatRequest({
       url,
       model,
       key: keyVal,
@@ -742,28 +744,123 @@ async function executeAiWithProviderOrFallback({
         model: result.model || model,
         providerName: providerConfig.name,
       };
-    } else {
-      const status = result.status;
-      lastFailedStatus = status;
-      lastFailedError = result.error || `HTTP ${status}`;
+    }
 
-      if (status === 503 || status === 502 || status === 504 || status === 429) {
-        keyCooldownMap.set(keyVal, Date.now() + 2000); // 2s brief pause for transient spikes
-        console.warn(
-          `[AI Provider: ${providerConfig.name}] Key "${keyLabel}" (${i + 1}/${executionKeyList.length}) received transient HTTP ${status} (${result.error}). Auto-failing over to next key...`,
-        );
-      } else if (status === 401 || status === 403 || status === 400 || status === 422) {
-        keyCooldownMap.set(keyVal, Date.now() + 300000); // 5m invalid cooldown
-        console.warn(
-          `[AI Provider: ${providerConfig.name}] Key "${keyLabel}" (${i + 1}/${executionKeyList.length}) auth/param failed (HTTP ${status}: ${result.error}). Auto-failing over to next key...`,
-        );
-      } else {
-        keyCooldownMap.set(keyVal, Date.now() + 2000);
-        console.warn(
-          `[AI Provider: ${providerConfig.name}] Key "${keyLabel}" (${i + 1}/${executionKeyList.length}) error HTTP ${status}: ${result.error}. Auto-failing over to next key...`,
-        );
+    const status = result.status || (result.ok ? 502 : 500);
+    const rawError = result.error || (!result.text ? 'Empty or malformed response from AI provider' : `HTTP ${status}`);
+    lastFailedStatus = status;
+    lastFailedError = rawError;
+
+    // Detect failure categories (credit exhaustion, rate limits, auth errors, server errors, timeouts)
+    const isCreditOrPaymentError =
+      status === 402 ||
+      /insufficient credits|requires more credits|can only afford|credit balance|payment required|out of credits|quota exceeded|balance is too low|free tier limit/i.test(rawError);
+
+    const isRateLimit =
+      status === 429 ||
+      /rate limit|too many requests|tokens per minute|requests per minute|tpm limit|rpm limit/i.test(rawError);
+
+    const isAuthError =
+      status === 401 ||
+      status === 403 ||
+      /unauthorized|forbidden|invalid api key|access denied|wrong api key/i.test(rawError);
+
+    const isServerError =
+      status === 500 || status === 502 || status === 503 || status === 504;
+
+    const isMalformedOrEmpty =
+      result.ok && (!result.text || !result.text.trim());
+
+    // Check if the error indicates a token budget ceiling (e.g. OpenRouter: "You requested up to X tokens, but can only afford Y")
+    const affordMatch = rawError.match(/can only afford (\d+)/i);
+    if (affordMatch && affordMatch[1]) {
+      const affordableTokens = parseInt(affordMatch[1], 10);
+      if (affordableTokens > 16) {
+        const adjustedMaxTokens = Math.min(effectiveMaxTokens, Math.max(16, Math.floor(affordableTokens * 0.95)));
+        if (adjustedMaxTokens < effectiveMaxTokens) {
+          console.warn(
+            `[AI Provider Failover: ${providerConfig.name}] Provider credit allowance limit encountered ("can only afford ${affordableTokens}"). Adapting maxTokens from ${effectiveMaxTokens} to ${adjustedMaxTokens} for subsequent attempts.`,
+          );
+          effectiveMaxTokens = adjustedMaxTokens;
+
+          // If this key wasn't retried yet and can afford at least 30 tokens, retry it once with the adapted budget
+          if (!retriedKeysWithBudget.has(keyVal) && affordableTokens >= 30) {
+            retriedKeysWithBudget.add(keyVal);
+            console.warn(
+              `[AI Provider Failover: ${providerConfig.name}] Retrying Key "${keyLabel}" (${i + 1}/${executionKeyList.length}) with adapted budget of ${effectiveMaxTokens} tokens...`,
+            );
+            const retryResult = await executeProviderChatRequest({
+              url,
+              model,
+              key: keyVal,
+              messages,
+              temperature,
+              maxTokens: effectiveMaxTokens,
+              timeoutMs: effectiveTimeout,
+            });
+            if (retryResult.ok && retryResult.text && retryResult.text.trim().length > 0) {
+              keyCooldownMap.delete(keyVal);
+              console.log(
+                `[AI Provider Failover: ${providerConfig.name}] Key "${keyLabel}" (${i + 1}/${executionKeyList.length}) succeeded on adapted token budget (${effectiveMaxTokens} tokens).`,
+              );
+              return {
+                text: retryResult.text,
+                content: retryResult.content,
+                reasoning: retryResult.reasoning,
+                model: retryResult.model || model,
+                providerName: providerConfig.name,
+              };
+            }
+            result = retryResult;
+          }
+        }
       }
     }
+
+    // Determine categorization & cooldown duration
+    let failureCategory = 'error';
+    let cooldownDuration = 5000;
+
+    if (isCreditOrPaymentError) {
+      failureCategory = 'insufficient credits / payment required (HTTP 402)';
+      cooldownDuration = 300000; // 5m cooldown so subsequent agent steps automatically skip this exhausted key
+    } else if (isAuthError) {
+      failureCategory = `auth/credentials failed (HTTP ${status})`;
+      cooldownDuration = 300000; // 5m cooldown for bad keys
+    } else if (isRateLimit) {
+      failureCategory = 'rate limit (HTTP 429)';
+      cooldownDuration = 10000; // 10s cooldown for rate limit recovery
+    } else if (isServerError) {
+      failureCategory = `server error (HTTP ${status})`;
+      cooldownDuration = 3000;
+    } else if (isMalformedOrEmpty) {
+      failureCategory = 'empty or malformed response';
+      cooldownDuration = 3000;
+    } else {
+      failureCategory = `HTTP ${status}`;
+      cooldownDuration = 5000;
+    }
+
+    keyCooldownMap.set(keyVal, Date.now() + cooldownDuration);
+
+    const nextKeyItem = i < executionKeyList.length - 1 ? executionKeyList[i + 1] : null;
+    const nextKeyLabel = nextKeyItem ? (nextKeyItem.label || `Key #${i + 2}`) : null;
+
+    keyFailureHistory.push(`"${keyLabel}": [${failureCategory}] ${rawError}`);
+
+    if (nextKeyItem) {
+      console.warn(
+        `[AI Provider Failover: ${providerConfig.name}] Key "${keyLabel}" (${i + 1}/${executionKeyList.length}) failed [${failureCategory}: ${rawError}]. Auto-failing over to next Key "${nextKeyLabel}" (${i + 2}/${executionKeyList.length})...`,
+      );
+    } else {
+      console.warn(
+        `[AI Provider Failover: ${providerConfig.name}] Key "${keyLabel}" (${i + 1}/${executionKeyList.length}) failed [${failureCategory}: ${rawError}]. All ${executionKeyList.length} configured keys exhausted.`,
+      );
+    }
+  }
+
+  if (keyFailureHistory.length > 0) {
+    lastFailedError = `All ${executionKeyList.length} keys failed for provider "${providerConfig.name}": [${keyFailureHistory.join(' | ')}]`;
   }
 
   // Fallback to Gemini or server key if custom keys failed

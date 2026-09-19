@@ -571,8 +571,10 @@ export function AIProvidersSettings() {
         }
       } else {
         const errorMsg = res.error || `HTTP ${res.status || 'Error'}`;
-        const statusType: KeyHealthStatus =
-          res.status === 429 ? 'cooldown' : res.status === 401 ? 'invalid' : 'cooldown';
+        const isAuth = res.status === 401 || res.status === 403;
+        const statusType: KeyHealthStatus = isAuth ? 'invalid' : 'cooldown';
+        const isCreditIssue = res.status === 402 || /credit|payment|afford|balance/i.test(errorMsg);
+        const cooldownMs = isCreditIssue ? 300000 : 60000;
         setKeyTestResults((prev) => ({
           ...prev,
           [keyItem.id]: { ok: false, message: `✕ ${errorMsg}` },
@@ -587,6 +589,7 @@ export function AIProvidersSettings() {
                     status: statusType,
                     lastTested: Date.now(),
                     lastError: errorMsg,
+                    cooldownUntil: statusType === 'cooldown' ? Date.now() + cooldownMs : undefined,
                   }
                 : k
             ),
@@ -2435,7 +2438,7 @@ export function AIProvidersSettings() {
                 API Key Strategy
               </h4>
               <p style={{ margin: '3px 0 0', fontSize: '11px', color: 'var(--muted)' }}>
-                Automatic Failover tries backup keys on 429/rate-limit. Round Robin balances requests.
+                Automatic Failover rotates through backup keys on 429 rate-limits, 402 credit exhaustion, auth errors, and timeouts. Round Robin balances requests.
               </p>
             </div>
 
