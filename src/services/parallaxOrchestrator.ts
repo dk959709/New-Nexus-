@@ -329,87 +329,285 @@ const DYNAMIC_SPECIALIST_PALETTES = [
   { color: '#14b8a6', voice: 'en-US-JennyNeural' },  // Teal
 ];
 
+const DOMAIN_EMOJI_KEYWORDS: { keywords: string[]; emoji: string }[] = [
+  { keywords: ['space', 'moon', 'mars', 'orbital', 'astro', 'planetary', 'satellite', 'cosm'], emoji: '🪐' },
+  { keywords: ['law', 'policy', 'legal', 'juris', 'treaty', 'regulation', 'governance', 'charter', 'constitutional'], emoji: '⚖️' },
+  { keywords: ['ethics', 'moral', 'welfare', 'human', 'equity', 'justice', 'dignity', 'rights'], emoji: '🕊️' },
+  { keywords: ['bio', 'medical', 'health', 'genetic', 'pathogen', 'ecology', 'life', 'organism'], emoji: '🧬' },
+  { keywords: ['defense', 'security', 'protection', 'threat', 'military', 'safeguard', 'shield', 'conflict'], emoji: '🛡️' },
+  { keywords: ['physics', 'quantum', 'nuclear', 'energy', 'radiation', 'power'], emoji: '⚛️' },
+  { keywords: ['logic', 'systems', 'algorithm', 'causal', 'comput', 'cyber', 'software', 'ai', 'network'], emoji: '📐' },
+  { keywords: ['economy', 'economic', 'finance', 'market', 'trade', 'fiscal', 'resource', 'currency', 'capital'], emoji: '📊' },
+  { keywords: ['environment', 'climate', 'earth', 'ocean', 'ecological', 'atmosphere'], emoji: '🌍' },
+  { keywords: ['philosophy', 'epistem', 'ontology', 'conceptual', 'premise', 'teleolog'], emoji: '📜' },
+  { keywords: ['engineering', 'infrastructure', 'propulsion', 'hardware', 'logistics', 'construction'], emoji: '⚙️' },
+];
+
+const BACKUP_DISTINCT_EMOJIS = ['🪐', '⚖️', '🧬', '🛡️', '📐', '🕊️', '📊', '⚛️', '📜', '🌍', '⚙️', '🔬', '💡', '🧭'];
+
+function resolveDistinctEmoji(
+  requestedEmoji: string | undefined,
+  role: string,
+  usedEmojis: Set<string>,
+): string {
+  // If requested emoji is provided, not generic placeholder (✨, 🤖), and not already used
+  if (
+    requestedEmoji &&
+    requestedEmoji.trim() &&
+    requestedEmoji !== '✨' &&
+    requestedEmoji !== '🤖' &&
+    !usedEmojis.has(requestedEmoji.trim())
+  ) {
+    usedEmojis.add(requestedEmoji.trim());
+    return requestedEmoji.trim();
+  }
+
+  // Look for keyword match in the role
+  const lowerRole = role.toLowerCase();
+  for (const entry of DOMAIN_EMOJI_KEYWORDS) {
+    if (entry.keywords.some((kw) => lowerRole.includes(kw))) {
+      if (!usedEmojis.has(entry.emoji)) {
+        usedEmojis.add(entry.emoji);
+        return entry.emoji;
+      }
+    }
+  }
+
+  // Pick first unused from backup list
+  for (const emoji of BACKUP_DISTINCT_EMOJIS) {
+    if (!usedEmojis.has(emoji)) {
+      usedEmojis.add(emoji);
+      return emoji;
+    }
+  }
+
+  const fallback = '🔬';
+  usedEmojis.add(fallback);
+  return fallback;
+}
+
+function generateSpecialistCodename(role: string, fallbackIdx: number, existingNames: Set<string>): string {
+  const clean = role.replace(/[^a-zA-Z\s]/g, ' ').trim();
+  const words = clean
+    .split(/\s+/)
+    .filter(
+      (w) =>
+        w.length >= 3 &&
+        !['AND', 'THE', 'FOR', 'SPECIALIST', 'OFFICER', 'SCHOLAR', 'ANALYST', 'EXPERT', 'STUDIES', 'POLICY'].includes(
+          w.toUpperCase(),
+        ),
+    );
+
+  let candidate = '';
+  if (words.length > 0) {
+    const primary = words[0].toUpperCase();
+    if (primary.length <= 8) {
+      candidate = primary;
+    } else {
+      candidate = primary.slice(0, 7);
+    }
+  }
+
+  if (!candidate || candidate.length < 3) {
+    const defaultRoots = ['THEMIS', 'ASTRON', 'BIOS', 'ETHOS', 'JURIS', 'KRONOS', 'LOGOS'];
+    candidate = defaultRoots[fallbackIdx % defaultRoots.length];
+  }
+
+  let finalName = candidate;
+  let counter = 1;
+  while (existingNames.has(finalName.toUpperCase())) {
+    finalName = `${candidate}-${counter++}`;
+  }
+  return finalName.toUpperCase();
+}
+
+function formatTopicForInstruction(topic: string): string {
+  const clean = topic.trim().replace(/^["']|["']$/g, '').replace(/\s+/g, ' ');
+  if (clean.length <= 140) return clean;
+  // Truncate cleanly at a word boundary to prevent cutting words mid-sentence
+  return clean.slice(0, 137).replace(/\s+\S*$/, '') + '…';
+}
+
+function extractJsonFromCompilerResponse(rawText: string): {
+  compilerStrategy?: string;
+  compilerReasoning?: string;
+  selected?: Record<string, unknown>[];
+} | null {
+  if (!rawText || !rawText.trim()) return null;
+
+  // 1. Clean markdown code blocks
+  const text = rawText.replace(/```(?:json)?/gi, '').replace(/```/g, '').trim();
+
+  // 2. Try direct parse first
+  try {
+    const direct = JSON.parse(text);
+    if (direct && typeof direct === 'object') {
+      return direct;
+    }
+  } catch {
+    // Continue to regex extraction
+  }
+
+  // 3. Find outermost { ... }
+  const firstBrace = text.indexOf('{');
+  const lastBrace = text.lastIndexOf('}');
+  if (firstBrace !== -1 && lastBrace > firstBrace) {
+    const jsonCandidate = text.slice(firstBrace, lastBrace + 1);
+    try {
+      const parsed = JSON.parse(jsonCandidate);
+      if (parsed && typeof parsed === 'object') {
+        return parsed;
+      }
+    } catch {
+      // Continue to bracket repair
+    }
+  }
+
+  // 4. Try auto-repairing truncated JSON if cut off mid-output
+  if (firstBrace !== -1) {
+    const partial = text.slice(firstBrace);
+    const openCurly = (partial.match(/\{/g) || []).length;
+    const closeCurly = (partial.match(/\}/g) || []).length;
+    const openSquare = (partial.match(/\[/g) || []).length;
+    const closeSquare = (partial.match(/\]/g) || []).length;
+
+    let repaired = partial;
+    const quoteCount = (repaired.match(/(?<!\\)"/g) || []).length;
+    if (quoteCount % 2 !== 0) {
+      repaired += '"';
+    }
+    for (let i = 0; i < openSquare - closeSquare; i++) {
+      repaired += ']';
+    }
+    for (let i = 0; i < openCurly - closeCurly; i++) {
+      repaired += '}';
+    }
+
+    try {
+      const parsed = JSON.parse(repaired);
+      if (parsed && typeof parsed === 'object') {
+        return parsed;
+      }
+    } catch {
+      // Failed repair
+    }
+  }
+
+  return null;
+}
+
 function createFallbackSpecialists(
   topic: string,
   countNeeded: number,
   existingIds: Set<string>,
   existingNames: Set<string>,
   baseAgent: ParallaxAgentConfig,
+  opinions?: ParallaxSpecialistOpinion[],
 ): ParallaxAgentConfig[] {
   const fallbacks: ParallaxAgentConfig[] = [];
-  const cleanTopic = topic.trim().slice(0, 45);
+  const cleanTopic = formatTopicForInstruction(topic);
+  const usedEmojis = new Set<string>();
 
-  const fallbackTemplates = [
-    {
-      defaultSlug: 'domain_analyst',
-      defaultName: 'DOMINA',
-      emoji: '🔬',
-      role: 'Subject Matter Specialist',
-      instruction: `Provide analytical subject-matter evaluation and domain evidence on ${cleanTopic}.`,
-    },
-    {
-      defaultSlug: 'field_practitioner',
-      defaultName: 'PRAXIS',
-      emoji: '🛠️',
-      role: 'Applied Practice Specialist',
-      instruction: `Evaluate frontline realities, practical constraints, and execution dynamics on ${cleanTopic}.`,
-    },
-    {
-      defaultSlug: 'systems_ethicist',
-      defaultName: 'AXIOM',
-      emoji: '⚖️',
-      role: 'Systems & Ethics Specialist',
-      instruction: `Examine ethical nuances, systemic trade-offs, and second-order impacts on ${cleanTopic}.`,
-    },
-    {
-      defaultSlug: 'societal_impact',
-      defaultName: 'HUMANA',
-      emoji: '🌐',
-      role: 'Societal Dynamics Specialist',
-      instruction: `Assess human-centric, cultural, and long-term societal consequences of ${cleanTopic}.`,
-    },
-    {
-      defaultSlug: 'strategic_analyst',
-      defaultName: 'STRATIS',
-      emoji: '🎯',
-      role: 'Strategic Trajectory Specialist',
-      instruction: `Project strategic scenarios, structural risks, and future equilibria on ${cleanTopic}.`,
-    },
-  ];
+  // 1. If we have rich persona opinions from Step 1, DIRECTLY USE THEM instead of generic templates!
+  if (opinions && opinions.length > 0) {
+    for (let i = 0; i < opinions.length && fallbacks.length < countNeeded; i++) {
+      const op = opinions[i];
+      const role = op.suggestedSpecialist || 'Domain Specialist';
+      const codename = generateSpecialistCodename(role, i, existingNames);
+      existingNames.add(codename);
 
-  for (let i = 0; i < fallbackTemplates.length && fallbacks.length < countNeeded; i++) {
-    const t = fallbackTemplates[i];
-    let slug = t.defaultSlug;
-    let name = t.defaultName;
-    let suffix = 1;
-    while (existingIds.has(slug)) {
-      slug = `${t.defaultSlug}_${suffix++}`;
+      let slug = codename.toLowerCase().replace(/[^a-z0-9]/g, '_');
+      let suffix = 1;
+      while (existingIds.has(slug)) {
+        slug = `${codename.toLowerCase()}_${suffix++}`;
+      }
+      existingIds.add(slug);
+
+      const emoji = resolveDistinctEmoji(op.emoji, role, usedEmojis);
+      const palette = DYNAMIC_SPECIALIST_PALETTES[(existingIds.size - 1) % DYNAMIC_SPECIALIST_PALETTES.length];
+
+      fallbacks.push({
+        id: slug,
+        name: codename,
+        initials: codename.slice(0, 2),
+        role,
+        accentColor: palette.color,
+        hasToolAccess: false,
+        providerId: baseAgent.providerId || 'existing',
+        modelId: baseAgent.modelId || 'deepseek/deepseek-chat',
+        enabled: true,
+        systemInstruction: `Serve as ${role} on the debate topic "${cleanTopic}". Apply technical domain methodology focusing on ${op.reason}. Speak with substantive domain authority and distinct evidentiary standards.`,
+        selectionReason: `Selected from ${op.agentName}'s recommendation: ${op.reason}`,
+        maxTokens: 100,
+        voice: palette.voice,
+        isDynamic: true,
+        mood: emoji,
+      });
     }
-    existingIds.add(slug);
+  }
 
-    suffix = 1;
-    while (existingNames.has(name)) {
-      name = `${t.defaultName}-${suffix++}`;
+  // 2. If opinions are not available or not enough, generate topic-aware domain templates (no generic DOMINA/PRAXIS)
+  if (fallbacks.length < countNeeded) {
+    const topicTemplates = [
+      {
+        role: 'Empirical Verification & Methodology Specialist',
+        nameRoot: 'EMPIRIC',
+        instruction: `Ground discourse on "${cleanTopic}" with verifiable empirical datasets, methodology checks, and evidential standards.`,
+        reason: 'Required to anchor debate claims in empirical reality and prevent unchecked assertions.',
+      },
+      {
+        role: 'Systems Architecture & Policy Specialist',
+        nameRoot: 'THEMIS',
+        instruction: `Analyze systemic causal chains, institutional mechanics, and regulatory frameworks governing "${cleanTopic}".`,
+        reason: 'Required to model structural constraints, legal dynamics, and institutional trade-offs.',
+      },
+      {
+        role: 'Applied Ethics & Long-Term Welfare Specialist',
+        nameRoot: 'ETHOS',
+        instruction: `Evaluate human dignity, societal equity, ethical principles, and intergenerational impacts of "${cleanTopic}".`,
+        reason: 'Essential to center ethical accountability, human welfare, and moral rights.',
+      },
+      {
+        role: 'Strategic Equilibria & Governance Specialist',
+        nameRoot: 'STRATIS',
+        instruction: `Project strategic incentives, multi-polar equilibria, and systemic risk trade-offs on "${cleanTopic}".`,
+        reason: 'Vital to balance competing stakeholder interests and dynamic multi-polar risks.',
+      },
+    ];
+
+    for (let i = 0; i < topicTemplates.length && fallbacks.length < countNeeded; i++) {
+      const t = topicTemplates[i];
+      const codename = generateSpecialistCodename(t.nameRoot, i, existingNames);
+      existingNames.add(codename);
+
+      let slug = codename.toLowerCase();
+      let suffix = 1;
+      while (existingIds.has(slug)) {
+        slug = `${codename.toLowerCase()}_${suffix++}`;
+      }
+      existingIds.add(slug);
+
+      const emoji = resolveDistinctEmoji(undefined, t.role, usedEmojis);
+      const palette = DYNAMIC_SPECIALIST_PALETTES[(existingIds.size - 1) % DYNAMIC_SPECIALIST_PALETTES.length];
+
+      fallbacks.push({
+        id: slug,
+        name: codename,
+        initials: codename.slice(0, 2),
+        role: t.role,
+        accentColor: palette.color,
+        hasToolAccess: false,
+        providerId: baseAgent.providerId || 'existing',
+        modelId: baseAgent.modelId || 'deepseek/deepseek-chat',
+        enabled: true,
+        systemInstruction: t.instruction,
+        selectionReason: t.reason,
+        maxTokens: 100,
+        voice: palette.voice,
+        isDynamic: true,
+        mood: emoji,
+      });
     }
-    existingNames.add(name);
-
-    const palette = DYNAMIC_SPECIALIST_PALETTES[(existingIds.size - 1) % DYNAMIC_SPECIALIST_PALETTES.length];
-    fallbacks.push({
-      id: slug,
-      name,
-      initials: name.slice(0, 2),
-      role: t.role,
-      accentColor: palette.color,
-      hasToolAccess: false,
-      providerId: baseAgent.providerId || 'existing',
-      modelId: baseAgent.modelId || 'deepseek/deepseek-chat',
-      enabled: true,
-      systemInstruction: t.instruction,
-      maxTokens: 100,
-      voice: palette.voice,
-      isDynamic: true,
-      mood: t.emoji,
-    });
   }
 
   return fallbacks;
@@ -639,7 +837,8 @@ export async function compileMandatorySpecialists(
   signal?: AbortSignal,
 ): Promise<CompiledSpecialistsResult> {
   const baseAgent = existingAgents[0] || DEFAULT_PARALLAX_AGENTS.veritas;
-  const { provider } = resolveParallaxProviderConfig(baseAgent, 420);
+  // Generous token headroom so the compiled JSON is never cut off
+  const { provider } = resolveParallaxProviderConfig(baseAgent, 750);
 
   const existingIds = new Set(existingAgents.map((a) => a.id.toLowerCase()));
   const existingNames = new Set(existingAgents.map((a) => a.name.toUpperCase()));
@@ -663,21 +862,24 @@ You are the PARALLAX Swarm Specialist Compiler.
 Carefully review all 5 detailed specialist proposals from VERITAS, AXIOM, SOCRATES, HARMONY, and NEXUS-9.
 Select the top 3 most distinct, high-impact, non-overlapping specialist roles to maximize analytical coverage for this specific debate topic, eliminating redundant domains.
 
-For each of the 3 chosen specialists:
-1. Explain WHY this specialist was selected over the alternative proposals (for transparency and debate alignment).
-2. Refine into a crisp uppercase codename, emoji, precise role, and a focused 2-sentence system instruction.
+CRITICAL REQUIREMENTS:
+1. DIRECTLY DERIVE FROM PROPOSALS: The 3 selected specialists MUST directly adopt or refine 3 of the 5 proposals above. The "role" field MUST match the domain specialist proposed (e.g. if VERITAS proposed "Planetary Protection Officer", use that exact title or close equivalent). DO NOT invent generic roles like "Subject Matter Specialist" or "Applied Practice Specialist".
+2. DISTINCT UPPERCASE CODENAMES: Assign a punchy, evocative 1-word Greek/Latin/thematic uppercase codename for each (e.g., ASTRON, BIOS, THEMIS, JURIS, ETHOS, LOGOS, CUSTOS). NEVER use generic names like "SPECIALIST-1", "DOMINA", or "PRAXIS".
+3. DISTINCT DOMAIN EMOJIS: Assign a unique, contextually relevant emoji to EACH of the 3 specialists (e.g., 🪐, ⚖️, 🧬, 🛡️, 📐, 📜). All 3 specialists MUST have different emojis—never repeat the same emoji or give all 3 generic emojis like ✨ or 🚀.
+4. SPECIFIC DEBATE INSTRUCTION: Write a focused 2-sentence systemInstruction instructing this specialist on their distinct technical methodology, evidentiary standards, and domain perspective on the topic, ensuring they debate with a unique, distinct voice.
+5. SELECTION REASON: In selectionReason, explicitly state which persona proposed it and why it was chosen over the omitted proposals.
 
 OUTPUT STRICT JSON ONLY with this schema:
 {
   "compilerStrategy": "2 sentences explaining the synthesis strategy behind choosing these 3 specialists and why they cover the topic's primary axes over the 2 omitted proposals.",
   "selected": [
     {
-      "id": "slug",
-      "name": "UPPERCASE_NAME",
-      "emoji": "✨",
-      "role": "Specific Domain Specialist Role",
-      "selectionReason": "1-2 concise sentences explaining why this specialist was selected over the other proposals and what unique domain gap it covers.",
-      "systemInstruction": "2 concise sentences directing this specialist's analytical priorities, domain methodology, and debate contributions."
+      "id": "short_slug",
+      "name": "CODENAME",
+      "emoji": "🪐",
+      "role": "Full Domain Specialist Title (matching chosen proposal)",
+      "selectionReason": "Proposed by [PERSONA]: 1-2 concise sentences explaining why this specialist was selected over the other proposals.",
+      "systemInstruction": "2 concise sentences directing this specialist's domain methodology, analytical standards, and debate contributions."
     }
   ]
 }`;
@@ -689,63 +891,82 @@ OUTPUT STRICT JSON ONLY with this schema:
         {
           role: 'system',
           content:
-            'You are the PARALLAX Swarm Specialist Compiler. You review 5 detailed persona proposals and select the top 3 distinct, non-overlapping specialist personas. For each pick, you provide clear selection reasoning explaining why it was chosen over the other proposals. You output strict JSON only.',
+            'You are the PARALLAX Swarm Specialist Compiler. You review 5 detailed persona proposals and select the top 3 distinct, non-overlapping specialist personas. You MUST derive the 3 specialists directly from the provided proposals, assign distinct domain emojis, and provide transparent selection reasoning. You output strict JSON only.',
         },
         { role: 'user', content: compilePrompt },
       ],
       providerConfig: provider,
-      temperature: 0.3,
-      maxTokens: 420,
-      timeoutMs: 16000,
+      temperature: 0.25,
+      maxTokens: 750,
+      timeoutMs: 24000,
       signal,
     });
 
     const rawText = (res.text || res.content || '').trim();
-    const cleanJsonText = rawText.replace(/^```[a-z]*\s*/i, '').replace(/\s*```$/, '').trim();
-    const jsonMatch = cleanJsonText.match(/\{[\s\S]*\}/);
+    console.log(`[Parallax Compile] Compiler raw response received (length: ${rawText.length}):\n${rawText}`);
 
+    const parsedJson = extractJsonFromCompilerResponse(rawText);
     let rawList: Record<string, unknown>[] = [];
     let compilerReasoning = '';
-    if (jsonMatch) {
-      try {
-        const parsed = JSON.parse(jsonMatch[0]);
-        if (Array.isArray(parsed.selected)) {
-          rawList = parsed.selected.slice(0, 3);
-        }
-        if (typeof parsed.compilerStrategy === 'string' && parsed.compilerStrategy.trim()) {
-          compilerReasoning = parsed.compilerStrategy.trim();
-        } else if (typeof parsed.compilerReasoning === 'string' && parsed.compilerReasoning.trim()) {
-          compilerReasoning = parsed.compilerReasoning.trim();
-        }
-      } catch (e) {
-        console.warn('[Parallax Compile] JSON parse warning, supplementing with fallbacks:', e);
+
+    if (parsedJson) {
+      if (Array.isArray(parsedJson.selected)) {
+        rawList = parsedJson.selected.slice(0, 3);
       }
+      if (typeof parsedJson.compilerStrategy === 'string' && parsedJson.compilerStrategy.trim()) {
+        compilerReasoning = parsedJson.compilerStrategy.trim();
+      } else if (typeof parsedJson.compilerReasoning === 'string' && parsedJson.compilerReasoning.trim()) {
+        compilerReasoning = parsedJson.compilerReasoning.trim();
+      }
+    } else {
+      console.warn('[Parallax Compile] Failed to parse compiler response into JSON. Raw response was:\n', rawText);
     }
 
     const mandatorySpecialists: ParallaxAgentConfig[] = [];
+    const usedEmojis = new Set<string>();
 
     rawList.forEach((item: Record<string, unknown>, idx: number) => {
       if (!item || typeof item !== 'object') return;
-      let rawId = typeof item.id === 'string' ? item.id.toLowerCase().replace(/[^a-z0-9]/g, '') : `mand_spec_${idx + 1}`;
-      if (!rawId || existingIds.has(rawId)) {
-        rawId = `${rawId}_${idx + 1}`;
-      }
-      existingIds.add(rawId);
+      const role = typeof item.role === 'string' && item.role.trim() ? item.role.trim() : `Specialist ${idx + 1}`;
 
-      let rawName = typeof item.name === 'string' ? item.name.toUpperCase().replace(/[^A-Z0-9-]/g, '').trim() : `SPECIALIST-${idx + 1}`;
-      if (!rawName || existingNames.has(rawName)) {
-        rawName = `${rawName}-${idx + 1}`;
+      let rawName =
+        typeof item.name === 'string' && item.name.trim()
+          ? item.name.toUpperCase().replace(/[^A-Z0-9-]/g, '').trim()
+          : '';
+
+      // If name is missing, generic, or duplicated, generate a tailored domain codename
+      if (
+        !rawName ||
+        rawName.startsWith('SPECIALIST') ||
+        rawName === 'DOMINA' ||
+        rawName === 'PRAXIS' ||
+        existingNames.has(rawName)
+      ) {
+        rawName = generateSpecialistCodename(role, idx, existingNames);
       }
       existingNames.add(rawName);
 
-      const emoji = typeof item.emoji === 'string' && item.emoji.trim() ? item.emoji.trim() : '✨';
-      const role = typeof item.role === 'string' && item.role.trim() ? item.role.trim() : 'Domain Specialist';
-      const systemInstruction = typeof item.systemInstruction === 'string' && item.systemInstruction.trim()
-        ? item.systemInstruction.trim()
-        : `Apply rigorous domain-specific analysis from the perspective of a ${role}.`;
-      const selectionReason = typeof item.selectionReason === 'string' && item.selectionReason.trim()
-        ? item.selectionReason.trim()
-        : 'Selected for domain complementarity and non-overlapping analytical rigor.';
+      let rawId =
+        typeof item.id === 'string' && item.id.trim()
+          ? item.id.toLowerCase().replace(/[^a-z0-9_]/g, '')
+          : rawName.toLowerCase();
+      if (!rawId || existingIds.has(rawId)) {
+        rawId = `${rawName.toLowerCase()}_${idx + 1}`;
+      }
+      existingIds.add(rawId);
+
+      const rawEmoji = typeof item.emoji === 'string' ? item.emoji.trim() : undefined;
+      const emoji = resolveDistinctEmoji(rawEmoji, role, usedEmojis);
+
+      const systemInstruction =
+        typeof item.systemInstruction === 'string' && item.systemInstruction.trim()
+          ? item.systemInstruction.trim()
+          : `Apply rigorous domain-specific analysis from the perspective of a ${role} on the debate topic "${formatTopicForInstruction(topic)}".`;
+
+      const selectionReason =
+        typeof item.selectionReason === 'string' && item.selectionReason.trim()
+          ? item.selectionReason.trim()
+          : 'Selected for domain complementarity and non-overlapping analytical rigor.';
 
       const palette = DYNAMIC_SPECIALIST_PALETTES[idx % DYNAMIC_SPECIALIST_PALETTES.length];
       const initials = rawName.replace(/[^A-Z]/g, '').slice(0, 2) || 'SP';
@@ -771,13 +992,14 @@ OUTPUT STRICT JSON ONLY with this schema:
 
     if (mandatorySpecialists.length < 3) {
       const needed = 3 - mandatorySpecialists.length;
-      const supplemental = createFallbackSpecialists(topic, needed, existingIds, existingNames, baseAgent);
+      console.warn(`[Parallax Compile] Compiler produced ${mandatorySpecialists.length}/3 specialists. Generating ${needed} from persona proposals...`);
+      const supplemental = createFallbackSpecialists(topic, needed, existingIds, existingNames, baseAgent, opinions);
       mandatorySpecialists.push(...supplemental);
     }
 
     const finalSpecialists = mandatorySpecialists.slice(0, 3);
     if (!compilerReasoning && finalSpecialists.length >= 3) {
-      compilerReasoning = `Selected ${finalSpecialists.map((s) => s.name).join(', ')} to balance empirical, structural, and ethical domain axes without analytical overlap.`;
+      compilerReasoning = `Selected ${finalSpecialists.map((s) => `${s.name} (${s.role})`).join(', ')} to balance empirical, structural, and ethical domain axes without analytical overlap.`;
     }
 
     return {
@@ -786,11 +1008,11 @@ OUTPUT STRICT JSON ONLY with this schema:
     };
   } catch (err) {
     if (signal?.aborted) throw err;
-    console.warn('[Parallax Compile] Compiler call failed, generating fallback mandatory specialists:', err);
-    const fallbacks = createFallbackSpecialists(topic, 3, existingIds, existingNames, baseAgent);
+    console.warn('[Parallax Compile] Compiler call failed with error, generating from persona proposals:', err);
+    const fallbacks = createFallbackSpecialists(topic, 3, existingIds, existingNames, baseAgent, opinions);
     return {
       specialists: fallbacks,
-      compilerReasoning: `Fallback selection: Mobilized ${fallbacks.map((s) => s.name).join(', ')} across key analytical axes.`,
+      compilerReasoning: `Compiled from persona proposals: Mobilized ${fallbacks.map((s) => `${s.name} (${s.role})`).join(', ')} across key analytical axes.`,
     };
   }
 }
@@ -1122,6 +1344,8 @@ Constraint: Exactly 1-2 punchy sentences (<40 words). Speak directly; no greetin
       } else {
         userPrompt = `Topic: "${topic}"\n\nProvide your initial 1-2 sentence perspective on this topic based on your fact-based, skeptical analysis as VERITAS.`;
       }
+    } else if (agent.isDynamic) {
+      userPrompt = `Topic: "${topic}"\nProvide your initial 1-2 sentence perspective on this topic strictly applying your specialized domain expertise as ${agent.name} (${agent.role}).`;
     } else {
       userPrompt = `Topic: "${topic}"\nProvide your initial 1-2 sentence perspective on this topic based on your archetype.`;
     }
@@ -1152,6 +1376,8 @@ Constraint: Exactly 1-2 punchy sentences (<40 words). Speak directly; no greetin
 
     if (agent.id === 'veritas' && veritasGrounding && !veritasGrounding.failed && veritasGrounding.committedFact) {
       userPrompt = `Topic: "${topic}"\n\n[Committed Verified Fact]: "${veritasGrounding.committedFact}"\n\nPeer points from Round ${round - 1}:\n${peerBullets}\n\n${action} as VERITAS, upholding your verified fact.`;
+    } else if (agent.isDynamic) {
+      userPrompt = `Topic: "${topic}"\n\nPeer points from Round ${round - 1}:\n${peerBullets}\n\n${action} as ${agent.name} strictly applying your specialized domain expertise as ${agent.role}.`;
     } else {
       userPrompt = `Topic: "${topic}"\n\nPeer points from Round ${round - 1}:\n${peerBullets}\n\n${action} as ${agent.name}.`;
     }
@@ -1573,7 +1799,7 @@ export async function runParallaxSwarm(options: ParallaxRunOptions): Promise<voi
       const baseAgent = enabledAgents[0] || DEFAULT_PARALLAX_AGENTS.veritas;
       const existingIds = new Set(enabledAgents.map((a) => a.id.toLowerCase()));
       const existingNames = new Set(enabledAgents.map((a) => a.name.toUpperCase()));
-      const fallbackMandatory = createFallbackSpecialists(topic, 3, existingIds, existingNames, baseAgent);
+      const fallbackMandatory = createFallbackSpecialists(topic, 3, existingIds, existingNames, baseAgent, specialistDeliberation?.opinions);
       dynamicAgents = fallbackMandatory;
       specialistDeliberation = {
         opinions: [],
