@@ -823,7 +823,7 @@ async function executeAiWithProviderOrFallback({
 
     if (isCreditOrPaymentError) {
       failureCategory = 'insufficient credits / payment required (HTTP 402)';
-      cooldownDuration = 300000; // 5m cooldown so subsequent agent steps automatically skip this exhausted key
+      cooldownDuration = 60000; // 1m (60s) cooldown so subsequent agent steps automatically skip this exhausted key
     } else if (isAuthError) {
       failureCategory = `auth/credentials failed (HTTP ${status})`;
       cooldownDuration = 300000; // 5m cooldown for bad keys

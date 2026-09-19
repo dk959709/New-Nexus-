@@ -573,8 +573,7 @@ export function AIProvidersSettings() {
         const errorMsg = res.error || `HTTP ${res.status || 'Error'}`;
         const isAuth = res.status === 401 || res.status === 403;
         const statusType: KeyHealthStatus = isAuth ? 'invalid' : 'cooldown';
-        const isCreditIssue = res.status === 402 || /credit|payment|afford|balance/i.test(errorMsg);
-        const cooldownMs = isCreditIssue ? 300000 : 60000;
+        const cooldownMs = 60000; // 60s cooldown (1 minute)
         setKeyTestResults((prev) => ({
           ...prev,
           [keyItem.id]: { ok: false, message: `✕ ${errorMsg}` },
