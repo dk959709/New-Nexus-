@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import {
   Plus,
   Trash2,
@@ -82,6 +82,22 @@ export function AIProvidersSettings() {
     setImageProvidersState(newState);
     storage.saveImageProvidersState(newState);
   };
+
+  // Keep state synchronized with storage events
+  useEffect(() => {
+    const handleSync = () => {
+      setProvidersState(storage.getAIProvidersState());
+      setImageProvidersState(storage.getImageProvidersState());
+    };
+    window.addEventListener('storage', handleSync);
+    window.addEventListener('nexus-ai-providers-updated', handleSync);
+    window.addEventListener('nexus-image-providers-updated', handleSync);
+    return () => {
+      window.removeEventListener('storage', handleSync);
+      window.removeEventListener('nexus-ai-providers-updated', handleSync);
+      window.removeEventListener('nexus-image-providers-updated', handleSync);
+    };
+  }, []);
 
   // Open modal/editor for a new provider
   const handleAddNew = (type: AIProviderType = 'text') => {
@@ -204,21 +220,22 @@ export function AIProvidersSettings() {
       keys: finalKeys,
     };
 
-    const existingIndex = providersState.providers.findIndex(
+    const currentStored = storage.getAIProvidersState();
+    const existingIndex = currentStored.providers.findIndex(
       (p) => p.id === finalProvider.id
     );
     let updatedList: AIProviderConfig[];
 
     if (existingIndex >= 0) {
-      updatedList = providersState.providers.map((p) =>
+      updatedList = currentStored.providers.map((p) =>
         p.id === finalProvider.id ? finalProvider : p
       );
     } else {
-      updatedList = [...providersState.providers, finalProvider];
+      updatedList = [...currentStored.providers, finalProvider];
     }
 
     const newState: AIProvidersState = {
-      activeProviderId: providersState.activeProviderId,
+      activeProviderId: currentStored.activeProviderId || providersState.activeProviderId,
       providers: updatedList,
     };
 
@@ -287,21 +304,22 @@ export function AIProvidersSettings() {
       keys: finalKeys,
     };
 
-    const existingIndex = imageProvidersState.providers.findIndex(
+    const currentStoredImage = storage.getImageProvidersState();
+    const existingIndex = currentStoredImage.providers.findIndex(
       (p) => p.id === finalProvider.id
     );
     let updatedList: ImageProviderConfig[];
 
     if (existingIndex >= 0) {
-      updatedList = imageProvidersState.providers.map((p) =>
+      updatedList = currentStoredImage.providers.map((p) =>
         p.id === finalProvider.id ? finalProvider : p
       );
     } else {
-      updatedList = [...imageProvidersState.providers, finalProvider];
+      updatedList = [...currentStoredImage.providers, finalProvider];
     }
 
     const newState: ImageProvidersState = {
-      activeProviderId: imageProvidersState.activeProviderId || finalProvider.id,
+      activeProviderId: currentStoredImage.activeProviderId || imageProvidersState.activeProviderId || finalProvider.id,
       providers: updatedList,
     };
 

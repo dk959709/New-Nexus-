@@ -1135,6 +1135,10 @@ export const storage = {
 
   saveAIProvidersState(state: AIProvidersState): void {
     write(KEYS.aiProviders, state);
+    if (typeof window !== 'undefined') {
+      window.dispatchEvent(new CustomEvent('nexus-ai-providers-updated', { detail: state }));
+      window.dispatchEvent(new Event('storage'));
+    }
   },
 
   getActiveAIProvider(): AIProviderConfig | null {
@@ -1182,6 +1186,10 @@ export const storage = {
 
   saveImageProvidersState(state: ImageProvidersState): void {
     write(KEYS.imageProviders, state);
+    if (typeof window !== 'undefined') {
+      window.dispatchEvent(new CustomEvent('nexus-image-providers-updated', { detail: state }));
+      window.dispatchEvent(new Event('storage'));
+    }
   },
 
   getActiveImageProvider(): ImageProviderConfig | null {

@@ -133,6 +133,9 @@ async function executeProviderChatRequest({
 
   for (let attempt = 1; attempt <= maxAttempts; attempt++) {
     try {
+      console.log(
+        `[AI Provider Outgoing Request] POST ${url} | model: "${model}" | max_tokens: ${maxTokens} | temp: ${temperature} | key: ${key ? `${key.slice(0, 10)}...` : 'NONE'} (attempt ${attempt}/${maxAttempts})`
+      );
       const res = await fetch(url, {
         method: 'POST',
         headers,
@@ -628,6 +631,10 @@ async function executeAiWithProviderOrFallback({
     (k): k is CustomKeyItem & { key: string } => Boolean(k && typeof k.key === 'string' && k.key.trim().length > 0),
   );
 
+  console.log(
+    `[AI Provider Failover: ${providerConfig.name}] Starting execution with ${validKeys.length} valid keys out of ${rawKeys.length} configured items in payload: [${validKeys.map((k, idx) => `"${k.label || `API Key ${idx + 1}`}"`).join(', ')}]`,
+  );
+
   const serverKey =
     process.env.AI_API_KEY ||
     process.env.OPENROUTER_API_KEY ||
@@ -703,13 +710,14 @@ async function executeAiWithProviderOrFallback({
   const inactiveKeys = orderedKeys.filter((k) => !isKeyActive(k));
   const finalKeySequence = activeKeys.length > 0 ? [...activeKeys, ...inactiveKeys] : orderedKeys;
 
-  // Deduplicate keys by key string
-  const seenKeyStrings = new Set<string>();
+  // Preserve all configured keys in sequence (avoid deduplication by key string which drops distinct keys)
+  const seenKeyIds = new Set<string>();
   const executionKeyList: Array<CustomKeyItem & { key: string }> = [];
-  for (const k of finalKeySequence) {
-    const trimmedKey = k.key.trim();
-    if (!seenKeyStrings.has(trimmedKey)) {
-      seenKeyStrings.add(trimmedKey);
+  for (let idx = 0; idx < finalKeySequence.length; idx++) {
+    const k = finalKeySequence[idx];
+    const keyIdentifier = k.id || `key_idx_${idx}`;
+    if (!seenKeyIds.has(keyIdentifier)) {
+      seenKeyIds.add(keyIdentifier);
       executionKeyList.push(k);
     }
   }
@@ -772,47 +780,51 @@ async function executeAiWithProviderOrFallback({
       result.ok && (!result.text || !result.text.trim());
 
     // Check if the error indicates a token budget ceiling (e.g. OpenRouter: "You requested up to X tokens, but can only afford Y")
-    const affordMatch = rawError.match(/can only afford (\d+)/i);
-    if (affordMatch && affordMatch[1]) {
-      const affordableTokens = parseInt(affordMatch[1], 10);
-      if (affordableTokens > 16) {
-        const adjustedMaxTokens = Math.min(effectiveMaxTokens, Math.max(16, Math.floor(affordableTokens * 0.95)));
-        if (adjustedMaxTokens < effectiveMaxTokens) {
-          console.warn(
-            `[AI Provider Failover: ${providerConfig.name}] Provider credit allowance limit encountered ("can only afford ${affordableTokens}"). Adapting maxTokens from ${effectiveMaxTokens} to ${adjustedMaxTokens} for subsequent attempts.`,
-          );
-          effectiveMaxTokens = adjustedMaxTokens;
+    const affordMatch =
+      rawError.match(/can only afford (\d+)/i) ||
+      rawError.match(/(?:afford up to|affordable:?)\s*(\d+)/i) ||
+      rawError.match(/(\d+)\s*(?:tokens available|tokens afford)/i) ||
+      rawError.match(/requires more credits, or fewer max_tokens[^\d]*(\d+)?/i);
 
-          // If this key wasn't retried yet and can afford at least 30 tokens, retry it once with the adapted budget
-          if (!retriedKeysWithBudget.has(keyVal) && affordableTokens >= 30) {
-            retriedKeysWithBudget.add(keyVal);
-            console.warn(
-              `[AI Provider Failover: ${providerConfig.name}] Retrying Key "${keyLabel}" (${i + 1}/${executionKeyList.length}) with adapted budget of ${effectiveMaxTokens} tokens...`,
+    if (affordMatch) {
+      const affordableTokens = affordMatch[1] ? parseInt(affordMatch[1], 10) : 16;
+      const safeBudget = Math.max(1, Math.floor(affordableTokens * 0.95) || affordableTokens);
+      const adjustedMaxTokens = Math.min(effectiveMaxTokens, safeBudget);
+      if (adjustedMaxTokens < effectiveMaxTokens) {
+        console.warn(
+          `[AI Provider Failover: ${providerConfig.name}] Provider credit allowance limit encountered ("can only afford ${affordableTokens}"). Adapting maxTokens from ${effectiveMaxTokens} to ${adjustedMaxTokens} for subsequent attempts.`,
+        );
+        effectiveMaxTokens = adjustedMaxTokens;
+
+        // If this key wasn't retried yet and can afford at least 4 tokens, retry it once with the adapted budget
+        if (!retriedKeysWithBudget.has(keyVal) && affordableTokens >= 4) {
+          retriedKeysWithBudget.add(keyVal);
+          console.warn(
+            `[AI Provider Failover: ${providerConfig.name}] Retrying Key "${keyLabel}" (${i + 1}/${executionKeyList.length}) with adapted budget of ${effectiveMaxTokens} tokens...`,
+          );
+          const retryResult = await executeProviderChatRequest({
+            url,
+            model,
+            key: keyVal,
+            messages,
+            temperature,
+            maxTokens: effectiveMaxTokens,
+            timeoutMs: effectiveTimeout,
+          });
+          if (retryResult.ok && retryResult.text && retryResult.text.trim().length > 0) {
+            keyCooldownMap.delete(keyVal);
+            console.log(
+              `[AI Provider Failover: ${providerConfig.name}] Key "${keyLabel}" (${i + 1}/${executionKeyList.length}) succeeded on adapted token budget (${effectiveMaxTokens} tokens).`,
             );
-            const retryResult = await executeProviderChatRequest({
-              url,
-              model,
-              key: keyVal,
-              messages,
-              temperature,
-              maxTokens: effectiveMaxTokens,
-              timeoutMs: effectiveTimeout,
-            });
-            if (retryResult.ok && retryResult.text && retryResult.text.trim().length > 0) {
-              keyCooldownMap.delete(keyVal);
-              console.log(
-                `[AI Provider Failover: ${providerConfig.name}] Key "${keyLabel}" (${i + 1}/${executionKeyList.length}) succeeded on adapted token budget (${effectiveMaxTokens} tokens).`,
-              );
-              return {
-                text: retryResult.text,
-                content: retryResult.content,
-                reasoning: retryResult.reasoning,
-                model: retryResult.model || model,
-                providerName: providerConfig.name,
-              };
-            }
-            result = retryResult;
+            return {
+              text: retryResult.text,
+              content: retryResult.content,
+              reasoning: retryResult.reasoning,
+              model: retryResult.model || model,
+              providerName: providerConfig.name,
+            };
           }
+          result = retryResult;
         }
       }
     }

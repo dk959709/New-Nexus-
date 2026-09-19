@@ -1037,6 +1037,10 @@ function resolveProviderConfig(
     maxTokens: effectiveMaxTokens,
   };
 
+  console.log(
+    `[JARVIS resolveProviderConfig] Agent "${agentConfig.name}" -> Provider "${customConfig.name}" (${customConfig.id}) | model: "${liveModel}" | keys configured: ${customConfig.keys?.length || 0}`,
+  );
+
   return {
     provider: customConfig,
     model: liveModel,

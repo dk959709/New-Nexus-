@@ -58,6 +58,9 @@ export function resolveParallaxProviderConfig(
   const matched = state.providers.find((p) => p.id === agent.providerId);
   if (matched) {
     const liveModel = agent.modelId || matched.model || 'deepseek/deepseek-chat';
+    console.log(
+      `[PARALLAX resolveProviderConfig] Persona "${agent.name}" -> Provider "${matched.name}" (${matched.id}) | model: "${liveModel}" | keys configured: ${matched.keys?.length || 0}`,
+    );
     return {
       provider: {
         ...matched,
