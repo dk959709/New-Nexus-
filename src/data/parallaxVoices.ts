@@ -132,8 +132,14 @@ export function formatFullParallaxTranscript(
     if (specialistDeliberation.selectedMandatory && specialistDeliberation.selectedMandatory.length > 0) {
       output += `COMPILED MANDATORY SPECIALISTS (Top 3 Distinct Picks):\n`;
       output += `${subDivider}\n`;
+      if (specialistDeliberation.compilerReasoning) {
+        output += `Compiler Strategy: ${specialistDeliberation.compilerReasoning}\n\n`;
+      }
       specialistDeliberation.selectedMandatory.forEach((m, idx) => {
         output += `• [Mandatory #${idx + 1}] ${m.name} ${m.mood || '✨'} (${m.role}) [Dynamically Generated]\n`;
+        if (m.selectionReason) {
+          output += `  Selection Rationale: ${m.selectionReason}\n`;
+        }
         output += `  Focus: ${m.systemInstruction}\n`;
       });
       output += '\n';

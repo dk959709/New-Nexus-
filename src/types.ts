@@ -455,6 +455,7 @@ export interface ParallaxAgentConfig {
   voice?: string; // Edge TTS neural voice ID
   isDynamic?: boolean;
   mood?: string;
+  selectionReason?: string;
 }
 
 export interface ParallaxSystemConfig {
@@ -532,6 +533,8 @@ export interface ParallaxSpecialistDeliberation {
   selectedMandatory: ParallaxAgentConfig[]; // exactly 3
   additionalSpecialists: ParallaxAgentConfig[]; // 0 to 2
   allSpecialists: ParallaxAgentConfig[]; // 3 to 5
+  compilerReasoning?: string;
+  selectionReasons?: Record<string, string>;
 }
 
 export interface ParallaxSession {

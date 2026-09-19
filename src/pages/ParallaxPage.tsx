@@ -1773,6 +1773,22 @@ export const ParallaxPage: React.FC = () => {
                               Active in all 3 Rounds
                             </span>
                           </div>
+                          {specialistDeliberation.compilerReasoning && (
+                            <div
+                              style={{
+                                fontSize: '11px',
+                                color: '#94a3b8',
+                                lineHeight: 1.4,
+                                padding: '6px 10px',
+                                borderRadius: '8px',
+                                background: 'rgba(16, 185, 129, 0.05)',
+                                border: '1px solid rgba(16, 185, 129, 0.2)',
+                              }}
+                            >
+                              <span style={{ fontWeight: 700, color: '#a7f3d0' }}>Compiler Strategy: </span>
+                              <span>{specialistDeliberation.compilerReasoning}</span>
+                            </div>
+                          )}
                           <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(260px, 1fr))', gap: '10px' }}>
                             {specialistDeliberation.selectedMandatory.map((spec, sIdx) => (
                               <div
@@ -1810,6 +1826,12 @@ export const ParallaxPage: React.FC = () => {
                                 <div style={{ fontSize: '11px', fontWeight: 600, color: '#e2e8f0' }}>
                                   {spec.role}
                                 </div>
+                                {spec.selectionReason && (
+                                  <div style={{ fontSize: '10px', color: '#6ee7b7', lineHeight: 1.35, fontStyle: 'italic' }}>
+                                    <span style={{ fontWeight: 700, color: '#34d399', fontStyle: 'normal' }}>Rationale: </span>
+                                    {spec.selectionReason}
+                                  </div>
+                                )}
                                 <div style={{ fontSize: '10px', color: '#94a3b8', lineHeight: 1.35 }}>
                                   {spec.systemInstruction}
                                 </div>

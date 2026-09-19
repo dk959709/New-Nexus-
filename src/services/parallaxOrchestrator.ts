@@ -421,7 +421,8 @@ interface PersonaOpinionTarget {
   emoji: string;
   role: string;
   accentColor: string;
-  angle: string;
+  detailedPersona: string;
+  worldviewFocus: string;
   defaultSpecialist: string;
   defaultReason: string;
 }
@@ -433,9 +434,13 @@ const PERSONA_OPINION_TARGETS: PersonaOpinionTarget[] = [
     emoji: '🧠',
     role: 'Fact-based, skeptical analysis',
     accentColor: '#06b6d4',
-    angle: 'empirical data, verifiable evidence, and methodological scrutiny',
-    defaultSpecialist: 'Empirical Research & Methodology Specialist',
-    defaultReason: 'Without verifiable empirical data on this topic, discourse risks resting on unchecked assertions.',
+    detailedPersona:
+      'You are VERITAS 🧠, the fact-based, hyper-skeptical reality anchor of the Parallax Swarm. Your role is to provide rigorous empirical scrutiny, demand verifiable evidence, uncover unverified assumptions, and flag factual voids. In any debate, you refuse to accept speculative rhetoric without concrete documentation, empirical research benchmarks, or methodological validation.',
+    worldviewFocus:
+      'Empirical voids, unverified statistical assertions, lack of historical or scientific datasets, and methodological validation.',
+    defaultSpecialist: 'Empirical Research & Verification Methodology Specialist',
+    defaultReason:
+      'Discussion on this topic risks resting on unverified assertions without rigorous empirical datasets and methodological validation. A dedicated specialist is necessary to ground claims in documented evidence and empirical reality.',
   },
   {
     id: 'axiom',
@@ -443,9 +448,13 @@ const PERSONA_OPINION_TARGETS: PersonaOpinionTarget[] = [
     emoji: '📐',
     role: 'Pure logic & scientific reasoning',
     accentColor: '#10b981',
-    angle: 'first-principles logic, mathematical consistency, and causal systems dynamics',
-    defaultSpecialist: 'Systems Logic & Causal Dynamics Specialist',
-    defaultReason: 'A rigorous first-principles logical framework is required to trace systemic causal dependencies and consistency.',
+    detailedPersona:
+      'You are AXIOM 📐, the pure logic and first-principles scientific reasoning engine of the Parallax Swarm. Your role is to enforce formal deductive validity, trace systemic causal dependency chains, expose cognitive fallacies, and evaluate physical or computational constraints. You model problems as interconnected, falsifiable causal systems where every conclusion must follow sound premises.',
+    worldviewFocus:
+      'First-principles causality, formal deductive consistency, broken causal links, and systemic dynamic feedback loops.',
+    defaultSpecialist: 'Systems Logic & Causal Architecture Specialist',
+    defaultReason:
+      'Prevailing viewpoints on this topic conflate correlation with causation and lack formal first-principles consistency. An architecture and causal dynamics specialist is required to trace systemic dependencies and constraints.',
   },
   {
     id: 'socrates',
@@ -453,9 +462,13 @@ const PERSONA_OPINION_TARGETS: PersonaOpinionTarget[] = [
     emoji: '🤔',
     role: 'Deep philosophical questioning',
     accentColor: '#8b5cf6',
-    angle: 'philosophical inquiry, interrogation of unexamined premises, and conceptual clarity',
+    detailedPersona:
+      'You are SOCRATES 🤔, the philosophical interrogator and conceptual foundation analyst of the Parallax Swarm. Your role is to interrogate unexamined premises, expose tacit ideological dogmas, deconstruct ambiguous definitions, and dissect the teleological intent behind arguments. You refuse to let participants proceed without confronting the core epistemological and metaphysical questions they take for granted.',
+    worldviewFocus:
+      'Unexamined premises, linguistic ambiguities, tacit ideological dogmas, and foundational philosophical or epistemological dilemmas.',
     defaultSpecialist: 'Epistemology & Conceptual Foundations Specialist',
-    defaultReason: 'We must examine the foundational premises and hidden assumptions that pre-condition debate on this question.',
+    defaultReason:
+      'The foundational definitions and tacit philosophical presuppositions framing this debate remain completely unexamined. A specialist in conceptual foundations is vital to clarify core premises before meaningful debate can proceed.',
   },
   {
     id: 'harmony',
@@ -463,9 +476,13 @@ const PERSONA_OPINION_TARGETS: PersonaOpinionTarget[] = [
     emoji: '🕊️',
     role: 'Ethical & ontological concerns',
     accentColor: '#14b8a6',
-    angle: 'ethical imperatives, human dignity, societal equity, and emotional welfare',
-    defaultSpecialist: 'Human Welfare & Applied Ethics Specialist',
-    defaultReason: 'Human dignity, equity, and ethical consequences must anchor how this topic affects real communities.',
+    detailedPersona:
+      'You are HARMONY 🕊️, the ethical conscience and human dignity advocate of the Parallax Swarm. Your role is to champion human dignity, societal equity, ecological preservation, vulnerable communities, and moral accountability. You insist that utilitarian or technocratic metrics must never overshadow human suffering, moral rights, and generational justice.',
+    worldviewFocus:
+      'Moral obligations, human rights, societal equity, ecological stewardship, and impacts on vulnerable communities.',
+    defaultSpecialist: 'Applied Ethics & Human Welfare Specialist',
+    defaultReason:
+      'Technocratic and utilitarian arguments on this topic consistently neglect human dignity, societal equity, and disproportionate impacts on vulnerable communities. An applied ethics specialist is essential to center moral accountability and welfare.',
   },
   {
     id: 'nexus9',
@@ -473,18 +490,22 @@ const PERSONA_OPINION_TARGETS: PersonaOpinionTarget[] = [
     emoji: '⚖️',
     role: 'Neutral synthesizer/summarizer',
     accentColor: '#67e8f9',
-    angle: 'systemic synthesis, trade-off governance, and multi-domain equilibrium',
-    defaultSpecialist: 'Cross-Domain Governance & Trade-Offs Specialist',
-    defaultReason: 'Balancing competing interests on this issue requires structural synthesis across institutional and policy trade-offs.',
+    detailedPersona:
+      'You are NEXUS-9 ⚖️, the systemic synthesizer and objective equilibrium architect of the Parallax Swarm. Your role is to map multi-polar trade-offs, institutional governance frameworks, regulatory friction, and practical consensus mechanics across divergent paradigms. You identify where competing stakeholder incentives collide and how structural balance can be achieved.',
+    worldviewFocus:
+      'Multi-stakeholder governance, institutional friction, cross-domain trade-offs, and practical equilibrium mechanics.',
+    defaultSpecialist: 'Cross-Domain Governance & Policy Trade-Offs Specialist',
+    defaultReason:
+      'Conflicting stakeholder interests on this topic will produce institutional gridlock without a structured governance framework. A cross-domain trade-offs specialist is critical to map sustainable regulatory mechanisms and equilibrium.',
   },
 ];
 
 /**
  * Step 1: 5-Persona Opinion Step
  * VERITAS 🧠, AXIOM 📐, SOCRATES 🤔, HARMONY 🕊️, and NEXUS-9 ⚖️ each independently
- * give a short, reasoned opinion on what specialist expertise this specific topic needs
- * in their distinctive persona voice/style.
- * Token budget: ~140 input tokens, ~60-80 output tokens each.
+ * give a rich, 2-sentence reasoned opinion on what specialist expertise this specific topic needs
+ * grounded in their distinctive persona worldview and system prompt identity.
+ * Token budget: ~150-180 input tokens, ~80-100 output tokens each.
  */
 export async function fetchPersonaSpecialistOpinions(
   topic: string,
@@ -492,20 +513,30 @@ export async function fetchPersonaSpecialistOpinions(
   signal?: AbortSignal,
 ): Promise<ParallaxSpecialistOpinion[]> {
   const baseAgent = existingAgents[0] || DEFAULT_PARALLAX_AGENTS.veritas;
-  const { provider } = resolveParallaxProviderConfig(baseAgent, 100);
+  const { provider } = resolveParallaxProviderConfig(baseAgent, 150);
 
   const opinionPromises = PERSONA_OPINION_TARGETS.map(async (target) => {
     const matchedAgent = existingAgents.find((a) => a.id.toLowerCase() === target.id) || baseAgent;
-    const targetProvider = resolveParallaxProviderConfig(matchedAgent, 100).provider || provider;
+    const targetProvider = resolveParallaxProviderConfig(matchedAgent, 150).provider || provider;
 
-    const sysContent = `You are ${target.name} ${target.emoji} (${target.role}).
-Tone & priorities: ${target.angle}.
-TASK: Propose ONE domain specialist expertise needed for this debate topic in your distinctive persona voice.
-FORMAT STRICTLY:
-Specialist: [Role or Domain Title]
-Reason: [1 concise sentence in your persona voice explaining why this domain expertise is required]`;
+    const sysContent = `${target.detailedPersona}
 
-    const userContent = `Topic: "${topic}"\nPropose the specialist expertise needed.`;
+Worldview Focus: ${target.worldviewFocus}
+
+TASK:
+Analyze the debate topic below through your distinct philosophical lens and persona worldview.
+Identify the single most critical domain expertise missing from conventional discussions on this topic, and propose ONE domain specialist.
+Provide exactly 2 substantive sentences of reasoning in your persona voice:
+• Sentence 1: Identify the specific empirical, logical, philosophical, ethical, or governance gap you detect on this topic.
+• Sentence 2: Explain specifically how this proposed specialist resolves that gap and elevates swarm deliberation.
+
+FORMAT STRICTLY (No preamble, no markdown formatting):
+Specialist: [Precise Domain Specialist Title]
+Reason: [Sentence 1 explaining the specific domain gap. Sentence 2 explaining how this specialist resolves it.]`;
+
+    const userContent = `Debate Topic: "${topic}"
+
+From your distinct persona identity, worldview principles, and analytical role, propose the single most essential domain specialist expertise needed for this deliberation.`;
 
     try {
       const res = await api.jarvisAgentCall({
@@ -516,8 +547,8 @@ Reason: [1 concise sentence in your persona voice explaining why this domain exp
         ],
         providerConfig: targetProvider,
         temperature: 0.35,
-        maxTokens: 100,
-        timeoutMs: 12000,
+        maxTokens: 150,
+        timeoutMs: 14000,
         signal,
       });
 
@@ -539,7 +570,7 @@ Reason: [1 concise sentence in your persona voice explaining why this domain exp
         const lines = raw.split(/\r?\n/).map((l) => l.trim()).filter(Boolean);
         if (lines.length >= 2) {
           specialist = specialist || lines[0].replace(/^[^:]*:\s*/, '').replace(/[*_#`[\]]/g, '').trim();
-          reason = reason || lines[1].replace(/^[^:]*:\s*/, '').replace(/[*_#`]/g, '').trim();
+          reason = reason || lines.slice(1).join(' ').replace(/^Reason:\s*/i, '').replace(/[*_#`]/g, '').trim();
         } else if (lines.length === 1) {
           specialist = specialist || target.defaultSpecialist;
           reason = reason || lines[0];
@@ -589,45 +620,64 @@ Reason: [1 concise sentence in your persona voice explaining why this domain exp
   });
 }
 
+export interface CompiledSpecialistsResult {
+  specialists: ParallaxAgentConfig[];
+  compilerReasoning?: string;
+}
+
 /**
  * Step 2: Compile Step
  * Reviews the 5 suggestions and selects the 3 most distinct, non-overlapping specialist
- * ideas among them to eliminate redundancy. Compiles into exactly 3 mandatory specialists.
- * Token budget: ~220 input tokens, ~240 output tokens.
+ * ideas among them to eliminate redundancy. Compiles into exactly 3 mandatory specialists
+ * and provides explicit selection reasoning explaining why each was chosen.
+ * Token budget: ~350 input tokens, ~200 output tokens.
  */
 export async function compileMandatorySpecialists(
   topic: string,
   opinions: ParallaxSpecialistOpinion[],
   existingAgents: ParallaxAgentConfig[],
   signal?: AbortSignal,
-): Promise<ParallaxAgentConfig[]> {
+): Promise<CompiledSpecialistsResult> {
   const baseAgent = existingAgents[0] || DEFAULT_PARALLAX_AGENTS.veritas;
-  const { provider } = resolveParallaxProviderConfig(baseAgent, 280);
+  const { provider } = resolveParallaxProviderConfig(baseAgent, 420);
 
   const existingIds = new Set(existingAgents.map((a) => a.id.toLowerCase()));
   const existingNames = new Set(existingAgents.map((a) => a.name.toUpperCase()));
 
   const opinionLines = opinions
-    .map((op, idx) => `${idx + 1}. ${op.agentName} ${op.emoji}: "${op.suggestedSpecialist}" — ${op.reason}`)
-    .join('\n');
+    .map(
+      (op, idx) =>
+        `[PROPOSAL ${idx + 1} from ${op.agentName} ${op.emoji} (${op.role})]\n` +
+        `• Proposed Specialist: "${op.suggestedSpecialist}"\n` +
+        `• Persona Rationale: "${op.reason}"`,
+    )
+    .join('\n\n');
 
-  const compilePrompt = `Topic: "${topic}"
+  const compilePrompt = `Debate Topic: "${topic}"
 
-5 Core Persona Specialist Suggestions:
+5 Core Persona Specialist Proposals:
 ${opinionLines}
 
-TASK: Review the 5 suggestions and select the 3 most distinct and non-overlapping specialist ideas among them (avoid redundancy).
-Compile these into exactly 3 mandatory specialist personas tailored for this topic.
+TASK:
+You are the PARALLAX Swarm Specialist Compiler.
+Carefully review all 5 detailed specialist proposals from VERITAS, AXIOM, SOCRATES, HARMONY, and NEXUS-9.
+Select the top 3 most distinct, high-impact, non-overlapping specialist roles to maximize analytical coverage for this specific debate topic, eliminating redundant domains.
 
-OUTPUT STRICT JSON ONLY:
+For each of the 3 chosen specialists:
+1. Explain WHY this specialist was selected over the alternative proposals (for transparency and debate alignment).
+2. Refine into a crisp uppercase codename, emoji, precise role, and a focused 2-sentence system instruction.
+
+OUTPUT STRICT JSON ONLY with this schema:
 {
+  "compilerStrategy": "2 sentences explaining the synthesis strategy behind choosing these 3 specialists and why they cover the topic's primary axes over the 2 omitted proposals.",
   "selected": [
     {
       "id": "slug",
       "name": "UPPERCASE_NAME",
       "emoji": "✨",
       "role": "Specific Domain Specialist Role",
-      "systemInstruction": "1-2 sentences on analytical priorities and perspective."
+      "selectionReason": "1-2 concise sentences explaining why this specialist was selected over the other proposals and what unique domain gap it covers.",
+      "systemInstruction": "2 concise sentences directing this specialist's analytical priorities, domain methodology, and debate contributions."
     }
   ]
 }`;
@@ -638,14 +688,15 @@ OUTPUT STRICT JSON ONLY:
       messages: [
         {
           role: 'system',
-          content: 'You are the PARALLAX Specialist Compiler. You review 5 persona proposals and select the top 3 distinct, non-overlapping specialist personas. You output strict JSON only.',
+          content:
+            'You are the PARALLAX Swarm Specialist Compiler. You review 5 detailed persona proposals and select the top 3 distinct, non-overlapping specialist personas. For each pick, you provide clear selection reasoning explaining why it was chosen over the other proposals. You output strict JSON only.',
         },
         { role: 'user', content: compilePrompt },
       ],
       providerConfig: provider,
       temperature: 0.3,
-      maxTokens: 280,
-      timeoutMs: 14000,
+      maxTokens: 420,
+      timeoutMs: 16000,
       signal,
     });
 
@@ -654,11 +705,17 @@ OUTPUT STRICT JSON ONLY:
     const jsonMatch = cleanJsonText.match(/\{[\s\S]*\}/);
 
     let rawList: Record<string, unknown>[] = [];
+    let compilerReasoning = '';
     if (jsonMatch) {
       try {
         const parsed = JSON.parse(jsonMatch[0]);
         if (Array.isArray(parsed.selected)) {
           rawList = parsed.selected.slice(0, 3);
+        }
+        if (typeof parsed.compilerStrategy === 'string' && parsed.compilerStrategy.trim()) {
+          compilerReasoning = parsed.compilerStrategy.trim();
+        } else if (typeof parsed.compilerReasoning === 'string' && parsed.compilerReasoning.trim()) {
+          compilerReasoning = parsed.compilerReasoning.trim();
         }
       } catch (e) {
         console.warn('[Parallax Compile] JSON parse warning, supplementing with fallbacks:', e);
@@ -686,6 +743,9 @@ OUTPUT STRICT JSON ONLY:
       const systemInstruction = typeof item.systemInstruction === 'string' && item.systemInstruction.trim()
         ? item.systemInstruction.trim()
         : `Apply rigorous domain-specific analysis from the perspective of a ${role}.`;
+      const selectionReason = typeof item.selectionReason === 'string' && item.selectionReason.trim()
+        ? item.selectionReason.trim()
+        : 'Selected for domain complementarity and non-overlapping analytical rigor.';
 
       const palette = DYNAMIC_SPECIALIST_PALETTES[idx % DYNAMIC_SPECIALIST_PALETTES.length];
       const initials = rawName.replace(/[^A-Z]/g, '').slice(0, 2) || 'SP';
@@ -701,6 +761,7 @@ OUTPUT STRICT JSON ONLY:
         modelId: baseAgent.modelId || 'deepseek/deepseek-chat',
         enabled: true,
         systemInstruction,
+        selectionReason,
         maxTokens: 100,
         voice: palette.voice,
         isDynamic: true,
@@ -714,11 +775,23 @@ OUTPUT STRICT JSON ONLY:
       mandatorySpecialists.push(...supplemental);
     }
 
-    return mandatorySpecialists.slice(0, 3);
+    const finalSpecialists = mandatorySpecialists.slice(0, 3);
+    if (!compilerReasoning && finalSpecialists.length >= 3) {
+      compilerReasoning = `Selected ${finalSpecialists.map((s) => s.name).join(', ')} to balance empirical, structural, and ethical domain axes without analytical overlap.`;
+    }
+
+    return {
+      specialists: finalSpecialists,
+      compilerReasoning,
+    };
   } catch (err) {
     if (signal?.aborted) throw err;
     console.warn('[Parallax Compile] Compiler call failed, generating fallback mandatory specialists:', err);
-    return createFallbackSpecialists(topic, 3, existingIds, existingNames, baseAgent);
+    const fallbacks = createFallbackSpecialists(topic, 3, existingIds, existingNames, baseAgent);
+    return {
+      specialists: fallbacks,
+      compilerReasoning: `Fallback selection: Mobilized ${fallbacks.map((s) => s.name).join(', ')} across key analytical axes.`,
+    };
   }
 }
 
@@ -871,7 +944,9 @@ export async function deliberateAndCreateSpecialists(
   const opinions = await fetchPersonaSpecialistOpinions(topic, existingAgents, signal);
 
   onStatusUpdate?.('Pre-Round 1: Compiling top 3 distinct mandatory specialists from persona proposals...');
-  const selectedMandatory = await compileMandatorySpecialists(topic, opinions, existingAgents, signal);
+  const compiledResult = await compileMandatorySpecialists(topic, opinions, existingAgents, signal);
+  const selectedMandatory = compiledResult.specialists;
+  const compilerReasoning = compiledResult.compilerReasoning;
 
   onStatusUpdate?.('Pre-Round 1: Evaluating if acute domain gaps require additional specialists...');
   const additionalSpecialists = await evaluateAdditionalSpecialists(topic, existingAgents, selectedMandatory, signal);
@@ -883,6 +958,7 @@ export async function deliberateAndCreateSpecialists(
     selectedMandatory,
     additionalSpecialists,
     allSpecialists,
+    compilerReasoning,
   };
 }
 
