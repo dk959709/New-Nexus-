@@ -33,7 +33,9 @@ import { ParallaxAudioVisualizer } from '@/components/parallax/ParallaxAudioVisu
 import { getParallaxAgentVoice, formatFullParallaxTranscript } from '@/data/parallaxVoices';
 import { cleanMarkdownForSpeech } from '@/lib/format';
 import type {
+  ParallaxAgentConfig,
   ParallaxMessage,
+  ParallaxSpecialistDeliberation,
   ParallaxSummary,
   ParallaxSystemConfig,
   ParallaxSession,
@@ -86,6 +88,7 @@ export const ParallaxPage: React.FC = () => {
   const [rawJsonOpenMap, setRawJsonOpenMap] = useState<Record<string, boolean>>({});
   const [copiedRawJsonId, setCopiedRawJsonId] = useState<string | null>(null);
   const [dynamicPersonas, setDynamicPersonas] = useState<ParallaxAgentConfig[]>([]);
+  const [specialistDeliberation, setSpecialistDeliberation] = useState<ParallaxSpecialistDeliberation | null>(null);
   const audioRef = useRef<HTMLAudioElement | null>(null);
   const swarmPlaybackCancelledRef = useRef<boolean>(false);
 
@@ -481,7 +484,12 @@ export const ParallaxPage: React.FC = () => {
 
   // Universal Copy: copies full transcript in exact requested format
   const handleCopyFullSwarm = () => {
-    const transcript = formatFullParallaxTranscript(currentTopic || topicInput, messages, summary);
+    const transcript = formatFullParallaxTranscript(
+      currentTopic || topicInput,
+      messages,
+      summary,
+      specialistDeliberation || undefined,
+    );
     navigator.clipboard.writeText(transcript);
     setCopiedSwarmTranscript(true);
     setTimeout(() => setCopiedSwarmTranscript(false), 2500);
@@ -520,6 +528,7 @@ export const ParallaxPage: React.FC = () => {
     setWasStoppedEarly(false);
     setMessages([]);
     setDynamicPersonas([]);
+    setSpecialistDeliberation(null);
     setCurrentTopic(targetTopic);
     setIsRunning(true);
     setCurrentRound(1);
@@ -537,6 +546,9 @@ export const ParallaxPage: React.FC = () => {
       onRoundStart: (r) => {
         setCurrentRound(r);
       },
+      onSpecialistDeliberation: (deliberation) => {
+        setSpecialistDeliberation(deliberation);
+      },
       onDynamicPersonasCreated: (personas) => {
         setDynamicPersonas(personas);
       },
@@ -546,8 +558,11 @@ export const ParallaxPage: React.FC = () => {
       onStatusUpdate: (status) => {
         setStatusText(status);
       },
-      onComplete: (sum) => {
+      onComplete: (sum, _allMsgs, deliberation) => {
         setSummary(sum);
+        if (deliberation) {
+          setSpecialistDeliberation(deliberation);
+        }
         setWasStoppedEarly(false);
         setIsRunning(false);
         setSessions(storage.getParallaxSessions());
@@ -720,23 +735,21 @@ export const ParallaxPage: React.FC = () => {
             }}
           >
             <strong style={{ color: '#61d7c9' }}>{enabledAgentsCount}</strong>/20 Personas
-            {dynamicPersonasCount > 0 && (
-              <span
-                id="parallax-dynamic-count-badge"
-                style={{
-                  color: '#c084fc',
-                  background: 'rgba(192, 132, 252, 0.15)',
-                  padding: '1px 7px',
-                  borderRadius: '999px',
-                  fontSize: '11px',
-                  border: '1px solid rgba(192, 132, 252, 0.3)',
-                  fontWeight: 600,
-                }}
-                title="Dynamically generated topic specialists active"
-              >
-                +{dynamicPersonasCount} Specialist{dynamicPersonasCount > 1 ? 's' : ''}
-              </span>
-            )}
+            <span
+              id="parallax-dynamic-count-badge"
+              style={{
+                color: '#c084fc',
+                background: 'rgba(192, 132, 252, 0.15)',
+                padding: '1px 7px',
+                borderRadius: '999px',
+                fontSize: '11px',
+                border: '1px solid rgba(192, 132, 252, 0.3)',
+                fontWeight: 600,
+              }}
+              title="Mandatory dynamic topic specialists (guaranteed 3 minimum, up to 5 max per debate)"
+            >
+              +{dynamicPersonasCount >= 3 ? Math.min(5, dynamicPersonasCount) : dynamicPersonasCount > 0 ? 3 : '3–5'} Specialists
+            </span>
           </div>
         </div>
       </div>
@@ -994,6 +1007,7 @@ export const ParallaxPage: React.FC = () => {
                             setStitchedSwarmBlob(null);
                             setMessages(sess.messages);
                             setSummary(sess.summary || null);
+                            setSpecialistDeliberation(sess.specialistDeliberation || null);
                             setWasStoppedEarly(false);
                             setCurrentTopic(sess.topic);
                             setActiveTab('feed');
@@ -1638,6 +1652,233 @@ export const ParallaxPage: React.FC = () => {
                     gap: '24px',
                   }}
                 >
+                  {/* PRE-ROUND: 5-PERSONA SPECIALIST DELIBERATION & COMPILATION */}
+                  {(roundFilter === 'all' || roundFilter === 1) && specialistDeliberation && (
+                    <div
+                      id="parallax-pre-round-deliberation"
+                      style={{
+                        borderRadius: '14px',
+                        background: 'linear-gradient(135deg, rgba(8, 22, 34, 0.95) 0%, rgba(4, 12, 18, 0.98) 100%)',
+                        border: '1.5px solid rgba(168, 85, 247, 0.35)',
+                        padding: '18px 20px',
+                        boxShadow: '0 8px 28px rgba(0, 0, 0, 0.35)',
+                        display: 'flex',
+                        flexDirection: 'column',
+                        gap: '14px',
+                      }}
+                    >
+                      {/* Header */}
+                      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: '10px' }}>
+                        <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
+                          <div
+                            style={{
+                              width: '30px',
+                              height: '30px',
+                              borderRadius: '8px',
+                              background: 'rgba(168, 85, 247, 0.2)',
+                              border: '1px solid rgba(168, 85, 247, 0.5)',
+                              display: 'grid',
+                              placeItems: 'center',
+                              color: '#c084fc',
+                            }}
+                          >
+                            <Sparkles size={16} />
+                          </div>
+                          <div>
+                            <div style={{ display: 'flex', alignItems: 'center', gap: '8px', flexWrap: 'wrap' }}>
+                              <span style={{ fontSize: '13px', fontWeight: 800, color: '#f8fafc', letterSpacing: '-0.01em' }}>
+                                PRE-ROUND • DYNAMIC SPECIALIST DELIBERATION
+                              </span>
+                              <span
+                                style={{
+                                  fontSize: '10px',
+                                  fontFamily: 'DM Mono, monospace',
+                                  fontWeight: 800,
+                                  padding: '2px 7px',
+                                  borderRadius: '5px',
+                                  background: 'rgba(168, 85, 247, 0.18)',
+                                  color: '#c084fc',
+                                  border: '1px solid rgba(168, 85, 247, 0.4)',
+                                }}
+                              >
+                                5 OPINIONS • 3 MANDATORY COMPILED
+                              </span>
+                            </div>
+                            <p style={{ margin: '2px 0 0', fontSize: '11px', color: '#94a3b8' }}>
+                              VERITAS, AXIOM, SOCRATES, HARMONY, and NEXUS-9 each contributed specialist proposals before Round 1.
+                            </p>
+                          </div>
+                        </div>
+                      </div>
+
+                      {/* The 5 Persona Opinions */}
+                      {specialistDeliberation.opinions && specialistDeliberation.opinions.length > 0 && (
+                        <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
+                          <span style={{ fontSize: '11px', fontWeight: 700, color: '#94a3b8', textTransform: 'uppercase', letterSpacing: '0.04em' }}>
+                            5 Core Persona Recommendations:
+                          </span>
+                          <div
+                            style={{
+                              display: 'grid',
+                              gridTemplateColumns: 'repeat(auto-fit, minmax(280px, 1fr))',
+                              gap: '10px',
+                            }}
+                          >
+                            {specialistDeliberation.opinions.map((op, idx) => (
+                              <div
+                                key={op.agentId || idx}
+                                id={`deliberation-opinion-${op.agentId}`}
+                                style={{
+                                  padding: '10px 12px',
+                                  borderRadius: '10px',
+                                  background: 'rgba(15, 23, 42, 0.65)',
+                                  border: `1px solid ${op.accentColor ? `${op.accentColor}40` : 'rgba(255,255,255,0.1)'}`,
+                                  display: 'flex',
+                                  flexDirection: 'column',
+                                  gap: '6px',
+                                }}
+                              >
+                                <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: '8px' }}>
+                                  <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
+                                    <span style={{ fontSize: '14px' }}>{op.emoji}</span>
+                                    <span style={{ fontSize: '12px', fontWeight: 800, color: op.accentColor || '#fff' }}>
+                                      {op.agentName}
+                                    </span>
+                                  </div>
+                                  <span style={{ fontSize: '10px', color: '#94a3b8', fontStyle: 'italic' }}>
+                                    {op.role}
+                                  </span>
+                                </div>
+                                <div style={{ fontSize: '11px', color: '#cbd5e1', lineHeight: 1.4 }}>
+                                  <span style={{ color: '#67e8f9', fontWeight: 700 }}>Suggests: </span>
+                                  <span style={{ fontWeight: 600, color: '#f1f5f9' }}>{op.suggestedSpecialist}</span>
+                                </div>
+                                <div style={{ fontSize: '11px', color: '#94a3b8', fontStyle: 'italic', lineHeight: 1.35 }}>
+                                  &ldquo;{op.reason}&rdquo;
+                                </div>
+                              </div>
+                            ))}
+                          </div>
+                        </div>
+                      )}
+
+                      {/* Compiled 3 Mandatory Specialists */}
+                      {specialistDeliberation.selectedMandatory && specialistDeliberation.selectedMandatory.length > 0 && (
+                        <div style={{ display: 'flex', flexDirection: 'column', gap: '8px', paddingTop: '4px' }}>
+                          <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+                            <span style={{ fontSize: '11px', fontWeight: 700, color: '#94a3b8', textTransform: 'uppercase', letterSpacing: '0.04em' }}>
+                              Compiled Mandatory Specialists (Top 3 Distinct Picks):
+                            </span>
+                            <span style={{ fontSize: '10px', color: '#10b981', fontWeight: 700, fontFamily: 'DM Mono, monospace' }}>
+                              Active in all 3 Rounds
+                            </span>
+                          </div>
+                          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(260px, 1fr))', gap: '10px' }}>
+                            {specialistDeliberation.selectedMandatory.map((spec, sIdx) => (
+                              <div
+                                key={spec.id || sIdx}
+                                id={`mandatory-specialist-${spec.id}`}
+                                style={{
+                                  padding: '10px 12px',
+                                  borderRadius: '10px',
+                                  background: 'rgba(16, 185, 129, 0.08)',
+                                  border: '1px solid rgba(16, 185, 129, 0.35)',
+                                  display: 'flex',
+                                  flexDirection: 'column',
+                                  gap: '4px',
+                                }}
+                              >
+                                <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+                                  <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
+                                    <span>{spec.mood || '✨'}</span>
+                                    <span style={{ fontSize: '12px', fontWeight: 800, color: '#10b981' }}>{spec.name}</span>
+                                    <span
+                                      style={{
+                                        fontSize: '9px',
+                                        padding: '1px 5px',
+                                        borderRadius: '4px',
+                                        background: 'rgba(16, 185, 129, 0.2)',
+                                        color: '#a7f3d0',
+                                        border: '1px solid rgba(16, 185, 129, 0.4)',
+                                      }}
+                                    >
+                                      MANDATORY
+                                    </span>
+                                  </div>
+                                  <span style={{ fontSize: '10px', color: '#94a3b8' }}>#{sIdx + 1}</span>
+                                </div>
+                                <div style={{ fontSize: '11px', fontWeight: 600, color: '#e2e8f0' }}>
+                                  {spec.role}
+                                </div>
+                                <div style={{ fontSize: '10px', color: '#94a3b8', lineHeight: 1.35 }}>
+                                  {spec.systemInstruction}
+                                </div>
+                              </div>
+                            ))}
+                          </div>
+                        </div>
+                      )}
+
+                      {/* Additional Specialists from Invisible System */}
+                      <div style={{ paddingTop: '2px' }}>
+                        {specialistDeliberation.additionalSpecialists && specialistDeliberation.additionalSpecialists.length > 0 ? (
+                          <div style={{ display: 'flex', flexDirection: 'column', gap: '6px' }}>
+                            <span style={{ fontSize: '11px', fontWeight: 700, color: '#94a3b8', textTransform: 'uppercase', letterSpacing: '0.04em' }}>
+                              Additional Specialists (Invisible Gap Assessment: +{specialistDeliberation.additionalSpecialists.length}):
+                            </span>
+                            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(260px, 1fr))', gap: '10px' }}>
+                              {specialistDeliberation.additionalSpecialists.map((spec, aIdx) => (
+                                <div
+                                  key={spec.id || aIdx}
+                                  id={`additional-specialist-${spec.id}`}
+                                  style={{
+                                    padding: '10px 12px',
+                                    borderRadius: '10px',
+                                    background: 'rgba(245, 158, 11, 0.08)',
+                                    border: '1px solid rgba(245, 158, 11, 0.35)',
+                                    display: 'flex',
+                                    flexDirection: 'column',
+                                    gap: '4px',
+                                  }}
+                                >
+                                  <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+                                    <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
+                                      <span>{spec.mood || '✨'}</span>
+                                      <span style={{ fontSize: '12px', fontWeight: 800, color: '#f59e0b' }}>{spec.name}</span>
+                                      <span
+                                        style={{
+                                          fontSize: '9px',
+                                          padding: '1px 5px',
+                                          borderRadius: '4px',
+                                          background: 'rgba(245, 158, 11, 0.2)',
+                                          color: '#fde68a',
+                                          border: '1px solid rgba(245, 158, 11, 0.4)',
+                                        }}
+                                      >
+                                        GAP MOBILIZATION
+                                      </span>
+                                    </div>
+                                  </div>
+                                  <div style={{ fontSize: '11px', fontWeight: 600, color: '#e2e8f0' }}>
+                                    {spec.role}
+                                  </div>
+                                  <div style={{ fontSize: '10px', color: '#94a3b8', lineHeight: 1.35 }}>
+                                    {spec.systemInstruction}
+                                  </div>
+                                </div>
+                              ))}
+                            </div>
+                          </div>
+                        ) : (
+                          <div style={{ fontSize: '11px', color: '#64748b', fontStyle: 'italic', display: 'flex', alignItems: 'center', gap: '6px' }}>
+                            <Check size={12} style={{ color: '#10b981' }} />
+                            <span>Invisible Gap Assessment: Full domain coverage achieved (0 additional specialists needed beyond the 3 mandatory).</span>
+                          </div>
+                        )}
+                      </div>
+                    </div>
+                  )}
+
                   {/* RENDER BY ROUND WITH INLINE CURATION (first 4-5 inline, rest collapsed) */}
                 {([1, 2, 3] as const).map((roundNum) => {
                   if (roundFilter !== 'all' && roundFilter !== roundNum) return null;

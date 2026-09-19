@@ -4,6 +4,8 @@ import type {
   AIProviderConfig,
   ParallaxAgentConfig,
   ParallaxMessage,
+  ParallaxSpecialistDeliberation,
+  ParallaxSpecialistOpinion,
   ParallaxSummary,
   ParallaxSystemConfig,
   ParallaxToolRawPayload,
@@ -311,7 +313,8 @@ export interface ParallaxRunOptions {
   onRoundComplete?: (round: 1 | 2 | 3, roundMessages: ParallaxMessage[]) => void;
   onStatusUpdate?: (status: string) => void;
   onDynamicPersonasCreated?: (personas: ParallaxAgentConfig[]) => void;
-  onComplete?: (summary: ParallaxSummary, allMessages: ParallaxMessage[]) => void;
+  onSpecialistDeliberation?: (deliberation: ParallaxSpecialistDeliberation) => void;
+  onComplete?: (summary: ParallaxSummary, allMessages: ParallaxMessage[], deliberation?: ParallaxSpecialistDeliberation) => void;
   onError?: (error: string) => void;
   signal?: AbortSignal;
 }
@@ -326,105 +329,349 @@ const DYNAMIC_SPECIALIST_PALETTES = [
   { color: '#14b8a6', voice: 'en-US-JennyNeural' },  // Teal
 ];
 
+function createFallbackSpecialists(
+  topic: string,
+  countNeeded: number,
+  existingIds: Set<string>,
+  existingNames: Set<string>,
+  baseAgent: ParallaxAgentConfig,
+): ParallaxAgentConfig[] {
+  const fallbacks: ParallaxAgentConfig[] = [];
+  const cleanTopic = topic.trim().slice(0, 45);
+
+  const fallbackTemplates = [
+    {
+      defaultSlug: 'domain_analyst',
+      defaultName: 'DOMINA',
+      emoji: '🔬',
+      role: 'Subject Matter Specialist',
+      instruction: `Provide analytical subject-matter evaluation and domain evidence on ${cleanTopic}.`,
+    },
+    {
+      defaultSlug: 'field_practitioner',
+      defaultName: 'PRAXIS',
+      emoji: '🛠️',
+      role: 'Applied Practice Specialist',
+      instruction: `Evaluate frontline realities, practical constraints, and execution dynamics on ${cleanTopic}.`,
+    },
+    {
+      defaultSlug: 'systems_ethicist',
+      defaultName: 'AXIOM',
+      emoji: '⚖️',
+      role: 'Systems & Ethics Specialist',
+      instruction: `Examine ethical nuances, systemic trade-offs, and second-order impacts on ${cleanTopic}.`,
+    },
+    {
+      defaultSlug: 'societal_impact',
+      defaultName: 'HUMANA',
+      emoji: '🌐',
+      role: 'Societal Dynamics Specialist',
+      instruction: `Assess human-centric, cultural, and long-term societal consequences of ${cleanTopic}.`,
+    },
+    {
+      defaultSlug: 'strategic_analyst',
+      defaultName: 'STRATIS',
+      emoji: '🎯',
+      role: 'Strategic Trajectory Specialist',
+      instruction: `Project strategic scenarios, structural risks, and future equilibria on ${cleanTopic}.`,
+    },
+  ];
+
+  for (let i = 0; i < fallbackTemplates.length && fallbacks.length < countNeeded; i++) {
+    const t = fallbackTemplates[i];
+    let slug = t.defaultSlug;
+    let name = t.defaultName;
+    let suffix = 1;
+    while (existingIds.has(slug)) {
+      slug = `${t.defaultSlug}_${suffix++}`;
+    }
+    existingIds.add(slug);
+
+    suffix = 1;
+    while (existingNames.has(name)) {
+      name = `${t.defaultName}-${suffix++}`;
+    }
+    existingNames.add(name);
+
+    const palette = DYNAMIC_SPECIALIST_PALETTES[(existingIds.size - 1) % DYNAMIC_SPECIALIST_PALETTES.length];
+    fallbacks.push({
+      id: slug,
+      name,
+      initials: name.slice(0, 2),
+      role: t.role,
+      accentColor: palette.color,
+      hasToolAccess: false,
+      providerId: baseAgent.providerId || 'existing',
+      modelId: baseAgent.modelId || 'deepseek/deepseek-chat',
+      enabled: true,
+      systemInstruction: t.instruction,
+      maxTokens: 100,
+      voice: palette.voice,
+      isDynamic: true,
+      mood: t.emoji,
+    });
+  }
+
+  return fallbacks;
+}
+
+interface PersonaOpinionTarget {
+  id: string;
+  name: string;
+  emoji: string;
+  role: string;
+  accentColor: string;
+  angle: string;
+  defaultSpecialist: string;
+  defaultReason: string;
+}
+
+const PERSONA_OPINION_TARGETS: PersonaOpinionTarget[] = [
+  {
+    id: 'veritas',
+    name: 'VERITAS',
+    emoji: '🧠',
+    role: 'Fact-based, skeptical analysis',
+    accentColor: '#06b6d4',
+    angle: 'empirical data, verifiable evidence, and methodological scrutiny',
+    defaultSpecialist: 'Empirical Research & Methodology Specialist',
+    defaultReason: 'Without verifiable empirical data on this topic, discourse risks resting on unchecked assertions.',
+  },
+  {
+    id: 'axiom',
+    name: 'AXIOM',
+    emoji: '📐',
+    role: 'Pure logic & scientific reasoning',
+    accentColor: '#10b981',
+    angle: 'first-principles logic, mathematical consistency, and causal systems dynamics',
+    defaultSpecialist: 'Systems Logic & Causal Dynamics Specialist',
+    defaultReason: 'A rigorous first-principles logical framework is required to trace systemic causal dependencies and consistency.',
+  },
+  {
+    id: 'socrates',
+    name: 'SOCRATES',
+    emoji: '🤔',
+    role: 'Deep philosophical questioning',
+    accentColor: '#8b5cf6',
+    angle: 'philosophical inquiry, interrogation of unexamined premises, and conceptual clarity',
+    defaultSpecialist: 'Epistemology & Conceptual Foundations Specialist',
+    defaultReason: 'We must examine the foundational premises and hidden assumptions that pre-condition debate on this question.',
+  },
+  {
+    id: 'harmony',
+    name: 'HARMONY',
+    emoji: '🕊️',
+    role: 'Ethical & ontological concerns',
+    accentColor: '#14b8a6',
+    angle: 'ethical imperatives, human dignity, societal equity, and emotional welfare',
+    defaultSpecialist: 'Human Welfare & Applied Ethics Specialist',
+    defaultReason: 'Human dignity, equity, and ethical consequences must anchor how this topic affects real communities.',
+  },
+  {
+    id: 'nexus9',
+    name: 'NEXUS-9',
+    emoji: '⚖️',
+    role: 'Neutral synthesizer/summarizer',
+    accentColor: '#67e8f9',
+    angle: 'systemic synthesis, trade-off governance, and multi-domain equilibrium',
+    defaultSpecialist: 'Cross-Domain Governance & Trade-Offs Specialist',
+    defaultReason: 'Balancing competing interests on this issue requires structural synthesis across institutional and policy trade-offs.',
+  },
+];
+
 /**
- * Dynamic Temporary Persona Creation for Parallax Swarm:
- * Analyzes the debate topic against the existing 20-persona roster traits and roles.
- * If genuinely relevant specialist expertise is missing, generates 0-5 new temporary personas
- * specifically for that debate.
- *
- * Constraints:
- * 1. Most everyday topics return 0 personas (no expertise gap).
- * 2. Only creates 1-5 personas if there is a genuine professional/scientific domain gap.
- * 3. Temporary only: never saved to persistent storage or parallaxVoices.ts.
+ * Step 1: 5-Persona Opinion Step
+ * VERITAS 🧠, AXIOM 📐, SOCRATES 🤔, HARMONY 🕊️, and NEXUS-9 ⚖️ each independently
+ * give a short, reasoned opinion on what specialist expertise this specific topic needs
+ * in their distinctive persona voice/style.
+ * Token budget: ~140 input tokens, ~60-80 output tokens each.
  */
-export async function analyzeTopicAndCreateTemporaryPersonas(
+export async function fetchPersonaSpecialistOpinions(
   topic: string,
   existingAgents: ParallaxAgentConfig[],
   signal?: AbortSignal,
+): Promise<ParallaxSpecialistOpinion[]> {
+  const baseAgent = existingAgents[0] || DEFAULT_PARALLAX_AGENTS.veritas;
+  const { provider } = resolveParallaxProviderConfig(baseAgent, 100);
+
+  const opinionPromises = PERSONA_OPINION_TARGETS.map(async (target) => {
+    const matchedAgent = existingAgents.find((a) => a.id.toLowerCase() === target.id) || baseAgent;
+    const targetProvider = resolveParallaxProviderConfig(matchedAgent, 100).provider || provider;
+
+    const sysContent = `You are ${target.name} ${target.emoji} (${target.role}).
+Tone & priorities: ${target.angle}.
+TASK: Propose ONE domain specialist expertise needed for this debate topic in your distinctive persona voice.
+FORMAT STRICTLY:
+Specialist: [Role or Domain Title]
+Reason: [1 concise sentence in your persona voice explaining why this domain expertise is required]`;
+
+    const userContent = `Topic: "${topic}"\nPropose the specialist expertise needed.`;
+
+    try {
+      const res = await api.jarvisAgentCall({
+        agentId: `opinion_${target.id}`,
+        messages: [
+          { role: 'system', content: sysContent },
+          { role: 'user', content: userContent },
+        ],
+        providerConfig: targetProvider,
+        temperature: 0.35,
+        maxTokens: 100,
+        timeoutMs: 12000,
+        signal,
+      });
+
+      const raw = (res.text || res.content || '').trim();
+      let specialist = '';
+      let reason = '';
+
+      const specMatch = raw.match(/Specialist:\s*([^\n\r]+)/i);
+      const reasonMatch = raw.match(/Reason:\s*([\s\S]+)$/i);
+
+      if (specMatch && specMatch[1]) {
+        specialist = specMatch[1].replace(/[*_#`[\]]/g, '').trim();
+      }
+      if (reasonMatch && reasonMatch[1]) {
+        reason = reasonMatch[1].replace(/[*_#`]/g, '').trim();
+      }
+
+      if (!specialist || !reason) {
+        const lines = raw.split(/\r?\n/).map((l) => l.trim()).filter(Boolean);
+        if (lines.length >= 2) {
+          specialist = specialist || lines[0].replace(/^[^:]*:\s*/, '').replace(/[*_#`[\]]/g, '').trim();
+          reason = reason || lines[1].replace(/^[^:]*:\s*/, '').replace(/[*_#`]/g, '').trim();
+        } else if (lines.length === 1) {
+          specialist = specialist || target.defaultSpecialist;
+          reason = reason || lines[0];
+        }
+      }
+
+      specialist = specialist || target.defaultSpecialist;
+      reason = reason || target.defaultReason;
+
+      return {
+        agentId: target.id,
+        agentName: target.name,
+        emoji: target.emoji,
+        role: target.role,
+        accentColor: target.accentColor,
+        suggestedSpecialist: specialist,
+        reason,
+      };
+    } catch (err) {
+      if (signal?.aborted) throw err;
+      console.warn(`[Parallax Specialist Opinions] ${target.name} opinion call failed, using default:`, err);
+      return {
+        agentId: target.id,
+        agentName: target.name,
+        emoji: target.emoji,
+        role: target.role,
+        accentColor: target.accentColor,
+        suggestedSpecialist: target.defaultSpecialist,
+        reason: target.defaultReason,
+      };
+    }
+  });
+
+  const settled = await Promise.allSettled(opinionPromises);
+  return settled.map((result, idx) => {
+    if (result.status === 'fulfilled') return result.value;
+    const target = PERSONA_OPINION_TARGETS[idx];
+    return {
+      agentId: target.id,
+      agentName: target.name,
+      emoji: target.emoji,
+      role: target.role,
+      accentColor: target.accentColor,
+      suggestedSpecialist: target.defaultSpecialist,
+      reason: target.defaultReason,
+    };
+  });
+}
+
+/**
+ * Step 2: Compile Step
+ * Reviews the 5 suggestions and selects the 3 most distinct, non-overlapping specialist
+ * ideas among them to eliminate redundancy. Compiles into exactly 3 mandatory specialists.
+ * Token budget: ~220 input tokens, ~240 output tokens.
+ */
+export async function compileMandatorySpecialists(
+  topic: string,
+  opinions: ParallaxSpecialistOpinion[],
+  existingAgents: ParallaxAgentConfig[],
+  signal?: AbortSignal,
 ): Promise<ParallaxAgentConfig[]> {
-  // =========================================================================
-  // TOPIC-ANALYSIS SPECIALIST CHECK (Pre-Round 1 only, executed once):
-  // Evaluates the topic against the core roster for acute domain gaps.
-  // ISOLATION MANDATE:
-  // - This context is used strictly ONCE before Round 1.
-  // - It is NEVER passed into individual persona round prompts or memory.
-  // - Generates 0-5 temporary personas (0 for everyday/general topics).
-  // Total call input: ~180-220 tokens. Max output tokens: 250.
-  // =========================================================================
-  const rosterSummary = existingAgents
-    .map((a) => `${a.name} (${a.role})`)
-    .join(', ');
+  const baseAgent = existingAgents[0] || DEFAULT_PARALLAX_AGENTS.veritas;
+  const { provider } = resolveParallaxProviderConfig(baseAgent, 280);
 
-  const prompt = `Topic: "${topic}"
-Core Swarm Roster: ${rosterSummary}
+  const existingIds = new Set(existingAgents.map((a) => a.id.toLowerCase()));
+  const existingNames = new Set(existingAgents.map((a) => a.name.toUpperCase()));
 
-TASK: Decide if this topic demands 1-5 temporary specialist personas due to an acute domain expertise gap absent from the roster.
-RULE: Everyday, technology, philosophical, business, and social topics already have full coverage across core personas. Return 0 specialists: {"personas": []}.
-Only create 1-5 personas if deep specialized domain expertise is missing (e.g., surgical medicine, constitutional jurisprudence, aerospace dynamics).
+  const opinionLines = opinions
+    .map((op, idx) => `${idx + 1}. ${op.agentName} ${op.emoji}: "${op.suggestedSpecialist}" — ${op.reason}`)
+    .join('\n');
 
-Output valid JSON only:
+  const compilePrompt = `Topic: "${topic}"
+
+5 Core Persona Specialist Suggestions:
+${opinionLines}
+
+TASK: Review the 5 suggestions and select the 3 most distinct and non-overlapping specialist ideas among them (avoid redundancy).
+Compile these into exactly 3 mandatory specialist personas tailored for this topic.
+
+OUTPUT STRICT JSON ONLY:
 {
-  "gapAnalysis": "1-sentence assessment",
-  "personas": [
+  "selected": [
     {
       "id": "slug",
-      "name": "NAME",
+      "name": "UPPERCASE_NAME",
       "emoji": "✨",
-      "role": "Specialist Role",
-      "systemInstruction": "Analytical domain priorities in 1-2 sentences."
+      "role": "Specific Domain Specialist Role",
+      "systemInstruction": "1-2 sentences on analytical priorities and perspective."
     }
   ]
 }`;
 
-  const baseAgent = existingAgents[0] || DEFAULT_PARALLAX_AGENTS.veritas;
-  const { provider } = resolveParallaxProviderConfig(baseAgent, 250);
-
   try {
-    console.log(`[Parallax Dynamic Personas] Analyzing topic for specialist expertise gaps: "${topic}"...`);
     const res = await api.jarvisAgentCall({
-      agentId: 'parallax_persona_architect',
+      agentId: 'specialist_compiler',
       messages: [
         {
           role: 'system',
-          content: 'You are the PARALLAX Swarm Specialist Architect. You analyze debate topics and identify if genuine domain specialist personas are needed. You output strictly JSON.',
+          content: 'You are the PARALLAX Specialist Compiler. You review 5 persona proposals and select the top 3 distinct, non-overlapping specialist personas. You output strict JSON only.',
         },
-        { role: 'user', content: prompt },
+        { role: 'user', content: compilePrompt },
       ],
       providerConfig: provider,
-      temperature: 0.2,
-      maxTokens: 250,
-      timeoutMs: 16000,
+      temperature: 0.3,
+      maxTokens: 280,
+      timeoutMs: 14000,
       signal,
     });
 
     const rawText = (res.text || res.content || '').trim();
     const cleanJsonText = rawText.replace(/^```[a-z]*\s*/i, '').replace(/\s*```$/, '').trim();
     const jsonMatch = cleanJsonText.match(/\{[\s\S]*\}/);
-    if (!jsonMatch) {
-      console.log('[Parallax Dynamic Personas] No valid JSON returned, proceeding with 0 temporary personas.');
-      return [];
+
+    let rawList: Record<string, unknown>[] = [];
+    if (jsonMatch) {
+      try {
+        const parsed = JSON.parse(jsonMatch[0]);
+        if (Array.isArray(parsed.selected)) {
+          rawList = parsed.selected.slice(0, 3);
+        }
+      } catch (e) {
+        console.warn('[Parallax Compile] JSON parse warning, supplementing with fallbacks:', e);
+      }
     }
 
-    const parsed = JSON.parse(jsonMatch[0]);
-    console.log(`[Parallax Dynamic Personas] Gap analysis verdict: "${parsed.gapAnalysis || 'Evaluated'}"`);
-
-    if (!Array.isArray(parsed.personas) || parsed.personas.length === 0) {
-      console.log(`[Parallax Dynamic Personas] No expertise gap detected for "${topic}". Proceeding with core 20 personas.`);
-      return [];
-    }
-
-    // Cap strictly at 0-5 new temporary personas
-    const rawList = parsed.personas.slice(0, 5);
-    const existingIds = new Set(existingAgents.map((a) => a.id.toLowerCase()));
-    const existingNames = new Set(existingAgents.map((a) => a.name.toUpperCase()));
-
-    const temporaryPersonas: ParallaxAgentConfig[] = [];
+    const mandatorySpecialists: ParallaxAgentConfig[] = [];
 
     rawList.forEach((item: Record<string, unknown>, idx: number) => {
       if (!item || typeof item !== 'object') return;
-      let rawId = typeof item.id === 'string' ? item.id.toLowerCase().replace(/[^a-z0-9]/g, '') : `spec_${idx + 1}`;
+      let rawId = typeof item.id === 'string' ? item.id.toLowerCase().replace(/[^a-z0-9]/g, '') : `mand_spec_${idx + 1}`;
       if (!rawId || existingIds.has(rawId)) {
-        rawId = `${rawId}_spec_${idx + 1}`;
+        rawId = `${rawId}_${idx + 1}`;
       }
       existingIds.add(rawId);
 
@@ -443,7 +690,7 @@ Output valid JSON only:
       const palette = DYNAMIC_SPECIALIST_PALETTES[idx % DYNAMIC_SPECIALIST_PALETTES.length];
       const initials = rawName.replace(/[^A-Z]/g, '').slice(0, 2) || 'SP';
 
-      temporaryPersonas.push({
+      mandatorySpecialists.push({
         id: rawId,
         name: rawName,
         initials,
@@ -461,17 +708,195 @@ Output valid JSON only:
       });
     });
 
-    console.log(
-      `[Parallax Dynamic Personas] Successfully generated ${temporaryPersonas.length} temporary specialist personas for debate:`,
-      temporaryPersonas.map((p) => `${p.name} ${p.mood} (${p.role})`),
-    );
+    if (mandatorySpecialists.length < 3) {
+      const needed = 3 - mandatorySpecialists.length;
+      const supplemental = createFallbackSpecialists(topic, needed, existingIds, existingNames, baseAgent);
+      mandatorySpecialists.push(...supplemental);
+    }
 
-    return temporaryPersonas;
+    return mandatorySpecialists.slice(0, 3);
   } catch (err) {
     if (signal?.aborted) throw err;
-    console.warn('[Parallax Dynamic Personas] AI persona analysis error, continuing with core roster:', err);
+    console.warn('[Parallax Compile] Compiler call failed, generating fallback mandatory specialists:', err);
+    return createFallbackSpecialists(topic, 3, existingIds, existingNames, baseAgent);
+  }
+}
+
+/**
+ * Step 3: Invisible System (Optional Specialists #4 and #5)
+ * After the 3 mandatory specialists are set, the anonymous topic-analysis logic runs
+ * to decide if 1-2 additional specialists are genuinely needed beyond those 3.
+ * Token budget: ~220 input tokens, ~180 output tokens.
+ */
+export async function evaluateAdditionalSpecialists(
+  topic: string,
+  coreAgents: ParallaxAgentConfig[],
+  mandatorySpecialists: ParallaxAgentConfig[],
+  signal?: AbortSignal,
+): Promise<ParallaxAgentConfig[]> {
+  const baseAgent = coreAgents[0] || DEFAULT_PARALLAX_AGENTS.veritas;
+  const { provider } = resolveParallaxProviderConfig(baseAgent, 200);
+
+  const existingIds = new Set([
+    ...coreAgents.map((a) => a.id.toLowerCase()),
+    ...mandatorySpecialists.map((s) => s.id.toLowerCase()),
+  ]);
+  const existingNames = new Set([
+    ...coreAgents.map((a) => a.name.toUpperCase()),
+    ...mandatorySpecialists.map((s) => s.name.toUpperCase()),
+  ]);
+
+  const coreSummary = coreAgents.map((a) => a.name).join(', ');
+  const mandatorySummary = mandatorySpecialists.map((s) => `${s.name} (${s.role})`).join(', ');
+
+  const prompt = `Topic: "${topic}"
+Core Swarm (20 personas): ${coreSummary}
+Mandatory Specialists: ${mandatorySummary}
+
+TASK: Decide if 1 or 2 additional specialists (max 2) are genuinely needed because of acute domain expertise gaps not covered by the 23 agents above.
+RULE: Most everyday and general topics are already fully covered. Return 0 additional specialists: {"additional": []}. Only add 1-2 if a profound domain gap remains (e.g. surgical medicine, aerospace propulsion, constitutional jurisprudence).
+
+OUTPUT STRICT JSON ONLY:
+{
+  "gapAnalysis": "1-sentence assessment",
+  "additional": [
+    {
+      "id": "slug",
+      "name": "UPPERCASE_NAME",
+      "emoji": "✨",
+      "role": "Specific Domain Specialist Role",
+      "systemInstruction": "1-2 sentences on analytical priorities."
+    }
+  ]
+}`;
+
+  try {
+    const res = await api.jarvisAgentCall({
+      agentId: 'invisible_gap_analyzer',
+      messages: [
+        {
+          role: 'system',
+          content: 'You are the PARALLAX Invisible Gap Analyzer. You evaluate if 1-2 additional specialists are genuinely needed beyond the 23 existing agents. You output strict JSON only.',
+        },
+        { role: 'user', content: prompt },
+      ],
+      providerConfig: provider,
+      temperature: 0.2,
+      maxTokens: 220,
+      timeoutMs: 14000,
+      signal,
+    });
+
+    const rawText = (res.text || res.content || '').trim();
+    const cleanJsonText = rawText.replace(/^```[a-z]*\s*/i, '').replace(/\s*```$/, '').trim();
+    const jsonMatch = cleanJsonText.match(/\{[\s\S]*\}/);
+
+    let rawList: Record<string, unknown>[] = [];
+    if (jsonMatch) {
+      try {
+        const parsed = JSON.parse(jsonMatch[0]);
+        if (Array.isArray(parsed.additional)) {
+          rawList = parsed.additional.slice(0, 2);
+        }
+      } catch (e) {
+        console.warn('[Parallax Additional Specialists] JSON parse warning:', e);
+      }
+    }
+
+    const additionalSpecialists: ParallaxAgentConfig[] = [];
+    rawList.forEach((item: Record<string, unknown>, idx: number) => {
+      if (!item || typeof item !== 'object') return;
+      let rawId = typeof item.id === 'string' ? item.id.toLowerCase().replace(/[^a-z0-9]/g, '') : `add_spec_${idx + 1}`;
+      if (!rawId || existingIds.has(rawId)) {
+        rawId = `${rawId}_add_${idx + 1}`;
+      }
+      existingIds.add(rawId);
+
+      let rawName = typeof item.name === 'string' ? item.name.toUpperCase().replace(/[^A-Z0-9-]/g, '').trim() : `SPECIALIST-PLUS-${idx + 1}`;
+      if (!rawName || existingNames.has(rawName)) {
+        rawName = `${rawName}-${idx + 1}`;
+      }
+      existingNames.add(rawName);
+
+      const emoji = typeof item.emoji === 'string' && item.emoji.trim() ? item.emoji.trim() : '✨';
+      const role = typeof item.role === 'string' && item.role.trim() ? item.role.trim() : 'Domain Specialist';
+      const systemInstruction = typeof item.systemInstruction === 'string' && item.systemInstruction.trim()
+        ? item.systemInstruction.trim()
+        : `Apply rigorous domain-specific analysis from the perspective of a ${role}.`;
+
+      // Palette offset by 3 so additional specialists get distinct colors
+      const palette = DYNAMIC_SPECIALIST_PALETTES[(3 + idx) % DYNAMIC_SPECIALIST_PALETTES.length];
+      const initials = rawName.replace(/[^A-Z]/g, '').slice(0, 2) || 'SP';
+
+      additionalSpecialists.push({
+        id: rawId,
+        name: rawName,
+        initials,
+        role,
+        accentColor: palette.color,
+        hasToolAccess: false,
+        providerId: baseAgent.providerId || 'existing',
+        modelId: baseAgent.modelId || 'deepseek/deepseek-chat',
+        enabled: true,
+        systemInstruction,
+        maxTokens: 100,
+        voice: palette.voice,
+        isDynamic: true,
+        mood: emoji,
+      });
+    });
+
+    return additionalSpecialists.slice(0, 2);
+  } catch (err) {
+    if (signal?.aborted) throw err;
+    console.warn('[Parallax Additional Specialists] Invisible gap check error, proceeding with 0 additional:', err);
     return [];
   }
+}
+
+/**
+ * Deliberate and Create Dynamic Specialists:
+ * Orchestrates the full pre-Round-1 specialist creation flow:
+ * 1. 5-Persona Opinion Step (VERITAS, AXIOM, SOCRATES, HARMONY, NEXUS-9)
+ * 2. Compile Step (3 top distinct non-overlapping picks as mandatory specialists)
+ * 3. Invisible System (0 to 2 additional specialists for acute gaps)
+ */
+export async function deliberateAndCreateSpecialists(
+  topic: string,
+  existingAgents: ParallaxAgentConfig[],
+  signal?: AbortSignal,
+  onStatusUpdate?: (status: string) => void,
+): Promise<ParallaxSpecialistDeliberation> {
+  onStatusUpdate?.('Pre-Round 1: Gathering specialist recommendations from VERITAS, AXIOM, SOCRATES, HARMONY, and NEXUS-9...');
+  const opinions = await fetchPersonaSpecialistOpinions(topic, existingAgents, signal);
+
+  onStatusUpdate?.('Pre-Round 1: Compiling top 3 distinct mandatory specialists from persona proposals...');
+  const selectedMandatory = await compileMandatorySpecialists(topic, opinions, existingAgents, signal);
+
+  onStatusUpdate?.('Pre-Round 1: Evaluating if acute domain gaps require additional specialists...');
+  const additionalSpecialists = await evaluateAdditionalSpecialists(topic, existingAgents, selectedMandatory, signal);
+
+  const allSpecialists = [...selectedMandatory, ...additionalSpecialists];
+
+  return {
+    opinions,
+    selectedMandatory,
+    additionalSpecialists,
+    allSpecialists,
+  };
+}
+
+/**
+ * Dynamic Temporary Persona Creation for Parallax Swarm:
+ * Backward compatible entry point that runs deliberateAndCreateSpecialists and returns all created specialists.
+ */
+export async function analyzeTopicAndCreateTemporaryPersonas(
+  topic: string,
+  existingAgents: ParallaxAgentConfig[],
+  signal?: AbortSignal,
+): Promise<ParallaxAgentConfig[]> {
+  const deliberation = await deliberateAndCreateSpecialists(topic, existingAgents, signal);
+  return deliberation.allSpecialists;
 }
 
 function abortableSleep(ms: number, signal?: AbortSignal): Promise<void> {
@@ -908,11 +1333,11 @@ export async function generateParallaxSummary(
     excerpts.push(`• [Round 3 Conclusion] ${m.agentName}: "${trimmed}"`);
   }
 
-  // 4. Dynamic specialist: At most 1 representative quote if dynamic personas participated
-  const dynamicMsg = allMessages.find((m) => m.isDynamic);
-  if (dynamicMsg) {
-    const trimmed = dynamicMsg.text.length > 110 ? dynamicMsg.text.slice(0, 107) + '…' : dynamicMsg.text;
-    excerpts.push(`• [Round ${dynamicMsg.round} Specialist] ${dynamicMsg.agentName} (${dynamicMsg.role || 'Specialist'}): "${trimmed}"`);
+  // 4. Dynamic specialists: Up to 2 representative quotes from dynamic specialists
+  const dynamicMsgs = allMessages.filter((m) => m.isDynamic);
+  for (const dm of dynamicMsgs.slice(0, 2)) {
+    const trimmed = dm.text.length > 110 ? dm.text.slice(0, 107) + '…' : dm.text;
+    excerpts.push(`• [Round ${dm.round} Specialist] ${dm.agentName} (${dm.role || 'Specialist'}): "${trimmed}"`);
   }
 
   // Fallback: If somehow fewer than 4 excerpts collected, fill up to 4
@@ -937,7 +1362,7 @@ ${excerpts.join('\n')}
 
 Instructions:
 1. Base synthesis strictly on the persona claims above.
-2. In "highlights", write 4 concise bullet points (1 sentence each) citing specific personas and their arguments.
+2. In "highlights", write 4 concise bullet points (1 sentence each) citing specific personas and their arguments (core personas or dynamically generated specialists).
 3. In "verdict", write 1 objective sentence summarizing the swarm's actual final consensus or division.
 4. In "consensusLean", provide a 2-4 word descriptor (e.g. "Empirically Grounded Lean", "Cautiously Split", "Factually Polarized").
 
@@ -1047,26 +1472,41 @@ export async function runParallaxSwarm(options: ParallaxRunOptions): Promise<voi
     }
 
     // -------------------------------------------------------------
-    // DYNAMIC TEMPORARY PERSONA CREATION (0-5 SPECIALISTS)
-    // Analyzes the debate topic and existing roster.
-    // If a genuine domain gap exists, generates 1-5 temporary specialists.
-    // Otherwise returns 0 personas. Not saved to permanent storage.
+    // DYNAMIC SPECIALIST CREATION (2-STEP HYBRID ARCHITECTURE):
+    // 1. 5-Persona Opinion Step (VERITAS, AXIOM, SOCRATES, HARMONY, NEXUS-9)
+    // 2. Compile Step (Selects top 3 distinct non-overlapping picks as mandatory)
+    // 3. Invisible System (Assesses if 1-2 additional specialists are genuinely needed)
     // -------------------------------------------------------------
+    let specialistDeliberation: ParallaxSpecialistDeliberation | null = null;
     let dynamicAgents: ParallaxAgentConfig[] = [];
     try {
-      onStatusUpdate?.('Analyzing debate topic for specialist domain expertise gaps...');
-      dynamicAgents = await analyzeTopicAndCreateTemporaryPersonas(topic, enabledAgents, signal);
-      if (dynamicAgents.length > 0) {
-        const names = dynamicAgents.map((p) => `${p.name} ${p.mood || ''} (${p.role})`).join(', ');
-        onStatusUpdate?.(
-          `Topic analysis: Identified expertise gap. Mobilized ${dynamicAgents.length} specialist personas: ${names}`,
-        );
-        options.onDynamicPersonasCreated?.(dynamicAgents);
-      } else {
-        onStatusUpdate?.('Topic analysis complete: Roster coverage optimal (0 temporary personas added).');
-      }
+      specialistDeliberation = await deliberateAndCreateSpecialists(topic, enabledAgents, signal, onStatusUpdate);
+      dynamicAgents = specialistDeliberation.allSpecialists;
+
+      options.onSpecialistDeliberation?.(specialistDeliberation);
+      options.onDynamicPersonasCreated?.(dynamicAgents);
+
+      const mandatoryNames = specialistDeliberation.selectedMandatory.map((s) => `${s.name} ${s.mood || ''}`).join(', ');
+      const addCount = specialistDeliberation.additionalSpecialists.length;
+      onStatusUpdate?.(
+        `Dynamic Specialists finalized: 3 mandatory (${mandatoryNames})${addCount > 0 ? ` + ${addCount} additional` : ''}. Mobilizing swarm...`
+      );
     } catch (dynamicErr) {
-      console.warn('[Parallax Dynamic Personas] Persona analysis error, proceeding with core roster:', dynamicErr);
+      if (signal?.aborted) throw dynamicErr;
+      console.warn('[Parallax Dynamic Personas] Deliberation error, applying fallback specialists:', dynamicErr);
+      const baseAgent = enabledAgents[0] || DEFAULT_PARALLAX_AGENTS.veritas;
+      const existingIds = new Set(enabledAgents.map((a) => a.id.toLowerCase()));
+      const existingNames = new Set(enabledAgents.map((a) => a.name.toUpperCase()));
+      const fallbackMandatory = createFallbackSpecialists(topic, 3, existingIds, existingNames, baseAgent);
+      dynamicAgents = fallbackMandatory;
+      specialistDeliberation = {
+        opinions: [],
+        selectedMandatory: fallbackMandatory,
+        additionalSpecialists: [],
+        allSpecialists: fallbackMandatory,
+      };
+      options.onSpecialistDeliberation?.(specialistDeliberation);
+      options.onDynamicPersonasCreated?.(dynamicAgents);
     }
 
     const debateAgents: ParallaxAgentConfig[] = [...enabledAgents, ...dynamicAgents];
@@ -1192,10 +1632,11 @@ export async function runParallaxSwarm(options: ParallaxRunOptions): Promise<voi
       roundsCompleted: 3,
       messages: allMessages,
       summary,
+      specialistDeliberation: specialistDeliberation || undefined,
     });
 
     onStatusUpdate?.('Parallax Swarm complete. Auto-stopped after Round 3.');
-    onComplete?.(summary, allMessages);
+    onComplete?.(summary, allMessages, specialistDeliberation || undefined);
   } catch (err: unknown) {
     if (signal?.aborted) {
       onStatusUpdate?.('Swarm stopped early by user.');

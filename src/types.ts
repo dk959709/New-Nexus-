@@ -517,6 +517,23 @@ export interface ParallaxSummary {
   totalContributions: number;
 }
 
+export interface ParallaxSpecialistOpinion {
+  agentId: string;
+  agentName: string;
+  emoji: string;
+  role: string;
+  accentColor: string;
+  suggestedSpecialist: string;
+  reason: string;
+}
+
+export interface ParallaxSpecialistDeliberation {
+  opinions: ParallaxSpecialistOpinion[];
+  selectedMandatory: ParallaxAgentConfig[]; // exactly 3
+  additionalSpecialists: ParallaxAgentConfig[]; // 0 to 2
+  allSpecialists: ParallaxAgentConfig[]; // 3 to 5
+}
+
 export interface ParallaxSession {
   id: string;
   topic: string;
@@ -524,6 +541,7 @@ export interface ParallaxSession {
   roundsCompleted: number;
   messages: ParallaxMessage[];
   summary?: ParallaxSummary;
+  specialistDeliberation?: ParallaxSpecialistDeliberation;
 }
 
 export interface Settings {

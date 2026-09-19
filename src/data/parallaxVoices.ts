@@ -1,4 +1,4 @@
-import type { ParallaxMessage, ParallaxSummary } from '@/types';
+import type { ParallaxMessage, ParallaxSummary, ParallaxSpecialistDeliberation } from '@/types';
 
 /**
  * 20 Distinct Microsoft Edge Neural Voices assigned to Parallax agents.
@@ -72,7 +72,8 @@ const ROUND_TITLES: Record<number, string> = {
 export function formatFullParallaxTranscript(
   topic: string,
   messages: ParallaxMessage[],
-  summary?: ParallaxSummary | null
+  summary?: ParallaxSummary | null,
+  specialistDeliberation?: ParallaxSpecialistDeliberation | null,
 ): string {
   const cleanTopic = topic.trim() || 'Untitled Deliberation';
 
@@ -110,6 +111,46 @@ export function formatFullParallaxTranscript(
   output += `TIME        : ${formattedTime}\n`;
   output += scaleLine;
   output += `${divider}\n\n\n`;
+
+  // Pre-Round Dynamic Specialist Deliberation (5-persona opinions + 3 compiled mandatory + invisible gap check)
+  if (specialistDeliberation && (specialistDeliberation.opinions?.length > 0 || specialistDeliberation.selectedMandatory?.length > 0)) {
+    output += `${divider}\n`;
+    output += `PRE-ROUND: DYNAMIC SPECIALIST DELIBERATION\n`;
+    output += `${divider}\n\n`;
+
+    if (specialistDeliberation.opinions && specialistDeliberation.opinions.length > 0) {
+      output += `5 CORE PERSONA SPECIALIST RECOMMENDATIONS:\n`;
+      output += `${subDivider}\n`;
+      specialistDeliberation.opinions.forEach((op, idx) => {
+        const idxStr = String(idx + 1).padStart(2, '0');
+        output += `[${idxStr}] ${op.agentName} ${op.emoji || ''} (${op.role})\n`;
+        output += `     Suggested Specialist : ${op.suggestedSpecialist}\n`;
+        output += `     Reason               : "${op.reason}"\n\n`;
+      });
+    }
+
+    if (specialistDeliberation.selectedMandatory && specialistDeliberation.selectedMandatory.length > 0) {
+      output += `COMPILED MANDATORY SPECIALISTS (Top 3 Distinct Picks):\n`;
+      output += `${subDivider}\n`;
+      specialistDeliberation.selectedMandatory.forEach((m, idx) => {
+        output += `• [Mandatory #${idx + 1}] ${m.name} ${m.mood || '✨'} (${m.role}) [Dynamically Generated]\n`;
+        output += `  Focus: ${m.systemInstruction}\n`;
+      });
+      output += '\n';
+    }
+
+    output += `ADDITIONAL SPECIALISTS (Invisible Topic-Analysis Gap System):\n`;
+    output += `${subDivider}\n`;
+    if (specialistDeliberation.additionalSpecialists && specialistDeliberation.additionalSpecialists.length > 0) {
+      specialistDeliberation.additionalSpecialists.forEach((m, idx) => {
+        output += `• [Additional #${idx + 1}] ${m.name} ${m.mood || '✨'} (${m.role}) [Dynamically Generated]\n`;
+        output += `  Focus: ${m.systemInstruction}\n`;
+      });
+    } else {
+      output += `• None required (Core 20 + 3 Mandatory Specialists achieve comprehensive domain coverage)\n`;
+    }
+    output += `\n${divider}\n\n\n`;
+  }
 
   for (let r = 1; r <= 3; r++) {
     const roundTitle = ROUND_TITLES[r] || `ROUND ${r}`;
