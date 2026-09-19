@@ -6,9 +6,11 @@ import { getBackendApiKey, getBackendApiKeyDetail } from '../apiCatalog.js';
 export const WIKIPEDIA_USER_AGENT = 'NEXUS-Intelligence/1.0 (https://nexus.app; contact: dk959709@gmail.com)';
 
 export const searchSchema = z.object({
-  query: z.string().trim().min(1).max(300),
+  query: z.string().trim().max(300).default(''),
   page: z.number().int().positive().optional(),
   category: z.enum(['ALL', 'NEWS', 'IMAGES', 'VIDEOS', 'SHOPPING', 'WIKIPEDIA']).optional(),
+  newsCategory: z.string().optional(),
+  newsMode: z.enum(['headlines', 'topic']).optional(),
   region: z.string().optional(),
   language: z.string().optional(),
   max_results: z.number().int().min(1).max(30).optional(),
@@ -531,12 +533,23 @@ export function isGeneralWorldNewsQuery(q?: string): boolean {
     /^breaking news$/,
     /^latest news$/,
     /^news$/,
+    /^what s happening today$/,
+    /^what is happening today$/,
+    /^what is happening in the world today$/,
+    /^what s happening in the world today$/,
   ];
   if (worldNewsPatterns.some((pattern) => pattern.test(normalized))) {
     return true;
   }
   const isJustWorldOrTop = /^(what are the )?(top \d+ |latest |breaking )?(world|global|international) news( today| this week)?$/.test(normalized);
-  return isJustWorldOrTop;
+  if (isJustWorldOrTop) return true;
+
+  if (/^(top\s*\d*\s*)?(world|global|international)?\s*news(\s+today|\s+this\s+week)?$/i.test(normalized)) return true;
+  if (/^top\s*\d*\s*news(\s+today|\s+this\s+week)?$/i.test(normalized)) return true;
+  if (/^(what are the\s+)?(top\s*\d*\s*)?(world|global|international)\s*news(\s+today|\s+this\s+week)?$/i.test(normalized)) return true;
+  if (/^(what\s*s\s*happening|what\s+is\s+happening)(\s+today|\s+in\s+the\s+world)?$/i.test(normalized)) return true;
+
+  return false;
 }
 
 export function cleanNewsSearchTopic(q: string): string {
@@ -548,21 +561,80 @@ export function cleanNewsSearchTopic(q: string): string {
     .trim();
 }
 
-export async function fetchGoogleNewsRSS(query?: string, category?: string): Promise<SearchResult[]> {
+export interface AnalyzedNewsQuery {
+  mode: 'headlines' | 'topic';
+  category: string;
+  topicKeyword: string;
+}
+
+export function analyzeNewsQuery(
+  rawQuery?: string,
+  categoryInput?: string,
+  modeInput?: 'headlines' | 'topic',
+): AnalyzedNewsQuery {
+  const q = (rawQuery || '').trim();
+  const lower = q.toLowerCase();
+
+  // 1. Explicit headlines mode requested or query is empty
+  if (modeInput === 'headlines' || !q) {
+    const isWorld = categoryInput === 'world' || /\b(?:world|global|international)\b/i.test(q) || !categoryInput || categoryInput === 'general' || categoryInput === 'top';
+    const cat = isWorld ? 'world' : (categoryInput || 'top');
+    return {
+      mode: 'headlines',
+      category: cat,
+      topicKeyword: '',
+    };
+  }
+
+  // 2. Query matches general top/world news patterns (no specific topic)
+  if (isGeneralWorldNewsQuery(q)) {
+    const isWorld = categoryInput === 'world' || /\b(?:world|global|international)\b/i.test(lower);
+    const cat = isWorld ? 'world' : (categoryInput || 'top');
+    return {
+      mode: 'headlines',
+      category: cat,
+      topicKeyword: '',
+    };
+  }
+
+  // 3. Otherwise, specific topic news query
+  const cleanTopic = cleanNewsSearchTopic(q);
+  // If cleanTopic became empty or is just generic news words like "world", "top"
+  if (!cleanTopic || /^(world|global|international|top|breaking|headlines|today|news)$/i.test(cleanTopic)) {
+    const isWorld = categoryInput === 'world' || /\b(?:world|global|international)\b/i.test(lower);
+    return {
+      mode: 'headlines',
+      category: isWorld ? 'world' : (categoryInput || 'top'),
+      topicKeyword: '',
+    };
+  }
+
+  return {
+    mode: 'topic',
+    category: categoryInput || 'top',
+    topicKeyword: cleanTopic,
+  };
+}
+
+export async function fetchGoogleNewsRSS(
+  query?: string,
+  category?: string,
+  newsMode?: 'headlines' | 'topic',
+): Promise<SearchResult[]> {
   try {
     let rssUrl: string;
-    const cat = category?.toUpperCase().trim();
+    const analysis = analyzeNewsQuery(query, category, newsMode);
+    const cat = analysis.category.toUpperCase().trim();
     const knownTopics = ['WORLD', 'BUSINESS', 'TECHNOLOGY', 'SCIENCE', 'HEALTH', 'SPORTS', 'ENTERTAINMENT', 'NATION'];
 
-    if (cat && knownTopics.includes(cat)) {
-      rssUrl = `https://news.google.com/rss/headlines/section/topic/${cat}?hl=en-US&gl=US&ceid=US:en`;
-    } else if (isGeneralWorldNewsQuery(query)) {
-      rssUrl = `https://news.google.com/rss/headlines/section/topic/WORLD?hl=en-US&gl=US&ceid=US:en`;
+    if (analysis.mode === 'headlines') {
+      const topicCode = cat && knownTopics.includes(cat) ? cat : 'WORLD';
+      rssUrl = `https://news.google.com/rss/headlines/section/topic/${topicCode}?hl=en-US&gl=US&ceid=US:en`;
+      console.log(`[Google News RSS] Mode: Category-based (top headlines) | Topic: ${topicCode} | URL: ${rssUrl}`);
     } else {
-      const rawQ = query?.trim() || 'world news breaking';
-      const cleanTopic = cleanNewsSearchTopic(rawQ) || rawQ;
-      const q = cleanTopic.includes('when:') ? cleanTopic : `${cleanTopic} when:7d`;
+      const q = analysis.topicKeyword.includes('when:') ? analysis.topicKeyword : `${analysis.topicKeyword} when:7d`;
       rssUrl = `https://news.google.com/rss/search?q=${encodeURIComponent(q)}&hl=en-US&gl=US&ceid=US:en`;
+      console.log(`[Google News RSS] Mode: Keyword-search | Query: "${analysis.topicKeyword}" | URL: ${rssUrl}`);
     }
 
     const res = await fetch(rssUrl, {
@@ -662,6 +734,7 @@ export interface FetchGNewsOptions {
   country?: string;
   lang?: string;
   max?: number;
+  newsMode?: 'headlines' | 'topic';
 }
 
 export async function fetchGNewsArticles(options: FetchGNewsOptions = {}): Promise<{
@@ -678,22 +751,28 @@ export async function fetchGNewsArticles(options: FetchGNewsOptions = {}): Promi
     throw new Error('GNEWS_API_KEY is not configured in server environment or API catalog');
   }
 
-  const isWorld = isGeneralWorldNewsQuery(options.query) || options.category === 'world';
-  const category = isWorld ? 'world' : options.category && options.category.trim() ? options.category.trim() : 'general';
+  const analysis = analyzeNewsQuery(options.query, options.category, options.newsMode);
   const lang = options.lang || 'en';
   const country = options.country || 'us';
   const max = Math.min(options.max || 10, 10);
+  const isCategoryMode = analysis.mode === 'headlines' || !analysis.topicKeyword;
 
   let url: string;
-  if (isWorld || !options.query?.trim()) {
-    url = `https://gnews.io/api/v4/top-headlines?category=${encodeURIComponent(category)}&lang=${lang}&country=${country}&max=${max}&apikey=${apiKey.trim()}`;
+  let targetCategory = analysis.category;
+  if (isCategoryMode) {
+    if (targetCategory === 'top') targetCategory = 'general';
+    url = `https://gnews.io/api/v4/top-headlines?category=${encodeURIComponent(targetCategory)}&lang=${lang}&country=${country}&max=${max}&apikey=${apiKey.trim()}`;
   } else {
-    const cleanTopic = cleanNewsSearchTopic(options.query.trim()) || options.query.trim();
-    url = `https://gnews.io/api/v4/search?q=${encodeURIComponent(cleanTopic)}&lang=${lang}&country=${country}&max=${max}&apikey=${apiKey.trim()}`;
+    url = `https://gnews.io/api/v4/search?q=${encodeURIComponent(analysis.topicKeyword)}&lang=${lang}&country=${country}&max=${max}&apikey=${apiKey.trim()}`;
   }
 
   const maskedUrl = url.replace(apiKey.trim(), keyDetail.masked);
-  console.log(`[GNews API Call Attempt] URL: ${maskedUrl} | Source: ${keyDetail.source} | Key: ${keyDetail.masked}`);
+  console.log(
+    `[GNews API Call] Mode: ${isCategoryMode ? 'Category-based (top headlines)' : 'Keyword-search'} | ` +
+    `Category: "${targetCategory}" | ` +
+    `Topic Keyword: "${isCategoryMode ? '(none - top headlines)' : analysis.topicKeyword}" | ` +
+    `URL: ${maskedUrl}`
+  );
 
   let res: Response;
   try {
@@ -775,7 +854,7 @@ export async function fetchGNewsArticles(options: FetchGNewsOptions = {}): Promi
     articles,
     source: 'GNews API',
     totalArticles: data.totalArticles || articles.length,
-    category,
+    category: targetCategory,
   };
 }
 
@@ -785,6 +864,7 @@ export interface FetchNewsDataOptions {
   country?: string;
   lang?: string;
   max?: number;
+  newsMode?: 'headlines' | 'topic';
 }
 
 interface NewsDataArticleItem {
@@ -825,6 +905,7 @@ const NEWSDATA_CATEGORY_MAP: Record<string, string> = {
   sports: 'sports',
   entertainment: 'entertainment',
   nation: 'politics',
+  politics: 'politics',
 };
 
 export async function fetchNewsDataArticles(options: FetchNewsDataOptions = {}): Promise<{
@@ -833,31 +914,46 @@ export async function fetchNewsDataArticles(options: FetchNewsDataOptions = {}):
   totalArticles: number;
   category: string;
 }> {
-  const apiKey = getBackendApiKey('NEWSDATA_API_KEY');
+  const keyDetail = getBackendApiKeyDetail('NEWSDATA_API_KEY');
+  const apiKey = keyDetail.key;
   if (!apiKey || !apiKey.trim()) {
     throw new Error('NEWSDATA_API_KEY is not configured in server environment or API catalog');
   }
 
-  const isWorld = isGeneralWorldNewsQuery(options.query) || options.category === 'world';
-  const rawCat = isWorld ? 'world' : options.category && options.category.trim() ? options.category.trim().toLowerCase() : 'general';
-  const category = rawCat;
+  const analysis = analyzeNewsQuery(options.query, options.category, options.newsMode);
   const lang = options.lang || 'en';
 
   const params = new URLSearchParams();
   params.set('apikey', apiKey.trim());
   params.set('language', lang);
 
-  const cleanTopic = cleanNewsSearchTopic(options.query?.trim() || '') || (options.query ? options.query.trim() : '');
+  const isCategoryMode = analysis.mode === 'headlines' || !analysis.topicKeyword;
+  let mappedCategory = '';
 
-  if (cleanTopic) {
-    params.set('q', cleanTopic.slice(0, 100));
-  } else {
-    const mappedCategory = NEWSDATA_CATEGORY_MAP[rawCat] || (rawCat === 'world' ? 'world' : 'top');
+  if (isCategoryMode) {
+    const rawCat = analysis.category.toLowerCase();
+    mappedCategory = NEWSDATA_CATEGORY_MAP[rawCat] || (rawCat === 'world' ? 'world' : 'top');
     params.set('category', mappedCategory);
     if (options.country) {
       params.set('country', options.country);
     }
+  } else {
+    params.set('q', analysis.topicKeyword.slice(0, 100));
+    if (analysis.category && analysis.category !== 'general' && analysis.category !== 'top') {
+      const mapped = NEWSDATA_CATEGORY_MAP[analysis.category.toLowerCase()];
+      if (mapped) params.set('category', mapped);
+    }
   }
+
+  const maskedParams = new URLSearchParams(params);
+  maskedParams.set('apikey', keyDetail.masked);
+
+  console.log(
+    `[NewsData.io API Call] Mode: ${isCategoryMode ? 'Category-based (top headlines)' : 'Keyword-search'} | ` +
+    `Category: "${mappedCategory || analysis.category}" | ` +
+    `Topic Keyword: "${isCategoryMode ? '(none - curated headlines)' : analysis.topicKeyword}" | ` +
+    `Parameters: ${maskedParams.toString()}`
+  );
 
   const url = `https://newsdata.io/api/1/latest?${params.toString()}`;
 
@@ -917,7 +1013,7 @@ export async function fetchNewsDataArticles(options: FetchNewsDataOptions = {}):
     articles,
     source: 'NewsData.io',
     totalArticles: data.totalResults || articles.length,
-    category,
+    category: mappedCategory || analysis.category,
   };
 }
 
@@ -935,7 +1031,11 @@ export async function searchProvider(input: z.infer<typeof searchSchema>): Promi
   if (input.category === 'NEWS') {
     // 1. Primary: GNews API
     try {
-      const gnews = await fetchGNewsArticles({ query: input.query });
+      const gnews = await fetchGNewsArticles({
+        query: input.query,
+        category: input.newsCategory,
+        newsMode: input.newsMode,
+      });
       if (gnews.articles.length > 0) {
         return { results: gnews.articles, searchSource: 'GNews API' };
       }
@@ -946,7 +1046,11 @@ export async function searchProvider(input: z.infer<typeof searchSchema>): Promi
 
     // 2. Second Fallback: NewsData.io
     try {
-      const newsdata = await fetchNewsDataArticles({ query: input.query });
+      const newsdata = await fetchNewsDataArticles({
+        query: input.query,
+        category: input.newsCategory,
+        newsMode: input.newsMode,
+      });
       if (newsdata.articles.length > 0) {
         return { results: newsdata.articles, searchSource: 'NewsData.io (fallback)' };
       }
@@ -956,7 +1060,7 @@ export async function searchProvider(input: z.infer<typeof searchSchema>): Promi
     }
 
     // 3. Final Fallback: Google News RSS
-    const newsResults = await fetchGoogleNewsRSS(input.query);
+    const newsResults = await fetchGoogleNewsRSS(input.query, input.newsCategory, input.newsMode);
     if (newsResults.length > 0) {
       return { results: newsResults, searchSource: 'Google News RSS (fallback)' };
     }
@@ -2197,11 +2301,12 @@ export function createSearchRouter(deps: SearchRouterDependencies = {}) {
     const query = typeof req.query.q === 'string' ? req.query.q : typeof req.query.query === 'string' ? req.query.query : undefined;
     const country = typeof req.query.country === 'string' ? req.query.country : 'us';
     const lang = typeof req.query.lang === 'string' ? req.query.lang : 'en';
+    const newsMode = req.query.newsMode === 'headlines' || req.query.newsMode === 'topic' ? req.query.newsMode : undefined;
 
     // 1. Primary: GNews API
     let gnewsError = '';
     try {
-      const gnews = await fetchGNewsArticles({ category, query, country, lang });
+      const gnews = await fetchGNewsArticles({ category, query, country, lang, newsMode });
       if (gnews.articles.length > 0) {
         return res.json({
           data: gnews.articles,
@@ -2225,7 +2330,7 @@ export function createSearchRouter(deps: SearchRouterDependencies = {}) {
     // 2. Second Fallback: NewsData.io
     let newsDataError = '';
     try {
-      const newsdata = await fetchNewsDataArticles({ category, query, country, lang });
+      const newsdata = await fetchNewsDataArticles({ category, query, country, lang, newsMode });
       if (newsdata.articles.length > 0) {
         return res.json({
           data: newsdata.articles,
@@ -2250,7 +2355,7 @@ export function createSearchRouter(deps: SearchRouterDependencies = {}) {
     // 3. Final Fallback: Google News RSS
     try {
       const rssQuery = query || (category && category !== 'general' ? `${category} news` : 'latest world news');
-      const fallbackResults = await fetchGoogleNewsRSS(rssQuery, category);
+      const fallbackResults = await fetchGoogleNewsRSS(rssQuery, category, newsMode);
       return res.json({
         data: fallbackResults,
         source: 'Google News RSS (Fallback)',
@@ -2274,7 +2379,8 @@ export function createSearchRouter(deps: SearchRouterDependencies = {}) {
       const category = typeof req.query.category === 'string' ? req.query.category : undefined;
       const lang = typeof req.query.lang === 'string' ? req.query.lang : undefined;
       const country = typeof req.query.country === 'string' ? req.query.country : undefined;
-      const results = await fetchNewsDataArticles({ query: q, category, lang, country });
+      const newsMode = req.query.newsMode === 'headlines' || req.query.newsMode === 'topic' ? req.query.newsMode : undefined;
+      const results = await fetchNewsDataArticles({ query: q, category, lang, country, newsMode });
       return res.json({
         data: results.articles,
         source: 'NewsData.io',
@@ -2289,7 +2395,9 @@ export function createSearchRouter(deps: SearchRouterDependencies = {}) {
   router.get('/api/news/rss', async (req, res) => {
     try {
       const q = typeof req.query.q === 'string' ? req.query.q : typeof req.query.query === 'string' ? req.query.query : undefined;
-      const results = await fetchGoogleNewsRSS(q);
+      const category = typeof req.query.category === 'string' ? req.query.category : undefined;
+      const newsMode = req.query.newsMode === 'headlines' || req.query.newsMode === 'topic' ? req.query.newsMode : undefined;
+      const results = await fetchGoogleNewsRSS(q, category, newsMode);
       return res.json({
         data: results,
         source: 'Google News RSS',

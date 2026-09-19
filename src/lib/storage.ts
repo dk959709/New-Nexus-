@@ -405,11 +405,13 @@ Set needsKnowledgeAgent to false for all other query types, including: time-sens
      - Examples: "latest Claude models" / "current Claude model lineup" / "what models does Claude have now" = PRODUCT/MODEL LINEUP intent.
      - Action: In "task", specifically target the subject's official product/model listing and current lineup (e.g. "Identify current Claude model lineup and specifications"). Set needsResearch: true and set "needsResearchQuery" to targeted keywords (e.g. "latest Claude models Anthropic lineup specs"). Set needsWikipedia: true if model-family history or encyclopedic listing exists. Do NOT treat this as general news, scandals, or lawsuits.
   2. "RECENT NEWS" intent:
-     - Queries asking about recent happenings, current events, headlines, controversies, lawsuits, breaking updates, or news related to a subject (e.g. "latest Claude news", "recent Anthropic news", "recent Anthropic controversies", "what's happening with Claude", "breaking AI news today", "world news today").
-     - Examples: "latest Claude news" / "recent Anthropic news" / "what's happening with Claude" / "world news today" = RECENT NEWS intent.
-     - Action: In "task", target recent news stories and events. Set needsNews: true, needsNewsQuery: clean search query for the news topic, needsResearch: false, needsResearchQuery: "", needsWikipedia: false, needsWikidata: false.
+     - Distinguish between two request types:
+       a) General top/world news requests (e.g. "top news today", "top 5 world news today", "world news", "what's happening today", "breaking news today") — no specific topic mentioned.
+          Action: In "task", target top world news headlines. Set needsNews: true, needsNewsQuery: "", newsMode: "headlines", newsCategory: "world" (or "top"), needsResearch: false, needsResearchQuery: "", needsWikipedia: false, needsWikidata: false. (Do NOT generate a keyword search phrase for general headlines, as News API endpoints return curated headlines when query is empty).
+       b) Specific topic news requests (e.g. "latest Claude news", "OpenAI news", "Tesla news", "stock market news").
+          Action: In "task", target topic-specific news. Set needsNews: true, needsNewsQuery: "topic keywords", newsMode: "topic", newsCategory: "top", needsResearch: false, needsResearchQuery: "", needsWikipedia: false, needsWikidata: false.
 - GENERAL RESEARCH VS NEWS ROUTING:
-  - Set needsNews: true & needsNewsQuery for queries about current events, breaking news, "latest updates from X", recent announcements, world happenings.
+  - Set needsNews: true (with needsNewsQuery: "" for general top/world news, or topic keywords for specific topics) for queries about current events, breaking news, "latest updates from X", recent announcements, world happenings.
   - Set needsResearch: true & needsResearchQuery for general knowledge, technical research, factual inquiries, and conceptual topics.
 - task: a concise goal statement, under 15 words.
 - plan: 2-4 short steps describing your approach, not a full essay.
@@ -458,6 +460,8 @@ You MUST output ONLY a valid JSON object. Every response MUST include all keys b
   "needsResearchQuery": "HTML security risks hidden code tracking scripts",
   "needsNews": false,
   "needsNewsQuery": "",
+  "newsMode": "headlines",
+  "newsCategory": "world",
   "needsKnowledgeAgent": true,
   "needsFactCheck": true,
   "needsReview": true,

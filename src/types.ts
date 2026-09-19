@@ -280,6 +280,8 @@ export interface JarvisPlannerOutput {
   needsResearchQuery: string;
   needsNews?: boolean;
   needsNewsQuery?: string;
+  newsMode?: 'headlines' | 'topic';
+  newsCategory?: 'top' | 'world' | 'business' | 'technology' | 'sports' | 'entertainment' | 'science' | 'health' | 'politics' | string;
   needsKnowledgeAgent?: boolean;
   needsFactCheck: boolean;
   needsReview: boolean;

@@ -2819,7 +2819,9 @@ You are the JARVIS Planner. You MUST output ONLY a valid JSON object strictly ma
   "needsResearch": boolean (true for general factual knowledge, technical research, documentation lookups, or encyclopedic research queries),
   "needsResearchQuery": string (MANDATORY: clean, specific search phrase focusing strictly on the actual topic without conversational filler or full questions if needsResearch is true, or empty string "" if false),
   "needsNews": boolean (true ONLY for current events, breaking news, latest headlines, or 'what happened today' news queries. Do NOT set true for 'latest updates', technical updates, product updates, or general updates — those belong to needsResearch: true),
-  "needsNewsQuery": string (MANDATORY: clean, specific news search phrase if needsNews is true, or empty string "" if false),
+  "needsNewsQuery": string (MANDATORY: clean news search phrase for specific topics if needsNews is true, or empty string "" for general top/world headlines),
+  "newsMode": "headlines" | "topic" (MANDATORY if needsNews is true: "headlines" for general top/world news without a specific subject, or "topic" for news regarding a specific topic/entity),
+  "newsCategory": "general" | "world" | "technology" | "business" | "science" | "health" | "sports" | "entertainment" (category if needsNews is true),
   "needsKnowledgeAgent": boolean,
   "needsFactCheck": boolean,
   "needsReview": boolean,
@@ -2836,7 +2838,10 @@ You are the JARVIS Planner. You MUST output ONLY a valid JSON object strictly ma
 CRITICAL RULES:
 1. Under NO circumstance should "needsResearchQuery", "needsNewsQuery", "wikipediaQuery", "wikidataQuery", or "weatherLocation" be omitted from the JSON output. All string keys MUST always be present in the returned JSON object.
 2. When needsResearch is true, "needsResearchQuery" MUST be a clean, specific search phrase (not the full raw user question) that the Researcher agent should use for its web search — strip out conversational words, filler ("Is this true?", "Tell me about"), punctuation, and focus only on the actual topic being researched (e.g. for "This is true? Rich HTML can carry hidden dangerous code...", needsResearchQuery MUST be "HTML security risks hidden code tracking scripts"). If needsResearch is false, set it to "".
-3. When needsNews is true (for current events, breaking news, latest headlines — NOT general 'latest updates' or technical updates), set "needsNewsQuery" to the clean news search phrase. If needsNews is false, set it to "".
+3. When needsNews is true:
+   - For general top/world news (e.g. "top 5 world news today", "what's happening in the world", "latest top headlines"): set "newsMode": "headlines", "newsCategory": "world" or "general", and "needsNewsQuery": "" (empty string). Do NOT generate a literal search phrase like "top 5 world news today".
+   - For specific topic news (e.g. "SpaceX rocket launch news", "Apple earnings news", "Tesla recalls"): set "newsMode": "topic", "needsNewsQuery": "<clean topic>", and appropriate "newsCategory".
+   If needsNews is false, set "needsNewsQuery": "", and omit/ignore newsMode/newsCategory.
 4. When needsWikipedia is true, "wikipediaQuery" MUST be the clean, concise subject/title (e.g. for "tell about brawl stars game", wikipediaQuery MUST be "Brawl Stars"). If needsWikipedia is false, set it to "".
 5. When needsWikidata is true, "wikidataQuery" MUST be the clean entity name. If needsWikidata is false, set it to "".
 6. When needsWeather is true, set "weatherLocation" to the target city or location name (e.g. for "weather in Paris", weatherLocation MUST be "Paris"). If no specific location is mentioned, set it to "". When needsWeather is false, set it to "".
@@ -3068,11 +3073,17 @@ CRITICAL RULES:
       }
       plannerOutput.needsNews = Boolean(plannerOutput.needsNews);
       if (plannerOutput.needsNews) {
-        if (typeof plannerOutput.needsNewsQuery === 'string' && plannerOutput.needsNewsQuery.trim()) {
+        if (plannerOutput.newsMode === 'headlines') {
+          plannerOutput.needsNewsQuery = '';
+        } else if (typeof plannerOutput.needsNewsQuery === 'string' && plannerOutput.needsNewsQuery.trim()) {
           plannerOutput.needsNewsQuery = plannerOutput.needsNewsQuery.trim();
         } else {
           const { cleanedSearchQuery } = extractTopicKeywords(strippedQuery, plannerOutput.task);
           plannerOutput.needsNewsQuery = cleanedSearchQuery || strippedQuery;
+        }
+
+        if (plannerOutput.newsCategory && typeof plannerOutput.newsCategory === 'string') {
+          plannerOutput.newsCategory = plannerOutput.newsCategory.trim().toLowerCase();
         }
       } else {
         plannerOutput.needsNewsQuery = '';
@@ -4658,7 +4669,6 @@ Document search was performed for query: "${cleanSearchQuery}" across ${targetLa
         (isCodeOnline || isSearchOverride || deepResearch || Boolean(plannerOutput.needsNews) || Boolean(plannerOutput.needsResearch));
 
       if (shouldRunWebSearch && searchResults.length === 0) {
-        const currentDateStr = new Date().toLocaleDateString('en-US', { month: 'long', day: 'numeric', year: 'numeric' });
         const currentYear = new Date().getFullYear();
         const isFastChangingTopic = /\b(?:ai|model|models|llm|llms|claude|gpt|gemini|llama|deepseek|mistral|anthropic|openai|version|releases?|pricing|specs?|software|firmware|hardware)\b/i.test(
           `${strippedQuery} ${plannerOutput.task || ''}`,
@@ -4685,10 +4695,12 @@ Document search was performed for query: "${cleanSearchQuery}" across ${targetLa
 
           effectiveSearchQuery = `${brandPrefix}${queryWithoutPunctuation} models list current lineup overview official documentation`;
         } else if (isNewsSearch) {
-          const newsQueryText = plannerOutput.needsNewsQuery || plannerResearchQuery || cleanedSearchQuery || strippedQuery;
-          effectiveSearchQuery = isWorldNews
-            ? `top world breaking news headlines today ${currentDateStr}`
-            : `world news today ${currentDateStr} ${newsQueryText}`;
+          const isHeadlineMode = plannerOutput.newsMode === 'headlines' || (!plannerOutput.newsMode && isWorldNews && !plannerOutput.needsNewsQuery);
+          const newsQueryText = isHeadlineMode ? '' : (plannerOutput.needsNewsQuery || plannerResearchQuery || cleanedSearchQuery || strippedQuery);
+
+          effectiveSearchQuery = isHeadlineMode
+            ? (isWorldNews ? 'world' : 'top headlines')
+            : (isWorldNews ? `top world news ${newsQueryText}` : newsQueryText);
         } else {
           // General / Factual / CodeOnline Search: Prioritize clean, specific search phrase from Planner
           effectiveSearchQuery = plannerResearchQuery || (isSearchOverride ? (cleanedSearchQuery || strippedQuery) : (cleanedSearchQuery || strippedQuery));
@@ -4707,7 +4719,17 @@ Document search was performed for query: "${cleanSearchQuery}" across ${targetLa
 
         try {
           const searchCategory = isNewsSearch ? 'NEWS' : undefined;
-          const searchRes = await api.search(effectiveSearchQuery, searchCategory, undefined, deepResearch ? 16 : 15);
+          const isHeadlineMode = isNewsSearch && (plannerOutput.newsMode === 'headlines' || (!plannerOutput.newsMode && isWorldNews && !plannerOutput.needsNewsQuery));
+          const effectiveNewsMode: 'headlines' | 'topic' | undefined = isNewsSearch ? (isHeadlineMode ? 'headlines' : 'topic') : undefined;
+          const effectiveNewsCat = isNewsSearch ? (plannerOutput.newsCategory || (isWorldNews ? 'world' : 'general')) : undefined;
+
+          const searchRes = await api.search(
+            effectiveSearchQuery,
+            searchCategory,
+            undefined,
+            deepResearch ? 16 : 15,
+            isNewsSearch ? { newsCategory: effectiveNewsCat, newsMode: effectiveNewsMode } : undefined
+          );
           let rawResults: SearchResult[] = [];
           let sourceLabel = 'Tavily API';
           let fallbackOccurred = false;
