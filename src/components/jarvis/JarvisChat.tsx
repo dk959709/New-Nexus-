@@ -204,6 +204,12 @@ export function JarvisChat({ config, onOpenSettings }: JarvisChatProps) {
     if (codeParam === 'false') return false;
     return config.coderModeDefault ?? (config.agents?.coder?.enabled !== false);
   });
+  const [newAgentMode, setNewAgentMode] = useState(() => {
+    const dynamicParam = searchParams.get('newAgent') || searchParams.get('dynamic');
+    if (dynamicParam === 'true') return true;
+    if (dynamicParam === 'false') return false;
+    return config.newAgentModeDefault ?? false;
+  });
 
   const handleToggleCoderMode = (enabled: boolean) => {
     setCoderMode(enabled);
@@ -568,6 +574,7 @@ export function JarvisChat({ config, onOpenSettings }: JarvisChatProps) {
             selectedDocId: docSearchMode === 'specific' ? selectedDocId : undefined,
             selectedDocName: docSearchMode === 'specific' ? selectedDocObj?.name : undefined,
           },
+          newAgentMode,
         );
 
         const completedMessage: JarvisMessage = {
@@ -580,6 +587,8 @@ export function JarvisChat({ config, onOpenSettings }: JarvisChatProps) {
           chartMode,
           imageMode,
           coderMode,
+          newAgentMode,
+          dynamicSpecialists: result.dynamicSpecialists,
           attachments: currentAttachments.length > 0 ? currentAttachments : undefined,
           searchMyDocs: searchMyDocs,
           docSearchMode: searchMyDocs ? docSearchMode : undefined,
@@ -613,6 +622,7 @@ export function JarvisChat({ config, onOpenSettings }: JarvisChatProps) {
           chartMode,
           imageMode,
           coderMode,
+          newAgentMode,
           attachments: currentAttachments.length > 0 ? currentAttachments : undefined,
           steps: activeSteps,
           error: errMsg,
@@ -635,6 +645,7 @@ export function JarvisChat({ config, onOpenSettings }: JarvisChatProps) {
       chartMode,
       imageMode,
       coderMode,
+      newAgentMode,
       searchMyDocs,
       docSearchMode,
       selectedDocId,
@@ -1754,6 +1765,49 @@ export function JarvisChat({ config, onOpenSettings }: JarvisChatProps) {
                   }`}
                 >
                   ⚡ DEEP RESEARCH <span className="jarvis-toggle-subtext">(5-AGENT MESH)</span>
+                </span>
+              </label>
+
+              {/* New Agent (Dynamic 5-Node Specialist Mesh) Colorful Pill Switch */}
+              <label
+                className="jarvis-mode-toggle inline-flex items-center gap-2 px-3 py-1.5 rounded-full cursor-pointer transition-all duration-200 border"
+                style={{
+                  background: newAgentMode
+                    ? 'linear-gradient(135deg, rgba(168,85,247,0.24) 0%, rgba(139,92,246,0.2) 100%)'
+                    : 'rgba(255,255,255,0.03)',
+                  borderColor: newAgentMode ? 'rgba(168,85,247,0.6)' : 'rgba(255,255,255,0.1)',
+                  boxShadow: newAgentMode ? '0 0 14px rgba(168,85,247,0.35)' : 'none',
+                }}
+                title={
+                  newAgentMode
+                    ? 'New Agent Mode active: 5-node dynamic pipeline (Planner → 3 Query-Tailored Specialists → Synthesizer)'
+                    : 'Enable New Agent Mode (dynamic 5-node specialist pipeline)'
+                }
+              >
+                <input
+                  type="checkbox"
+                  checked={newAgentMode}
+                  onChange={(e) => setNewAgentMode(e.target.checked)}
+                  className="hidden"
+                />
+                <div
+                  className={`w-7 h-3.5 rounded-full transition-colors relative flex items-center p-0.5 ${
+                    newAgentMode ? 'bg-purple-400' : 'bg-slate-700'
+                  }`}
+                >
+                  <div
+                    className={`w-2.5 h-2.5 rounded-full bg-slate-950 transition-transform duration-200 ${
+                      newAgentMode ? 'translate-x-3.5' : 'translate-x-0'
+                    }`}
+                  />
+                </div>
+                <span
+                  className={`text-[11px] font-bold font-mono tracking-wide flex items-center gap-1.5 ${
+                    newAgentMode ? 'text-purple-300' : 'text-slate-400'
+                  }`}
+                >
+                  <span>✨</span>
+                  <span>NEW AGENT</span>
                 </span>
               </label>
 

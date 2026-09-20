@@ -34,6 +34,8 @@ import type {
   JarvisImageResult,
   JarvisPlannerOutput,
   JarvisSystemConfig,
+  JarvisDynamicSpecialist,
+  JarvisDynamicSpecialistTool,
   SearchResult,
   WikidataEntity,
   DocumentRetrievalResult,
@@ -49,6 +51,7 @@ export interface JarvisExecutionResult {
   retrievedDocChunks?: DocumentRetrievalResult[];
   promptImageVariations?: string[];
   promptImageRoughIdea?: string;
+  dynamicSpecialists?: JarvisDynamicSpecialist[];
   error?: string;
 }
 
@@ -1446,6 +1449,127 @@ export function isCustomApiCommand(text: string): boolean {
   return /^\/customapi(?:\s+|$)/i.test(text.trim());
 }
 
+export function extractAnyUrlFromQuery(text: string): string | null {
+  if (!text || typeof text !== 'string') return null;
+  const match = text.match(/https?:\/\/[^\s"'`<>()]+/i);
+  if (match) {
+    return match[0].replace(/[.,;:!?)]+$/, '');
+  }
+  return null;
+}
+
+export function extractJsonFromDynamicPlannerResponse(rawText: string): {
+  task?: string;
+  plan?: string[];
+  specialists?: JarvisDynamicSpecialist[];
+} | null {
+  if (!rawText || !rawText.trim()) return null;
+
+  // 1. Clean markdown code blocks
+  const text = rawText.replace(/```(?:json)?/gi, '').replace(/```/g, '').trim();
+
+  // 2. Try direct parse first
+  try {
+    const direct = JSON.parse(text);
+    if (direct && typeof direct === 'object') {
+      return direct;
+    }
+  } catch {
+    // Continue
+  }
+
+  // 3. Find outermost { ... }
+  const firstBrace = text.indexOf('{');
+  const lastBrace = text.lastIndexOf('}');
+  if (firstBrace !== -1 && lastBrace > firstBrace) {
+    const jsonCandidate = text.slice(firstBrace, lastBrace + 1);
+    try {
+      const parsed = JSON.parse(jsonCandidate);
+      if (parsed && typeof parsed === 'object') {
+        return parsed;
+      }
+    } catch {
+      // Continue
+    }
+  }
+
+  // 4. Auto-repair unclosed quotes and brackets
+  if (firstBrace !== -1) {
+    const partial = text.slice(firstBrace);
+    const openCurly = (partial.match(/\{/g) || []).length;
+    const closeCurly = (partial.match(/\}/g) || []).length;
+    const openSquare = (partial.match(/\[/g) || []).length;
+    const closeSquare = (partial.match(/\]/g) || []).length;
+
+    let repaired = partial;
+    const quoteCount = (repaired.match(/(?<!\\)"/g) || []).length;
+    if (quoteCount % 2 !== 0) {
+      repaired += '"';
+    }
+    for (let i = 0; i < openSquare - closeSquare; i++) {
+      repaired += ']';
+    }
+    for (let i = 0; i < openCurly - closeCurly; i++) {
+      repaired += '}';
+    }
+
+    try {
+      const parsed = JSON.parse(repaired);
+      if (parsed && typeof parsed === 'object') {
+        return parsed;
+      }
+    } catch {
+      // ignore
+    }
+  }
+
+  return null;
+}
+
+export function generateFallbackSpecialists(
+  query: string,
+  targetUrl?: string | null,
+): JarvisDynamicSpecialist[] {
+  const cleanQ = query.replace(/[?.,!]+$/, '').trim();
+  const hasUrl = Boolean(targetUrl);
+
+  return [
+    {
+      id: 'specialist_1',
+      name: 'Technical & Architecture Specialist',
+      role: 'Core domain mechanisms, systems architecture, and foundational principles',
+      systemPrompt: `You are the Technical & Architecture Specialist. Your objective is to dissect the user inquiry with deep domain rigor, analyzing underlying architecture, mechanics, specifications, and foundational concepts. Provide evidence-based technical explanations without superficial summaries.`,
+      assignedTools: hasUrl ? ['webFetch', 'search'] : ['search', 'wikipedia'],
+      searchQuery: cleanQ,
+      wikipediaQuery: cleanQ,
+      targetUrl: targetUrl || undefined,
+      icon: '🔬',
+      accentColor: '#38bdf8',
+    },
+    {
+      id: 'specialist_2',
+      name: 'Empirical & Comparative Analyst',
+      role: 'Cross-examination of evidence, benchmark metrics, and market/historical context',
+      systemPrompt: `You are the Empirical & Comparative Analyst. Your objective is to gather live data, evaluate trade-offs, identify empirical evidence or counter-arguments, and present comparative breakdowns with precise data points.`,
+      assignedTools: ['search', 'news'],
+      searchQuery: `${cleanQ} analysis comparison`,
+      newsQuery: cleanQ,
+      icon: '📊',
+      accentColor: '#c084fc',
+    },
+    {
+      id: 'specialist_3',
+      name: 'Practical Implementation & Strategy Specialist',
+      role: 'Actionable execution pathways, modern best practices, and strategic synthesis',
+      systemPrompt: `You are the Practical Implementation & Strategy Specialist. Your objective is to formulate actionable takeaways, real-world execution considerations, best practices, and practical implications derived from findings.`,
+      assignedTools: ['search'],
+      searchQuery: `${cleanQ} guide best practices`,
+      icon: '💡',
+      accentColor: '#34d399',
+    },
+  ];
+}
+
 export function parseCustomApiCommand(text: string): { apiName: string; customQuery: string } | null {
   if (!text || typeof text !== 'string') return null;
   const match = text.trim().match(/^\/customapi\s+([^\s]+)(?:\s+(.*))?$/i);
@@ -2272,6 +2396,7 @@ export async function runJarvisPipeline(
     selectedDocId?: string;
     selectedDocName?: string;
   },
+  newAgentMode = false,
 ): Promise<JarvisExecutionResult> {
   // Safely resolve and validate user's local timezone with fallback to Europe/London
   let effectiveTimeZone = 'Europe/London';
@@ -2718,6 +2843,469 @@ Please perform your specialized processing for this inquiry. Provide clear, conc
             : isPromptImageSlash
               ? promptImageIdea
               : query;
+
+  // -------------------------------------------------------------
+  // NEW AGENT 5-NODE DYNAMIC PIPELINE MODE (Planner → 3 Specialists → Final Synthesizer)
+  // -------------------------------------------------------------
+  if (newAgentMode) {
+    const detectedUrl = extractAnyUrlFromQuery(query) || (isWebFetchQuery(query) ? extractWebFetchUrl(query) : null);
+
+    const initialSpecialists: JarvisDynamicSpecialist[] = [
+      {
+        id: 'specialist_1',
+        name: 'Specialist 1 (Initializing...)',
+        role: 'Dynamic Domain Specialist',
+        systemPrompt: '',
+        assignedTools: [],
+        icon: '🔬',
+      },
+      {
+        id: 'specialist_2',
+        name: 'Specialist 2 (Initializing...)',
+        role: 'Dynamic Domain Specialist',
+        systemPrompt: '',
+        assignedTools: [],
+        icon: '📊',
+      },
+      {
+        id: 'specialist_3',
+        name: 'Specialist 3 (Initializing...)',
+        role: 'Dynamic Domain Specialist',
+        systemPrompt: '',
+        assignedTools: [],
+        icon: '💡',
+      },
+    ];
+
+    const pCfg = agentConfigs.planner || DEFAULT_JARVIS_CONFIG.agents.planner;
+    const provInfo = resolveProviderConfig(pCfg);
+    const sCfg = agentConfigs.finalSynthesizer || DEFAULT_JARVIS_CONFIG.agents.finalSynthesizer;
+    const sProvInfo = resolveProviderConfig(sCfg);
+
+    // Initialize the exact 5 HUD / Diagnostic steps
+    steps.length = 0;
+    steps.push({
+      agentId: 'planner',
+      name: pCfg.name || 'Planner',
+      icon: pCfg.icon || '🧭',
+      status: 'pending',
+      providerName: provInfo.provider?.name || 'Primary',
+      model: provInfo.model || pCfg.modelId,
+    });
+    initialSpecialists.forEach((sp) => {
+      steps.push({
+        agentId: sp.id as JarvisAgentId,
+        name: sp.name,
+        icon: sp.icon || '🤖',
+        status: 'pending',
+        providerName: provInfo.provider?.name || 'Primary',
+        model: provInfo.model || pCfg.modelId,
+        specialistRole: sp.role,
+      });
+    });
+    steps.push({
+      agentId: 'finalSynthesizer',
+      name: sCfg.name || 'Synthesizer',
+      icon: sCfg.icon || '✨',
+      status: 'pending',
+      providerName: sProvInfo.provider?.name || 'Primary',
+      model: sProvInfo.model || sCfg.modelId,
+    });
+
+    // Notify initial step states
+    steps.forEach((s) => onStepUpdate?.(s));
+
+    // ==========================================
+    // NODE 1: 🧭 DYNAMIC PLANNER
+    // ==========================================
+    const planStart = Date.now();
+    updateStep({
+      agentId: 'planner',
+      name: pCfg.name || 'Planner',
+      icon: pCfg.icon || '🧭',
+      status: 'running',
+      providerName: provInfo.provider?.name || 'Primary',
+      model: provInfo.model || pCfg.modelId,
+    });
+
+    const dynamicPlannerSystemPrompt = `Current date and time: ${currentDateTime}
+
+You are the JARVIS Dynamic Pipeline Planner.
+Your role is to analyze the user's inquiry and formulate exactly 3 custom specialized expert agents to investigate different critical angles of the query.
+
+AVAILABLE AGENT TOOLS:
+- "search": Web search engine (Tavily/Exa/DuckDuckGo) to discover latest verified info.
+- "wikipedia": Comprehensive encyclopedia lookup.
+- "news": Recent breaking news articles and journalistic reporting.
+- "weather": Real-time meteorological forecast.
+- "webFetch": Direct webpage HTML fetching and parsing (use only if user query contains an actual URL).
+
+${detectedUrl ? `[DETECTED URL IN USER QUERY]: "${detectedUrl}" -> You may assign "webFetch" with targetUrl: "${detectedUrl}" to specialist(s) that need to inspect this webpage.` : ''}
+
+REQUIREMENTS:
+1. Analyze the query: "${query}"
+2. Generate EXACTLY 3 distinct specialists with complementary expertise (e.g. Technical Specialist, Empirical/Comparative Analyst, Practical Strategy Specialist).
+3. Assign tools selectively per specialist — only assign tools that are directly helpful for that specialist's specific angle (do not assign tools globally or blindly).
+4. Output STRICT JSON adhering to this schema:
+\`\`\`json
+{
+  "task": "Summary of user request",
+  "plan": [
+    "Step 1...",
+    "Step 2...",
+    "Step 3..."
+  ],
+  "specialists": [
+    {
+      "id": "specialist_1",
+      "name": "Specialist Name",
+      "role": "Concise role description",
+      "systemPrompt": "Comprehensive, rigorous system instruction for this specialist",
+      "assignedTools": ["search", "wikipedia"],
+      "searchQuery": "custom query if needed",
+      "wikipediaQuery": "custom query if needed",
+      "newsQuery": "custom query if needed",
+      "weatherLocation": "location if weather tool",
+      "targetUrl": "${detectedUrl || ''}"
+    },
+    {
+      "id": "specialist_2",
+      "name": "Specialist Name",
+      "role": "Concise role description",
+      "systemPrompt": "Comprehensive, rigorous system instruction for this specialist",
+      "assignedTools": ["search", "news"],
+      "searchQuery": "custom query if needed",
+      "newsQuery": "custom query if needed"
+    },
+    {
+      "id": "specialist_3",
+      "name": "Specialist Name",
+      "role": "Concise role description",
+      "systemPrompt": "Comprehensive, rigorous system instruction for this specialist",
+      "assignedTools": ["search"],
+      "searchQuery": "custom query if needed"
+    }
+  ]
+}
+\`\`\``;
+
+    const planRes = await callAgent('planner', [
+      { role: 'system', content: dynamicPlannerSystemPrompt },
+      { role: 'user', content: `Construct the 3-specialist dynamic pipeline for inquiry: "${query}"` },
+    ]);
+
+    const planDuration = Date.now() - planStart;
+
+    const dynamicParsed = planRes.ok ? extractJsonFromDynamicPlannerResponse(planRes.text) : null;
+    let generatedSpecialists: JarvisDynamicSpecialist[] = [];
+
+    if (dynamicParsed?.specialists && Array.isArray(dynamicParsed.specialists) && dynamicParsed.specialists.length >= 3) {
+      generatedSpecialists = dynamicParsed.specialists.slice(0, 3).map((s, idx) => ({
+        id: `specialist_${idx + 1}`,
+        name: s.name || `Specialist ${idx + 1}`,
+        role: s.role || 'Domain Specialist',
+        systemPrompt: s.systemPrompt || `Analyze the topic from specialized domain perspective.`,
+        assignedTools: Array.isArray(s.assignedTools) ? (s.assignedTools as JarvisDynamicSpecialistTool[]) : ['search'],
+        searchQuery: s.searchQuery || query,
+        wikipediaQuery: s.wikipediaQuery || query,
+        newsQuery: s.newsQuery || query,
+        weatherLocation: s.weatherLocation,
+        targetUrl: s.targetUrl || detectedUrl || undefined,
+        icon: idx === 0 ? '🔬' : idx === 1 ? '📊' : '💡',
+        accentColor: idx === 0 ? '#38bdf8' : idx === 1 ? '#c084fc' : '#34d399',
+      }));
+    } else {
+      generatedSpecialists = generateFallbackSpecialists(query, detectedUrl);
+    }
+
+    const taskDescription = dynamicParsed?.task || query;
+    const planItems = Array.isArray(dynamicParsed?.plan) ? dynamicParsed.plan : [
+      `Deploy ${generatedSpecialists[0].name} for deep investigation`,
+      `Deploy ${generatedSpecialists[1].name} for comparative empirical analysis`,
+      `Deploy ${generatedSpecialists[2].name} for practical synthesis and strategic execution`,
+    ];
+
+    updateStep({
+      agentId: 'planner',
+      name: pCfg.name || 'Planner',
+      icon: pCfg.icon || '🧭',
+      status: 'completed',
+      providerName: planRes.providerName || provInfo.provider?.name || 'Primary',
+      model: planRes.model || provInfo.model,
+      durationMs: planDuration,
+      summary: `Created 3 dynamic specialists: ${generatedSpecialists.map((s) => s.name).join(', ')}`,
+      outputPreview: JSON.stringify({ task: taskDescription, plan: planItems, specialists: generatedSpecialists.map((s) => ({ name: s.name, role: s.role, tools: s.assignedTools })) }, null, 2),
+      rawOutput: planRes.text || JSON.stringify(generatedSpecialists, null, 2),
+      usedFallback: planRes.usedFallback,
+    });
+
+    // Update specialist step names in steps array
+    generatedSpecialists.forEach((sp) => {
+      const idx = steps.findIndex((s) => s.agentId === sp.id);
+      if (idx >= 0) {
+        steps[idx] = {
+          ...steps[idx],
+          name: sp.name,
+          icon: sp.icon || '🤖',
+          specialistRole: sp.role,
+          assignedTools: sp.assignedTools,
+        };
+        onStepUpdate?.(steps[idx]);
+      }
+    });
+
+    // ==========================================
+    // NODES 2, 3, 4: 🔬 3 SPECIALIST AGENTS
+    // ==========================================
+    const specialistOutputs: Array<{ specialist: JarvisDynamicSpecialist; output: string }> = [];
+
+    for (let i = 0; i < generatedSpecialists.length; i++) {
+      const spec = generatedSpecialists[i];
+      const specStart = Date.now();
+
+      updateStep({
+        agentId: spec.id as JarvisAgentId,
+        name: spec.name,
+        icon: spec.icon || '🤖',
+        status: 'running',
+        providerName: provInfo.provider?.name || 'Primary',
+        model: provInfo.model || pCfg.modelId,
+        specialistRole: spec.role,
+        assignedTools: spec.assignedTools,
+      });
+
+      // Execute Assigned Tools
+      const gatheredContextChunks: string[] = [];
+      const toolDetailsList: Array<{ tool: string; query?: string; targetUrl?: string }> = [];
+
+      for (const tool of spec.assignedTools) {
+        if (tool === 'search') {
+          const sQuery = spec.searchQuery || query;
+          toolDetailsList.push({ tool: 'Search', query: sQuery });
+          try {
+            const sRes = await api.search(sQuery);
+            if (sRes.results && sRes.results.length > 0) {
+              gatheredContextChunks.push(
+                `### Search Results for "${sQuery}":\n` +
+                sRes.results.slice(0, 4).map((r, rIdx) => `${rIdx + 1}. [${r.title}](${r.url})\n${r.snippet}`).join('\n\n')
+              );
+              sRes.results.slice(0, 4).forEach((r) => {
+                if (!sourcesCollected.some((sc) => sc.url === r.url)) {
+                  sourcesCollected.push({
+                    title: r.title,
+                    url: r.url,
+                    domain: r.domain,
+                    snippet: r.snippet,
+                    publishedAt: r.publishedAt || null,
+                  });
+                }
+              });
+            }
+          } catch (toolErr) {
+            console.warn(`[Specialist ${spec.name}] Search failed:`, toolErr);
+          }
+        } else if (tool === 'wikipedia') {
+          const wQuery = spec.wikipediaQuery || query;
+          toolDetailsList.push({ tool: 'Wikipedia', query: wQuery });
+          try {
+            const summary = await getWikipediaSummary(wQuery);
+            if (summary && summary.extract) {
+              gatheredContextChunks.push(`### Wikipedia (${summary.title}):\n${summary.extract}`);
+              if (!sourcesCollected.some((sc) => sc.url === summary.url)) {
+                sourcesCollected.push({
+                  title: summary.title,
+                  url: summary.url,
+                  domain: 'wikipedia.org',
+                  snippet: summary.extract.slice(0, 200),
+                });
+              }
+            }
+          } catch (toolErr) {
+            console.warn(`[Specialist ${spec.name}] Wikipedia failed:`, toolErr);
+          }
+        } else if (tool === 'news') {
+          const nQuery = spec.newsQuery || query;
+          toolDetailsList.push({ tool: 'News', query: nQuery });
+          try {
+            const newsRes = await api.search(nQuery, { newsMode: 'topic' });
+            if (newsRes.results && newsRes.results.length > 0) {
+              gatheredContextChunks.push(
+                `### News Articles for "${nQuery}":\n` +
+                newsRes.results.slice(0, 4).map((r, rIdx) => `${rIdx + 1}. [${r.title}](${r.url}) (${r.publishedAt || 'Recent'})\n${r.snippet}`).join('\n\n')
+              );
+              newsRes.results.slice(0, 4).forEach((r) => {
+                if (!sourcesCollected.some((sc) => sc.url === r.url)) {
+                  sourcesCollected.push({
+                    title: r.title,
+                    url: r.url,
+                    domain: r.domain,
+                    snippet: r.snippet,
+                    publishedAt: r.publishedAt || null,
+                  });
+                }
+              });
+            }
+          } catch (toolErr) {
+            console.warn(`[Specialist ${spec.name}] News search failed:`, toolErr);
+          }
+        } else if (tool === 'weather') {
+          const wLoc = spec.weatherLocation || query;
+          toolDetailsList.push({ tool: 'Weather', query: wLoc });
+          try {
+            const geoRes = await api.geocode(wLoc);
+            if (geoRes && geoRes.results && geoRes.results.length > 0) {
+              const place = geoRes.results[0];
+              const weatherData = await api.weather(place.latitude, place.longitude);
+              if (weatherData && weatherData.current) {
+                gatheredContextChunks.push(
+                  `### Real-Time Weather in ${place.name}, ${place.country || ''}:\n` +
+                  `Temperature: ${weatherData.current.temperature_2m ?? 'N/A'}°C, Wind: ${weatherData.current.wind_speed_10m ?? 'N/A'} km/h`
+                );
+              }
+            }
+          } catch (toolErr) {
+            console.warn(`[Specialist ${spec.name}] Weather fetch failed:`, toolErr);
+          }
+        } else if (tool === 'webFetch') {
+          const fetchUrl = spec.targetUrl || detectedUrl;
+          if (fetchUrl) {
+            toolDetailsList.push({ tool: 'Web Fetcher', targetUrl: fetchUrl });
+            try {
+              const fetched = await api.webFetch(fetchUrl);
+              if (fetched && fetched.text) {
+                gatheredContextChunks.push(
+                  `### Fetched Webpage Content (${fetched.title || fetchUrl}):\n${fetched.text.slice(0, 3500)}`
+                );
+                if (!sourcesCollected.some((sc) => sc.url === fetchUrl)) {
+                  sourcesCollected.push({
+                    title: fetched.title || fetchUrl,
+                    url: fetchUrl,
+                    domain: fetched.domain || new URL(fetchUrl).hostname,
+                    snippet: (fetched.text || '').slice(0, 200),
+                  });
+                }
+              }
+            } catch (toolErr) {
+              console.warn(`[Specialist ${spec.name}] WebFetch failed:`, toolErr);
+            }
+          }
+        }
+      }
+
+      const specialistSystemPrompt = `Current date and time: ${currentDateTime}
+
+${spec.systemPrompt || 'You are an autonomous specialized domain expert.'}
+
+You are ${spec.name} (${spec.role}).
+Conduct a rigorous, authoritative analysis from your domain perspective.
+Use evidence, facts, and structure. Bold key terms and outline specific technical or strategic insights.`;
+
+      const specialistUserMessage = `Inquiry: "${query}"
+Task: "${taskDescription}"
+
+${gatheredContextChunks.length > 0 ? `[GATHERED TOOL DATA & RESEARCH INTELLIGENCE]\n${gatheredContextChunks.join('\n\n')}\n\n` : ''}Please provide your expert perspective, detailed findings, and domain-specific evidence.`;
+
+      const specRes = await callAgent('researcher', [
+        { role: 'system', content: specialistSystemPrompt },
+        { role: 'user', content: specialistUserMessage },
+      ], 2400);
+
+      const specDuration = Date.now() - specStart;
+      const specOutputText = specRes.ok && specRes.text ? specRes.text : `[${spec.name}] Completed domain analysis with direct reasoning.`;
+
+      specialistOutputs.push({
+        specialist: spec,
+        output: specOutputText,
+      });
+
+      const toolsSummary = spec.assignedTools.length > 0
+        ? `Executed tools: ${spec.assignedTools.join(', ')}`
+        : 'Completed direct specialized reasoning';
+
+      updateStep({
+        agentId: spec.id as JarvisAgentId,
+        name: spec.name,
+        icon: spec.icon || '🤖',
+        status: specRes.ok ? 'completed' : 'failed',
+        providerName: specRes.providerName || provInfo.provider?.name || 'Primary',
+        model: specRes.model || provInfo.model,
+        durationMs: specDuration,
+        summary: toolsSummary,
+        outputPreview: specOutputText,
+        rawOutput: specOutputText,
+        usedFallback: specRes.usedFallback,
+        assignedTools: spec.assignedTools,
+        assignedToolDetails: toolDetailsList,
+        specialistRole: spec.role,
+        error: specRes.ok ? undefined : specRes.error,
+      });
+    }
+
+    // ==========================================
+    // NODE 5: ✨ FINAL SYNTHESIZER
+    // ==========================================
+    const synthStart = Date.now();
+    updateStep({
+      agentId: 'finalSynthesizer',
+      name: sCfg.name || 'Synthesizer',
+      icon: sCfg.icon || '✨',
+      status: 'running',
+      providerName: sProvInfo.provider?.name || 'Primary',
+      model: sProvInfo.model || sCfg.modelId,
+    });
+
+    const synthSystemPrompt = `Current date and time: ${currentDateTime}
+
+${DEFAULT_AGENT_SYSTEM_PROMPTS.finalSynthesizer || 'You are the Final Synthesizer.'}
+
+You have received findings from a streamlined 5-node dynamic pipeline featuring 3 specialized domain agents created specifically for this query:
+
+${generatedSpecialists.map((s, idx) => `${idx + 1}. **${s.name}** (${s.role})`).join('\n')}
+
+SYNTHESIS DIRECTIVES:
+1. Synthesize all 3 specialist perspectives into a unified, authoritative, comprehensive, and clear final response.
+2. Structure the answer logically using clean markdown headers (##), bold key terms, comparative tables or structured bullet points where relevant, and concise summaries.
+3. Integrate verified facts and technical depth from the specialists without duplicating text.
+4. Deliver high-value, definitive insights directly to the user.`;
+
+    const synthUserMessage = `User Query: "${query}"
+
+${specialistOutputs.map((so) => `=== SPECIALIST ANALYSIS: ${so.specialist.name} (${so.specialist.role}) ===\n${so.output}`).join('\n\n')}
+
+Please synthesize the definitive comprehensive answer.`;
+
+    const synthRes = await callAgent('finalSynthesizer', [
+      { role: 'system', content: synthSystemPrompt },
+      { role: 'user', content: synthUserMessage },
+    ], 3500);
+
+    const synthDuration = Date.now() - synthStart;
+    const finalAnswer = synthRes.ok && synthRes.text
+      ? stripConversationalMetaText(synthRes.text)
+      : specialistOutputs.map((so) => `### ${so.specialist.name}\n${so.output}`).join('\n\n');
+
+    updateStep({
+      agentId: 'finalSynthesizer',
+      name: sCfg.name || 'Synthesizer',
+      icon: sCfg.icon || '✨',
+      status: synthRes.ok ? 'completed' : 'failed',
+      providerName: synthRes.providerName || sProvInfo.provider?.name || 'Primary',
+      model: synthRes.model || sProvInfo.model,
+      durationMs: synthDuration,
+      summary: 'Synthesized multi-specialist neural consensus.',
+      outputPreview: finalAnswer,
+      rawOutput: synthRes.text,
+      usedFallback: synthRes.usedFallback,
+      error: synthRes.ok ? undefined : synthRes.error,
+    });
+
+    return {
+      answer: finalAnswer,
+      steps,
+      sources: sourcesCollected,
+      dynamicSpecialists: generatedSpecialists,
+    };
+  }
 
   let plannerOutput: JarvisPlannerOutput = {
     task: isPureFileAnalysis

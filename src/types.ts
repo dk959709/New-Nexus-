@@ -273,6 +273,24 @@ export interface CustomJarvisAgentConfig extends JarvisAgentConfig {
   createdAt?: number;
 }
 
+export type JarvisDynamicSpecialistTool = 'search' | 'wikipedia' | 'news' | 'weather' | 'webFetch';
+
+export interface JarvisDynamicSpecialist {
+  id: string;
+  name: string;
+  role: string;
+  systemPrompt: string;
+  assignedTools: JarvisDynamicSpecialistTool[];
+  searchQuery?: string;
+  wikipediaQuery?: string;
+  newsQuery?: string;
+  weatherLocation?: string;
+  targetUrl?: string;
+  icon?: string;
+  accentColor?: string;
+  focus?: string;
+}
+
 export interface JarvisPlannerOutput {
   task: string;
   plan: string[];
@@ -295,6 +313,8 @@ export interface JarvisPlannerOutput {
   wikidataQuery: string;
   needsWeather?: boolean;
   weatherLocation?: string;
+  specialists?: JarvisDynamicSpecialist[];
+  isDynamicAgentsMode?: boolean;
 }
 
 export interface JarvisSystemConfig {
@@ -303,6 +323,7 @@ export interface JarvisSystemConfig {
   chartModeDefault?: boolean;
   imageModeDefault?: boolean;
   coderModeDefault?: boolean;
+  newAgentModeDefault?: boolean;
   agents: Record<string, JarvisAgentConfig>;
   customAgents?: CustomJarvisAgentConfig[];
 }
@@ -323,6 +344,9 @@ export interface JarvisExecutionStep {
   rawOutput?: string;
   usedFallback?: boolean;
   searchSource?: string;
+  assignedTools?: JarvisDynamicSpecialistTool[];
+  assignedToolDetails?: Array<{ tool: string; query?: string; targetUrl?: string }>;
+  specialistRole?: string;
 }
 
 export interface JarvisAttachedFile {
@@ -349,6 +373,8 @@ export interface JarvisMessage {
   promptImageVariations?: string[];
   promptImageRoughIdea?: string;
   coderMode?: boolean;
+  newAgentMode?: boolean;
+  dynamicSpecialists?: JarvisDynamicSpecialist[];
   attachments?: JarvisAttachedFile[];
   searchMyDocs?: boolean;
   docSearchMode?: 'all' | 'specific';

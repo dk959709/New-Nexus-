@@ -154,11 +154,21 @@ export const JarvisPipelineHudTracker: React.FC<JarvisPipelineHudTrackerProps> =
   };
 
   // Build the list of active agents to display in the tracker:
+  const isDynamicSpecialistPipeline =
+    message?.newAgentMode ||
+    steps.some(
+      (s) =>
+        s?.agentId === 'specialist_1' ||
+        (typeof s?.agentId === 'string' && s.agentId.startsWith('specialist_')),
+    );
+
   const isCodeOnlyPipeline =
+    !isDynamicSpecialistPipeline &&
     steps.some((s) => s?.agentId === 'coder') &&
     steps.some((s) => s?.agentId === 'finalSynthesizer' && s.status === 'skipped');
 
   const isAutoCodePipeline =
+    !isDynamicSpecialistPipeline &&
     steps.some((s) => s?.agentId === 'coder') &&
     (steps.some((s) => s?.agentId === 'finalSynthesizer' && s.status !== 'skipped') ||
       steps.some((s) => s?.agentId === 'reviewer' && s.status !== 'skipped'));
@@ -168,7 +178,70 @@ export const JarvisPipelineHudTracker: React.FC<JarvisPipelineHudTrackerProps> =
   const hasCoder = steps.some((s) => s?.agentId === 'coder');
   const hasResearcher = steps.some((s) => s?.agentId === 'researcher');
 
-  if (isCodeOnlyPipeline) {
+  if (isDynamicSpecialistPipeline) {
+    // Dynamic 5-node pipeline: Planner → 3 Query-Tailored Specialists → Synthesizer
+    const pNode = CORE_AGENTS.find((a) => a.id === 'planner') || {
+      id: 'planner',
+      name: 'Planner',
+      shortLabel: 'PLAN',
+      code: 'PLN-01',
+      icon: <Compass size={13} />,
+      color: '#34d399',
+      glowColor: 'rgba(52, 211, 153, 0.5)',
+    };
+    activeNodes.push(pNode);
+
+    const specialistSteps = steps.filter(
+      (s) => s?.agentId && typeof s.agentId === 'string' && s.agentId.startsWith('specialist_'),
+    );
+
+    if (specialistSteps.length > 0) {
+      specialistSteps.forEach((sp, idx) => {
+        const colors = ['#38bdf8', '#c084fc', '#34d399'];
+        const glowColors = [
+          'rgba(56, 189, 248, 0.5)',
+          'rgba(192, 132, 252, 0.5)',
+          'rgba(52, 211, 153, 0.5)',
+        ];
+        const rawLabel = sp.name ? sp.name.replace(/^(Specialist\s*\d*[:-]?\s*)/i, '').trim() : '';
+        const shortLabel = rawLabel ? rawLabel.slice(0, 8).toUpperCase() : `SPEC-${idx + 1}`;
+
+        activeNodes.push({
+          id: sp.agentId,
+          name: sp.name || `Specialist ${idx + 1}`,
+          shortLabel,
+          code: `SPC-0${idx + 1}`,
+          icon: idx === 0 ? <Sparkles size={13} /> : idx === 1 ? <BarChart3 size={13} /> : <Lightbulb size={13} />,
+          color: colors[idx % colors.length],
+          glowColor: glowColors[idx % glowColors.length],
+        });
+      });
+    } else {
+      const defaultSpecNames = ['Technical Specialist', 'Empirical Analyst', 'Practical Strategist'];
+      for (let i = 1; i <= 3; i++) {
+        activeNodes.push({
+          id: `specialist_${i}`,
+          name: defaultSpecNames[i - 1],
+          shortLabel: `SPEC-0${i}`,
+          code: `SPC-0${i}`,
+          icon: <Sparkles size={13} />,
+          color: i === 1 ? '#38bdf8' : i === 2 ? '#c084fc' : '#34d399',
+          glowColor: i === 1 ? 'rgba(56, 189, 248, 0.5)' : i === 2 ? 'rgba(192, 132, 252, 0.5)' : 'rgba(52, 211, 153, 0.5)',
+        });
+      }
+    }
+
+    const sNode = CORE_AGENTS.find((a) => a.id === 'finalSynthesizer') || {
+      id: 'finalSynthesizer',
+      name: 'Synthesizer',
+      shortLabel: 'SYNTH',
+      code: 'SYN-05',
+      icon: <Sparkles size={13} />,
+      color: '#fb7185',
+      glowColor: 'rgba(251, 113, 133, 0.5)',
+    };
+    activeNodes.push(sNode);
+  } else if (isCodeOnlyPipeline) {
     // 2-agent pipeline: Planner → Coder ONLY
     const plannerNode = CORE_AGENTS.find((a) => a.id === 'planner');
     if (plannerNode) activeNodes.push(plannerNode);

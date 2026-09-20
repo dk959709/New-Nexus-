@@ -808,6 +808,7 @@ export const DEFAULT_JARVIS_CONFIG: JarvisSystemConfig = {
   chartModeDefault: false,
   imageModeDefault: false,
   coderModeDefault: true,
+  newAgentModeDefault: false,
   customAgents: [],
   agents: {
     planner: {

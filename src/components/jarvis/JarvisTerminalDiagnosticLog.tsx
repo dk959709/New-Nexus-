@@ -28,6 +28,9 @@ interface JarvisTerminalDiagnosticLogProps {
 // Icon mapping per role
 const AGENT_ICONS: Record<string, React.ReactNode> = {
   planner: <Compass size={14} className="text-emerald-400" />,
+  specialist_1: <Sparkles size={14} className="text-sky-400" />,
+  specialist_2: <BarChart3 size={14} className="text-purple-400" />,
+  specialist_3: <Lightbulb size={14} className="text-emerald-400" />,
   researcher: <Globe2 size={14} className="text-[#d99b64]" />,
   webFetcher: <Globe2 size={14} className="text-cyan-400" />,
   customApiRunner: <Server size={14} className="text-sky-400" />,
@@ -43,6 +46,9 @@ const AGENT_ICONS: Record<string, React.ReactNode> = {
 
 const AGENT_ROLE_DESCRIPTIONS: Record<string, string> = {
   planner: 'Decomposes inquiry & constructs execution topology',
+  specialist_1: 'Domain-tailored technical & architectural investigation',
+  specialist_2: 'Empirical cross-examination & comparative analysis',
+  specialist_3: 'Practical execution pathways & strategic synthesis',
   researcher: 'Gathers multi-source intelligence & verifiable facts',
   webFetcher: 'Fetches and parses raw webpage HTML directly',
   customApiRunner: 'Direct REST API execution & parameterized retrieval',
@@ -68,6 +74,27 @@ const AGENT_THEMES: Record<
 > = {
   planner: {
     border: 'rgba(52, 211, 153, 0.4)',
+    bg: 'rgba(52, 211, 153, 0.08)',
+    text: '#34d399',
+    glow: 'rgba(52, 211, 153, 0.25)',
+    badgeBg: 'rgba(52, 211, 153, 0.18)',
+  },
+  specialist_1: {
+    border: 'rgba(56, 189, 248, 0.45)',
+    bg: 'rgba(56, 189, 248, 0.08)',
+    text: '#38bdf8',
+    glow: 'rgba(56, 189, 248, 0.25)',
+    badgeBg: 'rgba(56, 189, 248, 0.18)',
+  },
+  specialist_2: {
+    border: 'rgba(192, 132, 252, 0.45)',
+    bg: 'rgba(192, 132, 252, 0.08)',
+    text: '#c084fc',
+    glow: 'rgba(192, 132, 252, 0.25)',
+    badgeBg: 'rgba(192, 132, 252, 0.18)',
+  },
+  specialist_3: {
+    border: 'rgba(52, 211, 153, 0.45)',
     bg: 'rgba(52, 211, 153, 0.08)',
     text: '#34d399',
     glow: 'rgba(52, 211, 153, 0.25)',
@@ -344,8 +371,26 @@ export const JarvisTerminalDiagnosticLog: React.FC<JarvisTerminalDiagnosticLogPr
                 <div className="flex items-start gap-1.5 text-slate-400 leading-relaxed">
                   <span className="text-slate-600 font-bold shrink-0">├──</span>
                   <span className="text-slate-500 shrink-0">ROLE:</span>
-                  <span className="text-slate-300 font-sans text-xs">{roleDesc}</span>
+                  <span className="text-slate-300 font-sans text-xs">{step.specialistRole || roleDesc}</span>
                 </div>
+
+                {/* Assigned Tools Line (if dynamic specialist or has assignedTools) */}
+                {step.assignedTools && step.assignedTools.length > 0 && (
+                  <div className="flex items-start gap-1.5 text-slate-400 leading-relaxed">
+                    <span className="text-slate-600 font-bold shrink-0">├──</span>
+                    <span className="text-purple-400/90 shrink-0">TOOLS:</span>
+                    <div className="flex items-center gap-1.5 flex-wrap">
+                      {step.assignedTools.map((tool) => (
+                        <span
+                          key={tool}
+                          className="px-1.5 py-0.2 rounded bg-purple-500/10 border border-purple-400/30 text-purple-300 text-[10px] font-mono capitalize"
+                        >
+                          {tool}
+                        </span>
+                      ))}
+                    </div>
+                  </div>
+                )}
 
                 {/* Summary / Task Diagnostic Line */}
                 {step.summary && (
