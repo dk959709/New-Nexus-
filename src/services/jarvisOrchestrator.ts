@@ -3097,9 +3097,22 @@ REQUIREMENTS:
 
     for (let i = 0; i < generatedSpecialists.length; i++) {
       const spec = generatedSpecialists[i];
-      const slotCfg = specSlots[i] || specSlots[0] || DEFAULT_SPECIALIST_SLOT_CONFIGS[i] || DEFAULT_SPECIALIST_CONFIG;
+      const liveSlots = storage.getJarvisConfig().specialistSlots || specSlots;
+      const slotCfg = liveSlots[i] || specSlots[i] || DEFAULT_SPECIALIST_SLOT_CONFIGS[i] || DEFAULT_SPECIALIST_CONFIG;
       const slotProvInfo = resolveProviderConfig(slotCfg);
       const specStart = Date.now();
+
+      logToJarvisTerminal(
+        `[Specialist Slot ${i + 1}] Deploying "${spec.name}" (${spec.role}) using Slot ${i + 1} model: ${slotProvInfo.provider?.name || 'Primary'} / ${slotProvInfo.model || slotCfg.modelId}`
+      );
+      console.log(`[Specialist Execution] Specialist ${i + 1} (${spec.name}) -> Slot ${i + 1} config:`, {
+        providerId: slotCfg.providerId,
+        modelId: slotCfg.modelId,
+        providerName: slotProvInfo.provider?.name,
+        modelResolved: slotProvInfo.model,
+        maxTokens: slotCfg.maxTokens,
+        assignedTools: spec.assignedTools,
+      });
 
       updateStep({
         agentId: spec.id as JarvisAgentId,
@@ -3116,115 +3129,235 @@ REQUIREMENTS:
       const gatheredContextChunks: string[] = [];
       const toolDetailsList: Array<{ tool: string; query?: string; targetUrl?: string }> = [];
 
+      if (Array.isArray(spec.assignedTools) && spec.assignedTools.length > 0) {
+        logToJarvisTerminal(
+          `[Specialist ${i + 1}: ${spec.name}] Assigned tools to execute: ${spec.assignedTools.join(', ')}`
+        );
+      } else {
+        logToJarvisTerminal(
+          `[Specialist ${i + 1}: ${spec.name}] No external tools assigned. Proceeding with specialized direct reasoning.`
+        );
+      }
+
       for (const tool of spec.assignedTools) {
         if (tool === 'search') {
           const sQuery = spec.searchQuery || query;
           toolDetailsList.push({ tool: 'Search', query: sQuery });
+          logToJarvisTerminal(`[Specialist ${i + 1}: ${spec.name}] Executing Search tool for: "${sQuery}"`);
+          console.log(`[Dynamic Specialist Tool: Search] Running api.search("${sQuery}")...`);
           try {
             const sRes = await api.search(sQuery);
-            if (sRes.results && sRes.results.length > 0) {
-              gatheredContextChunks.push(
-                `### Search Results for "${sQuery}":\n` +
-                sRes.results.slice(0, 4).map((r, rIdx) => `${rIdx + 1}. [${r.title}](${r.url})\n${r.snippet}`).join('\n\n')
+            const results: SearchResult[] = Array.isArray(sRes)
+              ? sRes
+              : sRes && Array.isArray((sRes as { data?: SearchResult[] }).data)
+                ? (sRes as { data: SearchResult[] }).data
+                : [];
+            console.log(`[Dynamic Specialist Tool: Search] Raw results returned (${results.length} items):`, results);
+            if (results.length > 0) {
+              const formattedSearchResults = results
+                .slice(0, 5)
+                .map((r, rIdx) => {
+                  const desc = r.snippet || (r as { description?: string }).description || '';
+                  return `${rIdx + 1}. [${r.title}](${r.url})\n${desc}`;
+                })
+                .join('\n\n');
+              gatheredContextChunks.push(`### Web Search Intelligence for "${sQuery}":\n${formattedSearchResults}`);
+              logToJarvisTerminal(
+                `[Specialist ${i + 1}: ${spec.name}] Search returned ${results.length} results (top ${Math.min(5, results.length)} added to context)`
               );
-              sRes.results.slice(0, 4).forEach((r) => {
+              results.slice(0, 5).forEach((r) => {
                 if (!sourcesCollected.some((sc) => sc.url === r.url)) {
                   sourcesCollected.push({
                     title: r.title,
                     url: r.url,
-                    domain: r.domain,
-                    snippet: r.snippet,
+                    domain: r.domain || (r.url.startsWith('http') ? new URL(r.url).hostname.replace(/^www\./, '') : undefined),
+                    snippet: r.snippet || (r as { description?: string }).description || undefined,
+                    description: r.snippet || (r as { description?: string }).description || undefined,
                     publishedAt: r.publishedAt || null,
                   });
                 }
               });
+            } else {
+              logToJarvisTerminal(`[Specialist ${i + 1}: ${spec.name}] Search returned 0 results for: "${sQuery}"`, 'warning');
             }
           } catch (toolErr) {
-            console.warn(`[Specialist ${spec.name}] Search failed:`, toolErr);
+            const errMsg = toolErr instanceof Error ? toolErr.message : String(toolErr);
+            console.warn(`[Specialist ${spec.name}] Search failed:`, errMsg);
+            logToJarvisTerminal(`[Specialist ${i + 1}: ${spec.name}] Search tool failed: ${errMsg}`, 'warning');
           }
         } else if (tool === 'wikipedia') {
           const wQuery = spec.wikipediaQuery || query;
           toolDetailsList.push({ tool: 'Wikipedia', query: wQuery });
+          logToJarvisTerminal(`[Specialist ${i + 1}: ${spec.name}] Executing Wikipedia tool for: "${wQuery}"`);
+          console.log(`[Dynamic Specialist Tool: Wikipedia] Fetching Wikipedia summary for "${wQuery}"...`);
           try {
-            const summary = await getWikipediaSummary(wQuery);
+            let summary = await getWikipediaSummary(wQuery);
+            if (!summary) {
+              const extractedSubject = extractWikipediaSubject(wQuery);
+              if (extractedSubject && extractedSubject !== wQuery) {
+                summary = await getWikipediaSummary(extractedSubject);
+              }
+            }
+            console.log(`[Dynamic Specialist Tool: Wikipedia] Raw summary returned:`, summary);
             if (summary && summary.extract) {
-              gatheredContextChunks.push(`### Wikipedia (${summary.title}):\n${summary.extract}`);
+              gatheredContextChunks.push(`### Wikipedia Reference (${summary.title}):\n${summary.extract}`);
+              logToJarvisTerminal(
+                `[Specialist ${i + 1}: ${spec.name}] Wikipedia returned article "${summary.title}" (${summary.extract.length} chars)`
+              );
               if (!sourcesCollected.some((sc) => sc.url === summary.url)) {
                 sourcesCollected.push({
                   title: summary.title,
                   url: summary.url,
                   domain: 'wikipedia.org',
                   snippet: summary.extract.slice(0, 200),
+                  description: summary.extract.slice(0, 200),
                 });
               }
+            } else {
+              logToJarvisTerminal(`[Specialist ${i + 1}: ${spec.name}] Wikipedia found no matching article for "${wQuery}"`, 'warning');
             }
           } catch (toolErr) {
-            console.warn(`[Specialist ${spec.name}] Wikipedia failed:`, toolErr);
+            const errMsg = toolErr instanceof Error ? toolErr.message : String(toolErr);
+            console.warn(`[Specialist ${spec.name}] Wikipedia failed:`, errMsg);
+            logToJarvisTerminal(`[Specialist ${i + 1}: ${spec.name}] Wikipedia tool failed: ${errMsg}`, 'warning');
           }
         } else if (tool === 'news') {
           const nQuery = spec.newsQuery || query;
           toolDetailsList.push({ tool: 'News', query: nQuery });
+          logToJarvisTerminal(`[Specialist ${i + 1}: ${spec.name}] Executing News tool for: "${nQuery}"`);
+          console.log(`[Dynamic Specialist Tool: News] Querying news for "${nQuery}"...`);
           try {
-            const newsRes = await api.search(nQuery, { newsMode: 'topic' });
-            if (newsRes.results && newsRes.results.length > 0) {
-              gatheredContextChunks.push(
-                `### News Articles for "${nQuery}":\n` +
-                newsRes.results.slice(0, 4).map((r, rIdx) => `${rIdx + 1}. [${r.title}](${r.url}) (${r.publishedAt || 'Recent'})\n${r.snippet}`).join('\n\n')
+            let newsResults: SearchResult[] = [];
+            try {
+              const res = await api.search(nQuery, 'NEWS', 1, 5, { newsMode: 'topic' });
+              if (Array.isArray(res) && res.length > 0) {
+                newsResults = res;
+              }
+            } catch {
+              // Fallback to api.news
+              const newsObj = await api.news({ query: nQuery });
+              if (newsObj && Array.isArray(newsObj.data) && newsObj.data.length > 0) {
+                newsResults = newsObj.data;
+              }
+            }
+            console.log(`[Dynamic Specialist Tool: News] Raw news returned (${newsResults.length} items):`, newsResults);
+            if (newsResults.length > 0) {
+              const formattedNews = newsResults
+                .slice(0, 5)
+                .map((r, rIdx) => {
+                  const desc = r.snippet || (r as { description?: string }).description || '';
+                  return `${rIdx + 1}. [${r.title}](${r.url}) (${r.publishedAt || 'Recent'})\n${desc}`;
+                })
+                .join('\n\n');
+              gatheredContextChunks.push(`### Recent News & Journalism for "${nQuery}":\n${formattedNews}`);
+              logToJarvisTerminal(
+                `[Specialist ${i + 1}: ${spec.name}] News returned ${newsResults.length} articles (top ${Math.min(5, newsResults.length)} added to context)`
               );
-              newsRes.results.slice(0, 4).forEach((r) => {
+              newsResults.slice(0, 5).forEach((r) => {
                 if (!sourcesCollected.some((sc) => sc.url === r.url)) {
                   sourcesCollected.push({
                     title: r.title,
                     url: r.url,
-                    domain: r.domain,
-                    snippet: r.snippet,
+                    domain: r.domain || (r.url.startsWith('http') ? new URL(r.url).hostname.replace(/^www\./, '') : undefined),
+                    snippet: r.snippet || (r as { description?: string }).description || undefined,
+                    description: r.snippet || (r as { description?: string }).description || undefined,
                     publishedAt: r.publishedAt || null,
                   });
                 }
               });
+            } else {
+              logToJarvisTerminal(`[Specialist ${i + 1}: ${spec.name}] News returned 0 articles for: "${nQuery}"`, 'warning');
             }
           } catch (toolErr) {
-            console.warn(`[Specialist ${spec.name}] News search failed:`, toolErr);
+            const errMsg = toolErr instanceof Error ? toolErr.message : String(toolErr);
+            console.warn(`[Specialist ${spec.name}] News search failed:`, errMsg);
+            logToJarvisTerminal(`[Specialist ${i + 1}: ${spec.name}] News search tool failed: ${errMsg}`, 'warning');
           }
         } else if (tool === 'weather') {
           const wLoc = spec.weatherLocation || query;
           toolDetailsList.push({ tool: 'Weather', query: wLoc });
+          logToJarvisTerminal(`[Specialist ${i + 1}: ${spec.name}] Executing Weather tool for: "${wLoc}"`);
+          console.log(`[Dynamic Specialist Tool: Weather] Geocoding location "${wLoc}"...`);
           try {
             const geoRes = await api.geocode(wLoc);
-            if (geoRes && geoRes.results && geoRes.results.length > 0) {
-              const place = geoRes.results[0];
-              const weatherData = await api.weather(place.latitude, place.longitude);
+            const places = Array.isArray(geoRes)
+              ? geoRes
+              : geoRes && Array.isArray((geoRes as { results?: typeof geoRes }).results)
+                ? (geoRes as { results: typeof geoRes }).results
+                : [];
+            if (places.length > 0) {
+              const place = places[0];
+              console.log(`[Dynamic Specialist Tool: Weather] Geocoded to ${place.name} (${place.latitude}, ${place.longitude})`);
+              const weatherData = await api.weather(`latitude=${place.latitude}&longitude=${place.longitude}`);
+              console.log(`[Dynamic Specialist Tool: Weather] Raw weather data:`, weatherData);
               if (weatherData && weatherData.current) {
-                gatheredContextChunks.push(
-                  `### Real-Time Weather in ${place.name}, ${place.country || ''}:\n` +
-                  `Temperature: ${weatherData.current.temperature_2m ?? 'N/A'}°C, Wind: ${weatherData.current.wind_speed_10m ?? 'N/A'} km/h`
+                const c = weatherData.current;
+                const weatherSummary = `Location: ${c.location || place.name} | Temperature: ${c.temperature ?? (c as { temperature_2m?: number }).temperature_2m ?? 'N/A'}°C | Condition: ${c.conditionLabel || 'Observed'} | Humidity: ${c.humidity ?? 'N/A'}% | Wind: ${c.wind ?? (c as { wind_speed_10m?: number }).wind_speed_10m ?? 'N/A'} km/h`;
+                gatheredContextChunks.push(`### Real-Time Weather (${place.name}, ${place.country || ''}):\n${weatherSummary}`);
+                logToJarvisTerminal(
+                  `[Specialist ${i + 1}: ${spec.name}] Weather retrieved for ${place.name}: ${c.temperature ?? 'N/A'}°C, ${c.conditionLabel || 'observed'}`
                 );
+                if (!sourcesCollected.some((sc) => sc.url === `/weather?city=${encodeURIComponent(place.name)}`)) {
+                  sourcesCollected.push({
+                    title: `Live Weather: ${place.name}`,
+                    url: `/weather?city=${encodeURIComponent(place.name)}`,
+                    domain: 'open-meteo.com',
+                    snippet: weatherSummary,
+                    description: weatherSummary,
+                  });
+                }
+              }
+            } else {
+              // Direct weather call with city query string
+              const weatherData = await api.weather(`city=${encodeURIComponent(wLoc)}`);
+              if (weatherData && weatherData.current) {
+                const c = weatherData.current;
+                const weatherSummary = `Location: ${c.location || wLoc} | Temperature: ${c.temperature ?? 'N/A'}°C | Condition: ${c.conditionLabel || 'Observed'} | Humidity: ${c.humidity ?? 'N/A'}% | Wind: ${c.wind ?? 'N/A'} km/h`;
+                gatheredContextChunks.push(`### Real-Time Weather (${c.location || wLoc}):\n${weatherSummary}`);
+                logToJarvisTerminal(`[Specialist ${i + 1}: ${spec.name}] Weather retrieved for ${c.location || wLoc}`);
+              } else {
+                logToJarvisTerminal(`[Specialist ${i + 1}: ${spec.name}] Could not geocode weather location "${wLoc}"`, 'warning');
               }
             }
           } catch (toolErr) {
-            console.warn(`[Specialist ${spec.name}] Weather fetch failed:`, toolErr);
+            const errMsg = toolErr instanceof Error ? toolErr.message : String(toolErr);
+            console.warn(`[Specialist ${spec.name}] Weather fetch failed:`, errMsg);
+            logToJarvisTerminal(`[Specialist ${i + 1}: ${spec.name}] Weather tool failed: ${errMsg}`, 'warning');
           }
         } else if (tool === 'webFetch') {
           const fetchUrl = spec.targetUrl || detectedUrl;
           if (fetchUrl) {
             toolDetailsList.push({ tool: 'Web Fetcher', targetUrl: fetchUrl });
+            logToJarvisTerminal(`[Specialist ${i + 1}: ${spec.name}] Executing Web Fetcher tool for: "${fetchUrl}"`);
+            console.log(`[Dynamic Specialist Tool: Web Fetcher] Fetching URL "${fetchUrl}"...`);
             try {
               const fetched = await api.webFetch(fetchUrl);
-              if (fetched && fetched.text) {
-                gatheredContextChunks.push(
-                  `### Fetched Webpage Content (${fetched.title || fetchUrl}):\n${fetched.text.slice(0, 3500)}`
-                );
-                if (!sourcesCollected.some((sc) => sc.url === fetchUrl)) {
-                  sourcesCollected.push({
-                    title: fetched.title || fetchUrl,
-                    url: fetchUrl,
-                    domain: fetched.domain || new URL(fetchUrl).hostname,
-                    snippet: (fetched.text || '').slice(0, 200),
-                  });
+              console.log(`[Dynamic Specialist Tool: Web Fetcher] Raw web fetch result:`, fetched);
+              if (fetched && fetched.ok && fetched.data) {
+                const pageTitle = fetched.data.title || fetchUrl;
+                const pageContent = fetched.data.textContent || (fetched.data as { text?: string }).text || '';
+                if (pageContent) {
+                  gatheredContextChunks.push(`### Fetched Webpage Content (${pageTitle}):\n${pageContent.slice(0, 3500)}`);
+                  logToJarvisTerminal(
+                    `[Specialist ${i + 1}: ${spec.name}] Web Fetcher retrieved ${pageContent.length} chars from ${pageTitle}`
+                  );
+                  if (!sourcesCollected.some((sc) => sc.url === (fetched.data?.finalUrl || fetchUrl))) {
+                    sourcesCollected.push({
+                      title: pageTitle,
+                      url: fetched.data?.finalUrl || fetchUrl,
+                      domain: fetched.data?.domain || (fetchUrl.startsWith('http') ? new URL(fetchUrl).hostname : 'web'),
+                      snippet: pageContent.slice(0, 200),
+                      description: pageContent.slice(0, 200),
+                    });
+                  }
                 }
+              } else {
+                logToJarvisTerminal(`[Specialist ${i + 1}: ${spec.name}] Web Fetcher returned no content for "${fetchUrl}"`, 'warning');
               }
             } catch (toolErr) {
-              console.warn(`[Specialist ${spec.name}] WebFetch failed:`, toolErr);
+              const errMsg = toolErr instanceof Error ? toolErr.message : String(toolErr);
+              console.warn(`[Specialist ${spec.name}] WebFetch failed:`, errMsg);
+              logToJarvisTerminal(`[Specialist ${i + 1}: ${spec.name}] Web Fetcher failed: ${errMsg}`, 'warning');
             }
           }
         }

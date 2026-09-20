@@ -1046,6 +1046,25 @@ function formatAgentStep(step: JarvisExecutionStep): string {
     return lines.join('\n').trim();
   }
 
+  // 3.95. Dynamic Specialist Agent (New Agent Mode)
+  if (step.agentId.startsWith('specialist_') || step.specialistRole) {
+    const lines: string[] = [`=== ${agentTitle} ===`];
+    if (step.specialistRole) {
+      lines.push(`Domain Role: ${step.specialistRole}`);
+    }
+    if (step.assignedTools && step.assignedTools.length > 0) {
+      lines.push(`Assigned Tools: ${step.assignedTools.join(', ')}`);
+    }
+    if (step.assignedToolDetails && step.assignedToolDetails.length > 0) {
+      lines.push(
+        `Tool Invocations: ${step.assignedToolDetails.map((td) => `${td.tool}${td.query ? ` ("${td.query}")` : td.targetUrl ? ` (${td.targetUrl})` : ''}`).join('; ')}`
+      );
+    }
+    lines.push(``);
+    lines.push(raw || step.outputPreview || step.summary || 'Domain specialist analysis completed.');
+    return lines.join('\n').trim();
+  }
+
   // 4. Reviewer Agent
   if (step.agentId === 'reviewer') {
     let recommendation = 'Proceed with comprehensive synthesis.';
@@ -1220,8 +1239,13 @@ export function formatFullPipelineExport(
         second: '2-digit',
       });
 
-  const mode =
-    finalMessage && finalMessage.deepResearch === false
+  const isDynamicSpecialistRun =
+    steps.some((s) => s.agentId.startsWith('specialist_') || Boolean(s.specialistRole)) ||
+    Boolean(finalMessage && (finalMessage.newAgentMode || (Array.isArray(finalMessage.dynamicSpecialists) && (finalMessage.dynamicSpecialists as unknown[]).length > 0)));
+
+  const mode = isDynamicSpecialistRun
+    ? 'Dynamic Specialist Pipeline (New Agent)'
+    : finalMessage && finalMessage.deepResearch === false
       ? 'Standard Multi-Agent Research'
       : 'Autonomous Multi-Agent Deep Research';
 
