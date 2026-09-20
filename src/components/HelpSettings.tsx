@@ -194,7 +194,14 @@ NEXUS includes dedicated slash commands that allow users to override normal plan
 - **Interactive Actions**: Displays an interactive card for each prompt with one-click "Use This Prompt" (clipboard copy), "Image Studio" jump with preloaded prompt, "/imagesai" instant AI generation, and a "🔄 Generate 5 More" button to produce fresh variations.
 - **Example**:
   \`/promptimage a dragon made of stained glass\`
-  \`/promptimage futuristic coffee shop in Tokyo at night\``;
+  \`/promptimage futuristic coffee shop in Tokyo at night\`
+
+#### 9. \`/newagent [task]\` (or \`/new_agent\`) — Dynamic Specialist Pipeline Override
+- **What it does**: Forces the 5-node Dynamic Specialist Pipeline (Planner → 3 Dynamic Domain Specialists → Final Synthesizer) for a single query, regardless of whether the "New Agent" toggle is currently ON or OFF in the UI.
+- **Pipeline Behavior**: Bypasses the UI toggle state for this one query without mutating the persistent toggle setting. The user's exact task text after the command is passed to the Planner, which dynamically creates 3 custom specialists tailored to the task with specific roles, system prompts, and assigned tools (Search, Wikipedia, News, Weather, Web Fetcher). Each specialist executes using its assigned Specialist Slot model configuration (Slot 1, Slot 2, Slot 3), and the Final Synthesizer produces a cohesive intelligence briefing labeled "Mode: Dynamic Specialist Pipeline (New Agent)".
+- **Example**:
+  \`/newagent What is the environmental and economic impact of switching to electric vehicles?\`
+  \`/newagent Compare RISC-V vs ARM architectures for embedded IoT edge devices\``;
 
   // Section 5: API Catalog
   const apiCatalogText = `### 5. API Catalog — Credential Architecture & Custom API Registration

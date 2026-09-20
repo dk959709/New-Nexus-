@@ -38,6 +38,7 @@ import {
   isPromptImageSlashCommand,
   stripPromptImagePrefix,
   extractPromptImageVariations,
+  isNewAgentSlashCommand,
 } from '@/services/jarvisOrchestrator';
 import {
   validateAttachmentFile,
@@ -507,6 +508,10 @@ export function JarvisChat({ config, onOpenSettings }: JarvisChatProps) {
           ? `Analyze attached file: ${currentAttachments[0].name}`
           : `Analyze ${currentAttachments.length} attached files`);
 
+      // Check for /newagent one-time override command
+      const isNewAgentSlash = isNewAgentSlashCommand(userText);
+      const effectiveNewAgentModeForThisQuery = Boolean(newAgentMode || isNewAgentSlash);
+
       const initialMessage: JarvisMessage = {
         id: messageId,
         query: displayQuery,
@@ -517,6 +522,7 @@ export function JarvisChat({ config, onOpenSettings }: JarvisChatProps) {
         chartMode,
         imageMode,
         coderMode,
+        newAgentMode: effectiveNewAgentModeForThisQuery,
         attachments: currentAttachments.length > 0 ? currentAttachments : undefined,
         steps: [],
       };
@@ -574,7 +580,7 @@ export function JarvisChat({ config, onOpenSettings }: JarvisChatProps) {
             selectedDocId: docSearchMode === 'specific' ? selectedDocId : undefined,
             selectedDocName: docSearchMode === 'specific' ? selectedDocObj?.name : undefined,
           },
-          newAgentMode,
+          effectiveNewAgentModeForThisQuery,
         );
 
         const completedMessage: JarvisMessage = {
@@ -587,7 +593,7 @@ export function JarvisChat({ config, onOpenSettings }: JarvisChatProps) {
           chartMode,
           imageMode,
           coderMode,
-          newAgentMode,
+          newAgentMode: effectiveNewAgentModeForThisQuery,
           dynamicSpecialists: result.dynamicSpecialists,
           attachments: currentAttachments.length > 0 ? currentAttachments : undefined,
           searchMyDocs: searchMyDocs,
@@ -622,7 +628,7 @@ export function JarvisChat({ config, onOpenSettings }: JarvisChatProps) {
           chartMode,
           imageMode,
           coderMode,
-          newAgentMode,
+          newAgentMode: effectiveNewAgentModeForThisQuery,
           attachments: currentAttachments.length > 0 ? currentAttachments : undefined,
           steps: activeSteps,
           error: errMsg,

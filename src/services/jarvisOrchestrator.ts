@@ -1393,6 +1393,16 @@ export function stripPromptImagePrefix(text: string): string {
   return text.trim().replace(/^\/(?:promptimage|promptimages|prompt_image|prompt_images|promptimg)\s*/i, '').trim().replace(/^["'`<]+|[>"'`]+$/g, '').trim();
 }
 
+export function isNewAgentSlashCommand(text: string): boolean {
+  if (!text || typeof text !== 'string') return false;
+  return /^\/(?:newagent|new_agent)(?:\s+|$)/i.test(text.trim());
+}
+
+export function stripNewAgentPrefix(text: string): string {
+  if (!text || typeof text !== 'string') return text;
+  return text.trim().replace(/^\/(?:newagent|new_agent)\s*/i, '').trim().replace(/^["'`<]+|[>"'`]+$/g, '').trim();
+}
+
 export function generateFallbackPromptVariations(roughIdea: string): string[] {
   const idea = (roughIdea || '').trim() || 'futuristic cosmic concept';
   return [
@@ -2859,6 +2869,8 @@ Please perform your specialized processing for this inquiry. Provide clear, conc
   const isImageAiSlash = isImageAiSlashCommand(query);
   const isPromptImageSlash = isPromptImageSlashCommand(query);
   const promptImageIdea = isPromptImageSlash ? stripPromptImagePrefix(query) : '';
+  const isNewAgentSlash = isNewAgentSlashCommand(query);
+  const newAgentTask = isNewAgentSlash ? stripNewAgentPrefix(query) : '';
   const strippedQuery = isCustomApi
     ? (customApiParsed ? `${customApiParsed.apiName} ${customApiParsed.customQuery}`.trim() : query)
     : isWebFetch
@@ -2871,13 +2883,18 @@ Please perform your specialized processing for this inquiry. Provide clear, conc
             ? stripImageAiPrefix(query)
             : isPromptImageSlash
               ? promptImageIdea
-              : query;
+              : isNewAgentSlash
+                ? newAgentTask
+                : query;
 
   // -------------------------------------------------------------
   // NEW AGENT 5-NODE DYNAMIC PIPELINE MODE (Planner → 3 Specialists → Final Synthesizer)
   // -------------------------------------------------------------
-  if (newAgentMode) {
-    const detectedUrl = extractAnyUrlFromQuery(query) || (isWebFetchQuery(query) ? extractWebFetchUrl(query) : null);
+  const isDynamicSpecialistActive = Boolean(newAgentMode || isNewAgentSlash);
+  const effectiveSpecialistQuery = (isNewAgentSlash ? newAgentTask : query) || query;
+
+  if (isDynamicSpecialistActive) {
+    const detectedUrl = extractAnyUrlFromQuery(effectiveSpecialistQuery) || (isWebFetchQuery(effectiveSpecialistQuery) ? extractWebFetchUrl(effectiveSpecialistQuery) : null);
 
     const initialSpecialists: JarvisDynamicSpecialist[] = [
       {
@@ -2979,7 +2996,7 @@ AVAILABLE AGENT TOOLS:
 ${detectedUrl ? `[DETECTED URL IN USER QUERY]: "${detectedUrl}" -> You may assign "webFetch" with targetUrl: "${detectedUrl}" to specialist(s) that need to inspect this webpage.` : ''}
 
 REQUIREMENTS:
-1. Analyze the query: "${query}"
+1. Analyze the query/task: "${effectiveSpecialistQuery}"
 2. Generate EXACTLY 3 distinct specialists with complementary expertise (e.g. Technical Specialist, Empirical/Comparative Analyst, Practical Strategy Specialist).
 3. Assign tools selectively per specialist — only assign tools that are directly helpful for that specialist's specific angle (do not assign tools globally or blindly).
 4. Output STRICT JSON adhering to this schema:
@@ -3027,7 +3044,7 @@ REQUIREMENTS:
 
     const planRes = await callAgent('planner', [
       { role: 'system', content: dynamicPlannerSystemPrompt },
-      { role: 'user', content: `Construct the 3-specialist dynamic pipeline for inquiry: "${query}"` },
+      { role: 'user', content: `Construct the 3-specialist dynamic pipeline for task: "${effectiveSpecialistQuery}"` },
     ]);
 
     const planDuration = Date.now() - planStart;
@@ -3042,19 +3059,19 @@ REQUIREMENTS:
         role: s.role || 'Domain Specialist',
         systemPrompt: s.systemPrompt || `Analyze the topic from specialized domain perspective.`,
         assignedTools: Array.isArray(s.assignedTools) ? (s.assignedTools as JarvisDynamicSpecialistTool[]) : ['search'],
-        searchQuery: s.searchQuery || query,
-        wikipediaQuery: s.wikipediaQuery || query,
-        newsQuery: s.newsQuery || query,
+        searchQuery: s.searchQuery || effectiveSpecialistQuery,
+        wikipediaQuery: s.wikipediaQuery || effectiveSpecialistQuery,
+        newsQuery: s.newsQuery || effectiveSpecialistQuery,
         weatherLocation: s.weatherLocation,
         targetUrl: s.targetUrl || detectedUrl || undefined,
         icon: idx === 0 ? '🔬' : idx === 1 ? '📊' : '💡',
         accentColor: idx === 0 ? '#38bdf8' : idx === 1 ? '#c084fc' : '#34d399',
       }));
     } else {
-      generatedSpecialists = generateFallbackSpecialists(query, detectedUrl);
+      generatedSpecialists = generateFallbackSpecialists(effectiveSpecialistQuery, detectedUrl);
     }
 
-    const taskDescription = dynamicParsed?.task || query;
+    const taskDescription = dynamicParsed?.task || effectiveSpecialistQuery;
     const planItems = Array.isArray(dynamicParsed?.plan) ? dynamicParsed.plan : [
       `Deploy ${generatedSpecialists[0].name} for deep investigation`,
       `Deploy ${generatedSpecialists[1].name} for comparative empirical analysis`,
@@ -3141,7 +3158,7 @@ REQUIREMENTS:
 
       for (const tool of spec.assignedTools) {
         if (tool === 'search') {
-          const sQuery = spec.searchQuery || query;
+          const sQuery = spec.searchQuery || effectiveSpecialistQuery;
           toolDetailsList.push({ tool: 'Search', query: sQuery });
           logToJarvisTerminal(`[Specialist ${i + 1}: ${spec.name}] Executing Search tool for: "${sQuery}"`);
           console.log(`[Dynamic Specialist Tool: Search] Running api.search("${sQuery}")...`);
@@ -3186,7 +3203,7 @@ REQUIREMENTS:
             logToJarvisTerminal(`[Specialist ${i + 1}: ${spec.name}] Search tool failed: ${errMsg}`, 'warning');
           }
         } else if (tool === 'wikipedia') {
-          const wQuery = spec.wikipediaQuery || query;
+          const wQuery = spec.wikipediaQuery || effectiveSpecialistQuery;
           toolDetailsList.push({ tool: 'Wikipedia', query: wQuery });
           logToJarvisTerminal(`[Specialist ${i + 1}: ${spec.name}] Executing Wikipedia tool for: "${wQuery}"`);
           console.log(`[Dynamic Specialist Tool: Wikipedia] Fetching Wikipedia summary for "${wQuery}"...`);
@@ -3222,7 +3239,7 @@ REQUIREMENTS:
             logToJarvisTerminal(`[Specialist ${i + 1}: ${spec.name}] Wikipedia tool failed: ${errMsg}`, 'warning');
           }
         } else if (tool === 'news') {
-          const nQuery = spec.newsQuery || query;
+          const nQuery = spec.newsQuery || effectiveSpecialistQuery;
           toolDetailsList.push({ tool: 'News', query: nQuery });
           logToJarvisTerminal(`[Specialist ${i + 1}: ${spec.name}] Executing News tool for: "${nQuery}"`);
           console.log(`[Dynamic Specialist Tool: News] Querying news for "${nQuery}"...`);
@@ -3274,7 +3291,7 @@ REQUIREMENTS:
             logToJarvisTerminal(`[Specialist ${i + 1}: ${spec.name}] News search tool failed: ${errMsg}`, 'warning');
           }
         } else if (tool === 'weather') {
-          const wLoc = spec.weatherLocation || query;
+          const wLoc = spec.weatherLocation || effectiveSpecialistQuery;
           toolDetailsList.push({ tool: 'Weather', query: wLoc });
           logToJarvisTerminal(`[Specialist ${i + 1}: ${spec.name}] Executing Weather tool for: "${wLoc}"`);
           console.log(`[Dynamic Specialist Tool: Weather] Geocoding location "${wLoc}"...`);
@@ -3371,7 +3388,7 @@ You are ${spec.name} (${spec.role}).
 Conduct a rigorous, authoritative analysis from your domain perspective.
 Use evidence, facts, and structure. Bold key terms and outline specific technical or strategic insights.`;
 
-      const specialistUserMessage = `Inquiry: "${query}"
+      const specialistUserMessage = `Inquiry / Task: "${effectiveSpecialistQuery}"
 Task: "${taskDescription}"
 
 ${gatheredContextChunks.length > 0 ? `[GATHERED TOOL DATA & RESEARCH INTELLIGENCE]\n${gatheredContextChunks.join('\n\n')}\n\n` : ''}Please provide your expert perspective, detailed findings, and domain-specific evidence.`;
@@ -3439,7 +3456,7 @@ SYNTHESIS DIRECTIVES:
 3. Integrate verified facts and technical depth from the specialists without duplicating text.
 4. Deliver high-value, definitive insights directly to the user.`;
 
-    const synthUserMessage = `User Query: "${query}"
+    const synthUserMessage = `User Query / Task: "${effectiveSpecialistQuery}"
 
 ${specialistOutputs.map((so) => `=== SPECIALIST ANALYSIS: ${so.specialist.name} (${so.specialist.role}) ===\n${so.output}`).join('\n\n')}
 
