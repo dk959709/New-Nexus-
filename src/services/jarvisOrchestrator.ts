@@ -1566,6 +1566,48 @@ export function isProductLineupInquiry(text: string): boolean {
   return hasLineupNoun && hasLineupIntent;
 }
 
+/**
+ * Detects whether a query is asking for "latest updates" or general entity/topic updates
+ * (e.g. "what is latest update from x", "what is letest update from x", "what are the latest updates on OpenAI", "latest update on React", "any updates from Apple", "what's the update with Google").
+ * These queries seek general web research/status updates (needsResearch: true), NOT the news headlines API (needsNews: false).
+ */
+export function isLatestUpdatesInquiry(text: string): boolean {
+  if (!text || typeof text !== 'string') return false;
+  const lower = text.toLowerCase().trim();
+
+  // Exclude if explicitly asking for news/breaking/headlines
+  if (/\b(breaking\s+news|top\s+headlines?|world\s+news)\b/i.test(lower)) {
+    return false;
+  }
+
+  // Check for update keywords including common typos like "letest"
+  const hasUpdateKeyword = /\b(updates?|updation)\b/i.test(lower);
+  if (!hasUpdateKeyword) return false;
+
+  // Match patterns like:
+  // - "latest/letest/recent/current/new/newest update(s)"
+  if (/\b(latest|letest|recent|current|new|newest)\s+updates?\b/i.test(lower)) {
+    return true;
+  }
+
+  // - "update(s) from/on/about/for/of/regarding/in/with <something>"
+  if (/\bupdates?\s+(from|on|about|for|of|regarding|in|with)\b/i.test(lower)) {
+    return true;
+  }
+
+  // - "what is / what are / what's / any / give me ... update(s)"
+  if (/\b(what\s+is|what\s+are|what's|whats|any|give\s+me|tell\s+me\s+about)\s+(the\s+)?(latest\s+|letest\s+|recent\s+|new\s+)?updates?\b/i.test(lower)) {
+    return true;
+  }
+
+  // - Generic update query without explicit news words
+  if (!/\b(news|headlines)\b/i.test(lower)) {
+    return true;
+  }
+
+  return false;
+}
+
 export function extractTopicKeywords(query: string, task?: string): {
   coreTerms: string[];
   keyPhrases: string[];
@@ -2816,9 +2858,9 @@ You are the JARVIS Planner. You MUST output ONLY a valid JSON object strictly ma
   "task": string (concise goal statement under 15 words),
   "plan": string[] (2-4 short steps),
   "needsCode": boolean (true if inquiry is a coding, programming, bug fixing, or software engineering task),
-  "needsResearch": boolean (true for general factual knowledge, technical research, documentation lookups, or encyclopedic research queries),
+  "needsResearch": boolean (true for general factual knowledge, technical research, documentation lookups, "latest updates from X" inquiries, or encyclopedic research queries),
   "needsResearchQuery": string (MANDATORY: clean, specific search phrase focusing strictly on the actual topic without conversational filler or full questions if needsResearch is true, or empty string "" if false),
-  "needsNews": boolean (true ONLY for current events, breaking news, latest headlines, or 'what happened today' news queries. Do NOT set true for 'latest updates', technical updates, product updates, or general updates — those belong to needsResearch: true),
+  "needsNews": boolean (true ONLY for current events, breaking news, latest headlines, or 'what happened today' news queries. NEVER set true for 'latest updates from X', 'latest update on X', technical updates, product updates, or general updates — those belong strictly to needsResearch: true),
   "needsNewsQuery": string (MANDATORY: clean news search phrase for specific topics if needsNews is true, or empty string "" for general top/world headlines),
   "newsMode": "headlines" | "topic" (MANDATORY if needsNews is true: "headlines" for general top/world news without a specific subject, or "topic" for news regarding a specific topic/entity),
   "newsCategory": "general" | "world" | "technology" | "business" | "science" | "health" | "sports" | "entertainment" (category if needsNews is true),
@@ -2841,6 +2883,7 @@ CRITICAL RULES:
 3. When needsNews is true:
    - For general top/world news (e.g. "top 5 world news today", "what's happening in the world", "latest top headlines"): set "newsMode": "headlines", "newsCategory": "world" or "general", and "needsNewsQuery": "" (empty string). Do NOT generate a literal search phrase like "top 5 world news today".
    - For specific topic news (e.g. "SpaceX rocket launch news", "Apple earnings news", "Tesla recalls"): set "newsMode": "topic", "needsNewsQuery": "<clean topic>", and appropriate "newsCategory".
+   - CRITICAL: Queries asking for "latest updates from X", "what is latest update from X", "status update on X", or general updates regarding an entity/technology MUST NEVER set needsNews: true. They must ALWAYS set needsNews: false, needsNewsQuery: "", needsResearch: true, and needsResearchQuery: "<entity> latest updates".
    If needsNews is false, set "needsNewsQuery": "", and omit/ignore newsMode/newsCategory.
 4. When needsWikipedia is true, "wikipediaQuery" MUST be the clean, concise subject/title (e.g. for "tell about brawl stars game", wikipediaQuery MUST be "Brawl Stars"). If needsWikipedia is false, set it to "".
 5. When needsWikidata is true, "wikidataQuery" MUST be the clean entity name. If needsWikidata is false, set it to "".
@@ -3088,6 +3131,24 @@ CRITICAL RULES:
       } else {
         plannerOutput.needsNewsQuery = '';
       }
+
+      // Enforce: Queries asking for latest updates from X must route to Researcher, never News
+      if (
+        isLatestUpdatesInquiry(query) ||
+        isLatestUpdatesInquiry(plannerOutput.task || '') ||
+        isLatestUpdatesInquiry(strippedQuery)
+      ) {
+        plannerOutput.needsNews = false;
+        plannerOutput.needsNewsQuery = '';
+        if (!plannerOutput.needsWeather) {
+          plannerOutput.needsResearch = true;
+          if (!plannerOutput.needsResearchQuery) {
+            const { cleanedSearchQuery } = extractTopicKeywords(strippedQuery, plannerOutput.task);
+            plannerOutput.needsResearchQuery = `${cleanedSearchQuery || strippedQuery} latest updates`;
+          }
+        }
+      }
+
       plannerOutput.needsKnowledgeAgent = Boolean(plannerOutput.needsKnowledgeAgent);
       plannerOutput.needsWikipedia = Boolean(plannerOutput.needsWikipedia);
       if (plannerOutput.needsWikipedia) {
@@ -3672,16 +3733,6 @@ CRITICAL RULES:
     plannerOutput.needsFactCheck = false;
     plannerOutput.needsKnowledgeAgent = false;
   }
-
-  // Helper to detect if a query is asking for "latest updates" or general topic updates without explicitly requesting news
-  const isLatestUpdatesInquiry = (text: string): boolean => {
-    const lower = text.toLowerCase();
-    // Exclude if explicitly asking for news/breaking/headlines
-    if (/\b(news|headlines?|breaking\s+news)\b/i.test(lower)) {
-      return false;
-    }
-    return /\b(latest|recent|current|new|newest)\s+updates?\b/i.test(lower) || /\bupdates?\b/i.test(lower);
-  };
 
   // Standalone whole-word matching for news inquiries (excludes technical terms like 'electrical current' and product lineup inquiries)
   const isNewsInquiry = (text: string): boolean => {

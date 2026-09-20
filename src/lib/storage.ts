@@ -411,8 +411,13 @@ Set needsKnowledgeAgent to false for all other query types, including: time-sens
        b) Specific topic news requests (e.g. "latest Claude news", "OpenAI news", "Tesla news", "stock market news").
           Action: In "task", target topic-specific news. Set needsNews: true, needsNewsQuery: "topic keywords", newsMode: "topic", newsCategory: "top", needsResearch: false, needsResearchQuery: "", needsWikipedia: false, needsWikidata: false.
 - GENERAL RESEARCH VS NEWS ROUTING:
-  - Set needsNews: true (with needsNewsQuery: "" for general top/world news, or topic keywords for specific topics) for queries about current events, breaking news, "latest updates from X", recent announcements, world happenings.
-  - Set needsResearch: true & needsResearchQuery for general knowledge, technical research, factual inquiries, and conceptual topics.
+  - Set needsNews: true (with needsNewsQuery: "" for general top/world news, or topic keywords for specific topics) ONLY for queries explicitly asking for breaking news, latest headlines, world happenings, or current events news.
+  - CRITICAL - "LATEST UPDATES FROM X" INQUIRIES:
+    When the query asks for updates about an entity, company, technology, person, platform, or project (e.g. "what is latest update from x", "what is letest update from x", "latest updates from OpenAI", "latest update on React", "what are the updates from Google", "status update on X"):
+    - ALWAYS set needsResearch: true.
+    - Set "needsResearchQuery" to a targeted search phrase (e.g. "[entity] latest updates developments announcements").
+    - NEVER set needsNews: true for "latest updates from X" — set needsNews: false and needsNewsQuery: "".
+  - Set needsResearch: true & needsResearchQuery for general knowledge, technical research, factual inquiries, status updates, and conceptual topics.
 - task: a concise goal statement, under 15 words.
 - plan: 2-4 short steps describing your approach, not a full essay.
 - CRITICAL - SELF-REFERENTIAL, PERSONAL, ARCHITECTURE & HUMAN-AI COMPARISON INQUIRIES:
