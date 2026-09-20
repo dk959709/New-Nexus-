@@ -248,6 +248,8 @@ export function JarvisSettings({ onSaved }: JarvisSettingsProps) {
 
   // Active prompt tab for Planner agent ('standard' vs 'newAgent')
   const [plannerPromptTab, setPlannerPromptTab] = useState<'standard' | 'newAgent'>('standard');
+  // Active prompt tab for Final Synthesizer agent ('standard' vs 'newAgent')
+  const [synthesizerPromptTab, setSynthesizerPromptTab] = useState<'standard' | 'newAgent'>('standard');
 
   // Modal / drawer state for "Add New Custom Agent"
   const [showAddModal, setShowAddModal] = useState(false);
@@ -337,9 +339,15 @@ export function JarvisSettings({ onSaved }: JarvisSettingsProps) {
       setTimeout(() => setSaveStatus(null), 3000);
       return;
     }
+    if (agentId === 'finalSynthesizer' && subKey === 'newAgent') {
+      handleAgentChange('finalSynthesizer', { newAgentSystemPrompt: DEFAULT_AGENT_SYSTEM_PROMPTS.newAgentSynthesizer });
+      setSaveStatus('Restored default prompt for New Agent Dynamic Synthesizer.');
+      setTimeout(() => setSaveStatus(null), 3000);
+      return;
+    }
     const defaultPrompt = DEFAULT_AGENT_SYSTEM_PROMPTS[agentId];
     if (defaultPrompt) {
-      handleAgentChange(agentId, { systemPrompt: defaultPrompt });
+      handleAgentChange(agentId as JarvisAgentId, { systemPrompt: defaultPrompt });
       setSaveStatus(`Restored default prompt for ${config.agents[agentId as keyof typeof config.agents]?.name || agentId}`);
       setTimeout(() => setSaveStatus(null), 3000);
     }
@@ -1445,6 +1453,233 @@ export function JarvisSettings({ onSaved }: JarvisSettingsProps) {
                                     outline: 'none',
                                   }}
                                   placeholder="Enter New Agent mode dynamic specialist formulation prompt..."
+                                />
+                              </div>
+                            )}
+                          </div>
+                        )}
+                      </div>
+                    ) : agentId === 'finalSynthesizer' ? (
+                      /* FINAL SYNTHESIZER AGENT: DUAL ISOLATED PROMPTS (Standard vs New Agent Mode) */
+                      <div>
+                        {/* Section Header */}
+                        <div
+                          style={{
+                            padding: '12px 16px',
+                            background: 'rgba(10,22,36,0.9)',
+                            borderBottom: isPromptOpen ? '1px solid rgba(97,215,201,0.2)' : 'none',
+                            display: 'flex',
+                            alignItems: 'center',
+                            justifyContent: 'space-between',
+                            flexWrap: 'wrap',
+                            gap: '10px',
+                          }}
+                        >
+                          <div
+                            onClick={() => togglePromptExpanded('finalSynthesizer')}
+                            style={{
+                              display: 'flex',
+                              alignItems: 'center',
+                              gap: '8px',
+                              cursor: 'pointer',
+                              userSelect: 'none',
+                            }}
+                          >
+                            <FileCode2 size={16} className="text-cyan-400" />
+                            <span style={{ fontSize: '12px', fontWeight: 700, fontFamily: 'DM Mono', color: '#61d7c9' }}>
+                              SYSTEM PROMPTS (ISOLATED DUAL-ENGINE)
+                            </span>
+                            <span style={{ fontSize: '11px', color: 'var(--muted)' }}>
+                              {synthesizerPromptTab === 'standard'
+                                ? `Standard: ${(agent.systemPrompt || DEFAULT_AGENT_SYSTEM_PROMPTS.finalSynthesizer).length} chars`
+                                : `New Agent: ${(agent.newAgentSystemPrompt || DEFAULT_AGENT_SYSTEM_PROMPTS.newAgentSynthesizer).length} chars`}
+                            </span>
+                            {isPromptOpen ? <ChevronUp size={15} /> : <ChevronDown size={15} />}
+                          </div>
+
+                          <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                            {synthesizerPromptTab === 'standard' && (agent.systemPrompt || '').trim() !== DEFAULT_AGENT_SYSTEM_PROMPTS.finalSynthesizer.trim() && (
+                              <span style={{ fontSize: '11px', color: '#fbbf24', fontFamily: 'DM Mono' }}>
+                                ● Custom Standard Prompt
+                              </span>
+                            )}
+                            {synthesizerPromptTab === 'newAgent' && (agent.newAgentSystemPrompt || '').trim() !== DEFAULT_AGENT_SYSTEM_PROMPTS.newAgentSynthesizer.trim() && (
+                              <span style={{ fontSize: '11px', color: '#34d399', fontFamily: 'DM Mono' }}>
+                                ● Custom New Agent Prompt
+                              </span>
+                            )}
+                            <button
+                              type="button"
+                              onClick={() => handleResetAgentPrompt('finalSynthesizer', synthesizerPromptTab)}
+                              style={{
+                                padding: '4px 10px',
+                                fontSize: '11px',
+                                fontFamily: 'DM Mono',
+                                borderRadius: '6px',
+                                background: 'rgba(255,255,255,0.06)',
+                                border: '1px solid rgba(255,255,255,0.18)',
+                                color: '#cbd5e1',
+                                cursor: 'pointer',
+                                display: 'inline-flex',
+                                alignItems: 'center',
+                                gap: '4px',
+                              }}
+                              title={`Restore default ${synthesizerPromptTab === 'standard' ? 'Standard' : 'New Agent'} synthesizer prompt`}
+                            >
+                              <RotateCcw size={11} />
+                              Reset Active Prompt
+                            </button>
+                          </div>
+                        </div>
+
+                        {/* Expandable Dual-Prompt Editor */}
+                        {isPromptOpen && (
+                          <div style={{ padding: '14px 16px', display: 'grid', gap: '12px' }}>
+                            {/* Sub-Tabs: Standard vs New Agent Mode */}
+                            <div
+                              style={{
+                                display: 'flex',
+                                gap: '8px',
+                                borderBottom: '1px solid rgba(97,215,201,0.15)',
+                                paddingBottom: '10px',
+                                flexWrap: 'wrap',
+                              }}
+                            >
+                              <button
+                                type="button"
+                                onClick={() => setSynthesizerPromptTab('standard')}
+                                style={{
+                                  padding: '6px 14px',
+                                  fontSize: '12px',
+                                  fontWeight: 700,
+                                  fontFamily: 'DM Mono',
+                                  borderRadius: '8px',
+                                  border: synthesizerPromptTab === 'standard'
+                                    ? '1px solid rgba(97,215,201,0.6)'
+                                    : '1px solid rgba(255,255,255,0.1)',
+                                  background: synthesizerPromptTab === 'standard'
+                                    ? 'rgba(97,215,201,0.2)'
+                                    : 'rgba(255,255,255,0.04)',
+                                  color: synthesizerPromptTab === 'standard' ? '#61d7c9' : '#94a3b8',
+                                  cursor: 'pointer',
+                                  display: 'inline-flex',
+                                  alignItems: 'center',
+                                  gap: '6px',
+                                }}
+                              >
+                                <span>✨ Standard Synthesizer Prompt</span>
+                                <span style={{ fontSize: '10px', opacity: 0.8, padding: '1px 6px', borderRadius: '4px', background: 'rgba(0,0,0,0.3)' }}>
+                                  {(agent.systemPrompt || DEFAULT_AGENT_SYSTEM_PROMPTS.finalSynthesizer).length} chars
+                                </span>
+                              </button>
+
+                              <button
+                                type="button"
+                                onClick={() => setSynthesizerPromptTab('newAgent')}
+                                style={{
+                                  padding: '6px 14px',
+                                  fontSize: '12px',
+                                  fontWeight: 700,
+                                  fontFamily: 'DM Mono',
+                                  borderRadius: '8px',
+                                  border: synthesizerPromptTab === 'newAgent'
+                                    ? '1px solid rgba(52,211,153,0.6)'
+                                    : '1px solid rgba(255,255,255,0.1)',
+                                  background: synthesizerPromptTab === 'newAgent'
+                                    ? 'rgba(52,211,153,0.2)'
+                                    : 'rgba(255,255,255,0.04)',
+                                  color: synthesizerPromptTab === 'newAgent' ? '#34d399' : '#94a3b8',
+                                  cursor: 'pointer',
+                                  display: 'inline-flex',
+                                  alignItems: 'center',
+                                  gap: '6px',
+                                }}
+                              >
+                                <span>⚡ New Agent Synthesizer Prompt</span>
+                                <span style={{ fontSize: '10px', opacity: 0.8, padding: '1px 6px', borderRadius: '4px', background: 'rgba(0,0,0,0.3)' }}>
+                                  {(agent.newAgentSystemPrompt || DEFAULT_AGENT_SYSTEM_PROMPTS.newAgentSynthesizer).length} chars
+                                </span>
+                              </button>
+                            </div>
+
+                            {/* Tab 1: Standard Prompt */}
+                            {synthesizerPromptTab === 'standard' && (
+                              <div style={{ display: 'grid', gap: '8px' }}>
+                                <div
+                                  style={{
+                                    fontSize: '11px',
+                                    color: '#94a3b8',
+                                    display: 'flex',
+                                    alignItems: 'center',
+                                    gap: '6px',
+                                    lineHeight: 1.5,
+                                  }}
+                                >
+                                  <Info size={13} className="text-cyan-400 shrink-0" />
+                                  <span>
+                                    <strong>Standard 10-Agent Pipeline Synthesizer:</strong> Used for all normal JARVIS queries. Synthesizes findings from Researcher, Fact Checker, Advisor, Reviewer, Wikidata, Document RAG, and custom agents without loading dynamic specialist rules.
+                                  </span>
+                                </div>
+
+                                <textarea
+                                  value={agent.systemPrompt || DEFAULT_AGENT_SYSTEM_PROMPTS.finalSynthesizer}
+                                  onChange={(e) => handleAgentChange('finalSynthesizer', { systemPrompt: e.target.value })}
+                                  rows={8}
+                                  style={{
+                                    width: '100%',
+                                    padding: '12px',
+                                    borderRadius: '8px',
+                                    background: 'rgba(3,8,14,0.95)',
+                                    border: '1px solid rgba(97,215,201,0.3)',
+                                    color: '#e2e8f0',
+                                    fontSize: '12px',
+                                    fontFamily: 'DM Mono, monospace',
+                                    lineHeight: 1.6,
+                                    resize: 'vertical',
+                                    outline: 'none',
+                                  }}
+                                  placeholder="Enter standard JARVIS final synthesizer system prompt..."
+                                />
+                              </div>
+                            )}
+
+                            {/* Tab 2: New Agent Dynamic Specialist Prompt */}
+                            {synthesizerPromptTab === 'newAgent' && (
+                              <div style={{ display: 'grid', gap: '8px' }}>
+                                <div
+                                  style={{
+                                    fontSize: '11px',
+                                    color: '#94a3b8',
+                                    display: 'flex',
+                                    alignItems: 'center',
+                                    gap: '6px',
+                                    lineHeight: 1.5,
+                                  }}
+                                >
+                                  <Info size={13} className="text-emerald-400 shrink-0" />
+                                  <span>
+                                    <strong>Dynamic 5-Node Specialist Synthesizer:</strong> Used strictly when New Agent mode is active. Synthesizes perspectives from the 3 specialized domain experts, enforces cross-specialist contradiction detection, and verifies dates on empirical claims.
+                                  </span>
+                                </div>
+
+                                <textarea
+                                  value={agent.newAgentSystemPrompt || DEFAULT_AGENT_SYSTEM_PROMPTS.newAgentSynthesizer}
+                                  onChange={(e) => handleAgentChange('finalSynthesizer', { newAgentSystemPrompt: e.target.value })}
+                                  rows={8}
+                                  style={{
+                                    width: '100%',
+                                    padding: '12px',
+                                    borderRadius: '8px',
+                                    background: 'rgba(3,8,14,0.95)',
+                                    border: '1px solid rgba(52,211,153,0.3)',
+                                    color: '#e2e8f0',
+                                    fontSize: '12px',
+                                    fontFamily: 'DM Mono, monospace',
+                                    lineHeight: 1.6,
+                                    resize: 'vertical',
+                                    outline: 'none',
+                                  }}
+                                  placeholder="Enter New Agent mode final synthesizer system prompt..."
                                 />
                               </div>
                             )}

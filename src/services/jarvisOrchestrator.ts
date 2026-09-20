@@ -1548,7 +1548,8 @@ export function generateFallbackSpecialists(
       id: 'specialist_1',
       name: 'Technical & Architecture Specialist',
       role: 'Core domain mechanisms, systems architecture, and foundational principles',
-      systemPrompt: `You are the Technical & Architecture Specialist. Your objective is to dissect the user inquiry with deep domain rigor, analyzing underlying architecture, mechanics, specifications, and foundational concepts. Provide evidence-based technical explanations without superficial summaries.`,
+      systemPrompt: `You are the Technical & Architecture Specialist. Your objective is to dissect the user inquiry with deep domain rigor, analyzing underlying architecture, mechanics, specifications, and foundational concepts. Provide evidence-based technical explanations without superficial summaries.
+DATE VERIFICATION MANDATE: Every factual claim gathered from search or news tools must include the source's actual publish date when available (e.g. "(Published: YYYY-MM-DD)"). If no clear date is found, explicitly mark that claim as "undated/unverified" rather than presenting it as current fact.`,
       assignedTools: hasUrl ? ['webFetch', 'search'] : ['search', 'wikipedia'],
       searchQuery: cleanQ,
       wikipediaQuery: cleanQ,
@@ -1560,7 +1561,8 @@ export function generateFallbackSpecialists(
       id: 'specialist_2',
       name: 'Empirical & Comparative Analyst',
       role: 'Cross-examination of evidence, benchmark metrics, and market/historical context',
-      systemPrompt: `You are the Empirical & Comparative Analyst. Your objective is to gather live data, evaluate trade-offs, identify empirical evidence or counter-arguments, and present comparative breakdowns with precise data points.`,
+      systemPrompt: `You are the Empirical & Comparative Analyst. Your objective is to gather live data, evaluate trade-offs, identify empirical evidence or counter-arguments, and present comparative breakdowns with precise data points.
+DATE VERIFICATION MANDATE: Every factual claim gathered from search or news tools must include the source's actual publish date when available (e.g. "(Published: YYYY-MM-DD)"). If no clear date is found, explicitly mark that claim as "undated/unverified" rather than presenting it as current fact.`,
       assignedTools: ['search', 'news'],
       searchQuery: `${cleanQ} analysis comparison`,
       newsQuery: cleanQ,
@@ -1571,7 +1573,8 @@ export function generateFallbackSpecialists(
       id: 'specialist_3',
       name: 'Practical Implementation & Strategy Specialist',
       role: 'Actionable execution pathways, modern best practices, and strategic synthesis',
-      systemPrompt: `You are the Practical Implementation & Strategy Specialist. Your objective is to formulate actionable takeaways, real-world execution considerations, best practices, and practical implications derived from findings.`,
+      systemPrompt: `You are the Practical Implementation & Strategy Specialist. Your objective is to formulate actionable takeaways, real-world execution considerations, best practices, and practical implications derived from findings.
+DATE VERIFICATION MANDATE: Every factual claim gathered from search or news tools must include the source's actual publish date when available (e.g. "(Published: YYYY-MM-DD)"). If no clear date is found, explicitly mark that claim as "undated/unverified" rather than presenting it as current fact.`,
       assignedTools: ['search'],
       searchQuery: `${cleanQ} guide best practices`,
       icon: '💡',
@@ -3347,7 +3350,10 @@ ${spec.systemPrompt || 'You are an autonomous specialized domain expert.'}
 
 You are ${spec.name} (${spec.role}).
 Conduct a rigorous, authoritative analysis from your domain perspective.
-Use evidence, facts, and structure. Bold key terms and outline specific technical or strategic insights.`;
+Use evidence, facts, and structure. Bold key terms and outline specific technical or strategic insights.
+
+DATE VERIFICATION & FACTUAL GROUNDING MANDATE:
+Every factual claim gathered from search, news, or webFetch tools must include the source's actual publish date when available (e.g. "(Published: YYYY-MM-DD)"). If no clear date is found in the source, you MUST explicitly mark that claim as "undated/unverified" rather than presenting it as current fact.`;
 
       const specialistUserMessage = `Inquiry / Task: "${effectiveSpecialistQuery}"
 Task: "${taskDescription}"
@@ -3391,8 +3397,11 @@ ${gatheredContextChunks.length > 0 ? `[GATHERED TOOL DATA & RESEARCH INTELLIGENC
     }
 
     // ==========================================
-    // NODE 5: ✨ FINAL SYNTHESIZER
+    // NODE 5: ✨ FINAL SYNTHESIZER (Dynamic Specialist Pipeline)
     // ==========================================
+    // Prompt Selection for New Agent Mode:
+    // Uses the dedicated, isolated New Agent Synthesizer prompt (sCfg.newAgentSystemPrompt || DEFAULT_AGENT_SYSTEM_PROMPTS.newAgentSynthesizer)
+    // with cross-specialist contradiction detection and date integrity safeguards.
     const synthStart = Date.now();
     updateStep({
       agentId: 'finalSynthesizer',
@@ -3403,9 +3412,13 @@ ${gatheredContextChunks.length > 0 ? `[GATHERED TOOL DATA & RESEARCH INTELLIGENC
       model: sProvInfo.model || sCfg.modelId,
     });
 
+    const activeNewAgentSynthPrompt = (sCfg.newAgentSystemPrompt && sCfg.newAgentSystemPrompt.trim())
+      ? sCfg.newAgentSystemPrompt.trim()
+      : (DEFAULT_AGENT_SYSTEM_PROMPTS.newAgentSynthesizer || DEFAULT_NEW_AGENT_SYNTHESIZER_PROMPT);
+
     const synthSystemPrompt = `Current date and time: ${currentDateTime}
 
-${DEFAULT_AGENT_SYSTEM_PROMPTS.finalSynthesizer || 'You are the Final Synthesizer.'}
+${activeNewAgentSynthPrompt}
 
 You have received findings from a streamlined 5-node dynamic pipeline featuring 3 specialized domain agents created specifically for this query:
 
@@ -3414,8 +3427,9 @@ ${generatedSpecialists.map((s, idx) => `${idx + 1}. **${s.name}** (${s.role})`).
 SYNTHESIS DIRECTIVES:
 1. Synthesize all 3 specialist perspectives into a unified, authoritative, comprehensive, and clear final response.
 2. Structure the answer logically using clean markdown headers (##), bold key terms, comparative tables or structured bullet points where relevant, and concise summaries.
-3. Integrate verified facts and technical depth from the specialists without duplicating text.
-4. Deliver high-value, definitive insights directly to the user.`;
+3. Integrate verified facts, date-stamps, and technical depth from the specialists without duplicating text.
+4. Perform active cross-specialist contradiction detection. If specialists disagree on facts, dates, or changelogs, explicitly surface and flag the contradiction rather than presenting false consensus.
+5. Deliver high-value, definitive insights directly to the user.`;
 
     const synthUserMessage = `User Query / Task: "${effectiveSpecialistQuery}"
 
@@ -6951,6 +6965,9 @@ ${wikidataReportSection ? `[WIKIDATA INTELLIGENCE & REQUIRED REPORT SECTION]:\n$
 Retrieved Ground-Truth Sources (CRITICAL RULE: Only cite sources from this exact list. Never invent or cite any other sources):
 ${sourcesListText}${customInsightsBlock}${personalIdentityDirective}${architectureReferenceDirective}`;
 
+    // Prompt Selection for Standard 10-Agent Pipeline:
+    // Uses the Standard Synthesizer Prompt (DEFAULT_AGENT_SYSTEM_PROMPTS.finalSynthesizer)
+    // containing full directives for Researcher, Fact Checker, Advisor, Reviewer, Wikidata, and RAG.
     const defaultSysPrompt = DEFAULT_AGENT_SYSTEM_PROMPTS.finalSynthesizer;
     let activeSysPrompt =
       sCfg.systemPrompt && sCfg.systemPrompt.trim()
