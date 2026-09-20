@@ -22,6 +22,7 @@ import {
   storage,
   DEFAULT_JARVIS_CONFIG,
   DEFAULT_SPECIALIST_CONFIG,
+  DEFAULT_SPECIALIST_SLOT_CONFIGS,
   DEFAULT_AGENT_SYSTEM_PROMPTS,
 } from '@/lib/storage';
 import type {
@@ -165,9 +166,15 @@ function getModelSuggestions(provider?: AIProviderConfig | null): string[] {
 export function JarvisSettings({ onSaved }: JarvisSettingsProps) {
   const [config, setConfig] = useState<JarvisSystemConfig>(() => {
     const loaded = storage.getJarvisConfig();
+    const rawSlots = loaded.specialistSlots || DEFAULT_SPECIALIST_SLOT_CONFIGS;
+    const normalizedSlots = [0, 1, 2].map((idx) => ({
+      ...DEFAULT_SPECIALIST_SLOT_CONFIGS[idx],
+      ...(rawSlots[idx] || (idx === 0 ? loaded.specialistConfig : undefined) || {}),
+    }));
     return {
       ...loaded,
-      specialistConfig: loaded.specialistConfig || DEFAULT_SPECIALIST_CONFIG,
+      specialistSlots: normalizedSlots,
+      specialistConfig: normalizedSlots[0],
       agents: {
         ...DEFAULT_JARVIS_CONFIG.agents,
         ...loaded.agents,
@@ -183,9 +190,15 @@ export function JarvisSettings({ onSaved }: JarvisSettingsProps) {
   useEffect(() => {
     setProvidersState(storage.getAIProvidersState());
     const loaded = storage.getJarvisConfig();
+    const rawSlots = loaded.specialistSlots || DEFAULT_SPECIALIST_SLOT_CONFIGS;
+    const normalizedSlots = [0, 1, 2].map((idx) => ({
+      ...DEFAULT_SPECIALIST_SLOT_CONFIGS[idx],
+      ...(rawSlots[idx] || (idx === 0 ? loaded.specialistConfig : undefined) || {}),
+    }));
     setConfig({
       ...loaded,
-      specialistConfig: loaded.specialistConfig || DEFAULT_SPECIALIST_CONFIG,
+      specialistSlots: normalizedSlots,
+      specialistConfig: normalizedSlots[0],
       agents: {
         ...DEFAULT_JARVIS_CONFIG.agents,
         ...loaded.agents,
@@ -196,9 +209,15 @@ export function JarvisSettings({ onSaved }: JarvisSettingsProps) {
     const handleStorage = () => {
       setProvidersState(storage.getAIProvidersState());
       const freshLoaded = storage.getJarvisConfig();
+      const freshRawSlots = freshLoaded.specialistSlots || DEFAULT_SPECIALIST_SLOT_CONFIGS;
+      const freshNormalizedSlots = [0, 1, 2].map((idx) => ({
+        ...DEFAULT_SPECIALIST_SLOT_CONFIGS[idx],
+        ...(freshRawSlots[idx] || (idx === 0 ? freshLoaded.specialistConfig : undefined) || {}),
+      }));
       setConfig({
         ...freshLoaded,
-        specialistConfig: freshLoaded.specialistConfig || DEFAULT_SPECIALIST_CONFIG,
+        specialistSlots: freshNormalizedSlots,
+        specialistConfig: freshNormalizedSlots[0],
         agents: {
           ...DEFAULT_JARVIS_CONFIG.agents,
           ...freshLoaded.agents,
@@ -317,16 +336,21 @@ export function JarvisSettings({ onSaved }: JarvisSettingsProps) {
     }
   };
 
-  const handleSpecialistConfigChange = (patch: Partial<JarvisAgentConfig>) => {
+  const handleSpecialistSlotChange = (slotIndex: number, patch: Partial<JarvisAgentConfig>) => {
     setConfig((prev) => {
-      const current = prev.specialistConfig || DEFAULT_SPECIALIST_CONFIG;
-      const updatedSpecialist: JarvisAgentConfig = {
-        ...current,
+      const rawSlots = prev.specialistSlots || DEFAULT_SPECIALIST_SLOT_CONFIGS;
+      const currentSlots = [0, 1, 2].map((idx) => ({
+        ...DEFAULT_SPECIALIST_SLOT_CONFIGS[idx],
+        ...(rawSlots[idx] || {}),
+      }));
+      currentSlots[slotIndex] = {
+        ...currentSlots[slotIndex],
         ...patch,
       };
       const updated: JarvisSystemConfig = {
         ...prev,
-        specialistConfig: updatedSpecialist,
+        specialistSlots: currentSlots,
+        specialistConfig: currentSlots[0],
       };
       try {
         storage.saveJarvisConfig(updated);
@@ -337,26 +361,47 @@ export function JarvisSettings({ onSaved }: JarvisSettingsProps) {
       return updated;
     });
 
-    if (validationErrors.dynamicSpecialists || validationErrors.dynamicSpecialists_fallback) {
+    const slotKey = `specialist_slot_${slotIndex + 1}`;
+    if (validationErrors[slotKey] || validationErrors[`${slotKey}_fallback`]) {
       setValidationErrors((prev) => {
         const next = { ...prev };
-        delete next.dynamicSpecialists;
-        delete next.dynamicSpecialists_fallback;
+        delete next[slotKey];
+        delete next[`${slotKey}_fallback`];
         return next;
       });
     }
   };
 
-  const handleResetSpecialistConfig = () => {
-    handleSpecialistConfigChange({
-      providerId: DEFAULT_SPECIALIST_CONFIG.providerId,
-      modelId: DEFAULT_SPECIALIST_CONFIG.modelId,
-      maxTokens: DEFAULT_SPECIALIST_CONFIG.maxTokens,
-      enableFailover: DEFAULT_SPECIALIST_CONFIG.enableFailover,
-      fallbackProviderId: DEFAULT_SPECIALIST_CONFIG.fallbackProviderId,
-      fallbackModelId: DEFAULT_SPECIALIST_CONFIG.fallbackModelId,
+  const handleResetSpecialistSlot = (slotIndex: number) => {
+    const defaultSlot = DEFAULT_SPECIALIST_SLOT_CONFIGS[slotIndex] || DEFAULT_SPECIALIST_CONFIG;
+    handleSpecialistSlotChange(slotIndex, {
+      providerId: defaultSlot.providerId,
+      modelId: defaultSlot.modelId,
+      maxTokens: defaultSlot.maxTokens,
+      enableFailover: defaultSlot.enableFailover,
+      fallbackProviderId: defaultSlot.fallbackProviderId,
+      fallbackModelId: defaultSlot.fallbackModelId,
     });
-    setSaveStatus('Restored default model configuration for Dynamic Specialist Agents.');
+    setSaveStatus(`Restored default configuration for Specialist ${slotIndex + 1} Model.`);
+    setTimeout(() => setSaveStatus(null), 3000);
+  };
+
+  const handleResetAllSpecialistSlots = () => {
+    setConfig((prev) => {
+      const updated: JarvisSystemConfig = {
+        ...prev,
+        specialistSlots: DEFAULT_SPECIALIST_SLOT_CONFIGS,
+        specialistConfig: DEFAULT_SPECIALIST_SLOT_CONFIGS[0],
+      };
+      try {
+        storage.saveJarvisConfig(updated);
+        onSaved?.(updated);
+      } catch {
+        // ignore
+      }
+      return updated;
+    });
+    setSaveStatus('Restored default configurations for all 3 Specialist Model Slots.');
     setTimeout(() => setSaveStatus(null), 3000);
   };
 
@@ -462,27 +507,32 @@ export function JarvisSettings({ onSaved }: JarvisSettingsProps) {
       }
     });
 
-    // Validate Dynamic Specialist Model Config
-    const spec = config.specialistConfig || DEFAULT_SPECIALIST_CONFIG;
-    if (spec && spec.enabled) {
-      if (!spec.providerId) {
-        errors.dynamicSpecialists = 'Dynamic Specialist Agents require a selected AI Provider.';
-      } else if (!spec.modelId || !spec.modelId.trim()) {
-        errors.dynamicSpecialists = 'Dynamic Specialist Agents require a valid Model ID.';
-      } else if (spec.providerId !== 'existing') {
-        const found = providersState.providers.find((p) => p.id === spec.providerId);
-        if (!found) {
-          errors.dynamicSpecialists = 'Selected provider for Dynamic Specialist Agents no longer exists. Please reselect a provider.';
+    // Validate Dynamic Specialist Model Slots (Slot 1, Slot 2, Slot 3)
+    const rawSlots = config.specialistSlots || DEFAULT_SPECIALIST_SLOT_CONFIGS;
+    [0, 1, 2].forEach((slotIdx) => {
+      const slot = rawSlots[slotIdx] || DEFAULT_SPECIALIST_SLOT_CONFIGS[slotIdx];
+      const slotKey = `specialist_slot_${slotIdx + 1}`;
+      const slotLabel = `Specialist ${slotIdx + 1} Model`;
+      if (slot && slot.enabled) {
+        if (!slot.providerId) {
+          errors[slotKey] = `${slotLabel} requires a selected AI Provider.`;
+        } else if (!slot.modelId || !slot.modelId.trim()) {
+          errors[slotKey] = `${slotLabel} requires a valid Model ID.`;
+        } else if (slot.providerId !== 'existing') {
+          const found = providersState.providers.find((p) => p.id === slot.providerId);
+          if (!found) {
+            errors[slotKey] = `Selected provider for ${slotLabel} no longer exists. Please reselect a provider.`;
+          }
         }
-      }
 
-      if (spec.enableFailover && spec.fallbackProviderId && spec.fallbackProviderId !== 'existing') {
-        const foundFallback = providersState.providers.find((p) => p.id === spec.fallbackProviderId);
-        if (!foundFallback) {
-          errors.dynamicSpecialists_fallback = 'Fallback provider for Dynamic Specialist Agents no longer exists.';
+        if (slot.enableFailover && slot.fallbackProviderId && slot.fallbackProviderId !== 'existing') {
+          const foundFallback = providersState.providers.find((p) => p.id === slot.fallbackProviderId);
+          if (!foundFallback) {
+            errors[`${slotKey}_fallback`] = `Fallback provider for ${slotLabel} no longer exists.`;
+          }
         }
       }
-    }
+    });
 
     // Validate custom agents
     (config.customAgents || []).forEach((cAgent) => {
@@ -1290,174 +1340,184 @@ export function JarvisSettings({ onSaved }: JarvisSettingsProps) {
               New Agent Mode — Specialist Model Configuration
             </h3>
           </div>
-          <span
-            style={{
-              fontSize: '11px',
-              fontFamily: 'DM Mono',
-              padding: '3px 9px',
-              borderRadius: '6px',
-              background: 'rgba(52,211,153,0.15)',
-              color: '#34d399',
-              border: '1px solid rgba(52,211,153,0.3)',
-            }}
-          >
-            5-Node Pipeline • 3 Dynamic Specialists Shared Model
-          </span>
-        </div>
-
-        {(() => {
-          const spec = config.specialistConfig || DEFAULT_SPECIALIST_CONFIG;
-          const hasError = Boolean(validationErrors.dynamicSpecialists || validationErrors.dynamicSpecialists_fallback);
-          const currentProvider =
-            spec.providerId === 'existing'
-              ? null
-              : providersState.providers.find((p) => p.id === spec.providerId) || null;
-          const modelSuggestions = getModelSuggestions(currentProvider);
-
-          return (
-            <div
-              className="card"
+          <div style={{ display: 'flex', alignItems: 'center', gap: '8px', flexWrap: 'wrap' }}>
+            <span
               style={{
-                padding: '22px',
-                borderRadius: '16px',
-                background: 'linear-gradient(135deg, rgba(8,28,30,0.85) 0%, rgba(14,24,48,0.88) 100%)',
-                border: hasError
-                  ? '1px solid var(--danger)'
-                  : '1px solid rgba(52,211,153,0.35)',
-                boxShadow: '0 4px 20px rgba(5,15,20,0.35)',
+                fontSize: '11px',
+                fontFamily: 'DM Mono',
+                padding: '3px 9px',
+                borderRadius: '6px',
+                background: 'rgba(52,211,153,0.15)',
+                color: '#34d399',
+                border: '1px solid rgba(52,211,153,0.3)',
               }}
             >
-              {/* Header */}
+              5-Node Pipeline • 3 Independent Specialist Model Slots
+            </span>
+            <button
+              type="button"
+              onClick={handleResetAllSpecialistSlots}
+              style={{
+                padding: '4px 10px',
+                fontSize: '11px',
+                fontFamily: 'DM Mono',
+                borderRadius: '6px',
+                background: 'rgba(255,255,255,0.06)',
+                border: '1px solid rgba(255,255,255,0.18)',
+                color: '#cbd5e1',
+                cursor: 'pointer',
+                display: 'inline-flex',
+                alignItems: 'center',
+                gap: '4px',
+              }}
+              title="Reset all 3 Specialist Model Slots to default"
+            >
+              <RotateCcw size={11} />
+              Reset All to Default
+            </button>
+          </div>
+        </div>
+
+        {/* 3 Specialist Configuration Slots */}
+        <div style={{ display: 'grid', gap: '16px' }}>
+          {[0, 1, 2].map((slotIdx) => {
+            const rawSlots = config.specialistSlots || DEFAULT_SPECIALIST_SLOT_CONFIGS;
+            const slot = rawSlots[slotIdx] || DEFAULT_SPECIALIST_SLOT_CONFIGS[slotIdx];
+            const slotNum = slotIdx + 1;
+            const slotKey = `specialist_slot_${slotNum}`;
+            const hasError = Boolean(validationErrors[slotKey] || validationErrors[`${slotKey}_fallback`]);
+            const currentProvider =
+              slot.providerId === 'existing'
+                ? null
+                : providersState.providers.find((p) => p.id === slot.providerId) || null;
+            const modelSuggestions = getModelSuggestions(currentProvider);
+
+            const slotOrdinal = slotNum === 1 ? '1st' : slotNum === 2 ? '2nd' : '3rd';
+            const slotSubtitle = `Model used for whichever domain specialist the Planner generates ${slotOrdinal} in execution order.`;
+
+            return (
               <div
+                key={`specialist-slot-${slotNum}`}
+                className="card"
                 style={{
-                  display: 'flex',
-                  justifyContent: 'space-between',
-                  alignItems: 'center',
-                  flexWrap: 'wrap',
-                  gap: '12px',
-                  borderBottom: '1px solid rgba(52,211,153,0.15)',
-                  paddingBottom: '14px',
-                  marginBottom: '18px',
+                  padding: '22px',
+                  borderRadius: '16px',
+                  background: 'linear-gradient(135deg, rgba(8,28,30,0.85) 0%, rgba(14,24,48,0.88) 100%)',
+                  border: hasError
+                    ? '1px solid var(--danger)'
+                    : '1px solid rgba(52,211,153,0.35)',
+                  boxShadow: '0 4px 20px rgba(5,15,20,0.35)',
                 }}
               >
-                <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
-                  <span style={{ fontSize: '24px' }}>⚡</span>
-                  <div>
-                    <div style={{ display: 'flex', alignItems: 'center', gap: '8px', flexWrap: 'wrap' }}>
-                      <h3 style={{ margin: 0, fontSize: '17px', fontWeight: 700, color: '#fff' }}>
-                        Dynamic Specialist Agents
-                      </h3>
-                      <span
-                        style={{
-                          fontSize: '10px',
-                          fontFamily: 'DM Mono',
-                          padding: '2px 8px',
-                          borderRadius: '4px',
-                          background: 'rgba(52,211,153,0.18)',
-                          color: '#34d399',
-                          border: '1px solid rgba(52,211,153,0.3)',
-                        }}
-                      >
-                        Shared Execution Model
-                      </span>
+                {/* Header */}
+                <div
+                  style={{
+                    display: 'flex',
+                    justifyContent: 'space-between',
+                    alignItems: 'center',
+                    flexWrap: 'wrap',
+                    gap: '12px',
+                    borderBottom: '1px solid rgba(52,211,153,0.15)',
+                    paddingBottom: '14px',
+                    marginBottom: '18px',
+                  }}
+                >
+                  <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
+                    <span style={{ fontSize: '22px' }}>⚡</span>
+                    <div>
+                      <div style={{ display: 'flex', alignItems: 'center', gap: '8px', flexWrap: 'wrap' }}>
+                        <h4 style={{ margin: 0, fontSize: '16px', fontWeight: 700, color: '#fff' }}>
+                          Specialist {slotNum} Model
+                        </h4>
+                        <span
+                          style={{
+                            fontSize: '10px',
+                            fontFamily: 'DM Mono',
+                            padding: '2px 8px',
+                            borderRadius: '4px',
+                            background: 'rgba(52,211,153,0.18)',
+                            color: '#34d399',
+                            border: '1px solid rgba(52,211,153,0.3)',
+                          }}
+                        >
+                          Slot {slotNum} ({slotOrdinal} Generated Specialist)
+                        </span>
+                      </div>
+                      <p style={{ margin: '4px 0 0', color: 'var(--muted)', fontSize: '12px', lineHeight: 1.5 }}>
+                        {slotSubtitle}
+                      </p>
                     </div>
-                    <p style={{ margin: '4px 0 0', color: 'var(--muted)', fontSize: '12px', lineHeight: 1.5 }}>
-                      Shared provider, model identifier, and token budget governing all 3 dynamically-spawned specialist agents when "New Agent" toggle is ON.
-                    </p>
                   </div>
+
+                  <button
+                    type="button"
+                    onClick={() => handleResetSpecialistSlot(slotIdx)}
+                    style={{
+                      padding: '4px 10px',
+                      fontSize: '11px',
+                      fontFamily: 'DM Mono',
+                      borderRadius: '6px',
+                      background: 'rgba(255,255,255,0.06)',
+                      border: '1px solid rgba(255,255,255,0.18)',
+                      color: '#cbd5e1',
+                      cursor: 'pointer',
+                      display: 'inline-flex',
+                      alignItems: 'center',
+                      gap: '4px',
+                    }}
+                    title={`Reset Specialist ${slotNum} Model Configuration to default`}
+                  >
+                    <RotateCcw size={11} />
+                    Reset to Default
+                  </button>
                 </div>
 
-                <button
-                  type="button"
-                  onClick={handleResetSpecialistConfig}
-                  style={{
-                    padding: '4px 10px',
-                    fontSize: '11px',
-                    fontFamily: 'DM Mono',
-                    borderRadius: '6px',
-                    background: 'rgba(255,255,255,0.06)',
-                    border: '1px solid rgba(255,255,255,0.18)',
-                    color: '#cbd5e1',
-                    cursor: 'pointer',
-                    display: 'inline-flex',
-                    alignItems: 'center',
-                    gap: '4px',
-                  }}
-                  title="Reset Specialist Model Configuration to default"
-                >
-                  <RotateCcw size={11} />
-                  Reset to Default
-                </button>
-              </div>
-
-              {/* Grid Controls */}
-              <div style={{ display: 'grid', gap: '18px' }}>
-                <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(280px, 1fr))', gap: '16px' }}>
-                  {/* Primary Provider Selector */}
-                  <div>
-                    <label
-                      style={{
-                        display: 'block',
-                        fontSize: '11px',
-                        fontFamily: 'DM Mono',
-                        color: '#34d399',
-                        marginBottom: '6px',
-                        letterSpacing: '0.05em',
-                      }}
-                    >
-                      PRIMARY AI PROVIDER
-                    </label>
-                    <select
-                      value={spec.providerId}
-                      onChange={(e) => {
-                        const newProvId = e.target.value;
-                        const prov = providersState.providers.find((p) => p.id === newProvId);
-                        handleSpecialistConfigChange({
-                          providerId: newProvId,
-                          modelId: prov ? prov.model : spec.modelId || 'deepseek/deepseek-chat',
-                        });
-                      }}
-                      style={{
-                        width: '100%',
-                        padding: '10px 12px',
-                        borderRadius: '8px',
-                        background: 'rgba(6,16,24,0.85)',
-                        border: '1px solid rgba(165,207,214,0.25)',
-                        color: '#e7eef2',
-                        fontSize: '13px',
-                        outline: 'none',
-                      }}
-                    >
-                      {availableProviders.map((p) => (
-                        <option key={p.id} value={p.id}>
-                          {p.name} {p.keyCount > 0 ? `(${p.keyCount} key)` : ''}
-                        </option>
-                      ))}
-                    </select>
+                {/* Validation Error Banner */}
+                {hasError && (
+                  <div
+                    style={{
+                      padding: '10px 14px',
+                      borderRadius: '8px',
+                      background: 'rgba(239,68,68,0.15)',
+                      border: '1px solid rgba(239,68,68,0.3)',
+                      color: '#fca5a5',
+                      fontSize: '12px',
+                      marginBottom: '16px',
+                    }}
+                  >
+                    {validationErrors[slotKey] || validationErrors[`${slotKey}_fallback`]}
                   </div>
+                )}
 
-                  {/* Primary Model Selector & Input */}
-                  <div>
-                    <label
-                      style={{
-                        display: 'block',
-                        fontSize: '11px',
-                        fontFamily: 'DM Mono',
-                        color: '#34d399',
-                        marginBottom: '6px',
-                        letterSpacing: '0.05em',
-                      }}
-                    >
-                      MODEL IDENTIFIER
-                    </label>
-                    <div style={{ display: 'flex', gap: '8px' }}>
-                      <input
-                        type="text"
-                        value={spec.modelId}
-                        onChange={(e) => handleSpecialistConfigChange({ modelId: e.target.value })}
-                        placeholder="e.g. deepseek/deepseek-chat"
+                {/* Grid Controls */}
+                <div style={{ display: 'grid', gap: '18px' }}>
+                  <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(280px, 1fr))', gap: '16px' }}>
+                    {/* Primary Provider Selector */}
+                    <div>
+                      <label
                         style={{
-                          flex: 1,
+                          display: 'block',
+                          fontSize: '11px',
+                          fontFamily: 'DM Mono',
+                          color: '#34d399',
+                          marginBottom: '6px',
+                          letterSpacing: '0.05em',
+                        }}
+                      >
+                        PRIMARY AI PROVIDER
+                      </label>
+                      <select
+                        value={slot.providerId}
+                        onChange={(e) => {
+                          const newProvId = e.target.value;
+                          const prov = providersState.providers.find((p) => p.id === newProvId);
+                          handleSpecialistSlotChange(slotIdx, {
+                            providerId: newProvId,
+                            modelId: prov ? prov.model : slot.modelId || 'deepseek/deepseek-chat',
+                          });
+                        }}
+                        style={{
+                          width: '100%',
                           padding: '10px 12px',
                           borderRadius: '8px',
                           background: 'rgba(6,16,24,0.85)',
@@ -1465,215 +1525,256 @@ export function JarvisSettings({ onSaved }: JarvisSettingsProps) {
                           color: '#e7eef2',
                           fontSize: '13px',
                           outline: 'none',
-                          fontFamily: 'DM Mono',
                         }}
-                      />
-
-                      {modelSuggestions.length > 0 && (
-                        <select
-                          aria-label="Select model preset"
-                          value=""
-                          onChange={(e) => {
-                            if (e.target.value) {
-                              handleSpecialistConfigChange({ modelId: e.target.value });
-                            }
-                          }}
-                          style={{
-                            width: '40px',
-                            borderRadius: '8px',
-                            background: 'rgba(14,31,48,0.9)',
-                            border: '1px solid rgba(165,207,214,0.25)',
-                            color: '#34d399',
-                            fontSize: '12px',
-                            cursor: 'pointer',
-                          }}
-                          title="Choose preset model"
-                        >
-                          <option value="">▼</option>
-                          {modelSuggestions.map((m) => (
-                            <option key={m} value={m}>
-                              {m}
-                            </option>
-                          ))}
-                        </select>
-                      )}
+                      >
+                        {availableProviders.map((p) => (
+                          <option key={p.id} value={p.id}>
+                            {p.name} {p.keyCount > 0 ? `(${p.keyCount} key)` : ''}
+                          </option>
+                        ))}
+                      </select>
                     </div>
-                  </div>
 
-                  {/* Max Tokens Slider & Input */}
-                  <div>
-                    <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '6px' }}>
+                    {/* Primary Model Selector & Input */}
+                    <div>
                       <label
                         style={{
+                          display: 'block',
                           fontSize: '11px',
                           fontFamily: 'DM Mono',
                           color: '#34d399',
+                          marginBottom: '6px',
                           letterSpacing: '0.05em',
                         }}
                       >
-                        MAX OUTPUT TOKENS
+                        MODEL IDENTIFIER
                       </label>
-                      <span style={{ fontSize: '11px', fontFamily: 'DM Mono', color: '#e7eef2' }}>
-                        {spec.maxTokens || 2400} tokens
-                      </span>
-                    </div>
-                    <div style={{ display: 'flex', gap: '12px', alignItems: 'center' }}>
-                      <input
-                        type="range"
-                        min={100}
-                        max={4000}
-                        step={32}
-                        value={spec.maxTokens || 2400}
-                        onChange={(e) => handleSpecialistConfigChange({ maxTokens: Number(e.target.value) })}
-                        style={{ flex: 1, accentColor: '#34d399', cursor: 'pointer' }}
-                      />
-                      <input
-                        type="number"
-                        min={32}
-                        max={8000}
-                        value={spec.maxTokens || 2400}
-                        onChange={(e) => handleSpecialistConfigChange({ maxTokens: Number(e.target.value) })}
-                        style={{
-                          width: '70px',
-                          padding: '6px 8px',
-                          borderRadius: '6px',
-                          background: 'rgba(6,16,24,0.85)',
-                          border: '1px solid rgba(165,207,214,0.25)',
-                          color: '#e7eef2',
-                          fontSize: '12px',
-                          fontFamily: 'DM Mono',
-                          textAlign: 'right',
-                          outline: 'none',
-                        }}
-                      />
-                    </div>
-                  </div>
-                </div>
-
-                {/* Agent Failover Toggle */}
-                <div
-                  style={{
-                    padding: '12px 14px',
-                    borderRadius: '10px',
-                    background: 'rgba(6,16,24,0.5)',
-                    border: '1px solid rgba(165,207,214,0.12)',
-                    display: 'grid',
-                    gap: '12px',
-                  }}
-                >
-                  <label
-                    style={{
-                      display: 'flex',
-                      alignItems: 'center',
-                      gap: '8px',
-                      cursor: 'pointer',
-                      fontSize: '12px',
-                      fontWeight: 600,
-                      color: spec.enableFailover ? '#34d399' : 'var(--muted)',
-                    }}
-                  >
-                    <input
-                      type="checkbox"
-                      checked={Boolean(spec.enableFailover)}
-                      onChange={(e) => handleSpecialistConfigChange({ enableFailover: e.target.checked })}
-                      style={{ accentColor: '#34d399' }}
-                    />
-                    Enable Automatic Provider Failover
-                  </label>
-
-                  {spec.enableFailover && (
-                    <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(260px, 1fr))', gap: '14px', paddingTop: '4px' }}>
-                      <div>
-                        <label
-                          style={{
-                            display: 'block',
-                            fontSize: '11px',
-                            fontFamily: 'DM Mono',
-                            color: '#34d399',
-                            marginBottom: '4px',
-                          }}
-                        >
-                          FALLBACK PROVIDER
-                        </label>
-                        <select
-                          value={spec.fallbackProviderId || 'existing'}
-                          onChange={(e) => handleSpecialistConfigChange({ fallbackProviderId: e.target.value })}
-                          style={{
-                            width: '100%',
-                            padding: '8px 10px',
-                            borderRadius: '6px',
-                            background: 'rgba(6,16,24,0.85)',
-                            border: '1px solid rgba(165,207,214,0.25)',
-                            color: '#e7eef2',
-                            fontSize: '12px',
-                            outline: 'none',
-                          }}
-                        >
-                          {availableProviders.map((p) => (
-                            <option key={p.id} value={p.id}>
-                              {p.name}
-                            </option>
-                          ))}
-                        </select>
-                      </div>
-
-                      <div>
-                        <label
-                          style={{
-                            display: 'block',
-                            fontSize: '11px',
-                            fontFamily: 'DM Mono',
-                            color: '#34d399',
-                            marginBottom: '4px',
-                          }}
-                        >
-                          FALLBACK MODEL
-                        </label>
+                      <div style={{ display: 'flex', gap: '8px' }}>
                         <input
                           type="text"
-                          value={spec.fallbackModelId || ''}
-                          onChange={(e) => handleSpecialistConfigChange({ fallbackModelId: e.target.value })}
-                          placeholder="Optional fallback model"
+                          value={slot.modelId}
+                          onChange={(e) => handleSpecialistSlotChange(slotIdx, { modelId: e.target.value })}
+                          placeholder="e.g. deepseek/deepseek-chat"
                           style={{
-                            width: '100%',
-                            padding: '8px 10px',
-                            borderRadius: '6px',
+                            flex: 1,
+                            padding: '10px 12px',
+                            borderRadius: '8px',
                             background: 'rgba(6,16,24,0.85)',
                             border: '1px solid rgba(165,207,214,0.25)',
                             color: '#e7eef2',
-                            fontSize: '12px',
+                            fontSize: '13px',
                             outline: 'none',
                             fontFamily: 'DM Mono',
                           }}
                         />
+
+                        {modelSuggestions.length > 0 && (
+                          <select
+                            aria-label={`Select model preset for Specialist ${slotNum}`}
+                            value=""
+                            onChange={(e) => {
+                              if (e.target.value) {
+                                handleSpecialistSlotChange(slotIdx, { modelId: e.target.value });
+                              }
+                            }}
+                            style={{
+                              width: '40px',
+                              borderRadius: '8px',
+                              background: 'rgba(14,31,48,0.9)',
+                              border: '1px solid rgba(165,207,214,0.25)',
+                              color: '#34d399',
+                              fontSize: '12px',
+                              cursor: 'pointer',
+                            }}
+                            title="Choose preset model"
+                          >
+                            <option value="">▼</option>
+                            {modelSuggestions.map((m) => (
+                              <option key={m} value={m}>
+                                {m}
+                              </option>
+                            ))}
+                          </select>
+                        )}
                       </div>
                     </div>
-                  )}
-                </div>
 
-                {/* Pipeline Context Info Note */}
-                <div
-                  style={{
-                    padding: '10px 14px',
-                    borderRadius: '8px',
-                    background: 'rgba(52,211,153,0.06)',
-                    border: '1px solid rgba(52,211,153,0.2)',
-                    display: 'flex',
-                    alignItems: 'center',
-                    gap: '8px',
-                    fontSize: '11.5px',
-                    color: '#94a3b8',
-                  }}
-                >
-                  <Info size={14} className="text-emerald-400 shrink-0" />
-                  <span>
-                    When "New Agent" mode is enabled, the Planner dynamically creates 3 specialized experts tailored to the query. All 3 specialists run on this configured model, while receiving individual, per-specialist tool allocations (Search, Wikipedia, News, Weather, Web Fetcher).
-                  </span>
+                    {/* Max Tokens Slider & Input */}
+                    <div>
+                      <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '6px' }}>
+                        <label
+                          style={{
+                            fontSize: '11px',
+                            fontFamily: 'DM Mono',
+                            color: '#34d399',
+                            letterSpacing: '0.05em',
+                          }}
+                        >
+                          MAX OUTPUT TOKENS
+                        </label>
+                        <span style={{ fontSize: '11px', fontFamily: 'DM Mono', color: '#e7eef2' }}>
+                          {slot.maxTokens || 2400} tokens
+                        </span>
+                      </div>
+                      <div style={{ display: 'flex', gap: '12px', alignItems: 'center' }}>
+                        <input
+                          type="range"
+                          min={100}
+                          max={4000}
+                          step={32}
+                          value={slot.maxTokens || 2400}
+                          onChange={(e) => handleSpecialistSlotChange(slotIdx, { maxTokens: Number(e.target.value) })}
+                          style={{ flex: 1, accentColor: '#34d399', cursor: 'pointer' }}
+                        />
+                        <input
+                          type="number"
+                          min={32}
+                          max={8000}
+                          value={slot.maxTokens || 2400}
+                          onChange={(e) => handleSpecialistSlotChange(slotIdx, { maxTokens: Number(e.target.value) })}
+                          style={{
+                            width: '70px',
+                            padding: '6px 8px',
+                            borderRadius: '6px',
+                            background: 'rgba(6,16,24,0.85)',
+                            border: '1px solid rgba(165,207,214,0.25)',
+                            color: '#e7eef2',
+                            fontSize: '12px',
+                            fontFamily: 'DM Mono',
+                            textAlign: 'right',
+                            outline: 'none',
+                          }}
+                        />
+                      </div>
+                    </div>
+                  </div>
+
+                  {/* Agent Failover Toggle */}
+                  <div
+                    style={{
+                      padding: '12px 14px',
+                      borderRadius: '10px',
+                      background: 'rgba(6,16,24,0.5)',
+                      border: '1px solid rgba(165,207,214,0.12)',
+                      display: 'grid',
+                      gap: '12px',
+                    }}
+                  >
+                    <label
+                      style={{
+                        display: 'flex',
+                        alignItems: 'center',
+                        gap: '8px',
+                        cursor: 'pointer',
+                        fontSize: '12px',
+                        fontWeight: 600,
+                        color: slot.enableFailover ? '#34d399' : 'var(--muted)',
+                      }}
+                    >
+                      <input
+                        type="checkbox"
+                        checked={Boolean(slot.enableFailover)}
+                        onChange={(e) => handleSpecialistSlotChange(slotIdx, { enableFailover: e.target.checked })}
+                        style={{ accentColor: '#34d399' }}
+                      />
+                      Enable Automatic Provider Failover
+                    </label>
+
+                    {slot.enableFailover && (
+                      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(260px, 1fr))', gap: '14px', paddingTop: '4px' }}>
+                        <div>
+                          <label
+                            style={{
+                              display: 'block',
+                              fontSize: '11px',
+                              fontFamily: 'DM Mono',
+                              color: '#34d399',
+                              marginBottom: '4px',
+                            }}
+                          >
+                            FALLBACK PROVIDER
+                          </label>
+                          <select
+                            value={slot.fallbackProviderId || 'existing'}
+                            onChange={(e) => handleSpecialistSlotChange(slotIdx, { fallbackProviderId: e.target.value })}
+                            style={{
+                              width: '100%',
+                              padding: '8px 10px',
+                              borderRadius: '6px',
+                              background: 'rgba(6,16,24,0.85)',
+                              border: '1px solid rgba(165,207,214,0.25)',
+                              color: '#e7eef2',
+                              fontSize: '12px',
+                              outline: 'none',
+                            }}
+                          >
+                            {availableProviders.map((p) => (
+                              <option key={p.id} value={p.id}>
+                                {p.name}
+                              </option>
+                            ))}
+                          </select>
+                        </div>
+
+                        <div>
+                          <label
+                            style={{
+                              display: 'block',
+                              fontSize: '11px',
+                              fontFamily: 'DM Mono',
+                              color: '#34d399',
+                              marginBottom: '4px',
+                            }}
+                          >
+                            FALLBACK MODEL
+                          </label>
+                          <input
+                            type="text"
+                            value={slot.fallbackModelId || ''}
+                            onChange={(e) => handleSpecialistSlotChange(slotIdx, { fallbackModelId: e.target.value })}
+                            placeholder="Optional fallback model"
+                            style={{
+                              width: '100%',
+                              padding: '8px 10px',
+                              borderRadius: '6px',
+                              background: 'rgba(6,16,24,0.85)',
+                              border: '1px solid rgba(165,207,214,0.25)',
+                              color: '#e7eef2',
+                              fontSize: '12px',
+                              outline: 'none',
+                              fontFamily: 'DM Mono',
+                            }}
+                          />
+                        </div>
+                      </div>
+                    )}
+                  </div>
                 </div>
               </div>
-            </div>
-          );
-        })()}
+            );
+          })}
+        </div>
+
+        {/* Pipeline Context Info Note */}
+        <div
+          style={{
+            padding: '12px 16px',
+            borderRadius: '10px',
+            background: 'rgba(52,211,153,0.06)',
+            border: '1px solid rgba(52,211,153,0.2)',
+            display: 'flex',
+            alignItems: 'flex-start',
+            gap: '10px',
+            fontSize: '12px',
+            color: '#94a3b8',
+            lineHeight: 1.55,
+          }}
+        >
+          <Info size={16} className="text-emerald-400 shrink-0 mt-0.5" />
+          <span>
+            When "New Agent" mode is active, the Planner dynamically creates 3 domain specialists tailored to your query. Whichever specialist the Planner generates first uses Slot 1's model, the second uses Slot 2's model, and the third uses Slot 3's model. Each specialist's tool allocation (Search, Wikipedia, News, Weather, Web Fetcher) is independently determined by the Planner regardless of which model is assigned to each slot.
+          </span>
+        </div>
       </div>
 
       {/* SECTION 3: CUSTOM AGENTS */}

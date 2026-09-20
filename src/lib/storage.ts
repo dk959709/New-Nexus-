@@ -802,20 +802,52 @@ Instructions:
 - Deliver high-leverage technical engineering solutions with zero conversational fluff.`,
 };
 
-export const DEFAULT_SPECIALIST_CONFIG: JarvisAgentConfig = {
-  id: 'dynamicSpecialists',
-  name: 'Dynamic Specialist Agents',
-  role: 'Domain-Tailored Multi-Angle Investigation',
-  description: 'Shared provider, model, token budget, and failover configuration for all 3 dynamically-generated specialist agents when "New Agent" mode is active.',
-  icon: '🤖',
-  providerId: 'existing',
-  modelId: 'deepseek/deepseek-chat',
-  enabled: true,
-  maxTokens: 2400,
-  enableFailover: false,
-  fallbackProviderId: 'existing',
-  fallbackModelId: '',
-};
+export const DEFAULT_SPECIALIST_SLOT_CONFIGS: JarvisAgentConfig[] = [
+  {
+    id: 'specialist_slot_1',
+    name: 'Specialist 1 Model',
+    role: 'Domain Expert Slot 1 (1st Generated Specialist)',
+    description: 'Provider, model, token budget, and failover configuration for the 1st specialist agent in execution sequence.',
+    icon: '⚡',
+    providerId: 'existing',
+    modelId: 'deepseek/deepseek-chat',
+    enabled: true,
+    maxTokens: 2400,
+    enableFailover: false,
+    fallbackProviderId: 'existing',
+    fallbackModelId: '',
+  },
+  {
+    id: 'specialist_slot_2',
+    name: 'Specialist 2 Model',
+    role: 'Domain Expert Slot 2 (2nd Generated Specialist)',
+    description: 'Provider, model, token budget, and failover configuration for the 2nd specialist agent in execution sequence.',
+    icon: '⚡',
+    providerId: 'existing',
+    modelId: 'deepseek/deepseek-chat',
+    enabled: true,
+    maxTokens: 2400,
+    enableFailover: false,
+    fallbackProviderId: 'existing',
+    fallbackModelId: '',
+  },
+  {
+    id: 'specialist_slot_3',
+    name: 'Specialist 3 Model',
+    role: 'Domain Expert Slot 3 (3rd Generated Specialist)',
+    description: 'Provider, model, token budget, and failover configuration for the 3rd specialist agent in execution sequence.',
+    icon: '⚡',
+    providerId: 'existing',
+    modelId: 'deepseek/deepseek-chat',
+    enabled: true,
+    maxTokens: 2400,
+    enableFailover: false,
+    fallbackProviderId: 'existing',
+    fallbackModelId: '',
+  },
+];
+
+export const DEFAULT_SPECIALIST_CONFIG: JarvisAgentConfig = DEFAULT_SPECIALIST_SLOT_CONFIGS[0];
 
 export const DEFAULT_JARVIS_CONFIG: JarvisSystemConfig = {
   deepResearchDefault: false,
@@ -824,7 +856,8 @@ export const DEFAULT_JARVIS_CONFIG: JarvisSystemConfig = {
   imageModeDefault: false,
   coderModeDefault: true,
   newAgentModeDefault: false,
-  specialistConfig: DEFAULT_SPECIALIST_CONFIG,
+  specialistSlots: DEFAULT_SPECIALIST_SLOT_CONFIGS,
+  specialistConfig: DEFAULT_SPECIALIST_SLOT_CONFIGS[0],
   customAgents: [],
   agents: {
     planner: {
@@ -1280,6 +1313,18 @@ export const storage = {
         stored.coderModeDefault ??
         (stored.agents?.coder?.enabled !== undefined ? stored.agents.coder.enabled : DEFAULT_JARVIS_CONFIG.coderModeDefault),
       customAgents: Array.isArray(stored.customAgents) ? stored.customAgents : [],
+      specialistSlots: (() => {
+        const rawSlots = Array.isArray(stored.specialistSlots) ? stored.specialistSlots : [];
+        return [0, 1, 2].map((idx) => {
+          const defaultSlot = DEFAULT_SPECIALIST_SLOT_CONFIGS[idx];
+          const userSlot = rawSlots[idx] || (idx === 0 ? stored.specialistConfig : undefined) || {};
+          return {
+            ...defaultSlot,
+            ...userSlot,
+            maxTokens: Math.max(64, userSlot.maxTokens || defaultSlot.maxTokens || 2400),
+          };
+        });
+      })(),
       specialistConfig: {
         ...DEFAULT_SPECIALIST_CONFIG,
         ...(stored.specialistConfig || {}),

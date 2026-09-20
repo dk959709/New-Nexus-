@@ -1,5 +1,5 @@
 import { api } from '@/services/api';
-import { storage, DEFAULT_AGENT_SYSTEM_PROMPTS, DEFAULT_JARVIS_CONFIG, DEFAULT_SPECIALIST_CONFIG, DEFAULT_IMAGE_PROVIDERS } from '@/lib/storage';
+import { storage, DEFAULT_AGENT_SYSTEM_PROMPTS, DEFAULT_JARVIS_CONFIG, DEFAULT_SPECIALIST_CONFIG, DEFAULT_SPECIALIST_SLOT_CONFIGS, DEFAULT_IMAGE_PROVIDERS } from '@/lib/storage';
 import { getLocation } from '@/services/location';
 import {
   searchWikipedia,
@@ -2490,10 +2490,30 @@ export async function runJarvisPipeline(
     }
     if (agentId === 'dynamicSpecialists' || agentId.startsWith('specialist_')) {
       const liveFresh = storage.getJarvisConfig();
+      const slots =
+        liveFresh?.specialistSlots ||
+        effectiveConfig?.specialistSlots ||
+        DEFAULT_JARVIS_CONFIG.specialistSlots ||
+        DEFAULT_SPECIALIST_SLOT_CONFIGS;
+
+      let slotIdx = 0;
+      if (agentId === 'specialist_2' || agentId === 'specialist_slot_2') {
+        slotIdx = 1;
+      } else if (agentId === 'specialist_3' || agentId === 'specialist_slot_3') {
+        slotIdx = 2;
+      } else if (agentId.startsWith('specialist_')) {
+        const num = parseInt(agentId.replace(/\D/g, ''), 10);
+        if (!isNaN(num) && num >= 1 && num <= 3) {
+          slotIdx = num - 1;
+        }
+      }
+
       return (
+        slots[slotIdx] ||
+        slots[0] ||
         liveFresh?.specialistConfig ||
         effectiveConfig?.specialistConfig ||
-        DEFAULT_JARVIS_CONFIG.specialistConfig ||
+        DEFAULT_SPECIALIST_SLOT_CONFIGS[slotIdx] ||
         DEFAULT_SPECIALIST_CONFIG
       );
     }
@@ -2888,11 +2908,11 @@ Please perform your specialized processing for this inquiry. Provide clear, conc
 
     const pCfg = agentConfigs.planner || DEFAULT_JARVIS_CONFIG.agents.planner;
     const provInfo = resolveProviderConfig(pCfg);
-    const specCfg =
-      effectiveConfig.specialistConfig ||
-      storage.getJarvisConfig().specialistConfig ||
-      DEFAULT_SPECIALIST_CONFIG;
-    const specProvInfo = resolveProviderConfig(specCfg);
+    const specSlots =
+      effectiveConfig.specialistSlots ||
+      storage.getJarvisConfig().specialistSlots ||
+      DEFAULT_JARVIS_CONFIG.specialistSlots ||
+      DEFAULT_SPECIALIST_SLOT_CONFIGS;
     const sCfg = agentConfigs.finalSynthesizer || DEFAULT_JARVIS_CONFIG.agents.finalSynthesizer;
     const sProvInfo = resolveProviderConfig(sCfg);
 
@@ -2906,14 +2926,16 @@ Please perform your specialized processing for this inquiry. Provide clear, conc
       providerName: provInfo.provider?.name || 'Primary',
       model: provInfo.model || pCfg.modelId,
     });
-    initialSpecialists.forEach((sp) => {
+    initialSpecialists.forEach((sp, idx) => {
+      const slotCfg = specSlots[idx] || specSlots[0] || DEFAULT_SPECIALIST_SLOT_CONFIGS[idx] || DEFAULT_SPECIALIST_CONFIG;
+      const slotProvInfo = resolveProviderConfig(slotCfg);
       steps.push({
         agentId: sp.id as JarvisAgentId,
         name: sp.name,
         icon: sp.icon || '🤖',
         status: 'pending',
-        providerName: specProvInfo.provider?.name || 'Primary',
-        model: specProvInfo.model || specCfg.modelId,
+        providerName: slotProvInfo.provider?.name || 'Primary',
+        model: slotProvInfo.model || slotCfg.modelId,
         specialistRole: sp.role,
       });
     });
@@ -3075,6 +3097,8 @@ REQUIREMENTS:
 
     for (let i = 0; i < generatedSpecialists.length; i++) {
       const spec = generatedSpecialists[i];
+      const slotCfg = specSlots[i] || specSlots[0] || DEFAULT_SPECIALIST_SLOT_CONFIGS[i] || DEFAULT_SPECIALIST_CONFIG;
+      const slotProvInfo = resolveProviderConfig(slotCfg);
       const specStart = Date.now();
 
       updateStep({
@@ -3082,8 +3106,8 @@ REQUIREMENTS:
         name: spec.name,
         icon: spec.icon || '🤖',
         status: 'running',
-        providerName: specProvInfo.provider?.name || 'Primary',
-        model: specProvInfo.model || specCfg.modelId,
+        providerName: slotProvInfo.provider?.name || 'Primary',
+        model: slotProvInfo.model || slotCfg.modelId,
         specialistRole: spec.role,
         assignedTools: spec.assignedTools,
       });
@@ -3222,7 +3246,7 @@ ${gatheredContextChunks.length > 0 ? `[GATHERED TOOL DATA & RESEARCH INTELLIGENC
       const specRes = await callAgent(spec.id, [
         { role: 'system', content: specialistSystemPrompt },
         { role: 'user', content: specialistUserMessage },
-      ], specCfg.maxTokens || 2400);
+      ], slotCfg.maxTokens || 2400);
 
       const specDuration = Date.now() - specStart;
       const specOutputText = specRes.ok && specRes.text ? specRes.text : `[${spec.name}] Completed domain analysis with direct reasoning.`;
@@ -3241,8 +3265,8 @@ ${gatheredContextChunks.length > 0 ? `[GATHERED TOOL DATA & RESEARCH INTELLIGENC
         name: spec.name,
         icon: spec.icon || '🤖',
         status: specRes.ok ? 'completed' : 'failed',
-        providerName: specRes.providerName || specProvInfo.provider?.name || 'Primary',
-        model: specRes.model || specProvInfo.model || specCfg.modelId,
+        providerName: specRes.providerName || slotProvInfo.provider?.name || 'Primary',
+        model: specRes.model || slotProvInfo.model || slotCfg.modelId,
         durationMs: specDuration,
         summary: toolsSummary,
         outputPreview: specOutputText,
