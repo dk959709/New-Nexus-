@@ -1,5 +1,5 @@
 import { api } from '@/services/api';
-import { storage, DEFAULT_AGENT_SYSTEM_PROMPTS, DEFAULT_JARVIS_CONFIG, DEFAULT_SPECIALIST_CONFIG, DEFAULT_SPECIALIST_SLOT_CONFIGS, DEFAULT_IMAGE_PROVIDERS } from '@/lib/storage';
+import { storage, DEFAULT_AGENT_SYSTEM_PROMPTS, DEFAULT_NEW_AGENT_PLANNER_PROMPT, DEFAULT_JARVIS_CONFIG, DEFAULT_SPECIALIST_CONFIG, DEFAULT_SPECIALIST_SLOT_CONFIGS, DEFAULT_IMAGE_PROVIDERS } from '@/lib/storage';
 import { getLocation } from '@/services/location';
 import {
   searchWikipedia,
@@ -2981,66 +2981,27 @@ Please perform your specialized processing for this inquiry. Provide clear, conc
       model: provInfo.model || pCfg.modelId,
     });
 
-    const dynamicPlannerSystemPrompt = `Current date and time: ${currentDateTime}
+    // =========================================================================
+    // ISOLATED PROMPT ARCHITECTURE: NEW AGENT / DYNAMIC SPECIALIST PLANNER PROMPT
+    // =========================================================================
+    // CRITICAL ARCHITECTURAL ISOLATION RULE:
+    // This prompt is STRICTLY and EXCLUSIVELY executed for New Agent mode (the 5-node
+    // dynamic pipeline: Planner -> 3 Specialists -> Synthesizer).
+    // It contains ONLY instructions for analyzing the inquiry, formulating 3 domain
+    // specialists, assigning tools (search, wikipedia, news, weather, webFetch), and
+    // returning the specialist JSON schema.
+    //
+    // DO NOT MERGE standard routing rules (needsResearch, needsNews, needsCode, needsFactCheck,
+    // needsReview, needsDiagram, needsChart, needsImage, etc.) into this prompt.
+    // Standard routing is completely bypassed in New Agent mode for maximum token savings.
+    // =========================================================================
+    const dynamicPromptTemplate = pCfg.newAgentSystemPrompt || DEFAULT_NEW_AGENT_PLANNER_PROMPT;
+    let dynamicPlannerSystemPrompt = dynamicPromptTemplate.replace('{query}', effectiveSpecialistQuery);
+    dynamicPlannerSystemPrompt = `Current date and time: ${currentDateTime}\n\n${dynamicPlannerSystemPrompt}`;
 
-You are the JARVIS Dynamic Pipeline Planner.
-Your role is to analyze the user's inquiry and formulate exactly 3 custom specialized expert agents to investigate different critical angles of the query.
-
-AVAILABLE AGENT TOOLS:
-- "search": Web search engine (Tavily/Exa/DuckDuckGo) to discover latest verified info.
-- "wikipedia": Comprehensive encyclopedia lookup.
-- "news": Recent breaking news articles and journalistic reporting.
-- "weather": Real-time meteorological forecast.
-- "webFetch": Direct webpage HTML fetching and parsing (use only if user query contains an actual URL).
-
-${detectedUrl ? `[DETECTED URL IN USER QUERY]: "${detectedUrl}" -> You may assign "webFetch" with targetUrl: "${detectedUrl}" to specialist(s) that need to inspect this webpage.` : ''}
-
-REQUIREMENTS:
-1. Analyze the query/task: "${effectiveSpecialistQuery}"
-2. Generate EXACTLY 3 distinct specialists with complementary expertise (e.g. Technical Specialist, Empirical/Comparative Analyst, Practical Strategy Specialist).
-3. Assign tools selectively per specialist — only assign tools that are directly helpful for that specialist's specific angle (do not assign tools globally or blindly).
-4. Output STRICT JSON adhering to this schema:
-\`\`\`json
-{
-  "task": "Summary of user request",
-  "plan": [
-    "Step 1...",
-    "Step 2...",
-    "Step 3..."
-  ],
-  "specialists": [
-    {
-      "id": "specialist_1",
-      "name": "Specialist Name",
-      "role": "Concise role description",
-      "systemPrompt": "Comprehensive, rigorous system instruction for this specialist",
-      "assignedTools": ["search", "wikipedia"],
-      "searchQuery": "custom query if needed",
-      "wikipediaQuery": "custom query if needed",
-      "newsQuery": "custom query if needed",
-      "weatherLocation": "location if weather tool",
-      "targetUrl": "${detectedUrl || ''}"
-    },
-    {
-      "id": "specialist_2",
-      "name": "Specialist Name",
-      "role": "Concise role description",
-      "systemPrompt": "Comprehensive, rigorous system instruction for this specialist",
-      "assignedTools": ["search", "news"],
-      "searchQuery": "custom query if needed",
-      "newsQuery": "custom query if needed"
-    },
-    {
-      "id": "specialist_3",
-      "name": "Specialist Name",
-      "role": "Concise role description",
-      "systemPrompt": "Comprehensive, rigorous system instruction for this specialist",
-      "assignedTools": ["search"],
-      "searchQuery": "custom query if needed"
+    if (detectedUrl) {
+      dynamicPlannerSystemPrompt += `\n\n[DETECTED URL IN USER QUERY]: "${detectedUrl}" -> You may assign "webFetch" with targetUrl: "${detectedUrl}" to specialist(s) that need to inspect this webpage.`;
     }
-  ]
-}
-\`\`\``;
 
     const planRes = await callAgent('planner', [
       { role: 'system', content: dynamicPlannerSystemPrompt },
@@ -3544,6 +3505,17 @@ Please synthesize the definitive comprehensive answer.`;
       model: provInfo.model,
     });
 
+    // =========================================================================
+    // ISOLATED PROMPT ARCHITECTURE: STANDARD JARVIS ROUTING PLANNER PROMPT
+    // =========================================================================
+    // CRITICAL ARCHITECTURAL ISOLATION RULE:
+    // This prompt is STRICTLY and EXCLUSIVELY executed for Normal JARVIS queries
+    // (standard multi-agent routing: research, weather, news, code, diagram, chart, etc.).
+    // It is completely free of any Dynamic Specialist / New Agent creation rules.
+    //
+    // DO NOT MERGE Dynamic Specialist generation logic into this prompt.
+    // Standard queries use this lean, isolated prompt to minimize token consumption.
+    // =========================================================================
     const defaultPromptTemplate = DEFAULT_AGENT_SYSTEM_PROMPTS.planner;
     let activePrompt = (pCfg.systemPrompt || defaultPromptTemplate).replace('{query}', query);
 

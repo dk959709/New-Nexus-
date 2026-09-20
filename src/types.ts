@@ -265,6 +265,7 @@ export interface JarvisAgentConfig {
   fallbackProviderId?: string;
   fallbackModelId?: string;
   systemPrompt?: string;
+  newAgentSystemPrompt?: string;
   responseLanguage?: string;
 }
 

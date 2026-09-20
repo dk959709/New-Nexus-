@@ -246,6 +246,9 @@ export function JarvisSettings({ onSaved }: JarvisSettingsProps) {
     coder: false,
   });
 
+  // Active prompt tab for Planner agent ('standard' vs 'newAgent')
+  const [plannerPromptTab, setPlannerPromptTab] = useState<'standard' | 'newAgent'>('standard');
+
   // Modal / drawer state for "Add New Custom Agent"
   const [showAddModal, setShowAddModal] = useState(false);
   const [showResetConfirmModal, setShowResetConfirmModal] = useState(false);
@@ -327,7 +330,13 @@ export function JarvisSettings({ onSaved }: JarvisSettingsProps) {
     }
   };
 
-  const handleResetAgentPrompt = (agentId: string) => {
+  const handleResetAgentPrompt = (agentId: string, subKey?: 'standard' | 'newAgent') => {
+    if (agentId === 'planner' && subKey === 'newAgent') {
+      handleAgentChange('planner', { newAgentSystemPrompt: DEFAULT_AGENT_SYSTEM_PROMPTS.newAgentPlanner });
+      setSaveStatus('Restored default prompt for New Agent Dynamic Planner.');
+      setTimeout(() => setSaveStatus(null), 3000);
+      return;
+    }
     const defaultPrompt = DEFAULT_AGENT_SYSTEM_PROMPTS[agentId];
     if (defaultPrompt) {
       handleAgentChange(agentId, { systemPrompt: defaultPrompt });
@@ -1215,112 +1224,344 @@ export function JarvisSettings({ onSaved }: JarvisSettingsProps) {
                       overflow: 'hidden',
                     }}
                   >
-                    {/* Section Header with Toggle & Reset Button */}
-                    <div
-                      style={{
-                        padding: '12px 16px',
-                        background: 'rgba(10,22,36,0.9)',
-                        borderBottom: isPromptOpen ? '1px solid rgba(97,215,201,0.2)' : 'none',
-                        display: 'flex',
-                        alignItems: 'center',
-                        justifyContent: 'space-between',
-                        flexWrap: 'wrap',
-                        gap: '10px',
-                      }}
-                    >
-                      <div
-                        onClick={() => togglePromptExpanded(agentId)}
-                        style={{
-                          display: 'flex',
-                          alignItems: 'center',
-                          gap: '8px',
-                          cursor: 'pointer',
-                          userSelect: 'none',
-                        }}
-                      >
-                        <FileCode2 size={16} className="text-cyan-400" />
-                        <span style={{ fontSize: '12px', fontWeight: 700, fontFamily: 'DM Mono', color: '#61d7c9' }}>
-                          SYSTEM PROMPT / INSTRUCTIONS
-                        </span>
-                        <span style={{ fontSize: '11px', color: 'var(--muted)' }}>
-                          ({currentPrompt.length} chars)
-                        </span>
-                        {isPromptOpen ? <ChevronUp size={15} /> : <ChevronDown size={15} />}
-                      </div>
-
-                      <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
-                        {isCustomizedPrompt && (
-                          <span style={{ fontSize: '11px', color: '#fbbf24', fontFamily: 'DM Mono' }}>
-                            ● Custom Prompt
-                          </span>
-                        )}
-                        <button
-                          type="button"
-                          onClick={() => handleResetAgentPrompt(agentId)}
+                    {agentId === 'planner' ? (
+                      /* PLANNER AGENT: DUAL ISOLATED PROMPTS (Standard vs New Agent Mode) */
+                      <div>
+                        {/* Section Header */}
+                        <div
                           style={{
-                            padding: '4px 10px',
-                            fontSize: '11px',
-                            fontFamily: 'DM Mono',
-                            borderRadius: '6px',
-                            background: 'rgba(255,255,255,0.06)',
-                            border: '1px solid rgba(255,255,255,0.18)',
-                            color: '#cbd5e1',
-                            cursor: 'pointer',
-                            display: 'inline-flex',
+                            padding: '12px 16px',
+                            background: 'rgba(10,22,36,0.9)',
+                            borderBottom: isPromptOpen ? '1px solid rgba(97,215,201,0.2)' : 'none',
+                            display: 'flex',
                             alignItems: 'center',
-                            gap: '4px',
+                            justifyContent: 'space-between',
+                            flexWrap: 'wrap',
+                            gap: '10px',
                           }}
-                          title="Restore default system prompt for this agent"
                         >
-                          <RotateCcw size={11} />
-                          Reset to Default
-                        </button>
-                      </div>
-                    </div>
-
-                    {/* Expandable Textarea & Info */}
-                    {isPromptOpen && (
-                      <div style={{ padding: '14px 16px', display: 'grid', gap: '10px' }}>
-                        {helpInfo && (
                           <div
+                            onClick={() => togglePromptExpanded('planner')}
                             style={{
-                              fontSize: '11px',
-                              color: 'var(--muted)',
                               display: 'flex',
                               alignItems: 'center',
-                              gap: '6px',
-                              flexWrap: 'wrap',
+                              gap: '8px',
+                              cursor: 'pointer',
+                              userSelect: 'none',
                             }}
                           >
-                            <Info size={13} className="text-cyan-400 shrink-0" />
-                            <span>{helpInfo.purpose}</span>
-                            {helpInfo.vars.length > 0 && (
-                              <span style={{ fontFamily: 'DM Mono', color: '#61d7c9' }}>
-                                Available Variables: {helpInfo.vars.join(', ')}
+                            <FileCode2 size={16} className="text-cyan-400" />
+                            <span style={{ fontSize: '12px', fontWeight: 700, fontFamily: 'DM Mono', color: '#61d7c9' }}>
+                              SYSTEM PROMPTS (ISOLATED DUAL-ENGINE)
+                            </span>
+                            <span style={{ fontSize: '11px', color: 'var(--muted)' }}>
+                              {plannerPromptTab === 'standard'
+                                ? `Standard: ${(agent.systemPrompt || DEFAULT_AGENT_SYSTEM_PROMPTS.planner).length} chars`
+                                : `New Agent: ${(agent.newAgentSystemPrompt || DEFAULT_AGENT_SYSTEM_PROMPTS.newAgentPlanner).length} chars`}
+                            </span>
+                            {isPromptOpen ? <ChevronUp size={15} /> : <ChevronDown size={15} />}
+                          </div>
+
+                          <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                            {plannerPromptTab === 'standard' && (agent.systemPrompt || '').trim() !== DEFAULT_AGENT_SYSTEM_PROMPTS.planner.trim() && (
+                              <span style={{ fontSize: '11px', color: '#fbbf24', fontFamily: 'DM Mono' }}>
+                                ● Custom Standard Prompt
                               </span>
+                            )}
+                            {plannerPromptTab === 'newAgent' && (agent.newAgentSystemPrompt || '').trim() !== DEFAULT_AGENT_SYSTEM_PROMPTS.newAgentPlanner.trim() && (
+                              <span style={{ fontSize: '11px', color: '#34d399', fontFamily: 'DM Mono' }}>
+                                ● Custom New Agent Prompt
+                              </span>
+                            )}
+                            <button
+                              type="button"
+                              onClick={() => handleResetAgentPrompt('planner', plannerPromptTab)}
+                              style={{
+                                padding: '4px 10px',
+                                fontSize: '11px',
+                                fontFamily: 'DM Mono',
+                                borderRadius: '6px',
+                                background: 'rgba(255,255,255,0.06)',
+                                border: '1px solid rgba(255,255,255,0.18)',
+                                color: '#cbd5e1',
+                                cursor: 'pointer',
+                                display: 'inline-flex',
+                                alignItems: 'center',
+                                gap: '4px',
+                              }}
+                              title={`Restore default ${plannerPromptTab === 'standard' ? 'Standard' : 'New Agent'} prompt`}
+                            >
+                              <RotateCcw size={11} />
+                              Reset Active Prompt
+                            </button>
+                          </div>
+                        </div>
+
+                        {/* Expandable Dual-Prompt Editor */}
+                        {isPromptOpen && (
+                          <div style={{ padding: '14px 16px', display: 'grid', gap: '12px' }}>
+                            {/* Sub-Tabs: Standard vs New Agent Mode */}
+                            <div
+                              style={{
+                                display: 'flex',
+                                gap: '8px',
+                                borderBottom: '1px solid rgba(97,215,201,0.15)',
+                                paddingBottom: '10px',
+                                flexWrap: 'wrap',
+                              }}
+                            >
+                              <button
+                                type="button"
+                                onClick={() => setPlannerPromptTab('standard')}
+                                style={{
+                                  padding: '6px 14px',
+                                  fontSize: '12px',
+                                  fontWeight: 700,
+                                  fontFamily: 'DM Mono',
+                                  borderRadius: '8px',
+                                  border: plannerPromptTab === 'standard'
+                                    ? '1px solid rgba(97,215,201,0.6)'
+                                    : '1px solid rgba(255,255,255,0.1)',
+                                  background: plannerPromptTab === 'standard'
+                                    ? 'rgba(97,215,201,0.2)'
+                                    : 'rgba(255,255,255,0.04)',
+                                  color: plannerPromptTab === 'standard' ? '#61d7c9' : '#94a3b8',
+                                  cursor: 'pointer',
+                                  display: 'inline-flex',
+                                  alignItems: 'center',
+                                  gap: '6px',
+                                }}
+                              >
+                                <span>🧭 Standard Planner Prompt</span>
+                                <span style={{ fontSize: '10px', opacity: 0.8, padding: '1px 6px', borderRadius: '4px', background: 'rgba(0,0,0,0.3)' }}>
+                                  {(agent.systemPrompt || DEFAULT_AGENT_SYSTEM_PROMPTS.planner).length} chars
+                                </span>
+                              </button>
+
+                              <button
+                                type="button"
+                                onClick={() => setPlannerPromptTab('newAgent')}
+                                style={{
+                                  padding: '6px 14px',
+                                  fontSize: '12px',
+                                  fontWeight: 700,
+                                  fontFamily: 'DM Mono',
+                                  borderRadius: '8px',
+                                  border: plannerPromptTab === 'newAgent'
+                                    ? '1px solid rgba(52,211,153,0.6)'
+                                    : '1px solid rgba(255,255,255,0.1)',
+                                  background: plannerPromptTab === 'newAgent'
+                                    ? 'rgba(52,211,153,0.2)'
+                                    : 'rgba(255,255,255,0.04)',
+                                  color: plannerPromptTab === 'newAgent' ? '#34d399' : '#94a3b8',
+                                  cursor: 'pointer',
+                                  display: 'inline-flex',
+                                  alignItems: 'center',
+                                  gap: '6px',
+                                }}
+                              >
+                                <span>⚡ New Agent Mode Prompt</span>
+                                <span style={{ fontSize: '10px', opacity: 0.8, padding: '1px 6px', borderRadius: '4px', background: 'rgba(0,0,0,0.3)' }}>
+                                  {(agent.newAgentSystemPrompt || DEFAULT_AGENT_SYSTEM_PROMPTS.newAgentPlanner).length} chars
+                                </span>
+                              </button>
+                            </div>
+
+                            {/* Tab 1: Standard Prompt */}
+                            {plannerPromptTab === 'standard' && (
+                              <div style={{ display: 'grid', gap: '8px' }}>
+                                <div
+                                  style={{
+                                    fontSize: '11px',
+                                    color: '#94a3b8',
+                                    display: 'flex',
+                                    alignItems: 'center',
+                                    gap: '6px',
+                                    lineHeight: 1.5,
+                                  }}
+                                >
+                                  <Info size={13} className="text-cyan-400 shrink-0" />
+                                  <span>
+                                    <strong>Standard Routing Engine:</strong> Used for all normal JARVIS queries & slash commands (<code>/search</code>, <code>/web</code>, <code>/code</code>, <code>/image</code>, etc.). Contains routing directives for web search, weather, news, wikipedia, code, diagrams, charts, and facts without loading any dynamic specialist creation rules.
+                                  </span>
+                                </div>
+
+                                <textarea
+                                  value={agent.systemPrompt || DEFAULT_AGENT_SYSTEM_PROMPTS.planner}
+                                  onChange={(e) => handleAgentChange('planner', { systemPrompt: e.target.value })}
+                                  rows={8}
+                                  style={{
+                                    width: '100%',
+                                    padding: '12px',
+                                    borderRadius: '8px',
+                                    background: 'rgba(3,8,14,0.95)',
+                                    border: '1px solid rgba(97,215,201,0.3)',
+                                    color: '#e2e8f0',
+                                    fontSize: '12px',
+                                    fontFamily: 'DM Mono, monospace',
+                                    lineHeight: 1.6,
+                                    resize: 'vertical',
+                                    outline: 'none',
+                                  }}
+                                  placeholder="Enter standard JARVIS routing system prompt..."
+                                />
+                              </div>
+                            )}
+
+                            {/* Tab 2: New Agent Dynamic Specialist Prompt */}
+                            {plannerPromptTab === 'newAgent' && (
+                              <div style={{ display: 'grid', gap: '8px' }}>
+                                <div
+                                  style={{
+                                    fontSize: '11px',
+                                    color: '#94a3b8',
+                                    display: 'flex',
+                                    alignItems: 'center',
+                                    gap: '6px',
+                                    lineHeight: 1.5,
+                                  }}
+                                >
+                                  <Info size={13} className="text-emerald-400 shrink-0" />
+                                  <span>
+                                    <strong>Dynamic 5-Node Specialist Engine:</strong> Used strictly when the "New Agent" toggle is ON or when <code>/newagent [task]</code> is triggered. Instructs the Planner to analyze the query and formulate exactly 3 custom specialized expert agents with per-agent tool assignments.
+                                  </span>
+                                </div>
+
+                                <textarea
+                                  value={agent.newAgentSystemPrompt || DEFAULT_AGENT_SYSTEM_PROMPTS.newAgentPlanner}
+                                  onChange={(e) => handleAgentChange('planner', { newAgentSystemPrompt: e.target.value })}
+                                  rows={8}
+                                  style={{
+                                    width: '100%',
+                                    padding: '12px',
+                                    borderRadius: '8px',
+                                    background: 'rgba(3,8,14,0.95)',
+                                    border: '1px solid rgba(52,211,153,0.3)',
+                                    color: '#e2e8f0',
+                                    fontSize: '12px',
+                                    fontFamily: 'DM Mono, monospace',
+                                    lineHeight: 1.6,
+                                    resize: 'vertical',
+                                    outline: 'none',
+                                  }}
+                                  placeholder="Enter New Agent mode dynamic specialist formulation prompt..."
+                                />
+                              </div>
                             )}
                           </div>
                         )}
-
-                        <textarea
-                          value={currentPrompt}
-                          onChange={(e) => handleAgentChange(agentId, { systemPrompt: e.target.value })}
-                          rows={7}
+                      </div>
+                    ) : (
+                      /* OTHER BUILT-IN AGENTS (Single System Prompt) */
+                      <div>
+                        {/* Section Header with Toggle & Reset Button */}
+                        <div
                           style={{
-                            width: '100%',
-                            padding: '12px',
-                            borderRadius: '8px',
-                            background: 'rgba(3,8,14,0.95)',
-                            border: '1px solid rgba(97,215,201,0.3)',
-                            color: '#e2e8f0',
-                            fontSize: '12px',
-                            fontFamily: 'DM Mono, monospace',
-                            lineHeight: 1.6,
-                            resize: 'vertical',
-                            outline: 'none',
+                            padding: '12px 16px',
+                            background: 'rgba(10,22,36,0.9)',
+                            borderBottom: isPromptOpen ? '1px solid rgba(97,215,201,0.2)' : 'none',
+                            display: 'flex',
+                            alignItems: 'center',
+                            justifyContent: 'space-between',
+                            flexWrap: 'wrap',
+                            gap: '10px',
                           }}
-                          placeholder={`Enter custom system instructions for ${agent.name}...`}
-                        />
+                        >
+                          <div
+                            onClick={() => togglePromptExpanded(agentId)}
+                            style={{
+                              display: 'flex',
+                              alignItems: 'center',
+                              gap: '8px',
+                              cursor: 'pointer',
+                              userSelect: 'none',
+                            }}
+                          >
+                            <FileCode2 size={16} className="text-cyan-400" />
+                            <span style={{ fontSize: '12px', fontWeight: 700, fontFamily: 'DM Mono', color: '#61d7c9' }}>
+                              SYSTEM PROMPT / INSTRUCTIONS
+                            </span>
+                            <span style={{ fontSize: '11px', color: 'var(--muted)' }}>
+                              ({currentPrompt.length} chars)
+                            </span>
+                            {isPromptOpen ? <ChevronUp size={15} /> : <ChevronDown size={15} />}
+                          </div>
+
+                          <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                            {isCustomizedPrompt && (
+                              <span style={{ fontSize: '11px', color: '#fbbf24', fontFamily: 'DM Mono' }}>
+                                ● Custom Prompt
+                              </span>
+                            )}
+                            <button
+                              type="button"
+                              onClick={() => handleResetAgentPrompt(agentId)}
+                              style={{
+                                padding: '4px 10px',
+                                fontSize: '11px',
+                                fontFamily: 'DM Mono',
+                                borderRadius: '6px',
+                                background: 'rgba(255,255,255,0.06)',
+                                border: '1px solid rgba(255,255,255,0.18)',
+                                color: '#cbd5e1',
+                                cursor: 'pointer',
+                                display: 'inline-flex',
+                                alignItems: 'center',
+                                gap: '4px',
+                              }}
+                              title="Restore default system prompt for this agent"
+                            >
+                              <RotateCcw size={11} />
+                              Reset to Default
+                            </button>
+                          </div>
+                        </div>
+
+                        {/* Expandable Textarea & Info */}
+                        {isPromptOpen && (
+                          <div style={{ padding: '14px 16px', display: 'grid', gap: '10px' }}>
+                            {helpInfo && (
+                              <div
+                                style={{
+                                  fontSize: '11px',
+                                  color: 'var(--muted)',
+                                  display: 'flex',
+                                  alignItems: 'center',
+                                  gap: '6px',
+                                  flexWrap: 'wrap',
+                                }}
+                              >
+                                <Info size={13} className="text-cyan-400 shrink-0" />
+                                <span>{helpInfo.purpose}</span>
+                                {helpInfo.vars.length > 0 && (
+                                  <span style={{ fontFamily: 'DM Mono', color: '#61d7c9' }}>
+                                    Available Variables: {helpInfo.vars.join(', ')}
+                                  </span>
+                                )}
+                              </div>
+                            )}
+
+                            <textarea
+                              value={currentPrompt}
+                              onChange={(e) => handleAgentChange(agentId, { systemPrompt: e.target.value })}
+                              rows={7}
+                              style={{
+                                width: '100%',
+                                padding: '12px',
+                                borderRadius: '8px',
+                                background: 'rgba(3,8,14,0.95)',
+                                border: '1px solid rgba(97,215,201,0.3)',
+                                color: '#e2e8f0',
+                                fontSize: '12px',
+                                fontFamily: 'DM Mono, monospace',
+                                lineHeight: 1.6,
+                                resize: 'vertical',
+                                outline: 'none',
+                              }}
+                              placeholder={`Enter custom system instructions for ${agent.name}...`}
+                            />
+                          </div>
+                        )}
                       </div>
                     )}
                   </div>
