@@ -324,6 +324,7 @@ export interface JarvisSystemConfig {
   imageModeDefault?: boolean;
   coderModeDefault?: boolean;
   newAgentModeDefault?: boolean;
+  specialistConfig?: JarvisAgentConfig;
   agents: Record<string, JarvisAgentConfig>;
   customAgents?: CustomJarvisAgentConfig[];
 }

@@ -1,5 +1,5 @@
 import { api } from '@/services/api';
-import { storage, DEFAULT_AGENT_SYSTEM_PROMPTS, DEFAULT_JARVIS_CONFIG, DEFAULT_IMAGE_PROVIDERS } from '@/lib/storage';
+import { storage, DEFAULT_AGENT_SYSTEM_PROMPTS, DEFAULT_JARVIS_CONFIG, DEFAULT_SPECIALIST_CONFIG, DEFAULT_IMAGE_PROVIDERS } from '@/lib/storage';
 import { getLocation } from '@/services/location';
 import {
   searchWikipedia,
@@ -2488,6 +2488,15 @@ export async function runJarvisPipeline(
         liveFresh?.agents?.coder || agentConfigs.coder || DEFAULT_JARVIS_CONFIG.agents.coder;
       return { ...baseCoder, enabled: coderMode };
     }
+    if (agentId === 'dynamicSpecialists' || agentId.startsWith('specialist_')) {
+      const liveFresh = storage.getJarvisConfig();
+      return (
+        liveFresh?.specialistConfig ||
+        effectiveConfig?.specialistConfig ||
+        DEFAULT_JARVIS_CONFIG.specialistConfig ||
+        DEFAULT_SPECIALIST_CONFIG
+      );
+    }
     const liveFresh = storage.getJarvisConfig();
     if (liveFresh.agents && liveFresh.agents[agentId as keyof typeof liveFresh.agents]) {
       return liveFresh.agents[agentId as keyof typeof liveFresh.agents];
@@ -2879,6 +2888,11 @@ Please perform your specialized processing for this inquiry. Provide clear, conc
 
     const pCfg = agentConfigs.planner || DEFAULT_JARVIS_CONFIG.agents.planner;
     const provInfo = resolveProviderConfig(pCfg);
+    const specCfg =
+      effectiveConfig.specialistConfig ||
+      storage.getJarvisConfig().specialistConfig ||
+      DEFAULT_SPECIALIST_CONFIG;
+    const specProvInfo = resolveProviderConfig(specCfg);
     const sCfg = agentConfigs.finalSynthesizer || DEFAULT_JARVIS_CONFIG.agents.finalSynthesizer;
     const sProvInfo = resolveProviderConfig(sCfg);
 
@@ -2898,8 +2912,8 @@ Please perform your specialized processing for this inquiry. Provide clear, conc
         name: sp.name,
         icon: sp.icon || '🤖',
         status: 'pending',
-        providerName: provInfo.provider?.name || 'Primary',
-        model: provInfo.model || pCfg.modelId,
+        providerName: specProvInfo.provider?.name || 'Primary',
+        model: specProvInfo.model || specCfg.modelId,
         specialistRole: sp.role,
       });
     });
@@ -3068,8 +3082,8 @@ REQUIREMENTS:
         name: spec.name,
         icon: spec.icon || '🤖',
         status: 'running',
-        providerName: provInfo.provider?.name || 'Primary',
-        model: provInfo.model || pCfg.modelId,
+        providerName: specProvInfo.provider?.name || 'Primary',
+        model: specProvInfo.model || specCfg.modelId,
         specialistRole: spec.role,
         assignedTools: spec.assignedTools,
       });
@@ -3205,10 +3219,10 @@ Task: "${taskDescription}"
 
 ${gatheredContextChunks.length > 0 ? `[GATHERED TOOL DATA & RESEARCH INTELLIGENCE]\n${gatheredContextChunks.join('\n\n')}\n\n` : ''}Please provide your expert perspective, detailed findings, and domain-specific evidence.`;
 
-      const specRes = await callAgent('researcher', [
+      const specRes = await callAgent(spec.id, [
         { role: 'system', content: specialistSystemPrompt },
         { role: 'user', content: specialistUserMessage },
-      ], 2400);
+      ], specCfg.maxTokens || 2400);
 
       const specDuration = Date.now() - specStart;
       const specOutputText = specRes.ok && specRes.text ? specRes.text : `[${spec.name}] Completed domain analysis with direct reasoning.`;
@@ -3227,8 +3241,8 @@ ${gatheredContextChunks.length > 0 ? `[GATHERED TOOL DATA & RESEARCH INTELLIGENC
         name: spec.name,
         icon: spec.icon || '🤖',
         status: specRes.ok ? 'completed' : 'failed',
-        providerName: specRes.providerName || provInfo.provider?.name || 'Primary',
-        model: specRes.model || provInfo.model,
+        providerName: specRes.providerName || specProvInfo.provider?.name || 'Primary',
+        model: specRes.model || specProvInfo.model || specCfg.modelId,
         durationMs: specDuration,
         summary: toolsSummary,
         outputPreview: specOutputText,

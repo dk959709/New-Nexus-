@@ -802,6 +802,21 @@ Instructions:
 - Deliver high-leverage technical engineering solutions with zero conversational fluff.`,
 };
 
+export const DEFAULT_SPECIALIST_CONFIG: JarvisAgentConfig = {
+  id: 'dynamicSpecialists',
+  name: 'Dynamic Specialist Agents',
+  role: 'Domain-Tailored Multi-Angle Investigation',
+  description: 'Shared provider, model, token budget, and failover configuration for all 3 dynamically-generated specialist agents when "New Agent" mode is active.',
+  icon: '🤖',
+  providerId: 'existing',
+  modelId: 'deepseek/deepseek-chat',
+  enabled: true,
+  maxTokens: 2400,
+  enableFailover: false,
+  fallbackProviderId: 'existing',
+  fallbackModelId: '',
+};
+
 export const DEFAULT_JARVIS_CONFIG: JarvisSystemConfig = {
   deepResearchDefault: false,
   diagramModeDefault: false,
@@ -809,6 +824,7 @@ export const DEFAULT_JARVIS_CONFIG: JarvisSystemConfig = {
   imageModeDefault: false,
   coderModeDefault: true,
   newAgentModeDefault: false,
+  specialistConfig: DEFAULT_SPECIALIST_CONFIG,
   customAgents: [],
   agents: {
     planner: {
@@ -1264,6 +1280,11 @@ export const storage = {
         stored.coderModeDefault ??
         (stored.agents?.coder?.enabled !== undefined ? stored.agents.coder.enabled : DEFAULT_JARVIS_CONFIG.coderModeDefault),
       customAgents: Array.isArray(stored.customAgents) ? stored.customAgents : [],
+      specialistConfig: {
+        ...DEFAULT_SPECIALIST_CONFIG,
+        ...(stored.specialistConfig || {}),
+        maxTokens: Math.max(64, stored.specialistConfig?.maxTokens || DEFAULT_SPECIALIST_CONFIG.maxTokens),
+      },
       agents: {
         planner: {
           ...DEFAULT_JARVIS_CONFIG.agents.planner,
