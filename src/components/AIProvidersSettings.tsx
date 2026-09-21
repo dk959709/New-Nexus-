@@ -30,6 +30,11 @@ import {
   DEFAULT_PUTER_MODEL,
   PUTER_TIMEOUT_ERROR_MESSAGE,
 } from '@/services/puterImageService';
+import {
+  buildImageRequestBody,
+  buildImageRequestHeaders,
+  extractImageUrlFromJson,
+} from '@/lib/imageProviderUtils';
 
 function maskKey(key: string): string {
   if (!key) return '';
@@ -299,8 +304,10 @@ export function AIProvidersSettings() {
         : editingImageProvider.url.trim(),
       model: isSdk
         ? (editingImageProvider.model || DEFAULT_PUTER_MODEL)
-        : editingImageProvider.model,
+        : (editingImageProvider.model?.trim() || undefined),
       requestType: editingImageProvider.requestType || 'get',
+      customHeaderName: editingImageProvider.customHeaderName?.trim() || undefined,
+      requestBodyTemplate: editingImageProvider.requestBodyTemplate?.trim() || undefined,
       keys: finalKeys,
     };
 
@@ -501,6 +508,19 @@ export function AIProvidersSettings() {
     } else {
       if (!editingImageProvider) return;
       const newKeyId = `img_key_${Date.now()}_${editingImageProvider.keys.length + 1}`;
+      const isPixazo =
+        editingImageProvider.name.toLowerCase().includes('pixazo') ||
+        editingImageProvider.url.toLowerCase().includes('pixazo') ||
+        editingImageProvider.customHeaderName?.includes('Ocp-Apim');
+      const isCloudflare =
+        editingImageProvider.name.toLowerCase().includes('cloudflare') ||
+        editingImageProvider.url.toLowerCase().includes('cloudflare');
+      const labelPrefix = isPixazo
+        ? 'Pixazo API Key'
+        : isCloudflare
+        ? 'Cloudflare API Token'
+        : 'API Key';
+
       setEditingImageProvider({
         ...editingImageProvider,
         keys: [
@@ -508,7 +528,7 @@ export function AIProvidersSettings() {
           {
             id: newKeyId,
             key: '',
-            label: `API Key ${editingImageProvider.keys.length + 1}`,
+            label: `${labelPrefix} ${editingImageProvider.keys.length + 1}`,
             status: 'untested',
           },
         ],
@@ -643,13 +663,20 @@ export function AIProvidersSettings() {
 
       let resp: Response;
       if (isPost) {
+        const testHeaders = editingImageProvider
+          ? buildImageRequestHeaders(editingImageProvider, keyItem.key.trim())
+          : {
+              'Content-Type': 'application/json',
+              ...(keyItem.key.trim() ? { Authorization: `Bearer ${keyItem.key.trim()}` } : {}),
+            };
+        const testBody = editingImageProvider?.requestBodyTemplate
+          ? buildImageRequestBody(editingImageProvider.requestBodyTemplate, 'A simple geometric icon test', 1024, 1024)
+          : { inputs: 'A simple geometric icon test', prompt: 'A simple geometric icon test' };
+
         resp = await fetch(url.trim(), {
           method: 'POST',
-          headers: {
-            'Content-Type': 'application/json',
-            ...(keyItem.key.trim() ? { Authorization: `Bearer ${keyItem.key.trim()}` } : {}),
-          },
-          body: JSON.stringify({ inputs: 'A simple geometric icon test' }),
+          headers: testHeaders,
+          body: JSON.stringify(testBody),
           signal: controller.signal,
           mode: 'cors',
         });
@@ -856,14 +883,15 @@ export function AIProvidersSettings() {
               apiKey: keyToTest,
               apiToken: keyToTest,
             }
+          : provider.requestBodyTemplate
+          ? buildImageRequestBody(provider.requestBodyTemplate, 'A simple geometric test icon', 1024, 1024)
           : { inputs: 'A simple geometric icon test', prompt: 'A simple geometric test icon' };
+
+        const testHeaders = buildImageRequestHeaders(provider, keyToTest);
 
         resp = await fetch(testTargetUrl, {
           method: 'POST',
-          headers: {
-            'Content-Type': 'application/json',
-            ...(keyToTest ? { Authorization: `Bearer ${keyToTest}` } : {}),
-          },
+          headers: testHeaders,
           body: JSON.stringify(testPayload),
           signal: controller.signal,
           mode: 'cors',
@@ -896,8 +924,12 @@ export function AIProvidersSettings() {
               const errDetail = json.errors?.[0]?.message || json.errors?.[0] || json.error || 'API returned error';
               throw new Error(String(errDetail));
             }
-            if (json?.result?.image) {
+            if (json?.output) {
+              successMsg = '✓ Pixazo AI verified (image URL returned)';
+            } else if (json?.result?.image) {
               successMsg = '✓ Cloudflare Workers AI verified (image base64 returned)';
+            } else if (extractImageUrlFromJson(json)) {
+              successMsg = '✓ Image endpoint verified (image returned)';
             }
           } catch (jsonErr) {
             if (jsonErr instanceof Error && !jsonErr.message.includes('JSON')) {
@@ -2023,6 +2055,40 @@ export function AIProvidersSettings() {
                 onClick={() => {
                   setEditingImageProvider({
                     ...editingImageProvider,
+                    name: 'Pixazo AI',
+                    url: 'https://gateway.pixazo.ai/flux-1-schnell/v1/getData',
+                    requestType: 'post',
+                    model: 'Flux Schnell (Black Forest Labs)',
+                    customHeaderName: 'Ocp-Apim-Subscription-Key',
+                    requestBodyTemplate: '{\n  "prompt": "{prompt}",\n  "num_steps": 4,\n  "height": "{height}",\n  "width": "{width}"\n}',
+                    keys:
+                      editingImageProvider.keys && editingImageProvider.keys.length > 0
+                        ? editingImageProvider.keys.map((k, idx) => ({
+                            ...k,
+                            label: k.label && !k.label.includes('API Key') && !k.label.includes('Pollinations') && !k.label.includes('Hugging') && !k.label.includes('Cloudflare')
+                              ? k.label
+                              : `Pixazo API Key ${idx + 1}`,
+                          }))
+                        : [
+                            {
+                              id: `pixazo_key_${Date.now()}`,
+                              label: 'Pixazo API Key',
+                              key: '',
+                              status: 'untested',
+                            },
+                          ],
+                  });
+                }}
+                className="secondary-button"
+                style={{ fontSize: '11px', padding: '4px 10px', borderRadius: '5px', borderColor: 'rgba(168,85,247,0.35)', color: '#c084fc' }}
+              >
+                🔮 Pixazo AI
+              </button>
+              <button
+                type="button"
+                onClick={() => {
+                  setEditingImageProvider({
+                    ...editingImageProvider,
                     name: 'Cloudflare Workers AI',
                     url: 'https://api.cloudflare.com/client/v4/accounts/YOUR_ACCOUNT_ID/ai/run/@cf/black-forest-labs/flux-1-schnell',
                     requestType: 'post',
@@ -2430,6 +2496,120 @@ export function AIProvidersSettings() {
                   )}
                 </div>
               )}
+
+              {editingImageProvider.requestType === 'post' && (
+                <>
+                  <div>
+                    <label
+                      style={{
+                        display: 'block',
+                        fontSize: '12px',
+                        fontWeight: 600,
+                        color: 'var(--text)',
+                        marginBottom: '6px',
+                      }}
+                    >
+                      Model Identifier <span style={{ fontWeight: 400, color: 'var(--muted)' }}>(Optional)</span>
+                    </label>
+                    <input
+                      type="text"
+                      placeholder="e.g. Flux Schnell (Black Forest Labs) or @cf/black-forest-labs/flux-1-schnell"
+                      value={editingImageProvider.model || ''}
+                      onChange={(e) =>
+                        setEditingImageProvider({ ...editingImageProvider, model: e.target.value })
+                      }
+                      style={{
+                        width: '100%',
+                        boxSizing: 'border-box',
+                        background: 'rgba(10,22,28,0.8)',
+                        border: '1px solid var(--line)',
+                        borderRadius: '8px',
+                        padding: '10px 12px',
+                        color: '#fff',
+                        fontSize: '13px',
+                        outline: 'none',
+                      }}
+                    />
+                  </div>
+
+                  <div>
+                    <label
+                      style={{
+                        display: 'block',
+                        fontSize: '12px',
+                        fontWeight: 600,
+                        color: 'var(--text)',
+                        marginBottom: '6px',
+                      }}
+                    >
+                      Custom Authentication Header Name <span style={{ fontWeight: 400, color: 'var(--muted)' }}>(Optional)</span>
+                    </label>
+                    <input
+                      type="text"
+                      placeholder="e.g. Ocp-Apim-Subscription-Key (leave empty for Authorization: Bearer)"
+                      value={editingImageProvider.customHeaderName || ''}
+                      onChange={(e) =>
+                        setEditingImageProvider({ ...editingImageProvider, customHeaderName: e.target.value })
+                      }
+                      style={{
+                        width: '100%',
+                        boxSizing: 'border-box',
+                        background: 'rgba(10,22,28,0.8)',
+                        border: '1px solid var(--line)',
+                        borderRadius: '8px',
+                        padding: '10px 12px',
+                        color: '#fff',
+                        fontSize: '13px',
+                        outline: 'none',
+                        fontFamily: 'DM Mono, monospace',
+                      }}
+                    />
+                    <p style={{ margin: '5px 0 0', fontSize: '11px', color: 'var(--muted)' }}>
+                      {editingImageProvider.customHeaderName?.includes('Ocp-Apim')
+                        ? '🔑 Pixazo AI format: API key will be sent directly via Ocp-Apim-Subscription-Key header without "Bearer " prefix.'
+                        : 'If specified, the API key will be sent directly in this header (e.g. Ocp-Apim-Subscription-Key for Pixazo AI). If empty, standard "Authorization: Bearer <key>" is used.'}
+                    </p>
+                  </div>
+
+                  <div style={{ gridColumn: '1 / -1' }}>
+                    <label
+                      style={{
+                        display: 'block',
+                        fontSize: '12px',
+                        fontWeight: 600,
+                        color: 'var(--text)',
+                        marginBottom: '6px',
+                      }}
+                    >
+                      Request Body Template (JSON) <span style={{ fontWeight: 400, color: 'var(--muted)' }}>(Optional)</span>
+                    </label>
+                    <textarea
+                      rows={4}
+                      placeholder={'{\n  "prompt": "{prompt}",\n  "num_steps": 4,\n  "height": "{height}",\n  "width": "{width}"\n}'}
+                      value={editingImageProvider.requestBodyTemplate || ''}
+                      onChange={(e) =>
+                        setEditingImageProvider({ ...editingImageProvider, requestBodyTemplate: e.target.value })
+                      }
+                      style={{
+                        width: '100%',
+                        boxSizing: 'border-box',
+                        background: 'rgba(10,22,28,0.8)',
+                        border: '1px solid var(--line)',
+                        borderRadius: '8px',
+                        padding: '10px 12px',
+                        color: '#fff',
+                        fontSize: '12px',
+                        outline: 'none',
+                        fontFamily: 'DM Mono, monospace',
+                        resize: 'vertical',
+                      }}
+                    />
+                    <p style={{ margin: '5px 0 0', fontSize: '11px', color: 'var(--muted)' }}>
+                      JSON payload template. Supported dynamic placeholders: <code>{'{prompt}'}</code> (user's prompt), <code>{'{width}'}</code>, and <code>{'{height}'}</code> (dynamically populated from selected aspect ratio in Image Studio).
+                    </p>
+                  </div>
+                </>
+              )}
             </div>
           )}
 
@@ -2609,7 +2789,18 @@ export function AIProvidersSettings() {
                       {/* Key Label */}
                       <input
                         type="text"
-                        placeholder={`Key ${index + 1}`}
+                        placeholder={
+                          providerType === 'image'
+                            ? editingImageProvider?.name?.toLowerCase().includes('pixazo') ||
+                              editingImageProvider?.url?.toLowerCase().includes('pixazo') ||
+                              editingImageProvider?.customHeaderName?.includes('Ocp-Apim')
+                              ? 'Pixazo API Key'
+                              : editingImageProvider?.name?.toLowerCase().includes('cloudflare') ||
+                                editingImageProvider?.url?.toLowerCase().includes('cloudflare')
+                              ? 'Cloudflare API Token'
+                              : 'API Key'
+                            : `Key ${index + 1}`
+                        }
                         value={keyItem.label || ''}
                         onChange={(e) => {
                           const val = e.target.value;
@@ -2658,8 +2849,12 @@ export function AIProvidersSettings() {
                               ? editingImageProvider?.url?.toLowerCase().includes('cloudflare') ||
                                 editingImageProvider?.name?.toLowerCase().includes('cloudflare')
                                 ? 'Cloudflare API Token (Bearer token)'
+                                : editingImageProvider?.url?.toLowerCase().includes('pixazo') ||
+                                  editingImageProvider?.name?.toLowerCase().includes('pixazo') ||
+                                  editingImageProvider?.customHeaderName?.includes('Ocp-Apim')
+                                ? 'Pixazo API Key (Ocp-Apim-Subscription-Key)'
                                 : editingImageProvider?.requestType === 'post'
-                                ? 'Bearer API Key / Token'
+                                ? (editingImageProvider?.customHeaderName ? `${editingImageProvider.customHeaderName} value` : 'Bearer API Key / Token')
                                 : 'Pollinations API Key / Token (optional for basic tier)'
                               : 'sk-...'
                           }

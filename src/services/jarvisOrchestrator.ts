@@ -24,6 +24,11 @@ import {
 } from '@/services/jarvisAttachmentService';
 import { searchDocumentLibrary } from '@/services/documentLibraryService';
 import { generatePuterImage, DEFAULT_PUTER_MODEL } from '@/services/puterImageService';
+import {
+  buildImageRequestBody,
+  buildImageRequestHeaders,
+  extractImageUrlFromJson,
+} from '@/lib/imageProviderUtils';
 import type {
   AIProviderConfig,
   AISource,
@@ -316,23 +321,24 @@ export async function generateJarvisAiImage(
         const timeoutId = setTimeout(() => controller.abort(), 25000);
 
         const targetFetchUrl = isCloudflare ? '/api/proxy/cloudflare-image' : activeProvider.url.trim();
-        const requestBody = isCloudflare
-          ? JSON.stringify({
+        const requestPayload = isCloudflare
+          ? {
               prompt: cleanPrompt,
               url: activeProvider.url.trim(),
               model: activeProvider.model,
               apiKey,
               apiToken: apiKey,
-            })
-          : JSON.stringify({ inputs: cleanPrompt, prompt: cleanPrompt });
+            }
+          : activeProvider.requestBodyTemplate
+          ? buildImageRequestBody(activeProvider.requestBodyTemplate, cleanPrompt, 1024, 1024)
+          : { inputs: cleanPrompt, prompt: cleanPrompt };
+
+        const requestHeaders = buildImageRequestHeaders(activeProvider, apiKey);
 
         const response = await fetch(targetFetchUrl, {
           method: 'POST',
-          headers: {
-            'Content-Type': 'application/json',
-            ...(apiKey ? { Authorization: `Bearer ${apiKey}` } : {}),
-          },
-          body: requestBody,
+          headers: requestHeaders,
+          body: JSON.stringify(requestPayload),
           signal: controller.signal,
           mode: 'cors',
         });
@@ -344,13 +350,9 @@ export async function generateJarvisAiImage(
 
           if (contentType.includes('application/json') || contentType.includes('+json')) {
             const json = await response.json();
-            const rawB64 =
-              json?.result?.image ||
-              json?.image ||
-              (Array.isArray(json?.data) && json.data[0]?.b64_json) ||
-              (typeof json?.result === 'string' ? json.result : null);
-            if (rawB64 && typeof rawB64 === 'string') {
-              base64Data = rawB64.startsWith('data:') ? rawB64 : `data:image/png;base64,${rawB64.trim()}`;
+            const extracted = extractImageUrlFromJson(json);
+            if (extracted) {
+              base64Data = extracted;
             }
           } else {
             const blob = await response.blob();
@@ -358,12 +360,9 @@ export async function generateJarvisAiImage(
               try {
                 const text = await blob.text();
                 const json = JSON.parse(text);
-                const rawB64 =
-                  json?.result?.image ||
-                  json?.image ||
-                  (Array.isArray(json?.data) && json.data[0]?.b64_json);
-                if (rawB64 && typeof rawB64 === 'string') {
-                  base64Data = rawB64.startsWith('data:') ? rawB64 : `data:image/png;base64,${rawB64.trim()}`;
+                const extracted = extractImageUrlFromJson(json);
+                if (extracted) {
+                  base64Data = extracted;
                 }
               } catch {
                 // Not JSON, continue with blob reader
@@ -1542,6 +1541,50 @@ export function generateFallbackSpecialists(
 ): JarvisDynamicSpecialist[] {
   const cleanQ = query.replace(/[?.,!]+$/, '').trim();
   const hasUrl = Boolean(targetUrl);
+  const now = new Date();
+  const currentMonthYear = now.toLocaleDateString('en-US', { month: 'long', year: 'numeric' }); // e.g. "September 2026"
+  const isUpdateQuery = /\b(update|updates|patch|changelog|version|season|release|releases|new features|latest)\b/i.test(cleanQ);
+
+  if (isUpdateQuery) {
+    return [
+      {
+        id: 'specialist_1',
+        name: 'Patch & Version Changes Specialist',
+        role: 'Official changelog, core mechanics, new features, and technical updates',
+        systemPrompt: `You are the Patch & Version Changes Specialist. Analyze official release notes, system mechanics changes, and technical updates with deep domain rigor. Provide evidence-based technical explanations without superficial summaries.
+DATE VERIFICATION MANDATE: Every factual claim gathered from search or news tools must include the source's actual publish date when available (e.g. "(Published: YYYY-MM-DD)"). If no clear date is found, explicitly mark that claim as "undated/unverified" rather than presenting it as current fact.`,
+        assignedTools: hasUrl ? ['webFetch', 'search'] : ['search', 'news'],
+        searchQuery: `${cleanQ} official patch notes changelog ${currentMonthYear}`,
+        newsQuery: `${cleanQ} patch notes ${currentMonthYear}`,
+        targetUrl: targetUrl || undefined,
+        icon: '🔧',
+        accentColor: '#38bdf8',
+      },
+      {
+        id: 'specialist_2',
+        name: 'Meta & Balance Impact Analyst',
+        role: 'Competitive tier lists, balance buffs/nerfs, empirical performance metrics, and strategy shift',
+        systemPrompt: `You are the Meta & Balance Impact Analyst. Your objective is to evaluate balance changes, buffs and nerfs, competitive meta shifts, benchmark metrics, and community feedback.
+DATE VERIFICATION MANDATE: Every factual claim gathered from search or news tools must include the source's actual publish date when available (e.g. "(Published: YYYY-MM-DD)"). If no clear date is found, explicitly mark that claim as "undated/unverified" rather than presenting it as current fact.`,
+        assignedTools: ['search'],
+        searchQuery: `${cleanQ} balance changes buffs nerfs meta ${currentMonthYear}`,
+        icon: '📊',
+        accentColor: '#c084fc',
+      },
+      {
+        id: 'specialist_3',
+        name: 'Live Events & Seasonal Content Specialist',
+        role: 'Active live events, seasonal content, collaborations, battle passes, and limited-time promotions',
+        systemPrompt: `You are the Live Events & Seasonal Content Specialist. Your objective is to investigate current and upcoming live events, seasonal content, collaborations, limited-time modes, rewards, and promotions.
+DATE VERIFICATION MANDATE: Every factual claim gathered from search or news tools must include the source's actual publish date when available (e.g. "(Published: YYYY-MM-DD)"). If no clear date is found, explicitly mark that claim as "undated/unverified" rather than presenting it as current fact.`,
+        assignedTools: ['search', 'news'],
+        searchQuery: `${cleanQ} live events collaborations season rewards ${currentMonthYear}`,
+        newsQuery: `${cleanQ} events update ${currentMonthYear}`,
+        icon: '🎉',
+        accentColor: '#34d399',
+      },
+    ];
+  }
 
   return [
     {
@@ -1551,7 +1594,7 @@ export function generateFallbackSpecialists(
       systemPrompt: `You are the Technical & Architecture Specialist. Your objective is to dissect the user inquiry with deep domain rigor, analyzing underlying architecture, mechanics, specifications, and foundational concepts. Provide evidence-based technical explanations without superficial summaries.
 DATE VERIFICATION MANDATE: Every factual claim gathered from search or news tools must include the source's actual publish date when available (e.g. "(Published: YYYY-MM-DD)"). If no clear date is found, explicitly mark that claim as "undated/unverified" rather than presenting it as current fact.`,
       assignedTools: hasUrl ? ['webFetch', 'search'] : ['search', 'wikipedia'],
-      searchQuery: cleanQ,
+      searchQuery: `${cleanQ} ${currentMonthYear}`,
       wikipediaQuery: cleanQ,
       targetUrl: targetUrl || undefined,
       icon: '🔬',
@@ -1564,8 +1607,8 @@ DATE VERIFICATION MANDATE: Every factual claim gathered from search or news tool
       systemPrompt: `You are the Empirical & Comparative Analyst. Your objective is to gather live data, evaluate trade-offs, identify empirical evidence or counter-arguments, and present comparative breakdowns with precise data points.
 DATE VERIFICATION MANDATE: Every factual claim gathered from search or news tools must include the source's actual publish date when available (e.g. "(Published: YYYY-MM-DD)"). If no clear date is found, explicitly mark that claim as "undated/unverified" rather than presenting it as current fact.`,
       assignedTools: ['search', 'news'],
-      searchQuery: `${cleanQ} analysis comparison`,
-      newsQuery: cleanQ,
+      searchQuery: `${cleanQ} analysis comparison ${currentMonthYear}`,
+      newsQuery: `${cleanQ} ${currentMonthYear}`,
       icon: '📊',
       accentColor: '#c084fc',
     },
@@ -1576,7 +1619,7 @@ DATE VERIFICATION MANDATE: Every factual claim gathered from search or news tool
       systemPrompt: `You are the Practical Implementation & Strategy Specialist. Your objective is to formulate actionable takeaways, real-world execution considerations, best practices, and practical implications derived from findings.
 DATE VERIFICATION MANDATE: Every factual claim gathered from search or news tools must include the source's actual publish date when available (e.g. "(Published: YYYY-MM-DD)"). If no clear date is found, explicitly mark that claim as "undated/unverified" rather than presenting it as current fact.`,
       assignedTools: ['search'],
-      searchQuery: `${cleanQ} guide best practices`,
+      searchQuery: `${cleanQ} guide best practices ${currentMonthYear}`,
       icon: '💡',
       accentColor: '#34d399',
     },
@@ -2998,9 +3041,22 @@ Please perform your specialized processing for this inquiry. Provide clear, conc
     // needsReview, needsDiagram, needsChart, needsImage, etc.) into this prompt.
     // Standard routing is completely bypassed in New Agent mode for maximum token savings.
     // =========================================================================
+    let currentMonthYear: string;
+    try {
+      currentMonthYear = new Date().toLocaleString('en-US', {
+        timeZone: effectiveTimeZone,
+        month: 'long',
+        year: 'numeric',
+      });
+    } catch {
+      currentMonthYear = new Date().toLocaleString('en-US', { month: 'long', year: 'numeric' });
+    }
+
     const dynamicPromptTemplate = pCfg.newAgentSystemPrompt || DEFAULT_NEW_AGENT_PLANNER_PROMPT;
-    let dynamicPlannerSystemPrompt = dynamicPromptTemplate.replace('{query}', effectiveSpecialistQuery);
-    dynamicPlannerSystemPrompt = `Current date and time: ${currentDateTime}\n\n${dynamicPlannerSystemPrompt}`;
+    let dynamicPlannerSystemPrompt = dynamicPromptTemplate
+      .replace(/\{query\}/g, effectiveSpecialistQuery)
+      .replace(/\{currentMonthYear\}/g, currentMonthYear);
+    dynamicPlannerSystemPrompt = `Current date and time: ${currentDateTime} (Current Month & Year: ${currentMonthYear})\n\n${dynamicPlannerSystemPrompt}`;
 
     if (detectedUrl) {
       dynamicPlannerSystemPrompt += `\n\n[DETECTED URL IN USER QUERY]: "${detectedUrl}" -> You may assign "webFetch" with targetUrl: "${detectedUrl}" to specialist(s) that need to inspect this webpage.`;
@@ -3021,11 +3077,11 @@ Please perform your specialized processing for this inquiry. Provide clear, conc
         id: `specialist_${idx + 1}`,
         name: s.name || `Specialist ${idx + 1}`,
         role: s.role || 'Domain Specialist',
-        systemPrompt: s.systemPrompt || `Analyze the topic from specialized domain perspective.`,
+        systemPrompt: s.systemPrompt || `Analyze the topic from specialized domain perspective. DATE VERIFICATION MANDATE: Every factual claim gathered from search or news tools must include the source's actual publish date when available (e.g. "(Published: YYYY-MM-DD)"). If no clear date is found, explicitly mark that claim as "undated/unverified" rather than presenting it as current fact.`,
         assignedTools: Array.isArray(s.assignedTools) ? (s.assignedTools as JarvisDynamicSpecialistTool[]) : ['search'],
-        searchQuery: s.searchQuery || effectiveSpecialistQuery,
+        searchQuery: s.searchQuery || `${effectiveSpecialistQuery} ${currentMonthYear}`,
         wikipediaQuery: s.wikipediaQuery || effectiveSpecialistQuery,
-        newsQuery: s.newsQuery || effectiveSpecialistQuery,
+        newsQuery: s.newsQuery || `${effectiveSpecialistQuery} ${currentMonthYear}`,
         weatherLocation: s.weatherLocation,
         targetUrl: s.targetUrl || detectedUrl || undefined,
         icon: idx === 0 ? '🔬' : idx === 1 ? '📊' : '💡',

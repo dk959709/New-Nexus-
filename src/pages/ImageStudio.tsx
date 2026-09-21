@@ -39,6 +39,11 @@ import {
   DEFAULT_PUTER_MODEL,
   PUTER_IMAGE_MODELS,
 } from '@/services/puterImageService';
+import {
+  buildImageRequestBody,
+  buildImageRequestHeaders,
+  extractImageUrlFromJson,
+} from '@/lib/imageProviderUtils';
 import type {
   ImageProviderConfig,
   ImageProvidersState,
@@ -69,7 +74,7 @@ const ASPECT_RATIOS = [
   { label: '16:9 Landscape', width: 1280, height: 720, icon: '▬' },
   { label: '9:16 Portrait', width: 720, height: 1280, icon: '▮' },
   { label: '4:3 Standard', width: 1024, height: 768, icon: '▭' },
-  { label: '3:2 Photo', width: 1200, height: 800, icon: '▰' },
+  { label: '3:2 Photo', width: 1280, height: 800, icon: '▰' },
 ];
 
 interface ReferenceImageDetails {
@@ -589,14 +594,20 @@ export function ImageStudio() {
                   apiToken: candidate.key,
                   apiKey: candidate.key,
                 }
+              : activeProvider.requestBodyTemplate
+              ? buildImageRequestBody(
+                  activeProvider.requestBodyTemplate,
+                  promptToUse,
+                  ratio.width,
+                  ratio.height
+                )
               : { inputs: promptToUse, prompt: promptToUse };
+
+            const reqHeaders = buildImageRequestHeaders(activeProvider, candidate.key);
 
             const response = await fetch(targetFetchUrl, {
               method: 'POST',
-              headers: {
-                'Content-Type': 'application/json',
-                ...(candidate.key ? { Authorization: `Bearer ${candidate.key}` } : {}),
-              },
+              headers: reqHeaders,
               body: JSON.stringify(requestPayload),
               signal: controller.signal,
               mode: 'cors',
@@ -671,27 +682,22 @@ export function ImageStudio() {
               'color: #34d399; font-weight: bold;'
             );
 
-            // Handle both Cloudflare Workers AI JSON format (result.image base64) and Hugging Face raw binary blob format
+            // Handle Pixazo AI format ({ output: "https://..." }), Cloudflare Workers AI JSON format (result.image base64), and Hugging Face raw binary blob format
             const contentType = (response.headers.get('content-type') || '').toLowerCase();
             if (contentType.includes('application/json') || contentType.includes('+json')) {
               const json = await response.json();
-              const rawB64 =
-                json?.result?.image ||
-                json?.image ||
-                (Array.isArray(json?.data) && json.data[0]?.b64_json) ||
-                (Array.isArray(json?.images) && json.images[0]) ||
-                (Array.isArray(json?.result) && json.result[0]) ||
-                (typeof json?.result === 'string' ? json.result : null);
+              const extracted = extractImageUrlFromJson(json);
 
-              if (rawB64 && typeof rawB64 === 'string') {
-                finalImageUrl = rawB64.startsWith('data:')
-                  ? rawB64
-                  : `data:image/png;base64,${rawB64.trim()}`;
+              if (extracted) {
+                finalImageUrl = extracted;
               } else if (json?.success === false || (Array.isArray(json?.errors) && json.errors.length > 0)) {
-                const errMsg = json.errors?.[0]?.message || json.errors?.[0] || json.error || 'Cloudflare returned an error';
+                const errMsg = json.errors?.[0]?.message || json.errors?.[0] || json.error || `${activeProvider.name} returned an error`;
+                throw new Error(typeof errMsg === 'string' ? errMsg : JSON.stringify(errMsg));
+              } else if (json?.error || json?.message) {
+                const errMsg = json.error || json.message;
                 throw new Error(typeof errMsg === 'string' ? errMsg : JSON.stringify(errMsg));
               } else {
-                throw new Error('Cloudflare JSON response did not contain an image field (expected result.image).');
+                throw new Error(`${activeProvider.name} JSON response did not contain an image field (expected output or result.image).`);
               }
             } else {
               // Raw binary blob (Hugging Face / direct binary stream)
@@ -700,14 +706,9 @@ export function ImageStudio() {
                 try {
                   const text = await imageBlob.text();
                   const json = JSON.parse(text);
-                  const rawB64 =
-                    json?.result?.image ||
-                    json?.image ||
-                    (Array.isArray(json?.data) && json.data[0]?.b64_json);
-                  if (rawB64 && typeof rawB64 === 'string') {
-                    finalImageUrl = rawB64.startsWith('data:')
-                      ? rawB64
-                      : `data:image/png;base64,${rawB64.trim()}`;
+                  const extracted = extractImageUrlFromJson(json);
+                  if (extracted) {
+                    finalImageUrl = extracted;
                   }
                 } catch {
                   // Not JSON, continue with blob reader

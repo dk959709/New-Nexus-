@@ -178,6 +178,8 @@ export interface ImageProviderConfig {
   url: string;
   model?: string;
   requestType?: ImageRequestType;
+  customHeaderName?: string;
+  requestBodyTemplate?: string;
   keyStrategy: KeyStrategy;
   preferredKeyId?: string;
   keys: AIKeyItem[];
