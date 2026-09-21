@@ -14,6 +14,7 @@ import {
   Settings,
   Volume2,
   Info,
+  Radio,
 } from 'lucide-react';
 import { playTapSound } from '@/lib/audio';
 import { storage } from '@/lib/storage';
@@ -24,6 +25,7 @@ import { StudioWaveformVisualizer } from '@/components/voice/StudioWaveformVisua
 import { StudioHeroGraphic } from '@/components/voice/StudioHeroGraphic';
 import { StudioAudioControls } from '@/components/voice/StudioAudioControls';
 import { StudioScriptPalettes } from '@/components/voice/StudioScriptPalettes';
+import { LiveStreamingStudio } from '@/components/voice/LiveStreamingStudio';
 import { DEFAULT_ELEVENLABS_VOICES } from '@/data/elevenLabsVoices';
 import { cleanMarkdownForSpeech } from '@/lib/format';
 import { synthesizeCloudVoiceAudio } from '@/lib/voiceProviderUtils';
@@ -117,6 +119,7 @@ export function VoiceAI() {
   const edgeAudioRef = useRef<HTMLAudioElement | null>(null);
 
   // Cloud Voice AI State
+  const [cloudSubMode, setCloudSubMode] = useState<'standard' | 'live'>('standard');
   const [cloudText, setCloudText] = useState('');
   const [selectedCloudVoice, setSelectedCloudVoice] = useState(() => storage.getCloudVoice());
   const [activeVoiceProvider, setActiveVoiceProvider] = useState<VoiceProviderConfig | null>(() =>
@@ -499,25 +502,6 @@ export function VoiceAI() {
               type="button"
               onClick={() => {
                 playTapSound();
-                setActiveSection('edge');
-              }}
-              className={`px-5 py-2.5 rounded-xl text-xs sm:text-sm font-semibold flex items-center gap-2.5 transition cursor-pointer ${
-                activeSection === 'edge'
-                  ? 'bg-gradient-to-r from-cyan-500/20 to-blue-500/20 text-cyan-300 border border-cyan-500/40 shadow-sm'
-                  : 'text-slate-400 hover:text-slate-200 hover:bg-slate-900/60'
-              }`}
-            >
-              <Mic size={15} className={activeSection === 'edge' ? 'text-cyan-400' : 'text-slate-400'} />
-              <span>Microsoft Edge TTS</span>
-              <span className="text-[10px] font-mono px-1.5 py-0.5 rounded bg-cyan-500/10 text-cyan-400 border border-cyan-500/20 hidden sm:inline-block">
-                Built-in
-              </span>
-            </button>
-
-            <button
-              type="button"
-              onClick={() => {
-                playTapSound();
                 setActiveSection('cloud');
               }}
               className={`px-5 py-2.5 rounded-xl text-xs sm:text-sm font-semibold flex items-center gap-2.5 transition cursor-pointer ${
@@ -533,6 +517,25 @@ export function VoiceAI() {
                   {activeVoiceProvider.name}
                 </span>
               )}
+            </button>
+
+            <button
+              type="button"
+              onClick={() => {
+                playTapSound();
+                setActiveSection('edge');
+              }}
+              className={`px-5 py-2.5 rounded-xl text-xs sm:text-sm font-semibold flex items-center gap-2.5 transition cursor-pointer ${
+                activeSection === 'edge'
+                  ? 'bg-gradient-to-r from-cyan-500/20 to-blue-500/20 text-cyan-300 border border-cyan-500/40 shadow-sm'
+                  : 'text-slate-400 hover:text-slate-200 hover:bg-slate-900/60'
+              }`}
+            >
+              <Mic size={15} className={activeSection === 'edge' ? 'text-cyan-400' : 'text-slate-400'} />
+              <span>Microsoft Edge TTS</span>
+              <span className="text-[10px] font-mono px-1.5 py-0.5 rounded bg-cyan-500/10 text-cyan-400 border border-cyan-500/20 hidden sm:inline-block">
+                Built-in
+              </span>
             </button>
           </div>
         </div>
@@ -828,220 +831,292 @@ export function VoiceAI() {
             </div>
           )}
 
-          <form onSubmit={handleCloudSpeak} className="space-y-6 relative z-10">
-            {/* Voice Model Selector */}
-            <div className="space-y-2">
-              <CloudVoicePicker
-                selectedVoiceId={selectedCloudVoice}
-                onSelectVoice={(vId) => {
-                  setSelectedCloudVoice(vId);
-                  storage.saveCloudVoice(vId);
+          {/* Cloud Voice AI Sub-Mode Switcher: Standard Generation vs Live Streaming */}
+          <div className="flex items-center justify-between flex-wrap gap-3 p-1.5 bg-slate-950/80 rounded-2xl border border-slate-800/80 relative z-10">
+            <div className="flex items-center gap-2">
+              <button
+                type="button"
+                onClick={() => {
+                  playTapSound();
+                  setCloudSubMode('standard');
                 }}
-                activeProvider={activeVoiceProvider}
-              />
-            </div>
-
-            {/* Production Script Presets & Duration Telemetry */}
-            <StudioScriptPalettes
-              currentText={cloudText}
-              onSelectScript={(text) => {
-                setCloudText(text);
-                if (cloudError) setCloudError(null);
-              }}
-            />
-
-            {/* Studio Script Textarea Input */}
-            <div className="space-y-2">
-              <div className="flex justify-between items-center">
-                <label className="block text-xs font-mono font-semibold text-slate-300 uppercase tracking-wider">
-                  Script & Spoken Dialogue
-                </label>
-                <span
-                  className={`text-xs font-mono transition-colors ${
-                    cloudText.length > MAX_CHAR_LIMIT * 0.9
-                      ? 'text-amber-400 font-bold'
-                      : 'text-slate-500'
-                  }`}
-                >
-                  {cloudText.length} / {MAX_CHAR_LIMIT} chars
-                </span>
-              </div>
-              <textarea
-                value={cloudText}
-                onChange={(e) => {
-                  setCloudText(e.target.value);
-                  if (cloudError) setCloudError(null);
-                }}
-                placeholder="Type or paste dialogue here to synthesize in studio quality..."
-                rows={5}
-                maxLength={MAX_CHAR_LIMIT}
-                className="w-full bg-slate-950 border border-slate-700/80 rounded-xl p-4 text-slate-100 text-sm focus:outline-none focus:border-purple-500 focus:ring-1 focus:ring-purple-500/50 transition resize-y shadow-inner leading-relaxed"
-              />
-            </div>
-
-            {/* Studio Audio Tuning Rack (Stability, Clarity, Pace) */}
-            <StudioAudioControls
-              settings={studioSettings}
-              onChangeSettings={setStudioSettings}
-            />
-
-            {/* Error Banner with 1-click tier recovery & Edge TTS graceful fallback */}
-            {cloudError && (
-              <div
-                className={`rounded-xl p-4 border animate-fadeIn ${
-                  isVoiceTierError
-                    ? 'bg-amber-950/40 border-amber-500/40 text-amber-200'
-                    : 'bg-rose-500/10 border-rose-500/30 text-rose-300'
+                className={`px-4 py-2 rounded-xl text-xs font-semibold flex items-center gap-2 transition cursor-pointer ${
+                  cloudSubMode === 'standard'
+                    ? 'bg-purple-600/30 text-purple-200 border border-purple-500/50 shadow-sm'
+                    : 'text-slate-400 hover:text-slate-200 hover:bg-slate-900/60'
                 }`}
               >
-                <div className="flex items-start gap-3">
-                  {isVoiceTierError ? (
-                    <Sparkles size={18} className="text-amber-400 shrink-0 mt-0.5" />
-                  ) : (
-                    <AlertCircle size={18} className="text-rose-400 shrink-0 mt-0.5" />
-                  )}
-                  <div className="flex-1 space-y-2.5">
-                    {isVoiceTierError ? (
-                      <div className="space-y-1">
-                        <div className="font-semibold text-amber-300 text-sm flex items-center gap-1.5">
-                          ElevenLabs Free-Tier Voice Restriction (402 Paid Plan Required)
-                        </div>
-                        <p className="text-xs text-amber-200/90 leading-relaxed">
-                          Free users cannot use community or library voices via the API. Please switch to a confirmed free-tier premade voice (such as Sarah, George, or Brian), or seamlessly fall back to Microsoft Edge TTS (built-in, free &amp; unlimited).
-                        </p>
-                      </div>
-                    ) : (
-                      <p className="text-xs sm:text-sm leading-relaxed">{cloudError}</p>
-                    )}
+                <Sparkles size={14} className={cloudSubMode === 'standard' ? 'text-purple-400' : 'text-slate-400'} />
+                <span>Standard Generation</span>
+                <span className="text-[10px] font-mono px-1.5 py-0.2 rounded bg-slate-800 text-slate-400 border border-slate-700 hidden sm:inline-block">
+                  HTTP REST
+                </span>
+              </button>
 
-                    {isVoiceTierError && (
-                      <div className="pt-2 space-y-2.5">
-                        {/* Graceful Fallback Option: Microsoft Edge TTS */}
-                        <div className="flex flex-wrap items-center gap-2">
-                          <button
-                            type="button"
-                            onClick={handleFallbackToEdgeTTS}
-                            className="px-3.5 py-2 rounded-lg bg-cyan-600 hover:bg-cyan-500 text-white font-semibold text-xs transition shadow-md cursor-pointer flex items-center gap-1.5"
-                          >
-                            <Mic size={14} />
-                            Fall Back to Microsoft Edge TTS (Always Free &amp; Unlimited)
-                          </button>
-                        </div>
+              <button
+                type="button"
+                onClick={() => {
+                  playTapSound();
+                  setCloudSubMode('live');
+                }}
+                className={`px-4 py-2 rounded-xl text-xs font-semibold flex items-center gap-2 transition cursor-pointer ${
+                  cloudSubMode === 'live'
+                    ? 'bg-rose-500/20 text-rose-200 border border-rose-500/50 shadow-sm'
+                    : 'text-slate-400 hover:text-slate-200 hover:bg-slate-900/60'
+                }`}
+              >
+                <Radio size={14} className={cloudSubMode === 'live' ? 'text-rose-400 animate-pulse' : 'text-slate-400'} />
+                <span>Live Streaming</span>
+                <span className="text-[9px] font-mono font-bold px-1.5 py-0.5 rounded-full bg-rose-500/25 text-rose-300 border border-rose-500/40 animate-pulse">
+                  LIVE
+                </span>
+                <span className="text-[10px] font-mono px-1.5 py-0.2 rounded bg-slate-800 text-slate-400 border border-slate-700 hidden md:inline-block">
+                  WebSocket
+                </span>
+              </button>
+            </div>
 
-                        {/* Fallback Option: Confirmed Free-Tier Premade Voices */}
-                        <div className="flex flex-wrap items-center gap-2 pt-0.5">
-                          <span className="text-[11px] font-mono text-amber-300/80 mr-1">
-                            Or try free premade voices:
-                          </span>
-                          <button
-                            type="button"
-                            onClick={() => executeCloudSynthesis('EXAVITQu4vr4xnSDxMaL')}
-                            className="px-3 py-1.5 rounded-lg bg-amber-500 hover:bg-amber-400 text-slate-950 font-semibold text-xs transition shadow cursor-pointer flex items-center gap-1"
-                          >
-                            <Sparkles size={12} />
-                            Switch to Sarah &amp; Retry
-                          </button>
-                          <button
-                            type="button"
-                            onClick={() => executeCloudSynthesis('JBFqnCBsd6RMkjVDRZzb')}
-                            className="px-3 py-1.5 rounded-lg bg-slate-800 hover:bg-slate-700 text-amber-200 border border-amber-500/40 font-semibold text-xs transition cursor-pointer"
-                          >
-                            Switch to George
-                          </button>
-                          <button
-                            type="button"
-                            onClick={() => executeCloudSynthesis('nPczCjzI2devNBz1zQrb')}
-                            className="px-3 py-1.5 rounded-lg bg-slate-800 hover:bg-slate-700 text-amber-200 border border-amber-500/40 font-semibold text-xs transition cursor-pointer"
-                          >
-                            Switch to Brian
-                          </button>
-                          <button
-                            type="button"
-                            onClick={() => executeCloudSynthesis('Xb7hH8MSUJpSbSDYk0k2')}
-                            className="px-3 py-1.5 rounded-lg bg-slate-800 hover:bg-slate-700 text-amber-200 border border-amber-500/40 font-semibold text-xs transition cursor-pointer"
-                          >
-                            Switch to Alice
-                          </button>
-                        </div>
-                      </div>
-                    )}
-                  </div>
+            <div className="text-[11px] font-mono text-slate-400 px-2 hidden sm:block">
+              {cloudSubMode === 'standard'
+                ? 'Standard HTTP synthesis with downloadable MP3 waveform'
+                : 'Real-time WebSocket streaming with gapless live audio decoding'}
+            </div>
+          </div>
+
+          {/* SUB-MODE 1: STANDARD CLOUD SYNTHESIS (Unchanged) */}
+          {cloudSubMode === 'standard' && (
+            <>
+              <form onSubmit={handleCloudSpeak} className="space-y-6 relative z-10">
+                {/* Voice Model Selector */}
+                <div className="space-y-2">
+                  <CloudVoicePicker
+                    selectedVoiceId={selectedCloudVoice}
+                    onSelectVoice={(vId) => {
+                      setSelectedCloudVoice(vId);
+                      storage.saveCloudVoice(vId);
+                    }}
+                    activeProvider={activeVoiceProvider}
+                  />
                 </div>
-              </div>
-            )}
 
-            {/* Action Bar */}
-            <div className="flex flex-wrap items-center justify-between gap-4 pt-1">
-              <div className="flex flex-wrap items-center gap-3">
-                <button
-                  type="submit"
-                  disabled={cloudLoading || cloudDownloading || !cloudText.trim()}
-                  className="px-6 py-3 rounded-xl bg-gradient-to-r from-purple-600 to-indigo-600 text-white font-semibold text-sm shadow-lg shadow-purple-500/25 hover:from-purple-500 hover:to-indigo-500 disabled:opacity-50 disabled:cursor-not-allowed transition flex items-center gap-2 cursor-pointer transform active:scale-98"
-                >
-                  {cloudLoading ? (
-                    <>
-                      <RefreshCw size={17} className="animate-spin" />
-                      <span>{cloudProgressStatus || 'Synthesizing Studio Audio...'}</span>
-                    </>
-                  ) : (
-                    <>
-                      <Sparkles size={17} />
-                      <span>Synthesize Speech</span>
-                    </>
-                  )}
-                </button>
-
-                <button
-                  type="button"
-                  onClick={handleCloudDownload}
-                  disabled={cloudLoading || cloudDownloading || !cloudText.trim()}
-                  className="px-5 py-3 rounded-xl bg-slate-800 hover:bg-slate-700 border border-slate-700 text-purple-300 font-semibold text-sm shadow-md hover:text-purple-200 disabled:opacity-50 disabled:cursor-not-allowed transition flex items-center gap-2 cursor-pointer"
-                  title="Synthesize and download audio as MP3 file"
-                >
-                  {cloudDownloading ? (
-                    <>
-                      <Loader2 size={17} className="animate-spin text-purple-400" />
-                      <span>{cloudProgressStatus || 'Downloading MP3...'}</span>
-                    </>
-                  ) : (
-                    <>
-                      <Download size={17} />
-                      <span>Download MP3</span>
-                    </>
-                  )}
-                </button>
-              </div>
-
-              {cloudText && !cloudLoading && !cloudDownloading && (
-                <button
-                  type="button"
-                  onClick={() => {
-                    playTapSound();
-                    setCloudText('');
-                    setCloudAudioUrl(null);
-                    setCloudSynthesizedText(null);
-                    setCloudSynthesizedVoice(null);
-                    setCloudError(null);
+                {/* Production Script Presets & Duration Telemetry */}
+                <StudioScriptPalettes
+                  currentText={cloudText}
+                  onSelectScript={(text) => {
+                    setCloudText(text);
+                    if (cloudError) setCloudError(null);
                   }}
-                  className="text-xs text-slate-400 hover:text-slate-200 transition px-2 py-1 rounded hover:bg-slate-800 cursor-pointer"
-                >
-                  Clear text
-                </button>
-              )}
-            </div>
-          </form>
+                />
 
-          {/* Interactive Studio Waveform Visualizer & Audio Player */}
-          {cloudAudioUrl && (
-            <div className="mt-8 pt-6 border-t border-slate-800 animate-fadeIn space-y-4">
-              <StudioWaveformVisualizer
-                audioUrl={cloudAudioUrl}
-                voiceName={selectedVoiceName}
-                providerName={activeVoiceProvider ? activeVoiceProvider.name : 'Cloud Voice AI'}
-                onDownload={handleCloudDownload}
-                isDownloading={cloudDownloading}
-              />
-            </div>
+                {/* Studio Script Textarea Input */}
+                <div className="space-y-2">
+                  <div className="flex justify-between items-center">
+                    <label className="block text-xs font-mono font-semibold text-slate-300 uppercase tracking-wider">
+                      Script & Spoken Dialogue
+                    </label>
+                    <span
+                      className={`text-xs font-mono transition-colors ${
+                        cloudText.length > MAX_CHAR_LIMIT * 0.9
+                          ? 'text-amber-400 font-bold'
+                          : 'text-slate-500'
+                      }`}
+                    >
+                      {cloudText.length} / {MAX_CHAR_LIMIT} chars
+                    </span>
+                  </div>
+                  <textarea
+                    value={cloudText}
+                    onChange={(e) => {
+                      setCloudText(e.target.value);
+                      if (cloudError) setCloudError(null);
+                    }}
+                    placeholder="Type or paste dialogue here to synthesize in studio quality..."
+                    rows={5}
+                    maxLength={MAX_CHAR_LIMIT}
+                    className="w-full bg-slate-950 border border-slate-700/80 rounded-xl p-4 text-slate-100 text-sm focus:outline-none focus:border-purple-500 focus:ring-1 focus:ring-purple-500/50 transition resize-y shadow-inner leading-relaxed"
+                  />
+                </div>
+
+                {/* Studio Audio Tuning Rack (Stability, Clarity, Pace) */}
+                <StudioAudioControls
+                  settings={studioSettings}
+                  onChangeSettings={setStudioSettings}
+                />
+
+                {/* Error Banner with 1-click tier recovery & Edge TTS graceful fallback */}
+                {cloudError && (
+                  <div
+                    className={`rounded-xl p-4 border animate-fadeIn ${
+                      isVoiceTierError
+                        ? 'bg-amber-950/40 border-amber-500/40 text-amber-200'
+                        : 'bg-rose-500/10 border-rose-500/30 text-rose-300'
+                    }`}
+                  >
+                    <div className="flex items-start gap-3">
+                      {isVoiceTierError ? (
+                        <Sparkles size={18} className="text-amber-400 shrink-0 mt-0.5" />
+                      ) : (
+                        <AlertCircle size={18} className="text-rose-400 shrink-0 mt-0.5" />
+                      )}
+                      <div className="flex-1 space-y-2.5">
+                        {isVoiceTierError ? (
+                          <div className="space-y-1">
+                            <div className="font-semibold text-amber-300 text-sm flex items-center gap-1.5">
+                              ElevenLabs Free-Tier Voice Restriction (402 Paid Plan Required)
+                            </div>
+                            <p className="text-xs text-amber-200/90 leading-relaxed">
+                              Free users cannot use community or library voices via the API. Please switch to a confirmed free-tier premade voice (such as Sarah, George, or Brian), or seamlessly fall back to Microsoft Edge TTS (built-in, free &amp; unlimited).
+                            </p>
+                          </div>
+                        ) : (
+                          <p className="text-xs sm:text-sm leading-relaxed">{cloudError}</p>
+                        )}
+
+                        {isVoiceTierError && (
+                          <div className="pt-2 space-y-2.5">
+                            {/* Graceful Fallback Option: Microsoft Edge TTS */}
+                            <div className="flex flex-wrap items-center gap-2">
+                              <button
+                                type="button"
+                                onClick={handleFallbackToEdgeTTS}
+                                className="px-3.5 py-2 rounded-lg bg-cyan-600 hover:bg-cyan-500 text-white font-semibold text-xs transition shadow-md cursor-pointer flex items-center gap-1.5"
+                              >
+                                <Mic size={14} />
+                                Fall Back to Microsoft Edge TTS (Always Free &amp; Unlimited)
+                              </button>
+                            </div>
+
+                            {/* Fallback Option: Confirmed Free-Tier Premade Voices */}
+                            <div className="flex flex-wrap items-center gap-2 pt-0.5">
+                              <span className="text-[11px] font-mono text-amber-300/80 mr-1">
+                                Or try free premade voices:
+                              </span>
+                              <button
+                                type="button"
+                                onClick={() => executeCloudSynthesis('EXAVITQu4vr4xnSDxMaL')}
+                                className="px-3 py-1.5 rounded-lg bg-amber-500 hover:bg-amber-400 text-slate-950 font-semibold text-xs transition shadow cursor-pointer flex items-center gap-1"
+                              >
+                                <Sparkles size={12} />
+                                Switch to Sarah &amp; Retry
+                              </button>
+                              <button
+                                type="button"
+                                onClick={() => executeCloudSynthesis('JBFqnCBsd6RMkjVDRZzb')}
+                                className="px-3 py-1.5 rounded-lg bg-slate-800 hover:bg-slate-700 text-amber-200 border border-amber-500/40 font-semibold text-xs transition cursor-pointer"
+                              >
+                                Switch to George
+                              </button>
+                              <button
+                                type="button"
+                                onClick={() => executeCloudSynthesis('nPczCjzI2devNBz1zQrb')}
+                                className="px-3 py-1.5 rounded-lg bg-slate-800 hover:bg-slate-700 text-amber-200 border border-amber-500/40 font-semibold text-xs transition cursor-pointer"
+                              >
+                                Switch to Brian
+                              </button>
+                              <button
+                                type="button"
+                                onClick={() => executeCloudSynthesis('Xb7hH8MSUJpSbSDYk0k2')}
+                                className="px-3 py-1.5 rounded-lg bg-slate-800 hover:bg-slate-700 text-amber-200 border border-amber-500/40 font-semibold text-xs transition cursor-pointer"
+                              >
+                                Switch to Alice
+                              </button>
+                            </div>
+                          </div>
+                        )}
+                      </div>
+                    </div>
+                  </div>
+                )}
+
+                {/* Action Bar */}
+                <div className="flex flex-wrap items-center justify-between gap-4 pt-1">
+                  <div className="flex flex-wrap items-center gap-3">
+                    <button
+                      type="submit"
+                      disabled={cloudLoading || cloudDownloading || !cloudText.trim()}
+                      className="px-6 py-3 rounded-xl bg-gradient-to-r from-purple-600 to-indigo-600 text-white font-semibold text-sm shadow-lg shadow-purple-500/25 hover:from-purple-500 hover:to-indigo-500 disabled:opacity-50 disabled:cursor-not-allowed transition flex items-center gap-2 cursor-pointer transform active:scale-98"
+                    >
+                      {cloudLoading ? (
+                        <>
+                          <RefreshCw size={17} className="animate-spin" />
+                          <span>{cloudProgressStatus || 'Synthesizing Studio Audio...'}</span>
+                        </>
+                      ) : (
+                        <>
+                          <Sparkles size={17} />
+                          <span>Synthesize Speech</span>
+                        </>
+                      )}
+                    </button>
+
+                    <button
+                      type="button"
+                      onClick={handleCloudDownload}
+                      disabled={cloudLoading || cloudDownloading || !cloudText.trim()}
+                      className="px-5 py-3 rounded-xl bg-slate-800 hover:bg-slate-700 border border-slate-700 text-purple-300 font-semibold text-sm shadow-md hover:text-purple-200 disabled:opacity-50 disabled:cursor-not-allowed transition flex items-center gap-2 cursor-pointer"
+                      title="Synthesize and download audio as MP3 file"
+                    >
+                      {cloudDownloading ? (
+                        <>
+                          <Loader2 size={17} className="animate-spin text-purple-400" />
+                          <span>{cloudProgressStatus || 'Downloading MP3...'}</span>
+                        </>
+                      ) : (
+                        <>
+                          <Download size={17} />
+                          <span>Download MP3</span>
+                        </>
+                      )}
+                    </button>
+                  </div>
+
+                  {cloudText && !cloudLoading && !cloudDownloading && (
+                    <button
+                      type="button"
+                      onClick={() => {
+                        playTapSound();
+                        setCloudText('');
+                        setCloudAudioUrl(null);
+                        setCloudSynthesizedText(null);
+                        setCloudSynthesizedVoice(null);
+                        setCloudError(null);
+                      }}
+                      className="text-xs text-slate-400 hover:text-slate-200 transition px-2 py-1 rounded hover:bg-slate-800 cursor-pointer"
+                    >
+                      Clear text
+                    </button>
+                  )}
+                </div>
+              </form>
+
+              {/* Interactive Studio Waveform Visualizer & Audio Player */}
+              {cloudAudioUrl && (
+                <div className="mt-8 pt-6 border-t border-slate-800 animate-fadeIn space-y-4">
+                  <StudioWaveformVisualizer
+                    audioUrl={cloudAudioUrl}
+                    voiceName={selectedVoiceName}
+                    providerName={activeVoiceProvider ? activeVoiceProvider.name : 'Cloud Voice AI'}
+                    onDownload={handleCloudDownload}
+                    isDownloading={cloudDownloading}
+                  />
+                </div>
+              )}
+            </>
+          )}
+
+          {/* SUB-MODE 2: LIVE STREAMING (WebSocket wss://api.elevenlabs.io/.../stream-input) */}
+          {cloudSubMode === 'live' && (
+            <LiveStreamingStudio
+              voiceId={selectedCloudVoice}
+              voiceName={selectedVoiceName}
+              activeProvider={activeVoiceProvider}
+              onSelectVoice={(vId) => {
+                setSelectedCloudVoice(vId);
+                storage.saveCloudVoice(vId);
+              }}
+              onFallbackToEdge={handleFallbackToEdgeTTS}
+              initialText={cloudText || ''}
+            />
           )}
         </div>
       )}

@@ -29,6 +29,31 @@ export function buildVoiceRequestHeaders(
 }
 
 /**
+ * Resolves the ElevenLabs WebSocket streaming URL:
+ * wss://api.elevenlabs.io/v1/text-to-speech/{voice_id}/stream-input?model_id={model_id}
+ */
+export function buildElevenLabsWebSocketUrl(voiceId: string, modelId?: string): string {
+  const cleanVoiceId = encodeURIComponent(voiceId.trim());
+  const cleanModel = encodeURIComponent(modelId || 'eleven_multilingual_v2');
+  return `wss://api.elevenlabs.io/v1/text-to-speech/${cleanVoiceId}/stream-input?model_id=${cleanModel}&output_format=mp3_44100_128`;
+}
+
+/**
+ * Checks if a voice ID is a known library/restricted voice requiring a paid ElevenLabs plan
+ */
+export function isVoiceTierRestricted(voiceId: string): boolean {
+  const restrictedIds = [
+    'gOupLcAkjEnguROwi4oS', // Darian
+    'OZ0L6eISlOejga3XjDFt', // Talia
+    'WQP7cQUF5aAS6Axh5yaa', // Elara
+    '21m00Tcm4TlvDq8ikWAM', // Rachel
+    'AZnzlk1XvdvUeBnXmlld', // Domi
+    'ErXwobaYiN019PkySvjV', // Antoni
+  ];
+  return restrictedIds.includes(voiceId.trim());
+}
+
+/**
  * Resolves the Voice AI endpoint URL by replacing '{voice_id}' or '{voiceId}'
  * with the target voice ID. If not found in the template, appends the voice ID.
  */
