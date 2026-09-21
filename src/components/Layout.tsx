@@ -52,9 +52,10 @@ export function Layout() {
     }
   };
 
-  const bottomNavItems = navItems.filter((item) =>
-    ['/', '/jarvis', '/search', '/assistant', '/weather', '/space'].includes(item.to)
-  );
+  const bottomNavRoutes = ['/', '/jarvis', '/search', '/assistant', '/weather', '/image-studio'] as const;
+  const bottomNavItems = bottomNavRoutes
+    .map((route) => navItems.find((item) => item.to === route))
+    .filter((item): item is (typeof navItems)[number] => item !== undefined);
 
   return (
     <div className="app-shell">
@@ -127,7 +128,9 @@ export function Layout() {
               ? 'Home'
               : to === '/assistant'
                 ? 'AI'
-                : label.replace('Web ', '').replace('NASA ', '').replace(' Bot', '');
+                : to === '/image-studio'
+                  ? 'Image Studio'
+                  : label.replace('Web ', '').replace('NASA ', '').replace(' Bot', '');
           return (
             <NavLink to={to} end={to === '/'} key={to} onClick={handleNavClick}>
               <Icon size={18} />

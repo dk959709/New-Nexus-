@@ -13,7 +13,6 @@ import {
   Cloud,
   Settings,
   Volume2,
-  Info,
   Radio,
 } from 'lucide-react';
 import { playTapSound } from '@/lib/audio';
@@ -793,22 +792,6 @@ export function VoiceAI() {
               storage.saveCloudVoice(vId);
             }}
           />
-
-          {/* ElevenLabs Free Tier Monthly Limit & Voice Rules Note */}
-          <div className="bg-slate-950/80 border border-purple-500/25 rounded-xl p-3.5 sm:p-4 flex items-start gap-3 text-xs shadow-sm">
-            <Info size={17} className="text-purple-400 shrink-0 mt-0.5" />
-            <div className="space-y-1">
-              <div className="flex items-center gap-2 flex-wrap">
-                <span className="font-semibold text-slate-200">ElevenLabs Free-Tier Quota &amp; Policy Note:</span>
-                <span className="text-[10px] font-mono px-1.5 py-0.2 rounded bg-purple-500/15 text-purple-300 border border-purple-500/30 font-semibold">
-                  ~10,000 credits/mo (~10 min audio)
-                </span>
-              </div>
-              <p className="text-slate-400 leading-relaxed text-[11px] sm:text-xs">
-                ElevenLabs accounts on the free tier include ~10,000 credits per month (roughly 10 minutes of synthesized audio) that resets monthly. In addition, free-tier API accounts are restricted exclusively to official premade system voices (e.g. Sarah, George, Brian, Alice). Community and library voices require a paid ElevenLabs plan. You can switch to the built-in Microsoft Edge TTS tab at any time for 100% free and unlimited speech synthesis.
-              </p>
-            </div>
-          </div>
 
           {/* Warning if no key configured */}
           {!hasCloudKeyConfigured && (
