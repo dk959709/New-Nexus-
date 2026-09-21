@@ -11,6 +11,10 @@ import {
   Play,
   Pause,
   Zap,
+  Copy,
+  Check,
+  X,
+  Activity,
 } from 'lucide-react';
 import { VoiceProviderConfig, StudioVoiceSettings } from '@/types';
 import { playTapSound } from '@/lib/audio';
@@ -96,6 +100,7 @@ export function LiveStreamingStudio({
   const [recordedDuration, setRecordedDuration] = useState<number>(0);
   const recordedAudioRef = useRef<HTMLAudioElement | null>(null);
   const [isRecordedPlaying, setIsRecordedPlaying] = useState(false);
+  const [hasCopiedError, setHasCopiedError] = useState(false);
 
   // Refs for audio pipeline and WebSocket
   const wsRef = useRef<WebSocket | null>(null);
@@ -115,12 +120,17 @@ export function LiveStreamingStudio({
   const streamDurationSecRef = useRef<number>(0);
   const durationTimerRef = useRef<number | null>(null);
   const idleTimeoutTimerRef = useRef<number | null>(null);
+  const connectionTimeoutTimerRef = useRef<number | null>(null);
   const simulationIntervalRef = useRef<number | null>(null);
 
   // Clean up all resources
   const cleanupLiveStream = useCallback(() => {
     console.log('[LiveVoice] cleanupLiveStream invoked');
     // Clear timers
+    if (connectionTimeoutTimerRef.current) {
+      clearTimeout(connectionTimeoutTimerRef.current);
+      connectionTimeoutTimerRef.current = null;
+    }
     if (durationTimerRef.current) {
       clearInterval(durationTimerRef.current);
       durationTimerRef.current = null;
@@ -241,110 +251,135 @@ export function LiveStreamingStudio({
     playTapSound();
     cleanupLiveStream();
 
-    const targetVoiceId = (customVoiceId || voiceId || 'EXAVITQu4vr4xnSDxMaL').trim();
-    const cleanText = text.trim();
-
-    if (!cleanText) {
-      setErrorMessage('Please enter dialogue or select a script to stream.');
-      setConnectionStatus('error');
-      return;
-    }
-
-    // Free-tier voice restriction pre-check
-    if (isVoiceTierRestricted(targetVoiceId)) {
-      setIsVoiceTierError(true);
-      setConnectionStatus('error');
-      setErrorMessage(
-        'ElevenLabs Free-Tier Restriction: Community and library voices are not permitted via the API. Please switch to an official premade voice (such as Sarah or George).'
-      );
-      return;
-    }
-
-    // Retrieve active API key
-    if (!activeProvider || !activeProvider.keys || activeProvider.keys.length === 0) {
-      setErrorMessage('No ElevenLabs API key found. Please configure your key in AI Providers Settings.');
-      setConnectionStatus('error');
-      return;
-    }
-
-    const healthyKey =
-      activeProvider.keys.find((k) => k.health === 'healthy')?.key ||
-      activeProvider.keys[0]?.key ||
-      activeProvider.apiKey;
-
-    if (!healthyKey) {
-      setErrorMessage('No valid API key available for Cloud Voice AI.');
-      setConnectionStatus('error');
-      return;
-    }
-
-    // Reset state & telemetry
-    setErrorMessage(null);
-    setIsVoiceTierError(false);
-    setConnectionStatus('connecting');
-    setChunksCount(0);
-    setTotalBytes(0);
-    setTimeToFirstChunkMs(null);
-    setStreamDurationSec(0);
-    streamDurationSecRef.current = 0;
-    allRecordedChunksRef.current = [];
-    chunkQueueRef.current = [];
-    isStreamFinalRef.current = false;
-    setRecordedAudioUrl(null);
-    setRecordedDuration(0);
-
-    const wordsTotal = cleanText.split(/\s+/).filter(Boolean).length;
-    setWordProgress({ current: 0, total: wordsTotal });
-
-    // Initialize or resume Web Audio Context & Graph immediately during user interaction
     try {
-      const AudioCtx =
-        window.AudioContext ||
-        (window as unknown as { webkitAudioContext: typeof AudioContext }).webkitAudioContext;
-      if (!audioContextRef.current || audioContextRef.current.state === 'closed') {
-        audioContextRef.current = new AudioCtx();
-        console.log('[LiveVoice] Created fresh AudioContext, state:', audioContextRef.current.state);
-      }
-      if (audioContextRef.current.state === 'suspended') {
-        console.log('[LiveVoice] AudioContext is suspended, calling .resume() immediately...');
-        await audioContextRef.current.resume();
-        console.log('[LiveVoice] AudioContext .resume() resolved. State:', audioContextRef.current.state);
-      } else {
-        console.log('[LiveVoice] AudioContext state:', audioContextRef.current.state);
+      const targetVoiceId = (customVoiceId || voiceId || 'EXAVITQu4vr4xnSDxMaL').trim();
+      const cleanText = text.trim();
+
+      if (!cleanText) {
+        setErrorMessage('Please enter dialogue or select a script to stream.');
+        setConnectionStatus('error');
+        return;
       }
 
-      if (!analyserNodeRef.current && audioContextRef.current) {
-        const analyser = audioContextRef.current.createAnalyser();
-        analyser.fftSize = 128;
-        analyser.smoothingTimeConstant = 0.8;
-        analyserNodeRef.current = analyser;
+      // Free-tier voice restriction pre-check
+      if (isVoiceTierRestricted(targetVoiceId)) {
+        setIsVoiceTierError(true);
+        setConnectionStatus('error');
+        setErrorMessage(
+          'ElevenLabs Free-Tier Restriction: Community and library voices are not permitted via the API. Please switch to an official premade voice (such as Sarah or George).'
+        );
+        return;
       }
 
-      if (!gainNodeRef.current && audioContextRef.current) {
-        const gainNode = audioContextRef.current.createGain();
-        gainNode.gain.value = isMuted ? 0 : volume;
-        gainNodeRef.current = gainNode;
+      // Retrieve active API key
+      if (!activeProvider || !activeProvider.keys || activeProvider.keys.length === 0) {
+        setErrorMessage('No ElevenLabs API key found. Please configure your key in AI Providers Settings.');
+        setConnectionStatus('error');
+        return;
       }
 
-      // Wire Web Audio Graph: AnalyserNode -> GainNode -> Destination
-      if (analyserNodeRef.current && gainNodeRef.current && audioContextRef.current) {
-        try {
-          analyserNodeRef.current.disconnect();
-        } catch {
-          // ignore
+      const healthyKey =
+        activeProvider.keys.find((k) => k.health === 'healthy')?.key ||
+        activeProvider.keys[0]?.key ||
+        activeProvider.apiKey;
+
+      if (!healthyKey) {
+        setErrorMessage('No valid API key available for Cloud Voice AI.');
+        setConnectionStatus('error');
+        return;
+      }
+
+      // Reset state & telemetry
+      setErrorMessage(null);
+      setIsVoiceTierError(false);
+      setConnectionStatus('connecting');
+      setChunksCount(0);
+      setTotalBytes(0);
+      setTimeToFirstChunkMs(null);
+      setStreamDurationSec(0);
+      streamDurationSecRef.current = 0;
+      allRecordedChunksRef.current = [];
+      rawChunkQueueRef.current = [];
+      accumulatedChunksRef.current = [];
+      isStreamFinalRef.current = false;
+      setRecordedAudioUrl(null);
+      setRecordedDuration(0);
+
+      const wordsTotal = cleanText.split(/\s+/).filter(Boolean).length;
+      setWordProgress({ current: 0, total: wordsTotal });
+
+      // Connection Timeout (15 seconds): Prevents hanging on "CONNECTING WEBSOCKET..." forever
+      if (connectionTimeoutTimerRef.current) {
+        clearTimeout(connectionTimeoutTimerRef.current);
+        connectionTimeoutTimerRef.current = null;
+      }
+      connectionTimeoutTimerRef.current = window.setTimeout(() => {
+        if (!wsRef.current || wsRef.current.readyState !== WebSocket.OPEN) {
+          console.warn('[LiveVoice] Connection timeout (15s) triggered before WebSocket open');
+          setConnectionStatus('error');
+          setErrorMessage(
+            'Connection failed: Timed out waiting for ElevenLabs WebSocket to connect (15s). The remote server did not respond in time. Please verify your internet connection and ElevenLabs API key validity, or switch to a premade voice.'
+          );
+          cleanupLiveStream();
         }
-        try {
-          gainNodeRef.current.disconnect();
-        } catch {
-          // ignore
+      }, 15000);
+
+      // Initialize or resume Web Audio Context & Graph immediately during user interaction
+      try {
+        const AudioCtx =
+          window.AudioContext ||
+          (window as unknown as { webkitAudioContext: typeof AudioContext }).webkitAudioContext;
+        if (!audioContextRef.current || audioContextRef.current.state === 'closed') {
+          audioContextRef.current = new AudioCtx();
+          console.log('[LiveVoice] Created fresh AudioContext, state:', audioContextRef.current.state);
         }
-        analyserNodeRef.current.connect(gainNodeRef.current);
-        gainNodeRef.current.connect(audioContextRef.current.destination);
-        console.log('[LiveVoice] Web Audio graph wired: AnalyserNode -> GainNode -> Destination');
+        if (audioContextRef.current.state === 'suspended') {
+          console.log('[LiveVoice] AudioContext is suspended, calling .resume() with race timeout...');
+          try {
+            await Promise.race([
+              audioContextRef.current.resume(),
+              new Promise((resolve) => setTimeout(resolve, 600)),
+            ]);
+          } catch (resumeErr) {
+            console.warn('[LiveVoice] AudioContext resume error (non-fatal):', resumeErr);
+          }
+          console.log('[LiveVoice] AudioContext resume attempt finished. State:', audioContextRef.current.state);
+        } else {
+          console.log('[LiveVoice] AudioContext state:', audioContextRef.current.state);
+        }
+
+        if (!analyserNodeRef.current && audioContextRef.current) {
+          const analyser = audioContextRef.current.createAnalyser();
+          analyser.fftSize = 128;
+          analyser.smoothingTimeConstant = 0.8;
+          analyserNodeRef.current = analyser;
+        }
+
+        if (!gainNodeRef.current && audioContextRef.current) {
+          const gainNode = audioContextRef.current.createGain();
+          gainNode.gain.value = isMuted ? 0 : volume;
+          gainNodeRef.current = gainNode;
+        }
+
+        // Wire Web Audio Graph: AnalyserNode -> GainNode -> Destination
+        if (analyserNodeRef.current && gainNodeRef.current && audioContextRef.current) {
+          try {
+            analyserNodeRef.current.disconnect();
+          } catch {
+            // ignore
+          }
+          try {
+            gainNodeRef.current.disconnect();
+          } catch {
+            // ignore
+          }
+          analyserNodeRef.current.connect(gainNodeRef.current);
+          gainNodeRef.current.connect(audioContextRef.current.destination);
+          console.log('[LiveVoice] Web Audio graph wired: AnalyserNode -> GainNode -> Destination');
+        }
+      } catch (e) {
+        console.warn('[LiveVoice] Web Audio API init warning (continuing with connection):', e);
       }
-    } catch (e) {
-      console.warn('[LiveVoice] Web Audio API init warning:', e);
-    }
 
     // Reset playback tracking for live stream
     nextPlayTimeRef.current = 0;
@@ -573,6 +608,10 @@ export function LiveStreamingStudio({
       };
 
       ws.onopen = () => {
+        if (connectionTimeoutTimerRef.current) {
+          clearTimeout(connectionTimeoutTimerRef.current);
+          connectionTimeoutTimerRef.current = null;
+        }
         resetIdleTimer();
         setConnectionStatus('streaming');
 
@@ -759,37 +798,76 @@ export function LiveStreamingStudio({
 
       ws.onerror = (evt) => {
         console.error('[LiveVoice] WebSocket connection error:', evt);
+        if (connectionTimeoutTimerRef.current) {
+          clearTimeout(connectionTimeoutTimerRef.current);
+          connectionTimeoutTimerRef.current = null;
+        }
         setConnectionStatus('error');
-        setErrorMessage('WebSocket connection error. Please verify network connectivity and your ElevenLabs API key.');
+        setErrorMessage(
+          'Connection failed: WebSocket connection error. Please verify network connectivity, CORS/firewall settings, and your ElevenLabs API key.'
+        );
         cleanupLiveStream();
       };
 
       ws.onclose = (evt) => {
+        if (connectionTimeoutTimerRef.current) {
+          clearTimeout(connectionTimeoutTimerRef.current);
+          connectionTimeoutTimerRef.current = null;
+        }
         if (idleTimeoutTimerRef.current) clearTimeout(idleTimeoutTimerRef.current);
 
         // Policy violation or forbidden (often 402 or key issue)
         if (evt.code === 1008 || evt.code === 4001 || evt.reason?.includes('402')) {
           setIsVoiceTierError(true);
           setErrorMessage(
-            'ElevenLabs Free-Tier Voice Policy Restriction: Community/library voices require a paid plan. Please switch to an official premade voice (Sarah, George, Brian, or Alice).'
+            'Connection failed (402): ElevenLabs Free-Tier Voice Policy Restriction. Community and library voices require a paid plan. Please switch to an official premade voice (Sarah, George, Brian, or Alice).'
           );
           setConnectionStatus('error');
-        } else if (evt.code !== 1000 && connectionStatus === 'streaming') {
-          // Abnormal close
-          if (evt.reason?.toLowerCase().includes('timeout') || evt.code === 1006) {
-            setConnectionStatus('timeout');
-            setErrorMessage('ElevenLabs WebSocket closed (idle timeout or connection interrupted).');
+          cleanupLiveStream();
+        } else if (evt.code !== 1000) {
+          // If closed prematurely during handshake / connection phase
+          if (connectionStatus === 'connecting') {
+            setConnectionStatus('error');
+            const reasonDetail = evt.reason ? ` - ${evt.reason}` : '';
+            setErrorMessage(
+              `Connection failed: WebSocket closed prematurely during handshake (Code: ${evt.code}${reasonDetail}). Please verify your ElevenLabs API key status and permissions.`
+            );
+            cleanupLiveStream();
+          } else if (connectionStatus === 'streaming') {
+            // Abnormal close during streaming
+            if (evt.reason?.toLowerCase().includes('timeout') || evt.code === 1006) {
+              setConnectionStatus('timeout');
+              setErrorMessage('ElevenLabs WebSocket closed (idle timeout or connection interrupted).');
+            }
           }
         }
       };
     } catch (wsInitErr) {
       console.error('[LiveVoice] WebSocket initialization error:', wsInitErr);
+      if (connectionTimeoutTimerRef.current) {
+        clearTimeout(connectionTimeoutTimerRef.current);
+        connectionTimeoutTimerRef.current = null;
+      }
       setConnectionStatus('error');
       setErrorMessage(
-        wsInitErr instanceof Error ? wsInitErr.message : 'Failed to establish ElevenLabs WebSocket.'
+        wsInitErr instanceof Error
+          ? `Connection failed: ${wsInitErr.message}`
+          : 'Connection failed: Failed to establish ElevenLabs WebSocket.'
       );
+      cleanupLiveStream();
     }
-  };
+  } catch (outerErr) {
+    console.error('[LiveVoice] Unhandled exception in startLiveStreaming:', outerErr);
+    if (connectionTimeoutTimerRef.current) {
+      clearTimeout(connectionTimeoutTimerRef.current);
+      connectionTimeoutTimerRef.current = null;
+    }
+    const msg = outerErr instanceof Error ? outerErr.message : String(outerErr);
+    setErrorMessage(`Connection failed: Initialization exception: ${msg}`);
+    setConnectionStatus('error');
+    cleanupLiveStream();
+  }
+};
 
   // Switch voice and retry helper for 402 recovery
   const handleRecoverVoice = (safeVoiceId: string) => {
@@ -950,13 +1028,100 @@ export function LiveStreamingStudio({
         </div>
       )}
 
-      {/* General Error Banner */}
+      {/* Prominent On-Screen Error Banner / Toast */}
       {errorMessage && !isVoiceTierError && (
-        <div className="bg-rose-500/10 border border-rose-500/30 rounded-xl p-4 text-rose-300 text-xs flex items-start gap-3 animate-fadeIn">
-          <AlertCircle size={18} className="text-rose-400 shrink-0 mt-0.5" />
-          <div className="space-y-1">
-            <div className="font-semibold text-sm">Streaming Stream Error</div>
-            <p className="leading-relaxed">{errorMessage}</p>
+        <div className="bg-rose-950/80 border-2 border-rose-500/80 rounded-2xl p-4 sm:p-5 text-rose-100 text-xs sm:text-sm space-y-3 animate-fadeIn shadow-2xl shadow-rose-950/60 backdrop-blur-md">
+          <div className="flex items-start justify-between gap-3">
+            <div className="flex items-start gap-3">
+              <div className="w-8 h-8 rounded-xl bg-rose-500/20 border border-rose-500/40 flex items-center justify-center shrink-0 mt-0.5">
+                <AlertCircle size={18} className="text-rose-400" />
+              </div>
+              <div className="space-y-1">
+                <div className="font-bold text-sm sm:text-base text-rose-200 flex items-center gap-2">
+                  <span>Stream Connection Failed</span>
+                  <span className="px-2 py-0.5 text-[10px] font-mono uppercase rounded-full bg-rose-500/30 text-rose-300 border border-rose-500/40">
+                    Live WebSocket
+                  </span>
+                </div>
+                <p className="text-xs text-rose-300/90 font-medium">
+                  The live streaming connection encountered an issue or timed out.
+                </p>
+              </div>
+            </div>
+            <button
+              type="button"
+              onClick={() => {
+                playTapSound();
+                setErrorMessage(null);
+                setConnectionStatus('idle');
+              }}
+              className="p-1 rounded-lg text-rose-400 hover:text-white hover:bg-rose-900/60 transition cursor-pointer"
+              title="Dismiss error message"
+            >
+              <X size={16} />
+            </button>
+          </div>
+
+          {/* Plain Text Error Display */}
+          <div className="bg-slate-950/80 border border-rose-500/30 rounded-xl p-3 font-mono text-xs text-rose-200 break-words leading-relaxed select-all">
+            <div className="text-[10px] uppercase font-bold text-rose-400/80 mb-1 flex items-center gap-1.5">
+              <Activity size={12} />
+              Error Details (Plain Text)
+            </div>
+            {errorMessage}
+          </div>
+
+          {/* Quick Actions & Recovery */}
+          <div className="flex flex-wrap items-center gap-2.5 pt-1">
+            <button
+              type="button"
+              onClick={() => {
+                playTapSound();
+                startLiveStreaming();
+              }}
+              className="px-4 py-2 rounded-xl bg-rose-600 hover:bg-rose-500 text-white font-semibold text-xs transition shadow-md shadow-rose-600/30 cursor-pointer flex items-center gap-1.5 active:scale-98"
+            >
+              <RefreshCw size={13} />
+              <span>Retry Connection</span>
+            </button>
+
+            <button
+              type="button"
+              onClick={() => {
+                playTapSound();
+                if (errorMessage) {
+                  navigator.clipboard.writeText(errorMessage).then(() => {
+                    setHasCopiedError(true);
+                    setTimeout(() => setHasCopiedError(false), 2000);
+                  });
+                }
+              }}
+              className="px-3.5 py-2 rounded-xl bg-slate-900 hover:bg-slate-800 text-slate-200 border border-slate-700 font-semibold text-xs transition cursor-pointer flex items-center gap-1.5"
+            >
+              {hasCopiedError ? (
+                <>
+                  <Check size={13} className="text-emerald-400" />
+                  <span className="text-emerald-300">Copied!</span>
+                </>
+              ) : (
+                <>
+                  <Copy size={13} />
+                  <span>Copy Error Text</span>
+                </>
+              )}
+            </button>
+
+            <button
+              type="button"
+              onClick={() => {
+                playTapSound();
+                onFallbackToEdge();
+              }}
+              className="px-3.5 py-2 rounded-xl bg-cyan-950 hover:bg-cyan-900 text-cyan-200 border border-cyan-500/40 font-semibold text-xs transition cursor-pointer flex items-center gap-1.5"
+            >
+              <Mic size={13} />
+              <span>Switch to Edge TTS</span>
+            </button>
           </div>
         </div>
       )}
@@ -1090,7 +1255,45 @@ export function LiveStreamingStudio({
       {/* Main Action Bar */}
       <div className="flex flex-wrap items-center justify-between gap-4 pt-2">
         <div className="flex flex-wrap items-center gap-3">
-          {connectionStatus !== 'streaming' && connectionStatus !== 'connecting' ? (
+          {connectionStatus === 'connecting' ? (
+            <div className="flex items-center gap-2">
+              <button
+                type="button"
+                disabled
+                className="px-6 py-3.5 rounded-xl bg-amber-600/80 text-white font-semibold text-sm shadow-xl shadow-amber-600/20 transition flex items-center gap-2.5 cursor-wait"
+              >
+                <RefreshCw size={16} className="animate-spin" />
+                <span>Connecting (up to 15s)...</span>
+              </button>
+              <button
+                type="button"
+                onClick={handleStopStream}
+                className="px-4 py-3.5 rounded-xl bg-slate-800 hover:bg-slate-700 text-slate-300 hover:text-white border border-slate-700 font-semibold text-sm transition cursor-pointer"
+                title="Cancel connection attempt"
+              >
+                Cancel
+              </button>
+            </div>
+          ) : connectionStatus === 'streaming' ? (
+            <button
+              type="button"
+              onClick={handleStopStream}
+              className="px-6 py-3.5 rounded-xl bg-rose-600 hover:bg-rose-500 text-white font-semibold text-sm shadow-xl shadow-rose-600/30 transition flex items-center gap-2.5 cursor-pointer transform active:scale-98 animate-pulse"
+            >
+              <Square size={16} className="fill-current" />
+              <span>Stop Streaming</span>
+            </button>
+          ) : connectionStatus === 'error' ? (
+            <button
+              type="button"
+              onClick={() => startLiveStreaming()}
+              disabled={!text.trim()}
+              className="px-6 py-3.5 rounded-xl bg-gradient-to-r from-rose-600 via-purple-600 to-indigo-600 text-white font-semibold text-sm shadow-xl shadow-rose-500/20 hover:from-rose-500 hover:to-indigo-500 disabled:opacity-50 disabled:cursor-not-allowed transition flex items-center gap-2.5 cursor-pointer transform active:scale-98"
+            >
+              <RefreshCw size={16} />
+              <span>Retry Live Stream</span>
+            </button>
+          ) : (
             <button
               type="button"
               onClick={() => startLiveStreaming()}
@@ -1099,15 +1302,6 @@ export function LiveStreamingStudio({
             >
               <Radio size={18} className="animate-pulse" />
               <span>Start Live Stream</span>
-            </button>
-          ) : (
-            <button
-              type="button"
-              onClick={handleStopStream}
-              className="px-6 py-3.5 rounded-xl bg-rose-600 hover:bg-rose-500 text-white font-semibold text-sm shadow-xl shadow-rose-600/30 transition flex items-center gap-2.5 cursor-pointer transform active:scale-98 animate-pulse"
-            >
-              <Square size={16} className="fill-current" />
-              <span>Stop Streaming</span>
             </button>
           )}
 
