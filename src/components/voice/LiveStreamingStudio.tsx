@@ -193,7 +193,16 @@ export function LiveStreamingStudio({
   // Volume & Mute synchronizer
   useEffect(() => {
     if (gainNodeRef.current) {
-      gainNodeRef.current.gain.value = isMuted ? 0 : volume;
+      const val = isMuted ? 0 : volume;
+      if (audioContextRef.current && audioContextRef.current.state === 'running') {
+        try {
+          gainNodeRef.current.gain.setValueAtTime(val, audioContextRef.current.currentTime);
+        } catch {
+          gainNodeRef.current.gain.value = val;
+        }
+      } else {
+        gainNodeRef.current.gain.value = val;
+      }
       console.log('[LiveVoice] Synchronized gainNode volume:', gainNodeRef.current.gain.value);
     }
     if (recordedAudioRef.current) {
@@ -348,34 +357,32 @@ export function LiveStreamingStudio({
           console.log('[LiveVoice] AudioContext state:', audioContextRef.current.state);
         }
 
-        if (!analyserNodeRef.current && audioContextRef.current) {
+        if (!analyserNodeRef.current || analyserNodeRef.current.context !== audioContextRef.current) {
           const analyser = audioContextRef.current.createAnalyser();
           analyser.fftSize = 128;
           analyser.smoothingTimeConstant = 0.8;
           analyserNodeRef.current = analyser;
         }
 
-        if (!gainNodeRef.current && audioContextRef.current) {
+        if (!gainNodeRef.current || gainNodeRef.current.context !== audioContextRef.current) {
           const gainNode = audioContextRef.current.createGain();
-          gainNode.gain.value = isMuted ? 0 : volume;
           gainNodeRef.current = gainNode;
         }
 
-        // Wire Web Audio Graph: AnalyserNode -> GainNode -> Destination
-        if (analyserNodeRef.current && gainNodeRef.current && audioContextRef.current) {
-          try {
-            analyserNodeRef.current.disconnect();
-          } catch {
-            // ignore
-          }
-          try {
-            gainNodeRef.current.disconnect();
-          } catch {
-            // ignore
-          }
-          analyserNodeRef.current.connect(gainNodeRef.current);
+        const initialGain = isMuted ? 0 : (volume > 0 ? volume : 1.0);
+        gainNodeRef.current.gain.setValueAtTime(initialGain, audioContextRef.current.currentTime);
+
+        // Wire Web Audio Graph: GainNode -> Destination
+        try {
+          gainNodeRef.current.disconnect();
+        } catch {
+          // ignore
+        }
+        try {
           gainNodeRef.current.connect(audioContextRef.current.destination);
-          console.log('[LiveVoice] Web Audio graph wired: AnalyserNode -> GainNode -> Destination');
+          console.log('[LiveVoice] Web Audio graph wired: GainNode -> Destination (gain:', gainNodeRef.current.gain.value, ')');
+        } catch (wireErr) {
+          console.warn('[LiveVoice] GainNode connect error:', wireErr);
         }
       } catch (e) {
         console.warn('[LiveVoice] Web Audio API init warning (continuing with connection):', e);
@@ -390,42 +397,90 @@ export function LiveStreamingStudio({
     isStreamFinalRef.current = false;
 
     // Schedules a decoded AudioBuffer for seamless, gapless playback
-    const scheduleAudioBuffer = (audioBuffer: AudioBuffer, chunkInfo: string) => {
+    const scheduleAudioBuffer = async (audioBuffer: AudioBuffer, chunkInfo: string) => {
       const ctx = audioContextRef.current;
-      const analyser = analyserNodeRef.current;
-      if (!ctx || !analyser) {
-        console.warn('[LiveVoice] Cannot schedule buffer: AudioContext or AnalyserNode missing');
+      if (!ctx) {
+        console.warn('[LiveVoice] Cannot schedule buffer: AudioContext missing');
         return;
       }
 
-      if (ctx.state === 'suspended') {
-        ctx.resume().catch((err) => {
-          console.warn('[LiveVoice] AudioContext resume error during scheduling:', err);
-        });
+      // [CHECK 1] AudioContext State & Await Resume
+      if (ctx.state !== 'running') {
+        console.log(`[LiveVoice] [Check 1] audioContext.state is "${ctx.state}". Awaiting ctx.resume()...`);
+        try {
+          await ctx.resume();
+        } catch (resumeErr) {
+          console.warn('[LiveVoice] [Check 1] ctx.resume() error during scheduling:', resumeErr);
+        }
       }
+      console.log(
+        `[LiveVoice] [Check 1] audioContext.state at scheduling: "${ctx.state}" (ctx.currentTime=${ctx.currentTime.toFixed(4)}s)`
+      );
 
+      // [CHECK 2] Gain Node & Volume Initialization
+      if (!gainNodeRef.current || gainNodeRef.current.context !== ctx) {
+        gainNodeRef.current = ctx.createGain();
+      }
+      const gainNode = gainNodeRef.current;
+      const targetGain = isMuted ? 0 : (volume > 0 ? volume : 1.0);
+      gainNode.gain.setValueAtTime(targetGain, ctx.currentTime);
+      console.log(
+        `[LiveVoice] [Check 2] gainNode.gain.value=${gainNode.gain.value} (targetGain=${targetGain}, volumeState=${volume}, isMuted=${isMuted})`
+      );
+
+      // [CHECK 3] Full Connection Chain Verification
       const sourceNode = ctx.createBufferSource();
       sourceNode.buffer = audioBuffer;
 
-      // Connect to AnalyserNode (which routes to GainNode -> Destination)
-      sourceNode.connect(analyser);
+      // 1. Direct connection to GainNode (audible playback through speakers)
+      sourceNode.connect(gainNode);
 
+      // 2. Direct connection to AnalyserNode (real-time waveform visualizer)
+      if (analyserNodeRef.current && analyserNodeRef.current.context === ctx) {
+        try {
+          sourceNode.connect(analyserNodeRef.current);
+        } catch (analyserConnErr) {
+          console.warn('[LiveVoice] [Check 3] sourceNode -> analyserNode connection warning:', analyserConnErr);
+        }
+      }
+
+      // 3. Ensure GainNode is connected to destination
+      try {
+        gainNode.connect(ctx.destination);
+      } catch (destErr) {
+        console.warn('[LiveVoice] [Check 3] gainNode -> ctx.destination connection warning:', destErr);
+      }
+
+      console.log(
+        `[LiveVoice] [Check 3] Connection chain verified: sourceNode -> gainNode(gain=${gainNode.gain.value}) -> ctx.destination [SPEAKER OUTPUT]; sourceNode -> analyserNode [WAVEFORM]`
+      );
+
+      // [CHECK 4] Timing & Gapless Scheduling vs audioContext.currentTime
       const now = ctx.currentTime;
-      // Start immediately with a slight 25ms lead time if starting or queue starved,
-      // otherwise schedule back-to-back at nextPlayTimeRef.current
-      const startTime = Math.max(now + 0.025, nextPlayTimeRef.current);
       const duration = audioBuffer.duration;
+      // Start with small lead time (20ms) if first buffer or queue underrun, else gapless back-to-back
+      const startTime = Math.max(now + 0.02, nextPlayTimeRef.current);
       const endTime = startTime + duration;
-
-      sourceNode.start(startTime);
       nextPlayTimeRef.current = endTime;
 
       console.log(
-        `[LiveVoice] Scheduled AudioBuffer [${chunkInfo}]: scheduledStart=${startTime.toFixed(3)}s, scheduledEnd=${endTime.toFixed(3)}s, duration=${duration.toFixed(3)}s (ctx.currentTime=${now.toFixed(3)}s)`
+        `[LiveVoice] [Check 4] Timing check: scheduled start(time)=${startTime.toFixed(4)}s vs ctx.currentTime=${now.toFixed(4)}s (delta: +${(startTime - now).toFixed(4)}s, lead: ${((startTime - now) * 1000).toFixed(1)}ms), duration=${duration.toFixed(4)}s, nextScheduledEndTime=${endTime.toFixed(4)}s`
       );
 
-      activeSourcesRef.current.push(sourceNode);
-      setIsPlaying(true);
+      // [CHECK 5] Calling source.start()
+      try {
+        sourceNode.start(startTime);
+        activeSourcesRef.current.push(sourceNode);
+        setIsPlaying(true);
+        console.log(
+          `[LiveVoice] [Check 5] source.start(${startTime.toFixed(4)}) called successfully for buffer [${chunkInfo}] (activeSourcesCount=${activeSourcesRef.current.length})`
+        );
+      } catch (startErr) {
+        console.error(
+          `[LiveVoice] [Check 5] source.start(${startTime.toFixed(4)}) FAILED for buffer [${chunkInfo}]:`,
+          startErr
+        );
+      }
 
       sourceNode.onended = () => {
         activeSourcesRef.current = activeSourcesRef.current.filter((s) => s !== sourceNode);
@@ -568,7 +623,7 @@ export function LiveStreamingStudio({
           accumulatedChunksRef.current = [];
 
           // Schedule gapless playback
-          scheduleAudioBuffer(decodedBuffer, `${chunkCount} chunk(s), ${totalBytes} B`);
+          await scheduleAudioBuffer(decodedBuffer, `${chunkCount} chunk(s), ${totalBytes} B`);
         }
       }
 
