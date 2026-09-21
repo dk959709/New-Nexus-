@@ -223,6 +223,14 @@ export interface CloudVoiceItem {
   accent?: string;
   description?: string;
   previewUrl?: string;
+  requiresSubscription?: boolean;
+  isFreeTierCompatible?: boolean;
+}
+
+export interface StudioVoiceSettings {
+  stability: number;
+  similarityBoost: number;
+  speed: number;
 }
 
 export interface GeneratedImageItem {

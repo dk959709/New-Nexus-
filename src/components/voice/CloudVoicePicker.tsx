@@ -20,7 +20,7 @@ export function CloudVoicePicker({
   const [searchQuery, setSearchQuery] = useState('');
   const [voices, setVoices] = useState<CloudVoiceItem[]>(DEFAULT_ELEVENLABS_VOICES);
   const [loadingVoices, setLoadingVoices] = useState(false);
-  const [filterCategory, setFilterCategory] = useState<string>('all');
+  const [tierFilter, setTierFilter] = useState<'all' | 'free' | 'pro'>('all');
   const containerRef = useRef<HTMLDivElement>(null);
 
   // Active key for API fetching
@@ -80,20 +80,13 @@ export function CloudVoicePicker({
     };
   }, [voices, selectedVoiceId]);
 
-  // Unique categories
-  const categories = useMemo(() => {
-    const set = new Set<string>();
-    voices.forEach((v) => {
-      if (v.category) set.add(v.category);
-    });
-    return Array.from(set);
-  }, [voices]);
-
-  // Filter voices
   const filteredVoices = useMemo(() => {
     let list = voices;
-    if (filterCategory !== 'all') {
-      list = list.filter((v) => v.category === filterCategory);
+
+    if (tierFilter === 'free') {
+      list = list.filter((v) => v.isFreeTierCompatible !== false && !v.requiresSubscription);
+    } else if (tierFilter === 'pro') {
+      list = list.filter((v) => v.requiresSubscription || v.isFreeTierCompatible === false);
     }
 
     if (!searchQuery.trim()) return list;
@@ -108,7 +101,7 @@ export function CloudVoicePicker({
         (v.description && v.description.toLowerCase().includes(q)) ||
         (v.labels && Object.values(v.labels).some((val) => val.toLowerCase().includes(q)))
     );
-  }, [voices, filterCategory, searchQuery]);
+  }, [voices, tierFilter, searchQuery]);
 
   return (
     <div className="relative" ref={containerRef}>
@@ -144,6 +137,11 @@ export function CloudVoicePicker({
                   ({currentVoiceObj.gender})
                 </span>
               )}
+              {currentVoiceObj.requiresSubscription && (
+                <span className="text-[10px] font-mono px-1.5 py-0.2 rounded bg-amber-500/15 text-amber-300 border border-amber-500/30">
+                  Paid Plan
+                </span>
+              )}
             </div>
             <div className="text-[11px] text-slate-400 font-mono truncate">
               {currentVoiceObj.accent || 'Neural'} {currentVoiceObj.description ? `• ${currentVoiceObj.description}` : ''}
@@ -155,6 +153,26 @@ export function CloudVoicePicker({
           className={`text-slate-400 transition-transform ${isOpen ? 'rotate-180' : ''}`}
         />
       </button>
+
+      {/* Warning for paid/library voices if selected */}
+      {currentVoiceObj.requiresSubscription && (
+        <div className="mt-2 p-2.5 rounded-xl bg-amber-500/10 border border-amber-500/30 text-amber-200 text-xs flex items-center justify-between gap-2">
+          <span className="leading-snug">
+            ⚠️ <strong>{currentVoiceObj.name}</strong> requires a paid ElevenLabs plan via API.
+          </span>
+          <button
+            type="button"
+            onClick={(e) => {
+              e.stopPropagation();
+              playTapSound();
+              onSelectVoice('gOupLcAkjEnguROwi4oS'); // Darian
+            }}
+            className="text-[11px] font-medium px-2 py-1 rounded bg-amber-500/20 hover:bg-amber-500/30 text-amber-100 border border-amber-500/40 transition shrink-0 cursor-pointer"
+          >
+            Switch to Darian
+          </button>
+        </div>
+      )}
 
       {/* Dropdown / Selection Panel */}
       {isOpen && (
@@ -188,36 +206,42 @@ export function CloudVoicePicker({
               </button>
             </div>
 
-            {/* Filter pills if multiple categories exist */}
-            {categories.length > 1 && (
-              <div className="flex items-center gap-1.5 overflow-x-auto pb-1 custom-scrollbar">
-                <button
-                  type="button"
-                  onClick={() => setFilterCategory('all')}
-                  className={`text-[10px] font-mono px-2.5 py-1 rounded-lg border transition ${
-                    filterCategory === 'all'
-                      ? 'bg-purple-500/20 text-purple-300 border-purple-500/40 font-semibold'
-                      : 'bg-slate-900 text-slate-400 border-slate-800 hover:text-slate-200'
-                  }`}
-                >
-                  All ({voices.length})
-                </button>
-                {categories.map((cat) => (
-                  <button
-                    key={cat}
-                    type="button"
-                    onClick={() => setFilterCategory(cat)}
-                    className={`text-[10px] font-mono px-2.5 py-1 rounded-lg border capitalize transition ${
-                      filterCategory === cat
-                        ? 'bg-purple-500/20 text-purple-300 border-purple-500/40 font-semibold'
-                        : 'bg-slate-900 text-slate-400 border-slate-800 hover:text-slate-200'
-                    }`}
-                  >
-                    {cat}
-                  </button>
-                ))}
-              </div>
-            )}
+            {/* Quick Filter: Free Tier vs All */}
+            <div className="flex items-center gap-1.5 overflow-x-auto pb-1 custom-scrollbar">
+              <button
+                type="button"
+                onClick={() => setTierFilter('all')}
+                className={`text-[10px] font-mono px-2 py-0.5 rounded-lg border transition ${
+                  tierFilter === 'all'
+                    ? 'bg-purple-500/20 text-purple-300 border-purple-500/40 font-semibold'
+                    : 'bg-slate-900 text-slate-400 border-slate-800 hover:text-slate-200'
+                }`}
+              >
+                All Voices
+              </button>
+              <button
+                type="button"
+                onClick={() => setTierFilter('free')}
+                className={`text-[10px] font-mono px-2 py-0.5 rounded-lg border transition ${
+                  tierFilter === 'free'
+                    ? 'bg-emerald-500/20 text-emerald-300 border-emerald-500/40 font-semibold'
+                    : 'bg-slate-900 text-slate-400 border-slate-800 hover:text-slate-200'
+                }`}
+              >
+                Standard Voices
+              </button>
+              <button
+                type="button"
+                onClick={() => setTierFilter('pro')}
+                className={`text-[10px] font-mono px-2 py-0.5 rounded-lg border transition ${
+                  tierFilter === 'pro'
+                    ? 'bg-amber-500/20 text-amber-300 border-amber-500/40 font-semibold'
+                    : 'bg-slate-900 text-slate-400 border-slate-800 hover:text-slate-200'
+                }`}
+              >
+                Paid / Library
+              </button>
+            </div>
 
             <div className="flex items-center justify-between px-1 text-[11px] font-mono text-slate-400">
               <span>{filteredVoices.length} voice models available</span>
@@ -234,6 +258,8 @@ export function CloudVoicePicker({
             ) : (
               filteredVoices.map((v) => {
                 const isSelected = v.id === selectedVoiceId;
+                const isPaidOnly = v.requiresSubscription || v.isFreeTierCompatible === false;
+
                 return (
                   <button
                     key={v.id}
@@ -252,6 +278,11 @@ export function CloudVoicePicker({
                     <div className="space-y-1 flex-1 min-w-0">
                       <div className="flex items-center gap-2 flex-wrap">
                         <span className="font-semibold text-slate-100 text-sm">{v.name}</span>
+                        {isPaidOnly && (
+                          <span className="text-[10px] font-mono px-1.5 py-0.5 rounded bg-amber-500/15 text-amber-300 border border-amber-500/30">
+                            Paid Plan Required
+                          </span>
+                        )}
                         {v.gender && (
                           <span className="text-[10px] font-mono px-1.5 py-0.5 rounded bg-slate-800 text-slate-300 border border-slate-700">
                             {v.gender}
@@ -262,22 +293,10 @@ export function CloudVoicePicker({
                             {v.accent}
                           </span>
                         )}
-                        {v.category && (
-                          <span className="text-[10px] font-mono px-1.5 py-0.5 rounded bg-slate-800/80 text-slate-400 capitalize">
-                            {v.category}
-                          </span>
-                        )}
                       </div>
                       {v.description && (
                         <p className="text-[11px] text-slate-400 line-clamp-1 leading-relaxed">
                           {v.description}
-                        </p>
-                      )}
-                      {v.labels && Object.keys(v.labels).length > 0 && !v.description && (
-                        <p className="text-[11px] text-slate-400 font-mono truncate">
-                          {Object.entries(v.labels)
-                            .map(([k, val]) => `${k}: ${val}`)
-                            .join(' • ')}
                         </p>
                       )}
                     </div>

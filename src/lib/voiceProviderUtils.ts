@@ -1,4 +1,4 @@
-import { VoiceProviderConfig, CloudVoiceItem, AIKeyItem } from '@/types';
+import { VoiceProviderConfig, CloudVoiceItem, AIKeyItem, StudioVoiceSettings } from '@/types';
 import { DEFAULT_ELEVENLABS_VOICES } from '@/data/elevenLabsVoices';
 import { storage } from '@/lib/storage';
 
@@ -60,19 +60,22 @@ export function buildVoiceEndpointUrl(urlTemplate: string, voiceId: string): str
 export function buildVoiceRequestBody(
   template?: string,
   text: string = '',
-  model?: string
+  model?: string,
+  settings?: StudioVoiceSettings
 ): Record<string, unknown> {
   const cleanText = text.trim();
   const modelToUse = model || 'eleven_multilingual_v2';
+  const voiceSettings = {
+    stability: typeof settings?.stability === 'number' ? settings.stability : 0.5,
+    similarity_boost: typeof settings?.similarityBoost === 'number' ? settings.similarityBoost : 0.75,
+    ...(typeof settings?.speed === 'number' && settings.speed !== 1.0 ? { speed: settings.speed } : {}),
+  };
 
   if (!template || !template.trim()) {
     return {
       text: cleanText,
       model_id: modelToUse,
-      voice_settings: {
-        stability: 0.5,
-        similarity_boost: 0.75,
-      },
+      voice_settings: voiceSettings,
     };
   }
 
@@ -85,16 +88,18 @@ export function buildVoiceRequestBody(
       .replace(/"\{model\}"/g, JSON.stringify(modelToUse))
       .replace(/\{model\}/g, modelToUse);
 
-    return JSON.parse(replaced) as Record<string, unknown>;
+    const parsed = JSON.parse(replaced) as Record<string, unknown>;
+    parsed.voice_settings = {
+      ...((parsed.voice_settings as Record<string, unknown>) || {}),
+      ...voiceSettings,
+    };
+    return parsed;
   } catch (parseErr) {
     console.warn('[VoiceProvider] JSON.parse template failed, using safe fallback:', parseErr);
     return {
       text: cleanText,
       model_id: modelToUse,
-      voice_settings: {
-        stability: 0.5,
-        similarity_boost: 0.75,
-      },
+      voice_settings: voiceSettings,
     };
   }
 }
@@ -149,27 +154,47 @@ export async function fetchCloudVoices(
     const rawVoices = Array.isArray(data.voices) ? data.voices : Array.isArray(data) ? data : null;
 
     if (rawVoices && rawVoices.length > 0) {
-      return rawVoices.map((v: Record<string, unknown>) => {
-        const id = String(v.voice_id || v.id || '');
-        const name = String(v.name || id);
-        const category = typeof v.category === 'string' ? v.category : undefined;
-        const labels = typeof v.labels === 'object' && v.labels !== null ? (v.labels as Record<string, string>) : undefined;
-        const gender = labels?.gender || (typeof v.gender === 'string' ? v.gender : undefined);
-        const accent = labels?.accent || (typeof v.accent === 'string' ? v.accent : undefined);
-        const description = typeof v.description === 'string' ? v.description : labels?.description;
-        const previewUrl = typeof v.preview_url === 'string' ? v.preview_url : undefined;
+      const parsedVoices: CloudVoiceItem[] = rawVoices
+        .map((v: Record<string, unknown>) => {
+          const id = String(v.voice_id || v.id || '');
+          const name = String(v.name || id);
+          const category = typeof v.category === 'string' ? v.category : undefined;
+          const labels = typeof v.labels === 'object' && v.labels !== null ? (v.labels as Record<string, string>) : undefined;
+          const gender = labels?.gender || (typeof v.gender === 'string' ? v.gender : undefined);
+          const accent = labels?.accent || (typeof v.accent === 'string' ? v.accent : undefined);
+          const description = typeof v.description === 'string' ? v.description : labels?.description;
+          const previewUrl = typeof v.preview_url === 'string' ? v.preview_url : undefined;
+          const availableTiers = Array.isArray(v.available_for_tiers) ? (v.available_for_tiers as string[]) : undefined;
 
-        return {
-          id,
-          name,
-          category,
-          labels,
-          gender,
-          accent,
-          description,
-          previewUrl,
-        };
-      }).filter((v: CloudVoiceItem) => Boolean(v.id));
+          // Legacy voices known to be restricted on free tier API (e.g. Rachel 21m00Tcm4TlvDq8ikWAM)
+          const isLegacyRestricted = id === '21m00Tcm4TlvDq8ikWAM' || id === 'AZnzlk1XvdvUeBnXmlld' || id === 'ErXwobaYiN019PkySvjV';
+          const isLibrary = category === 'library' || Boolean(v.sharing && (v.sharing as Record<string, unknown>).library_item_id) || isLegacyRestricted;
+          const requiresSubscription = isLibrary || (availableTiers && availableTiers.length > 0 && !availableTiers.includes('free'));
+          const isFreeTierCompatible = !requiresSubscription;
+
+          return {
+            id,
+            name,
+            category,
+            labels,
+            gender,
+            accent,
+            description,
+            previewUrl,
+            requiresSubscription,
+            isFreeTierCompatible,
+          };
+        })
+        .filter((v: CloudVoiceItem) => Boolean(v.id));
+
+      // Sort: Free tier compatible voices first, then alphabetical
+      parsedVoices.sort((a, b) => {
+        if (a.isFreeTierCompatible && !b.isFreeTierCompatible) return -1;
+        if (!a.isFreeTierCompatible && b.isFreeTierCompatible) return 1;
+        return a.name.localeCompare(b.name);
+      });
+
+      return parsedVoices;
     }
 
     return DEFAULT_ELEVENLABS_VOICES;
@@ -186,7 +211,8 @@ export async function synthesizeCloudVoiceAudio(
   provider: VoiceProviderConfig,
   text: string,
   voiceId: string,
-  onProgress?: (msg: string) => void
+  onProgress?: (msg: string) => void,
+  settings?: StudioVoiceSettings
 ): Promise<{ blob: Blob; usedKeyId?: string }> {
   const cleanText = text.trim();
   if (!cleanText) {
@@ -238,7 +264,7 @@ export async function synthesizeCloudVoiceAudio(
       }
 
       const headers = buildVoiceRequestHeaders(provider, keyVal);
-      const requestPayload = buildVoiceRequestBody(provider.requestBodyTemplate, cleanText, provider.model);
+      const requestPayload = buildVoiceRequestBody(provider.requestBodyTemplate, cleanText, provider.model, settings);
 
       const controller = new AbortController();
       const timeoutId = setTimeout(() => controller.abort(), 35000);
@@ -272,6 +298,26 @@ export async function synthesizeCloudVoiceAudio(
           }
         } catch {
           // ignore parsing error
+        }
+
+        const isVoiceTierRestricted =
+          response.status === 402 ||
+          /needs_to_be_subscribed_to_use_voice/i.test(errMessage) ||
+          /cannot use library voices/i.test(errMessage) ||
+          /library voices via the api/i.test(errMessage) ||
+          /upgrade your subscription to use this voice/i.test(errMessage);
+
+        if (isVoiceTierRestricted) {
+          // The API key is valid and authenticated; the voice itself is restricted on the free tier.
+          // Keep key healthy and do not penalize it.
+          storage.updateVoiceKeyHealth(provider.id, keyItem.id, 'healthy');
+          const restrictionError = new Error(
+            `Free users cannot use library voices via the API. Please switch to a supported default voice model (such as Darian, Talia, or Elara) or upgrade your ElevenLabs subscription.`
+          );
+          (restrictionError as Record<string, unknown>).isVoiceTierRestricted = true;
+          (restrictionError as Record<string, unknown>).suggestedVoiceId = 'gOupLcAkjEnguROwi4oS';
+          (restrictionError as Record<string, unknown>).suggestedVoiceName = 'Darian';
+          throw restrictionError;
         }
 
         const isAuthError = response.status === 401 || response.status === 403;
@@ -311,6 +357,12 @@ export async function synthesizeCloudVoiceAudio(
       const parsedErr = err instanceof Error ? err : new Error(String(err));
       console.warn(`[VoiceProvider] Key ${keyItem.id} failed:`, parsedErr.message);
       lastError = parsedErr;
+
+      // If this is a voice-tier restriction, breaking immediately prevents attempting other keys
+      // which would also fail because the voice model itself is restricted.
+      if ((parsedErr as Record<string, unknown>).isVoiceTierRestricted) {
+        break;
+      }
 
       // If user selected manual strategy, do not failover automatically
       if (provider.keyStrategy === 'manual') {

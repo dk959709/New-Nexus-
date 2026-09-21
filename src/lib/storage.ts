@@ -355,7 +355,7 @@ export const DEFAULT_VOICE_PROVIDERS: VoiceProviderConfig[] = [
     url: 'https://api.elevenlabs.io/v1/text-to-speech/{voice_id}',
     voicesUrl: 'https://api.elevenlabs.io/v1/voices',
     model: 'eleven_multilingual_v2',
-    voiceId: '21m00Tcm4TlvDq8ikWAM',
+    voiceId: 'gOupLcAkjEnguROwi4oS',
     requestType: 'post',
     customHeaderName: 'xi-api-key',
     requestBodyTemplate: '{\n  "text": "{text}",\n  "model_id": "eleven_multilingual_v2"\n}',
@@ -1353,6 +1353,23 @@ export const storage = {
     if (!loaded.providers || loaded.providers.length === 0) {
       return defaultState;
     }
+
+    // Auto-migrate any legacy restricted Rachel voice ID ('21m00Tcm4TlvDq8ikWAM') in ElevenLabs providers
+    let needsMigration = false;
+    const migratedProviders = loaded.providers.map((p) => {
+      if (p.voiceId === '21m00Tcm4TlvDq8ikWAM') {
+        needsMigration = true;
+        return { ...p, voiceId: 'gOupLcAkjEnguROwi4oS' };
+      }
+      return p;
+    });
+
+    if (needsMigration) {
+      const updatedState = { ...loaded, providers: migratedProviders };
+      write(KEYS.voiceProviders, updatedState);
+      return updatedState;
+    }
+
     return loaded;
   },
 
@@ -1396,18 +1413,26 @@ export const storage = {
   },
 
   getCloudVoice(): string {
+    const fallbackDefault = 'gOupLcAkjEnguROwi4oS'; // Darian (Universal default, works on free and paid tiers)
     try {
       const raw = localStorage.getItem(KEYS.cloudVoice);
-      if (!raw) return '21m00Tcm4TlvDq8ikWAM';
+      if (!raw) return fallbackDefault;
+      let voiceVal = raw;
       try {
         const parsed = JSON.parse(raw);
-        if (typeof parsed === 'string' && parsed.trim()) return parsed.trim();
+        if (typeof parsed === 'string' && parsed.trim()) voiceVal = parsed.trim();
       } catch {
-        if (raw.trim()) return raw.trim();
+        if (raw.trim()) voiceVal = raw.trim();
       }
-      return '21m00Tcm4TlvDq8ikWAM';
+
+      // Auto-migrate legacy restricted Rachel voice ID which fails with 402 on free tier API accounts
+      if (voiceVal === '21m00Tcm4TlvDq8ikWAM' || !voiceVal) {
+        this.saveCloudVoice(fallbackDefault);
+        return fallbackDefault;
+      }
+      return voiceVal;
     } catch {
-      return '21m00Tcm4TlvDq8ikWAM';
+      return fallbackDefault;
     }
   },
 

@@ -16,9 +16,14 @@ import {
 } from 'lucide-react';
 import { playTapSound } from '@/lib/audio';
 import { storage } from '@/lib/storage';
-import { VoiceProviderConfig } from '@/types';
+import { VoiceProviderConfig, StudioVoiceSettings } from '@/types';
 import { EdgeVoicePicker } from '@/components/voice/EdgeVoicePicker';
 import { CloudVoicePicker } from '@/components/voice/CloudVoicePicker';
+import { StudioWaveformVisualizer } from '@/components/voice/StudioWaveformVisualizer';
+import { StudioHeroGraphic } from '@/components/voice/StudioHeroGraphic';
+import { StudioAudioControls } from '@/components/voice/StudioAudioControls';
+import { StudioScriptPalettes } from '@/components/voice/StudioScriptPalettes';
+import { DEFAULT_ELEVENLABS_VOICES } from '@/data/elevenLabsVoices';
 import { cleanMarkdownForSpeech } from '@/lib/format';
 import { synthesizeCloudVoiceAudio } from '@/lib/voiceProviderUtils';
 
@@ -30,13 +35,6 @@ const EDGE_SAMPLE_TEXTS = [
   "Artificial Intelligence and advanced speech generation are transforming how we communicate across digital interfaces.",
   "The quick brown fox jumps over the lazy dog with crystal-clear neural articulation.",
   "In a world driven by data and automation, clear vocal interfaces bridge human intent and machine execution seamlessly.",
-];
-
-const CLOUD_SAMPLE_TEXTS = [
-  "Greetings from Cloud Voice AI. High-fidelity neural voice synthesis is now operational.",
-  "With multi-provider voice synthesis, you can articulate complex ideas with human-like expressiveness.",
-  "The atmosphere was charged with quiet anticipation as the research team initiated the neural speech array.",
-  "Experience natural vocal cadence, dynamic tone inflection, and multi-language clarity powered by cloud voice engines.",
 ];
 
 type VoiceSectionType = 'edge' | 'cloud';
@@ -127,11 +125,19 @@ export function VoiceAI() {
   const [cloudDownloading, setCloudDownloading] = useState(false);
   const [cloudProgressStatus, setCloudProgressStatus] = useState<string | null>(null);
   const [cloudError, setCloudError] = useState<string | null>(null);
+  const [isVoiceTierError, setIsVoiceTierError] = useState(false);
   const [cloudAudioUrl, setCloudAudioUrl] = useState<string | null>(null);
   const [cloudSynthesizedText, setCloudSynthesizedText] = useState<string | null>(null);
   const [cloudSynthesizedVoice, setCloudSynthesizedVoice] = useState<string | null>(null);
-  const [cloudIsPlaying, setCloudIsPlaying] = useState(false);
-  const cloudAudioRef = useRef<HTMLAudioElement | null>(null);
+  const [studioSettings, setStudioSettings] = useState<StudioVoiceSettings>({
+    stability: 0.5,
+    similarityBoost: 0.75,
+    speed: 1.0,
+  });
+
+  const selectedVoiceItem = DEFAULT_ELEVENLABS_VOICES.find((v) => v.id === selectedCloudVoice);
+  const selectedVoiceName = selectedVoiceItem?.name || selectedCloudVoice;
+  const isFreeTierOk = selectedVoiceItem?.isFreeTierCompatible ?? true;
 
   // Keep active voice provider in sync with storage
   const syncVoiceProvider = useCallback(() => {
@@ -302,8 +308,7 @@ export function VoiceAI() {
   };
 
   // Cloud Voice Handlers
-  const handleCloudSpeak = async (e?: React.FormEvent) => {
-    if (e) e.preventDefault();
+  const executeCloudSynthesis = async (overrideVoiceId?: string) => {
     if (!cloudText.trim()) {
       setCloudError('Please enter text to synthesize.');
       return;
@@ -318,6 +323,13 @@ export function VoiceAI() {
     setCloudLoading(true);
     setCloudProgressStatus(`Connecting to ${activeVoiceProvider.name}...`);
     setCloudError(null);
+    setIsVoiceTierError(false);
+
+    const voiceToUse = overrideVoiceId || selectedCloudVoice;
+    if (overrideVoiceId) {
+      setSelectedCloudVoice(overrideVoiceId);
+      storage.saveCloudVoice(overrideVoiceId);
+    }
 
     if (cloudAudioUrl) {
       URL.revokeObjectURL(cloudAudioUrl);
@@ -329,31 +341,38 @@ export function VoiceAI() {
       const result = await synthesizeCloudVoiceAudio(
         activeVoiceProvider,
         cleaned,
-        selectedCloudVoice,
-        (msg) => setCloudProgressStatus(msg)
+        voiceToUse,
+        (msg) => setCloudProgressStatus(msg),
+        studioSettings
       );
 
       const url = URL.createObjectURL(result.blob);
       setCloudAudioUrl(url);
       setCloudSynthesizedText(cloudText);
-      setCloudSynthesizedVoice(selectedCloudVoice);
-
-      setTimeout(() => {
-        if (cloudAudioRef.current) {
-          cloudAudioRef.current.play().catch((err) => {
-            console.warn('Autoplay prevented:', err);
-          });
-          setCloudIsPlaying(true);
-        }
-      }, 100);
+      setCloudSynthesizedVoice(voiceToUse);
     } catch (err: unknown) {
       console.error('[Cloud Voice AI] Speech generation error:', err);
       const msg = err instanceof Error ? err.message : String(err);
+      const isTierIssue =
+        (err as Record<string, unknown>)?.isVoiceTierRestricted ||
+        /library voices/i.test(msg) ||
+        /needs_to_be_subscribed/i.test(msg) ||
+        /upgrade your subscription/i.test(msg) ||
+        /free users cannot use/i.test(msg);
+
+      if (isTierIssue) {
+        setIsVoiceTierError(true);
+      }
       setCloudError(msg || 'Failed to generate cloud voice audio.');
     } finally {
       setCloudLoading(false);
       setCloudProgressStatus(null);
     }
+  };
+
+  const handleCloudSpeak = async (e?: React.FormEvent) => {
+    if (e) e.preventDefault();
+    await executeCloudSynthesis();
   };
 
   const handleCloudDownload = async () => {
@@ -384,7 +403,8 @@ export function VoiceAI() {
         activeVoiceProvider,
         cleaned,
         selectedCloudVoice,
-        (msg) => setCloudProgressStatus(msg)
+        (msg) => setCloudProgressStatus(msg),
+        studioSettings
       );
 
       const url = URL.createObjectURL(result.blob);
@@ -705,38 +725,45 @@ export function VoiceAI() {
       )}
 
       {/* ========================================================================= */}
-      {/* SECTION 2: CLOUD VOICE AI */}
+      {/* SECTION 2: CLOUD VOICE AI (PRO STUDIO) */}
       {/* ========================================================================= */}
       {activeSection === 'cloud' && (
         <div className="bg-slate-900/80 border border-slate-800 rounded-2xl p-6 sm:p-8 shadow-2xl backdrop-blur-xl relative overflow-hidden space-y-6 animate-fadeIn">
           <div className="absolute top-0 right-0 w-96 h-96 bg-purple-500/5 rounded-full blur-3xl pointer-events-none" />
 
-          {/* Section Header Banner */}
-          <div className="flex items-center justify-between pb-4 border-b border-slate-800/80 flex-wrap gap-3">
-            <div className="space-y-1">
-              <div className="flex items-center gap-2">
-                <div className="w-2.5 h-2.5 rounded-full bg-purple-400 animate-pulse" />
-                <h2 className="text-base font-bold text-slate-100">Cloud Voice AI</h2>
-                {activeVoiceProvider && (
-                  <span className="text-[10px] font-mono px-2 py-0.5 rounded-full bg-purple-500/15 text-purple-300 border border-purple-500/30">
-                    Active: {activeVoiceProvider.name}
-                  </span>
-                )}
-              </div>
-              <p className="text-xs text-slate-400">
-                Premium multi-provider cloud voice synthesis (e.g. ElevenLabs) with automatic key failover and expressive voice models.
-              </p>
+          {/* Top Actions Bar */}
+          <div className="flex items-center justify-between flex-wrap gap-3 pb-2 border-b border-slate-800/60">
+            <div className="flex items-center gap-2">
+              <span className="text-xs font-mono font-bold text-purple-300 uppercase tracking-wider flex items-center gap-1.5">
+                <Sparkles size={13} className="text-purple-400" />
+                Production Studio
+              </span>
+              <span className="text-[10px] font-mono px-2 py-0.5 rounded-full bg-slate-800 text-slate-300 border border-slate-700">
+                {activeVoiceProvider ? activeVoiceProvider.name : 'ElevenLabs Engine'}
+              </span>
             </div>
 
             <button
               type="button"
               onClick={() => navigate('/settings')}
-              className="px-3 py-1.5 rounded-xl bg-slate-800 hover:bg-slate-700 border border-slate-700 text-purple-300 text-xs font-semibold flex items-center gap-1.5 transition cursor-pointer"
+              className="px-3 py-1.5 rounded-xl bg-slate-800/90 hover:bg-slate-700/90 border border-slate-700 text-purple-300 text-xs font-semibold flex items-center gap-1.5 transition cursor-pointer"
             >
               <Settings size={13} />
               <span>Voice AI Settings</span>
             </button>
           </div>
+
+          {/* Studio Hero Graphic Banner */}
+          <StudioHeroGraphic
+            providerName={activeVoiceProvider ? activeVoiceProvider.name : 'Cloud Voice AI'}
+            selectedVoiceName={selectedVoiceName}
+            selectedVoiceId={selectedCloudVoice}
+            isFreeTierOk={isFreeTierOk}
+            onQuickSelectVoice={(vId) => {
+              setSelectedCloudVoice(vId);
+              storage.saveCloudVoice(vId);
+            }}
+          />
 
           {/* Warning if no key configured */}
           {!hasCloudKeyConfigured && (
@@ -760,48 +787,32 @@ export function VoiceAI() {
           )}
 
           <form onSubmit={handleCloudSpeak} className="space-y-6 relative z-10">
-            {/* Voice Selector & Presets */}
-            <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-              <div>
-                <CloudVoicePicker
-                  selectedVoiceId={selectedCloudVoice}
-                  onSelectVoice={(vId) => {
-                    setSelectedCloudVoice(vId);
-                    storage.saveCloudVoice(vId);
-                  }}
-                  activeProvider={activeVoiceProvider}
-                />
-              </div>
-
-              <div>
-                <label className="block text-xs font-mono font-semibold text-slate-300 uppercase tracking-wider mb-2">
-                  Quick Prompts
-                </label>
-                <div className="flex flex-wrap gap-2">
-                  {CLOUD_SAMPLE_TEXTS.slice(0, 2).map((s, idx) => (
-                    <button
-                      key={idx}
-                      type="button"
-                      onClick={() => {
-                        playTapSound();
-                        setCloudText(s);
-                        setCloudError(null);
-                      }}
-                      className="text-xs bg-slate-800/80 hover:bg-slate-700 text-slate-300 hover:text-slate-100 px-3 py-2 rounded-lg border border-slate-700/50 transition truncate max-w-[200px]"
-                      title={s}
-                    >
-                      Sample {idx + 1}
-                    </button>
-                  ))}
-                </div>
-              </div>
+            {/* Voice Model Selector */}
+            <div className="space-y-2">
+              <CloudVoicePicker
+                selectedVoiceId={selectedCloudVoice}
+                onSelectVoice={(vId) => {
+                  setSelectedCloudVoice(vId);
+                  storage.saveCloudVoice(vId);
+                }}
+                activeProvider={activeVoiceProvider}
+              />
             </div>
 
-            {/* Textarea Input */}
+            {/* Production Script Presets & Duration Telemetry */}
+            <StudioScriptPalettes
+              currentText={cloudText}
+              onSelectScript={(text) => {
+                setCloudText(text);
+                if (cloudError) setCloudError(null);
+              }}
+            />
+
+            {/* Studio Script Textarea Input */}
             <div className="space-y-2">
               <div className="flex justify-between items-center">
                 <label className="block text-xs font-mono font-semibold text-slate-300 uppercase tracking-wider">
-                  Input Text for Cloud Voice Synthesis
+                  Script & Spoken Dialogue
                 </label>
                 <span
                   className={`text-xs font-mono transition-colors ${
@@ -819,38 +830,89 @@ export function VoiceAI() {
                   setCloudText(e.target.value);
                   if (cloudError) setCloudError(null);
                 }}
-                placeholder="Enter text to synthesize with Cloud Voice AI..."
-                rows={6}
+                placeholder="Type or paste dialogue here to synthesize in studio quality..."
+                rows={5}
                 maxLength={MAX_CHAR_LIMIT}
-                className="w-full bg-slate-950 border border-slate-700/80 rounded-xl p-4 text-slate-100 text-sm focus:outline-none focus:border-purple-500 transition resize-y shadow-inner leading-relaxed"
+                className="w-full bg-slate-950 border border-slate-700/80 rounded-xl p-4 text-slate-100 text-sm focus:outline-none focus:border-purple-500 focus:ring-1 focus:ring-purple-500/50 transition resize-y shadow-inner leading-relaxed"
               />
             </div>
 
-            {/* Error Banner */}
+            {/* Studio Audio Tuning Rack (Stability, Clarity, Pace) */}
+            <StudioAudioControls
+              settings={studioSettings}
+              onChangeSettings={setStudioSettings}
+            />
+
+            {/* Error Banner with 1-click tier recovery */}
             {cloudError && (
-              <div className="bg-rose-500/10 border border-rose-500/30 rounded-xl p-4 flex items-start gap-3 text-rose-300 text-sm animate-fadeIn">
-                <AlertCircle size={18} className="text-rose-400 shrink-0 mt-0.5" />
-                <div className="flex-1">{cloudError}</div>
+              <div
+                className={`rounded-xl p-4 border animate-fadeIn ${
+                  isVoiceTierError
+                    ? 'bg-amber-500/10 border-amber-500/30 text-amber-200'
+                    : 'bg-rose-500/10 border-rose-500/30 text-rose-300'
+                }`}
+              >
+                <div className="flex items-start gap-3">
+                  {isVoiceTierError ? (
+                    <Sparkles size={18} className="text-amber-400 shrink-0 mt-0.5" />
+                  ) : (
+                    <AlertCircle size={18} className="text-rose-400 shrink-0 mt-0.5" />
+                  )}
+                  <div className="flex-1 space-y-2">
+                    {isVoiceTierError && (
+                      <div className="font-semibold text-amber-300 text-sm flex items-center gap-1.5">
+                        ElevenLabs Free-Tier Voice Restriction Detected
+                      </div>
+                    )}
+                    <p className="text-xs sm:text-sm leading-relaxed">{cloudError}</p>
+                    {isVoiceTierError && (
+                      <div className="pt-2 flex flex-wrap items-center gap-2">
+                        <button
+                          type="button"
+                          onClick={() => executeCloudSynthesis('gOupLcAkjEnguROwi4oS')}
+                          className="px-3.5 py-1.5 rounded-lg bg-amber-500 hover:bg-amber-400 text-slate-950 font-semibold text-xs transition shadow cursor-pointer flex items-center gap-1.5"
+                        >
+                          <Sparkles size={13} />
+                          Switch to Darian & Retry
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => executeCloudSynthesis('OZ0L6eISlOejga3XjDFt')}
+                          className="px-3.5 py-1.5 rounded-lg bg-slate-800 hover:bg-slate-700 text-amber-200 border border-amber-500/40 font-semibold text-xs transition cursor-pointer"
+                        >
+                          Switch to Talia
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => executeCloudSynthesis('WQP7cQUF5aAS6Axh5yaa')}
+                          className="px-3.5 py-1.5 rounded-lg bg-slate-800 hover:bg-slate-700 text-amber-200 border border-amber-500/40 font-semibold text-xs transition cursor-pointer"
+                        >
+                          Switch to Elara
+                        </button>
+                      </div>
+                    )}
+                  </div>
+                </div>
               </div>
             )}
 
             {/* Action Bar */}
-            <div className="flex flex-wrap items-center justify-between gap-4 pt-2">
+            <div className="flex flex-wrap items-center justify-between gap-4 pt-1">
               <div className="flex flex-wrap items-center gap-3">
                 <button
                   type="submit"
                   disabled={cloudLoading || cloudDownloading || !cloudText.trim()}
-                  className="px-6 py-3 rounded-xl bg-gradient-to-r from-purple-600 to-indigo-600 text-white font-semibold text-sm shadow-lg shadow-purple-500/20 hover:from-purple-500 hover:to-indigo-500 disabled:opacity-50 disabled:cursor-not-allowed transition flex items-center gap-2 cursor-pointer"
+                  className="px-6 py-3 rounded-xl bg-gradient-to-r from-purple-600 to-indigo-600 text-white font-semibold text-sm shadow-lg shadow-purple-500/25 hover:from-purple-500 hover:to-indigo-500 disabled:opacity-50 disabled:cursor-not-allowed transition flex items-center gap-2 cursor-pointer transform active:scale-98"
                 >
                   {cloudLoading ? (
                     <>
                       <RefreshCw size={17} className="animate-spin" />
-                      <span>{cloudProgressStatus || 'Synthesizing Audio...'}</span>
+                      <span>{cloudProgressStatus || 'Synthesizing Studio Audio...'}</span>
                     </>
                   ) : (
                     <>
                       <Sparkles size={17} />
-                      <span>Speak It</span>
+                      <span>Synthesize Speech</span>
                     </>
                   )}
                 </button>
@@ -887,7 +949,7 @@ export function VoiceAI() {
                     setCloudSynthesizedVoice(null);
                     setCloudError(null);
                   }}
-                  className="text-xs text-slate-400 hover:text-slate-200 transition"
+                  className="text-xs text-slate-400 hover:text-slate-200 transition px-2 py-1 rounded hover:bg-slate-800 cursor-pointer"
                 >
                   Clear text
                 </button>
@@ -895,55 +957,16 @@ export function VoiceAI() {
             </div>
           </form>
 
-          {/* Audio Player Card */}
+          {/* Interactive Studio Waveform Visualizer & Audio Player */}
           {cloudAudioUrl && (
             <div className="mt-8 pt-6 border-t border-slate-800 animate-fadeIn space-y-4">
-              <div className="flex items-center justify-between">
-                <div className="flex items-center gap-2 text-emerald-400 text-sm font-medium">
-                  <CheckCircle2 size={18} />
-                  <span>Audio Generated Successfully (Cloud Voice AI)</span>
-                </div>
-                <button
-                  type="button"
-                  onClick={handleCloudDownload}
-                  className="inline-flex items-center gap-1.5 text-xs font-medium px-3 py-1.5 rounded-lg bg-slate-800 hover:bg-slate-700 text-purple-300 border border-slate-700 transition cursor-pointer"
-                >
-                  <Download size={14} /> Download MP3
-                </button>
-              </div>
-
-              <div className="bg-slate-950 border border-slate-800 rounded-xl p-4 flex items-center gap-4">
-                <button
-                  type="button"
-                  onClick={() => {
-                    if (!cloudAudioRef.current) return;
-                    playTapSound();
-                    if (cloudIsPlaying) {
-                      cloudAudioRef.current.pause();
-                      setCloudIsPlaying(false);
-                    } else {
-                      cloudAudioRef.current.play().catch(() => {});
-                      setCloudIsPlaying(true);
-                    }
-                  }}
-                  className="w-12 h-12 rounded-full bg-purple-600 hover:bg-purple-500 text-white flex items-center justify-center shadow-lg shadow-purple-500/30 transition cursor-pointer shrink-0"
-                  aria-label={cloudIsPlaying ? 'Pause' : 'Play'}
-                >
-                  {cloudIsPlaying ? <Pause size={20} /> : <Play size={20} className="ml-0.5" />}
-                </button>
-
-                <div className="flex-1">
-                  <audio
-                    ref={cloudAudioRef}
-                    src={cloudAudioUrl}
-                    controls
-                    onPlay={() => setCloudIsPlaying(true)}
-                    onPause={() => setCloudIsPlaying(false)}
-                    onEnded={() => setCloudIsPlaying(false)}
-                    className="w-full accent-purple-500"
-                  />
-                </div>
-              </div>
+              <StudioWaveformVisualizer
+                audioUrl={cloudAudioUrl}
+                voiceName={selectedVoiceName}
+                providerName={activeVoiceProvider ? activeVoiceProvider.name : 'Cloud Voice AI'}
+                onDownload={handleCloudDownload}
+                isDownloading={cloudDownloading}
+              />
             </div>
           )}
         </div>

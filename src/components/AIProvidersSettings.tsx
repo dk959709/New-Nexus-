@@ -556,7 +556,7 @@ export function AIProvidersSettings() {
           url: 'https://api.elevenlabs.io/v1/text-to-speech/{voice_id}',
           voicesUrl: 'https://api.elevenlabs.io/v1/voices',
           model: 'eleven_multilingual_v2',
-          voiceId: '21m00Tcm4TlvDq8ikWAM',
+          voiceId: 'gOupLcAkjEnguROwi4oS',
           requestType: 'post',
           customHeaderName: 'xi-api-key',
           requestBodyTemplate: '{\n  "text": "{text}",\n  "model_id": "eleven_multilingual_v2"\n}',
