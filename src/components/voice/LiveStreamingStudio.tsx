@@ -225,16 +225,16 @@ export function LiveStreamingStudio({
 
     // Finalize any recorded audio captured before interruption
     if (allRecordedChunksRef.current.length > 0) {
-      const wavBlob = pcmToWavBlob(allRecordedChunksRef.current, 44100, 1);
+      const wavBlob = pcmToWavBlob(allRecordedChunksRef.current, 24000, 1);
       console.log(`[LiveVoice] Interrupted stream captured ${allRecordedChunksRef.current.length} PCM chunks, WAV blob size: ${wavBlob.size} bytes`);
       const url = URL.createObjectURL(wavBlob);
       setRecordedAudioUrl(url);
 
       const totalPcmBytes = allRecordedChunksRef.current.reduce((sum, c) => sum + c.byteLength, 0);
-      const exactDuration = totalPcmBytes / (44100 * 2);
+      const exactDuration = totalPcmBytes / (24000 * 2);
       setRecordedDuration(exactDuration > 0 ? exactDuration : elapsed);
       console.log(
-        `[LiveVoice] Interrupted stream WAV playback ready. Duration: ${exactDuration.toFixed(2)}s, SampleRate: 44100Hz (lossless mono WAV)`
+        `[LiveVoice] Interrupted stream WAV playback ready. Duration: ${exactDuration.toFixed(2)}s, SampleRate: 24000Hz (lossless mono WAV)`
       );
     }
   }, [cleanupLiveStream]);
@@ -540,11 +540,11 @@ export function LiveStreamingStudio({
         }
 
         // Directly construct AudioBuffer without calling decodeAudioData()
-        const audioBuffer = ctx.createBuffer(1, sampleCount, 44100);
+        const audioBuffer = ctx.createBuffer(1, sampleCount, 24000);
         audioBuffer.copyToChannel(float32, 0);
 
         console.log(
-          `[LiveVoice] [PCM Direct AudioBuffer] Built AudioBuffer: ${sampleCount} samples (${chunkBytes.byteLength} B), duration: ${audioBuffer.duration.toFixed(4)}s at 44.1kHz. [CONFIRMED: NO decodeAudioData called]`
+          `[LiveVoice] [PCM Direct AudioBuffer] Built AudioBuffer: ${sampleCount} samples (${chunkBytes.byteLength} B), duration: ${audioBuffer.duration.toFixed(4)}s at 24kHz. [CONFIRMED: NO decodeAudioData called]`
         );
 
         // Schedule gapless playback using existing nextPlayTimeRef logic
@@ -566,13 +566,13 @@ export function LiveStreamingStudio({
       processPcmQueue();
     };
 
-    // Build ElevenLabs WebSocket URL with output_format=pcm_44100
+    // Build ElevenLabs WebSocket URL with output_format=pcm_24000 (Free-tier supported 24kHz PCM)
     const modelId = activeProvider.model || 'eleven_multilingual_v2';
-    const outputFormat = 'pcm_44100';
+    const outputFormat = 'pcm_24000';
     const wsUrl = buildElevenLabsWebSocketUrl(targetVoiceId, modelId, outputFormat);
     const connectStartTime = Date.now();
     console.log(
-      `[LiveVoice] Connecting to ElevenLabs WebSocket with output_format=${outputFormat} (44.1 kHz Studio Master PCM):`,
+      `[LiveVoice] Connecting to ElevenLabs WebSocket with output_format=${outputFormat} (24 kHz Studio PCM):`,
       wsUrl
     );
 
@@ -714,7 +714,7 @@ export function LiveStreamingStudio({
           if (hasAudioField) {
             const base64Str = (response.audio as string).trim();
             try {
-              // Decode base64 into raw 16-bit signed linear PCM bytes (little-endian, 44.1kHz mono)
+              // Decode base64 into raw 16-bit signed linear PCM bytes (little-endian, 24kHz mono)
               const binaryStr = window.atob(base64Str);
               const decodedByteLength = binaryStr.length;
               const bytes = new Uint8Array(decodedByteLength);
@@ -732,7 +732,7 @@ export function LiveStreamingStudio({
               setTotalBytes((prev) => prev + decodedByteLength);
 
               console.log(
-                `[LiveVoice] [PCM Chunk Received] rawType=${rawType}, hasAudio=true, base64Length=${base64Str.length}, rawPcmBytes=${decodedByteLength} B, pcmSamples=${sampleCount} samples, totalChunks=${allRecordedChunksRef.current.length + 1} (output_format: pcm_44100). [CONFIRMED: NO decodeAudioData called for live chunks]`
+                `[LiveVoice] [PCM Chunk Received] rawType=${rawType}, hasAudio=true, base64Length=${base64Str.length}, rawPcmBytes=${decodedByteLength} B, pcmSamples=${sampleCount} samples, totalChunks=${allRecordedChunksRef.current.length + 1} (output_format: pcm_24000). [CONFIRMED: NO decodeAudioData called for live chunks]`
               );
 
               // Enqueue raw PCM bytes for direct Web Audio API buffer generation and playback
@@ -777,12 +777,12 @@ export function LiveStreamingStudio({
 
             // Capture complete audio blob as standard WAV for replay & download
             if (allRecordedChunksRef.current.length > 0) {
-              const wavBlob = pcmToWavBlob(allRecordedChunksRef.current, 44100, 1);
+              const wavBlob = pcmToWavBlob(allRecordedChunksRef.current, 24000, 1);
               const totalPcmBytes = allRecordedChunksRef.current.reduce((sum, c) => sum + c.byteLength, 0);
-              const exactDuration = totalPcmBytes / (44100 * 2);
+              const exactDuration = totalPcmBytes / (24000 * 2);
 
               console.log(
-                `[LiveVoice] Assembled full stream WAV audio blob. Size: ${wavBlob.size} bytes, exact duration: ${exactDuration.toFixed(2)}s, SampleRate: 44100Hz`
+                `[LiveVoice] Assembled full stream WAV audio blob. Size: ${wavBlob.size} bytes, exact duration: ${exactDuration.toFixed(2)}s, SampleRate: 24000Hz`
               );
               const url = URL.createObjectURL(wavBlob);
               setRecordedAudioUrl(url);
@@ -1371,7 +1371,7 @@ export function LiveStreamingStudio({
                 </span>
               </div>
               <p className="text-[11px] font-mono text-slate-400">
-                {chunksCount} audio chunks captured • Duration: ~{recordedDuration.toFixed(1)}s
+                {chunksCount} audio chunks captured • 24 kHz Lossless WAV • Duration: ~{recordedDuration.toFixed(1)}s
               </p>
             </div>
           </div>

@@ -30,12 +30,12 @@ export function buildVoiceRequestHeaders(
 
 /**
  * Resolves the ElevenLabs WebSocket streaming URL:
- * wss://api.elevenlabs.io/v1/text-to-speech/{voice_id}/stream-input?model_id={model_id}&output_format=pcm_44100
+ * wss://api.elevenlabs.io/v1/text-to-speech/{voice_id}/stream-input?model_id={model_id}&output_format=pcm_24000
  */
 export function buildElevenLabsWebSocketUrl(
   voiceId: string,
   modelId?: string,
-  outputFormat: string = 'pcm_44100'
+  outputFormat: string = 'pcm_24000'
 ): string {
   const cleanVoiceId = encodeURIComponent(voiceId.trim());
   const cleanModel = encodeURIComponent(modelId || 'eleven_multilingual_v2');
@@ -411,11 +411,11 @@ export async function synthesizeCloudVoiceAudio(
 }
 
 /**
- * Converts accumulated 16-bit linear PCM chunks (mono, 44.1kHz) into a valid RIFF WAV audio Blob.
+ * Converts accumulated 16-bit linear PCM chunks (mono, 24kHz) into a valid RIFF WAV audio Blob.
  */
 export function pcmToWavBlob(
   pcmChunks: Uint8Array[],
-  sampleRate = 44100,
+  sampleRate = 24000,
   numChannels = 1
 ): Blob {
   const totalPcmBytes = pcmChunks.reduce((sum, c) => sum + c.byteLength, 0);
@@ -432,7 +432,7 @@ export function pcmToWavBlob(
   view.setUint32(16, 16, true); // Subchunk1Size (16 for PCM)
   view.setUint16(20, 1, true); // AudioFormat (1 = PCM linear)
   view.setUint16(22, numChannels, true); // NumChannels
-  view.setUint32(24, sampleRate, true); // SampleRate (e.g. 44100)
+  view.setUint32(24, sampleRate, true); // SampleRate (e.g. 24000)
   view.setUint32(28, sampleRate * numChannels * 2, true); // ByteRate (SampleRate * NumChannels * 2)
   view.setUint16(32, numChannels * 2, true); // BlockAlign (NumChannels * 2)
   view.setUint16(34, 16, true); // BitsPerSample (16 bits)

@@ -324,7 +324,10 @@ export function LiveWaveformVisualizer({
             </div>
           )}
 
-          <span className="text-[11px] font-mono text-purple-300/70 hidden md:inline-block">
+          <span className="text-[10px] font-mono px-2 py-0.5 rounded-full bg-cyan-500/15 text-cyan-300 border border-cyan-500/30">
+            24 kHz PCM Stream
+          </span>
+          <span className="text-[11px] font-mono text-purple-300/70 hidden lg:inline-block">
             wss://api.elevenlabs.io/v1/text-to-speech/.../stream-input
           </span>
         </div>
