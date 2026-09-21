@@ -293,7 +293,7 @@ export function LiveStreamingStudio({
       streamDurationSecRef.current = 0;
       allRecordedChunksRef.current = [];
       rawChunkQueueRef.current = [];
-      accumulatedChunksRef.current = [];
+      leftoverPcmByteRef.current = null;
       isStreamFinalRef.current = false;
       setRecordedAudioUrl(null);
       setRecordedDuration(0);
@@ -376,7 +376,7 @@ export function LiveStreamingStudio({
     nextPlayTimeRef.current = 0;
     activeSourcesRef.current = [];
     rawChunkQueueRef.current = [];
-    accumulatedChunksRef.current = [];
+    leftoverPcmByteRef.current = null;
     isProcessingQueueRef.current = false;
     isStreamFinalRef.current = false;
 
