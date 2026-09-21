@@ -101,21 +101,26 @@ export function LiveStreamingStudio({
   const wsRef = useRef<WebSocket | null>(null);
   const audioContextRef = useRef<AudioContext | null>(null);
   const analyserNodeRef = useRef<AnalyserNode | null>(null);
+  const gainNodeRef = useRef<GainNode | null>(null);
+  const sourceNodeRef = useRef<MediaElementAudioSourceNode | null>(null);
   const mediaSourceRef = useRef<MediaSource | null>(null);
+  const mediaUrlRef = useRef<string | null>(null);
   const sourceBufferRef = useRef<SourceBuffer | null>(null);
   const liveAudioElementRef = useRef<HTMLAudioElement | null>(null);
   const chunkQueueRef = useRef<Uint8Array[]>([]);
   const isStreamFinalRef = useRef(false);
   const allRecordedChunksRef = useRef<Uint8Array[]>([]);
 
-  // Timers
+  // Timers and duration tracking
   const streamStartTimeRef = useRef<number | null>(null);
+  const streamDurationSecRef = useRef<number>(0);
   const durationTimerRef = useRef<number | null>(null);
   const idleTimeoutTimerRef = useRef<number | null>(null);
   const simulationIntervalRef = useRef<number | null>(null);
 
   // Clean up all resources
   const cleanupLiveStream = useCallback(() => {
+    console.log('[LiveVoice] cleanupLiveStream invoked');
     // Clear timers
     if (durationTimerRef.current) {
       clearInterval(durationTimerRef.current);
@@ -144,9 +149,42 @@ export function LiveStreamingStudio({
 
     // Stop live audio
     if (liveAudioElementRef.current) {
-      liveAudioElementRef.current.pause();
+      try {
+        liveAudioElementRef.current.pause();
+        liveAudioElementRef.current.src = '';
+      } catch {
+        // ignore
+      }
+      liveAudioElementRef.current = null;
     }
 
+    if (sourceNodeRef.current) {
+      try {
+        sourceNodeRef.current.disconnect();
+      } catch {
+        // ignore
+      }
+      sourceNodeRef.current = null;
+    }
+
+    if (sourceBufferRef.current) {
+      try {
+        if (sourceBufferRef.current.updating) {
+          sourceBufferRef.current.abort();
+        }
+      } catch {
+        // ignore
+      }
+      sourceBufferRef.current = null;
+    }
+
+    if (mediaUrlRef.current) {
+      URL.revokeObjectURL(mediaUrlRef.current);
+      mediaUrlRef.current = null;
+    }
+
+    mediaSourceRef.current = null;
+    chunkQueueRef.current = [];
     setIsPlaying(false);
   }, []);
 
@@ -165,25 +203,61 @@ export function LiveStreamingStudio({
 
   // Volume & Mute synchronizer
   useEffect(() => {
+    if (gainNodeRef.current) {
+      gainNodeRef.current.gain.value = isMuted ? 0 : volume;
+      console.log('[LiveVoice] Synchronized gainNode volume:', gainNodeRef.current.gain.value);
+    }
     if (liveAudioElementRef.current) {
       liveAudioElementRef.current.volume = isMuted ? 0 : volume;
+      liveAudioElementRef.current.muted = isMuted;
     }
     if (recordedAudioRef.current) {
       recordedAudioRef.current.volume = isMuted ? 0 : volume;
+      recordedAudioRef.current.muted = isMuted;
     }
   }, [volume, isMuted]);
 
   // Handle Stop Streaming / Interruption
   const handleStopStream = useCallback(() => {
     playTapSound();
+    console.log('[LiveVoice] handleStopStream called');
+    const elapsed = streamStartTimeRef.current
+      ? (Date.now() - streamStartTimeRef.current) / 1000
+      : streamDurationSecRef.current;
+
     cleanupLiveStream();
     setConnectionStatus('interrupted');
 
     // Finalize any recorded audio captured before interruption
     if (allRecordedChunksRef.current.length > 0) {
       const blob = new Blob(allRecordedChunksRef.current, { type: 'audio/mpeg' });
+      console.log(`[LiveVoice] Interrupted stream captured ${allRecordedChunksRef.current.length} chunks, blob size: ${blob.size} bytes`);
       const url = URL.createObjectURL(blob);
       setRecordedAudioUrl(url);
+
+      if (elapsed > 0) {
+        setRecordedDuration(elapsed);
+      }
+
+      // Decode audio in Web Audio API to get exact duration and verify audio data integrity
+      if (audioContextRef.current) {
+        blob.arrayBuffer().then((buf) => {
+          audioContextRef.current?.decodeAudioData(
+            buf.slice(0),
+            (decoded) => {
+              console.log(`[LiveVoice] Stopped stream decoded successfully! Duration: ${decoded.duration.toFixed(2)}s, SampleRate: ${decoded.sampleRate}Hz`);
+              if (decoded.duration > 0) {
+                setRecordedDuration(decoded.duration);
+              }
+            },
+            (decErr) => {
+              console.warn('[LiveVoice] decodeAudioData warning on stopped stream blob:', decErr);
+            }
+          );
+        }).catch((err) => {
+          console.warn('[LiveVoice] ArrayBuffer conversion error:', err);
+        });
+      }
     }
   }, [cleanupLiveStream]);
 
@@ -237,24 +311,31 @@ export function LiveStreamingStudio({
     setTotalBytes(0);
     setTimeToFirstChunkMs(null);
     setStreamDurationSec(0);
+    streamDurationSecRef.current = 0;
     allRecordedChunksRef.current = [];
     chunkQueueRef.current = [];
     isStreamFinalRef.current = false;
     setRecordedAudioUrl(null);
+    setRecordedDuration(0);
 
     const wordsTotal = cleanText.split(/\s+/).filter(Boolean).length;
     setWordProgress({ current: 0, total: wordsTotal });
 
-    // Initialize Web Audio Context & Analyser
+    // Initialize or resume Web Audio Context & Graph immediately during user interaction
     try {
       const AudioCtx =
         window.AudioContext ||
         (window as unknown as { webkitAudioContext: typeof AudioContext }).webkitAudioContext;
       if (!audioContextRef.current || audioContextRef.current.state === 'closed') {
         audioContextRef.current = new AudioCtx();
+        console.log('[LiveVoice] Created fresh AudioContext, state:', audioContextRef.current.state);
       }
       if (audioContextRef.current.state === 'suspended') {
+        console.log('[LiveVoice] AudioContext is suspended, calling .resume() immediately...');
         await audioContextRef.current.resume();
+        console.log('[LiveVoice] AudioContext .resume() resolved. State:', audioContextRef.current.state);
+      } else {
+        console.log('[LiveVoice] AudioContext state:', audioContextRef.current.state);
       }
 
       if (!analyserNodeRef.current && audioContextRef.current) {
@@ -263,87 +344,174 @@ export function LiveStreamingStudio({
         analyser.smoothingTimeConstant = 0.8;
         analyserNodeRef.current = analyser;
       }
+
+      if (!gainNodeRef.current && audioContextRef.current) {
+        const gainNode = audioContextRef.current.createGain();
+        gainNode.gain.value = isMuted ? 0 : volume;
+        gainNodeRef.current = gainNode;
+      }
     } catch (e) {
       console.warn('[LiveVoice] Web Audio API init warning:', e);
     }
 
     // Setup MediaSource and Audio Element for low-latency streaming
-    const mediaSource = new MediaSource();
-    mediaSourceRef.current = mediaSource;
-
-    const audio = new Audio();
-    audio.src = URL.createObjectURL(mediaSource);
-    audio.autoplay = true;
-    audio.volume = isMuted ? 0 : volume;
-    liveAudioElementRef.current = audio;
-
-    // Connect Audio element to AnalyserNode
-    try {
-      if (audioContextRef.current && analyserNodeRef.current) {
-        const sourceNode = audioContextRef.current.createMediaElementSource(audio);
-        sourceNode.connect(analyserNodeRef.current);
-        analyserNodeRef.current.connect(audioContextRef.current.destination);
-      }
-    } catch {
-      // Ignore if already connected
+    if (mediaUrlRef.current) {
+      URL.revokeObjectURL(mediaUrlRef.current);
+      mediaUrlRef.current = null;
     }
 
-    audio.onplay = () => setIsPlaying(true);
+    const mediaSource = new MediaSource();
+    mediaSourceRef.current = mediaSource;
+    const mediaUrl = URL.createObjectURL(mediaSource);
+    mediaUrlRef.current = mediaUrl;
+
+    const audio = new Audio();
+    audio.src = mediaUrl;
+    audio.autoplay = true;
+    audio.volume = isMuted ? 0 : volume;
+    audio.muted = false;
+    liveAudioElementRef.current = audio;
+
+    // Connect Audio element to Web Audio graph (Source -> Analyser -> Gain -> Destination)
+    try {
+      if (audioContextRef.current && analyserNodeRef.current && gainNodeRef.current) {
+        if (sourceNodeRef.current) {
+          try {
+            sourceNodeRef.current.disconnect();
+          } catch {
+            // ignore
+          }
+        }
+        const sourceNode = audioContextRef.current.createMediaElementSource(audio);
+        // CRITICAL: Retain in sourceNodeRef to prevent JavaScript Garbage Collector from disconnecting audio
+        sourceNodeRef.current = sourceNode;
+        sourceNode.connect(analyserNodeRef.current);
+        analyserNodeRef.current.connect(gainNodeRef.current);
+        gainNodeRef.current.connect(audioContextRef.current.destination);
+        console.log('[LiveVoice] Web Audio graph successfully connected to audioContext.destination');
+      }
+    } catch (routeErr) {
+      console.warn(
+        '[LiveVoice] createMediaElementSource connection notice (will fallback to direct speaker output):',
+        routeErr
+      );
+    }
+
+    audio.onplay = () => {
+      console.log('[LiveVoice] audio onplay event fired');
+      setIsPlaying(true);
+    };
+    audio.onplaying = () => {
+      console.log('[LiveVoice] audio onplaying event fired (sound is actively playing)');
+      setIsPlaying(true);
+    };
+    audio.onwaiting = () => {
+      console.log('[LiveVoice] audio onwaiting for chunks...');
+    };
     audio.onpause = () => {
+      console.log('[LiveVoice] audio onpause event fired');
       if (connectionStatus !== 'streaming') setIsPlaying(false);
     };
     audio.onended = () => {
+      console.log('[LiveVoice] audio onended event fired');
       setIsPlaying(false);
       setConnectionStatus('completed');
+    };
+    audio.onerror = (e) => {
+      console.error('[LiveVoice] audio element error:', audio.error, e);
+    };
+
+    // Prime audio during user gesture to grant autoplay permission
+    audio.play().catch(() => {
+      // Expected to wait until initial buffer is appended
+    });
+
+    // Queue drainer for SourceBuffer
+    const drainQueue = () => {
+      const sb = sourceBufferRef.current;
+      if (!sb) {
+        return;
+      }
+      if (sb.updating) {
+        // Will continue on 'updateend'
+        return;
+      }
+      if (chunkQueueRef.current.length > 0) {
+        const nextChunk = chunkQueueRef.current.shift();
+        if (nextChunk) {
+          try {
+            sb.appendBuffer(nextChunk);
+            console.log(
+              `[LiveVoice] SourceBuffer appended chunk successfully (${nextChunk.byteLength} B). Remaining in queue: ${chunkQueueRef.current.length}`
+            );
+          } catch (appendErr) {
+            console.error('[LiveVoice] SourceBuffer appendBuffer error:', appendErr);
+          }
+        }
+      } else if (isStreamFinalRef.current) {
+        if (mediaSource.readyState === 'open') {
+          try {
+            console.log('[LiveVoice] All stream chunks appended, calling mediaSource.endOfStream()');
+            mediaSource.endOfStream();
+          } catch (eosErr) {
+            console.warn('[LiveVoice] mediaSource.endOfStream error:', eosErr);
+          }
+        }
+      }
     };
 
     // Prepare SourceBuffer
     mediaSource.addEventListener('sourceopen', () => {
+      console.log('[LiveVoice] MediaSource sourceopen event fired. readyState:', mediaSource.readyState);
       try {
-        const sb = mediaSource.addSourceBuffer('audio/mpeg');
+        const mimeType = 'audio/mpeg';
+        const isSupported = MediaSource.isTypeSupported(mimeType);
+        console.log(`[LiveVoice] MediaSource.isTypeSupported("${mimeType}"):`, isSupported);
+
+        const sb = mediaSource.addSourceBuffer(mimeType);
         sourceBufferRef.current = sb;
+        console.log('[LiveVoice] SourceBuffer created successfully with audio/mpeg');
 
         sb.addEventListener('updateend', () => {
-          if (chunkQueueRef.current.length > 0 && sb && !sb.updating) {
-            const nextChunk = chunkQueueRef.current.shift();
-            if (nextChunk) {
-              try {
-                sb.appendBuffer(nextChunk);
-              } catch (appendErr) {
-                console.warn('[LiveVoice] SourceBuffer append warning:', appendErr);
-              }
-            }
-          } else if (isStreamFinalRef.current && chunkQueueRef.current.length === 0) {
-            if (mediaSource.readyState === 'open') {
-              try {
-                mediaSource.endOfStream();
-              } catch {
-                // ignore
-              }
-            }
-          }
+          drainQueue();
         });
+
+        sb.addEventListener('error', (errEvt) => {
+          console.error('[LiveVoice] SourceBuffer error event:', errEvt);
+        });
+
+        // CRITICAL FIX: Immediately drain any chunks that arrived before sourceopen fired!
+        drainQueue();
       } catch (sbErr) {
-        console.warn('[LiveVoice] Failed to create audio/mpeg SourceBuffer:', sbErr);
+        console.error('[LiveVoice] Failed to create audio/mpeg SourceBuffer:', sbErr);
       }
     });
 
     const appendChunkToBuffer = (chunk: Uint8Array) => {
       allRecordedChunksRef.current.push(chunk);
-      const sb = sourceBufferRef.current;
+      chunkQueueRef.current.push(chunk);
+      drainQueue();
 
-      if (sb && !sb.updating && chunkQueueRef.current.length === 0) {
-        try {
-          sb.appendBuffer(chunk);
-        } catch {
-          chunkQueueRef.current.push(chunk);
-        }
-      } else {
-        chunkQueueRef.current.push(chunk);
+      // Ensure AudioContext is active
+      if (audioContextRef.current && audioContextRef.current.state === 'suspended') {
+        audioContextRef.current.resume().catch((resErr) => {
+          console.warn('[LiveVoice] AudioContext resume inside appendChunk warning:', resErr);
+        });
       }
 
+      // Trigger audio playback if paused
       if (audio.paused) {
-        audio.play().catch(() => {});
+        const playPromise = audio.play();
+        if (playPromise !== undefined) {
+          playPromise
+            .then(() => {
+              console.log('[LiveVoice] audio.play() started successfully. CurrentTime:', audio.currentTime);
+              setIsPlaying(true);
+            })
+            .catch((playErr) => {
+              console.warn('[LiveVoice] audio.play() returned catch (buffering or waiting):', playErr);
+            });
+        }
       }
     };
 
@@ -378,7 +546,9 @@ export function LiveStreamingStudio({
         streamStartTimeRef.current = Date.now();
         durationTimerRef.current = window.setInterval(() => {
           if (streamStartTimeRef.current) {
-            setStreamDurationSec((Date.now() - streamStartTimeRef.current) / 1000);
+            const elapsed = (Date.now() - streamStartTimeRef.current) / 1000;
+            streamDurationSecRef.current = elapsed;
+            setStreamDurationSec(elapsed);
           }
         }, 100);
 
@@ -490,25 +660,54 @@ export function LiveStreamingStudio({
 
           // Check if stream is final
           if (response.isFinal) {
+            console.log(
+              `[LiveVoice] WebSocket isFinal received. Total chunks captured: ${allRecordedChunksRef.current.length}`
+            );
             isStreamFinalRef.current = true;
             if (idleTimeoutTimerRef.current) clearTimeout(idleTimeoutTimerRef.current);
 
-            // Check if queue is empty to finalize
-            const sb = sourceBufferRef.current;
-            if (!sb?.updating && chunkQueueRef.current.length === 0 && mediaSource.readyState === 'open') {
-              try {
-                mediaSource.endOfStream();
-              } catch {
-                // ignore
-              }
-            }
+            drainQueue();
 
             // Capture complete audio blob for replay & download
             if (allRecordedChunksRef.current.length > 0) {
               const fullBlob = new Blob(allRecordedChunksRef.current, { type: 'audio/mpeg' });
+              console.log(`[LiveVoice] Assembled full stream audio blob. Size: ${fullBlob.size} bytes`);
               const url = URL.createObjectURL(fullBlob);
               setRecordedAudioUrl(url);
-              setRecordedDuration(streamDurationSec);
+
+              const elapsed = streamStartTimeRef.current
+                ? (Date.now() - streamStartTimeRef.current) / 1000
+                : streamDurationSecRef.current;
+              if (elapsed > 0) {
+                setRecordedDuration(elapsed);
+              }
+
+              // Accurately decode with AudioContext to determine exact duration and verify MP3 integrity
+              if (audioContextRef.current) {
+                fullBlob
+                  .arrayBuffer()
+                  .then((buf) => {
+                    audioContextRef.current?.decodeAudioData(
+                      buf.slice(0),
+                      (decoded) => {
+                        console.log(
+                          `[LiveVoice] Full stream decoded successfully! Duration: ${decoded.duration.toFixed(
+                            2
+                          )}s, SampleRate: ${decoded.sampleRate}Hz, Channels: ${decoded.numberOfChannels}`
+                        );
+                        if (decoded.duration > 0) {
+                          setRecordedDuration(decoded.duration);
+                        }
+                      },
+                      (decodeErr) => {
+                        console.error('[LiveVoice] decodeAudioData error on assembled stream blob:', decodeErr);
+                      }
+                    );
+                  })
+                  .catch((arrErr) => {
+                    console.warn('[LiveVoice] ArrayBuffer extraction error:', arrErr);
+                  });
+              }
             }
           }
         } catch (parseErr) {
@@ -582,8 +781,25 @@ export function LiveStreamingStudio({
       el.pause();
       setIsRecordedPlaying(false);
     } else {
-      el.play().catch(() => {});
-      setIsRecordedPlaying(true);
+      if (audioContextRef.current && audioContextRef.current.state === 'suspended') {
+        audioContextRef.current.resume().catch(() => {});
+      }
+      el.volume = isMuted ? 0 : volume;
+      el.muted = isMuted;
+      if (el.currentTime >= el.duration && el.duration > 0) {
+        el.currentTime = 0;
+      }
+      el.play()
+        .then(() => {
+          console.log(
+            `[LiveVoice] Recorded audio replay started. CurrentTime: ${el.currentTime}s, Duration: ${el.duration}s`
+          );
+          setIsRecordedPlaying(true);
+        })
+        .catch((err) => {
+          console.error('[LiveVoice] Recorded audio replay play() failed:', err);
+          setIsRecordedPlaying(false);
+        });
     }
   };
 
@@ -888,7 +1104,20 @@ export function LiveStreamingStudio({
           <audio
             ref={recordedAudioRef}
             src={recordedAudioUrl}
+            preload="auto"
+            onLoadedMetadata={(e) => {
+              const dur = e.currentTarget.duration;
+              console.log('[LiveVoice] Recorded audio loadedmetadata event. Duration:', dur);
+              if (!isNaN(dur) && isFinite(dur) && dur > 0) {
+                setRecordedDuration(dur);
+              }
+            }}
+            onPlay={() => setIsRecordedPlaying(true)}
+            onPause={() => setIsRecordedPlaying(false)}
             onEnded={() => setIsRecordedPlaying(false)}
+            onError={(e) => {
+              console.error('[LiveVoice] Recorded audio element error:', e.currentTarget.error);
+            }}
             className="hidden"
           />
           <div className="flex items-center gap-3">
