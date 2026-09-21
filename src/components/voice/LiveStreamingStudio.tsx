@@ -22,6 +22,7 @@ import { storage } from '@/lib/storage';
 import {
   buildElevenLabsWebSocketUrl,
   isVoiceTierRestricted,
+  pcmToWavBlob,
 } from '@/lib/voiceProviderUtils';
 import {
   LiveWaveformVisualizer,
@@ -110,7 +111,7 @@ export function LiveStreamingStudio({
   const activeSourcesRef = useRef<AudioBufferSourceNode[]>([]);
   const nextPlayTimeRef = useRef<number>(0);
   const rawChunkQueueRef = useRef<Uint8Array[]>([]);
-  const accumulatedChunksRef = useRef<Uint8Array[]>([]);
+  const leftoverPcmByteRef = useRef<number | null>(null);
   const isProcessingQueueRef = useRef<boolean>(false);
   const isStreamFinalRef = useRef(false);
   const allRecordedChunksRef = useRef<Uint8Array[]>([]);
@@ -172,7 +173,7 @@ export function LiveStreamingStudio({
 
     nextPlayTimeRef.current = 0;
     rawChunkQueueRef.current = [];
-    accumulatedChunksRef.current = [];
+    leftoverPcmByteRef.current = null;
     isProcessingQueueRef.current = false;
     setIsPlaying(false);
   }, []);
@@ -224,34 +225,17 @@ export function LiveStreamingStudio({
 
     // Finalize any recorded audio captured before interruption
     if (allRecordedChunksRef.current.length > 0) {
-      const blob = new Blob(allRecordedChunksRef.current, { type: 'audio/mpeg' });
-      console.log(`[LiveVoice] Interrupted stream captured ${allRecordedChunksRef.current.length} chunks, blob size: ${blob.size} bytes`);
-      const url = URL.createObjectURL(blob);
+      const wavBlob = pcmToWavBlob(allRecordedChunksRef.current, 44100, 1);
+      console.log(`[LiveVoice] Interrupted stream captured ${allRecordedChunksRef.current.length} PCM chunks, WAV blob size: ${wavBlob.size} bytes`);
+      const url = URL.createObjectURL(wavBlob);
       setRecordedAudioUrl(url);
 
-      if (elapsed > 0) {
-        setRecordedDuration(elapsed);
-      }
-
-      // Decode audio in Web Audio API to get exact duration and verify audio data integrity
-      if (audioContextRef.current) {
-        blob.arrayBuffer().then((buf) => {
-          audioContextRef.current?.decodeAudioData(
-            buf.slice(0),
-            (decoded) => {
-              console.log(`[LiveVoice] Stopped stream decoded successfully! Duration: ${decoded.duration.toFixed(2)}s, SampleRate: ${decoded.sampleRate}Hz`);
-              if (decoded.duration > 0) {
-                setRecordedDuration(decoded.duration);
-              }
-            },
-            (decErr) => {
-              console.warn('[LiveVoice] decodeAudioData warning on stopped stream blob:', decErr);
-            }
-          );
-        }).catch((err) => {
-          console.warn('[LiveVoice] ArrayBuffer conversion error:', err);
-        });
-      }
+      const totalPcmBytes = allRecordedChunksRef.current.reduce((sum, c) => sum + c.byteLength, 0);
+      const exactDuration = totalPcmBytes / (44100 * 2);
+      setRecordedDuration(exactDuration > 0 ? exactDuration : elapsed);
+      console.log(
+        `[LiveVoice] Interrupted stream WAV playback ready. Duration: ${exactDuration.toFixed(2)}s, SampleRate: 44100Hz (lossless mono WAV)`
+      );
     }
   }, [cleanupLiveStream]);
 
@@ -491,18 +475,18 @@ export function LiveStreamingStudio({
         if (
           activeSourcesRef.current.length === 0 &&
           isStreamFinalRef.current &&
-          rawChunkQueueRef.current.length === 0 &&
-          accumulatedChunksRef.current.length === 0
+          rawChunkQueueRef.current.length === 0
         ) {
-          console.log('[LiveVoice] All scheduled live stream audio finished playing.');
+          console.log('[LiveVoice] All scheduled live stream PCM audio finished playing.');
           setIsPlaying(false);
           setConnectionStatus('completed');
         }
       };
     };
 
-    // Sequential decoder that combines chunks if individual chunks are not independently decodable
-    const processDecodeQueue = async () => {
+    // Direct PCM audio processor: converts raw 16-bit linear PCM into Float32 AudioBuffers
+    // bypassing decodeAudioData() entirely for 100% gapless, reliable live playback!
+    const processPcmQueue = async () => {
       if (isProcessingQueueRef.current) {
         return;
       }
@@ -510,139 +494,87 @@ export function LiveStreamingStudio({
 
       const ctx = audioContextRef.current;
       if (!ctx) {
-        console.warn('[LiveVoice] processDecodeQueue: AudioContext is not available');
+        console.warn('[LiveVoice] processPcmQueue: AudioContext is not available');
         isProcessingQueueRef.current = false;
         return;
       }
 
-      if (ctx.state === 'suspended') {
+      if (ctx.state !== 'running') {
         try {
           await ctx.resume();
-          console.log('[LiveVoice] AudioContext resumed in processDecodeQueue. State:', ctx.state);
+          console.log('[LiveVoice] AudioContext resumed in processPcmQueue. State:', ctx.state);
         } catch (resumeErr) {
-          console.warn('[LiveVoice] AudioContext resume error in decode queue:', resumeErr);
+          console.warn('[LiveVoice] AudioContext resume error in pcm queue:', resumeErr);
         }
       }
 
-      while (
-        rawChunkQueueRef.current.length > 0 ||
-        (isStreamFinalRef.current && accumulatedChunksRef.current.length > 0)
-      ) {
-        if (rawChunkQueueRef.current.length > 0) {
-          const nextRaw = rawChunkQueueRef.current.shift()!;
-          accumulatedChunksRef.current.push(nextRaw);
+      while (rawChunkQueueRef.current.length > 0) {
+        let chunkBytes = rawChunkQueueRef.current.shift()!;
+
+        // Handle any unaligned odd byte left over from the previous chunk
+        if (leftoverPcmByteRef.current !== null) {
+          const stitched = new Uint8Array(chunkBytes.byteLength + 1);
+          stitched[0] = leftoverPcmByteRef.current;
+          stitched.set(chunkBytes, 1);
+          leftoverPcmByteRef.current = null;
+          chunkBytes = stitched;
         }
 
-        if (accumulatedChunksRef.current.length === 0) {
-          break;
+        // If chunk length is odd, hold trailing byte for next chunk to maintain 16-bit sample alignment
+        if (chunkBytes.byteLength % 2 !== 0) {
+          leftoverPcmByteRef.current = chunkBytes[chunkBytes.byteLength - 1];
+          chunkBytes = chunkBytes.subarray(0, chunkBytes.byteLength - 1);
         }
 
-        const chunkCount = accumulatedChunksRef.current.length;
-        const totalBytes = accumulatedChunksRef.current.reduce((sum, c) => sum + c.byteLength, 0);
-
-        // Concatenate accumulated chunks
-        const combined = new Uint8Array(totalBytes);
-        let offset = 0;
-        for (const c of accumulatedChunksRef.current) {
-          combined.set(c, offset);
-          offset += c.byteLength;
+        const sampleCount = chunkBytes.byteLength / 2;
+        if (sampleCount <= 0) {
+          continue;
         }
 
-        // IMPORTANT: Slice a copy because decodeAudioData detaches/neuters the ArrayBuffer on invocation
-        const arrayBufferCopy = combined.buffer.slice(
-          combined.byteOffset,
-          combined.byteOffset + combined.byteLength
-        );
+        // Convert raw 16-bit signed PCM (little-endian) to normalized Float32 samples [-1.0, 1.0]
+        const float32 = new Float32Array(sampleCount);
+        const dataView = new DataView(chunkBytes.buffer, chunkBytes.byteOffset, chunkBytes.byteLength);
+        for (let i = 0; i < sampleCount; i++) {
+          const int16 = dataView.getInt16(i * 2, true); // little-endian
+          float32[i] = int16 / 32768.0;
+        }
+
+        // Directly construct AudioBuffer without calling decodeAudioData()
+        const audioBuffer = ctx.createBuffer(1, sampleCount, 44100);
+        audioBuffer.copyToChannel(float32, 0);
 
         console.log(
-          `[LiveVoice] [Decode Attempt] Calling audioContext.decodeAudioData on ${chunkCount === 1 ? 'single chunk' : `combined ${chunkCount} chunks`} (${totalBytes} decoded binary MP3 bytes)...`
+          `[LiveVoice] [PCM Direct AudioBuffer] Built AudioBuffer: ${sampleCount} samples (${chunkBytes.byteLength} B), duration: ${audioBuffer.duration.toFixed(4)}s at 44.1kHz. [CONFIRMED: NO decodeAudioData called]`
         );
 
-        let decodedBuffer: AudioBuffer | null = null;
-        try {
-          decodedBuffer = await new Promise<AudioBuffer>((resolve, reject) => {
-            let settled = false;
-            try {
-              const res = ctx.decodeAudioData(
-                arrayBufferCopy,
-                (buf) => {
-                  if (!settled) {
-                    settled = true;
-                    resolve(buf);
-                  }
-                },
-                (err) => {
-                  if (!settled) {
-                    settled = true;
-                    reject(err);
-                  }
-                }
-              );
-              if (res && typeof res.then === 'function') {
-                res.then(
-                  (buf) => {
-                    if (!settled) {
-                      settled = true;
-                      resolve(buf);
-                    }
-                  },
-                  (err) => {
-                    if (!settled) {
-                      settled = true;
-                      reject(err);
-                    }
-                  }
-                );
-              }
-            } catch (syncErr) {
-              if (!settled) {
-                settled = true;
-                reject(syncErr);
-              }
-            }
-          });
-        } catch (decodeErr) {
-          console.warn(
-            `[LiveVoice] [Decode FAILED/PARTIAL] Failed to decode ${chunkCount} chunk(s) (${totalBytes} binary bytes):`,
-            decodeErr instanceof Error ? decodeErr.message : decodeErr,
-            `- Retaining binary bytes in accumulator to retry with combined data upon next chunk arrival.`
-          );
-          if (isStreamFinalRef.current && rawChunkQueueRef.current.length === 0) {
-            console.warn('[LiveVoice] Stream is final and remaining buffer could not be decoded. Discarding trailing partial frame.');
-            accumulatedChunksRef.current = [];
-          }
-          break;
-        }
-
-        if (decodedBuffer) {
-          console.log(
-            `[LiveVoice] [Decode SUCCESS] Successfully decoded ${chunkCount === 1 ? 'single chunk' : `combined ${chunkCount} chunks`} (${totalBytes} bytes) into AudioBuffer! Duration: ${decodedBuffer.duration.toFixed(3)}s, SampleRate: ${decodedBuffer.sampleRate}Hz, Channels: ${decodedBuffer.numberOfChannels}`
-          );
-
-          // Clear accumulated chunks now that they've been successfully decoded
-          accumulatedChunksRef.current = [];
-
-          // Schedule gapless playback
-          await scheduleAudioBuffer(decodedBuffer, `${chunkCount} chunk(s), ${totalBytes} B`);
-        }
+        // Schedule gapless playback using existing nextPlayTimeRef logic
+        await scheduleAudioBuffer(
+          audioBuffer,
+          `PCM chunk (${sampleCount} samples, ${chunkBytes.byteLength} B)`
+        );
       }
 
       isProcessingQueueRef.current = false;
       if (rawChunkQueueRef.current.length > 0) {
-        processDecodeQueue();
+        processPcmQueue();
       }
     };
 
     const appendChunkToBuffer = (chunk: Uint8Array) => {
       allRecordedChunksRef.current.push(chunk);
       rawChunkQueueRef.current.push(chunk);
-      processDecodeQueue();
+      processPcmQueue();
     };
 
-    // Build ElevenLabs WebSocket URL
+    // Build ElevenLabs WebSocket URL with output_format=pcm_44100
     const modelId = activeProvider.model || 'eleven_multilingual_v2';
-    const wsUrl = buildElevenLabsWebSocketUrl(targetVoiceId, modelId);
+    const outputFormat = 'pcm_44100';
+    const wsUrl = buildElevenLabsWebSocketUrl(targetVoiceId, modelId, outputFormat);
     const connectStartTime = Date.now();
+    console.log(
+      `[LiveVoice] Connecting to ElevenLabs WebSocket with output_format=${outputFormat} (44.1 kHz Studio Master PCM):`,
+      wsUrl
+    );
 
     try {
       const ws = new WebSocket(wsUrl);
@@ -782,7 +714,7 @@ export function LiveStreamingStudio({
           if (hasAudioField) {
             const base64Str = (response.audio as string).trim();
             try {
-              // Decode base64 into raw binary MP3 bytes
+              // Decode base64 into raw 16-bit signed linear PCM bytes (little-endian, 44.1kHz mono)
               const binaryStr = window.atob(base64Str);
               const decodedByteLength = binaryStr.length;
               const bytes = new Uint8Array(decodedByteLength);
@@ -795,14 +727,15 @@ export function LiveStreamingStudio({
                 setTimeToFirstChunkMs(latency);
               }
 
+              const sampleCount = Math.floor(decodedByteLength / 2);
               setChunksCount((prev) => prev + 1);
               setTotalBytes((prev) => prev + decodedByteLength);
 
               console.log(
-                `[LiveVoice] Audio chunk extracted: rawType=${rawType}, hasAudio=true, base64Length=${base64Str.length}, decodedBytes=${decodedByteLength} B, totalChunks=${allRecordedChunksRef.current.length + 1}`
+                `[LiveVoice] [PCM Chunk Received] rawType=${rawType}, hasAudio=true, base64Length=${base64Str.length}, rawPcmBytes=${decodedByteLength} B, pcmSamples=${sampleCount} samples, totalChunks=${allRecordedChunksRef.current.length + 1} (output_format: pcm_44100). [CONFIRMED: NO decodeAudioData called for live chunks]`
               );
 
-              // Enqueue decoded binary bytes for Web Audio API playback
+              // Enqueue raw PCM bytes for direct Web Audio API buffer generation and playback
               appendChunkToBuffer(bytes);
             } catch (atobErr) {
               console.error(
@@ -835,53 +768,25 @@ export function LiveStreamingStudio({
           // Check if stream is final (support both isFinal and is_final)
           if (isFinal) {
             console.log(
-              `[LiveVoice] WebSocket stream isFinal/is_final confirmed! Total chunks captured: ${allRecordedChunksRef.current.length}`
+              `[LiveVoice] WebSocket stream isFinal/is_final confirmed! Total PCM chunks captured: ${allRecordedChunksRef.current.length}`
             );
             isStreamFinalRef.current = true;
             if (idleTimeoutTimerRef.current) clearTimeout(idleTimeoutTimerRef.current);
 
-            processDecodeQueue();
+            processPcmQueue();
 
-            // Capture complete audio blob for replay & download
+            // Capture complete audio blob as standard WAV for replay & download
             if (allRecordedChunksRef.current.length > 0) {
-              const fullBlob = new Blob(allRecordedChunksRef.current, { type: 'audio/mpeg' });
-              console.log(`[LiveVoice] Assembled full stream audio blob. Size: ${fullBlob.size} bytes`);
-              const url = URL.createObjectURL(fullBlob);
+              const wavBlob = pcmToWavBlob(allRecordedChunksRef.current, 44100, 1);
+              const totalPcmBytes = allRecordedChunksRef.current.reduce((sum, c) => sum + c.byteLength, 0);
+              const exactDuration = totalPcmBytes / (44100 * 2);
+
+              console.log(
+                `[LiveVoice] Assembled full stream WAV audio blob. Size: ${wavBlob.size} bytes, exact duration: ${exactDuration.toFixed(2)}s, SampleRate: 44100Hz`
+              );
+              const url = URL.createObjectURL(wavBlob);
               setRecordedAudioUrl(url);
-
-              const elapsed = streamStartTimeRef.current
-                ? (Date.now() - streamStartTimeRef.current) / 1000
-                : streamDurationSecRef.current;
-              if (elapsed > 0) {
-                setRecordedDuration(elapsed);
-              }
-
-              // Accurately decode with AudioContext to determine exact duration and verify MP3 integrity
-              if (audioContextRef.current) {
-                fullBlob
-                  .arrayBuffer()
-                  .then((buf) => {
-                    audioContextRef.current?.decodeAudioData(
-                      buf.slice(0),
-                      (decoded) => {
-                        console.log(
-                          `[LiveVoice] Full stream decoded successfully! Duration: ${decoded.duration.toFixed(
-                            2
-                          )}s, SampleRate: ${decoded.sampleRate}Hz, Channels: ${decoded.numberOfChannels}`
-                        );
-                        if (decoded.duration > 0) {
-                          setRecordedDuration(decoded.duration);
-                        }
-                      },
-                      (decodeErr) => {
-                        console.error('[LiveVoice] decodeAudioData error on assembled stream blob:', decodeErr);
-                      }
-                    );
-                  })
-                  .catch((arrErr) => {
-                    console.warn('[LiveVoice] ArrayBuffer extraction error:', arrErr);
-                  });
-              }
+              setRecordedDuration(exactDuration);
             }
           }
         } catch (parseErr) {
@@ -972,14 +877,14 @@ export function LiveStreamingStudio({
     startLiveStreaming(safeVoiceId);
   };
 
-  // Download recorded stream as MP3
+  // Download recorded stream as lossless WAV
   const handleDownloadRecorded = () => {
     playTapSound();
     if (!recordedAudioUrl) return;
     const a = document.createElement('a');
     a.href = recordedAudioUrl;
     const cleanName = voiceName.replace(/\s+/g, '-').toLowerCase();
-    a.download = `elevenlabs-live-${cleanName}-${Date.now()}.mp3`;
+    a.download = `elevenlabs-live-${cleanName}-${Date.now()}.wav`;
     document.body.appendChild(a);
     a.click();
     document.body.removeChild(a);
@@ -1403,10 +1308,10 @@ export function LiveStreamingStudio({
               type="button"
               onClick={handleDownloadRecorded}
               className="px-5 py-3.5 rounded-xl bg-slate-800 hover:bg-slate-700 border border-slate-700 text-purple-300 hover:text-white font-semibold text-sm transition flex items-center gap-2 cursor-pointer shadow-md"
-              title="Download full streamed recording as MP3"
+              title="Download full streamed recording as lossless WAV"
             >
               <Download size={16} />
-              <span>Download Stream (MP3)</span>
+              <span>Download Stream (WAV)</span>
             </button>
           )}
         </div>

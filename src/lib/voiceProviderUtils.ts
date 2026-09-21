@@ -30,12 +30,17 @@ export function buildVoiceRequestHeaders(
 
 /**
  * Resolves the ElevenLabs WebSocket streaming URL:
- * wss://api.elevenlabs.io/v1/text-to-speech/{voice_id}/stream-input?model_id={model_id}
+ * wss://api.elevenlabs.io/v1/text-to-speech/{voice_id}/stream-input?model_id={model_id}&output_format=pcm_44100
  */
-export function buildElevenLabsWebSocketUrl(voiceId: string, modelId?: string): string {
+export function buildElevenLabsWebSocketUrl(
+  voiceId: string,
+  modelId?: string,
+  outputFormat: string = 'pcm_44100'
+): string {
   const cleanVoiceId = encodeURIComponent(voiceId.trim());
   const cleanModel = encodeURIComponent(modelId || 'eleven_multilingual_v2');
-  return `wss://api.elevenlabs.io/v1/text-to-speech/${cleanVoiceId}/stream-input?model_id=${cleanModel}&output_format=mp3_44100_128`;
+  const cleanFormat = encodeURIComponent(outputFormat);
+  return `wss://api.elevenlabs.io/v1/text-to-speech/${cleanVoiceId}/stream-input?model_id=${cleanModel}&output_format=${cleanFormat}`;
 }
 
 /**
@@ -403,4 +408,38 @@ export async function synthesizeCloudVoiceAudio(
   }
 
   throw lastError || new Error(`Failed to synthesize voice with ${provider.name}.`);
+}
+
+/**
+ * Converts accumulated 16-bit linear PCM chunks (mono, 44.1kHz) into a valid RIFF WAV audio Blob.
+ */
+export function pcmToWavBlob(
+  pcmChunks: Uint8Array[],
+  sampleRate = 44100,
+  numChannels = 1
+): Blob {
+  const totalPcmBytes = pcmChunks.reduce((sum, c) => sum + c.byteLength, 0);
+  const wavHeader = new ArrayBuffer(44);
+  const view = new DataView(wavHeader);
+
+  // "RIFF" chunk
+  view.setUint32(0, 0x52494646, false); // "RIFF"
+  view.setUint32(4, 36 + totalPcmBytes, true); // chunkSize (36 + data size)
+  view.setUint32(8, 0x57415645, false); // "WAVE"
+
+  // "fmt " sub-chunk
+  view.setUint32(12, 0x666d7420, false); // "fmt "
+  view.setUint32(16, 16, true); // Subchunk1Size (16 for PCM)
+  view.setUint16(20, 1, true); // AudioFormat (1 = PCM linear)
+  view.setUint16(22, numChannels, true); // NumChannels
+  view.setUint32(24, sampleRate, true); // SampleRate (e.g. 44100)
+  view.setUint32(28, sampleRate * numChannels * 2, true); // ByteRate (SampleRate * NumChannels * 2)
+  view.setUint16(32, numChannels * 2, true); // BlockAlign (NumChannels * 2)
+  view.setUint16(34, 16, true); // BitsPerSample (16 bits)
+
+  // "data" sub-chunk
+  view.setUint32(36, 0x64617461, false); // "data"
+  view.setUint32(40, totalPcmBytes, true); // Subchunk2Size (data size)
+
+  return new Blob([wavHeader, ...pcmChunks], { type: 'audio/wav' });
 }
