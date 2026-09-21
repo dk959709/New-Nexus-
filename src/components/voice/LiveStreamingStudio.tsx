@@ -124,9 +124,31 @@ export function LiveStreamingStudio({
   const connectionTimeoutTimerRef = useRef<number | null>(null);
   const simulationIntervalRef = useRef<number | null>(null);
 
+  // Anti-silence keep-alive and heartbeat refs (prevent mobile Chrome auto-suspending on inter-chunk gaps)
+  const keepAliveSourceRef = useRef<AudioBufferSourceNode | null>(null);
+  const audioHeartbeatTimerRef = useRef<number | null>(null);
+
+  // Clean up and stop keep-alive audio source and heartbeat timer
+  const stopKeepAliveSource = useCallback(() => {
+    if (audioHeartbeatTimerRef.current) {
+      clearInterval(audioHeartbeatTimerRef.current);
+      audioHeartbeatTimerRef.current = null;
+    }
+    if (keepAliveSourceRef.current) {
+      try {
+        keepAliveSourceRef.current.stop();
+        keepAliveSourceRef.current.disconnect();
+      } catch {
+        // ignore
+      }
+      keepAliveSourceRef.current = null;
+    }
+  }, []);
+
   // Clean up all resources
   const cleanupLiveStream = useCallback(() => {
     console.log('[LiveVoice] cleanupLiveStream invoked');
+    stopKeepAliveSource();
     // Clear timers
     if (connectionTimeoutTimerRef.current) {
       clearTimeout(connectionTimeoutTimerRef.current);
@@ -176,7 +198,7 @@ export function LiveStreamingStudio({
     leftoverPcmByteRef.current = null;
     isProcessingQueueRef.current = false;
     setIsPlaying(false);
-  }, []);
+  }, [stopKeepAliveSource]);
 
   // Ensure cleanup on unmount
   useEffect(() => {
@@ -368,6 +390,51 @@ export function LiveStreamingStudio({
         } catch (wireErr) {
           console.warn('[LiveVoice] GainNode connect error:', wireErr);
         }
+
+        // Anti-Silence Keep-Alive Audio Source & Heartbeat Resume-Check
+        // Mobile Chrome/Android auto-suspends AudioContext on brief silence gaps between network buffers.
+        // A continuous, inaudible (amplitude 0.0001) audio source connected directly to ctx.destination
+        // guarantees non-zero audio output throughout the active stream.
+        stopKeepAliveSource();
+
+        const ctx = audioContextRef.current;
+        const keepAliveRate = ctx.sampleRate || 24000;
+        const keepAliveBuffer = ctx.createBuffer(1, keepAliveRate, keepAliveRate);
+        const channelData = keepAliveBuffer.getChannelData(0);
+        for (let i = 0; i < channelData.length; i++) {
+          // Micro-amplitude alternating signal (0.0001)
+          channelData[i] = (i % 2 === 0 ? 1 : -1) * 0.0001;
+        }
+
+        const keepAliveSource = ctx.createBufferSource();
+        keepAliveSource.buffer = keepAliveBuffer;
+        keepAliveSource.loop = true;
+        try {
+          keepAliveSource.connect(ctx.destination);
+          keepAliveSource.start(0);
+          keepAliveSourceRef.current = keepAliveSource;
+        } catch (keepAliveErr) {
+          console.warn('[LiveVoice] Keep-alive source connect/start warning:', keepAliveErr);
+        }
+
+        // Heartbeat setInterval (250ms) to detect and auto-resume suspended AudioContext
+        audioHeartbeatTimerRef.current = window.setInterval(async () => {
+          const activeCtx = audioContextRef.current;
+          if (!activeCtx) return;
+          if (activeCtx.state === 'suspended') {
+            console.warn('[LiveVoice] [AudioHeartbeat] AudioContext state was SUSPENDED! Auto-resuming immediately...');
+            try {
+              await activeCtx.resume();
+              console.log('[LiveVoice] [AudioHeartbeat] AudioContext successfully resumed. Current state:', activeCtx.state);
+            } catch (heartbeatErr) {
+              console.error('[LiveVoice] [AudioHeartbeat] Failed to resume suspended AudioContext:', heartbeatErr);
+            }
+          }
+        }, 250);
+
+        console.log(
+          '[LiveVoice] [Anti-Silence Keep-Alive] Initialized continuous inaudible keep-alive source (amplitude: 0.0001) and heartbeat resume-check (250ms interval) to prevent mobile Chrome silence auto-suspend.'
+        );
       } catch (e) {
         console.warn('[LiveVoice] Web Audio API init warning (continuing with connection):', e);
       }
@@ -480,6 +547,7 @@ export function LiveStreamingStudio({
           console.log('[LiveVoice] All scheduled live stream PCM audio finished playing.');
           setIsPlaying(false);
           setConnectionStatus('completed');
+          stopKeepAliveSource();
         }
       };
     };
