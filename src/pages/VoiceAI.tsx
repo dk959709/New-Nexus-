@@ -103,7 +103,7 @@ function splitTextIntoSpeechChunks(text: string, maxChunkLen = CHUNK_SIZE_LIMIT)
 
 export function VoiceAI() {
   const navigate = useNavigate();
-  const [activeSection, setActiveSection] = useState<VoiceSectionType>('edge');
+  const [activeSection, setActiveSection] = useState<VoiceSectionType>('cloud');
 
   // Edge TTS State
   const [edgeText, setEdgeText] = useState('');
