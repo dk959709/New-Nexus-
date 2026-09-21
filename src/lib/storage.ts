@@ -5,6 +5,8 @@ import type {
   AIProviderConfig,
   ImageProvidersState,
   ImageProviderConfig,
+  VoiceProvidersState,
+  VoiceProviderConfig,
   KeyHealthStatus,
   JarvisSystemConfig,
   JarvisMessage,
@@ -26,9 +28,11 @@ const KEYS = {
   locations: 'nexus-locations',
   aiProviders: 'nexus-ai-providers',
   imageProviders: 'nexus-image-providers',
+  voiceProviders: 'nexus-voice-providers',
   jarvisConfig: 'nexus-jarvis-config-v1',
   jarvisMessages: 'nexus-jarvis-messages-v1',
   edgeVoice: 'nexus-edge-voice-v1',
+  cloudVoice: 'nexus-cloud-voice-v1',
   multiChatConfig: 'nexus-multichat-config-v1',
   multiChatMessages: 'nexus-multichat-messages-v1',
   multiChatMemories: 'nexus-multichat-memories-v1',
@@ -337,6 +341,30 @@ export const DEFAULT_IMAGE_PROVIDERS: ImageProviderConfig[] = [
         id: 'pollinations_key_1',
         key: '',
         label: 'Pollinations API Key',
+        status: 'untested',
+      },
+    ],
+    isDefault: true,
+  },
+];
+
+export const DEFAULT_VOICE_PROVIDERS: VoiceProviderConfig[] = [
+  {
+    id: 'elevenlabs_default',
+    name: 'ElevenLabs',
+    url: 'https://api.elevenlabs.io/v1/text-to-speech/{voice_id}',
+    voicesUrl: 'https://api.elevenlabs.io/v1/voices',
+    model: 'eleven_multilingual_v2',
+    voiceId: '21m00Tcm4TlvDq8ikWAM',
+    requestType: 'post',
+    customHeaderName: 'xi-api-key',
+    requestBodyTemplate: '{\n  "text": "{text}",\n  "model_id": "eleven_multilingual_v2"\n}',
+    keyStrategy: 'failover',
+    keys: [
+      {
+        id: 'elevenlabs_key_1',
+        key: '',
+        label: 'ElevenLabs API Key',
         status: 'untested',
       },
     ],
@@ -1314,6 +1342,81 @@ export const storage = {
 
     state.providers[providerIndex] = { ...provider, keys: updatedKeys };
     this.saveImageProvidersState(state);
+  },
+
+  getVoiceProvidersState(): VoiceProvidersState {
+    const defaultState: VoiceProvidersState = {
+      activeProviderId: 'elevenlabs_default',
+      providers: DEFAULT_VOICE_PROVIDERS,
+    };
+    const loaded = read<VoiceProvidersState>(KEYS.voiceProviders, defaultState);
+    if (!loaded.providers || loaded.providers.length === 0) {
+      return defaultState;
+    }
+    return loaded;
+  },
+
+  saveVoiceProvidersState(state: VoiceProvidersState): void {
+    write(KEYS.voiceProviders, state);
+    if (typeof window !== 'undefined') {
+      window.dispatchEvent(new CustomEvent('nexus-voice-providers-updated', { detail: state }));
+      window.dispatchEvent(new Event('storage'));
+    }
+  },
+
+  getActiveVoiceProvider(): VoiceProviderConfig | null {
+    const state = this.getVoiceProvidersState();
+    if (!state.activeProviderId) {
+      return state.providers[0] || null;
+    }
+    return state.providers.find((p) => p.id === state.activeProviderId) || state.providers[0] || null;
+  },
+
+  updateVoiceKeyHealth(providerId: string, keyId: string, status: KeyHealthStatus, errorMsg?: string): void {
+    const state = this.getVoiceProvidersState();
+    const providerIndex = state.providers.findIndex((p) => p.id === providerId);
+    if (providerIndex === -1) return;
+
+    const provider = state.providers[providerIndex];
+    const updatedKeys = provider.keys.map((k) => {
+      if (k.id === keyId) {
+        return {
+          ...k,
+          status,
+          lastTested: Date.now(),
+          lastError: errorMsg,
+          cooldownUntil: status === 'cooldown' ? Date.now() + 60000 : undefined,
+        };
+      }
+      return k;
+    });
+
+    state.providers[providerIndex] = { ...provider, keys: updatedKeys };
+    this.saveVoiceProvidersState(state);
+  },
+
+  getCloudVoice(): string {
+    try {
+      const raw = localStorage.getItem(KEYS.cloudVoice);
+      if (!raw) return '21m00Tcm4TlvDq8ikWAM';
+      try {
+        const parsed = JSON.parse(raw);
+        if (typeof parsed === 'string' && parsed.trim()) return parsed.trim();
+      } catch {
+        if (raw.trim()) return raw.trim();
+      }
+      return '21m00Tcm4TlvDq8ikWAM';
+    } catch {
+      return '21m00Tcm4TlvDq8ikWAM';
+    }
+  },
+
+  saveCloudVoice(voice: string): void {
+    try {
+      localStorage.setItem(KEYS.cloudVoice, voice);
+    } catch {
+      // ignore
+    }
   },
 
 

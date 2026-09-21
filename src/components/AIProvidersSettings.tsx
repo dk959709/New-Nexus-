@@ -10,13 +10,16 @@ import {
   Layers,
   Key,
   Image as ImageIcon,
+  Volume2,
 } from 'lucide-react';
 import type {
   AIProviderConfig,
   ImageProviderConfig,
+  VoiceProviderConfig,
   AIKeyItem,
   AIProvidersState,
   ImageProvidersState,
+  VoiceProvidersState,
   KeyHealthStatus,
   AIProviderType,
 } from '@/types';
@@ -35,6 +38,9 @@ import {
   buildImageRequestHeaders,
   extractImageUrlFromJson,
 } from '@/lib/imageProviderUtils';
+import {
+  buildVoiceRequestHeaders,
+} from '@/lib/voiceProviderUtils';
 
 function maskKey(key: string): string {
   if (!key) return '';
@@ -52,11 +58,15 @@ export function AIProvidersSettings() {
   const [imageProvidersState, setImageProvidersState] = useState<ImageProvidersState>(() =>
     storage.getImageProvidersState()
   );
+  const [voiceProvidersState, setVoiceProvidersState] = useState<VoiceProvidersState>(() =>
+    storage.getVoiceProvidersState()
+  );
 
   const [isEditing, setIsEditing] = useState(false);
   const [providerType, setProviderType] = useState<AIProviderType>('text');
   const [editingProvider, setEditingProvider] = useState<AIProviderConfig | null>(null);
   const [editingImageProvider, setEditingImageProvider] = useState<ImageProviderConfig | null>(null);
+  const [editingVoiceProvider, setEditingVoiceProvider] = useState<VoiceProviderConfig | null>(null);
 
   const [showKeySecretMap, setShowKeySecretMap] = useState<Record<string, boolean>>({});
   const [testingKeyId, setTestingKeyId] = useState<string | null>(null);
@@ -88,19 +98,27 @@ export function AIProvidersSettings() {
     storage.saveImageProvidersState(newState);
   };
 
+  const updateVoiceProvidersState = (newState: VoiceProvidersState) => {
+    setVoiceProvidersState(newState);
+    storage.saveVoiceProvidersState(newState);
+  };
+
   // Keep state synchronized with storage events
   useEffect(() => {
     const handleSync = () => {
       setProvidersState(storage.getAIProvidersState());
       setImageProvidersState(storage.getImageProvidersState());
+      setVoiceProvidersState(storage.getVoiceProvidersState());
     };
     window.addEventListener('storage', handleSync);
     window.addEventListener('nexus-ai-providers-updated', handleSync);
     window.addEventListener('nexus-image-providers-updated', handleSync);
+    window.addEventListener('nexus-voice-providers-updated', handleSync);
     return () => {
       window.removeEventListener('storage', handleSync);
       window.removeEventListener('nexus-ai-providers-updated', handleSync);
       window.removeEventListener('nexus-image-providers-updated', handleSync);
+      window.removeEventListener('nexus-voice-providers-updated', handleSync);
     };
   }, []);
 
@@ -134,7 +152,8 @@ export function AIProvidersSettings() {
         },
       });
       setEditingImageProvider(null);
-    } else {
+      setEditingVoiceProvider(null);
+    } else if (type === 'image') {
       const newId = `img_provider_${Date.now()}`;
       const initialKeyId = `img_key_${Date.now()}_1`;
       setEditingImageProvider({
@@ -153,6 +172,32 @@ export function AIProvidersSettings() {
         ],
       });
       setEditingProvider(null);
+      setEditingVoiceProvider(null);
+    } else {
+      const newId = `voice_provider_${Date.now()}`;
+      const initialKeyId = `voice_key_${Date.now()}_1`;
+      setEditingVoiceProvider({
+        id: newId,
+        name: '',
+        url: 'https://api.elevenlabs.io/v1/text-to-speech/{voice_id}',
+        voicesUrl: 'https://api.elevenlabs.io/v1/voices',
+        model: 'eleven_multilingual_v2',
+        voiceId: '21m00Tcm4TlvDq8ikWAM',
+        requestType: 'post',
+        customHeaderName: 'xi-api-key',
+        requestBodyTemplate: '{\n  "text": "{text}",\n  "model_id": "eleven_multilingual_v2"\n}',
+        keyStrategy: 'failover',
+        keys: [
+          {
+            id: initialKeyId,
+            key: '',
+            label: 'ElevenLabs API Key 1',
+            status: 'untested',
+          },
+        ],
+      });
+      setEditingProvider(null);
+      setEditingImageProvider(null);
     }
     setKeyTestResults({});
     setFormError(null);
@@ -164,6 +209,7 @@ export function AIProvidersSettings() {
     setProviderType('text');
     setEditingProvider(JSON.parse(JSON.stringify(provider)));
     setEditingImageProvider(null);
+    setEditingVoiceProvider(null);
     setKeyTestResults({});
     setFormError(null);
     setIsEditing(true);
@@ -174,6 +220,18 @@ export function AIProvidersSettings() {
     setProviderType('image');
     setEditingImageProvider(JSON.parse(JSON.stringify(provider)));
     setEditingProvider(null);
+    setEditingVoiceProvider(null);
+    setKeyTestResults({});
+    setFormError(null);
+    setIsEditing(true);
+  };
+
+  // Open editor for an existing voice provider
+  const handleEditVoiceProvider = (provider: VoiceProviderConfig) => {
+    setProviderType('voice');
+    setEditingVoiceProvider(JSON.parse(JSON.stringify(provider)));
+    setEditingProvider(null);
+    setEditingImageProvider(null);
     setKeyTestResults({});
     setFormError(null);
     setIsEditing(true);
@@ -340,12 +398,90 @@ export function AIProvidersSettings() {
     }, 3000);
   };
 
+  // Save Voice Provider
+  const handleSaveVoiceProvider = () => {
+    if (!editingVoiceProvider) return;
+    setFormError(null);
+
+    if (!editingVoiceProvider.name.trim()) {
+      setFormError('Please enter a Provider Name');
+      return;
+    }
+    if (!editingVoiceProvider.url.trim()) {
+      setFormError('Please enter an API URL');
+      return;
+    }
+
+    const cleanedKeys = editingVoiceProvider.keys
+      .filter((k) => k.key.trim().length > 0)
+      .map((k, idx) => ({
+        ...k,
+        label: k.label?.trim() || `API Key ${idx + 1}`,
+        key: k.key.trim(),
+      }));
+
+    const finalKeys: AIKeyItem[] =
+      cleanedKeys.length > 0
+        ? cleanedKeys
+        : [
+            {
+              id: `voice_key_${Date.now()}`,
+              key: '',
+              label: 'API Key 1',
+              status: 'untested',
+            },
+          ];
+
+    const finalProvider: VoiceProviderConfig = {
+      ...editingVoiceProvider,
+      name: editingVoiceProvider.name.trim(),
+      url: editingVoiceProvider.url.trim(),
+      voicesUrl: editingVoiceProvider.voicesUrl?.trim() || undefined,
+      model: editingVoiceProvider.model?.trim() || undefined,
+      voiceId: editingVoiceProvider.voiceId?.trim() || undefined,
+      requestType: editingVoiceProvider.requestType || 'post',
+      customHeaderName: editingVoiceProvider.customHeaderName?.trim() || undefined,
+      requestBodyTemplate: editingVoiceProvider.requestBodyTemplate?.trim() || undefined,
+      keys: finalKeys,
+    };
+
+    const currentStoredVoice = storage.getVoiceProvidersState();
+    const existingIndex = currentStoredVoice.providers.findIndex(
+      (p) => p.id === finalProvider.id
+    );
+    let updatedList: VoiceProviderConfig[];
+
+    if (existingIndex >= 0) {
+      updatedList = currentStoredVoice.providers.map((p) =>
+        p.id === finalProvider.id ? finalProvider : p
+      );
+    } else {
+      updatedList = [...currentStoredVoice.providers, finalProvider];
+    }
+
+    const newState: VoiceProvidersState = {
+      activeProviderId: currentStoredVoice.activeProviderId || voiceProvidersState.activeProviderId || finalProvider.id,
+      providers: updatedList,
+    };
+
+    updateVoiceProvidersState(newState);
+    setIsEditing(false);
+    setEditingVoiceProvider(null);
+    setFormError(null);
+    setNotificationMessage(`Voice Provider "${finalProvider.name}" saved.`);
+    setTimeout(() => {
+      setNotificationMessage(null);
+    }, 3000);
+  };
+
   // Unified Save handler based on active providerType
   const handleSave = () => {
     if (providerType === 'text') {
       handleSaveTextProvider();
-    } else {
+    } else if (providerType === 'image') {
       handleSaveImageProvider();
+    } else {
+      handleSaveVoiceProvider();
     }
   };
 
@@ -355,18 +491,19 @@ export function AIProvidersSettings() {
     setFormError(null);
     if (newType === 'text') {
       if (!editingProvider) {
+        const sourceKeys = editingImageProvider?.keys || editingVoiceProvider?.keys || [];
         setEditingProvider({
-          id: editingImageProvider?.id.startsWith('img_')
-            ? editingImageProvider.id.replace('img_', 'provider_')
+          id: (editingImageProvider?.id || editingVoiceProvider?.id || '').startsWith('img_') || (editingImageProvider?.id || editingVoiceProvider?.id || '').startsWith('voice_')
+            ? (editingImageProvider?.id || editingVoiceProvider?.id || '').replace(/^img_|^voice_/, 'provider_')
             : `provider_${Date.now()}`,
-          name: editingImageProvider?.name || '',
+          name: editingImageProvider?.name || editingVoiceProvider?.name || '',
           url: 'https://openrouter.ai/api/v1/chat/completions',
           model: 'deepseek/deepseek-chat',
           maxTokens: 128,
-          keyStrategy: editingImageProvider?.keyStrategy || 'failover',
+          keyStrategy: editingImageProvider?.keyStrategy || editingVoiceProvider?.keyStrategy || 'failover',
           keys:
-            editingImageProvider?.keys && editingImageProvider.keys.length > 0
-              ? editingImageProvider.keys
+            sourceKeys.length > 0
+              ? sourceKeys
               : [
                   {
                     id: `key_${Date.now()}_1`,
@@ -384,24 +521,54 @@ export function AIProvidersSettings() {
           },
         });
       }
-    } else {
+    } else if (newType === 'image') {
       if (!editingImageProvider) {
+        const sourceKeys = editingProvider?.keys || editingVoiceProvider?.keys || [];
         setEditingImageProvider({
-          id: editingProvider?.id.startsWith('provider_')
-            ? editingProvider.id.replace('provider_', 'img_provider_')
+          id: (editingProvider?.id || editingVoiceProvider?.id || '').startsWith('provider_') || (editingProvider?.id || editingVoiceProvider?.id || '').startsWith('voice_')
+            ? (editingProvider?.id || editingVoiceProvider?.id || '').replace(/^provider_|^voice_/, 'img_provider_')
             : `img_provider_${Date.now()}`,
-          name: editingProvider?.name || '',
+          name: editingProvider?.name || editingVoiceProvider?.name || '',
           url: 'https://image.pollinations.ai/prompt/',
           requestType: 'get',
-          keyStrategy: editingProvider?.keyStrategy || 'failover',
+          keyStrategy: editingProvider?.keyStrategy || editingVoiceProvider?.keyStrategy || 'failover',
           keys:
-            editingProvider?.keys && editingProvider.keys.length > 0
-              ? editingProvider.keys
+            sourceKeys.length > 0
+              ? sourceKeys
               : [
                   {
                     id: `img_key_${Date.now()}_1`,
                     key: '',
                     label: 'API Key 1',
+                    status: 'untested',
+                  },
+                ],
+        });
+      }
+    } else {
+      if (!editingVoiceProvider) {
+        const sourceKeys = editingProvider?.keys || editingImageProvider?.keys || [];
+        setEditingVoiceProvider({
+          id: (editingProvider?.id || editingImageProvider?.id || '').startsWith('provider_') || (editingProvider?.id || editingImageProvider?.id || '').startsWith('img_')
+            ? (editingProvider?.id || editingImageProvider?.id || '').replace(/^provider_|^img_provider_|^img_/, 'voice_provider_')
+            : `voice_provider_${Date.now()}`,
+          name: editingProvider?.name || editingImageProvider?.name || '',
+          url: 'https://api.elevenlabs.io/v1/text-to-speech/{voice_id}',
+          voicesUrl: 'https://api.elevenlabs.io/v1/voices',
+          model: 'eleven_multilingual_v2',
+          voiceId: '21m00Tcm4TlvDq8ikWAM',
+          requestType: 'post',
+          customHeaderName: 'xi-api-key',
+          requestBodyTemplate: '{\n  "text": "{text}",\n  "model_id": "eleven_multilingual_v2"\n}',
+          keyStrategy: editingProvider?.keyStrategy || editingImageProvider?.keyStrategy || 'failover',
+          keys:
+            sourceKeys.length > 0
+              ? sourceKeys
+              : [
+                  {
+                    id: `voice_key_${Date.now()}_1`,
+                    key: '',
+                    label: 'ElevenLabs API Key 1',
                     status: 'untested',
                   },
                 ],
@@ -436,7 +603,7 @@ export function AIProvidersSettings() {
       };
 
       updateProvidersState(newState);
-    } else {
+    } else if (type === 'image') {
       const filtered = imageProvidersState.providers.filter((p) => p.id !== targetId);
       const newActive =
         imageProvidersState.activeProviderId === targetId
@@ -449,6 +616,19 @@ export function AIProvidersSettings() {
       };
 
       updateImageProvidersState(newState);
+    } else {
+      const filtered = voiceProvidersState.providers.filter((p) => p.id !== targetId);
+      const newActive =
+        voiceProvidersState.activeProviderId === targetId
+          ? filtered[0]?.id || ''
+          : voiceProvidersState.activeProviderId;
+
+      const newState: VoiceProvidersState = {
+        activeProviderId: newActive,
+        providers: filtered,
+      };
+
+      updateVoiceProvidersState(newState);
     }
 
     setDeletingProvider(null);
@@ -456,16 +636,22 @@ export function AIProvidersSettings() {
     // If editing this provider, close editor
     if (
       (type === 'text' && editingProvider && editingProvider.id === targetId) ||
-      (type === 'image' && editingImageProvider && editingImageProvider.id === targetId)
+      (type === 'image' && editingImageProvider && editingImageProvider.id === targetId) ||
+      (type === 'voice' && editingVoiceProvider && editingVoiceProvider.id === targetId)
     ) {
       setIsEditing(false);
       setEditingProvider(null);
       setEditingImageProvider(null);
+      setEditingVoiceProvider(null);
       setFormError(null);
     }
 
     setNotificationMessage(
-      type === 'text' ? 'AI text provider deleted.' : 'Image AI provider deleted.'
+      type === 'text'
+        ? 'AI text provider deleted.'
+        : type === 'image'
+        ? 'Image AI provider deleted.'
+        : 'Voice AI provider deleted.'
     );
     setTimeout(() => {
       setNotificationMessage(null);
@@ -488,6 +674,14 @@ export function AIProvidersSettings() {
     });
   };
 
+  // Switch active voice provider
+  const handleSelectActiveVoice = (id: string) => {
+    updateVoiceProvidersState({
+      ...voiceProvidersState,
+      activeProviderId: id,
+    });
+  };
+
   // Add key to currently editing provider
   const handleAddKeyToEditing = () => {
     if (providerType === 'text') {
@@ -505,7 +699,7 @@ export function AIProvidersSettings() {
           },
         ],
       });
-    } else {
+    } else if (providerType === 'image') {
       if (!editingImageProvider) return;
       const newKeyId = `img_key_${Date.now()}_${editingImageProvider.keys.length + 1}`;
       const isPixazo =
@@ -533,6 +727,26 @@ export function AIProvidersSettings() {
           },
         ],
       });
+    } else {
+      if (!editingVoiceProvider) return;
+      const newKeyId = `voice_key_${Date.now()}_${editingVoiceProvider.keys.length + 1}`;
+      const isElevenLabs =
+        editingVoiceProvider.name.toLowerCase().includes('eleven') ||
+        editingVoiceProvider.url.toLowerCase().includes('elevenlabs');
+      const labelPrefix = isElevenLabs ? 'ElevenLabs API Key' : 'API Key';
+
+      setEditingVoiceProvider({
+        ...editingVoiceProvider,
+        keys: [
+          ...editingVoiceProvider.keys,
+          {
+            id: newKeyId,
+            key: '',
+            label: `${labelPrefix} ${editingVoiceProvider.keys.length + 1}`,
+            status: 'untested',
+          },
+        ],
+      });
     }
   };
 
@@ -551,7 +765,7 @@ export function AIProvidersSettings() {
         preferredKeyId:
           editingProvider.preferredKeyId === keyId ? undefined : editingProvider.preferredKeyId,
       });
-    } else {
+    } else if (providerType === 'image') {
       if (!editingImageProvider) return;
       if (editingImageProvider.keys.length <= 1) {
         alert('A provider must have at least one API Key slot.');
@@ -566,6 +780,174 @@ export function AIProvidersSettings() {
             ? undefined
             : editingImageProvider.preferredKeyId,
       });
+    } else {
+      if (!editingVoiceProvider) return;
+      if (editingVoiceProvider.keys.length <= 1) {
+        alert('A provider must have at least one API Key slot.');
+        return;
+      }
+      const filtered = editingVoiceProvider.keys.filter((k) => k.id !== keyId);
+      setEditingVoiceProvider({
+        ...editingVoiceProvider,
+        keys: filtered,
+        preferredKeyId:
+          editingVoiceProvider.preferredKeyId === keyId
+            ? undefined
+            : editingVoiceProvider.preferredKeyId,
+      });
+    }
+  };
+
+  // Test individual voice key
+  const handleTestVoiceKey = async (
+    keyItem: AIKeyItem,
+    url: string,
+    providerConfig: VoiceProviderConfig
+  ) => {
+    if (!keyItem.key.trim()) {
+      setKeyTestResults((prev) => ({
+        ...prev,
+        [keyItem.id]: { ok: false, message: 'Please enter an API Key first' },
+      }));
+      return;
+    }
+
+    setTestingKeyId(keyItem.id);
+    setKeyTestResults((prev) => ({
+      ...prev,
+      [keyItem.id]: { ok: false, message: 'Testing voice connection & key...' },
+    }));
+
+    try {
+      const controller = new AbortController();
+      const timeoutId = setTimeout(() => controller.abort(), 12000);
+
+      const testUrl = providerConfig.voicesUrl?.trim() || 'https://api.elevenlabs.io/v1/voices';
+      const testHeaders = buildVoiceRequestHeaders(providerConfig, keyItem.key.trim());
+
+      const resp = await fetch(testUrl, {
+        method: 'GET',
+        headers: testHeaders,
+        signal: controller.signal,
+        mode: 'cors',
+      });
+      clearTimeout(timeoutId);
+
+      if (resp.ok) {
+        setKeyTestResults((prev) => ({
+          ...prev,
+          [keyItem.id]: { ok: true, message: '✓ Voice key verified & active' },
+        }));
+        if (editingVoiceProvider) {
+          setEditingVoiceProvider({
+            ...editingVoiceProvider,
+            keys: editingVoiceProvider.keys.map((k) =>
+              k.id === keyItem.id
+                ? { ...k, status: 'healthy', lastTested: Date.now(), lastError: undefined }
+                : k
+            ),
+          });
+        }
+      } else {
+        const errorMsg = `HTTP ${resp.status}: ${resp.statusText || 'Error'}`;
+        const statusType: KeyHealthStatus = resp.status === 429 ? 'cooldown' : 'invalid';
+        setKeyTestResults((prev) => ({
+          ...prev,
+          [keyItem.id]: { ok: false, message: `✕ ${errorMsg}` },
+        }));
+        if (editingVoiceProvider) {
+          setEditingVoiceProvider({
+            ...editingVoiceProvider,
+            keys: editingVoiceProvider.keys.map((k) =>
+              k.id === keyItem.id
+                ? {
+                    ...k,
+                    status: statusType,
+                    lastTested: Date.now(),
+                    lastError: errorMsg,
+                  }
+                : k
+            ),
+          });
+        }
+      }
+    } catch (err: unknown) {
+      const msg = err instanceof Error ? err.message : String(err);
+      const isTimeout = msg.includes('aborted') || msg.includes('Timeout');
+      setKeyTestResults((prev) => ({
+        ...prev,
+        [keyItem.id]: {
+          ok: false,
+          message: isTimeout ? '✕ Request timed out' : `✕ Connection failed: ${msg}`,
+        },
+      }));
+    } finally {
+      setTestingKeyId(null);
+    }
+  };
+
+  // Test full voice provider
+  const handleTestVoiceProvider = async (provider: VoiceProviderConfig) => {
+    setTestingProviderId(provider.id);
+    setProviderTestResults((prev) => ({
+      ...prev,
+      [provider.id]: { ok: false, message: 'Testing voice provider connection...' },
+    }));
+
+    try {
+      const validKeys = provider.keys.filter((k) => k.key.trim().length > 0);
+      const keyToTest = validKeys[0]?.key.trim();
+
+      const controller = new AbortController();
+      const timeoutId = setTimeout(() => controller.abort(), 12000);
+
+      const testUrl = provider.voicesUrl?.trim() || 'https://api.elevenlabs.io/v1/voices';
+      const testHeaders = buildVoiceRequestHeaders(provider, keyToTest);
+
+      const resp = await fetch(testUrl, {
+        method: 'GET',
+        headers: testHeaders,
+        signal: controller.signal,
+        mode: 'cors',
+      });
+      clearTimeout(timeoutId);
+
+      if (resp.ok) {
+        setProviderTestResults((prev) => ({
+          ...prev,
+          [provider.id]: { ok: true, message: '✓ Voice provider connected & verified' },
+        }));
+        if (validKeys.length > 0) {
+          storage.updateVoiceKeyHealth(provider.id, validKeys[0].id, 'healthy');
+        }
+      } else {
+        const errorText = `HTTP ${resp.status}: ${resp.statusText || 'Error'}`;
+        setProviderTestResults((prev) => ({
+          ...prev,
+          [provider.id]: { ok: false, message: `✕ Test failed: ${errorText}` },
+        }));
+        if (validKeys.length > 0) {
+          storage.updateVoiceKeyHealth(
+            provider.id,
+            validKeys[0].id,
+            resp.status === 429 ? 'cooldown' : 'invalid',
+            errorText
+          );
+        }
+      }
+    } catch (err: unknown) {
+      const errorMsg = err instanceof Error ? err.message : String(err);
+      setProviderTestResults((prev) => ({
+        ...prev,
+        [provider.id]: { ok: false, message: `✕ Test failed: ${errorMsg}` },
+      }));
+      const validKeys = provider.keys.filter((k) => k.key.trim().length > 0);
+      if (validKeys.length > 0) {
+        storage.updateVoiceKeyHealth(provider.id, validKeys[0].id, 'invalid', errorMsg);
+      }
+    } finally {
+      setTestingProviderId(null);
+      setVoiceProvidersState(storage.getVoiceProvidersState());
     }
   };
 
@@ -986,17 +1368,23 @@ export function AIProvidersSettings() {
   const currentEditingKeys =
     providerType === 'text'
       ? editingProvider?.keys || []
-      : editingImageProvider?.keys || [];
+      : providerType === 'image'
+      ? editingImageProvider?.keys || []
+      : editingVoiceProvider?.keys || [];
 
   const currentStrategy =
     providerType === 'text'
       ? editingProvider?.keyStrategy || 'failover'
-      : editingImageProvider?.keyStrategy || 'failover';
+      : providerType === 'image'
+      ? editingImageProvider?.keyStrategy || 'failover'
+      : editingVoiceProvider?.keyStrategy || 'failover';
 
   const currentPreferredKeyId =
     providerType === 'text'
       ? editingProvider?.preferredKeyId
-      : editingImageProvider?.preferredKeyId;
+      : providerType === 'image'
+      ? editingImageProvider?.preferredKeyId
+      : editingVoiceProvider?.preferredKeyId;
 
   return (
     <div className="ai-providers-container" style={{ display: 'grid', gap: '24px', position: 'relative' }}>
@@ -1846,6 +2234,298 @@ export function AIProvidersSettings() {
         </div>
       </div>
 
+      {/* SECTION 3: Voice AI Providers Overview & List */}
+      <div
+        style={{
+          padding: '20px',
+          borderRadius: '12px',
+          background: 'linear-gradient(135deg, rgba(28,14,39,0.7) 0%, rgba(20,20,48,0.7) 100%)',
+          border: '1px solid rgba(168,85,247,0.3)',
+          display: 'flex',
+          justifyContent: 'space-between',
+          alignItems: 'center',
+          flexWrap: 'wrap',
+          gap: '16px',
+        }}
+      >
+        <div>
+          <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+            <Volume2 size={18} style={{ color: '#c084fc' }} />
+            <h3 style={{ margin: 0, fontSize: '15px', fontWeight: 600 }}>Active Voice AI Engine</h3>
+          </div>
+          <p style={{ margin: '4px 0 0', fontSize: '12px', color: 'var(--muted)' }}>
+            Selected provider powers audio synthesis and realistic speech generation across Voice AI Studio.
+          </p>
+        </div>
+
+        <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
+          <select
+            id="active-voice-ai-provider-select"
+            value={voiceProvidersState.activeProviderId}
+            onChange={(e) => handleSelectActiveVoice(e.target.value)}
+            style={{
+              background: 'rgba(10,22,28,0.85)',
+              color: '#fff',
+              border: '1px solid rgba(168,85,247,0.4)',
+              padding: '8px 12px',
+              borderRadius: '8px',
+              fontSize: '13px',
+              fontWeight: 500,
+              minWidth: '220px',
+            }}
+          >
+            <option value="edge_tts">🎙️ Microsoft Edge TTS (Built-in / Free)</option>
+            {voiceProvidersState.providers.map((p) => (
+              <option key={p.id} value={p.id}>
+                🟣 {p.name} ({p.model || 'ElevenLabs TTS'})
+              </option>
+            ))}
+          </select>
+        </div>
+      </div>
+
+      {/* Voice AI Providers List */}
+      <div style={{ display: 'grid', gap: '16px' }}>
+        <div
+          style={{
+            display: 'flex',
+            justifyContent: 'space-between',
+            alignItems: 'center',
+            flexWrap: 'wrap',
+            gap: '12px',
+          }}
+        >
+          <div>
+            <h3 style={{ margin: 0, fontSize: '16px', fontWeight: 600, display: 'flex', alignItems: 'center', gap: '8px' }}>
+              <Volume2 size={17} style={{ color: '#c084fc' }} /> Voice AI Providers
+            </h3>
+            <p style={{ margin: '2px 0 0', fontSize: '12px', color: 'var(--muted)' }}>
+              Text-to-Speech (TTS) cloud voice engines (e.g. ElevenLabs) with customizable voice models and multi-key failover pools.
+            </p>
+          </div>
+
+          <button
+            onClick={() => handleAddNew('voice')}
+            style={{
+              padding: '8px 16px',
+              borderRadius: '8px',
+              background: 'rgba(168,85,247,0.15)',
+              border: '1px solid rgba(168,85,247,0.4)',
+              color: '#c084fc',
+              fontSize: '13px',
+              fontWeight: 600,
+              display: 'inline-flex',
+              alignItems: 'center',
+              gap: '6px',
+              cursor: 'pointer',
+            }}
+          >
+            <Plus size={15} /> Add Voice AI Provider
+          </button>
+        </div>
+
+        <div style={{ display: 'grid', gap: '12px' }}>
+          {voiceProvidersState.providers.map((p) => {
+            const isActive = voiceProvidersState.activeProviderId === p.id;
+            const healthyKeys = p.keys.filter((k) => k.status === 'healthy').length;
+            const cooldownKeys = p.keys.filter((k) => k.status === 'cooldown').length;
+            const invalidKeys = p.keys.filter((k) => k.status === 'invalid').length;
+            const untestedKeys = p.keys.filter((k) => !k.status || k.status === 'untested').length;
+            const isTesting = testingProviderId === p.id;
+            const testResult = providerTestResults[p.id];
+
+            return (
+              <div
+                key={p.id}
+                style={{
+                  padding: '16px',
+                  borderRadius: '10px',
+                  background: isActive ? 'rgba(168,85,247,0.08)' : 'rgba(10,22,28,0.5)',
+                  border: `1px solid ${isActive ? 'rgba(168,85,247,0.5)' : 'var(--line)'}`,
+                  display: 'flex',
+                  justifyContent: 'space-between',
+                  alignItems: 'center',
+                  flexWrap: 'wrap',
+                  gap: '14px',
+                }}
+              >
+                <div style={{ display: 'grid', gap: '6px', flex: 1, minWidth: '240px' }}>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: '10px', flexWrap: 'wrap' }}>
+                    <span style={{ fontSize: '15px', fontWeight: 600, color: '#fff' }}>
+                      {p.name}
+                    </span>
+                    {isActive && (
+                      <span
+                        style={{
+                          fontSize: '11px',
+                          padding: '2px 8px',
+                          borderRadius: '12px',
+                          background: 'rgba(168,85,247,0.2)',
+                          color: '#c084fc',
+                          border: '1px solid rgba(168,85,247,0.4)',
+                          fontWeight: 600,
+                        }}
+                      >
+                        Active Voice Engine
+                      </span>
+                    )}
+                    <span
+                      style={{
+                        fontSize: '10px',
+                        padding: '2px 6px',
+                        borderRadius: '4px',
+                        background: 'rgba(255,255,255,0.06)',
+                        color: 'var(--muted)',
+                      }}
+                    >
+                      {p.requestType === 'get' ? 'GET / URL' : 'POST / JSON'}
+                    </span>
+                    {p.customHeaderName && (
+                      <span
+                        style={{
+                          fontSize: '10px',
+                          padding: '2px 6px',
+                          borderRadius: '4px',
+                          background: 'rgba(168,85,247,0.12)',
+                          color: '#d8b4fe',
+                          border: '1px solid rgba(168,85,247,0.25)',
+                        }}
+                      >
+                        {p.customHeaderName}
+                      </span>
+                    )}
+                  </div>
+
+                  <div style={{ display: 'flex', gap: '16px', fontSize: '12px', color: 'var(--muted)', flexWrap: 'wrap' }}>
+                    <span>
+                      Model: <code style={{ color: 'var(--text)' }}>{p.model || 'eleven_multilingual_v2'}</code>
+                    </span>
+                    {p.voiceId && (
+                      <span>
+                        Default Voice: <code style={{ color: 'var(--text)' }}>{p.voiceId}</code>
+                      </span>
+                    )}
+                    <span>
+                      URL: <span style={{ fontFamily: 'DM Mono, monospace' }}>{p.url}</span>
+                    </span>
+                  </div>
+
+                  {/* Key health badges */}
+                  <div style={{ display: 'flex', alignItems: 'center', gap: '10px', fontSize: '11px', flexWrap: 'wrap' }}>
+                    <span style={{ color: 'var(--muted)' }}>
+                      Keys ({p.keys.length}):
+                    </span>
+                    {healthyKeys > 0 && (
+                      <span style={{ color: '#34d399', fontWeight: 600 }}>
+                        ● {healthyKeys} healthy
+                      </span>
+                    )}
+                    {cooldownKeys > 0 && (
+                      <span style={{ color: '#fbbf24', fontWeight: 600 }}>
+                        ● {cooldownKeys} rate-limited
+                      </span>
+                    )}
+                    {invalidKeys > 0 && (
+                      <span style={{ color: '#f87171', fontWeight: 600 }}>
+                        ● {invalidKeys} invalid
+                      </span>
+                    )}
+                    {untestedKeys > 0 && (
+                      <span style={{ color: 'var(--muted)' }}>
+                        ● {untestedKeys} untested
+                      </span>
+                    )}
+                    <span style={{ color: 'var(--muted)', marginLeft: '4px' }}>
+                      Strategy: <strong style={{ color: 'var(--text)' }}>{p.keyStrategy || 'failover'}</strong>
+                    </span>
+                  </div>
+
+                  {testResult && (
+                    <div
+                      style={{
+                        fontSize: '11px',
+                        color: testResult.ok ? '#34d399' : '#f87171',
+                        fontWeight: 500,
+                        marginTop: '2px',
+                      }}
+                    >
+                      {testResult.message}
+                    </div>
+                  )}
+                </div>
+
+                <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                  {!isActive && (
+                    <button
+                      onClick={() => handleSelectActiveVoice(p.id)}
+                      className="secondary-button"
+                      style={{
+                        padding: '7px 11px',
+                        borderRadius: '7px',
+                        fontSize: '12px',
+                        cursor: 'pointer',
+                      }}
+                    >
+                      Use as Active
+                    </button>
+                  )}
+
+                  <button
+                    onClick={() => handleTestVoiceProvider(p)}
+                    disabled={isTesting}
+                    className="secondary-button"
+                    style={{
+                      padding: '7px 11px',
+                      borderRadius: '7px',
+                      fontSize: '12px',
+                      display: 'inline-flex',
+                      alignItems: 'center',
+                      gap: '4px',
+                      cursor: 'pointer',
+                    }}
+                  >
+                    <RotateCw size={13} className={isTesting ? 'animate-spin' : ''} />
+                    {isTesting ? 'Testing' : 'Test'}
+                  </button>
+
+                  <button
+                    onClick={() => handleEditVoiceProvider(p)}
+                    className="secondary-button"
+                    style={{
+                      padding: '7px 11px',
+                      borderRadius: '7px',
+                      fontSize: '12px',
+                      display: 'inline-flex',
+                      alignItems: 'center',
+                      gap: '4px',
+                      cursor: 'pointer',
+                    }}
+                  >
+                    <Edit2 size={13} /> Edit
+                  </button>
+
+                  <button
+                    onClick={() => handleDeleteProvider(p.id, p.name, 'voice')}
+                    style={{
+                      padding: '7px 10px',
+                      borderRadius: '7px',
+                      background: 'rgba(237,139,139,0.1)',
+                      border: '1px solid rgba(237,139,139,0.3)',
+                      color: 'var(--danger)',
+                      fontSize: '12px',
+                      cursor: 'pointer',
+                    }}
+                    title="Delete voice provider"
+                  >
+                    <Trash2 size={13} />
+                  </button>
+                </div>
+              </div>
+            );
+          })}
+        </div>
+      </div>
+
       {/* SECTION 4: Add / Edit AI Provider Modal / Form */}
       {isEditing && (
         <div
@@ -1853,11 +2533,19 @@ export function AIProvidersSettings() {
             marginTop: '10px',
             padding: '24px',
             borderRadius: '14px',
-            border: `1px solid ${providerType === 'image' ? '#ec4899' : 'var(--accent)'}`,
+            border: `1px solid ${
+              providerType === 'image'
+                ? '#ec4899'
+                : providerType === 'voice'
+                ? '#a855f7'
+                : 'var(--accent)'
+            }`,
             background: 'linear-gradient(135deg, rgba(12,26,34,0.95) 0%, rgba(18,22,46,0.98) 100%)',
             boxShadow:
               providerType === 'image'
                 ? '0 8px 32px rgba(0,0,0,0.5), 0 0 20px rgba(236,72,153,0.2)'
+                : providerType === 'voice'
+                ? '0 8px 32px rgba(0,0,0,0.5), 0 0 20px rgba(168,85,247,0.2)'
                 : '0 8px 32px rgba(0,0,0,0.5), 0 0 20px rgba(97,215,201,0.2)',
             display: 'grid',
             gap: '20px',
@@ -1881,14 +2569,20 @@ export function AIProvidersSettings() {
                   ? editingProvider && providersState.providers.some((p) => p.id === editingProvider.id)
                     ? 'Edit Text AI Provider'
                     : 'Add Text AI Provider'
-                  : editingImageProvider && imageProvidersState.providers.some((p) => p.id === editingImageProvider.id)
-                  ? 'Edit Image AI Provider'
-                  : 'Add Image AI Provider'}
+                  : providerType === 'image'
+                  ? editingImageProvider && imageProvidersState.providers.some((p) => p.id === editingImageProvider.id)
+                    ? 'Edit Image AI Provider'
+                    : 'Add Image AI Provider'
+                  : editingVoiceProvider && voiceProvidersState.providers.some((p) => p.id === editingVoiceProvider.id)
+                  ? 'Edit Voice AI Provider'
+                  : 'Add Voice AI Provider'}
               </h3>
               <p style={{ margin: '4px 0 0', fontSize: '12px', color: 'var(--muted)' }}>
                 {providerType === 'text'
                   ? 'Configure endpoint URL, model, and multiple API keys for automatic failover & rotation.'
-                  : 'Configure base image generation endpoint URL and API keys with automatic failover.'}
+                  : providerType === 'image'
+                  ? 'Configure base image generation endpoint URL and API keys with automatic failover.'
+                  : 'Configure Text-to-Speech endpoint (e.g. ElevenLabs), voices, models, and failover API keys.'}
               </p>
             </div>
 
@@ -1913,6 +2607,14 @@ export function AIProvidersSettings() {
                   style={{ display: 'inline-flex', alignItems: 'center', gap: '5px' }}
                 >
                   <ImageIcon size={13} /> Image
+                </button>
+                <button
+                  type="button"
+                  className={providerType === 'voice' ? 'selected' : ''}
+                  onClick={() => handleSwitchType('voice')}
+                  style={{ display: 'inline-flex', alignItems: 'center', gap: '5px' }}
+                >
+                  <Volume2 size={13} /> Voice
                 </button>
               </div>
             </div>
@@ -2115,6 +2817,56 @@ export function AIProvidersSettings() {
                 style={{ fontSize: '11px', padding: '4px 10px', borderRadius: '5px', borderColor: 'rgba(249,115,22,0.35)', color: '#fb923c' }}
               >
                 ☁️ Cloudflare Workers AI
+              </button>
+            </div>
+          )}
+
+          {/* Quick Presets for Voice */}
+          {providerType === 'voice' && editingVoiceProvider && (
+            <div style={{ display: 'flex', gap: '8px', flexWrap: 'wrap', alignItems: 'center' }}>
+              <span style={{ fontSize: '11px', color: 'var(--muted)' }}>Presets:</span>
+              <button
+                type="button"
+                onClick={() => {
+                  setEditingVoiceProvider({
+                    ...editingVoiceProvider,
+                    name: 'ElevenLabs',
+                    url: 'https://api.elevenlabs.io/v1/text-to-speech/{voice_id}',
+                    voicesUrl: 'https://api.elevenlabs.io/v1/voices',
+                    model: 'eleven_multilingual_v2',
+                    voiceId: '21m00Tcm4TlvDq8ikWAM',
+                    requestType: 'post',
+                    customHeaderName: 'xi-api-key',
+                    requestBodyTemplate: '{\n  "text": "{text}",\n  "model_id": "eleven_multilingual_v2"\n}',
+                    keys:
+                      editingVoiceProvider.keys && editingVoiceProvider.keys.length > 0
+                        ? editingVoiceProvider.keys.map((k, idx) => ({
+                            ...k,
+                            label: k.label && !k.label.includes('API Key') && !k.label.includes('Voice')
+                              ? k.label
+                              : `ElevenLabs API Key ${idx + 1}`,
+                          }))
+                        : [
+                            {
+                              id: `voice_key_${Date.now()}`,
+                              label: 'ElevenLabs API Key',
+                              key: '',
+                              status: 'untested',
+                            },
+                          ],
+                  });
+                }}
+                className="secondary-button"
+                style={{
+                  fontSize: '11px',
+                  padding: '4px 10px',
+                  borderRadius: '5px',
+                  borderColor: 'rgba(168,85,247,0.35)',
+                  color: '#c084fc',
+                  fontWeight: 600,
+                }}
+              >
+                🎙️ ElevenLabs
               </button>
             </div>
           )}
@@ -2613,6 +3365,295 @@ export function AIProvidersSettings() {
             </div>
           )}
 
+          {/* Form Fields: Voice Mode */}
+          {providerType === 'voice' && editingVoiceProvider && (
+            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(280px, 1fr))', gap: '16px' }}>
+              <div>
+                <label
+                  style={{
+                    display: 'block',
+                    fontSize: '12px',
+                    fontWeight: 600,
+                    color: 'var(--text)',
+                    marginBottom: '6px',
+                  }}
+                >
+                  Provider Name
+                </label>
+                <input
+                  type="text"
+                  placeholder="e.g. ElevenLabs or Custom TTS Engine"
+                  value={editingVoiceProvider.name}
+                  onChange={(e) =>
+                    setEditingVoiceProvider({ ...editingVoiceProvider, name: e.target.value })
+                  }
+                  style={{
+                    width: '100%',
+                    boxSizing: 'border-box',
+                    background: 'rgba(10,22,28,0.8)',
+                    border: '1px solid var(--line)',
+                    borderRadius: '8px',
+                    padding: '10px 12px',
+                    color: '#fff',
+                    fontSize: '13px',
+                    outline: 'none',
+                  }}
+                />
+              </div>
+
+              <div>
+                <label
+                  style={{
+                    display: 'block',
+                    fontSize: '12px',
+                    fontWeight: 600,
+                    color: 'var(--text)',
+                    marginBottom: '6px',
+                  }}
+                >
+                  Request Type
+                </label>
+                <div className="segmented-control" style={{ display: 'flex', width: '100%' }}>
+                  <button
+                    type="button"
+                    className={editingVoiceProvider.requestType === 'post' ? 'selected' : ''}
+                    onClick={() => setEditingVoiceProvider({ ...editingVoiceProvider, requestType: 'post' })}
+                    style={{ flex: 1, fontSize: '12px', padding: '9px 12px', justifyContent: 'center' }}
+                  >
+                    POST / JSON-Based
+                  </button>
+                  <button
+                    type="button"
+                    className={editingVoiceProvider.requestType === 'get' ? 'selected' : ''}
+                    onClick={() => setEditingVoiceProvider({ ...editingVoiceProvider, requestType: 'get' })}
+                    style={{ flex: 1, fontSize: '12px', padding: '9px 12px', justifyContent: 'center' }}
+                  >
+                    GET / URL-Based
+                  </button>
+                </div>
+                <p style={{ margin: '5px 0 0', fontSize: '11px', color: 'var(--muted)' }}>
+                  ElevenLabs and major speech APIs use POST/JSON-based text-to-speech generation.
+                </p>
+              </div>
+
+              <div style={{ gridColumn: '1 / -1' }}>
+                <label
+                  style={{
+                    display: 'block',
+                    fontSize: '12px',
+                    fontWeight: 600,
+                    color: 'var(--text)',
+                    marginBottom: '6px',
+                  }}
+                >
+                  API URL (Text-to-Speech Endpoint)
+                </label>
+                <input
+                  type="text"
+                  placeholder="https://api.elevenlabs.io/v1/text-to-speech/{voice_id}"
+                  value={editingVoiceProvider.url}
+                  onChange={(e) =>
+                    setEditingVoiceProvider({ ...editingVoiceProvider, url: e.target.value })
+                  }
+                  style={{
+                    width: '100%',
+                    boxSizing: 'border-box',
+                    background: 'rgba(10,22,28,0.8)',
+                    border: '1px solid var(--line)',
+                    borderRadius: '8px',
+                    padding: '10px 12px',
+                    color: '#fff',
+                    fontSize: '13px',
+                    outline: 'none',
+                    fontFamily: 'DM Mono, monospace',
+                  }}
+                />
+                <p style={{ margin: '5px 0 0', fontSize: '11px', color: 'var(--muted)' }}>
+                  Target synthesis endpoint. Use <code>{'{voice_id}'}</code> placeholder to dynamically inject the chosen voice ID.
+                </p>
+              </div>
+
+              <div>
+                <label
+                  style={{
+                    display: 'block',
+                    fontSize: '12px',
+                    fontWeight: 600,
+                    color: 'var(--text)',
+                    marginBottom: '6px',
+                  }}
+                >
+                  Voices List Endpoint <span style={{ fontWeight: 400, color: 'var(--muted)' }}>(Optional)</span>
+                </label>
+                <input
+                  type="text"
+                  placeholder="https://api.elevenlabs.io/v1/voices"
+                  value={editingVoiceProvider.voicesUrl || ''}
+                  onChange={(e) =>
+                    setEditingVoiceProvider({ ...editingVoiceProvider, voicesUrl: e.target.value })
+                  }
+                  style={{
+                    width: '100%',
+                    boxSizing: 'border-box',
+                    background: 'rgba(10,22,28,0.8)',
+                    border: '1px solid var(--line)',
+                    borderRadius: '8px',
+                    padding: '10px 12px',
+                    color: '#fff',
+                    fontSize: '13px',
+                    outline: 'none',
+                    fontFamily: 'DM Mono, monospace',
+                  }}
+                />
+                <p style={{ margin: '5px 0 0', fontSize: '11px', color: 'var(--muted)' }}>
+                  Endpoint used to dynamically fetch available voice models into the Cloud Voice AI selector.
+                </p>
+              </div>
+
+              <div>
+                <label
+                  style={{
+                    display: 'block',
+                    fontSize: '12px',
+                    fontWeight: 600,
+                    color: 'var(--text)',
+                    marginBottom: '6px',
+                  }}
+                >
+                  Custom Auth Header Name <span style={{ fontWeight: 400, color: 'var(--muted)' }}>(Optional)</span>
+                </label>
+                <input
+                  type="text"
+                  placeholder="e.g. xi-api-key"
+                  value={editingVoiceProvider.customHeaderName || ''}
+                  onChange={(e) =>
+                    setEditingVoiceProvider({ ...editingVoiceProvider, customHeaderName: e.target.value })
+                  }
+                  style={{
+                    width: '100%',
+                    boxSizing: 'border-box',
+                    background: 'rgba(10,22,28,0.8)',
+                    border: '1px solid var(--line)',
+                    borderRadius: '8px',
+                    padding: '10px 12px',
+                    color: '#fff',
+                    fontSize: '13px',
+                    outline: 'none',
+                    fontFamily: 'DM Mono, monospace',
+                  }}
+                />
+                <p style={{ margin: '5px 0 0', fontSize: '11px', color: 'var(--muted)' }}>
+                  ElevenLabs uses <code>xi-api-key</code>. If left empty, standard <code>Authorization: Bearer &lt;key&gt;</code> is sent.
+                </p>
+              </div>
+
+              <div>
+                <label
+                  style={{
+                    display: 'block',
+                    fontSize: '12px',
+                    fontWeight: 600,
+                    color: 'var(--text)',
+                    marginBottom: '6px',
+                  }}
+                >
+                  Model Identifier <span style={{ fontWeight: 400, color: 'var(--muted)' }}>(Optional)</span>
+                </label>
+                <input
+                  type="text"
+                  placeholder="e.g. eleven_multilingual_v2 or eleven_turbo_v2_5"
+                  value={editingVoiceProvider.model || ''}
+                  onChange={(e) =>
+                    setEditingVoiceProvider({ ...editingVoiceProvider, model: e.target.value })
+                  }
+                  style={{
+                    width: '100%',
+                    boxSizing: 'border-box',
+                    background: 'rgba(10,22,28,0.8)',
+                    border: '1px solid var(--line)',
+                    borderRadius: '8px',
+                    padding: '10px 12px',
+                    color: '#fff',
+                    fontSize: '13px',
+                    outline: 'none',
+                  }}
+                />
+              </div>
+
+              <div>
+                <label
+                  style={{
+                    display: 'block',
+                    fontSize: '12px',
+                    fontWeight: 600,
+                    color: 'var(--text)',
+                    marginBottom: '6px',
+                  }}
+                >
+                  Default Voice ID <span style={{ fontWeight: 400, color: 'var(--muted)' }}>(Optional)</span>
+                </label>
+                <input
+                  type="text"
+                  placeholder="e.g. 21m00Tcm4TlvDq8ikWAM (Rachel)"
+                  value={editingVoiceProvider.voiceId || ''}
+                  onChange={(e) =>
+                    setEditingVoiceProvider({ ...editingVoiceProvider, voiceId: e.target.value })
+                  }
+                  style={{
+                    width: '100%',
+                    boxSizing: 'border-box',
+                    background: 'rgba(10,22,28,0.8)',
+                    border: '1px solid var(--line)',
+                    borderRadius: '8px',
+                    padding: '10px 12px',
+                    color: '#fff',
+                    fontSize: '13px',
+                    outline: 'none',
+                    fontFamily: 'DM Mono, monospace',
+                  }}
+                />
+              </div>
+
+              <div style={{ gridColumn: '1 / -1' }}>
+                <label
+                  style={{
+                    display: 'block',
+                    fontSize: '12px',
+                    fontWeight: 600,
+                    color: 'var(--text)',
+                    marginBottom: '6px',
+                  }}
+                >
+                  Request Body Template (JSON) <span style={{ fontWeight: 400, color: 'var(--muted)' }}>(Optional)</span>
+                </label>
+                <textarea
+                  rows={4}
+                  placeholder={'{\n  "text": "{text}",\n  "model_id": "eleven_multilingual_v2"\n}'}
+                  value={editingVoiceProvider.requestBodyTemplate || ''}
+                  onChange={(e) =>
+                    setEditingVoiceProvider({ ...editingVoiceProvider, requestBodyTemplate: e.target.value })
+                  }
+                  style={{
+                    width: '100%',
+                    boxSizing: 'border-box',
+                    background: 'rgba(10,22,28,0.8)',
+                    border: '1px solid var(--line)',
+                    borderRadius: '8px',
+                    padding: '10px 12px',
+                    color: '#fff',
+                    fontSize: '12px',
+                    outline: 'none',
+                    fontFamily: 'DM Mono, monospace',
+                    resize: 'vertical',
+                  }}
+                />
+                <p style={{ margin: '5px 0 0', fontSize: '11px', color: 'var(--muted)' }}>
+                  JSON payload template. Supported dynamic placeholders: <code>{'{text}'}</code> (text to synthesize) and <code>{'{voice_id}'}</code>.
+                </p>
+              </div>
+            </div>
+          )}
+
           {/* Key Strategy Selector & Configured Keys (Hidden for JS SDK) */}
           {!(providerType === 'image' && editingImageProvider?.requestType === 'sdk') && (
             <>
@@ -2649,6 +3690,8 @@ export function AIProvidersSettings() {
                       setEditingProvider({ ...editingProvider, keyStrategy: 'failover' });
                     } else if (providerType === 'image' && editingImageProvider) {
                       setEditingImageProvider({ ...editingImageProvider, keyStrategy: 'failover' });
+                    } else if (providerType === 'voice' && editingVoiceProvider) {
+                      setEditingVoiceProvider({ ...editingVoiceProvider, keyStrategy: 'failover' });
                     }
                   }}
                 >
@@ -2662,6 +3705,8 @@ export function AIProvidersSettings() {
                       setEditingProvider({ ...editingProvider, keyStrategy: 'round_robin' });
                     } else if (providerType === 'image' && editingImageProvider) {
                       setEditingImageProvider({ ...editingImageProvider, keyStrategy: 'round_robin' });
+                    } else if (providerType === 'voice' && editingVoiceProvider) {
+                      setEditingVoiceProvider({ ...editingVoiceProvider, keyStrategy: 'round_robin' });
                     }
                   }}
                 >
@@ -2675,6 +3720,8 @@ export function AIProvidersSettings() {
                       setEditingProvider({ ...editingProvider, keyStrategy: 'manual' });
                     } else if (providerType === 'image' && editingImageProvider) {
                       setEditingImageProvider({ ...editingImageProvider, keyStrategy: 'manual' });
+                    } else if (providerType === 'voice' && editingVoiceProvider) {
+                      setEditingVoiceProvider({ ...editingVoiceProvider, keyStrategy: 'manual' });
                     }
                   }}
                 >
@@ -2691,6 +3738,8 @@ export function AIProvidersSettings() {
                       setEditingProvider({ ...editingProvider, preferredKeyId: val });
                     } else if (providerType === 'image' && editingImageProvider) {
                       setEditingImageProvider({ ...editingImageProvider, preferredKeyId: val });
+                    } else if (providerType === 'voice' && editingVoiceProvider) {
+                      setEditingVoiceProvider({ ...editingVoiceProvider, preferredKeyId: val });
                     }
                   }}
                   style={{
@@ -2790,7 +3839,9 @@ export function AIProvidersSettings() {
                       <input
                         type="text"
                         placeholder={
-                          providerType === 'image'
+                          providerType === 'voice'
+                            ? 'ElevenLabs API Key'
+                            : providerType === 'image'
                             ? editingImageProvider?.name?.toLowerCase().includes('pixazo') ||
                               editingImageProvider?.url?.toLowerCase().includes('pixazo') ||
                               editingImageProvider?.customHeaderName?.includes('Ocp-Apim')
@@ -2815,6 +3866,13 @@ export function AIProvidersSettings() {
                             setEditingImageProvider({
                               ...editingImageProvider,
                               keys: editingImageProvider.keys.map((k) =>
+                                k.id === keyItem.id ? { ...k, label: val } : k
+                              ),
+                            });
+                          } else if (providerType === 'voice' && editingVoiceProvider) {
+                            setEditingVoiceProvider({
+                              ...editingVoiceProvider,
+                              keys: editingVoiceProvider.keys.map((k) =>
                                 k.id === keyItem.id ? { ...k, label: val } : k
                               ),
                             });
@@ -2845,7 +3903,11 @@ export function AIProvidersSettings() {
                         <input
                           type={isRevealed ? 'text' : 'password'}
                           placeholder={
-                            providerType === 'image'
+                            providerType === 'voice'
+                              ? editingVoiceProvider?.customHeaderName
+                                ? `${editingVoiceProvider.customHeaderName} value`
+                                : 'xi-api-key value'
+                              : providerType === 'image'
                               ? editingImageProvider?.url?.toLowerCase().includes('cloudflare') ||
                                 editingImageProvider?.name?.toLowerCase().includes('cloudflare')
                                 ? 'Cloudflare API Token (Bearer token)'
@@ -2874,6 +3936,15 @@ export function AIProvidersSettings() {
                               setEditingImageProvider({
                                 ...editingImageProvider,
                                 keys: editingImageProvider.keys.map((k) =>
+                                  k.id === keyItem.id
+                                    ? { ...k, key: val, status: 'untested' }
+                                    : k
+                                ),
+                              });
+                            } else if (providerType === 'voice' && editingVoiceProvider) {
+                              setEditingVoiceProvider({
+                                ...editingVoiceProvider,
+                                keys: editingVoiceProvider.keys.map((k) =>
                                   k.id === keyItem.id
                                     ? { ...k, key: val, status: 'untested' }
                                     : k
@@ -2949,6 +4020,8 @@ export function AIProvidersSettings() {
                             handleTestKey(keyItem, editingProvider.url, editingProvider.model);
                           } else if (providerType === 'image' && editingImageProvider) {
                             handleTestImageKey(keyItem, editingImageProvider.url);
+                          } else if (providerType === 'voice' && editingVoiceProvider) {
+                            handleTestVoiceKey(keyItem, editingVoiceProvider.url, editingVoiceProvider);
                           }
                         }}
                         disabled={isTesting}
@@ -3023,6 +4096,7 @@ export function AIProvidersSettings() {
                 setIsEditing(false);
                 setEditingProvider(null);
                 setEditingImageProvider(null);
+                setEditingVoiceProvider(null);
                 setFormError(null);
               }}
               className="secondary-button"
@@ -3043,7 +4117,12 @@ export function AIProvidersSettings() {
               style={{
                 padding: '9px 22px',
                 borderRadius: '8px',
-                background: providerType === 'image' ? '#ec4899' : 'var(--accent)',
+                background:
+                  providerType === 'image'
+                    ? '#ec4899'
+                    : providerType === 'voice'
+                    ? '#a855f7'
+                    : 'var(--accent)',
                 color: '#0a161c',
                 border: 'none',
                 fontSize: '13px',
@@ -3055,6 +4134,8 @@ export function AIProvidersSettings() {
                 boxShadow:
                   providerType === 'image'
                     ? '0 0 16px rgba(236,72,153,0.4)'
+                    : providerType === 'voice'
+                    ? '0 0 16px rgba(168,85,247,0.4)'
                     : '0 0 16px rgba(97,215,201,0.4)',
               }}
             >

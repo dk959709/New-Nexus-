@@ -142,7 +142,7 @@ export interface AIKeyItem {
   cooldownUntil?: number;
 }
 
-export type AIProviderType = 'text' | 'image';
+export type AIProviderType = 'text' | 'image' | 'voice';
 
 export interface AIProviderCapabilities {
   text: boolean;
@@ -189,6 +189,40 @@ export interface ImageProviderConfig {
 export interface ImageProvidersState {
   activeProviderId: string;
   providers: ImageProviderConfig[];
+}
+
+export type VoiceRequestType = 'post' | 'get';
+
+export interface VoiceProviderConfig {
+  id: string;
+  name: string;
+  url: string;
+  voicesUrl?: string;
+  model?: string;
+  voiceId?: string;
+  requestType?: VoiceRequestType;
+  customHeaderName?: string;
+  requestBodyTemplate?: string;
+  keyStrategy: KeyStrategy;
+  preferredKeyId?: string;
+  keys: AIKeyItem[];
+  isDefault?: boolean;
+}
+
+export interface VoiceProvidersState {
+  activeProviderId: string;
+  providers: VoiceProviderConfig[];
+}
+
+export interface CloudVoiceItem {
+  id: string;
+  name: string;
+  category?: string;
+  labels?: Record<string, string>;
+  gender?: string;
+  accent?: string;
+  description?: string;
+  previewUrl?: string;
 }
 
 export interface GeneratedImageItem {
