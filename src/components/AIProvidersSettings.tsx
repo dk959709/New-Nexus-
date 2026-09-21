@@ -182,7 +182,7 @@ export function AIProvidersSettings() {
         url: 'https://api.elevenlabs.io/v1/text-to-speech/{voice_id}',
         voicesUrl: 'https://api.elevenlabs.io/v1/voices',
         model: 'eleven_multilingual_v2',
-        voiceId: '21m00Tcm4TlvDq8ikWAM',
+        voiceId: 'EXAVITQu4vr4xnSDxMaL',
         requestType: 'post',
         customHeaderName: 'xi-api-key',
         requestBodyTemplate: '{\n  "text": "{text}",\n  "model_id": "eleven_multilingual_v2"\n}',
@@ -556,7 +556,7 @@ export function AIProvidersSettings() {
           url: 'https://api.elevenlabs.io/v1/text-to-speech/{voice_id}',
           voicesUrl: 'https://api.elevenlabs.io/v1/voices',
           model: 'eleven_multilingual_v2',
-          voiceId: 'gOupLcAkjEnguROwi4oS',
+          voiceId: 'EXAVITQu4vr4xnSDxMaL',
           requestType: 'post',
           customHeaderName: 'xi-api-key',
           requestBodyTemplate: '{\n  "text": "{text}",\n  "model_id": "eleven_multilingual_v2"\n}',
@@ -2834,7 +2834,7 @@ export function AIProvidersSettings() {
                     url: 'https://api.elevenlabs.io/v1/text-to-speech/{voice_id}',
                     voicesUrl: 'https://api.elevenlabs.io/v1/voices',
                     model: 'eleven_multilingual_v2',
-                    voiceId: '21m00Tcm4TlvDq8ikWAM',
+                    voiceId: 'EXAVITQu4vr4xnSDxMaL',
                     requestType: 'post',
                     customHeaderName: 'xi-api-key',
                     requestBodyTemplate: '{\n  "text": "{text}",\n  "model_id": "eleven_multilingual_v2"\n}',
@@ -3594,7 +3594,7 @@ export function AIProvidersSettings() {
                 </label>
                 <input
                   type="text"
-                  placeholder="e.g. 21m00Tcm4TlvDq8ikWAM (Rachel)"
+                  placeholder="e.g. EXAVITQu4vr4xnSDxMaL (Sarah - Free Tier Safe)"
                   value={editingVoiceProvider.voiceId || ''}
                   onChange={(e) =>
                     setEditingVoiceProvider({ ...editingVoiceProvider, voiceId: e.target.value })
@@ -3612,6 +3612,9 @@ export function AIProvidersSettings() {
                     fontFamily: 'DM Mono, monospace',
                   }}
                 />
+                <div style={{ fontSize: '11px', color: 'var(--muted)', marginTop: '4px' }}>
+                  Note: Free-tier ElevenLabs accounts require official premade system voices (e.g. Sarah: <code>EXAVITQu4vr4xnSDxMaL</code>, George: <code>JBFqnCBsd6RMkjVDRZzb</code>).
+                </div>
               </div>
 
               <div style={{ gridColumn: '1 / -1' }}>

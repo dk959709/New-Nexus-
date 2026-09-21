@@ -165,11 +165,11 @@ export function CloudVoicePicker({
             onClick={(e) => {
               e.stopPropagation();
               playTapSound();
-              onSelectVoice('gOupLcAkjEnguROwi4oS'); // Darian
+              onSelectVoice('EXAVITQu4vr4xnSDxMaL'); // Sarah (confirmed free tier premade)
             }}
             className="text-[11px] font-medium px-2 py-1 rounded bg-amber-500/20 hover:bg-amber-500/30 text-amber-100 border border-amber-500/40 transition shrink-0 cursor-pointer"
           >
-            Switch to Darian
+            Switch to Sarah
           </button>
         </div>
       )}

@@ -355,7 +355,7 @@ export const DEFAULT_VOICE_PROVIDERS: VoiceProviderConfig[] = [
     url: 'https://api.elevenlabs.io/v1/text-to-speech/{voice_id}',
     voicesUrl: 'https://api.elevenlabs.io/v1/voices',
     model: 'eleven_multilingual_v2',
-    voiceId: 'gOupLcAkjEnguROwi4oS',
+    voiceId: 'EXAVITQu4vr4xnSDxMaL',
     requestType: 'post',
     customHeaderName: 'xi-api-key',
     requestBodyTemplate: '{\n  "text": "{text}",\n  "model_id": "eleven_multilingual_v2"\n}',
@@ -1354,12 +1354,18 @@ export const storage = {
       return defaultState;
     }
 
-    // Auto-migrate any legacy restricted Rachel voice ID ('21m00Tcm4TlvDq8ikWAM') in ElevenLabs providers
+    // Auto-migrate restricted library voices (Rachel, Darian, Talia, Elara) in ElevenLabs providers
     let needsMigration = false;
+    const restrictedLibraryVoices = [
+      '21m00Tcm4TlvDq8ikWAM', // Rachel
+      'gOupLcAkjEnguROwi4oS', // Darian
+      'OZ0L6eISlOejga3XjDFt', // Talia
+      'WQP7cQUF5aAS6Axh5yaa', // Elara
+    ];
     const migratedProviders = loaded.providers.map((p) => {
-      if (p.voiceId === '21m00Tcm4TlvDq8ikWAM') {
+      if (p.voiceId && restrictedLibraryVoices.includes(p.voiceId)) {
         needsMigration = true;
-        return { ...p, voiceId: 'gOupLcAkjEnguROwi4oS' };
+        return { ...p, voiceId: 'EXAVITQu4vr4xnSDxMaL' };
       }
       return p;
     });
@@ -1413,7 +1419,7 @@ export const storage = {
   },
 
   getCloudVoice(): string {
-    const fallbackDefault = 'gOupLcAkjEnguROwi4oS'; // Darian (Universal default, works on free and paid tiers)
+    const fallbackDefault = 'EXAVITQu4vr4xnSDxMaL'; // Sarah (Confirmed official premade voice, works on free tier API)
     try {
       const raw = localStorage.getItem(KEYS.cloudVoice);
       if (!raw) return fallbackDefault;
@@ -1425,8 +1431,14 @@ export const storage = {
         if (raw.trim()) voiceVal = raw.trim();
       }
 
-      // Auto-migrate legacy restricted Rachel voice ID which fails with 402 on free tier API accounts
-      if (voiceVal === '21m00Tcm4TlvDq8ikWAM' || !voiceVal) {
+      // Auto-migrate restricted library/community voice IDs that fail with 402 on free-tier API accounts
+      const restrictedLibraryVoices = [
+        '21m00Tcm4TlvDq8ikWAM', // Rachel
+        'gOupLcAkjEnguROwi4oS', // Darian (Library voice)
+        'OZ0L6eISlOejga3XjDFt', // Talia (Library voice)
+        'WQP7cQUF5aAS6Axh5yaa', // Elara (Library voice)
+      ];
+      if (!voiceVal || restrictedLibraryVoices.includes(voiceVal)) {
         this.saveCloudVoice(fallbackDefault);
         return fallbackDefault;
       }

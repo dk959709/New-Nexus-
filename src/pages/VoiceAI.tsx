@@ -13,6 +13,7 @@ import {
   Cloud,
   Settings,
   Volume2,
+  Info,
 } from 'lucide-react';
 import { playTapSound } from '@/lib/audio';
 import { storage } from '@/lib/storage';
@@ -357,8 +358,10 @@ export function VoiceAI() {
         (err as Record<string, unknown>)?.isVoiceTierRestricted ||
         /library voices/i.test(msg) ||
         /needs_to_be_subscribed/i.test(msg) ||
+        /paid_plan_required/i.test(msg) ||
         /upgrade your subscription/i.test(msg) ||
-        /free users cannot use/i.test(msg);
+        /free users cannot use/i.test(msg) ||
+        /402/i.test(msg);
 
       if (isTierIssue) {
         setIsVoiceTierError(true);
@@ -419,6 +422,18 @@ export function VoiceAI() {
     } catch (err: unknown) {
       console.error('[Cloud Voice AI] Download error:', err);
       const msg = err instanceof Error ? err.message : String(err);
+      const isTierIssue =
+        (err as Record<string, unknown>)?.isVoiceTierRestricted ||
+        /library voices/i.test(msg) ||
+        /needs_to_be_subscribed/i.test(msg) ||
+        /paid_plan_required/i.test(msg) ||
+        /upgrade your subscription/i.test(msg) ||
+        /free users cannot use/i.test(msg) ||
+        /402/i.test(msg);
+
+      if (isTierIssue) {
+        setIsVoiceTierError(true);
+      }
       setCloudError(msg || 'Failed to download cloud audio.');
     } finally {
       setCloudDownloading(false);
@@ -433,6 +448,17 @@ export function VoiceAI() {
     document.body.appendChild(a);
     a.click();
     document.body.removeChild(a);
+  };
+
+  // Graceful fallback from Cloud Voice 402 restriction to Microsoft Edge TTS
+  const handleFallbackToEdgeTTS = () => {
+    playTapSound();
+    if (cloudText.trim()) {
+      setEdgeText(cloudText);
+    }
+    setActiveSection('edge');
+    setCloudError(null);
+    setIsVoiceTierError(false);
   };
 
   // Check if active cloud provider has at least one configured key
@@ -765,6 +791,22 @@ export function VoiceAI() {
             }}
           />
 
+          {/* ElevenLabs Free Tier Monthly Limit & Voice Rules Note */}
+          <div className="bg-slate-950/80 border border-purple-500/25 rounded-xl p-3.5 sm:p-4 flex items-start gap-3 text-xs shadow-sm">
+            <Info size={17} className="text-purple-400 shrink-0 mt-0.5" />
+            <div className="space-y-1">
+              <div className="flex items-center gap-2 flex-wrap">
+                <span className="font-semibold text-slate-200">ElevenLabs Free-Tier Quota &amp; Policy Note:</span>
+                <span className="text-[10px] font-mono px-1.5 py-0.2 rounded bg-purple-500/15 text-purple-300 border border-purple-500/30 font-semibold">
+                  ~10,000 credits/mo (~10 min audio)
+                </span>
+              </div>
+              <p className="text-slate-400 leading-relaxed text-[11px] sm:text-xs">
+                ElevenLabs accounts on the free tier include ~10,000 credits per month (roughly 10 minutes of synthesized audio) that resets monthly. In addition, free-tier API accounts are restricted exclusively to official premade system voices (e.g. Sarah, George, Brian, Alice). Community and library voices require a paid ElevenLabs plan. You can switch to the built-in Microsoft Edge TTS tab at any time for 100% free and unlimited speech synthesis.
+              </p>
+            </div>
+          </div>
+
           {/* Warning if no key configured */}
           {!hasCloudKeyConfigured && (
             <div className="bg-purple-950/40 border border-purple-500/30 rounded-xl p-4 flex items-start justify-between gap-4 text-purple-200 text-xs animate-fadeIn">
@@ -843,12 +885,12 @@ export function VoiceAI() {
               onChangeSettings={setStudioSettings}
             />
 
-            {/* Error Banner with 1-click tier recovery */}
+            {/* Error Banner with 1-click tier recovery & Edge TTS graceful fallback */}
             {cloudError && (
               <div
                 className={`rounded-xl p-4 border animate-fadeIn ${
                   isVoiceTierError
-                    ? 'bg-amber-500/10 border-amber-500/30 text-amber-200'
+                    ? 'bg-amber-950/40 border-amber-500/40 text-amber-200'
                     : 'bg-rose-500/10 border-rose-500/30 text-rose-300'
                 }`}
               >
@@ -858,37 +900,69 @@ export function VoiceAI() {
                   ) : (
                     <AlertCircle size={18} className="text-rose-400 shrink-0 mt-0.5" />
                   )}
-                  <div className="flex-1 space-y-2">
-                    {isVoiceTierError && (
-                      <div className="font-semibold text-amber-300 text-sm flex items-center gap-1.5">
-                        ElevenLabs Free-Tier Voice Restriction Detected
+                  <div className="flex-1 space-y-2.5">
+                    {isVoiceTierError ? (
+                      <div className="space-y-1">
+                        <div className="font-semibold text-amber-300 text-sm flex items-center gap-1.5">
+                          ElevenLabs Free-Tier Voice Restriction (402 Paid Plan Required)
+                        </div>
+                        <p className="text-xs text-amber-200/90 leading-relaxed">
+                          Free users cannot use community or library voices via the API. Please switch to a confirmed free-tier premade voice (such as Sarah, George, or Brian), or seamlessly fall back to Microsoft Edge TTS (built-in, free &amp; unlimited).
+                        </p>
                       </div>
+                    ) : (
+                      <p className="text-xs sm:text-sm leading-relaxed">{cloudError}</p>
                     )}
-                    <p className="text-xs sm:text-sm leading-relaxed">{cloudError}</p>
+
                     {isVoiceTierError && (
-                      <div className="pt-2 flex flex-wrap items-center gap-2">
-                        <button
-                          type="button"
-                          onClick={() => executeCloudSynthesis('gOupLcAkjEnguROwi4oS')}
-                          className="px-3.5 py-1.5 rounded-lg bg-amber-500 hover:bg-amber-400 text-slate-950 font-semibold text-xs transition shadow cursor-pointer flex items-center gap-1.5"
-                        >
-                          <Sparkles size={13} />
-                          Switch to Darian & Retry
-                        </button>
-                        <button
-                          type="button"
-                          onClick={() => executeCloudSynthesis('OZ0L6eISlOejga3XjDFt')}
-                          className="px-3.5 py-1.5 rounded-lg bg-slate-800 hover:bg-slate-700 text-amber-200 border border-amber-500/40 font-semibold text-xs transition cursor-pointer"
-                        >
-                          Switch to Talia
-                        </button>
-                        <button
-                          type="button"
-                          onClick={() => executeCloudSynthesis('WQP7cQUF5aAS6Axh5yaa')}
-                          className="px-3.5 py-1.5 rounded-lg bg-slate-800 hover:bg-slate-700 text-amber-200 border border-amber-500/40 font-semibold text-xs transition cursor-pointer"
-                        >
-                          Switch to Elara
-                        </button>
+                      <div className="pt-2 space-y-2.5">
+                        {/* Graceful Fallback Option: Microsoft Edge TTS */}
+                        <div className="flex flex-wrap items-center gap-2">
+                          <button
+                            type="button"
+                            onClick={handleFallbackToEdgeTTS}
+                            className="px-3.5 py-2 rounded-lg bg-cyan-600 hover:bg-cyan-500 text-white font-semibold text-xs transition shadow-md cursor-pointer flex items-center gap-1.5"
+                          >
+                            <Mic size={14} />
+                            Fall Back to Microsoft Edge TTS (Always Free &amp; Unlimited)
+                          </button>
+                        </div>
+
+                        {/* Fallback Option: Confirmed Free-Tier Premade Voices */}
+                        <div className="flex flex-wrap items-center gap-2 pt-0.5">
+                          <span className="text-[11px] font-mono text-amber-300/80 mr-1">
+                            Or try free premade voices:
+                          </span>
+                          <button
+                            type="button"
+                            onClick={() => executeCloudSynthesis('EXAVITQu4vr4xnSDxMaL')}
+                            className="px-3 py-1.5 rounded-lg bg-amber-500 hover:bg-amber-400 text-slate-950 font-semibold text-xs transition shadow cursor-pointer flex items-center gap-1"
+                          >
+                            <Sparkles size={12} />
+                            Switch to Sarah &amp; Retry
+                          </button>
+                          <button
+                            type="button"
+                            onClick={() => executeCloudSynthesis('JBFqnCBsd6RMkjVDRZzb')}
+                            className="px-3 py-1.5 rounded-lg bg-slate-800 hover:bg-slate-700 text-amber-200 border border-amber-500/40 font-semibold text-xs transition cursor-pointer"
+                          >
+                            Switch to George
+                          </button>
+                          <button
+                            type="button"
+                            onClick={() => executeCloudSynthesis('nPczCjzI2devNBz1zQrb')}
+                            className="px-3 py-1.5 rounded-lg bg-slate-800 hover:bg-slate-700 text-amber-200 border border-amber-500/40 font-semibold text-xs transition cursor-pointer"
+                          >
+                            Switch to Brian
+                          </button>
+                          <button
+                            type="button"
+                            onClick={() => executeCloudSynthesis('Xb7hH8MSUJpSbSDYk0k2')}
+                            className="px-3 py-1.5 rounded-lg bg-slate-800 hover:bg-slate-700 text-amber-200 border border-amber-500/40 font-semibold text-xs transition cursor-pointer"
+                          >
+                            Switch to Alice
+                          </button>
+                        </div>
                       </div>
                     )}
                   </div>

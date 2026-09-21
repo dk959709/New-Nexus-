@@ -18,10 +18,10 @@ export function StudioHeroGraphic({
   selectedVoiceId,
 }: StudioHeroGraphicProps) {
   const quickVoices = [
-    { id: 'gOupLcAkjEnguROwi4oS', name: 'Darian', accent: 'American • Narrative' },
-    { id: 'OZ0L6eISlOejga3XjDFt', name: 'Talia', accent: 'British • Natural' },
-    { id: 'WQP7cQUF5aAS6Axh5yaa', name: 'Elara', accent: 'American • Warm' },
-    { id: 'AZnzlk1XvdvUeBnXmlld', name: 'Domi', accent: 'American • Energetic', tier: 'Pro / Library' },
+    { id: 'EXAVITQu4vr4xnSDxMaL', name: 'Sarah', accent: 'American • Reassuring' },
+    { id: 'JBFqnCBsd6RMkjVDRZzb', name: 'George', accent: 'British • Storyteller' },
+    { id: 'nPczCjzI2devNBz1zQrb', name: 'Brian', accent: 'American • Deep Narrative' },
+    { id: 'Xb7hH8MSUJpSbSDYk0k2', name: 'Alice', accent: 'British • Clear Educator' },
   ];
 
   return (

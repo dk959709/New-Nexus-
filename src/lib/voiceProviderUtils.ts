@@ -166,9 +166,15 @@ export async function fetchCloudVoices(
           const previewUrl = typeof v.preview_url === 'string' ? v.preview_url : undefined;
           const availableTiers = Array.isArray(v.available_for_tiers) ? (v.available_for_tiers as string[]) : undefined;
 
-          // Legacy voices known to be restricted on free tier API (e.g. Rachel 21m00Tcm4TlvDq8ikWAM)
-          const isLegacyRestricted = id === '21m00Tcm4TlvDq8ikWAM' || id === 'AZnzlk1XvdvUeBnXmlld' || id === 'ErXwobaYiN019PkySvjV';
-          const isLibrary = category === 'library' || Boolean(v.sharing && (v.sharing as Record<string, unknown>).library_item_id) || isLegacyRestricted;
+          // Known restricted library/community voices (e.g. Darian, Talia, Elara, Rachel, Domi, Antoni)
+          const isKnownLibrary =
+            id === 'gOupLcAkjEnguROwi4oS' ||
+            id === 'OZ0L6eISlOejga3XjDFt' ||
+            id === 'WQP7cQUF5aAS6Axh5yaa' ||
+            id === '21m00Tcm4TlvDq8ikWAM' ||
+            id === 'AZnzlk1XvdvUeBnXmlld' ||
+            id === 'ErXwobaYiN019PkySvjV';
+          const isLibrary = category === 'library' || Boolean(v.sharing && (v.sharing as Record<string, unknown>).library_item_id) || isKnownLibrary || (category && category !== 'premade');
           const requiresSubscription = isLibrary || (availableTiers && availableTiers.length > 0 && !availableTiers.includes('free'));
           const isFreeTierCompatible = !requiresSubscription;
 
@@ -312,11 +318,11 @@ export async function synthesizeCloudVoiceAudio(
           // Keep key healthy and do not penalize it.
           storage.updateVoiceKeyHealth(provider.id, keyItem.id, 'healthy');
           const restrictionError = new Error(
-            `Free users cannot use library voices via the API. Please switch to a supported default voice model (such as Darian, Talia, or Elara) or upgrade your ElevenLabs subscription.`
+            `Free users cannot use library voices via the API (402 paid_plan_required). Please switch to a confirmed free-tier premade voice (such as Sarah, George, or Brian), use Microsoft Edge TTS, or upgrade your ElevenLabs subscription.`
           );
           (restrictionError as Record<string, unknown>).isVoiceTierRestricted = true;
-          (restrictionError as Record<string, unknown>).suggestedVoiceId = 'gOupLcAkjEnguROwi4oS';
-          (restrictionError as Record<string, unknown>).suggestedVoiceName = 'Darian';
+          (restrictionError as Record<string, unknown>).suggestedVoiceId = 'EXAVITQu4vr4xnSDxMaL';
+          (restrictionError as Record<string, unknown>).suggestedVoiceName = 'Sarah';
           throw restrictionError;
         }
 
