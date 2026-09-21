@@ -500,7 +500,7 @@ export function LiveStreamingStudio({
         );
 
         console.log(
-          `[LiveVoice] Attempting decodeAudioData: ${chunkCount === 1 ? 'single chunk' : `combined ${chunkCount} chunks`} (${totalBytes} B)...`
+          `[LiveVoice] [Decode Attempt] Calling audioContext.decodeAudioData on ${chunkCount === 1 ? 'single chunk' : `combined ${chunkCount} chunks`} (${totalBytes} decoded binary MP3 bytes)...`
         );
 
         let decodedBuffer: AudioBuffer | null = null;
@@ -548,9 +548,9 @@ export function LiveStreamingStudio({
           });
         } catch (decodeErr) {
           console.warn(
-            `[LiveVoice] Decode FAILED/INCOMPLETE (${chunkCount} chunk(s), ${totalBytes} B):`,
-            decodeErr,
-            `- Retaining buffer and waiting to retry with combined data when next chunk arrives.`
+            `[LiveVoice] [Decode FAILED/PARTIAL] Failed to decode ${chunkCount} chunk(s) (${totalBytes} binary bytes):`,
+            decodeErr instanceof Error ? decodeErr.message : decodeErr,
+            `- Retaining binary bytes in accumulator to retry with combined data upon next chunk arrival.`
           );
           if (isStreamFinalRef.current && rawChunkQueueRef.current.length === 0) {
             console.warn('[LiveVoice] Stream is final and remaining buffer could not be decoded. Discarding trailing partial frame.');
@@ -561,7 +561,7 @@ export function LiveStreamingStudio({
 
         if (decodedBuffer) {
           console.log(
-            `[LiveVoice] Decode SUCCESS (${chunkCount === 1 ? 'single chunk' : `combined ${chunkCount} chunks`}, ${totalBytes} B). Buffer duration: ${decodedBuffer.duration.toFixed(3)}s`
+            `[LiveVoice] [Decode SUCCESS] Successfully decoded ${chunkCount === 1 ? 'single chunk' : `combined ${chunkCount} chunks`} (${totalBytes} bytes) into AudioBuffer! Duration: ${decodedBuffer.duration.toFixed(3)}s, SampleRate: ${decodedBuffer.sampleRate}Hz, Channels: ${decodedBuffer.numberOfChannels}`
           );
 
           // Clear accumulated chunks now that they've been successfully decoded
@@ -675,20 +675,40 @@ export function LiveStreamingStudio({
         }
       };
 
-      ws.onmessage = (event) => {
+      ws.onmessage = async (event) => {
         resetIdleTimer();
         try {
-          const response = JSON.parse(event.data);
-          const hasAudio = Boolean(response.audio);
+          const rawType = typeof event.data;
+          let rawText: string;
+          if (rawType === 'string') {
+            rawText = event.data;
+          } else if (event.data instanceof Blob) {
+            rawText = await event.data.text();
+          } else if (event.data instanceof ArrayBuffer) {
+            rawText = new TextDecoder('utf-8').decode(event.data);
+          } else {
+            rawText = String(event.data);
+          }
+
+          let response: Record<string, unknown>;
+          try {
+            response = JSON.parse(rawText);
+          } catch (jsonErr) {
+            console.error('[LiveVoice] WebSocket frame is not valid JSON! rawType:', rawType, 'snippet:', rawText.slice(0, 100), jsonErr);
+            return;
+          }
+
+          const hasAudioField = typeof response.audio === 'string' && response.audio.trim().length > 0;
           const isFinal = Boolean(response.isFinal || response.is_final);
+
           console.log(
-            `[LiveVoice] WS message received: hasAudio=${hasAudio}, isFinal=${isFinal}, keys=${Object.keys(response).join(',')}`
+            `[LiveVoice] WS packet received: rawType=${rawType}, hasAudio=${hasAudioField}, isFinal=${isFinal}, keys=[${Object.keys(response).join(', ')}]`
           );
 
           // Check for API errors in payload
           if (response.error || response.code) {
             const errCode = response.code || 500;
-            const errMsg = response.message || response.error || 'ElevenLabs streaming error';
+            const errMsg = String(response.message || response.error || 'ElevenLabs streaming error');
 
             if (errCode === 402 || /paid_plan_required/i.test(errMsg) || /library/i.test(errMsg)) {
               setIsVoiceTierError(true);
@@ -703,31 +723,49 @@ export function LiveStreamingStudio({
             return;
           }
 
-          // Handle incoming base64 audio chunk
-          if (response.audio) {
-            if (timeToFirstChunkMs === null) {
-              const latency = Date.now() - connectStartTime;
-              setTimeToFirstChunkMs(latency);
-            }
+          // Handle incoming base64 audio chunk ONLY when audio field is present and non-empty
+          if (hasAudioField) {
+            const base64Str = (response.audio as string).trim();
+            try {
+              // Decode base64 into raw binary MP3 bytes
+              const binaryStr = window.atob(base64Str);
+              const decodedByteLength = binaryStr.length;
+              const bytes = new Uint8Array(decodedByteLength);
+              for (let i = 0; i < decodedByteLength; i++) {
+                bytes[i] = binaryStr.charCodeAt(i);
+              }
 
-            const binaryStr = window.atob(response.audio);
-            const len = binaryStr.length;
-            const bytes = new Uint8Array(len);
-            for (let i = 0; i < len; i++) {
-              bytes[i] = binaryStr.charCodeAt(i);
-            }
+              if (timeToFirstChunkMs === null) {
+                const latency = Date.now() - connectStartTime;
+                setTimeToFirstChunkMs(latency);
+              }
 
-            setChunksCount((prev) => prev + 1);
-            setTotalBytes((prev) => prev + bytes.byteLength);
+              setChunksCount((prev) => prev + 1);
+              setTotalBytes((prev) => prev + decodedByteLength);
+
+              console.log(
+                `[LiveVoice] Audio chunk extracted: rawType=${rawType}, hasAudio=true, base64Length=${base64Str.length}, decodedBytes=${decodedByteLength} B, totalChunks=${allRecordedChunksRef.current.length + 1}`
+              );
+
+              // Enqueue decoded binary bytes for Web Audio API playback
+              appendChunkToBuffer(bytes);
+            } catch (atobErr) {
+              console.error(
+                '[LiveVoice] Base64 decoding failed for audio packet:',
+                atobErr,
+                'base64 snippet:',
+                base64Str.slice(0, 40)
+              );
+            }
+          } else {
             console.log(
-              `[LiveVoice] Enqueuing chunk #${allRecordedChunksRef.current.length + 1} (${bytes.byteLength} B)`
+              `[LiveVoice] WS packet has NO AUDIO (audio field is ${response.audio === null ? 'null' : typeof response.audio}). Ignoring audio decode step.`
             );
-            appendChunkToBuffer(bytes);
           }
 
           // Handle incremental word/character alignment progress
           if (response.alignment || response.normalizedAlignment) {
-            const alignment = response.alignment || response.normalizedAlignment;
+            const alignment = (response.alignment || response.normalizedAlignment) as { chars?: unknown[] };
             if (alignment.chars && Array.isArray(alignment.chars)) {
               const totalChars = cleanText.length;
               const spokenChars = alignment.chars.length;
