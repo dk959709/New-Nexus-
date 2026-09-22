@@ -29,6 +29,7 @@ import {
   buildImageRequestHeaders,
   extractImageUrlFromJson,
 } from '@/lib/imageProviderUtils';
+import { applyReasoningConfig } from '@/lib/reasoningConfig';
 import type {
   AIProviderConfig,
   AISource,
@@ -961,7 +962,7 @@ function resolveProviderConfig(
   agentConfig: JarvisAgentConfig,
   isFallback = false,
   overrideMaxTokens?: number,
-): { provider: AIProviderConfig | null; model: string; error?: string } {
+): { provider: AIProviderConfig | null; model: string; reasoningParams?: Record<string, unknown> | null; error?: string } {
   const providerId = isFallback ? agentConfig.fallbackProviderId : agentConfig.providerId;
   const modelId = isFallback ? agentConfig.fallbackModelId : agentConfig.modelId;
   const effectiveMaxTokens = overrideMaxTokens !== undefined ? overrideMaxTokens : agentConfig.maxTokens;
@@ -969,25 +970,22 @@ function resolveProviderConfig(
   const state = storage.getAIProvidersState();
   const activeCustom = storage.getActiveAIProvider();
 
+  let resolvedConfig: AIProviderConfig | null = null;
+  let liveModel = modelId || 'deepseek/deepseek-chat';
+
   if (!providerId || providerId === 'existing') {
     if (activeCustom) {
-      const liveModel =
+      liveModel =
         activeCustom.model && activeCustom.model.trim()
           ? activeCustom.model.trim()
           : modelId || 'deepseek/deepseek-chat';
-      const customConfig: AIProviderConfig = {
+      resolvedConfig = {
         ...activeCustom,
         model: liveModel,
         maxTokens: effectiveMaxTokens,
       };
-      return {
-        provider: customConfig,
-        model: liveModel,
-      };
-    }
-
-    return {
-      provider: {
+    } else {
+      resolvedConfig = {
         id: 'existing',
         name: 'Built-in AI',
         url: '',
@@ -996,56 +994,67 @@ function resolveProviderConfig(
         keys: [],
         capabilities: { text: true, tools: true, web: true, wikipedia: true, memory: true },
         maxTokens: effectiveMaxTokens,
-      },
-      model: modelId || 'deepseek/deepseek-chat',
-    };
-  }
+      };
+    }
+  } else {
+    const matched = state.providers.find((p) => p.id === providerId);
 
-  const matched = state.providers.find((p) => p.id === providerId);
-
-  if (!matched) {
-    if (activeCustom) {
-      const liveModel =
-        activeCustom.model && activeCustom.model.trim()
-          ? activeCustom.model.trim()
+    if (!matched) {
+      if (activeCustom) {
+        liveModel =
+          activeCustom.model && activeCustom.model.trim()
+            ? activeCustom.model.trim()
+            : modelId || 'deepseek/deepseek-chat';
+        resolvedConfig = {
+          ...activeCustom,
+          model: liveModel,
+          maxTokens: effectiveMaxTokens,
+        };
+      } else {
+        return {
+          provider: null,
+          model: modelId || '',
+          error: `Configured provider "${providerId}" not found in AI Providers settings.`,
+        };
+      }
+    } else {
+      // When a custom provider is matched, prioritize the provider's live configured model ID
+      liveModel =
+        matched.model && matched.model.trim()
+          ? matched.model.trim()
           : modelId || 'deepseek/deepseek-chat';
-      const customConfig: AIProviderConfig = {
-        ...activeCustom,
+
+      resolvedConfig = {
+        ...matched,
         model: liveModel,
         maxTokens: effectiveMaxTokens,
       };
-      return {
-        provider: customConfig,
-        model: liveModel,
-      };
     }
-
-    return {
-      provider: null,
-      model: modelId || '',
-      error: `Configured provider "${providerId}" not found in AI Providers settings.`,
-    };
   }
 
-  // When a custom provider is matched, prioritize the provider's live configured model ID
-  const liveModel =
-    matched.model && matched.model.trim()
-      ? matched.model.trim()
-      : modelId || 'deepseek/deepseek-chat';
+  // Apply explicit provider-aware reasoning control based on agent role and model support
+  const { config: reasoningEnhancedConfig, spec: reasoningSpec, params: reasoningParams, desiredLevel } =
+    applyReasoningConfig(resolvedConfig, agentConfig);
 
-  const customConfig: AIProviderConfig = {
-    ...matched,
-    model: liveModel,
-    maxTokens: effectiveMaxTokens,
-  };
+  if (reasoningSpec && reasoningParams) {
+    console.log(
+      `[JARVIS Reasoning Control] Agent "${agentConfig.name}" (${agentConfig.id}) -> Provider: "${reasoningEnhancedConfig.name}" (${reasoningEnhancedConfig.id}) | Model: "${liveModel}" | Level: "${desiredLevel}" | Reasoning Params:`,
+      reasoningParams,
+    );
+  } else {
+    console.log(
+      `[JARVIS Reasoning Control] Agent "${agentConfig.name}" (${agentConfig.id}) -> Provider: "${reasoningEnhancedConfig.name}" (${reasoningEnhancedConfig.id}) | Model: "${liveModel}" | No reasoning config applied (unsupported or not in config map)`,
+    );
+  }
 
   console.log(
-    `[JARVIS resolveProviderConfig] Agent "${agentConfig.name}" -> Provider "${customConfig.name}" (${customConfig.id}) | model: "${liveModel}" | keys configured: ${customConfig.keys?.length || 0}`,
+    `[JARVIS resolveProviderConfig] Agent "${agentConfig.name}" -> Provider "${reasoningEnhancedConfig.name}" (${reasoningEnhancedConfig.id}) | model: "${liveModel}" | keys configured: ${reasoningEnhancedConfig.keys?.length || 0}`,
   );
 
   return {
-    provider: customConfig,
+    provider: reasoningEnhancedConfig,
     model: liveModel,
+    reasoningParams,
   };
 }
 

@@ -80,6 +80,7 @@ interface ProviderRequestOptions {
   temperature?: number;
   maxTokens?: number;
   timeoutMs?: number;
+  extraParams?: Record<string, unknown>;
 }
 
 interface ProviderRequestResult {
@@ -100,6 +101,7 @@ async function executeProviderChatRequest({
   temperature = 0.3,
   maxTokens = 128,
   timeoutMs = 25000,
+  extraParams,
 }: ProviderRequestOptions): Promise<ProviderRequestResult> {
   const url = normalizeProviderUrl(rawUrl);
   const model = (rawModel || 'deepseek/deepseek-chat').trim();
@@ -133,18 +135,21 @@ async function executeProviderChatRequest({
 
   for (let attempt = 1; attempt <= maxAttempts; attempt++) {
     try {
+      const requestBody: Record<string, unknown> = {
+        model,
+        messages: sanitized,
+        temperature,
+        max_tokens: maxTokens,
+        ...(extraParams || {}),
+      };
+
       console.log(
-        `[AI Provider Outgoing Request] POST ${url} | model: "${model}" | max_tokens: ${maxTokens} | temp: ${temperature} | key: ${key ? `${key.slice(0, 10)}...` : 'NONE'} (attempt ${attempt}/${maxAttempts})`
+        `[AI Provider Outgoing Request] POST ${url} | model: "${model}" | max_tokens: ${maxTokens} | temp: ${temperature} | params: ${JSON.stringify(extraParams || {})} | key: ${key ? `${key.slice(0, 10)}...` : 'NONE'} (attempt ${attempt}/${maxAttempts})`
       );
       const res = await fetch(url, {
         method: 'POST',
         headers,
-        body: JSON.stringify({
-          model,
-          messages: sanitized,
-          temperature,
-          max_tokens: maxTokens,
-        }),
+        body: JSON.stringify(requestBody),
         signal: AbortSignal.timeout(timeoutMs),
       });
 
@@ -557,6 +562,8 @@ interface CustomProviderPayload {
     wikipedia?: boolean;
     memory?: boolean;
   };
+  extraParams?: Record<string, unknown>;
+  reasoningParams?: Record<string, unknown>;
 }
 
 const keyCooldownMap = new Map<string, number>();
@@ -591,6 +598,11 @@ async function executeAiWithProviderOrFallback({
   lastError: string;
   lastStatus: number;
 } | null> {
+  const extraParams =
+    providerConfig?.extraParams ||
+    providerConfig?.reasoningParams ||
+    undefined;
+
   let effectiveMaxTokens =
     maxTokens && maxTokens > 0
       ? maxTokens
@@ -650,6 +662,7 @@ async function executeAiWithProviderOrFallback({
         temperature,
         maxTokens: effectiveMaxTokens,
         timeoutMs: effectiveTimeout,
+        extraParams,
       });
 
       if (serverResult.ok && serverResult.text) {
@@ -741,6 +754,7 @@ async function executeAiWithProviderOrFallback({
       temperature,
       maxTokens: effectiveMaxTokens,
       timeoutMs: effectiveTimeout,
+      extraParams,
     });
 
     if (result.ok && result.text && result.text.trim().length > 0) {
@@ -810,6 +824,7 @@ async function executeAiWithProviderOrFallback({
             temperature,
             maxTokens: effectiveMaxTokens,
             timeoutMs: effectiveTimeout,
+            extraParams,
           });
           if (retryResult.ok && retryResult.text && retryResult.text.trim().length > 0) {
             keyCooldownMap.delete(keyVal);
@@ -902,6 +917,7 @@ async function executeAiWithProviderOrFallback({
       temperature,
       maxTokens: effectiveMaxTokens,
       timeoutMs: 25000,
+      extraParams,
     });
 
     if (serverFallbackResult.ok && serverFallbackResult.text) {

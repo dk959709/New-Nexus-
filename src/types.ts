@@ -163,6 +163,8 @@ export interface AIProviderConfig {
   keys: AIKeyItem[];
   capabilities: AIProviderCapabilities;
   isDefault?: boolean;
+  extraParams?: Record<string, unknown>;
+  reasoningParams?: Record<string, unknown>;
 }
 
 export interface AIProvidersState {
