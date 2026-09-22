@@ -3493,7 +3493,10 @@ SYNTHESIS DIRECTIVES:
 1. Synthesize all 3 specialist perspectives into a unified, authoritative, comprehensive, and clear final response.
 2. Structure the answer logically using clean markdown headers (##), bold key terms, comparative tables or structured bullet points where relevant, and concise summaries.
 3. Integrate verified facts, date-stamps, and technical depth from the specialists without duplicating text.
-4. Perform active cross-specialist contradiction detection. If specialists disagree on facts, dates, or changelogs, explicitly surface and flag the contradiction rather than presenting false consensus.
+4. Perform active cross-specialist contradiction detection using the mandatory priority order:
+   - 1st Priority: Always prefer the claim with the more recent, explicitly-stated publish date, regardless of how frequently an older claim appears across specialists or sources.
+   - 2nd Priority: When dates are equally recent or absent on both sides, prefer authoritative primary sources (e.g. official company blogs/domains) over aggregators.
+   - Fallback: If neither resolves the conflict, explicitly note genuine ambiguity. NEVER treat frequency of mentions as a tie-breaker.
 5. Deliver high-value, definitive insights directly to the user.`;
 
     const synthUserMessage = `User Query / Task: "${effectiveSpecialistQuery}"
