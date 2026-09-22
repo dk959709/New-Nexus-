@@ -56,6 +56,7 @@ export function LiveWaveformVisualizer({
   onVolumeChange,
   onToggleMute,
   onStop,
+  onHardStop,
 }: LiveWaveformVisualizerProps) {
   const canvasRef = useRef<HTMLCanvasElement | null>(null);
   const animFrameIdRef = useRef<number | null>(null);

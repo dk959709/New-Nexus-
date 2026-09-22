@@ -34,7 +34,7 @@ interface LiveSessionFeedProps {
   connectionStatus: LiveConnectionState;
   onStartSession: () => void;
   onEndSession: () => void;
-  onHardStop: () => void;
+  onHardStop?: () => void;
   samplePrompts: { title: string; text: string }[];
 }
 
