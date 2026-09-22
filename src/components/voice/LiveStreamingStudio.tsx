@@ -1,8 +1,6 @@
 import React, { useState, useRef, useEffect, useCallback } from 'react';
 import {
-  Radio,
   Sparkles,
-  Square,
   RefreshCw,
   Download,
   AlertCircle,
@@ -10,11 +8,10 @@ import {
   Mic,
   Play,
   Pause,
-  Zap,
   Copy,
   Check,
   X,
-  Activity,
+  Layers,
 } from 'lucide-react';
 import { VoiceProviderConfig, StudioVoiceSettings } from '@/types';
 import { playTapSound } from '@/lib/audio';
@@ -33,6 +30,7 @@ import {
   DiagnosticEvent,
   DiagnosticSnapshot,
 } from './LiveAudioDiagnosticsOverlay';
+import { LiveSessionFeed, LiveSessionMessage } from './LiveSessionFeed';
 import { StudioAudioControls } from './StudioAudioControls';
 import { CloudVoicePicker } from './CloudVoicePicker';
 
@@ -51,16 +49,20 @@ const LIVE_SAMPLE_PROMPTS = [
     text: 'Good evening. We are reporting live from the central tech symposium. Quantum computing throughput has achieved a 400% acceleration in sub-atomic algorithmic routing today.',
   },
   {
-    title: 'Conversational AI Copilot',
+    title: 'Conversational Copilot',
     text: 'Hello! I am your real-time neural copilot. I am synthesizing speech dynamically as data packets stream across our low-latency WebSocket pipeline.',
   },
   {
-    title: 'Cosmic Documentary Narration',
+    title: 'Cosmic Documentary',
     text: 'Deep within the Orion Nebula, stellar nurseries ignite in silent majesty. Gravitational waves ripple outward across hundreds of light-years, echoing into eternity.',
   },
   {
-    title: 'Customer Concierge',
+    title: 'Executive Concierge',
     text: 'Thank you for reaching out to premier priority concierge. I can immediately expedite your flight reservation and verify your lounge boarding credentials.',
+  },
+  {
+    title: 'Rapid Status Update',
+    text: 'All operational parameters remain nominal. Audio buffers are executing in sequence with zero inter-chunk latency.',
   },
 ];
 
@@ -72,12 +74,18 @@ export function LiveStreamingStudio({
   onFallbackToEdge,
   initialText = '',
 }: LiveStreamingStudioProps) {
-  // Script and settings state
-  const [text, setText] = useState(
+  // Live conversation messages feed
+  const [messages, setMessages] = useState<LiveSessionMessage[]>([]);
+  const messagesRef = useRef<LiveSessionMessage[]>([]);
+  messagesRef.current = messages;
+
+  // Active dialogue input state
+  const [sessionInputText, setSessionInputText] = useState(
     initialText ||
       'Welcome to ElevenLabs Live Voice Streaming. Audio chunks are decoded and played seamlessly in real-time as text packets arrive.'
   );
-  const [streamMode, setStreamMode] = useState<'instant' | 'llm_simulation'>('instant');
+
+  // Studio voice tuning parameters
   const [settings, setSettings] = useState<StudioVoiceSettings>({
     stability: 0.5,
     similarityBoost: 0.75,
@@ -88,26 +96,25 @@ export function LiveStreamingStudio({
   const [connectionStatus, setConnectionStatus] = useState<LiveConnectionState>('idle');
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
   const [isVoiceTierError, setIsVoiceTierError] = useState(false);
+  const [hasCopiedError, setHasCopiedError] = useState(false);
 
   // Audio & telemetry metrics
   const [chunksCount, setChunksCount] = useState(0);
   const [totalBytes, setTotalBytes] = useState(0);
   const [timeToFirstChunkMs, setTimeToFirstChunkMs] = useState<number | null>(null);
   const [streamDurationSec, setStreamDurationSec] = useState(0);
-  const [wordProgress, setWordProgress] = useState<{ current: number; total: number } | null>(null);
 
   // Audio playback controls
   const [volume, setVolume] = useState(1.0);
   const [isMuted, setIsMuted] = useState(false);
   const [isPlaying, setIsPlaying] = useState(false);
 
-  // Completed audio capture for replay and download
+  // Completed session audio capture for replay and download
   const [recordedAudioUrl, setRecordedAudioUrl] = useState<string | null>(null);
   const recordedAudioUrlRef = useRef<string | null>(null);
   const [recordedDuration, setRecordedDuration] = useState<number>(0);
   const recordedAudioRef = useRef<HTMLAudioElement | null>(null);
   const [isRecordedPlaying, setIsRecordedPlaying] = useState(false);
-  const [hasCopiedError, setHasCopiedError] = useState(false);
 
   // Refs for audio pipeline and WebSocket
   const wsRef = useRef<WebSocket | null>(null);
@@ -119,16 +126,19 @@ export function LiveStreamingStudio({
   const rawChunkQueueRef = useRef<Uint8Array[]>([]);
   const leftoverPcmByteRef = useRef<number | null>(null);
   const isProcessingQueueRef = useRef<boolean>(false);
-  const isStreamFinalRef = useRef(false);
   const allRecordedChunksRef = useRef<Uint8Array[]>([]);
 
+  // Persistent session tracking
+  const isEndingSessionRef = useRef<boolean>(false);
+  const pendingAudioMessageIdsRef = useRef<string[]>([]);
+  const pendingTextToSendOnOpenRef = useRef<string | null>(null);
+
   // Timers and duration tracking
-  const streamStartTimeRef = useRef<number | null>(null);
-  const streamDurationSecRef = useRef<number>(0);
+  const sessionStartTimeRef = useRef<number | null>(null);
+  const sessionDurationSecRef = useRef<number>(0);
   const durationTimerRef = useRef<number | null>(null);
   const idleTimeoutTimerRef = useRef<number | null>(null);
   const connectionTimeoutTimerRef = useRef<number | null>(null);
-  const simulationIntervalRef = useRef<number | null>(null);
   const completionCheckTimerRef = useRef<number | null>(null);
 
   // Anti-silence keep-alive and heartbeat refs (prevent mobile Chrome auto-suspending on inter-chunk gaps)
@@ -143,7 +153,9 @@ export function LiveStreamingStudio({
   // Append real-time diagnostic event (capped to last 10 entries)
   const addDiagnosticEvent = useCallback(
     (type: DiagnosticEvent['type'], text: string) => {
-      const timeMs = streamStartTimeRef.current ? Math.max(0, Date.now() - streamStartTimeRef.current) : 0;
+      const timeMs = sessionStartTimeRef.current
+        ? Math.max(0, Date.now() - sessionStartTimeRef.current)
+        : 0;
       const event: DiagnosticEvent = {
         id: `${Date.now()}-${Math.random().toString(36).slice(2, 7)}`,
         timeMs,
@@ -170,7 +182,7 @@ export function LiveStreamingStudio({
       gapSeconds,
       isKeepAliveActive: !!keepAliveSourceRef.current,
       activeSourcesCount: activeSourcesRef.current.length,
-      streamDurationSec: streamDurationSecRef.current,
+      streamDurationSec: sessionDurationSecRef.current,
       connectionStatus,
       events: diagnosticsEventsRef.current,
     };
@@ -193,10 +205,11 @@ export function LiveStreamingStudio({
     }
   }, []);
 
-  // Clean up all resources
+  // Clean up all session resources
   const cleanupLiveStream = useCallback(() => {
     console.log('[LiveVoice] cleanupLiveStream invoked');
     stopKeepAliveSource();
+
     // Clear timers
     if (connectionTimeoutTimerRef.current) {
       clearTimeout(connectionTimeoutTimerRef.current);
@@ -210,10 +223,6 @@ export function LiveStreamingStudio({
       clearTimeout(idleTimeoutTimerRef.current);
       idleTimeoutTimerRef.current = null;
     }
-    if (simulationIntervalRef.current) {
-      clearInterval(simulationIntervalRef.current);
-      simulationIntervalRef.current = null;
-    }
     if (completionCheckTimerRef.current) {
       clearTimeout(completionCheckTimerRef.current);
       completionCheckTimerRef.current = null;
@@ -222,8 +231,11 @@ export function LiveStreamingStudio({
     // Close WebSocket cleanly
     if (wsRef.current) {
       try {
-        if (wsRef.current.readyState === WebSocket.OPEN || wsRef.current.readyState === WebSocket.CONNECTING) {
-          wsRef.current.close(1000, 'Live Stream Stopped');
+        if (
+          wsRef.current.readyState === WebSocket.OPEN ||
+          wsRef.current.readyState === WebSocket.CONNECTING
+        ) {
+          wsRef.current.close(1000, 'Session Ended');
         }
       } catch {
         // ignore
@@ -233,7 +245,9 @@ export function LiveStreamingStudio({
 
     // Stop and disconnect all active AudioBufferSourceNodes
     if (activeSourcesRef.current.length > 0) {
-      console.log(`[LiveVoice] Stopping and disconnecting ${activeSourcesRef.current.length} active AudioBufferSourceNodes`);
+      console.log(
+        `[LiveVoice] Stopping and disconnecting ${activeSourcesRef.current.length} active AudioBufferSourceNodes`
+      );
       for (const source of activeSourcesRef.current) {
         try {
           source.stop();
@@ -249,10 +263,12 @@ export function LiveStreamingStudio({
     rawChunkQueueRef.current = [];
     leftoverPcmByteRef.current = null;
     isProcessingQueueRef.current = false;
+    pendingAudioMessageIdsRef.current = [];
+    isEndingSessionRef.current = false;
     setIsPlaying(false);
   }, [stopKeepAliveSource]);
 
-  // Natural playback completion checker: only triggers once all scheduled audio has finished playing
+  // Natural playback completion checker: triggers once all scheduled audio finishes playing
   const checkAndTriggerCompletion = useCallback(() => {
     const ctx = audioContextRef.current;
     const now = ctx ? ctx.currentTime : 0;
@@ -260,34 +276,41 @@ export function LiveStreamingStudio({
     const noActiveSources = activeSourcesRef.current.length === 0;
     const noQueuedChunks = rawChunkQueueRef.current.length === 0;
 
-    if (
-      isStreamFinalRef.current &&
-      noQueuedChunks &&
-      (noActiveSources || isPastNextPlayTime)
-    ) {
-      console.log(
-        `[LiveVoice] [Cleanup Executed] All scheduled audio has finished playing. Executing final cleanup. nextPlayTimeRef=${nextPlayTimeRef.current.toFixed(4)}s, audioContext.currentTime=${(ctx ? ctx.currentTime.toFixed(4) : 'N/A')}s.`
-      );
-      setIsPlaying(false);
-      setConnectionStatus('completed');
-      stopKeepAliveSource();
-      if (durationTimerRef.current) {
-        clearInterval(durationTimerRef.current);
-        durationTimerRef.current = null;
+    if (noQueuedChunks && (noActiveSources || isPastNextPlayTime)) {
+      if (isEndingSessionRef.current) {
+        console.log(
+          `[LiveVoice] [Cleanup Executed] Session end requested and all audio finished. nextPlayTimeRef=${nextPlayTimeRef.current.toFixed(
+            4
+          )}s, currentTime=${now.toFixed(4)}s.`
+        );
+        setIsPlaying(false);
+        setConnectionStatus('completed');
+        stopKeepAliveSource();
+        if (durationTimerRef.current) {
+          clearInterval(durationTimerRef.current);
+          durationTimerRef.current = null;
+        }
+        if (idleTimeoutTimerRef.current) {
+          clearTimeout(idleTimeoutTimerRef.current);
+          idleTimeoutTimerRef.current = null;
+        }
+        if (completionCheckTimerRef.current) {
+          clearTimeout(completionCheckTimerRef.current);
+          completionCheckTimerRef.current = null;
+        }
+        addDiagnosticEvent('info', 'Live session ended cleanly after audio completed');
+      } else {
+        // Natural silence in an ongoing session: audio finished for current queue, session stays ready!
+        setIsPlaying(false);
+        setConnectionStatus((prev) => (prev === 'streaming' ? 'session_ready' : prev));
+        console.log(
+          `[LiveVoice] Audio finished speaking. Persistent live session remains READY for new messages.`
+        );
       }
-      if (idleTimeoutTimerRef.current) {
-        clearTimeout(idleTimeoutTimerRef.current);
-        idleTimeoutTimerRef.current = null;
-      }
-      if (completionCheckTimerRef.current) {
-        clearTimeout(completionCheckTimerRef.current);
-        completionCheckTimerRef.current = null;
-      }
-      addDiagnosticEvent('info', 'All scheduled live stream audio finished playing');
     }
   }, [stopKeepAliveSource, addDiagnosticEvent]);
 
-  // Ensure cleanup on genuine unmount only (not on recordedAudioUrl changes!)
+  // Ensure cleanup on unmount
   useEffect(() => {
     return () => {
       cleanupLiveStream();
@@ -314,7 +337,6 @@ export function LiveStreamingStudio({
       } else {
         gainNodeRef.current.gain.value = val;
       }
-      console.log('[LiveVoice] Synchronized gainNode volume:', gainNodeRef.current.gain.value);
     }
     if (recordedAudioRef.current) {
       recordedAudioRef.current.volume = isMuted ? 0 : volume;
@@ -322,39 +344,8 @@ export function LiveStreamingStudio({
     }
   }, [volume, isMuted]);
 
-  // Handle Stop Streaming / Interruption
-  const handleStopStream = useCallback(() => {
-    playTapSound();
-    console.log('[LiveVoice] handleStopStream called');
-    const elapsed = streamStartTimeRef.current
-      ? (Date.now() - streamStartTimeRef.current) / 1000
-      : streamDurationSecRef.current;
-
-    cleanupLiveStream();
-    setConnectionStatus('interrupted');
-
-    // Finalize any recorded audio captured before interruption
-    if (allRecordedChunksRef.current.length > 0) {
-      const wavBlob = pcmToWavBlob(allRecordedChunksRef.current, 24000, 1);
-      console.log(`[LiveVoice] Interrupted stream captured ${allRecordedChunksRef.current.length} PCM chunks, WAV blob size: ${wavBlob.size} bytes`);
-      if (recordedAudioUrlRef.current) {
-        URL.revokeObjectURL(recordedAudioUrlRef.current);
-      }
-      const url = URL.createObjectURL(wavBlob);
-      recordedAudioUrlRef.current = url;
-      setRecordedAudioUrl(url);
-
-      const totalPcmBytes = allRecordedChunksRef.current.reduce((sum, c) => sum + c.byteLength, 0);
-      const exactDuration = totalPcmBytes / (24000 * 2);
-      setRecordedDuration(exactDuration > 0 ? exactDuration : elapsed);
-      console.log(
-        `[LiveVoice] Interrupted stream WAV playback ready. Duration: ${exactDuration.toFixed(2)}s, SampleRate: 24000Hz (lossless mono WAV)`
-      );
-    }
-  }, [cleanupLiveStream]);
-
-  // Main Streaming Execution Engine
-  const startLiveStreaming = async (customVoiceId?: string) => {
+  // Start Live Session (Opens persistent WebSocket & Web Audio pipeline)
+  const startLiveSession = async (initialMessageText?: string) => {
     playTapSound();
     cleanupLiveStream();
 
@@ -365,316 +356,240 @@ export function LiveStreamingStudio({
     setRecordedAudioUrl(null);
     setRecordedDuration(0);
 
-    try {
-      const targetVoiceId = (customVoiceId || voiceId || 'EXAVITQu4vr4xnSDxMaL').trim();
-      const cleanText = text.trim();
+    const targetVoiceId = (voiceId || 'EXAVITQu4vr4xnSDxMaL').trim();
 
-      if (!cleanText) {
-        setErrorMessage('Please enter dialogue or select a script to stream.');
-        setConnectionStatus('error');
-        return;
-      }
+    // Free-tier voice restriction pre-check
+    if (isVoiceTierRestricted(targetVoiceId)) {
+      setIsVoiceTierError(true);
+      setConnectionStatus('error');
+      setErrorMessage(
+        'ElevenLabs Free-Tier Restriction: Community and library voices are not permitted via the API. Please switch to an official premade voice (such as Sarah or George).'
+      );
+      return;
+    }
 
-      // Free-tier voice restriction pre-check
-      if (isVoiceTierRestricted(targetVoiceId)) {
-        setIsVoiceTierError(true);
+    // Retrieve active API key
+    if (!activeProvider || !activeProvider.keys || activeProvider.keys.length === 0) {
+      setErrorMessage('No ElevenLabs API key found. Please configure your key in AI Providers Settings.');
+      setConnectionStatus('error');
+      return;
+    }
+
+    const healthyKey =
+      activeProvider.keys.find((k) => k.health === 'healthy')?.key ||
+      activeProvider.keys[0]?.key ||
+      activeProvider.apiKey;
+
+    if (!healthyKey) {
+      setErrorMessage('No valid API key available for Cloud Voice AI.');
+      setConnectionStatus('error');
+      return;
+    }
+
+    // Reset state & telemetry
+    setErrorMessage(null);
+    setIsVoiceTierError(false);
+    setConnectionStatus('connecting');
+    setChunksCount(0);
+    setTotalBytes(0);
+    setTimeToFirstChunkMs(null);
+    setStreamDurationSec(0);
+    sessionDurationSecRef.current = 0;
+    allRecordedChunksRef.current = [];
+    rawChunkQueueRef.current = [];
+    leftoverPcmByteRef.current = null;
+    isEndingSessionRef.current = false;
+    pendingAudioMessageIdsRef.current = [];
+
+    // Reset diagnostics
+    heartbeatResumeCountRef.current = 0;
+    diagnosticsEventsRef.current = [];
+    bufferSeqRef.current = 0;
+    addDiagnosticEvent('info', 'Live session starting (24kHz linear PCM)...');
+
+    // If initial text is passed or entered, queue it to send on open
+    const promptToSend = (initialMessageText || sessionInputText || '').trim();
+    if (promptToSend) {
+      pendingTextToSendOnOpenRef.current = promptToSend;
+    } else {
+      pendingTextToSendOnOpenRef.current = null;
+    }
+
+    // 15-second connection timeout guard
+    if (connectionTimeoutTimerRef.current) {
+      clearTimeout(connectionTimeoutTimerRef.current);
+      connectionTimeoutTimerRef.current = null;
+    }
+    connectionTimeoutTimerRef.current = window.setTimeout(() => {
+      if (!wsRef.current || wsRef.current.readyState !== WebSocket.OPEN) {
+        console.warn('[LiveVoice] Connection timeout (15s) triggered before WebSocket open');
         setConnectionStatus('error');
         setErrorMessage(
-          'ElevenLabs Free-Tier Restriction: Community and library voices are not permitted via the API. Please switch to an official premade voice (such as Sarah or George).'
+          'Connection failed: Timed out waiting for ElevenLabs WebSocket to connect (15s). Please verify your internet connection and API key.'
         );
-        return;
+        cleanupLiveStream();
       }
+    }, 15000);
 
-      // Retrieve active API key
-      if (!activeProvider || !activeProvider.keys || activeProvider.keys.length === 0) {
-        setErrorMessage('No ElevenLabs API key found. Please configure your key in AI Providers Settings.');
-        setConnectionStatus('error');
-        return;
+    // Initialize or resume Web Audio Context
+    try {
+      const AudioCtx =
+        window.AudioContext ||
+        (window as unknown as { webkitAudioContext: typeof AudioContext }).webkitAudioContext;
+      if (!audioContextRef.current || audioContextRef.current.state === 'closed') {
+        audioContextRef.current = new AudioCtx();
+        console.log('[LiveVoice] Created fresh AudioContext, state:', audioContextRef.current.state);
       }
-
-      const healthyKey =
-        activeProvider.keys.find((k) => k.health === 'healthy')?.key ||
-        activeProvider.keys[0]?.key ||
-        activeProvider.apiKey;
-
-      if (!healthyKey) {
-        setErrorMessage('No valid API key available for Cloud Voice AI.');
-        setConnectionStatus('error');
-        return;
-      }
-
-      // Reset state & telemetry
-      setErrorMessage(null);
-      setIsVoiceTierError(false);
-      setConnectionStatus('connecting');
-      setChunksCount(0);
-      setTotalBytes(0);
-      setTimeToFirstChunkMs(null);
-      setStreamDurationSec(0);
-      streamDurationSecRef.current = 0;
-      allRecordedChunksRef.current = [];
-      rawChunkQueueRef.current = [];
-      leftoverPcmByteRef.current = null;
-      isStreamFinalRef.current = false;
-      setRecordedAudioUrl(null);
-      setRecordedDuration(0);
-
-      // Reset diagnostics & telemetry
-      heartbeatResumeCountRef.current = 0;
-      diagnosticsEventsRef.current = [];
-      bufferSeqRef.current = 0;
-      addDiagnosticEvent('info', 'Live stream starting (24kHz linear PCM)...');
-
-      const wordsTotal = cleanText.split(/\s+/).filter(Boolean).length;
-      setWordProgress({ current: 0, total: wordsTotal });
-
-      // Connection Timeout (15 seconds): Prevents hanging on "CONNECTING WEBSOCKET..." forever
-      if (connectionTimeoutTimerRef.current) {
-        clearTimeout(connectionTimeoutTimerRef.current);
-        connectionTimeoutTimerRef.current = null;
-      }
-      connectionTimeoutTimerRef.current = window.setTimeout(() => {
-        if (!wsRef.current || wsRef.current.readyState !== WebSocket.OPEN) {
-          console.warn('[LiveVoice] Connection timeout (15s) triggered before WebSocket open');
-          setConnectionStatus('error');
-          setErrorMessage(
-            'Connection failed: Timed out waiting for ElevenLabs WebSocket to connect (15s). The remote server did not respond in time. Please verify your internet connection and ElevenLabs API key validity, or switch to a premade voice.'
-          );
-          cleanupLiveStream();
+      if (audioContextRef.current.state === 'suspended') {
+        try {
+          await Promise.race([
+            audioContextRef.current.resume(),
+            new Promise((resolve) => setTimeout(resolve, 600)),
+          ]);
+        } catch (resumeErr) {
+          console.warn('[LiveVoice] AudioContext resume error (non-fatal):', resumeErr);
         }
-      }, 15000);
+      }
 
-      // Initialize or resume Web Audio Context & Graph immediately during user interaction
+      // Initialize AnalyserNode & GainNode
+      if (!analyserNodeRef.current || analyserNodeRef.current.context !== audioContextRef.current) {
+        analyserNodeRef.current = audioContextRef.current.createAnalyser();
+        analyserNodeRef.current.fftSize = 256;
+        analyserNodeRef.current.smoothingTimeConstant = 0.8;
+      }
+      if (!gainNodeRef.current || gainNodeRef.current.context !== audioContextRef.current) {
+        gainNodeRef.current = audioContextRef.current.createGain();
+        gainNodeRef.current.gain.setValueAtTime(isMuted ? 0 : volume, audioContextRef.current.currentTime);
+        gainNodeRef.current.connect(audioContextRef.current.destination);
+      }
+
+      // Initialize Anti-Silence Keep-Alive Source (loops continuous 0.0001 amplitude buffer)
+      stopKeepAliveSource();
+      const ctx = audioContextRef.current;
+      const keepAliveRate = ctx.sampleRate || 24000;
+      const keepAliveBuffer = ctx.createBuffer(1, keepAliveRate, keepAliveRate);
+      const channelData = keepAliveBuffer.getChannelData(0);
+      for (let i = 0; i < channelData.length; i++) {
+        channelData[i] = (i % 2 === 0 ? 1 : -1) * 0.0001;
+      }
+      const keepAliveSource = ctx.createBufferSource();
+      keepAliveSource.buffer = keepAliveBuffer;
+      keepAliveSource.loop = true;
       try {
-        const AudioCtx =
-          window.AudioContext ||
-          (window as unknown as { webkitAudioContext: typeof AudioContext }).webkitAudioContext;
-        if (!audioContextRef.current || audioContextRef.current.state === 'closed') {
-          audioContextRef.current = new AudioCtx();
-          console.log('[LiveVoice] Created fresh AudioContext, state:', audioContextRef.current.state);
-        }
-        if (audioContextRef.current.state === 'suspended') {
-          console.log('[LiveVoice] AudioContext is suspended, calling .resume() with race timeout...');
-          try {
-            await Promise.race([
-              audioContextRef.current.resume(),
-              new Promise((resolve) => setTimeout(resolve, 600)),
-            ]);
-          } catch (resumeErr) {
-            console.warn('[LiveVoice] AudioContext resume error (non-fatal):', resumeErr);
-          }
-          console.log('[LiveVoice] AudioContext resume attempt finished. State:', audioContextRef.current.state);
-        } else {
-          console.log('[LiveVoice] AudioContext state:', audioContextRef.current.state);
-        }
-
-        if (!analyserNodeRef.current || analyserNodeRef.current.context !== audioContextRef.current) {
-          const analyser = audioContextRef.current.createAnalyser();
-          analyser.fftSize = 128;
-          analyser.smoothingTimeConstant = 0.8;
-          analyserNodeRef.current = analyser;
-        }
-
-        if (!gainNodeRef.current || gainNodeRef.current.context !== audioContextRef.current) {
-          const gainNode = audioContextRef.current.createGain();
-          gainNodeRef.current = gainNode;
-        }
-
-        const initialGain = isMuted ? 0 : (volume > 0 ? volume : 1.0);
-        gainNodeRef.current.gain.setValueAtTime(initialGain, audioContextRef.current.currentTime);
-
-        // Wire Web Audio Graph: GainNode -> Destination
-        try {
-          gainNodeRef.current.disconnect();
-        } catch {
-          // ignore
-        }
-        try {
-          gainNodeRef.current.connect(audioContextRef.current.destination);
-          console.log('[LiveVoice] Web Audio graph wired: GainNode -> Destination (gain:', gainNodeRef.current.gain.value, ')');
-        } catch (wireErr) {
-          console.warn('[LiveVoice] GainNode connect error:', wireErr);
-        }
-
-        // Anti-Silence Keep-Alive Audio Source & Heartbeat Resume-Check
-        // Mobile Chrome/Android auto-suspends AudioContext on brief silence gaps between network buffers.
-        // A continuous, inaudible (amplitude 0.0001) audio source connected directly to ctx.destination
-        // guarantees non-zero audio output throughout the active stream.
-        stopKeepAliveSource();
-
-        const ctx = audioContextRef.current;
-        const keepAliveRate = ctx.sampleRate || 24000;
-        const keepAliveBuffer = ctx.createBuffer(1, keepAliveRate, keepAliveRate);
-        const channelData = keepAliveBuffer.getChannelData(0);
-        for (let i = 0; i < channelData.length; i++) {
-          // Micro-amplitude alternating signal (0.0001)
-          channelData[i] = (i % 2 === 0 ? 1 : -1) * 0.0001;
-        }
-
-        const keepAliveSource = ctx.createBufferSource();
-        keepAliveSource.buffer = keepAliveBuffer;
-        keepAliveSource.loop = true;
-        try {
-          keepAliveSource.connect(ctx.destination);
-          keepAliveSource.start(0);
-          keepAliveSourceRef.current = keepAliveSource;
-          addDiagnosticEvent('info', 'Keep-alive silent source (0.0001 amp) started & looping');
-        } catch (keepAliveErr) {
-          console.warn('[LiveVoice] Keep-alive source connect/start warning:', keepAliveErr);
-          const errMsg = keepAliveErr instanceof Error ? keepAliveErr.message : String(keepAliveErr);
-          addDiagnosticEvent('error', `Keep-alive source start warning: ${errMsg}`);
-        }
-
-        // Heartbeat setInterval (250ms) to detect and auto-resume suspended AudioContext
-        audioHeartbeatTimerRef.current = window.setInterval(async () => {
-          const activeCtx = audioContextRef.current;
-          if (!activeCtx) return;
-          if (activeCtx.state === 'suspended') {
-            heartbeatResumeCountRef.current += 1;
-            const currentResumeCount = heartbeatResumeCountRef.current;
-            console.warn(
-              `[LiveVoice] [AudioHeartbeat] AudioContext state was SUSPENDED! Auto-resuming immediately... (count: ${currentResumeCount})`
-            );
-            addDiagnosticEvent(
-              'resumed',
-              `Heartbeat #${currentResumeCount}: AudioContext was SUSPENDED! Auto-resuming...`
-            );
-            try {
-              await activeCtx.resume();
-              console.log(
-                '[LiveVoice] [AudioHeartbeat] AudioContext successfully resumed. Current state:',
-                activeCtx.state
-              );
-              addDiagnosticEvent(
-                'resumed',
-                `Heartbeat #${currentResumeCount}: AudioContext resumed successfully (state: ${activeCtx.state})`
-              );
-            } catch (heartbeatErr) {
-              const errMsg = heartbeatErr instanceof Error ? heartbeatErr.message : String(heartbeatErr);
-              console.error('[LiveVoice] [AudioHeartbeat] Failed to resume suspended AudioContext:', heartbeatErr);
-              addDiagnosticEvent('error', `Heartbeat resume failed: ${errMsg}`);
-            }
-          }
-        }, 250);
-
-        console.log(
-          '[LiveVoice] [Anti-Silence Keep-Alive] Initialized continuous inaudible keep-alive source (amplitude: 0.0001) and heartbeat resume-check (250ms interval) to prevent mobile Chrome silence auto-suspend.'
-        );
-      } catch (e) {
-        console.warn('[LiveVoice] Web Audio API init warning (continuing with connection):', e);
+        keepAliveSource.connect(ctx.destination);
+        keepAliveSource.start(0);
+        keepAliveSourceRef.current = keepAliveSource;
+        addDiagnosticEvent('info', 'Keep-alive silent source (0.0001 amp) started & looping');
+      } catch (err) {
+        console.warn('[LiveVoice] Keep-alive source connect warning:', err);
       }
 
-    // Reset playback tracking for live stream
+      // Heartbeat timer (250ms) to auto-resume if mobile browser suspends AudioContext
+      audioHeartbeatTimerRef.current = window.setInterval(async () => {
+        const activeCtx = audioContextRef.current;
+        if (!activeCtx) return;
+        if (activeCtx.state === 'suspended') {
+          heartbeatResumeCountRef.current += 1;
+          const count = heartbeatResumeCountRef.current;
+          addDiagnosticEvent('resumed', `Heartbeat #${count}: AudioContext was SUSPENDED! Auto-resuming...`);
+          try {
+            await activeCtx.resume();
+            addDiagnosticEvent('resumed', `Heartbeat #${count}: AudioContext resumed (state: ${activeCtx.state})`);
+          } catch (heartbeatErr) {
+            console.error('[LiveVoice] AudioContext resume failed:', heartbeatErr);
+          }
+        }
+      }, 250);
+    } catch (e) {
+      console.warn('[LiveVoice] Web Audio API init warning:', e);
+    }
+
+    // Reset playback tracking
     nextPlayTimeRef.current = 0;
     activeSourcesRef.current = [];
     rawChunkQueueRef.current = [];
     leftoverPcmByteRef.current = null;
     isProcessingQueueRef.current = false;
-    isStreamFinalRef.current = false;
 
-    // Schedules a decoded AudioBuffer for seamless, gapless playback
-    const scheduleAudioBuffer = async (audioBuffer: AudioBuffer, chunkInfo: string) => {
+    // Schedules a decoded 24kHz AudioBuffer for gapless playback
+    const scheduleAudioBuffer = async (audioBuffer: AudioBuffer) => {
       const ctx = audioContextRef.current;
-      if (!ctx) {
-        console.warn('[LiveVoice] Cannot schedule buffer: AudioContext missing');
-        return;
-      }
+      if (!ctx) return;
 
-      // [CHECK 1] AudioContext State & Await Resume
       if (ctx.state !== 'running') {
-        console.log(`[LiveVoice] [Check 1] audioContext.state is "${ctx.state}". Awaiting ctx.resume()...`);
         try {
           await ctx.resume();
-        } catch (resumeErr) {
-          console.warn('[LiveVoice] [Check 1] ctx.resume() error during scheduling:', resumeErr);
+        } catch {
+          // ignore
         }
       }
-      console.log(
-        `[LiveVoice] [Check 1] audioContext.state at scheduling: "${ctx.state}" (ctx.currentTime=${ctx.currentTime.toFixed(4)}s)`
-      );
 
-      // [CHECK 2] Gain Node & Volume Initialization
       if (!gainNodeRef.current || gainNodeRef.current.context !== ctx) {
         gainNodeRef.current = ctx.createGain();
       }
       const gainNode = gainNodeRef.current;
-      const targetGain = isMuted ? 0 : (volume > 0 ? volume : 1.0);
+      const targetGain = isMuted ? 0 : volume > 0 ? volume : 1.0;
       gainNode.gain.setValueAtTime(targetGain, ctx.currentTime);
-      console.log(
-        `[LiveVoice] [Check 2] gainNode.gain.value=${gainNode.gain.value} (targetGain=${targetGain}, volumeState=${volume}, isMuted=${isMuted})`
-      );
 
-      // [CHECK 3] Full Connection Chain Verification
       const sourceNode = ctx.createBufferSource();
       sourceNode.buffer = audioBuffer;
-
-      // 1. Direct connection to GainNode (audible playback through speakers)
       sourceNode.connect(gainNode);
 
-      // 2. Direct connection to AnalyserNode (real-time waveform visualizer)
       if (analyserNodeRef.current && analyserNodeRef.current.context === ctx) {
         try {
           sourceNode.connect(analyserNodeRef.current);
-        } catch (analyserConnErr) {
-          console.warn('[LiveVoice] [Check 3] sourceNode -> analyserNode connection warning:', analyserConnErr);
+        } catch {
+          // ignore
         }
       }
 
-      // 3. Ensure GainNode is connected to destination
       try {
         gainNode.connect(ctx.destination);
-      } catch (destErr) {
-        console.warn('[LiveVoice] [Check 3] gainNode -> ctx.destination connection warning:', destErr);
+      } catch {
+        // ignore
       }
 
-      console.log(
-        `[LiveVoice] [Check 3] Connection chain verified: sourceNode -> gainNode(gain=${gainNode.gain.value}) -> ctx.destination [SPEAKER OUTPUT]; sourceNode -> analyserNode [WAVEFORM]`
-      );
-
-      // [CHECK 4] Timing & Gapless Scheduling vs audioContext.currentTime
+      // Timing & Gapless Scheduling
       const now = ctx.currentTime;
       const duration = audioBuffer.duration;
-      // Start with small lead time (20ms) if first buffer or queue underrun, else gapless back-to-back
-      const startTime = Math.max(now + 0.02, nextPlayTimeRef.current);
+      const startTime = Math.max(now + 0.05, nextPlayTimeRef.current);
       const endTime = startTime + duration;
       nextPlayTimeRef.current = endTime;
 
-      // Track buffer sequence and diagnostics events
+      // Correlate buffer with earliest pending message in feed
+      if (pendingAudioMessageIdsRef.current.length > 0) {
+        const currentMsgId = pendingAudioMessageIdsRef.current[0];
+        setMessages((prevMsgs) =>
+          prevMsgs.map((m) => {
+            if (m.id === currentMsgId) {
+              const firstStart = m.firstScheduledStartTime ?? startTime;
+              const curDur = (m.audioDurationSec || 0) + duration;
+              return {
+                ...m,
+                firstScheduledStartTime: firstStart,
+                lastScheduledEndTime: endTime,
+                audioDurationSec: curDur,
+              };
+            }
+            return m;
+          })
+        );
+      }
+
       bufferSeqRef.current += 1;
       const bufferNum = bufferSeqRef.current;
       addDiagnosticEvent(
         'scheduled',
-        `Buffer #${bufferNum} scheduled: start=${startTime.toFixed(3)}s, dur=${duration.toFixed(3)}s (gap: +${(startTime - now).toFixed(3)}s)`
+        `Buffer #${bufferNum} scheduled: start=${startTime.toFixed(3)}s, dur=${duration.toFixed(3)}s`
       );
 
-      // Schedule buffer started event when audio starts playback
-      const startDelayMs = Math.max(0, Math.round((startTime - now) * 1000));
-      window.setTimeout(() => {
-        addDiagnosticEvent(
-          'started',
-          `Buffer #${bufferNum} started (ctxTime: ${audioContextRef.current?.currentTime.toFixed(3) ?? '?'}s)`
-        );
-      }, startDelayMs);
-
-      console.log(
-        `[LiveVoice] [Check 4] Timing check: scheduled start(time)=${startTime.toFixed(4)}s vs ctx.currentTime=${now.toFixed(4)}s (delta: +${(startTime - now).toFixed(4)}s, lead: ${((startTime - now) * 1000).toFixed(1)}ms), duration=${duration.toFixed(4)}s, nextScheduledEndTime=${endTime.toFixed(4)}s`
-      );
-
-      // [CHECK 5] Calling source.start()
       try {
         sourceNode.start(startTime);
         activeSourcesRef.current.push(sourceNode);
         setIsPlaying(true);
-        console.log(
-          `[LiveVoice] [Check 5] source.start(${startTime.toFixed(4)}) called successfully for buffer [${chunkInfo}] (activeSourcesCount=${activeSourcesRef.current.length})`
-        );
       } catch (startErr) {
         const errMsg = startErr instanceof Error ? startErr.message : String(startErr);
         addDiagnosticEvent('error', `Buffer #${bufferNum} start() failed: ${errMsg}`);
-        console.error(
-          `[LiveVoice] [Check 5] source.start(${startTime.toFixed(4)}) FAILED for buffer [${chunkInfo}]:`,
-          startErr
-        );
       }
 
       sourceNode.onended = () => {
@@ -683,27 +598,17 @@ export function LiveStreamingStudio({
           'ended',
           `Buffer #${bufferNum} ended (active remaining: ${activeSourcesRef.current.length})`
         );
-        console.log(
-          `[LiveVoice] AudioBufferSourceNode ended. Remaining active: ${activeSourcesRef.current.length}, isFinal: ${isStreamFinalRef.current}`
-        );
-
-        if (isStreamFinalRef.current) {
-          checkAndTriggerCompletion();
-        }
+        checkAndTriggerCompletion();
       };
     };
 
     // Direct PCM audio processor: converts raw 16-bit linear PCM into Float32 AudioBuffers
-    // bypassing decodeAudioData() entirely for 100% gapless, reliable live playback!
     const processPcmQueue = async () => {
-      if (isProcessingQueueRef.current) {
-        return;
-      }
+      if (isProcessingQueueRef.current) return;
       isProcessingQueueRef.current = true;
 
       const ctx = audioContextRef.current;
       if (!ctx) {
-        console.warn('[LiveVoice] processPcmQueue: AudioContext is not available');
         isProcessingQueueRef.current = false;
         return;
       }
@@ -711,16 +616,14 @@ export function LiveStreamingStudio({
       if (ctx.state !== 'running') {
         try {
           await ctx.resume();
-          console.log('[LiveVoice] AudioContext resumed in processPcmQueue. State:', ctx.state);
-        } catch (resumeErr) {
-          console.warn('[LiveVoice] AudioContext resume error in pcm queue:', resumeErr);
+        } catch {
+          // ignore
         }
       }
 
       while (rawChunkQueueRef.current.length > 0) {
         let chunkBytes = rawChunkQueueRef.current.shift()!;
 
-        // Handle any unaligned odd byte left over from the previous chunk
         if (leftoverPcmByteRef.current !== null) {
           const stitched = new Uint8Array(chunkBytes.byteLength + 1);
           stitched[0] = leftoverPcmByteRef.current;
@@ -729,38 +632,26 @@ export function LiveStreamingStudio({
           chunkBytes = stitched;
         }
 
-        // If chunk length is odd, hold trailing byte for next chunk to maintain 16-bit sample alignment
         if (chunkBytes.byteLength % 2 !== 0) {
           leftoverPcmByteRef.current = chunkBytes[chunkBytes.byteLength - 1];
           chunkBytes = chunkBytes.subarray(0, chunkBytes.byteLength - 1);
         }
 
         const sampleCount = chunkBytes.byteLength / 2;
-        if (sampleCount <= 0) {
-          continue;
-        }
+        if (sampleCount <= 0) continue;
 
-        // Convert raw 16-bit signed PCM (little-endian) to normalized Float32 samples [-1.0, 1.0]
+        // Convert 16-bit linear PCM (little-endian) to Float32 [-1.0, 1.0]
         const float32 = new Float32Array(sampleCount);
         const dataView = new DataView(chunkBytes.buffer, chunkBytes.byteOffset, chunkBytes.byteLength);
         for (let i = 0; i < sampleCount; i++) {
-          const int16 = dataView.getInt16(i * 2, true); // little-endian
+          const int16 = dataView.getInt16(i * 2, true);
           float32[i] = int16 / 32768.0;
         }
 
-        // Directly construct AudioBuffer without calling decodeAudioData()
         const audioBuffer = ctx.createBuffer(1, sampleCount, 24000);
         audioBuffer.copyToChannel(float32, 0);
 
-        console.log(
-          `[LiveVoice] [PCM Direct AudioBuffer] Built AudioBuffer: ${sampleCount} samples (${chunkBytes.byteLength} B), duration: ${audioBuffer.duration.toFixed(4)}s at 24kHz. [CONFIRMED: NO decodeAudioData called]`
-        );
-
-        // Schedule gapless playback using existing nextPlayTimeRef logic
-        await scheduleAudioBuffer(
-          audioBuffer,
-          `PCM chunk (${sampleCount} samples, ${chunkBytes.byteLength} B)`
-        );
+        await scheduleAudioBuffer(audioBuffer);
       }
 
       isProcessingQueueRef.current = false;
@@ -775,15 +666,12 @@ export function LiveStreamingStudio({
       processPcmQueue();
     };
 
-    // Build ElevenLabs WebSocket URL with output_format=pcm_24000 (Free-tier supported 24kHz PCM)
-    const modelId = activeProvider.model || 'eleven_multilingual_v2';
+    // Build ElevenLabs WebSocket URL with output_format=pcm_24000
+    const modelId = activeProvider.model || 'eleven_turbo_v2_5';
     const outputFormat = 'pcm_24000';
     const wsUrl = buildElevenLabsWebSocketUrl(targetVoiceId, modelId, outputFormat);
     const connectStartTime = Date.now();
-    console.log(
-      `[LiveVoice] Connecting to ElevenLabs WebSocket with output_format=${outputFormat} (24 kHz Studio PCM):`,
-      wsUrl
-    );
+    console.log(`[LiveVoice] Connecting to ElevenLabs WebSocket (output_format=${outputFormat}):`, wsUrl);
 
     try {
       const ws = new WebSocket(wsUrl);
@@ -796,7 +684,7 @@ export function LiveStreamingStudio({
           if (wsRef.current && wsRef.current.readyState === WebSocket.OPEN) {
             setConnectionStatus('timeout');
             setErrorMessage(
-              'ElevenLabs 20-Second Idle Timeout: The live connection was closed due to 20 seconds of stream inactivity. Click "Reconnect & Resume" to start a fresh stream.'
+              'ElevenLabs 20-Second Idle Timeout: Connection paused due to 20 seconds of stream inactivity. Type a message or click "Reconnect" to resume anytime.'
             );
             cleanupLiveStream();
           }
@@ -809,19 +697,46 @@ export function LiveStreamingStudio({
           connectionTimeoutTimerRef.current = null;
         }
         resetIdleTimer();
-        setConnectionStatus('streaming');
+        setConnectionStatus('session_ready');
 
-        // Start stream duration counter
-        streamStartTimeRef.current = Date.now();
+        // Start session duration counter & message playback status synchronizer
+        sessionStartTimeRef.current = Date.now();
         durationTimerRef.current = window.setInterval(() => {
-          if (streamStartTimeRef.current) {
-            const elapsed = (Date.now() - streamStartTimeRef.current) / 1000;
-            streamDurationSecRef.current = elapsed;
+          if (sessionStartTimeRef.current) {
+            const elapsed = (Date.now() - sessionStartTimeRef.current) / 1000;
+            sessionDurationSecRef.current = elapsed;
             setStreamDurationSec(elapsed);
           }
+
+          // Dynamically synchronize message status: queued -> speaking -> spoken
+          const curTime = audioContextRef.current ? audioContextRef.current.currentTime : 0;
+          setMessages((prevMsgs) => {
+            let changed = false;
+            const updated = prevMsgs.map((msg) => {
+              let newStatus: LiveSessionMessage['status'] = msg.status;
+              if (
+                msg.firstScheduledStartTime !== undefined &&
+                msg.lastScheduledEndTime !== undefined
+              ) {
+                if (curTime >= msg.lastScheduledEndTime) {
+                  newStatus = 'spoken';
+                } else if (curTime >= msg.firstScheduledStartTime) {
+                  newStatus = 'speaking';
+                } else {
+                  newStatus = 'queued';
+                }
+              }
+              if (newStatus !== msg.status) {
+                changed = true;
+                return { ...msg, status: newStatus };
+              }
+              return msg;
+            });
+            return changed ? updated : prevMsgs;
+          });
         }, 100);
 
-        // Step 1: Send Beginning-Of-Stream (BOS) configuration message with xi_api_key
+        // Send Beginning-Of-Stream (BOS) configuration message with xi_api_key
         const bosPayload = {
           text: ' ',
           voice_settings: {
@@ -835,39 +750,13 @@ export function LiveStreamingStudio({
           xi_api_key: healthyKey,
         };
         ws.send(JSON.stringify(bosPayload));
+        console.log('[LiveVoice] BOS sent to ElevenLabs. Persistent session is READY.');
 
-        // Step 2: Stream text dialogue
-        if (streamMode === 'instant') {
-          // Instant full text streaming
-          ws.send(JSON.stringify({ text: cleanText + ' ' }));
-          // Send End-Of-Stream (EOS)
-          ws.send(JSON.stringify({ text: '' }));
-        } else {
-          // LLM-style token / chunk streaming simulation (words streamed in intervals)
-          const words = cleanText.split(' ');
-          let wordIdx = 0;
-          const chunkSize = 3; // send 3 words at a time
-
-          simulationIntervalRef.current = window.setInterval(() => {
-            if (!wsRef.current || wsRef.current.readyState !== WebSocket.OPEN) {
-              if (simulationIntervalRef.current) clearInterval(simulationIntervalRef.current);
-              return;
-            }
-
-            if (wordIdx < words.length) {
-              const slice = words.slice(wordIdx, wordIdx + chunkSize).join(' ') + ' ';
-              wordIdx += chunkSize;
-              ws.send(JSON.stringify({ text: slice }));
-              resetIdleTimer();
-            } else {
-              if (simulationIntervalRef.current) {
-                clearInterval(simulationIntervalRef.current);
-                simulationIntervalRef.current = null;
-              }
-              // Send End-Of-Stream (EOS) flush
-              ws.send(JSON.stringify({ text: '' }));
-            }
-          }, 180);
+        // If there was initial prompt text queued, send it immediately!
+        if (pendingTextToSendOnOpenRef.current) {
+          const textToSend = pendingTextToSendOnOpenRef.current;
+          pendingTextToSendOnOpenRef.current = null;
+          sendSessionMessage(textToSend);
         }
       };
 
@@ -889,17 +778,12 @@ export function LiveStreamingStudio({
           let response: Record<string, unknown>;
           try {
             response = JSON.parse(rawText);
-          } catch (jsonErr) {
-            console.error('[LiveVoice] WebSocket frame is not valid JSON! rawType:', rawType, 'snippet:', rawText.slice(0, 100), jsonErr);
+          } catch {
             return;
           }
 
           const hasAudioField = typeof response.audio === 'string' && response.audio.trim().length > 0;
           const isFinal = Boolean(response.isFinal || response.is_final);
-
-          console.log(
-            `[LiveVoice] WS packet received: rawType=${rawType}, hasAudio=${hasAudioField}, isFinal=${isFinal}, keys=[${Object.keys(response).join(', ')}]`
-          );
 
           // Check for API errors in payload
           if (response.error || response.code) {
@@ -909,7 +793,7 @@ export function LiveStreamingStudio({
             if (errCode === 402 || /paid_plan_required/i.test(errMsg) || /library/i.test(errMsg)) {
               setIsVoiceTierError(true);
               setErrorMessage(
-                'ElevenLabs Free-Tier Restriction (402 paid_plan_required): Free accounts are restricted to official premade voices (Sarah, George, Brian, Alice). Community and library voices require a paid plan.'
+                'ElevenLabs Free-Tier Restriction (402 paid_plan_required): Free accounts are restricted to official premade voices (Sarah, George, Brian, Alice).'
               );
             } else {
               setErrorMessage(errMsg);
@@ -919,11 +803,10 @@ export function LiveStreamingStudio({
             return;
           }
 
-          // Handle incoming base64 audio chunk ONLY when audio field is present and non-empty
+          // Handle incoming base64 audio chunk
           if (hasAudioField) {
             const base64Str = (response.audio as string).trim();
             try {
-              // Decode base64 into raw 16-bit signed linear PCM bytes (little-endian, 24kHz mono)
               const binaryStr = window.atob(base64Str);
               const decodedByteLength = binaryStr.length;
               const bytes = new Uint8Array(decodedByteLength);
@@ -932,8 +815,7 @@ export function LiveStreamingStudio({
               }
 
               if (timeToFirstChunkMs === null) {
-                const latency = Date.now() - connectStartTime;
-                setTimeToFirstChunkMs(latency);
+                setTimeToFirstChunkMs(Date.now() - connectStartTime);
               }
 
               const sampleCount = Math.floor(decodedByteLength / 2);
@@ -946,65 +828,38 @@ export function LiveStreamingStudio({
                 `Chunk #${chunkNum} received (${decodedByteLength}B, ${sampleCount} samples)`
               );
 
-              console.log(
-                `[LiveVoice] [PCM Chunk Received] rawType=${rawType}, hasAudio=true, base64Length=${base64Str.length}, rawPcmBytes=${decodedByteLength} B, pcmSamples=${sampleCount} samples, totalChunks=${allRecordedChunksRef.current.length + 1} (output_format: pcm_24000). [CONFIRMED: NO decodeAudioData called for live chunks]`
-              );
-
-              // Enqueue raw PCM bytes for direct Web Audio API buffer generation and playback
               appendChunkToBuffer(bytes);
             } catch (atobErr) {
-              const errMsg = atobErr instanceof Error ? atobErr.message : String(atobErr);
-              addDiagnosticEvent('error', `Base64 decode failed: ${errMsg}`);
-              console.error(
-                '[LiveVoice] Base64 decoding failed for audio packet:',
-                atobErr,
-                'base64 snippet:',
-                base64Str.slice(0, 40)
-              );
-            }
-          } else {
-            console.log(
-              `[LiveVoice] WS packet has NO AUDIO (audio field is ${response.audio === null ? 'null' : typeof response.audio}). Ignoring audio decode step.`
-            );
-          }
-
-          // Handle incremental word/character alignment progress
-          if (response.alignment || response.normalizedAlignment) {
-            const alignment = (response.alignment || response.normalizedAlignment) as { chars?: unknown[] };
-            if (alignment.chars && Array.isArray(alignment.chars)) {
-              const totalChars = cleanText.length;
-              const spokenChars = alignment.chars.length;
-              const ratio = Math.min(1.0, spokenChars / Math.max(1, totalChars));
-              setWordProgress({
-                current: Math.round(wordsTotal * ratio),
-                total: wordsTotal,
-              });
+              console.error('[LiveVoice] Base64 decoding failed:', atobErr);
             }
           }
 
-          // Check if stream is final (support both isFinal and is_final)
+          // Handle isFinal flag for current flushed segment
           if (isFinal) {
             console.log(
-              `[LiveVoice] WebSocket stream isFinal/is_final confirmed! Total PCM chunks captured: ${allRecordedChunksRef.current.length}`
+              `[LiveVoice] Message segment isFinal confirmed. Total session PCM chunks: ${allRecordedChunksRef.current.length}`
             );
-            isStreamFinalRef.current = true;
             addDiagnosticEvent(
               'info',
-              `Stream final flag confirmed (${allRecordedChunksRef.current.length} total PCM chunks)`
+              `Segment audio completed on network (${allRecordedChunksRef.current.length} total PCM chunks)`
             );
-            if (idleTimeoutTimerRef.current) clearTimeout(idleTimeoutTimerRef.current);
+
+            // Shift completed message from audio generation queue
+            if (pendingAudioMessageIdsRef.current.length > 0) {
+              pendingAudioMessageIdsRef.current.shift();
+            }
 
             processPcmQueue();
 
-            // Capture complete audio blob as standard WAV for replay & download
+            // Assemble continuous full-session WAV recording for download & replay
             if (allRecordedChunksRef.current.length > 0) {
               const wavBlob = pcmToWavBlob(allRecordedChunksRef.current, 24000, 1);
-              const totalPcmBytes = allRecordedChunksRef.current.reduce((sum, c) => sum + c.byteLength, 0);
+              const totalPcmBytes = allRecordedChunksRef.current.reduce(
+                (sum, c) => sum + c.byteLength,
+                0
+              );
               const exactDuration = totalPcmBytes / (24000 * 2);
 
-              console.log(
-                `[LiveVoice] Assembled full stream WAV audio blob. Size: ${wavBlob.size} bytes, exact duration: ${exactDuration.toFixed(2)}s, SampleRate: 24000Hz`
-              );
               if (recordedAudioUrlRef.current) {
                 URL.revokeObjectURL(recordedAudioUrlRef.current);
               }
@@ -1014,37 +869,35 @@ export function LiveStreamingStudio({
               setRecordedDuration(exactDuration);
             }
 
-            const ctx = audioContextRef.current;
-            const now = ctx ? ctx.currentTime : 0;
-            const isAudioStillPlaying =
-              activeSourcesRef.current.length > 0 ||
-              nextPlayTimeRef.current > now ||
-              rawChunkQueueRef.current.length > 0;
+            // If user explicitly initiated "End Session", check if audio is still playing
+            if (isEndingSessionRef.current) {
+              const ctx = audioContextRef.current;
+              const now = ctx ? ctx.currentTime : 0;
+              const isAudioStillPlaying =
+                activeSourcesRef.current.length > 0 ||
+                nextPlayTimeRef.current > now ||
+                rawChunkQueueRef.current.length > 0;
 
-            if (isAudioStillPlaying) {
-              const remainingSec = ctx ? Math.max(0, nextPlayTimeRef.current - now) : 0;
-              setConnectionStatus('finishing');
-              console.log(
-                `[LiveVoice] [Cleanup Deferred] WebSocket stream finished (isFinal received), but audio playback is still in progress. Deferring AudioContext cleanup until all scheduled buffers finish. nextPlayTimeRef=${nextPlayTimeRef.current.toFixed(4)}s, audioContext.currentTime=${now.toFixed(4)}s, remaining=${remainingSec.toFixed(4)}s, activeSources=${activeSourcesRef.current.length}`
-              );
-              addDiagnosticEvent(
-                'info',
-                `Stream ended on network (isFinal). Finishing playback (~${remainingSec.toFixed(2)}s remaining). Cleanup deferred.`
-              );
+              if (isAudioStillPlaying) {
+                const remainingSec = ctx ? Math.max(0, nextPlayTimeRef.current - now) : 0;
+                setConnectionStatus('finishing');
+                addDiagnosticEvent(
+                  'info',
+                  `Ending session: finishing playback (~${remainingSec.toFixed(2)}s remaining).`
+                );
 
-              if (completionCheckTimerRef.current) clearTimeout(completionCheckTimerRef.current);
-              const fallbackDelayMs = Math.max(600, Math.ceil(remainingSec * 1000) + 400);
-              completionCheckTimerRef.current = window.setTimeout(() => {
+                if (completionCheckTimerRef.current) clearTimeout(completionCheckTimerRef.current);
+                const fallbackDelayMs = Math.max(600, Math.ceil(remainingSec * 1000) + 400);
+                completionCheckTimerRef.current = window.setTimeout(() => {
+                  checkAndTriggerCompletion();
+                }, fallbackDelayMs);
+              } else {
                 checkAndTriggerCompletion();
-              }, fallbackDelayMs);
-            } else {
-              checkAndTriggerCompletion();
+              }
             }
           }
         } catch (parseErr) {
-          const errMsg = parseErr instanceof Error ? parseErr.message : String(parseErr);
-          addDiagnosticEvent('error', `Packet parse error: ${errMsg}`);
-          console.error('[LiveVoice] Failed to parse WebSocket packet:', parseErr);
+          console.error('[LiveVoice] WebSocket packet parse error:', parseErr);
         }
       };
 
@@ -1057,7 +910,7 @@ export function LiveStreamingStudio({
         }
         setConnectionStatus('error');
         setErrorMessage(
-          'Connection failed: WebSocket connection error. Please verify network connectivity, CORS/firewall settings, and your ElevenLabs API key.'
+          'Connection failed: WebSocket connection error. Please verify network connectivity and your ElevenLabs API key.'
         );
         cleanupLiveStream();
       };
@@ -1070,7 +923,6 @@ export function LiveStreamingStudio({
         }
         if (idleTimeoutTimerRef.current) clearTimeout(idleTimeoutTimerRef.current);
 
-        // Policy violation or forbidden (often 402 or key issue)
         if (evt.code === 1008 || evt.code === 4001 || evt.reason?.includes('402')) {
           setIsVoiceTierError(true);
           setErrorMessage(
@@ -1079,79 +931,168 @@ export function LiveStreamingStudio({
           setConnectionStatus('error');
           cleanupLiveStream();
         } else if (connectionStatus === 'connecting') {
-          // If closed prematurely during handshake / connection phase
           setConnectionStatus('error');
-          const reasonDetail = evt.reason ? ` - ${evt.reason}` : '';
           setErrorMessage(
-            `Connection failed: WebSocket closed prematurely during handshake (Code: ${evt.code}${reasonDetail}). Please verify your ElevenLabs API key status and permissions.`
+            `Connection failed: WebSocket closed prematurely during handshake (Code: ${evt.code}).`
           );
           cleanupLiveStream();
         } else {
-          // Check if audio playback is currently in progress
+          // If session was closed while audio still playing, defer finalization
           const ctx = audioContextRef.current;
           const now = ctx ? ctx.currentTime : 0;
-          const hasActivePlayback =
+          const isAudioStillPlaying =
             activeSourcesRef.current.length > 0 ||
             nextPlayTimeRef.current > now ||
-            isStreamFinalRef.current;
+            rawChunkQueueRef.current.length > 0;
 
-          if (hasActivePlayback) {
+          if (isAudioStillPlaying) {
             const remainingSec = ctx ? Math.max(0, nextPlayTimeRef.current - now) : 0;
-            console.log(
-              `[LiveVoice] [Cleanup Deferred] WebSocket onclose (code: ${evt.code}, reason: ${evt.reason || 'clean'}), but audio playback is still in progress. Deferring AudioContext cleanup until all scheduled buffers finish. nextPlayTimeRef=${nextPlayTimeRef.current.toFixed(4)}s, audioContext.currentTime=${now.toFixed(4)}s, remaining=${remainingSec.toFixed(4)}s, activeSources=${activeSourcesRef.current.length}`
-            );
             setConnectionStatus('finishing');
-            addDiagnosticEvent(
-              'info',
-              `WebSocket closed (${evt.code}). Audio still playing (~${remainingSec.toFixed(2)}s remaining). Cleanup deferred.`
-            );
             if (completionCheckTimerRef.current) clearTimeout(completionCheckTimerRef.current);
             const fallbackDelayMs = Math.max(600, Math.ceil(remainingSec * 1000) + 400);
             completionCheckTimerRef.current = window.setTimeout(() => {
               checkAndTriggerCompletion();
             }, fallbackDelayMs);
-          } else if (evt.code !== 1000) {
-            // Abnormal close during streaming without active audio
-            if (evt.reason?.toLowerCase().includes('timeout') || evt.code === 1006) {
-              setConnectionStatus('timeout');
-              setErrorMessage('ElevenLabs WebSocket closed (idle timeout or connection interrupted).');
-            } else {
-              setConnectionStatus('error');
-              setErrorMessage(`Connection closed unexpectedly (Code: ${evt.code}).`);
-            }
-            cleanupLiveStream();
           } else {
-            // Clean close with no active audio remaining
-            checkAndTriggerCompletion();
+            setConnectionStatus((prev) => (prev === 'finishing' ? 'completed' : prev));
+            cleanupLiveStream();
           }
         }
       };
-    } catch (wsInitErr) {
-      console.error('[LiveVoice] WebSocket initialization error:', wsInitErr);
-      if (connectionTimeoutTimerRef.current) {
-        clearTimeout(connectionTimeoutTimerRef.current);
-        connectionTimeoutTimerRef.current = null;
-      }
+    } catch (outerErr) {
+      console.error('[LiveVoice] Exception in startLiveSession:', outerErr);
+      const msg = outerErr instanceof Error ? outerErr.message : String(outerErr);
+      setErrorMessage(`Connection failed: Initialization exception: ${msg}`);
       setConnectionStatus('error');
-      setErrorMessage(
-        wsInitErr instanceof Error
-          ? `Connection failed: ${wsInitErr.message}`
-          : 'Connection failed: Failed to establish ElevenLabs WebSocket.'
-      );
       cleanupLiveStream();
     }
-  } catch (outerErr) {
-    console.error('[LiveVoice] Unhandled exception in startLiveStreaming:', outerErr);
-    if (connectionTimeoutTimerRef.current) {
-      clearTimeout(connectionTimeoutTimerRef.current);
-      connectionTimeoutTimerRef.current = null;
+  };
+
+  // Send New Text Message Anytime (even while speaking a previous message!)
+  const sendSessionMessage = (customText?: string) => {
+    const textToSend = (customText !== undefined ? customText : sessionInputText).trim();
+    if (!textToSend) return;
+
+    // If session is currently inactive or in timeout, start fresh session with this text
+    if (
+      connectionStatus === 'idle' ||
+      connectionStatus === 'completed' ||
+      connectionStatus === 'interrupted' ||
+      connectionStatus === 'error' ||
+      connectionStatus === 'timeout'
+    ) {
+      startLiveSession(textToSend);
+      setSessionInputText('');
+      return;
     }
-    const msg = outerErr instanceof Error ? outerErr.message : String(outerErr);
-    setErrorMessage(`Connection failed: Initialization exception: ${msg}`);
-    setConnectionStatus('error');
+
+    // Cancel any pending end-session request since the user is sending more dialogue
+    if (isEndingSessionRef.current) {
+      isEndingSessionRef.current = false;
+      if (completionCheckTimerRef.current) {
+        clearTimeout(completionCheckTimerRef.current);
+        completionCheckTimerRef.current = null;
+      }
+    }
+
+    // Create conversation feed entry
+    const newMsg: LiveSessionMessage = {
+      id: `msg-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`,
+      text: textToSend,
+      sentAt: Date.now(),
+      status: 'queued',
+    };
+
+    setMessages((prev) => [...prev, newMsg]);
+    pendingAudioMessageIdsRef.current.push(newMsg.id);
+    setSessionInputText('');
+
+    // Transmit over open WebSocket with flush: true (synthesizes immediately without closing stream)
+    if (wsRef.current && wsRef.current.readyState === WebSocket.OPEN) {
+      // Reset 20-second idle timer
+      if (idleTimeoutTimerRef.current) clearTimeout(idleTimeoutTimerRef.current);
+      idleTimeoutTimerRef.current = window.setTimeout(() => {
+        if (wsRef.current && wsRef.current.readyState === WebSocket.OPEN) {
+          setConnectionStatus('timeout');
+          setErrorMessage(
+            'ElevenLabs 20-Second Idle Timeout: The live connection paused after 20s of inactivity. Click "Reconnect" or send a message to resume.'
+          );
+          cleanupLiveStream();
+        }
+      }, 21000);
+
+      wsRef.current.send(JSON.stringify({ text: textToSend + ' ', flush: true }));
+      setConnectionStatus('streaming');
+      addDiagnosticEvent('info', `Sent text: "${textToSend.slice(0, 35)}..." (flush: true)`);
+      console.log(`[LiveVoice] Transmitted message to open live session: "${textToSend}"`);
+    } else {
+      console.warn('[LiveVoice] WebSocket not yet open when message sent; message queued in pipeline.');
+    }
+  };
+
+  // End Session (Gracefully closes after current and queued audio finishes playing)
+  const handleEndSession = useCallback(() => {
+    playTapSound();
+    console.log('[LiveVoice] handleEndSession requested');
+    isEndingSessionRef.current = true;
+
+    const ctx = audioContextRef.current;
+    const now = ctx ? ctx.currentTime : 0;
+    const isAudioPlaying =
+      activeSourcesRef.current.length > 0 ||
+      nextPlayTimeRef.current > now ||
+      rawChunkQueueRef.current.length > 0;
+
+    // Send EOS to ElevenLabs
+    if (wsRef.current && wsRef.current.readyState === WebSocket.OPEN) {
+      try {
+        wsRef.current.send(JSON.stringify({ text: '' }));
+      } catch {
+        // ignore
+      }
+    }
+
+    if (isAudioPlaying) {
+      setConnectionStatus('finishing');
+      const remainingSec = ctx ? Math.max(0, nextPlayTimeRef.current - now) : 0;
+      addDiagnosticEvent(
+        'info',
+        `End Session initiated. Playing out remaining queued audio (~${remainingSec.toFixed(2)}s)...`
+      );
+
+      if (completionCheckTimerRef.current) clearTimeout(completionCheckTimerRef.current);
+      const fallbackDelayMs = Math.max(600, Math.ceil(remainingSec * 1000) + 400);
+      completionCheckTimerRef.current = window.setTimeout(() => {
+        checkAndTriggerCompletion();
+      }, fallbackDelayMs);
+    } else {
+      cleanupLiveStream();
+      setConnectionStatus('completed');
+    }
+  }, [cleanupLiveStream, checkAndTriggerCompletion, addDiagnosticEvent]);
+
+  // Stop All Audio Now (Immediate Hard-Stop)
+  const handleHardStop = useCallback(() => {
+    playTapSound();
+    console.log('[LiveVoice] handleHardStop invoked');
     cleanupLiveStream();
-  }
-};
+    setConnectionStatus('interrupted');
+
+    // Finalize any recorded audio captured up to this point
+    if (allRecordedChunksRef.current.length > 0) {
+      const wavBlob = pcmToWavBlob(allRecordedChunksRef.current, 24000, 1);
+      if (recordedAudioUrlRef.current) {
+        URL.revokeObjectURL(recordedAudioUrlRef.current);
+      }
+      const url = URL.createObjectURL(wavBlob);
+      recordedAudioUrlRef.current = url;
+      setRecordedAudioUrl(url);
+
+      const totalPcmBytes = allRecordedChunksRef.current.reduce((sum, c) => sum + c.byteLength, 0);
+      const exactDuration = totalPcmBytes / (24000 * 2);
+      setRecordedDuration(exactDuration);
+    }
+  }, [cleanupLiveStream]);
 
   // Switch voice and retry helper for 402 recovery
   const handleRecoverVoice = (safeVoiceId: string) => {
@@ -1160,7 +1101,7 @@ export function LiveStreamingStudio({
     storage.saveCloudVoice(safeVoiceId);
     setIsVoiceTierError(false);
     setErrorMessage(null);
-    startLiveStreaming(safeVoiceId);
+    startLiveSession();
   };
 
   // Download recorded stream as lossless WAV
@@ -1170,7 +1111,7 @@ export function LiveStreamingStudio({
     const a = document.createElement('a');
     a.href = recordedAudioUrl;
     const cleanName = voiceName.replace(/\s+/g, '-').toLowerCase();
-    a.download = `elevenlabs-live-${cleanName}-${Date.now()}.wav`;
+    a.download = `elevenlabs-live-session-${cleanName}-${Date.now()}.wav`;
     document.body.appendChild(a);
     a.click();
     document.body.removeChild(a);
@@ -1194,18 +1135,16 @@ export function LiveStreamingStudio({
         el.currentTime = 0;
       }
       el.play()
-        .then(() => {
-          console.log(
-            `[LiveVoice] Recorded audio replay started. CurrentTime: ${el.currentTime}s, Duration: ${el.duration}s`
-          );
-          setIsRecordedPlaying(true);
-        })
-        .catch((err) => {
-          console.error('[LiveVoice] Recorded audio replay play() failed:', err);
-          setIsRecordedPlaying(false);
-        });
+        .then(() => setIsRecordedPlaying(true))
+        .catch(() => setIsRecordedPlaying(false));
     }
   };
+
+  const isSessionActive =
+    connectionStatus === 'session_ready' ||
+    connectionStatus === 'streaming' ||
+    connectionStatus === 'finishing' ||
+    connectionStatus === 'connecting';
 
   return (
     <div className="space-y-6 animate-fadeIn">
@@ -1219,7 +1158,7 @@ export function LiveStreamingStudio({
         totalBytes={totalBytes}
         timeToFirstChunkMs={timeToFirstChunkMs}
         streamDurationSec={streamDurationSec}
-        wordProgress={wordProgress}
+        wordProgress={null}
         volume={volume}
         isMuted={isMuted}
         onVolumeChange={setVolume}
@@ -1227,11 +1166,12 @@ export function LiveStreamingStudio({
           playTapSound();
           setIsMuted(!isMuted);
         }}
-        onStop={handleStopStream}
+        onStop={handleEndSession}
+        onHardStop={handleHardStop}
       />
 
       {/* Real-Time Live Audio Diagnostics HUD & Monospace Console Overlay */}
-      <LiveAudioDiagnosticsOverlay getSnapshot={getDiagnosticsSnapshot} defaultExpanded={true} />
+      <LiveAudioDiagnosticsOverlay getSnapshot={getDiagnosticsSnapshot} defaultExpanded={false} />
 
       {/* 20-Second Idle Timeout Warning Banner */}
       {connectionStatus === 'timeout' && (
@@ -1240,20 +1180,20 @@ export function LiveStreamingStudio({
             <Clock size={18} className="text-amber-400 shrink-0 mt-0.5" />
             <div className="space-y-1">
               <div className="font-semibold text-amber-300 text-sm">
-                WebSocket Stream Paused (20s Idle Timeout)
+                Live Session Paused (20s Inactivity Timeout)
               </div>
               <p className="text-slate-300 leading-relaxed text-[11px] sm:text-xs">
-                ElevenLabs automatically closes inactive streaming WebSocket channels after 20 seconds of silence to conserve API resources. You can resume at any time.
+                ElevenLabs automatically pauses idle WebSockets after 20 seconds of silence to conserve resources. You can resume anytime without losing your narration history.
               </p>
             </div>
           </div>
           <button
             type="button"
-            onClick={() => startLiveStreaming()}
+            onClick={() => startLiveSession()}
             className="px-3.5 py-1.5 rounded-lg bg-amber-500 hover:bg-amber-400 text-slate-950 font-semibold text-xs transition shadow shrink-0 cursor-pointer flex items-center gap-1.5"
           >
             <RefreshCw size={13} />
-            Reconnect &amp; Resume
+            <span>Reconnect Session</span>
           </button>
         </div>
       )}
@@ -1268,7 +1208,7 @@ export function LiveStreamingStudio({
                 ElevenLabs Free-Tier Streaming Restriction (402 Paid Plan Required)
               </div>
               <p className="text-xs text-amber-200/90 leading-relaxed">
-                Free-tier API accounts cannot stream community or library voices over WebSockets. Please switch to a verified free-tier premade voice (Sarah, George, Brian, Alice), or seamlessly switch to Microsoft Edge TTS.
+                Free-tier API accounts cannot stream community or library voices over WebSockets. Please switch to a verified free-tier premade voice (Sarah, George, Brian, Alice).
               </p>
             </div>
           </div>
@@ -1280,44 +1220,44 @@ export function LiveStreamingStudio({
               className="px-3.5 py-1.5 rounded-lg bg-amber-500 hover:bg-amber-400 text-slate-950 font-semibold text-xs transition shadow cursor-pointer flex items-center gap-1.5"
             >
               <Sparkles size={12} />
-              Switch to Sarah &amp; Stream
+              Switch to Sarah
             </button>
             <button
               type="button"
               onClick={() => handleRecoverVoice('JBFqnCBsd6RMkjVDRZzb')}
-              className="px-3 py-1.5 rounded-lg bg-slate-800 hover:bg-slate-700 text-amber-200 border border-amber-500/40 font-semibold text-xs transition cursor-pointer"
+              className="px-3.5 py-1.5 rounded-lg bg-slate-800 hover:bg-slate-700 text-amber-200 border border-amber-500/40 font-semibold text-xs transition cursor-pointer"
             >
               Switch to George
             </button>
             <button
               type="button"
               onClick={() => handleRecoverVoice('nPczCjzI2devNBz1zQrb')}
-              className="px-3 py-1.5 rounded-lg bg-slate-800 hover:bg-slate-700 text-amber-200 border border-amber-500/40 font-semibold text-xs transition cursor-pointer"
+              className="px-3.5 py-1.5 rounded-lg bg-slate-800 hover:bg-slate-700 text-amber-200 border border-amber-500/40 font-semibold text-xs transition cursor-pointer"
             >
               Switch to Brian
             </button>
             <button
               type="button"
               onClick={() => handleRecoverVoice('Xb7hH8MSUJpSbSDYk0k2')}
-              className="px-3 py-1.5 rounded-lg bg-slate-800 hover:bg-slate-700 text-amber-200 border border-amber-500/40 font-semibold text-xs transition cursor-pointer"
+              className="px-3.5 py-1.5 rounded-lg bg-slate-800 hover:bg-slate-700 text-amber-200 border border-amber-500/40 font-semibold text-xs transition cursor-pointer"
             >
               Switch to Alice
             </button>
             <button
               type="button"
               onClick={onFallbackToEdge}
-              className="px-3 py-1.5 rounded-lg bg-cyan-600 hover:bg-cyan-500 text-white font-semibold text-xs transition shadow cursor-pointer flex items-center gap-1.5"
+              className="px-3.5 py-1.5 rounded-lg bg-cyan-600 hover:bg-cyan-500 text-white font-semibold text-xs transition shadow cursor-pointer flex items-center gap-1.5"
             >
               <Mic size={13} />
-              Fall Back to Microsoft Edge TTS
+              Fall Back to Edge TTS
             </button>
           </div>
         </div>
       )}
 
-      {/* Prominent On-Screen Error Banner / Toast */}
+      {/* Connection Error Banner */}
       {errorMessage && !isVoiceTierError && (
-        <div className="bg-rose-950/80 border-2 border-rose-500/80 rounded-2xl p-4 sm:p-5 text-rose-100 text-xs sm:text-sm space-y-3 animate-fadeIn shadow-2xl shadow-rose-950/60 backdrop-blur-md">
+        <div className="bg-rose-950/80 border-2 border-rose-500/80 rounded-2xl p-4 sm:p-5 text-rose-100 text-xs sm:text-sm space-y-3 animate-fadeIn shadow-2xl backdrop-blur-md">
           <div className="flex items-start justify-between gap-3">
             <div className="flex items-start gap-3">
               <div className="w-8 h-8 rounded-xl bg-rose-500/20 border border-rose-500/40 flex items-center justify-center shrink-0 mt-0.5">
@@ -1325,13 +1265,13 @@ export function LiveStreamingStudio({
               </div>
               <div className="space-y-1">
                 <div className="font-bold text-sm sm:text-base text-rose-200 flex items-center gap-2">
-                  <span>Stream Connection Failed</span>
+                  <span>Session Error</span>
                   <span className="px-2 py-0.5 text-[10px] font-mono uppercase rounded-full bg-rose-500/30 text-rose-300 border border-rose-500/40">
                     Live WebSocket
                   </span>
                 </div>
                 <p className="text-xs text-rose-300/90 font-medium">
-                  The live streaming connection encountered an issue or timed out.
+                  {errorMessage}
                 </p>
               </div>
             </div>
@@ -1349,29 +1289,18 @@ export function LiveStreamingStudio({
             </button>
           </div>
 
-          {/* Plain Text Error Display */}
-          <div className="bg-slate-950/80 border border-rose-500/30 rounded-xl p-3 font-mono text-xs text-rose-200 break-words leading-relaxed select-all">
-            <div className="text-[10px] uppercase font-bold text-rose-400/80 mb-1 flex items-center gap-1.5">
-              <Activity size={12} />
-              Error Details (Plain Text)
-            </div>
-            {errorMessage}
-          </div>
-
-          {/* Quick Actions & Recovery */}
           <div className="flex flex-wrap items-center gap-2.5 pt-1">
             <button
               type="button"
               onClick={() => {
                 playTapSound();
-                startLiveStreaming();
+                startLiveSession();
               }}
-              className="px-4 py-2 rounded-xl bg-rose-600 hover:bg-rose-500 text-white font-semibold text-xs transition shadow-md shadow-rose-600/30 cursor-pointer flex items-center gap-1.5 active:scale-98"
+              className="px-4 py-2 rounded-xl bg-rose-600 hover:bg-rose-500 text-white font-semibold text-xs transition shadow-md cursor-pointer flex items-center gap-1.5"
             >
               <RefreshCw size={13} />
-              <span>Retry Connection</span>
+              <span>Retry Session</span>
             </button>
-
             <button
               type="button"
               onClick={() => {
@@ -1393,27 +1322,15 @@ export function LiveStreamingStudio({
               ) : (
                 <>
                   <Copy size={13} />
-                  <span>Copy Error Text</span>
+                  <span>Copy Error</span>
                 </>
               )}
-            </button>
-
-            <button
-              type="button"
-              onClick={() => {
-                playTapSound();
-                onFallbackToEdge();
-              }}
-              className="px-3.5 py-2 rounded-xl bg-cyan-950 hover:bg-cyan-900 text-cyan-200 border border-cyan-500/40 font-semibold text-xs transition cursor-pointer flex items-center gap-1.5"
-            >
-              <Mic size={13} />
-              <span>Switch to Edge TTS</span>
             </button>
           </div>
         </div>
       )}
 
-      {/* Voice Model Selector */}
+      {/* Voice Model Selector & Config */}
       <div className="space-y-2">
         <div className="flex items-center justify-between">
           <label className="block text-xs font-mono font-semibold text-slate-300 uppercase tracking-wider">
@@ -1433,203 +1350,54 @@ export function LiveStreamingStudio({
         />
       </div>
 
-      {/* Stream Script & Sample Presets */}
-      <div className="space-y-3">
-        <div className="flex items-center justify-between flex-wrap gap-2">
-          <label className="block text-xs font-mono font-semibold text-slate-300 uppercase tracking-wider">
-            Live Spoken Dialogue
-          </label>
-          <div className="flex items-center gap-2">
-            <span className="text-[11px] font-mono text-slate-500">
-              {text.length} chars • {text.trim().split(/\s+/).filter(Boolean).length} words
-            </span>
-          </div>
-        </div>
+      {/* Persistent Conversation-Style Feed & Instant Input Bar */}
+      <LiveSessionFeed
+        messages={messages}
+        currentInput={sessionInputText}
+        onInputChange={setSessionInputText}
+        onSendMessage={(custom) => sendSessionMessage(custom)}
+        isSessionActive={isSessionActive}
+        isConnecting={connectionStatus === 'connecting'}
+        connectionStatus={connectionStatus}
+        onStartSession={() => startLiveSession()}
+        onEndSession={handleEndSession}
+        onHardStop={handleHardStop}
+        samplePrompts={LIVE_SAMPLE_PROMPTS}
+      />
 
-        {/* Quick Live Presets */}
-        <div className="flex flex-wrap items-center gap-2">
-          <span className="text-[11px] font-mono text-slate-400">Presets:</span>
-          {LIVE_SAMPLE_PROMPTS.map((sample, idx) => (
-            <button
-              key={idx}
-              type="button"
-              onClick={() => {
-                playTapSound();
-                setText(sample.text);
-                if (errorMessage) setErrorMessage(null);
-              }}
-              className="text-xs bg-slate-800/80 hover:bg-slate-700 text-purple-200 hover:text-white px-2.5 py-1.5 rounded-lg border border-slate-700/60 transition truncate max-w-[190px] cursor-pointer"
-              title={sample.text}
-            >
-              {sample.title}
-            </button>
-          ))}
-        </div>
-
-        <textarea
-          value={text}
-          onChange={(e) => {
-            setText(e.target.value);
-            if (errorMessage) setErrorMessage(null);
-          }}
-          placeholder="Enter live text dialogue to stream across WebSocket..."
-          rows={4}
-          className="w-full bg-slate-950 border border-slate-700/80 rounded-xl p-4 text-slate-100 text-sm focus:outline-none focus:border-purple-500 focus:ring-1 focus:ring-purple-500/50 transition resize-y shadow-inner leading-relaxed font-normal"
-        />
-      </div>
-
-      {/* Stream Transmission Mode & Tuning Rack */}
+      {/* Voice Tuning Rack & Session Information */}
       <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-        {/* Stream Transmission Mode Card */}
+        {/* Session Details Card */}
         <div className="bg-slate-950/70 border border-slate-800 rounded-xl p-4 space-y-3">
           <div className="flex items-center justify-between">
             <span className="text-xs font-mono font-semibold text-slate-300 uppercase tracking-wider flex items-center gap-1.5">
-              <Zap size={13} className="text-purple-400" />
-              Stream Transmission Mode
+              <Layers size={13} className="text-purple-400" />
+              Live Pipeline Architecture
+            </span>
+            <span className="text-[10px] font-mono px-2 py-0.5 rounded-full bg-cyan-500/10 text-cyan-300 border border-cyan-500/30">
+              24 kHz Studio PCM
             </span>
           </div>
-          <div className="grid grid-cols-2 gap-2">
-            <button
-              type="button"
-              onClick={() => {
-                playTapSound();
-                setStreamMode('instant');
-              }}
-              className={`p-2.5 rounded-xl border text-left transition cursor-pointer ${
-                streamMode === 'instant'
-                  ? 'bg-purple-600/20 border-purple-500/50 text-purple-200'
-                  : 'bg-slate-900/60 border-slate-800 text-slate-400 hover:text-slate-300'
-              }`}
-            >
-              <div className="font-semibold text-xs flex items-center gap-1.5">
-                <Radio size={12} className={streamMode === 'instant' ? 'text-purple-400' : ''} />
-                Instant Flush
-              </div>
-              <p className="text-[10px] text-slate-400 mt-1 leading-normal">
-                Lowest latency (~250ms TTFB). Sends script immediately.
-              </p>
-            </button>
-
-            <button
-              type="button"
-              onClick={() => {
-                playTapSound();
-                setStreamMode('llm_simulation');
-              }}
-              className={`p-2.5 rounded-xl border text-left transition cursor-pointer ${
-                streamMode === 'llm_simulation'
-                  ? 'bg-cyan-600/20 border-cyan-500/50 text-cyan-200'
-                  : 'bg-slate-900/60 border-slate-800 text-slate-400 hover:text-slate-300'
-              }`}
-            >
-              <div className="font-semibold text-xs flex items-center gap-1.5">
-                <Mic size={12} className={streamMode === 'llm_simulation' ? 'text-cyan-400' : ''} />
-                LLM Simulation
-              </div>
-              <p className="text-[10px] text-slate-400 mt-1 leading-normal">
-                Streams word tokens progressively as an AI agent speaks.
-              </p>
-            </button>
+          <div className="space-y-2 text-xs text-slate-300 leading-relaxed">
+            <p>
+              • <strong className="text-slate-100">Persistent WebSocket:</strong> Stays open across multiple messages.
+            </p>
+            <p>
+              • <strong className="text-slate-100">Gapless Audio Queue:</strong> Messages sent while speech is playing queue automatically in the AudioContext timeline without cutoffs.
+            </p>
+            <p>
+              • <strong className="text-slate-100">Graceful End:</strong> Ending the session lets queued audio finish speaking naturally before teardown.
+            </p>
           </div>
         </div>
 
-        {/* Studio Audio Tuning Rack */}
+        {/* Studio Audio Tuning Controls */}
         <div className="bg-slate-950/70 border border-slate-800 rounded-xl p-4">
           <StudioAudioControls settings={settings} onChangeSettings={setSettings} />
         </div>
       </div>
 
-      {/* Main Action Bar */}
-      <div className="flex flex-wrap items-center justify-between gap-4 pt-2">
-        <div className="flex flex-wrap items-center gap-3">
-          {connectionStatus === 'connecting' ? (
-            <div className="flex items-center gap-2">
-              <button
-                type="button"
-                disabled
-                className="px-6 py-3.5 rounded-xl bg-amber-600/80 text-white font-semibold text-sm shadow-xl shadow-amber-600/20 transition flex items-center gap-2.5 cursor-wait"
-              >
-                <RefreshCw size={16} className="animate-spin" />
-                <span>Connecting (up to 15s)...</span>
-              </button>
-              <button
-                type="button"
-                onClick={handleStopStream}
-                className="px-4 py-3.5 rounded-xl bg-slate-800 hover:bg-slate-700 text-slate-300 hover:text-white border border-slate-700 font-semibold text-sm transition cursor-pointer"
-                title="Cancel connection attempt"
-              >
-                Cancel
-              </button>
-            </div>
-          ) : (connectionStatus === 'streaming' || connectionStatus === 'finishing') ? (
-            <div className="flex items-center gap-2">
-              <button
-                type="button"
-                onClick={handleStopStream}
-                className="px-6 py-3.5 rounded-xl bg-rose-600 hover:bg-rose-500 text-white font-semibold text-sm shadow-xl shadow-rose-600/30 transition flex items-center gap-2.5 cursor-pointer transform active:scale-98 animate-pulse"
-              >
-                <Square size={16} className="fill-current" />
-                <span>Stop Streaming</span>
-              </button>
-              {connectionStatus === 'finishing' && (
-                <span className="text-xs font-mono text-purple-300 bg-purple-500/15 border border-purple-500/35 px-3 py-2.5 rounded-xl flex items-center gap-1.5 animate-pulse">
-                  <Activity size={13} className="text-purple-400 animate-spin" />
-                  <span>Finishing playback...</span>
-                </span>
-              )}
-            </div>
-          ) : connectionStatus === 'error' ? (
-            <button
-              type="button"
-              onClick={() => startLiveStreaming()}
-              disabled={!text.trim()}
-              className="px-6 py-3.5 rounded-xl bg-gradient-to-r from-rose-600 via-purple-600 to-indigo-600 text-white font-semibold text-sm shadow-xl shadow-rose-500/20 hover:from-rose-500 hover:to-indigo-500 disabled:opacity-50 disabled:cursor-not-allowed transition flex items-center gap-2.5 cursor-pointer transform active:scale-98"
-            >
-              <RefreshCw size={16} />
-              <span>Retry Live Stream</span>
-            </button>
-          ) : (
-            <button
-              type="button"
-              onClick={() => startLiveStreaming()}
-              disabled={!text.trim()}
-              className="px-6 py-3.5 rounded-xl bg-gradient-to-r from-rose-600 via-purple-600 to-indigo-600 text-white font-semibold text-sm shadow-xl shadow-rose-500/20 hover:from-rose-500 hover:to-indigo-500 disabled:opacity-50 disabled:cursor-not-allowed transition flex items-center gap-2.5 cursor-pointer transform active:scale-98"
-            >
-              <Radio size={18} className="animate-pulse" />
-              <span>Start Live Stream</span>
-            </button>
-          )}
-
-          {recordedAudioUrl && (
-            <button
-              type="button"
-              onClick={handleDownloadRecorded}
-              className="px-5 py-3.5 rounded-xl bg-slate-800 hover:bg-slate-700 border border-slate-700 text-purple-300 hover:text-white font-semibold text-sm transition flex items-center gap-2 cursor-pointer shadow-md"
-              title="Download full streamed recording as lossless WAV"
-            >
-              <Download size={16} />
-              <span>Download Stream (WAV)</span>
-            </button>
-          )}
-        </div>
-
-        {/* Clear dialogue action */}
-        {text && (
-          <button
-            type="button"
-            onClick={() => {
-              playTapSound();
-              setText('');
-              setErrorMessage(null);
-            }}
-            className="text-xs text-slate-400 hover:text-slate-200 transition px-2 py-1 rounded hover:bg-slate-800 cursor-pointer"
-          >
-            Clear dialogue
-          </button>
-        )}
-      </div>
-
-      {/* Stream Post-Generation Playback Bar (When recording exists) */}
+      {/* Session Recording Audio Player & WAV Download Bar */}
       {recordedAudioUrl && (
         <div className="bg-slate-950/90 border border-purple-500/30 rounded-xl p-4 flex items-center justify-between flex-wrap gap-4 shadow-lg animate-fadeIn">
           <audio
@@ -1638,7 +1406,6 @@ export function LiveStreamingStudio({
             preload="auto"
             onLoadedMetadata={(e) => {
               const dur = e.currentTarget.duration;
-              console.log('[LiveVoice] Recorded audio loadedmetadata event. Duration:', dur);
               if (!isNaN(dur) && isFinite(dur) && dur > 0) {
                 setRecordedDuration(dur);
               }
@@ -1646,9 +1413,6 @@ export function LiveStreamingStudio({
             onPlay={() => setIsRecordedPlaying(true)}
             onPause={() => setIsRecordedPlaying(false)}
             onEnded={() => setIsRecordedPlaying(false)}
-            onError={(e) => {
-              console.error('[LiveVoice] Recorded audio element error:', e.currentTarget.error);
-            }}
             className="hidden"
           />
           <div className="flex items-center gap-3">
@@ -1656,19 +1420,19 @@ export function LiveStreamingStudio({
               type="button"
               onClick={handleToggleRecordedPlayback}
               className="w-10 h-10 rounded-xl bg-purple-600 hover:bg-purple-500 text-white flex items-center justify-center transition shadow cursor-pointer"
-              title={isRecordedPlaying ? 'Pause Replay' : 'Play Recorded Audio'}
+              title={isRecordedPlaying ? 'Pause Replay' : 'Play Full Session Audio'}
             >
               {isRecordedPlaying ? <Pause size={18} /> : <Play size={18} className="ml-0.5" />}
             </button>
             <div className="space-y-0.5">
               <div className="text-xs font-semibold text-slate-200 flex items-center gap-1.5">
-                <span>Recorded Stream Playback</span>
+                <span>Session Recording (Complete WAV)</span>
                 <span className="text-[10px] font-mono px-1.5 py-0.2 rounded bg-purple-500/20 text-purple-300 border border-purple-500/40">
                   {voiceName}
                 </span>
               </div>
               <p className="text-[11px] font-mono text-slate-400">
-                {chunksCount} audio chunks captured • 24 kHz Lossless WAV • Duration: ~{recordedDuration.toFixed(1)}s
+                {chunksCount} audio chunks • 24 kHz Lossless WAV • Duration: ~{recordedDuration.toFixed(1)}s
               </p>
             </div>
           </div>
@@ -1677,10 +1441,11 @@ export function LiveStreamingStudio({
             <button
               type="button"
               onClick={handleDownloadRecorded}
-              className="px-3.5 py-2 rounded-lg bg-slate-800 hover:bg-slate-700 text-purple-200 text-xs font-semibold flex items-center gap-1.5 transition cursor-pointer border border-slate-700"
+              className="px-3.5 py-2 rounded-lg bg-slate-800 hover:bg-slate-700 text-purple-200 hover:text-white text-xs font-semibold flex items-center gap-1.5 transition cursor-pointer border border-slate-700 shadow-sm"
+              title="Download entire session audio as 24kHz lossless WAV"
             >
               <Download size={13} />
-              <span>Save MP3</span>
+              <span>Download Session WAV</span>
             </button>
           </div>
         </div>

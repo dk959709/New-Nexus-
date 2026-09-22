@@ -15,6 +15,7 @@ import {
 export type LiveConnectionState =
   | 'idle'
   | 'connecting'
+  | 'session_ready'
   | 'streaming'
   | 'finishing'
   | 'completed'
@@ -37,6 +38,7 @@ interface LiveWaveformVisualizerProps {
   onVolumeChange: (vol: number) => void;
   onToggleMute: () => void;
   onStop: () => void;
+  onHardStop?: () => void;
 }
 
 export function LiveWaveformVisualizer({
@@ -199,7 +201,7 @@ export function LiveWaveformVisualizer({
 
         // Gradient bar
         const barGrad = ctx.createLinearGradient(x, midY - barHeight, x, midY + barHeight * 0.3);
-        if (status === 'streaming' || status === 'finishing') {
+        if (status === 'streaming' || status === 'finishing' || status === 'session_ready') {
           barGrad.addColorStop(0, '#c084fc'); // purple-400
           barGrad.addColorStop(0.5, '#a855f7'); // purple-500
           barGrad.addColorStop(1, '#06b6d4'); // cyan-500
@@ -225,12 +227,12 @@ export function LiveWaveformVisualizer({
 
         // Floating peak cap
         const peakY = midY - peaksRef.current[i] - 3;
-        ctx.fillStyle = status === 'streaming' || status === 'finishing' ? '#38bdf8' : '#cbd5e1';
+        ctx.fillStyle = status === 'streaming' || status === 'finishing' || status === 'session_ready' ? '#38bdf8' : '#cbd5e1';
         ctx.fillRect(x, peakY, barWidth, 1.5);
       }
 
       // Draw Center Baseline Horizon
-      ctx.strokeStyle = status === 'streaming' || status === 'finishing' ? 'rgba(168, 85, 247, 0.4)' : 'rgba(148, 163, 184, 0.2)';
+      ctx.strokeStyle = status === 'streaming' || status === 'finishing' || status === 'session_ready' ? 'rgba(168, 85, 247, 0.4)' : 'rgba(148, 163, 184, 0.2)';
       ctx.lineWidth = 1;
       ctx.beginPath();
       ctx.moveTo(marginX, midY);
@@ -282,6 +284,14 @@ export function LiveWaveformVisualizer({
             </div>
           )}
 
+          {status === 'session_ready' && (
+            <div className="flex items-center gap-2 px-3 py-1 rounded-full bg-emerald-500/20 border border-emerald-500/50 text-emerald-300 text-xs font-semibold shadow-sm">
+              <span className="w-2 h-2 rounded-full bg-emerald-400 animate-pulse inline-block" />
+              <Radio size={13} className="text-emerald-400" />
+              <span className="font-mono tracking-wide">LIVE SESSION READY</span>
+            </div>
+          )}
+
           {status === 'finishing' && (
             <div className="flex items-center gap-2 px-3 py-1 rounded-full bg-purple-500/25 border border-purple-500/50 text-purple-200 text-xs font-semibold shadow-sm animate-pulse">
               <span className="w-2 h-2 rounded-full bg-purple-400 animate-ping inline-block" />
@@ -301,21 +311,21 @@ export function LiveWaveformVisualizer({
           {status === 'completed' && (
             <div className="flex items-center gap-1.5 px-3 py-1 rounded-full bg-emerald-500/20 border border-emerald-500/40 text-emerald-300 text-xs font-semibold">
               <CheckCircle2 size={13} className="text-emerald-400" />
-              <span className="font-mono tracking-wide">STREAM COMPLETE</span>
+              <span className="font-mono tracking-wide">SESSION ENDED</span>
             </div>
           )}
 
           {status === 'interrupted' && (
             <div className="flex items-center gap-1.5 px-3 py-1 rounded-full bg-slate-800 border border-slate-700 text-slate-300 text-xs font-semibold">
               <Square size={12} className="text-slate-400" />
-              <span className="font-mono tracking-wide">STREAM STOPPED</span>
+              <span className="font-mono tracking-wide">AUDIO STOPPED</span>
             </div>
           )}
 
           {status === 'timeout' && (
             <div className="flex items-center gap-1.5 px-3 py-1 rounded-full bg-amber-500/20 border border-amber-500/40 text-amber-300 text-xs font-semibold">
               <Clock size={13} className="text-amber-400" />
-              <span className="font-mono tracking-wide">STREAM IDLE TIMEOUT (20s)</span>
+              <span className="font-mono tracking-wide">SESSION IDLE TIMEOUT (20s)</span>
             </div>
           )}
 
@@ -329,7 +339,7 @@ export function LiveWaveformVisualizer({
           {status === 'idle' && (
             <div className="flex items-center gap-2 px-3 py-1 rounded-full bg-slate-900 border border-slate-800 text-slate-400 text-xs font-semibold">
               <span className="w-2 h-2 rounded-full bg-slate-500 inline-block" />
-              <span className="font-mono tracking-wide">STANDBY • WEBSOCKET READY</span>
+              <span className="font-mono tracking-wide">STANDBY • READY TO START</span>
             </div>
           )}
 
@@ -341,16 +351,30 @@ export function LiveWaveformVisualizer({
           </span>
         </div>
 
-        {/* Real-time Stop Button when active */}
-        {(status === 'streaming' || status === 'connecting' || status === 'finishing') && (
-          <button
-            type="button"
-            onClick={onStop}
-            className="px-3.5 py-1.5 rounded-xl bg-rose-500 hover:bg-rose-600 text-white font-semibold text-xs transition shadow-md flex items-center gap-1.5 cursor-pointer transform active:scale-95 animate-fadeIn"
-          >
-            <Square size={12} className="fill-current" />
-            <span>Stop Streaming</span>
-          </button>
+        {/* Real-time Session Control Buttons when active */}
+        {(status === 'session_ready' || status === 'streaming' || status === 'connecting' || status === 'finishing') && (
+          <div className="flex items-center gap-2 animate-fadeIn">
+            {onHardStop && (status === 'streaming' || status === 'finishing') && (
+              <button
+                type="button"
+                onClick={onHardStop}
+                className="px-3 py-1.5 rounded-xl bg-slate-800 hover:bg-slate-700 border border-slate-700 text-rose-300 hover:text-white font-semibold text-xs transition shadow-md flex items-center gap-1.5 cursor-pointer transform active:scale-95"
+                title="Immediately stop all currently playing audio"
+              >
+                <Square size={11} className="fill-current" />
+                <span>Stop Audio</span>
+              </button>
+            )}
+            <button
+              type="button"
+              onClick={onStop}
+              className="px-3.5 py-1.5 rounded-xl bg-rose-600 hover:bg-rose-500 text-white font-semibold text-xs transition shadow-md flex items-center gap-1.5 cursor-pointer transform active:scale-95"
+              title="Gracefully end live session after audio completes"
+            >
+              <Square size={12} className="fill-current" />
+              <span>End Session</span>
+            </button>
+          </div>
         )}
       </div>
 
