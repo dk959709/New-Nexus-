@@ -103,6 +103,7 @@ export function LiveStreamingStudio({
 
   // Completed audio capture for replay and download
   const [recordedAudioUrl, setRecordedAudioUrl] = useState<string | null>(null);
+  const recordedAudioUrlRef = useRef<string | null>(null);
   const [recordedDuration, setRecordedDuration] = useState<number>(0);
   const recordedAudioRef = useRef<HTMLAudioElement | null>(null);
   const [isRecordedPlaying, setIsRecordedPlaying] = useState(false);
@@ -128,6 +129,7 @@ export function LiveStreamingStudio({
   const idleTimeoutTimerRef = useRef<number | null>(null);
   const connectionTimeoutTimerRef = useRef<number | null>(null);
   const simulationIntervalRef = useRef<number | null>(null);
+  const completionCheckTimerRef = useRef<number | null>(null);
 
   // Anti-silence keep-alive and heartbeat refs (prevent mobile Chrome auto-suspending on inter-chunk gaps)
   const keepAliveSourceRef = useRef<AudioBufferSourceNode | null>(null);
@@ -212,6 +214,10 @@ export function LiveStreamingStudio({
       clearInterval(simulationIntervalRef.current);
       simulationIntervalRef.current = null;
     }
+    if (completionCheckTimerRef.current) {
+      clearTimeout(completionCheckTimerRef.current);
+      completionCheckTimerRef.current = null;
+    }
 
     // Close WebSocket cleanly
     if (wsRef.current) {
@@ -246,18 +252,54 @@ export function LiveStreamingStudio({
     setIsPlaying(false);
   }, [stopKeepAliveSource]);
 
-  // Ensure cleanup on unmount
+  // Natural playback completion checker: only triggers once all scheduled audio has finished playing
+  const checkAndTriggerCompletion = useCallback(() => {
+    const ctx = audioContextRef.current;
+    const now = ctx ? ctx.currentTime : 0;
+    const isPastNextPlayTime = !ctx || nextPlayTimeRef.current <= now + 0.05;
+    const noActiveSources = activeSourcesRef.current.length === 0;
+    const noQueuedChunks = rawChunkQueueRef.current.length === 0;
+
+    if (
+      isStreamFinalRef.current &&
+      noQueuedChunks &&
+      (noActiveSources || isPastNextPlayTime)
+    ) {
+      console.log(
+        `[LiveVoice] [Cleanup Executed] All scheduled audio has finished playing. Executing final cleanup. nextPlayTimeRef=${nextPlayTimeRef.current.toFixed(4)}s, audioContext.currentTime=${(ctx ? ctx.currentTime.toFixed(4) : 'N/A')}s.`
+      );
+      setIsPlaying(false);
+      setConnectionStatus('completed');
+      stopKeepAliveSource();
+      if (durationTimerRef.current) {
+        clearInterval(durationTimerRef.current);
+        durationTimerRef.current = null;
+      }
+      if (idleTimeoutTimerRef.current) {
+        clearTimeout(idleTimeoutTimerRef.current);
+        idleTimeoutTimerRef.current = null;
+      }
+      if (completionCheckTimerRef.current) {
+        clearTimeout(completionCheckTimerRef.current);
+        completionCheckTimerRef.current = null;
+      }
+      addDiagnosticEvent('info', 'All scheduled live stream audio finished playing');
+    }
+  }, [stopKeepAliveSource, addDiagnosticEvent]);
+
+  // Ensure cleanup on genuine unmount only (not on recordedAudioUrl changes!)
   useEffect(() => {
     return () => {
       cleanupLiveStream();
-      if (recordedAudioUrl) {
-        URL.revokeObjectURL(recordedAudioUrl);
+      if (recordedAudioUrlRef.current) {
+        URL.revokeObjectURL(recordedAudioUrlRef.current);
+        recordedAudioUrlRef.current = null;
       }
       if (audioContextRef.current && audioContextRef.current.state !== 'closed') {
         audioContextRef.current.close().catch(() => {});
       }
     };
-  }, [cleanupLiveStream, recordedAudioUrl]);
+  }, [cleanupLiveStream]);
 
   // Volume & Mute synchronizer
   useEffect(() => {
@@ -295,7 +337,11 @@ export function LiveStreamingStudio({
     if (allRecordedChunksRef.current.length > 0) {
       const wavBlob = pcmToWavBlob(allRecordedChunksRef.current, 24000, 1);
       console.log(`[LiveVoice] Interrupted stream captured ${allRecordedChunksRef.current.length} PCM chunks, WAV blob size: ${wavBlob.size} bytes`);
+      if (recordedAudioUrlRef.current) {
+        URL.revokeObjectURL(recordedAudioUrlRef.current);
+      }
       const url = URL.createObjectURL(wavBlob);
+      recordedAudioUrlRef.current = url;
       setRecordedAudioUrl(url);
 
       const totalPcmBytes = allRecordedChunksRef.current.reduce((sum, c) => sum + c.byteLength, 0);
@@ -311,6 +357,13 @@ export function LiveStreamingStudio({
   const startLiveStreaming = async (customVoiceId?: string) => {
     playTapSound();
     cleanupLiveStream();
+
+    if (recordedAudioUrlRef.current) {
+      URL.revokeObjectURL(recordedAudioUrlRef.current);
+      recordedAudioUrlRef.current = null;
+    }
+    setRecordedAudioUrl(null);
+    setRecordedDuration(0);
 
     try {
       const targetVoiceId = (customVoiceId || voiceId || 'EXAVITQu4vr4xnSDxMaL').trim();
@@ -634,16 +687,8 @@ export function LiveStreamingStudio({
           `[LiveVoice] AudioBufferSourceNode ended. Remaining active: ${activeSourcesRef.current.length}, isFinal: ${isStreamFinalRef.current}`
         );
 
-        if (
-          activeSourcesRef.current.length === 0 &&
-          isStreamFinalRef.current &&
-          rawChunkQueueRef.current.length === 0
-        ) {
-          console.log('[LiveVoice] All scheduled live stream PCM audio finished playing.');
-          setIsPlaying(false);
-          setConnectionStatus('completed');
-          stopKeepAliveSource();
-          addDiagnosticEvent('info', 'All scheduled live stream audio finished playing');
+        if (isStreamFinalRef.current) {
+          checkAndTriggerCompletion();
         }
       };
     };
@@ -960,9 +1005,40 @@ export function LiveStreamingStudio({
               console.log(
                 `[LiveVoice] Assembled full stream WAV audio blob. Size: ${wavBlob.size} bytes, exact duration: ${exactDuration.toFixed(2)}s, SampleRate: 24000Hz`
               );
+              if (recordedAudioUrlRef.current) {
+                URL.revokeObjectURL(recordedAudioUrlRef.current);
+              }
               const url = URL.createObjectURL(wavBlob);
+              recordedAudioUrlRef.current = url;
               setRecordedAudioUrl(url);
               setRecordedDuration(exactDuration);
+            }
+
+            const ctx = audioContextRef.current;
+            const now = ctx ? ctx.currentTime : 0;
+            const isAudioStillPlaying =
+              activeSourcesRef.current.length > 0 ||
+              nextPlayTimeRef.current > now ||
+              rawChunkQueueRef.current.length > 0;
+
+            if (isAudioStillPlaying) {
+              const remainingSec = ctx ? Math.max(0, nextPlayTimeRef.current - now) : 0;
+              setConnectionStatus('finishing');
+              console.log(
+                `[LiveVoice] [Cleanup Deferred] WebSocket stream finished (isFinal received), but audio playback is still in progress. Deferring AudioContext cleanup until all scheduled buffers finish. nextPlayTimeRef=${nextPlayTimeRef.current.toFixed(4)}s, audioContext.currentTime=${now.toFixed(4)}s, remaining=${remainingSec.toFixed(4)}s, activeSources=${activeSourcesRef.current.length}`
+              );
+              addDiagnosticEvent(
+                'info',
+                `Stream ended on network (isFinal). Finishing playback (~${remainingSec.toFixed(2)}s remaining). Cleanup deferred.`
+              );
+
+              if (completionCheckTimerRef.current) clearTimeout(completionCheckTimerRef.current);
+              const fallbackDelayMs = Math.max(600, Math.ceil(remainingSec * 1000) + 400);
+              completionCheckTimerRef.current = window.setTimeout(() => {
+                checkAndTriggerCompletion();
+              }, fallbackDelayMs);
+            } else {
+              checkAndTriggerCompletion();
             }
           }
         } catch (parseErr) {
@@ -1002,21 +1078,51 @@ export function LiveStreamingStudio({
           );
           setConnectionStatus('error');
           cleanupLiveStream();
-        } else if (evt.code !== 1000) {
+        } else if (connectionStatus === 'connecting') {
           // If closed prematurely during handshake / connection phase
-          if (connectionStatus === 'connecting') {
-            setConnectionStatus('error');
-            const reasonDetail = evt.reason ? ` - ${evt.reason}` : '';
-            setErrorMessage(
-              `Connection failed: WebSocket closed prematurely during handshake (Code: ${evt.code}${reasonDetail}). Please verify your ElevenLabs API key status and permissions.`
+          setConnectionStatus('error');
+          const reasonDetail = evt.reason ? ` - ${evt.reason}` : '';
+          setErrorMessage(
+            `Connection failed: WebSocket closed prematurely during handshake (Code: ${evt.code}${reasonDetail}). Please verify your ElevenLabs API key status and permissions.`
+          );
+          cleanupLiveStream();
+        } else {
+          // Check if audio playback is currently in progress
+          const ctx = audioContextRef.current;
+          const now = ctx ? ctx.currentTime : 0;
+          const hasActivePlayback =
+            activeSourcesRef.current.length > 0 ||
+            nextPlayTimeRef.current > now ||
+            isStreamFinalRef.current;
+
+          if (hasActivePlayback) {
+            const remainingSec = ctx ? Math.max(0, nextPlayTimeRef.current - now) : 0;
+            console.log(
+              `[LiveVoice] [Cleanup Deferred] WebSocket onclose (code: ${evt.code}, reason: ${evt.reason || 'clean'}), but audio playback is still in progress. Deferring AudioContext cleanup until all scheduled buffers finish. nextPlayTimeRef=${nextPlayTimeRef.current.toFixed(4)}s, audioContext.currentTime=${now.toFixed(4)}s, remaining=${remainingSec.toFixed(4)}s, activeSources=${activeSourcesRef.current.length}`
             );
-            cleanupLiveStream();
-          } else if (connectionStatus === 'streaming') {
-            // Abnormal close during streaming
+            setConnectionStatus('finishing');
+            addDiagnosticEvent(
+              'info',
+              `WebSocket closed (${evt.code}). Audio still playing (~${remainingSec.toFixed(2)}s remaining). Cleanup deferred.`
+            );
+            if (completionCheckTimerRef.current) clearTimeout(completionCheckTimerRef.current);
+            const fallbackDelayMs = Math.max(600, Math.ceil(remainingSec * 1000) + 400);
+            completionCheckTimerRef.current = window.setTimeout(() => {
+              checkAndTriggerCompletion();
+            }, fallbackDelayMs);
+          } else if (evt.code !== 1000) {
+            // Abnormal close during streaming without active audio
             if (evt.reason?.toLowerCase().includes('timeout') || evt.code === 1006) {
               setConnectionStatus('timeout');
               setErrorMessage('ElevenLabs WebSocket closed (idle timeout or connection interrupted).');
+            } else {
+              setConnectionStatus('error');
+              setErrorMessage(`Connection closed unexpectedly (Code: ${evt.code}).`);
             }
+            cleanupLiveStream();
+          } else {
+            // Clean close with no active audio remaining
+            checkAndTriggerCompletion();
           }
         }
       };
@@ -1107,7 +1213,7 @@ export function LiveStreamingStudio({
       <LiveWaveformVisualizer
         analyserNode={analyserNodeRef.current}
         isPlaying={isPlaying}
-        isStreaming={connectionStatus === 'streaming'}
+        isStreaming={connectionStatus === 'streaming' || connectionStatus === 'finishing'}
         status={connectionStatus}
         chunksCount={chunksCount}
         totalBytes={totalBytes}
@@ -1455,15 +1561,23 @@ export function LiveStreamingStudio({
                 Cancel
               </button>
             </div>
-          ) : connectionStatus === 'streaming' ? (
-            <button
-              type="button"
-              onClick={handleStopStream}
-              className="px-6 py-3.5 rounded-xl bg-rose-600 hover:bg-rose-500 text-white font-semibold text-sm shadow-xl shadow-rose-600/30 transition flex items-center gap-2.5 cursor-pointer transform active:scale-98 animate-pulse"
-            >
-              <Square size={16} className="fill-current" />
-              <span>Stop Streaming</span>
-            </button>
+          ) : (connectionStatus === 'streaming' || connectionStatus === 'finishing') ? (
+            <div className="flex items-center gap-2">
+              <button
+                type="button"
+                onClick={handleStopStream}
+                className="px-6 py-3.5 rounded-xl bg-rose-600 hover:bg-rose-500 text-white font-semibold text-sm shadow-xl shadow-rose-600/30 transition flex items-center gap-2.5 cursor-pointer transform active:scale-98 animate-pulse"
+              >
+                <Square size={16} className="fill-current" />
+                <span>Stop Streaming</span>
+              </button>
+              {connectionStatus === 'finishing' && (
+                <span className="text-xs font-mono text-purple-300 bg-purple-500/15 border border-purple-500/35 px-3 py-2.5 rounded-xl flex items-center gap-1.5 animate-pulse">
+                  <Activity size={13} className="text-purple-400 animate-spin" />
+                  <span>Finishing playback...</span>
+                </span>
+              )}
+            </div>
           ) : connectionStatus === 'error' ? (
             <button
               type="button"

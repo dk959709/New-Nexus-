@@ -16,6 +16,7 @@ export type LiveConnectionState =
   | 'idle'
   | 'connecting'
   | 'streaming'
+  | 'finishing'
   | 'completed'
   | 'interrupted'
   | 'timeout'
@@ -198,7 +199,7 @@ export function LiveWaveformVisualizer({
 
         // Gradient bar
         const barGrad = ctx.createLinearGradient(x, midY - barHeight, x, midY + barHeight * 0.3);
-        if (status === 'streaming') {
+        if (status === 'streaming' || status === 'finishing') {
           barGrad.addColorStop(0, '#c084fc'); // purple-400
           barGrad.addColorStop(0.5, '#a855f7'); // purple-500
           barGrad.addColorStop(1, '#06b6d4'); // cyan-500
@@ -224,12 +225,12 @@ export function LiveWaveformVisualizer({
 
         // Floating peak cap
         const peakY = midY - peaksRef.current[i] - 3;
-        ctx.fillStyle = status === 'streaming' ? '#38bdf8' : '#cbd5e1';
+        ctx.fillStyle = status === 'streaming' || status === 'finishing' ? '#38bdf8' : '#cbd5e1';
         ctx.fillRect(x, peakY, barWidth, 1.5);
       }
 
       // Draw Center Baseline Horizon
-      ctx.strokeStyle = status === 'streaming' ? 'rgba(168, 85, 247, 0.4)' : 'rgba(148, 163, 184, 0.2)';
+      ctx.strokeStyle = status === 'streaming' || status === 'finishing' ? 'rgba(168, 85, 247, 0.4)' : 'rgba(148, 163, 184, 0.2)';
       ctx.lineWidth = 1;
       ctx.beginPath();
       ctx.moveTo(marginX, midY);
@@ -273,11 +274,19 @@ export function LiveWaveformVisualizer({
       <div className="flex items-center justify-between flex-wrap gap-3 relative z-10">
         {/* Status Badge */}
         <div className="flex items-center gap-2.5">
-          {(status === 'streaming' || isStreaming) && (
+          {status === 'streaming' && (
             <div className="flex items-center gap-2 px-3 py-1 rounded-full bg-rose-500/20 border border-rose-500/50 text-rose-300 text-xs font-semibold shadow-sm animate-pulse">
               <span className="w-2 h-2 rounded-full bg-rose-400 animate-ping inline-block" />
               <Radio size={13} className="text-rose-400 animate-bounce" />
               <span className="font-mono tracking-wide">LIVE STREAMING</span>
+            </div>
+          )}
+
+          {status === 'finishing' && (
+            <div className="flex items-center gap-2 px-3 py-1 rounded-full bg-purple-500/25 border border-purple-500/50 text-purple-200 text-xs font-semibold shadow-sm animate-pulse">
+              <span className="w-2 h-2 rounded-full bg-purple-400 animate-ping inline-block" />
+              <Activity size={13} className="text-purple-400 animate-spin" />
+              <span className="font-mono tracking-wide">FINISHING PLAYBACK...</span>
             </div>
           )}
 
@@ -333,7 +342,7 @@ export function LiveWaveformVisualizer({
         </div>
 
         {/* Real-time Stop Button when active */}
-        {(status === 'streaming' || status === 'connecting') && (
+        {(status === 'streaming' || status === 'connecting' || status === 'finishing') && (
           <button
             type="button"
             onClick={onStop}
