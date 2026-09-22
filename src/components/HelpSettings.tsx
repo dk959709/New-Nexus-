@@ -26,6 +26,11 @@ import {
   Key,
   Clock,
   Database,
+  Mic,
+  Image as ImageIcon,
+  Wand2,
+  Orbit,
+  Zap,
 } from 'lucide-react';
 import { copyToClipboard } from '@/lib/clipboard';
 import { playTapSound } from '@/lib/audio';
@@ -383,6 +388,109 @@ The **Document Library** (Settings > 📚 Document Library) is NEXUS's local, pr
 - **In-Place Edit & Re-Index**: For text documents and pasted notes, click **Edit** to modify full text in-browser. Saving automatically re-segments, re-indexes vectors, and atomically replaces old chunks in IndexedDB.
 - **Interactive Search Sandbox**: Test your library retrieval with live search queries and similarity score diagnostics directly inside the settings panel.`;
 
+  // Section 12: Voice AI Studio & Real-Time Live Streaming
+  const voiceAiStudioText = `### 12. Voice AI Studio & Real-Time Live Streaming (24kHz Studio PCM & Ask AI Pipeline)
+
+The **Voice AI Studio** (/voice-ai) is NEXUS's high-fidelity audio engineering workstation, integrating local neural voice synthesis with studio-grade bidirectional WebSocket live streaming and real-time conversational AI integration.
+
+#### A. Dual Voice Engine Architecture
+1. **Edge Neural Voice TTS (40+ International Voices)**:
+   - High-speed neural speech synthesis powered by Edge TTS models (\`/api/edge-tts\`).
+   - Features 40+ multilingual expressive voices across English, Spanish, French, German, Japanese, Chinese, Hindi, and more.
+   - Zero-configuration, free tier with instant audio preview, MP3 export, and real-time speech rate and pitch adjustments.
+2. **Cloud Voice AI (ElevenLabs WebSocket Streaming)**:
+   - Studio-grade cloud voice synthesis utilizing ElevenLabs high-speed models (\`eleven_turbo_v2_5\`, \`eleven_multilingual_v2\`).
+   - Delivers uncompressed **24 kHz linear PCM** audio streams over binary WebSockets with immediate time-to-first-chunk (< 350ms).
+
+#### B. Persistent Live Session & Gapless Audio Queue
+- **Persistent WebSocket Session**: Clicking "Start Live Session" opens a persistent, bidirectional WebSocket connection that remains active across multiple dialogue turns, eliminating per-sentence reconnect delays.
+- **Gapless Timeline Scheduling**: Ingested 24kHz linear PCM chunks are converted to Float32 audio buffers and scheduled seamlessly on the Web Audio API \`AudioContext.currentTime\` timeline without micro-stutters or inter-chunk clicks.
+- **Continuous Turn Queueing**: Users can transmit new dialogue while the voice is actively speaking previous sentences; subsequent audio streams queue smoothly on the timeline.
+- **Session Lifecycle Controls**:
+  - **End Session**: Transmits an End-of-Stream (EOS) packet and gracefully waits for all queued speech to finish playing before closing the audio context.
+  - **Stop Audio (Hard Stop)**: Instantly halts and disconnects active audio buffers, cancels pending speech queues, and resets playback immediately.
+
+#### C. Dual Input Modes: Type to Speak vs. Ask AI
+- **Type to Speak**: Manual transmission mode. Type custom dialogue, news excerpts, or scripts and click Send to stream the spoken voice immediately.
+- **Ask AI Mode**: Query NEXUS AI directly inside the live voice stream. Submitting a question calls the conversational intelligence backend, renders a real-time "AI is thinking..." pulse state, cleans markdown formatting for natural speech cadence, and automatically routes the AI's generated reply into the live voice streaming pipeline.
+
+#### D. Telemetry, Keep-Alive & Full Session WAV Export
+- **Anti-Silence Keep-Alive Buffer**: Automatically runs an imperceptible background keep-alive node, preventing mobile Chrome/Safari and background tabs from auto-suspending the Web Audio context between speech chunks.
+- **4Hz Diagnostics Overlay**: Real-time diagnostic telemetry tracking buffer count, jitter, playback drift, Web Audio context state, and dropped frame metrics.
+- **Download Session Audio (WAV)**: Packages the accumulated 24kHz PCM stream from all messages in the session into a single studio-quality 16-bit PCM WAV audio file with one click.`;
+
+  // Section 13: Image Studio
+  const imageStudioText = `### 13. Image Studio & AI Visual Synthesis Matrix
+
+The **Image Studio** (/image-studio) is NEXUS's multimodal visual generation environment for synthesizing photorealistic imagery, concept art, technical schematics, and UI mockups.
+
+#### A. Multi-Provider AI Diffusion Architecture
+NEXUS incorporates a redundant matrix of leading open and commercial visual diffusion engines:
+1. **Pollinations.ai**: Ultra-fast, zero-auth generation with cutting-edge Flux, Turbo, and SDXL models.
+2. **Hugging Face Inference API**: High-precision diffusion pipelines using \`HUGGINGFACE_API_KEY\` (Flux.1-Dev, Stable Diffusion XL Base).
+3. **Puter.js & Cloudflare Workers AI**: Resilient secondary and tertiary fallback generators providing serverless visual redundancy.
+
+#### B. Intelligent Prompt Synthesizer (/promptimage)
+- Converts rough concepts into 5 vivid, highly detailed prompt variations across distinct stylistic axes: Photorealistic Cinematic, Concept Art / Matte Painting, Cyberpunk / Sci-Fi, Vintage / Retro, and Minimalist Vector.
+- Features one-click clipboard copying, direct jump to Image Studio with prefilled prompts, or instant generation via \`/imageai\`.
+
+#### C. Direct Visual Slash Commands
+- **/image [prompt]** — Dual visual sourcing: Discovers real-world Wikipedia / Wikimedia photographic assets side-by-side with AI-generated visuals.
+- **/imageai [prompt]** — Direct AI generation: Instantly triggers your active Image AI provider, rendering high-resolution visual cards with downloadable PNG assets and metadata.
+
+#### D. Studio Controls & Canvas Tools
+- **Prompt Enhancer**: Automatically enriches lighting, camera lens specifications (e.g. 85mm f/1.4), texture details, and composition tags.
+- **Aspect Ratio Selector**: Instant switching between 1:1 Square, 16:9 Landscape, 9:16 Mobile Portrait, 4:3 Standard, and 3:2 Classic photography.
+- **Interactive Lightbox & Metadata Inspector**: Fullscreen image inspection with zoom, seed inspection, generation model tagging, and direct PNG export.`;
+
+  // Section 14: Dynamic Specialist Matrix ("New Agent" Pipeline)
+  const dynamicSpecialistText = `### 14. Dynamic Specialist Matrix — "New Agent" 5-Node Pipeline
+
+The **Dynamic Specialist Matrix** ("New Agent" mode / \`/newagent\`) is an advanced multi-agent architecture where the system dynamically generates custom, domain-tailored AI specialists on the fly for any complex, multi-faceted task.
+
+#### A. 5-Node Cognitive Architecture
+Unlike static pipelines with fixed roles, the Dynamic Specialist Matrix synthesizes a custom cognitive team for each specific prompt:
+1. **Node 1: Dynamic Planner**: Analyzes the problem statement and dynamically defines 3 custom specialist personas with tailored expertise, distinct analytical angles, detailed system instructions, and assigned toolkits.
+2. **Nodes 2–4: Specialized Domain Agents (Slot 1, Slot 2, Slot 3)**:
+   - **Specialist 1**: Tackles foundational theory, technical mechanics, or architectural considerations.
+   - **Specialist 2**: Evaluates empirical data, market benchmarks, or operational practicalities.
+   - **Specialist 3**: Investigates risks, edge cases, strategic counterpoints, or future trajectories.
+   - **Runtime Tool Dispatch**: Each specialist is granted access to live tools (Live Web Search, Wikipedia REST, 3-Tier News Fallbacks, OpenWeatherMap, and Web Page Fetching) as designated by the Planner.
+3. **Node 5: Final Matrix Synthesizer**: Ingests all 3 specialized findings, resolves conflicting perspectives, structures comparative tables, and produces an executive intelligence briefing labeled \`Mode: Dynamic Specialist Pipeline (New Agent)\`.
+
+#### B. Specialist Slots & Multi-Model Mapping
+- Navigate to **Settings > 🤖 New Agent** to configure the 3 Specialist Slots.
+- Each slot can be independently assigned to any AI provider and model in your portfolio (e.g. Slot 1 = Claude 3.5 Sonnet for reasoning, Slot 2 = GPT-4o for broad knowledge, Slot 3 = Llama 3 70B for fast verification).
+- Enables heterogeneous multi-model deliberation where different AI architectures cross-audit and refine each other's outputs.
+
+#### C. Command Steering & Global Override
+- **UI Toggle**: Enable the "New Agent" switch on the JARVIS query bar to route all inquiries through the 5-node specialist pipeline.
+- **Slash Command (\`/newagent [task]\` or \`/new_agent [task]\`)**: Triggers the Dynamic Specialist Pipeline for a single query without changing your persistent UI toggle state.`;
+
+  // Section 15: Space & Planetary Intelligence Radar
+  const spaceIntelligenceText = `### 15. Space & Planetary Intelligence Radar (/space & /weather)
+
+NEXUS integrates real-time astrophysical telemetry, deep space observations, and atmospheric radar to provide comprehensive terrestrial and cosmic situational awareness.
+
+#### A. NASA Astronomy Picture of the Day (APOD)
+- Direct integration with NASA's APOD API via \`NASA_API_KEY\` (with automatic public demo key fallback).
+- Daily high-resolution cosmic imagery, planetary captures, and astrophysical descriptions authored by professional astronomers.
+- Fullscreen HD asset inspection, media type handling (interactive YouTube/Vimeo space video player embeds), and direct NASA archive linking.
+
+#### B. Real-Time ISS Orbital Radar & Live Pass Tracker
+- **Live Orbital Telemetry**: Real-time tracking of the International Space Station (ISS) fetching live orbital coordinates from \`http://api.open-notify.org/iss-now.json\`.
+- **Cosmic Metrics**: Displays current latitude, longitude, altitude (~420 km), and hypersonic orbital velocity (~27,600 km/h).
+- **Overhead Pass Detection**: Calculates the spherical Great Circle distance between the ISS and your location, triggering proximity alerts when the station passes within 500 km.
+
+#### C. Near-Earth Object (NEO) Asteroid Radar
+- Real-time scanning of close-approach asteroids and comets via NASA NeoWs (Near Earth Object Web Service).
+- Tracks asteroid name, estimated diameter (meters/feet), relative velocity (km/s), close-approach timestamp, and miss distance (astronomical units / lunar distances).
+- Automatically flags potentially hazardous asteroids (PHA) with visual danger badges.
+
+#### D. Global Atmospheric & Meteorological Map Radar (/weather & /weather/map)
+- Real-time meteorological data via OpenWeatherMap (\`OPENWEATHERMAP_API_KEY\`) covering temperature, humidity, barometric pressure, UV index, wind speed/direction, and multi-day hourly forecasts.
+- Interactive weather radar map layer with precipitation heatmaps, wind streamline particle animations, and city search coordinates.`;
+
   const sections: DocSection[] = [
     {
       id: 'overview',
@@ -407,7 +515,7 @@ The **Document Library** (Settings > 📚 Document Library) is NEXUS's local, pr
     },
     {
       id: 'commands',
-      title: 'Slash Commands (/search, /web, /customapi, /code, /codeonline)',
+      title: 'Slash Commands (/search, /web, /customapi, /code, /codeonline, /image, /promptimage, /newagent)',
       badge: 'Pipeline Steering',
       icon: Terminal,
       text: slashCommandsText,
@@ -461,6 +569,34 @@ The **Document Library** (Settings > 📚 Document Library) is NEXUS's local, pr
       icon: Database,
       text: documentLibraryText,
     },
+    {
+      id: 'voice-ai',
+      title: 'Voice AI Studio & 24kHz Live Streaming',
+      badge: 'Studio Audio & Ask AI',
+      icon: Mic,
+      text: voiceAiStudioText,
+    },
+    {
+      id: 'image-studio',
+      title: 'Image Studio & Visual Diffusion Matrix',
+      badge: 'Multimodal Art',
+      icon: ImageIcon,
+      text: imageStudioText,
+    },
+    {
+      id: 'dynamic-specialist',
+      title: 'Dynamic Specialist Matrix (New Agent)',
+      badge: '5-Node Dynamic RAG',
+      icon: Zap,
+      text: dynamicSpecialistText,
+    },
+    {
+      id: 'space-weather',
+      title: 'Space & Planetary Intelligence Radar',
+      badge: 'Cosmic & Weather',
+      icon: Orbit,
+      text: spaceIntelligenceText,
+    },
   ];
 
   const fullDocumentationText = `# NEXUS INTELLIGENCE & JARVIS SYSTEM DOCUMENTATION
@@ -509,6 +645,22 @@ ${telegramBotText}
 --------------------------------------------------------------------------------
 
 ${documentLibraryText}
+
+--------------------------------------------------------------------------------
+
+${voiceAiStudioText}
+
+--------------------------------------------------------------------------------
+
+${imageStudioText}
+
+--------------------------------------------------------------------------------
+
+${dynamicSpecialistText}
+
+--------------------------------------------------------------------------------
+
+${spaceIntelligenceText}
 
 ================================================================================
 End of NEXUS Documentation
@@ -1137,6 +1289,22 @@ End of NEXUS Documentation
                 </p>
                 <div className="text-[11px] text-slate-300 font-mono bg-slate-900 px-2.5 py-1.5 rounded border border-slate-800">
                   <span className="text-slate-500">Example:</span> /promptimage a dragon made of stained glass
+                </div>
+              </div>
+
+              {/* Command 9 */}
+              <div className="p-3.5 rounded-lg bg-slate-950/80 border border-purple-500/30">
+                <div className="flex flex-wrap items-center justify-between gap-2 mb-2">
+                  <div className="font-mono text-purple-300 font-semibold text-xs sm:text-sm bg-purple-950/60 px-2 py-0.5 rounded border border-purple-800/40">
+                    /newagent [task] <span className="text-[10px] text-purple-400/80">(or /new_agent)</span>
+                  </div>
+                  <span className="text-[11px] text-purple-300 font-medium">5-Node Dynamic Specialist Matrix Override</span>
+                </div>
+                <p className="text-xs text-slate-400 m-0 mb-2">
+                  Forces the 5-node Dynamic Specialist Pipeline (Planner &rarr; 3 Dynamic Domain Specialists &rarr; Final Synthesizer) for a single query, regardless of the UI toggle state. The Planner dynamically defines 3 custom domain specialists with bespoke instructions and live toolkits (Search, Wikipedia, News, Weather, Web Fetcher), executing through your configured Specialist Slots (1–3).
+                </p>
+                <div className="text-[11px] text-slate-300 font-mono bg-slate-900 px-2.5 py-1.5 rounded border border-slate-800">
+                  <span className="text-slate-500">Example:</span> /newagent Compare RISC-V vs ARM architectures for embedded edge devices
                 </div>
               </div>
             </div>
@@ -1844,6 +2012,350 @@ End of NEXUS Documentation
                 </div>
                 <p className="text-xs text-slate-400 m-0">
                   Test library vector retrieval directly inside Settings &gt; Document Library with real-time similarity score match meters and instant chunk inspections.
+                </p>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        {/* Section 12: Voice AI Studio & 24kHz Live Streaming */}
+        <div
+          id="doc-voice-ai"
+          className="rounded-xl border border-slate-800 bg-slate-900/60 p-6 shadow-md backdrop-blur-sm transition-colors hover:border-slate-700/80"
+        >
+          <div className="flex items-start justify-between gap-4 pb-4 border-b border-slate-800">
+            <div className="flex items-center gap-3">
+              <div className="p-2.5 rounded-lg bg-cyan-500/10 border border-cyan-500/30 text-cyan-400">
+                <Mic size={20} />
+              </div>
+              <div>
+                <h3 className="text-base font-semibold text-slate-100 flex items-center gap-2">
+                  <span>12. Voice AI Studio &amp; 24kHz Live Streaming</span>
+                  <span className="text-[11px] font-mono font-normal text-cyan-400 bg-cyan-950/80 px-2 py-0.5 rounded border border-cyan-800/60">
+                    Studio Audio &amp; Ask AI
+                  </span>
+                </h3>
+                <p className="text-xs text-slate-400 mt-0.5">
+                  Edge Neural TTS (40+ voices), 24kHz ElevenLabs WebSocket PCM streaming, and live Ask AI speech synthesis
+                </p>
+              </div>
+            </div>
+            <button
+              onClick={() => handleCopySection('voice-ai', voiceAiStudioText)}
+              className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-medium border border-slate-700 bg-slate-800/80 text-slate-300 hover:text-white hover:bg-slate-700 transition-colors shrink-0"
+              title="Copy this section's markdown"
+            >
+              {copiedSection === 'voice-ai' ? (
+                <>
+                  <Check size={13} className="text-emerald-400" />
+                  <span className="text-emerald-400 font-mono text-[11px]">Copied</span>
+                </>
+              ) : (
+                <>
+                  <Copy size={13} />
+                  <span>Copy</span>
+                </>
+              )}
+            </button>
+          </div>
+
+          <div className="mt-5 space-y-4 text-xs sm:text-sm text-slate-300 leading-relaxed">
+            <p>
+              The <strong className="text-slate-100">Voice AI Studio</strong> (<code className="text-cyan-300">/voice-ai</code>) pairs an Edge Neural Voice engine with high-performance, studio-grade 24kHz uncompressed linear PCM WebSocket streaming.
+            </p>
+
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-3.5">
+              <div className="p-3.5 rounded-lg bg-slate-950/80 border border-cyan-500/30 space-y-1.5">
+                <div className="font-semibold text-cyan-300 text-xs flex items-center gap-1.5">
+                  <Radio size={14} /> Persistent WebSocket &amp; Gapless Scheduling
+                </div>
+                <p className="text-xs text-slate-400 m-0">
+                  Live sessions maintain an open WebSocket connection across multiple sentences. Incoming 24kHz PCM chunks are scheduled gaplessly on the Web Audio API timeline, letting you type and send new dialogue anytime without waiting or stuttering.
+                </p>
+              </div>
+
+              <div className="p-3.5 rounded-lg bg-slate-950/80 border border-purple-500/30 space-y-1.5">
+                <div className="font-semibold text-purple-300 text-xs flex items-center gap-1.5">
+                  <Bot size={14} /> &quot;Ask AI&quot; Live Voice Pipeline
+                </div>
+                <p className="text-xs text-slate-400 m-0">
+                  Switch between <strong>Type to Speak</strong> (manual input) and <strong>Ask AI</strong> mode. Submitting a question invokes NEXUS AI, renders a thinking pulse state, and automatically streams the generated answer into the live voice synthesis engine.
+                </p>
+              </div>
+
+              <div className="p-3.5 rounded-lg bg-slate-950/80 border border-slate-800 space-y-1.5">
+                <div className="font-semibold text-cyan-300 text-xs flex items-center gap-1.5">
+                  <Volume2 size={14} /> 40+ Edge Neural Voices &amp; MP3 Export
+                </div>
+                <p className="text-xs text-slate-400 m-0">
+                  Zero-auth neural TTS with pitch and rate controls across 40+ languages (English, Spanish, French, German, Japanese, Chinese, Hindi), complete with instant audio playback and direct MP3 export.
+                </p>
+              </div>
+
+              <div className="p-3.5 rounded-lg bg-slate-950/80 border border-slate-800 space-y-1.5">
+                <div className="font-semibold text-cyan-300 text-xs flex items-center gap-1.5">
+                  <Sliders size={14} /> Telemetry &amp; Full Session WAV Download
+                </div>
+                <p className="text-xs text-slate-400 m-0">
+                  Includes an anti-silence audio keep-alive buffer to prevent mobile browser suspension, a 4Hz diagnostics jitter/drift overlay, and 1-click export of the entire session&apos;s speech as an uncompressed 16-bit WAV file.
+                </p>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        {/* Section 13: Image Studio & AI Visual Synthesis Matrix */}
+        <div
+          id="doc-image-studio"
+          className="rounded-xl border border-slate-800 bg-slate-900/60 p-6 shadow-md backdrop-blur-sm transition-colors hover:border-slate-700/80"
+        >
+          <div className="flex items-start justify-between gap-4 pb-4 border-b border-slate-800">
+            <div className="flex items-center gap-3">
+              <div className="p-2.5 rounded-lg bg-cyan-500/10 border border-cyan-500/30 text-cyan-400">
+                <ImageIcon size={20} />
+              </div>
+              <div>
+                <h3 className="text-base font-semibold text-slate-100 flex items-center gap-2">
+                  <span>13. Image Studio &amp; AI Visual Synthesis Matrix</span>
+                  <span className="text-[11px] font-mono font-normal text-cyan-400 bg-cyan-950/80 px-2 py-0.5 rounded border border-cyan-800/60">
+                    Multimodal Art
+                  </span>
+                </h3>
+                <p className="text-xs text-slate-400 mt-0.5">
+                  Multi-provider diffusion engines (Pollinations, Hugging Face, Puter, Workers AI), /promptimage synthesizer, and /imageai commands
+                </p>
+              </div>
+            </div>
+            <button
+              onClick={() => handleCopySection('image-studio', imageStudioText)}
+              className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-medium border border-slate-700 bg-slate-800/80 text-slate-300 hover:text-white hover:bg-slate-700 transition-colors shrink-0"
+              title="Copy this section's markdown"
+            >
+              {copiedSection === 'image-studio' ? (
+                <>
+                  <Check size={13} className="text-emerald-400" />
+                  <span className="text-emerald-400 font-mono text-[11px]">Copied</span>
+                </>
+              ) : (
+                <>
+                  <Copy size={13} />
+                  <span>Copy</span>
+                </>
+              )}
+            </button>
+          </div>
+
+          <div className="mt-5 space-y-4 text-xs sm:text-sm text-slate-300 leading-relaxed">
+            <p>
+              The <strong className="text-slate-100">Image Studio</strong> (<code className="text-cyan-300">/image-studio</code>) generates photorealistic renders, concept art, and UI diagrams with multi-model redundancy and automated failover.
+            </p>
+
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-3.5">
+              <div className="p-3.5 rounded-lg bg-slate-950/80 border border-slate-800 space-y-1.5">
+                <div className="font-semibold text-cyan-300 text-xs flex items-center gap-1.5">
+                  <Layers size={14} /> Multi-Provider AI Diffusion Matrix
+                </div>
+                <p className="text-xs text-slate-400 m-0">
+                  Connects seamlessly to Pollinations.ai (Flux, SDXL), Hugging Face Inference API, Puter.js, and Cloudflare Workers AI with automatic fallback on rate limits or service outages.
+                </p>
+              </div>
+
+              <div className="p-3.5 rounded-lg bg-slate-950/80 border border-slate-800 space-y-1.5">
+                <div className="font-semibold text-cyan-300 text-xs flex items-center gap-1.5">
+                  <Wand2 size={14} /> /promptimage AI Prompt Synthesizer
+                </div>
+                <p className="text-xs text-slate-400 m-0">
+                  Transforms brief 3-word concepts into 5 distinct, high-detail prompt variations (Cinematic, Concept Art, Cyberpunk, Retro, Vector) with one-click clipboard copying, Image Studio preloading, or instant generation.
+                </p>
+              </div>
+
+              <div className="p-3.5 rounded-lg bg-slate-950/80 border border-slate-800 space-y-1.5">
+                <div className="font-semibold text-cyan-300 text-xs flex items-center gap-1.5">
+                  <Terminal size={14} /> /image &amp; /imageai Slash Commands
+                </div>
+                <p className="text-xs text-slate-400 m-0">
+                  Execute visual generation directly from the JARVIS prompt. <code className="text-cyan-300">/image</code> provides dual photo and AI discovery, while <code className="text-cyan-300">/imageai</code> executes direct diffusion rendering.
+                </p>
+              </div>
+
+              <div className="p-3.5 rounded-lg bg-slate-950/80 border border-slate-800 space-y-1.5">
+                <div className="font-semibold text-cyan-300 text-xs flex items-center gap-1.5">
+                  <Palette size={14} /> Aspect Ratio &amp; Canvas Controls
+                </div>
+                <p className="text-xs text-slate-400 m-0">
+                  Supports 1:1 Square, 16:9 Landscape, 9:16 Mobile Story, 4:3 Standard, and 3:2 Classic ratios, with custom prompt enhancers and full-resolution lightbox inspection.
+                </p>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        {/* Section 14: Dynamic Specialist Matrix ("New Agent" Pipeline) */}
+        <div
+          id="doc-dynamic-specialist"
+          className="rounded-xl border border-slate-800 bg-slate-900/60 p-6 shadow-md backdrop-blur-sm transition-colors hover:border-slate-700/80"
+        >
+          <div className="flex items-start justify-between gap-4 pb-4 border-b border-slate-800">
+            <div className="flex items-center gap-3">
+              <div className="p-2.5 rounded-lg bg-cyan-500/10 border border-cyan-500/30 text-cyan-400">
+                <Zap size={20} />
+              </div>
+              <div>
+                <h3 className="text-base font-semibold text-slate-100 flex items-center gap-2">
+                  <span>14. Dynamic Specialist Matrix (&quot;New Agent&quot; Pipeline)</span>
+                  <span className="text-[11px] font-mono font-normal text-cyan-400 bg-cyan-950/80 px-2 py-0.5 rounded border border-cyan-800/60">
+                    5-Node Dynamic RAG
+                  </span>
+                </h3>
+                <p className="text-xs text-slate-400 mt-0.5">
+                  On-the-fly specialist role creation, configurable Specialist Slots (Slot 1-3), and /newagent command overrides
+                </p>
+              </div>
+            </div>
+            <button
+              onClick={() => handleCopySection('dynamic-specialist', dynamicSpecialistText)}
+              className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-medium border border-slate-700 bg-slate-800/80 text-slate-300 hover:text-white hover:bg-slate-700 transition-colors shrink-0"
+              title="Copy this section's markdown"
+            >
+              {copiedSection === 'dynamic-specialist' ? (
+                <>
+                  <Check size={13} className="text-emerald-400" />
+                  <span className="text-emerald-400 font-mono text-[11px]">Copied</span>
+                </>
+              ) : (
+                <>
+                  <Copy size={13} />
+                  <span>Copy</span>
+                </>
+              )}
+            </button>
+          </div>
+
+          <div className="mt-5 space-y-4 text-xs sm:text-sm text-slate-300 leading-relaxed">
+            <p>
+              The <strong className="text-slate-100">Dynamic Specialist Matrix</strong> generates tailored cognitive specialists on the fly for any multi-faceted task, enabling heterogeneous model deliberation.
+            </p>
+
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-3.5">
+              <div className="p-3.5 rounded-lg bg-slate-950/80 border border-cyan-500/30 space-y-1.5">
+                <div className="font-semibold text-cyan-300 text-xs flex items-center gap-1.5">
+                  <Brain size={14} /> 5-Node Cognitive Matrix Workflow
+                </div>
+                <p className="text-xs text-slate-400 m-0">
+                  <strong>Node 1: Planner</strong> dynamically authors 3 custom specialist personas with specialized system prompts and assigned toolkits. <strong>Nodes 2–4: Specialists 1, 2, 3</strong> execute research in parallel. <strong>Node 5: Synthesizer</strong> unifies their findings into a cohesive report.
+                </p>
+              </div>
+
+              <div className="p-3.5 rounded-lg bg-slate-950/80 border border-slate-800 space-y-1.5">
+                <div className="font-semibold text-cyan-300 text-xs flex items-center gap-1.5">
+                  <Sliders size={14} /> Configurable Specialist Slots (1–3)
+                </div>
+                <p className="text-xs text-slate-400 m-0">
+                  Settings &gt; 🤖 New Agent lets you map each specialist slot to distinct models (e.g. Claude 3.5 Sonnet, GPT-4o, Llama 3 70B) for multi-architecture cross-auditing and varied analytical viewpoints.
+                </p>
+              </div>
+
+              <div className="p-3.5 rounded-lg bg-slate-950/80 border border-slate-800 space-y-1.5">
+                <div className="font-semibold text-cyan-300 text-xs flex items-center gap-1.5">
+                  <Terminal size={14} /> /newagent Slash Command Override
+                </div>
+                <p className="text-xs text-slate-400 m-0">
+                  Prefix any query with <code className="text-cyan-300">/newagent [task]</code> to force the 5-node Dynamic Specialist Matrix for that single query without mutating your global UI toggle settings.
+                </p>
+              </div>
+
+              <div className="p-3.5 rounded-lg bg-slate-950/80 border border-slate-800 space-y-1.5">
+                <div className="font-semibold text-cyan-300 text-xs flex items-center gap-1.5">
+                  <Globe size={14} /> Runtime Dynamic Tool Dispatch
+                </div>
+                <p className="text-xs text-slate-400 m-0">
+                  The Planner grants each specialist tailored access to real-time tools including Live Web Search, Wikipedia REST summaries, 3-Tier News fallbacks, OpenWeatherMap atmospheric queries, and Web Page scrapers.
+                </p>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        {/* Section 15: Space & Planetary Intelligence Radar */}
+        <div
+          id="doc-space-weather"
+          className="rounded-xl border border-slate-800 bg-slate-900/60 p-6 shadow-md backdrop-blur-sm transition-colors hover:border-slate-700/80"
+        >
+          <div className="flex items-start justify-between gap-4 pb-4 border-b border-slate-800">
+            <div className="flex items-center gap-3">
+              <div className="p-2.5 rounded-lg bg-cyan-500/10 border border-cyan-500/30 text-cyan-400">
+                <Orbit size={20} />
+              </div>
+              <div>
+                <h3 className="text-base font-semibold text-slate-100 flex items-center gap-2">
+                  <span>15. Space &amp; Planetary Intelligence Radar</span>
+                  <span className="text-[11px] font-mono font-normal text-cyan-400 bg-cyan-950/80 px-2 py-0.5 rounded border border-cyan-800/60">
+                    Cosmic &amp; Weather
+                  </span>
+                </h3>
+                <p className="text-xs text-slate-400 mt-0.5">
+                  NASA APOD, real-time ISS orbital tracking, Near-Earth Asteroid (NEO) radar, and OpenWeatherMap radar
+                </p>
+              </div>
+            </div>
+            <button
+              onClick={() => handleCopySection('space-weather', spaceIntelligenceText)}
+              className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-medium border border-slate-700 bg-slate-800/80 text-slate-300 hover:text-white hover:bg-slate-700 transition-colors shrink-0"
+              title="Copy this section's markdown"
+            >
+              {copiedSection === 'space-weather' ? (
+                <>
+                  <Check size={13} className="text-emerald-400" />
+                  <span className="text-emerald-400 font-mono text-[11px]">Copied</span>
+                </>
+              ) : (
+                <>
+                  <Copy size={13} />
+                  <span>Copy</span>
+                </>
+              )}
+            </button>
+          </div>
+
+          <div className="mt-5 space-y-4 text-xs sm:text-sm text-slate-300 leading-relaxed">
+            <p>
+              NEXUS provides real-time situational telemetry across terrestrial atmosphere and deep space (<code className="text-cyan-300">/space</code> and <code className="text-cyan-300">/weather</code>).
+            </p>
+
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-3.5">
+              <div className="p-3.5 rounded-lg bg-slate-950/80 border border-slate-800 space-y-1.5">
+                <div className="font-semibold text-cyan-300 text-xs flex items-center gap-1.5">
+                  <Sparkles size={14} /> NASA APOD &amp; Deep Space Imagery
+                </div>
+                <p className="text-xs text-slate-400 m-0">
+                  Daily high-resolution astronomical captures from NASA APOD API with professional scientific descriptions, HD full-view inspection, and video player support.
+                </p>
+              </div>
+
+              <div className="p-3.5 rounded-lg bg-slate-950/80 border border-slate-800 space-y-1.5">
+                <div className="font-semibold text-cyan-300 text-xs flex items-center gap-1.5">
+                  <Radio size={14} /> ISS Live Orbital Tracker &amp; Pass Radar
+                </div>
+                <p className="text-xs text-slate-400 m-0">
+                  Tracks the International Space Station in real time (~27,600 km/h velocity, ~420 km altitude) with spherical Great Circle distance calculations for proximity alerts.
+                </p>
+              </div>
+
+              <div className="p-3.5 rounded-lg bg-slate-950/80 border border-slate-800 space-y-1.5">
+                <div className="font-semibold text-cyan-300 text-xs flex items-center gap-1.5">
+                  <ShieldCheck size={14} /> Near-Earth Object (NEO) Asteroid Radar
+                </div>
+                <p className="text-xs text-slate-400 m-0">
+                  Monitors close-approach asteroids and comets via NASA NeoWs telemetry, tracking velocity, diameter, miss distance in AU/LD, and hazardous classification badges.
+                </p>
+              </div>
+
+              <div className="p-3.5 rounded-lg bg-slate-950/80 border border-slate-800 space-y-1.5">
+                <div className="font-semibold text-cyan-300 text-xs flex items-center gap-1.5">
+                  <Globe size={14} /> Global Atmospheric Radar &amp; Weather Maps
+                </div>
+                <p className="text-xs text-slate-400 m-0">
+                  Real-time OpenWeatherMap atmospheric radar with temperature, humidity, UV index, wind streamline particle visualizations, and multi-day hourly forecasts.
                 </p>
               </div>
             </div>
