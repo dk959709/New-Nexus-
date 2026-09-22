@@ -28,6 +28,11 @@ import {
   LiveWaveformVisualizer,
   LiveConnectionState,
 } from './LiveWaveformVisualizer';
+import {
+  LiveAudioDiagnosticsOverlay,
+  DiagnosticEvent,
+  DiagnosticSnapshot,
+} from './LiveAudioDiagnosticsOverlay';
 import { StudioAudioControls } from './StudioAudioControls';
 import { CloudVoicePicker } from './CloudVoicePicker';
 
@@ -127,6 +132,47 @@ export function LiveStreamingStudio({
   // Anti-silence keep-alive and heartbeat refs (prevent mobile Chrome auto-suspending on inter-chunk gaps)
   const keepAliveSourceRef = useRef<AudioBufferSourceNode | null>(null);
   const audioHeartbeatTimerRef = useRef<number | null>(null);
+
+  // Diagnostics tracking refs (monitored at 4Hz by LiveAudioDiagnosticsOverlay)
+  const heartbeatResumeCountRef = useRef<number>(0);
+  const diagnosticsEventsRef = useRef<DiagnosticEvent[]>([]);
+  const bufferSeqRef = useRef<number>(0);
+
+  // Append real-time diagnostic event (capped to last 10 entries)
+  const addDiagnosticEvent = useCallback(
+    (type: DiagnosticEvent['type'], text: string) => {
+      const timeMs = streamStartTimeRef.current ? Math.max(0, Date.now() - streamStartTimeRef.current) : 0;
+      const event: DiagnosticEvent = {
+        id: `${Date.now()}-${Math.random().toString(36).slice(2, 7)}`,
+        timeMs,
+        type,
+        text,
+      };
+      diagnosticsEventsRef.current = [...diagnosticsEventsRef.current.slice(-9), event];
+    },
+    []
+  );
+
+  // Snapshot getter for the live monospace diagnostics panel
+  const getDiagnosticsSnapshot = useCallback((): DiagnosticSnapshot => {
+    const ctx = audioContextRef.current;
+    const audioContextState = ctx ? ctx.state : 'uninitialized';
+    const currentTime = ctx ? ctx.currentTime : 0;
+    const nextPlayTime = nextPlayTimeRef.current;
+    const gapSeconds = nextPlayTime > 0 ? nextPlayTime - currentTime : 0;
+    return {
+      audioContextState,
+      heartbeatResumeCount: heartbeatResumeCountRef.current,
+      nextPlayTime,
+      currentTime,
+      gapSeconds,
+      isKeepAliveActive: !!keepAliveSourceRef.current,
+      activeSourcesCount: activeSourcesRef.current.length,
+      streamDurationSec: streamDurationSecRef.current,
+      connectionStatus,
+      events: diagnosticsEventsRef.current,
+    };
+  }, [connectionStatus]);
 
   // Clean up and stop keep-alive audio source and heartbeat timer
   const stopKeepAliveSource = useCallback(() => {
@@ -320,6 +366,12 @@ export function LiveStreamingStudio({
       setRecordedAudioUrl(null);
       setRecordedDuration(0);
 
+      // Reset diagnostics & telemetry
+      heartbeatResumeCountRef.current = 0;
+      diagnosticsEventsRef.current = [];
+      bufferSeqRef.current = 0;
+      addDiagnosticEvent('info', 'Live stream starting (24kHz linear PCM)...');
+
       const wordsTotal = cleanText.split(/\s+/).filter(Boolean).length;
       setWordProgress({ current: 0, total: wordsTotal });
 
@@ -413,8 +465,11 @@ export function LiveStreamingStudio({
           keepAliveSource.connect(ctx.destination);
           keepAliveSource.start(0);
           keepAliveSourceRef.current = keepAliveSource;
+          addDiagnosticEvent('info', 'Keep-alive silent source (0.0001 amp) started & looping');
         } catch (keepAliveErr) {
           console.warn('[LiveVoice] Keep-alive source connect/start warning:', keepAliveErr);
+          const errMsg = keepAliveErr instanceof Error ? keepAliveErr.message : String(keepAliveErr);
+          addDiagnosticEvent('error', `Keep-alive source start warning: ${errMsg}`);
         }
 
         // Heartbeat setInterval (250ms) to detect and auto-resume suspended AudioContext
@@ -422,12 +477,29 @@ export function LiveStreamingStudio({
           const activeCtx = audioContextRef.current;
           if (!activeCtx) return;
           if (activeCtx.state === 'suspended') {
-            console.warn('[LiveVoice] [AudioHeartbeat] AudioContext state was SUSPENDED! Auto-resuming immediately...');
+            heartbeatResumeCountRef.current += 1;
+            const currentResumeCount = heartbeatResumeCountRef.current;
+            console.warn(
+              `[LiveVoice] [AudioHeartbeat] AudioContext state was SUSPENDED! Auto-resuming immediately... (count: ${currentResumeCount})`
+            );
+            addDiagnosticEvent(
+              'resumed',
+              `Heartbeat #${currentResumeCount}: AudioContext was SUSPENDED! Auto-resuming...`
+            );
             try {
               await activeCtx.resume();
-              console.log('[LiveVoice] [AudioHeartbeat] AudioContext successfully resumed. Current state:', activeCtx.state);
+              console.log(
+                '[LiveVoice] [AudioHeartbeat] AudioContext successfully resumed. Current state:',
+                activeCtx.state
+              );
+              addDiagnosticEvent(
+                'resumed',
+                `Heartbeat #${currentResumeCount}: AudioContext resumed successfully (state: ${activeCtx.state})`
+              );
             } catch (heartbeatErr) {
+              const errMsg = heartbeatErr instanceof Error ? heartbeatErr.message : String(heartbeatErr);
               console.error('[LiveVoice] [AudioHeartbeat] Failed to resume suspended AudioContext:', heartbeatErr);
+              addDiagnosticEvent('error', `Heartbeat resume failed: ${errMsg}`);
             }
           }
         }, 250);
@@ -514,6 +586,23 @@ export function LiveStreamingStudio({
       const endTime = startTime + duration;
       nextPlayTimeRef.current = endTime;
 
+      // Track buffer sequence and diagnostics events
+      bufferSeqRef.current += 1;
+      const bufferNum = bufferSeqRef.current;
+      addDiagnosticEvent(
+        'scheduled',
+        `Buffer #${bufferNum} scheduled: start=${startTime.toFixed(3)}s, dur=${duration.toFixed(3)}s (gap: +${(startTime - now).toFixed(3)}s)`
+      );
+
+      // Schedule buffer started event when audio starts playback
+      const startDelayMs = Math.max(0, Math.round((startTime - now) * 1000));
+      window.setTimeout(() => {
+        addDiagnosticEvent(
+          'started',
+          `Buffer #${bufferNum} started (ctxTime: ${audioContextRef.current?.currentTime.toFixed(3) ?? '?'}s)`
+        );
+      }, startDelayMs);
+
       console.log(
         `[LiveVoice] [Check 4] Timing check: scheduled start(time)=${startTime.toFixed(4)}s vs ctx.currentTime=${now.toFixed(4)}s (delta: +${(startTime - now).toFixed(4)}s, lead: ${((startTime - now) * 1000).toFixed(1)}ms), duration=${duration.toFixed(4)}s, nextScheduledEndTime=${endTime.toFixed(4)}s`
       );
@@ -527,6 +616,8 @@ export function LiveStreamingStudio({
           `[LiveVoice] [Check 5] source.start(${startTime.toFixed(4)}) called successfully for buffer [${chunkInfo}] (activeSourcesCount=${activeSourcesRef.current.length})`
         );
       } catch (startErr) {
+        const errMsg = startErr instanceof Error ? startErr.message : String(startErr);
+        addDiagnosticEvent('error', `Buffer #${bufferNum} start() failed: ${errMsg}`);
         console.error(
           `[LiveVoice] [Check 5] source.start(${startTime.toFixed(4)}) FAILED for buffer [${chunkInfo}]:`,
           startErr
@@ -535,6 +626,10 @@ export function LiveStreamingStudio({
 
       sourceNode.onended = () => {
         activeSourcesRef.current = activeSourcesRef.current.filter((s) => s !== sourceNode);
+        addDiagnosticEvent(
+          'ended',
+          `Buffer #${bufferNum} ended (active remaining: ${activeSourcesRef.current.length})`
+        );
         console.log(
           `[LiveVoice] AudioBufferSourceNode ended. Remaining active: ${activeSourcesRef.current.length}, isFinal: ${isStreamFinalRef.current}`
         );
@@ -548,6 +643,7 @@ export function LiveStreamingStudio({
           setIsPlaying(false);
           setConnectionStatus('completed');
           stopKeepAliveSource();
+          addDiagnosticEvent('info', 'All scheduled live stream audio finished playing');
         }
       };
     };
@@ -799,6 +895,12 @@ export function LiveStreamingStudio({
               setChunksCount((prev) => prev + 1);
               setTotalBytes((prev) => prev + decodedByteLength);
 
+              const chunkNum = allRecordedChunksRef.current.length + 1;
+              addDiagnosticEvent(
+                'chunk',
+                `Chunk #${chunkNum} received (${decodedByteLength}B, ${sampleCount} samples)`
+              );
+
               console.log(
                 `[LiveVoice] [PCM Chunk Received] rawType=${rawType}, hasAudio=true, base64Length=${base64Str.length}, rawPcmBytes=${decodedByteLength} B, pcmSamples=${sampleCount} samples, totalChunks=${allRecordedChunksRef.current.length + 1} (output_format: pcm_24000). [CONFIRMED: NO decodeAudioData called for live chunks]`
               );
@@ -806,6 +908,8 @@ export function LiveStreamingStudio({
               // Enqueue raw PCM bytes for direct Web Audio API buffer generation and playback
               appendChunkToBuffer(bytes);
             } catch (atobErr) {
+              const errMsg = atobErr instanceof Error ? atobErr.message : String(atobErr);
+              addDiagnosticEvent('error', `Base64 decode failed: ${errMsg}`);
               console.error(
                 '[LiveVoice] Base64 decoding failed for audio packet:',
                 atobErr,
@@ -839,6 +943,10 @@ export function LiveStreamingStudio({
               `[LiveVoice] WebSocket stream isFinal/is_final confirmed! Total PCM chunks captured: ${allRecordedChunksRef.current.length}`
             );
             isStreamFinalRef.current = true;
+            addDiagnosticEvent(
+              'info',
+              `Stream final flag confirmed (${allRecordedChunksRef.current.length} total PCM chunks)`
+            );
             if (idleTimeoutTimerRef.current) clearTimeout(idleTimeoutTimerRef.current);
 
             processPcmQueue();
@@ -858,12 +966,15 @@ export function LiveStreamingStudio({
             }
           }
         } catch (parseErr) {
+          const errMsg = parseErr instanceof Error ? parseErr.message : String(parseErr);
+          addDiagnosticEvent('error', `Packet parse error: ${errMsg}`);
           console.error('[LiveVoice] Failed to parse WebSocket packet:', parseErr);
         }
       };
 
       ws.onerror = (evt) => {
         console.error('[LiveVoice] WebSocket connection error:', evt);
+        addDiagnosticEvent('error', 'WebSocket connection error event triggered');
         if (connectionTimeoutTimerRef.current) {
           clearTimeout(connectionTimeoutTimerRef.current);
           connectionTimeoutTimerRef.current = null;
@@ -876,6 +987,7 @@ export function LiveStreamingStudio({
       };
 
       ws.onclose = (evt) => {
+        addDiagnosticEvent('info', `WebSocket closed (code: ${evt.code}, reason: ${evt.reason || 'clean'})`);
         if (connectionTimeoutTimerRef.current) {
           clearTimeout(connectionTimeoutTimerRef.current);
           connectionTimeoutTimerRef.current = null;
@@ -1011,6 +1123,9 @@ export function LiveStreamingStudio({
         }}
         onStop={handleStopStream}
       />
+
+      {/* Real-Time Live Audio Diagnostics HUD & Monospace Console Overlay */}
+      <LiveAudioDiagnosticsOverlay getSnapshot={getDiagnosticsSnapshot} defaultExpanded={true} />
 
       {/* 20-Second Idle Timeout Warning Banner */}
       {connectionStatus === 'timeout' && (
