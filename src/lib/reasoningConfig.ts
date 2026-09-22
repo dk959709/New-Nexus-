@@ -9,7 +9,7 @@ export type ReasoningTargetLevel = 'low' | 'high'; // 'low' = disable / lowest e
 export type ReasoningParamFormat = 'flat_groq' | 'openrouter_nested' | 'custom';
 
 export interface ReasoningModelSpec {
-  provider: string; // Normalized provider ID (e.g. 'groq', 'openrouter', 'huggingface')
+  provider: string; // Normalized provider ID (e.g. 'groq', 'openrouter', 'huggingface', 'cloudflare')
   model: string; // Model ID (e.g. 'qwen/qwen3.8-27b')
   supportsReasoning: boolean;
   paramFormat: ReasoningParamFormat;
@@ -19,6 +19,8 @@ export interface ReasoningModelSpec {
   supportsIncludeReasoning?: boolean; // True if include_reasoning: false is supported
   isGenericFallback?: boolean; // True if resolved via generic provider fallback
   isGroqSuffixSpecialCase?: boolean; // True if resolved via Hugging Face :groq suffix special case
+  isKnownProviderPrefixSpecialCase?: boolean; // True if resolved via Cloudflare AI Gateway known provider prefix
+  matchedProvider?: string; // Name of the underlying matched provider (e.g. 'groq', 'bazaarlink', 'openrouter')
   /**
    * Function to build the exact parameter payload to merge into the request body
    */
@@ -140,6 +142,12 @@ export function normalizeProviderId(
       s.includes('hf.co') ||
       s === 'hf'
     ) return 'huggingface';
+    if (
+      s.includes('gateway.ai.cloudflare.com') ||
+      s.includes('cloudflare') ||
+      s.includes('cf-gateway') ||
+      s.includes('ai-gateway')
+    ) return 'cloudflare';
     if (s.includes('deepseek')) return 'deepseek';
     if (s.includes('openai')) return 'openai';
     if (s.includes('anthropic')) return 'anthropic';
@@ -174,6 +182,17 @@ export function normalizeProviderId(
     name.includes('huggingface')
   ) {
     return 'huggingface';
+  }
+  if (
+    url.includes('gateway.ai.cloudflare.com') ||
+    url.includes('cloudflare.com') ||
+    id.includes('cloudflare') ||
+    id.includes('cf-gateway') ||
+    id.includes('ai-gateway') ||
+    name.includes('cloudflare') ||
+    name.includes('ai gateway')
+  ) {
+    return 'cloudflare';
   }
   if (url.includes('deepseek.com') || id.includes('deepseek') || name.includes('deepseek')) {
     return 'deepseek';
@@ -365,6 +384,123 @@ export function lookupReasoningConfig(
     };
   }
 
+  // 7. Cloudflare AI Gateway fallback (applies to gateway.ai.cloudflare.com/v1/.../compat endpoints)
+  if (provKey === 'cloudflare') {
+    // Check if the model string indicates a known underlying provider (e.g. groq/, bazaarlink/, openrouter/)
+    const hasGroqPrefix = normModel.startsWith('groq/') || normModel.includes('/groq/') || normModel.includes('groq:');
+    const hasBazaarLinkPrefix = normModel.startsWith('bazaarlink/') || normModel.includes('/bazaarlink/');
+    const hasOpenRouterPrefix = normModel.startsWith('openrouter/') || normModel.includes('/openrouter/');
+
+    if (hasGroqPrefix) {
+      const strippedModel = normModel.replace(/^groq\//, '').replace(/^.*\/groq\//, '').trim();
+      const isGptOss = strippedModel.includes('gpt-oss') || strippedModel.includes('gpt_oss');
+      const isQwen38 = strippedModel.includes('qwen3.8') || strippedModel.includes('qwen/qwen3.8-27b');
+
+      if (isGptOss) {
+        return {
+          provider: 'cloudflare',
+          model: (model || '').trim(),
+          supportsReasoning: true,
+          paramFormat: 'flat_groq',
+          validEfforts: ['low', 'medium', 'high'],
+          supportsFullDisable: false,
+          supportsHiddenFormat: false,
+          supportsIncludeReasoning: true,
+          isKnownProviderPrefixSpecialCase: true,
+          matchedProvider: 'groq (gpt-oss)',
+          buildParams: (target: ReasoningTargetLevel) => ({
+            reasoning_effort: target === 'high' ? 'high' : 'low',
+            include_reasoning: false,
+          }),
+        };
+      }
+
+      if (isQwen38) {
+        return {
+          provider: 'cloudflare',
+          model: (model || '').trim(),
+          supportsReasoning: true,
+          paramFormat: 'flat_groq',
+          validEfforts: ['none', 'low', 'medium', 'high'],
+          supportsFullDisable: true,
+          supportsHiddenFormat: true,
+          isKnownProviderPrefixSpecialCase: true,
+          matchedProvider: 'groq (qwen3.8)',
+          buildParams: (target: ReasoningTargetLevel) => ({
+            reasoning_effort: target === 'high' ? 'high' : 'none',
+            reasoning_format: 'hidden',
+          }),
+        };
+      }
+
+      return {
+        provider: 'cloudflare',
+        model: (model || '').trim(),
+        supportsReasoning: true,
+        paramFormat: 'flat_groq',
+        validEfforts: ['none', 'low', 'medium', 'high'],
+        supportsFullDisable: true,
+        supportsHiddenFormat: false,
+        isKnownProviderPrefixSpecialCase: true,
+        matchedProvider: 'groq',
+        buildParams: (target: ReasoningTargetLevel) => ({
+          reasoning_effort: target === 'high' ? 'high' : 'none',
+        }),
+      };
+    }
+
+    if (hasBazaarLinkPrefix) {
+      return {
+        provider: 'cloudflare',
+        model: (model || '').trim(),
+        supportsReasoning: true,
+        paramFormat: 'flat_groq',
+        validEfforts: ['low', 'medium', 'high'],
+        supportsFullDisable: false,
+        supportsHiddenFormat: false,
+        isKnownProviderPrefixSpecialCase: true,
+        matchedProvider: 'bazaarlink',
+        buildParams: (target: ReasoningTargetLevel) => ({
+          reasoning_effort: target === 'high' ? 'high' : 'low',
+        }),
+      };
+    }
+
+    if (hasOpenRouterPrefix) {
+      return {
+        provider: 'cloudflare',
+        model: (model || '').trim(),
+        supportsReasoning: true,
+        paramFormat: 'openrouter_nested',
+        validEfforts: ['none', 'low', 'medium', 'high'],
+        supportsFullDisable: true,
+        supportsHiddenFormat: false,
+        isKnownProviderPrefixSpecialCase: true,
+        matchedProvider: 'openrouter',
+        buildParams: (target: ReasoningTargetLevel) => ({
+          reasoning: target === 'high'
+            ? { effort: 'high', exclude: true }
+            : { effort: 'none' },
+        }),
+      };
+    }
+
+    // Generic Cloudflare AI Gateway fallback rule: flat reasoning_effort ("none" for fast/disabled, "high" for Coder/Architect/Data Analyst)
+    return {
+      provider: 'cloudflare',
+      model: (model || '').trim(),
+      supportsReasoning: true,
+      paramFormat: 'flat_groq',
+      validEfforts: ['none', 'low', 'medium', 'high'],
+      supportsFullDisable: true,
+      supportsHiddenFormat: false,
+      isGenericFallback: true,
+      buildParams: (target: ReasoningTargetLevel) => ({
+        reasoning_effort: target === 'high' ? 'high' : 'none',
+      }),
+    };
+  }
+
   return null;
 }
 
@@ -530,6 +666,22 @@ export function applyReasoningConfig<T extends { extraParams?: Record<string, un
     }
     console.log(
       '[Hugging Face Reasoning Control] HF reasoning_effort sent — actual effect not guaranteed on this backend; no error does not confirm success',
+    );
+  }
+
+  // Log whether generic fallback or known-provider-prefix special-case was applied for Cloudflare AI Gateway models
+  if (provKey === 'cloudflare') {
+    if (spec.isKnownProviderPrefixSpecialCase) {
+      console.log(
+        `[Cloudflare AI Gateway Reasoning Control] Model "${effectiveModel}" -> using ${spec.matchedProvider || 'known-provider'}-prefix SPECIAL-CASE rule (reusing known provider reasoning parameters: ${JSON.stringify(params)})`,
+      );
+    } else {
+      console.log(
+        `[Cloudflare AI Gateway Reasoning Control] Model "${effectiveModel}" -> using GENERIC Cloudflare AI Gateway fallback rule (params: ${JSON.stringify(params)})`,
+      );
+    }
+    console.log(
+      '[Cloudflare AI Gateway Reasoning Control] Cloudflare AI Gateway reasoning_effort sent — actual effect depends on the underlying routed provider; no error does not confirm success.',
     );
   }
 
