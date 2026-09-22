@@ -165,16 +165,20 @@ export function lookupReasoningConfig(
 }
 
 /**
- * Determines an agent's desired reasoning level:
+ * Determines an agent's or caller's desired reasoning level:
+ * - If explicitly 'low' or 'high', returns that level directly.
  * - Coder, Architect, Data Analyst = 'high' (high reasoning effort)
- * - Planner, Researcher, Fact Checker, Advisor, Reviewer, Synthesizer, Image Finder, dynamic specialists = 'low' (disable / lowest effort)
+ * - Planner, Researcher, Fact Checker, Advisor, Reviewer, Synthesizer, Image Finder, dynamic specialists, Multi Chat personas (NOVA/ORBIT/COSMOS), AI Assistant = 'low' (disable / lowest effort)
  */
 export function getAgentDesiredReasoningLevel(
-  agent: { id?: string; name?: string } | string | null | undefined,
+  agentOrTargetLevel?: { id?: string; name?: string } | string | ReasoningTargetLevel | null,
 ): ReasoningTargetLevel {
-  if (!agent) return 'low';
-  const agentId = (typeof agent === 'string' ? agent : agent.id || '').toLowerCase().trim();
-  const agentName = (typeof agent === 'object' && agent.name ? agent.name : '').toLowerCase().trim();
+  if (!agentOrTargetLevel) return 'low';
+  if (agentOrTargetLevel === 'low' || agentOrTargetLevel === 'high') {
+    return agentOrTargetLevel;
+  }
+  const agentId = (typeof agentOrTargetLevel === 'string' ? agentOrTargetLevel : agentOrTargetLevel.id || '').toLowerCase().trim();
+  const agentName = (typeof agentOrTargetLevel === 'object' && agentOrTargetLevel.name ? agentOrTargetLevel.name : '').toLowerCase().trim();
 
   // High effort agents: Coder, Architect, Data Analyst
   if (
@@ -189,25 +193,27 @@ export function getAgentDesiredReasoningLevel(
     return 'high';
   }
 
-  // All other agents (Planner, Researcher, Fact Checker, Advisor, Reviewer, Synthesizer, Image Finder, Dynamic Specialists) = lowest effort / disabled
+  // All other agents / callers (Planner, Researcher, Fact Checker, Advisor, Reviewer, Synthesizer, Image Finder, Dynamic Specialists, Multi Chat personas, AI Assistant) = lowest effort / disabled
   return 'low';
 }
 
 /**
- * Applies reasoning configuration parameters to a provider config for a specific agent.
+ * Applies reasoning configuration parameters to a provider config.
  * If the model/provider is NOT in the config map, no parameters are added.
  */
 export function applyReasoningConfig<T extends { extraParams?: Record<string, unknown>; reasoningParams?: Record<string, unknown>; model?: string; id?: string; name?: string; url?: string }>(
   provider: T,
-  agent: { id?: string; name?: string } | string | null | undefined,
+  agentOrTargetLevel?: { id?: string; name?: string } | string | ReasoningTargetLevel | null,
+  modelOverride?: string,
 ): {
   config: T;
   spec: ReasoningModelSpec | null;
   params: Record<string, unknown> | null;
   desiredLevel: ReasoningTargetLevel;
 } {
-  const desiredLevel = getAgentDesiredReasoningLevel(agent);
-  const spec = lookupReasoningConfig(provider, provider.model);
+  const desiredLevel = getAgentDesiredReasoningLevel(agentOrTargetLevel);
+  const effectiveModel = modelOverride || provider.model;
+  const spec = lookupReasoningConfig(provider, effectiveModel);
 
   if (!spec || !spec.supportsReasoning) {
     return {

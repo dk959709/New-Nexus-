@@ -26,6 +26,7 @@ import type {
   CustomApiCallResult,
 } from '@/types';
 import { storage } from '@/lib/storage';
+import { applyReasoningConfig } from '@/lib/reasoningConfig';
 import { searchWikipedia, getWikipediaSummary, wikipediaToSearchResult, formatWikipediaForReport } from './wikipedia';
 
 function getBaseUrl(): string {
@@ -321,7 +322,26 @@ export const api = {
     sources?: AISource[];
     weather?: unknown;
   }> {
-    const provider = customProvider !== undefined ? customProvider : storage.getActiveAIProvider();
+    const rawProvider = customProvider !== undefined ? customProvider : storage.getActiveAIProvider();
+    let providerToSend = rawProvider;
+
+    if (rawProvider) {
+      const { config: reasoningEnhancedConfig, spec: reasoningSpec, params: reasoningParams, desiredLevel } =
+        applyReasoningConfig(rawProvider, 'low');
+      providerToSend = reasoningEnhancedConfig;
+
+      if (reasoningSpec && reasoningParams) {
+        console.log(
+          `[AI Assistant Reasoning Control] Provider: "${reasoningEnhancedConfig.name}" (${reasoningEnhancedConfig.id}) | Model: "${reasoningEnhancedConfig.model || ''}" | Level: "${desiredLevel}" | Reasoning Params:`,
+          reasoningParams,
+        );
+      } else {
+        console.log(
+          `[AI Assistant Reasoning Control] Provider: "${reasoningEnhancedConfig.name}" (${reasoningEnhancedConfig.id}) | Model: "${reasoningEnhancedConfig.model || ''}" | No reasoning config applied (unsupported or not in config map)`,
+        );
+      }
+    }
+
     return call<{
       answer: string;
       model: string;
@@ -334,7 +354,7 @@ export const api = {
         message,
         history: history.slice(-4),
         memory: memory.slice(-300),
-        providerConfig: provider || undefined,
+        providerConfig: providerToSend || undefined,
       }),
     });
   },

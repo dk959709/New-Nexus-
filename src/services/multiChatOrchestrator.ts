@@ -1,6 +1,7 @@
 import { storage } from '@/lib/storage';
 import { api } from '@/services/api';
 import { searchDocumentLibrary } from '@/services/documentLibraryService';
+import { applyReasoningConfig } from '@/lib/reasoningConfig';
 import type {
   AIProviderConfig,
   MultiChatMessage,
@@ -18,7 +19,7 @@ export function resolvePersonaProviderConfig(
   personaConfig: MultiChatPersonaConfig,
   isFallback = false,
   overrideMaxTokens?: number,
-): { provider: AIProviderConfig | null; model: string; error?: string } {
+): { provider: AIProviderConfig | null; model: string; reasoningParams?: Record<string, unknown> | null; error?: string } {
   const providerId = isFallback ? personaConfig.fallbackProviderId : personaConfig.providerId;
   const modelId = isFallback ? personaConfig.fallbackModelId : personaConfig.modelId;
   const effectiveMaxTokens = overrideMaxTokens !== undefined ? overrideMaxTokens : personaConfig.maxTokens;
@@ -26,24 +27,22 @@ export function resolvePersonaProviderConfig(
   const state = storage.getAIProvidersState();
   const activeCustom = storage.getActiveAIProvider();
 
+  let resolvedConfig: AIProviderConfig | null = null;
+  let liveModel = modelId || 'deepseek/deepseek-chat';
+
   if (!providerId || providerId === 'existing') {
     if (activeCustom) {
-      const liveModel =
+      liveModel =
         activeCustom.model && activeCustom.model.trim()
           ? activeCustom.model.trim()
           : modelId || 'deepseek/deepseek-chat';
-      return {
-        provider: {
-          ...activeCustom,
-          model: liveModel,
-          maxTokens: effectiveMaxTokens,
-        },
+      resolvedConfig = {
+        ...activeCustom,
         model: liveModel,
+        maxTokens: effectiveMaxTokens,
       };
-    }
-
-    return {
-      provider: {
+    } else {
+      resolvedConfig = {
         id: 'existing',
         name: 'Built-in AI',
         url: '',
@@ -52,47 +51,61 @@ export function resolvePersonaProviderConfig(
         keys: [],
         capabilities: { text: true, tools: true, web: true, wikipedia: true, memory: true },
         maxTokens: effectiveMaxTokens,
-      },
-      model: modelId || 'deepseek/deepseek-chat',
-    };
-  }
-
-  const matched = state.providers.find((p) => p.id === providerId);
-  if (!matched) {
-    if (activeCustom) {
-      const liveModel =
-        activeCustom.model && activeCustom.model.trim()
-          ? activeCustom.model.trim()
-          : modelId || 'deepseek/deepseek-chat';
-      return {
-        provider: {
+      };
+    }
+  } else {
+    const matched = state.providers.find((p) => p.id === providerId);
+    if (!matched) {
+      if (activeCustom) {
+        liveModel =
+          activeCustom.model && activeCustom.model.trim()
+            ? activeCustom.model.trim()
+            : modelId || 'deepseek/deepseek-chat';
+        resolvedConfig = {
           ...activeCustom,
           model: liveModel,
           maxTokens: effectiveMaxTokens,
-        },
+        };
+      } else {
+        return {
+          provider: null,
+          model: modelId || '',
+          error: `Configured provider "${providerId}" not found in AI Providers settings.`,
+        };
+      }
+    } else {
+      liveModel =
+        matched.model && matched.model.trim()
+          ? matched.model.trim()
+          : modelId || 'deepseek/deepseek-chat';
+
+      resolvedConfig = {
+        ...matched,
         model: liveModel,
+        maxTokens: effectiveMaxTokens,
       };
     }
-
-    return {
-      provider: null,
-      model: modelId || '',
-      error: `Configured provider "${providerId}" not found in AI Providers settings.`,
-    };
   }
 
-  const liveModel =
-    matched.model && matched.model.trim()
-      ? matched.model.trim()
-      : modelId || 'deepseek/deepseek-chat';
+  // Apply explicit provider-aware reasoning control (defaulting to lowest effort / disabled for personas)
+  const { config: reasoningEnhancedConfig, spec: reasoningSpec, params: reasoningParams, desiredLevel } =
+    applyReasoningConfig(resolvedConfig, 'low');
+
+  if (reasoningSpec && reasoningParams) {
+    console.log(
+      `[Multi Chat Reasoning Control] Persona "${personaConfig.name}" (${personaConfig.id}) -> Provider: "${reasoningEnhancedConfig.name}" (${reasoningEnhancedConfig.id}) | Model: "${liveModel}" | Level: "${desiredLevel}" | Reasoning Params:`,
+      reasoningParams,
+    );
+  } else {
+    console.log(
+      `[Multi Chat Reasoning Control] Persona "${personaConfig.name}" (${personaConfig.id}) -> Provider: "${reasoningEnhancedConfig.name}" (${reasoningEnhancedConfig.id}) | Model: "${liveModel}" | No reasoning config applied (unsupported or not in config map)`,
+    );
+  }
 
   return {
-    provider: {
-      ...matched,
-      model: liveModel,
-      maxTokens: effectiveMaxTokens,
-    },
+    provider: reasoningEnhancedConfig,
     model: liveModel,
+    reasoningParams,
   };
 }
 
