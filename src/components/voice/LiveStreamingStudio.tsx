@@ -33,6 +33,7 @@ import {
 import { LiveSessionFeed, LiveSessionMessage } from './LiveSessionFeed';
 import { StudioAudioControls } from './StudioAudioControls';
 import { CloudVoicePicker } from './CloudVoicePicker';
+import { api } from '@/services/api';
 
 interface LiveStreamingStudioProps {
   voiceId: string;
@@ -131,7 +132,12 @@ export function LiveStreamingStudio({
   // Persistent session tracking
   const isEndingSessionRef = useRef<boolean>(false);
   const pendingAudioMessageIdsRef = useRef<string[]>([]);
-  const pendingTextToSendOnOpenRef = useRef<string | null>(null);
+  const pendingTextToSendOnOpenRef = useRef<{ text: string; promptQuestion?: string } | null>(null);
+
+  // Ask AI state & conversation history
+  const [isAiThinking, setIsAiThinking] = useState<boolean>(false);
+  const [aiPendingQuestion, setAiPendingQuestion] = useState<string | null>(null);
+  const aiChatHistoryRef = useRef<Array<{ role: 'user' | 'assistant'; content: string }>>([]);
 
   // Timers and duration tracking
   const sessionStartTimeRef = useRef<number | null>(null);
@@ -298,6 +304,32 @@ export function LiveStreamingStudio({
           clearTimeout(completionCheckTimerRef.current);
           completionCheckTimerRef.current = null;
         }
+
+        // Finalize recorded full-session WAV audio
+        if (allRecordedChunksRef.current.length > 0) {
+          const wavBlob = pcmToWavBlob(allRecordedChunksRef.current, 24000, 1);
+          if (recordedAudioUrlRef.current) {
+            URL.revokeObjectURL(recordedAudioUrlRef.current);
+          }
+          const url = URL.createObjectURL(wavBlob);
+          recordedAudioUrlRef.current = url;
+          setRecordedAudioUrl(url);
+
+          const totalPcmBytes = allRecordedChunksRef.current.reduce((sum, c) => sum + c.byteLength, 0);
+          const exactDuration = totalPcmBytes / (24000 * 2);
+          setRecordedDuration(exactDuration);
+        }
+
+        // Mark all scheduled messages as spoken
+        setMessages((prevMsgs) =>
+          prevMsgs.map((msg) => {
+            if (msg.firstScheduledStartTime !== undefined && msg.status !== 'spoken') {
+              return { ...msg, status: 'spoken' };
+            }
+            return msg;
+          })
+        );
+
         addDiagnosticEvent('info', 'Live session ended cleanly after audio completed');
       } else {
         // Natural silence in an ongoing session: audio finished for current queue, session stays ready!
@@ -345,7 +377,10 @@ export function LiveStreamingStudio({
   }, [volume, isMuted]);
 
   // Start Live Session (Opens persistent WebSocket & Web Audio pipeline)
-  const startLiveSession = async (initialMessageText?: string) => {
+  const startLiveSession = async (
+    initialMessageText?: string,
+    initialPromptQuestion?: string
+  ) => {
     playTapSound();
     cleanupLiveStream();
 
@@ -410,7 +445,10 @@ export function LiveStreamingStudio({
     // If initial text is passed or entered, queue it to send on open
     const promptToSend = (initialMessageText || sessionInputText || '').trim();
     if (promptToSend) {
-      pendingTextToSendOnOpenRef.current = promptToSend;
+      pendingTextToSendOnOpenRef.current = {
+        text: promptToSend,
+        promptQuestion: initialPromptQuestion,
+      };
     } else {
       pendingTextToSendOnOpenRef.current = null;
     }
@@ -754,9 +792,9 @@ export function LiveStreamingStudio({
 
         // If there was initial prompt text queued, send it immediately!
         if (pendingTextToSendOnOpenRef.current) {
-          const textToSend = pendingTextToSendOnOpenRef.current;
+          const pending = pendingTextToSendOnOpenRef.current;
           pendingTextToSendOnOpenRef.current = null;
-          sendSessionMessage(textToSend);
+          sendSessionMessage(pending.text, pending.promptQuestion);
         }
       };
 
@@ -969,7 +1007,7 @@ export function LiveStreamingStudio({
   };
 
   // Send New Text Message Anytime (even while speaking a previous message!)
-  const sendSessionMessage = (customText?: string) => {
+  const sendSessionMessage = (customText?: string, promptQuestion?: string) => {
     const textToSend = (customText !== undefined ? customText : sessionInputText).trim();
     if (!textToSend) return;
 
@@ -981,7 +1019,7 @@ export function LiveStreamingStudio({
       connectionStatus === 'error' ||
       connectionStatus === 'timeout'
     ) {
-      startLiveSession(textToSend);
+      startLiveSession(textToSend, promptQuestion);
       setSessionInputText('');
       return;
     }
@@ -1001,6 +1039,7 @@ export function LiveStreamingStudio({
       text: textToSend,
       sentAt: Date.now(),
       status: 'queued',
+      promptQuestion,
     };
 
     setMessages((prev) => [...prev, newMsg]);
@@ -1025,10 +1064,78 @@ export function LiveStreamingStudio({
       setConnectionStatus('streaming');
       addDiagnosticEvent('info', `Sent text: "${textToSend.slice(0, 35)}..." (flush: true)`);
       console.log(`[LiveVoice] Transmitted message to open live session: "${textToSend}"`);
+    } else if (wsRef.current && wsRef.current.readyState === WebSocket.CONNECTING) {
+      console.log('[LiveVoice] WebSocket connecting; queueing message for transmission upon open.');
+      pendingTextToSendOnOpenRef.current = { text: textToSend, promptQuestion };
     } else {
-      console.warn('[LiveVoice] WebSocket not yet open when message sent; message queued in pipeline.');
+      console.warn('[LiveVoice] WebSocket not open when message sent; restarting session with text.');
+      startLiveSession(textToSend, promptQuestion);
     }
   };
+
+  const startLiveSessionRef = useRef(startLiveSession);
+  startLiveSessionRef.current = startLiveSession;
+  const sendSessionMessageRef = useRef(sendSessionMessage);
+  sendSessionMessageRef.current = sendSessionMessage;
+
+  // Ask AI handler: queries NEXUS AI and automatically speaks the response live
+  const handleAskAI = useCallback(
+    async (question: string) => {
+      const cleanQuestion = question.trim();
+      if (!cleanQuestion || isAiThinking) return;
+
+      // If no Live Session is active yet, automatically start one first
+      if (
+        connectionStatus === 'idle' ||
+        connectionStatus === 'completed' ||
+        connectionStatus === 'interrupted' ||
+        connectionStatus === 'error' ||
+        connectionStatus === 'timeout'
+      ) {
+        startLiveSessionRef.current();
+      }
+
+      setIsAiThinking(true);
+      setAiPendingQuestion(cleanQuestion);
+      addDiagnosticEvent('info', `Asking NEXUS AI: "${cleanQuestion.slice(0, 35)}..."`);
+
+      try {
+        const historyForRequest = aiChatHistoryRef.current.slice(-4);
+        const response = await api.aiChat(cleanQuestion, historyForRequest);
+        const rawAnswer = response.answer || '';
+
+        // Clean markdown styling that doesn't read naturally when spoken aloud
+        const cleanAnswer = rawAnswer
+          .replace(/```[\s\S]*?```/g, ' Code snippet omitted. ')
+          .replace(/[*#`_~>[\]()]/g, '')
+          .replace(/\s+/g, ' ')
+          .trim();
+
+        if (!cleanAnswer) {
+          throw new Error('NEXUS AI returned an empty response.');
+        }
+
+        aiChatHistoryRef.current.push({ role: 'user', content: cleanQuestion });
+        aiChatHistoryRef.current.push({ role: 'assistant', content: cleanAnswer });
+
+        // Automatically send that reply text into the EXISTING Live Session's "send new dialogue" function
+        sendSessionMessageRef.current(cleanAnswer, cleanQuestion);
+        addDiagnosticEvent(
+          'info',
+          `NEXUS AI replied (${cleanAnswer.length} chars). Queued for live voice synthesis.`
+        );
+      } catch (err) {
+        console.error('[LiveVoice] Ask AI error:', err);
+        const errMsg = err instanceof Error ? err.message : String(err);
+        setErrorMessage(`NEXUS AI error: ${errMsg}`);
+        addDiagnosticEvent('error', `Ask AI failed: ${errMsg}`);
+      } finally {
+        setIsAiThinking(false);
+        setAiPendingQuestion(null);
+      }
+    },
+    [connectionStatus, isAiThinking, addDiagnosticEvent]
+  );
 
   // End Session (Gracefully closes after current and queued audio finishes playing)
   const handleEndSession = useCallback(() => {
@@ -1068,6 +1175,27 @@ export function LiveStreamingStudio({
     } else {
       cleanupLiveStream();
       setConnectionStatus('completed');
+      if (allRecordedChunksRef.current.length > 0) {
+        const wavBlob = pcmToWavBlob(allRecordedChunksRef.current, 24000, 1);
+        if (recordedAudioUrlRef.current) {
+          URL.revokeObjectURL(recordedAudioUrlRef.current);
+        }
+        const url = URL.createObjectURL(wavBlob);
+        recordedAudioUrlRef.current = url;
+        setRecordedAudioUrl(url);
+
+        const totalPcmBytes = allRecordedChunksRef.current.reduce((sum, c) => sum + c.byteLength, 0);
+        const exactDuration = totalPcmBytes / (24000 * 2);
+        setRecordedDuration(exactDuration);
+      }
+      setMessages((prevMsgs) =>
+        prevMsgs.map((msg) => {
+          if (msg.firstScheduledStartTime !== undefined && msg.status !== 'spoken') {
+            return { ...msg, status: 'spoken' };
+          }
+          return msg;
+        })
+      );
     }
   }, [cleanupLiveStream, checkAndTriggerCompletion, addDiagnosticEvent]);
 
@@ -1092,6 +1220,16 @@ export function LiveStreamingStudio({
       const exactDuration = totalPcmBytes / (24000 * 2);
       setRecordedDuration(exactDuration);
     }
+
+    const curTime = audioContextRef.current ? audioContextRef.current.currentTime : 0;
+    setMessages((prevMsgs) =>
+      prevMsgs.map((msg) => {
+        if (msg.firstScheduledStartTime !== undefined && curTime >= msg.firstScheduledStartTime) {
+          return { ...msg, status: 'spoken' };
+        }
+        return msg;
+      })
+    );
   }, [cleanupLiveStream]);
 
   // Switch voice and retry helper for 402 recovery
@@ -1104,17 +1242,28 @@ export function LiveStreamingStudio({
     startLiveSession();
   };
 
-  // Download recorded stream as lossless WAV
-  const handleDownloadRecorded = () => {
+  // Download accumulated session audio as lossless WAV (ordered full-session audio)
+  const handleDownloadSessionWav = useCallback(() => {
     playTapSound();
-    if (!recordedAudioUrl) return;
+    if (allRecordedChunksRef.current.length === 0) return;
+
+    const wavBlob = pcmToWavBlob(allRecordedChunksRef.current, 24000, 1);
+    const downloadUrl = URL.createObjectURL(wavBlob);
     const a = document.createElement('a');
-    a.href = recordedAudioUrl;
-    const cleanName = voiceName.replace(/\s+/g, '-').toLowerCase();
+    a.href = downloadUrl;
+    const cleanName = (voiceName || 'voice').replace(/\s+/g, '-').toLowerCase();
     a.download = `elevenlabs-live-session-${cleanName}-${Date.now()}.wav`;
     document.body.appendChild(a);
     a.click();
     document.body.removeChild(a);
+    window.setTimeout(() => {
+      URL.revokeObjectURL(downloadUrl);
+    }, 1500);
+  }, [voiceName]);
+
+  // Download recorded stream as lossless WAV (uses unified session WAV logic)
+  const handleDownloadRecorded = () => {
+    handleDownloadSessionWav();
   };
 
   // Toggle recorded audio preview playback
@@ -1362,7 +1511,11 @@ export function LiveStreamingStudio({
         onStartSession={() => startLiveSession()}
         onEndSession={handleEndSession}
         onHardStop={handleHardStop}
+        onDownloadSessionAudio={handleDownloadSessionWav}
         samplePrompts={LIVE_SAMPLE_PROMPTS}
+        onAskAI={handleAskAI}
+        isAiThinking={isAiThinking}
+        aiPendingQuestion={aiPendingQuestion}
       />
 
       {/* Voice Tuning Rack & Session Information */}
