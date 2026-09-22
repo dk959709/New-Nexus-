@@ -72,6 +72,20 @@ export const REASONING_MODEL_CONFIG: Record<string, ReasoningModelSpec> = {
     }),
   },
 
+  // BazaarLink qwen/qwen3.7-flash:free: flat reasoning_effort string param (same shape as Groq's), attempt "none" first for fully-disabled reasoning
+  'bazaarlink:qwen/qwen3.7-flash:free': {
+    provider: 'bazaarlink',
+    model: 'qwen/qwen3.7-flash:free',
+    supportsReasoning: true,
+    paramFormat: 'flat_groq',
+    validEfforts: ['none', 'low', 'medium', 'high'],
+    supportsFullDisable: true,
+    supportsHiddenFormat: false,
+    buildParams: (target: ReasoningTargetLevel) => ({
+      reasoning_effort: target === 'high' ? 'high' : 'none',
+    }),
+  },
+
   // OpenRouter nvidia/nemotron-3-super-120b-a12b:free: nested reasoning: { enabled: boolean, effort: "low"|"medium"|"high" }
   'openrouter:nvidia/nemotron-3-super-120b-a12b:free': {
     provider: 'openrouter',
@@ -100,6 +114,7 @@ export function normalizeProviderId(
   if (typeof provider === 'string') {
     const s = provider.toLowerCase().trim();
     if (s.includes('groq')) return 'groq';
+    if (s.includes('bazaarlink')) return 'bazaarlink';
     if (s.includes('openrouter')) return 'openrouter';
     if (s.includes('deepseek')) return 'deepseek';
     if (s.includes('openai')) return 'openai';
@@ -111,6 +126,9 @@ export function normalizeProviderId(
   const id = (provider.id || '').toLowerCase();
   const name = (provider.name || '').toLowerCase();
 
+  if (url.includes('bazaarlink.ai') || id.includes('bazaarlink') || name.includes('bazaarlink')) {
+    return 'bazaarlink';
+  }
   if (url.includes('groq.com') || id.includes('groq') || name.includes('groq')) {
     return 'groq';
   }

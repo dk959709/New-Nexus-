@@ -123,6 +123,10 @@ async function executeProviderChatRequest({
   const maxAttempts = 3; // Initial attempt + up to 2 retries for transient 503/502/504/429
 
   const isOpenRouter = url.includes('openrouter.ai');
+  const isBazaarLink = url.includes('bazaarlink.ai') || (rawUrl && rawUrl.includes('bazaarlink'));
+  const isQwen37FlashFree = model.toLowerCase().includes('qwen/qwen3.7-flash:free');
+  const isBazaarLinkQwen37Flash = Boolean(isBazaarLink && isQwen37FlashFree);
+
   const headers: Record<string, string> = {
     'Content-Type': 'application/json',
     Authorization: `Bearer ${key}`,
@@ -143,6 +147,12 @@ async function executeProviderChatRequest({
         ...(extraParams || {}),
       };
 
+      if (isBazaarLinkQwen37Flash) {
+        console.log(
+          `[BazaarLink Qwen3.7-Flash Reasoning] Outgoing request to ${url} | model: "${model}" | Reasoning Params: ${JSON.stringify(extraParams || {})} | key: ${key ? `${key.slice(0, 10)}...` : 'NONE'} (attempt ${attempt}/${maxAttempts})`
+        );
+      }
+
       console.log(
         `[AI Provider Outgoing Request] POST ${url} | model: "${model}" | max_tokens: ${maxTokens} | temp: ${temperature} | params: ${JSON.stringify(extraParams || {})} | key: ${key ? `${key.slice(0, 10)}...` : 'NONE'} (attempt ${attempt}/${maxAttempts})`
       );
@@ -153,7 +163,18 @@ async function executeProviderChatRequest({
         signal: AbortSignal.timeout(timeoutMs),
       });
 
+      if (isBazaarLinkQwen37Flash) {
+        console.log(
+          `[BazaarLink Qwen3.7-Flash Reasoning] Response received from BazaarLink | Status: ${res.status} | Ok: ${res.ok} | Sent Params: ${JSON.stringify(extraParams || {})}`
+        );
+      }
+
       if (res.ok) {
+        if (isBazaarLinkQwen37Flash) {
+          console.log(
+            `[BazaarLink Qwen3.7-Flash Reasoning] Request accepted by BazaarLink (HTTP ${res.status}). Working reasoning params: ${JSON.stringify(extraParams || {})}`
+          );
+        }
         const payload = (await res.json()) as {
           model?: string;
           choices?: Array<{
@@ -230,6 +251,114 @@ async function executeProviderChatRequest({
           const rawText = await res.text().catch(() => '');
           if (rawText) {
             errorMsg = rawText.slice(0, 200);
+          }
+        }
+
+        // If BazaarLink rejects reasoning_effort: "none" with a 400 error, trigger fallback retry with reasoning_effort: "low" and enable_thinking: false
+        if (isBazaarLinkQwen37Flash && status === 400 && extraParams?.reasoning_effort === 'none') {
+          console.warn(
+            `[BazaarLink Qwen3.7-Flash Reasoning] HTTP 400 rejected for reasoning_effort: "none" (${errorMsg}). Triggering fallback retry with reasoning_effort: "low" and enable_thinking: false...`
+          );
+          const fallbackParams: Record<string, unknown> = {
+            ...(extraParams || {}),
+            reasoning_effort: 'low',
+            enable_thinking: false,
+          };
+          const fallbackRequestBody: Record<string, unknown> = {
+            model,
+            messages: sanitized,
+            temperature,
+            max_tokens: maxTokens,
+            ...fallbackParams,
+          };
+
+          console.log(
+            `[BazaarLink Qwen3.7-Flash Reasoning] Fallback retry outgoing request to ${url} | model: "${model}" | Fallback Reasoning Params: ${JSON.stringify(fallbackParams)}`
+          );
+
+          try {
+            const fallbackRes = await fetch(url, {
+              method: 'POST',
+              headers,
+              body: JSON.stringify(fallbackRequestBody),
+              signal: AbortSignal.timeout(timeoutMs),
+            });
+
+            console.log(
+              `[BazaarLink Qwen3.7-Flash Reasoning] Fallback response received from BazaarLink | Status: ${fallbackRes.status} | Ok: ${fallbackRes.ok}`
+            );
+
+            if (fallbackRes.ok) {
+              console.log(
+                `[BazaarLink Qwen3.7-Flash Reasoning] Fallback retry succeeded (HTTP ${fallbackRes.status})! Confirmed working configuration: { reasoning_effort: "low", enable_thinking: false }`
+              );
+              const fbPayload = (await fallbackRes.json()) as {
+                model?: string;
+                choices?: Array<{
+                  message?: {
+                    content?: string | Array<{ type?: string; text?: string }>;
+                    reasoning?: string;
+                    reasoning_content?: string;
+                  };
+                  text?: string;
+                }>;
+              };
+
+              const fbChoice = fbPayload.choices?.[0];
+              let fbContentStr = '';
+              if (fbChoice?.message?.content) {
+                if (typeof fbChoice.message.content === 'string') {
+                  fbContentStr = fbChoice.message.content.trim();
+                } else if (Array.isArray(fbChoice.message.content)) {
+                  fbContentStr = fbChoice.message.content
+                    .map((part) => (typeof part === 'string' ? part : part?.text || ''))
+                    .join('')
+                    .trim();
+                }
+              }
+
+              const fbRawReasoning =
+                fbChoice?.message?.reasoning ||
+                (fbChoice?.message as { reasoning_content?: string })?.reasoning_content;
+              let fbReasoningStr = '';
+              if (fbRawReasoning && typeof fbRawReasoning === 'string') {
+                fbReasoningStr = fbRawReasoning.trim();
+              }
+
+              const fbText =
+                fbContentStr ||
+                fbReasoningStr ||
+                (typeof fbChoice?.text === 'string' ? fbChoice.text.trim() : '') ||
+                (fbChoice ? 'OK' : '');
+
+              if (fbText) {
+                return {
+                  ok: true,
+                  text: fbText,
+                  content: fbContentStr,
+                  reasoning: fbReasoningStr,
+                  model: fbPayload.model || model,
+                  status: fallbackRes.status,
+                };
+              }
+            } else {
+              let fbErrMsg = `HTTP ${fallbackRes.status}`;
+              try {
+                const fbErrObj = (await fallbackRes.json()) as { error?: { message?: string } | string; message?: string };
+                fbErrMsg = (typeof fbErrObj.error === 'object' ? fbErrObj.error?.message : fbErrObj.error) || fbErrObj.message || `HTTP ${fallbackRes.status}`;
+              } catch {
+                const fbRaw = await fallbackRes.text().catch(() => '');
+                if (fbRaw) fbErrMsg = fbRaw.slice(0, 200);
+              }
+              console.error(
+                `[BazaarLink Qwen3.7-Flash Reasoning] Fallback retry failed with HTTP ${fallbackRes.status} (${fbErrMsg}).`
+              );
+            }
+          } catch (fbErr) {
+            console.error(
+              `[BazaarLink Qwen3.7-Flash Reasoning] Fallback retry network error:`,
+              fbErr
+            );
           }
         }
 
