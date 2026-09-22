@@ -123,7 +123,17 @@ async function executeProviderChatRequest({
   const maxAttempts = 3; // Initial attempt + up to 2 retries for transient 503/502/504/429
 
   const isOpenRouter = url.includes('openrouter.ai');
-  const isBazaarLink = url.includes('bazaarlink.ai') || (rawUrl && rawUrl.includes('bazaarlink'));
+  const isGroq = url.includes('groq.com') || (rawUrl && rawUrl.includes('groq'));
+  const isBazaarLink =
+    url.includes('bazaarlink.ai') ||
+    url.includes('api.bazaarlink.ai') ||
+    url.includes('bazaarlink.ai/api') ||
+    (rawUrl && rawUrl.includes('bazaarlink'));
+  const isHuggingFace =
+    url.includes('router.huggingface.co') ||
+    url.includes('huggingface.co') ||
+    url.includes('hf.co') ||
+    (rawUrl && rawUrl.includes('huggingface'));
   const isQwen37FlashFree = model.toLowerCase().includes('qwen/qwen3.7-flash:free');
   const isBazaarLinkQwen37Flash = Boolean(isBazaarLink && isQwen37FlashFree);
 
@@ -254,10 +264,10 @@ async function executeProviderChatRequest({
           }
         }
 
-        // If BazaarLink rejects reasoning_effort: "none" with a 400 error, trigger fallback retry with reasoning_effort: "low" and enable_thinking: false
-        if (isBazaarLinkQwen37Flash && status === 400 && extraParams?.reasoning_effort === 'none') {
+        // If BazaarLink rejects initial reasoning_effort (e.g. "low") with a 400 error for Qwen3.7-Flash, trigger secondary fallback retry with reasoning_effort: "low" and enable_thinking: false
+        if (isBazaarLinkQwen37Flash && status === 400 && extraParams?.reasoning_effort && extraParams?.enable_thinking === undefined) {
           console.warn(
-            `[BazaarLink Qwen3.7-Flash Reasoning] HTTP 400 rejected for reasoning_effort: "none" (${errorMsg}). Triggering fallback retry with reasoning_effort: "low" and enable_thinking: false...`
+            `[BazaarLink Qwen3.7-Flash Reasoning] HTTP 400 rejected for initial reasoning_effort: "${extraParams.reasoning_effort}" (${errorMsg}). Triggering secondary fallback retry with reasoning_effort: "low" and enable_thinking: false...`
           );
           const fallbackParams: Record<string, unknown> = {
             ...(extraParams || {}),
@@ -273,7 +283,7 @@ async function executeProviderChatRequest({
           };
 
           console.log(
-            `[BazaarLink Qwen3.7-Flash Reasoning] Fallback retry outgoing request to ${url} | model: "${model}" | Fallback Reasoning Params: ${JSON.stringify(fallbackParams)}`
+            `[BazaarLink Qwen3.7-Flash Reasoning] Secondary fallback retry outgoing request to ${url} | model: "${model}" | Fallback Reasoning Params: ${JSON.stringify(fallbackParams)}`
           );
 
           try {
@@ -285,12 +295,12 @@ async function executeProviderChatRequest({
             });
 
             console.log(
-              `[BazaarLink Qwen3.7-Flash Reasoning] Fallback response received from BazaarLink | Status: ${fallbackRes.status} | Ok: ${fallbackRes.ok}`
+              `[BazaarLink Qwen3.7-Flash Reasoning] Secondary fallback response received from BazaarLink | Status: ${fallbackRes.status} | Ok: ${fallbackRes.ok}`
             );
 
             if (fallbackRes.ok) {
               console.log(
-                `[BazaarLink Qwen3.7-Flash Reasoning] Fallback retry succeeded (HTTP ${fallbackRes.status})! Confirmed working configuration: { reasoning_effort: "low", enable_thinking: false }`
+                `[BazaarLink Qwen3.7-Flash Reasoning] Secondary fallback retry succeeded (HTTP ${fallbackRes.status})! Confirmed working configuration: { reasoning_effort: "low", enable_thinking: false }`
               );
               const fbPayload = (await fallbackRes.json()) as {
                 model?: string;
@@ -357,6 +367,456 @@ async function executeProviderChatRequest({
           } catch (fbErr) {
             console.error(
               `[BazaarLink Qwen3.7-Flash Reasoning] Fallback retry network error:`,
+              fbErr
+            );
+          }
+        }
+
+        // If BazaarLink returns an error for the reasoning parameter on any other model (e.g. plain models rejecting reasoning_effort), catch it and retry once without reasoning params
+        if (
+          isBazaarLink &&
+          !isBazaarLinkQwen37Flash &&
+          (extraParams?.reasoning_effort !== undefined || extraParams?.reasoning_format !== undefined || extraParams?.enable_thinking !== undefined) &&
+          status >= 400 &&
+          status < 500
+        ) {
+          console.warn(
+            `[BazaarLink Reasoning Fallback] Model "${model}" rejected reasoning parameters (HTTP ${status}: ${errorMsg}). Retrying once without reasoning parameter...`
+          );
+          const fallbackParams = { ...(extraParams || {}) };
+          delete fallbackParams.reasoning_effort;
+          delete fallbackParams.reasoning_format;
+          delete fallbackParams.enable_thinking;
+
+          const fallbackRequestBody: Record<string, unknown> = {
+            model,
+            messages: sanitized,
+            temperature,
+            max_tokens: maxTokens,
+            ...fallbackParams,
+          };
+
+          console.log(
+            `[BazaarLink Reasoning Fallback] Outgoing retry request to ${url} | model: "${model}" | Fallback Params: ${JSON.stringify(fallbackParams)}`
+          );
+
+          try {
+            const fallbackRes = await fetch(url, {
+              method: 'POST',
+              headers,
+              body: JSON.stringify(fallbackRequestBody),
+              signal: AbortSignal.timeout(timeoutMs),
+            });
+
+            console.log(
+              `[BazaarLink Reasoning Fallback] Fallback response from BazaarLink | Status: ${fallbackRes.status} | Ok: ${fallbackRes.ok}`
+            );
+
+            if (fallbackRes.ok) {
+              console.log(
+                `[BazaarLink Reasoning Fallback] Fallback retry succeeded (HTTP ${fallbackRes.status}) for model "${model}" without reasoning parameter.`
+              );
+              const fbPayload = (await fallbackRes.json()) as {
+                model?: string;
+                choices?: Array<{
+                  message?: {
+                    content?: string | Array<{ type?: string; text?: string }>;
+                    reasoning?: string;
+                    reasoning_content?: string;
+                  };
+                  text?: string;
+                }>;
+              };
+
+              const fbChoice = fbPayload.choices?.[0];
+              let fbContentStr = '';
+              if (fbChoice?.message?.content) {
+                if (typeof fbChoice.message.content === 'string') {
+                  fbContentStr = fbChoice.message.content.trim();
+                } else if (Array.isArray(fbChoice.message.content)) {
+                  fbContentStr = fbChoice.message.content
+                    .map((part) => (typeof part === 'string' ? part : part?.text || ''))
+                    .join('')
+                    .trim();
+                }
+              }
+
+              const fbRawReasoning =
+                fbChoice?.message?.reasoning ||
+                (fbChoice?.message as { reasoning_content?: string })?.reasoning_content;
+              let fbReasoningStr = '';
+              if (fbRawReasoning && typeof fbRawReasoning === 'string') {
+                fbReasoningStr = fbRawReasoning.trim();
+              }
+
+              const fbText =
+                fbContentStr ||
+                fbReasoningStr ||
+                (typeof fbChoice?.text === 'string' ? fbChoice.text.trim() : '') ||
+                (fbChoice ? 'OK' : '');
+
+              if (fbText) {
+                return {
+                  ok: true,
+                  text: fbText,
+                  content: fbContentStr,
+                  reasoning: fbReasoningStr,
+                  model: fbPayload.model || model,
+                  status: fallbackRes.status,
+                };
+              }
+            } else {
+              let fbErrMsg = `HTTP ${fallbackRes.status}`;
+              try {
+                const fbErrObj = (await fallbackRes.json()) as { error?: { message?: string } | string; message?: string };
+                fbErrMsg = (typeof fbErrObj.error === 'object' ? fbErrObj.error?.message : fbErrObj.error) || fbErrObj.message || `HTTP ${fallbackRes.status}`;
+              } catch {
+                const fbRaw = await fallbackRes.text().catch(() => '');
+                if (fbRaw) fbErrMsg = fbRaw.slice(0, 200);
+              }
+              console.error(
+                `[BazaarLink Reasoning Fallback] Fallback retry failed with HTTP ${fallbackRes.status} (${fbErrMsg}).`
+              );
+            }
+          } catch (fbErr) {
+            console.error(
+              `[BazaarLink Reasoning Fallback] Fallback retry network error for model "${model}":`,
+              fbErr
+            );
+          }
+        }
+
+        // If OpenRouter returns an error for the reasoning parameter on any specific model, catch it and retry once without reasoning params
+        if (isOpenRouter && extraParams?.reasoning && status >= 400 && status < 500) {
+          console.warn(
+            `[OpenRouter Reasoning Fallback] Model "${model}" rejected reasoning parameter (HTTP ${status}: ${errorMsg}). Retrying once without reasoning parameter...`
+          );
+          const fallbackParams = { ...(extraParams || {}) };
+          delete fallbackParams.reasoning;
+
+          const fallbackRequestBody: Record<string, unknown> = {
+            model,
+            messages: sanitized,
+            temperature,
+            max_tokens: maxTokens,
+            ...fallbackParams,
+          };
+
+          console.log(
+            `[OpenRouter Reasoning Fallback] Outgoing retry request to ${url} | model: "${model}" | Fallback Params: ${JSON.stringify(fallbackParams)}`
+          );
+
+          try {
+            const fallbackRes = await fetch(url, {
+              method: 'POST',
+              headers,
+              body: JSON.stringify(fallbackRequestBody),
+              signal: AbortSignal.timeout(timeoutMs),
+            });
+
+            console.log(
+              `[OpenRouter Reasoning Fallback] Fallback response from OpenRouter | Status: ${fallbackRes.status} | Ok: ${fallbackRes.ok}`
+            );
+
+            if (fallbackRes.ok) {
+              console.log(
+                `[OpenRouter Reasoning Fallback] Fallback retry succeeded (HTTP ${fallbackRes.status}) for model "${model}" without reasoning parameter.`
+              );
+              const fbPayload = (await fallbackRes.json()) as {
+                model?: string;
+                choices?: Array<{
+                  message?: {
+                    content?: string | Array<{ type?: string; text?: string }>;
+                    reasoning?: string;
+                    reasoning_content?: string;
+                  };
+                  text?: string;
+                }>;
+              };
+
+              const fbChoice = fbPayload.choices?.[0];
+              let fbContentStr = '';
+              if (fbChoice?.message?.content) {
+                if (typeof fbChoice.message.content === 'string') {
+                  fbContentStr = fbChoice.message.content.trim();
+                } else if (Array.isArray(fbChoice.message.content)) {
+                  fbContentStr = fbChoice.message.content
+                    .map((part) => (typeof part === 'string' ? part : part?.text || ''))
+                    .join('')
+                    .trim();
+                }
+              }
+
+              const fbRawReasoning =
+                fbChoice?.message?.reasoning ||
+                (fbChoice?.message as { reasoning_content?: string })?.reasoning_content;
+              let fbReasoningStr = '';
+              if (fbRawReasoning && typeof fbRawReasoning === 'string') {
+                fbReasoningStr = fbRawReasoning.trim();
+              }
+
+              const fbText =
+                fbContentStr ||
+                fbReasoningStr ||
+                (typeof fbChoice?.text === 'string' ? fbChoice.text.trim() : '') ||
+                (fbChoice ? 'OK' : '');
+
+              if (fbText) {
+                return {
+                  ok: true,
+                  text: fbText,
+                  content: fbContentStr,
+                  reasoning: fbReasoningStr,
+                  model: fbPayload.model || model,
+                  status: fallbackRes.status,
+                };
+              }
+            } else {
+              let fbErrMsg = `HTTP ${fallbackRes.status}`;
+              try {
+                const fbErrObj = (await fallbackRes.json()) as { error?: { message?: string } | string; message?: string };
+                fbErrMsg = (typeof fbErrObj.error === 'object' ? fbErrObj.error?.message : fbErrObj.error) || fbErrObj.message || `HTTP ${fallbackRes.status}`;
+              } catch {
+                const fbRaw = await fallbackRes.text().catch(() => '');
+                if (fbRaw) fbErrMsg = fbRaw.slice(0, 200);
+              }
+              console.error(
+                `[OpenRouter Reasoning Fallback] Fallback retry failed with HTTP ${fallbackRes.status} (${fbErrMsg}).`
+              );
+            }
+          } catch (fbErr) {
+            console.error(
+              `[OpenRouter Reasoning Fallback] Fallback retry network error for model "${model}":`,
+              fbErr
+            );
+          }
+        }
+
+        // If Groq returns an error for the reasoning parameter on any specific model (e.g. plain instruct model), catch it and retry once without reasoning params
+        if (
+          isGroq &&
+          (extraParams?.reasoning_effort !== undefined ||
+            extraParams?.reasoning_format !== undefined ||
+            extraParams?.include_reasoning !== undefined) &&
+          status >= 400 &&
+          status < 500
+        ) {
+          console.warn(
+            `[Groq Reasoning Fallback] Model "${model}" rejected reasoning parameters (HTTP ${status}: ${errorMsg}). Retrying once without reasoning parameter...`
+          );
+          const fallbackParams = { ...(extraParams || {}) };
+          delete fallbackParams.reasoning_effort;
+          delete fallbackParams.reasoning_format;
+          delete fallbackParams.include_reasoning;
+
+          const fallbackRequestBody: Record<string, unknown> = {
+            model,
+            messages: sanitized,
+            temperature,
+            max_tokens: maxTokens,
+            ...fallbackParams,
+          };
+
+          console.log(
+            `[Groq Reasoning Fallback] Outgoing retry request to ${url} | model: "${model}" | Fallback Params: ${JSON.stringify(fallbackParams)}`
+          );
+
+          try {
+            const fallbackRes = await fetch(url, {
+              method: 'POST',
+              headers,
+              body: JSON.stringify(fallbackRequestBody),
+              signal: AbortSignal.timeout(timeoutMs),
+            });
+
+            console.log(
+              `[Groq Reasoning Fallback] Fallback response from Groq | Status: ${fallbackRes.status} | Ok: ${fallbackRes.ok}`
+            );
+
+            if (fallbackRes.ok) {
+              console.log(
+                `[Groq Reasoning Fallback] Fallback retry succeeded (HTTP ${fallbackRes.status}) for model "${model}" without reasoning parameter.`
+              );
+              const fbPayload = (await fallbackRes.json()) as {
+                model?: string;
+                choices?: Array<{
+                  message?: {
+                    content?: string | Array<{ type?: string; text?: string }>;
+                    reasoning?: string;
+                    reasoning_content?: string;
+                  };
+                  text?: string;
+                }>;
+              };
+
+              const fbChoice = fbPayload.choices?.[0];
+              let fbContentStr = '';
+              if (fbChoice?.message?.content) {
+                if (typeof fbChoice.message.content === 'string') {
+                  fbContentStr = fbChoice.message.content.trim();
+                } else if (Array.isArray(fbChoice.message.content)) {
+                  fbContentStr = fbChoice.message.content
+                    .map((part) => (typeof part === 'string' ? part : part?.text || ''))
+                    .join('')
+                    .trim();
+                }
+              }
+
+              const fbRawReasoning =
+                fbChoice?.message?.reasoning ||
+                (fbChoice?.message as { reasoning_content?: string })?.reasoning_content;
+              let fbReasoningStr = '';
+              if (fbRawReasoning && typeof fbRawReasoning === 'string') {
+                fbReasoningStr = fbRawReasoning.trim();
+              }
+
+              const fbText =
+                fbContentStr ||
+                fbReasoningStr ||
+                (typeof fbChoice?.text === 'string' ? fbChoice.text.trim() : '') ||
+                (fbChoice ? 'OK' : '');
+
+              if (fbText) {
+                return {
+                  ok: true,
+                  text: fbText,
+                  content: fbContentStr,
+                  reasoning: fbReasoningStr,
+                  model: fbPayload.model || model,
+                  status: fallbackRes.status,
+                };
+              }
+            } else {
+              let fbErrMsg = `HTTP ${fallbackRes.status}`;
+              try {
+                const fbErrObj = (await fallbackRes.json()) as { error?: { message?: string } | string; message?: string };
+                fbErrMsg = (typeof fbErrObj.error === 'object' ? fbErrObj.error?.message : fbErrObj.error) || fbErrObj.message || `HTTP ${fallbackRes.status}`;
+              } catch {
+                const fbRaw = await fallbackRes.text().catch(() => '');
+                if (fbRaw) fbErrMsg = fbRaw.slice(0, 200);
+              }
+              console.error(
+                `[Groq Reasoning Fallback] Fallback retry failed with HTTP ${fallbackRes.status} (${fbErrMsg}).`
+              );
+            }
+          } catch (fbErr) {
+            console.error(
+              `[Groq Reasoning Fallback] Fallback retry network error for model "${model}":`,
+              fbErr
+            );
+          }
+        }
+
+        // If Hugging Face returns an error for the reasoning parameter on any specific backend, catch it and retry once without reasoning params
+        if (
+          isHuggingFace &&
+          (extraParams?.reasoning_effort !== undefined ||
+            extraParams?.reasoning_format !== undefined ||
+            extraParams?.include_reasoning !== undefined) &&
+          status >= 400 &&
+          status < 500
+        ) {
+          console.warn(
+            `[Hugging Face Reasoning Fallback] Model "${model}" rejected reasoning parameters (HTTP ${status}: ${errorMsg}). Retrying once without reasoning parameter...`
+          );
+          const fallbackParams = { ...(extraParams || {}) };
+          delete fallbackParams.reasoning_effort;
+          delete fallbackParams.reasoning_format;
+          delete fallbackParams.include_reasoning;
+
+          const fallbackRequestBody: Record<string, unknown> = {
+            model,
+            messages: sanitized,
+            temperature,
+            max_tokens: maxTokens,
+            ...fallbackParams,
+          };
+
+          console.log(
+            `[Hugging Face Reasoning Fallback] Outgoing retry request to ${url} | model: "${model}" | Fallback Params: ${JSON.stringify(fallbackParams)}`
+          );
+
+          try {
+            const fallbackRes = await fetch(url, {
+              method: 'POST',
+              headers,
+              body: JSON.stringify(fallbackRequestBody),
+              signal: AbortSignal.timeout(timeoutMs),
+            });
+
+            console.log(
+              `[Hugging Face Reasoning Fallback] Fallback response from Hugging Face | Status: ${fallbackRes.status} | Ok: ${fallbackRes.ok}`
+            );
+
+            if (fallbackRes.ok) {
+              console.log(
+                `[Hugging Face Reasoning Fallback] Fallback retry succeeded (HTTP ${fallbackRes.status}) for model "${model}" without reasoning parameter.`
+              );
+              const fbPayload = (await fallbackRes.json()) as {
+                model?: string;
+                choices?: Array<{
+                  message?: {
+                    content?: string | Array<{ type?: string; text?: string }>;
+                    reasoning?: string;
+                    reasoning_content?: string;
+                  };
+                  text?: string;
+                }>;
+              };
+
+              const fbChoice = fbPayload.choices?.[0];
+              let fbContentStr = '';
+              if (fbChoice?.message?.content) {
+                if (typeof fbChoice.message.content === 'string') {
+                  fbContentStr = fbChoice.message.content.trim();
+                } else if (Array.isArray(fbChoice.message.content)) {
+                  fbContentStr = fbChoice.message.content
+                    .map((part) => (typeof part === 'string' ? part : part?.text || ''))
+                    .join('')
+                    .trim();
+                }
+              }
+
+              const fbRawReasoning =
+                fbChoice?.message?.reasoning ||
+                (fbChoice?.message as { reasoning_content?: string })?.reasoning_content;
+              let fbReasoningStr = '';
+              if (fbRawReasoning && typeof fbRawReasoning === 'string') {
+                fbReasoningStr = fbRawReasoning.trim();
+              }
+
+              const fbText =
+                fbContentStr ||
+                fbReasoningStr ||
+                (typeof fbChoice?.text === 'string' ? fbChoice.text.trim() : '') ||
+                (fbChoice ? 'OK' : '');
+
+              if (fbText) {
+                return {
+                  ok: true,
+                  text: fbText,
+                  content: fbContentStr,
+                  reasoning: fbReasoningStr,
+                  model: fbPayload.model || model,
+                  status: fallbackRes.status,
+                };
+              }
+            } else {
+              let fbErrMsg = `HTTP ${fallbackRes.status}`;
+              try {
+                const fbErrObj = (await fallbackRes.json()) as { error?: { message?: string } | string; message?: string };
+                fbErrMsg = (typeof fbErrObj.error === 'object' ? fbErrObj.error?.message : fbErrObj.error) || fbErrObj.message || `HTTP ${fallbackRes.status}`;
+              } catch {
+                const fbRaw = await fallbackRes.text().catch(() => '');
+                if (fbRaw) fbErrMsg = fbRaw.slice(0, 200);
+              }
+              console.error(
+                `[Hugging Face Reasoning Fallback] Fallback retry failed with HTTP ${fallbackRes.status} (${fbErrMsg}).`
+              );
+            }
+          } catch (fbErr) {
+            console.error(
+              `[Hugging Face Reasoning Fallback] Fallback retry network error for model "${model}":`,
               fbErr
             );
           }
