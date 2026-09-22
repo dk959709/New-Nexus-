@@ -168,7 +168,7 @@ export function lookupReasoningConfig(
  * Determines an agent's or caller's desired reasoning level:
  * - If explicitly 'low' or 'high', returns that level directly.
  * - Coder, Architect, Data Analyst = 'high' (high reasoning effort)
- * - Planner, Researcher, Fact Checker, Advisor, Reviewer, Synthesizer, Image Finder, dynamic specialists, Multi Chat personas (NOVA/ORBIT/COSMOS), AI Assistant = 'low' (disable / lowest effort)
+ * - Planner, Researcher, Fact Checker, Advisor, Reviewer, Synthesizer, Image Finder, dynamic specialists, Multi Chat personas (NOVA/ORBIT/COSMOS), AI Assistant, Parallax 20-agent swarm = 'low' (disable / lowest effort)
  */
 export function getAgentDesiredReasoningLevel(
   agentOrTargetLevel?: { id?: string; name?: string } | string | ReasoningTargetLevel | null,
@@ -193,7 +193,7 @@ export function getAgentDesiredReasoningLevel(
     return 'high';
   }
 
-  // All other agents / callers (Planner, Researcher, Fact Checker, Advisor, Reviewer, Synthesizer, Image Finder, Dynamic Specialists, Multi Chat personas, AI Assistant) = lowest effort / disabled
+  // All other agents / callers (Planner, Researcher, Fact Checker, Advisor, Reviewer, Synthesizer, Image Finder, Dynamic Specialists, Multi Chat personas, AI Assistant, Parallax personas) = lowest effort / disabled
   return 'low';
 }
 

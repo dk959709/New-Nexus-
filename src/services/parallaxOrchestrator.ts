@@ -1,5 +1,6 @@
 import { storage, DEFAULT_PARALLAX_AGENTS } from '@/lib/storage';
 import { api } from '@/services/api';
+import { applyReasoningConfig } from '@/lib/reasoningConfig';
 import type {
   AIProviderConfig,
   ParallaxAgentConfig,
@@ -14,34 +15,32 @@ import type {
 
 /**
  * Resolves AI Provider configuration for a Parallax agent.
- * Reuses existing provider selection logic with multi-key failover support.
+ * Reuses existing provider selection logic with multi-key failover support and provider-aware reasoning control.
  */
 export function resolveParallaxProviderConfig(
   agent: ParallaxAgentConfig,
   overrideMaxTokens?: number,
-): { provider: AIProviderConfig | null; model: string } {
+): { provider: AIProviderConfig | null; model: string; reasoningParams?: Record<string, unknown> | null } {
   const effectiveMaxTokens = overrideMaxTokens !== undefined ? overrideMaxTokens : agent.maxTokens || 100;
   const state = storage.getAIProvidersState();
   const activeCustom = storage.getActiveAIProvider();
 
+  let resolvedConfig: AIProviderConfig | null = null;
+  let liveModel = agent.modelId || 'deepseek/deepseek-chat';
+
   if (!agent.providerId || agent.providerId === 'existing') {
     if (activeCustom) {
-      const liveModel =
+      liveModel =
         activeCustom.model && activeCustom.model.trim()
           ? activeCustom.model.trim()
           : agent.modelId || 'deepseek/deepseek-chat';
-      return {
-        provider: {
-          ...activeCustom,
-          model: liveModel,
-          maxTokens: effectiveMaxTokens,
-        },
+      resolvedConfig = {
+        ...activeCustom,
         model: liveModel,
+        maxTokens: effectiveMaxTokens,
       };
-    }
-
-    return {
-      provider: {
+    } else {
+      resolvedConfig = {
         id: 'existing',
         name: 'Built-in AI',
         url: '',
@@ -50,39 +49,66 @@ export function resolveParallaxProviderConfig(
         keys: [],
         capabilities: { text: true, tools: true, web: true, wikipedia: true, memory: true },
         maxTokens: effectiveMaxTokens,
-      },
-      model: agent.modelId || 'deepseek/deepseek-chat',
-    };
-  }
-
-  const matched = state.providers.find((p) => p.id === agent.providerId);
-  if (matched) {
-    const liveModel = agent.modelId || matched.model || 'deepseek/deepseek-chat';
-    console.log(
-      `[PARALLAX resolveProviderConfig] Persona "${agent.name}" -> Provider "${matched.name}" (${matched.id}) | model: "${liveModel}" | keys configured: ${matched.keys?.length || 0}`,
-    );
-    return {
-      provider: {
+      };
+    }
+  } else {
+    const matched = state.providers.find((p) => p.id === agent.providerId);
+    if (matched) {
+      liveModel = agent.modelId || matched.model || 'deepseek/deepseek-chat';
+      resolvedConfig = {
         ...matched,
         model: liveModel,
         maxTokens: effectiveMaxTokens,
-      },
-      model: liveModel,
-    };
+      };
+    } else {
+      if (activeCustom) {
+        liveModel =
+          activeCustom.model && activeCustom.model.trim()
+            ? activeCustom.model.trim()
+            : agent.modelId || 'deepseek/deepseek-chat';
+        resolvedConfig = {
+          ...activeCustom,
+          model: liveModel,
+          maxTokens: effectiveMaxTokens,
+        };
+      } else {
+        resolvedConfig = {
+          id: 'existing',
+          name: 'Built-in AI',
+          url: '',
+          model: agent.modelId || 'deepseek/deepseek-chat',
+          keyStrategy: 'failover',
+          keys: [],
+          capabilities: { text: true, tools: true, web: true, wikipedia: true, memory: true },
+          maxTokens: effectiveMaxTokens,
+        };
+      }
+    }
   }
 
+  // Apply explicit provider-aware reasoning control (defaulting to lowest effort / disabled for Parallax personas)
+  const { config: reasoningEnhancedConfig, spec: reasoningSpec, params: reasoningParams, desiredLevel } =
+    applyReasoningConfig(resolvedConfig, 'low');
+
+  if (reasoningSpec && reasoningParams) {
+    console.log(
+      `[PARALLAX Reasoning Control] Persona "${agent.name}" (${agent.id}) -> Provider: "${reasoningEnhancedConfig.name}" (${reasoningEnhancedConfig.id}) | Model: "${liveModel}" | Level: "${desiredLevel}" | Reasoning Params:`,
+      reasoningParams,
+    );
+  } else {
+    console.log(
+      `[PARALLAX Reasoning Control] Persona "${agent.name}" (${agent.id}) -> Provider: "${reasoningEnhancedConfig.name}" (${reasoningEnhancedConfig.id}) | Model: "${liveModel}" | No reasoning config applied (unsupported or not in config map)`,
+    );
+  }
+
+  console.log(
+    `[PARALLAX resolveProviderConfig] Persona "${agent.name}" -> Provider "${reasoningEnhancedConfig.name}" (${reasoningEnhancedConfig.id}) | model: "${liveModel}" | keys configured: ${reasoningEnhancedConfig.keys?.length || 0}`,
+  );
+
   return {
-    provider: {
-      id: 'existing',
-      name: 'Built-in AI',
-      url: '',
-      model: agent.modelId || 'deepseek/deepseek-chat',
-      keyStrategy: 'failover',
-      keys: [],
-      capabilities: { text: true, tools: true, web: true, wikipedia: true, memory: true },
-      maxTokens: effectiveMaxTokens,
-    },
-    model: agent.modelId || 'deepseek/deepseek-chat',
+    provider: reasoningEnhancedConfig,
+    model: liveModel,
+    reasoningParams,
   };
 }
 
