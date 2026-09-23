@@ -850,7 +850,7 @@ export function AssistantPage() {
         }
         return updated;
       });
-      triggerSettingsToast('Answer deleted from conversation');
+      triggerSettingsToast('Message deleted from conversation');
     },
     [speakingIndex, edgeTtsPlayingIndex, stopSpeak],
   );
@@ -2164,16 +2164,57 @@ export function AssistantPage() {
                   >
                     {/* User Message Bubble */}
                     {isUser ? (
-                      <div
-                        className={`leading-relaxed break-words whitespace-pre-wrap transition-all ${
-                          theme === 'classic'
-                            ? 'px-4 py-2.5 rounded-2xl bg-gradient-to-r from-cyan-950/90 to-blue-950/90 text-cyan-50 text-[14.5px] border border-cyan-500/40 shadow-[0_0_15px_rgba(6,182,212,0.15)]'
-                            : theme === 'fulldark'
-                            ? 'px-5 py-3 rounded-[24px] bg-[#212121] text-[#f4f4f5] text-[15px] border border-[#2f2f2f] shadow-none'
-                            : 'px-4 py-2.5 rounded-2xl bg-[#27272a] text-zinc-100 text-[14.5px] border border-zinc-700/60'
-                        }`}
-                      >
-                        {message.content}
+                      <div className="flex flex-col items-end gap-1 group/user">
+                        <div
+                          className={`leading-relaxed break-words whitespace-pre-wrap transition-all ${
+                            theme === 'classic'
+                              ? 'px-4 py-2.5 rounded-2xl bg-gradient-to-r from-cyan-950/90 to-blue-950/90 text-cyan-50 text-[14.5px] border border-cyan-500/40 shadow-[0_0_15px_rgba(6,182,212,0.15)]'
+                              : theme === 'fulldark'
+                              ? 'px-5 py-3 rounded-[24px] bg-[#212121] text-[#f4f4f5] text-[15px] border border-[#2f2f2f] shadow-none'
+                              : 'px-4 py-2.5 rounded-2xl bg-[#27272a] text-zinc-100 text-[14.5px] border border-zinc-700/60'
+                          }`}
+                        >
+                          {message.content}
+                        </div>
+
+                        {/* User Message Action Toolbar (Copy & Delete) */}
+                        <div
+                          className={`flex items-center gap-1.5 opacity-70 group-hover/user:opacity-100 transition-opacity text-xs ${
+                            theme === 'fulldark' ? 'text-[#888]' : 'text-zinc-400'
+                          }`}
+                        >
+                          <button
+                            type="button"
+                            onClick={() => handleCopyText(message.content, index)}
+                            className={`p-1 rounded-md transition-colors ${
+                              theme === 'fulldark'
+                                ? 'hover:text-white hover:bg-[#282828]'
+                                : 'hover:text-zinc-200 hover:bg-zinc-800'
+                            }`}
+                            title="Copy prompt"
+                            aria-label="Copy prompt"
+                          >
+                            {copiedIndex === index ? (
+                              <Check size={12} className="text-emerald-400" />
+                            ) : (
+                              <Copy size={12} />
+                            )}
+                          </button>
+
+                          <button
+                            type="button"
+                            onClick={() => handleDeleteMessage(index)}
+                            className={`p-1 rounded-md transition-colors ${
+                              theme === 'fulldark'
+                                ? 'hover:text-red-400 hover:bg-red-500/10'
+                                : 'hover:text-red-400 hover:bg-red-500/10'
+                            }`}
+                            title="Delete this prompt"
+                            aria-label="Delete prompt"
+                          >
+                            <Trash2 size={12} />
+                          </button>
+                        </div>
                       </div>
                     ) : (
                       /* Assistant Message */
