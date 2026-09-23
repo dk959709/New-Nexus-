@@ -7163,6 +7163,31 @@ Please combine the Coder's code and the Reviewer's feedback into a clean, well-f
         { role: 'system', content: codeSynthesizerSysPrompt },
         { role: 'user', content: codeSynthesizerUserPrompt },
       ]);
+    } else if (isWebFetch && webFetchData) {
+      const webSynthesizerSysPrompt = `Current date and time: ${currentDateTime}
+
+You are the FINAL SYNTHESIZER agent of JARVIS, a multi-agent intelligence platform.
+Your task is to analyze the extracted webpage content and deliver a direct, comprehensive, and well-structured final agent answer for the user.
+
+DIRECTIVES:
+1. Deliver a clear, authoritative, and informative analysis of this webpage in clean Markdown.
+2. Outline the purpose of the website or platform, its key features, primary sections, services, or documentation.
+3. Structure your response logically using concise headers, bullet points, and clean paragraphs.
+4. Ground your answer strictly in the provided webpage content.
+5. Provide ONLY the definitive final agent answer. Do NOT output internal agent labels, system steps, JSON schemas, or tool logs.`;
+
+      const webSynthesizerUserPrompt = `Webpage Title: ${webFetchData.title}
+Target URL: ${webFetchData.finalUrl || webFetchData.url}
+${webFetchData.description ? `Meta Description: ${webFetchData.description}\n` : ''}${webFetchData.headings && webFetchData.headings.length > 0 ? `Key Page Headings: ${webFetchData.headings.join(' • ')}\n` : ''}
+Extracted Content:
+${webFetchData.textContent.slice(0, 6000)}
+
+Please deliver your definitive final agent response summarizing and explaining this webpage.`;
+
+      synthRes = await callAgent('finalSynthesizer', [
+        { role: 'system', content: webSynthesizerSysPrompt },
+        { role: 'user', content: webSynthesizerUserPrompt },
+      ]);
     } else {
       synthRes = await callAgent('finalSynthesizer', [
         {
@@ -7190,6 +7215,8 @@ Please combine the Coder's code and the Reviewer's feedback into a clean, well-f
         durationMs: duration,
         summary: isAutoCode
           ? 'Synthesized final code solution incorporating code review and usage notes.'
+          : isWebFetch
+          ? 'Synthesized final webpage analysis and summary.'
           : 'Final synthesis compiled and formatted.',
         outputPreview: finalAnswer,
         rawOutput: finalAnswer,
@@ -7209,7 +7236,21 @@ Please combine the Coder's code and the Reviewer's feedback into a clean, well-f
       if (isAutoCode && coderOutput) {
         finalAnswer = coderOutput;
       } else if (isWebFetch && webFetchData) {
-        finalAnswer = `### Webpage Summary: ${webFetchData.title}\n\n${webFetchData.textContent.slice(0, 1500)}`;
+        finalAnswer = `## ${webFetchData.title}\n\n${
+          webFetchData.description ? `**Overview:** ${webFetchData.description}\n\n` : ''
+        }${
+          webFetchData.headings && webFetchData.headings.length > 0
+            ? `**Key Sections & Features:**\n${webFetchData.headings.slice(0, 8).map((h) => `- ${h}`).join('\n')}\n\n`
+            : ''
+        }**Page Content Summary:**\n${
+          webFetchData.textContent
+            .split('\n')
+            .map((l) => l.trim())
+            .filter((l) => l.length > 25 && !l.includes('Cookie') && !l.includes('Privacy Policy') && !l.includes('Terms of Service'))
+            .slice(0, 10)
+            .map((l) => `- ${l}`)
+            .join('\n') || webFetchData.description || 'Webpage content extracted and indexed successfully.'
+        }`;
       } else if (isCustomApi && customApiData) {
         finalAnswer = `### Custom API Response: ${customApiData.apiName}\n\n\`\`\`json\n${JSON.stringify(customApiData.data, null, 2)}\n\`\`\``;
       } else if (researcherOutput.facts.length > 0) {
@@ -7758,12 +7799,12 @@ JARVIS is a multi-agent AI intelligence platform composed of 10 specialized neur
   return {
     answer: cleanedFinalAnswer,
     steps,
-    sources: sourcesCollected,
-    diagramSvg,
-    chartData,
-    images: retrievedImages,
-    retrievedDocChunks: retrievedDocChunks && retrievedDocChunks.length > 0 ? retrievedDocChunks : undefined,
-    promptImageVariations: promptImageVariationsResult,
-    promptImageRoughIdea: promptImageRoughIdeaResult,
+    sources: isWebFetch ? [] : sourcesCollected,
+    diagramSvg: isWebFetch ? undefined : diagramSvg,
+    chartData: isWebFetch ? undefined : chartData,
+    images: isWebFetch ? [] : retrievedImages,
+    retrievedDocChunks: !isWebFetch && retrievedDocChunks && retrievedDocChunks.length > 0 ? retrievedDocChunks : undefined,
+    promptImageVariations: isWebFetch ? undefined : promptImageVariationsResult,
+    promptImageRoughIdea: isWebFetch ? undefined : promptImageRoughIdeaResult,
   };
 }

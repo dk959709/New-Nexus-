@@ -1152,44 +1152,38 @@ async function generateWithGemini({
   if (contents.length === 0) return null;
 
   // Primary model and fallback models supporting current API specifications
-  const candidateModels = ['gemini-3.7-flash', 'gemini-3.8-flash'];
+  const candidateModels = [
+    'gemini-3.6-flash',
+    'gemini-3.8-flash',
+  ];
 
   for (const model of candidateModels) {
-    for (let attempt = 0; attempt < 2; attempt++) {
-      try {
-        const response = await client.models.generateContent({
+    try {
+      const timeoutPromise = new Promise<never>((_, reject) =>
+        setTimeout(() => reject(new Error(`Timeout calling model ${model}`)), 4000),
+      );
+
+      const response = await Promise.race([
+        client.models.generateContent({
           model,
           contents,
           config: {
             systemInstruction: sys || undefined,
             temperature,
             maxOutputTokens: Math.max(maxTokens || 1200, 1000),
-            // Disable thinking budget for conversational responses so output tokens are not consumed by reasoning traces
-            thinkingConfig: { thinkingBudget: 0 },
           },
-        });
+        }),
+        timeoutPromise,
+      ]);
 
-        const text = response.text?.trim();
-        if (text) {
-          return { text, model };
-        }
-      } catch (err: unknown) {
-        const errStr = err instanceof Error ? err.message : String(err);
-        const isUnavailableOrThrottled =
-          errStr.includes('503') ||
-          errStr.includes('UNAVAILABLE') ||
-          errStr.includes('high demand') ||
-          errStr.includes('429') ||
-          errStr.includes('RESOURCE_EXHAUSTED');
-
-        console.warn(`[Gemini AI] (${model} attempt ${attempt + 1}) notice: ${errStr}`);
-
-        if (isUnavailableOrThrottled && attempt === 0) {
-          await new Promise((resolve) => setTimeout(resolve, 800));
-          continue;
-        }
-        break;
+      const text = response.text?.trim();
+      if (text) {
+        return { text, model };
       }
+    } catch (err: unknown) {
+      const errStr = err instanceof Error ? err.message : String(err);
+      console.warn(`[Gemini AI] (${model}) notice: ${errStr}`);
+      continue;
     }
   }
 
@@ -1206,6 +1200,86 @@ function generateLocalNexusAiResponse(
   void _memory;
   const trimmed = query.trim();
   const lower = trimmed.toLowerCase();
+
+  // 0. Webpage Extraction synthesis
+  if (trimmed.includes('Webpage Title:') || trimmed.includes('Target URL:')) {
+    const titleMatch = trimmed.match(/Webpage Title:\s*([^\n]+)/i);
+    const urlMatch = trimmed.match(/(?:Target URL|Webpage URL):\s*([^\n]+)/i);
+    const descMatch = trimmed.match(/Meta Description:\s*([^\n]+)/i);
+    const headingsMatch = trimmed.match(/Key Page Headings:\s*([^\n]+)/i);
+    const contentMatch = trimmed.match(/Extracted Content:\s*([\s\S]*?)(?:Please deliver|$)/i);
+
+    const title = titleMatch ? titleMatch[1].trim() : 'Webpage Analysis';
+    const url = urlMatch ? urlMatch[1].trim() : '';
+    const desc = descMatch ? descMatch[1].trim() : '';
+    const headings = headingsMatch
+      ? headingsMatch[1]
+          .split('•')
+          .map((h) => h.trim())
+          .filter((h) => h.length > 2)
+      : [];
+    const content = contentMatch ? contentMatch[1].trim() : '';
+
+    const lines = content
+      .split('\n')
+      .map((l) => l.trim())
+      .filter((l) => {
+        if (l.length < 15) return false;
+        const low = l.toLowerCase();
+        return (
+          !low.includes('cookie') &&
+          !low.includes('terms of service') &&
+          !low.includes('privacy policy') &&
+          !low.includes('sign in') &&
+          !low.includes('search settings') &&
+          !low.includes('send feedback')
+        );
+      });
+    let items = Array.from(new Set(lines));
+    if (items.length === 0 && content.length > 0) {
+      items = Array.from(
+        new Set(
+          content
+            .split(/(?:\s*[•\n.!?]+\s*)/)
+            .map((s) => s.trim())
+            .filter(
+              (s) =>
+                s.length > 8 &&
+                !s.toLowerCase().includes('cookie') &&
+                !s.toLowerCase().includes('terms') &&
+                !s.toLowerCase().includes('settings'),
+            ),
+        ),
+      );
+    }
+
+    let report = `### ${title}\n\n`;
+    if (desc) {
+      report += `**Overview:** ${desc}\n\n`;
+    } else if (items.length > 0) {
+      report += `**Overview:** ${items[0]}\n\n`;
+    }
+
+    if (headings.length > 0) {
+      report += `#### Key Page Topics & Sections\n`;
+      report += headings.slice(0, 6).map((h) => `- **${h}**`).join('\n') + '\n\n';
+    }
+
+    const highlights = items.slice(desc ? 0 : 1, 7);
+    if (highlights.length > 0) {
+      report += `#### Extracted Content Highlights\n`;
+      report += highlights.map((h) => `- ${h}`).join('\n') + '\n\n';
+    }
+
+    if (url) {
+      report += `**Source URL:** [${title}](${url})`;
+    }
+
+    return {
+      text: report.trim(),
+      model: 'nexus-web-synthesizer',
+    };
+  }
 
   // 1. Greetings
   const isGreeting =
@@ -1371,32 +1445,47 @@ async function generateOpenRouterOrCustomAi({
     process.env.AI_API_KEY ||
     process.env.OPENROUTER_API_KEY ||
     process.env.DEEPSEEK_API_KEY;
-  if (!key) return null;
 
-  const url =
-    process.env.AI_API_URL || 'https://openrouter.ai/api/v1/chat/completions';
-  const model = process.env.AI_MODEL || 'deepseek/deepseek-chat';
+  if (key) {
+    const url =
+      process.env.AI_API_URL || 'https://openrouter.ai/api/v1/chat/completions';
+    const model = process.env.AI_MODEL || 'deepseek/deepseek-chat';
 
-  const result = await executeProviderChatRequest({
-    url,
-    model,
-    key,
-    messages,
-    temperature,
-    maxTokens,
-    timeoutMs: timeoutMs || 35000,
-  });
+    const result = await executeProviderChatRequest({
+      url,
+      model,
+      key,
+      messages,
+      temperature,
+      maxTokens,
+      timeoutMs: timeoutMs || 35000,
+    });
 
-  if (result.ok && result.text) {
-    return {
-      text: result.text,
-      content: result.content,
-      reasoning: result.reasoning,
-      model: result.model,
-    };
+    if (result.ok && result.text) {
+      return {
+        text: result.text,
+        content: result.content,
+        reasoning: result.reasoning,
+        model: result.model,
+      };
+    }
   }
 
-  console.warn(`[Built-in AI] Request failed: ${result.error || `HTTP ${result.status}`}`);
+  console.warn('[Built-in AI] Notice: Cloud provider unavailable, executing intelligent local synthesis');
+
+  const lastUserMsg = messages.filter((m) => m.role === 'user').pop()?.content || '';
+  if (lastUserMsg) {
+    const local = generateLocalNexusAiResponse(lastUserMsg);
+    if (local && local.text) {
+      return {
+        text: local.text,
+        content: local.text,
+        reasoning: '',
+        model: local.model || 'nexus-web-synthesizer',
+      };
+    }
+  }
+
   return null;
 }
 

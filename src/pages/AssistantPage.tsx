@@ -1778,7 +1778,7 @@ export function AssistantPage() {
           userTz = 'Europe/London';
         }
 
-        const isWebFetchQuery = effectiveMessage.startsWith('/web');
+        const isWebFetchQuery = webFetcherEnabled || /^\/web(?:\s+|$)/i.test(effectiveMessage);
 
         const result = await runJarvisPipeline(
           effectiveMessage,
