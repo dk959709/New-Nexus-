@@ -664,6 +664,8 @@ export interface WallpaperSetting {
 export type SourceCategory = 'web' | 'wikipedia' | 'news' | 'nasa' | 'weather';
 export type ConfidenceLevel = 'verified' | 'limited' | 'unverified';
 
+export type DomainTrustTier = 1 | 2 | 3;
+
 export interface AISource {
   title: string;
   url: string;
@@ -673,6 +675,9 @@ export interface AISource {
   thumbnail?: string;
   image?: string;
   type?: SourceCategory;
+  trustTier?: DomainTrustTier;
+  trustTierLabel?: 'Official / Primary' | 'Secondary' | 'Unverified';
+  trustTierReason?: string;
 }
 
 export interface AnswerEngineResult {

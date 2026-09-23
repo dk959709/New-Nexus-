@@ -1811,6 +1811,237 @@ interface SmartAnswerSource {
   thumbnail?: string;
   image?: string;
   type: SourceCategory;
+  trustTier?: 1 | 2 | 3;
+  trustTierLabel?: 'Official / Primary' | 'Secondary' | 'Unverified';
+  trustTierReason?: string;
+}
+
+interface DomainTrustClassification {
+  tier: 1 | 2 | 3;
+  tierLabel: 'Official / Primary' | 'Secondary' | 'Unverified';
+  reason: string;
+}
+
+const TIER_1_OFFICIAL_DOMAINS = new Set([
+  // Core AI & Tech Foundation Creators
+  'anthropic.com',
+  'claude.ai',
+  'openai.com',
+  'chatgpt.com',
+  'google.com',
+  'ai.google.dev',
+  'deepmind.google',
+  'blog.google',
+  'cloud.google.com',
+  'developers.google.com',
+  'microsoft.com',
+  'azure.com',
+  'msdn.com',
+  'meta.com',
+  'ai.meta.com',
+  'apple.com',
+  'developer.apple.com',
+  'nvidia.com',
+  'developer.nvidia.com',
+  'amazon.com',
+  'aws.amazon.com',
+  'github.com',
+  'gitlab.com',
+  'huggingface.co',
+  // Official software standards, specs & documentation
+  'wikipedia.org',
+  'wikimedia.org',
+  'wikidata.org',
+  'python.org',
+  'rust-lang.org',
+  'golang.org',
+  'go.dev',
+  'nodejs.org',
+  'typescriptlang.org',
+  'react.dev',
+  'nextjs.org',
+  'vuejs.org',
+  'angular.dev',
+  'mozilla.org',
+  'developer.mozilla.org',
+  'w3.org',
+  'ietf.org',
+  'docker.com',
+  'kubernetes.io',
+  'linux.org',
+  'kernel.org',
+  'postgresql.org',
+  'sqlite.org',
+  'mongodb.com',
+  'redis.io',
+  'apache.org',
+  // Major recognized news outlets, financial, and science publications
+  'reuters.com',
+  'bloomberg.com',
+  'cnbc.com',
+  'wsj.com',
+  'ft.com',
+  'nytimes.com',
+  'washingtonpost.com',
+  'theguardian.com',
+  'bbc.com',
+  'bbc.co.uk',
+  'apnews.com',
+  'techcrunch.com',
+  'theverge.com',
+  'wired.com',
+  'arstechnica.com',
+  'nature.com',
+  'science.org',
+  'economist.com',
+  'engadget.com',
+  'zdnet.com',
+  'forbes.com',
+  'time.com',
+  'cnn.com',
+  'aljazeera.com',
+  'nationalgeographic.com',
+  'scientificamerican.com',
+  'technologyreview.com',
+]);
+
+const TIER_2_REPUTABLE_DOMAINS = new Set([
+  'medium.com',
+  'dev.to',
+  'hashnode.com',
+  'stackoverflow.com',
+  'stackexchange.com',
+  'reddit.com',
+  'github.io',
+  'geeksforgeeks.org',
+  'freecodecamp.org',
+  'tomshardware.com',
+  'tomsguide.com',
+  'cnet.com',
+  'gsmarena.com',
+  'techradar.com',
+  'pcmag.com',
+  'androidauthority.com',
+  'androidcentral.com',
+  '9to5google.com',
+  '9to5mac.com',
+  'macrumors.com',
+  'xda-developers.com',
+  'hackerone.com',
+  'news.ycombinator.com',
+  'substack.com',
+  'quora.com',
+  'producthunt.com',
+  'digitalocean.com',
+  'howtogeek.com',
+  'dzone.com',
+  'infoq.com',
+  'towardsdatascience.com',
+  'slashdot.org',
+  'businessinsider.com',
+  'mashable.com',
+  'venturebeat.com',
+  'gizmodo.com',
+  'bleepingcomputer.com',
+  'securityweek.com',
+  'krebsonsecurity.com',
+]);
+
+function extractBaseDomain(rawDomainOrUrl: string): string {
+  if (!rawDomainOrUrl) return '';
+  let str = rawDomainOrUrl.trim().toLowerCase();
+  str = str.replace(/^https?:\/\//, '').replace(/^www\./, '').split('/')[0].split('?')[0].split(':')[0];
+  return str;
+}
+
+function classifyDomainTrustTier(domainOrUrl: string, query: string): DomainTrustClassification {
+  const host = extractBaseDomain(domainOrUrl);
+  if (!host) {
+    return { tier: 3, tierLabel: 'Unverified', reason: 'Empty or unrecognizable domain' };
+  }
+
+  // 1. Check Government / Multilateral Official Institutions (.gov, .mil, .int, europa.eu)
+  if (
+    host.endsWith('.gov') ||
+    host.includes('.gov.') ||
+    host.endsWith('.mil') ||
+    host.endsWith('.int') ||
+    host.includes('europa.eu')
+  ) {
+    return {
+      tier: 1,
+      tierLabel: 'Official / Primary',
+      reason: 'Official government, institutional, or multilateral authority',
+    };
+  }
+
+  // 2. Check explicitly listed Tier 1 official domains and publications
+  for (const t1 of TIER_1_OFFICIAL_DOMAINS) {
+    if (host === t1 || host.endsWith(`.${t1}`)) {
+      return {
+        tier: 1,
+        tierLabel: 'Official / Primary',
+        reason: `Verified official primary domain or recognized major publication (${t1})`,
+      };
+    }
+  }
+
+  // 3. Dynamic subject match: if query references a specific product/entity whose primary domain matches
+  const qClean = query.toLowerCase().replace(/[^a-z0-9\s]/g, ' ');
+  const qWords = qClean
+    .split(/\s+/)
+    .filter(
+      (w) =>
+        w.length >= 3 &&
+        ![
+          'what', 'when', 'where', 'which', 'who', 'how', 'about', 'the', 'and', 'for', 'with',
+          'from', 'this', 'that', 'explain', 'show', 'tell', 'latest', 'news', 'update', 'version',
+        ].includes(w),
+    );
+
+  const hostParts = host.split('.');
+  const rootName = hostParts.length >= 2 ? hostParts[hostParts.length - 2] : host;
+
+  for (const word of qWords) {
+    if (rootName === word || rootName.startsWith(word) || word.startsWith(rootName)) {
+      const validTlds = ['com', 'org', 'dev', 'io', 'ai', 'app', 'net', 'co', 'so', 'me', 'gg'];
+      const tld = hostParts[hostParts.length - 1];
+      if (validTlds.includes(tld)) {
+        return {
+          tier: 1,
+          tierLabel: 'Official / Primary',
+          reason: `Subject's official root domain match for "${word}"`,
+        };
+      }
+    }
+  }
+
+  // 4. Check .edu educational domains (Secondary Tier 2 per spec: ".edu pages that aren't clearly current/official documentation")
+  if (host.endsWith('.edu') || host.includes('.edu.')) {
+    return {
+      tier: 2,
+      tierLabel: 'Secondary',
+      reason: 'Academic or educational institution domain (.edu)',
+    };
+  }
+
+  // 5. Check explicitly listed Tier 2 secondary domains
+  for (const t2 of TIER_2_REPUTABLE_DOMAINS) {
+    if (host === t2 || host.endsWith(`.${t2}`)) {
+      return {
+        tier: 2,
+        tierLabel: 'Secondary',
+        reason: `Recognized secondary tech blog, community, or review hub (${t2})`,
+      };
+    }
+  }
+
+  // 6. Default to Tier 3 (Unverified / Suspicious / Unfamiliar)
+  return {
+    tier: 3,
+    tierLabel: 'Unverified',
+    reason: 'Unverified or unfamiliar domain with unknown authority',
+  };
 }
 
 interface SmartAnswerResult {
@@ -2245,7 +2476,7 @@ async function processAiChatInternal(
 
   // Check if query is factual or web search is forced
   let sourceContext = '';
-  const structuredSources: SmartAnswerSource[] = [];
+  let structuredSources: SmartAnswerSource[] = [];
 
   const lower = trimmed.toLowerCase();
   const isForcedWebSearch = Boolean(webSearch);
@@ -2285,20 +2516,25 @@ async function processAiChatInternal(
     try {
       const searchPromises: Promise<void>[] = [];
       searchPromises.push(
-        searchProvider({ query: trimmed, page: 1, category: 'ALL' })
+        searchProvider({ query: trimmed, page: 1, category: 'ALL', max_results: 10, maxResults: 10 })
           .then((webRes) => {
             const webItems = webRes?.results ?? [];
-            for (const item of webItems.slice(0, 4)) {
+            for (const item of webItems.slice(0, 10)) {
               if (!structuredSources.some((s) => s.url === item.url)) {
-                const cleanDesc = (item.description || '').slice(0, 220).trim();
+                const cleanDesc = (item.description || '').slice(0, 300).trim();
+                const domainName = item.domain || domainOf(item.url) || 'web';
+                const classification = classifyDomainTrustTier(domainName, trimmed);
                 structuredSources.push({
                   title: item.title,
                   url: item.url,
-                  domain: item.domain || 'web',
+                  domain: domainName,
                   description: cleanDesc,
                   thumbnail: item.thumbnail || item.image,
                   image: item.image || item.thumbnail,
                   type: 'web',
+                  trustTier: classification.tier,
+                  trustTierLabel: classification.tierLabel,
+                  trustTierReason: classification.reason,
                 });
               }
             }
@@ -2310,12 +2546,17 @@ async function processAiChatInternal(
         fetchWikipediaSummary(trimmed)
           .then((wikiSummary) => {
             if (wikiSummary && wikiSummary.extract) {
+              const domainName = 'wikipedia.org';
+              const classification = classifyDomainTrustTier(domainName, trimmed);
               structuredSources.push({
                 title: wikiSummary.title,
                 url: wikiSummary.url,
-                description: wikiSummary.extract.slice(0, 220),
-                domain: 'wikipedia.org',
+                description: wikiSummary.extract.slice(0, 300),
+                domain: domainName,
                 type: 'wikipedia',
+                trustTier: classification.tier,
+                trustTierLabel: classification.tierLabel,
+                trustTierReason: classification.reason,
               });
             }
           })
@@ -2324,10 +2565,16 @@ async function processAiChatInternal(
 
       await Promise.allSettled(searchPromises);
 
+      // Order injected results so Tier 1 sources appear first, then Tier 2, then Tier 3 (preserve up to 10)
+      structuredSources.sort((a, b) => (a.trustTier ?? 2) - (b.trustTier ?? 2));
+      structuredSources = structuredSources.slice(0, 10);
+
       if (structuredSources.length > 0) {
         const sourcesText = structuredSources
-          .slice(0, 5)
-          .map((s, i) => `[Source ${i + 1}: ${s.title}] (${s.domain || 'web'})\nURL: ${s.url}\nSummary: ${s.description}`)
+          .map(
+            (s, i) =>
+              `[Source ${i + 1}: ${s.title}]\nDomain: ${s.domain || 'web'} | Trust: Tier ${s.trustTier} (${s.trustTierLabel})\nURL: ${s.url}\nSummary: ${s.description}`,
+          )
           .join('\n\n');
         sourceContext = sourcesText;
       }
@@ -2338,14 +2585,19 @@ async function processAiChatInternal(
     try {
       const wikiSummary = await fetchWikipediaSummary(trimmed);
       if (wikiSummary && wikiSummary.extract) {
+        const domainName = 'wikipedia.org';
+        const classification = classifyDomainTrustTier(domainName, trimmed);
         structuredSources.push({
           title: wikiSummary.title,
           url: wikiSummary.url,
-          description: wikiSummary.extract.slice(0, 200),
-          domain: 'wikipedia.org',
+          description: wikiSummary.extract.slice(0, 300),
+          domain: domainName,
           type: 'wikipedia',
+          trustTier: classification.tier,
+          trustTierLabel: classification.tierLabel,
+          trustTierReason: classification.reason,
         });
-        sourceContext = `[Wikipedia Reference for "${wikiSummary.title}"]: ${wikiSummary.extract.slice(0, 260)}`;
+        sourceContext = `[Wikipedia Reference for "${wikiSummary.title}"] (Trust: Tier 1 - Official Primary):\n${wikiSummary.extract.slice(0, 350)}`;
       }
     } catch {
       // Non-blocking knowledge lookup
@@ -2409,12 +2661,24 @@ async function processAiChatInternal(
   const currentDateTimeStr = `${now.toUTCString()} (UTC)`;
 
   const sourcesFormatted = structuredSources
-    .slice(0, 5)
+    .slice(0, 10)
     .map(
       (s, i) =>
-        `[Source ${i + 1}: ${s.title}] (${s.domain || 'web'})\nURL: ${s.url}\nSummary: ${s.description}`,
+        `[Source ${i + 1}: ${s.title}]\nDomain: ${s.domain || 'web'} | Trust: Tier ${s.trustTier} (${s.trustTierLabel})\nURL: ${s.url}\nSummary: ${s.description}`,
     )
     .join('\n\n');
+
+  const hasTier1 = structuredSources.some((s) => s.trustTier === 1);
+  const allTier3 = structuredSources.length > 0 && structuredSources.every((s) => s.trustTier === 3);
+
+  let tierGuidance = '';
+  if (hasTier1) {
+    tierGuidance += `- Tier 1 (Official/Primary) source(s) are present below. You MUST prioritize Tier 1 sources over Tier 2 and Tier 3 sources if they provide conflicting information.\n`;
+  }
+  tierGuidance += `- If sources disagree with each other on facts, dates, specifications, or details, explicitly note the discrepancy in your response rather than silently choosing one.\n`;
+  if (allTier3) {
+    tierGuidance += `- CRITICAL CAVEAT: ALL 10 retrieved sources are Tier 3 (unverified / low-authority domains). You MUST explicitly caveat your answer to the user stating that this response is based on unverified sources.\n`;
+  }
 
   const systemInstructions: string[] = [
     `You are NEXUS AI, powered by ${providerConfig?.name || 'AI'}. Provide direct, insightful, factual, and concise answers.`,
@@ -2427,12 +2691,14 @@ async function processAiChatInternal(
 
   if (structuredSources.length > 0 || isForcedWebSearch) {
     systemInstructions.push(
-      `[REAL-TIME LIVE WEB SEARCH RESULTS FOR THIS TURN ONLY]:\n` +
+      `[REAL-TIME LIVE WEB SEARCH RESULTS FOR THIS TURN ONLY - 10 SOURCES RANKED BY TRUST TIER]:\n` +
         `${sourcesFormatted || 'No additional web text returned; use current date/time reference and available knowledge.'}\n\n` +
-        `CRITICAL GROUNDING INSTRUCTIONS FOR THIS TURN:\n` +
+        `CRITICAL GROUNDING & DOMAIN-TRUST INSTRUCTIONS FOR THIS TURN:\n` +
         `- Real-time web search was conducted specifically for the user's query: "${trimmed}".\n` +
+        `- 10 live sources are provided above, sorted with highest domain trust first (Tier 1: Official/Primary, Tier 2: Secondary, Tier 3: Unverified).\n` +
         `- You MUST use the live search results and current timestamp (${currentDateTimeStr}) provided above to answer the user accurately and factually.\n` +
         `- NEVER state that you lack real-time access, cannot browse the internet, or do not know the current date/information.\n` +
+        tierGuidance +
         `- Answer the user's question directly based on these verified live sources.`,
     );
   } else if (sourceContext) {
@@ -2449,7 +2715,7 @@ async function processAiChatInternal(
 
   const userContentForTurn =
     structuredSources.length > 0
-      ? `${trimmed}\n\n[Live Search Grounding for this question]:\n${sourcesFormatted}\n(Current Date/Time Reference: ${currentDateTimeStr})\n\nInstructions: Use the live search results above to answer directly.`
+      ? `${trimmed}\n\n[Live Search Grounding for this question - 10 Sources by Trust Tier]:\n${sourcesFormatted}\n(Current Date/Time Reference: ${currentDateTimeStr})\n\nInstructions: Use the live search results above to answer directly. Prioritize Tier 1 sources and note any source discrepancies.`
       : trimmed;
 
   const messages: Array<{ role: string; content: string }> = [
@@ -2462,13 +2728,12 @@ async function processAiChatInternal(
   console.log(`[AI Assistant Web Search] ========================================`);
   console.log(`[AI Assistant Web Search] Turn Query: "${trimmed}"`);
   console.log(`[AI Assistant Web Search] Forced WebSearch: ${isForcedWebSearch} | Search Run: ${shouldSearchWeb}`);
+  console.log(`[AI Assistant Web Search] Injected ${structuredSources.length} fresh search result(s) into model prompt (Sorted by Trust Tier):`);
   if (structuredSources.length > 0) {
-    console.log(
-      `[AI Assistant Web Search] Injected ${structuredSources.length} fresh search result(s) into model prompt for this turn:`,
-    );
     structuredSources.forEach((s, idx) => {
-      console.log(`  [#${idx + 1}] "${s.title}" (${s.domain || 'web'}) -> ${s.url}`);
-      console.log(`      Snippet: ${s.description.slice(0, 120)}...`);
+      console.log(`  [#${idx + 1}] [Tier ${s.trustTier ?? 2} - ${s.trustTierLabel || 'Secondary'}] "${s.title}" (${s.domain || 'web'}) -> ${s.url}`);
+      console.log(`      Trust Reason: ${s.trustTierReason || 'Domain trust assessment'}`);
+      console.log(`      Snippet: ${s.description.slice(0, 100)}...`);
     });
   } else {
     console.log(`[AI Assistant Web Search] No search results injected into model prompt for this turn (clean isolated turn).`);

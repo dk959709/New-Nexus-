@@ -664,46 +664,95 @@ export function AssistantPage() {
                           </div>
                         )}
 
-                        {/* Collapsible Verified Sources Panel */}
+                        {/* Collapsible Verified Sources Panel with 10-item scrollable grid & domain trust badges */}
                         {hasSources && expandedSources[index] && (
-                          <div className="grid grid-cols-1 sm:grid-cols-2 gap-2 my-2.5">
-                            {message.sources?.map((src, sIdx) => {
-                              const isWiki =
-                                src.type === 'wikipedia' ||
-                                src.domain?.toLowerCase().includes('wikipedia');
-                              return (
-                                <a
-                                  key={`${src.url}-${sIdx}`}
-                                  href={src.url}
-                                  target="_blank"
-                                  rel="noreferrer"
-                                  className="p-2.5 rounded-lg border border-zinc-800 bg-zinc-900/60 hover:bg-zinc-800/80 hover:border-zinc-700 transition-all text-xs block group/card"
-                                >
-                                  <div className="flex items-center justify-between gap-1 mb-1">
-                                    <span className="inline-flex items-center gap-1 text-[10px] font-medium text-zinc-400">
-                                      {isWiki ? (
-                                        <>
-                                          <BookOpen size={10} className="text-cyan-400" /> Wikipedia
-                                        </>
-                                      ) : (
-                                        <>
-                                          <Globe size={10} className="text-zinc-400" /> {src.domain || 'Web'}
-                                        </>
+                          <div className="my-2.5 p-2.5 rounded-xl border border-zinc-800/80 bg-zinc-950/60 shadow-sm">
+                            <div className="flex items-center justify-between px-1 py-1 mb-2 border-b border-zinc-800/60 text-[11px] text-zinc-400">
+                              <span className="font-medium text-zinc-300 flex items-center gap-1.5">
+                                <Globe size={12} className="text-cyan-400" />
+                                <span>Retrieved Sources ({message.sources?.length})</span>
+                              </span>
+                              <span className="text-[10.5px] text-zinc-500 hidden sm:inline">
+                                Ranked by Domain Authority & Trust
+                              </span>
+                            </div>
+
+                            <div className="grid grid-cols-1 sm:grid-cols-2 gap-2 max-h-[420px] overflow-y-auto pr-1">
+                              {message.sources?.map((src, sIdx) => {
+                                const isWiki =
+                                  src.type === 'wikipedia' ||
+                                  src.domain?.toLowerCase().includes('wikipedia');
+                                const tier = src.trustTier ?? (isWiki ? 1 : 2);
+                                const tierLabel =
+                                  src.trustTierLabel ||
+                                  (tier === 1 ? 'Official / Primary' : tier === 2 ? 'Secondary' : 'Unverified');
+
+                                return (
+                                  <a
+                                    key={`${src.url}-${sIdx}`}
+                                    href={src.url}
+                                    target="_blank"
+                                    rel="noreferrer"
+                                    className="p-2.5 rounded-lg border border-zinc-800/90 bg-zinc-900/60 hover:bg-zinc-850 hover:border-zinc-700 transition-all text-xs flex flex-col justify-between group/card"
+                                  >
+                                    <div>
+                                      <div className="flex items-center justify-between gap-1 mb-1.5 flex-wrap">
+                                        <span className="inline-flex items-center gap-1 text-[10.5px] font-medium text-zinc-400 truncate max-w-[140px]">
+                                          {isWiki ? (
+                                            <>
+                                              <BookOpen size={10} className="text-cyan-400 shrink-0" /> Wikipedia
+                                            </>
+                                          ) : (
+                                            <>
+                                              <Globe size={10} className="text-zinc-400 shrink-0" /> {src.domain || 'Web'}
+                                            </>
+                                          )}
+                                        </span>
+
+                                        {/* Trust Tier Badge */}
+                                        <span
+                                          className={`inline-flex items-center gap-1 px-1.5 py-0.5 rounded text-[9.5px] font-medium border ${
+                                            tier === 1
+                                              ? 'bg-emerald-950/60 text-emerald-300 border-emerald-700/60'
+                                              : tier === 2
+                                              ? 'bg-sky-950/60 text-sky-300 border-sky-700/60'
+                                              : 'bg-amber-950/40 text-amber-300/90 border-amber-800/50'
+                                          }`}
+                                          title={src.trustTierReason || `Tier ${tier}: ${tierLabel}`}
+                                        >
+                                          <span
+                                            className={`w-1.5 h-1.5 rounded-full inline-block shrink-0 ${
+                                              tier === 1
+                                                ? 'bg-emerald-400'
+                                                : tier === 2
+                                                ? 'bg-sky-400'
+                                                : 'bg-amber-400'
+                                            }`}
+                                          />
+                                          Tier {tier} • {tierLabel}
+                                        </span>
+                                      </div>
+
+                                      <p className="font-medium text-zinc-200 line-clamp-1 mb-1 group-hover/card:text-white transition-colors">
+                                        {src.title}
+                                      </p>
+                                      {src.description && (
+                                        <p className="text-[11px] text-zinc-400 line-clamp-2 leading-relaxed">
+                                          {src.description}
+                                        </p>
                                       )}
-                                    </span>
-                                    <ExternalLink size={11} className="text-zinc-500 group-hover/card:text-zinc-300" />
-                                  </div>
-                                  <p className="font-medium text-zinc-200 line-clamp-1 mb-0.5">
-                                    {src.title}
-                                  </p>
-                                  {src.description && (
-                                    <p className="text-[11px] text-zinc-400 line-clamp-2 leading-tight">
-                                      {src.description}
-                                    </p>
-                                  )}
-                                </a>
-                              );
-                            })}
+                                    </div>
+
+                                    <div className="mt-2 pt-1.5 border-t border-zinc-800/40 flex items-center justify-between text-[10px] text-zinc-500">
+                                      <span className="truncate max-w-[170px]">
+                                        {src.url.replace(/^https?:\/\//, '')}
+                                      </span>
+                                      <ExternalLink size={11} className="text-zinc-500 group-hover/card:text-zinc-300 shrink-0 ml-1" />
+                                    </div>
+                                  </a>
+                                );
+                              })}
+                            </div>
                           </div>
                         )}
 
