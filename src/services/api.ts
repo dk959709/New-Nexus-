@@ -315,6 +315,7 @@ export const api = {
     history: Array<{ role: 'user' | 'assistant'; content: string }> = [],
     memory = '',
     customProvider?: AIProviderConfig | null,
+    webSearch?: boolean,
   ): Promise<{
     answer: string;
     model: string;
@@ -355,6 +356,7 @@ export const api = {
         history: history.slice(-4),
         memory: memory.slice(-300),
         providerConfig: providerToSend || undefined,
+        webSearch: Boolean(webSearch),
       }),
     });
   },

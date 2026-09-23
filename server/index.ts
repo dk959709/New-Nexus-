@@ -2212,15 +2212,17 @@ async function processAiChatInternal(
   history: Array<{ role: 'user' | 'assistant'; content: string }> = [],
   memory = '',
   providerConfig?: CustomProviderPayload | null,
+  webSearch?: boolean,
 ) {
   const trimmed = message.trim();
   const activeModel = providerConfig?.model || process.env.AI_MODEL || 'deepseek/deepseek-chat';
 
-  // Check if query is factual to enrich with compact live context
+  // Check if query is factual or web search is forced
   let sourceContext = '';
   const structuredSources: SmartAnswerSource[] = [];
 
   const lower = trimmed.toLowerCase();
+  const isForcedWebSearch = Boolean(webSearch);
   const isKnowledgeQuery =
     lower.length > 5 &&
     !['hello', 'hi', 'hey', 'who are you', 'how are you', 'thank you', 'thanks'].includes(lower) &&
@@ -2234,7 +2236,79 @@ async function processAiChatInternal(
       lower.startsWith('explain') ||
       lower.startsWith('summarize'));
 
-  if (isKnowledgeQuery) {
+  const isTimeSensitive =
+    lower.includes('today') ||
+    lower.includes('latest') ||
+    lower.includes('current') ||
+    lower.includes('recent') ||
+    lower.includes('news') ||
+    lower.includes('now') ||
+    lower.includes('price') ||
+    lower.includes('weather') ||
+    lower.includes('score') ||
+    lower.includes('stock') ||
+    lower.includes('2024') ||
+    lower.includes('2025') ||
+    lower.includes('2026') ||
+    lower.includes('who won') ||
+    lower.includes('release date');
+
+  const shouldSearchWeb = isForcedWebSearch || isTimeSensitive;
+
+  if (shouldSearchWeb) {
+    try {
+      const searchPromises: Promise<void>[] = [];
+      searchPromises.push(
+        searchProvider({ query: trimmed, page: 1, category: 'ALL' })
+          .then((webRes) => {
+            const webItems = webRes?.results ?? [];
+            for (const item of webItems.slice(0, 4)) {
+              if (!structuredSources.some((s) => s.url === item.url)) {
+                const cleanDesc = (item.description || '').slice(0, 220).trim();
+                structuredSources.push({
+                  title: item.title,
+                  url: item.url,
+                  domain: item.domain || 'web',
+                  description: cleanDesc,
+                  thumbnail: item.thumbnail || item.image,
+                  image: item.image || item.thumbnail,
+                  type: 'web',
+                });
+              }
+            }
+          })
+          .catch(() => {}),
+      );
+
+      searchPromises.push(
+        fetchWikipediaSummary(trimmed)
+          .then((wikiSummary) => {
+            if (wikiSummary && wikiSummary.extract) {
+              structuredSources.push({
+                title: wikiSummary.title,
+                url: wikiSummary.url,
+                description: wikiSummary.extract.slice(0, 220),
+                domain: 'wikipedia.org',
+                type: 'wikipedia',
+              });
+            }
+          })
+          .catch(() => {}),
+      );
+
+      await Promise.allSettled(searchPromises);
+
+      if (structuredSources.length > 0) {
+        const sourcesText = structuredSources
+          .slice(0, 4)
+          .map((s) => `[Source: ${s.title} (${s.domain || 'web'})]: ${s.description}`)
+          .join('\n\n');
+        sourceContext = `[Live Web Search Sources for "${trimmed}"]:\n${sourcesText}`;
+      }
+    } catch {
+      // Non-blocking
+    }
+  } else if (isKnowledgeQuery) {
     try {
       const wikiSummary = await fetchWikipediaSummary(trimmed);
       if (wikiSummary && wikiSummary.extract) {
@@ -2336,6 +2410,7 @@ async function processAiChatInternal(
     return {
       answer: aiResult.text,
       model: aiResult.model,
+      tool: structuredSources.length > 0 || isForcedWebSearch ? ('search' as const) : ('none' as const),
       confidence: (structuredSources.length ? 'verified' : 'verified') as ConfidenceLevel,
       confidenceReason: structuredSources.length
         ? `Synthesized with ${aiResult.providerName || providerConfig?.name || 'AI'} (${aiResult.model}) and grounded with verified live sources.`
@@ -2351,6 +2426,7 @@ async function processAiChatInternal(
     return {
       answer: structuredSources[0].description,
       model: 'nexus-knowledge',
+      tool: 'search' as const,
       confidence: 'limited' as ConfidenceLevel,
       confidenceReason: `${providerConfig?.name || 'AI Provider'} currently unavailable (${aiResult?.lastError || 'provider error'}); extracted from verified live knowledge.`,
       sources: structuredSources,
@@ -2443,6 +2519,7 @@ const aiChatSchema = z.object({
     .optional(),
   memory: z.string().max(1200).optional(),
   providerConfig: customProviderSchema.optional().nullable(),
+  webSearch: z.boolean().optional(),
 });
 
 
@@ -2757,6 +2834,7 @@ async function startServer() {
         parsed.data.history ?? [],
         parsed.data.memory ?? '',
         parsed.data.providerConfig,
+        parsed.data.webSearch,
       );
       return res.json({ data: result });
     } catch (err: unknown) {

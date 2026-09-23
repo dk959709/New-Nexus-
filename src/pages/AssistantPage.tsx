@@ -1,5 +1,26 @@
-import { useEffect, useState, useRef, useCallback } from 'react';
-import { Bot, Send, Sparkles, User, Trash2, Plus, Brain, BookOpen, Globe, ExternalLink, Cpu, AlertTriangle, Check, Volume2, VolumeX, Radio, Loader2, Copy } from 'lucide-react';
+import React, { useEffect, useState, useRef, useCallback } from 'react';
+import {
+  Send,
+  User,
+  Trash2,
+  Plus,
+  Brain,
+  BookOpen,
+  Globe,
+  ExternalLink,
+  Cpu,
+  AlertTriangle,
+  Check,
+  Volume2,
+  VolumeX,
+  Radio,
+  Loader2,
+  Copy,
+  Search,
+  Sparkles,
+  ChevronDown,
+  ChevronUp,
+} from 'lucide-react';
 import { Link } from 'react-router-dom';
 import { api } from '@/services/api';
 import { storage } from '@/lib/storage';
@@ -13,25 +34,27 @@ type Message = {
   tool?: 'none' | 'search' | 'weather';
   sources?: AISource[];
   weather?: unknown;
+  searchedWeb?: boolean;
 };
 
 const CHAT_KEY = 'nexus-ai-conversation-v2';
 const MEMORY_KEY = 'nexus-ai-smart-memory-v1';
+const WEB_SEARCH_PREF_KEY = 'nexus-ai-web-search-toggle';
 
 const RECENT_MESSAGES = 8;
 const MAX_MEMORY_LENGTH = 1200;
 
 const QUICK_PROMPTS = [
-  'Explain something simply',
-  'Help me solve a problem',
-  'Give me productivity tips',
-  'Summarize a topic',
+  'Explain quantum computing simply',
+  'Help me optimize my daily productivity',
+  'Summarize the latest trends in artificial intelligence',
+  'Write a clean TypeScript utility function',
 ];
 
 const welcomeMessage: Message = {
   role: 'assistant',
   content:
-    "Hi! I'm NEXUS AI. Ask me anything and I'll help with explanations, ideas, problem solving, summaries, and more.",
+    "Hello. I'm NEXUS AI. How can I assist you today?",
 };
 
 function loadMessages(): Message[] {
@@ -68,6 +91,14 @@ function loadSmartMemory(): string {
   }
 }
 
+function loadWebSearchToggle(): boolean {
+  try {
+    return localStorage.getItem(WEB_SEARCH_PREF_KEY) === 'true';
+  } catch {
+    return false;
+  }
+}
+
 function buildLocalMemory(messages: Message[]): string {
   const useful = messages
     .filter((message) => message.content.trim())
@@ -88,6 +119,7 @@ function buildLocalMemory(messages: Message[]): string {
 export function AssistantPage() {
   const [messages, setMessages] = useState<Message[]>(loadMessages);
   const [smartMemory, setSmartMemory] = useState(loadSmartMemory);
+  const [webSearchEnabled, setWebSearchEnabled] = useState(loadWebSearchToggle);
   const [input, setInput] = useState('');
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
@@ -99,8 +131,39 @@ export function AssistantPage() {
   const [edgeTtsLoadingIndex, setEdgeTtsLoadingIndex] = useState<number | null>(null);
   const [edgeTtsPlayingIndex, setEdgeTtsPlayingIndex] = useState<number | null>(null);
   const [copiedIndex, setCopiedIndex] = useState<number | null>(null);
+  const [expandedSources, setExpandedSources] = useState<Record<number, boolean>>({});
+
   const utteranceRef = useRef<SpeechSynthesisUtterance | null>(null);
   const edgeTtsAudioRef = useRef<HTMLAudioElement | null>(null);
+  const messagesEndRef = useRef<HTMLDivElement | null>(null);
+  const textareaRef = useRef<HTMLTextAreaElement | null>(null);
+
+  const scrollToBottom = useCallback((behavior: ScrollBehavior = 'smooth') => {
+    messagesEndRef.current?.scrollIntoView({ behavior });
+  }, []);
+
+  useEffect(() => {
+    scrollToBottom('smooth');
+  }, [messages, loading, scrollToBottom]);
+
+  const toggleWebSearch = () => {
+    setWebSearchEnabled((prev) => {
+      const next = !prev;
+      try {
+        localStorage.setItem(WEB_SEARCH_PREF_KEY, String(next));
+      } catch {
+        // Ignore
+      }
+      return next;
+    });
+  };
+
+  const toggleSourceExpand = (index: number) => {
+    setExpandedSources((prev) => ({
+      ...prev,
+      [index]: !prev[index],
+    }));
+  };
 
   const stopSpeak = useCallback(() => {
     if (typeof window !== 'undefined' && 'speechSynthesis' in window) {
@@ -272,12 +335,28 @@ export function AssistantPage() {
     }
   }, [smartMemory]);
 
+  const adjustTextareaHeight = () => {
+    if (textareaRef.current) {
+      textareaRef.current.style.height = 'auto';
+      const scrollHeight = textareaRef.current.scrollHeight;
+      textareaRef.current.style.height = `${Math.min(scrollHeight, 200)}px`;
+    }
+  };
+
+  const handleInputChange = (e: React.ChangeEvent<HTMLTextAreaElement>) => {
+    setInput(e.target.value);
+    adjustTextareaHeight();
+  };
+
   const sendMessage = async (value = input) => {
     const message = value.trim();
 
     if (!message || loading) return;
 
     setInput('');
+    if (textareaRef.current) {
+      textareaRef.current.style.height = 'auto';
+    }
     setError('');
 
     const userMessage: Message = {
@@ -292,12 +371,21 @@ export function AssistantPage() {
     setMessages((current) => [...current, userMessage]);
     setLoading(true);
 
+    const isWebSearchForced = webSearchEnabled;
+
     try {
       const response = await api.aiChat(
         message,
         historyForRequest,
         smartMemory,
+        undefined,
+        isWebSearchForced,
       );
+
+      const usedWebSearch =
+        isWebSearchForced ||
+        response.tool === 'search' ||
+        Boolean(response.sources && response.sources.length > 0);
 
       const assistantMessage: Message = {
         role: 'assistant',
@@ -305,11 +393,11 @@ export function AssistantPage() {
         tool: response.tool,
         sources: response.sources,
         weather: response.weather,
+        searchedWeb: usedWebSearch,
       };
 
       setMessages((current) => [...current, assistantMessage]);
 
-      // Keep a compact local memory instead of sending the full conversation.
       const updatedConversation = [
         ...messages,
         userMessage,
@@ -379,733 +467,382 @@ export function AssistantPage() {
     setMemoryEditorOpen(false);
   };
 
+  const activeProvider = storage.getActiveAIProvider();
+  const providerLabel = activeProvider ? activeProvider.name : 'NEXUS Standard';
+
+  const isOnlyWelcome =
+    messages.length === 1 &&
+    messages[0].role === 'assistant' &&
+    messages[0].content === welcomeMessage.content;
+
   return (
-    <div className="assistant-page max-w-5xl mx-auto px-4 py-8 relative">
-      <div className="page-intro relative mb-8">
-        <div className="absolute -top-12 left-1/3 w-96 h-96 bg-cyan-500/10 rounded-full blur-[120px] pointer-events-none animate-pulse" />
-        <div className="absolute top-0 right-10 w-80 h-80 bg-purple-500/10 rounded-full blur-[100px] pointer-events-none animate-pulse" style={{ animationDuration: '7s' }} />
-
-        <div className="flex items-center gap-2 mb-2">
-          <span className="w-2.5 h-2.5 rounded-full bg-cyan-400 animate-ping" />
-          <span className="eyebrow">NEXUS AI</span>
-        </div>
-        <h1>Ask the intelligence.</h1>
-        <p className="text-slate-300 font-medium sm:text-base">
-          Chat with NEXUS AI for answers, explanations, ideas,
-          summaries, and problem solving.
-        </p>
-      </div>
-
-      <section
-        className="assistant-shell relative overflow-hidden shadow-2xl"
-        style={{
-          display: 'flex',
-          flexDirection: 'column',
-          minHeight: '68vh',
-          border: '1px solid rgba(97,221,210,0.25)',
-          borderRadius: 24,
-          overflow: 'hidden',
-          background: 'rgba(5,18,24,0.85)',
-          backdropFilter: 'blur(24px)',
-        }}
-      >
-        {/* Ambient neural grid glow */}
-        <div className="absolute top-0 right-0 w-96 h-96 bg-gradient-to-br from-cyan-500/15 via-purple-500/10 to-transparent rounded-full blur-3xl pointer-events-none" />
-
-        <header
-          className="assistant-header"
-          style={{
-            display: 'flex',
-            alignItems: 'center',
-            justifyContent: 'space-between',
-            gap: 12,
-            padding: '18px 22px',
-            borderBottom: '1px solid rgba(255,255,255,.08)',
-            background: 'rgba(255,255,255,0.02)',
-          }}
-        >
-          <div className="assistant-header-title-box" style={{ display: 'flex', alignItems: 'center', gap: 14 }}>
-            <div
-              className="assistant-avatar"
-              style={{
-                width: 44,
-                height: 44,
-                display: 'grid',
-                placeItems: 'center',
-                borderRadius: 14,
-                color: '#61ddd2',
-                background: 'rgba(97,221,210,.12)',
-                border: '1px solid rgba(97,221,210,.3)',
-                boxShadow: '0 0 20px rgba(97,221,210,0.2)',
-              }}
-            >
-              <Bot size={22} className="animate-pulse" />
-            </div>
-
-            <div>
-              <div className="flex items-center gap-2">
-                <strong className="text-white tracking-wide text-base">NEXUS AI</strong>
-                <span className="px-2 py-0.5 rounded-full bg-cyan-500/15 border border-cyan-500/30 text-[10px] font-mono text-cyan-300">
-                  Neural Active
-                </span>
-              </div>
-
-              <Link
-                to="/settings?tab=ai"
-                style={{
-                  display: 'flex',
-                  alignItems: 'center',
-                  gap: 5,
-                  opacity: 0.85,
-                  marginTop: 3,
-                  fontSize: 11,
-                  color: '#61ddd2',
-                  textDecoration: 'none',
-                }}
-                title="Configure AI Providers & Keys in Settings"
-              >
-                <Cpu size={12} />
-                <span>
-                  {(() => {
-                    const prov = storage.getActiveAIProvider();
-                    if (!prov) return 'Existing AI (Default)';
-                    return `${prov.name} (${prov.keys.length} ${prov.keys.length === 1 ? 'key' : 'keys'})`;
-                  })()}
-                </span>
-              </Link>
-            </div>
-          </div>
-
-          <div className="assistant-header-actions" style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-            <button
-              className="assistant-header-btn hover:border-cyan-500/40 transition-all text-xs font-semibold px-3 py-1.5 rounded-lg border border-slate-700 bg-slate-800/60 text-slate-200 flex items-center gap-1.5"
-              onClick={newChat}
-              aria-label="New chat"
-              title="Start a new chat session"
-              type="button"
-            >
-              <Plus size={15} className="text-cyan-400" />
-              <span>New Chat</span>
-            </button>
-
-            <button
-              className="assistant-header-btn hover:border-red-500/40 transition-all text-xs font-semibold px-3 py-1.5 rounded-lg border border-red-500/30 bg-red-500/10 text-red-300 flex items-center gap-1.5"
-              onClick={() => setShowClearConfirm(true)}
-              aria-label="Clear chat"
-              title="Clear conversation and memory"
-              type="button"
-            >
-              <Trash2 size={15} />
-              <span>Clear Chat</span>
-            </button>
-          </div>
-        </header>
-
-        {/* Cleared Toast */}
-        {clearedToast && (
-          <div className="bg-cyan-500/15 border-b border-cyan-500/30 px-6 py-2.5 flex items-center gap-2 text-cyan-300 text-xs font-medium">
-            <Check size={15} />
-            <span>Chat history and memory have been cleared successfully.</span>
-          </div>
-        )}
-
-        {/* Clear Confirmation Prompt */}
-        {showClearConfirm && (
-          <div className="bg-red-950/90 border-b border-red-500/40 px-6 py-3 flex items-center justify-between gap-4 flex-wrap">
-            <div className="flex items-center gap-2.5">
-              <AlertTriangle size={17} className="text-red-400 shrink-0" />
-              <div>
-                <div className="text-white text-xs font-bold">Clear entire conversation and memory?</div>
-                <div className="text-red-200/70 text-[11px]">All chat messages and local AI context will be removed.</div>
-              </div>
-            </div>
-            <div className="flex items-center gap-2">
-              <button
-                type="button"
-                onClick={() => setShowClearConfirm(false)}
-                className="px-3 py-1 rounded-md text-xs font-medium bg-slate-800 text-slate-200 border border-slate-700 hover:bg-slate-700"
-              >
-                Cancel
-              </button>
-              <button
-                type="button"
-                onClick={handleConfirmClearChat}
-                className="px-3 py-1 rounded-md text-xs font-bold bg-red-600 text-white hover:bg-red-500 flex items-center gap-1"
-              >
-                <Trash2 size={12} />
-                Yes, Clear All
-              </button>
-            </div>
-          </div>
-        )}
-
-        <div
-          style={{
-            padding: '12px 22px',
-            borderBottom: '1px solid rgba(255,255,255,.05)',
-            display: 'flex',
-            alignItems: 'center',
-            justifyContent: 'space-between',
-            gap: 12,
-            flexWrap: 'wrap',
-            background: 'rgba(0,0,0,0.2)',
-          }}
-        >
-          <div
-            style={{
-              display: 'flex',
-              alignItems: 'center',
-              gap: 8,
-              fontSize: 12,
-              opacity: 0.8,
-            }}
-          >
-            <Brain size={15} className="text-cyan-400" />
-            <span className="text-slate-300">
-              {smartMemory
-                ? '🧠 Memory saved locally & active'
-                : '✨ No saved memories yet'}
+    <div className="min-h-screen bg-[#111113] text-[#e3e3e7] flex flex-col font-sans -mx-4 sm:-mx-8 md:-mx-12 -my-8 px-4 sm:px-8 py-4">
+      {/* Minimal Top Navigation Header */}
+      <header className="max-w-4xl w-full mx-auto flex items-center justify-between pb-3 pt-1 border-b border-zinc-800/80">
+        <div className="flex items-center gap-3">
+          <div className="flex items-center gap-2">
+            <span className="font-semibold text-zinc-100 text-sm tracking-tight">
+              NEXUS AI
             </span>
           </div>
 
+          <div className="h-3 w-px bg-zinc-700/80" />
+
+          <Link
+            to="/settings?tab=ai"
+            className="flex items-center gap-1.5 text-xs text-zinc-400 hover:text-zinc-200 transition-colors"
+            title="Configure AI Providers in Settings"
+          >
+            <Cpu size={12} className="text-zinc-400" />
+            <span className="truncate max-w-[160px] sm:max-w-[240px]">
+              {providerLabel}
+            </span>
+          </Link>
+        </div>
+
+        <div className="flex items-center gap-2">
+          {/* Smart Memory Status & Trigger */}
           <button
             type="button"
-            className="icon-button"
             onClick={openMemoryEditor}
-            title="Manage memory"
-            aria-label="Manage memory"
-            style={{
-              display: 'inline-flex',
-              alignItems: 'center',
-              gap: 6,
-              padding: '7px 12px',
-              borderRadius: 10,
-              background: 'rgba(97,221,210,0.1)',
-              borderColor: 'rgba(97,221,210,0.3)',
-              color: '#61ddd2',
-            }}
+            className={`text-xs px-2.5 py-1.5 rounded-lg border transition-all flex items-center gap-1.5 ${
+              smartMemory
+                ? 'bg-zinc-800/80 text-zinc-300 border-zinc-700 hover:bg-zinc-700/70'
+                : 'text-zinc-400 border-transparent hover:bg-zinc-800/60'
+            }`}
+            title="Manage Memory"
           >
-            <Brain size={14} />
-            <span style={{ fontSize: 12, fontWeight: 600 }}>Manage Memory</span>
+            <Brain size={13} className={smartMemory ? 'text-cyan-400' : 'text-zinc-400'} />
+            <span className="hidden sm:inline">Memory</span>
+          </button>
+
+          {/* New Chat */}
+          <button
+            type="button"
+            onClick={newChat}
+            className="text-xs px-2.5 py-1.5 rounded-lg text-zinc-300 hover:text-white hover:bg-zinc-800 transition-all flex items-center gap-1.5"
+            title="Start a new chat"
+          >
+            <Plus size={14} />
+            <span className="hidden sm:inline">New chat</span>
+          </button>
+
+          {/* Clear Chat */}
+          <button
+            type="button"
+            onClick={() => setShowClearConfirm(true)}
+            className="text-xs p-1.5 sm:px-2.5 sm:py-1.5 rounded-lg text-zinc-400 hover:text-red-300 hover:bg-red-500/10 transition-all flex items-center gap-1.5"
+            title="Clear conversation"
+          >
+            <Trash2 size={14} />
+            <span className="hidden sm:inline">Clear</span>
           </button>
         </div>
+      </header>
 
-        {memoryEditorOpen && (
-          <div
-            style={{
-              margin: '12px 18px',
-              padding: 14,
-              borderRadius: 14,
-              border: '1px solid rgba(97,221,210,.18)',
-              background: 'rgba(97,221,210,.045)',
-            }}
-          >
-            <div
-              style={{
-                display: 'flex',
-                justifyContent: 'space-between',
-                alignItems: 'center',
-                gap: 10,
-                marginBottom: 8,
-              }}
-            >
-              <strong style={{ display: 'flex', alignItems: 'center', gap: 7 }}>
-                <Brain size={16} />
-                AI Memory
-              </strong>
-
-              <small style={{ opacity: 0.5 }}>
-                Stored on this device
-              </small>
-            </div>
-
-            <p style={{ fontSize: 12, opacity: 0.6, margin: '0 0 10px' }}>
-              Edit what NEXUS AI should remember. Keep it short and useful.
-            </p>
-
-            <textarea
-              value={memoryDraft}
-              onChange={(event) => setMemoryDraft(event.target.value)}
-              maxLength={MAX_MEMORY_LENGTH}
-              placeholder="Example: My name is Alex. I like space photography."
-              rows={5}
-              style={{
-                width: '100%',
-                resize: 'vertical',
-                boxSizing: 'border-box',
-                padding: 12,
-                borderRadius: 12,
-                border: '1px solid rgba(255,255,255,.1)',
-                background: 'rgba(0,0,0,.2)',
-                color: '#e8f0f2',
-                outline: 'none',
-                font: 'inherit',
-              }}
-            />
-
-            <div
-              style={{
-                display: 'flex',
-                justifyContent: 'space-between',
-                alignItems: 'center',
-                gap: 10,
-                marginTop: 10,
-                flexWrap: 'wrap',
-              }}
-            >
-              <small style={{ opacity: 0.45 }}>
-                {memoryDraft.length}/{MAX_MEMORY_LENGTH}
-              </small>
-
-              <div style={{ display: 'flex', gap: 8 }}>
-                <button
-                  type="button"
-                  className="icon-button"
-                  onClick={() => setMemoryEditorOpen(false)}
-                >
-                  Cancel
-                </button>
-
-                <button
-                  type="button"
-                  className="icon-button"
-                  onClick={clearMemory}
-                  title="Delete all memory"
-                >
-                  <Trash2 size={14} />
-                  Clear
-                </button>
-
-                <button
-                  type="button"
-                  className="icon-button"
-                  onClick={saveMemory}
-                  title="Save memory"
-                >
-                  Save
-                </button>
-              </div>
-            </div>
-          </div>
-        )}
-
-        <div
-          style={{
-            padding: '8px 18px',
-            borderBottom: '1px solid rgba(255,255,255,.05)',
-            fontSize: 12,
-            opacity: 0.55,
-            display: 'flex',
-            alignItems: 'center',
-            gap: 6,
-          }}
-        >
-          <Brain size={14} />
-          {smartMemory
-            ? 'Smart memory active · recent context only'
-            : 'Smart memory ready'}
+      {/* Confirmation & Toast Banners */}
+      {clearedToast && (
+        <div className="max-w-4xl w-full mx-auto mt-2 px-3 py-2 rounded-lg bg-zinc-800 border border-zinc-700 text-xs text-zinc-300 flex items-center gap-2">
+          <Check size={14} className="text-emerald-400" />
+          <span>Conversation and local context cleared.</span>
         </div>
+      )}
 
-        <div
-          style={{
-            flex: 1,
-            padding: 18,
-            overflowY: 'auto',
-          }}
-        >
-          {messages.map((message, index) => (
-            <div
-              key={`${message.role}-${index}`}
-              style={{
-                display: 'flex',
-                justifyContent:
-                  message.role === 'user' ? 'flex-end' : 'flex-start',
-                marginBottom: 16,
-              }}
+      {showClearConfirm && (
+        <div className="max-w-4xl w-full mx-auto mt-2 px-4 py-3 rounded-lg bg-zinc-900 border border-zinc-700/80 flex items-center justify-between gap-4 flex-wrap">
+          <div className="flex items-center gap-2.5">
+            <AlertTriangle size={15} className="text-amber-400 shrink-0" />
+            <span className="text-xs text-zinc-300">
+              Clear conversation history and stored memory?
+            </span>
+          </div>
+          <div className="flex items-center gap-2">
+            <button
+              type="button"
+              onClick={() => setShowClearConfirm(false)}
+              className="px-2.5 py-1 rounded text-xs text-zinc-400 hover:text-zinc-200"
             >
-              <div
-                style={{
-                  display: 'flex',
-                  alignItems: 'flex-start',
-                  gap: 10,
-                  maxWidth: '88%',
-                  flexDirection:
-                    message.role === 'user' ? 'row-reverse' : 'row',
-                }}
-              >
-                <span
-                  style={{
-                    flex: '0 0 auto',
-                    width: 32,
-                    height: 32,
-                    display: 'grid',
-                    placeItems: 'center',
-                    borderRadius: 10,
-                    color:
-                      message.role === 'user'
-                        ? '#8fa4ad'
-                        : '#61ddd2',
-                    background:
-                      message.role === 'user'
-                        ? 'rgba(255,255,255,.06)'
-                        : 'rgba(97,221,210,.1)',
-                  }}
-                >
-                  {message.role === 'user' ? (
-                    <User size={16} />
-                  ) : (
-                    <Sparkles size={16} />
-                  )}
-                </span>
+              Cancel
+            </button>
+            <button
+              type="button"
+              onClick={handleConfirmClearChat}
+              className="px-3 py-1 rounded text-xs font-medium bg-red-600/90 hover:bg-red-600 text-white"
+            >
+              Clear All
+            </button>
+          </div>
+        </div>
+      )}
 
-                <div style={{ width: '100%' }}>
-                  {message.role === 'assistant' && message.tool === 'search' && (
-                    <div
-                      style={{
-                        fontSize: 12,
-                        opacity: 0.7,
-                        marginBottom: 6,
-                        color: '#61ddd2',
-                      }}
-                    >
-                      🔎 NEXUS Search
-                    </div>
-                  )}
+      {/* Main Chat Stream (Claude-style transparent and clean message bubbles) */}
+      <main className="flex-1 max-w-4xl w-full mx-auto flex flex-col justify-between py-6 px-1 sm:px-2">
+        <div className="flex-1 space-y-6">
+          {/* Empty / Welcome state hero */}
+          {isOnlyWelcome && (
+            <div className="py-12 sm:py-20 text-center flex flex-col items-center justify-center">
+              <h2 className="text-2xl sm:text-3xl font-normal text-zinc-200 tracking-tight mb-3">
+                How can I help you today?
+              </h2>
+              <p className="text-sm text-zinc-400 max-w-md mb-8">
+                Ask questions, synthesize documents, solve technical problems, or explore live web data.
+              </p>
 
-                  {message.role === 'assistant' && message.tool === 'weather' && (
-                    <div
-                      style={{
-                        fontSize: 12,
-                        opacity: 0.7,
-                        marginBottom: 6,
-                        color: '#61ddd2',
-                      }}
-                    >
-                      🌤️ Weather data
-                    </div>
-                  )}
-
-                  {message.role === 'assistant' &&
-                    message.tool === 'weather' &&
-                    message.weather &&
-                    typeof message.weather === 'object' ? (() => {
-                    const weather = message.weather as {
-                      current?: {
-                        location?: string;
-                        temperature?: number;
-                        feelsLike?: number;
-                        conditionLabel?: string;
-                        humidity?: number;
-                        rainProbability?: number;
-                      };
-                    };
-
-                    const current = weather.current;
-
-                    if (!current) return null;
-
-                    return (
-                      <div
-                        style={{
-                          marginTop: 10,
-                          marginBottom: 10,
-                          padding: '12px 14px',
-                          borderRadius: 14,
-                          background: 'rgba(97,221,210,.055)',
-                          border: '1px solid rgba(97,221,210,.14)',
-                        }}
-                      >
-                        <div
-                          style={{
-                            fontSize: 12,
-                            fontWeight: 700,
-                            color: '#61ddd2',
-                            marginBottom: 8,
-                          }}
-                        >
-                          🌤️ Weather data
-                        </div>
-
-                        <div
-                          style={{
-                            fontSize: 13,
-                            fontWeight: 600,
-                            marginBottom: 8,
-                          }}
-                        >
-                          📍 {current.location ?? 'Selected location'}
-                        </div>
-
-                        <div
-                          style={{
-                            display: 'grid',
-                            gridTemplateColumns: '1fr 1fr',
-                            gap: 7,
-                            fontSize: 12,
-                            opacity: 0.85,
-                          }}
-                        >
-                          <div>
-                            🌡️ {current.temperature ?? '—'}°C
-                            {typeof current.feelsLike === 'number'
-                              ? ` · Feels like ${current.feelsLike}°C`
-                              : ''}
-                          </div>
-
-                          <div>
-                            ☁️ {current.conditionLabel ?? '—'}
-                          </div>
-
-                          <div>
-                            💧 Humidity {current.humidity ?? '—'}%
-                          </div>
-
-                          <div>
-                            🌧️ Rain {current.rainProbability ?? '—'}%
-                          </div>
-                        </div>
-                      </div>
-                    );
-                  })() : null}
-
-                  <div
-                    style={{
-                      padding: '12px 14px',
-                      borderRadius: 15,
-                    lineHeight: 1.55,
-                    fontSize: 14,
-                    whiteSpace: 'pre-wrap',
-                    color: '#e8f0f2',
-                    background:
-                      message.role === 'user'
-                        ? 'rgba(97,221,210,.12)'
-                        : 'rgba(255,255,255,.055)',
-                    border: '1px solid rgba(255,255,255,.07)',
-                  }}
-                >
-                    {message.content}
-                  </div>
-
-                  {message.role === 'assistant' && (
-                    <div className="flex items-center gap-1.5 mt-2.5">
-                      <button
-                        type="button"
-                        onClick={() => toggleBrowserSpeak(message.content, index)}
-                        className={`p-1.5 rounded-full transition-all duration-200 flex items-center justify-center ${
-                          speakingIndex === index
-                            ? 'bg-cyan-400 text-slate-950 shadow-[0_0_12px_#61d7c9]'
-                            : 'text-slate-300 hover:text-cyan-300 hover:bg-cyan-500/15'
-                        }`}
-                        title={speakingIndex === index ? 'Stop Voice' : 'Read Aloud (Browser Voice)'}
-                      >
-                        {speakingIndex === index ? <VolumeX size={14} /> : <Volume2 size={14} />}
-                      </button>
-
-                      <button
-                        type="button"
-                        onClick={() => handleEdgeTtsSpeak(message.content, index)}
-                        disabled={edgeTtsLoadingIndex === index}
-                        className={`p-1.5 rounded-full transition-all duration-200 flex items-center justify-center ${
-                          edgeTtsPlayingIndex === index
-                            ? 'bg-purple-400 text-slate-950 shadow-[0_0_12px_#c084fc]'
-                            : 'text-slate-300 hover:text-purple-300 hover:bg-purple-500/15'
-                        }`}
-                        title={
-                          edgeTtsLoadingIndex === index
-                            ? 'Generating Neural Audio...'
-                            : edgeTtsPlayingIndex === index
-                            ? 'Stop Edge TTS Audio'
-                            : 'Play Edge TTS Neural Voice'
-                        }
-                      >
-                        {edgeTtsLoadingIndex === index ? (
-                          <Loader2 size={14} className="animate-spin text-purple-400" />
-                        ) : edgeTtsPlayingIndex === index ? (
-                          <Radio size={14} className="animate-pulse" />
-                        ) : (
-                          <Radio size={14} />
-                        )}
-                      </button>
-
-                      <button
-                        type="button"
-                        onClick={() => handleCopyText(message.content, index)}
-                        className="p-1.5 rounded-full text-slate-300 hover:text-cyan-300 hover:bg-cyan-500/15 transition-colors flex items-center justify-center"
-                        title="Copy message"
-                      >
-                        {copiedIndex === index ? <Check size={14} className="text-cyan-400" /> : <Copy size={14} />}
-                      </button>
-                    </div>
-                  )}
-
-                  {message.role === 'assistant' &&
-                    message.sources?.length ? (
-                    <div
-                      style={{
-                        display: 'grid',
-                        gap: 8,
-                        marginTop: 12,
-                      }}
-                    >
-                      <div
-                        style={{
-                          fontSize: 11,
-                          fontWeight: 700,
-                          letterSpacing: '0.08em',
-                          textTransform: 'uppercase',
-                          color: '#61ddd2',
-                          display: 'flex',
-                          alignItems: 'center',
-                          gap: 6,
-                        }}
-                      >
-                        <Sparkles size={12} /> Verified Sources
-                      </div>
-                      {message.sources.slice(0, 5).map((source, sourceIndex) => {
-                        const isWiki =
-                          source.type === 'wikipedia' ||
-                          source.domain?.toLowerCase().includes('wikipedia');
-                        return (
-                          <a
-                            key={`${source.url}-${sourceIndex}`}
-                            href={source.url}
-                            target="_blank"
-                            rel="noreferrer"
-                            style={{
-                              display: 'block',
-                              padding: '10px 14px',
-                              borderRadius: 12,
-                              textDecoration: 'none',
-                              color: 'inherit',
-                              background: isWiki
-                                ? 'rgba(97, 215, 201, 0.08)'
-                                : 'rgba(255,255,255,.035)',
-                              border: isWiki
-                                ? '1px solid rgba(97, 215, 201, 0.28)'
-                                : '1px solid rgba(255,255,255,.07)',
-                              transition: 'all 0.2s ease',
-                            }}
-                          >
-                            <div
-                              style={{
-                                display: 'flex',
-                                alignItems: 'center',
-                                justifyContent: 'space-between',
-                                gap: 8,
-                                marginBottom: 4,
-                              }}
-                            >
-                              <span
-                                style={{
-                                  display: 'inline-flex',
-                                  alignItems: 'center',
-                                  gap: 5,
-                                  fontSize: 10,
-                                  fontWeight: 700,
-                                  letterSpacing: '0.06em',
-                                  textTransform: 'uppercase',
-                                  color: isWiki ? '#61ddd2' : '#81949e',
-                                  background: isWiki
-                                    ? 'rgba(97, 215, 201, 0.15)'
-                                    : 'rgba(255,255,255,0.06)',
-                                  padding: '2px 7px',
-                                  borderRadius: 4,
-                                }}
-                              >
-                                {isWiki ? (
-                                  <>
-                                    <BookOpen size={11} /> Wikipedia
-                                  </>
-                                ) : (
-                                  <>
-                                    <Globe size={11} /> {source.domain || 'Web'}
-                                  </>
-                                )}
-                              </span>
-                              <ExternalLink size={12} style={{ opacity: 0.5 }} />
-                            </div>
-
-                            <strong
-                              style={{
-                                display: 'block',
-                                fontSize: 13,
-                                marginBottom: 3,
-                                color: '#e8f0f2',
-                              }}
-                            >
-                              {source.title}
-                            </strong>
-
-                            {source.description && (
-                              <span
-                                style={{
-                                  display: 'block',
-                                  fontSize: 12,
-                                  lineHeight: 1.4,
-                                  opacity: 0.75,
-                                  color: '#a5cfd6',
-                                }}
-                              >
-                                {source.description}
-                              </span>
-                            )}
-                          </a>
-                        );
-                      })}
-                    </div>
-                  ) : null}
-                </div>
+              {/* Quick suggestion prompt pills */}
+              <div className="flex flex-wrap items-center justify-center gap-2 max-w-xl">
+                {QUICK_PROMPTS.map((prompt) => (
+                  <button
+                    key={prompt}
+                    type="button"
+                    onClick={() => sendMessage(prompt)}
+                    disabled={loading}
+                    className="text-xs px-3.5 py-2 rounded-full border border-zinc-800 bg-zinc-900/60 text-zinc-300 hover:text-white hover:border-zinc-700 hover:bg-zinc-800 transition-all text-left"
+                  >
+                    {prompt}
+                  </button>
+                ))}
               </div>
             </div>
-          ))}
+          )}
 
+          {/* Message List */}
+          {!isOnlyWelcome &&
+            messages.map((message, index) => {
+              const isUser = message.role === 'user';
+              const hasSources = message.sources && message.sources.length > 0;
+              const hasSearched = message.searchedWeb || message.tool === 'search' || hasSources;
+
+              return (
+                <div
+                  key={`${message.role}-${index}`}
+                  className={`flex w-full ${
+                    isUser ? 'justify-end' : 'justify-start'
+                  } group`}
+                >
+                  <div
+                    className={`flex flex-col ${
+                      isUser
+                        ? 'items-end max-w-[85%] sm:max-w-[75%]'
+                        : 'items-start w-full max-w-full'
+                    }`}
+                  >
+                    {/* User Message: Clean tinted rounded box */}
+                    {isUser ? (
+                      <div className="px-4 py-2.5 rounded-2xl bg-zinc-800 text-zinc-100 text-[14.5px] leading-relaxed border border-zinc-700/50 break-words whitespace-pre-wrap">
+                        {message.content}
+                      </div>
+                    ) : (
+                      /* Assistant Message: Claude-style transparent typography */
+                      <div className="w-full space-y-2">
+                        {/* Web Search Indicator Tag */}
+                        {hasSearched && (
+                          <div className="flex items-center gap-2 pt-1 pb-0.5">
+                            <span className="inline-flex items-center gap-1.5 px-2 py-0.5 rounded-full text-[11px] font-medium bg-zinc-800 text-zinc-300 border border-zinc-700/60">
+                              <Search size={11} className="text-cyan-400" />
+                              <span>Searched the web</span>
+                              {hasSources && (
+                                <span className="text-zinc-500 font-normal">
+                                  ({message.sources?.length} {message.sources?.length === 1 ? 'source' : 'sources'})
+                                </span>
+                              )}
+                            </span>
+
+                            {hasSources && (
+                              <button
+                                type="button"
+                                onClick={() => toggleSourceExpand(index)}
+                                className="text-[11px] text-zinc-400 hover:text-zinc-200 flex items-center gap-0.5 transition-colors"
+                              >
+                                <span>{expandedSources[index] ? 'Hide sources' : 'Show sources'}</span>
+                                {expandedSources[index] ? (
+                                  <ChevronUp size={12} />
+                                ) : (
+                                  <ChevronDown size={12} />
+                                )}
+                              </button>
+                            )}
+                          </div>
+                        )}
+
+                        {/* Collapsible Verified Sources Panel */}
+                        {hasSources && expandedSources[index] && (
+                          <div className="grid grid-cols-1 sm:grid-cols-2 gap-2 my-2.5">
+                            {message.sources?.map((src, sIdx) => {
+                              const isWiki =
+                                src.type === 'wikipedia' ||
+                                src.domain?.toLowerCase().includes('wikipedia');
+                              return (
+                                <a
+                                  key={`${src.url}-${sIdx}`}
+                                  href={src.url}
+                                  target="_blank"
+                                  rel="noreferrer"
+                                  className="p-2.5 rounded-lg border border-zinc-800 bg-zinc-900/60 hover:bg-zinc-800/80 hover:border-zinc-700 transition-all text-xs block group/card"
+                                >
+                                  <div className="flex items-center justify-between gap-1 mb-1">
+                                    <span className="inline-flex items-center gap-1 text-[10px] font-medium text-zinc-400">
+                                      {isWiki ? (
+                                        <>
+                                          <BookOpen size={10} className="text-cyan-400" /> Wikipedia
+                                        </>
+                                      ) : (
+                                        <>
+                                          <Globe size={10} className="text-zinc-400" /> {src.domain || 'Web'}
+                                        </>
+                                      )}
+                                    </span>
+                                    <ExternalLink size={11} className="text-zinc-500 group-hover/card:text-zinc-300" />
+                                  </div>
+                                  <p className="font-medium text-zinc-200 line-clamp-1 mb-0.5">
+                                    {src.title}
+                                  </p>
+                                  {src.description && (
+                                    <p className="text-[11px] text-zinc-400 line-clamp-2 leading-tight">
+                                      {src.description}
+                                    </p>
+                                  )}
+                                </a>
+                              );
+                            })}
+                          </div>
+                        )}
+
+                        {/* Weather Data Widget (if returned) */}
+                        {message.tool === 'weather' && message.weather && typeof message.weather === 'object' && (() => {
+                          const weather = message.weather as {
+                            current?: {
+                              location?: string;
+                              temperature?: number;
+                              feelsLike?: number;
+                              conditionLabel?: string;
+                              humidity?: number;
+                              rainProbability?: number;
+                            };
+                          };
+                          const curr = weather.current;
+                          if (!curr) return null;
+                          return (
+                            <div className="my-2 p-3 rounded-xl border border-zinc-800 bg-zinc-900/80 text-xs flex items-center justify-between gap-4 flex-wrap">
+                              <div>
+                                <span className="font-medium text-zinc-200">
+                                  {curr.location || 'Location'}
+                                </span>
+                                <span className="text-zinc-400 ml-2">
+                                  {curr.conditionLabel || 'Current Weather'}
+                                </span>
+                              </div>
+                              <div className="flex items-center gap-3 text-zinc-300">
+                                <span>🌡️ {curr.temperature ?? '—'}°C</span>
+                                <span>💧 {curr.humidity ?? '—'}%</span>
+                                <span>🌧️ {curr.rainProbability ?? '—'}%</span>
+                              </div>
+                            </div>
+                          );
+                        })()}
+
+                        {/* Plain Transparent Assistant Message Body */}
+                        <div className="text-[15px] leading-relaxed text-zinc-200 break-words whitespace-pre-wrap pt-0.5">
+                          {message.content}
+                        </div>
+
+                        {/* Message Action Toolbar */}
+                        <div className="flex items-center gap-1.5 pt-1 text-zinc-400 opacity-60 group-hover:opacity-100 transition-opacity">
+                          {/* Copy */}
+                          <button
+                            type="button"
+                            onClick={() => handleCopyText(message.content, index)}
+                            className="p-1 rounded-md hover:text-zinc-200 hover:bg-zinc-800 transition-colors"
+                            title="Copy response"
+                          >
+                            {copiedIndex === index ? (
+                              <Check size={13} className="text-emerald-400" />
+                            ) : (
+                              <Copy size={13} />
+                            )}
+                          </button>
+
+                          {/* Browser Voice Read Aloud */}
+                          <button
+                            type="button"
+                            onClick={() => toggleBrowserSpeak(message.content, index)}
+                            className={`p-1 rounded-md transition-colors ${
+                              speakingIndex === index
+                                ? 'text-cyan-400 bg-cyan-500/10'
+                                : 'hover:text-zinc-200 hover:bg-zinc-800'
+                            }`}
+                            title={speakingIndex === index ? 'Stop voice' : 'Read aloud (Browser)'}
+                          >
+                            {speakingIndex === index ? (
+                              <VolumeX size={13} />
+                            ) : (
+                              <Volume2 size={13} />
+                            )}
+                          </button>
+
+                          {/* Neural Edge TTS */}
+                          <button
+                            type="button"
+                            onClick={() => handleEdgeTtsSpeak(message.content, index)}
+                            disabled={edgeTtsLoadingIndex === index}
+                            className={`p-1 rounded-md transition-colors ${
+                              edgeTtsPlayingIndex === index
+                                ? 'text-purple-400 bg-purple-500/10'
+                                : 'hover:text-zinc-200 hover:bg-zinc-800'
+                            }`}
+                            title={
+                              edgeTtsLoadingIndex === index
+                                ? 'Synthesizing Neural voice...'
+                                : edgeTtsPlayingIndex === index
+                                ? 'Stop Edge TTS'
+                                : 'Play Neural voice (Edge TTS)'
+                            }
+                          >
+                            {edgeTtsLoadingIndex === index ? (
+                              <Loader2 size={13} className="animate-spin text-purple-400" />
+                            ) : edgeTtsPlayingIndex === index ? (
+                              <Radio size={13} className="animate-pulse" />
+                            ) : (
+                              <Radio size={13} />
+                            )}
+                          </button>
+                        </div>
+                      </div>
+                    )}
+                  </div>
+                </div>
+              );
+            })}
+
+          {/* Loading indicator */}
           {loading && (
-            <div
-              style={{
-                display: 'flex',
-                alignItems: 'center',
-                gap: 10,
-                opacity: 0.7,
-                padding: '8px 0',
-              }}
-            >
-              <Sparkles size={17} />
+            <div className="flex items-center gap-2 text-xs text-zinc-400 py-2">
+              <Loader2 size={14} className="animate-spin text-zinc-400" />
               <span>NEXUS AI is thinking...</span>
             </div>
           )}
 
+          {/* Error Message */}
           {error && (
-            <div style={{ marginTop: 8 }}>
+            <div className="my-2">
               <ErrorMessage message={error} />
             </div>
           )}
+
+          <div ref={messagesEndRef} />
         </div>
 
-        <div
-          className="assistant-bottom-bar"
-          style={{
-            padding: '12px 16px',
-            borderTop: '1px solid rgba(255,255,255,.07)',
-          }}
-        >
-          {!input && (
-            <div
-              className="nexus-quick-prompts-row"
-              style={{
-                display: 'flex',
-                gap: 8,
-                overflowX: 'auto',
-                paddingBottom: 10,
-              }}
-            >
-              {QUICK_PROMPTS.map((prompt) => (
+        {/* Input Bar: Claude-style centered pinned container */}
+        <div className="sticky bottom-0 pt-4 pb-1 bg-gradient-to-t from-[#111113] via-[#111113] to-transparent">
+          {/* Quick prompts chips if conversation has few messages and user isn't typing */}
+          {!isOnlyWelcome && messages.length <= 3 && !input && (
+            <div className="flex items-center gap-2 overflow-x-auto pb-2.5 no-scrollbar">
+              {QUICK_PROMPTS.slice(0, 3).map((prompt) => (
                 <button
                   key={prompt}
                   type="button"
-                  className="secondary-button nexus-quick-prompt-btn"
                   onClick={() => sendMessage(prompt)}
                   disabled={loading}
-                  style={{ whiteSpace: 'nowrap' }}
+                  className="text-xs px-3 py-1.5 rounded-full border border-zinc-800 bg-zinc-900/60 text-zinc-400 hover:text-zinc-200 hover:border-zinc-700 whitespace-nowrap transition-colors"
                 >
                   {prompt}
                 </button>
@@ -1113,25 +850,22 @@ export function AssistantPage() {
             </div>
           )}
 
+          {/* Claude-style Input Box */}
           <form
-            className="assistant-input-form"
-            onSubmit={(event) => {
-              event.preventDefault();
+            onSubmit={(e) => {
+              e.preventDefault();
               sendMessage();
             }}
-            style={{
-              display: 'flex',
-              alignItems: 'flex-end',
-              gap: 10,
-            }}
+            className="rounded-2xl border border-zinc-700/70 bg-[#1e1e21] shadow-lg focus-within:border-zinc-500 transition-all p-2.5 flex flex-col gap-2"
           >
+            {/* Input Textarea */}
             <textarea
-              className="assistant-input-textarea"
+              ref={textareaRef}
               value={input}
-              onChange={(event) => setInput(event.target.value)}
-              onKeyDown={(event) => {
-                if (event.key === 'Enter' && !event.shiftKey) {
-                  event.preventDefault();
+              onChange={handleInputChange}
+              onKeyDown={(e) => {
+                if (e.key === 'Enter' && !e.shiftKey) {
+                  e.preventDefault();
                   sendMessage();
                 }
               }}
@@ -1139,50 +873,122 @@ export function AssistantPage() {
               aria-label="Message NEXUS AI"
               rows={1}
               disabled={loading}
-              style={{
-                flex: 1,
-                resize: 'none',
-                minHeight: 48,
-                maxHeight: 140,
-                padding: '13px 14px',
-                borderRadius: 13,
-                border: '1px solid rgba(97,221,210,.2)',
-                background: 'rgba(5,18,23,.8)',
-                color: 'inherit',
-                font: 'inherit',
-                outline: 'none',
-              }}
+              className="w-full bg-transparent text-zinc-100 placeholder-zinc-500 text-[14.5px] leading-relaxed resize-none outline-none px-2 pt-1 pb-1 min-h-[44px] max-h-[180px]"
             />
 
-            <button
-              className="search-submit assistant-submit-btn"
-              type="submit"
-              disabled={!input.trim() || loading}
-              aria-label="Send message"
-              style={{
-                minWidth: 50,
-                minHeight: 48,
-                display: 'grid',
-                placeItems: 'center',
-              }}
-            >
-              <Send size={18} />
-            </button>
+            {/* Bottom Controls inside input box */}
+            <div className="flex items-center justify-between pt-1 border-t border-zinc-800/60">
+              {/* Web Search Toggle (Claude-like placement) */}
+              <div className="flex items-center gap-2">
+                <button
+                  type="button"
+                  onClick={toggleWebSearch}
+                  className={`text-xs px-2.5 py-1.5 rounded-lg border transition-all flex items-center gap-1.5 ${
+                    webSearchEnabled
+                      ? 'bg-cyan-500/15 text-cyan-300 border-cyan-500/30'
+                      : 'text-zinc-400 border-transparent hover:text-zinc-300 hover:bg-zinc-800/60'
+                  }`}
+                  title={
+                    webSearchEnabled
+                      ? 'Web Search is ON: forces live search on every request'
+                      : 'Web Search is Auto: searches when needed'
+                  }
+                >
+                  <Globe
+                    size={13}
+                    className={webSearchEnabled ? 'text-cyan-400' : 'text-zinc-400'}
+                  />
+                  <span>Web Search</span>
+                  {webSearchEnabled && (
+                    <span className="w-1.5 h-1.5 rounded-full bg-cyan-400" />
+                  )}
+                </button>
+              </div>
+
+              {/* Right: Send Button */}
+              <div className="flex items-center gap-2">
+                <button
+                  type="submit"
+                  disabled={!input.trim() || loading}
+                  className={`w-8 h-8 rounded-full flex items-center justify-center transition-all ${
+                    input.trim() && !loading
+                      ? 'bg-zinc-100 text-zinc-900 hover:bg-white cursor-pointer'
+                      : 'bg-zinc-800 text-zinc-500 cursor-not-allowed opacity-50'
+                  }`}
+                  aria-label="Send message"
+                >
+                  <Send size={14} className="translate-x-px" />
+                </button>
+              </div>
+            </div>
           </form>
 
-          <small
-            style={{
-              display: 'block',
-              textAlign: 'center',
-              opacity: 0.42,
-              fontSize: 11,
-              marginTop: 8,
-            }}
-          >
-            Recent context + compact memory · saved on this device
-          </small>
+          {/* Subtext info */}
+          <div className="text-center pt-2 pb-0.5 text-[11px] text-zinc-500">
+            NEXUS AI · {webSearchEnabled ? 'Live Web Search Active' : 'Automatic Web Search'} · Local Context
+          </div>
         </div>
-      </section>
+      </main>
+
+      {/* Memory Management Modal */}
+      {memoryEditorOpen && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/60 backdrop-blur-sm">
+          <div className="w-full max-w-lg rounded-2xl border border-zinc-700/80 bg-[#19191c] p-5 shadow-2xl space-y-4">
+            <div className="flex items-center justify-between pb-1 border-b border-zinc-800">
+              <div className="flex items-center gap-2">
+                <Brain size={16} className="text-cyan-400" />
+                <h3 className="text-sm font-semibold text-zinc-100">
+                  Memory Management
+                </h3>
+              </div>
+              <span className="text-[11px] text-zinc-500">
+                {memoryDraft.length}/{MAX_MEMORY_LENGTH}
+              </span>
+            </div>
+
+            <p className="text-xs text-zinc-400">
+              Saved locally on this device. Edit notes or context you want NEXUS AI to remember across sessions.
+            </p>
+
+            <textarea
+              value={memoryDraft}
+              onChange={(e) => setMemoryDraft(e.target.value)}
+              maxLength={MAX_MEMORY_LENGTH}
+              placeholder="e.g. My preferred tech stack is TypeScript and React. Always explain complex concepts concisely."
+              rows={6}
+              className="w-full rounded-xl border border-zinc-700 bg-zinc-900/80 p-3 text-xs text-zinc-100 placeholder-zinc-600 outline-none focus:border-zinc-500 resize-none font-sans"
+            />
+
+            <div className="flex items-center justify-between pt-1">
+              <button
+                type="button"
+                onClick={clearMemory}
+                className="text-xs text-red-400 hover:text-red-300 px-2 py-1 rounded hover:bg-red-500/10 flex items-center gap-1 transition-colors"
+              >
+                <Trash2 size={13} />
+                Clear
+              </button>
+
+              <div className="flex items-center gap-2">
+                <button
+                  type="button"
+                  onClick={() => setMemoryEditorOpen(false)}
+                  className="text-xs px-3 py-1.5 rounded-lg text-zinc-400 hover:text-zinc-200 transition-colors"
+                >
+                  Cancel
+                </button>
+                <button
+                  type="button"
+                  onClick={saveMemory}
+                  className="text-xs font-medium px-4 py-1.5 rounded-lg bg-zinc-100 text-zinc-900 hover:bg-white transition-colors"
+                >
+                  Save
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }
