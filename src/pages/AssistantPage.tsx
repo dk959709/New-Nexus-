@@ -199,6 +199,8 @@ export function AssistantPage() {
   const [deepResearchEnabled, setDeepResearchEnabled] = useState(loadDeepResearchToggle);
   const [deepResearchProgress, setDeepResearchProgress] = useState<number>(0);
   const [deepResearchPhase, setDeepResearchPhase] = useState<string>('');
+  const [specialistProgress, setSpecialistProgress] = useState<number>(0);
+  const [specialistPhase, setSpecialistPhase] = useState<string>('');
   const [imageLoadingPhase, setImageLoadingPhase] = useState<string>('');
   const [fullscreenModalImage, setFullscreenModalImage] = useState<string | null>(null);
   const [input, setInput] = useState('');
@@ -271,9 +273,17 @@ export function AssistantPage() {
     setArchitectEnabled((prev) => {
       const next = !prev;
       storage.setAssistantArchitectEnabled(next);
+      if (next) {
+        setWebSearchEnabled(false);
+        try {
+          localStorage.setItem(WEB_SEARCH_PREF_KEY, 'false');
+        } catch {
+          // Ignore
+        }
+      }
       triggerSettingsToast(
         next
-          ? 'Architect Mode enabled: Diagram & System Design Agent active'
+          ? 'Architect Mode enabled (automatic web search disabled)'
           : 'Architect Mode disabled',
       );
       return next;
@@ -284,9 +294,17 @@ export function AssistantPage() {
     setDataAnalysisEnabled((prev) => {
       const next = !prev;
       storage.setAssistantDataAnalysisEnabled(next);
+      if (next) {
+        setWebSearchEnabled(false);
+        try {
+          localStorage.setItem(WEB_SEARCH_PREF_KEY, 'false');
+        } catch {
+          // Ignore
+        }
+      }
       triggerSettingsToast(
         next
-          ? 'Data Analysis Mode enabled: Charts & Quantitative Insights Agent active'
+          ? 'Data Analysis Mode enabled (automatic web search disabled)'
           : 'Data Analysis Mode disabled',
       );
       return next;
@@ -524,6 +542,7 @@ export function AssistantPage() {
   }, [messages, loading, scrollToBottom]);
 
   const toggleWebSearch = () => {
+    if (deepResearchEnabled || architectEnabled || dataAnalysisEnabled) return;
     setWebSearchEnabled((prev) => {
       const next = !prev;
       try {
@@ -1015,6 +1034,15 @@ export function AssistantPage() {
 
     // If Architect or Data Analysis mode is enabled in Settings, route through JARVIS specialized agent pipeline
     if (architectEnabled || dataAnalysisEnabled) {
+      setSpecialistProgress(10);
+      setSpecialistPhase(
+        architectEnabled && dataAnalysisEnabled
+          ? 'Initializing Architect & Data Analysis pipeline...'
+          : architectEnabled
+          ? 'Initializing Architect agent (Planner formulating blueprint strategy)...'
+          : 'Initializing Data Analysis agent (Planner formulating metrics strategy)...'
+      );
+
       try {
         const jarvisConfig = storage.getJarvisConfig();
         let userTz = '';
@@ -1031,7 +1059,30 @@ export function AssistantPage() {
           architectEnabled, // diagramMode = architectEnabled
           dataAnalysisEnabled, // chartMode = dataAnalysisEnabled
           false, // imageMode
-          undefined,
+          (step: JarvisExecutionStep) => {
+            let pct = 15;
+            let label = `${step.name || 'Agent'}: ${step.status === 'running' ? 'Processing...' : 'Completed'}`;
+
+            if (step.agentId === 'planner') {
+              pct = step.status === 'completed' ? 30 : 20;
+              label = step.status === 'completed' ? 'Planner finalized system strategy' : 'Planner analyzing system architecture & parameters...';
+            } else if (step.agentId === 'architect') {
+              pct = step.status === 'completed' ? 85 : 55;
+              label = step.status === 'completed' ? 'Architect rendered SVG blueprint' : 'Architect generating interactive vector system blueprint...';
+            } else if (step.agentId === 'dataAnalyst') {
+              pct = step.status === 'completed' ? 85 : 55;
+              label = step.status === 'completed' ? 'Data Analyst extracted metrics' : 'Data Analyst structuring data points & chart series...';
+            } else if (step.agentId === 'coder') {
+              pct = step.status === 'completed' ? 80 : 50;
+              label = step.status === 'completed' ? 'Coder synthesized technical structures' : 'Coder formulating technical specifications...';
+            } else if (step.agentId === 'finalSynthesizer') {
+              pct = step.status === 'completed' ? 100 : 92;
+              label = step.status === 'completed' ? 'Synthesis complete' : 'Final Synthesizer assembling complete response...';
+            }
+
+            setSpecialistProgress((prev) => Math.max(prev, pct));
+            setSpecialistPhase(label);
+          },
           userTz,
         );
 
@@ -1070,6 +1121,8 @@ export function AssistantPage() {
         setError(errDetail);
       } finally {
         setLoading(false);
+        setSpecialistProgress(0);
+        setSpecialistPhase('');
       }
       return;
     }
@@ -2265,6 +2318,12 @@ export function AssistantPage() {
                 className={`flex items-center justify-between text-xs ${
                   deepResearchEnabled
                     ? 'text-emerald-300'
+                    : architectEnabled && dataAnalysisEnabled
+                    ? 'text-amber-300'
+                    : architectEnabled
+                    ? 'text-amber-300'
+                    : dataAnalysisEnabled
+                    ? 'text-sky-300'
                     : imageGenEnabled
                     ? 'text-purple-300'
                     : theme === 'classic'
@@ -2280,6 +2339,12 @@ export function AssistantPage() {
                     className={`animate-spin shrink-0 ${
                       deepResearchEnabled
                         ? 'text-emerald-400'
+                        : architectEnabled && dataAnalysisEnabled
+                        ? 'text-amber-400'
+                        : architectEnabled
+                        ? 'text-amber-400'
+                        : dataAnalysisEnabled
+                        ? 'text-sky-400'
                         : imageGenEnabled
                         ? 'text-purple-400'
                         : theme === 'classic'
@@ -2290,6 +2355,13 @@ export function AssistantPage() {
                   <span className="font-medium">
                     {deepResearchEnabled
                       ? deepResearchPhase || 'JARVIS Deep Research in progress...'
+                      : (architectEnabled || dataAnalysisEnabled)
+                      ? specialistPhase ||
+                        (architectEnabled && dataAnalysisEnabled
+                          ? 'Architect & Data Analysis in progress...'
+                          : architectEnabled
+                          ? 'Architect generating system blueprint...'
+                          : 'Data Analysis processing metrics & charts...')
                       : imageGenEnabled
                       ? imageLoadingPhase || 'Synthesizing AI image across providers...'
                       : 'NEXUS AI is thinking...'}
@@ -2300,6 +2372,19 @@ export function AssistantPage() {
                     {deepResearchProgress}%
                   </span>
                 )}
+                {(architectEnabled || dataAnalysisEnabled) && specialistProgress > 0 && (
+                  <span
+                    className={`text-[11px] font-mono font-semibold shrink-0 ${
+                      architectEnabled && dataAnalysisEnabled
+                        ? 'text-amber-400'
+                        : architectEnabled
+                        ? 'text-amber-400'
+                        : 'text-sky-400'
+                    }`}
+                  >
+                    {specialistProgress}%
+                  </span>
+                )}
               </div>
 
               {/* Deep Research Progress Bar */}
@@ -2308,6 +2393,22 @@ export function AssistantPage() {
                   <div
                     className="h-full bg-gradient-to-r from-emerald-500 via-teal-400 to-emerald-300 transition-all duration-300 ease-out rounded-full shadow-[0_0_8px_rgba(16,185,129,0.5)]"
                     style={{ width: `${Math.max(8, Math.min(100, deepResearchProgress))}%` }}
+                  />
+                </div>
+              )}
+
+              {/* Architect & Data Analysis Progress Bar */}
+              {(architectEnabled || dataAnalysisEnabled) && specialistProgress > 0 && (
+                <div className="w-full max-w-md h-1.5 rounded-full bg-zinc-800/80 overflow-hidden border border-zinc-700/50">
+                  <div
+                    className={`h-full transition-all duration-300 ease-out rounded-full ${
+                      architectEnabled && dataAnalysisEnabled
+                        ? 'bg-gradient-to-r from-amber-500 via-orange-400 to-sky-400 shadow-[0_0_8px_rgba(245,158,11,0.5)]'
+                        : architectEnabled
+                        ? 'bg-gradient-to-r from-amber-500 via-amber-400 to-yellow-300 shadow-[0_0_8px_rgba(245,158,11,0.5)]'
+                        : 'bg-gradient-to-r from-sky-500 via-cyan-400 to-sky-300 shadow-[0_0_8px_rgba(56,189,248,0.5)]'
+                    }`}
+                    style={{ width: `${Math.max(8, Math.min(100, specialistProgress))}%` }}
                   />
                 </div>
               )}
@@ -2376,41 +2477,252 @@ export function AssistantPage() {
                 : 'rounded-2xl border border-zinc-700/70 bg-[#1e1e21] shadow-lg focus-within:border-zinc-500 p-2.5 flex flex-col gap-2'
             }`}
           >
-            {/* Input Textarea */}
-            <textarea
-              ref={textareaRef}
-              value={input}
-              onChange={handleInputChange}
-              onKeyDown={(e) => {
-                if (e.key === 'Enter' && !e.shiftKey) {
-                  e.preventDefault();
-                  sendMessage();
+            {/* Input Textarea & Top-Right More Options Button */}
+            <div className="relative flex items-start">
+              <textarea
+                ref={textareaRef}
+                value={input}
+                onChange={handleInputChange}
+                onKeyDown={(e) => {
+                  if (e.key === 'Enter' && !e.shiftKey) {
+                    e.preventDefault();
+                    sendMessage();
+                  }
+                }}
+                placeholder={
+                  deepResearchEnabled
+                    ? 'Ask a deep research question (JARVIS Multi-Agent will investigate)...'
+                    : imageGenEnabled
+                    ? 'Describe the image you want to generate...'
+                    : 'Ask NEXUS AI anything...'
                 }
-              }}
-              placeholder={
-                deepResearchEnabled
-                  ? 'Ask a deep research question (JARVIS Multi-Agent will investigate)...'
-                  : imageGenEnabled
-                  ? 'Describe the image you want to generate...'
-                  : 'Ask NEXUS AI anything...'
-              }
-              aria-label={
-                deepResearchEnabled
-                  ? 'Ask a deep research question'
-                  : imageGenEnabled
-                  ? 'Describe image prompt'
-                  : 'Message NEXUS AI'
-              }
-              rows={1}
-              disabled={loading}
-              className={`w-full bg-transparent text-[14.5px] leading-relaxed resize-none outline-none px-2 pt-1 pb-1 min-h-[44px] max-h-[180px] ${
-                theme === 'classic'
-                  ? 'text-white placeholder-cyan-300/40'
-                  : theme === 'fulldark'
-                  ? 'text-[#ececec] placeholder-[#737373]'
-                  : 'text-zinc-100 placeholder-zinc-500'
-              }`}
-            />
+                aria-label={
+                  deepResearchEnabled
+                    ? 'Ask a deep research question'
+                    : imageGenEnabled
+                    ? 'Describe image prompt'
+                    : 'Message NEXUS AI'
+                }
+                rows={1}
+                disabled={loading}
+                className={`w-full bg-transparent text-[14.5px] leading-relaxed resize-none outline-none px-2 pt-1 pb-1 pr-11 min-h-[44px] max-h-[180px] ${
+                  theme === 'classic'
+                    ? 'text-white placeholder-cyan-300/40'
+                    : theme === 'fulldark'
+                    ? 'text-[#ececec] placeholder-[#737373]'
+                    : 'text-zinc-100 placeholder-zinc-500'
+                }`}
+              />
+
+              {/* Expandable More Options (▲) Button & Popup in Top-Right (Red Spot) */}
+              <div ref={moreOptionsRef} className="absolute right-1 top-1 z-20 flex items-center">
+                <button
+                  type="button"
+                  onClick={() => setMoreOptionsOpen((prev) => !prev)}
+                  className={`text-xs p-1.5 rounded-lg border transition-all flex items-center justify-center gap-1 ${
+                    moreOptionsOpen || architectEnabled || dataAnalysisEnabled || multiChatEnabled
+                      ? theme === 'classic'
+                        ? 'bg-cyan-500/15 text-cyan-200 border-cyan-500/40 shadow-[0_0_8px_rgba(6,182,212,0.2)]'
+                        : theme === 'fulldark'
+                        ? 'bg-[#2a2a2a] text-[#ececec] border-[#444]'
+                        : 'bg-zinc-800 text-zinc-200 border-zinc-700 shadow-sm'
+                      : theme === 'classic'
+                      ? 'text-cyan-300/70 border-transparent hover:text-cyan-200 hover:bg-cyan-950/40'
+                      : theme === 'fulldark'
+                      ? 'text-[#a1a1aa] border-transparent hover:text-[#ececec] hover:bg-[#2a2a2a]'
+                      : 'text-zinc-400 border-transparent hover:text-zinc-300 hover:bg-zinc-800/60'
+                  }`}
+                  title={
+                    moreOptionsOpen
+                      ? 'Close quick modes menu'
+                      : 'More Agent Modes: Architect, Data Analysis, Multi Chat'
+                  }
+                  aria-label="More options"
+                  aria-expanded={moreOptionsOpen}
+                >
+                  <ChevronUp
+                    size={14}
+                    className={`transition-transform duration-200 ${
+                      moreOptionsOpen ? 'rotate-180 text-cyan-400' : ''
+                    }`}
+                  />
+                  {(architectEnabled || dataAnalysisEnabled || multiChatEnabled) && (
+                    <span className="w-1.5 h-1.5 rounded-full bg-cyan-400 shadow-[0_0_6px_rgba(6,182,212,0.8)]" />
+                  )}
+                </button>
+
+                {/* Popup Menu */}
+                {moreOptionsOpen && (
+                  <div
+                    className={`absolute bottom-full mb-3 right-0 w-64 p-2.5 rounded-2xl border shadow-2xl backdrop-blur-xl z-50 flex flex-col gap-1.5 ${
+                      theme === 'classic'
+                        ? 'bg-slate-900/95 border-cyan-500/40 shadow-[0_8px_30px_rgba(6,182,212,0.25)]'
+                        : theme === 'fulldark'
+                        ? 'bg-[#1a1a1a] border-[#333] shadow-2xl'
+                        : 'bg-zinc-900/95 border-zinc-700/80 shadow-2xl'
+                    }`}
+                  >
+                    <div className="px-2 py-1 flex items-center justify-between border-b border-zinc-800/80 mb-0.5">
+                      <span className="text-[11px] font-semibold uppercase tracking-wider text-zinc-400">
+                        Specialist Modes
+                      </span>
+                      <button
+                        type="button"
+                        onClick={() => {
+                          setMoreOptionsOpen(false);
+                          setSettingsOpen(true);
+                        }}
+                        className="text-[10px] text-cyan-400 hover:underline flex items-center gap-1"
+                      >
+                        <SettingsIcon size={10} />
+                        <span>Settings</span>
+                      </button>
+                    </div>
+
+                    {/* 1. Architect Toggle */}
+                    <button
+                      type="button"
+                      onClick={toggleArchitect}
+                      className={`w-full p-2 rounded-xl border text-left flex items-center justify-between transition-all ${
+                        architectEnabled
+                          ? 'border-amber-500/40 bg-amber-950/30 text-amber-200 shadow-[0_0_10px_rgba(245,158,11,0.1)]'
+                          : 'border-transparent hover:bg-zinc-800/60 text-zinc-300'
+                      }`}
+                    >
+                      <div className="flex items-center gap-2.5 min-w-0">
+                        <div
+                          className={`w-7 h-7 rounded-lg grid place-items-center shrink-0 ${
+                            architectEnabled
+                              ? 'bg-amber-500/20 text-amber-300 border border-amber-500/30'
+                              : 'bg-zinc-800 text-zinc-400'
+                          }`}
+                        >
+                          <Layers size={13} />
+                        </div>
+                        <div className="min-w-0">
+                          <div className="text-xs font-semibold text-zinc-100 flex items-center gap-1.5">
+                            <span>Architect</span>
+                            {architectEnabled && (
+                              <span className="text-[9px] font-mono font-semibold px-1.5 py-0.2 rounded bg-amber-950 text-amber-400 border border-amber-500/40">
+                                ON
+                              </span>
+                            )}
+                          </div>
+                          <div className="text-[10.5px] text-zinc-400 truncate">
+                            SVG Diagrams &amp; Blueprints
+                          </div>
+                        </div>
+                      </div>
+                      <div
+                        className={`w-8 h-4 rounded-full transition-colors relative flex items-center p-0.5 shrink-0 ${
+                          architectEnabled ? 'bg-amber-500' : 'bg-zinc-700'
+                        }`}
+                      >
+                        <div
+                          className={`w-3 h-3 rounded-full bg-white shadow-sm transition-transform duration-150 ${
+                            architectEnabled ? 'translate-x-4' : 'translate-x-0'
+                          }`}
+                        />
+                      </div>
+                    </button>
+
+                    {/* 2. Data Analysis Toggle */}
+                    <button
+                      type="button"
+                      onClick={toggleDataAnalysis}
+                      className={`w-full p-2 rounded-xl border text-left flex items-center justify-between transition-all ${
+                        dataAnalysisEnabled
+                          ? 'border-sky-500/40 bg-sky-950/30 text-sky-200 shadow-[0_0_10px_rgba(56,189,248,0.1)]'
+                          : 'border-transparent hover:bg-zinc-800/60 text-zinc-300'
+                      }`}
+                    >
+                      <div className="flex items-center gap-2.5 min-w-0">
+                        <div
+                          className={`w-7 h-7 rounded-lg grid place-items-center shrink-0 ${
+                            dataAnalysisEnabled
+                              ? 'bg-sky-500/20 text-sky-300 border border-sky-500/30'
+                              : 'bg-zinc-800 text-zinc-400'
+                          }`}
+                        >
+                          <BarChart3 size={13} />
+                        </div>
+                        <div className="min-w-0">
+                          <div className="text-xs font-semibold text-zinc-100 flex items-center gap-1.5">
+                            <span>Data Analysis</span>
+                            {dataAnalysisEnabled && (
+                              <span className="text-[9px] font-mono font-semibold px-1.5 py-0.2 rounded bg-sky-950 text-sky-400 border border-sky-500/40">
+                                ON
+                              </span>
+                            )}
+                          </div>
+                          <div className="text-[10.5px] text-zinc-400 truncate">
+                            Charts &amp; Visual Metrics
+                          </div>
+                        </div>
+                      </div>
+                      <div
+                        className={`w-8 h-4 rounded-full transition-colors relative flex items-center p-0.5 shrink-0 ${
+                          dataAnalysisEnabled ? 'bg-sky-500' : 'bg-zinc-700'
+                        }`}
+                      >
+                        <div
+                          className={`w-3 h-3 rounded-full bg-white shadow-sm transition-transform duration-150 ${
+                            dataAnalysisEnabled ? 'translate-x-4' : 'translate-x-0'
+                          }`}
+                        />
+                      </div>
+                    </button>
+
+                    {/* 3. Multi Chat Toggle */}
+                    <button
+                      type="button"
+                      onClick={toggleMultiChat}
+                      className={`w-full p-2 rounded-xl border text-left flex items-center justify-between transition-all ${
+                        multiChatEnabled
+                          ? 'border-cyan-500/40 bg-cyan-950/30 text-cyan-200 shadow-[0_0_10px_rgba(6,182,212,0.1)]'
+                          : 'border-transparent hover:bg-zinc-800/60 text-zinc-300'
+                      }`}
+                    >
+                      <div className="flex items-center gap-2.5 min-w-0">
+                        <div
+                          className={`w-7 h-7 rounded-lg grid place-items-center shrink-0 ${
+                            multiChatEnabled
+                              ? 'bg-cyan-500/20 text-cyan-300 border border-cyan-500/30'
+                              : 'bg-zinc-800 text-zinc-400'
+                          }`}
+                        >
+                          <MessagesSquare size={13} />
+                        </div>
+                        <div className="min-w-0">
+                          <div className="text-xs font-semibold text-zinc-100 flex items-center gap-1.5">
+                            <span>Multi Chat</span>
+                            {multiChatEnabled && (
+                              <span className="text-[9px] font-mono font-semibold px-1.5 py-0.2 rounded bg-cyan-950 text-cyan-400 border border-cyan-500/40">
+                                ON
+                              </span>
+                            )}
+                          </div>
+                          <div className="text-[10.5px] text-zinc-400 truncate">
+                            3-Persona Sequential Panel
+                          </div>
+                        </div>
+                      </div>
+                      <div
+                        className={`w-8 h-4 rounded-full transition-colors relative flex items-center p-0.5 shrink-0 ${
+                          multiChatEnabled ? 'bg-cyan-500' : 'bg-zinc-700'
+                        }`}
+                      >
+                        <div
+                          className={`w-3 h-3 rounded-full bg-white shadow-sm transition-transform duration-150 ${
+                            multiChatEnabled ? 'translate-x-4' : 'translate-x-0'
+                          }`}
+                        />
+                      </div>
+                    </button>
+                  </div>
+                )}
+              </div>
+            </div>
 
             {/* Bottom Controls inside input box */}
             <div
@@ -2457,9 +2769,9 @@ export function AssistantPage() {
                 <button
                   type="button"
                   onClick={toggleWebSearch}
-                  disabled={deepResearchEnabled}
+                  disabled={deepResearchEnabled || architectEnabled || dataAnalysisEnabled}
                   className={`text-xs px-2.5 py-1.5 rounded-lg border transition-all flex items-center gap-1.5 ${
-                    deepResearchEnabled
+                    deepResearchEnabled || architectEnabled || dataAnalysisEnabled
                       ? 'opacity-35 cursor-not-allowed border-transparent text-zinc-500 pointer-events-none'
                       : webSearchEnabled
                       ? 'bg-cyan-500/15 text-cyan-300 border-cyan-500/30'
@@ -2472,6 +2784,10 @@ export function AssistantPage() {
                   title={
                     deepResearchEnabled
                       ? 'Disabled while Deep Research is ON (JARVIS pipeline includes multi-agent search internally)'
+                      : architectEnabled
+                      ? 'Disabled while Architect is ON (Specialist diagram agent active without automatic search)'
+                      : dataAnalysisEnabled
+                      ? 'Disabled while Data Analysis is ON (Specialist data agent active without automatic search)'
                       : webSearchEnabled
                       ? 'Web Search is ON: forces live search on every request'
                       : 'Web Search is Auto: searches when needed'
@@ -2479,10 +2795,14 @@ export function AssistantPage() {
                 >
                   <Globe
                     size={13}
-                    className={!deepResearchEnabled && webSearchEnabled ? 'text-cyan-400' : 'text-zinc-400'}
+                    className={
+                      !deepResearchEnabled && !architectEnabled && !dataAnalysisEnabled && webSearchEnabled
+                        ? 'text-cyan-400'
+                        : 'text-zinc-400'
+                    }
                   />
                   <span>Web Search</span>
-                  {!deepResearchEnabled && webSearchEnabled && (
+                  {!deepResearchEnabled && !architectEnabled && !dataAnalysisEnabled && webSearchEnabled && (
                     <span className="w-1.5 h-1.5 rounded-full bg-cyan-400" />
                   )}
                 </button>
@@ -2520,215 +2840,6 @@ export function AssistantPage() {
                     <span className="w-1.5 h-1.5 rounded-full bg-purple-400 shadow-[0_0_6px_rgba(192,132,252,0.8)]" />
                   )}
                 </button>
-
-                {/* Expandable More Options (▲) Button & Popup for Architect, Data Analysis, and Multi Chat */}
-                <div ref={moreOptionsRef} className="relative flex items-center">
-                  <button
-                    type="button"
-                    onClick={() => setMoreOptionsOpen((prev) => !prev)}
-                    className={`text-xs px-2 py-1.5 rounded-lg border transition-all flex items-center justify-center gap-1 ${
-                      moreOptionsOpen || architectEnabled || dataAnalysisEnabled || multiChatEnabled
-                        ? theme === 'classic'
-                          ? 'bg-cyan-500/15 text-cyan-200 border-cyan-500/40 shadow-[0_0_8px_rgba(6,182,212,0.2)]'
-                          : theme === 'fulldark'
-                          ? 'bg-[#2a2a2a] text-[#ececec] border-[#444]'
-                          : 'bg-zinc-800 text-zinc-200 border-zinc-700 shadow-sm'
-                        : theme === 'classic'
-                        ? 'text-cyan-300/70 border-transparent hover:text-cyan-200 hover:bg-cyan-950/40'
-                        : theme === 'fulldark'
-                        ? 'text-[#a1a1aa] border-transparent hover:text-[#ececec] hover:bg-[#2a2a2a]'
-                        : 'text-zinc-400 border-transparent hover:text-zinc-300 hover:bg-zinc-800/60'
-                    }`}
-                    title={
-                      moreOptionsOpen
-                        ? 'Close quick modes menu'
-                        : 'More Agent Modes: Architect, Data Analysis, Multi Chat'
-                    }
-                    aria-label="More options"
-                    aria-expanded={moreOptionsOpen}
-                  >
-                    <ChevronUp
-                      size={13}
-                      className={`transition-transform duration-200 ${
-                        moreOptionsOpen ? 'rotate-180 text-cyan-400' : ''
-                      }`}
-                    />
-                    {(architectEnabled || dataAnalysisEnabled || multiChatEnabled) && (
-                      <span className="w-1.5 h-1.5 rounded-full bg-cyan-400 shadow-[0_0_6px_rgba(6,182,212,0.8)]" />
-                    )}
-                  </button>
-
-                  {/* Popup Menu */}
-                  {moreOptionsOpen && (
-                    <div
-                      className={`absolute bottom-full mb-2 left-0 sm:left-auto sm:right-0 w-64 p-2.5 rounded-2xl border shadow-2xl backdrop-blur-xl z-50 flex flex-col gap-1.5 ${
-                        theme === 'classic'
-                          ? 'bg-slate-900/95 border-cyan-500/40 shadow-[0_8px_30px_rgba(6,182,212,0.25)]'
-                          : theme === 'fulldark'
-                          ? 'bg-[#1a1a1a] border-[#333] shadow-2xl'
-                          : 'bg-zinc-900/95 border-zinc-700/80 shadow-2xl'
-                      }`}
-                    >
-                      <div className="px-2 py-1 flex items-center justify-between border-b border-zinc-800/80 mb-0.5">
-                        <span className="text-[11px] font-semibold uppercase tracking-wider text-zinc-400">
-                          Specialist Modes
-                        </span>
-                        <button
-                          type="button"
-                          onClick={() => {
-                            setMoreOptionsOpen(false);
-                            setSettingsOpen(true);
-                          }}
-                          className="text-[10px] text-cyan-400 hover:underline flex items-center gap-1"
-                        >
-                          <SettingsIcon size={10} />
-                          <span>Settings</span>
-                        </button>
-                      </div>
-
-                      {/* 1. Architect Toggle */}
-                      <button
-                        type="button"
-                        onClick={toggleArchitect}
-                        className={`w-full p-2 rounded-xl border text-left flex items-center justify-between transition-all ${
-                          architectEnabled
-                            ? 'border-amber-500/40 bg-amber-950/30 text-amber-200 shadow-[0_0_10px_rgba(245,158,11,0.1)]'
-                            : 'border-transparent hover:bg-zinc-800/60 text-zinc-300'
-                        }`}
-                      >
-                        <div className="flex items-center gap-2.5 min-w-0">
-                          <div
-                            className={`w-7 h-7 rounded-lg grid place-items-center shrink-0 ${
-                              architectEnabled
-                                ? 'bg-amber-500/20 text-amber-300 border border-amber-500/30'
-                                : 'bg-zinc-800 text-zinc-400'
-                            }`}
-                          >
-                            <Layers size={13} />
-                          </div>
-                          <div className="min-w-0">
-                            <div className="text-xs font-semibold text-zinc-100 flex items-center gap-1.5">
-                              <span>Architect</span>
-                              {architectEnabled && (
-                                <span className="text-[9px] font-mono font-semibold px-1.5 py-0.2 rounded bg-amber-950 text-amber-400 border border-amber-500/40">
-                                  ON
-                                </span>
-                              )}
-                            </div>
-                            <div className="text-[10.5px] text-zinc-400 truncate">
-                              SVG Diagrams &amp; Blueprints
-                            </div>
-                          </div>
-                        </div>
-                        <div
-                          className={`w-8 h-4 rounded-full transition-colors relative flex items-center p-0.5 shrink-0 ${
-                            architectEnabled ? 'bg-amber-500' : 'bg-zinc-700'
-                          }`}
-                        >
-                          <div
-                            className={`w-3 h-3 rounded-full bg-white shadow-sm transition-transform duration-150 ${
-                              architectEnabled ? 'translate-x-4' : 'translate-x-0'
-                            }`}
-                          />
-                        </div>
-                      </button>
-
-                      {/* 2. Data Analysis Toggle */}
-                      <button
-                        type="button"
-                        onClick={toggleDataAnalysis}
-                        className={`w-full p-2 rounded-xl border text-left flex items-center justify-between transition-all ${
-                          dataAnalysisEnabled
-                            ? 'border-sky-500/40 bg-sky-950/30 text-sky-200 shadow-[0_0_10px_rgba(56,189,248,0.1)]'
-                            : 'border-transparent hover:bg-zinc-800/60 text-zinc-300'
-                        }`}
-                      >
-                        <div className="flex items-center gap-2.5 min-w-0">
-                          <div
-                            className={`w-7 h-7 rounded-lg grid place-items-center shrink-0 ${
-                              dataAnalysisEnabled
-                                ? 'bg-sky-500/20 text-sky-300 border border-sky-500/30'
-                                : 'bg-zinc-800 text-zinc-400'
-                            }`}
-                          >
-                            <BarChart3 size={13} />
-                          </div>
-                          <div className="min-w-0">
-                            <div className="text-xs font-semibold text-zinc-100 flex items-center gap-1.5">
-                              <span>Data Analysis</span>
-                              {dataAnalysisEnabled && (
-                                <span className="text-[9px] font-mono font-semibold px-1.5 py-0.2 rounded bg-sky-950 text-sky-400 border border-sky-500/40">
-                                  ON
-                                </span>
-                              )}
-                            </div>
-                            <div className="text-[10.5px] text-zinc-400 truncate">
-                              Charts &amp; Visual Metrics
-                            </div>
-                          </div>
-                        </div>
-                        <div
-                          className={`w-8 h-4 rounded-full transition-colors relative flex items-center p-0.5 shrink-0 ${
-                            dataAnalysisEnabled ? 'bg-sky-500' : 'bg-zinc-700'
-                          }`}
-                        >
-                          <div
-                            className={`w-3 h-3 rounded-full bg-white shadow-sm transition-transform duration-150 ${
-                              dataAnalysisEnabled ? 'translate-x-4' : 'translate-x-0'
-                            }`}
-                          />
-                        </div>
-                      </button>
-
-                      {/* 3. Multi Chat Toggle */}
-                      <button
-                        type="button"
-                        onClick={toggleMultiChat}
-                        className={`w-full p-2 rounded-xl border text-left flex items-center justify-between transition-all ${
-                          multiChatEnabled
-                            ? 'border-cyan-500/40 bg-cyan-950/30 text-cyan-200 shadow-[0_0_10px_rgba(6,182,212,0.1)]'
-                            : 'border-transparent hover:bg-zinc-800/60 text-zinc-300'
-                        }`}
-                      >
-                        <div className="flex items-center gap-2.5 min-w-0">
-                          <div
-                            className={`w-7 h-7 rounded-lg grid place-items-center shrink-0 ${
-                              multiChatEnabled
-                                ? 'bg-cyan-500/20 text-cyan-300 border border-cyan-500/30'
-                                : 'bg-zinc-800 text-zinc-400'
-                            }`}
-                          >
-                            <MessagesSquare size={13} />
-                          </div>
-                          <div className="min-w-0">
-                            <div className="text-xs font-semibold text-zinc-100 flex items-center gap-1.5">
-                              <span>Multi Chat</span>
-                              {multiChatEnabled && (
-                                <span className="text-[9px] font-mono font-semibold px-1.5 py-0.2 rounded bg-cyan-950 text-cyan-400 border border-cyan-500/40">
-                                  ON
-                                </span>
-                              )}
-                            </div>
-                            <div className="text-[10.5px] text-zinc-400 truncate">
-                              3-Persona Sequential Panel
-                            </div>
-                          </div>
-                        </div>
-                        <div
-                          className={`w-8 h-4 rounded-full transition-colors relative flex items-center p-0.5 shrink-0 ${
-                            multiChatEnabled ? 'bg-cyan-500' : 'bg-zinc-700'
-                          }`}
-                        >
-                          <div
-                            className={`w-3 h-3 rounded-full bg-white shadow-sm transition-transform duration-150 ${
-                              multiChatEnabled ? 'translate-x-4' : 'translate-x-0'
-                            }`}
-                          />
-                        </div>
-                      </button>
-                    </div>
-                  )}
-                </div>
 
                 {responseLanguage && (
                   <button
