@@ -1925,6 +1925,22 @@ export const storage = {
     write('nexus-ai-data-analysis-toggle', enabled);
   },
 
+  getAssistantCoderEnabled(): boolean {
+    return read<boolean>('nexus-ai-coder-toggle', false);
+  },
+
+  setAssistantCoderEnabled(enabled: boolean): void {
+    write('nexus-ai-coder-toggle', enabled);
+  },
+
+  getAssistantWebFetcherEnabled(): boolean {
+    return read<boolean>('nexus-ai-web-fetcher-toggle', false);
+  },
+
+  setAssistantWebFetcherEnabled(enabled: boolean): void {
+    write('nexus-ai-web-fetcher-toggle', enabled);
+  },
+
   getMultiChatResponseLanguage(): string {
     const cfg = this.getMultiChatConfig();
     return cfg.responseLanguage || 'English';

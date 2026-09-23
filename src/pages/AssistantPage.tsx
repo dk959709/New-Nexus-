@@ -34,6 +34,7 @@ import {
   FlaskConical,
   Layers,
   BarChart3,
+  Code2,
 } from 'lucide-react';
 import { Link } from 'react-router-dom';
 import { api } from '@/services/api';
@@ -86,8 +87,6 @@ const MEMORY_KEY = 'nexus-ai-smart-memory-v1';
 const WEB_SEARCH_PREF_KEY = 'nexus-ai-web-search-toggle';
 const IMAGE_GEN_PREF_KEY = 'nexus-ai-image-gen-toggle';
 const DEEP_RESEARCH_PREF_KEY = 'nexus-ai-deep-research-toggle';
-const ARCHITECT_PREF_KEY = 'nexus-ai-architect-toggle';
-const DATA_ANALYSIS_PREF_KEY = 'nexus-ai-data-analysis-toggle';
 
 const RECENT_MESSAGES = 8;
 const MAX_MEMORY_LENGTH = 1200;
@@ -244,6 +243,8 @@ export function AssistantPage() {
   const [multiChatEnabled, setMultiChatEnabled] = useState<boolean>(() => storage.getAssistantMultiChatEnabled());
   const [architectEnabled, setArchitectEnabled] = useState<boolean>(() => storage.getAssistantArchitectEnabled());
   const [dataAnalysisEnabled, setDataAnalysisEnabled] = useState<boolean>(() => storage.getAssistantDataAnalysisEnabled());
+  const [coderEnabled, setCoderEnabled] = useState<boolean>(() => storage.getAssistantCoderEnabled());
+  const [webFetcherEnabled, setWebFetcherEnabled] = useState<boolean>(() => storage.getAssistantWebFetcherEnabled());
   const [newMemoryInput, setNewMemoryInput] = useState('');
   const [editingMemoryIndex, setEditingMemoryIndex] = useState<number | null>(null);
   const [editingMemoryDraft, setEditingMemoryDraft] = useState('');
@@ -326,6 +327,40 @@ export function AssistantPage() {
         next
           ? 'Data Analysis Mode enabled (automatic web search disabled)'
           : 'Data Analysis Mode disabled',
+      );
+      return next;
+    });
+  };
+
+  const toggleCoder = () => {
+    setCoderEnabled((prev) => {
+      const next = !prev;
+      storage.setAssistantCoderEnabled(next);
+      if (next) {
+        setWebSearchEnabled(false);
+        try {
+          localStorage.setItem(WEB_SEARCH_PREF_KEY, 'false');
+        } catch {
+          // Ignore
+        }
+      }
+      triggerSettingsToast(
+        next
+          ? 'Coder Mode enabled: research-grounded code pipeline active'
+          : 'Coder Mode disabled',
+      );
+      return next;
+    });
+  };
+
+  const toggleWebFetcher = () => {
+    setWebFetcherEnabled((prev) => {
+      const next = !prev;
+      storage.setAssistantWebFetcherEnabled(next);
+      triggerSettingsToast(
+        next
+          ? 'Web Fetcher enabled: live URL content extraction active'
+          : 'Web Fetcher disabled',
       );
       return next;
     });
@@ -910,16 +945,6 @@ export function AssistantPage() {
       hour12: true,
     });
 
-    const activeMode = multiChatEnabled
-      ? 'Multi-Chat (3-Persona Pipeline)'
-      : architectEnabled
-      ? 'Architect Mode (System Architecture)'
-      : dataAnalysisEnabled
-      ? 'Data Analysis Mode'
-      : deepResearchEnabled
-      ? 'Deep Research Mode'
-      : 'Standard AI Assistant';
-
     const transcriptLines: string[] = [];
 
     // Header Meta Block
@@ -928,7 +953,6 @@ export function AssistantPage() {
     transcriptLines.push('════════════════════════════════════════════════════════════════');
     transcriptLines.push(`📅 Date: ${formattedDate}`);
     transcriptLines.push(`⏰ Time: ${formattedTime}`);
-    transcriptLines.push(`🌐 Mode: ${activeMode}`);
     transcriptLines.push(`📊 Total Messages: ${meaningfulMessages.length}`);
     transcriptLines.push('────────────────────────────────────────────────────────────────\n');
 
@@ -995,7 +1019,7 @@ export function AssistantPage() {
       setTimeout(() => setUniversalCopied(false), 2500);
       triggerSettingsToast('Universal Copy: Exported structured transcript with timestamps!');
     }
-  }, [messages, multiChatEnabled, architectEnabled, dataAnalysisEnabled, deepResearchEnabled]);
+  }, [messages]);
 
   const handleUniversalSaveAll = useCallback(() => {
     playTapSound();
@@ -1414,7 +1438,8 @@ export function AssistantPage() {
       return;
     }
 
-    // If Multi Chat (3-Persona Panel) mode is enabled in Settings, route through sequential multiChatOrchestrator pipeline
+    // PRIORITY 1: Multi Chat (3-Persona Panel) Mode
+    // When Multi Chat is ON, Multi Chat keeps its current behavior, and Coder / Web Fetcher are ignored while it is on.
     if (multiChatEnabled) {
       try {
         const multiChatConfig = storage.getMultiChatConfig();
@@ -1535,11 +1560,70 @@ export function AssistantPage() {
       return;
     }
 
-    // If Architect or Data Analysis mode is enabled in Settings, route through JARVIS specialized agent pipeline
-    if (architectEnabled || dataAnalysisEnabled) {
+    // =========================================================================
+    // SPECIALIST MODES PRIORITY & ROUTING (Architect, Data Analysis, Coder, Web Fetcher)
+    // Priority Rules:
+    // 1. Multi Chat ON: Multi Chat keeps its current behavior, and Coder / Web Fetcher are ignored while it is on.
+    // 2. Both Coder + Web Fetcher ON:
+    //    - If the message contains a URL, use "/web" (Web Fetcher takes precedence for URLs).
+    //    - If the message has no URL, use "/codeonline" (Coder handles general technical requests).
+    // 3. Only Web Fetcher ON:
+    //    - If the message contains a URL, send with "/web " prefix.
+    //    - If the message has no URL, do NOT call pipeline; prompt user with friendly message.
+    // 4. Only Coder ON:
+    //    - Send with "/codeonline " prefix.
+    // 5. Architect and Data Analysis can stay ON together with Coder or Web Fetcher.
+    //    - Keep their current behavior (diagramMode = architectEnabled, chartMode = dataAnalysisEnabled).
+    // =========================================================================
+    const isSpecialistActive = architectEnabled || dataAnalysisEnabled || coderEnabled || webFetcherEnabled;
+
+    if (isSpecialistActive) {
+      // Check if message has a URL (http/https, www.*, or domain.tld/...)
+      const hasUrl = /(https?:\/\/[^\s]+|www\.[^\s]+|[a-zA-Z0-9-]+\.(?:com|org|net|io|dev|app|ai|gov|edu|co|uk|in|me|info|de|ca|jp)\b[^\s]*)/i.test(message);
+
+      let effectiveMessage = message;
+      let effectiveTool: Message['tool'] = 'agent';
+
+      if (coderEnabled && webFetcherEnabled) {
+        // Coder + Web Fetcher both ON:
+        // if message contains URL -> use "/web", else use "/codeonline"
+        if (hasUrl) {
+          effectiveMessage = /^\/web(?:\s+|$)/i.test(message.trim()) ? message : `/web ${message}`;
+          effectiveTool = 'search';
+        } else {
+          effectiveMessage = /^\/codeonline(?:\s+|$)/i.test(message.trim()) ? message : `/codeonline ${message}`;
+          effectiveTool = 'coder';
+        }
+      } else if (webFetcherEnabled) {
+        // Only Web Fetcher ON:
+        if (!hasUrl) {
+          // If the message has no URL in it, do NOT call the pipeline.
+          const assistantMessage: Message = {
+            role: 'assistant',
+            content: 'Web Fetcher is ON — please send a URL (example: https://example.com).',
+            tool: 'none',
+          };
+          setMessages((current) => [...current, assistantMessage]);
+          setLoading(false);
+          return;
+        }
+        effectiveMessage = /^\/web(?:\s+|$)/i.test(message.trim()) ? message : `/web ${message}`;
+        effectiveTool = 'search';
+      } else if (coderEnabled) {
+        // Only Coder ON:
+        effectiveMessage = /^\/codeonline(?:\s+|$)/i.test(message.trim()) ? message : `/codeonline ${message}`;
+        effectiveTool = 'coder';
+      } else {
+        effectiveTool = architectEnabled ? 'architect' : 'dataAnalyst';
+      }
+
       setSpecialistProgress(10);
       setSpecialistPhase(
-        architectEnabled && dataAnalysisEnabled
+        effectiveMessage.startsWith('/web')
+          ? 'Initializing Web Fetcher (extracting and analyzing webpage content)...'
+          : effectiveMessage.startsWith('/codeonline')
+          ? 'Initializing Coder agent (Planner & Researcher formulating technical blueprint)...'
+          : architectEnabled && dataAnalysisEnabled
           ? 'Initializing Architect & Data Analysis pipeline...'
           : architectEnabled
           ? 'Initializing Architect agent (Planner formulating blueprint strategy)...'
@@ -1556,7 +1640,7 @@ export function AssistantPage() {
         }
 
         const result = await runJarvisPipeline(
-          message,
+          effectiveMessage,
           jarvisConfig,
           false, // deepResearch = false
           architectEnabled, // diagramMode = architectEnabled
@@ -1569,15 +1653,21 @@ export function AssistantPage() {
             if (step.agentId === 'planner') {
               pct = step.status === 'completed' ? 30 : 20;
               label = step.status === 'completed' ? 'Planner finalized system strategy' : 'Planner analyzing system architecture & parameters...';
+            } else if (step.agentId === 'researcher') {
+              pct = step.status === 'completed' ? 55 : 35;
+              label = step.status === 'completed' ? 'Researcher compiled technical docs' : 'Researcher gathering live documentation...';
+            } else if (step.agentId === 'coder') {
+              pct = step.status === 'completed' ? 85 : 55;
+              label = step.status === 'completed' ? 'Coder synthesized technical structures' : 'Coder formulating technical specifications...';
+            } else if (step.agentId === 'webReader' || step.agentId === 'customApiRunner') {
+              pct = step.status === 'completed' ? 80 : 45;
+              label = step.status === 'completed' ? 'Content extraction completed' : 'Extracting and parsing live webpage content...';
             } else if (step.agentId === 'architect') {
               pct = step.status === 'completed' ? 85 : 55;
               label = step.status === 'completed' ? 'Architect rendered SVG blueprint' : 'Architect generating interactive vector system blueprint...';
             } else if (step.agentId === 'dataAnalyst') {
               pct = step.status === 'completed' ? 85 : 55;
               label = step.status === 'completed' ? 'Data Analyst extracted metrics' : 'Data Analyst structuring data points & chart series...';
-            } else if (step.agentId === 'coder') {
-              pct = step.status === 'completed' ? 80 : 50;
-              label = step.status === 'completed' ? 'Coder synthesized technical structures' : 'Coder formulating technical specifications...';
             } else if (step.agentId === 'finalSynthesizer') {
               pct = step.status === 'completed' ? 100 : 92;
               label = step.status === 'completed' ? 'Synthesis complete' : 'Final Synthesizer assembling complete response...';
@@ -1592,7 +1682,7 @@ export function AssistantPage() {
         const assistantMessage: Message = {
           role: 'assistant',
           content: stripTierLabels(result.answer),
-          tool: architectEnabled ? 'architect' : 'dataAnalyst',
+          tool: effectiveTool,
           sources: result.sources && result.sources.length > 0 ? result.sources : undefined,
           searchedWeb: Boolean(result.sources && result.sources.length > 0),
           diagramSvg: result.diagramSvg,
@@ -2180,6 +2270,122 @@ export function AssistantPage() {
                   }`}
                   title="Disable Data Analysis mode"
                   aria-label="Disable Data Analysis"
+                >
+                  <X size={12} />
+                  <span>Disable</span>
+                </button>
+              </div>
+            </div>
+          )}
+
+          {/* Coder Mode Active Indicator Banner */}
+          {coderEnabled && (
+            <div
+              className={`px-3.5 py-2.5 rounded-xl border flex items-center justify-between gap-3 text-xs transition-all ${
+                theme === 'classic'
+                  ? 'bg-emerald-950/40 border-emerald-500/30 text-emerald-200 shadow-[0_0_15px_rgba(16,185,129,0.15)]'
+                  : theme === 'fulldark'
+                  ? 'bg-[#181818] border-[#2e2e2e] text-[#e0e0e0]'
+                  : 'bg-zinc-900/90 border-zinc-800 text-zinc-300'
+              }`}
+            >
+              <div className="flex items-center gap-2.5 min-w-0">
+                <div
+                  className={`w-6 h-6 rounded-lg grid place-items-center text-xs shrink-0 ${
+                    theme === 'classic'
+                      ? 'bg-emerald-500/20 text-emerald-300'
+                      : 'bg-zinc-800 text-emerald-400'
+                  }`}
+                >
+                  <Code2 size={13} />
+                </div>
+                <div className="flex items-center gap-2 flex-wrap">
+                  <span className="font-semibold text-zinc-100">Coder Active:</span>
+                  <span className="text-[11px] opacity-90">
+                    Research-grounded code pipeline (/codeonline)
+                  </span>
+                </div>
+              </div>
+              <div className="flex items-center gap-1.5 shrink-0">
+                <button
+                  type="button"
+                  onClick={() => setSettingsOpen(true)}
+                  className="text-[11px] px-2.5 py-1 rounded-lg border border-zinc-700/60 bg-zinc-800/80 hover:bg-zinc-700 text-zinc-300 transition-colors flex items-center gap-1"
+                  title="Configure in Settings"
+                >
+                  <SettingsIcon size={11} />
+                  <span className="hidden sm:inline">Settings</span>
+                </button>
+                <button
+                  type="button"
+                  onClick={toggleCoder}
+                  className={`text-[11px] px-2.5 py-1 rounded-lg border transition-all flex items-center gap-1 ${
+                    theme === 'classic'
+                      ? 'border-emerald-500/40 bg-emerald-950/70 text-emerald-200 hover:border-red-500/50 hover:bg-red-950/40 hover:text-red-300'
+                      : theme === 'fulldark'
+                      ? 'border-[#333] bg-[#222] text-[#ccc] hover:border-red-500/40 hover:bg-red-950/30 hover:text-red-300'
+                      : 'border-zinc-700/60 bg-zinc-800/80 text-zinc-300 hover:border-red-500/40 hover:bg-red-500/10 hover:text-red-300'
+                  }`}
+                  title="Disable Coder mode"
+                  aria-label="Disable Coder"
+                >
+                  <X size={12} />
+                  <span>Disable</span>
+                </button>
+              </div>
+            </div>
+          )}
+
+          {/* Web Fetcher Mode Active Indicator Banner */}
+          {webFetcherEnabled && (
+            <div
+              className={`px-3.5 py-2.5 rounded-xl border flex items-center justify-between gap-3 text-xs transition-all ${
+                theme === 'classic'
+                  ? 'bg-teal-950/40 border-teal-500/30 text-teal-200 shadow-[0_0_15px_rgba(20,184,166,0.15)]'
+                  : theme === 'fulldark'
+                  ? 'bg-[#181818] border-[#2e2e2e] text-[#e0e0e0]'
+                  : 'bg-zinc-900/90 border-zinc-800 text-zinc-300'
+              }`}
+            >
+              <div className="flex items-center gap-2.5 min-w-0">
+                <div
+                  className={`w-6 h-6 rounded-lg grid place-items-center text-xs shrink-0 ${
+                    theme === 'classic'
+                      ? 'bg-teal-500/20 text-teal-300'
+                      : 'bg-zinc-800 text-teal-400'
+                  }`}
+                >
+                  <Globe size={13} />
+                </div>
+                <div className="flex items-center gap-2 flex-wrap">
+                  <span className="font-semibold text-zinc-100">Web Fetcher Active:</span>
+                  <span className="text-[11px] opacity-90">
+                    Read any webpage URL (/web)
+                  </span>
+                </div>
+              </div>
+              <div className="flex items-center gap-1.5 shrink-0">
+                <button
+                  type="button"
+                  onClick={() => setSettingsOpen(true)}
+                  className="text-[11px] px-2.5 py-1 rounded-lg border border-zinc-700/60 bg-zinc-800/80 hover:bg-zinc-700 text-zinc-300 transition-colors flex items-center gap-1"
+                  title="Configure in Settings"
+                >
+                  <SettingsIcon size={11} />
+                  <span className="hidden sm:inline">Settings</span>
+                </button>
+                <button
+                  type="button"
+                  onClick={toggleWebFetcher}
+                  className={`text-[11px] px-2.5 py-1 rounded-lg border transition-all flex items-center gap-1 ${
+                    theme === 'classic'
+                      ? 'border-teal-500/40 bg-teal-950/70 text-teal-200 hover:border-red-500/50 hover:bg-red-950/40 hover:text-red-300'
+                      : theme === 'fulldark'
+                      ? 'border-[#333] bg-[#222] text-[#ccc] hover:border-red-500/40 hover:bg-red-950/30 hover:text-red-300'
+                      : 'border-zinc-700/60 bg-zinc-800/80 text-zinc-300 hover:border-red-500/40 hover:bg-red-500/10 hover:text-red-300'
+                  }`}
+                  title="Disable Web Fetcher mode"
+                  aria-label="Disable Web Fetcher"
                 >
                   <X size={12} />
                   <span>Disable</span>
@@ -3242,7 +3448,7 @@ export function AssistantPage() {
                   type="button"
                   onClick={() => setMoreOptionsOpen((prev) => !prev)}
                   className={`text-xs p-1.5 rounded-lg border transition-all flex items-center justify-center gap-1 ${
-                    moreOptionsOpen || architectEnabled || dataAnalysisEnabled || multiChatEnabled
+                    moreOptionsOpen || architectEnabled || dataAnalysisEnabled || multiChatEnabled || coderEnabled || webFetcherEnabled
                       ? theme === 'classic'
                         ? 'bg-cyan-500/15 text-cyan-200 border-cyan-500/40 shadow-[0_0_8px_rgba(6,182,212,0.2)]'
                         : theme === 'fulldark'
@@ -3257,7 +3463,7 @@ export function AssistantPage() {
                   title={
                     moreOptionsOpen
                       ? 'Close quick modes menu'
-                      : 'More Agent Modes: Architect, Data Analysis, Multi Chat'
+                      : 'Specialist Modes: Architect, Data Analysis, Multi Chat, Coder, Web Fetcher'
                   }
                   aria-label="More options"
                   aria-expanded={moreOptionsOpen}
@@ -3268,7 +3474,7 @@ export function AssistantPage() {
                       moreOptionsOpen ? 'rotate-180 text-cyan-400' : ''
                     }`}
                   />
-                  {(architectEnabled || dataAnalysisEnabled || multiChatEnabled) && (
+                  {(architectEnabled || dataAnalysisEnabled || multiChatEnabled || coderEnabled || webFetcherEnabled) && (
                     <span className="w-1.5 h-1.5 rounded-full bg-cyan-400 shadow-[0_0_6px_rgba(6,182,212,0.8)]" />
                   )}
                 </button>
@@ -3437,6 +3643,100 @@ export function AssistantPage() {
                         <div
                           className={`w-3 h-3 rounded-full bg-white shadow-sm transition-transform duration-150 ${
                             multiChatEnabled ? 'translate-x-4' : 'translate-x-0'
+                          }`}
+                        />
+                      </div>
+                    </button>
+
+                    {/* 4. Coder Toggle */}
+                    <button
+                      type="button"
+                      onClick={toggleCoder}
+                      className={`w-full p-2 rounded-xl border text-left flex items-center justify-between transition-all ${
+                        coderEnabled
+                          ? 'border-emerald-500/40 bg-emerald-950/30 text-emerald-200 shadow-[0_0_10px_rgba(16,185,129,0.1)]'
+                          : 'border-transparent hover:bg-zinc-800/60 text-zinc-300'
+                      }`}
+                    >
+                      <div className="flex items-center gap-2.5 min-w-0">
+                        <div
+                          className={`w-7 h-7 rounded-lg grid place-items-center shrink-0 ${
+                            coderEnabled
+                              ? 'bg-emerald-500/20 text-emerald-300 border border-emerald-500/30'
+                              : 'bg-zinc-800 text-zinc-400'
+                          }`}
+                        >
+                          <Code2 size={13} />
+                        </div>
+                        <div className="min-w-0">
+                          <div className="text-xs font-semibold text-zinc-100 flex items-center gap-1.5">
+                            <span>Coder</span>
+                            {coderEnabled && (
+                              <span className="text-[9px] font-mono font-semibold px-1.5 py-0.2 rounded bg-emerald-950 text-emerald-400 border border-emerald-500/40">
+                                ON
+                              </span>
+                            )}
+                          </div>
+                          <div className="text-[10.5px] text-zinc-400 truncate">
+                            Research-grounded code
+                          </div>
+                        </div>
+                      </div>
+                      <div
+                        className={`w-8 h-4 rounded-full transition-colors relative flex items-center p-0.5 shrink-0 ${
+                          coderEnabled ? 'bg-emerald-500' : 'bg-zinc-700'
+                        }`}
+                      >
+                        <div
+                          className={`w-3 h-3 rounded-full bg-white shadow-sm transition-transform duration-150 ${
+                            coderEnabled ? 'translate-x-4' : 'translate-x-0'
+                          }`}
+                        />
+                      </div>
+                    </button>
+
+                    {/* 5. Web Fetcher Toggle */}
+                    <button
+                      type="button"
+                      onClick={toggleWebFetcher}
+                      className={`w-full p-2 rounded-xl border text-left flex items-center justify-between transition-all ${
+                        webFetcherEnabled
+                          ? 'border-teal-500/40 bg-teal-950/30 text-teal-200 shadow-[0_0_10px_rgba(20,184,166,0.1)]'
+                          : 'border-transparent hover:bg-zinc-800/60 text-zinc-300'
+                      }`}
+                    >
+                      <div className="flex items-center gap-2.5 min-w-0">
+                        <div
+                          className={`w-7 h-7 rounded-lg grid place-items-center shrink-0 ${
+                            webFetcherEnabled
+                              ? 'bg-teal-500/20 text-teal-300 border border-teal-500/30'
+                              : 'bg-zinc-800 text-zinc-400'
+                          }`}
+                        >
+                          <Globe size={13} />
+                        </div>
+                        <div className="min-w-0">
+                          <div className="text-xs font-semibold text-zinc-100 flex items-center gap-1.5">
+                            <span>Web Fetcher</span>
+                            {webFetcherEnabled && (
+                              <span className="text-[9px] font-mono font-semibold px-1.5 py-0.2 rounded bg-teal-950 text-teal-400 border border-teal-500/40">
+                                ON
+                              </span>
+                            )}
+                          </div>
+                          <div className="text-[10.5px] text-zinc-400 truncate">
+                            Read any webpage URL
+                          </div>
+                        </div>
+                      </div>
+                      <div
+                        className={`w-8 h-4 rounded-full transition-colors relative flex items-center p-0.5 shrink-0 ${
+                          webFetcherEnabled ? 'bg-teal-500' : 'bg-zinc-700'
+                        }`}
+                      >
+                        <div
+                          className={`w-3 h-3 rounded-full bg-white shadow-sm transition-transform duration-150 ${
+                            webFetcherEnabled ? 'translate-x-4' : 'translate-x-0'
                           }`}
                         />
                       </div>
@@ -4204,6 +4504,160 @@ export function AssistantPage() {
                   <div
                     className={`w-5 h-5 rounded-full bg-white shadow-md transition-transform duration-200 ${
                       dataAnalysisEnabled ? 'translate-x-5' : 'translate-x-0'
+                    }`}
+                  />
+                </div>
+              </div>
+            </div>
+
+            <div className="h-px bg-zinc-800" />
+
+            {/* Section 7: Coder Toggle */}
+            <div className="space-y-3">
+              <div className="flex items-center justify-between">
+                <div className="flex items-center gap-2">
+                  <Code2 size={15} className="text-emerald-400" />
+                  <h4 className="text-xs font-semibold uppercase tracking-wider text-zinc-300">
+                    Coder
+                  </h4>
+                </div>
+                <span
+                  className={`text-[10px] font-mono font-semibold px-2 py-0.5 rounded-full border ${
+                    coderEnabled
+                      ? 'bg-emerald-950/80 text-emerald-300 border-emerald-500/50 shadow-[0_0_8px_rgba(16,185,129,0.2)]'
+                      : 'bg-zinc-800 text-zinc-500 border-zinc-700/60'
+                  }`}
+                >
+                  {coderEnabled ? 'ACTIVE' : 'DISABLED'}
+                </span>
+              </div>
+
+              <p className="text-xs text-zinc-400 leading-relaxed">
+                When enabled, AI Assistant routes messages through the research-grounded code pipeline (Planner → Researcher → Coder) using the /codeonline workflow to generate production-ready implementations.
+              </p>
+
+              {/* Interactive Toggle Card */}
+              <div
+                onClick={toggleCoder}
+                className={`p-3.5 rounded-xl border flex items-center justify-between cursor-pointer transition-all ${
+                  coderEnabled
+                    ? 'border-emerald-500/40 bg-emerald-950/20 shadow-[0_0_15px_rgba(16,185,129,0.12)]'
+                    : 'border-zinc-800 bg-zinc-900/60 hover:bg-zinc-850 hover:border-zinc-700'
+                }`}
+              >
+                <div className="flex items-center gap-3">
+                  <div
+                    className={`w-9 h-9 rounded-xl grid place-items-center transition-colors ${
+                      coderEnabled
+                        ? 'bg-emerald-500/20 border border-emerald-500/40 text-emerald-300'
+                        : 'bg-zinc-800 border border-zinc-700 text-zinc-400'
+                    }`}
+                  >
+                    <Code2 size={18} />
+                  </div>
+                  <div>
+                    <div className="text-xs font-semibold text-zinc-100 flex items-center gap-2">
+                      <span>Enable Coder</span>
+                      {coderEnabled && (
+                        <span className="text-[10px] font-mono text-emerald-400 bg-emerald-950/80 px-1.5 py-0.2 rounded border border-emerald-500/40">
+                          Research Code
+                        </span>
+                      )}
+                    </div>
+                    <p className="text-[11px] text-zinc-400 mt-0.5">
+                      {coderEnabled
+                        ? 'Planner → Researcher → Coder pipeline is active'
+                        : 'Standard coding responses'}
+                    </p>
+                  </div>
+                </div>
+
+                {/* Toggle Switch */}
+                <div
+                  className={`w-11 h-6 rounded-full transition-colors relative flex items-center p-0.5 shrink-0 ${
+                    coderEnabled ? 'bg-emerald-500 shadow-[0_0_8px_rgba(16,185,129,0.4)]' : 'bg-zinc-700'
+                  }`}
+                >
+                  <div
+                    className={`w-5 h-5 rounded-full bg-white shadow-md transition-transform duration-200 ${
+                      coderEnabled ? 'translate-x-5' : 'translate-x-0'
+                    }`}
+                  />
+                </div>
+              </div>
+            </div>
+
+            <div className="h-px bg-zinc-800" />
+
+            {/* Section 8: Web Fetcher Toggle */}
+            <div className="space-y-3">
+              <div className="flex items-center justify-between">
+                <div className="flex items-center gap-2">
+                  <Globe size={15} className="text-teal-400" />
+                  <h4 className="text-xs font-semibold uppercase tracking-wider text-zinc-300">
+                    Web Fetcher
+                  </h4>
+                </div>
+                <span
+                  className={`text-[10px] font-mono font-semibold px-2 py-0.5 rounded-full border ${
+                    webFetcherEnabled
+                      ? 'bg-teal-950/80 text-teal-300 border-teal-500/50 shadow-[0_0_8px_rgba(20,184,166,0.2)]'
+                      : 'bg-zinc-800 text-zinc-500 border-zinc-700/60'
+                  }`}
+                >
+                  {webFetcherEnabled ? 'ACTIVE' : 'DISABLED'}
+                </span>
+              </div>
+
+              <p className="text-xs text-zinc-400 leading-relaxed">
+                When enabled, AI Assistant reads and extracts full webpage content from any provided URL using the /web live extraction pipeline.
+              </p>
+
+              {/* Interactive Toggle Card */}
+              <div
+                onClick={toggleWebFetcher}
+                className={`p-3.5 rounded-xl border flex items-center justify-between cursor-pointer transition-all ${
+                  webFetcherEnabled
+                    ? 'border-teal-500/40 bg-teal-950/20 shadow-[0_0_15px_rgba(20,184,166,0.12)]'
+                    : 'border-zinc-800 bg-zinc-900/60 hover:bg-zinc-850 hover:border-zinc-700'
+                }`}
+              >
+                <div className="flex items-center gap-3">
+                  <div
+                    className={`w-9 h-9 rounded-xl grid place-items-center transition-colors ${
+                      webFetcherEnabled
+                        ? 'bg-teal-500/20 border border-teal-500/40 text-teal-300'
+                        : 'bg-zinc-800 border border-zinc-700 text-zinc-400'
+                    }`}
+                  >
+                    <Globe size={18} />
+                  </div>
+                  <div>
+                    <div className="text-xs font-semibold text-zinc-100 flex items-center gap-2">
+                      <span>Enable Web Fetcher</span>
+                      {webFetcherEnabled && (
+                        <span className="text-[10px] font-mono text-teal-400 bg-teal-950/80 px-1.5 py-0.2 rounded border border-teal-500/40">
+                          URL Reader
+                        </span>
+                      )}
+                    </div>
+                    <p className="text-[11px] text-zinc-400 mt-0.5">
+                      {webFetcherEnabled
+                        ? 'Live webpage reader and content extraction'
+                        : 'Standard web search browsing'}
+                    </p>
+                  </div>
+                </div>
+
+                {/* Toggle Switch */}
+                <div
+                  className={`w-11 h-6 rounded-full transition-colors relative flex items-center p-0.5 shrink-0 ${
+                    webFetcherEnabled ? 'bg-teal-500 shadow-[0_0_8px_rgba(20,184,166,0.4)]' : 'bg-zinc-700'
+                  }`}
+                >
+                  <div
+                    className={`w-5 h-5 rounded-full bg-white shadow-md transition-transform duration-200 ${
+                      webFetcherEnabled ? 'translate-x-5' : 'translate-x-0'
                     }`}
                   />
                 </div>
