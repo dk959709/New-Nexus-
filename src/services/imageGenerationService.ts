@@ -373,7 +373,7 @@ export async function generateStudioImage(
 
   // Determine provider sequence starting with active/requested provider
   const providersList = [...state.providers];
-  let targetProviderId = options.providerId || state.activeProviderId;
+  const targetProviderId = options.providerId || state.activeProviderId;
   let primaryProvider = providersList.find((p) => p.id === targetProviderId) || providersList[0];
 
   if (!primaryProvider) {

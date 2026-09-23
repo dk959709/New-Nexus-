@@ -29,6 +29,8 @@ import {
   Languages,
   RotateCcw,
   Palette,
+  MessagesSquare,
+  Bot,
 } from 'lucide-react';
 import { Link } from 'react-router-dom';
 import { api } from '@/services/api';
@@ -36,7 +38,8 @@ import { storage } from '@/lib/storage';
 import { copyToClipboard } from '@/lib/clipboard';
 import { ErrorMessage } from '@/components';
 import { generateStudioImage } from '@/services/imageGenerationService';
-import type { AISource } from '@/types';
+import { executeMultiChatTurn } from '@/services/multiChatOrchestrator';
+import type { AISource, MultiChatPersonaResponse, MultiChatMessage } from '@/types';
 
 export interface AssistantGeneratedImage {
   url: string;
@@ -52,11 +55,12 @@ export interface AssistantGeneratedImage {
 type Message = {
   role: 'user' | 'assistant';
   content: string;
-  tool?: 'none' | 'search' | 'weather' | 'image';
+  tool?: 'none' | 'search' | 'weather' | 'image' | 'multichat';
   sources?: AISource[];
   weather?: unknown;
   searchedWeb?: boolean;
   image?: AssistantGeneratedImage;
+  multiChatResponses?: MultiChatPersonaResponse[];
 };
 
 const CHAT_KEY = 'nexus-ai-conversation-v2';
@@ -179,10 +183,13 @@ export function AssistantPage() {
   const [responseLanguage, setResponseLanguage] = useState<string>(() => storage.getAssistantLanguage());
   const [theme, setTheme] = useState<'minimal' | 'classic' | 'fulldark'>(() => storage.getAssistantTheme());
   const [permanentMemories, setPermanentMemories] = useState<string[]>(() => storage.getPermanentMemories());
+  const [multiChatEnabled, setMultiChatEnabled] = useState<boolean>(() => storage.getAssistantMultiChatEnabled());
   const [newMemoryInput, setNewMemoryInput] = useState('');
   const [editingMemoryIndex, setEditingMemoryIndex] = useState<number | null>(null);
   const [editingMemoryDraft, setEditingMemoryDraft] = useState('');
   const [settingsSavedToast, setSettingsSavedToast] = useState<string | null>(null);
+  const [personaAudioPlayingKey, setPersonaAudioPlayingKey] = useState<string | null>(null);
+  const [personaAudioLoadingKey, setPersonaAudioLoadingKey] = useState<string | null>(null);
 
   const utteranceRef = useRef<SpeechSynthesisUtterance | null>(null);
   const edgeTtsAudioRef = useRef<HTMLAudioElement | null>(null);
@@ -192,6 +199,89 @@ export function AssistantPage() {
   const triggerSettingsToast = (msg: string) => {
     setSettingsSavedToast(msg);
     setTimeout(() => setSettingsSavedToast(null), 3000);
+  };
+
+  const toggleMultiChat = () => {
+    setMultiChatEnabled((prev) => {
+      const next = !prev;
+      storage.setAssistantMultiChatEnabled(next);
+      triggerSettingsToast(
+        next
+          ? 'Multi Chat enabled: 3-Persona panel will process all messages'
+          : 'Multi Chat disabled: standard single assistant active',
+      );
+      return next;
+    });
+  };
+
+  const getPersonaVoice = (personaId?: string): string => {
+    const globalVoice = storage.getEdgeVoice();
+    if (personaId === 'nova') return 'en-US-JennyNeural';
+    if (personaId === 'orbit') return 'en-US-GuyNeural';
+    if (personaId === 'cosmos') return 'en-US-EricNeural';
+    return globalVoice || 'en-US-AriaNeural';
+  };
+
+  const handlePlayPersonaAudio = async (text: string, idKey: string, personaId: string) => {
+    if (personaAudioPlayingKey === idKey) {
+      if (edgeTtsAudioRef.current) {
+        edgeTtsAudioRef.current.pause();
+        edgeTtsAudioRef.current = null;
+      }
+      setPersonaAudioPlayingKey(null);
+      return;
+    }
+
+    if (edgeTtsAudioRef.current) {
+      edgeTtsAudioRef.current.pause();
+      edgeTtsAudioRef.current = null;
+    }
+    if (typeof window !== 'undefined' && 'speechSynthesis' in window) {
+      window.speechSynthesis.cancel();
+    }
+    setSpeakingIndex(null);
+    setEdgeTtsPlayingIndex(null);
+
+    setPersonaAudioLoadingKey(idKey);
+    try {
+      const voice = getPersonaVoice(personaId);
+      const cleanText = text.replace(/[*_#`~[\]()]/g, '').trim();
+      const response = await fetch('/api/edge-tts', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          text: cleanText.slice(0, 4000),
+          voice,
+        }),
+      });
+
+      if (!response.ok) {
+        throw new Error(`Edge TTS failed: ${response.status}`);
+      }
+
+      const blob = await response.blob();
+      const audioUrl = URL.createObjectURL(blob);
+      const audio = new Audio(audioUrl);
+      edgeTtsAudioRef.current = audio;
+
+      audio.onended = () => {
+        setPersonaAudioPlayingKey(null);
+        URL.revokeObjectURL(audioUrl);
+      };
+
+      audio.onerror = () => {
+        setPersonaAudioPlayingKey(null);
+        URL.revokeObjectURL(audioUrl);
+      };
+
+      await audio.play();
+      setPersonaAudioPlayingKey(idKey);
+    } catch (err) {
+      console.error('Persona TTS failed:', err);
+      setPersonaAudioPlayingKey(null);
+    } finally {
+      setPersonaAudioLoadingKey(null);
+    }
   };
 
   const handleLanguageChange = (val: string) => {
@@ -621,6 +711,121 @@ export function AssistantPage() {
       return;
     }
 
+    // If Multi Chat (3-Persona Panel) mode is enabled in Settings, route through sequential multiChatOrchestrator pipeline
+    if (multiChatEnabled) {
+      try {
+        const multiChatConfig = storage.getMultiChatConfig();
+        const currentLanguage = storage.getAssistantLanguage() || storage.getMultiChatResponseLanguage();
+        const currentPermanentMemories = storage.getPermanentMemories();
+
+        // Convert prior messages to MultiChatMessage history
+        const multiChatHistory: MultiChatMessage[] = messages
+          .slice(-10)
+          .filter((m) => m.role === 'assistant' && m.multiChatResponses && m.multiChatResponses.length > 0)
+          .map((m, idx) => ({
+            id: `mc_turn_${idx}`,
+            query: 'Prior user context',
+            timestamp: Date.now(),
+            responses: m.multiChatResponses || [],
+          }));
+
+        // Build initial persona list in sequential order (NOVA -> ORBIT -> COSMOS)
+        const enabledPersonas = Object.values(multiChatConfig.personas).filter((p) => p.enabled);
+        const orderedIds = ['nova', 'orbit', 'cosmos'];
+        const sortedPersonas = [...enabledPersonas].sort((a, b) => {
+          const idxA = orderedIds.indexOf(a.id);
+          const idxB = orderedIds.indexOf(b.id);
+          return (idxA === -1 ? 99 : idxA) - (idxB === -1 ? 99 : idxB);
+        });
+
+        const initialResponses: MultiChatPersonaResponse[] = sortedPersonas.map((p, idx) => ({
+          personaId: p.id,
+          name: p.name,
+          icon: p.icon,
+          accentColor: p.accentColor,
+          toneBadge: p.toneBadge,
+          text: '',
+          status: idx === 0 ? 'running' : 'pending',
+        }));
+
+        const placeholderAssistantMessage: Message = {
+          role: 'assistant',
+          content: '',
+          tool: 'multichat',
+          multiChatResponses: initialResponses,
+        };
+
+        setMessages((current) => [...current, placeholderAssistantMessage]);
+
+        const { responses } = await executeMultiChatTurn({
+          query: message,
+          conversationHistory: multiChatHistory,
+          config: multiChatConfig,
+          permanentMemories: currentPermanentMemories,
+          responseLanguage: currentLanguage,
+          onPersonaUpdate: (updatedResp) => {
+            setMessages((current) => {
+              const next = [...current];
+              const lastIdx = next.length - 1;
+              if (lastIdx >= 0 && next[lastIdx].role === 'assistant' && next[lastIdx].tool === 'multichat') {
+                const existing = next[lastIdx].multiChatResponses || [];
+                const hasExisting = existing.some((r) => r.personaId === updatedResp.personaId);
+                const updatedList = hasExisting
+                  ? existing.map((r) => (r.personaId === updatedResp.personaId ? updatedResp : r))
+                  : [...existing, updatedResp];
+                next[lastIdx] = {
+                  ...next[lastIdx],
+                  multiChatResponses: updatedList,
+                  content: updatedList.map((r) => `${r.name}: ${r.content || r.text}`).join('\n\n'),
+                };
+              }
+              return next;
+            });
+          },
+        });
+
+        const finalContent = responses
+          .map((r) => `${r.name}: ${r.content || r.text}`)
+          .join('\n\n');
+
+        const finalAssistantMessage: Message = {
+          role: 'assistant',
+          content: finalContent,
+          tool: 'multichat',
+          multiChatResponses: responses,
+        };
+
+        setMessages((current) => {
+          const next = [...current];
+          const lastIdx = next.length - 1;
+          if (lastIdx >= 0 && next[lastIdx].tool === 'multichat') {
+            next[lastIdx] = finalAssistantMessage;
+            return next;
+          }
+          return [...next, finalAssistantMessage];
+        });
+
+        const updatedConversation = [
+          ...messages,
+          userMessage,
+          finalAssistantMessage,
+        ];
+        const newMemory = buildLocalMemory(updatedConversation);
+        if (newMemory) {
+          setSmartMemory(newMemory);
+        }
+      } catch (mcErr) {
+        const errDetail =
+          mcErr instanceof Error
+            ? mcErr.message
+            : 'Multi Chat pipeline encountered an issue.';
+        setError(errDetail);
+      } finally {
+        setLoading(false);
+      }
+      return;
+    }
+
     const isWebSearchForced = webSearchEnabled;
 
     try {
@@ -921,6 +1126,48 @@ export function AssistantPage() {
       {/* Main Chat Stream (Claude-style transparent and clean message bubbles) */}
       <main className="flex-1 max-w-4xl w-full mx-auto flex flex-col justify-between py-6 px-1 sm:px-2">
         <div className="flex-1 space-y-6">
+          {/* Multi Chat Mode Active Indicator Banner */}
+          {multiChatEnabled && (
+            <div
+              className={`px-3.5 py-2.5 rounded-xl border flex items-center justify-between gap-3 text-xs transition-all ${
+                theme === 'classic'
+                  ? 'bg-cyan-950/40 border-cyan-500/30 text-cyan-200 shadow-[0_0_15px_rgba(6,182,212,0.15)]'
+                  : theme === 'fulldark'
+                  ? 'bg-[#181818] border-[#2e2e2e] text-[#e0e0e0]'
+                  : 'bg-zinc-900/90 border-zinc-800 text-zinc-300'
+              }`}
+            >
+              <div className="flex items-center gap-2.5 min-w-0">
+                <div
+                  className={`w-6 h-6 rounded-lg grid place-items-center text-xs shrink-0 ${
+                    theme === 'classic'
+                      ? 'bg-cyan-500/20 text-cyan-300'
+                      : theme === 'fulldark'
+                      ? 'bg-zinc-800 text-cyan-400'
+                      : 'bg-zinc-800 text-cyan-400'
+                  }`}
+                >
+                  <MessagesSquare size={13} />
+                </div>
+                <div className="flex items-center gap-2 flex-wrap">
+                  <span className="font-semibold text-zinc-100">Multi Chat Active:</span>
+                  <span className="text-[11px] opacity-90">
+                    3-Persona Sequential Panel (<strong>NOVA 🧠</strong> → <strong>ORBIT 😎</strong> → <strong>COSMOS 🧘</strong>)
+                  </span>
+                </div>
+              </div>
+              <button
+                type="button"
+                onClick={() => setSettingsOpen(true)}
+                className="text-[11px] px-2.5 py-1 rounded-lg border border-zinc-700/60 bg-zinc-800/80 hover:bg-zinc-700 text-zinc-300 transition-colors shrink-0 flex items-center gap-1"
+                title="Configure in Settings"
+              >
+                <SettingsIcon size={11} />
+                <span>Settings</span>
+              </button>
+            </div>
+          )}
+
           {/* Empty / Welcome state hero */}
           {isOnlyWelcome && (
             <div className="py-12 sm:py-20 text-center flex flex-col items-center justify-center">
@@ -1204,18 +1451,233 @@ export function AssistantPage() {
                           );
                         })()}
 
-                        {/* Plain Transparent Assistant Message Body */}
-                        <div
-                          className={`text-[15px] leading-relaxed break-words whitespace-pre-wrap pt-0.5 ${
-                            theme === 'classic'
-                              ? 'text-slate-100'
-                              : theme === 'fulldark'
-                              ? 'text-[#ececec] font-normal tracking-normal'
-                              : 'text-zinc-200'
-                          }`}
-                        >
-                          {message.content}
-                        </div>
+                        {/* 3-Persona Sequential Panel (if Multi Chat) or Standard Response Body */}
+                        {message.multiChatResponses && message.multiChatResponses.length > 0 ? (
+                          <div className="space-y-3 pt-1">
+                            {/* Multi-Chat Sequential Pipeline Bar */}
+                            <div
+                              className={`flex items-center justify-between px-3.5 py-2 rounded-xl border text-xs ${
+                                theme === 'classic'
+                                  ? 'bg-cyan-950/40 border-cyan-500/30 text-cyan-300'
+                                  : theme === 'fulldark'
+                                  ? 'bg-[#1a1a1a] border-[#2e2e2e] text-[#ccc]'
+                                  : 'bg-zinc-900 border-zinc-800 text-zinc-300'
+                              }`}
+                            >
+                              <div className="flex items-center gap-2">
+                                <MessagesSquare size={14} className="text-cyan-400" />
+                                <span className="font-semibold text-[11px] tracking-wide uppercase">
+                                  3-Persona Sequential Dialogue
+                                </span>
+                              </div>
+                              <div className="flex items-center gap-1.5 text-[10.5px] font-mono opacity-80">
+                                <span className="text-cyan-400 font-semibold">NOVA 🧠</span>
+                                <span>→</span>
+                                <span className="text-pink-400 font-semibold">ORBIT 😎</span>
+                                <span>→</span>
+                                <span className="text-purple-400 font-semibold">COSMOS 🧘</span>
+                              </div>
+                            </div>
+
+                            {/* Persona Response Cards */}
+                            {message.multiChatResponses.map((resp, pIdx) => {
+                              const isRunning = resp.status === 'running';
+                              const isPending = resp.status === 'pending';
+                              const isFailed = resp.status === 'failed';
+                              const cleanPersonaText = resp.content || resp.text || '';
+                              const personaKey = `${index}_${resp.personaId}`;
+                              const isAudioPlaying = personaAudioPlayingKey === personaKey;
+                              const isAudioLoading = personaAudioLoadingKey === personaKey;
+
+                              return (
+                                <div
+                                  key={resp.personaId || pIdx}
+                                  className={`p-4 rounded-2xl border transition-all ${
+                                    isRunning
+                                      ? 'ring-1 ring-cyan-400/40 animate-pulse'
+                                      : ''
+                                  } ${
+                                    theme === 'classic'
+                                      ? 'bg-slate-900/85 border-cyan-500/25 shadow-[0_2px_15px_rgba(6,182,212,0.08)]'
+                                      : theme === 'fulldark'
+                                      ? 'bg-[#181818] border-[#292929]'
+                                      : 'bg-zinc-900/80 border-zinc-800/90'
+                                  }`}
+                                  style={{
+                                    borderLeftColor: resp.accentColor || '#06b6d4',
+                                    borderLeftWidth: '3.5px',
+                                  }}
+                                >
+                                  {/* Persona Header */}
+                                  <div className="flex items-center justify-between mb-2.5 flex-wrap gap-2">
+                                    <div className="flex items-center gap-2">
+                                      {/* Persona Icon Badge */}
+                                      <div
+                                        className="w-7 h-7 rounded-lg grid place-items-center text-sm shadow-sm"
+                                        style={{
+                                          background: `${resp.accentColor || '#06b6d4'}20`,
+                                          border: `1px solid ${resp.accentColor || '#06b6d4'}40`,
+                                        }}
+                                      >
+                                        {resp.icon || '🤖'}
+                                      </div>
+
+                                      {/* Persona Name & Tone Badge */}
+                                      <div className="flex items-center gap-1.5 flex-wrap">
+                                        <span className="font-bold text-xs text-zinc-100 font-mono tracking-tight">
+                                          {resp.name}
+                                        </span>
+                                        <span
+                                          className="text-[10px] font-mono px-2 py-0.5 rounded-md font-semibold"
+                                          style={{
+                                            background: `${resp.accentColor || '#06b6d4'}18`,
+                                            color: resp.accentColor || '#06b6d4',
+                                            border: `1px solid ${resp.accentColor || '#06b6d4'}35`,
+                                          }}
+                                        >
+                                          {resp.toneBadge}
+                                        </span>
+                                      </div>
+                                    </div>
+
+                                    {/* Status & Timing */}
+                                    <div className="flex items-center gap-2">
+                                      {isRunning && (
+                                        <span className="inline-flex items-center gap-1.5 text-[11px] text-cyan-400 font-medium">
+                                          <Loader2 size={11} className="animate-spin" />
+                                          <span>Synthesizing...</span>
+                                        </span>
+                                      )}
+                                      {isPending && (
+                                        <span className="text-[11px] text-zinc-500 italic">
+                                          Queued in sequence...
+                                        </span>
+                                      )}
+                                      {isFailed && (
+                                        <span className="inline-flex items-center gap-1 text-[11px] text-red-400">
+                                          <AlertTriangle size={11} />
+                                          <span>Failed</span>
+                                        </span>
+                                      )}
+                                      {resp.durationMs && resp.status === 'completed' && (
+                                        <span className="text-[10px] text-zinc-500 font-mono">
+                                          {(resp.durationMs / 1000).toFixed(1)}s
+                                        </span>
+                                      )}
+                                    </div>
+                                  </div>
+
+                                  {/* Persona Text Content */}
+                                  {cleanPersonaText ? (
+                                    <div
+                                      className={`text-[14px] leading-relaxed break-words whitespace-pre-wrap ${
+                                        theme === 'classic'
+                                          ? 'text-slate-100'
+                                          : theme === 'fulldark'
+                                          ? 'text-[#e5e5e5]'
+                                          : 'text-zinc-200'
+                                      }`}
+                                    >
+                                      {cleanPersonaText}
+                                    </div>
+                                  ) : isRunning ? (
+                                    <div className="text-xs text-zinc-400 py-1 flex items-center gap-2">
+                                      <Loader2 size={12} className="animate-spin text-cyan-400" />
+                                      <span>Thinking through {resp.name}&apos;s persona lens...</span>
+                                    </div>
+                                  ) : isPending ? (
+                                    <div className="text-xs text-zinc-500 italic py-1">
+                                      Awaiting prior persona answers to connect reasoning...
+                                    </div>
+                                  ) : isFailed ? (
+                                    <div className="text-xs text-red-400 py-1">
+                                      {resp.error || 'Failed to generate response for this persona.'}
+                                    </div>
+                                  ) : null}
+
+                                  {/* Persona Action Toolbar */}
+                                  {resp.status === 'completed' && cleanPersonaText && (
+                                    <div
+                                      className={`flex items-center justify-between pt-2.5 mt-2.5 border-t text-xs ${
+                                        theme === 'classic'
+                                          ? 'border-cyan-500/10 text-cyan-200/60'
+                                          : theme === 'fulldark'
+                                          ? 'border-[#262626] text-zinc-400'
+                                          : 'border-zinc-800 text-zinc-400'
+                                      }`}
+                                    >
+                                      <div className="flex items-center gap-1.5">
+                                        {/* Copy persona text */}
+                                        <button
+                                          type="button"
+                                          onClick={() => handleCopyText(cleanPersonaText, index * 100 + pIdx)}
+                                          className={`p-1 rounded-md transition-colors ${
+                                            theme === 'fulldark'
+                                              ? 'hover:text-white hover:bg-[#282828]'
+                                              : 'hover:text-zinc-200 hover:bg-zinc-800'
+                                          }`}
+                                          title={`Copy ${resp.name}'s response`}
+                                        >
+                                          {copiedIndex === index * 100 + pIdx ? (
+                                            <Check size={12} className="text-emerald-400" />
+                                          ) : (
+                                            <Copy size={12} />
+                                          )}
+                                        </button>
+
+                                        {/* Voice TTS Read Aloud */}
+                                        <button
+                                          type="button"
+                                          onClick={() => handlePlayPersonaAudio(cleanPersonaText, personaKey, resp.personaId)}
+                                          disabled={isAudioLoading}
+                                          className={`p-1 rounded-md transition-colors ${
+                                            isAudioPlaying
+                                              ? 'text-cyan-400 bg-cyan-500/10'
+                                              : theme === 'fulldark'
+                                              ? 'hover:text-white hover:bg-[#282828]'
+                                              : 'hover:text-zinc-200 hover:bg-zinc-800'
+                                          }`}
+                                          title={
+                                            isAudioLoading
+                                              ? `Synthesizing ${resp.name}'s Voice...`
+                                              : isAudioPlaying
+                                              ? `Stop ${resp.name}'s Voice`
+                                              : `Listen to ${resp.name}'s Voice`
+                                          }
+                                        >
+                                          {isAudioLoading ? (
+                                            <Loader2 size={12} className="animate-spin text-cyan-400" />
+                                          ) : isAudioPlaying ? (
+                                            <VolumeX size={12} />
+                                          ) : (
+                                            <Volume2 size={12} />
+                                          )}
+                                        </button>
+                                      </div>
+
+                                      <span className="text-[10px] opacity-60 font-mono">
+                                        Persona: {resp.name}
+                                      </span>
+                                    </div>
+                                  )}
+                                </div>
+                              );
+                            })}
+                          </div>
+                        ) : (
+                          /* Plain Transparent Assistant Message Body */
+                          <div
+                            className={`text-[15px] leading-relaxed break-words whitespace-pre-wrap pt-0.5 ${
+                              theme === 'classic'
+                                ? 'text-slate-100'
+                                : theme === 'fulldark'
+                                ? 'text-[#ececec] font-normal tracking-normal'
+                                : 'text-zinc-200'
+                            }`}
+                          >
+                            {message.content}
+                          </div>
+                        )}
 
                         {/* Generated Image Bubble (if present) */}
                         {message.image && (
@@ -1648,7 +2110,7 @@ export function AssistantPage() {
           <div className="text-center pt-2 pb-0.5 text-[11px] text-zinc-500 flex items-center justify-center gap-2 flex-wrap">
             <span>NEXUS AI</span>
             <span>·</span>
-            <span>{imageGenEnabled ? 'Image Generation Mode Active' : webSearchEnabled ? 'Live Web Search Active' : 'Automatic Web Search'}</span>
+            <span>{multiChatEnabled ? 'Multi Chat (3-Persona Pipeline)' : imageGenEnabled ? 'Image Generation Mode Active' : webSearchEnabled ? 'Live Web Search Active' : 'Automatic Web Search'}</span>
             <span>·</span>
             <span>Theme: {theme === 'classic' ? 'NEXUS Classic' : theme === 'fulldark' ? 'Full Dark' : 'NEXUS Minimal'}</span>
             {responseLanguage && (
@@ -2014,6 +2476,83 @@ export function AssistantPage() {
                     );
                   })
                 )}
+              </div>
+            </div>
+
+            <div className="h-px bg-zinc-800" />
+
+            {/* Section 4: Multi Chat Mode Toggle */}
+            <div className="space-y-3">
+              <div className="flex items-center justify-between">
+                <div className="flex items-center gap-2">
+                  <MessagesSquare size={15} className="text-cyan-400" />
+                  <h4 className="text-xs font-semibold uppercase tracking-wider text-zinc-300">
+                    Multi Chat (3-Persona Pipeline)
+                  </h4>
+                </div>
+                <span
+                  className={`text-[10px] font-mono font-semibold px-2 py-0.5 rounded-full border ${
+                    multiChatEnabled
+                      ? 'bg-cyan-950/80 text-cyan-300 border-cyan-500/50 shadow-[0_0_8px_rgba(6,182,212,0.2)]'
+                      : 'bg-zinc-800 text-zinc-500 border-zinc-700/60'
+                  }`}
+                >
+                  {multiChatEnabled ? 'ACTIVE' : 'DISABLED'}
+                </span>
+              </div>
+
+              <p className="text-xs text-zinc-400 leading-relaxed">
+                When enabled, every message sent in AI Assistant routes through the 3-persona sequential pipeline (NOVA 🧠 → ORBIT 😎 → COSMOS 🧘). Each persona builds upon prior reasoning and displays distinct response cards.
+              </p>
+
+              {/* Interactive Toggle Card */}
+              <div
+                onClick={toggleMultiChat}
+                className={`p-3.5 rounded-xl border flex items-center justify-between cursor-pointer transition-all ${
+                  multiChatEnabled
+                    ? 'border-cyan-500/40 bg-cyan-950/20 shadow-[0_0_15px_rgba(6,182,212,0.12)]'
+                    : 'border-zinc-800 bg-zinc-900/60 hover:bg-zinc-850 hover:border-zinc-700'
+                }`}
+              >
+                <div className="flex items-center gap-3">
+                  <div
+                    className={`w-9 h-9 rounded-xl grid place-items-center transition-colors ${
+                      multiChatEnabled
+                        ? 'bg-cyan-500/20 border border-cyan-500/40 text-cyan-300'
+                        : 'bg-zinc-800 border border-zinc-700 text-zinc-400'
+                    }`}
+                  >
+                    <Bot size={18} />
+                  </div>
+                  <div>
+                    <div className="text-xs font-semibold text-zinc-100 flex items-center gap-2">
+                      <span>Enable Multi Chat</span>
+                      {multiChatEnabled && (
+                        <span className="text-[10px] font-mono text-cyan-400 bg-cyan-950/80 px-1.5 py-0.2 rounded border border-cyan-500/40">
+                          NOVA → ORBIT → COSMOS
+                        </span>
+                      )}
+                    </div>
+                    <p className="text-[11px] text-zinc-400 mt-0.5">
+                      {multiChatEnabled
+                        ? 'Connected 3-Persona sequential reasoning pipeline is active'
+                        : 'Standard single NEXUS AI Assistant responses'}
+                    </p>
+                  </div>
+                </div>
+
+                {/* Toggle Switch */}
+                <div
+                  className={`w-11 h-6 rounded-full transition-colors relative flex items-center p-0.5 shrink-0 ${
+                    multiChatEnabled ? 'bg-cyan-500 shadow-[0_0_8px_rgba(6,182,212,0.4)]' : 'bg-zinc-700'
+                  }`}
+                >
+                  <div
+                    className={`w-5 h-5 rounded-full bg-white shadow-md transition-transform duration-200 ${
+                      multiChatEnabled ? 'translate-x-5' : 'translate-x-0'
+                    }`}
+                  />
+                </div>
               </div>
             </div>
 

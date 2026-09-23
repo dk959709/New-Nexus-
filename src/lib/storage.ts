@@ -1901,6 +1901,14 @@ export const storage = {
     write('nexus-ai-assistant-theme', theme);
   },
 
+  getAssistantMultiChatEnabled(): boolean {
+    return read<boolean>('nexus-ai-assistant-multi-chat-enabled', false);
+  },
+
+  setAssistantMultiChatEnabled(enabled: boolean): void {
+    write('nexus-ai-assistant-multi-chat-enabled', enabled);
+  },
+
   getMultiChatResponseLanguage(): string {
     const cfg = this.getMultiChatConfig();
     return cfg.responseLanguage || 'English';
