@@ -300,7 +300,7 @@ The **AI Assistant** (/assistant) provides a rapid, streamlined single-turn and 
 
 #### B. Core Capabilities & Tool Integrations:
 - **Specialist Modes**: Toggleable specialized pipelines including **Architect** (SVG software blueprints), **Data Analysis** (Recharts quantitative metrics), **Multi Chat** (3-persona deliberation), **Coder** (research-grounded code via \`/codeonline\`), **Web Fetcher** (live URL content extraction via \`/web\`), and **Wikimedia** (instant retrieval of 5 real photographic images directly from Wikimedia Commons).
-- **Smart Memory (Persistent Scratchpad)**: Automatically compresses and remembers context across messages (up to 1,200 characters). You can view, edit, or wipe this persistent memory scratchpad at any time using the Brain icon editor.
+- **Smart Memory (Persistent Scratchpad)**: Automatically compresses and remembers context across messages (up to 2,200 characters). You can view, edit, or wipe this persistent memory scratchpad at any time using the Brain icon editor.
 - **Dynamic Tool Dispatch**: Seamlessly executes live web searches or fetches real-time meteorological weather data when the query demands up-to-the-minute information.
 - **Quick Prompts**: Instant starter prompts across explanation, problem solving, productivity advice, and topic summaries.
 - **Voice Narration & Audio**: Full support for Edge Neural TTS and browser Web Speech read-aloud with instant pause/play controls.
@@ -1666,7 +1666,7 @@ End of NEXUS Documentation
                 </div>
                 <div className="space-y-1">
                   <strong className="text-slate-200 block">🧠 Smart Memory (Persistent Scratchpad):</strong>
-                  <span>Automatically retains and compresses key conversational points (up to 1,200 characters). You can view, edit, or wipe this memory at any time via the Brain icon.</span>
+                  <span>Automatically retains and compresses key conversational points (up to 2,200 characters). You can view, edit, or wipe this memory at any time via the Brain icon.</span>
                 </div>
                 <div className="space-y-1">
                   <strong className="text-slate-200 block">🌐 Dynamic Tool Execution:</strong>

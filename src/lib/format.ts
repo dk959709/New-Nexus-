@@ -132,6 +132,12 @@ export function stripConversationalMetaText(text: string): string {
     ''
   );
 
+  // 5b. Remove leading agent role prefixes e.g. "Final Synthesizer:", "[Final Agent Answer]:"
+  cleaned = cleaned.replace(
+    /^(?:#+\s*)?(?:\[?\s*(?:Final\s*Synthesizer|Final\s*Agent\s*Answer|Final\s*Answer|Synthesizer\s*Output|Agent\s*Answer)\s*\]?[:\s-]*\n*)+/i,
+    ''
+  );
+
   // 6. Run stripSourcesSection once more in case a meta-note was located after the sources section
   cleaned = stripSourcesSection(cleaned);
 

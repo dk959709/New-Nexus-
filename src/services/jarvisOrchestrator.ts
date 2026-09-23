@@ -7036,6 +7036,7 @@ DIRECT WEBPAGE ANALYSIS DIRECTIVES:
 - Provide a clear, thorough, and well-structured summary and analysis of this specific webpage's real content.
 - Present the main thesis/purpose, key features, announcements, articles, documentation sections, or specifications found on the page.
 - Do NOT search for other topics; ground your answer exclusively in the fetched page content above.
+- Do NOT output any internal agent names, execution steps, tool traces, or intermediate thought processes. Output ONLY the definitive final agent answer.
 - Cite the source URL [${webFetchData.title}](${webFetchData.finalUrl || webFetchData.url}).`
         : `\n\n[DIRECT WEBPAGE FETCH FAILED]:
 Target URL: ${targetWebUrl}

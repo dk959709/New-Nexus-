@@ -43,7 +43,7 @@ import { copyToClipboard, formatMarkdownToRichHtml } from '@/lib/clipboard';
 import { playTapSound } from '@/lib/audio';
 import { ErrorMessage } from '@/components';
 import { FormattedText } from '@/components/jarvis/FormattedText';
-import { stripTierLabels } from '@/lib/format';
+import { stripTierLabels, stripConversationalMetaText } from '@/lib/format';
 import { generateStudioImage } from '@/services/imageGenerationService';
 import { executeMultiChatTurn } from '@/services/multiChatOrchestrator';
 import { runJarvisPipeline } from '@/services/jarvisOrchestrator';
@@ -135,7 +135,7 @@ const IMAGE_GEN_PREF_KEY = 'nexus-ai-image-gen-toggle';
 const DEEP_RESEARCH_PREF_KEY = 'nexus-ai-deep-research-toggle';
 
 const RECENT_MESSAGES = 8;
-const MAX_MEMORY_LENGTH = 1200;
+const MAX_MEMORY_LENGTH = 2200;
 
 const QUICK_PROMPTS = [
   'Explain quantum computing simply',
@@ -1728,7 +1728,7 @@ export function AssistantPage() {
         // if message contains URL -> use "/web", else use "/codeonline"
         if (hasUrl) {
           effectiveMessage = /^\/web(?:\s+|$)/i.test(message.trim()) ? message : `/web ${message}`;
-          effectiveTool = 'search';
+          effectiveTool = 'none';
         } else {
           effectiveMessage = /^\/codeonline(?:\s+|$)/i.test(message.trim()) ? message : `/codeonline ${message}`;
           effectiveTool = 'coder';
@@ -1747,7 +1747,7 @@ export function AssistantPage() {
           return;
         }
         effectiveMessage = /^\/web(?:\s+|$)/i.test(message.trim()) ? message : `/web ${message}`;
-        effectiveTool = 'search';
+        effectiveTool = 'none';
       } else if (coderEnabled) {
         // Only Coder ON:
         effectiveMessage = /^\/codeonline(?:\s+|$)/i.test(message.trim()) ? message : `/codeonline ${message}`;
@@ -1778,12 +1778,14 @@ export function AssistantPage() {
           userTz = 'Europe/London';
         }
 
+        const isWebFetchQuery = effectiveMessage.startsWith('/web');
+
         const result = await runJarvisPipeline(
           effectiveMessage,
           jarvisConfig,
           false, // deepResearch = false
-          architectEnabled, // diagramMode = architectEnabled
-          dataAnalysisEnabled, // chartMode = dataAnalysisEnabled
+          isWebFetchQuery ? false : architectEnabled, // Web Fetcher only shows final agent answer
+          isWebFetchQuery ? false : dataAnalysisEnabled, // Web Fetcher only shows final agent answer
           false, // imageMode
           (step: JarvisExecutionStep) => {
             let pct = 15;
@@ -1820,12 +1822,15 @@ export function AssistantPage() {
 
         const assistantMessage: Message = {
           role: 'assistant',
-          content: stripTierLabels(result.answer),
-          tool: effectiveTool,
-          sources: result.sources && result.sources.length > 0 ? result.sources : undefined,
-          searchedWeb: Boolean(result.sources && result.sources.length > 0),
-          diagramSvg: result.diagramSvg,
-          chartData: result.chartData,
+          content: isWebFetchQuery
+            ? stripConversationalMetaText(stripTierLabels(result.answer))
+            : stripTierLabels(result.answer),
+          tool: isWebFetchQuery ? 'none' : effectiveTool,
+          // In Web Fetcher function, only show final agent answer: no search badges, no sources panels, no diagrams, no charts
+          sources: isWebFetchQuery ? undefined : (result.sources && result.sources.length > 0 ? result.sources : undefined),
+          searchedWeb: isWebFetchQuery ? false : Boolean(result.sources && result.sources.length > 0),
+          diagramSvg: isWebFetchQuery ? undefined : result.diagramSvg,
+          chartData: isWebFetchQuery ? undefined : result.chartData,
         };
 
         setMessages((current) => [...current, assistantMessage]);
