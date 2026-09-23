@@ -49,6 +49,7 @@ import { executeMultiChatTurn } from '@/services/multiChatOrchestrator';
 import { runJarvisPipeline } from '@/services/jarvisOrchestrator';
 import { JarvisSvgDiagram } from '@/components/jarvis/JarvisSvgDiagram';
 import { JarvisChartCard } from '@/components/jarvis/JarvisChartCard';
+import { searchWikimediaCommons } from '@/services/media';
 import type {
   AISource,
   MultiChatPersonaResponse,
@@ -56,6 +57,7 @@ import type {
   JarvisExecutionStep,
   JarvisChartData,
   SavedItem,
+  MediaItem,
 } from '@/types';
 
 export interface AssistantGeneratedImage {
@@ -70,9 +72,10 @@ export interface AssistantGeneratedImage {
 }
 
 type Message = {
+  id?: string;
   role: 'user' | 'assistant';
   content: string;
-  tool?: 'none' | 'search' | 'weather' | 'image' | 'multichat' | 'architect' | 'dataAnalyst';
+  tool?: 'none' | 'search' | 'weather' | 'image' | 'multichat' | 'architect' | 'dataAnalyst' | 'agent' | 'coder' | 'wikimedia';
   sources?: AISource[];
   weather?: unknown;
   searchedWeb?: boolean;
@@ -80,7 +83,50 @@ type Message = {
   multiChatResponses?: MultiChatPersonaResponse[];
   diagramSvg?: string;
   chartData?: JarvisChartData | null;
+  wikimediaItems?: MediaItem[];
+  wikimediaTopic?: string;
 };
+
+// Helper: Clean user's message into a concise search topic for Wikimedia Commons
+function cleanWikimediaQuery(prompt: string): string {
+  let q = prompt.trim();
+  // Strip command prefixes
+  q = q.replace(/^\/(?:wikimedia|images?|photos?|search|web)\s+/i, '');
+  // Strip conversational request phrases (e.g. "show me", "can you show me", "find me", "look up")
+  q = q.replace(/\b(?:could\s+you\s+|can\s+you\s+|please\s+)?(?:show\s+me|give\s+me|find\s+me|get\s+me|search\s+for|look\s+up|fetch\s+me|display)\b/gi, '');
+  // Strip "images of", "photos of", "pictures of", "pics of"
+  q = q.replace(/\b(?:images?|photos?|pictures?|pics?|photographs?)\s+(?:of|about|from|for|showing)\b/gi, '');
+  // Strip standalone media words
+  q = q.replace(/\b(?:images?|photos?|pictures?|pics?|photographs?)\b/gi, '');
+  // Strip leading articles
+  q = q.replace(/^(?:the|a|an)\s+/i, '');
+  // Strip trailing punctuation
+  q = q.replace(/[?!.,;:]+$/, '').trim();
+  // Normalize whitespace
+  q = q.replace(/\s+/g, ' ').trim();
+
+  // If cleaning leaves an empty string, fallback to original cleaned of punctuation
+  if (!q) {
+    q = prompt.replace(/[?!.,;:]+$/, '').trim();
+  }
+  return q;
+}
+
+// Helper: Verify an item is a real photo/bitmap image (skipping SVG, PDF, audio, video)
+function isRealBitmapImage(item: MediaItem): boolean {
+  if (item.type !== 'image') return false;
+  const url = (item.mediaUrl || '').toLowerCase();
+  const thumb = (item.thumbnailUrl || '').toLowerCase();
+  const title = (item.title || '').toLowerCase();
+
+  // Skip SVG vectors, PDFs, TIFFs, audio, and video files
+  if (url.endsWith('.svg') || thumb.endsWith('.svg') || title.endsWith('.svg') || url.includes('.svg/')) return false;
+  if (url.endsWith('.pdf') || thumb.endsWith('.pdf') || title.endsWith('.pdf')) return false;
+  if (url.endsWith('.tif') || url.endsWith('.tiff') || thumb.endsWith('.tif') || thumb.endsWith('.tiff')) return false;
+  if (/\.(webm|ogv|mp4|ogg|mp3|wav|flac|mkv|avi|mov)($|\?)/i.test(url)) return false;
+
+  return Boolean(item.thumbnailUrl || item.mediaUrl);
+}
 
 const CHAT_KEY = 'nexus-ai-conversation-v2';
 const MEMORY_KEY = 'nexus-ai-smart-memory-v1';
@@ -245,6 +291,7 @@ export function AssistantPage() {
   const [dataAnalysisEnabled, setDataAnalysisEnabled] = useState<boolean>(() => storage.getAssistantDataAnalysisEnabled());
   const [coderEnabled, setCoderEnabled] = useState<boolean>(() => storage.getAssistantCoderEnabled());
   const [webFetcherEnabled, setWebFetcherEnabled] = useState<boolean>(() => storage.getAssistantWebFetcherEnabled());
+  const [wikimediaEnabled, setWikimediaEnabled] = useState<boolean>(() => storage.getAssistantWikimediaEnabled());
   const [newMemoryInput, setNewMemoryInput] = useState('');
   const [editingMemoryIndex, setEditingMemoryIndex] = useState<number | null>(null);
   const [editingMemoryDraft, setEditingMemoryDraft] = useState('');
@@ -361,6 +408,19 @@ export function AssistantPage() {
         next
           ? 'Web Fetcher enabled: live URL content extraction active'
           : 'Web Fetcher disabled',
+      );
+      return next;
+    });
+  };
+
+  const toggleWikimedia = () => {
+    setWikimediaEnabled((prev) => {
+      const next = !prev;
+      storage.setAssistantWikimediaEnabled(next);
+      triggerSettingsToast(
+        next
+          ? 'Wikimedia Mode enabled: 5 real images from Wikimedia'
+          : 'Wikimedia Mode disabled',
       );
       return next;
     });
@@ -799,7 +859,16 @@ export function AssistantPage() {
             url: s.url,
             domain: s.domain,
           })),
-          images: message.image
+          images: message.wikimediaItems && message.wikimediaItems.length > 0
+            ? message.wikimediaItems.map((w) => ({
+                url: w.mediaUrl || w.thumbnailUrl,
+                thumbUrl: w.thumbnailUrl || w.mediaUrl,
+                title: w.title,
+                description: w.description || w.author || '',
+                source: 'Wikimedia Commons',
+                domain: 'commons.wikimedia.org',
+              }))
+            : message.image
             ? [
                 {
                   url: message.image.url || message.image.imageData || '',
@@ -990,6 +1059,15 @@ export function AssistantPage() {
         // Generated Image
         if (m.image) {
           transcriptLines.push(`🖼️ [Generated Image: "${m.image.prompt}" (${m.image.providerName} · ${m.image.width}×${m.image.height})]\n`);
+        }
+
+        // Wikimedia Commons Images
+        if (m.wikimediaItems && m.wikimediaItems.length > 0) {
+          transcriptLines.push(`📷 [Wikimedia Commons: ${m.wikimediaItems.length} Real Photographic Assets for "${m.wikimediaTopic || 'Topic'}"]`);
+          m.wikimediaItems.forEach((w, wIdx) => {
+            transcriptLines.push(`  ${wIdx + 1}. ${w.title} — ${w.sourceUrl || w.mediaUrl}`);
+          });
+          transcriptLines.push('  Credit: Images from Wikimedia Commons\n');
         }
 
         // Sources & Citations
@@ -1561,26 +1639,87 @@ export function AssistantPage() {
     }
 
     // =========================================================================
-    // SPECIALIST MODES PRIORITY & ROUTING (Architect, Data Analysis, Coder, Web Fetcher)
-    // Priority Rules:
-    // 1. Multi Chat ON: Multi Chat keeps its current behavior, and Coder / Web Fetcher are ignored while it is on.
-    // 2. Both Coder + Web Fetcher ON:
-    //    - If the message contains a URL, use "/web" (Web Fetcher takes precedence for URLs).
-    //    - If the message has no URL, use "/codeonline" (Coder handles general technical requests).
-    // 3. Only Web Fetcher ON:
-    //    - If the message contains a URL, send with "/web " prefix.
-    //    - If the message has no URL, do NOT call pipeline; prompt user with friendly message.
-    // 4. Only Coder ON:
-    //    - Send with "/codeonline " prefix.
-    // 5. Architect and Data Analysis can stay ON together with Coder or Web Fetcher.
-    //    - Keep their current behavior (diagramMode = architectEnabled, chartMode = dataAnalysisEnabled).
+    // SPECIALIST MODES PRIORITY & ROUTING
+    // Full Priority Order: Multi Chat > Web Fetcher (with URL) > Wikimedia > Coder
+    //
+    // Detailed Priority Rules:
+    // 1. Multi Chat ON: Multi Chat keeps top priority (handled earlier above).
+    //    All other specialist modes (Web Fetcher, Wikimedia, Coder, Architect, Data Analysis) are ignored while Multi Chat is ON.
+    // 2. Web Fetcher ON and the message contains a URL: Web Fetcher wins.
+    //    Routes through /web live webpage extraction pipeline (JARVIS Planner -> WebReader).
+    // 3. Wikimedia ON: Otherwise, Wikimedia wins over Coder (Coder is ignored while Wikimedia is ON).
+    //    Fetches 5 real photo/bitmap images from Wikimedia Commons directly without invoking any AI model.
+    //    Architect and Data Analysis flags are NOT used by Wikimedia mode.
+    // 4. Coder ON (when Wikimedia is OFF): Sends with /codeonline prefix (Planner -> Researcher -> Coder).
+    // 5. Web Fetcher ON without URL (when Wikimedia is OFF): Prompts user with friendly message to provide a URL.
+    // 6. Architect and Data Analysis can stay ON together with Coder or Web Fetcher.
+    //    Keep their current behavior (diagramMode = architectEnabled, chartMode = dataAnalysisEnabled).
     // =========================================================================
+    const hasUrl = /(https?:\/\/[^\s]+|www\.[^\s]+|[a-zA-Z0-9-]+\.(?:com|org|net|io|dev|app|ai|gov|edu|co|uk|in|me|info|de|ca|jp)\b[^\s]*)/i.test(message);
+
+    // Check if Wikimedia mode wins (when Multi Chat is OFF and Web Fetcher with URL is not winning)
+    if (!webFetcherEnabled || !hasUrl) {
+      if (wikimediaEnabled) {
+        // Direct Wikimedia Commons search (5 real images, no AI model invoked)
+        const cleanTopic = cleanWikimediaQuery(message);
+        setSpecialistProgress(20);
+        setSpecialistPhase(`Fetching Wikimedia Commons images for "${cleanTopic}"...`);
+
+        try {
+          setSpecialistProgress(50);
+          const rawResults = await searchWikimediaCommons(cleanTopic, 5);
+          setSpecialistProgress(85);
+
+          // Filter for real photo/bitmap images only (skip SVG, PDF, audio, video)
+          const photoImages = (rawResults || []).filter(isRealBitmapImage).slice(0, 5);
+
+          if (photoImages.length === 0) {
+            const assistantMessage: Message = {
+              role: 'assistant',
+              content: `No Wikimedia images found for '${cleanTopic}'. Try a different word.`,
+              tool: 'none',
+            };
+            setMessages((current) => [...current, assistantMessage]);
+          } else {
+            const assistantMessage: Message = {
+              role: 'assistant',
+              content: `Retrieved ${photoImages.length} real photo${photoImages.length === 1 ? '' : 's'} from Wikimedia Commons for **${cleanTopic}**:`,
+              tool: 'wikimedia',
+              wikimediaItems: photoImages,
+              wikimediaTopic: cleanTopic,
+            };
+            setMessages((current) => [...current, assistantMessage]);
+
+            const updatedConversation = [
+              ...messages,
+              userMessage,
+              assistantMessage,
+            ];
+            const newMemory = buildLocalMemory(updatedConversation);
+            if (newMemory) {
+              setSmartMemory(newMemory);
+            }
+          }
+        } catch (wErr) {
+          console.error('[AI Assistant] Wikimedia search failed:', wErr);
+          const assistantMessage: Message = {
+            role: 'assistant',
+            content: `Unable to retrieve Wikimedia images for '${cleanTopic}' right now. Please verify your connection and try again.`,
+            tool: 'none',
+          };
+          setMessages((current) => [...current, assistantMessage]);
+        } finally {
+          setLoading(false);
+          setSpecialistProgress(0);
+          setSpecialistPhase('');
+        }
+        return;
+      }
+    }
+
     const isSpecialistActive = architectEnabled || dataAnalysisEnabled || coderEnabled || webFetcherEnabled;
 
     if (isSpecialistActive) {
-      // Check if message has a URL (http/https, www.*, or domain.tld/...)
-      const hasUrl = /(https?:\/\/[^\s]+|www\.[^\s]+|[a-zA-Z0-9-]+\.(?:com|org|net|io|dev|app|ai|gov|edu|co|uk|in|me|info|de|ca|jp)\b[^\s]*)/i.test(message);
-
       let effectiveMessage = message;
       let effectiveTool: Message['tool'] = 'agent';
 
@@ -2394,6 +2533,64 @@ export function AssistantPage() {
             </div>
           )}
 
+          {/* Wikimedia Mode Active Indicator Banner */}
+          {wikimediaEnabled && (
+            <div
+              className={`px-3.5 py-2.5 rounded-xl border flex items-center justify-between gap-3 text-xs transition-all ${
+                theme === 'classic'
+                  ? 'bg-violet-950/40 border-violet-500/30 text-violet-200 shadow-[0_0_15px_rgba(139,92,246,0.15)]'
+                  : theme === 'fulldark'
+                  ? 'bg-[#181818] border-[#2e2e2e] text-[#e0e0e0]'
+                  : 'bg-zinc-900/90 border-zinc-800 text-zinc-300'
+              }`}
+            >
+              <div className="flex items-center gap-2.5 min-w-0">
+                <div
+                  className={`w-6 h-6 rounded-lg grid place-items-center text-xs shrink-0 ${
+                    theme === 'classic'
+                      ? 'bg-violet-500/20 text-violet-300'
+                      : 'bg-zinc-800 text-violet-400'
+                  }`}
+                >
+                  <ImageIcon size={13} />
+                </div>
+                <div className="flex items-center gap-2 flex-wrap">
+                  <span className="font-semibold text-zinc-100">Wikimedia Active:</span>
+                  <span className="text-[11px] opacity-90">
+                    5 real images from Wikimedia Commons
+                  </span>
+                </div>
+              </div>
+              <div className="flex items-center gap-1.5 shrink-0">
+                <button
+                  type="button"
+                  onClick={() => setSettingsOpen(true)}
+                  className="text-[11px] px-2.5 py-1 rounded-lg border border-zinc-700/60 bg-zinc-800/80 hover:bg-zinc-700 text-zinc-300 transition-colors flex items-center gap-1"
+                  title="Configure in Settings"
+                >
+                  <SettingsIcon size={11} />
+                  <span className="hidden sm:inline">Settings</span>
+                </button>
+                <button
+                  type="button"
+                  onClick={toggleWikimedia}
+                  className={`text-[11px] px-2.5 py-1 rounded-lg border transition-all flex items-center gap-1 ${
+                    theme === 'classic'
+                      ? 'border-violet-500/40 bg-violet-950/70 text-violet-200 hover:border-red-500/50 hover:bg-red-950/40 hover:text-red-300'
+                      : theme === 'fulldark'
+                      ? 'border-[#333] bg-[#222] text-[#ccc] hover:border-red-500/40 hover:bg-red-950/30 hover:text-red-300'
+                      : 'border-zinc-700/60 bg-zinc-800/80 text-zinc-300 hover:border-red-500/40 hover:bg-red-500/10 hover:text-red-300'
+                  }`}
+                  title="Disable Wikimedia mode"
+                  aria-label="Disable Wikimedia"
+                >
+                  <X size={12} />
+                  <span>Disable</span>
+                </button>
+              </div>
+            </div>
+          )}
+
           {/* Empty / Welcome state hero */}
           {isOnlyWelcome && (
             <div className="py-12 sm:py-20 text-center flex flex-col items-center justify-center">
@@ -2587,6 +2784,42 @@ export function AssistantPage() {
                             >
                               <BarChart3 size={11} className="text-sky-400" />
                               <span>Data Analysis</span>
+                            </span>
+                          </div>
+                        )}
+
+                        {/* Coder Indicator Tag */}
+                        {message.tool === 'coder' && (
+                          <div className="flex items-center gap-2 pt-1 pb-0.5">
+                            <span
+                              className={`inline-flex items-center gap-1.5 px-2 py-0.5 rounded-full text-[11px] font-medium border ${
+                                theme === 'classic'
+                                  ? 'bg-emerald-950/70 text-emerald-300 border-emerald-500/40'
+                                  : theme === 'fulldark'
+                                  ? 'bg-[#1e1e1e] text-emerald-300 border-[#2e2e2e]'
+                                  : 'bg-zinc-800 text-emerald-300 border-zinc-700/60'
+                              }`}
+                            >
+                              <Code2 size={11} className="text-emerald-400" />
+                              <span>Coder Online</span>
+                            </span>
+                          </div>
+                        )}
+
+                        {/* Wikimedia Indicator Tag */}
+                        {Boolean((message.wikimediaItems && message.wikimediaItems.length > 0) || message.tool === 'wikimedia') && (
+                          <div className="flex items-center gap-2 pt-1 pb-0.5">
+                            <span
+                              className={`inline-flex items-center gap-1.5 px-2 py-0.5 rounded-full text-[11px] font-medium border ${
+                                theme === 'classic'
+                                  ? 'bg-violet-950/70 text-violet-300 border-violet-500/40'
+                                  : theme === 'fulldark'
+                                  ? 'bg-[#1e1e1e] text-violet-300 border-[#2e2e2e]'
+                                  : 'bg-zinc-800 text-violet-300 border-zinc-700/60'
+                              }`}
+                            >
+                              <ImageIcon size={11} className="text-violet-400" />
+                              <span>Wikimedia Commons</span>
                             </span>
                           </div>
                         )}
@@ -3107,6 +3340,145 @@ export function AssistantPage() {
                           </div>
                         )}
 
+                        {/* Wikimedia Commons Real Image Gallery */}
+                        {message.wikimediaItems && message.wikimediaItems.length > 0 && (
+                          <div
+                            className={`my-4 p-4 rounded-2xl border transition-all ${
+                              theme === 'classic'
+                                ? 'bg-gradient-to-b from-slate-950/90 to-violet-950/30 border-violet-500/35 shadow-[0_8px_30px_rgba(139,92,246,0.15)]'
+                                : theme === 'fulldark'
+                                ? 'bg-[#141414] border-[#2e2e2e]'
+                                : 'bg-zinc-950/90 border-zinc-800 shadow-xl'
+                            }`}
+                          >
+                            {/* Gallery Header */}
+                            <div className="flex items-center justify-between gap-3 pb-3 mb-3.5 border-b border-white/10 flex-wrap">
+                              <div className="flex items-center gap-2.5">
+                                <div className="w-6 h-6 rounded-lg bg-violet-500/20 border border-violet-500/40 flex items-center justify-center text-violet-300 shrink-0">
+                                  <ImageIcon size={13} />
+                                </div>
+                                <div>
+                                  <span className="text-xs font-bold text-zinc-100 uppercase tracking-wide">
+                                    Wikimedia Commons Gallery
+                                  </span>
+                                  {message.wikimediaTopic && (
+                                    <span className="text-[11px] text-violet-300/80 font-mono ml-2">
+                                      Topic: {message.wikimediaTopic}
+                                    </span>
+                                  )}
+                                </div>
+                              </div>
+                              <span className="text-[10px] font-mono font-semibold px-2 py-0.5 rounded-full bg-violet-500/20 text-violet-300 border border-violet-500/40">
+                                {message.wikimediaItems.length} {message.wikimediaItems.length === 1 ? 'REAL IMAGE' : 'REAL IMAGES'}
+                              </span>
+                            </div>
+
+                            {/* Responsive Image Grid */}
+                            <div
+                              className={`grid gap-3.5 ${
+                                message.wikimediaItems.length === 1
+                                  ? 'grid-cols-1 max-w-lg mx-auto'
+                                  : message.wikimediaItems.length === 2
+                                  ? 'grid-cols-1 sm:grid-cols-2'
+                                  : 'grid-cols-1 sm:grid-cols-2 lg:grid-cols-3'
+                              }`}
+                            >
+                              {message.wikimediaItems.map((item, idx) => (
+                                <div
+                                  key={item.id || idx}
+                                  className={`group rounded-xl overflow-hidden border flex flex-col transition-all duration-200 hover:scale-[1.015] ${
+                                    theme === 'classic'
+                                      ? 'bg-slate-900/90 border-violet-500/25 hover:border-violet-400/50'
+                                      : theme === 'fulldark'
+                                      ? 'bg-[#1c1c1c] border-[#2c2c2c] hover:border-[#444]'
+                                      : 'bg-zinc-900/90 border-zinc-800 hover:border-zinc-700'
+                                  }`}
+                                >
+                                  {/* Image Container with hover zoom & modal opener */}
+                                  <div
+                                    className="relative aspect-[4/3] w-full overflow-hidden bg-black/60 cursor-pointer"
+                                    onClick={() => setFullscreenModalImage(item.mediaUrl || item.thumbnailUrl)}
+                                  >
+                                    <img
+                                      src={item.thumbnailUrl || item.mediaUrl}
+                                      alt={item.title || 'Wikimedia Commons Image'}
+                                      referrerPolicy="no-referrer"
+                                      className="w-full h-full object-cover object-center transition-transform duration-300 group-hover:scale-105"
+                                      loading="lazy"
+                                    />
+                                    <div className="absolute inset-0 bg-gradient-to-t from-black/80 via-black/10 to-transparent opacity-0 group-hover:opacity-100 transition-opacity duration-200 flex items-end justify-between p-2.5">
+                                      <span className="text-[11px] text-white font-medium drop-shadow-md">
+                                        Click to expand
+                                      </span>
+                                      <div className="w-6 h-6 rounded-full bg-violet-600 text-white flex items-center justify-center shadow-md">
+                                        <Maximize2 size={12} />
+                                      </div>
+                                    </div>
+                                  </div>
+
+                                  {/* Details */}
+                                  <div className="p-3 flex-1 flex flex-col justify-between gap-2">
+                                    <div>
+                                      <h5
+                                        className="text-xs font-semibold text-zinc-200 group-hover:text-violet-200 line-clamp-2 m-0 transition-colors"
+                                        title={item.title}
+                                      >
+                                        {item.title}
+                                      </h5>
+                                      {(item.author || item.license) && (
+                                        <div className="flex items-center gap-1.5 flex-wrap text-[10.5px] text-zinc-400 mt-1.5 font-mono">
+                                          {item.author && (
+                                            <span className="truncate max-w-[140px]" title={item.author}>
+                                              By {item.author.replace(/<[^>]+>/g, '').trim()}
+                                            </span>
+                                          )}
+                                          {item.author && item.license && <span>•</span>}
+                                          {item.license && (
+                                            <span className="px-1.5 py-0.2 rounded bg-violet-950/70 text-violet-300 border border-violet-500/30 text-[10px]">
+                                              {item.license}
+                                            </span>
+                                          )}
+                                        </div>
+                                      )}
+                                    </div>
+
+                                    {/* Direct Commons Link */}
+                                    <div className="pt-2 border-t border-white/5 flex items-center justify-end">
+                                      <a
+                                        href={item.sourceUrl || item.mediaUrl}
+                                        target="_blank"
+                                        rel="noopener noreferrer"
+                                        className="inline-flex items-center gap-1 text-[11px] font-semibold text-violet-400 hover:text-violet-300 hover:underline transition-colors shrink-0"
+                                        title="Open on Wikimedia Commons"
+                                      >
+                                        <span>Open on Wikimedia Commons</span>
+                                        <ExternalLink size={11} />
+                                      </a>
+                                    </div>
+                                  </div>
+                                </div>
+                              ))}
+                            </div>
+
+                            {/* Clear credit line under the gallery */}
+                            <div className="mt-3.5 pt-2.5 border-t border-white/10 flex items-center justify-between text-[11px] text-zinc-400">
+                              <div className="flex items-center gap-1.5">
+                                <ImageIcon size={13} className="text-violet-400" />
+                                <span className="font-semibold text-zinc-300">Images from Wikimedia Commons</span>
+                              </div>
+                              <a
+                                href={`https://commons.wikimedia.org/w/index.php?search=${encodeURIComponent(message.wikimediaTopic || '')}`}
+                                target="_blank"
+                                rel="noopener noreferrer"
+                                className="text-zinc-500 hover:text-zinc-300 transition-colors flex items-center gap-1 text-[10.5px]"
+                              >
+                                <span>Explore more</span>
+                                <ExternalLink size={10} />
+                              </a>
+                            </div>
+                          </div>
+                        )}
+
                         {/* Message Action Toolbar (Only for standard non-MultiChat messages; MultiChat personas have individual toolbars) */}
                         {(!message.multiChatResponses || message.multiChatResponses.length === 0) && (
                           <div
@@ -3246,12 +3618,18 @@ export function AssistantPage() {
                 className={`flex items-center justify-between text-xs ${
                   deepResearchEnabled
                     ? 'text-emerald-300'
+                    : wikimediaEnabled
+                    ? 'text-violet-300'
                     : architectEnabled && dataAnalysisEnabled
                     ? 'text-amber-300'
                     : architectEnabled
                     ? 'text-amber-300'
                     : dataAnalysisEnabled
                     ? 'text-sky-300'
+                    : coderEnabled
+                    ? 'text-emerald-300'
+                    : webFetcherEnabled
+                    ? 'text-teal-300'
                     : imageGenEnabled
                     ? 'text-purple-300'
                     : theme === 'classic'
@@ -3267,12 +3645,18 @@ export function AssistantPage() {
                     className={`animate-spin shrink-0 ${
                       deepResearchEnabled
                         ? 'text-emerald-400'
+                        : wikimediaEnabled
+                        ? 'text-violet-400'
                         : architectEnabled && dataAnalysisEnabled
                         ? 'text-amber-400'
                         : architectEnabled
                         ? 'text-amber-400'
                         : dataAnalysisEnabled
                         ? 'text-sky-400'
+                        : coderEnabled
+                        ? 'text-emerald-400'
+                        : webFetcherEnabled
+                        ? 'text-teal-400'
                         : imageGenEnabled
                         ? 'text-purple-400'
                         : theme === 'classic'
@@ -3283,12 +3667,18 @@ export function AssistantPage() {
                   <span className="font-medium">
                     {deepResearchEnabled
                       ? deepResearchPhase || 'JARVIS Deep Research in progress...'
-                      : (architectEnabled || dataAnalysisEnabled)
+                      : wikimediaEnabled
+                      ? specialistPhase || 'Fetching real images from Wikimedia Commons...'
+                      : (architectEnabled || dataAnalysisEnabled || coderEnabled || webFetcherEnabled)
                       ? specialistPhase ||
                         (architectEnabled && dataAnalysisEnabled
                           ? 'Architect & Data Analysis in progress...'
                           : architectEnabled
                           ? 'Architect generating system blueprint...'
+                          : coderEnabled
+                          ? 'Coder generating research-grounded code...'
+                          : webFetcherEnabled
+                          ? 'Web Fetcher extracting webpage...'
                           : 'Data Analysis processing metrics & charts...')
                       : imageGenEnabled
                       ? imageLoadingPhase || 'Synthesizing AI image across providers...'
@@ -3300,10 +3690,16 @@ export function AssistantPage() {
                     {deepResearchProgress}%
                   </span>
                 )}
-                {(architectEnabled || dataAnalysisEnabled) && specialistProgress > 0 && (
+                {(architectEnabled || dataAnalysisEnabled || coderEnabled || webFetcherEnabled || wikimediaEnabled) && specialistProgress > 0 && (
                   <span
                     className={`text-[11px] font-mono font-semibold shrink-0 ${
-                      architectEnabled && dataAnalysisEnabled
+                      wikimediaEnabled
+                        ? 'text-violet-400'
+                        : coderEnabled
+                        ? 'text-emerald-400'
+                        : webFetcherEnabled
+                        ? 'text-teal-400'
+                        : architectEnabled && dataAnalysisEnabled
                         ? 'text-amber-400'
                         : architectEnabled
                         ? 'text-amber-400'
@@ -3325,12 +3721,18 @@ export function AssistantPage() {
                 </div>
               )}
 
-              {/* Architect & Data Analysis Progress Bar */}
-              {(architectEnabled || dataAnalysisEnabled) && specialistProgress > 0 && (
+              {/* Specialist Modes Progress Bar */}
+              {(architectEnabled || dataAnalysisEnabled || coderEnabled || webFetcherEnabled || wikimediaEnabled) && specialistProgress > 0 && (
                 <div className="w-full max-w-md h-1.5 rounded-full bg-zinc-800/80 overflow-hidden border border-zinc-700/50">
                   <div
                     className={`h-full transition-all duration-300 ease-out rounded-full ${
-                      architectEnabled && dataAnalysisEnabled
+                      wikimediaEnabled
+                        ? 'bg-gradient-to-r from-violet-500 via-purple-400 to-fuchsia-300 shadow-[0_0_8px_rgba(139,92,246,0.5)]'
+                        : coderEnabled
+                        ? 'bg-gradient-to-r from-emerald-500 via-teal-400 to-green-300 shadow-[0_0_8px_rgba(16,185,129,0.5)]'
+                        : webFetcherEnabled
+                        ? 'bg-gradient-to-r from-teal-500 via-cyan-400 to-emerald-300 shadow-[0_0_8px_rgba(20,184,166,0.5)]'
+                        : architectEnabled && dataAnalysisEnabled
                         ? 'bg-gradient-to-r from-amber-500 via-orange-400 to-sky-400 shadow-[0_0_8px_rgba(245,158,11,0.5)]'
                         : architectEnabled
                         ? 'bg-gradient-to-r from-amber-500 via-amber-400 to-yellow-300 shadow-[0_0_8px_rgba(245,158,11,0.5)]'
@@ -3448,7 +3850,7 @@ export function AssistantPage() {
                   type="button"
                   onClick={() => setMoreOptionsOpen((prev) => !prev)}
                   className={`text-xs p-1.5 rounded-lg border transition-all flex items-center justify-center gap-1 ${
-                    moreOptionsOpen || architectEnabled || dataAnalysisEnabled || multiChatEnabled || coderEnabled || webFetcherEnabled
+                    moreOptionsOpen || architectEnabled || dataAnalysisEnabled || multiChatEnabled || coderEnabled || webFetcherEnabled || wikimediaEnabled
                       ? theme === 'classic'
                         ? 'bg-cyan-500/15 text-cyan-200 border-cyan-500/40 shadow-[0_0_8px_rgba(6,182,212,0.2)]'
                         : theme === 'fulldark'
@@ -3463,7 +3865,7 @@ export function AssistantPage() {
                   title={
                     moreOptionsOpen
                       ? 'Close quick modes menu'
-                      : 'Specialist Modes: Architect, Data Analysis, Multi Chat, Coder, Web Fetcher'
+                      : 'Specialist Modes: Architect, Data Analysis, Multi Chat, Coder, Web Fetcher, Wikimedia'
                   }
                   aria-label="More options"
                   aria-expanded={moreOptionsOpen}
@@ -3474,7 +3876,7 @@ export function AssistantPage() {
                       moreOptionsOpen ? 'rotate-180 text-cyan-400' : ''
                     }`}
                   />
-                  {(architectEnabled || dataAnalysisEnabled || multiChatEnabled || coderEnabled || webFetcherEnabled) && (
+                  {(architectEnabled || dataAnalysisEnabled || multiChatEnabled || coderEnabled || webFetcherEnabled || wikimediaEnabled) && (
                     <span className="w-1.5 h-1.5 rounded-full bg-cyan-400 shadow-[0_0_6px_rgba(6,182,212,0.8)]" />
                   )}
                 </button>
@@ -3737,6 +4139,53 @@ export function AssistantPage() {
                         <div
                           className={`w-3 h-3 rounded-full bg-white shadow-sm transition-transform duration-150 ${
                             webFetcherEnabled ? 'translate-x-4' : 'translate-x-0'
+                          }`}
+                        />
+                      </div>
+                    </button>
+
+                    {/* 6. Wikimedia Toggle */}
+                    <button
+                      type="button"
+                      onClick={toggleWikimedia}
+                      className={`w-full p-2 rounded-xl border text-left flex items-center justify-between transition-all ${
+                        wikimediaEnabled
+                          ? 'border-violet-500/40 bg-violet-950/30 text-violet-200 shadow-[0_0_10px_rgba(139,92,246,0.15)]'
+                          : 'border-transparent hover:bg-zinc-800/60 text-zinc-300'
+                      }`}
+                    >
+                      <div className="flex items-center gap-2.5 min-w-0">
+                        <div
+                          className={`w-7 h-7 rounded-lg grid place-items-center shrink-0 ${
+                            wikimediaEnabled
+                              ? 'bg-violet-500/20 text-violet-300 border border-violet-500/30'
+                              : 'bg-zinc-800 text-zinc-400'
+                          }`}
+                        >
+                          <ImageIcon size={13} />
+                        </div>
+                        <div className="min-w-0">
+                          <div className="text-xs font-semibold text-zinc-100 flex items-center gap-1.5">
+                            <span>Wikimedia</span>
+                            {wikimediaEnabled && (
+                              <span className="text-[9px] font-mono font-semibold px-1.5 py-0.2 rounded bg-violet-950 text-violet-400 border border-violet-500/40">
+                                ON
+                              </span>
+                            )}
+                          </div>
+                          <div className="text-[10.5px] text-zinc-400 truncate">
+                            5 real images from Wikimedia
+                          </div>
+                        </div>
+                      </div>
+                      <div
+                        className={`w-8 h-4 rounded-full transition-colors relative flex items-center p-0.5 shrink-0 ${
+                          wikimediaEnabled ? 'bg-violet-500' : 'bg-zinc-700'
+                        }`}
+                      >
+                        <div
+                          className={`w-3 h-3 rounded-full bg-white shadow-sm transition-transform duration-150 ${
+                            wikimediaEnabled ? 'translate-x-4' : 'translate-x-0'
                           }`}
                         />
                       </div>
@@ -4658,6 +5107,83 @@ export function AssistantPage() {
                   <div
                     className={`w-5 h-5 rounded-full bg-white shadow-md transition-transform duration-200 ${
                       webFetcherEnabled ? 'translate-x-5' : 'translate-x-0'
+                    }`}
+                  />
+                </div>
+              </div>
+            </div>
+
+            <div className="h-px bg-zinc-800" />
+
+            {/* Section 9: Wikimedia Toggle */}
+            <div className="space-y-3">
+              <div className="flex items-center justify-between">
+                <div className="flex items-center gap-2">
+                  <ImageIcon size={15} className="text-violet-400" />
+                  <h4 className="text-xs font-semibold uppercase tracking-wider text-zinc-300">
+                    Wikimedia
+                  </h4>
+                </div>
+                <span
+                  className={`text-[10px] font-mono font-semibold px-2 py-0.5 rounded-full border ${
+                    wikimediaEnabled
+                      ? 'bg-violet-950/80 text-violet-300 border-violet-500/50 shadow-[0_0_8px_rgba(139,92,246,0.2)]'
+                      : 'bg-zinc-800 text-zinc-500 border-zinc-700/60'
+                  }`}
+                >
+                  {wikimediaEnabled ? 'ACTIVE' : 'DISABLED'}
+                </span>
+              </div>
+
+              <p className="text-xs text-zinc-400 leading-relaxed">
+                When enabled, AI Assistant extracts the topic from your message and retrieves 5 real photographic images directly from Wikimedia Commons without invoking an AI model.
+              </p>
+
+              {/* Interactive Toggle Card */}
+              <div
+                onClick={toggleWikimedia}
+                className={`p-3.5 rounded-xl border flex items-center justify-between cursor-pointer transition-all ${
+                  wikimediaEnabled
+                    ? 'border-violet-500/40 bg-violet-950/20 shadow-[0_0_15px_rgba(139,92,246,0.12)]'
+                    : 'border-zinc-800 bg-zinc-900/60 hover:bg-zinc-850 hover:border-zinc-700'
+                }`}
+              >
+                <div className="flex items-center gap-3">
+                  <div
+                    className={`w-9 h-9 rounded-xl grid place-items-center transition-colors ${
+                      wikimediaEnabled
+                        ? 'bg-violet-500/20 border border-violet-500/40 text-violet-300'
+                        : 'bg-zinc-800 border border-zinc-700 text-zinc-400'
+                    }`}
+                  >
+                    <ImageIcon size={18} />
+                  </div>
+                  <div>
+                    <div className="text-xs font-semibold text-zinc-100 flex items-center gap-2">
+                      <span>Enable Wikimedia</span>
+                      {wikimediaEnabled && (
+                        <span className="text-[10px] font-mono text-violet-400 bg-violet-950/80 px-1.5 py-0.2 rounded border border-violet-500/40">
+                          Real Images
+                        </span>
+                      )}
+                    </div>
+                    <p className="text-[11px] text-zinc-400 mt-0.5">
+                      {wikimediaEnabled
+                        ? '5 real images retrieved from Wikimedia Commons'
+                        : 'Standard conversational responses'}
+                    </p>
+                  </div>
+                </div>
+
+                {/* Toggle Switch */}
+                <div
+                  className={`w-11 h-6 rounded-full transition-colors relative flex items-center p-0.5 shrink-0 ${
+                    wikimediaEnabled ? 'bg-violet-500 shadow-[0_0_8px_rgba(139,92,246,0.4)]' : 'bg-zinc-700'
+                  }`}
+                >
+                  <div
+                    className={`w-5 h-5 rounded-full bg-white shadow-md transition-transform duration-200 ${
+                      wikimediaEnabled ? 'translate-x-5' : 'translate-x-0'
                     }`}
                   />
                 </div>

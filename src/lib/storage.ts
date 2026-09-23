@@ -1941,6 +1941,14 @@ export const storage = {
     write('nexus-ai-web-fetcher-toggle', enabled);
   },
 
+  getAssistantWikimediaEnabled(): boolean {
+    return read<boolean>('nexus-ai-wikimedia-toggle', false);
+  },
+
+  setAssistantWikimediaEnabled(enabled: boolean): void {
+    write('nexus-ai-wikimedia-toggle', enabled);
+  },
+
   getMultiChatResponseLanguage(): string {
     const cfg = this.getMultiChatConfig();
     return cfg.responseLanguage || 'English';
