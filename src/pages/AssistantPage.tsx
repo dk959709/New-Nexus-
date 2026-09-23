@@ -1156,15 +1156,33 @@ export function AssistantPage() {
                   </span>
                 </div>
               </div>
-              <button
-                type="button"
-                onClick={() => setSettingsOpen(true)}
-                className="text-[11px] px-2.5 py-1 rounded-lg border border-zinc-700/60 bg-zinc-800/80 hover:bg-zinc-700 text-zinc-300 transition-colors shrink-0 flex items-center gap-1"
-                title="Configure in Settings"
-              >
-                <SettingsIcon size={11} />
-                <span>Settings</span>
-              </button>
+              <div className="flex items-center gap-1.5 shrink-0">
+                <button
+                  type="button"
+                  onClick={() => setSettingsOpen(true)}
+                  className="text-[11px] px-2.5 py-1 rounded-lg border border-zinc-700/60 bg-zinc-800/80 hover:bg-zinc-700 text-zinc-300 transition-colors flex items-center gap-1"
+                  title="Configure in Settings"
+                >
+                  <SettingsIcon size={11} />
+                  <span className="hidden sm:inline">Settings</span>
+                </button>
+                <button
+                  type="button"
+                  onClick={toggleMultiChat}
+                  className={`text-[11px] px-2.5 py-1 rounded-lg border transition-all flex items-center gap-1 ${
+                    theme === 'classic'
+                      ? 'border-cyan-500/40 bg-cyan-950/70 text-cyan-200 hover:border-red-500/50 hover:bg-red-950/40 hover:text-red-300'
+                      : theme === 'fulldark'
+                      ? 'border-[#333] bg-[#222] text-[#ccc] hover:border-red-500/40 hover:bg-red-950/30 hover:text-red-300'
+                      : 'border-zinc-700/60 bg-zinc-800/80 text-zinc-300 hover:border-red-500/40 hover:bg-red-500/10 hover:text-red-300'
+                  }`}
+                  title="Disable Multi Chat mode"
+                  aria-label="Disable Multi Chat"
+                >
+                  <X size={12} />
+                  <span>Disable</span>
+                </button>
+              </div>
             </div>
           )}
 
