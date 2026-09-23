@@ -163,6 +163,12 @@ export function normalizeProviderId(
       s.includes('ai-gateway')
     ) return 'cloudflare';
     if (s.includes('ollama.com') || s.includes('ollama') || s.includes('11434')) return 'ollama';
+    if (
+      s.includes('google') ||
+      s.includes('gemini') ||
+      s.includes('generativelanguage.googleapis.com') ||
+      s.includes('ai.google.dev')
+    ) return 'google';
     if (s.includes('deepseek')) return 'deepseek';
     if (s.includes('openai')) return 'openai';
     if (s.includes('anthropic')) return 'anthropic';
@@ -208,6 +214,17 @@ export function normalizeProviderId(
     name.includes('ai gateway')
   ) {
     return 'cloudflare';
+  }
+  if (
+    url.includes('generativelanguage.googleapis.com') ||
+    url.includes('ai.google.dev') ||
+    url.includes('googleapis.com') ||
+    id.includes('google') ||
+    id.includes('gemini') ||
+    name.includes('google') ||
+    name.includes('gemini')
+  ) {
+    return 'google';
   }
   if (
     url.includes('ollama.com') ||
@@ -327,6 +344,23 @@ export function lookupReasoningConfig(
         reasoning: target === 'high'
           ? { effort: 'high', exclude: true }
           : { effort: 'none' },
+      }),
+    };
+  }
+
+  // 5b. Generic Google Gemini provider fallback (generativelanguage.googleapis.com)
+  if (provKey === 'google' || normModel.startsWith('gemini-') || normModel.includes('gemini')) {
+    return {
+      provider: 'google',
+      model: (model || '').trim(),
+      supportsReasoning: true,
+      paramFormat: 'flat_groq',
+      validEfforts: ['none', 'low', 'medium', 'high'],
+      supportsFullDisable: true,
+      supportsHiddenFormat: false,
+      isGenericFallback: true,
+      buildParams: (target: ReasoningTargetLevel) => ({
+        reasoning_effort: target === 'high' ? 'high' : target === 'off' ? 'none' : 'low',
       }),
     };
   }

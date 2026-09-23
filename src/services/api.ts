@@ -371,8 +371,8 @@ export const api = {
     url: string;
     model: string;
     key: string;
-  }): Promise<{ ok: boolean; model?: string; status?: number; error?: string }> {
-    return call<{ ok: boolean; model?: string; status?: number; error?: string }>(
+  }): Promise<{ ok: boolean; model?: string; status?: number; error?: string; note?: string }> {
+    return call<{ ok: boolean; model?: string; status?: number; error?: string; note?: string }>(
       '/api/ai/provider/test',
       {
         method: 'POST',

@@ -102,7 +102,13 @@ const MODEL_PRESETS: Record<string, string[]> = {
     'anthropic/claude-3.5-sonnet',
     'mistralai/mixtral-8x7b-instruct',
     'qwen/qwen-2.5-72b-instruct',
-    'google/gemini-2.0-flash-001',
+    'google/gemini-2.5-flash',
+  ],
+  google: [
+    'gemini-3.6-flash',
+    'gemini-3.8-flash',
+    'gemini-3.1-flash-lite',
+    'gemini-3.1-pro-preview',
   ],
   groq: [
     'llama-3.3-70b-versatile',

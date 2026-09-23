@@ -37,6 +37,17 @@ export function normalizeProviderUrl(rawUrl?: string): string {
     const host = parsed.hostname.toLowerCase();
     const pathname = parsed.pathname.replace(/\/+$/, '');
 
+    // Google Gemini API (generativelanguage.googleapis.com, ai.google.dev, or googleapis)
+    if (
+      host === 'generativelanguage.googleapis.com' ||
+      host.endsWith('.googleapis.com') ||
+      host === 'ai.google.dev'
+    ) {
+      // Regardless of whether user typed bare origin, /v1, /v1beta, or native :generateContent,
+      // route to the reliable OpenAI chat completions endpoint
+      return `${parsed.origin}/v1beta/openai/chat/completions`;
+    }
+
     // Cloudflare AI Gateway (e.g. gateway.ai.cloudflare.com/v1/{account}/{gateway}/workers-ai)
     if (host === 'gateway.ai.cloudflare.com') {
       if (pathname.endsWith('/workers-ai')) {

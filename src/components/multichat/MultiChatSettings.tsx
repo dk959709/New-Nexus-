@@ -24,9 +24,10 @@ interface MultiChatSettingsProps {
 const MODEL_PRESETS = [
   'nvidia/nemotron-3-nano-30b-a3b',
   'nemotron-3-nano-30b-a3b',
+  'gemini-3.6-flash',
   'deepseek/deepseek-chat',
   'deepseek/deepseek-r1',
-  'google/gemini-2.0-flash-001',
+  'google/gemini-2.5-flash',
   'anthropic/claude-3.5-sonnet',
   'openai/gpt-4o',
   'openai/gpt-4o-mini',

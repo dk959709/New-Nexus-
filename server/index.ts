@@ -142,6 +142,11 @@ async function executeProviderChatRequest({
     url.includes('ollama.com') ||
     url.includes('11434') ||
     (rawUrl && (rawUrl.includes('ollama') || rawUrl.includes('11434')));
+  const isGoogle =
+    url.includes('generativelanguage.googleapis.com') ||
+    url.includes('googleapis.com') ||
+    url.includes('ai.google.dev') ||
+    (rawUrl && (rawUrl.includes('googleapis') || rawUrl.includes('google') || rawUrl.includes('gemini')));
   const isQwen37FlashFree = model.toLowerCase().includes('qwen/qwen3.7-flash:free');
   const isBazaarLinkQwen37Flash = Boolean(isBazaarLink && isQwen37FlashFree);
 
@@ -150,6 +155,10 @@ async function executeProviderChatRequest({
     Authorization: `Bearer ${key}`,
   };
 
+  if (isGoogle) {
+    headers['x-goog-api-key'] = key;
+  }
+
   if (isOpenRouter) {
     headers['HTTP-Referer'] = 'https://nexus-intelligence.local';
     headers['X-Title'] = 'NEXUS Intelligence';
@@ -157,12 +166,34 @@ async function executeProviderChatRequest({
 
   for (let attempt = 1; attempt <= maxAttempts; attempt++) {
     try {
+      // Sanitize reasoning params for Google OpenAI endpoint (only accepts reasoning_effort, not nested reasoning object)
+      let outgoingExtraParams = extraParams;
+      if (isGoogle && extraParams) {
+        outgoingExtraParams = {};
+        if (extraParams.reasoning_effort !== undefined) {
+          const re = String(extraParams.reasoning_effort).toLowerCase();
+          outgoingExtraParams.reasoning_effort = re === 'none' || re === 'low' || re === 'medium' || re === 'high' ? re : 'low';
+        }
+        for (const [k, v] of Object.entries(extraParams)) {
+          if (
+            k !== 'reasoning' &&
+            k !== 'reasoning_format' &&
+            k !== 'include_reasoning' &&
+            k !== 'enable_thinking' &&
+            k !== 'chat_template_kwargs' &&
+            k !== 'reasoning_effort'
+          ) {
+            outgoingExtraParams[k] = v;
+          }
+        }
+      }
+
       const requestBody: Record<string, unknown> = {
         model,
         messages: sanitized,
         temperature,
         max_tokens: maxTokens,
-        ...(extraParams || {}),
+        ...(outgoingExtraParams || {}),
       };
 
       if (isBazaarLinkQwen37Flash) {
@@ -269,6 +300,173 @@ async function executeProviderChatRequest({
           const rawText = await res.text().catch(() => '');
           if (rawText) {
             errorMsg = rawText.slice(0, 200);
+          }
+        }
+
+        // If Google Gemini returns 503 (high demand) or 404 (model deprecated / not found), auto-failover to gemini-3.6-flash
+        if (isGoogle && (status === 503 || status === 404) && model !== 'gemini-3.6-flash') {
+          console.warn(
+            `[Google Gemini Model Fallback] Model "${model}" returned HTTP ${status} (${errorMsg}). Automatically failing over to resilient "gemini-3.6-flash"...`
+          );
+          const fallbackRequestBody = {
+            model: 'gemini-3.6-flash',
+            messages: sanitized,
+            temperature,
+            max_tokens: maxTokens,
+          };
+
+          try {
+            const fallbackRes = await fetch(url, {
+              method: 'POST',
+              headers,
+              body: JSON.stringify(fallbackRequestBody),
+              signal: AbortSignal.timeout(timeoutMs),
+            });
+
+            if (fallbackRes.ok) {
+              console.log(
+                `[Google Gemini Model Fallback] Fallback to "gemini-3.6-flash" succeeded (HTTP ${fallbackRes.status})!`
+              );
+              const fbPayload = (await fallbackRes.json()) as {
+                model?: string;
+                choices?: Array<{
+                  message?: {
+                    content?: string | Array<{ type?: string; text?: string }>;
+                    reasoning?: string;
+                    reasoning_content?: string;
+                  };
+                  text?: string;
+                }>;
+              };
+
+              const fbChoice = fbPayload.choices?.[0];
+              let fbContentStr = '';
+              if (fbChoice?.message?.content) {
+                if (typeof fbChoice.message.content === 'string') {
+                  fbContentStr = fbChoice.message.content.trim();
+                } else if (Array.isArray(fbChoice.message.content)) {
+                  fbContentStr = fbChoice.message.content
+                    .map((part) => (typeof part === 'string' ? part : part?.text || ''))
+                    .join('')
+                    .trim();
+                }
+              }
+
+              const fbRawReasoning =
+                fbChoice?.message?.reasoning ||
+                (fbChoice?.message as { reasoning_content?: string })?.reasoning_content;
+              let fbReasoningStr = '';
+              if (fbRawReasoning && typeof fbRawReasoning === 'string') {
+                fbReasoningStr = fbRawReasoning.trim();
+              }
+
+              const fbText =
+                fbContentStr ||
+                fbReasoningStr ||
+                (typeof fbChoice?.text === 'string' ? fbChoice.text.trim() : '') ||
+                (fbChoice ? 'OK' : '');
+
+              if (fbText) {
+                return {
+                  ok: true,
+                  text: fbText,
+                  content: fbContentStr,
+                  reasoning: fbReasoningStr,
+                  model: 'gemini-3.6-flash',
+                  status: fallbackRes.status,
+                };
+              }
+            } else {
+              let fbErrMsg = `HTTP ${fallbackRes.status}`;
+              try {
+                const fbErrObj = (await fallbackRes.json()) as { error?: { message?: string } | string; message?: string };
+                fbErrMsg = (typeof fbErrObj.error === 'object' ? fbErrObj.error?.message : fbErrObj.error) || fbErrObj.message || `HTTP ${fallbackRes.status}`;
+              } catch {
+                const fbRaw = await fallbackRes.text().catch(() => '');
+                if (fbRaw) fbErrMsg = fbRaw.slice(0, 200);
+              }
+              console.error(
+                `[Google Gemini Model Fallback] Fallback to "gemini-3.6-flash" failed with HTTP ${fallbackRes.status} (${fbErrMsg}).`
+              );
+            }
+          } catch (fbErr) {
+            console.error('[Google Gemini Model Fallback] Network error during fallback:', fbErr);
+          }
+        }
+
+        // If Google rejects reasoning parameters with a 400 error, retry once cleanly without reasoning parameters
+        if (isGoogle && status === 400 && (extraParams?.reasoning_effort !== undefined || extraParams?.reasoning !== undefined)) {
+          console.warn(
+            `[Google Gemini Reasoning Fallback] Model "${model}" rejected reasoning parameters (HTTP 400: ${errorMsg}). Retrying cleanly without reasoning parameter...`
+          );
+          const fallbackRequestBody = {
+            model,
+            messages: sanitized,
+            temperature,
+            max_tokens: maxTokens,
+          };
+
+          try {
+            const fallbackRes = await fetch(url, {
+              method: 'POST',
+              headers,
+              body: JSON.stringify(fallbackRequestBody),
+              signal: AbortSignal.timeout(timeoutMs),
+            });
+
+            if (fallbackRes.ok) {
+              const fbPayload = (await fallbackRes.json()) as {
+                model?: string;
+                choices?: Array<{
+                  message?: {
+                    content?: string | Array<{ type?: string; text?: string }>;
+                    reasoning?: string;
+                    reasoning_content?: string;
+                  };
+                  text?: string;
+                }>;
+              };
+
+              const fbChoice = fbPayload.choices?.[0];
+              let fbContentStr = '';
+              if (fbChoice?.message?.content) {
+                if (typeof fbChoice.message.content === 'string') {
+                  fbContentStr = fbChoice.message.content.trim();
+                } else if (Array.isArray(fbChoice.message.content)) {
+                  fbContentStr = fbChoice.message.content
+                    .map((part) => (typeof part === 'string' ? part : part?.text || ''))
+                    .join('')
+                    .trim();
+                }
+              }
+
+              const fbRawReasoning =
+                fbChoice?.message?.reasoning ||
+                (fbChoice?.message as { reasoning_content?: string })?.reasoning_content;
+              let fbReasoningStr = '';
+              if (fbRawReasoning && typeof fbRawReasoning === 'string') {
+                fbReasoningStr = fbRawReasoning.trim();
+              }
+
+              const fbText =
+                fbContentStr ||
+                fbReasoningStr ||
+                (typeof fbChoice?.text === 'string' ? fbChoice.text.trim() : '') ||
+                (fbChoice ? 'OK' : '');
+
+              if (fbText) {
+                return {
+                  ok: true,
+                  text: fbText,
+                  content: fbContentStr,
+                  reasoning: fbReasoningStr,
+                  model: fbPayload.model || model,
+                  status: fallbackRes.status,
+                };
+              }
+            }
+          } catch (fbErr) {
+            console.error('[Google Gemini Reasoning Fallback] Retry error:', fbErr);
           }
         }
 
@@ -3528,6 +3726,37 @@ async function startServer() {
       temperature: 0.1,
       timeoutMs: 15000,
     });
+
+    const isGoogle =
+      url.includes('googleapis') ||
+      url.includes('google') ||
+      model.toLowerCase().includes('gemini');
+
+    // If Google returned 503 (high demand) or 404 (model deprecated) and it wasn't already gemini-3.6-flash,
+    // verify whether the API key is valid by testing against the highly available gemini-3.6-flash
+    if (!result.ok && isGoogle && model !== 'gemini-3.6-flash' && (result.status === 503 || result.status === 404)) {
+      console.log(`[/api/ai/provider/test] Model "${model}" failed with HTTP ${result.status}. Verifying key with "gemini-3.6-flash"...`);
+      const fallbackResult = await executeProviderChatRequest({
+        url,
+        model: 'gemini-3.6-flash',
+        key,
+        messages: [{ role: 'user', content: 'ping' }],
+        maxTokens: 16,
+        temperature: 0.1,
+        timeoutMs: 15000,
+      });
+
+      if (fallbackResult.ok) {
+        return res.json({
+          data: {
+            ok: true,
+            status: fallbackResult.status,
+            model: 'gemini-3.6-flash',
+            note: `Key is valid! (Note: "${model}" is experiencing high demand [HTTP 503] on Google; key confirmed working with gemini-3.6-flash)`,
+          },
+        });
+      }
+    }
 
     return res.json({
       data: {

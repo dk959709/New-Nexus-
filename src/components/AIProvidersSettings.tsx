@@ -1008,9 +1008,12 @@ export function AIProvidersSettings() {
       });
 
       if (res.ok) {
+        const successMessage = res.note
+          ? `✓ ${res.note}`
+          : `✓ Connection successful (${res.model || model})`;
         setKeyTestResults((prev) => ({
           ...prev,
-          [keyItem.id]: { ok: true, message: `✓ Connection successful (${model})` },
+          [keyItem.id]: { ok: true, message: successMessage },
         }));
         if (editingProvider) {
           setEditingProvider({
@@ -1023,7 +1026,13 @@ export function AIProvidersSettings() {
           });
         }
       } else {
-        const errorMsg = res.error || `HTTP ${res.status || 'Error'}`;
+        const isGoogle = url.includes('google') || url.includes('generativelanguage') || model.toLowerCase().includes('gemini');
+        let errorMsg = res.error || `HTTP ${res.status || 'Error'}`;
+        if (isGoogle && res.status === 503) {
+          errorMsg = `HTTP 503: High demand on "${model}". Switch to "gemini-3.6-flash".`;
+        } else if (isGoogle && res.status === 404) {
+          errorMsg = `HTTP 404: Model "${model}" not found or deprecated. Switch to "gemini-3.6-flash".`;
+        }
         const isAuth = res.status === 401 || res.status === 403;
         const statusType: KeyHealthStatus = isAuth ? 'invalid' : 'cooldown';
         const cooldownMs = 60000; // 60s cooldown (1 minute)
@@ -2770,6 +2779,22 @@ export function AIProvidersSettings() {
                 onClick={() => {
                   setEditingProvider({
                     ...editingProvider,
+                    name: 'Google Gemini',
+                    url: 'https://generativelanguage.googleapis.com/v1beta/openai/chat/completions',
+                    model: 'gemini-3.6-flash',
+                    reasoningOverride: 'auto',
+                  });
+                }}
+                className="secondary-button"
+                style={{ fontSize: '10px', padding: '4px 8px', borderRadius: '5px', borderColor: 'rgba(66, 133, 244, 0.4)', color: '#60a5fa' }}
+              >
+                ✨ Google Gemini
+              </button>
+              <button
+                type="button"
+                onClick={() => {
+                  setEditingProvider({
+                    ...editingProvider,
                     name: 'OpenRouter',
                     url: 'https://openrouter.ai/api/v1/chat/completions',
                     model: 'deepseek/deepseek-chat',
@@ -3134,6 +3159,47 @@ export function AIProvidersSettings() {
                     fontFamily: 'DM Mono, monospace',
                   }}
                 />
+                {/* Google Gemini Quick Model Selector */}
+                {(editingProvider.url.includes('google') ||
+                  editingProvider.url.includes('generativelanguage') ||
+                  editingProvider.name.toLowerCase().includes('google') ||
+                  editingProvider.name.toLowerCase().includes('gemini') ||
+                  editingProvider.model.toLowerCase().includes('gemini')) && (
+                  <div style={{ marginTop: '8px' }}>
+                    <div style={{ fontSize: '11px', color: 'var(--muted)', marginBottom: '5px' }}>
+                      Google Gemini Models:
+                    </div>
+                    <div style={{ display: 'flex', gap: '6px', flexWrap: 'wrap' }}>
+                      {[
+                        { id: 'gemini-3.6-flash', label: 'gemini-3.6-flash (Recommended)' },
+                        { id: 'gemini-3.8-flash', label: 'gemini-3.8-flash' },
+                        { id: 'gemini-3.1-flash-lite', label: 'gemini-3.1-flash-lite' },
+                        { id: 'gemini-3.1-pro-preview', label: 'gemini-3.1-pro-preview' },
+                      ].map((m) => (
+                        <button
+                          key={m.id}
+                          type="button"
+                          onClick={() => setEditingProvider({ ...editingProvider, model: m.id })}
+                          style={{
+                            fontSize: '11px',
+                            padding: '3px 8px',
+                            borderRadius: '4px',
+                            cursor: 'pointer',
+                            border: editingProvider.model === m.id ? '1px solid #3b82f6' : '1px solid rgba(255,255,255,0.15)',
+                            background: editingProvider.model === m.id ? 'rgba(59, 130, 246, 0.25)' : 'rgba(255,255,255,0.05)',
+                            color: editingProvider.model === m.id ? '#60a5fa' : 'var(--text)',
+                            fontWeight: editingProvider.model === m.id ? 600 : 400,
+                          }}
+                        >
+                          {m.label}
+                        </button>
+                      ))}
+                    </div>
+                    <span style={{ fontSize: '11px', color: '#93c5fd', display: 'block', marginTop: '5px' }}>
+                      💡 Tip: <strong>gemini-3.6-flash</strong> is Google&apos;s most reliable model. If other models return HTTP 503 (high demand), switch to gemini-3.6-flash.
+                    </span>
+                  </div>
+                )}
               </div>
 
               <div>
