@@ -38,7 +38,8 @@ import {
 import { Link } from 'react-router-dom';
 import { api } from '@/services/api';
 import { storage } from '@/lib/storage';
-import { copyToClipboard } from '@/lib/clipboard';
+import { copyToClipboard, formatMarkdownToRichHtml } from '@/lib/clipboard';
+import { playTapSound } from '@/lib/audio';
 import { ErrorMessage } from '@/components';
 import { FormattedText } from '@/components/jarvis/FormattedText';
 import { stripTierLabels } from '@/lib/format';
@@ -47,7 +48,14 @@ import { executeMultiChatTurn } from '@/services/multiChatOrchestrator';
 import { runJarvisPipeline } from '@/services/jarvisOrchestrator';
 import { JarvisSvgDiagram } from '@/components/jarvis/JarvisSvgDiagram';
 import { JarvisChartCard } from '@/components/jarvis/JarvisChartCard';
-import type { AISource, MultiChatPersonaResponse, MultiChatMessage, JarvisExecutionStep, JarvisChartData } from '@/types';
+import type {
+  AISource,
+  MultiChatPersonaResponse,
+  MultiChatMessage,
+  JarvisExecutionStep,
+  JarvisChartData,
+  SavedItem,
+} from '@/types';
 
 export interface AssistantGeneratedImage {
   url: string;
@@ -215,6 +223,14 @@ export function AssistantPage() {
   const [edgeTtsPlayingIndex, setEdgeTtsPlayingIndex] = useState<number | null>(null);
   const [copiedIndex, setCopiedIndex] = useState<number | null>(null);
   const [expandedSources, setExpandedSources] = useState<Record<number, boolean>>({});
+  const [savedItemIds, setSavedItemIds] = useState<Set<string>>(() => {
+    try {
+      const items = storage.getSaved();
+      return new Set(items.map((i) => i.id));
+    } catch {
+      return new Set();
+    }
+  });
 
   // Assistant Settings Panel state
   const [settingsOpen, setSettingsOpen] = useState(false);
@@ -614,6 +630,7 @@ export function AssistantPage() {
 
   const handleEdgeTtsSpeak = useCallback(
     async (text: string, index: number) => {
+      playTapSound();
       if (edgeTtsPlayingIndex === index) {
         if (edgeTtsAudioRef.current) {
           edgeTtsAudioRef.current.pause();
@@ -643,7 +660,7 @@ export function AssistantPage() {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({
-            text: cleanText.slice(0, 1500),
+            text: cleanText.slice(0, 4000),
             voice: storage.getEdgeVoice(),
           }),
         });
@@ -688,11 +705,133 @@ export function AssistantPage() {
   );
 
   const handleCopyText = useCallback(async (text: string, index: number) => {
-    const success = await copyToClipboard(text);
+    playTapSound();
+    const clean = stripTierLabels(text);
+    const richHtml = formatMarkdownToRichHtml(clean);
+    const success = await copyToClipboard(clean, richHtml);
     if (success) {
       setCopiedIndex(index);
       setTimeout(() => setCopiedIndex(null), 2000);
     }
+  }, []);
+
+  const handleToggleSaveMessage = useCallback(
+    (message: AssistantChatMessage, index: number) => {
+      playTapSound();
+      const stableId = message.id || `assistant-msg-${index}`;
+      const isCurrentlySaved = storage.isSaved(stableId) || savedItemIds.has(stableId);
+
+      if (isCurrentlySaved) {
+        storage.removeSaved(stableId);
+        setSavedItemIds((prev) => {
+          const next = new Set(prev);
+          next.delete(stableId);
+          return next;
+        });
+        triggerSettingsToast('Removed from Saved Library');
+      } else {
+        const prevUserMsg = index > 0 && messages[index - 1]?.role === 'user' ? messages[index - 1].content : '';
+        const title =
+          prevUserMsg.trim() ||
+          (message.diagramSvg
+            ? 'Architectural Blueprint'
+            : message.chartData
+            ? 'Data Analysis Chart'
+            : 'AI Assistant Response');
+
+        const itemType: 'diagram' | 'chart' | 'jarvis' = message.diagramSvg
+          ? 'diagram'
+          : message.chartData
+          ? 'chart'
+          : 'jarvis';
+
+        const itemToSave: SavedItem = {
+          id: stableId,
+          type: itemType,
+          title: title.slice(0, 120),
+          query: prevUserMsg.trim() || title,
+          subtitle: stripTierLabels(message.content).slice(0, 200).trim() || title,
+          content: message.content,
+          diagramSvg: message.diagramSvg,
+          chartData: message.chartData,
+          deepResearch: message.deepResearch,
+          sources: message.sources?.map((s) => ({
+            title: s.title,
+            url: s.url,
+            domain: s.domain,
+          })),
+          images: message.image
+            ? [
+                {
+                  url: message.image.url || message.image.imageData || '',
+                  thumbUrl: message.image.url || message.image.imageData || '',
+                  title: message.image.prompt || 'Generated Image',
+                  description: message.image.prompt || '',
+                  source: message.image.providerName || 'AI Studio',
+                  domain: 'nexus',
+                },
+              ]
+            : undefined,
+          savedAt: new Date().toISOString(),
+        };
+
+        storage.saveItem(itemToSave);
+        setSavedItemIds((prev) => new Set(prev).add(stableId));
+        triggerSettingsToast('Saved to your Library in Saved Page');
+      }
+    },
+    [messages, savedItemIds],
+  );
+
+  const handleToggleSavePersona = useCallback(
+    (personaText: string, personaName: string, index: number, pIdx: number) => {
+      playTapSound();
+      const stableId = `assistant-persona-${index}-${pIdx}`;
+      const isCurrentlySaved = storage.isSaved(stableId) || savedItemIds.has(stableId);
+
+      if (isCurrentlySaved) {
+        storage.removeSaved(stableId);
+        setSavedItemIds((prev) => {
+          const next = new Set(prev);
+          next.delete(stableId);
+          return next;
+        });
+        triggerSettingsToast(`Removed ${personaName}'s response from Saved Library`);
+      } else {
+        const prevUserMsg = index > 0 && messages[index - 1]?.role === 'user' ? messages[index - 1].content : '';
+        const title = prevUserMsg.trim() || `${personaName}'s Persona Response`;
+
+        const itemToSave: SavedItem = {
+          id: stableId,
+          type: 'jarvis',
+          title: `${title} (${personaName})`,
+          query: prevUserMsg.trim() || title,
+          subtitle: stripTierLabels(personaText).slice(0, 200).trim() || title,
+          content: personaText,
+          savedAt: new Date().toISOString(),
+        };
+
+        storage.saveItem(itemToSave);
+        setSavedItemIds((prev) => new Set(prev).add(stableId));
+        triggerSettingsToast(`Saved ${personaName}'s response to your Library in Saved Page`);
+      }
+    },
+    [messages, savedItemIds],
+  );
+
+  useEffect(() => {
+    const syncSaved = () => {
+      try {
+        const items = storage.getSaved();
+        setSavedItemIds(new Set(items.map((i) => i.id)));
+      } catch {
+        // ignore
+      }
+    };
+    window.addEventListener('storage', syncSaved);
+    return () => {
+      window.removeEventListener('storage', syncSaved);
+    };
   }, []);
 
   useEffect(() => {
@@ -2018,54 +2157,87 @@ export function AssistantPage() {
                                   {/* Minimal Action Toolbar below response */}
                                   {resp.status === 'completed' && cleanPersonaText && (
                                     <div
-                                      className={`flex items-center gap-1.5 pt-0.5 opacity-60 group-hover:opacity-100 transition-opacity ${
+                                      className={`flex items-center gap-1.5 pt-1 opacity-70 group-hover:opacity-100 transition-opacity ${
                                         theme === 'fulldark' ? 'text-[#888]' : 'text-zinc-400'
                                       }`}
                                     >
-                                      {/* Copy */}
+                                      {/* Universal Copy */}
                                       <button
                                         type="button"
                                         onClick={() => handleCopyText(cleanPersonaText, index * 100 + pIdx)}
-                                        className={`p-1 rounded-md transition-colors ${
+                                        className={`p-1.5 rounded-md transition-colors flex items-center gap-1 text-xs ${
                                           theme === 'fulldark'
                                             ? 'hover:text-white hover:bg-[#282828]'
                                             : 'hover:text-zinc-200 hover:bg-zinc-800'
                                         }`}
-                                        title={`Copy ${resp.name}'s response`}
+                                        title={`Universal Copy ${resp.name}'s response`}
                                       >
                                         {copiedIndex === index * 100 + pIdx ? (
-                                          <Check size={13} className="text-emerald-400" />
+                                          <>
+                                            <Check size={13} className="text-emerald-400" />
+                                            <span className="text-[11px] text-emerald-400 font-medium">Copied</span>
+                                          </>
                                         ) : (
                                           <Copy size={13} />
                                         )}
                                       </button>
 
-                                      {/* Voice TTS Read Aloud */}
+                                      {/* Universal Edge TTS Voice */}
                                       <button
                                         type="button"
                                         onClick={() => handlePlayPersonaAudio(cleanPersonaText, personaKey, resp.personaId)}
                                         disabled={isAudioLoading}
-                                        className={`p-1 rounded-md transition-colors ${
+                                        className={`p-1.5 rounded-md transition-colors flex items-center gap-1 text-xs ${
                                           isAudioPlaying
-                                            ? 'text-cyan-400 bg-cyan-500/10'
+                                            ? 'text-cyan-400 bg-cyan-500/15'
                                             : theme === 'fulldark'
                                             ? 'hover:text-white hover:bg-[#282828]'
                                             : 'hover:text-zinc-200 hover:bg-zinc-800'
                                         }`}
                                         title={
                                           isAudioLoading
-                                            ? `Synthesizing ${resp.name}'s voice...`
+                                            ? `Synthesizing ${resp.name}'s Neural Edge TTS voice...`
                                             : isAudioPlaying
                                             ? `Stop ${resp.name}'s voice`
-                                            : `Play ${resp.name}'s voice`
+                                            : `Play ${resp.name}'s Neural Voice (Edge TTS)`
                                         }
                                       >
                                         {isAudioLoading ? (
                                           <Loader2 size={13} className="animate-spin text-cyan-400" />
                                         ) : isAudioPlaying ? (
-                                          <VolumeX size={13} />
+                                          <Radio size={13} className="animate-pulse text-cyan-400" />
                                         ) : (
-                                          <Volume2 size={13} />
+                                          <Radio size={13} />
+                                        )}
+                                      </button>
+
+                                      {/* Save to Library Button */}
+                                      <button
+                                        type="button"
+                                        onClick={() => handleToggleSavePersona(cleanPersonaText, resp.name, index, pIdx)}
+                                        className={`p-1.5 rounded-md transition-colors flex items-center gap-1 text-xs ${
+                                          savedItemIds.has(`assistant-persona-${index}-${pIdx}`)
+                                            ? 'text-amber-400 bg-amber-500/15'
+                                            : theme === 'fulldark'
+                                            ? 'hover:text-white hover:bg-[#282828]'
+                                            : 'hover:text-zinc-200 hover:bg-zinc-800'
+                                        }`}
+                                        title={
+                                          savedItemIds.has(`assistant-persona-${index}-${pIdx}`)
+                                            ? 'Saved to Library (Saved Page) — click to remove'
+                                            : `Save ${resp.name}'s response to Library (Stored in Saved Page)`
+                                        }
+                                      >
+                                        <Bookmark
+                                          size={13}
+                                          className={
+                                            savedItemIds.has(`assistant-persona-${index}-${pIdx}`)
+                                              ? 'fill-amber-400 text-amber-400'
+                                              : ''
+                                          }
+                                        />
+                                        {savedItemIds.has(`assistant-persona-${index}-${pIdx}`) && (
+                                          <span className="text-[11px] text-amber-300 font-medium hidden sm:inline">Saved</span>
                                         )}
                                       </button>
                                     </div>
@@ -2233,33 +2405,67 @@ export function AssistantPage() {
 
                         {/* Message Action Toolbar */}
                         <div
-                          className={`flex items-center gap-1.5 pt-1 opacity-60 group-hover:opacity-100 transition-opacity ${
+                          className={`flex items-center gap-1.5 pt-1 opacity-70 group-hover:opacity-100 transition-opacity flex-wrap ${
                             theme === 'fulldark' ? 'text-[#888]' : 'text-zinc-400'
                           }`}
                         >
-                          {/* Copy */}
+                          {/* Universal Copy Button */}
                           <button
                             type="button"
                             onClick={() => handleCopyText(message.content, index)}
-                            className={`p-1 rounded-md transition-colors ${
+                            className={`p-1.5 rounded-md transition-colors flex items-center gap-1 text-xs ${
                               theme === 'fulldark'
                                 ? 'hover:text-white hover:bg-[#282828]'
                                 : 'hover:text-zinc-200 hover:bg-zinc-800'
                             }`}
-                            title="Copy response"
+                            title="Universal Copy response"
                           >
                             {copiedIndex === index ? (
-                              <Check size={13} className="text-emerald-400" />
+                              <>
+                                <Check size={13} className="text-emerald-400" />
+                                <span className="text-[11px] text-emerald-400 font-medium">Copied</span>
+                              </>
                             ) : (
-                              <Copy size={13} />
+                              <>
+                                <Copy size={13} />
+                              </>
                             )}
                           </button>
 
-                          {/* Browser Voice Read Aloud */}
+                          {/* Universal Edge TTS Speaker Button */}
+                          <button
+                            type="button"
+                            onClick={() => handleEdgeTtsSpeak(message.content, index)}
+                            disabled={edgeTtsLoadingIndex === index}
+                            className={`p-1.5 rounded-md transition-colors flex items-center gap-1 text-xs ${
+                              edgeTtsPlayingIndex === index
+                                ? 'text-purple-400 bg-purple-500/15'
+                                : theme === 'fulldark'
+                                ? 'hover:text-white hover:bg-[#282828]'
+                                : 'hover:text-zinc-200 hover:bg-zinc-800'
+                            }`}
+                            title={
+                              edgeTtsLoadingIndex === index
+                                ? 'Synthesizing Edge TTS Neural voice...'
+                                : edgeTtsPlayingIndex === index
+                                ? 'Stop Edge TTS playback'
+                                : 'Play Neural Voice (Edge TTS)'
+                            }
+                          >
+                            {edgeTtsLoadingIndex === index ? (
+                              <Loader2 size={13} className="animate-spin text-purple-400" />
+                            ) : edgeTtsPlayingIndex === index ? (
+                              <Radio size={13} className="animate-pulse text-purple-400" />
+                            ) : (
+                              <Radio size={13} />
+                            )}
+                          </button>
+
+                          {/* Browser Voice Speaker Fallback */}
                           <button
                             type="button"
                             onClick={() => toggleBrowserSpeak(message.content, index)}
-                            className={`p-1 rounded-md transition-colors ${
+                            className={`p-1.5 rounded-md transition-colors ${
                               speakingIndex === index
                                 ? 'text-cyan-400 bg-cyan-500/10'
                                 : theme === 'fulldark'
@@ -2275,32 +2481,33 @@ export function AssistantPage() {
                             )}
                           </button>
 
-                          {/* Neural Edge TTS */}
+                          {/* Universal Save Button */}
                           <button
                             type="button"
-                            onClick={() => handleEdgeTtsSpeak(message.content, index)}
-                            disabled={edgeTtsLoadingIndex === index}
-                            className={`p-1 rounded-md transition-colors ${
-                              edgeTtsPlayingIndex === index
-                                ? 'text-purple-400 bg-purple-500/10'
+                            onClick={() => handleToggleSaveMessage(message, index)}
+                            className={`p-1.5 rounded-md transition-colors flex items-center gap-1 text-xs ${
+                              savedItemIds.has(message.id || `assistant-msg-${index}`)
+                                ? 'text-amber-400 bg-amber-500/15'
                                 : theme === 'fulldark'
                                 ? 'hover:text-white hover:bg-[#282828]'
                                 : 'hover:text-zinc-200 hover:bg-zinc-800'
                             }`}
                             title={
-                              edgeTtsLoadingIndex === index
-                                ? 'Synthesizing Neural voice...'
-                                : edgeTtsPlayingIndex === index
-                                ? 'Stop Edge TTS'
-                                : 'Play Neural voice (Edge TTS)'
+                              savedItemIds.has(message.id || `assistant-msg-${index}`)
+                                ? 'Saved to Library (Saved Page) — click to remove'
+                                : 'Save to Library (Stored in your Saved Page category)'
                             }
                           >
-                            {edgeTtsLoadingIndex === index ? (
-                              <Loader2 size={13} className="animate-spin text-purple-400" />
-                            ) : edgeTtsPlayingIndex === index ? (
-                              <Radio size={13} className="animate-pulse" />
-                            ) : (
-                              <Radio size={13} />
+                            <Bookmark
+                              size={13}
+                              className={
+                                savedItemIds.has(message.id || `assistant-msg-${index}`)
+                                  ? 'fill-amber-400 text-amber-400'
+                                  : ''
+                              }
+                            />
+                            {savedItemIds.has(message.id || `assistant-msg-${index}`) && (
+                              <span className="text-[11px] text-amber-300 font-medium hidden sm:inline">Saved</span>
                             )}
                           </button>
                         </div>
