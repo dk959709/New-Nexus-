@@ -909,7 +909,6 @@ export function AssistantPage() {
       second: '2-digit',
       hour12: true,
     });
-    const timeZone = Intl.DateTimeFormat().resolvedOptions().timeZone || 'Local';
 
     const activeMode = multiChatEnabled
       ? 'Multi-Chat (3-Persona Pipeline)'
@@ -928,7 +927,7 @@ export function AssistantPage() {
     transcriptLines.push('🤖 NEXUS AI ASSISTANT — CONVERSATION EXPORT');
     transcriptLines.push('════════════════════════════════════════════════════════════════');
     transcriptLines.push(`📅 Date: ${formattedDate}`);
-    transcriptLines.push(`⏰ Time: ${formattedTime} (${timeZone})`);
+    transcriptLines.push(`⏰ Time: ${formattedTime}`);
     transcriptLines.push(`🌐 Mode: ${activeMode}`);
     transcriptLines.push(`📊 Total Messages: ${meaningfulMessages.length}`);
     transcriptLines.push('────────────────────────────────────────────────────────────────\n');
