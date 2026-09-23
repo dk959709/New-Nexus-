@@ -1223,6 +1223,32 @@ function generateLocalNexusAiResponse(
     };
   }
 
+  // 1.5 Real-time Date and Time Query
+  if (
+    lower.includes('date now') ||
+    lower.includes('date today') ||
+    lower.includes("today's date") ||
+    lower.includes('today date') ||
+    lower.includes('what day is today') ||
+    lower.includes('what day is it') ||
+    lower.includes('current date') ||
+    lower.includes('what time is it') ||
+    lower.includes('time now')
+  ) {
+    const now = new Date();
+    const formattedDate = now.toLocaleDateString('en-US', {
+      weekday: 'long',
+      year: 'numeric',
+      month: 'long',
+      day: 'numeric',
+      timeZone: 'UTC',
+    });
+    return {
+      text: `Today is **${formattedDate}** (${now.toUTCString()}).`,
+      model: 'nexus-time',
+    };
+  }
+
   // 2. Identity / Capabilities
   if (
     lower.includes('who are you') ||
@@ -2300,10 +2326,10 @@ async function processAiChatInternal(
 
       if (structuredSources.length > 0) {
         const sourcesText = structuredSources
-          .slice(0, 4)
-          .map((s) => `[Source: ${s.title} (${s.domain || 'web'})]: ${s.description}`)
+          .slice(0, 5)
+          .map((s, i) => `[Source ${i + 1}: ${s.title}] (${s.domain || 'web'})\nURL: ${s.url}\nSummary: ${s.description}`)
           .join('\n\n');
-        sourceContext = `[Live Web Search Sources for "${trimmed}"]:\n${sourcesText}`;
+        sourceContext = sourcesText;
       }
     } catch {
       // Non-blocking
@@ -2379,25 +2405,76 @@ async function processAiChatInternal(
     }
   }
 
+  const now = new Date();
+  const currentDateTimeStr = `${now.toUTCString()} (UTC)`;
 
-  const systemPrompt = [
-    `You are NEXUS AI, powered by ${providerConfig?.name || 'DeepSeek'}. Provide direct, insightful, and concise answers.`,
-    memory ? `[User Context]: ${memory.slice(0, 250)}` : '',
-    sourceContext ? `[Verified Source]:\n${sourceContext}` : '',
-  ]
-    .filter(Boolean)
+  const sourcesFormatted = structuredSources
+    .slice(0, 5)
+    .map(
+      (s, i) =>
+        `[Source ${i + 1}: ${s.title}] (${s.domain || 'web'})\nURL: ${s.url}\nSummary: ${s.description}`,
+    )
     .join('\n\n');
 
+  const systemInstructions: string[] = [
+    `You are NEXUS AI, powered by ${providerConfig?.name || 'AI'}. Provide direct, insightful, factual, and concise answers.`,
+    `Current Real-Time Reference: ${currentDateTimeStr}. You have active real-time web search capabilities.`,
+  ];
+
+  if (memory) {
+    systemInstructions.push(`[User Context / Saved Memory]:\n${memory.slice(0, 300)}`);
+  }
+
+  if (structuredSources.length > 0 || isForcedWebSearch) {
+    systemInstructions.push(
+      `[REAL-TIME LIVE WEB SEARCH RESULTS FOR THIS TURN ONLY]:\n` +
+        `${sourcesFormatted || 'No additional web text returned; use current date/time reference and available knowledge.'}\n\n` +
+        `CRITICAL GROUNDING INSTRUCTIONS FOR THIS TURN:\n` +
+        `- Real-time web search was conducted specifically for the user's query: "${trimmed}".\n` +
+        `- You MUST use the live search results and current timestamp (${currentDateTimeStr}) provided above to answer the user accurately and factually.\n` +
+        `- NEVER state that you lack real-time access, cannot browse the internet, or do not know the current date/information.\n` +
+        `- Answer the user's question directly based on these verified live sources.`,
+    );
+  } else if (sourceContext) {
+    systemInstructions.push(`[Verified Source Context]:\n${sourceContext}`);
+  }
+
+  const systemPrompt = systemInstructions.join('\n\n');
+
+  // Strict turn isolation: conversation history contains ONLY clean previous text, never injected raw search blocks
   const compactHistory = history.slice(-4).map((h) => ({
     role: h.role,
     content: h.content.slice(0, 600),
   }));
 
+  const userContentForTurn =
+    structuredSources.length > 0
+      ? `${trimmed}\n\n[Live Search Grounding for this question]:\n${sourcesFormatted}\n(Current Date/Time Reference: ${currentDateTimeStr})\n\nInstructions: Use the live search results above to answer directly.`
+      : trimmed;
+
   const messages: Array<{ role: string; content: string }> = [
     { role: 'system', content: systemPrompt },
     ...compactHistory,
-    { role: 'user', content: trimmed },
+    { role: 'user', content: userContentForTurn },
   ];
+
+  // Comprehensive turn logging to verify exact prompt injection and turn isolation
+  console.log(`[AI Assistant Web Search] ========================================`);
+  console.log(`[AI Assistant Web Search] Turn Query: "${trimmed}"`);
+  console.log(`[AI Assistant Web Search] Forced WebSearch: ${isForcedWebSearch} | Search Run: ${shouldSearchWeb}`);
+  if (structuredSources.length > 0) {
+    console.log(
+      `[AI Assistant Web Search] Injected ${structuredSources.length} fresh search result(s) into model prompt for this turn:`,
+    );
+    structuredSources.forEach((s, idx) => {
+      console.log(`  [#${idx + 1}] "${s.title}" (${s.domain || 'web'}) -> ${s.url}`);
+      console.log(`      Snippet: ${s.description.slice(0, 120)}...`);
+    });
+  } else {
+    console.log(`[AI Assistant Web Search] No search results injected into model prompt for this turn (clean isolated turn).`);
+  }
+  console.log(`[AI Assistant Web Search] Clean history turns sent to model: ${compactHistory.length}`);
+  console.log(`[AI Assistant Web Search] ========================================`);
 
   const aiResult = await executeAiWithProviderOrFallback({
     messages,
