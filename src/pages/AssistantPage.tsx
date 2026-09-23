@@ -1345,7 +1345,13 @@ export function AssistantPage() {
       try {
         const multiChatConfig = storage.getMultiChatConfig();
         const currentLanguage = storage.getAssistantLanguage() || storage.getMultiChatResponseLanguage();
-        const currentPermanentMemories = storage.getPermanentMemories();
+        
+        // Unify all memories (AI Assistant Permanent Memories, Smart Short-term Memory, and Multi-Chat Memories)
+        const combinedMemories = [
+          ...storage.getPermanentMemories(),
+          ...storage.getMultiChatMemories(),
+          ...(smartMemory ? [`Short-term context: ${smartMemory}`] : []),
+        ].filter((m, idx, arr) => m && m.trim().length > 0 && arr.indexOf(m) === idx);
 
         // Convert prior messages to MultiChatMessage history
         const multiChatHistory: MultiChatMessage[] = messages
@@ -1390,7 +1396,7 @@ export function AssistantPage() {
           query: message,
           conversationHistory: multiChatHistory,
           config: multiChatConfig,
-          permanentMemories: currentPermanentMemories,
+          permanentMemories: combinedMemories,
           responseLanguage: currentLanguage,
           onPersonaUpdate: (updatedResp) => {
             setMessages((current) => {
