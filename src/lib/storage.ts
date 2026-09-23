@@ -1853,6 +1853,54 @@ export const storage = {
     return updated;
   },
 
+  updateMultiChatMemory(index: number, newText: string): string[] {
+    const trimmed = newText.trim();
+    if (!trimmed) return this.deleteMultiChatMemory(index);
+    const current = this.getMultiChatMemories();
+    const updated = current.map((m, idx) => (idx === index ? trimmed : m));
+    write(KEYS.multiChatMemories, updated);
+    return updated;
+  },
+
+  // Generic Permanent Memories aliases for Assistant & MultiChat
+  getPermanentMemories(): string[] {
+    return this.getMultiChatMemories();
+  },
+
+  savePermanentMemories(memories: string[]): void {
+    this.saveMultiChatMemories(memories);
+  },
+
+  addPermanentMemory(memory: string): string[] {
+    return this.addMultiChatMemory(memory);
+  },
+
+  deletePermanentMemory(index: number): string[] {
+    return this.deleteMultiChatMemory(index);
+  },
+
+  updatePermanentMemory(index: number, newText: string): string[] {
+    return this.updateMultiChatMemory(index, newText);
+  },
+
+  getAssistantLanguage(): string {
+    return read<string>('nexus-ai-assistant-language', '');
+  },
+
+  setAssistantLanguage(language: string): string {
+    const trimmed = language.trim();
+    write('nexus-ai-assistant-language', trimmed);
+    return trimmed;
+  },
+
+  getAssistantTheme(): 'minimal' | 'classic' | 'fulldark' {
+    return read<'minimal' | 'classic' | 'fulldark'>('nexus-ai-assistant-theme', 'minimal');
+  },
+
+  setAssistantTheme(theme: 'minimal' | 'classic' | 'fulldark'): void {
+    write('nexus-ai-assistant-theme', theme);
+  },
+
   getMultiChatResponseLanguage(): string {
     const cfg = this.getMultiChatConfig();
     return cfg.responseLanguage || 'English';

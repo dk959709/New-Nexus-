@@ -316,6 +316,10 @@ export const api = {
     memory = '',
     customProvider?: AIProviderConfig | null,
     webSearch?: boolean,
+    options?: {
+      language?: string;
+      permanentMemories?: string[];
+    },
   ): Promise<{
     answer: string;
     model: string;
@@ -357,6 +361,8 @@ export const api = {
         memory: memory.slice(-300),
         providerConfig: providerToSend || undefined,
         webSearch: Boolean(webSearch),
+        language: options?.language,
+        permanentMemories: options?.permanentMemories,
       }),
     });
   },

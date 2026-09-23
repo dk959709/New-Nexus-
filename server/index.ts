@@ -2583,6 +2583,8 @@ async function processAiChatInternal(
   memory = '',
   providerConfig?: CustomProviderPayload | null,
   webSearch?: boolean,
+  language?: string,
+  permanentMemories: string[] = [],
 ) {
   const trimmed = message.trim();
   const activeModel = providerConfig?.model || process.env.AI_MODEL || 'deepseek/deepseek-chat';
@@ -2812,8 +2814,26 @@ async function processAiChatInternal(
     `Current Real-Time Reference: ${currentDateTimeStr}. You have active real-time web search capabilities.`,
   ];
 
+  if (permanentMemories && permanentMemories.length > 0) {
+    const validMemories = permanentMemories.map((m) => m.trim()).filter(Boolean);
+    if (validMemories.length > 0) {
+      systemInstructions.push(
+        `[User Permanent Standing Memories (Always-On Context)]:\n` +
+          validMemories.map((m, i) => `${i + 1}. ${m}`).join('\n') +
+          `\n(These are permanent, always-on standing facts and preferences about the user. Always maintain consistency with these memories across all turns.)`,
+      );
+    }
+  }
+
   if (memory) {
     systemInstructions.push(`[User Context / Saved Memory]:\n${memory.slice(0, 300)}`);
+  }
+
+  const effectiveLang = (language || '').trim();
+  if (effectiveLang && effectiveLang.toLowerCase() !== 'english') {
+    systemInstructions.push(
+      `[Language Setting]: Respond in ${effectiveLang}. If the input refers to a country or is informally phrased, infer the intended language (e.g. 'Russia' means Russian, 'Japan' means Japanese). Complete all explanations and answers fluently in that language.`,
+    );
   }
 
   const searchSubjectDescription = isQueryReformulated
@@ -3002,6 +3022,9 @@ const aiChatSchema = z.object({
   memory: z.string().max(1200).optional(),
   providerConfig: customProviderSchema.optional().nullable(),
   webSearch: z.boolean().optional(),
+  language: z.string().max(100).optional(),
+  responseLanguage: z.string().max(100).optional(),
+  permanentMemories: z.array(z.string().max(500)).max(50).optional(),
 });
 
 
@@ -3317,6 +3340,8 @@ async function startServer() {
         parsed.data.memory ?? '',
         parsed.data.providerConfig,
         parsed.data.webSearch,
+        parsed.data.language || parsed.data.responseLanguage,
+        parsed.data.permanentMemories ?? [],
       );
       return res.json({ data: result });
     } catch (err: unknown) {
