@@ -138,6 +138,10 @@ async function executeProviderChatRequest({
     url.includes('gateway.ai.cloudflare.com') ||
     url.includes('cloudflare.com') ||
     (rawUrl && rawUrl.includes('cloudflare'));
+  const isOllama =
+    url.includes('ollama.com') ||
+    url.includes('11434') ||
+    (rawUrl && (rawUrl.includes('ollama') || rawUrl.includes('11434')));
   const isQwen37FlashFree = model.toLowerCase().includes('qwen/qwen3.7-flash:free');
   const isBazaarLinkQwen37Flash = Boolean(isBazaarLink && isQwen37FlashFree);
 
@@ -832,7 +836,8 @@ async function executeProviderChatRequest({
           (extraParams?.reasoning_effort !== undefined ||
             extraParams?.reasoning_format !== undefined ||
             extraParams?.include_reasoning !== undefined ||
-            extraParams?.reasoning !== undefined) &&
+            extraParams?.reasoning !== undefined ||
+            extraParams?.chat_template_kwargs !== undefined) &&
           status >= 400 &&
           status < 500
         ) {
@@ -844,6 +849,7 @@ async function executeProviderChatRequest({
           delete fallbackParams.reasoning_format;
           delete fallbackParams.include_reasoning;
           delete fallbackParams.reasoning;
+          delete fallbackParams.chat_template_kwargs;
 
           const fallbackRequestBody: Record<string, unknown> = {
             model,
@@ -938,6 +944,125 @@ async function executeProviderChatRequest({
           } catch (fbErr) {
             console.error(
               `[Cloudflare AI Gateway Reasoning Fallback] Fallback retry network error for model "${model}":`,
+              fbErr
+            );
+          }
+        }
+
+        // If Ollama returns an error for the reasoning parameter on any specific model, catch it and retry once without reasoning params
+        if (
+          isOllama &&
+          (extraParams?.reasoning_effort !== undefined ||
+            extraParams?.reasoning_format !== undefined ||
+            extraParams?.include_reasoning !== undefined ||
+            extraParams?.reasoning !== undefined ||
+            extraParams?.chat_template_kwargs !== undefined) &&
+          status >= 400 &&
+          status < 500
+        ) {
+          console.warn(
+            `[Ollama Reasoning Fallback] Model "${model}" rejected reasoning parameters (HTTP ${status}: ${errorMsg}). Retrying once without reasoning parameter...`
+          );
+          const fallbackParams = { ...(extraParams || {}) };
+          delete fallbackParams.reasoning_effort;
+          delete fallbackParams.reasoning_format;
+          delete fallbackParams.include_reasoning;
+          delete fallbackParams.reasoning;
+          delete fallbackParams.chat_template_kwargs;
+
+          const fallbackRequestBody: Record<string, unknown> = {
+            model,
+            messages: sanitized,
+            temperature,
+            max_tokens: maxTokens,
+            ...fallbackParams,
+          };
+
+          console.log(
+            `[Ollama Reasoning Fallback] Outgoing retry request to ${url} | model: "${model}" | Fallback Params: ${JSON.stringify(fallbackParams)}`
+          );
+
+          try {
+            const fallbackRes = await fetch(url, {
+              method: 'POST',
+              headers,
+              body: JSON.stringify(fallbackRequestBody),
+              signal: AbortSignal.timeout(timeoutMs),
+            });
+
+            console.log(
+              `[Ollama Reasoning Fallback] Fallback response from Ollama | Status: ${fallbackRes.status} | Ok: ${fallbackRes.ok}`
+            );
+
+            if (fallbackRes.ok) {
+              console.log(
+                `[Ollama Reasoning Fallback] Fallback retry succeeded (HTTP ${fallbackRes.status}) for model "${model}" without reasoning parameter.`
+              );
+              const fbPayload = (await fallbackRes.json()) as {
+                model?: string;
+                choices?: Array<{
+                  message?: {
+                    content?: string | Array<{ type?: string; text?: string }>;
+                    reasoning?: string;
+                    reasoning_content?: string;
+                  };
+                  text?: string;
+                }>;
+              };
+
+              const fbChoice = fbPayload.choices?.[0];
+              let fbContentStr = '';
+              if (fbChoice?.message?.content) {
+                if (typeof fbChoice.message.content === 'string') {
+                  fbContentStr = fbChoice.message.content.trim();
+                } else if (Array.isArray(fbChoice.message.content)) {
+                  fbContentStr = fbChoice.message.content
+                    .map((part) => (typeof part === 'string' ? part : part?.text || ''))
+                    .join('')
+                    .trim();
+                }
+              }
+
+              const fbRawReasoning =
+                fbChoice?.message?.reasoning ||
+                (fbChoice?.message as { reasoning_content?: string })?.reasoning_content;
+              let fbReasoningStr = '';
+              if (fbRawReasoning && typeof fbRawReasoning === 'string') {
+                fbReasoningStr = fbRawReasoning.trim();
+              }
+
+              const fbText =
+                fbContentStr ||
+                fbReasoningStr ||
+                (typeof fbChoice?.text === 'string' ? fbChoice.text.trim() : '') ||
+                (fbChoice ? 'OK' : '');
+
+              if (fbText) {
+                return {
+                  ok: true,
+                  text: fbText,
+                  content: fbContentStr,
+                  reasoning: fbReasoningStr,
+                  model: fbPayload.model || model,
+                  status: fallbackRes.status,
+                };
+              }
+            } else {
+              let fbErrMsg = `HTTP ${fallbackRes.status}`;
+              try {
+                const fbErrObj = (await fallbackRes.json()) as { error?: { message?: string } | string; message?: string };
+                fbErrMsg = (typeof fbErrObj.error === 'object' ? fbErrObj.error?.message : fbErrObj.error) || fbErrObj.message || `HTTP ${fallbackRes.status}`;
+              } catch {
+                const fbRaw = await fallbackRes.text().catch(() => '');
+                if (fbRaw) fbErrMsg = fbRaw.slice(0, 200);
+              }
+              console.error(
+                `[Ollama Reasoning Fallback] Fallback retry failed with HTTP ${fallbackRes.status} (${fbErrMsg}).`
+              );
+            }
+          } catch (fbErr) {
+            console.error(
+              `[Ollama Reasoning Fallback] Fallback retry network error for model "${model}":`,
               fbErr
             );
           }

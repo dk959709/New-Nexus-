@@ -22,6 +22,7 @@ import type {
   VoiceProvidersState,
   KeyHealthStatus,
   AIProviderType,
+  ReasoningOverrideMode,
 } from '@/types';
 import { storage } from '@/lib/storage';
 import { api } from '@/services/api';
@@ -310,6 +311,38 @@ export function AIProvidersSettings() {
     setTimeout(() => {
       setNotificationMessage(null);
     }, 3000);
+  };
+
+  // Update provider reasoning override mode ('auto' | 'force_on' | 'force_off')
+  const handleUpdateProviderReasoningOverride = (
+    providerId: string,
+    override: ReasoningOverrideMode
+  ) => {
+    const current = storage.getAIProvidersState();
+    const updatedProviders = current.providers.map((p) =>
+      p.id === providerId ? { ...p, reasoningOverride: override } : p
+    );
+    const newState: AIProvidersState = {
+      ...current,
+      providers: updatedProviders,
+    };
+    updateProvidersState(newState);
+
+    if (editingProvider && editingProvider.id === providerId) {
+      setEditingProvider({ ...editingProvider, reasoningOverride: override });
+    }
+
+    const providerName = current.providers.find((p) => p.id === providerId)?.name || 'Provider';
+    const label =
+      override === 'auto'
+        ? 'Auto (role-based)'
+        : override === 'force_on'
+        ? 'Forced On'
+        : 'Forced Off';
+    setNotificationMessage(`Reasoning mode for "${providerName}" set to ${label}.`);
+    setTimeout(() => {
+      setNotificationMessage(null);
+    }, 2500);
   };
 
   // Save Image Provider
@@ -1682,6 +1715,114 @@ export function AIProvidersSettings() {
                     >
                       Strategy: {p.keyStrategy.replace('_', ' ')}
                     </span>
+
+                    {/* Reasoning Mode Override 3-State Control */}
+                    <div
+                      style={{
+                        display: 'inline-flex',
+                        alignItems: 'center',
+                        background: 'rgba(10, 22, 28, 0.75)',
+                        border: '1px solid rgba(165, 207, 214, 0.22)',
+                        borderRadius: '16px',
+                        padding: '1px 2px',
+                        gap: '2px',
+                      }}
+                      title={`Reasoning Control: ${
+                        (p.reasoningOverride || 'auto') === 'auto'
+                          ? 'Auto (uses role-based logic: fast roles off, Coder/Architect/Data Analyst on)'
+                          : p.reasoningOverride === 'force_on'
+                          ? 'Forced On (always sends high reasoning effort parameters)'
+                          : 'Forced Off (always sends disabled reasoning parameters)'
+                      }`}
+                    >
+                      <button
+                        type="button"
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          handleUpdateProviderReasoningOverride(p.id, 'auto');
+                        }}
+                        style={{
+                          fontSize: '10px',
+                          padding: '2px 7px',
+                          borderRadius: '12px',
+                          border: 'none',
+                          cursor: 'pointer',
+                          fontWeight: (p.reasoningOverride || 'auto') === 'auto' ? 700 : 500,
+                          background:
+                            (p.reasoningOverride || 'auto') === 'auto'
+                              ? 'rgba(97,215,201,0.25)'
+                              : 'transparent',
+                          color:
+                            (p.reasoningOverride || 'auto') === 'auto'
+                              ? 'var(--accent)'
+                              : 'var(--muted)',
+                          transition: 'all 0.15s ease',
+                          display: 'inline-flex',
+                          alignItems: 'center',
+                          gap: '3px',
+                        }}
+                      >
+                        🧠 Auto
+                      </button>
+                      <button
+                        type="button"
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          handleUpdateProviderReasoningOverride(p.id, 'force_on');
+                        }}
+                        style={{
+                          fontSize: '10px',
+                          padding: '2px 7px',
+                          borderRadius: '12px',
+                          border: 'none',
+                          cursor: 'pointer',
+                          fontWeight: p.reasoningOverride === 'force_on' ? 700 : 500,
+                          background:
+                            p.reasoningOverride === 'force_on'
+                              ? 'rgba(52,211,153,0.3)'
+                              : 'transparent',
+                          color:
+                            p.reasoningOverride === 'force_on'
+                              ? '#34d399'
+                              : 'var(--muted)',
+                          transition: 'all 0.15s ease',
+                          display: 'inline-flex',
+                          alignItems: 'center',
+                          gap: '3px',
+                        }}
+                      >
+                        {p.reasoningOverride === 'force_on' ? '🧠 Forced On' : 'Force On'}
+                      </button>
+                      <button
+                        type="button"
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          handleUpdateProviderReasoningOverride(p.id, 'force_off');
+                        }}
+                        style={{
+                          fontSize: '10px',
+                          padding: '2px 7px',
+                          borderRadius: '12px',
+                          border: 'none',
+                          cursor: 'pointer',
+                          fontWeight: p.reasoningOverride === 'force_off' ? 700 : 500,
+                          background:
+                            p.reasoningOverride === 'force_off'
+                              ? 'rgba(239,68,68,0.25)'
+                              : 'transparent',
+                          color:
+                            p.reasoningOverride === 'force_off'
+                              ? '#f87171'
+                              : 'var(--muted)',
+                          transition: 'all 0.15s ease',
+                          display: 'inline-flex',
+                          alignItems: 'center',
+                          gap: '3px',
+                        }}
+                      >
+                        {p.reasoningOverride === 'force_off' ? '🧠 Forced Off' : 'Force Off'}
+                      </button>
+                    </div>
                     {isActive && (
                       <span
                         style={{
@@ -3035,6 +3176,47 @@ export function AIProvidersSettings() {
                 />
                 <span style={{ fontSize: '11px', color: 'var(--muted)', display: 'block', marginTop: '4px' }}>
                   Default: 128.
+                </span>
+              </div>
+
+              <div>
+                <label
+                  style={{
+                    display: 'block',
+                    fontSize: '12px',
+                    fontWeight: 600,
+                    color: 'var(--text)',
+                    marginBottom: '6px',
+                  }}
+                >
+                  Reasoning Effort Mode
+                </label>
+                <select
+                  value={editingProvider.reasoningOverride || 'auto'}
+                  onChange={(e) =>
+                    setEditingProvider({
+                      ...editingProvider,
+                      reasoningOverride: e.target.value as ReasoningOverrideMode,
+                    })
+                  }
+                  style={{
+                    width: '100%',
+                    boxSizing: 'border-box',
+                    background: 'rgba(10,22,28,0.8)',
+                    border: '1px solid var(--line)',
+                    borderRadius: '8px',
+                    padding: '10px 12px',
+                    color: '#fff',
+                    fontSize: '13px',
+                    outline: 'none',
+                  }}
+                >
+                  <option value="auto">🧠 Auto (Role-Based: Deep for Coder/Architect/Data Analyst, Off for Fast Roles)</option>
+                  <option value="force_on">🧠 Force On (Always High Effort Reasoning)</option>
+                  <option value="force_off">🧠 Force Off (Always Disabled Reasoning)</option>
+                </select>
+                <span style={{ fontSize: '11px', color: 'var(--muted)', display: 'block', marginTop: '4px' }}>
+                  Per-provider override for Groq, OpenRouter, Cloudflare, HF, Ollama, and BazaarLink endpoints.
                 </span>
               </div>
             </div>

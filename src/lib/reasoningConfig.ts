@@ -20,6 +20,7 @@ export interface ReasoningModelSpec {
   isGenericFallback?: boolean; // True if resolved via generic provider fallback
   isGroqSuffixSpecialCase?: boolean; // True if resolved via Hugging Face :groq suffix special case
   isKnownProviderPrefixSpecialCase?: boolean; // True if resolved via Cloudflare AI Gateway known provider prefix
+  isDualMechanismWorkersAi?: boolean; // True if resolved via generic dual-mechanism fallback for Workers AI (@cf/ models)
   matchedProvider?: string; // Name of the underlying matched provider (e.g. 'groq', 'bazaarlink', 'openrouter')
   /**
    * Function to build the exact parameter payload to merge into the request body
@@ -41,6 +42,19 @@ export const NON_CHAT_MODELS = new Set([
  * Extensible: Add a single entry here to support reasoning on any new model/provider.
  */
 export const REASONING_MODEL_CONFIG: Record<string, ReasoningModelSpec> = {
+  // Cloudflare Workers AI @cf/nvidia/nemotron-3-120b-a12b: reasoning_effort: "low" for fast roles, "high" for Coder/Architect/Data Analyst (no "none" support per Cloudflare docs)
+  'cloudflare:@cf/nvidia/nemotron-3-120b-a12b': {
+    provider: 'cloudflare',
+    model: '@cf/nvidia/nemotron-3-120b-a12b',
+    supportsReasoning: true,
+    paramFormat: 'flat_groq',
+    validEfforts: ['low', 'medium', 'high'],
+    supportsFullDisable: false,
+    supportsHiddenFormat: false,
+    buildParams: (target: ReasoningTargetLevel) => ({
+      reasoning_effort: target === 'high' ? 'high' : 'low',
+    }),
+  },
   // Groq qwen/qwen3.8-27b: flat reasoning_effort param (none/low/medium/high); supports full disable via none; supports reasoning_format: "hidden"
   'groq:qwen/qwen3.8-27b': {
     provider: 'groq',
@@ -148,6 +162,7 @@ export function normalizeProviderId(
       s.includes('cf-gateway') ||
       s.includes('ai-gateway')
     ) return 'cloudflare';
+    if (s.includes('ollama.com') || s.includes('ollama') || s.includes('11434')) return 'ollama';
     if (s.includes('deepseek')) return 'deepseek';
     if (s.includes('openai')) return 'openai';
     if (s.includes('anthropic')) return 'anthropic';
@@ -193,6 +208,14 @@ export function normalizeProviderId(
     name.includes('ai gateway')
   ) {
     return 'cloudflare';
+  }
+  if (
+    url.includes('ollama.com') ||
+    url.includes('11434') ||
+    id.includes('ollama') ||
+    name.includes('ollama')
+  ) {
+    return 'ollama';
   }
   if (url.includes('deepseek.com') || id.includes('deepseek') || name.includes('deepseek')) {
     return 'deepseek';
@@ -384,8 +407,27 @@ export function lookupReasoningConfig(
     };
   }
 
-  // 7. Cloudflare AI Gateway fallback (applies to gateway.ai.cloudflare.com/v1/.../compat endpoints)
-  if (provKey === 'cloudflare') {
+  // 7. Cloudflare AI Gateway & Workers AI fallback (applies to gateway.ai.cloudflare.com or @cf/ models)
+  if (provKey === 'cloudflare' || normModel.startsWith('@cf/') || normModel.includes('@cf/')) {
+    // Check if the model is a Workers AI (@cf/) model not explicitly listed in REASONING_MODEL_CONFIG
+    if (normModel.startsWith('@cf/') || normModel.includes('@cf/')) {
+      return {
+        provider: 'cloudflare',
+        model: (model || '').trim(),
+        supportsReasoning: true,
+        paramFormat: 'flat_groq',
+        validEfforts: ['low', 'medium', 'high'],
+        supportsFullDisable: false,
+        supportsHiddenFormat: false,
+        isGenericFallback: true,
+        isDualMechanismWorkersAi: true,
+        buildParams: (target: ReasoningTargetLevel) => ({
+          reasoning_effort: target === 'high' ? 'high' : 'low',
+          ...(target === 'high' ? {} : { chat_template_kwargs: { enable_thinking: false } }),
+        }),
+      };
+    }
+
     // Check if the model string indicates a known underlying provider (e.g. groq/, bazaarlink/, openrouter/)
     const hasGroqPrefix = normModel.startsWith('groq/') || normModel.includes('/groq/') || normModel.includes('groq:');
     const hasBazaarLinkPrefix = normModel.startsWith('bazaarlink/') || normModel.includes('/bazaarlink/');
@@ -501,8 +543,27 @@ export function lookupReasoningConfig(
     };
   }
 
+  // 8. Generic Ollama provider fallback (applies to ANY Ollama chat model e.g. ollama.com/v1/chat/completions)
+  if (provKey === 'ollama') {
+    return {
+      provider: 'ollama',
+      model: (model || '').trim(),
+      supportsReasoning: true,
+      paramFormat: 'flat_groq',
+      validEfforts: ['none', 'low', 'medium', 'high'],
+      supportsFullDisable: true,
+      supportsHiddenFormat: false,
+      isGenericFallback: true,
+      buildParams: (target: ReasoningTargetLevel) => ({
+        reasoning_effort: target === 'high' ? 'high' : 'none',
+      }),
+    };
+  }
+
   return null;
 }
+
+export type ReasoningOverrideMode = 'auto' | 'force_on' | 'force_off';
 
 /**
  * Determines an agent's or caller's desired reasoning level:
@@ -538,10 +599,29 @@ export function getAgentDesiredReasoningLevel(
 }
 
 /**
+ * Resolves the effective reasoning target level by checking the per-provider reasoning override FIRST.
+ * - If set to 'force_off': always 'low' (disabled / lowest effort) regardless of caller
+ * - If set to 'force_on': always 'high' (high reasoning effort) regardless of caller
+ * - If set to 'auto' (or unset/null): falls back to standard role-based logic
+ */
+export function getEffectiveReasoningTargetLevel(
+  provider?: { reasoningOverride?: ReasoningOverrideMode; name?: string; id?: string } | null,
+  agentOrTargetLevel?: { id?: string; name?: string } | string | ReasoningTargetLevel | null,
+): ReasoningTargetLevel {
+  if (provider?.reasoningOverride === 'force_off') {
+    return 'low';
+  }
+  if (provider?.reasoningOverride === 'force_on') {
+    return 'high';
+  }
+  return getAgentDesiredReasoningLevel(agentOrTargetLevel);
+}
+
+/**
  * Applies reasoning configuration parameters to a provider config.
  * Supports explicit matrix entries and generic OpenRouter fallback.
  */
-export function applyReasoningConfig<T extends { extraParams?: Record<string, unknown>; reasoningParams?: Record<string, unknown>; model?: string; id?: string; name?: string; url?: string }>(
+export function applyReasoningConfig<T extends { extraParams?: Record<string, unknown>; reasoningParams?: Record<string, unknown>; model?: string; id?: string; name?: string; url?: string; reasoningOverride?: ReasoningOverrideMode }>(
   provider: T,
   agentOrTargetLevel?: { id?: string; name?: string } | string | ReasoningTargetLevel | null,
   modelOverride?: string,
@@ -551,10 +631,20 @@ export function applyReasoningConfig<T extends { extraParams?: Record<string, un
   params: Record<string, unknown> | null;
   desiredLevel: ReasoningTargetLevel;
 } {
-  const desiredLevel = getAgentDesiredReasoningLevel(agentOrTargetLevel);
+  const desiredLevel = getEffectiveReasoningTargetLevel(provider, agentOrTargetLevel);
   const effectiveModel = modelOverride || provider.model;
   const provKey = normalizeProviderId(provider);
   const normModel = normalizeModelId(effectiveModel);
+
+  if (provider.reasoningOverride === 'force_off') {
+    console.log(
+      `[Reasoning Control Override] Provider "${provider.name || provider.id || 'unnamed'}" reasoning override active: FORCE OFF (sending disabled reasoning parameters regardless of agent role)`,
+    );
+  } else if (provider.reasoningOverride === 'force_on') {
+    console.log(
+      `[Reasoning Control Override] Provider "${provider.name || provider.id || 'unnamed'}" reasoning override active: FORCE ON (sending high reasoning effort parameters regardless of agent role)`,
+    );
+  }
 
   // Exclude non-chat models
   if (
@@ -669,20 +759,41 @@ export function applyReasoningConfig<T extends { extraParams?: Record<string, un
     );
   }
 
-  // Log whether generic fallback or known-provider-prefix special-case was applied for Cloudflare AI Gateway models
-  if (provKey === 'cloudflare') {
-    if (spec.isKnownProviderPrefixSpecialCase) {
+  // Log whether generic fallback, dual-mechanism Workers AI fallback, or known-provider-prefix special-case was applied for Cloudflare / @cf models
+  if (provKey === 'cloudflare' || normModel.startsWith('@cf/') || normModel.includes('@cf/')) {
+    if (spec.isDualMechanismWorkersAi) {
+      console.log(
+        `[Cloudflare Workers AI Reasoning Control] Model "${effectiveModel}" -> using GENERIC DUAL-MECHANISM fallback rule (sending both reasoning_effort: "${params.reasoning_effort}" and chat_template_kwargs: ${JSON.stringify(params.chat_template_kwargs || 'omitted (thinking on)')}) (params: ${JSON.stringify(params)})`,
+      );
+    } else if (spec.isKnownProviderPrefixSpecialCase) {
       console.log(
         `[Cloudflare AI Gateway Reasoning Control] Model "${effectiveModel}" -> using ${spec.matchedProvider || 'known-provider'}-prefix SPECIAL-CASE rule (reusing known provider reasoning parameters: ${JSON.stringify(params)})`,
       );
-    } else {
+    } else if (spec.isGenericFallback) {
       console.log(
         `[Cloudflare AI Gateway Reasoning Control] Model "${effectiveModel}" -> using GENERIC Cloudflare AI Gateway fallback rule (params: ${JSON.stringify(params)})`,
+      );
+    } else {
+      console.log(
+        `[Cloudflare AI Gateway Reasoning Control] Model "${effectiveModel}" -> using EXPLICIT config entry in reasoning matrix (params: ${JSON.stringify(params)})`,
       );
     }
     console.log(
       '[Cloudflare AI Gateway Reasoning Control] Cloudflare AI Gateway reasoning_effort sent — actual effect depends on the underlying routed provider; no error does not confirm success.',
     );
+  }
+
+  // Log whether generic fallback or explicit config was applied for Ollama models
+  if (provKey === 'ollama') {
+    if (spec.isGenericFallback) {
+      console.log(
+        `[Ollama Reasoning Control] Model "${effectiveModel}" -> using GENERIC Ollama fallback rule (params: ${JSON.stringify(params)})`,
+      );
+    } else {
+      console.log(
+        `[Ollama Reasoning Control] Model "${effectiveModel}" -> using EXPLICIT config entry in reasoning matrix (params: ${JSON.stringify(params)})`,
+      );
+    }
   }
 
   const updatedConfig: T = {

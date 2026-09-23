@@ -152,6 +152,8 @@ export interface AIProviderCapabilities {
   memory: boolean;
 }
 
+export type ReasoningOverrideMode = 'auto' | 'force_on' | 'force_off';
+
 export interface AIProviderConfig {
   id: string;
   name: string;
@@ -165,6 +167,7 @@ export interface AIProviderConfig {
   isDefault?: boolean;
   extraParams?: Record<string, unknown>;
   reasoningParams?: Record<string, unknown>;
+  reasoningOverride?: ReasoningOverrideMode;
 }
 
 export interface AIProvidersState {
