@@ -231,6 +231,10 @@ export function AssistantPage() {
       return new Set();
     }
   });
+  const [universalCopied, setUniversalCopied] = useState(false);
+  const [universalSaved, setUniversalSaved] = useState(false);
+  const [universalEdgeTtsPlaying, setUniversalEdgeTtsPlaying] = useState(false);
+  const [universalEdgeTtsLoading, setUniversalEdgeTtsLoading] = useState(false);
 
   // Assistant Settings Panel state
   const [settingsOpen, setSettingsOpen] = useState(false);
@@ -818,6 +822,221 @@ export function AssistantPage() {
     },
     [messages, savedItemIds],
   );
+
+  const handleUniversalCopyAll = useCallback(async () => {
+    playTapSound();
+    const meaningfulMessages = messages.filter((m) => !m.isWelcome);
+    if (meaningfulMessages.length === 0) {
+      triggerSettingsToast('No conversation text to copy yet.');
+      return;
+    }
+
+    const fullTranscript: string[] = [];
+    meaningfulMessages.forEach((m) => {
+      if (m.role === 'user') {
+        fullTranscript.push(`### 👤 User:\n${m.content}\n`);
+      } else if (m.role === 'assistant') {
+        fullTranscript.push(`### 🤖 AI Assistant:\n${stripTierLabels(m.content)}\n`);
+        if (m.multiChatResponses && m.multiChatResponses.length > 0) {
+          m.multiChatResponses.forEach((resp) => {
+            const personaText = stripTierLabels(resp.content || resp.text || '');
+            if (personaText) {
+              fullTranscript.push(`**${resp.name} (${resp.personaId}):**\n${personaText}\n`);
+            }
+          });
+        }
+      }
+    });
+
+    const fullText = fullTranscript.join('\n---\n\n').trim();
+    const richHtml = formatMarkdownToRichHtml(fullText);
+    const success = await copyToClipboard(fullText, richHtml);
+    if (success) {
+      setUniversalCopied(true);
+      setTimeout(() => setUniversalCopied(false), 2500);
+      triggerSettingsToast('Universal Copy: Copied all AI Assistant answers & text!');
+    }
+  }, [messages]);
+
+  const handleUniversalSaveAll = useCallback(() => {
+    playTapSound();
+    const assistantMessages = messages.filter(
+      (m) =>
+        m.role === 'assistant' &&
+        !m.isWelcome &&
+        (m.content || m.diagramSvg || m.chartData || (m.multiChatResponses && m.multiChatResponses.length > 0)),
+    );
+
+    if (assistantMessages.length === 0) {
+      triggerSettingsToast('No AI Assistant answers to save yet.');
+      return;
+    }
+
+    const updatedIds = new Set(savedItemIds);
+    let savedCount = 0;
+
+    messages.forEach((msg, idx) => {
+      if (msg.role !== 'assistant' || msg.isWelcome) return;
+      const stableId = msg.id || `assistant-msg-${idx}`;
+      const prevUserMsg = idx > 0 && messages[idx - 1]?.role === 'user' ? messages[idx - 1].content : '';
+      const title =
+        prevUserMsg.trim() ||
+        (msg.diagramSvg
+          ? 'Architectural Blueprint'
+          : msg.chartData
+          ? 'Data Analysis Chart'
+          : 'AI Assistant Response');
+
+      const itemType: 'diagram' | 'chart' | 'jarvis' = msg.diagramSvg
+        ? 'diagram'
+        : msg.chartData
+        ? 'chart'
+        : 'jarvis';
+
+      const itemToSave: SavedItem = {
+        id: stableId,
+        type: itemType,
+        title: title.slice(0, 120),
+        query: prevUserMsg.trim() || title,
+        subtitle: stripTierLabels(msg.content).slice(0, 200).trim() || title,
+        content: msg.content,
+        diagramSvg: msg.diagramSvg,
+        chartData: msg.chartData,
+        deepResearch: msg.deepResearch,
+        sources: msg.sources?.map((s) => ({
+          title: s.title,
+          url: s.url,
+          domain: s.domain,
+        })),
+        images: msg.image
+          ? [
+              {
+                url: msg.image.url || msg.image.imageData || '',
+                thumbUrl: msg.image.url || msg.image.imageData || '',
+                title: msg.image.prompt || 'Generated Image',
+                description: msg.image.prompt || '',
+                source: msg.image.providerName || 'AI Studio',
+                domain: 'nexus',
+              },
+            ]
+          : undefined,
+        savedAt: new Date().toISOString(),
+      };
+
+      storage.saveItem(itemToSave);
+      updatedIds.add(stableId);
+      savedCount++;
+    });
+
+    const firstQuery = messages.find((m) => m.role === 'user')?.content?.slice(0, 80) || 'AI Assistant Session';
+    const masterSessionId = `assistant-session-${Date.now()}`;
+    const transcriptText = messages
+      .filter((m) => !m.isWelcome)
+      .map((m) => `${m.role === 'user' ? '👤 User:' : '🤖 AI Assistant:'}\n${stripTierLabels(m.content)}`)
+      .join('\n\n---\n\n');
+
+    const sessionItem: SavedItem = {
+      id: masterSessionId,
+      type: 'jarvis',
+      title: `Session: ${firstQuery}`,
+      query: firstQuery,
+      subtitle: `Complete conversation archive (${savedCount} answers saved)`,
+      content: transcriptText,
+      savedAt: new Date().toISOString(),
+    };
+    storage.saveItem(sessionItem);
+    updatedIds.add(masterSessionId);
+
+    setSavedItemIds(updatedIds);
+    setUniversalSaved(true);
+    setTimeout(() => setUniversalSaved(false), 3000);
+    triggerSettingsToast(`Universal Save: Stored all ${savedCount} answers in your Saved Page!`);
+  }, [messages, savedItemIds]);
+
+  const handleUniversalEdgeTtsSpeakAll = useCallback(async () => {
+    playTapSound();
+    if (universalEdgeTtsPlaying) {
+      if (edgeTtsAudioRef.current) {
+        edgeTtsAudioRef.current.pause();
+        edgeTtsAudioRef.current.currentTime = 0;
+        edgeTtsAudioRef.current = null;
+      }
+      setUniversalEdgeTtsPlaying(false);
+      setEdgeTtsPlayingIndex(null);
+      return;
+    }
+
+    const assistantTextList = messages
+      .filter((m) => m.role === 'assistant' && !m.isWelcome && m.content)
+      .map((m) => stripTierLabels(m.content));
+
+    if (assistantTextList.length === 0) {
+      triggerSettingsToast('No AI Assistant answers to read aloud yet.');
+      return;
+    }
+
+    const combinedAssistantSpeech = assistantTextList.join('. Next response: ');
+
+    stopSpeak();
+    if (edgeTtsAudioRef.current) {
+      edgeTtsAudioRef.current.pause();
+      edgeTtsAudioRef.current = null;
+    }
+
+    const cleanText = combinedAssistantSpeech
+      .replace(/```[\s\S]*?```/g, ' Code snippet omitted. ')
+      .replace(/[*#`_~>[\]()]/g, '')
+      .replace(/\s+/g, ' ')
+      .trim();
+
+    if (!cleanText) return;
+
+    setUniversalEdgeTtsLoading(true);
+    try {
+      const response = await fetch('/api/edge-tts', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          text: cleanText.slice(0, 4000),
+          voice: storage.getEdgeVoice(),
+        }),
+      });
+
+      if (!response.ok) {
+        throw new Error(`Edge TTS error: ${response.status}`);
+      }
+
+      const blob = await response.blob();
+      const url = URL.createObjectURL(blob);
+      const audio = new Audio(url);
+      edgeTtsAudioRef.current = audio;
+
+      audio.onplay = () => {
+        setUniversalEdgeTtsPlaying(true);
+      };
+
+      audio.onended = () => {
+        setUniversalEdgeTtsPlaying(false);
+        edgeTtsAudioRef.current = null;
+        URL.revokeObjectURL(url);
+      };
+
+      audio.onerror = () => {
+        setUniversalEdgeTtsPlaying(false);
+        edgeTtsAudioRef.current = null;
+        URL.revokeObjectURL(url);
+      };
+
+      await audio.play();
+      setUniversalEdgeTtsPlaying(true);
+      triggerSettingsToast('Universal Edge TTS: Reading all AI Assistant answers aloud...');
+    } catch (err) {
+      console.error('[Universal Edge TTS] Error:', err);
+      setUniversalEdgeTtsPlaying(false);
+    } finally {
+      setUniversalEdgeTtsLoading(false);
+    }
+  }, [messages, universalEdgeTtsPlaying, stopSpeak]);
 
   useEffect(() => {
     const syncSaved = () => {
@@ -1448,6 +1667,84 @@ export function AssistantPage() {
         </div>
 
         <div className="flex items-center gap-1.5 sm:gap-2 flex-wrap justify-end">
+          {/* Universal Icon-Only Controls (Copy, Save, Edge TTS) for all AI Assistant answers */}
+          {!isOnlyWelcome && messages.some((m) => m.role === 'assistant' && !m.isWelcome) && (
+            <div className="flex items-center gap-1 bg-zinc-900/90 border border-zinc-700/70 p-0.5 sm:p-1 rounded-xl shadow-sm mr-0.5 sm:mr-1">
+              {/* Universal Copy Icon Only */}
+              <button
+                type="button"
+                onClick={handleUniversalCopyAll}
+                className={`p-1.5 rounded-lg border transition-all flex items-center justify-center ${
+                  universalCopied
+                    ? 'bg-emerald-500/20 text-emerald-300 border-emerald-500/40'
+                    : theme === 'classic'
+                    ? 'border-transparent text-cyan-200 hover:bg-cyan-950/50 hover:text-white'
+                    : theme === 'fulldark'
+                    ? 'border-transparent text-[#d4d4d8] hover:bg-[#282828] hover:text-white'
+                    : 'border-transparent text-zinc-300 hover:bg-zinc-800 hover:text-white'
+                }`}
+                title="Universal Copy: Copy all AI Assistant answers and text"
+                aria-label="Universal Copy"
+              >
+                {universalCopied ? <Check size={14} className="text-emerald-400" /> : <Copy size={14} />}
+              </button>
+
+              {/* Universal Edge TTS Speaker Icon Only */}
+              <button
+                type="button"
+                onClick={handleUniversalEdgeTtsSpeakAll}
+                disabled={universalEdgeTtsLoading}
+                className={`p-1.5 rounded-lg border transition-all flex items-center justify-center ${
+                  universalEdgeTtsPlaying
+                    ? 'bg-purple-500/20 text-purple-300 border-purple-500/40'
+                    : theme === 'classic'
+                    ? 'border-transparent text-cyan-200 hover:bg-cyan-950/50 hover:text-white'
+                    : theme === 'fulldark'
+                    ? 'border-transparent text-[#d4d4d8] hover:bg-[#282828] hover:text-white'
+                    : 'border-transparent text-zinc-300 hover:bg-zinc-800 hover:text-white'
+                }`}
+                title={
+                  universalEdgeTtsLoading
+                    ? 'Synthesizing Edge TTS Neural voice...'
+                    : universalEdgeTtsPlaying
+                    ? 'Stop Universal Edge TTS'
+                    : 'Universal Edge TTS: Play all AI Assistant answers read aloud'
+                }
+                aria-label="Universal Edge TTS Speaker"
+              >
+                {universalEdgeTtsLoading ? (
+                  <Loader2 size={14} className="animate-spin text-purple-400" />
+                ) : universalEdgeTtsPlaying ? (
+                  <Radio size={14} className="animate-pulse text-purple-400" />
+                ) : (
+                  <Radio size={14} />
+                )}
+              </button>
+
+              {/* Universal Save Icon Only */}
+              <button
+                type="button"
+                onClick={handleUniversalSaveAll}
+                className={`p-1.5 rounded-lg border transition-all flex items-center justify-center ${
+                  universalSaved
+                    ? 'bg-amber-500/20 text-amber-300 border-amber-500/40'
+                    : theme === 'classic'
+                    ? 'border-transparent text-cyan-200 hover:bg-cyan-950/50 hover:text-white'
+                    : theme === 'fulldark'
+                    ? 'border-transparent text-[#d4d4d8] hover:bg-[#282828] hover:text-white'
+                    : 'border-transparent text-zinc-300 hover:bg-zinc-800 hover:text-white'
+                }`}
+                title="Universal Save: Save all AI Assistant answers to Saved Page"
+                aria-label="Universal Save"
+              >
+                <Bookmark
+                  size={14}
+                  className={universalSaved ? 'fill-amber-400 text-amber-400' : ''}
+                />
+              </button>
+            </div>
+          )}
+
           {/* Settings Modal Trigger */}
           <button
             type="button"
