@@ -2464,6 +2464,119 @@ async function executeSmartAnswerEngine(
   return finalResult;
 }
 
+/**
+ * Reformulates a follow-up user query using recent conversation context into a standalone search query.
+ * Keeps latency minimal by using a fast, lightweight completion call with strict timeout.
+ */
+async function reformulateSearchQueryWithContext(
+  message: string,
+  history: Array<{ role: 'user' | 'assistant'; content: string }> = [],
+  providerConfig?: CustomProviderPayload | null,
+): Promise<{ query: string; reformulated: boolean; reason?: string }> {
+  const trimmed = message.trim();
+  if (!trimmed || !history || history.length === 0) {
+    return { query: trimmed, reformulated: false };
+  }
+
+  const lower = trimmed.toLowerCase();
+  const hasPronounOrDeictic = /\b(this|that|these|those|it|its|they|them|their|he|she|him|her|his|hers|here|there)\b/i.test(lower);
+  const isShortFollowUp =
+    lower.length < 50 ||
+    lower.startsWith('how') ||
+    lower.startsWith('why') ||
+    lower.startsWith('what about') ||
+    lower.startsWith('what else') ||
+    lower.startsWith('explain') ||
+    lower.startsWith('tell me more') ||
+    lower.startsWith('can you') ||
+    lower.includes('work') ||
+    lower.includes('example') ||
+    lower.includes('difference') ||
+    lower.includes('pros') ||
+    lower.includes('cons') ||
+    lower.includes('advantages') ||
+    lower.includes('limitations');
+
+  const recentTurns = history.slice(-4).map((h) => {
+    const roleLabel = h.role === 'user' ? 'User' : 'Assistant';
+    const snippet = h.content.replace(/\s+/g, ' ').slice(0, 200).trim();
+    return `[${roleLabel}]: ${snippet}`;
+  });
+
+  if (recentTurns.length === 0) {
+    return { query: trimmed, reformulated: false };
+  }
+
+  // Fast AI reformulation attempt
+  try {
+    const systemPrompt =
+      'You are a search query optimizer. Given recent conversation turns and a user follow-up question, rewrite the follow-up question into a single, concise, standalone web search query (3 to 8 words) that captures the full specific topic/subject. Output ONLY the plain search query without quotes, without prefixes, and without punctuation.';
+
+    const userPrompt =
+      `Recent Conversation:\n${recentTurns.join('\n')}\n\n` +
+      `User Follow-up Message: "${trimmed}"\n\n` +
+      `Standalone Search Query:`;
+
+    const aiResult = await executeAiWithProviderOrFallback({
+      messages: [
+        { role: 'system', content: systemPrompt },
+        { role: 'user', content: userPrompt },
+      ],
+      temperature: 0.1,
+      maxTokens: 32,
+      timeoutMs: 3500,
+      providerConfig,
+    });
+
+    if (aiResult && aiResult.text) {
+      let cleaned = aiResult.text
+        .replace(/^["'`]|["'`]$/g, '')
+        .replace(/^(standalone search query|search query|standalone query|query|search):\s*/i, '')
+        .replace(/[\n\r]+/g, ' ')
+        .trim();
+
+      cleaned = cleaned.replace(/[.]+$/, '').trim();
+
+      if (
+        cleaned.length >= 3 &&
+        cleaned.length <= 120 &&
+        !cleaned.toLowerCase().includes('as an ai') &&
+        !cleaned.toLowerCase().includes('here is')
+      ) {
+        return {
+          query: cleaned,
+          reformulated: cleaned.toLowerCase() !== trimmed.toLowerCase(),
+          reason: 'AI Context Reformulation',
+        };
+      }
+    }
+  } catch {
+    // Non-blocking fallback
+  }
+
+  // Rule-based heuristic fallback if AI call is unavailable/times out
+  if (hasPronounOrDeictic || isShortFollowUp) {
+    const lastUserTurn = [...history].reverse().find((h) => h.role === 'user');
+    const lastAssistantTurn = [...history].reverse().find((h) => h.role === 'assistant');
+    const prevContext = lastUserTurn?.content || lastAssistantTurn?.content || '';
+
+    if (prevContext) {
+      const cleanPrev = prevContext
+        .replace(/^(what is|who is|explain|tell me about|how does|why is)\s+/i, '')
+        .split(/[.?!,\n]/)[0]
+        .trim();
+      if (cleanPrev && cleanPrev.length > 2) {
+        const combined = `${trimmed.replace(/\b(this|that|it|these|those)\b/gi, cleanPrev)} ${cleanPrev}`
+          .replace(/\s+/g, ' ')
+          .trim();
+        return { query: combined, reformulated: true, reason: 'Heuristic Context Fallback' };
+      }
+    }
+  }
+
+  return { query: trimmed, reformulated: false };
+}
+
 async function processAiChatInternal(
   message: string,
   history: Array<{ role: 'user' | 'assistant'; content: string }> = [],
@@ -2512,18 +2625,32 @@ async function processAiChatInternal(
 
   const shouldSearchWeb = isForcedWebSearch || isTimeSensitive;
 
+  // Context-aware query reformulation for follow-up conversational queries
+  let effectiveSearchQuery = trimmed;
+  let isQueryReformulated = false;
+  let queryReformulationReason = '';
+
+  if (shouldSearchWeb || isKnowledgeQuery) {
+    if (history && history.length > 0) {
+      const reformulation = await reformulateSearchQueryWithContext(trimmed, history, providerConfig);
+      effectiveSearchQuery = reformulation.query;
+      isQueryReformulated = reformulation.reformulated;
+      queryReformulationReason = reformulation.reason || '';
+    }
+  }
+
   if (shouldSearchWeb) {
     try {
       const searchPromises: Promise<void>[] = [];
       searchPromises.push(
-        searchProvider({ query: trimmed, page: 1, category: 'ALL', max_results: 10, maxResults: 10 })
+        searchProvider({ query: effectiveSearchQuery, page: 1, category: 'ALL', max_results: 10, maxResults: 10 })
           .then((webRes) => {
             const webItems = webRes?.results ?? [];
             for (const item of webItems.slice(0, 10)) {
               if (!structuredSources.some((s) => s.url === item.url)) {
                 const cleanDesc = (item.description || '').slice(0, 300).trim();
                 const domainName = item.domain || domainOf(item.url) || 'web';
-                const classification = classifyDomainTrustTier(domainName, trimmed);
+                const classification = classifyDomainTrustTier(domainName, effectiveSearchQuery);
                 structuredSources.push({
                   title: item.title,
                   url: item.url,
@@ -2543,11 +2670,11 @@ async function processAiChatInternal(
       );
 
       searchPromises.push(
-        fetchWikipediaSummary(trimmed)
+        fetchWikipediaSummary(effectiveSearchQuery)
           .then((wikiSummary) => {
             if (wikiSummary && wikiSummary.extract) {
               const domainName = 'wikipedia.org';
-              const classification = classifyDomainTrustTier(domainName, trimmed);
+              const classification = classifyDomainTrustTier(domainName, effectiveSearchQuery);
               structuredSources.push({
                 title: wikiSummary.title,
                 url: wikiSummary.url,
@@ -2583,10 +2710,10 @@ async function processAiChatInternal(
     }
   } else if (isKnowledgeQuery) {
     try {
-      const wikiSummary = await fetchWikipediaSummary(trimmed);
+      const wikiSummary = await fetchWikipediaSummary(effectiveSearchQuery);
       if (wikiSummary && wikiSummary.extract) {
         const domainName = 'wikipedia.org';
-        const classification = classifyDomainTrustTier(domainName, trimmed);
+        const classification = classifyDomainTrustTier(domainName, effectiveSearchQuery);
         structuredSources.push({
           title: wikiSummary.title,
           url: wikiSummary.url,
@@ -2689,17 +2816,21 @@ async function processAiChatInternal(
     systemInstructions.push(`[User Context / Saved Memory]:\n${memory.slice(0, 300)}`);
   }
 
+  const searchSubjectDescription = isQueryReformulated
+    ? `"${effectiveSearchQuery}" (reformulated from contextual follow-up: "${trimmed}")`
+    : `"${trimmed}"`;
+
   if (structuredSources.length > 0 || isForcedWebSearch) {
     systemInstructions.push(
       `[REAL-TIME LIVE WEB SEARCH RESULTS FOR THIS TURN ONLY - 10 SOURCES RANKED BY TRUST TIER]:\n` +
         `${sourcesFormatted || 'No additional web text returned; use current date/time reference and available knowledge.'}\n\n` +
         `CRITICAL GROUNDING & DOMAIN-TRUST INSTRUCTIONS FOR THIS TURN:\n` +
-        `- Real-time web search was conducted specifically for the user's query: "${trimmed}".\n` +
+        `- Real-time web search was conducted for: ${searchSubjectDescription}.\n` +
         `- 10 live sources are provided above, sorted with highest domain trust first (Tier 1: Official/Primary, Tier 2: Secondary, Tier 3: Unverified).\n` +
         `- You MUST use the live search results and current timestamp (${currentDateTimeStr}) provided above to answer the user accurately and factually.\n` +
         `- NEVER state that you lack real-time access, cannot browse the internet, or do not know the current date/information.\n` +
         tierGuidance +
-        `- Answer the user's question directly based on these verified live sources.`,
+        `- Answer the user's question directly based on these verified live sources in context of the conversation.`,
     );
   } else if (sourceContext) {
     systemInstructions.push(`[Verified Source Context]:\n${sourceContext}`);
@@ -2715,7 +2846,7 @@ async function processAiChatInternal(
 
   const userContentForTurn =
     structuredSources.length > 0
-      ? `${trimmed}\n\n[Live Search Grounding for this question - 10 Sources by Trust Tier]:\n${sourcesFormatted}\n(Current Date/Time Reference: ${currentDateTimeStr})\n\nInstructions: Use the live search results above to answer directly. Prioritize Tier 1 sources and note any source discrepancies.`
+      ? `${trimmed}\n\n[Live Search Grounding for this question (Searched: "${effectiveSearchQuery}") - 10 Sources by Trust Tier]:\n${sourcesFormatted}\n(Current Date/Time Reference: ${currentDateTimeStr})\n\nInstructions: Use the live search results above to answer directly. Prioritize Tier 1 sources and note any source discrepancies.`
       : trimmed;
 
   const messages: Array<{ role: string; content: string }> = [
@@ -2724,9 +2855,18 @@ async function processAiChatInternal(
     { role: 'user', content: userContentForTurn },
   ];
 
-  // Comprehensive turn logging to verify exact prompt injection and turn isolation
+  // Comprehensive turn logging to verify exact prompt injection, query reformulation, and turn isolation
   console.log(`[AI Assistant Web Search] ========================================`);
-  console.log(`[AI Assistant Web Search] Turn Query: "${trimmed}"`);
+  console.log(`[AI Assistant Web Search] Original User Query: "${trimmed}"`);
+  if (isQueryReformulated) {
+    console.log(
+      `[AI Assistant Web Search] Context Reformulated Search Query: "${effectiveSearchQuery}" (${queryReformulationReason})`,
+    );
+  } else {
+    console.log(
+      `[AI Assistant Web Search] Standalone Search Query: "${effectiveSearchQuery}" (No reformulation needed)`,
+    );
+  }
   console.log(`[AI Assistant Web Search] Forced WebSearch: ${isForcedWebSearch} | Search Run: ${shouldSearchWeb}`);
   console.log(`[AI Assistant Web Search] Injected ${structuredSources.length} fresh search result(s) into model prompt (Sorted by Trust Tier):`);
   if (structuredSources.length > 0) {
