@@ -2827,129 +2827,131 @@ export function AssistantPage() {
                           </div>
                         )}
 
-                        {/* Message Action Toolbar */}
-                        <div
-                          className={`flex items-center gap-1.5 pt-1 opacity-70 group-hover:opacity-100 transition-opacity flex-wrap ${
-                            theme === 'fulldark' ? 'text-[#888]' : 'text-zinc-400'
-                          }`}
-                        >
-                          {/* Universal Copy Button */}
-                          <button
-                            type="button"
-                            onClick={() => handleCopyText(message.content, index)}
-                            className={`p-1.5 rounded-md transition-colors flex items-center gap-1 text-xs ${
-                              theme === 'fulldark'
-                                ? 'hover:text-white hover:bg-[#282828]'
-                                : 'hover:text-zinc-200 hover:bg-zinc-800'
+                        {/* Message Action Toolbar (Only for standard non-MultiChat messages; MultiChat personas have individual toolbars) */}
+                        {(!message.multiChatResponses || message.multiChatResponses.length === 0) && (
+                          <div
+                            className={`flex items-center gap-1.5 pt-1 opacity-70 group-hover:opacity-100 transition-opacity flex-wrap ${
+                              theme === 'fulldark' ? 'text-[#888]' : 'text-zinc-400'
                             }`}
-                            title="Universal Copy response"
                           >
-                            {copiedIndex === index ? (
-                              <>
-                                <Check size={13} className="text-emerald-400" />
-                                <span className="text-[11px] text-emerald-400 font-medium">Copied</span>
-                              </>
-                            ) : (
-                              <>
-                                <Copy size={13} />
-                              </>
-                            )}
-                          </button>
+                            {/* Universal Copy Button */}
+                            <button
+                              type="button"
+                              onClick={() => handleCopyText(message.content, index)}
+                              className={`p-1.5 rounded-md transition-colors flex items-center gap-1 text-xs ${
+                                theme === 'fulldark'
+                                  ? 'hover:text-white hover:bg-[#282828]'
+                                  : 'hover:text-zinc-200 hover:bg-zinc-800'
+                              }`}
+                              title="Universal Copy response"
+                            >
+                              {copiedIndex === index ? (
+                                <>
+                                  <Check size={13} className="text-emerald-400" />
+                                  <span className="text-[11px] text-emerald-400 font-medium">Copied</span>
+                                </>
+                              ) : (
+                                <>
+                                  <Copy size={13} />
+                                </>
+                              )}
+                            </button>
 
-                          {/* Universal Edge TTS Speaker Button */}
-                          <button
-                            type="button"
-                            onClick={() => handleEdgeTtsSpeak(message.content, index)}
-                            disabled={edgeTtsLoadingIndex === index}
-                            className={`p-1.5 rounded-md transition-colors flex items-center gap-1 text-xs ${
-                              edgeTtsPlayingIndex === index
-                                ? 'text-purple-400 bg-purple-500/15'
-                                : theme === 'fulldark'
-                                ? 'hover:text-white hover:bg-[#282828]'
-                                : 'hover:text-zinc-200 hover:bg-zinc-800'
-                            }`}
-                            title={
-                              edgeTtsLoadingIndex === index
-                                ? 'Synthesizing Edge TTS Neural voice...'
-                                : edgeTtsPlayingIndex === index
-                                ? 'Stop Edge TTS playback'
-                                : 'Play Neural Voice (Edge TTS)'
-                            }
-                          >
-                            {edgeTtsLoadingIndex === index ? (
-                              <Loader2 size={13} className="animate-spin text-purple-400" />
-                            ) : edgeTtsPlayingIndex === index ? (
-                              <Radio size={13} className="animate-pulse text-purple-400" />
-                            ) : (
-                              <Radio size={13} />
-                            )}
-                          </button>
-
-                          {/* Browser Voice Speaker Fallback */}
-                          <button
-                            type="button"
-                            onClick={() => toggleBrowserSpeak(message.content, index)}
-                            className={`p-1.5 rounded-md transition-colors ${
-                              speakingIndex === index
-                                ? 'text-cyan-400 bg-cyan-500/10'
-                                : theme === 'fulldark'
-                                ? 'hover:text-white hover:bg-[#282828]'
-                                : 'hover:text-zinc-200 hover:bg-zinc-800'
-                            }`}
-                            title={speakingIndex === index ? 'Stop voice' : 'Read aloud (Browser)'}
-                          >
-                            {speakingIndex === index ? (
-                              <VolumeX size={13} />
-                            ) : (
-                              <Volume2 size={13} />
-                            )}
-                          </button>
-
-                          {/* Universal Save Button */}
-                          <button
-                            type="button"
-                            onClick={() => handleToggleSaveMessage(message, index)}
-                            className={`p-1.5 rounded-md transition-colors flex items-center gap-1 text-xs ${
-                              savedItemIds.has(message.id || `assistant-msg-${index}`)
-                                ? 'text-amber-400 bg-amber-500/15'
-                                : theme === 'fulldark'
-                                ? 'hover:text-white hover:bg-[#282828]'
-                                : 'hover:text-zinc-200 hover:bg-zinc-800'
-                            }`}
-                            title={
-                              savedItemIds.has(message.id || `assistant-msg-${index}`)
-                                ? 'Saved to Library (Saved Page) — click to remove'
-                                : 'Save to Library (Stored in your Saved Page category)'
-                            }
-                          >
-                            <Bookmark
-                              size={13}
-                              className={
-                                savedItemIds.has(message.id || `assistant-msg-${index}`)
-                                  ? 'fill-amber-400 text-amber-400'
-                                  : ''
+                            {/* Universal Edge TTS Speaker Button */}
+                            <button
+                              type="button"
+                              onClick={() => handleEdgeTtsSpeak(message.content, index)}
+                              disabled={edgeTtsLoadingIndex === index}
+                              className={`p-1.5 rounded-md transition-colors flex items-center gap-1 text-xs ${
+                                edgeTtsPlayingIndex === index
+                                  ? 'text-purple-400 bg-purple-500/15'
+                                  : theme === 'fulldark'
+                                  ? 'hover:text-white hover:bg-[#282828]'
+                                  : 'hover:text-zinc-200 hover:bg-zinc-800'
+                              }`}
+                              title={
+                                edgeTtsLoadingIndex === index
+                                  ? 'Synthesizing Edge TTS Neural voice...'
+                                  : edgeTtsPlayingIndex === index
+                                  ? 'Stop Edge TTS playback'
+                                  : 'Play Neural Voice (Edge TTS)'
                               }
-                            />
-                            {savedItemIds.has(message.id || `assistant-msg-${index}`) && (
-                              <span className="text-[11px] text-amber-300 font-medium hidden sm:inline">Saved</span>
-                            )}
-                          </button>
+                            >
+                              {edgeTtsLoadingIndex === index ? (
+                                <Loader2 size={13} className="animate-spin text-purple-400" />
+                              ) : edgeTtsPlayingIndex === index ? (
+                                <Radio size={13} className="animate-pulse text-purple-400" />
+                              ) : (
+                                <Radio size={13} />
+                              )}
+                            </button>
 
-                          {/* Delete Answer Button */}
-                          <button
-                            type="button"
-                            onClick={() => handleDeleteMessage(index)}
-                            className={`p-1.5 rounded-md transition-colors flex items-center gap-1 text-xs ${
-                              theme === 'fulldark'
-                                ? 'hover:text-red-400 hover:bg-red-500/10'
-                                : 'hover:text-red-400 hover:bg-red-500/10'
-                            }`}
-                            title="Delete this answer"
-                            aria-label="Delete answer"
-                          >
-                            <Trash2 size={13} />
-                          </button>
-                        </div>
+                            {/* Browser Voice Speaker Fallback */}
+                            <button
+                              type="button"
+                              onClick={() => toggleBrowserSpeak(message.content, index)}
+                              className={`p-1.5 rounded-md transition-colors ${
+                                speakingIndex === index
+                                  ? 'text-cyan-400 bg-cyan-500/10'
+                                  : theme === 'fulldark'
+                                  ? 'hover:text-white hover:bg-[#282828]'
+                                  : 'hover:text-zinc-200 hover:bg-zinc-800'
+                              }`}
+                              title={speakingIndex === index ? 'Stop voice' : 'Read aloud (Browser)'}
+                            >
+                              {speakingIndex === index ? (
+                                <VolumeX size={13} />
+                              ) : (
+                                <Volume2 size={13} />
+                              )}
+                            </button>
+
+                            {/* Universal Save Button */}
+                            <button
+                              type="button"
+                              onClick={() => handleToggleSaveMessage(message, index)}
+                              className={`p-1.5 rounded-md transition-colors flex items-center gap-1 text-xs ${
+                                savedItemIds.has(message.id || `assistant-msg-${index}`)
+                                  ? 'text-amber-400 bg-amber-500/15'
+                                  : theme === 'fulldark'
+                                  ? 'hover:text-white hover:bg-[#282828]'
+                                  : 'hover:text-zinc-200 hover:bg-zinc-800'
+                              }`}
+                              title={
+                                savedItemIds.has(message.id || `assistant-msg-${index}`)
+                                  ? 'Saved to Library (Saved Page) — click to remove'
+                                  : 'Save to Library (Stored in your Saved Page category)'
+                              }
+                            >
+                              <Bookmark
+                                size={13}
+                                className={
+                                  savedItemIds.has(message.id || `assistant-msg-${index}`)
+                                    ? 'fill-amber-400 text-amber-400'
+                                    : ''
+                                }
+                              />
+                              {savedItemIds.has(message.id || `assistant-msg-${index}`) && (
+                                <span className="text-[11px] text-amber-300 font-medium hidden sm:inline">Saved</span>
+                              )}
+                            </button>
+
+                            {/* Delete Answer Button */}
+                            <button
+                              type="button"
+                              onClick={() => handleDeleteMessage(index)}
+                              className={`p-1.5 rounded-md transition-colors flex items-center gap-1 text-xs ${
+                                theme === 'fulldark'
+                                  ? 'hover:text-red-400 hover:bg-red-500/10'
+                                  : 'hover:text-red-400 hover:bg-red-500/10'
+                              }`}
+                              title="Delete this answer"
+                              aria-label="Delete answer"
+                            >
+                              <Trash2 size={13} />
+                            </button>
+                          </div>
+                        )}
                       </div>
                     )}
                   </div>
