@@ -3894,6 +3894,41 @@ CRITICAL RULES:
         providerName: 'Internal Router',
         model: 'promptimage-pipeline',
       };
+    } else if (isSearchOverrideQuery(query)) {
+      const stripped = stripSearchOverridePrefix(query).trim();
+      const { cleanedSearchQuery } = extractTopicKeywords(stripped);
+      plannerOutput = {
+        task: `Search web: ${stripped || 'Web search'}`,
+        plan: [
+          'Execute live web search for verified intelligence across authoritative sources',
+          'Audit and fact-check extracted evidence via Fact Checker',
+          'Synthesize comprehensive, grounded response via Final Synthesizer',
+        ],
+        needsCode: false,
+        needsResearch: true,
+        needsResearchQuery: cleanedSearchQuery || stripped,
+        needsNews: false,
+        needsNewsQuery: '',
+        needsWikipedia: false,
+        wikipediaQuery: '',
+        needsWikidata: false,
+        wikidataQuery: '',
+        needsWeather: false,
+        weatherLocation: '',
+        needsKnowledgeAgent: false,
+        needsReview: false,
+        needsFactCheck: true,
+        needsDiagram: false,
+        needsChart: false,
+        needsImage: false,
+      };
+      duration = 5;
+      planRes = {
+        ok: true,
+        text: JSON.stringify(plannerOutput, null, 2),
+        providerName: 'Internal Router',
+        model: 'search-pipeline',
+      };
     } else {
       const pStart = Date.now();
       planRes = await callAgent('planner', [
@@ -4201,10 +4236,16 @@ CRITICAL RULES:
       } else if (isSearchOverrideQuery(query)) {
         plannerOutput.needsResearch = true;
         plannerOutput.needsResearchQuery = stripSearchOverridePrefix(query).trim();
+        plannerOutput.needsNews = false;
+        plannerOutput.needsNewsQuery = '';
+        plannerOutput.newsCategory = undefined;
+        plannerOutput.newsMode = undefined;
         plannerOutput.needsWikipedia = false;
         plannerOutput.wikipediaQuery = '';
         plannerOutput.needsWikidata = false;
         plannerOutput.wikidataQuery = '';
+        plannerOutput.needsWeather = false;
+        plannerOutput.weatherLocation = '';
         plannerOutput.needsKnowledgeAgent = false;
         plannerOutput.needsReview = false;
         plannerOutput.needsFactCheck = true;
@@ -4352,10 +4393,16 @@ CRITICAL RULES:
       } else if (isSearchOverrideQuery(query)) {
         plannerOutput.needsResearch = true;
         plannerOutput.needsResearchQuery = stripSearchOverridePrefix(query).trim();
+        plannerOutput.needsNews = false;
+        plannerOutput.needsNewsQuery = '';
+        plannerOutput.newsCategory = undefined;
+        plannerOutput.newsMode = undefined;
         plannerOutput.needsWikipedia = false;
         plannerOutput.wikipediaQuery = '';
         plannerOutput.needsWikidata = false;
         plannerOutput.wikidataQuery = '';
+        plannerOutput.needsWeather = false;
+        plannerOutput.weatherLocation = '';
         plannerOutput.needsKnowledgeAgent = false;
         plannerOutput.needsReview = false;
         plannerOutput.needsFactCheck = true;
@@ -4474,10 +4521,16 @@ CRITICAL RULES:
   } else if (isSearchOverrideQuery(query)) {
     plannerOutput.needsResearch = true;
     plannerOutput.needsResearchQuery = stripSearchOverridePrefix(query).trim();
+    plannerOutput.needsNews = false;
+    plannerOutput.needsNewsQuery = '';
+    plannerOutput.newsCategory = undefined;
+    plannerOutput.newsMode = undefined;
     plannerOutput.needsWikipedia = false;
     plannerOutput.wikipediaQuery = '';
     plannerOutput.needsWikidata = false;
     plannerOutput.wikidataQuery = '';
+    plannerOutput.needsWeather = false;
+    plannerOutput.weatherLocation = '';
     plannerOutput.needsKnowledgeAgent = false;
     plannerOutput.needsReview = false;
     plannerOutput.needsFactCheck = true;
@@ -4674,8 +4727,8 @@ CRITICAL RULES:
 
   const isProductLineupQuery = !isCustomApi && !isWebFetch && !isPureFileAnalysis && !isPureDocRagQuery && isProductLineupInquiry(textForIntentCheck);
   const isLatestUpdatesQuery = !isCustomApi && !isWebFetch && !isPureFileAnalysis && !isPureDocRagQuery && isLatestUpdatesInquiry(textForIntentCheck);
-  const isNewsQuery = !isCustomApi && !isWebFetch && !isProductLineupQuery && !isLatestUpdatesQuery && !isWeatherQuery && !isPureFileAnalysis && !isPureDocRagQuery && isNewsInquiry(textForIntentCheck);
-  const isWorldNews = !isCustomApi && !isWebFetch && !isProductLineupQuery && !isLatestUpdatesQuery && !isWeatherQuery && !isPureFileAnalysis && !isPureDocRagQuery && isWorldNewsInquiry(textForIntentCheck);
+  const isNewsQuery = !isCustomApi && !isWebFetch && !isSearchOverride && !isProductLineupQuery && !isLatestUpdatesQuery && !isWeatherQuery && !isPureFileAnalysis && !isPureDocRagQuery && isNewsInquiry(textForIntentCheck);
+  const isWorldNews = !isCustomApi && !isWebFetch && !isSearchOverride && !isProductLineupQuery && !isLatestUpdatesQuery && !isWeatherQuery && !isPureFileAnalysis && !isPureDocRagQuery && isWorldNewsInquiry(textForIntentCheck);
   const isPersonalQuery = !isCustomApi && !isWebFetch && !isSearchOverride && !isPureFileAnalysis && !isPureDocRagQuery && (isPersonalOrHumanAiComparison(query) || isPersonalOrHumanAiComparison(combinedQueryText));
   const isSelfQuery = !isCustomApi && !isWebFetch && !isSearchOverride && !isPureFileAnalysis && !isPureDocRagQuery && (isSelfReferentialInquiry(query) || isSelfReferentialInquiry(combinedQueryText));
 
@@ -5556,7 +5609,7 @@ Document search was performed for query: "${cleanSearchQuery}" across ${targetLa
         );
 
         let effectiveSearchQuery = '';
-        const isNewsSearch = !isLatestUpdatesQuery && (Boolean(plannerOutput.needsNews) || isNewsQuery);
+        const isNewsSearch = !isSearchOverride && !isLatestUpdatesQuery && (Boolean(plannerOutput.needsNews) || isNewsQuery);
         if (isProductLineupQuery) {
           // For product/model lineup queries: specifically target official product/model listing and documentation pages
           const queryWithoutPunctuation = (plannerResearchQuery || cleanedSearchQuery || strippedQuery).replace(/[^\w\s-]/g, ' ').replace(/\s+/g, ' ').trim();

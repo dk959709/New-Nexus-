@@ -31,6 +31,7 @@ import {
   Palette,
   MessagesSquare,
   Bot,
+  FlaskConical,
 } from 'lucide-react';
 import { Link } from 'react-router-dom';
 import { api } from '@/services/api';
@@ -39,7 +40,8 @@ import { copyToClipboard } from '@/lib/clipboard';
 import { ErrorMessage } from '@/components';
 import { generateStudioImage } from '@/services/imageGenerationService';
 import { executeMultiChatTurn } from '@/services/multiChatOrchestrator';
-import type { AISource, MultiChatPersonaResponse, MultiChatMessage } from '@/types';
+import { runJarvisPipeline } from '@/services/jarvisOrchestrator';
+import type { AISource, MultiChatPersonaResponse, MultiChatMessage, JarvisExecutionStep } from '@/types';
 
 export interface AssistantGeneratedImage {
   url: string;
@@ -67,6 +69,7 @@ const CHAT_KEY = 'nexus-ai-conversation-v2';
 const MEMORY_KEY = 'nexus-ai-smart-memory-v1';
 const WEB_SEARCH_PREF_KEY = 'nexus-ai-web-search-toggle';
 const IMAGE_GEN_PREF_KEY = 'nexus-ai-image-gen-toggle';
+const DEEP_RESEARCH_PREF_KEY = 'nexus-ai-deep-research-toggle';
 
 const RECENT_MESSAGES = 8;
 const MAX_MEMORY_LENGTH = 1200;
@@ -83,6 +86,13 @@ const QUICK_IMAGE_PROMPTS = [
   'Futuristic glass greenhouse on Mars at twilight',
   'Astronaut floating above a prismatic cosmic nebula',
   'Minimalist architectural villa on a misty Nordic fjord',
+];
+
+const QUICK_DEEP_RESEARCH_PROMPTS = [
+  'Commercial viability and timeline of solid-state EV batteries',
+  'Breakthroughs in quantum error correction and topological qubits',
+  'Global semiconductor supply chain risks and geopolitical landscape',
+  'Long-term ecological impact of deep-sea mineral mining',
 ];
 
 const welcomeMessage: Message = {
@@ -141,6 +151,14 @@ function loadImageGenToggle(): boolean {
   }
 }
 
+function loadDeepResearchToggle(): boolean {
+  try {
+    return localStorage.getItem(DEEP_RESEARCH_PREF_KEY) === 'true';
+  } catch {
+    return false;
+  }
+}
+
 function buildLocalMemory(messages: Message[]): string {
   const useful = messages
     .filter((message) => message.content.trim())
@@ -163,6 +181,9 @@ export function AssistantPage() {
   const [smartMemory, setSmartMemory] = useState(loadSmartMemory);
   const [webSearchEnabled, setWebSearchEnabled] = useState(loadWebSearchToggle);
   const [imageGenEnabled, setImageGenEnabled] = useState(loadImageGenToggle);
+  const [deepResearchEnabled, setDeepResearchEnabled] = useState(loadDeepResearchToggle);
+  const [deepResearchProgress, setDeepResearchProgress] = useState<number>(0);
+  const [deepResearchPhase, setDeepResearchPhase] = useState<string>('');
   const [imageLoadingPhase, setImageLoadingPhase] = useState<string>('');
   const [fullscreenModalImage, setFullscreenModalImage] = useState<string | null>(null);
   const [input, setInput] = useState('');
@@ -319,6 +340,18 @@ export function AssistantPage() {
       const next = !prev;
       try {
         localStorage.setItem(IMAGE_GEN_PREF_KEY, String(next));
+      } catch {
+        // Ignore storage errors
+      }
+      return next;
+    });
+  };
+
+  const toggleDeepResearch = () => {
+    setDeepResearchEnabled((prev) => {
+      const next = !prev;
+      try {
+        localStorage.setItem(DEEP_RESEARCH_PREF_KEY, String(next));
       } catch {
         // Ignore storage errors
       }
@@ -656,6 +689,98 @@ export function AssistantPage() {
 
     setMessages((current) => [...current, userMessage]);
     setLoading(true);
+
+    // If Deep Research mode is ON, route directly through JARVIS multi-agent research pipeline (takes top priority)
+    if (deepResearchEnabled) {
+      setDeepResearchProgress(10);
+      setDeepResearchPhase('Initializing JARVIS research pipeline (Planner formulating strategy)...');
+      try {
+        const jarvisConfig = storage.getJarvisConfig();
+        let userTz = '';
+        try {
+          userTz = Intl.DateTimeFormat().resolvedOptions().timeZone || '';
+        } catch {
+          userTz = 'Europe/London';
+        }
+
+        const result = await runJarvisPipeline(
+          message,
+          jarvisConfig,
+          true, // deepResearch = true
+          false, // diagramMode
+          false, // chartMode
+          false, // imageMode
+          (step: JarvisExecutionStep) => {
+            let pct = 10;
+            let label = `${step.name || 'Agent'}: ${step.status === 'running' ? 'Processing...' : 'Completed'}`;
+
+            if (step.agentId === 'planner') {
+              pct = step.status === 'completed' ? 25 : 15;
+              label = step.status === 'completed' ? 'Planner finalized research strategy' : 'Planner analyzing inquiry & formulating strategy...';
+            } else if (step.agentId === 'researcher') {
+              pct = step.status === 'completed' ? 55 : 35;
+              label = step.status === 'completed' ? 'Researcher compiled sources & data' : 'Researcher gathering verified intelligence & sources...';
+            } else if (step.agentId === 'factChecker') {
+              pct = step.status === 'completed' ? 70 : 58;
+              label = step.status === 'completed' ? 'Fact Checker validated claims' : 'Fact Checker auditing claims & evidence...';
+            } else if (step.agentId === 'advisor' || step.agentId === 'coder' || step.agentId === 'architect') {
+              pct = step.status === 'completed' ? 80 : 72;
+              label = `${step.name} analyzing domain context...`;
+            } else if (step.agentId === 'reviewer') {
+              pct = step.status === 'completed' ? 88 : 82;
+              label = step.status === 'completed' ? 'Reviewer audit finished' : 'Reviewer evaluating depth & edge cases...';
+            } else if (step.agentId === 'finalSynthesizer') {
+              pct = step.status === 'completed' ? 100 : 93;
+              label = step.status === 'completed' ? 'Synthesis complete' : 'Final Synthesizer generating comprehensive report...';
+            } else if (step.agentId === 'dataAnalyst' || step.agentId === 'imageFinder') {
+              pct = step.status === 'completed' ? 95 : 90;
+              label = `${step.name} processing assets...`;
+            }
+
+            setDeepResearchProgress((prev) => Math.max(prev, pct));
+            setDeepResearchPhase(label);
+          },
+          userTz,
+        );
+
+        const assistantMessage: Message = {
+          role: 'assistant',
+          content: result.answer,
+          tool: result.sources && result.sources.length > 0 ? 'search' : 'none',
+          sources: result.sources && result.sources.length > 0 ? result.sources : undefined,
+          searchedWeb: Boolean(result.sources && result.sources.length > 0),
+        };
+
+        setMessages((current) => [...current, assistantMessage]);
+
+        const updatedConversation = [
+          ...messages,
+          userMessage,
+          assistantMessage,
+        ];
+        const newMemory = buildLocalMemory(updatedConversation);
+        if (newMemory) {
+          setSmartMemory(newMemory);
+        }
+      } catch (drErr) {
+        const errDetail =
+          drErr instanceof Error
+            ? drErr.message
+            : 'JARVIS Deep Research pipeline encountered an issue.';
+        const assistantMessage: Message = {
+          role: 'assistant',
+          content: `Deep Research execution failed: ${errDetail}\n\nPlease try again or check your configured AI providers in Settings.`,
+          tool: 'none',
+        };
+        setMessages((current) => [...current, assistantMessage]);
+        setError(errDetail);
+      } finally {
+        setLoading(false);
+        setDeepResearchProgress(0);
+        setDeepResearchPhase('');
+      }
+      return;
+    }
 
     // If Image Generation mode is ON, route directly to Image Studio generation infrastructure
     if (imageGenEnabled) {
@@ -1469,35 +1594,25 @@ export function AssistantPage() {
                           );
                         })()}
 
-                        {/* 3-Persona Sequential Panel (if Multi Chat) or Standard Response Body */}
+                        {/* 3-Persona Sequential Dialogue (if Multi Chat) or Standard Response Body */}
                         {message.multiChatResponses && message.multiChatResponses.length > 0 ? (
-                          <div className="space-y-3 pt-1">
-                            {/* Multi-Chat Sequential Pipeline Bar */}
-                            <div
-                              className={`flex items-center justify-between px-3.5 py-2 rounded-xl border text-xs ${
-                                theme === 'classic'
-                                  ? 'bg-cyan-950/40 border-cyan-500/30 text-cyan-300'
-                                  : theme === 'fulldark'
-                                  ? 'bg-[#1a1a1a] border-[#2e2e2e] text-[#ccc]'
-                                  : 'bg-zinc-900 border-zinc-800 text-zinc-300'
-                              }`}
-                            >
-                              <div className="flex items-center gap-2">
-                                <MessagesSquare size={14} className="text-cyan-400" />
-                                <span className="font-semibold text-[11px] tracking-wide uppercase">
-                                  3-Persona Sequential Dialogue
-                                </span>
-                              </div>
-                              <div className="flex items-center gap-1.5 text-[10.5px] font-mono opacity-80">
-                                <span className="text-cyan-400 font-semibold">NOVA 🧠</span>
-                                <span>→</span>
-                                <span className="text-pink-400 font-semibold">ORBIT 😎</span>
-                                <span>→</span>
-                                <span className="text-purple-400 font-semibold">COSMOS 🧘</span>
+                          <div className="space-y-4 pt-1">
+                            {/* Simplified plain Multi-Chat Sequential Pipeline Indicator */}
+                            <div className="flex items-center gap-2 text-xs text-zinc-400 pb-1 flex-wrap">
+                              <span className="font-semibold text-[11px] tracking-wide uppercase text-zinc-300">
+                                3-Persona Dialogue
+                              </span>
+                              <span className="text-zinc-600">·</span>
+                              <div className="flex items-center gap-1.5 text-[11px] font-mono">
+                                <span className="text-cyan-400 font-medium">NOVA 🧠</span>
+                                <span className="text-zinc-600">→</span>
+                                <span className="text-pink-400 font-medium">ORBIT 😎</span>
+                                <span className="text-zinc-600">→</span>
+                                <span className="text-purple-400 font-medium">COSMOS 🧘</span>
                               </div>
                             </div>
 
-                            {/* Persona Response Cards */}
+                            {/* Minimal Flowing Persona Responses (no boxes or borders) */}
                             {message.multiChatResponses.map((resp, pIdx) => {
                               const isRunning = resp.status === 'running';
                               const isPending = resp.status === 'pending';
@@ -1510,172 +1625,117 @@ export function AssistantPage() {
                               return (
                                 <div
                                   key={resp.personaId || pIdx}
-                                  className={`p-4 rounded-2xl border transition-all ${
-                                    isRunning
-                                      ? 'ring-1 ring-cyan-400/40 animate-pulse'
-                                      : ''
-                                  } ${
-                                    theme === 'classic'
-                                      ? 'bg-slate-900/85 border-cyan-500/25 shadow-[0_2px_15px_rgba(6,182,212,0.08)]'
-                                      : theme === 'fulldark'
-                                      ? 'bg-[#181818] border-[#292929]'
-                                      : 'bg-zinc-900/80 border-zinc-800/90'
-                                  }`}
-                                  style={{
-                                    borderLeftColor: resp.accentColor || '#06b6d4',
-                                    borderLeftWidth: '3.5px',
-                                  }}
+                                  className="space-y-1.5 pt-2 first:pt-0"
                                 >
-                                  {/* Persona Header */}
-                                  <div className="flex items-center justify-between mb-2.5 flex-wrap gap-2">
-                                    <div className="flex items-center gap-2">
-                                      {/* Persona Icon Badge */}
-                                      <div
-                                        className="w-7 h-7 rounded-lg grid place-items-center text-sm shadow-sm"
-                                        style={{
-                                          background: `${resp.accentColor || '#06b6d4'}20`,
-                                          border: `1px solid ${resp.accentColor || '#06b6d4'}40`,
-                                        }}
-                                      >
-                                        {resp.icon || '🤖'}
-                                      </div>
-
-                                      {/* Persona Name & Tone Badge */}
-                                      <div className="flex items-center gap-1.5 flex-wrap">
-                                        <span className="font-bold text-xs text-zinc-100 font-mono tracking-tight">
-                                          {resp.name}
-                                        </span>
-                                        <span
-                                          className="text-[10px] font-mono px-2 py-0.5 rounded-md font-semibold"
-                                          style={{
-                                            background: `${resp.accentColor || '#06b6d4'}18`,
-                                            color: resp.accentColor || '#06b6d4',
-                                            border: `1px solid ${resp.accentColor || '#06b6d4'}35`,
-                                          }}
-                                        >
-                                          {resp.toneBadge}
-                                        </span>
-                                      </div>
-                                    </div>
-
-                                    {/* Status & Timing */}
-                                    <div className="flex items-center gap-2">
-                                      {isRunning && (
-                                        <span className="inline-flex items-center gap-1.5 text-[11px] text-cyan-400 font-medium">
-                                          <Loader2 size={11} className="animate-spin" />
-                                          <span>Synthesizing...</span>
-                                        </span>
-                                      )}
-                                      {isPending && (
-                                        <span className="text-[11px] text-zinc-500 italic">
-                                          Queued in sequence...
-                                        </span>
-                                      )}
-                                      {isFailed && (
-                                        <span className="inline-flex items-center gap-1 text-[11px] text-red-400">
-                                          <AlertTriangle size={11} />
-                                          <span>Failed</span>
-                                        </span>
-                                      )}
-                                      {resp.durationMs && resp.status === 'completed' && (
-                                        <span className="text-[10px] text-zinc-500 font-mono">
-                                          {(resp.durationMs / 1000).toFixed(1)}s
-                                        </span>
-                                      )}
-                                    </div>
+                                  {/* Simple Minimal Label: Emoji + Name */}
+                                  <div className="flex items-center gap-2">
+                                    <span className="text-sm">{resp.icon || '🤖'}</span>
+                                    <span
+                                      className="text-xs font-semibold font-mono tracking-tight"
+                                      style={{ color: resp.accentColor || '#06b6d4' }}
+                                    >
+                                      {resp.name}
+                                    </span>
+                                    {isRunning && (
+                                      <span className="inline-flex items-center gap-1 text-[11px] text-cyan-400 font-normal">
+                                        <Loader2 size={11} className="animate-spin" />
+                                        <span>Synthesizing...</span>
+                                      </span>
+                                    )}
+                                    {isPending && (
+                                      <span className="text-[11px] text-zinc-500 italic font-normal">
+                                        Waiting in sequence...
+                                      </span>
+                                    )}
+                                    {isFailed && (
+                                      <span className="inline-flex items-center gap-1 text-[11px] text-red-400 font-normal">
+                                        <AlertTriangle size={11} />
+                                        <span>Failed</span>
+                                      </span>
+                                    )}
                                   </div>
 
-                                  {/* Persona Text Content */}
+                                  {/* Plain Text Body matching regular messages */}
                                   {cleanPersonaText ? (
                                     <div
-                                      className={`text-[14px] leading-relaxed break-words whitespace-pre-wrap ${
+                                      className={`text-[15px] leading-relaxed break-words whitespace-pre-wrap ${
                                         theme === 'classic'
                                           ? 'text-slate-100'
                                           : theme === 'fulldark'
-                                          ? 'text-[#e5e5e5]'
+                                          ? 'text-[#ececec] font-normal tracking-normal'
                                           : 'text-zinc-200'
                                       }`}
                                     >
                                       {cleanPersonaText}
                                     </div>
                                   ) : isRunning ? (
-                                    <div className="text-xs text-zinc-400 py-1 flex items-center gap-2">
+                                    <div className="text-xs text-zinc-400 py-0.5 flex items-center gap-2">
                                       <Loader2 size={12} className="animate-spin text-cyan-400" />
-                                      <span>Thinking through {resp.name}&apos;s persona lens...</span>
+                                      <span>Thinking...</span>
                                     </div>
                                   ) : isPending ? (
-                                    <div className="text-xs text-zinc-500 italic py-1">
-                                      Awaiting prior persona answers to connect reasoning...
+                                    <div className="text-xs text-zinc-500 italic py-0.5">
+                                      Waiting for previous persona...
                                     </div>
                                   ) : isFailed ? (
-                                    <div className="text-xs text-red-400 py-1">
+                                    <div className="text-xs text-red-400 py-0.5">
                                       {resp.error || 'Failed to generate response for this persona.'}
                                     </div>
                                   ) : null}
 
-                                  {/* Persona Action Toolbar */}
+                                  {/* Minimal Action Toolbar below response */}
                                   {resp.status === 'completed' && cleanPersonaText && (
                                     <div
-                                      className={`flex items-center justify-between pt-2.5 mt-2.5 border-t text-xs ${
-                                        theme === 'classic'
-                                          ? 'border-cyan-500/10 text-cyan-200/60'
-                                          : theme === 'fulldark'
-                                          ? 'border-[#262626] text-zinc-400'
-                                          : 'border-zinc-800 text-zinc-400'
+                                      className={`flex items-center gap-1.5 pt-0.5 opacity-60 group-hover:opacity-100 transition-opacity ${
+                                        theme === 'fulldark' ? 'text-[#888]' : 'text-zinc-400'
                                       }`}
                                     >
-                                      <div className="flex items-center gap-1.5">
-                                        {/* Copy persona text */}
-                                        <button
-                                          type="button"
-                                          onClick={() => handleCopyText(cleanPersonaText, index * 100 + pIdx)}
-                                          className={`p-1 rounded-md transition-colors ${
-                                            theme === 'fulldark'
-                                              ? 'hover:text-white hover:bg-[#282828]'
-                                              : 'hover:text-zinc-200 hover:bg-zinc-800'
-                                          }`}
-                                          title={`Copy ${resp.name}'s response`}
-                                        >
-                                          {copiedIndex === index * 100 + pIdx ? (
-                                            <Check size={12} className="text-emerald-400" />
-                                          ) : (
-                                            <Copy size={12} />
-                                          )}
-                                        </button>
+                                      {/* Copy */}
+                                      <button
+                                        type="button"
+                                        onClick={() => handleCopyText(cleanPersonaText, index * 100 + pIdx)}
+                                        className={`p-1 rounded-md transition-colors ${
+                                          theme === 'fulldark'
+                                            ? 'hover:text-white hover:bg-[#282828]'
+                                            : 'hover:text-zinc-200 hover:bg-zinc-800'
+                                        }`}
+                                        title={`Copy ${resp.name}'s response`}
+                                      >
+                                        {copiedIndex === index * 100 + pIdx ? (
+                                          <Check size={13} className="text-emerald-400" />
+                                        ) : (
+                                          <Copy size={13} />
+                                        )}
+                                      </button>
 
-                                        {/* Voice TTS Read Aloud */}
-                                        <button
-                                          type="button"
-                                          onClick={() => handlePlayPersonaAudio(cleanPersonaText, personaKey, resp.personaId)}
-                                          disabled={isAudioLoading}
-                                          className={`p-1 rounded-md transition-colors ${
-                                            isAudioPlaying
-                                              ? 'text-cyan-400 bg-cyan-500/10'
-                                              : theme === 'fulldark'
-                                              ? 'hover:text-white hover:bg-[#282828]'
-                                              : 'hover:text-zinc-200 hover:bg-zinc-800'
-                                          }`}
-                                          title={
-                                            isAudioLoading
-                                              ? `Synthesizing ${resp.name}'s Voice...`
-                                              : isAudioPlaying
-                                              ? `Stop ${resp.name}'s Voice`
-                                              : `Listen to ${resp.name}'s Voice`
-                                          }
-                                        >
-                                          {isAudioLoading ? (
-                                            <Loader2 size={12} className="animate-spin text-cyan-400" />
-                                          ) : isAudioPlaying ? (
-                                            <VolumeX size={12} />
-                                          ) : (
-                                            <Volume2 size={12} />
-                                          )}
-                                        </button>
-                                      </div>
-
-                                      <span className="text-[10px] opacity-60 font-mono">
-                                        Persona: {resp.name}
-                                      </span>
+                                      {/* Voice TTS Read Aloud */}
+                                      <button
+                                        type="button"
+                                        onClick={() => handlePlayPersonaAudio(cleanPersonaText, personaKey, resp.personaId)}
+                                        disabled={isAudioLoading}
+                                        className={`p-1 rounded-md transition-colors ${
+                                          isAudioPlaying
+                                            ? 'text-cyan-400 bg-cyan-500/10'
+                                            : theme === 'fulldark'
+                                            ? 'hover:text-white hover:bg-[#282828]'
+                                            : 'hover:text-zinc-200 hover:bg-zinc-800'
+                                        }`}
+                                        title={
+                                          isAudioLoading
+                                            ? `Synthesizing ${resp.name}'s voice...`
+                                            : isAudioPlaying
+                                            ? `Stop ${resp.name}'s voice`
+                                            : `Play ${resp.name}'s voice`
+                                        }
+                                      >
+                                        {isAudioLoading ? (
+                                          <Loader2 size={13} className="animate-spin text-cyan-400" />
+                                        ) : isAudioPlaying ? (
+                                          <VolumeX size={13} />
+                                        ) : (
+                                          <Volume2 size={13} />
+                                        )}
+                                      </button>
                                     </div>
                                   )}
                                 </div>
@@ -1899,32 +1959,57 @@ export function AssistantPage() {
 
           {/* Loading indicator */}
           {loading && (
-            <div
-              className={`flex items-center gap-2 text-xs py-2 ${
-                imageGenEnabled
-                  ? 'text-purple-300'
-                  : theme === 'classic'
-                  ? 'text-cyan-300'
-                  : theme === 'fulldark'
-                  ? 'text-[#a1a1a1]'
-                  : 'text-zinc-400'
-              }`}
-            >
-              <Loader2
-                size={14}
-                className={`animate-spin ${
-                  imageGenEnabled
-                    ? 'text-purple-400'
+            <div className="py-2.5 space-y-2">
+              <div
+                className={`flex items-center justify-between text-xs ${
+                  deepResearchEnabled
+                    ? 'text-emerald-300'
+                    : imageGenEnabled
+                    ? 'text-purple-300'
                     : theme === 'classic'
-                    ? 'text-cyan-400'
+                    ? 'text-cyan-300'
+                    : theme === 'fulldark'
+                    ? 'text-[#a1a1a1]'
                     : 'text-zinc-400'
                 }`}
-              />
-              <span>
-                {imageGenEnabled
-                  ? imageLoadingPhase || 'Synthesizing AI image across providers...'
-                  : 'NEXUS AI is thinking...'}
-              </span>
+              >
+                <div className="flex items-center gap-2">
+                  <Loader2
+                    size={14}
+                    className={`animate-spin shrink-0 ${
+                      deepResearchEnabled
+                        ? 'text-emerald-400'
+                        : imageGenEnabled
+                        ? 'text-purple-400'
+                        : theme === 'classic'
+                        ? 'text-cyan-400'
+                        : 'text-zinc-400'
+                    }`}
+                  />
+                  <span className="font-medium">
+                    {deepResearchEnabled
+                      ? deepResearchPhase || 'JARVIS Deep Research in progress...'
+                      : imageGenEnabled
+                      ? imageLoadingPhase || 'Synthesizing AI image across providers...'
+                      : 'NEXUS AI is thinking...'}
+                  </span>
+                </div>
+                {deepResearchEnabled && deepResearchProgress > 0 && (
+                  <span className="text-[11px] font-mono font-semibold text-emerald-400 shrink-0">
+                    {deepResearchProgress}%
+                  </span>
+                )}
+              </div>
+
+              {/* Deep Research Progress Bar */}
+              {deepResearchEnabled && (
+                <div className="w-full max-w-md h-1.5 rounded-full bg-zinc-800/80 overflow-hidden border border-zinc-700/50">
+                  <div
+                    className="h-full bg-gradient-to-r from-emerald-500 via-teal-400 to-emerald-300 transition-all duration-300 ease-out rounded-full shadow-[0_0_8px_rgba(16,185,129,0.5)]"
+                    style={{ width: `${Math.max(8, Math.min(100, deepResearchProgress))}%` }}
+                  />
+                </div>
+              )}
             </div>
           )}
 
@@ -1951,7 +2036,12 @@ export function AssistantPage() {
           {/* Quick prompts chips if conversation has few messages and user isn't typing */}
           {!isOnlyWelcome && messages.length <= 3 && !input && (
             <div className="flex items-center gap-2 overflow-x-auto pb-2.5 no-scrollbar">
-              {(imageGenEnabled ? QUICK_IMAGE_PROMPTS : QUICK_PROMPTS).slice(0, 3).map((prompt) => (
+              {(deepResearchEnabled
+                ? QUICK_DEEP_RESEARCH_PROMPTS
+                : imageGenEnabled
+                ? QUICK_IMAGE_PROMPTS
+                : QUICK_PROMPTS
+              ).slice(0, 3).map((prompt) => (
                 <button
                   key={prompt}
                   type="button"
@@ -1997,11 +2087,19 @@ export function AssistantPage() {
                 }
               }}
               placeholder={
-                imageGenEnabled
+                deepResearchEnabled
+                  ? 'Ask a deep research question (JARVIS Multi-Agent will investigate)...'
+                  : imageGenEnabled
                   ? 'Describe the image you want to generate...'
                   : 'Ask NEXUS AI anything...'
               }
-              aria-label={imageGenEnabled ? 'Describe image prompt' : 'Message NEXUS AI'}
+              aria-label={
+                deepResearchEnabled
+                  ? 'Ask a deep research question'
+                  : imageGenEnabled
+                  ? 'Describe image prompt'
+                  : 'Message NEXUS AI'
+              }
               rows={1}
               disabled={loading}
               className={`w-full bg-transparent text-[14.5px] leading-relaxed resize-none outline-none px-2 pt-1 pb-1 min-h-[44px] max-h-[180px] ${
@@ -2023,14 +2121,46 @@ export function AssistantPage() {
                   : 'border-zinc-800/60'
               }`}
             >
-              {/* Web Search Toggle, Image Toggle & Language tag */}
+              {/* Deep Research Toggle, Web Search Toggle, Image Toggle & Language tag */}
               <div className="flex items-center gap-2">
+                {/* Deep Research Toggle */}
+                <button
+                  type="button"
+                  onClick={toggleDeepResearch}
+                  className={`text-xs px-2.5 py-1.5 rounded-lg border transition-all flex items-center gap-1.5 ${
+                    deepResearchEnabled
+                      ? 'bg-emerald-500/15 text-emerald-300 border-emerald-500/40 font-medium shadow-[0_0_10px_rgba(16,185,129,0.15)]'
+                      : theme === 'classic'
+                      ? 'text-cyan-300/70 border-transparent hover:text-cyan-200 hover:bg-cyan-950/40'
+                      : theme === 'fulldark'
+                      ? 'text-[#a1a1aa] border-transparent hover:text-[#ececec] hover:bg-[#2a2a2a]'
+                      : 'text-zinc-400 border-transparent hover:text-zinc-300 hover:bg-zinc-800/60'
+                  }`}
+                  title={
+                    deepResearchEnabled
+                      ? 'Deep Research is ON: routes queries through JARVIS multi-agent research pipeline (Planner → Researcher → Fact Checker → Advisor → Reviewer → Synthesizer)'
+                      : 'Deep Research is OFF: standard assistant responses'
+                  }
+                >
+                  <FlaskConical
+                    size={13}
+                    className={deepResearchEnabled ? 'text-emerald-400' : 'text-zinc-400'}
+                  />
+                  <span>Deep Research</span>
+                  {deepResearchEnabled && (
+                    <span className="w-1.5 h-1.5 rounded-full bg-emerald-400 shadow-[0_0_6px_rgba(52,211,153,0.8)]" />
+                  )}
+                </button>
+
                 {/* Web Search Toggle */}
                 <button
                   type="button"
                   onClick={toggleWebSearch}
+                  disabled={deepResearchEnabled}
                   className={`text-xs px-2.5 py-1.5 rounded-lg border transition-all flex items-center gap-1.5 ${
-                    webSearchEnabled
+                    deepResearchEnabled
+                      ? 'opacity-35 cursor-not-allowed border-transparent text-zinc-500 pointer-events-none'
+                      : webSearchEnabled
                       ? 'bg-cyan-500/15 text-cyan-300 border-cyan-500/30'
                       : theme === 'classic'
                       ? 'text-cyan-300/70 border-transparent hover:text-cyan-200 hover:bg-cyan-950/40'
@@ -2039,17 +2169,19 @@ export function AssistantPage() {
                       : 'text-zinc-400 border-transparent hover:text-zinc-300 hover:bg-zinc-800/60'
                   }`}
                   title={
-                    webSearchEnabled
+                    deepResearchEnabled
+                      ? 'Disabled while Deep Research is ON (JARVIS pipeline includes multi-agent search internally)'
+                      : webSearchEnabled
                       ? 'Web Search is ON: forces live search on every request'
                       : 'Web Search is Auto: searches when needed'
                   }
                 >
                   <Globe
                     size={13}
-                    className={webSearchEnabled ? 'text-cyan-400' : 'text-zinc-400'}
+                    className={!deepResearchEnabled && webSearchEnabled ? 'text-cyan-400' : 'text-zinc-400'}
                   />
                   <span>Web Search</span>
-                  {webSearchEnabled && (
+                  {!deepResearchEnabled && webSearchEnabled && (
                     <span className="w-1.5 h-1.5 rounded-full bg-cyan-400" />
                   )}
                 </button>
@@ -2058,8 +2190,11 @@ export function AssistantPage() {
                 <button
                   type="button"
                   onClick={toggleImageGen}
+                  disabled={deepResearchEnabled}
                   className={`text-xs px-2.5 py-1.5 rounded-lg border transition-all flex items-center gap-1.5 ${
-                    imageGenEnabled
+                    deepResearchEnabled
+                      ? 'opacity-35 cursor-not-allowed border-transparent text-zinc-500 pointer-events-none'
+                      : imageGenEnabled
                       ? 'bg-purple-500/15 text-purple-300 border-purple-500/40 font-medium shadow-[0_0_10px_rgba(168,85,247,0.15)]'
                       : theme === 'classic'
                       ? 'text-cyan-300/70 border-transparent hover:text-cyan-200 hover:bg-cyan-950/40'
@@ -2068,17 +2203,19 @@ export function AssistantPage() {
                       : 'text-zinc-400 border-transparent hover:text-zinc-300 hover:bg-zinc-800/60'
                   }`}
                   title={
-                    imageGenEnabled
+                    deepResearchEnabled
+                      ? 'Disabled while Deep Research is ON'
+                      : imageGenEnabled
                       ? 'Image Generation is ON: messages are synthesized into images using Image Studio providers'
                       : 'Image Generation is OFF: standard conversational chat'
                   }
                 >
                   <ImageIcon
                     size={13}
-                    className={imageGenEnabled ? 'text-purple-400' : 'text-zinc-400'}
+                    className={!deepResearchEnabled && imageGenEnabled ? 'text-purple-400' : 'text-zinc-400'}
                   />
                   <span>Image</span>
-                  {imageGenEnabled && (
+                  {!deepResearchEnabled && imageGenEnabled && (
                     <span className="w-1.5 h-1.5 rounded-full bg-purple-400 shadow-[0_0_6px_rgba(192,132,252,0.8)]" />
                   )}
                 </button>
@@ -2107,6 +2244,8 @@ export function AssistantPage() {
                         ? 'bg-cyan-500 text-slate-950 hover:bg-cyan-400 shadow-[0_0_12px_rgba(6,182,212,0.4)] cursor-pointer'
                         : theme === 'fulldark'
                         ? 'bg-white text-black hover:bg-neutral-200 cursor-pointer'
+                        : deepResearchEnabled
+                        ? 'bg-emerald-500 text-white hover:bg-emerald-400 cursor-pointer shadow-[0_0_12px_rgba(16,185,129,0.4)]'
                         : imageGenEnabled
                         ? 'bg-purple-500 text-white hover:bg-purple-400 cursor-pointer'
                         : 'bg-zinc-100 text-zinc-900 hover:bg-white cursor-pointer'
@@ -2128,7 +2267,7 @@ export function AssistantPage() {
           <div className="text-center pt-2 pb-0.5 text-[11px] text-zinc-500 flex items-center justify-center gap-2 flex-wrap">
             <span>NEXUS AI</span>
             <span>·</span>
-            <span>{multiChatEnabled ? 'Multi Chat (3-Persona Pipeline)' : imageGenEnabled ? 'Image Generation Mode Active' : webSearchEnabled ? 'Live Web Search Active' : 'Automatic Web Search'}</span>
+            <span>{multiChatEnabled ? 'Multi Chat (3-Persona Pipeline)' : deepResearchEnabled ? 'Deep Research (JARVIS Multi-Agent)' : imageGenEnabled ? 'Image Generation Mode Active' : webSearchEnabled ? 'Live Web Search Active' : 'Automatic Web Search'}</span>
             <span>·</span>
             <span>Theme: {theme === 'classic' ? 'NEXUS Classic' : theme === 'fulldark' ? 'Full Dark' : 'NEXUS Minimal'}</span>
             {responseLanguage && (
