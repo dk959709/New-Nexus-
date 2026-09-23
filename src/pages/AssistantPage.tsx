@@ -896,32 +896,107 @@ export function AssistantPage() {
       return;
     }
 
-    const fullTranscript: string[] = [];
+    const now = new Date();
+    const formattedDate = now.toLocaleDateString('en-US', {
+      weekday: 'long',
+      year: 'numeric',
+      month: 'long',
+      day: 'numeric',
+    });
+    const formattedTime = now.toLocaleTimeString('en-US', {
+      hour: '2-digit',
+      minute: '2-digit',
+      second: '2-digit',
+      hour12: true,
+    });
+    const timeZone = Intl.DateTimeFormat().resolvedOptions().timeZone || 'Local';
+
+    const activeMode = multiChatEnabled
+      ? 'Multi-Chat (3-Persona Pipeline)'
+      : architectEnabled
+      ? 'Architect Mode (System Architecture)'
+      : dataAnalysisEnabled
+      ? 'Data Analysis Mode'
+      : deepResearchEnabled
+      ? 'Deep Research Mode'
+      : 'Standard AI Assistant';
+
+    const transcriptLines: string[] = [];
+
+    // Header Meta Block
+    transcriptLines.push('════════════════════════════════════════════════════════════════');
+    transcriptLines.push('🤖 NEXUS AI ASSISTANT — CONVERSATION EXPORT');
+    transcriptLines.push('════════════════════════════════════════════════════════════════');
+    transcriptLines.push(`📅 Date: ${formattedDate}`);
+    transcriptLines.push(`⏰ Time: ${formattedTime} (${timeZone})`);
+    transcriptLines.push(`🌐 Mode: ${activeMode}`);
+    transcriptLines.push(`📊 Total Messages: ${meaningfulMessages.length}`);
+    transcriptLines.push('────────────────────────────────────────────────────────────────\n');
+
+    let turnNumber = 1;
     meaningfulMessages.forEach((m) => {
       if (m.role === 'user') {
-        fullTranscript.push(`### 👤 User:\n${m.content}\n`);
+        transcriptLines.push(`### 👤 USER PROMPT [Turn ${turnNumber}]`);
+        transcriptLines.push(`${m.content.trim()}\n`);
       } else if (m.role === 'assistant') {
-        fullTranscript.push(`### 🤖 AI Assistant:\n${stripTierLabels(m.content)}\n`);
+        transcriptLines.push(`### 🤖 AI ASSISTANT RESPONSE [Turn ${turnNumber}]`);
+
+        // Multi Chat Personas
         if (m.multiChatResponses && m.multiChatResponses.length > 0) {
           m.multiChatResponses.forEach((resp) => {
-            const personaText = stripTierLabels(resp.content || resp.text || '');
+            const personaText = stripTierLabels(resp.content || resp.text || '').trim();
             if (personaText) {
-              fullTranscript.push(`**${resp.name} (${resp.personaId}):**\n${personaText}\n`);
+              transcriptLines.push(`\n#### ▸ ${resp.name} (${resp.personaId.toUpperCase()}):`);
+              transcriptLines.push(`${personaText}\n`);
             }
           });
+        } else if (m.content) {
+          transcriptLines.push(`${stripTierLabels(m.content).trim()}\n`);
         }
+
+        // Architectural SVG Diagram
+        if (m.diagramSvg) {
+          transcriptLines.push('📐 [Architectural Blueprint SVG Diagram Generated]\n');
+        }
+
+        // Data Analysis Chart
+        if (m.chartData) {
+          transcriptLines.push(`📊 [Data Analysis Chart: ${m.chartData.title || 'Interactive Visual Metrics'}]\n`);
+        }
+
+        // Generated Image
+        if (m.image) {
+          transcriptLines.push(`🖼️ [Generated Image: "${m.image.prompt}" (${m.image.providerName} · ${m.image.width}×${m.image.height})]\n`);
+        }
+
+        // Sources & Citations
+        if (m.sources && m.sources.length > 0) {
+          transcriptLines.push('🔗 Sources & References:');
+          m.sources.forEach((src, sIdx) => {
+            transcriptLines.push(`  ${sIdx + 1}. ${src.title} — ${src.url}`);
+          });
+          transcriptLines.push('');
+        }
+
+        transcriptLines.push('────────────────────────────────────────────────────────────────\n');
+        turnNumber++;
       }
     });
 
-    const fullText = fullTranscript.join('\n---\n\n').trim();
+    // Footer Block
+    transcriptLines.push('════════════════════════════════════════════════════════════════');
+    transcriptLines.push('Exported securely from NEXUS AI Assistant | End of Transcript');
+    transcriptLines.push('════════════════════════════════════════════════════════════════');
+
+    const fullText = transcriptLines.join('\n').trim();
     const richHtml = formatMarkdownToRichHtml(fullText);
     const success = await copyToClipboard(fullText, richHtml);
     if (success) {
       setUniversalCopied(true);
       setTimeout(() => setUniversalCopied(false), 2500);
-      triggerSettingsToast('Universal Copy: Copied all AI Assistant answers & text!');
+      triggerSettingsToast('Universal Copy: Exported structured transcript with timestamps!');
     }
-  }, [messages]);
+  }, [messages, multiChatEnabled, architectEnabled, dataAnalysisEnabled, deepResearchEnabled]);
 
   const handleUniversalSaveAll = useCallback(() => {
     playTapSound();
