@@ -823,6 +823,71 @@ export function AssistantPage() {
     [messages, savedItemIds],
   );
 
+  const handleDeleteMessage = useCallback(
+    (indexToDelete: number) => {
+      playTapSound();
+      if (speakingIndex === indexToDelete) {
+        stopSpeak();
+      }
+      if (edgeTtsPlayingIndex === indexToDelete) {
+        if (edgeTtsAudioRef.current) {
+          edgeTtsAudioRef.current.pause();
+          edgeTtsAudioRef.current = null;
+        }
+        setEdgeTtsPlayingIndex(null);
+      }
+      setMessages((prev) => {
+        const updated = prev.filter((_, i) => i !== indexToDelete);
+        if (updated.length === 0 || updated.every((m) => m.isWelcome)) {
+          return [
+            {
+              id: 'welcome-0',
+              role: 'assistant',
+              content: '',
+              isWelcome: true,
+            },
+          ];
+        }
+        return updated;
+      });
+      triggerSettingsToast('Answer deleted from conversation');
+    },
+    [speakingIndex, edgeTtsPlayingIndex, stopSpeak],
+  );
+
+  const handleDeletePersonaResponse = useCallback(
+    (msgIndex: number, personaIndex: number) => {
+      playTapSound();
+      setMessages((prev) => {
+        const targetMsg = prev[msgIndex];
+        if (!targetMsg || !targetMsg.multiChatResponses) return prev;
+        const newResponses = targetMsg.multiChatResponses.filter((_, idx) => idx !== personaIndex);
+        if (newResponses.length === 0) {
+          const updated = prev.filter((_, i) => i !== msgIndex);
+          if (updated.length === 0 || updated.every((m) => m.isWelcome)) {
+            return [
+              {
+                id: 'welcome-0',
+                role: 'assistant',
+                content: '',
+                isWelcome: true,
+              },
+            ];
+          }
+          return updated;
+        }
+        const updated = [...prev];
+        updated[msgIndex] = {
+          ...targetMsg,
+          multiChatResponses: newResponses,
+        };
+        return updated;
+      });
+      triggerSettingsToast('Persona answer deleted');
+    },
+    [],
+  );
+
   const handleUniversalCopyAll = useCallback(async () => {
     playTapSound();
     const meaningfulMessages = messages.filter((m) => !m.isWelcome);
@@ -2537,6 +2602,21 @@ export function AssistantPage() {
                                           <span className="text-[11px] text-amber-300 font-medium hidden sm:inline">Saved</span>
                                         )}
                                       </button>
+
+                                      {/* Delete Persona Response */}
+                                      <button
+                                        type="button"
+                                        onClick={() => handleDeletePersonaResponse(index, pIdx)}
+                                        className={`p-1.5 rounded-md transition-colors flex items-center gap-1 text-xs ${
+                                          theme === 'fulldark'
+                                            ? 'hover:text-red-400 hover:bg-red-500/10'
+                                            : 'hover:text-red-400 hover:bg-red-500/10'
+                                        }`}
+                                        title={`Delete ${resp.name}'s answer`}
+                                        aria-label="Delete answer"
+                                      >
+                                        <Trash2 size={13} />
+                                      </button>
                                     </div>
                                   )}
                                 </div>
@@ -2806,6 +2886,21 @@ export function AssistantPage() {
                             {savedItemIds.has(message.id || `assistant-msg-${index}`) && (
                               <span className="text-[11px] text-amber-300 font-medium hidden sm:inline">Saved</span>
                             )}
+                          </button>
+
+                          {/* Delete Answer Button */}
+                          <button
+                            type="button"
+                            onClick={() => handleDeleteMessage(index)}
+                            className={`p-1.5 rounded-md transition-colors flex items-center gap-1 text-xs ${
+                              theme === 'fulldark'
+                                ? 'hover:text-red-400 hover:bg-red-500/10'
+                                : 'hover:text-red-400 hover:bg-red-500/10'
+                            }`}
+                            title="Delete this answer"
+                            aria-label="Delete answer"
+                          >
+                            <Trash2 size={13} />
                           </button>
                         </div>
                       </div>
