@@ -2577,6 +2577,70 @@ async function reformulateSearchQueryWithContext(
   return { query: trimmed, reformulated: false };
 }
 
+function stripTierLabels(text: string): string {
+  if (!text || typeof text !== 'string') return '';
+
+  let cleaned = text;
+
+  cleaned = cleaned.replace(
+    /\b(?:According\s+to\s+)?Tier\s*1\s*(?:\(Official(?:\/Primary)?\)\s*)?sources?\s*(?:confirm|confirms|indicate|indicates|report|reports|state|states|show|shows|note|notes|highlight|highlights|detail|details|provide|provides|reveal|reveals)?/gi,
+    (match) => {
+      if (/^according\s+to/i.test(match)) {
+        return 'According to primary sources';
+      }
+      if (/confirms?/i.test(match)) return 'Primary sources confirm';
+      if (/indicates?/i.test(match)) return 'Primary sources indicate';
+      if (/reports?/i.test(match)) return 'Primary sources report';
+      if (/states?/i.test(match)) return 'Primary sources state';
+      if (/shows?/i.test(match)) return 'Primary sources show';
+      if (/notes?/i.test(match)) return 'Primary sources note';
+      if (/highlights?/i.test(match)) return 'Primary sources highlight';
+      if (/details?/i.test(match)) return 'Primary sources detail';
+      if (/provides?/i.test(match)) return 'Primary sources provide';
+      if (/reveals?/i.test(match)) return 'Primary sources reveal';
+      return 'primary sources';
+    },
+  );
+
+  cleaned = cleaned.replace(
+    /\b(?:According\s+to\s+)?Tier\s*2\s*sources?\s*(?:confirm|confirms|indicate|indicates|report|reports|state|states|show|shows|note|notes|highlight|highlights|detail|details|provide|provides|reveal|reveals)?/gi,
+    (match) => {
+      if (/^according\s+to/i.test(match)) {
+        return 'According to secondary reporting';
+      }
+      if (/confirms?/i.test(match)) return 'Secondary reports confirm';
+      if (/indicates?/i.test(match)) return 'Secondary reports indicate';
+      if (/reports?/i.test(match)) return 'Secondary reports state';
+      return 'secondary sources';
+    },
+  );
+
+  cleaned = cleaned.replace(
+    /\b(?:According\s+to\s+)?Tier\s*3\s*sources?\s*(?:confirm|confirms|indicate|indicates|report|reports|state|states|show|shows|note|notes|highlight|highlights|detail|details|provide|provides|reveal|reveals)?/gi,
+    (match) => {
+      if (/^according\s+to/i.test(match)) {
+        return 'According to unverified sources';
+      }
+      return 'unverified sources';
+    },
+  );
+
+  cleaned = cleaned.replace(/\s*[([]\s*Tier\s*[123]\s*(?:[-–—:]\s*[^)\]]+)?[)\]]/gi, '');
+  cleaned = cleaned.replace(/\s*[([]\s*Trust(?:\s*Tier)?\s*:\s*Tier\s*[123][^)\]]*[)\]]/gi, '');
+  cleaned = cleaned.replace(/\bTier\s*1\s*(?:source|provider|domain|evidence)/gi, 'verified source');
+  cleaned = cleaned.replace(/\bTier\s*1\s*(?:sources|providers|domains)/gi, 'verified sources');
+  cleaned = cleaned.replace(/\bTier\s*2\s*(?:source|provider|domain|evidence)/gi, 'secondary source');
+  cleaned = cleaned.replace(/\bTier\s*2\s*(?:sources|providers|domains)/gi, 'secondary sources');
+  cleaned = cleaned.replace(/\bTier\s*3\s*(?:source|provider|domain|evidence)/gi, 'unverified source');
+  cleaned = cleaned.replace(/\bTier\s*3\s*(?:sources|providers|domains)/gi, 'unverified sources');
+  cleaned = cleaned.replace(/\bTier\s*1\s*:\s*/gi, 'Primary Sources: ');
+  cleaned = cleaned.replace(/\bTier\s*2\s*:\s*/gi, 'Secondary Sources: ');
+  cleaned = cleaned.replace(/\bTier\s*3\s*:\s*/gi, 'Unverified Sources: ');
+  cleaned = cleaned.replace(/[ \t]{2,}/g, ' ');
+
+  return cleaned.trim();
+}
+
 async function processAiChatInternal(
   message: string,
   history: Array<{ role: 'user' | 'assistant'; content: string }> = [],
@@ -2808,6 +2872,7 @@ async function processAiChatInternal(
   if (allTier3) {
     tierGuidance += `- CRITICAL CAVEAT: ALL 10 retrieved sources are Tier 3 (unverified / low-authority domains). You MUST explicitly caveat your answer to the user stating that this response is based on unverified sources.\n`;
   }
+  tierGuidance += `- NATURAL CITATION FORMATTING: Cite sources naturally by name/organization (e.g. "According to Anthropic's official announcement...", "Per Wikipedia...", "Reuters reports...") or a normal citation format. NEVER reference internal tier labels like "Tier 1", "Tier 2", "Tier 3", "Tier 1 sources", or "[Tier 1]" anywhere in your visible response.\n`;
 
   const systemInstructions: string[] = [
     `You are NEXUS AI, powered by ${providerConfig?.name || 'AI'}. Provide direct, insightful, factual, and concise answers.`,
@@ -2866,7 +2931,7 @@ async function processAiChatInternal(
 
   const userContentForTurn =
     structuredSources.length > 0
-      ? `${trimmed}\n\n[Live Search Grounding for this question (Searched: "${effectiveSearchQuery}") - 10 Sources by Trust Tier]:\n${sourcesFormatted}\n(Current Date/Time Reference: ${currentDateTimeStr})\n\nInstructions: Use the live search results above to answer directly. Prioritize Tier 1 sources and note any source discrepancies.`
+      ? `${trimmed}\n\n[Live Search Grounding for this question (Searched: "${effectiveSearchQuery}") - 10 Sources by Trust Tier]:\n${sourcesFormatted}\n(Current Date/Time Reference: ${currentDateTimeStr})\n\nInstructions: Use the live search results above to answer directly. Prioritize official and primary sources, cite sources naturally, and never output internal tier labels like "Tier 1" in your response.`
       : trimmed;
 
   const messages: Array<{ role: string; content: string }> = [
@@ -2910,7 +2975,7 @@ async function processAiChatInternal(
 
   if (aiResult && aiResult.text) {
     return {
-      answer: aiResult.text,
+      answer: stripTierLabels(aiResult.text),
       model: aiResult.model,
       tool: structuredSources.length > 0 || isForcedWebSearch ? ('search' as const) : ('none' as const),
       confidence: (structuredSources.length ? 'verified' : 'verified') as ConfidenceLevel,
@@ -2926,7 +2991,7 @@ async function processAiChatInternal(
   // Graceful response when AI provider is unreachable or API key missing
   if (structuredSources.length > 0) {
     return {
-      answer: structuredSources[0].description,
+      answer: stripTierLabels(structuredSources[0].description),
       model: 'nexus-knowledge',
       tool: 'search' as const,
       confidence: 'limited' as ConfidenceLevel,

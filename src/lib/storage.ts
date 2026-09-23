@@ -1909,6 +1909,22 @@ export const storage = {
     write('nexus-ai-assistant-multi-chat-enabled', enabled);
   },
 
+  getAssistantArchitectEnabled(): boolean {
+    return read<boolean>('nexus-ai-architect-toggle', false);
+  },
+
+  setAssistantArchitectEnabled(enabled: boolean): void {
+    write('nexus-ai-architect-toggle', enabled);
+  },
+
+  getAssistantDataAnalysisEnabled(): boolean {
+    return read<boolean>('nexus-ai-data-analysis-toggle', false);
+  },
+
+  setAssistantDataAnalysisEnabled(enabled: boolean): void {
+    write('nexus-ai-data-analysis-toggle', enabled);
+  },
+
   getMultiChatResponseLanguage(): string {
     const cfg = this.getMultiChatConfig();
     return cfg.responseLanguage || 'English';

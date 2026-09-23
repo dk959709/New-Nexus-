@@ -178,3 +178,80 @@ export function cleanMarkdownForSpeech(text: string): string {
     .trim();
 }
 
+/**
+ * Strips internal source-trust tier labels (e.g. "Tier 1 sources confirm...", "According to Tier 1 sources",
+ * "Tier 1 (Official Primary)", "[Tier 1]", "Trust: Tier 1") from visible text so citations and prose
+ * read naturally without exposing internal ranking taxonomy.
+ */
+export function stripTierLabels(text: string): string {
+  if (!text || typeof text !== 'string') return '';
+
+  let cleaned = text;
+
+  // 1. Common introductory phrases with verbs
+  cleaned = cleaned.replace(
+    /\b(?:According\s+to\s+)?Tier\s*1\s*(?:\(Official(?:\/Primary)?\)\s*)?sources?\s*(?:confirm|confirms|indicate|indicates|report|reports|state|states|show|shows|note|notes|highlight|highlights|detail|details|provide|provides|reveal|reveals)?/gi,
+    (match) => {
+      if (/^according\s+to/i.test(match)) {
+        return 'According to primary sources';
+      }
+      if (/confirms?/i.test(match)) return 'Primary sources confirm';
+      if (/indicates?/i.test(match)) return 'Primary sources indicate';
+      if (/reports?/i.test(match)) return 'Primary sources report';
+      if (/states?/i.test(match)) return 'Primary sources state';
+      if (/shows?/i.test(match)) return 'Primary sources show';
+      if (/notes?/i.test(match)) return 'Primary sources note';
+      if (/highlights?/i.test(match)) return 'Primary sources highlight';
+      if (/details?/i.test(match)) return 'Primary sources detail';
+      if (/provides?/i.test(match)) return 'Primary sources provide';
+      if (/reveals?/i.test(match)) return 'Primary sources reveal';
+      return 'primary sources';
+    },
+  );
+
+  cleaned = cleaned.replace(
+    /\b(?:According\s+to\s+)?Tier\s*2\s*sources?\s*(?:confirm|confirms|indicate|indicates|report|reports|state|states|show|shows|note|notes|highlight|highlights|detail|details|provide|provides|reveal|reveals)?/gi,
+    (match) => {
+      if (/^according\s+to/i.test(match)) {
+        return 'According to secondary reporting';
+      }
+      if (/confirms?/i.test(match)) return 'Secondary reports confirm';
+      if (/indicates?/i.test(match)) return 'Secondary reports indicate';
+      if (/reports?/i.test(match)) return 'Secondary reports state';
+      return 'secondary sources';
+    },
+  );
+
+  cleaned = cleaned.replace(
+    /\b(?:According\s+to\s+)?Tier\s*3\s*sources?\s*(?:confirm|confirms|indicate|indicates|report|reports|state|states|show|shows|note|notes|highlight|highlights|detail|details|provide|provides|reveal|reveals)?/gi,
+    (match) => {
+      if (/^according\s+to/i.test(match)) {
+        return 'According to unverified sources';
+      }
+      return 'unverified sources';
+    },
+  );
+
+  // 2. Parenthetical/bracketed Tier tags: (Tier 1 - Official Primary), (Tier 1), [Tier 1], (Tier 2), [Tier 2], (Tier 3), [Tier 3]
+  cleaned = cleaned.replace(/\s*[([]\s*Tier\s*[123]\s*(?:[-–—:]\s*[^)\]]+)?[)\]]/gi, '');
+  cleaned = cleaned.replace(/\s*[([]\s*Trust(?:\s*Tier)?\s*:\s*Tier\s*[123][^)\]]*[)\]]/gi, '');
+
+  // 3. Standalone "Tier 1 / Tier 2 / Tier 3" phrases in prose
+  cleaned = cleaned.replace(/\bTier\s*1\s*(?:source|provider|domain|evidence)/gi, 'verified source');
+  cleaned = cleaned.replace(/\bTier\s*1\s*(?:sources|providers|domains)/gi, 'verified sources');
+  cleaned = cleaned.replace(/\bTier\s*2\s*(?:source|provider|domain|evidence)/gi, 'secondary source');
+  cleaned = cleaned.replace(/\bTier\s*2\s*(?:sources|providers|domains)/gi, 'secondary sources');
+  cleaned = cleaned.replace(/\bTier\s*3\s*(?:source|provider|domain|evidence)/gi, 'unverified source');
+  cleaned = cleaned.replace(/\bTier\s*3\s*(?:sources|providers|domains)/gi, 'unverified sources');
+
+  // 4. "Tier 1:" or "Tier 2:" in headings/bullets
+  cleaned = cleaned.replace(/\bTier\s*1\s*:\s*/gi, 'Primary Sources: ');
+  cleaned = cleaned.replace(/\bTier\s*2\s*:\s*/gi, 'Secondary Sources: ');
+  cleaned = cleaned.replace(/\bTier\s*3\s*:\s*/gi, 'Unverified Sources: ');
+
+  // 5. Cleanup double spaces or stray punctuation created
+  cleaned = cleaned.replace(/[ \t]{2,}/g, ' ');
+
+  return cleaned.trim();
+}
+
