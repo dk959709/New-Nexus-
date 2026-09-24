@@ -2074,7 +2074,7 @@ export function AssistantPage() {
               if (webFetcherCancelledRef.current) return;
               const synthTime = Date.now() - synthStart;
               console.log(`[Web Fetcher] synthesis done (${synthTime} ms)`);
-              finalAnswerText = `Read page: ${directUrl}\n\n${stripTierLabels(aiRes.answer)}`;
+              finalAnswerText = stripTierLabels(aiRes.answer);
             } catch (synthErr: unknown) {
               if (webFetcherCancelledRef.current) return;
               const sErr = synthErr as Error;
@@ -2084,7 +2084,13 @@ export function AssistantPage() {
               } else {
                 console.log(`[Web Fetcher] synthesis error: ${sErr?.message || 'Synthesis failed'}`);
               }
-              finalAnswerText = `Read page: ${directUrl}\n\n${pageContent.slice(0, 1500)}\n\nThe AI was too slow or failed, so this is the raw page text. Try again or pick another number.`;
+              const rawMsg = sErr?.message || 'Synthesis failed';
+              const safeMsg = rawMsg
+                .replace(/(?:key|secret|token|password|bearer|auth|apikey)[=:\s]+[A-Za-z0-9_\-\.]{8,}/gi, '[redacted]')
+                .replace(/AIza[0-9A-Za-z-_]{35}/g, '[redacted]')
+                .replace(/sk-[a-zA-Z0-9]{20,}/g, '[redacted]');
+              const reason = isTimeout ? 'AI took more than 40 seconds' : safeMsg.slice(0, 150);
+              finalAnswerText = `Read page: ${directUrl}\n\n${pageContent.slice(0, 1500)}\n\nThe AI was too slow or failed, so this is the raw page text. Try again or pick another number.\nReason: ${reason}`;
             }
 
             if (webFetcherCancelledRef.current) return;
@@ -2216,7 +2222,7 @@ export function AssistantPage() {
               if (webFetcherCancelledRef.current) return;
               const synthTime = Date.now() - synthStart;
               console.log(`[Web Fetcher] synthesis done (${synthTime} ms)`);
-              finalAnswerText = `Read page: ${pickedItem.url}\n\n${stripTierLabels(aiRes.answer)}`;
+              finalAnswerText = stripTierLabels(aiRes.answer);
             } catch (synthErr: unknown) {
               if (webFetcherCancelledRef.current) return;
               const sErr = synthErr as Error;
@@ -2226,7 +2232,13 @@ export function AssistantPage() {
               } else {
                 console.log(`[Web Fetcher] synthesis error: ${sErr?.message || 'Synthesis failed'}`);
               }
-              finalAnswerText = `Read page: ${pickedItem.url}\n\n${pageContent.slice(0, 1500)}\n\nThe AI was too slow or failed, so this is the raw page text. Try again or pick another number.`;
+              const rawMsg = sErr?.message || 'Synthesis failed';
+              const safeMsg = rawMsg
+                .replace(/(?:key|secret|token|password|bearer|auth|apikey)[=:\s]+[A-Za-z0-9_\-\.]{8,}/gi, '[redacted]')
+                .replace(/AIza[0-9A-Za-z-_]{35}/g, '[redacted]')
+                .replace(/sk-[a-zA-Z0-9]{20,}/g, '[redacted]');
+              const reason = isTimeout ? 'AI took more than 40 seconds' : safeMsg.slice(0, 150);
+              finalAnswerText = `Read page: ${pickedItem.url}\n\n${pageContent.slice(0, 1500)}\n\nThe AI was too slow or failed, so this is the raw page text. Try again or pick another number.\nReason: ${reason}`;
             }
 
             if (webFetcherCancelledRef.current) return;
