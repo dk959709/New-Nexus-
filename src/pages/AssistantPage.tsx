@@ -459,6 +459,7 @@ export function AssistantPage() {
   const [webFetcherEnabled, setWebFetcherEnabled] = useState<boolean>(initialSpecialists.webFetcher);
   const [wikimediaEnabled, setWikimediaEnabled] = useState<boolean>(initialSpecialists.wikimedia);
   const [webFetcherList, setWebFetcherList] = useState<WebFetcherResultItem[]>([]);
+  const [webFetcherOriginalRequest, setWebFetcherOriginalRequest] = useState<string>('');
   const [newMemoryInput, setNewMemoryInput] = useState('');
   const [editingMemoryIndex, setEditingMemoryIndex] = useState<number | null>(null);
   const [editingMemoryDraft, setEditingMemoryDraft] = useState('');
@@ -601,6 +602,7 @@ export function AssistantPage() {
       setWebFetcherEnabled(false);
       storage.setAssistantWebFetcherEnabled(false);
       setWebFetcherList([]);
+      setWebFetcherOriginalRequest('');
     }
     if (except !== 'wikimedia') {
       setWikimediaEnabled(false);
@@ -688,6 +690,7 @@ export function AssistantPage() {
       disableOtherSpecialistModes('webFetcher');
     } else {
       setWebFetcherList([]);
+      setWebFetcherOriginalRequest('');
     }
     setWebFetcherEnabled(next);
     storage.setAssistantWebFetcherEnabled(next);
@@ -1999,6 +2002,7 @@ export function AssistantPage() {
         if (directUrl) {
           // Case a: URL or bare domain
           setWebFetcherList([]);
+          setWebFetcherOriginalRequest('');
           console.log(`[Web Fetcher] direct URL: ${directUrl}`);
           setSpecialistProgress(30);
           setSpecialistPhase(`Fetching webpage content directly from ${directUrl}...`);
@@ -2155,7 +2159,11 @@ export function AssistantPage() {
             const currentLanguage = storage.getAssistantLanguage();
             const currentPermanentMemories = storage.getPermanentMemories();
 
-            const aiPrompt = `Webpage URL: ${pickedItem.url}\n\nWebpage Content (truncated to 4,500 characters):\n${pageContent}\n\nUser Question/Message: "${message}"\n\nInstructions:\nAnswer from the webpage content provided above. Put the newest items first and include their exact dates when available on the page.`;
+            const userRequestText = webFetcherOriginalRequest.trim()
+              ? `The user asked for a list of websites with this request: "${webFetcherOriginalRequest}". They picked this page from the list.`
+              : `The user picked this page from a list. Summarize what this page is and its main information.`;
+
+            const aiPrompt = `Webpage URL: ${pickedItem.url}\n\nWebpage Content (truncated to 4,500 characters):\n${pageContent}\n\n${userRequestText}\n\nInstructions:\nSummarize what this page is and its most useful information for the user's request. Put the newest items first and include exact dates when available on the page. Never mention the list number.`;
 
             const aiRes = await api.aiChat(
               aiPrompt,
@@ -2320,6 +2328,7 @@ export function AssistantPage() {
           });
 
           setWebFetcherList(items);
+          setWebFetcherOriginalRequest(message);
           console.log(`[Web Fetcher] list built: ${items.length} items`);
 
           const lines: string[] = [];
@@ -2602,6 +2611,7 @@ export function AssistantPage() {
   const newChat = () => {
     setMessages([welcomeMessage]);
     setWebFetcherList([]);
+    setWebFetcherOriginalRequest('');
     setError('');
     setShowClearConfirm(false);
   };
@@ -2612,6 +2622,7 @@ export function AssistantPage() {
     setMemoryEditorOpen(false);
     setMessages([welcomeMessage]);
     setWebFetcherList([]);
+    setWebFetcherOriginalRequest('');
     setError('');
     setShowClearConfirm(false);
     setClearedToast(true);
