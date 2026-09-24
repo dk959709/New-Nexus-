@@ -965,5 +965,59 @@ export const api = {
       };
     }
   },
+
+  getGlobalSearchConfig(): Promise<{
+    ok: boolean;
+    mode: 'default' | 'custom';
+    customUrl: string;
+    hasKey: boolean;
+    maskedKey: string;
+  }> {
+    return call('/api/catalog/search-config');
+  },
+
+  saveGlobalSearchConfig(params: {
+    mode?: 'default' | 'custom';
+    customUrl?: string;
+    customKey?: string;
+  }): Promise<{
+    ok: boolean;
+    mode: 'default' | 'custom';
+    customUrl: string;
+    hasKey: boolean;
+    maskedKey: string;
+  }> {
+    return call('/api/catalog/search-config', {
+      method: 'POST',
+      body: JSON.stringify(params),
+    });
+  },
+
+  resetGlobalSearchConfig(): Promise<{
+    ok: boolean;
+    mode: 'default';
+    customUrl: string;
+    hasKey: boolean;
+    maskedKey: string;
+  }> {
+    return call('/api/catalog/search-config/reset', {
+      method: 'POST',
+    });
+  },
+
+  testGlobalSearchConfig(params: {
+    url?: string;
+    key?: string;
+  }): Promise<{
+    ok: boolean;
+    count?: number;
+    timeMs?: number;
+    error?: string;
+  }> {
+    return call('/api/catalog/search-config/test', {
+      method: 'POST',
+      body: JSON.stringify(params),
+    });
+  },
 };
 

@@ -1,7 +1,7 @@
 import { Router } from 'express';
 import { z } from 'zod';
 import { errorResponse, domainOf } from '../shared.js';
-import { getBackendApiKey, getBackendApiKeyDetail } from '../apiCatalog.js';
+import { getBackendApiKey, getBackendApiKeyDetail, getGlobalSearchConfig } from '../apiCatalog.js';
 
 export const WIKIPEDIA_USER_AGENT = 'NEXUS-Intelligence/1.0 (https://nexus.app; contact: dk959709@gmail.com)';
 
@@ -1204,10 +1204,11 @@ export async function searchProvider(input: z.infer<typeof searchSchema>): Promi
     );
   };
 
-  let key = getBackendApiKey('SEARCH_API_KEY') || getBackendApiKey('TAVILY_API_KEY');
-  let url = process.env.SEARCH_API_URL || (key ? 'https://api.tavily.com/search' : undefined);
+  let key = '';
+  let url = '';
   let isCustom = false;
 
+  // Priority 1: Per-request custom key/URL sent from AI Assistant device settings
   if (input.customSearchApiKey && input.customSearchApiUrl) {
     const val = validateCustomSearchUrl(input.customSearchApiUrl);
     if (val.valid) {
@@ -1215,6 +1216,25 @@ export async function searchProvider(input: z.infer<typeof searchSchema>): Promi
       url = input.customSearchApiUrl.trim();
       isCustom = true;
     }
+  }
+
+  // Priority 2: Global Custom Search from API Catalog
+  if (!isCustom) {
+    const globalConfig = getGlobalSearchConfig();
+    if (globalConfig.mode === 'custom' && globalConfig.customUrl && globalConfig.customKey) {
+      const val = validateCustomSearchUrl(globalConfig.customUrl);
+      if (val.valid) {
+        key = globalConfig.customKey;
+        url = globalConfig.customUrl;
+        isCustom = true;
+      }
+    }
+  }
+
+  // Priority 3: Default (Render env)
+  if (!isCustom) {
+    key = getBackendApiKey('SEARCH_API_KEY') || getBackendApiKey('TAVILY_API_KEY') || '';
+    url = process.env.SEARCH_API_URL || (key ? 'https://api.tavily.com/search' : '');
   }
 
   let primaryResults: SearchResult[] = [];
@@ -2242,6 +2262,106 @@ export async function fetchDirectWebPage(targetUrl: string): Promise<{
   }
 }
 
+export async function executeCustomSearchTest(
+  rawUrl: string,
+  rawKey: string,
+  clientIp: string = 'unknown',
+): Promise<{ ok: boolean; count?: number; timeMs?: number; error?: string }> {
+  if (!checkTestRateLimit(clientIp)) {
+    return { ok: false, error: 'Server returned an error (rate limit)' };
+  }
+
+  if (!rawUrl || typeof rawUrl !== 'string' || !rawKey || typeof rawKey !== 'string') {
+    return { ok: false, error: 'Invalid URL (must start with https://)' };
+  }
+
+  const validation = validateCustomSearchUrl(rawUrl);
+  if (!validation.valid) {
+    return { ok: false, error: validation.error || 'Invalid URL (must start with https://)' };
+  }
+
+  const cleanUrl = rawUrl.trim();
+  const cleanKey = rawKey.trim();
+  const startTime = Date.now();
+
+  try {
+    const isTavily = cleanUrl.includes('tavily.com');
+    const bodyPayload = isTavily
+      ? {
+          api_key: cleanKey,
+          query: 'test',
+          search_depth: 'basic',
+          max_results: 5,
+          include_answer: false,
+        }
+      : {
+          query: 'test',
+          page: 1,
+          category: 'ALL',
+          max_results: 5,
+        };
+
+    const headers: Record<string, string> = {
+      'Content-Type': 'application/json',
+    };
+    if (!isTavily) {
+      headers['Authorization'] = `Bearer ${cleanKey}`;
+      headers['X-API-Key'] = cleanKey;
+    }
+
+    const response = await fetch(cleanUrl, {
+      method: 'POST',
+      headers,
+      body: JSON.stringify(bodyPayload),
+      signal: AbortSignal.timeout(6000),
+    });
+
+    const duration = Date.now() - startTime;
+
+    if (!response.ok) {
+      if (response.status === 401 || response.status === 403) {
+        return { ok: false, error: 'Wrong key (401/403)' };
+      }
+      if (response.status === 404) {
+        return { ok: false, error: 'Not found (404)' };
+      }
+      return { ok: false, error: `Server returned an error (${response.status})` };
+    }
+
+    const payload = (await response.json()) as {
+      results?: Array<Record<string, unknown>>;
+      organic_results?: Array<Record<string, unknown>>;
+      news?: Array<Record<string, unknown>>;
+    };
+    const items =
+      payload.results ??
+      payload.organic_results ??
+      payload.news ??
+      (Array.isArray(payload) ? (payload as Array<Record<string, unknown>>) : []);
+
+    const validItems = items.filter(
+      (item) => item && typeof item === 'object' && (item.title || item.url || item.link),
+    );
+
+    if (validItems.length === 0) {
+      return { ok: false, error: 'No results returned' };
+    }
+
+    return {
+      ok: true,
+      count: validItems.length,
+      timeMs: duration,
+    };
+  } catch (err: unknown) {
+    if (err instanceof Error) {
+      if (err.name === 'AbortError' || err.message.includes('timeout')) {
+        return { ok: false, error: 'Timed out' };
+      }
+    }
+    return { ok: false, error: 'Server returned an error' };
+  }
+}
+
 export interface SearchRouterDependencies {
   generateSummaryAi?: (params: {
     messages: Array<{ role: string; content: string }>;
@@ -2508,94 +2628,9 @@ export function createSearchRouter(deps: SearchRouterDependencies = {}) {
   // Test connection endpoint for custom search API
   router.post('/api/assistant/test-search', async (req, res) => {
     const clientIp = (req.headers['x-forwarded-for'] as string) || req.socket?.remoteAddress || 'unknown';
-    if (!checkTestRateLimit(clientIp)) {
-      return res.json({ ok: false, error: 'Server returned an error (rate limit)' });
-    }
-
     const { url, key } = req.body || {};
-    if (!url || typeof url !== 'string' || !key || typeof key !== 'string') {
-      return res.json({ ok: false, error: 'Invalid URL (must start with https://)' });
-    }
-
-    const validation = validateCustomSearchUrl(url);
-    if (!validation.valid) {
-      return res.json({ ok: false, error: validation.error || 'Invalid URL (must start with https://)' });
-    }
-
-    const cleanUrl = url.trim();
-    const cleanKey = key.trim();
-    const startTime = Date.now();
-
-    try {
-      const isTavily = cleanUrl.includes('tavily.com');
-      const bodyPayload = isTavily
-        ? {
-            api_key: cleanKey,
-            query: 'test',
-            search_depth: 'basic',
-            max_results: 5,
-            include_answer: false,
-          }
-        : {
-            query: 'test',
-            page: 1,
-            category: 'ALL',
-            max_results: 5,
-          };
-
-      const headers: Record<string, string> = {
-        'Content-Type': 'application/json',
-      };
-      if (!isTavily) {
-        headers['Authorization'] = `Bearer ${cleanKey}`;
-        headers['X-API-Key'] = cleanKey;
-      }
-
-      const response = await fetch(cleanUrl, {
-        method: 'POST',
-        headers,
-        body: JSON.stringify(bodyPayload),
-        signal: AbortSignal.timeout(6000),
-      });
-
-      const duration = Date.now() - startTime;
-
-      if (!response.ok) {
-        if (response.status === 401 || response.status === 403) {
-          return res.json({ ok: false, error: 'Wrong key (401/403)' });
-        }
-        if (response.status === 404) {
-          return res.json({ ok: false, error: 'Not found (404)' });
-        }
-        return res.json({ ok: false, error: `Server returned an error (${response.status})` });
-      }
-
-      const payload = (await response.json()) as {
-        results?: Array<Record<string, unknown>>;
-        organic_results?: Array<Record<string, unknown>>;
-        news?: Array<Record<string, unknown>>;
-      };
-      const items = payload.results ?? payload.organic_results ?? payload.news ?? (Array.isArray(payload) ? (payload as Array<Record<string, unknown>>) : []);
-
-      const validItems = items.filter((item) => item && typeof item === 'object' && (item.title || item.url || item.link));
-
-      if (validItems.length === 0) {
-        return res.json({ ok: false, error: 'No results returned' });
-      }
-
-      return res.json({
-        ok: true,
-        count: validItems.length,
-        timeMs: duration,
-      });
-    } catch (err: unknown) {
-      if (err instanceof Error) {
-        if (err.name === 'AbortError' || err.message.includes('timeout')) {
-          return res.json({ ok: false, error: 'Timed out' });
-        }
-      }
-      return res.json({ ok: false, error: 'Server returned an error' });
-    }
+    const result = await executeCustomSearchTest(url, key, clientIp);
+    return res.json(result);
   });
 
   return router;

@@ -3,6 +3,7 @@ import fs from 'node:fs';
 import { resolve } from 'node:path';
 import { Router, type Request, type Response } from 'express';
 import { errorResponse } from './shared.js';
+import { validateCustomSearchUrl, executeCustomSearchTest } from './routes/search.js';
 
 const ALGORITHM = 'aes-256-gcm';
 const DATA_DIR = resolve(process.cwd(), 'data');
@@ -352,9 +353,125 @@ export interface CatalogItemResponse {
   isCustom: boolean;
 }
 
+export function getGlobalSearchConfig(): {
+  mode: 'default' | 'custom';
+  customUrl: string;
+  customKey: string;
+  hasKey: boolean;
+  maskedKey: string;
+} {
+  const store = loadCatalogStore();
+  const rec = store['custom-search'];
+  if (!rec) {
+    return {
+      mode: 'default',
+      customUrl: '',
+      customKey: '',
+      hasKey: false,
+      maskedKey: '(not configured)',
+    };
+  }
+
+  const mode = rec.mode === 'custom' ? 'custom' : 'default';
+  const customUrl = rec.baseUrl || rec.customUrl || '';
+  let customKey = '';
+  if (rec.encryptedKey) {
+    const dec = decryptValue(rec.encryptedKey);
+    if (dec) customKey = dec.trim();
+  }
+
+  const hasKey = Boolean(customKey);
+  const maskedKey = hasKey ? maskApiKey(customKey) : '(not configured)';
+
+  return {
+    mode,
+    customUrl,
+    customKey,
+    hasKey,
+    maskedKey,
+  };
+}
+
+export function saveGlobalSearchConfig(input: {
+  mode?: 'default' | 'custom';
+  customUrl?: string;
+  customKey?: string;
+}): {
+  mode: 'default' | 'custom';
+  customUrl: string;
+  hasKey: boolean;
+  maskedKey: string;
+} {
+  const store = loadCatalogStore();
+  const existing = store['custom-search'] || {};
+  let currentKey = '';
+  if (existing.encryptedKey) {
+    const dec = decryptValue(existing.encryptedKey);
+    if (dec) currentKey = dec.trim();
+  }
+
+  const mode = input.mode !== undefined ? input.mode : (existing.mode === 'custom' ? 'custom' : 'default');
+  const customUrl = input.customUrl !== undefined ? input.customUrl.trim() : (existing.baseUrl || existing.customUrl || '');
+
+  let finalKey = currentKey;
+  if (input.customKey !== undefined && input.customKey.trim().length > 0) {
+    finalKey = input.customKey.trim();
+  }
+
+  const encryptedKey = finalKey ? encryptValue(finalKey) : '';
+  const now = new Date().toISOString();
+
+  store['custom-search'] = {
+    ...existing,
+    id: 'custom-search',
+    name: 'Global Web Search API',
+    envVar: 'CUSTOM_SEARCH_API_KEY',
+    description: 'Global Web Search API overriding default search provider for the whole application.',
+    mode,
+    baseUrl: customUrl,
+    customUrl,
+    encryptedKey,
+    last4: finalKey ? finalKey.slice(-4) : '',
+    createdAt: existing.createdAt || now,
+    updatedAt: now,
+    isCustom: true,
+  };
+
+  saveCatalogStore(store);
+
+  const hasKey = Boolean(finalKey);
+  return {
+    mode,
+    customUrl,
+    hasKey,
+    maskedKey: hasKey ? maskApiKey(finalKey) : '(not configured)',
+  };
+}
+
+export function resetGlobalSearchConfig(): {
+  mode: 'default';
+  customUrl: string;
+  hasKey: boolean;
+  maskedKey: string;
+} {
+  const store = loadCatalogStore();
+  if (store['custom-search']) {
+    delete store['custom-search'];
+    saveCatalogStore(store);
+  }
+  return {
+    mode: 'default',
+    customUrl: '',
+    hasKey: false,
+    maskedKey: '(not configured)',
+  };
+}
+
 export function listCatalogItems(): CatalogItemResponse[] {
   const store = loadCatalogStore();
   const results: CatalogItemResponse[] = [];
+  const globalSearch = getGlobalSearchConfig();
+  const isGlobalCustomActive = globalSearch.mode === 'custom' && Boolean(globalSearch.customUrl) && globalSearch.hasKey;
 
   // 1. Predefined APIs
   for (const def of PREDEFINED_CATALOG) {
@@ -381,8 +498,20 @@ export function listCatalogItems(): CatalogItemResponse[] {
       }
     }
 
-    const isConnected = Boolean(key && key.trim().length > 0);
+    let isConnected = Boolean(key && key.trim().length > 0);
     const storedRec = store[def.id] || store[def.envVar];
+
+    let finalSource = source;
+    let finalStatus: 'connected' | 'not_configured' = isConnected ? 'connected' : 'not_configured';
+    let finalMaskedKey = isConnected ? (source === 'env' ? '••••••••••••••••' : maskApiKey(key)) : undefined;
+    let finalBaseUrl = storedRec?.baseUrl;
+
+    if (isGlobalCustomActive && (def.id === 'tavily' || def.envVar === 'SEARCH_API_KEY')) {
+      finalStatus = 'connected';
+      finalSource = 'catalog';
+      finalMaskedKey = globalSearch.maskedKey;
+      finalBaseUrl = globalSearch.customUrl;
+    }
 
     results.push({
       id: def.id,
@@ -391,13 +520,12 @@ export function listCatalogItems(): CatalogItemResponse[] {
       fallbackEnvVars: def.fallbackEnvVars,
       description: def.description,
       docsUrl: def.docsUrl,
-      baseUrl: storedRec?.baseUrl,
+      baseUrl: finalBaseUrl,
       queryParamName: storedRec?.queryParamName || 'q',
       category: def.category,
-      status: isConnected ? 'connected' : 'not_configured',
-      source,
-      // Security policy: Never expose any part of Render environment variables
-      maskedKey: isConnected ? (source === 'env' ? '••••••••••••••••' : maskApiKey(key)) : undefined,
+      status: finalStatus,
+      source: finalSource,
+      maskedKey: finalMaskedKey,
       updatedAt: storedRec?.updatedAt,
       isCustom: false,
     });
@@ -1068,5 +1196,78 @@ apiCatalogRouter.post('/api/catalog/test/:id', async (req: Request, res: Respons
     return res.json({ ok: true, ...result });
   } catch (err) {
     return errorResponse(res, 500, (err as Error).message);
+  }
+});
+
+apiCatalogRouter.get('/api/catalog/search-config', (_req: Request, res: Response) => {
+  try {
+    const config = getGlobalSearchConfig();
+    return res.json({
+      ok: true,
+      mode: config.mode,
+      customUrl: config.customUrl,
+      hasKey: config.hasKey,
+      maskedKey: config.maskedKey,
+    });
+  } catch (err) {
+    return errorResponse(res, 500, (err as Error).message);
+  }
+});
+
+apiCatalogRouter.post('/api/catalog/search-config', (req: Request, res: Response) => {
+  try {
+    const { mode, customUrl, customKey } = req.body || {};
+    if (mode === 'custom') {
+      if (!customUrl || typeof customUrl !== 'string' || !customUrl.trim()) {
+        return errorResponse(res, 400, 'Search API URL is required when Custom mode is selected.');
+      }
+      const val = validateCustomSearchUrl(customUrl);
+      if (!val.valid) {
+        return errorResponse(res, 400, val.error || 'Invalid Search API URL (must start with https://)');
+      }
+    }
+
+    const saved = saveGlobalSearchConfig({
+      mode: mode === 'custom' ? 'custom' : 'default',
+      customUrl: typeof customUrl === 'string' ? customUrl : undefined,
+      customKey: typeof customKey === 'string' ? customKey : undefined,
+    });
+
+    return res.json({ ok: true, ...saved });
+  } catch (err) {
+    return errorResponse(res, 500, (err as Error).message);
+  }
+});
+
+apiCatalogRouter.post('/api/catalog/search-config/reset', (_req: Request, res: Response) => {
+  try {
+    const resConfig = resetGlobalSearchConfig();
+    return res.json({ ok: true, ...resConfig });
+  } catch (err) {
+    return errorResponse(res, 500, (err as Error).message);
+  }
+});
+
+apiCatalogRouter.post('/api/catalog/search-config/test', async (req: Request, res: Response) => {
+  try {
+    const clientIp = (req.headers['x-forwarded-for'] as string) || req.socket?.remoteAddress || 'unknown';
+    const { url, key } = req.body || {};
+    const config = getGlobalSearchConfig();
+
+    const testUrl = typeof url === 'string' && url.trim() ? url.trim() : config.customUrl;
+    const testKey = typeof key === 'string' && key.trim() ? key.trim() : config.customKey;
+
+    if (!testUrl) {
+      return res.json({ ok: false, error: 'Invalid URL (must start with https://)' });
+    }
+
+    if (!testKey) {
+      return res.json({ ok: false, error: 'Wrong key (401/403)' });
+    }
+
+    const result = await executeCustomSearchTest(testUrl, testKey, clientIp);
+    return res.json(result);
+  } catch (err) {
+    return res.json({ ok: false, error: (err as Error).message || 'Server returned an error' });
   }
 });

@@ -23,6 +23,8 @@ import {
   Terminal,
   ChevronDown,
   ChevronUp,
+  Plug,
+  RotateCcw,
 } from 'lucide-react';
 import { api } from '@/services/api';
 import type { ApiCatalogItem } from '@/types';
@@ -33,6 +35,18 @@ export function ApiCatalogSettings() {
   const [error, setError] = useState<string | null>(null);
   const [searchQuery, setSearchQuery] = useState<string>('');
   const [selectedCategory, setSelectedCategory] = useState<string>('all');
+
+  // Global Web Search API State
+  const [globalSearchMode, setGlobalSearchMode] = useState<'default' | 'custom'>('default');
+  const [globalCustomUrl, setGlobalCustomUrl] = useState<string>('');
+  const [globalCustomKey, setGlobalCustomKey] = useState<string>('');
+  const [globalHasKey, setGlobalHasKey] = useState<boolean>(false);
+  const [globalMaskedKey, setGlobalMaskedKey] = useState<string>('');
+  const [webSearchCustomOpen, setWebSearchCustomOpen] = useState<boolean>(false);
+  const [showGlobalSearchKey, setShowGlobalSearchKey] = useState<boolean>(false);
+  const [testingGlobalSearch, setTestingGlobalSearch] = useState<boolean>(false);
+  const [globalSearchTestResult, setGlobalSearchTestResult] = useState<{ ok: boolean; message: string } | null>(null);
+  const [savingGlobalSearch, setSavingGlobalSearch] = useState<boolean>(false);
 
   // Key revealing states
   const [revealedKeys, setRevealedKeys] = useState<Record<string, string>>({});
@@ -93,9 +107,152 @@ export function ApiCatalogSettings() {
     }
   };
 
+  const fetchGlobalSearchConfig = async () => {
+    try {
+      const res = await api.getGlobalSearchConfig();
+      if (res && res.ok) {
+        setGlobalSearchMode(res.mode || 'default');
+        setGlobalCustomUrl(res.customUrl || '');
+        setGlobalHasKey(res.hasKey || false);
+        setGlobalMaskedKey(res.maskedKey || '');
+      }
+    } catch {
+      // Ignore initial config load error
+    }
+  };
+
   useEffect(() => {
     fetchCatalog();
+    fetchGlobalSearchConfig();
   }, []);
+
+  const handleSelectGlobalSearchMode = async (mode: 'default' | 'custom') => {
+    setGlobalSearchMode(mode);
+    setGlobalSearchTestResult(null);
+    try {
+      setSavingGlobalSearch(true);
+      const res = await api.saveGlobalSearchConfig({ mode, customUrl: globalCustomUrl, customKey: globalCustomKey });
+      if (res && res.ok) {
+        setGlobalSearchMode(res.mode);
+        setGlobalCustomUrl(res.customUrl);
+        setGlobalHasKey(res.hasKey);
+        setGlobalMaskedKey(res.maskedKey);
+        await fetchCatalog();
+      }
+    } catch (err: unknown) {
+      setActionNotice({
+        type: 'error',
+        message: err instanceof Error ? err.message : 'Failed to update Web Search mode',
+      });
+    } finally {
+      setSavingGlobalSearch(false);
+    }
+  };
+
+  const handleSaveGlobalSearch = async (e?: React.FormEvent) => {
+    if (e) e.preventDefault();
+    setGlobalSearchTestResult(null);
+
+    if (!globalCustomUrl.trim()) {
+      setActionNotice({ type: 'error', message: 'Please enter a valid Search API URL (must start with https://)' });
+      return;
+    }
+
+    try {
+      setSavingGlobalSearch(true);
+      const res = await api.saveGlobalSearchConfig({
+        mode: 'custom',
+        customUrl: globalCustomUrl.trim(),
+        customKey: globalCustomKey.trim() || undefined,
+      });
+
+      if (res && res.ok) {
+        setGlobalSearchMode('custom');
+        setGlobalCustomUrl(res.customUrl);
+        setGlobalHasKey(res.hasKey);
+        setGlobalMaskedKey(res.maskedKey);
+        setGlobalCustomKey('');
+        setActionNotice({ type: 'success', message: 'Global Web Search API settings saved.' });
+        await fetchCatalog();
+      }
+    } catch (err: unknown) {
+      setActionNotice({
+        type: 'error',
+        message: err instanceof Error ? err.message : 'Failed to save Web Search API settings',
+      });
+    } finally {
+      setSavingGlobalSearch(false);
+    }
+  };
+
+  const handleResetGlobalSearch = async () => {
+    setGlobalSearchTestResult(null);
+    try {
+      setSavingGlobalSearch(true);
+      const res = await api.resetGlobalSearchConfig();
+      if (res && res.ok) {
+        setGlobalSearchMode('default');
+        setGlobalCustomUrl('');
+        setGlobalCustomKey('');
+        setGlobalHasKey(false);
+        setGlobalMaskedKey('(not configured)');
+        setActionNotice({ type: 'success', message: 'Reset Web Search API to Default.' });
+        await fetchCatalog();
+      }
+    } catch (err: unknown) {
+      setActionNotice({
+        type: 'error',
+        message: err instanceof Error ? err.message : 'Failed to reset Web Search API',
+      });
+    } finally {
+      setSavingGlobalSearch(false);
+    }
+  };
+
+  const handleTestGlobalSearch = async () => {
+    if (testingGlobalSearch) return;
+    setGlobalSearchTestResult(null);
+
+    const urlToTest = globalCustomUrl.trim();
+    const keyToTest = globalCustomKey.trim();
+
+    if (!urlToTest) {
+      setGlobalSearchTestResult({ ok: false, message: 'Invalid URL (must start with https://)' });
+      return;
+    }
+
+    if (!keyToTest && !globalHasKey) {
+      setGlobalSearchTestResult({ ok: false, message: 'Wrong key (401/403)' });
+      return;
+    }
+
+    try {
+      setTestingGlobalSearch(true);
+      const res = await api.testGlobalSearchConfig({
+        url: urlToTest,
+        key: keyToTest || undefined,
+      });
+
+      if (res.ok) {
+        setGlobalSearchTestResult({
+          ok: true,
+          message: `Works: ${res.count ?? 0} results in ${res.timeMs ?? 0} ms`,
+        });
+      } else {
+        setGlobalSearchTestResult({
+          ok: false,
+          message: res.error || 'Server returned an error',
+        });
+      }
+    } catch (err: unknown) {
+      setGlobalSearchTestResult({
+        ok: false,
+        message: err instanceof Error ? err.message : 'Server returned an error',
+      });
+    } finally {
+      setTestingGlobalSearch(false);
+    }
+  };
 
   const copyToClipboard = async (text: string, identifier: string) => {
     try {
@@ -528,6 +685,220 @@ export function ApiCatalogSettings() {
             <p className="text-slate-400 text-[11px] m-0">
               Keys added through this table are encrypted into local vault storage (<code>data/api_catalog.json</code>). Runtime lookups resolve <strong>1. System Environment (Render)</strong> first, falling back to <strong>2. Local Vault</strong>. Render variables are never modified or overwritten.
             </p>
+          </div>
+        </div>
+      </section>
+
+      {/* Global Web Search API Section */}
+      <section
+        style={{
+          background: 'linear-gradient(135deg, rgba(16,28,42,0.85) 0%, rgba(13,24,38,0.85) 100%)',
+          border: '1px solid rgba(6,182,212,0.25)',
+          borderRadius: '12px',
+          padding: '20px',
+        }}
+        className="space-y-4 shadow-lg"
+      >
+        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2 border-b border-slate-800/80 pb-3">
+          <div>
+            <h3 className="text-sm font-bold text-slate-100 flex items-center gap-2 m-0">
+              <Search size={16} className="text-cyan-400" />
+              Web Search API
+            </h3>
+            <p className="text-xs text-slate-400 m-0 mt-0.5">
+              Choose which search API the whole app uses.
+            </p>
+          </div>
+          <span className="text-[11px] px-2.5 py-0.5 rounded-full font-mono font-medium bg-slate-900 border border-slate-800 text-slate-300 self-start sm:self-auto">
+            Mode: <strong className="text-cyan-300 uppercase">{globalSearchMode}</strong>
+          </span>
+        </div>
+
+        <div className="grid grid-cols-1 md:grid-cols-2 gap-3 items-start">
+          {/* Option 1: Default */}
+          <button
+            type="button"
+            onClick={() => handleSelectGlobalSearchMode('default')}
+            disabled={savingGlobalSearch}
+            className={`p-3.5 rounded-xl border text-left transition-all cursor-pointer ${
+              globalSearchMode === 'default'
+                ? 'border-cyan-500/60 bg-cyan-950/25 shadow-[0_0_15px_rgba(6,182,212,0.12)]'
+                : 'border-slate-800 bg-slate-900/50 hover:border-slate-700'
+            }`}
+          >
+            <div className="flex items-center justify-between">
+              <div className="flex items-center gap-2">
+                <Globe size={15} className={globalSearchMode === 'default' ? 'text-cyan-400' : 'text-slate-400'} />
+                <span className="text-xs font-semibold text-slate-200">Default Search API</span>
+              </div>
+              {globalSearchMode === 'default' && (
+                <span className="text-[10px] px-2 py-0.5 rounded-full bg-emerald-500/10 text-emerald-400 border border-emerald-500/30 font-medium">
+                  Active
+                </span>
+              )}
+            </div>
+            <p className="text-[11px] text-slate-400 mt-1.5 leading-relaxed">
+              Uses search API configured on the server (Render <code className="text-cyan-300">SEARCH_API_KEY</code> / <code className="text-cyan-300">SEARCH_API_URL</code>).
+            </p>
+          </button>
+
+          {/* Option 2: Custom Collapsible Sub-folder */}
+          <div
+            className={`rounded-xl border transition-all ${
+              globalSearchMode === 'custom'
+                ? 'border-purple-500/60 bg-purple-950/20 shadow-[0_0_15px_rgba(168,85,247,0.12)]'
+                : 'border-slate-800 bg-slate-900/50'
+            }`}
+          >
+            <div
+              onClick={() => {
+                handleSelectGlobalSearchMode('custom');
+                setWebSearchCustomOpen(true);
+              }}
+              className="p-3.5 flex items-center justify-between cursor-pointer hover:bg-slate-800/40 transition-colors rounded-xl"
+            >
+              <div className="flex items-center gap-2 min-w-0">
+                <Plug size={15} className={globalSearchMode === 'custom' ? 'text-purple-400' : 'text-slate-400'} />
+                <span className="text-xs font-semibold text-slate-200">Custom Search API</span>
+                {globalSearchMode === 'custom' && (
+                  <span className="text-[10px] px-2 py-0.5 rounded-full bg-emerald-500/10 text-emerald-400 border border-emerald-500/30 font-medium ml-1">
+                    Active
+                  </span>
+                )}
+              </div>
+              <button
+                type="button"
+                onClick={(e) => {
+                  e.stopPropagation();
+                  setWebSearchCustomOpen((prev) => !prev);
+                }}
+                className="p-1 rounded-lg text-slate-400 hover:text-slate-200 hover:bg-slate-800/60 transition-colors cursor-pointer"
+                title={webSearchCustomOpen ? 'Collapse fields' : 'Expand fields'}
+              >
+                <ChevronDown
+                  size={16}
+                  className={`transition-transform duration-200 ${
+                    webSearchCustomOpen ? 'rotate-180 text-slate-200' : ''
+                  }`}
+                />
+              </button>
+            </div>
+
+            {/* Collapsible Sub-folder Fields */}
+            {webSearchCustomOpen && (
+              <div className="p-3.5 pt-0 space-y-3 border-t border-slate-800/60 mt-1">
+                <form onSubmit={handleSaveGlobalSearch} noValidate className="space-y-3 pt-2">
+                  {/* Search API URL */}
+                  <div>
+                    <label className="block text-[11px] font-semibold text-slate-300 mb-1">
+                      Search API URL <span className="text-purple-400">*</span>
+                    </label>
+                    <input
+                      type="text"
+                      placeholder="https://api.example.com/search"
+                      value={globalCustomUrl}
+                      onChange={(e) => {
+                        setGlobalCustomUrl(e.target.value);
+                        setGlobalSearchTestResult(null);
+                      }}
+                      className="w-full text-xs px-3 py-2 rounded-lg bg-slate-950/80 border border-slate-800 text-slate-100 placeholder-slate-500 focus:outline-none focus:border-purple-400 font-mono"
+                    />
+                  </div>
+
+                  {/* Search API Key */}
+                  <div>
+                    <label className="block text-[11px] font-semibold text-slate-300 mb-1">
+                      Search API Key
+                    </label>
+                    <div className="relative">
+                      <input
+                        type={showGlobalSearchKey ? 'text' : 'password'}
+                        placeholder={globalHasKey ? '•••••••••••••••• (Saved - Leave empty to keep)' : 'Paste API key...'}
+                        value={globalCustomKey}
+                        onChange={(e) => {
+                          setGlobalCustomKey(e.target.value);
+                          setGlobalSearchTestResult(null);
+                        }}
+                        className="w-full text-xs pl-3 pr-8 py-2 rounded-lg bg-slate-950/80 border border-slate-800 text-slate-100 placeholder-slate-500 focus:outline-none focus:border-purple-400 font-mono"
+                      />
+                      <button
+                        type="button"
+                        onClick={() => setShowGlobalSearchKey(!showGlobalSearchKey)}
+                        className="absolute right-2.5 top-1/2 -translate-y-1/2 text-slate-400 hover:text-slate-200 cursor-pointer"
+                        title={showGlobalSearchKey ? 'Hide key' : 'Show key'}
+                      >
+                        {showGlobalSearchKey ? <EyeOff size={14} /> : <Eye size={14} />}
+                      </button>
+                    </div>
+                  </div>
+
+                  {/* Test Connection + Actions Row */}
+                  <div className="flex flex-wrap items-center justify-between gap-2 pt-1">
+                    <div className="flex items-center gap-2">
+                      <button
+                        type="button"
+                        onClick={handleTestGlobalSearch}
+                        disabled={testingGlobalSearch || (!globalCustomUrl.trim() && !globalCustomKey.trim() && !globalHasKey)}
+                        className="inline-flex items-center gap-1.5 text-xs font-semibold px-3 py-1.5 rounded-lg bg-slate-800 text-purple-300 border border-purple-500/30 hover:bg-purple-950/30 transition-colors disabled:opacity-40 cursor-pointer"
+                      >
+                        {testingGlobalSearch ? (
+                          <>
+                            <RefreshCw size={13} className="animate-spin text-purple-400" />
+                            <span>Testing...</span>
+                          </>
+                        ) : (
+                          <>
+                            <Plug size={13} className="text-purple-400" />
+                            <span>Test connection</span>
+                          </>
+                        )}
+                      </button>
+
+                      <button
+                        type="button"
+                        onClick={handleResetGlobalSearch}
+                        disabled={savingGlobalSearch}
+                        className="inline-flex items-center gap-1 text-[11px] font-medium px-2.5 py-1.5 rounded-lg bg-slate-900 text-slate-400 border border-slate-800 hover:text-slate-200 hover:bg-slate-800 transition-colors cursor-pointer"
+                        title="Reset to Default Search API"
+                      >
+                        <RotateCcw size={12} />
+                        <span>Reset to Default</span>
+                      </button>
+                    </div>
+
+                    <button
+                      type="submit"
+                      disabled={savingGlobalSearch || !globalCustomUrl.trim()}
+                      className="inline-flex items-center gap-1.5 text-xs font-semibold px-3.5 py-1.5 rounded-lg bg-purple-600 text-white hover:bg-purple-500 transition-colors disabled:opacity-40 cursor-pointer"
+                    >
+                      {savingGlobalSearch ? 'Saving...' : 'Save Custom API'}
+                    </button>
+                  </div>
+
+                  {/* Test Connection Result */}
+                  {globalSearchTestResult && (
+                    <div
+                      className={`p-2.5 rounded-lg border text-xs flex items-center gap-2 ${
+                        globalSearchTestResult.ok
+                          ? 'bg-emerald-950/50 border-emerald-500/40 text-emerald-300'
+                          : 'bg-rose-950/50 border-rose-500/40 text-rose-300'
+                      }`}
+                    >
+                      {globalSearchTestResult.ok ? (
+                        <CheckCircle2 size={14} className="text-emerald-400 flex-shrink-0" />
+                      ) : (
+                        <AlertCircle size={14} className="text-rose-400 flex-shrink-0" />
+                      )}
+                      <span>{globalSearchTestResult.message}</span>
+                    </div>
+                  )}
+
+                  <p className="text-[10px] text-slate-400 m-0 pt-0.5">
+                    Used for app-wide web searches. Your key is stored encrypted on the server vault.
+                  </p>
+                </form>
+              </div>
+            )}
           </div>
         </div>
       </section>
@@ -1079,7 +1450,9 @@ export function ApiCatalogSettings() {
 
                       {isConnected && (
                         <span className="text-[10px] text-slate-500">
-                          {item.source === 'env' ? (
+                          {globalSearchMode === 'custom' && (item.id === 'tavily' || item.envVar === 'SEARCH_API_KEY') ? (
+                            <span className="text-purple-400 font-semibold">Custom API</span>
+                          ) : item.source === 'env' ? (
                             <span className="text-indigo-400 font-medium">Render Env</span>
                           ) : (
                             <span className="text-cyan-400 font-medium">Local Vault</span>
