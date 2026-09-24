@@ -2949,8 +2949,10 @@ async function processAiChatInternal(
   let activeFallbackNotice = '';
 
   const lower = trimmed.toLowerCase();
-  const isForcedWebSearch = Boolean(webSearch);
+  const isForcedWebSearch = webSearch === true;
+  const isWebSearchExplicitlyDisabled = webSearch === false;
   const isKnowledgeQuery =
+    !isWebSearchExplicitlyDisabled &&
     lower.length > 5 &&
     !['hello', 'hi', 'hey', 'who are you', 'how are you', 'thank you', 'thanks'].includes(lower) &&
     (lower.startsWith('what') ||
@@ -2964,23 +2966,24 @@ async function processAiChatInternal(
       lower.startsWith('summarize'));
 
   const isTimeSensitive =
-    lower.includes('today') ||
-    lower.includes('latest') ||
-    lower.includes('current') ||
-    lower.includes('recent') ||
-    lower.includes('news') ||
-    lower.includes('now') ||
-    lower.includes('price') ||
-    lower.includes('weather') ||
-    lower.includes('score') ||
-    lower.includes('stock') ||
-    lower.includes('2024') ||
-    lower.includes('2025') ||
-    lower.includes('2026') ||
-    lower.includes('who won') ||
-    lower.includes('release date');
+    !isWebSearchExplicitlyDisabled &&
+    (lower.includes('today') ||
+      lower.includes('latest') ||
+      lower.includes('current') ||
+      lower.includes('recent') ||
+      lower.includes('news') ||
+      lower.includes('now') ||
+      lower.includes('price') ||
+      lower.includes('weather') ||
+      lower.includes('score') ||
+      lower.includes('stock') ||
+      lower.includes('2024') ||
+      lower.includes('2025') ||
+      lower.includes('2026') ||
+      lower.includes('who won') ||
+      lower.includes('release date'));
 
-  const shouldSearchWeb = isForcedWebSearch || isTimeSensitive;
+  const shouldSearchWeb = !isWebSearchExplicitlyDisabled && (isForcedWebSearch || isTimeSensitive);
 
   // Context-aware query reformulation for follow-up conversational queries
   let effectiveSearchQuery = trimmed;

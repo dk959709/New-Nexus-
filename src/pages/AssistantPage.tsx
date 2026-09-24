@@ -2051,7 +2051,22 @@ export function AssistantPage() {
             const currentLanguage = storage.getAssistantLanguage();
             const currentPermanentMemories = storage.getPermanentMemories();
 
-            const aiPrompt = `Webpage URL: ${directUrl}\n\nWebpage Content (truncated to 4,500 characters):\n${pageContent}\n\nUser Question/Message: "${message}"\n\nInstructions:\nAnswer from the webpage content provided above. Put the newest items first and include their exact dates when available on the page.`;
+            const aiPrompt = `You are the FINAL SYNTHESIZER agent.
+Your task is to analyze the extracted webpage content and deliver a direct, comprehensive, and well-structured final agent answer for the user.
+
+Webpage URL: ${directUrl}
+
+Webpage Content (truncated to 4,500 characters):
+${pageContent}
+
+User Question/Message: "${message}"
+
+DIRECTIVES:
+1. Deliver a clear, authoritative, and informative analysis of this webpage in clean Markdown.
+2. Outline the purpose of the website or platform, its key features, primary sections, services, or documentation.
+3. Structure your response logically using concise headers, bullet points, and clean paragraphs. Put newest items first and include exact dates when available on the page.
+4. Ground your answer strictly in the provided webpage content.
+5. Provide ONLY the definitive final agent answer. Do NOT output internal agent labels, system steps, JSON schemas, or tool logs.`;
 
             let finalAnswerText = '';
             console.log('[Web Fetcher] synthesis start');
@@ -2086,7 +2101,7 @@ export function AssistantPage() {
               }
               const rawMsg = sErr?.message || 'Synthesis failed';
               const safeMsg = rawMsg
-                .replace(/(?:key|secret|token|password|bearer|auth|apikey)[=:\s]+[A-Za-z0-9_\-\.]{8,}/gi, '[redacted]')
+                .replace(/(?:key|secret|token|password|bearer|auth|apikey)[=:\s]+[A-Za-z0-9_.-]{8,}/gi, '[redacted]')
                 .replace(/AIza[0-9A-Za-z-_]{35}/g, '[redacted]')
                 .replace(/sk-[a-zA-Z0-9]{20,}/g, '[redacted]');
               const reason = isTimeout ? 'AI took more than 40 seconds' : safeMsg.slice(0, 150);
@@ -2190,7 +2205,22 @@ export function AssistantPage() {
               ? `The user asked for a list of websites with this request: "${webFetcherOriginalRequest}". They picked this page from the list.`
               : `The user picked this page from a list. Summarize what this page is and its main information.`;
 
-            const aiPrompt = `Webpage URL: ${pickedItem.url}\n\nWebpage Content (truncated to 4,500 characters):\n${pageContent}\n\n${userRequestText}\n\nInstructions:\nSummarize what this page is and its most useful information for the user's request. Put the newest items first and include exact dates when available on the page. Never mention the list number.`;
+            const aiPrompt = `You are the FINAL SYNTHESIZER agent.
+Your task is to analyze the extracted webpage content and deliver a direct, comprehensive, and well-structured final agent answer for the user.
+
+Webpage URL: ${pickedItem.url}
+
+Webpage Content (truncated to 4,500 characters):
+${pageContent}
+
+${userRequestText}
+
+DIRECTIVES:
+1. Deliver a clear, authoritative, and informative analysis of this webpage in clean Markdown.
+2. Outline the purpose of the website or platform, its key features, primary sections, services, or documentation.
+3. Structure your response logically using concise headers, bullet points, and clean paragraphs. Put the newest items first and include exact dates when available on the page. Never mention the list number.
+4. Ground your answer strictly in the provided webpage content.
+5. Provide ONLY the definitive final agent answer. Do NOT output internal agent labels, system steps, JSON schemas, or tool logs.`;
 
             let finalAnswerText = '';
             console.log('[Web Fetcher] synthesis start');
@@ -2225,7 +2255,7 @@ export function AssistantPage() {
               }
               const rawMsg = sErr?.message || 'Synthesis failed';
               const safeMsg = rawMsg
-                .replace(/(?:key|secret|token|password|bearer|auth|apikey)[=:\s]+[A-Za-z0-9_\-\.]{8,}/gi, '[redacted]')
+                .replace(/(?:key|secret|token|password|bearer|auth|apikey)[=:\s]+[A-Za-z0-9_.-]{8,}/gi, '[redacted]')
                 .replace(/AIza[0-9A-Za-z-_]{35}/g, '[redacted]')
                 .replace(/sk-[a-zA-Z0-9]{20,}/g, '[redacted]');
               const reason = isTimeout ? 'AI took more than 40 seconds' : safeMsg.slice(0, 150);
