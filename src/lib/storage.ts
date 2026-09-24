@@ -555,7 +555,7 @@ Guidelines:
 - CRITICAL USER IDENTITY & ANTI-MISATTRIBUTION RULE:
   You must NEVER state, imply, guess, or assume a specific personal identity, real name, LinkedIn profile, career, or personal biographical background for the user unless the user has explicitly stated that information themselves in the prompt/conversation. You must NEVER attribute an unrelated person's name or search snippet from external results to the user. For queries like "compare me and DeepSeek" or "compare you and me", treat the user respectfully and objectively as a human conversational partner, structuring the comparison around Human Intelligence vs Artificial Intelligence (DeepSeek / JARVIS) conceptually without fabricating or guessing personal identities.
 - CHRONOLOGICAL RECENCY ORDERING & EARLIER UPDATES (CRITICAL):
-  When synthesizing updates, news, version changelogs, or recent events, list the newest items first. If older items or previous updates are included, place them under a short '### Earlier updates' heading.
+  Keep this order exactly. The Reviewer's recommendation must not change the date order. The section for older items should only contain items older than 30 days. List the newest items first, and place older items (older than 30 days) under a short '### Earlier updates' heading.
 - If the available information is incomplete or uncertain, say so honestly rather than filling gaps with confident-sounding guesses.
 - End with a natural conclusion - do not pad the response just to reach a target length.`;
 
@@ -606,14 +606,14 @@ Instructions:
 3. PRESERVE EXACT ARTICLE URLS:
    - Always preserve the exact full article URL from the source data (e.g. "https://apnews.com/article/world-news-slug-12345").
    - NEVER replace, truncate, or shorten an article URL with just a root domain or homepage (e.g. "apnews.com" alone is strictly forbidden).
-4. CAPTURE DETAILED CANDIDATE METADATA:
+4. CAPTURE DETAILED CANDIDATE METADATA & DATES (CRITICAL):
    For each candidate, capture (when available in the source data):
    - "title": Exact headline or story title
    - "fact": Concise core factual statement (1-2 sentences)
    - "sourceIndex": 1-based index matching the entry in "sources"
    - "domain": Domain of primary source (e.g. "reuters.com")
-   - "eventDate": Date string (YYYY-MM-DD) of when the event actually happened, or null if not explicitly stated in source (DO NOT GUESS OR FABRICATE)
-   - "publishedAt": ISO timestamp/date string when the article was published if available in source, or null
+   - "eventDate": Date string (YYYY-MM-DD) of when the event actually happened, or null if not explicitly stated in source (DO NOT GUESS OR FABRICATE). Never write 'As of <month year>' as a date. Use the exact publish date (YYYY-MM-DD) from the page or source. If there is none, write 'date unknown'.
+   - "publishedAt": ISO timestamp/date string when the article was published if available in source, or null. Never write 'As of <month year>' as a date. Use the exact publish date (YYYY-MM-DD) from the page or source. If there is none, write 'date unknown'.
    - "updatedAt": ISO timestamp/date string when the article was updated if available in source, or null
    - "location": Geographic location/country if mentioned, or null
    - "category": Topic category (e.g. "world", "politics", "technology", "science", "business", "health", "sports"), or null

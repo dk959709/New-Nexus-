@@ -858,6 +858,29 @@ function escapeXml(unsafe: string): string {
     .replace(/'/g, '&apos;');
 }
 
+export function extractTimestampFromVerifiedItem(item: unknown): number {
+  if (!item) return -1;
+  let dateStr = '';
+  if (typeof item === 'object' && item !== null) {
+    const obj = item as Record<string, unknown>;
+    dateStr = String(obj.eventDate || obj.publishedAt || obj.updatedAt || '').trim();
+  } else if (typeof item === 'string') {
+    const match = item.match(/\b(20\d\d)-(0[1-9]|1[0-2])-(0[1-9]|[12]\d|3[01])\b/);
+    if (match) {
+      dateStr = match[0];
+    } else {
+      const matchYear = item.match(/\b(20\d\d)\b/);
+      if (matchYear) {
+        dateStr = matchYear[1];
+      }
+    }
+  }
+
+  if (!dateStr || dateStr.toLowerCase().includes('unknown')) return -1;
+  const ms = Date.parse(dateStr);
+  return !isNaN(ms) && ms > 0 ? ms : -1;
+}
+
 export function generateConceptBlueprintSvg(query: string, contextText: string): string {
   const cleanTitle = query.replace(/[?.,!]+$/, '').trim();
   const lines = contextText
@@ -5870,6 +5893,8 @@ Document search was performed for query: "${cleanSearchQuery}" across ${targetLa
     let activePrompt = (rCfg.systemPrompt || defaultPromptTemplate)
       .replace('{task}', plannerOutput.task || strippedQuery);
 
+    activePrompt += `\n\n[DATE FORMAT DIRECTIVE]: Never write 'As of <month year>' as a date. Use the exact publish date (YYYY-MM-DD) from the page or source. If there is none, write 'date unknown'.`;
+
     if (deepResearch) {
       activePrompt += `\n\n[DEEP RESEARCH MODE DIRECTIVE - EXPANDED EVIDENCE GATHERING]:
 1. SOURCE & FACT TARGET: Extract 12-15 distinct, high-quality factual candidates/findings from the provided search sources.
@@ -6419,7 +6444,7 @@ This same strict self-check applies generally to ANY other library with a simila
           if (distinctConfirmed.length > 0) {
             confirmedStr = ` — Confirmed by: ${distinctConfirmed.join(', ')}`;
           } else {
-            confirmedStr = ` — Single source, not independently confirmed`;
+            confirmedStr = ` — Confirmed by: Single source, not independently confirmed`;
           }
 
           normalizedVerified.push(`${claimText}${metaStr}${confirmedStr}`.trim());
@@ -6428,9 +6453,32 @@ This same strict self-check applies generally to ANY other library with a simila
         }
       });
 
-      if (normalizedVerified.length > 0) {
-        factCheckOutput.verified = normalizedVerified;
-      }
+      // Post-process each claim string to enforce self-confirmation check
+      const finalVerifiedClaims = (normalizedVerified.length > 0 ? normalizedVerified : factCheckOutput.verified).map((claimItem) => {
+        if (typeof claimItem === 'string') {
+          if (claimItem.includes('— Confirmed by:')) {
+            const parts = claimItem.split('— Confirmed by:');
+            const mainPart = parts[0];
+            const confirmedPart = parts[1]?.trim() || '';
+            
+            // Extract claim source domain from mainPart e.g. (domain.com, YYYY-MM-DD)
+            const domainMatch = mainPart.match(/\(([^,\)]+)/);
+            if (domainMatch) {
+              const srcDom = domainMatch[1].toLowerCase().trim();
+              const cDom = confirmedPart.toLowerCase().trim();
+              if (cDom === 'single source, not independently confirmed') {
+                return `${mainPart}— Confirmed by: Single source, not independently confirmed`;
+              }
+              if (cDom && (cDom.includes(srcDom) || srcDom.includes(cDom))) {
+                return `${mainPart}— Confirmed by: Single source, not independently confirmed`;
+              }
+            }
+          }
+        }
+        return claimItem;
+      });
+
+      factCheckOutput.verified = finalVerifiedClaims;
 
       updateStep({
         agentId: 'factChecker',
@@ -6873,7 +6921,15 @@ Output strictly valid JSON matching this schema:
       ? plannerOutput.plan.join(' ')
       : String(plannerOutput?.plan || '');
     const factsList = Array.isArray(researcherOutput?.facts) ? researcherOutput.facts : [];
-    const verifiedList = Array.isArray(factCheckOutput?.verified) ? factCheckOutput.verified : [];
+    const verifiedListRaw = Array.isArray(factCheckOutput?.verified) ? factCheckOutput.verified : [];
+    const verifiedList = [...verifiedListRaw].sort((a, b) => {
+      const timeA = extractTimestampFromVerifiedItem(a);
+      const timeB = extractTimestampFromVerifiedItem(b);
+      if (timeA > 0 && timeB > 0) return timeB - timeA;
+      if (timeA > 0 && timeB <= 0) return -1;
+      if (timeA <= 0 && timeB > 0) return 1;
+      return 0;
+    });
     const issuesList = Array.isArray(factCheckOutput?.issues) ? factCheckOutput.issues : [];
     const plausibleUnconfirmedList: string[] = Array.isArray((factCheckOutput as Record<string, unknown>).plausible_unconfirmed)
       ? ((factCheckOutput as Record<string, unknown>).plausible_unconfirmed as string[])
@@ -7200,7 +7256,7 @@ ${sourcesListText}${customInsightsBlock}${personalIdentityDirective}${architectu
       ? `\n\nCRITICAL LANGUAGE REQUIREMENT: You MUST write and deliver your ENTIRE final response to the user in **${synthResponseLang}**. Do not reply in English unless ${synthResponseLang} is English.`
       : '';
 
-    const recencyOrderingDirective = `\n\n[RECENCY ORDERING DIRECTIVE]: Order all updates and news with the newest items listed first. Put older items under a short '### Earlier updates' heading.`;
+    const recencyOrderingDirective = `\n\n[RECENCY ORDERING DIRECTIVE]: Keep this order exactly. The Reviewer's recommendation must not change the date order. The section for older items should only contain items older than 30 days. Order all updates and news with the newest items listed first, and put older items (older than 30 days) under a short '### Earlier updates' heading.`;
     const fullSynthesizerSysPrompt = `Current date and time: ${currentDateTime}\n\n${activeSysPrompt}${recencyOrderingDirective}${synthLanguageInstruction}`;
     const finalizedSynthesizerContext = applyTemplateVariables(
       rawSynthesizerContext,
@@ -7281,7 +7337,7 @@ Please deliver your definitive final agent response summarizing and explaining t
     const duration = Date.now() - start;
 
     if (synthRes.ok && synthRes.text) {
-      finalAnswer = synthRes.text;
+      finalAnswer = synthRes.text.replace(/###\s*###\s*/g, '### ').replace(/(?:###\s*){2,}/g, '### ');
 
       // Recency check before Final Synthesis completion for "latest" type questions:
       if (isLatestTypeQuery) {
@@ -7871,7 +7927,7 @@ JARVIS is a multi-agent AI intelligence platform composed of 10 specialized neur
     }
   }
 
-  let cleanedFinalAnswer = stripConversationalMetaText(finalAnswer);
+  let cleanedFinalAnswer = stripConversationalMetaText(finalAnswer).replace(/###\s*###\s*/g, '### ').replace(/(?:###\s*){2,}/g, '### ');
 
   // If Wikidata was requested (needsWikidata is true), guarantee the "=== WIKIDATA ===" section is visible in the report output
   if (!isSearchOverride && !isWebFetch && plannerOutput.needsWikidata) {
