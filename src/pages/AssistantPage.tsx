@@ -3399,6 +3399,28 @@ export function AssistantPage() {
                                 : 'text-zinc-200'
                             }`}
                           >
+                            {message.content.startsWith('Read official page: ') && (
+                              <div className="mb-2.5 inline-flex items-center gap-1.5 px-2.5 py-1 rounded-lg bg-cyan-950/60 text-cyan-300 border border-cyan-500/30 text-xs font-medium">
+                                <Globe size={13} className="text-cyan-400 shrink-0" />
+                                <span>
+                                  Read official page:{' '}
+                                  <a
+                                    href={message.content.split('\n')[0].replace('Read official page:', '').trim()}
+                                    target="_blank"
+                                    rel="noopener noreferrer"
+                                    className="underline hover:text-cyan-200"
+                                  >
+                                    {message.content.split('\n')[0].replace('Read official page:', '').trim()}
+                                  </a>
+                                </span>
+                              </div>
+                            )}
+                            {message.content.startsWith('Could not read an official page, used web search instead.') && (
+                              <div className="mb-2.5 inline-flex items-center gap-1.5 px-2.5 py-1 rounded-lg bg-amber-950/60 text-amber-300 border border-amber-500/30 text-xs font-medium">
+                                <AlertTriangle size={13} className="text-amber-400 shrink-0" />
+                                <span>Could not read an official page, used web search instead.</span>
+                              </div>
+                            )}
                             <FormattedText content={stripTierLabels(message.content)} />
                           </div>
                         )}
