@@ -185,9 +185,9 @@ function checkIsOfficialDomain(url: string, query: string): boolean {
     const host = new URL(url).hostname.toLowerCase().replace(/^www\./, '');
     const cleanHost = host.replace(/\.(com|org|net|io|ai|dev|app|co|uk|in|me|info|de|ca|jp|fr|tech|xyz|site|online)$/i, '');
     const noise = new Set([
-      'list', 'find', 'get', 'show', 'search', 'check', 'gather', 'information', 'info',
-      'official', 'offical', 'offial', 'offfical', 'oficial', 'ofcial',
-      'website', 'wesite', 'websit', 'site', 'page', 'webpage', 'web', 'link', 'url',
+      'list', 'liste', 'find', 'get', 'give', 'show', 'search', 'check', 'gather', 'information', 'info',
+      'official', 'offical', 'officeal', 'offial', 'offfical', 'oficial', 'ofcial', 'officail',
+      'website', 'wesite', 'websit', 'site', 'sites', 'page', 'pages', 'webpage', 'web', 'link', 'links', 'url', 'urls',
       'the', 'an', 'a', 'of', 'for', 'about', 'from', 'in', 'on', 'to', 'me', 'please', 'tell', 'read'
     ]);
     const tokens = query.toLowerCase().replace(/[^a-z0-9\s]/g, ' ').split(/\s+/).filter(t => t.length > 1 && !noise.has(t));
@@ -196,6 +196,20 @@ function checkIsOfficialDomain(url: string, query: string): boolean {
   } catch {
     return false;
   }
+}
+
+function cleanWebFetcherQuery(rawMessage: string): { name: string; query: string } {
+  const fillerRegex = /\b(list|liste|show|find|give|get|me|the|a|an|official|offical|officeal|offial|oficial|offfical|ofcial|officail|website|websites|websit|wesite|web|site|sites|page|pages|link|links|url|urls)\b/gi;
+  const cleaned = rawMessage
+    .replace(fillerRegex, ' ')
+    .replace(/[^\w\s-]/g, ' ')
+    .replace(/\s+/g, ' ')
+    .trim();
+
+  if (!cleaned) {
+    return { name: '', query: rawMessage.trim() };
+  }
+  return { name: cleaned, query: `${cleaned} official website` };
 }
 
 function extractUrlOrDomain(text: string): string | null {
@@ -221,9 +235,9 @@ function parseSelectionNumber(text: string): number | null {
 function isWebsiteRequest(text: string): boolean {
   const q = text.toLowerCase();
   const siteKeywords = [
-    'official', 'offical', 'offial', 'offfical', 'oficial', 'ofcial',
-    'website', 'wesite', 'websit', 'site', 'webpage', 'page', 'web', 'link', 'web address', 'url', 'domain',
-    'homepage', 'newsroom', 'blog', 'docs', 'documentation', 'changelog'
+    'official', 'offical', 'officeal', 'offial', 'offfical', 'oficial', 'ofcial', 'officail',
+    'website', 'wesite', 'websit', 'site', 'sites', 'webpage', 'page', 'pages', 'web', 'link', 'links', 'web address', 'url', 'domain',
+    'homepage', 'newsroom', 'blog', 'docs', 'documentation', 'changelog', 'liste', 'list'
   ];
   return siteKeywords.some(kw => new RegExp(`\\b${kw}\\b`, 'i').test(q));
 }
@@ -2184,26 +2198,96 @@ export function AssistantPage() {
           }
         } else if (asksForWebsite) {
           // Case b: Website request (search and build numbered list)
+          const { name: cleanedName, query: cleanedQuery } = cleanWebFetcherQuery(message);
+          console.log(`[Web Fetcher] cleaned query: ${cleanedQuery}`);
+
           setSpecialistProgress(30);
-          setSpecialistPhase(`Searching web for websites matching "${message}"...`);
+          setSpecialistPhase(`Searching web for websites matching "${cleanedQuery}"...`);
 
-          let searchResults: SearchResult[] = [];
+          const isCustomSearchActive = webApiMode === 'custom' && Boolean(customSearchKey.trim() && customSearchUrl.trim());
+          const customKeyPayload = isCustomSearchActive ? customSearchKey.trim() : undefined;
+          const customUrlPayload = isCustomSearchActive ? customSearchUrl.trim() : undefined;
+
+          let rawResults: SearchResult[] = [];
+          let sourceLabel = 'default';
+
+          // Attempt 1: primary search (custom API if configured, else default)
           try {
-            const isCustomSearchActive = webApiMode === 'custom' && Boolean(customSearchKey.trim() && customSearchUrl.trim());
-            const customKeyPayload = isCustomSearchActive ? customSearchKey.trim() : undefined;
-            const customUrlPayload = isCustomSearchActive ? customSearchUrl.trim() : undefined;
-
-            const res = await api.search(message, customKeyPayload, customUrlPayload, 8);
-            searchResults = res || [];
-          } catch (sErr) {
-            console.warn('[Web Fetcher] Search error:', sErr);
+            const opts = isCustomSearchActive
+              ? { customSearchApiKey: customKeyPayload, customSearchApiUrl: customUrlPayload }
+              : undefined;
+            const res = await api.search(cleanedQuery, 'ALL', undefined, 8, opts);
+            if (res && res.length > 0) {
+              rawResults = res;
+              sourceLabel = res.searchSource || (isCustomSearchActive ? 'custom-api' : 'default');
+            }
+          } catch (err) {
+            const errMsg = err instanceof Error ? err.message : String(err);
+            const safeMsg = customKeyPayload ? errMsg.replace(customKeyPayload, '***') : errMsg;
+            console.log(`[Web Fetcher] search error: ${safeMsg}`);
           }
 
-          const validResults = searchResults.filter(
-            (r) => r.url && isValidOfficialHttpsUrl(r.url)
-          );
+          // Attempt 2: if custom API returned 0 results or errored, retry once with default search
+          if (rawResults.length === 0 && isCustomSearchActive) {
+            try {
+              const res = await api.search(cleanedQuery, 'ALL', undefined, 8);
+              if (res && res.length > 0) {
+                rawResults = res;
+                sourceLabel = res.searchSource || 'default';
+              }
+            } catch (err) {
+              const errMsg = err instanceof Error ? err.message : String(err);
+              console.log(`[Web Fetcher] search error: ${errMsg}`);
+            }
+          }
 
-          if (validResults.length === 0) {
+          // Attempt 3: if still 0 results or errored, retry once more with just "<name>" using default search
+          if (rawResults.length === 0 && cleanedName && cleanedName !== cleanedQuery) {
+            try {
+              const res = await api.search(cleanedName, 'ALL', undefined, 8);
+              if (res && res.length > 0) {
+                rawResults = res;
+                sourceLabel = res.searchSource || 'default';
+              }
+            } catch (err) {
+              const errMsg = err instanceof Error ? err.message : String(err);
+              console.log(`[Web Fetcher] search error: ${errMsg}`);
+            }
+          }
+
+          console.log(`[Web Fetcher] search results: ${rawResults.length} (source: ${sourceLabel})`);
+
+          // Filter: Remove duplicate URLs and results without a valid https URL.
+          const seenUrls = new Set<string>();
+          const validResults: SearchResult[] = [];
+
+          for (const r of rawResults) {
+            if (r && r.url && isValidOfficialHttpsUrl(r.url)) {
+              const normalized = r.url.trim().toLowerCase().replace(/\/+$/, '');
+              if (!seenUrls.has(normalized)) {
+                seenUrls.add(normalized);
+                validResults.push(r);
+              }
+            }
+          }
+
+          const targetForMatch = cleanedName || message;
+          const officialResults: SearchResult[] = [];
+          const standardResults: SearchResult[] = [];
+
+          validResults.forEach((r) => {
+            if (checkIsOfficialDomain(r.url, targetForMatch)) {
+              officialResults.push(r);
+            } else {
+              standardResults.push(r);
+            }
+          });
+
+          // Sort official first, non-official second. Keep up to 8.
+          const combinedResults = [...officialResults, ...standardResults].slice(0, 8);
+          console.log(`[Web Fetcher] after filtering: ${combinedResults.length}`);
+
+          if (combinedResults.length === 0) {
             const assistantMessage: Message = {
               role: 'assistant',
               content: 'No websites found. Try different words.',
@@ -2216,19 +2300,6 @@ export function AssistantPage() {
             return;
           }
 
-          const officialResults: SearchResult[] = [];
-          const standardResults: SearchResult[] = [];
-
-          validResults.forEach((r) => {
-            if (checkIsOfficialDomain(r.url, message)) {
-              officialResults.push(r);
-            } else {
-              standardResults.push(r);
-            }
-          });
-
-          const combinedResults = [...officialResults, ...standardResults].slice(0, 8);
-
           const items: WebFetcherResultItem[] = combinedResults.map((r, idx) => {
             let host = '';
             try {
@@ -2236,7 +2307,7 @@ export function AssistantPage() {
             } catch {
               host = r.domain || 'web';
             }
-            const isOff = checkIsOfficialDomain(r.url, message);
+            const isOff = checkIsOfficialDomain(r.url, targetForMatch);
             const snippet = (r.description || r.title || '').replace(/\s+/g, ' ').trim().slice(0, 140);
             return {
               number: idx + 1,

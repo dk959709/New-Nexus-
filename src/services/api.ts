@@ -117,7 +117,7 @@ export const api = {
     category?: string,
     page?: number,
     maxResults?: number,
-    options?: { newsCategory?: string; newsMode?: 'headlines' | 'topic' },
+    options?: { newsCategory?: string; newsMode?: 'headlines' | 'topic'; customSearchApiKey?: string; customSearchApiUrl?: string },
   ): Promise<SearchResult[] & { searchSource?: string; fallbackOccurred?: boolean; fallbackReason?: string }> {
     const url = BASE + '/api/search';
     const res = await fetch(url, {
@@ -130,6 +130,8 @@ export const api = {
         max_results: maxResults,
         newsCategory: options?.newsCategory,
         newsMode: options?.newsMode,
+        customSearchApiKey: options?.customSearchApiKey,
+        customSearchApiUrl: options?.customSearchApiUrl,
       }),
     });
     const body = (await res.json().catch(() => ({}))) as {
