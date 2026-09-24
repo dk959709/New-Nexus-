@@ -356,16 +356,29 @@ export function AssistantPage() {
   const [webApiMode, setWebApiMode] = useState<'default' | 'custom'>(() => storage.getAssistantWebApiMode());
   const [customSearchKey, setCustomSearchKey] = useState<string>(() => storage.getAssistantCustomSearchKey());
   const [customSearchUrl, setCustomSearchUrl] = useState<string>(() => storage.getAssistantCustomSearchUrl());
-  const [customSearchFolderOpen, setCustomSearchFolderOpen] = useState<boolean>(() => storage.getAssistantWebApiMode() === 'custom');
+  const [webApiCustomOpen, setWebApiCustomOpen] = useState<boolean>(() => {
+    const mode = storage.getAssistantWebApiMode();
+    const key = storage.getAssistantCustomSearchKey();
+    const url = storage.getAssistantCustomSearchUrl();
+    return mode === 'custom' && (!key.trim() || !url.trim());
+  });
   const [showSearchKey, setShowSearchKey] = useState<boolean>(false);
   const [testSearchLoading, setTestSearchLoading] = useState<boolean>(false);
   const [testSearchResult, setTestSearchResult] = useState<{ ok: boolean; message: string } | null>(null);
+
+  useEffect(() => {
+    if (settingsOpen) {
+      if (webApiMode === 'custom' && (!customSearchKey.trim() || !customSearchUrl.trim())) {
+        setWebApiCustomOpen(true);
+      }
+    }
+  }, [settingsOpen, webApiMode, customSearchKey, customSearchUrl]);
 
   const handleSelectWebApiMode = (mode: 'default' | 'custom') => {
     setWebApiMode(mode);
     storage.setAssistantWebApiMode(mode);
     if (mode === 'custom') {
-      setCustomSearchFolderOpen(true);
+      setWebApiCustomOpen(true);
     } else {
       setTestSearchResult(null);
     }
@@ -4603,10 +4616,10 @@ export function AssistantPage() {
 
       {/* Settings Modal (Language, Permanent Memories, Theme, Modes) */}
       {settingsOpen && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 md:p-6 lg:p-8 bg-black/75 backdrop-blur-sm animate-in fade-in duration-150 md:overflow-y-auto">
-          <div className="w-full max-w-2xl rounded-2xl border border-zinc-700/80 bg-[#161618] text-zinc-200 p-6 shadow-2xl space-y-6 max-h-[88vh] overflow-y-auto md:p-0 md:space-y-0 md:max-h-[min(86vh,780px)] md:flex md:flex-col md:overflow-hidden md:my-auto">
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-3 sm:p-4 md:p-6 bg-black/75 backdrop-blur-sm animate-in fade-in duration-150">
+          <div className="w-full max-w-2xl rounded-2xl border border-zinc-700/80 bg-[#161618] text-zinc-200 shadow-2xl flex flex-col max-h-[90vh] my-auto overflow-hidden">
             {/* Modal Header */}
-            <div className="flex items-start justify-between pb-3 border-b border-zinc-800 md:p-6 md:pb-4 md:shrink-0">
+            <div className="flex items-start justify-between p-4 sm:p-6 pb-3 sm:pb-4 border-b border-zinc-800 shrink-0">
               <div className="flex items-center gap-2.5">
                 <div className="p-2 rounded-xl bg-zinc-800/80 border border-zinc-700/60 text-zinc-200">
                   <SettingsIcon size={18} className="text-cyan-400" />
@@ -4632,14 +4645,14 @@ export function AssistantPage() {
 
             {/* Toast feedback inside modal if active */}
             {settingsSavedToast && (
-              <div className="px-3.5 py-2 rounded-lg bg-emerald-950/60 border border-emerald-700/60 text-emerald-300 text-xs flex items-center gap-2 md:mx-6 md:mt-3 md:shrink-0">
+              <div className="mx-4 sm:mx-6 mt-3 px-3.5 py-2 rounded-lg bg-emerald-950/60 border border-emerald-700/60 text-emerald-300 text-xs flex items-center gap-2 shrink-0">
                 <Check size={14} className="text-emerald-400 shrink-0" />
                 <span>{settingsSavedToast}</span>
               </div>
             )}
 
-            {/* Scrollable Content Body on Desktop / Normal Flow on Mobile */}
-            <div className="space-y-6 md:flex-1 md:overflow-y-auto md:p-6 md:space-y-6 specialist-popup-scroll">
+            {/* Scrollable Content Body */}
+            <div className="flex-1 overflow-y-auto p-4 sm:p-6 space-y-6 specialist-popup-scroll">
               {/* Section 1: Visual Theme Selector */}
             <div className="space-y-3">
               <div className="flex items-center gap-2">
@@ -4979,7 +4992,7 @@ export function AssistantPage() {
                 Choose search provider for AI Assistant web search.
               </p>
 
-              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 items-start">
                 {/* Option 1: Default Card */}
                 <button
                   type="button"
@@ -5010,7 +5023,7 @@ export function AssistantPage() {
 
                 {/* Option 2: Custom Collapsible Sub-folder Card */}
                 <div
-                  className={`rounded-2xl border transition-all overflow-hidden ${
+                  className={`rounded-2xl border transition-all ${
                     webApiMode === 'custom'
                       ? 'border-purple-500/60 bg-purple-950/20 shadow-[0_0_15px_rgba(168,85,247,0.15)]'
                       : 'border-zinc-800 bg-zinc-900/50'
@@ -5020,9 +5033,9 @@ export function AssistantPage() {
                   <div
                     onClick={() => {
                       handleSelectWebApiMode('custom');
-                      setCustomSearchFolderOpen((prev) => !prev);
+                      setWebApiCustomOpen(true);
                     }}
-                    className="p-3.5 flex items-center justify-between cursor-pointer hover:bg-zinc-800/40 transition-colors"
+                    className="p-3.5 flex items-center justify-between cursor-pointer hover:bg-zinc-800/40 transition-colors rounded-2xl"
                   >
                     <div className="flex items-center gap-2 min-w-0">
                       <Plug size={15} className={webApiMode === 'custom' ? 'text-purple-400' : 'text-zinc-400'} />
@@ -5033,18 +5046,26 @@ export function AssistantPage() {
                         </span>
                       )}
                     </div>
-                    <div className="flex items-center gap-1 text-zinc-400">
+                    <button
+                      type="button"
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        setWebApiCustomOpen((prev) => !prev);
+                      }}
+                      className="p-1 rounded-lg text-zinc-400 hover:text-zinc-200 hover:bg-zinc-800/60 transition-colors"
+                      title={webApiCustomOpen ? 'Collapse fields' : 'Expand fields'}
+                    >
                       <ChevronDown
-                        size={15}
+                        size={16}
                         className={`transition-transform duration-200 ${
-                          customSearchFolderOpen ? 'rotate-180 text-zinc-200' : ''
+                          webApiCustomOpen ? 'rotate-180 text-zinc-200' : ''
                         }`}
                       />
-                    </div>
+                    </button>
                   </div>
 
                   {/* Collapsible Content */}
-                  {customSearchFolderOpen && (
+                  {webApiCustomOpen && (
                     <div className="p-3.5 pt-0 space-y-3 border-t border-zinc-800/60 mt-1">
                       {/* Warning if fields are empty while Custom is selected */}
                       {webApiMode === 'custom' && (!customSearchKey.trim() || !customSearchUrl.trim()) && (
@@ -5688,7 +5709,7 @@ export function AssistantPage() {
             </div>
 
             {/* Modal Footer */}
-            <div className="flex items-center justify-between pt-3 border-t border-zinc-800 md:p-6 md:py-3.5 md:shrink-0 md:bg-[#161618]">
+            <div className="flex items-center justify-between p-4 sm:p-6 py-3.5 sm:py-3.5 border-t border-zinc-800 shrink-0 bg-[#161618]">
               <span className="text-[11px] text-zinc-500">
                 All changes are saved automatically to your device.
               </span>
