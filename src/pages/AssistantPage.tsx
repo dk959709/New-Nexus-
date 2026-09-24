@@ -179,61 +179,62 @@ function isValidOfficialHttpsUrl(urlStr: string): boolean {
   }
 }
 
-function extractOfficialTarget(query: string): string | null {
-  const q = query.trim();
-  const officialRegexStr = '(?:official|offical|offial|offfical|oficial|ofcial)';
-  const siteRegexStr = '(?:website|wesite|websit|site|page|webpage|blog|docs|documentation|newsroom|news|changelog|updates)';
-
-  // Pattern 1: ... official <name> website/site/page/blog/docs/newsroom ...
-  // e.g. "Gather information from the official claude website" -> "claude"
-  const p1 = new RegExp(`\\b${officialRegexStr}\\s+([a-zA-Z0-9_.-]+(?:\\s+[a-zA-Z0-9_.-]+){0,3})\\s+${siteRegexStr}\\b`, 'i');
-  const m1 = q.match(p1);
-  if (m1 && m1[1]) {
-    const name = m1[1].replace(/^(?:the|an|a|for|about|from)\s+/i, '').trim();
-    if (name) return name;
+function checkIsOfficialDomain(url: string, query: string): boolean {
+  try {
+    if (isNonOfficialDomain(url)) return false;
+    const host = new URL(url).hostname.toLowerCase().replace(/^www\./, '');
+    const cleanHost = host.replace(/\.(com|org|net|io|ai|dev|app|co|uk|in|me|info|de|ca|jp|fr|tech|xyz|site|online)$/i, '');
+    const noise = new Set([
+      'list', 'find', 'get', 'show', 'search', 'check', 'gather', 'information', 'info',
+      'official', 'offical', 'offial', 'offfical', 'oficial', 'ofcial',
+      'website', 'wesite', 'websit', 'site', 'page', 'webpage', 'web', 'link', 'url',
+      'the', 'an', 'a', 'of', 'for', 'about', 'from', 'in', 'on', 'to', 'me', 'please', 'tell', 'read'
+    ]);
+    const tokens = query.toLowerCase().replace(/[^a-z0-9\s]/g, ' ').split(/\s+/).filter(t => t.length > 1 && !noise.has(t));
+    if (tokens.length === 0) return false;
+    return tokens.some(token => cleanHost.includes(token) || token.includes(cleanHost));
+  } catch {
+    return false;
   }
+}
 
-  // Pattern 2: ... <name> official website/site/page ...
-  // e.g. "claude official website", "check claude official site"
-  const p2 = new RegExp(`\\b([a-zA-Z0-9_.-]+(?:\\s+[a-zA-Z0-9_.-]+){0,2})\\s+${officialRegexStr}\\s+${siteRegexStr}\\b`, 'i');
-  const m2 = q.match(p2);
-  if (m2 && m2[1]) {
-    const name = m2[1].replace(/^(?:gather|get|check|find|read|search|information|info|from|the|an|a|for|about|latest|news|updates|what's|new|in|on)\s+/gi, ' ').trim();
-    if (name) return name;
+function extractUrlOrDomain(text: string): string | null {
+  const match = text.match(/(https?:\/\/[^\s]+|www\.[^\s]+|[a-zA-Z0-9-]+\.(?:com|org|net|io|dev|app|ai|gov|edu|co|uk|in|me|info|de|ca|jp|fr|tech|xyz|site|online)\b[^\s]*)/i);
+  if (!match) return null;
+  let raw = match[0].trim().replace(/[.,;:!?)]+$/, '');
+  if (!/^https?:\/\//i.test(raw)) {
+    raw = `https://${raw}`;
   }
+  return raw;
+}
 
-  // Pattern 3: ... (official)? website/site/page of/for/about <name> ...
-  // e.g. "the official website of claude", "website of claude", "page for nextjs"
-  const p3 = new RegExp(`\\b(?:${officialRegexStr}\\s+)?${siteRegexStr}\\s+(?:of|for|about)\\s+([a-zA-Z0-9_.-]+(?:\\s+[a-zA-Z0-9_.-]+){0,3})\\b`, 'i');
-  const m3 = q.match(p3);
-  if (m3 && m3[1]) {
-    const name = m3[1].replace(/^(?:the|an|a)\s+/i, '').trim();
-    if (name) return name;
+function parseSelectionNumber(text: string): number | null {
+  const trimmed = text.trim();
+  const match = trimmed.match(/^(?:number|open|pick|select|choice|#)?\s*(\d+)(?:st|nd|rd|th|\.)?$/i);
+  if (match && match[1]) {
+    const n = parseInt(match[1], 10);
+    return isNaN(n) ? null : n;
   }
-
-  // Pattern 4: official site / official page ... for/about/of <name>
-  const p4 = new RegExp(`\\b${officialRegexStr}\\s+${siteRegexStr}\\b.*?(?:for|about|of|on)\\s+([a-zA-Z0-9_.-]+(?:\\s+[a-zA-Z0-9_.-]+){0,3})`, 'i');
-  const m4 = q.match(p4);
-  if (m4 && m4[1]) {
-    const name = m4[1].replace(/^(?:the|an|a)\s+/i, '').trim();
-    if (name) return name;
-  }
-
-  // Pattern 5: general query containing official keyword and a company / topic name
-  const p5Official = new RegExp(`\\b${officialRegexStr}\\b`, 'i');
-  const p5Site = new RegExp(`\\b${siteRegexStr}\\b`, 'i');
-  if (p5Official.test(q) && (p5Site.test(q) || /\b(from|check|visit|gather|get|read|view|see|latest|news|updates)\b/i.test(q))) {
-    const cleaned = q
-      .replace(new RegExp(`\\b${officialRegexStr}\\b`, 'gi'), ' ')
-      .replace(new RegExp(`\\b${siteRegexStr}\\b`, 'gi'), ' ')
-      .replace(/\b(gather|information|info|from|check|the|an|a|latest|news|updates|what's|new|in|on|about|of|for|to|with|read|view|see|visit|get|find|search|tell|me)\b/gi, ' ')
-      .replace(/[?!.,;:]+/g, ' ')
-      .replace(/\s+/g, ' ')
-      .trim();
-    if (cleaned && cleaned.length > 1) return cleaned;
-  }
-
   return null;
+}
+
+function isWebsiteRequest(text: string): boolean {
+  const q = text.toLowerCase();
+  const siteKeywords = [
+    'official', 'offical', 'offial', 'offfical', 'oficial', 'ofcial',
+    'website', 'wesite', 'websit', 'site', 'webpage', 'page', 'web', 'link', 'web address', 'url', 'domain',
+    'homepage', 'newsroom', 'blog', 'docs', 'documentation', 'changelog'
+  ];
+  return siteKeywords.some(kw => new RegExp(`\\b${kw}\\b`, 'i').test(q));
+}
+
+interface WebFetcherResultItem {
+  number: number;
+  title: string;
+  domain: string;
+  url: string;
+  snippet: string;
+  isOfficial?: boolean;
 }
 
 const CHAT_KEY = 'nexus-ai-conversation-v2';
@@ -443,6 +444,7 @@ export function AssistantPage() {
   const [coderEnabled, setCoderEnabled] = useState<boolean>(initialSpecialists.coder);
   const [webFetcherEnabled, setWebFetcherEnabled] = useState<boolean>(initialSpecialists.webFetcher);
   const [wikimediaEnabled, setWikimediaEnabled] = useState<boolean>(initialSpecialists.wikimedia);
+  const [webFetcherList, setWebFetcherList] = useState<WebFetcherResultItem[]>([]);
   const [newMemoryInput, setNewMemoryInput] = useState('');
   const [editingMemoryIndex, setEditingMemoryIndex] = useState<number | null>(null);
   const [editingMemoryDraft, setEditingMemoryDraft] = useState('');
@@ -584,6 +586,7 @@ export function AssistantPage() {
     if (except !== 'webFetcher') {
       setWebFetcherEnabled(false);
       storage.setAssistantWebFetcherEnabled(false);
+      setWebFetcherList([]);
     }
     if (except !== 'wikimedia') {
       setWikimediaEnabled(false);
@@ -669,6 +672,8 @@ export function AssistantPage() {
     const next = !webFetcherEnabled;
     if (next) {
       disableOtherSpecialistModes('webFetcher');
+    } else {
+      setWebFetcherList([]);
     }
     setWebFetcherEnabled(next);
     storage.setAssistantWebFetcherEnabled(next);
@@ -1663,7 +1668,6 @@ export function AssistantPage() {
 
     // If Deep Research mode is ON, route directly through JARVIS multi-agent research pipeline (takes top priority)
     if (deepResearchEnabled) {
-      console.log('[Official Page] skipped: Deep Research is active');
       console.log('[AI Assistant] Automatic search skipped: Deep Research mode is active (handled by JARVIS pipeline internally)');
       setDeepResearchProgress(10);
       setDeepResearchPhase('Initializing JARVIS research pipeline (Planner formulating strategy)...');
@@ -1957,121 +1961,405 @@ export function AssistantPage() {
 
     // =========================================================================
     // SPECIALIST MODES PRIORITY & ROUTING
-    // Full Priority Order: Multi Chat > Web Fetcher (with URL) > Wikimedia > Coder
-    //
-    // Detailed Priority Rules:
-    // 1. Multi Chat ON: Multi Chat keeps top priority (handled earlier above).
-    //    All other specialist modes (Web Fetcher, Wikimedia, Coder, Architect, Data Analysis) are ignored while Multi Chat is ON.
-    // 2. Web Fetcher ON and the message contains a URL: Web Fetcher wins.
-    //    Routes through /web live webpage extraction pipeline (JARVIS Planner -> WebReader).
-    // 3. Wikimedia ON: Otherwise, Wikimedia wins over Coder (Coder is ignored while Wikimedia is ON).
-    //    Fetches 5 real photo/bitmap images from Wikimedia Commons directly without invoking any AI model.
-    //    Architect and Data Analysis flags are NOT used by Wikimedia mode.
-    // 4. Coder ON (when Wikimedia is OFF): Sends with /codeonline prefix (Planner -> Researcher -> Coder).
-    // 5. Web Fetcher ON without URL (when Wikimedia is OFF): Prompts user with friendly message to provide a URL.
-    // 6. Architect and Data Analysis can stay ON together with Coder or Web Fetcher.
-    //    Keep their current behavior (diagramMode = architectEnabled, chartMode = dataAnalysisEnabled).
+    // Priority Order: Multi Chat (handled above) > Web Fetcher / Coder / Wikimedia / Architect / Data Analysis
     // =========================================================================
-    const hasUrl = /(https?:\/\/[^\s]+|www\.[^\s]+|[a-zA-Z0-9-]+\.(?:com|org|net|io|dev|app|ai|gov|edu|co|uk|in|me|info|de|ca|jp)\b[^\s]*)/i.test(message);
-    if (hasUrl) {
-      console.log('[Official Page] skipped: Message contains a URL');
-    }
 
-    // Check if Wikimedia mode wins (when Multi Chat is OFF and Web Fetcher with URL is not winning)
-    if (!webFetcherEnabled || !hasUrl) {
-      if (wikimediaEnabled) {
-        console.log('[Official Page] skipped: Specialist mode is active (Wikimedia)');
-        // Direct Wikimedia Commons search (5 real images, no AI model invoked)
-        const cleanTopic = cleanWikimediaQuery(message);
-        setSpecialistProgress(20);
-        setSpecialistPhase(`Fetching Wikimedia Commons images for "${cleanTopic}"...`);
+    // 1. Check Web Fetcher mode if enabled
+    if (webFetcherEnabled) {
+      const directUrl = extractUrlOrDomain(message);
+      const pickedNumber = parseSelectionNumber(message);
+      const asksForWebsite = isWebsiteRequest(message);
 
-        try {
-          setSpecialistProgress(50);
-          const rawResults = await searchWikimediaCommons(cleanTopic, 5);
-          setSpecialistProgress(85);
+      // If Coder is also ON, Web Fetcher handles:
+      // - messages with a URL
+      // - number selection when a list exists
+      // - messages that ask for a website, site, page, link or web address
+      // Everything else goes to Coder.
+      const shouldWebFetcherHandle =
+        Boolean(directUrl) ||
+        (pickedNumber !== null && (webFetcherList.length > 0 || !coderEnabled)) ||
+        asksForWebsite ||
+        !coderEnabled;
 
-          // Filter for real photo/bitmap images only (skip SVG, PDF, audio, video)
-          const photoImages = (rawResults || []).filter(isRealBitmapImage).slice(0, 5);
+      if (shouldWebFetcherHandle) {
+        if (directUrl) {
+          // Case a: URL or bare domain
+          setWebFetcherList([]);
+          console.log(`[Web Fetcher] direct URL: ${directUrl}`);
+          setSpecialistProgress(30);
+          setSpecialistPhase(`Fetching webpage content directly from ${directUrl}...`);
 
-          if (photoImages.length === 0) {
+          let pageContent = '';
+          try {
+            const webRes = await api.webFetch(directUrl);
+            if (webRes && webRes.ok && webRes.data && webRes.data.textContent) {
+              pageContent = webRes.data.textContent.slice(0, 4500);
+            }
+          } catch {
+            // fallback to direct fetch
+          }
+
+          if (!pageContent) {
+            try {
+              const directRes = await fetch(directUrl, {
+                headers: { 'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64)' },
+                signal: AbortSignal.timeout(10000),
+              });
+              if (directRes.ok) {
+                const rawHtml = await directRes.text();
+                pageContent = rawHtml
+                  .replace(/<script\b[^<]*(?:(?!<\/script>)<[^<]*)*<\/script>/gi, '')
+                  .replace(/<style\b[^<]*(?:(?!<\/style>)<[^<]*)*<\/style>/gi, '')
+                  .replace(/<[^>]+>/g, ' ')
+                  .replace(/\s+/g, ' ')
+                  .trim()
+                  .slice(0, 4500);
+              }
+            } catch {
+              // ignore
+            }
+          }
+
+          if (pageContent) {
+            setSpecialistProgress(70);
+            setSpecialistPhase('Synthesizing answer from webpage content...');
+            const currentLanguage = storage.getAssistantLanguage();
+            const currentPermanentMemories = storage.getPermanentMemories();
+
+            const aiPrompt = `Webpage URL: ${directUrl}\n\nWebpage Content (truncated to 4,500 characters):\n${pageContent}\n\nUser Question/Message: "${message}"\n\nInstructions:\nAnswer from the webpage content provided above. Put the newest items first and include their exact dates when available on the page.`;
+
+            const aiRes = await api.aiChat(
+              aiPrompt,
+              [],
+              '',
+              undefined,
+              false,
+              { language: currentLanguage, permanentMemories: currentPermanentMemories }
+            );
+
+            let domainHost = '';
+            try {
+              domainHost = new URL(directUrl).hostname;
+            } catch {
+              domainHost = 'web';
+            }
+
+            const finalAnswerText = `Read page: ${directUrl}\n\n${stripTierLabels(aiRes.answer)}`;
+
             const assistantMessage: Message = {
               role: 'assistant',
-              content: `No Wikimedia images found for '${cleanTopic}'. Try a different word.`,
+              content: finalAnswerText,
               tool: 'none',
+              sources: [{ title: domainHost, url: directUrl, domain: domainHost }],
+              searchedWeb: true,
             };
+
             setMessages((current) => [...current, assistantMessage]);
+            const updatedConversation = [...messages, userMessage, assistantMessage];
+            const newMemory = buildLocalMemory(updatedConversation);
+            if (newMemory) setSmartMemory(newMemory);
+            setLoading(false);
+            setSpecialistProgress(0);
+            setSpecialistPhase('');
+            return;
           } else {
             const assistantMessage: Message = {
               role: 'assistant',
-              content: `Retrieved ${photoImages.length} real photo${photoImages.length === 1 ? '' : 's'} from Wikimedia Commons for **${cleanTopic}**:`,
-              tool: 'wikimedia',
-              wikimediaItems: photoImages,
-              wikimediaTopic: cleanTopic,
+              content: 'Could not read this page. Try another number.',
+              tool: 'none',
             };
             setMessages((current) => [...current, assistantMessage]);
+            setLoading(false);
+            setSpecialistProgress(0);
+            setSpecialistPhase('');
+            return;
+          }
+        } else if (pickedNumber !== null) {
+          // Case c: Number selection
+          if (webFetcherList.length === 0) {
+            const assistantMessage: Message = {
+              role: 'assistant',
+              content: 'There is no list yet. Ask for a website first, for example: list claude official web.',
+              tool: 'none',
+            };
+            setMessages((current) => [...current, assistantMessage]);
+            setLoading(false);
+            return;
+          }
 
-            const updatedConversation = [
-              ...messages,
-              userMessage,
-              assistantMessage,
-            ];
-            const newMemory = buildLocalMemory(updatedConversation);
-            if (newMemory) {
-              setSmartMemory(newMemory);
+          if (pickedNumber < 1 || pickedNumber > webFetcherList.length) {
+            const assistantMessage: Message = {
+              role: 'assistant',
+              content: `Please send a number from 1 to ${webFetcherList.length}.`,
+              tool: 'none',
+            };
+            setMessages((current) => [...current, assistantMessage]);
+            setLoading(false);
+            return;
+          }
+
+          const pickedItem = webFetcherList[pickedNumber - 1];
+          console.log(`[Web Fetcher] picked #${pickedNumber}: ${pickedItem.url}`);
+
+          setSpecialistProgress(30);
+          setSpecialistPhase(`Fetching content from #${pickedNumber} (${pickedItem.url})...`);
+
+          let pageContent = '';
+          try {
+            const webRes = await api.webFetch(pickedItem.url);
+            if (webRes && webRes.ok && webRes.data && webRes.data.textContent) {
+              pageContent = webRes.data.textContent.slice(0, 4500);
+            }
+          } catch {
+            // fallback
+          }
+
+          if (!pageContent) {
+            try {
+              const directRes = await fetch(pickedItem.url, {
+                headers: { 'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64)' },
+                signal: AbortSignal.timeout(10000),
+              });
+              if (directRes.ok) {
+                const rawHtml = await directRes.text();
+                pageContent = rawHtml
+                  .replace(/<script\b[^<]*(?:(?!<\/script>)<[^<]*)*<\/script>/gi, '')
+                  .replace(/<style\b[^<]*(?:(?!<\/style>)<[^<]*)*<\/style>/gi, '')
+                  .replace(/<[^>]+>/g, ' ')
+                  .replace(/\s+/g, ' ')
+                  .trim()
+                  .slice(0, 4500);
+              }
+            } catch {
+              // ignore
             }
           }
-        } catch (wErr) {
-          console.error('[AI Assistant] Wikimedia search failed:', wErr);
+
+          if (pageContent) {
+            setSpecialistProgress(70);
+            setSpecialistPhase('Synthesizing answer from webpage content...');
+            const currentLanguage = storage.getAssistantLanguage();
+            const currentPermanentMemories = storage.getPermanentMemories();
+
+            const aiPrompt = `Webpage URL: ${pickedItem.url}\n\nWebpage Content (truncated to 4,500 characters):\n${pageContent}\n\nUser Question/Message: "${message}"\n\nInstructions:\nAnswer from the webpage content provided above. Put the newest items first and include their exact dates when available on the page.`;
+
+            const aiRes = await api.aiChat(
+              aiPrompt,
+              [],
+              '',
+              undefined,
+              false,
+              { language: currentLanguage, permanentMemories: currentPermanentMemories }
+            );
+
+            const finalAnswerText = `Read page: ${pickedItem.url}\n\n${stripTierLabels(aiRes.answer)}`;
+
+            const assistantMessage: Message = {
+              role: 'assistant',
+              content: finalAnswerText,
+              tool: 'none',
+              sources: [{ title: pickedItem.title || pickedItem.domain, url: pickedItem.url, domain: pickedItem.domain }],
+              searchedWeb: true,
+            };
+
+            setMessages((current) => [...current, assistantMessage]);
+            const updatedConversation = [...messages, userMessage, assistantMessage];
+            const newMemory = buildLocalMemory(updatedConversation);
+            if (newMemory) setSmartMemory(newMemory);
+            setLoading(false);
+            setSpecialistProgress(0);
+            setSpecialistPhase('');
+            return;
+          } else {
+            const assistantMessage: Message = {
+              role: 'assistant',
+              content: 'Could not read this page. Try another number.',
+              tool: 'none',
+            };
+            setMessages((current) => [...current, assistantMessage]);
+            setLoading(false);
+            setSpecialistProgress(0);
+            setSpecialistPhase('');
+            return;
+          }
+        } else if (asksForWebsite) {
+          // Case b: Website request (search and build numbered list)
+          setSpecialistProgress(30);
+          setSpecialistPhase(`Searching web for websites matching "${message}"...`);
+
+          let searchResults: SearchResult[] = [];
+          try {
+            const isCustomSearchActive = webApiMode === 'custom' && Boolean(customSearchKey.trim() && customSearchUrl.trim());
+            const customKeyPayload = isCustomSearchActive ? customSearchKey.trim() : undefined;
+            const customUrlPayload = isCustomSearchActive ? customSearchUrl.trim() : undefined;
+
+            const res = await api.search(message, customKeyPayload, customUrlPayload, 8);
+            searchResults = res || [];
+          } catch (sErr) {
+            console.warn('[Web Fetcher] Search error:', sErr);
+          }
+
+          const validResults = searchResults.filter(
+            (r) => r.url && isValidOfficialHttpsUrl(r.url)
+          );
+
+          if (validResults.length === 0) {
+            const assistantMessage: Message = {
+              role: 'assistant',
+              content: 'No websites found. Try different words.',
+              tool: 'none',
+            };
+            setMessages((current) => [...current, assistantMessage]);
+            setLoading(false);
+            setSpecialistProgress(0);
+            setSpecialistPhase('');
+            return;
+          }
+
+          const officialResults: SearchResult[] = [];
+          const standardResults: SearchResult[] = [];
+
+          validResults.forEach((r) => {
+            if (checkIsOfficialDomain(r.url, message)) {
+              officialResults.push(r);
+            } else {
+              standardResults.push(r);
+            }
+          });
+
+          const combinedResults = [...officialResults, ...standardResults].slice(0, 8);
+
+          const items: WebFetcherResultItem[] = combinedResults.map((r, idx) => {
+            let host = '';
+            try {
+              host = new URL(r.url).hostname;
+            } catch {
+              host = r.domain || 'web';
+            }
+            const isOff = checkIsOfficialDomain(r.url, message);
+            const snippet = (r.description || r.title || '').replace(/\s+/g, ' ').trim().slice(0, 140);
+            return {
+              number: idx + 1,
+              title: r.title || host,
+              domain: host,
+              url: r.url,
+              snippet,
+              isOfficial: isOff,
+            };
+          });
+
+          setWebFetcherList(items);
+          console.log(`[Web Fetcher] list built: ${items.length} items`);
+
+          const lines: string[] = [];
+          lines.push(`Found ${items.length} website${items.length === 1 ? '' : 's'}:\n`);
+          items.forEach((item) => {
+            const badge = item.isOfficial ? ' **[Official]**' : '';
+            lines.push(`${item.number}.${badge} [${item.title}](${item.url}) — \`${item.domain}\``);
+            if (item.snippet) {
+              lines.push(`   ${item.snippet}`);
+            }
+            lines.push('');
+          });
+          lines.push(`Send a number (1-${items.length}) to read that page.`);
+
+          const listContent = lines.join('\n').trim();
+
           const assistantMessage: Message = {
             role: 'assistant',
-            content: `Unable to retrieve Wikimedia images for '${cleanTopic}' right now. Please verify your connection and try again.`,
+            content: listContent,
             tool: 'none',
+            sources: items.map((i) => ({ title: i.title, url: i.url, domain: i.domain })),
+            searchedWeb: true,
           };
+
           setMessages((current) => [...current, assistantMessage]);
-        } finally {
+          const updatedConversation = [...messages, userMessage, assistantMessage];
+          const newMemory = buildLocalMemory(updatedConversation);
+          if (newMemory) setSmartMemory(newMemory);
           setLoading(false);
           setSpecialistProgress(0);
           setSpecialistPhase('');
-        }
-        return;
-      }
-    }
-
-    const isSpecialistActive = architectEnabled || dataAnalysisEnabled || coderEnabled || webFetcherEnabled;
-
-    if (isSpecialistActive) {
-      console.log('[Official Page] skipped: Specialist mode is active');
-      let effectiveMessage = message;
-      let effectiveTool: Message['tool'] = 'agent';
-
-      if (coderEnabled && webFetcherEnabled) {
-        // Coder + Web Fetcher both ON:
-        // if message contains URL -> use "/web", else use "/codeonline"
-        if (hasUrl) {
-          effectiveMessage = /^\/web(?:\s+|$)/i.test(message.trim()) ? message : `/web ${message}`;
-          effectiveTool = 'none';
+          return;
         } else {
-          effectiveMessage = /^\/codeonline(?:\s+|$)/i.test(message.trim()) ? message : `/codeonline ${message}`;
-          effectiveTool = 'coder';
-        }
-      } else if (webFetcherEnabled) {
-        // Only Web Fetcher ON:
-        if (!hasUrl) {
-          // If the message has no URL in it, do NOT call the pipeline.
+          // Case d: Unrecognized message when Web Fetcher is ON
           const assistantMessage: Message = {
             role: 'assistant',
-            content: 'Web Fetcher is ON — please send a URL (example: https://example.com).',
+            content: 'Web Fetcher is ON. Send a URL, ask for a website (for example: list claude official web), or send a number from the list.',
             tool: 'none',
           };
           setMessages((current) => [...current, assistantMessage]);
           setLoading(false);
           return;
         }
-        effectiveMessage = /^\/web(?:\s+|$)/i.test(message.trim()) ? message : `/web ${message}`;
-        effectiveTool = 'none';
-      } else if (coderEnabled) {
-        // Only Coder ON:
+      }
+    }
+
+    // 2. Check Wikimedia mode
+    if (wikimediaEnabled) {
+      const cleanTopic = cleanWikimediaQuery(message);
+      setSpecialistProgress(20);
+      setSpecialistPhase(`Fetching Wikimedia Commons images for "${cleanTopic}"...`);
+
+      try {
+        setSpecialistProgress(50);
+        const rawResults = await searchWikimediaCommons(cleanTopic, 5);
+        setSpecialistProgress(85);
+
+        // Filter for real photo/bitmap images only (skip SVG, PDF, audio, video)
+        const photoImages = (rawResults || []).filter(isRealBitmapImage).slice(0, 5);
+
+        if (photoImages.length === 0) {
+          const assistantMessage: Message = {
+            role: 'assistant',
+            content: `No Wikimedia images found for '${cleanTopic}'. Try a different word.`,
+            tool: 'none',
+          };
+          setMessages((current) => [...current, assistantMessage]);
+        } else {
+          const assistantMessage: Message = {
+            role: 'assistant',
+            content: `Retrieved ${photoImages.length} real photo${photoImages.length === 1 ? '' : 's'} from Wikimedia Commons for **${cleanTopic}**:`,
+            tool: 'wikimedia',
+            wikimediaItems: photoImages,
+            wikimediaTopic: cleanTopic,
+          };
+          setMessages((current) => [...current, assistantMessage]);
+
+          const updatedConversation = [
+            ...messages,
+            userMessage,
+            assistantMessage,
+          ];
+          const newMemory = buildLocalMemory(updatedConversation);
+          if (newMemory) {
+            setSmartMemory(newMemory);
+          }
+        }
+      } catch (wErr) {
+        console.error('[AI Assistant] Wikimedia search failed:', wErr);
+        const assistantMessage: Message = {
+          role: 'assistant',
+          content: `Unable to retrieve Wikimedia images for '${cleanTopic}' right now. Please verify your connection and try again.`,
+          tool: 'none',
+        };
+        setMessages((current) => [...current, assistantMessage]);
+      } finally {
+        setLoading(false);
+        setSpecialistProgress(0);
+        setSpecialistPhase('');
+      }
+      return;
+    }
+
+    // 3. Check Coder, Architect, Data Analysis modes
+    const isOtherSpecialistActive = architectEnabled || dataAnalysisEnabled || coderEnabled;
+
+    if (isOtherSpecialistActive) {
+      let effectiveMessage = message;
+      let effectiveTool: Message['tool'] = 'agent';
+
+      if (coderEnabled) {
         effectiveMessage = /^\/codeonline(?:\s+|$)/i.test(message.trim()) ? message : `/codeonline ${message}`;
         effectiveTool = 'coder';
       } else {
@@ -2080,9 +2368,7 @@ export function AssistantPage() {
 
       setSpecialistProgress(10);
       setSpecialistPhase(
-        effectiveMessage.startsWith('/web')
-          ? 'Initializing Web Fetcher (extracting and analyzing webpage content)...'
-          : effectiveMessage.startsWith('/codeonline')
+        effectiveMessage.startsWith('/codeonline')
           ? 'Initializing Coder agent (Planner & Researcher formulating technical blueprint)...'
           : architectEnabled && dataAnalysisEnabled
           ? 'Initializing Architect & Data Analysis pipeline...'
@@ -2100,14 +2386,12 @@ export function AssistantPage() {
           userTz = 'Europe/London';
         }
 
-        const isWebFetchQuery = webFetcherEnabled || /^\/web(?:\s+|$)/i.test(effectiveMessage);
-
         const result = await runJarvisPipeline(
           effectiveMessage,
           jarvisConfig,
           false, // deepResearch = false
-          isWebFetchQuery ? false : architectEnabled, // Web Fetcher only shows final agent answer
-          isWebFetchQuery ? false : dataAnalysisEnabled, // Web Fetcher only shows final agent answer
+          architectEnabled,
+          dataAnalysisEnabled,
           false, // imageMode
           (step: JarvisExecutionStep) => {
             let pct = 15;
@@ -2122,9 +2406,6 @@ export function AssistantPage() {
             } else if (step.agentId === 'coder') {
               pct = step.status === 'completed' ? 85 : 55;
               label = step.status === 'completed' ? 'Coder synthesized technical structures' : 'Coder formulating technical specifications...';
-            } else if (step.agentId === 'webReader' || step.agentId === 'customApiRunner') {
-              pct = step.status === 'completed' ? 80 : 45;
-              label = step.status === 'completed' ? 'Content extraction completed' : 'Extracting and parsing live webpage content...';
             } else if (step.agentId === 'architect') {
               pct = step.status === 'completed' ? 85 : 55;
               label = step.status === 'completed' ? 'Architect rendered SVG blueprint' : 'Architect generating interactive vector system blueprint...';
@@ -2144,15 +2425,12 @@ export function AssistantPage() {
 
         const assistantMessage: Message = {
           role: 'assistant',
-          content: isWebFetchQuery
-            ? stripConversationalMetaText(stripTierLabels(result.answer))
-            : stripTierLabels(result.answer),
-          tool: isWebFetchQuery ? 'none' : effectiveTool,
-          // In Web Fetcher function, only show final agent answer: no search badges, no sources panels, no diagrams, no charts
-          sources: isWebFetchQuery ? undefined : (result.sources && result.sources.length > 0 ? result.sources : undefined),
-          searchedWeb: isWebFetchQuery ? false : Boolean(result.sources && result.sources.length > 0),
-          diagramSvg: isWebFetchQuery ? undefined : result.diagramSvg,
-          chartData: isWebFetchQuery ? undefined : result.chartData,
+          content: stripTierLabels(result.answer),
+          tool: effectiveTool,
+          sources: result.sources && result.sources.length > 0 ? result.sources : undefined,
+          searchedWeb: Boolean(result.sources && result.sources.length > 0),
+          diagramSvg: result.diagramSvg,
+          chartData: result.chartData,
         };
 
         setMessages((current) => [...current, assistantMessage]);
@@ -2184,152 +2462,6 @@ export function AssistantPage() {
         setSpecialistPhase('');
       }
       return;
-    }
-
-    // =========================================================================
-    // OFFICIAL PAGE HANDLING
-    // Runs BEFORE normal web search whether Web Search toggle is ON or OFF.
-    // =========================================================================
-    const officialTarget = extractOfficialTarget(message);
-    if (officialTarget) {
-      console.log(`[Official Page] detected: ${officialTarget}`);
-      try {
-        let chosenUrl: string | null = null;
-        try {
-          const searchRes = await api.search(`${officialTarget} official website`, undefined, undefined, 8);
-          const validResults = (searchRes || []).filter(
-            (r) => r.url && isValidOfficialHttpsUrl(r.url) && !isNonOfficialDomain(r.url)
-          );
-
-          if (validResults.length > 0) {
-            // Prefer news, blog, release-notes, changelog, or updates page on the official domain
-            const subpageMatch = validResults.find((r) =>
-              /(?:\/blog|\/news|\/release-notes|\/changelog|\/updates|\/announcements|\/whats-new|blog\.|news\.)/i.test(r.url) ||
-              /(?:blog|news|updates|release notes|changelog|announcements)/i.test(r.title || '')
-            );
-            chosenUrl = subpageMatch ? subpageMatch.url : validResults[0].url;
-          }
-        } catch (sErr) {
-          console.warn('[Official Page] Search error:', sErr);
-        }
-
-        if (chosenUrl) {
-          console.log(`[Official Page] chosen URL: ${chosenUrl}`);
-          let pageContent = '';
-          try {
-            const webRes = await api.webFetch(chosenUrl);
-            if (webRes && webRes.ok && webRes.data && webRes.data.textContent) {
-              pageContent = webRes.data.textContent.slice(0, 4500);
-            }
-          } catch {
-            // fallback
-          }
-
-          if (!pageContent) {
-            try {
-              const directRes = await fetch(chosenUrl, {
-                headers: { 'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64)' },
-                signal: AbortSignal.timeout(10000),
-              });
-              if (directRes.ok) {
-                const rawHtml = await directRes.text();
-                pageContent = rawHtml
-                  .replace(/<script\b[^<]*(?:(?!<\/script>)<[^<]*)*<\/script>/gi, '')
-                  .replace(/<style\b[^<]*(?:(?!<\/style>)<[^<]*)*<\/style>/gi, '')
-                  .replace(/<[^>]+>/g, ' ')
-                  .replace(/\s+/g, ' ')
-                  .trim()
-                  .slice(0, 4500);
-              }
-            } catch {
-              // ignore
-            }
-          }
-
-          if (pageContent) {
-            const currentLanguage = storage.getAssistantLanguage();
-            const currentPermanentMemories = storage.getPermanentMemories();
-
-            const aiPrompt = `Official Webpage URL: ${chosenUrl}\n\nOfficial Webpage Content (truncated to 4,500 characters):\n${pageContent}\n\nUser Question: "${message}"\n\nInstructions:\nAnswer ONLY from the official page content provided above. Put the newest items first and include their exact dates when available.`;
-
-            const aiRes = await api.aiChat(
-              aiPrompt,
-              [],
-              '',
-              undefined,
-              false,
-              { language: currentLanguage, permanentMemories: currentPermanentMemories }
-            );
-
-            const finalAnswerText = `Read official page: ${chosenUrl}\n\n${stripTierLabels(aiRes.answer)}`;
-            let domainHost = '';
-            try {
-              domainHost = new URL(chosenUrl).hostname;
-            } catch {
-              domainHost = 'official-page';
-            }
-
-            const assistantMessage: Message = {
-              role: 'assistant',
-              content: finalAnswerText,
-              tool: 'none',
-              sources: [{ title: `Official Page (${domainHost})`, url: chosenUrl, domain: domainHost }],
-              searchedWeb: true,
-            };
-
-            setMessages((current) => [...current, assistantMessage]);
-            const updatedConversation = [...messages, userMessage, assistantMessage];
-            const newMemory = buildLocalMemory(updatedConversation);
-            if (newMemory) setSmartMemory(newMemory);
-            setLoading(false);
-            return;
-          }
-        }
-
-        // If choosing URL or reading page failed, fall back to normal search
-        console.log('[Official Page] skipped: Could not read an official page, used web search instead.');
-        const currentLanguage = storage.getAssistantLanguage();
-        const currentPermanentMemories = storage.getPermanentMemories();
-        const isCustomSearchActive = webApiMode === 'custom' && Boolean(customSearchKey.trim() && customSearchUrl.trim());
-        const customKeyPayload = isCustomSearchActive ? customSearchKey.trim() : undefined;
-        const customUrlPayload = isCustomSearchActive ? customSearchUrl.trim() : undefined;
-
-        const response = await api.aiChat(
-          message,
-          historyForRequest,
-          smartMemory,
-          undefined,
-          true, // force web search
-          {
-            language: currentLanguage,
-            permanentMemories: currentPermanentMemories,
-            customSearchApiKey: customKeyPayload,
-            customSearchApiUrl: customUrlPayload,
-          }
-        );
-
-        const assistantMessage: Message = {
-          role: 'assistant',
-          content: `Could not read an official page, used web search instead.\n\n${stripTierLabels(response.answer)}`,
-          tool: response.tool,
-          sources: response.sources,
-          weather: response.weather,
-          searchedWeb: true,
-          searchSource: response.searchSource,
-          searchNotice: response.searchNotice,
-        };
-
-        setMessages((current) => [...current, assistantMessage]);
-        const updatedConversation = [...messages, userMessage, assistantMessage];
-        const newMemory = buildLocalMemory(updatedConversation);
-        if (newMemory) setSmartMemory(newMemory);
-        setLoading(false);
-        return;
-      } catch (officialErr) {
-        console.warn('[Official Page] Execution error, falling back:', officialErr);
-      }
-    } else {
-      console.log('[Official Page] skipped: No official page trigger detected');
     }
 
     const isWebSearchForced = webSearchEnabled;
@@ -2398,6 +2530,7 @@ export function AssistantPage() {
 
   const newChat = () => {
     setMessages([welcomeMessage]);
+    setWebFetcherList([]);
     setError('');
     setShowClearConfirm(false);
   };
@@ -2407,6 +2540,7 @@ export function AssistantPage() {
     setMemoryDraft('');
     setMemoryEditorOpen(false);
     setMessages([welcomeMessage]);
+    setWebFetcherList([]);
     setError('');
     setShowClearConfirm(false);
     setClearedToast(true);
@@ -3652,26 +3786,20 @@ export function AssistantPage() {
                                 : 'text-zinc-200'
                             }`}
                           >
-                            {message.content.startsWith('Read official page: ') && (
-                              <div className="mb-2.5 inline-flex items-center gap-1.5 px-2.5 py-1 rounded-lg bg-cyan-950/60 text-cyan-300 border border-cyan-500/30 text-xs font-medium">
-                                <Globe size={13} className="text-cyan-400 shrink-0" />
+                            {message.content.startsWith('Read page: ') && (
+                              <div className="mb-2.5 inline-flex items-center gap-1.5 px-2.5 py-1 rounded-lg bg-teal-950/60 text-teal-300 border border-teal-500/30 text-xs font-medium">
+                                <Globe size={13} className="text-teal-400 shrink-0" />
                                 <span>
-                                  Read official page:{' '}
+                                  Read page:{' '}
                                   <a
-                                    href={message.content.split('\n')[0].replace('Read official page:', '').trim()}
+                                    href={message.content.split('\n')[0].replace('Read page:', '').trim()}
                                     target="_blank"
                                     rel="noopener noreferrer"
-                                    className="underline hover:text-cyan-200"
+                                    className="underline hover:text-teal-200"
                                   >
-                                    {message.content.split('\n')[0].replace('Read official page:', '').trim()}
+                                    {message.content.split('\n')[0].replace('Read page:', '').trim()}
                                   </a>
                                 </span>
-                              </div>
-                            )}
-                            {message.content.startsWith('Could not read an official page, used web search instead.') && (
-                              <div className="mb-2.5 inline-flex items-center gap-1.5 px-2.5 py-1 rounded-lg bg-amber-950/60 text-amber-300 border border-amber-500/30 text-xs font-medium">
-                                <AlertTriangle size={13} className="text-amber-400 shrink-0" />
-                                <span>Could not read an official page, used web search instead.</span>
                               </div>
                             )}
                             <FormattedText content={stripTierLabels(message.content)} />
