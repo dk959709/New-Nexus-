@@ -2219,6 +2219,10 @@ export async function fetchDirectWebPage(targetUrl: string): Promise<{
       if (fallbackResult.ok) {
         return fallbackResult;
       }
+      return {
+        ok: false,
+        error: fallbackResult.error || `Page requires JavaScript rendering. All fallbacks failed.`,
+      };
     }
 
     return {

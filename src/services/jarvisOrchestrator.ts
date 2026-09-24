@@ -6462,7 +6462,7 @@ This same strict self-check applies generally to ANY other library with a simila
             const confirmedPart = parts[1]?.trim() || '';
             
             // Extract claim source domain from mainPart e.g. (domain.com, YYYY-MM-DD)
-            const domainMatch = mainPart.match(/\(([^,\)]+)/);
+            const domainMatch = mainPart.match(/\(([^,)]+)/);
             if (domainMatch) {
               const srcDom = domainMatch[1].toLowerCase().trim();
               const cDom = confirmedPart.toLowerCase().trim();

@@ -498,7 +498,7 @@ export function listCatalogItems(): CatalogItemResponse[] {
       }
     }
 
-    let isConnected = Boolean(key && key.trim().length > 0);
+    const isConnected = Boolean(key && key.trim().length > 0);
     const storedRec = store[def.id] || store[def.envVar];
 
     let finalSource = source;

@@ -41,7 +41,6 @@ export function ApiCatalogSettings() {
   const [globalCustomUrl, setGlobalCustomUrl] = useState<string>('');
   const [globalCustomKey, setGlobalCustomKey] = useState<string>('');
   const [globalHasKey, setGlobalHasKey] = useState<boolean>(false);
-  const [globalMaskedKey, setGlobalMaskedKey] = useState<string>('');
   const [webSearchCustomOpen, setWebSearchCustomOpen] = useState<boolean>(false);
   const [showGlobalSearchKey, setShowGlobalSearchKey] = useState<boolean>(false);
   const [testingGlobalSearch, setTestingGlobalSearch] = useState<boolean>(false);
@@ -114,7 +113,6 @@ export function ApiCatalogSettings() {
         setGlobalSearchMode(res.mode || 'default');
         setGlobalCustomUrl(res.customUrl || '');
         setGlobalHasKey(res.hasKey || false);
-        setGlobalMaskedKey(res.maskedKey || '');
       }
     } catch {
       // Ignore initial config load error
@@ -136,7 +134,6 @@ export function ApiCatalogSettings() {
         setGlobalSearchMode(res.mode);
         setGlobalCustomUrl(res.customUrl);
         setGlobalHasKey(res.hasKey);
-        setGlobalMaskedKey(res.maskedKey);
         await fetchCatalog();
       }
     } catch (err: unknown) {
@@ -170,7 +167,6 @@ export function ApiCatalogSettings() {
         setGlobalSearchMode('custom');
         setGlobalCustomUrl(res.customUrl);
         setGlobalHasKey(res.hasKey);
-        setGlobalMaskedKey(res.maskedKey);
         setGlobalCustomKey('');
         setActionNotice({ type: 'success', message: 'Global Web Search API settings saved.' });
         await fetchCatalog();
@@ -195,7 +191,6 @@ export function ApiCatalogSettings() {
         setGlobalCustomUrl('');
         setGlobalCustomKey('');
         setGlobalHasKey(false);
-        setGlobalMaskedKey('(not configured)');
         setActionNotice({ type: 'success', message: 'Reset Web Search API to Default.' });
         await fetchCatalog();
       }

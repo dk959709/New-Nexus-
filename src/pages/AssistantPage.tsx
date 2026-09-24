@@ -41,6 +41,7 @@ import {
   EyeOff,
   AlertCircle,
   Key,
+  Square,
 } from 'lucide-react';
 import { Haptics, ImpactStyle } from '@capacitor/haptics';
 import { Link } from 'react-router-dom';
@@ -50,7 +51,7 @@ import { copyToClipboard, formatMarkdownToRichHtml } from '@/lib/clipboard';
 import { playTapSound } from '@/lib/audio';
 import { ErrorMessage } from '@/components';
 import { FormattedText } from '@/components/jarvis/FormattedText';
-import { stripTierLabels, stripConversationalMetaText } from '@/lib/format';
+import { stripTierLabels } from '@/lib/format';
 import { generateStudioImage, enhanceImagePromptWithAI } from '@/services/imageGenerationService';
 import { executeMultiChatTurn } from '@/services/multiChatOrchestrator';
 import { runJarvisPipeline } from '@/services/jarvisOrchestrator';
@@ -559,6 +560,14 @@ export function AssistantPage() {
   const messagesEndRef = useRef<HTMLDivElement | null>(null);
   const textareaRef = useRef<HTMLTextAreaElement | null>(null);
   const moreOptionsRef = useRef<HTMLDivElement | null>(null);
+  const webFetcherCancelledRef = useRef<boolean>(false);
+
+  const handleStopWebFetcher = () => {
+    webFetcherCancelledRef.current = true;
+    setLoading(false);
+    setSpecialistProgress(0);
+    setSpecialistPhase('');
+  };
 
   useEffect(() => {
     if (!moreOptionsOpen) return;
@@ -1682,6 +1691,7 @@ export function AssistantPage() {
 
     setMessages((current) => [...current, userMessage]);
     setLoading(true);
+    webFetcherCancelledRef.current = false;
 
     // If Deep Research mode is ON, route directly through JARVIS multi-agent research pipeline (takes top priority)
     if (deepResearchEnabled) {
@@ -2008,35 +2018,32 @@ export function AssistantPage() {
           setSpecialistPhase(`Fetching webpage content directly from ${directUrl}...`);
 
           let pageContent = '';
+          const fetchStart = Date.now();
           try {
-            const webRes = await api.webFetch(directUrl);
+            const webRes = await Promise.race([
+              api.webFetch(directUrl),
+              new Promise<never>((_, reject) =>
+                setTimeout(() => reject(new Error('webFetch timeout')), 60000)
+              ),
+            ]);
+            if (webFetcherCancelledRef.current) return;
             if (webRes && webRes.ok && webRes.data && webRes.data.textContent) {
               pageContent = webRes.data.textContent.slice(0, 4500);
+              const fetchTime = Date.now() - fetchStart;
+              console.log(`[Web Fetcher] fetch ok: ${directUrl} (${fetchTime} ms, ${pageContent.length} chars)`);
             }
-          } catch {
-            // fallback to direct fetch
+          } catch (err: unknown) {
+            if (webFetcherCancelledRef.current) return;
+            const errObj = err as Error;
+            const isTimeout = errObj?.message?.includes('timeout');
+            if (isTimeout) {
+              console.log('[Web Fetcher] timeout: fetch');
+            } else {
+              console.log(`[Web Fetcher] fetch error: ${errObj?.message || 'unknown'}`);
+            }
           }
 
-          if (!pageContent) {
-            try {
-              const directRes = await fetch(directUrl, {
-                headers: { 'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64)' },
-                signal: AbortSignal.timeout(10000),
-              });
-              if (directRes.ok) {
-                const rawHtml = await directRes.text();
-                pageContent = rawHtml
-                  .replace(/<script\b[^<]*(?:(?!<\/script>)<[^<]*)*<\/script>/gi, '')
-                  .replace(/<style\b[^<]*(?:(?!<\/style>)<[^<]*)*<\/style>/gi, '')
-                  .replace(/<[^>]+>/g, ' ')
-                  .replace(/\s+/g, ' ')
-                  .trim()
-                  .slice(0, 4500);
-              }
-            } catch {
-              // ignore
-            }
-          }
+          if (webFetcherCancelledRef.current) return;
 
           if (pageContent) {
             setSpecialistProgress(70);
@@ -2046,14 +2053,41 @@ export function AssistantPage() {
 
             const aiPrompt = `Webpage URL: ${directUrl}\n\nWebpage Content (truncated to 4,500 characters):\n${pageContent}\n\nUser Question/Message: "${message}"\n\nInstructions:\nAnswer from the webpage content provided above. Put the newest items first and include their exact dates when available on the page.`;
 
-            const aiRes = await api.aiChat(
-              aiPrompt,
-              [],
-              '',
-              undefined,
-              false,
-              { language: currentLanguage, permanentMemories: currentPermanentMemories }
-            );
+            let finalAnswerText = '';
+            console.log('[Web Fetcher] synthesis start');
+            const synthStart = Date.now();
+
+            try {
+              const aiRes = await Promise.race([
+                api.aiChat(
+                  aiPrompt,
+                  [],
+                  '',
+                  undefined,
+                  false,
+                  { language: currentLanguage, permanentMemories: currentPermanentMemories }
+                ),
+                new Promise<never>((_, reject) =>
+                  setTimeout(() => reject(new Error('aiChat timeout')), 40000)
+                ),
+              ]);
+              if (webFetcherCancelledRef.current) return;
+              const synthTime = Date.now() - synthStart;
+              console.log(`[Web Fetcher] synthesis done (${synthTime} ms)`);
+              finalAnswerText = `Read page: ${directUrl}\n\n${stripTierLabels(aiRes.answer)}`;
+            } catch (synthErr: unknown) {
+              if (webFetcherCancelledRef.current) return;
+              const sErr = synthErr as Error;
+              const isTimeout = sErr?.message?.includes('timeout');
+              if (isTimeout) {
+                console.log('[Web Fetcher] timeout: synthesis');
+              } else {
+                console.log(`[Web Fetcher] synthesis error: ${sErr?.message || 'Synthesis failed'}`);
+              }
+              finalAnswerText = `Read page: ${directUrl}\n\n${pageContent.slice(0, 1500)}\n\nThe AI was too slow or failed, so this is the raw page text. Try again or pick another number.`;
+            }
+
+            if (webFetcherCancelledRef.current) return;
 
             let domainHost = '';
             try {
@@ -2061,8 +2095,6 @@ export function AssistantPage() {
             } catch {
               domainHost = 'web';
             }
-
-            const finalAnswerText = `Read page: ${directUrl}\n\n${stripTierLabels(aiRes.answer)}`;
 
             const assistantMessage: Message = {
               role: 'assistant',
@@ -2081,6 +2113,7 @@ export function AssistantPage() {
             setSpecialistPhase('');
             return;
           } else {
+            if (webFetcherCancelledRef.current) return;
             const assistantMessage: Message = {
               role: 'assistant',
               content: 'Could not read this page. Try another number.',
@@ -2123,35 +2156,32 @@ export function AssistantPage() {
           setSpecialistPhase(`Fetching content from #${pickedNumber} (${pickedItem.url})...`);
 
           let pageContent = '';
+          const fetchStart = Date.now();
           try {
-            const webRes = await api.webFetch(pickedItem.url);
+            const webRes = await Promise.race([
+              api.webFetch(pickedItem.url),
+              new Promise<never>((_, reject) =>
+                setTimeout(() => reject(new Error('webFetch timeout')), 60000)
+              ),
+            ]);
+            if (webFetcherCancelledRef.current) return;
             if (webRes && webRes.ok && webRes.data && webRes.data.textContent) {
               pageContent = webRes.data.textContent.slice(0, 4500);
+              const fetchTime = Date.now() - fetchStart;
+              console.log(`[Web Fetcher] fetch ok: ${pickedItem.url} (${fetchTime} ms, ${pageContent.length} chars)`);
             }
-          } catch {
-            // fallback
+          } catch (err: unknown) {
+            if (webFetcherCancelledRef.current) return;
+            const errObj = err as Error;
+            const isTimeout = errObj?.message?.includes('timeout');
+            if (isTimeout) {
+              console.log('[Web Fetcher] timeout: fetch');
+            } else {
+              console.log(`[Web Fetcher] fetch error: ${errObj?.message || 'unknown'}`);
+            }
           }
 
-          if (!pageContent) {
-            try {
-              const directRes = await fetch(pickedItem.url, {
-                headers: { 'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64)' },
-                signal: AbortSignal.timeout(10000),
-              });
-              if (directRes.ok) {
-                const rawHtml = await directRes.text();
-                pageContent = rawHtml
-                  .replace(/<script\b[^<]*(?:(?!<\/script>)<[^<]*)*<\/script>/gi, '')
-                  .replace(/<style\b[^<]*(?:(?!<\/style>)<[^<]*)*<\/style>/gi, '')
-                  .replace(/<[^>]+>/g, ' ')
-                  .replace(/\s+/g, ' ')
-                  .trim()
-                  .slice(0, 4500);
-              }
-            } catch {
-              // ignore
-            }
-          }
+          if (webFetcherCancelledRef.current) return;
 
           if (pageContent) {
             setSpecialistProgress(70);
@@ -2165,16 +2195,41 @@ export function AssistantPage() {
 
             const aiPrompt = `Webpage URL: ${pickedItem.url}\n\nWebpage Content (truncated to 4,500 characters):\n${pageContent}\n\n${userRequestText}\n\nInstructions:\nSummarize what this page is and its most useful information for the user's request. Put the newest items first and include exact dates when available on the page. Never mention the list number.`;
 
-            const aiRes = await api.aiChat(
-              aiPrompt,
-              [],
-              '',
-              undefined,
-              false,
-              { language: currentLanguage, permanentMemories: currentPermanentMemories }
-            );
+            let finalAnswerText = '';
+            console.log('[Web Fetcher] synthesis start');
+            const synthStart = Date.now();
 
-            const finalAnswerText = `Read page: ${pickedItem.url}\n\n${stripTierLabels(aiRes.answer)}`;
+            try {
+              const aiRes = await Promise.race([
+                api.aiChat(
+                  aiPrompt,
+                  [],
+                  '',
+                  undefined,
+                  false,
+                  { language: currentLanguage, permanentMemories: currentPermanentMemories }
+                ),
+                new Promise<never>((_, reject) =>
+                  setTimeout(() => reject(new Error('aiChat timeout')), 40000)
+                ),
+              ]);
+              if (webFetcherCancelledRef.current) return;
+              const synthTime = Date.now() - synthStart;
+              console.log(`[Web Fetcher] synthesis done (${synthTime} ms)`);
+              finalAnswerText = `Read page: ${pickedItem.url}\n\n${stripTierLabels(aiRes.answer)}`;
+            } catch (synthErr: unknown) {
+              if (webFetcherCancelledRef.current) return;
+              const sErr = synthErr as Error;
+              const isTimeout = sErr?.message?.includes('timeout');
+              if (isTimeout) {
+                console.log('[Web Fetcher] timeout: synthesis');
+              } else {
+                console.log(`[Web Fetcher] synthesis error: ${sErr?.message || 'Synthesis failed'}`);
+              }
+              finalAnswerText = `Read page: ${pickedItem.url}\n\n${pageContent.slice(0, 1500)}\n\nThe AI was too slow or failed, so this is the raw page text. Try again or pick another number.`;
+            }
+
+            if (webFetcherCancelledRef.current) return;
 
             const assistantMessage: Message = {
               role: 'assistant',
@@ -2193,6 +2248,7 @@ export function AssistantPage() {
             setSpecialistPhase('');
             return;
           } else {
+            if (webFetcherCancelledRef.current) return;
             const assistantMessage: Message = {
               role: 'assistant',
               content: 'Could not read this page. Try another number.',
@@ -2605,6 +2661,8 @@ export function AssistantPage() {
       );
     } finally {
       setLoading(false);
+      setSpecialistProgress(0);
+      setSpecialistPhase('');
     }
   };
 
@@ -4345,30 +4403,43 @@ export function AssistantPage() {
                       : 'NEXUS AI is thinking...'}
                   </span>
                 </div>
-                {deepResearchEnabled && deepResearchProgress > 0 && (
-                  <span className="text-[11px] font-mono font-semibold text-emerald-400 shrink-0">
-                    {deepResearchProgress}%
-                  </span>
-                )}
-                {(architectEnabled || dataAnalysisEnabled || coderEnabled || webFetcherEnabled || wikimediaEnabled) && specialistProgress > 0 && (
-                  <span
-                    className={`text-[11px] font-mono font-semibold shrink-0 ${
-                      wikimediaEnabled
-                        ? 'text-violet-400'
-                        : coderEnabled
-                        ? 'text-emerald-400'
-                        : webFetcherEnabled
-                        ? 'text-teal-400'
-                        : architectEnabled && dataAnalysisEnabled
-                        ? 'text-amber-400'
-                        : architectEnabled
-                        ? 'text-amber-400'
-                        : 'text-sky-400'
-                    }`}
-                  >
-                    {specialistProgress}%
-                  </span>
-                )}
+                <div className="flex items-center gap-2">
+                  {deepResearchEnabled && deepResearchProgress > 0 && (
+                    <span className="text-[11px] font-mono font-semibold text-emerald-400 shrink-0">
+                      {deepResearchProgress}%
+                    </span>
+                  )}
+                  {(architectEnabled || dataAnalysisEnabled || coderEnabled || webFetcherEnabled || wikimediaEnabled) && specialistProgress > 0 && (
+                    <span
+                      className={`text-[11px] font-mono font-semibold shrink-0 ${
+                        wikimediaEnabled
+                          ? 'text-violet-400'
+                          : coderEnabled
+                          ? 'text-emerald-400'
+                          : webFetcherEnabled
+                          ? 'text-teal-400'
+                          : architectEnabled && dataAnalysisEnabled
+                          ? 'text-amber-400'
+                          : architectEnabled
+                          ? 'text-amber-400'
+                          : 'text-sky-400'
+                      }`}
+                    >
+                      {specialistProgress}%
+                    </span>
+                  )}
+                  {webFetcherEnabled && (
+                    <button
+                      type="button"
+                      onClick={handleStopWebFetcher}
+                      className="px-2 py-0.5 rounded border border-red-500/40 bg-red-950/40 text-red-300 hover:bg-red-900/60 hover:text-white transition-colors flex items-center gap-1 text-[11px] font-medium shrink-0"
+                      title="Stop Web Fetcher"
+                    >
+                      <Square size={9} className="fill-current" />
+                      <span>Stop</span>
+                    </button>
+                  )}
+                </div>
               </div>
 
               {/* Deep Research Progress Bar */}
