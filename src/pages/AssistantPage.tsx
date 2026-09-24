@@ -36,8 +36,8 @@ import {
   BarChart3,
   Code2,
   Sliders,
-  Wand2,
 } from 'lucide-react';
+import { Haptics, ImpactStyle } from '@capacitor/haptics';
 import { Link } from 'react-router-dom';
 import { api } from '@/services/api';
 import { storage } from '@/lib/storage';
@@ -252,6 +252,9 @@ export function AssistantPage() {
   const [webSearchEnabled, setWebSearchEnabled] = useState(loadWebSearchToggle);
   const [imageGenEnabled, setImageGenEnabled] = useState(loadImageGenToggle);
   const [imageEnhanceEnabled, setImageEnhanceEnabled] = useState<boolean>(() => storage.getAssistantImageEnhanceEnabled());
+  const [showImageEnhanceTip, setShowImageEnhanceTip] = useState<boolean>(() => !storage.getAssistantImageEnhanceTipDismissed());
+  const longPressTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const longPressTriggeredRef = useRef<boolean>(false);
   const [deepResearchEnabled, setDeepResearchEnabled] = useState(loadDeepResearchToggle);
   const [deepResearchProgress, setDeepResearchProgress] = useState<number>(0);
   const [deepResearchPhase, setDeepResearchPhase] = useState<string>('');
@@ -669,7 +672,72 @@ export function AssistantPage() {
     );
   };
 
-  const toggleImageGen = () => {
+  const dismissEnhanceTip = () => {
+    if (showImageEnhanceTip) {
+      setShowImageEnhanceTip(false);
+      storage.setAssistantImageEnhanceTipDismissed(true);
+    }
+  };
+
+  const handleImagePointerDown = () => {
+    if (deepResearchEnabled) return;
+    longPressTriggeredRef.current = false;
+    if (longPressTimerRef.current) {
+      clearTimeout(longPressTimerRef.current);
+    }
+
+    longPressTimerRef.current = setTimeout(() => {
+      longPressTriggeredRef.current = true;
+      dismissEnhanceTip();
+
+      try {
+        Haptics.impact({ style: ImpactStyle.Light });
+      } catch {
+        if (typeof navigator !== 'undefined' && navigator.vibrate) {
+          navigator.vibrate(40);
+        }
+      }
+
+      setImageEnhanceEnabled((prevEnhance) => {
+        const nextEnhance = !prevEnhance;
+        storage.setAssistantImageEnhanceEnabled(nextEnhance);
+        triggerSettingsToast(`AI Prompt Enhancement ${nextEnhance ? 'enabled' : 'disabled'}`);
+        return nextEnhance;
+      });
+
+      setImageGenEnabled((prevGen) => {
+        if (!prevGen) {
+          try {
+            localStorage.setItem(IMAGE_GEN_PREF_KEY, 'true');
+          } catch {
+            // Ignore
+          }
+          return true;
+        }
+        return prevGen;
+      });
+    }, 500);
+  };
+
+  const cancelImagePointer = () => {
+    if (longPressTimerRef.current) {
+      clearTimeout(longPressTimerRef.current);
+      longPressTimerRef.current = null;
+    }
+  };
+
+  const handleImageClick = (e: React.MouseEvent) => {
+    if (deepResearchEnabled) return;
+
+    if (longPressTriggeredRef.current) {
+      longPressTriggeredRef.current = false;
+      e.preventDefault();
+      e.stopPropagation();
+      return;
+    }
+
+    dismissEnhanceTip();
+
     setImageGenEnabled((prev) => {
       const next = !prev;
       try {
@@ -677,15 +745,10 @@ export function AssistantPage() {
       } catch {
         // Ignore storage errors
       }
-      return next;
-    });
-  };
-
-  const toggleImageEnhance = () => {
-    setImageEnhanceEnabled((prev) => {
-      const next = !prev;
-      storage.setAssistantImageEnhanceEnabled(next);
-      triggerSettingsToast(`AI Prompt Enhancement ${next ? 'enabled' : 'disabled'}`);
+      if (!next) {
+        setImageEnhanceEnabled(false);
+        storage.setAssistantImageEnhanceEnabled(false);
+      }
       return next;
     });
   };
@@ -4231,9 +4294,30 @@ export function AssistantPage() {
               </div>
             </div>
 
+            {/* One-time Hint Banner for AI Image Enhance */}
+            {showImageEnhanceTip && (
+              <div className="flex items-center justify-between gap-2 px-2.5 py-1 text-[11px] rounded-xl bg-purple-950/80 text-purple-200 border border-purple-500/30 mb-1 shadow-sm animate-in fade-in slide-in-from-bottom-1">
+                <div className="flex items-center gap-1.5 truncate">
+                  <Sparkles size={12} className="text-amber-400 shrink-0 animate-pulse" />
+                  <span className="truncate">Tip: hold the Image button to enhance your prompt with AI</span>
+                </div>
+                <button
+                  type="button"
+                  onClick={() => {
+                    setShowImageEnhanceTip(false);
+                    storage.setAssistantImageEnhanceTipDismissed(true);
+                  }}
+                  className="text-purple-300/70 hover:text-purple-100 p-0.5 rounded shrink-0 transition-colors"
+                  title="Dismiss tip"
+                >
+                  <X size={12} />
+                </button>
+              </div>
+            )}
+
             {/* Bottom Controls inside input box */}
             <div
-              className={`flex items-center justify-between pt-1 border-t ${
+              className={`flex items-center justify-between pt-1 border-t gap-1.5 min-w-0 ${
                 theme === 'classic'
                   ? 'border-cyan-500/20'
                   : theme === 'fulldark'
@@ -4242,12 +4326,12 @@ export function AssistantPage() {
               }`}
             >
               {/* Deep Research Toggle, Web Search Toggle, Image Toggle & Language tag */}
-              <div className="flex items-center gap-2">
+              <div className="flex items-center gap-1 sm:gap-2 overflow-x-auto no-scrollbar min-w-0 flex-1 py-0.5">
                 {/* Deep Research Toggle */}
                 <button
                   type="button"
                   onClick={toggleDeepResearch}
-                  className={`text-xs px-2.5 py-1.5 rounded-lg border transition-all flex items-center gap-1.5 ${
+                  className={`text-[11px] sm:text-xs px-2 sm:px-2.5 py-1 sm:py-1.5 rounded-lg border transition-all flex items-center gap-1 sm:gap-1.5 shrink-0 ${
                     deepResearchEnabled
                       ? 'bg-emerald-500/15 text-emerald-300 border-emerald-500/40 font-medium shadow-[0_0_10px_rgba(16,185,129,0.15)]'
                       : theme === 'classic'
@@ -4263,7 +4347,7 @@ export function AssistantPage() {
                   }
                 >
                   <FlaskConical
-                    size={13}
+                    size={12}
                     className={deepResearchEnabled ? 'text-emerald-400' : 'text-zinc-400'}
                   />
                   <span>Deep Research</span>
@@ -4277,7 +4361,7 @@ export function AssistantPage() {
                   type="button"
                   onClick={toggleWebSearch}
                   disabled={deepResearchEnabled || architectEnabled || dataAnalysisEnabled}
-                  className={`text-xs px-2.5 py-1.5 rounded-lg border transition-all flex items-center gap-1.5 ${
+                  className={`text-[11px] sm:text-xs px-2 sm:px-2.5 py-1 sm:py-1.5 rounded-lg border transition-all flex items-center gap-1 sm:gap-1.5 shrink-0 ${
                     deepResearchEnabled || architectEnabled || dataAnalysisEnabled
                       ? 'opacity-35 cursor-not-allowed border-transparent text-zinc-500 pointer-events-none'
                       : webSearchEnabled
@@ -4301,7 +4385,7 @@ export function AssistantPage() {
                   }
                 >
                   <Globe
-                    size={13}
+                    size={12}
                     className={
                       !deepResearchEnabled && !architectEnabled && !dataAnalysisEnabled && webSearchEnabled
                         ? 'text-cyan-400'
@@ -4314,12 +4398,18 @@ export function AssistantPage() {
                   )}
                 </button>
 
-                {/* Image Generation Toggle */}
+                {/* Image Generation Toggle (Tap to toggle / Hold to AI Enhance) */}
                 <button
                   type="button"
-                  onClick={toggleImageGen}
+                  onClick={handleImageClick}
+                  onPointerDown={handleImagePointerDown}
+                  onPointerUp={cancelImagePointer}
+                  onPointerLeave={cancelImagePointer}
+                  onPointerCancel={cancelImagePointer}
+                  onContextMenu={(e) => e.preventDefault()}
                   disabled={deepResearchEnabled}
-                  className={`text-xs px-2.5 py-1.5 rounded-lg border transition-all flex items-center gap-1.5 ${
+                  style={{ WebkitTouchCallout: 'none', userSelect: 'none' }}
+                  className={`text-[11px] sm:text-xs px-2 sm:px-2.5 py-1 sm:py-1.5 rounded-lg border transition-all flex items-center gap-1 sm:gap-1.5 shrink-0 select-none ${
                     deepResearchEnabled
                       ? 'opacity-35 cursor-not-allowed border-transparent text-zinc-500 pointer-events-none'
                       : imageGenEnabled
@@ -4330,60 +4420,32 @@ export function AssistantPage() {
                       ? 'text-[#a1a1aa] border-transparent hover:text-[#ececec] hover:bg-[#2a2a2a]'
                       : 'text-zinc-400 border-transparent hover:text-zinc-300 hover:bg-zinc-800/60'
                   }`}
-                  title={
-                    deepResearchEnabled
-                      ? 'Disabled while Deep Research is ON'
-                      : imageGenEnabled
-                      ? 'Image Generation is ON: messages are synthesized into images using Image Studio providers'
-                      : 'Image Generation is OFF: standard conversational chat'
-                  }
+                  title="Tap: use my exact prompt. Hold: Smart AI Enhance."
                 >
                   <ImageIcon
-                    size={13}
+                    size={12}
                     className={!deepResearchEnabled && imageGenEnabled ? 'text-purple-400' : 'text-zinc-400'}
                   />
                   <span>Image</span>
+                  {!deepResearchEnabled && imageGenEnabled && imageEnhanceEnabled && (
+                    <Sparkles size={11} className="text-amber-400 animate-pulse shrink-0" />
+                  )}
                   {!deepResearchEnabled && imageGenEnabled && (
-                    <span className="w-1.5 h-1.5 rounded-full bg-purple-400 shadow-[0_0_6px_rgba(192,132,252,0.8)]" />
+                    <span
+                      className={`w-1.5 h-1.5 rounded-full ${
+                        imageEnhanceEnabled
+                          ? 'bg-amber-400 shadow-[0_0_6px_rgba(251,191,36,0.8)]'
+                          : 'bg-purple-400 shadow-[0_0_6px_rgba(192,132,252,0.8)]'
+                      }`}
+                    />
                   )}
                 </button>
-
-                {/* AI Prompt Enhancement Sub-toggle for Image Mode */}
-                {imageGenEnabled && !deepResearchEnabled && (
-                  <button
-                    type="button"
-                    onClick={toggleImageEnhance}
-                    className={`text-xs px-2 py-1.5 rounded-lg border transition-all flex items-center gap-1 animate-in fade-in zoom-in-95 duration-200 ${
-                      imageEnhanceEnabled
-                        ? 'bg-amber-500/20 text-amber-300 border-amber-500/40 font-medium shadow-[0_0_10px_rgba(245,158,11,0.2)]'
-                        : theme === 'classic'
-                        ? 'text-zinc-400 border-cyan-900/30 hover:text-cyan-300 hover:bg-cyan-950/30'
-                        : theme === 'fulldark'
-                        ? 'text-zinc-400 border-[#2a2a2a] hover:text-zinc-200 hover:bg-[#2a2a2a]'
-                        : 'text-zinc-400 border-zinc-800 hover:text-zinc-200 hover:bg-zinc-800/60'
-                    }`}
-                    title={
-                      imageEnhanceEnabled
-                        ? 'AI Prompt Enhancement is ON: Automatically improves image prompts with artistic details'
-                        : 'AI Prompt Enhancement is OFF: Uses prompt as-is'
-                    }
-                  >
-                    <Wand2
-                      size={12}
-                      className={imageEnhanceEnabled ? 'text-amber-400 animate-pulse' : 'text-zinc-400'}
-                    />
-                    <span>Enhance</span>
-                    {imageEnhanceEnabled && (
-                      <span className="w-1.5 h-1.5 rounded-full bg-amber-400 shadow-[0_0_6px_rgba(251,191,36,0.8)]" />
-                    )}
-                  </button>
-                )}
 
                 {responseLanguage && (
                   <button
                     type="button"
                     onClick={() => setSettingsOpen(true)}
-                    className="text-[11px] px-2 py-1 rounded-md bg-zinc-800/80 text-zinc-300 border border-zinc-700/60 hover:border-zinc-600 transition-colors flex items-center gap-1"
+                    className="text-[10px] sm:text-[11px] px-1.5 sm:px-2 py-0.5 sm:py-1 rounded-md bg-zinc-800/80 text-zinc-300 border border-zinc-700/60 hover:border-zinc-600 transition-colors flex items-center gap-1 shrink-0"
                     title={`Response language set to ${responseLanguage}. Click to change in Settings.`}
                   >
                     <Languages size={11} className="text-cyan-400" />
