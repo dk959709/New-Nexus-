@@ -5,6 +5,73 @@ import { getBackendApiKey, getBackendApiKeyDetail } from '../apiCatalog.js';
 
 export const WIKIPEDIA_USER_AGENT = 'NEXUS-Intelligence/1.0 (https://nexus.app; contact: dk959709@gmail.com)';
 
+export function validateCustomSearchUrl(rawUrl: string): { valid: boolean; error?: string; parsedUrl?: URL } {
+  if (!rawUrl || typeof rawUrl !== 'string') {
+    return { valid: false, error: 'Invalid URL (must start with https://)' };
+  }
+  const trimmed = rawUrl.trim();
+  if (!trimmed.toLowerCase().startsWith('https://')) {
+    return { valid: false, error: 'Invalid URL (must start with https://)' };
+  }
+
+  let parsed: URL;
+  try {
+    parsed = new URL(trimmed);
+  } catch {
+    return { valid: false, error: 'Invalid URL (must start with https://)' };
+  }
+
+  if (parsed.protocol !== 'https:') {
+    return { valid: false, error: 'Invalid URL (must start with https://)' };
+  }
+
+  const hostname = parsed.hostname.toLowerCase();
+
+  // Block localhost, 127.0.0.1, 0.0.0.0, and internal hostnames
+  if (
+    hostname === 'localhost' ||
+    hostname === '127.0.0.1' ||
+    hostname === '0.0.0.0' ||
+    hostname === '::1' ||
+    hostname.endsWith('.local') ||
+    hostname.endsWith('.internal') ||
+    hostname.endsWith('.lan')
+  ) {
+    return { valid: false, error: 'URL not allowed' };
+  }
+
+  // Block IPv4 private ranges (10.x.x.x, 172.16-31.x.x, 192.168.x.x, 169.254.x.x, 127.x.x.x, 0.x.x.x)
+  const ipv4Regex = /^(\d{1,3})\.(\d{1,3})\.(\d{1,3})\.(\d{1,3})$/;
+  const match = hostname.match(ipv4Regex);
+  if (match) {
+    const p1 = parseInt(match[1], 10);
+    const p2 = parseInt(match[2], 10);
+    if (p1 === 10) return { valid: false, error: 'URL not allowed' };
+    if (p1 === 172 && p2 >= 16 && p2 <= 31) return { valid: false, error: 'URL not allowed' };
+    if (p1 === 192 && p2 === 168) return { valid: false, error: 'URL not allowed' };
+    if (p1 === 169 && p2 === 254) return { valid: false, error: 'URL not allowed' };
+    if (p1 === 127 || p1 === 0) return { valid: false, error: 'URL not allowed' };
+  }
+
+  return { valid: true, parsedUrl: parsed };
+}
+
+const testRateLimitMap = new Map<string, { count: number; resetAt: number }>();
+
+function checkTestRateLimit(ip: string): boolean {
+  const now = Date.now();
+  const entry = testRateLimitMap.get(ip);
+  if (!entry || now > entry.resetAt) {
+    testRateLimitMap.set(ip, { count: 1, resetAt: now + 60000 });
+    return true;
+  }
+  if (entry.count >= 10) {
+    return false;
+  }
+  entry.count++;
+  return true;
+}
+
 export const searchSchema = z.object({
   query: z.string().trim().max(300).default(''),
   page: z.number().int().positive().optional(),
@@ -15,6 +82,8 @@ export const searchSchema = z.object({
   language: z.string().optional(),
   max_results: z.number().int().min(1).max(30).optional(),
   maxResults: z.number().int().min(1).max(30).optional(),
+  customSearchApiKey: z.string().optional(),
+  customSearchApiUrl: z.string().optional(),
 });
 
 export interface SearchResult {
@@ -1135,15 +1204,26 @@ export async function searchProvider(input: z.infer<typeof searchSchema>): Promi
     );
   };
 
-  const key = getBackendApiKey('SEARCH_API_KEY') || getBackendApiKey('TAVILY_API_KEY');
-  const url = process.env.SEARCH_API_URL || (key ? 'https://api.tavily.com/search' : undefined);
+  let key = getBackendApiKey('SEARCH_API_KEY') || getBackendApiKey('TAVILY_API_KEY');
+  let url = process.env.SEARCH_API_URL || (key ? 'https://api.tavily.com/search' : undefined);
+  let isCustom = false;
+
+  if (input.customSearchApiKey && input.customSearchApiUrl) {
+    const val = validateCustomSearchUrl(input.customSearchApiUrl);
+    if (val.valid) {
+      key = input.customSearchApiKey.trim();
+      url = input.customSearchApiUrl.trim();
+      isCustom = true;
+    }
+  }
+
   let primaryResults: SearchResult[] = [];
   let primaryFailed = false;
   const requestedMax = input.max_results ?? input.maxResults ?? 15;
 
   if (key && url) {
     try {
-      const isTavily = url.includes('tavily.com') || Boolean(getBackendApiKey('TAVILY_API_KEY'));
+      const isTavily = !isCustom && (url.includes('tavily.com') || Boolean(getBackendApiKey('TAVILY_API_KEY')));
       const bodyPayload = isTavily
         ? {
             api_key: key,
@@ -1165,9 +1245,18 @@ export async function searchProvider(input: z.infer<typeof searchSchema>): Promi
       const headers: Record<string, string> = {
         'Content-Type': 'application/json',
       };
-      if (!isTavily) {
+      if (isCustom || !isTavily) {
         headers['Authorization'] = `Bearer ${key}`;
         headers['X-API-Key'] = key;
+      }
+
+      if (isCustom) {
+        try {
+          const host = new URL(url).hostname;
+          console.log(`[Search] Custom search request to ${host} (key: set) for query: "${input.query}"`);
+        } catch {
+          // Safe log fallback
+        }
       }
 
       const response = await fetch(url, {
@@ -1178,7 +1267,7 @@ export async function searchProvider(input: z.infer<typeof searchSchema>): Promi
       });
 
       if (!response.ok) {
-        console.warn(`[Search] Tavily/Primary search returned HTTP ${response.status}`);
+        console.warn(`[Search] ${isCustom ? 'Custom API' : 'Tavily/Primary'} search returned HTTP ${response.status}`);
         primaryFailed = true;
       } else {
         const payload = (await response.json()) as {
@@ -1186,7 +1275,7 @@ export async function searchProvider(input: z.infer<typeof searchSchema>): Promi
           organic_results?: Array<Record<string, unknown>>;
           news?: Array<Record<string, unknown>>;
         };
-        const items = payload.results ?? payload.organic_results ?? payload.news ?? [];
+        const items = payload.results ?? payload.organic_results ?? payload.news ?? (Array.isArray(payload) ? (payload as Array<Record<string, unknown>>) : []);
         const type: SearchResult['type'] =
           input.category === 'NEWS'
             ? 'news'
@@ -1213,13 +1302,22 @@ export async function searchProvider(input: z.infer<typeof searchSchema>): Promi
             };
           })
           .filter((item) => item.title && item.url);
+
+        if (isCustom && primaryResults.length === 0) {
+          primaryFailed = true;
+        }
       }
     } catch (err) {
-      console.warn('[Search] Primary search (Tavily/API) error or timeout:', err);
+      console.warn(`[Search] ${isCustom ? 'Custom API' : 'Primary search'} error or timeout:`, err);
       primaryFailed = true;
     }
   } else {
     primaryFailed = true;
+  }
+
+  if (isCustom && !primaryFailed && primaryResults.length > 0) {
+    console.log(`[Search] Source Used: Custom API (${primaryResults.length} results) for query: "${input.query}"`);
+    return { results: primaryResults, searchSource: 'Custom API', fallbackOccurred: false };
   }
 
   const isScientificOrFactualTopic = /\b(nasa|space|mars|moon|galaxy|physics|science|biology|chemistry|einstein|theory|history|edu|research|paper|quantum|black hole|astronomy|telescope)\b/i.test(input.query);
@@ -1227,7 +1325,7 @@ export async function searchProvider(input: z.infer<typeof searchSchema>): Promi
   const lacksTrustedDomainsForTopic = isScientificOrFactualTopic && !hasTrustedDomainMatch && primaryResults.length > 0;
   const needsFallback = primaryFailed || primaryResults.length < 3 || lacksTrustedDomainsForTopic;
 
-  if (!needsFallback && primaryResults.length >= 3) {
+  if (!isCustom && !needsFallback && primaryResults.length >= 3) {
     console.log(`[Search] Source Used: Tavily (${primaryResults.length} results) for query: "${input.query}"`);
     return { results: primaryResults, searchSource: 'Tavily API', fallbackOccurred: false };
   }
@@ -2404,6 +2502,99 @@ export function createSearchRouter(deps: SearchRouterDependencies = {}) {
       });
     } catch (err) {
       return errorResponse(res, 502, (err as Error).message);
+    }
+  });
+
+  // Test connection endpoint for custom search API
+  router.post('/api/assistant/test-search', async (req, res) => {
+    const clientIp = (req.headers['x-forwarded-for'] as string) || req.socket?.remoteAddress || 'unknown';
+    if (!checkTestRateLimit(clientIp)) {
+      return res.json({ ok: false, error: 'Server returned an error (rate limit)' });
+    }
+
+    const { url, key } = req.body || {};
+    if (!url || typeof url !== 'string' || !key || typeof key !== 'string') {
+      return res.json({ ok: false, error: 'Invalid URL (must start with https://)' });
+    }
+
+    const validation = validateCustomSearchUrl(url);
+    if (!validation.valid) {
+      return res.json({ ok: false, error: validation.error || 'Invalid URL (must start with https://)' });
+    }
+
+    const cleanUrl = url.trim();
+    const cleanKey = key.trim();
+    const startTime = Date.now();
+
+    try {
+      const isTavily = cleanUrl.includes('tavily.com');
+      const bodyPayload = isTavily
+        ? {
+            api_key: cleanKey,
+            query: 'test',
+            search_depth: 'basic',
+            max_results: 5,
+            include_answer: false,
+          }
+        : {
+            query: 'test',
+            page: 1,
+            category: 'ALL',
+            max_results: 5,
+          };
+
+      const headers: Record<string, string> = {
+        'Content-Type': 'application/json',
+      };
+      if (!isTavily) {
+        headers['Authorization'] = `Bearer ${cleanKey}`;
+        headers['X-API-Key'] = cleanKey;
+      }
+
+      const response = await fetch(cleanUrl, {
+        method: 'POST',
+        headers,
+        body: JSON.stringify(bodyPayload),
+        signal: AbortSignal.timeout(6000),
+      });
+
+      const duration = Date.now() - startTime;
+
+      if (!response.ok) {
+        if (response.status === 401 || response.status === 403) {
+          return res.json({ ok: false, error: 'Wrong key (401/403)' });
+        }
+        if (response.status === 404) {
+          return res.json({ ok: false, error: 'Not found (404)' });
+        }
+        return res.json({ ok: false, error: `Server returned an error (${response.status})` });
+      }
+
+      const payload = (await response.json()) as {
+        results?: Array<Record<string, unknown>>;
+        organic_results?: Array<Record<string, unknown>>;
+        news?: Array<Record<string, unknown>>;
+      };
+      const items = payload.results ?? payload.organic_results ?? payload.news ?? (Array.isArray(payload) ? (payload as Array<Record<string, unknown>>) : []);
+
+      const validItems = items.filter((item) => item && typeof item === 'object' && (item.title || item.url || item.link));
+
+      if (validItems.length === 0) {
+        return res.json({ ok: false, error: 'No results returned' });
+      }
+
+      return res.json({
+        ok: true,
+        count: validItems.length,
+        timeMs: duration,
+      });
+    } catch (err: unknown) {
+      if (err instanceof Error) {
+        if (err.name === 'AbortError' || err.message.includes('timeout')) {
+          return res.json({ ok: false, error: 'Timed out' });
+        }
+      }
+      return res.json({ ok: false, error: 'Server returned an error' });
     }
   });
 

@@ -36,6 +36,11 @@ import {
   BarChart3,
   Code2,
   Sliders,
+  Plug,
+  Eye,
+  EyeOff,
+  AlertCircle,
+  Key,
 } from 'lucide-react';
 import { Haptics, ImpactStyle } from '@capacitor/haptics';
 import { Link } from 'react-router-dom';
@@ -81,6 +86,8 @@ type Message = {
   sources?: AISource[];
   weather?: unknown;
   searchedWeb?: boolean;
+  searchSource?: string;
+  searchNotice?: string;
   image?: AssistantGeneratedImage;
   multiChatResponses?: MultiChatPersonaResponse[];
   diagramSvg?: string;
@@ -345,6 +352,78 @@ export function AssistantPage() {
   const [personaAudioLoadingKey, setPersonaAudioLoadingKey] = useState<string | null>(null);
   const [moreOptionsOpen, setMoreOptionsOpen] = useState(false);
   const [modesSectionOpen, setModesSectionOpen] = useState(false);
+
+  const [webApiMode, setWebApiMode] = useState<'default' | 'custom'>(() => storage.getAssistantWebApiMode());
+  const [customSearchKey, setCustomSearchKey] = useState<string>(() => storage.getAssistantCustomSearchKey());
+  const [customSearchUrl, setCustomSearchUrl] = useState<string>(() => storage.getAssistantCustomSearchUrl());
+  const [customSearchFolderOpen, setCustomSearchFolderOpen] = useState<boolean>(() => storage.getAssistantWebApiMode() === 'custom');
+  const [showSearchKey, setShowSearchKey] = useState<boolean>(false);
+  const [testSearchLoading, setTestSearchLoading] = useState<boolean>(false);
+  const [testSearchResult, setTestSearchResult] = useState<{ ok: boolean; message: string } | null>(null);
+
+  const handleSelectWebApiMode = (mode: 'default' | 'custom') => {
+    setWebApiMode(mode);
+    storage.setAssistantWebApiMode(mode);
+    if (mode === 'custom') {
+      setCustomSearchFolderOpen(true);
+    } else {
+      setTestSearchResult(null);
+    }
+  };
+
+  const handleCustomSearchKeyChange = (val: string) => {
+    setCustomSearchKey(val);
+    storage.setAssistantCustomSearchKey(val);
+    setTestSearchResult(null);
+  };
+
+  const handleCustomSearchUrlChange = (val: string) => {
+    setCustomSearchUrl(val);
+    storage.setAssistantCustomSearchUrl(val);
+    setTestSearchResult(null);
+  };
+
+  const handleResetSearchToDefault = () => {
+    setWebApiMode('default');
+    storage.setAssistantWebApiMode('default');
+    setCustomSearchKey('');
+    storage.setAssistantCustomSearchKey('');
+    setCustomSearchUrl('');
+    storage.setAssistantCustomSearchUrl('');
+    setTestSearchResult(null);
+  };
+
+  const handleTestSearchConnection = async () => {
+    if (!customSearchKey.trim() || !customSearchUrl.trim() || testSearchLoading) return;
+    setTestSearchLoading(true);
+    setTestSearchResult(null);
+    try {
+      const res = await api.testCustomSearch({
+        url: customSearchUrl.trim(),
+        key: customSearchKey.trim(),
+      });
+      if (res.ok) {
+        const count = res.count ?? 0;
+        const time = res.timeMs ?? 0;
+        setTestSearchResult({
+          ok: true,
+          message: `Works: ${count} ${count === 1 ? 'result' : 'results'} in ${time} ms`,
+        });
+      } else {
+        setTestSearchResult({
+          ok: false,
+          message: res.error || 'Server returned an error',
+        });
+      }
+    } catch {
+      setTestSearchResult({
+        ok: false,
+        message: 'Server returned an error',
+      });
+    } finally {
+      setTestSearchLoading(false);
+    }
+  };
 
   const utteranceRef = useRef<SpeechSynthesisUtterance | null>(null);
   const edgeTtsAudioRef = useRef<HTMLAudioElement | null>(null);
@@ -1993,6 +2072,10 @@ export function AssistantPage() {
       const currentLanguage = storage.getAssistantLanguage();
       const currentPermanentMemories = storage.getPermanentMemories();
 
+      const isCustomSearchActive = webApiMode === 'custom' && Boolean(customSearchKey.trim() && customSearchUrl.trim());
+      const customKeyPayload = isCustomSearchActive ? customSearchKey.trim() : undefined;
+      const customUrlPayload = isCustomSearchActive ? customSearchUrl.trim() : undefined;
+
       const response = await api.aiChat(
         message,
         historyForRequest,
@@ -2002,6 +2085,8 @@ export function AssistantPage() {
         {
           language: currentLanguage,
           permanentMemories: currentPermanentMemories,
+          customSearchApiKey: customKeyPayload,
+          customSearchApiUrl: customUrlPayload,
         },
       );
 
@@ -2017,6 +2102,8 @@ export function AssistantPage() {
         sources: response.sources,
         weather: response.weather,
         searchedWeb: usedWebSearch,
+        searchSource: response.searchSource,
+        searchNotice: response.searchNotice,
       };
 
       setMessages((current) => [...current, assistantMessage]);
@@ -2851,10 +2938,17 @@ export function AssistantPage() {
                               }`}
                             >
                               <Search size={11} className={theme === 'classic' ? 'text-cyan-400' : theme === 'fulldark' ? 'text-neutral-400' : 'text-cyan-400'} />
-                              <span>Searched the web</span>
+                              <span>
+                                {message.searchSource === 'Custom API' ? 'Searched via Custom API' : 'Searched the web'}
+                              </span>
                               {hasSources && (
                                 <span className={theme === 'fulldark' ? 'text-[#888] font-normal' : 'text-zinc-500 font-normal'}>
                                   ({message.sources?.length} {message.sources?.length === 1 ? 'source' : 'sources'})
+                                </span>
+                              )}
+                              {message.searchNotice && (
+                                <span className="text-[10.5px] text-amber-400 font-normal ml-0.5">
+                                  ({message.searchNotice})
                                 </span>
                               )}
                             </span>
@@ -4861,7 +4955,211 @@ export function AssistantPage() {
 
             <div className="h-px bg-zinc-800" />
 
-            {/* Section 4: Modes (Collapsible Folder Grouping Specialist Toggles) */}
+            {/* Section 4: Web API */}
+            <div className="space-y-3">
+              <div className="flex items-center justify-between">
+                <div className="flex items-center gap-2">
+                  <Globe size={15} className="text-cyan-400" />
+                  <h4 className="text-xs font-semibold uppercase tracking-wider text-zinc-300">
+                    Web API
+                  </h4>
+                </div>
+                {webApiMode === 'default' ? (
+                  <span className="text-[11px] px-2 py-0.5 rounded-full bg-emerald-950/80 text-emerald-300 border border-emerald-500/40 flex items-center gap-1 font-medium">
+                    <Check size={11} /> Default
+                  </span>
+                ) : (
+                  <span className="text-[11px] px-2 py-0.5 rounded-full bg-purple-950/80 text-purple-300 border border-purple-500/40 flex items-center gap-1 font-medium">
+                    <Plug size={11} /> Custom API
+                  </span>
+                )}
+              </div>
+
+              <p className="text-xs text-zinc-400">
+                Choose search provider for AI Assistant web search.
+              </p>
+
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                {/* Option 1: Default Card */}
+                <button
+                  type="button"
+                  onClick={() => handleSelectWebApiMode('default')}
+                  className={`p-3.5 rounded-2xl border text-left transition-all flex flex-col justify-between cursor-pointer ${
+                    webApiMode === 'default'
+                      ? 'border-cyan-500/60 bg-cyan-950/30 text-white shadow-[0_0_15px_rgba(6,182,212,0.15)]'
+                      : 'border-zinc-800 bg-zinc-900/50 hover:bg-zinc-800/50 text-zinc-300'
+                  }`}
+                >
+                  <div>
+                    <div className="flex items-center justify-between mb-1">
+                      <div className="flex items-center gap-2">
+                        <Globe size={15} className={webApiMode === 'default' ? 'text-cyan-400' : 'text-zinc-400'} />
+                        <span className="text-xs font-semibold text-zinc-100">Default</span>
+                      </div>
+                      {webApiMode === 'default' && (
+                        <span className="text-[10px] px-2 py-0.5 rounded-full bg-emerald-950/80 text-emerald-400 border border-emerald-500/40 font-medium flex items-center gap-0.5">
+                          <Check size={10} /> Active
+                        </span>
+                      )}
+                    </div>
+                    <p className="text-[11px] text-zinc-400 leading-relaxed">
+                      Uses the search API already configured on the server.
+                    </p>
+                  </div>
+                </button>
+
+                {/* Option 2: Custom Collapsible Sub-folder Card */}
+                <div
+                  className={`rounded-2xl border transition-all overflow-hidden ${
+                    webApiMode === 'custom'
+                      ? 'border-purple-500/60 bg-purple-950/20 shadow-[0_0_15px_rgba(168,85,247,0.15)]'
+                      : 'border-zinc-800 bg-zinc-900/50'
+                  }`}
+                >
+                  {/* Collapsible Sub-folder Header */}
+                  <div
+                    onClick={() => {
+                      handleSelectWebApiMode('custom');
+                      setCustomSearchFolderOpen((prev) => !prev);
+                    }}
+                    className="p-3.5 flex items-center justify-between cursor-pointer hover:bg-zinc-800/40 transition-colors"
+                  >
+                    <div className="flex items-center gap-2 min-w-0">
+                      <Plug size={15} className={webApiMode === 'custom' ? 'text-purple-400' : 'text-zinc-400'} />
+                      <span className="text-xs font-semibold text-zinc-100">Custom</span>
+                      {webApiMode === 'custom' && (
+                        <span className="text-[10px] px-2 py-0.5 rounded-full bg-emerald-950/80 text-emerald-400 border border-emerald-500/40 font-medium flex items-center gap-0.5 ml-1">
+                          <Check size={10} /> Active
+                        </span>
+                      )}
+                    </div>
+                    <div className="flex items-center gap-1 text-zinc-400">
+                      <ChevronDown
+                        size={15}
+                        className={`transition-transform duration-200 ${
+                          customSearchFolderOpen ? 'rotate-180 text-zinc-200' : ''
+                        }`}
+                      />
+                    </div>
+                  </div>
+
+                  {/* Collapsible Content */}
+                  {customSearchFolderOpen && (
+                    <div className="p-3.5 pt-0 space-y-3 border-t border-zinc-800/60 mt-1">
+                      {/* Warning if fields are empty while Custom is selected */}
+                      {webApiMode === 'custom' && (!customSearchKey.trim() || !customSearchUrl.trim()) && (
+                        <div className="p-2.5 rounded-xl border border-amber-500/30 bg-amber-950/40 text-amber-300 text-xs flex items-center gap-2">
+                          <AlertCircle size={14} className="shrink-0 text-amber-400" />
+                          <span>Fill both fields, or the Default search will be used</span>
+                        </div>
+                      )}
+
+                      {/* Field a: Search API Key */}
+                      <div className="space-y-1">
+                        <label className="text-[11px] font-medium text-zinc-300 flex items-center gap-1.5">
+                          <Key size={12} className="text-purple-400" />
+                          <span>Search API Key</span>
+                        </label>
+                        <div className="relative">
+                          <input
+                            type={showSearchKey ? 'text' : 'password'}
+                            value={customSearchKey}
+                            onChange={(e) => handleCustomSearchKeyChange(e.target.value)}
+                            placeholder="Enter custom API key..."
+                            className="w-full rounded-xl border border-zinc-700 bg-zinc-900/90 pl-3 pr-9 py-2 text-xs text-zinc-100 placeholder-zinc-500 outline-none focus:border-purple-500"
+                          />
+                          <button
+                            type="button"
+                            onClick={() => setShowSearchKey((prev) => !prev)}
+                            className="absolute right-2.5 top-1/2 -translate-y-1/2 text-zinc-400 hover:text-zinc-200 p-0.5"
+                            title={showSearchKey ? 'Hide key' : 'Show key'}
+                          >
+                            {showSearchKey ? <EyeOff size={13} /> : <Eye size={13} />}
+                          </button>
+                        </div>
+                      </div>
+
+                      {/* Field b: Search API URL */}
+                      <div className="space-y-1">
+                        <label className="text-[11px] font-medium text-zinc-300 flex items-center gap-1.5">
+                          <Globe size={12} className="text-purple-400" />
+                          <span>Search API URL</span>
+                        </label>
+                        <input
+                          type="text"
+                          value={customSearchUrl}
+                          onChange={(e) => handleCustomSearchUrlChange(e.target.value)}
+                          placeholder="https://api.example.com/search"
+                          className="w-full rounded-xl border border-zinc-700 bg-zinc-900/90 px-3 py-2 text-xs text-zinc-100 placeholder-zinc-500 outline-none focus:border-purple-500"
+                        />
+                      </div>
+
+                      {/* Action buttons */}
+                      <div className="flex flex-wrap items-center gap-2 pt-1">
+                        <button
+                          type="button"
+                          onClick={handleTestSearchConnection}
+                          disabled={!customSearchKey.trim() || !customSearchUrl.trim() || testSearchLoading}
+                          className={`text-xs px-3 py-1.5 rounded-xl font-medium border flex items-center gap-1.5 transition-all ${
+                            !customSearchKey.trim() || !customSearchUrl.trim() || testSearchLoading
+                              ? 'border-zinc-800 bg-zinc-900/40 text-zinc-600 cursor-not-allowed opacity-60'
+                              : 'border-purple-500/50 bg-purple-950/70 text-purple-300 hover:bg-purple-900/70 hover:text-white cursor-pointer'
+                          }`}
+                        >
+                          {testSearchLoading ? (
+                            <>
+                              <Loader2 size={12} className="animate-spin text-purple-400" />
+                              <span>Testing...</span>
+                            </>
+                          ) : (
+                            <>
+                              <Plug size={12} />
+                              <span>Test connection</span>
+                            </>
+                          )}
+                        </button>
+
+                        <button
+                          type="button"
+                          onClick={handleResetSearchToDefault}
+                          className="text-xs px-2.5 py-1.5 rounded-xl border border-zinc-700 bg-zinc-800/80 text-zinc-300 hover:bg-zinc-700 hover:text-white transition-all flex items-center gap-1"
+                        >
+                          <RotateCcw size={11} />
+                          <span>Reset to Default</span>
+                        </button>
+                      </div>
+
+                      {/* Test connection result display */}
+                      {testSearchResult && (
+                        <div
+                          className={`p-2.5 rounded-xl border text-xs flex items-center gap-2 ${
+                            testSearchResult.ok
+                              ? 'border-emerald-500/40 bg-emerald-950/60 text-emerald-300'
+                              : 'border-red-500/40 bg-red-950/60 text-red-300'
+                          }`}
+                        >
+                          {testSearchResult.ok ? (
+                            <Check size={14} className="shrink-0 text-emerald-400" />
+                          ) : (
+                            <AlertCircle size={14} className="shrink-0 text-red-400" />
+                          )}
+                          <span>{testSearchResult.message}</span>
+                        </div>
+                      )}
+
+                      {/* Help line */}
+                      <p className="text-[11px] text-zinc-500 leading-relaxed">
+                        Used for AI Assistant web search. Your key is saved only on this device.
+                      </p>
+                    </div>
+                  )}
+                </div>
+              </div>
+            </div>
+
+            <div className="h-px bg-zinc-800" />
+
+            {/* Section 5: Modes (Collapsible Folder Grouping Specialist Toggles) */}
             <div className="space-y-3">
               <div className="rounded-2xl border border-zinc-800 bg-zinc-900/50 overflow-hidden transition-all shadow-sm">
                 {/* Collapsible Header */}

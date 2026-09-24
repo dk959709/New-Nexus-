@@ -2936,6 +2936,8 @@ async function processAiChatInternal(
   webSearch?: boolean,
   language?: string,
   permanentMemories: string[] = [],
+  customSearchApiKey?: string,
+  customSearchApiUrl?: string,
 ) {
   const trimmed = message.trim();
   const activeModel = providerConfig?.model || process.env.AI_MODEL || 'deepseek/deepseek-chat';
@@ -2943,6 +2945,8 @@ async function processAiChatInternal(
   // Check if query is factual or web search is forced
   let sourceContext = '';
   let structuredSources: SmartAnswerSource[] = [];
+  let activeSearchSource = '';
+  let activeFallbackNotice = '';
 
   const lower = trimmed.toLowerCase();
   const isForcedWebSearch = Boolean(webSearch);
@@ -2996,8 +3000,22 @@ async function processAiChatInternal(
     try {
       const searchPromises: Promise<void>[] = [];
       searchPromises.push(
-        searchProvider({ query: effectiveSearchQuery, page: 1, category: 'ALL', max_results: 10, maxResults: 10 })
+        searchProvider({
+          query: effectiveSearchQuery,
+          page: 1,
+          category: 'ALL',
+          max_results: 10,
+          maxResults: 10,
+          customSearchApiKey,
+          customSearchApiUrl,
+        })
           .then((webRes) => {
+            if (webRes?.searchSource) {
+              activeSearchSource = webRes.searchSource;
+            }
+            if (webRes?.fallbackReason && webRes.fallbackReason.includes('Custom search API failed')) {
+              activeFallbackNotice = 'Custom search API failed, used fallback';
+            }
             const webItems = webRes?.results ?? [];
             for (const item of webItems.slice(0, 10)) {
               if (!structuredSources.some((s) => s.url === item.url)) {
@@ -3272,6 +3290,8 @@ async function processAiChatInternal(
       sources: structuredSources.length ? structuredSources : undefined,
       followUps: generateSmartFollowUps(trimmed, ['ALL'], structuredSources),
       selectedCategories: ['ALL'] as SourceCategory[],
+      searchSource: activeSearchSource || undefined,
+      searchNotice: activeFallbackNotice || undefined,
     };
   }
 
@@ -3377,6 +3397,8 @@ const aiChatSchema = z.object({
   language: z.string().max(100).optional(),
   responseLanguage: z.string().max(100).optional(),
   permanentMemories: z.array(z.string().max(500)).max(50).optional(),
+  customSearchApiKey: z.string().optional(),
+  customSearchApiUrl: z.string().optional(),
 });
 
 
@@ -3694,6 +3716,8 @@ async function startServer() {
         parsed.data.webSearch,
         parsed.data.language || parsed.data.responseLanguage,
         parsed.data.permanentMemories ?? [],
+        parsed.data.customSearchApiKey,
+        parsed.data.customSearchApiUrl,
       );
       return res.json({ data: result });
     } catch (err: unknown) {

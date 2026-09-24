@@ -319,6 +319,8 @@ export const api = {
     options?: {
       language?: string;
       permanentMemories?: string[];
+      customSearchApiKey?: string;
+      customSearchApiUrl?: string;
     },
   ): Promise<{
     answer: string;
@@ -326,6 +328,8 @@ export const api = {
     tool?: 'none' | 'search' | 'weather';
     sources?: AISource[];
     weather?: unknown;
+    searchSource?: string;
+    searchNotice?: string;
   }> {
     const rawProvider = customProvider !== undefined ? customProvider : storage.getActiveAIProvider();
     let providerToSend = rawProvider;
@@ -353,6 +357,8 @@ export const api = {
       tool?: 'none' | 'search' | 'weather';
       sources?: AISource[];
       weather?: unknown;
+      searchSource?: string;
+      searchNotice?: string;
     }>('/api/ai/chat', {
       method: 'POST',
       body: JSON.stringify({
@@ -363,8 +369,23 @@ export const api = {
         webSearch: Boolean(webSearch),
         language: options?.language,
         permanentMemories: options?.permanentMemories,
+        customSearchApiKey: options?.customSearchApiKey,
+        customSearchApiUrl: options?.customSearchApiUrl,
       }),
     });
+  },
+
+  testCustomSearch(payload: {
+    url: string;
+    key: string;
+  }): Promise<{ ok: boolean; count?: number; timeMs?: number; error?: string }> {
+    return call<{ ok: boolean; count?: number; timeMs?: number; error?: string }>(
+      '/api/assistant/test-search',
+      {
+        method: 'POST',
+        body: JSON.stringify(payload),
+      },
+    );
   },
 
   testAIProviderConnection(payload: {

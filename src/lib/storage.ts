@@ -1965,6 +1965,31 @@ export const storage = {
     write('nexus-ai-image-enhance-tip-seen', dismissed);
   },
 
+  getAssistantWebApiMode(): 'default' | 'custom' {
+    const val = read<string>('nexus-ai-assistant-web-api-mode', 'default');
+    return val === 'custom' ? 'custom' : 'default';
+  },
+
+  setAssistantWebApiMode(mode: 'default' | 'custom'): void {
+    write('nexus-ai-assistant-web-api-mode', mode);
+  },
+
+  getAssistantCustomSearchKey(): string {
+    return read<string>('nexus-ai-assistant-custom-search-key', '');
+  },
+
+  setAssistantCustomSearchKey(key: string): void {
+    write('nexus-ai-assistant-custom-search-key', key);
+  },
+
+  getAssistantCustomSearchUrl(): string {
+    return read<string>('nexus-ai-assistant-custom-search-url', '');
+  },
+
+  setAssistantCustomSearchUrl(url: string): void {
+    write('nexus-ai-assistant-custom-search-url', url);
+  },
+
   getMultiChatResponseLanguage(): string {
     const cfg = this.getMultiChatConfig();
     return cfg.responseLanguage || 'English';
