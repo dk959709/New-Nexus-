@@ -955,118 +955,7 @@ export function AssistantPage() {
     }
   }, []);
 
-  const handleToggleSaveMessage = useCallback(
-    (message: AssistantChatMessage, index: number) => {
-      playTapSound();
-      const stableId = message.id || `assistant-msg-${index}`;
-      const isCurrentlySaved = storage.isSaved(stableId) || savedItemIds.has(stableId);
 
-      if (isCurrentlySaved) {
-        storage.removeSaved(stableId);
-        setSavedItemIds((prev) => {
-          const next = new Set(prev);
-          next.delete(stableId);
-          return next;
-        });
-        triggerSettingsToast('Removed from Saved Library');
-      } else {
-        const prevUserMsg = index > 0 && messages[index - 1]?.role === 'user' ? messages[index - 1].content : '';
-        const title =
-          prevUserMsg.trim() ||
-          (message.diagramSvg
-            ? 'Architectural Blueprint'
-            : message.chartData
-            ? 'Data Analysis Chart'
-            : 'AI Assistant Response');
-
-        const itemType: 'diagram' | 'chart' | 'jarvis' = message.diagramSvg
-          ? 'diagram'
-          : message.chartData
-          ? 'chart'
-          : 'jarvis';
-
-        const itemToSave: SavedItem = {
-          id: stableId,
-          type: itemType,
-          title: title.slice(0, 120),
-          query: prevUserMsg.trim() || title,
-          subtitle: stripTierLabels(message.content).slice(0, 200).trim() || title,
-          content: message.content,
-          diagramSvg: message.diagramSvg,
-          chartData: message.chartData,
-          deepResearch: message.deepResearch,
-          sources: message.sources?.map((s) => ({
-            title: s.title,
-            url: s.url,
-            domain: s.domain,
-          })),
-          images: message.wikimediaItems && message.wikimediaItems.length > 0
-            ? message.wikimediaItems.map((w) => ({
-                url: w.mediaUrl || w.thumbnailUrl,
-                thumbUrl: w.thumbnailUrl || w.mediaUrl,
-                title: w.title,
-                description: w.description || w.author || '',
-                source: 'Wikimedia Commons',
-                domain: 'commons.wikimedia.org',
-              }))
-            : message.image
-            ? [
-                {
-                  url: message.image.url || message.image.imageData || '',
-                  thumbUrl: message.image.url || message.image.imageData || '',
-                  title: message.image.prompt || 'Generated Image',
-                  description: message.image.prompt || '',
-                  source: message.image.providerName || 'AI Studio',
-                  domain: 'nexus',
-                },
-              ]
-            : undefined,
-          savedAt: new Date().toISOString(),
-        };
-
-        storage.saveItem(itemToSave);
-        setSavedItemIds((prev) => new Set(prev).add(stableId));
-        triggerSettingsToast('Saved to your Library in Saved Page');
-      }
-    },
-    [messages, savedItemIds],
-  );
-
-  const handleToggleSavePersona = useCallback(
-    (personaText: string, personaName: string, index: number, pIdx: number) => {
-      playTapSound();
-      const stableId = `assistant-persona-${index}-${pIdx}`;
-      const isCurrentlySaved = storage.isSaved(stableId) || savedItemIds.has(stableId);
-
-      if (isCurrentlySaved) {
-        storage.removeSaved(stableId);
-        setSavedItemIds((prev) => {
-          const next = new Set(prev);
-          next.delete(stableId);
-          return next;
-        });
-        triggerSettingsToast(`Removed ${personaName}'s response from Saved Library`);
-      } else {
-        const prevUserMsg = index > 0 && messages[index - 1]?.role === 'user' ? messages[index - 1].content : '';
-        const title = prevUserMsg.trim() || `${personaName}'s Persona Response`;
-
-        const itemToSave: SavedItem = {
-          id: stableId,
-          type: 'jarvis',
-          title: `${title} (${personaName})`,
-          query: prevUserMsg.trim() || title,
-          subtitle: stripTierLabels(personaText).slice(0, 200).trim() || title,
-          content: personaText,
-          savedAt: new Date().toISOString(),
-        };
-
-        storage.saveItem(itemToSave);
-        setSavedItemIds((prev) => new Set(prev).add(stableId));
-        triggerSettingsToast(`Saved ${personaName}'s response to your Library in Saved Page`);
-      }
-    },
-    [messages, savedItemIds],
-  );
 
   const handleDeleteMessage = useCallback(
     (indexToDelete: number) => {
@@ -3279,36 +3168,6 @@ export function AssistantPage() {
                                         )}
                                       </button>
 
-                                      {/* Save to Library Button */}
-                                      <button
-                                        type="button"
-                                        onClick={() => handleToggleSavePersona(cleanPersonaText, resp.name, index, pIdx)}
-                                        className={`p-1.5 rounded-md transition-colors flex items-center gap-1 text-xs ${
-                                          savedItemIds.has(`assistant-persona-${index}-${pIdx}`)
-                                            ? 'text-amber-400 bg-amber-500/15'
-                                            : theme === 'fulldark'
-                                            ? 'hover:text-white hover:bg-[#282828]'
-                                            : 'hover:text-zinc-200 hover:bg-zinc-800'
-                                        }`}
-                                        title={
-                                          savedItemIds.has(`assistant-persona-${index}-${pIdx}`)
-                                            ? 'Saved to Library (Saved Page) — click to remove'
-                                            : `Save ${resp.name}'s response to Library (Stored in Saved Page)`
-                                        }
-                                      >
-                                        <Bookmark
-                                          size={13}
-                                          className={
-                                            savedItemIds.has(`assistant-persona-${index}-${pIdx}`)
-                                              ? 'fill-amber-400 text-amber-400'
-                                              : ''
-                                          }
-                                        />
-                                        {savedItemIds.has(`assistant-persona-${index}-${pIdx}`) && (
-                                          <span className="text-[11px] text-amber-300 font-medium hidden sm:inline">Saved</span>
-                                        )}
-                                      </button>
-
                                       {/* Delete Persona Response */}
                                       <button
                                         type="button"
@@ -3701,36 +3560,6 @@ export function AssistantPage() {
                                 <VolumeX size={13} />
                               ) : (
                                 <Volume2 size={13} />
-                              )}
-                            </button>
-
-                            {/* Universal Save Button */}
-                            <button
-                              type="button"
-                              onClick={() => handleToggleSaveMessage(message, index)}
-                              className={`p-1.5 rounded-md transition-colors flex items-center gap-1 text-xs ${
-                                savedItemIds.has(message.id || `assistant-msg-${index}`)
-                                  ? 'text-amber-400 bg-amber-500/15'
-                                  : theme === 'fulldark'
-                                  ? 'hover:text-white hover:bg-[#282828]'
-                                  : 'hover:text-zinc-200 hover:bg-zinc-800'
-                              }`}
-                              title={
-                                savedItemIds.has(message.id || `assistant-msg-${index}`)
-                                  ? 'Saved to Library (Saved Page) — click to remove'
-                                  : 'Save to Library (Stored in your Saved Page category)'
-                              }
-                            >
-                              <Bookmark
-                                size={13}
-                                className={
-                                  savedItemIds.has(message.id || `assistant-msg-${index}`)
-                                    ? 'fill-amber-400 text-amber-400'
-                                    : ''
-                                }
-                              />
-                              {savedItemIds.has(message.id || `assistant-msg-${index}`) && (
-                                <span className="text-[11px] text-amber-300 font-medium hidden sm:inline">Saved</span>
                               )}
                             </button>
 

@@ -2608,11 +2608,16 @@ export async function runJarvisPipeline(
     const cfg = agentConfigs[agentId as keyof typeof agentConfigs];
     if (cfg) {
       const provInfo = resolveProviderConfig(cfg);
+      const isOnlinePipelineAgent =
+        isCodeOnlineCommand(query) &&
+        (agentId === 'planner' || agentId === 'researcher' || agentId === 'coder');
+      const isCodeSlashAgent =
+        isCodeSlashCommand(query) && (agentId === 'planner' || agentId === 'coder');
       steps.push({
         agentId,
         name: cfg.name,
         icon: cfg.icon,
-        status: cfg.enabled ? 'pending' : 'skipped',
+        status: cfg.enabled || isOnlinePipelineAgent || isCodeSlashAgent ? 'pending' : 'skipped',
         providerName: provInfo.provider?.name || 'Unconfigured',
         model: provInfo.model || cfg.modelId,
       });
@@ -2649,8 +2654,12 @@ export async function runJarvisPipeline(
     if (!cfg) {
       return { ok: false, text: '', error: `Agent ${agentId} not found in configuration`, providerName: '', model: '' };
     }
-    const isCodeCommandInvocation = agentId === 'coder' && isCodeSlashCommand(query);
-    if (!cfg.enabled && !isCodeCommandInvocation) {
+    const isCodeOnline = isCodeOnlineCommand(query);
+    const isCodeCommandInvocation =
+      agentId === 'coder' && (isCodeSlashCommand(query) || isCodeOnline);
+    const isOnlinePipelineAgentInvocation =
+      (agentId === 'planner' || agentId === 'researcher') && isCodeOnline;
+    if (!cfg.enabled && !isCodeCommandInvocation && !isOnlinePipelineAgentInvocation) {
       return { ok: false, text: '', error: 'Agent disabled in configuration', providerName: '', model: '' };
     }
 
@@ -3574,7 +3583,7 @@ Please synthesize the definitive comprehensive answer.`;
     weatherLocation: '',
   };
 
-  if (agentConfigs.planner.enabled) {
+  if (agentConfigs.planner.enabled || isCodeOnlineCommand(query)) {
     const pCfg = agentConfigs.planner;
     const provInfo = resolveProviderConfig(pCfg);
 
@@ -4774,7 +4783,7 @@ CRITICAL RULES:
     !isPureFileAnalysis &&
     !isPureDocRagQuery &&
     !isPromptImageSlash &&
-    agentConfigs.researcher.enabled &&
+    (agentConfigs.researcher.enabled || isCodeOnline) &&
     (isCodeOnline ||
       isSearchOverride ||
       deepResearch ||
