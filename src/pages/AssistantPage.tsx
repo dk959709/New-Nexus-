@@ -35,6 +35,7 @@ import {
   Layers,
   BarChart3,
   Code2,
+  Sliders,
 } from 'lucide-react';
 import { Link } from 'react-router-dom';
 import { api } from '@/services/api';
@@ -286,12 +287,51 @@ export function AssistantPage() {
   const [responseLanguage, setResponseLanguage] = useState<string>(() => storage.getAssistantLanguage());
   const [theme, setTheme] = useState<'minimal' | 'classic' | 'fulldark'>(() => storage.getAssistantTheme());
   const [permanentMemories, setPermanentMemories] = useState<string[]>(() => storage.getPermanentMemories());
-  const [multiChatEnabled, setMultiChatEnabled] = useState<boolean>(() => storage.getAssistantMultiChatEnabled());
-  const [architectEnabled, setArchitectEnabled] = useState<boolean>(() => storage.getAssistantArchitectEnabled());
-  const [dataAnalysisEnabled, setDataAnalysisEnabled] = useState<boolean>(() => storage.getAssistantDataAnalysisEnabled());
-  const [coderEnabled, setCoderEnabled] = useState<boolean>(() => storage.getAssistantCoderEnabled());
-  const [webFetcherEnabled, setWebFetcherEnabled] = useState<boolean>(() => storage.getAssistantWebFetcherEnabled());
-  const [wikimediaEnabled, setWikimediaEnabled] = useState<boolean>(() => storage.getAssistantWikimediaEnabled());
+
+  // Ensure mutual exclusivity on initial load if multiple were saved in localStorage
+  const initialSpecialists = (() => {
+    const raw = {
+      architect: storage.getAssistantArchitectEnabled(),
+      dataAnalysis: storage.getAssistantDataAnalysisEnabled(),
+      multiChat: storage.getAssistantMultiChatEnabled(),
+      coder: storage.getAssistantCoderEnabled(),
+      webFetcher: storage.getAssistantWebFetcherEnabled(),
+      wikimedia: storage.getAssistantWikimediaEnabled(),
+    };
+    let foundActive = false;
+    const clean = { ...raw };
+    const order: Array<keyof typeof raw> = [
+      'architect',
+      'dataAnalysis',
+      'multiChat',
+      'coder',
+      'webFetcher',
+      'wikimedia',
+    ];
+    for (const key of order) {
+      if (clean[key]) {
+        if (foundActive) {
+          clean[key] = false;
+          if (key === 'architect') storage.setAssistantArchitectEnabled(false);
+          else if (key === 'dataAnalysis') storage.setAssistantDataAnalysisEnabled(false);
+          else if (key === 'multiChat') storage.setAssistantMultiChatEnabled(false);
+          else if (key === 'coder') storage.setAssistantCoderEnabled(false);
+          else if (key === 'webFetcher') storage.setAssistantWebFetcherEnabled(false);
+          else if (key === 'wikimedia') storage.setAssistantWikimediaEnabled(false);
+        } else {
+          foundActive = true;
+        }
+      }
+    }
+    return clean;
+  })();
+
+  const [multiChatEnabled, setMultiChatEnabled] = useState<boolean>(initialSpecialists.multiChat);
+  const [architectEnabled, setArchitectEnabled] = useState<boolean>(initialSpecialists.architect);
+  const [dataAnalysisEnabled, setDataAnalysisEnabled] = useState<boolean>(initialSpecialists.dataAnalysis);
+  const [coderEnabled, setCoderEnabled] = useState<boolean>(initialSpecialists.coder);
+  const [webFetcherEnabled, setWebFetcherEnabled] = useState<boolean>(initialSpecialists.webFetcher);
+  const [wikimediaEnabled, setWikimediaEnabled] = useState<boolean>(initialSpecialists.wikimedia);
   const [newMemoryInput, setNewMemoryInput] = useState('');
   const [editingMemoryIndex, setEditingMemoryIndex] = useState<number | null>(null);
   const [editingMemoryDraft, setEditingMemoryDraft] = useState('');
@@ -299,6 +339,21 @@ export function AssistantPage() {
   const [personaAudioPlayingKey, setPersonaAudioPlayingKey] = useState<string | null>(null);
   const [personaAudioLoadingKey, setPersonaAudioLoadingKey] = useState<string | null>(null);
   const [moreOptionsOpen, setMoreOptionsOpen] = useState(false);
+  const [modesSectionOpen, setModesSectionOpen] = useState(false);
+
+  const activeSpecialistModeName = architectEnabled
+    ? 'Architect'
+    : dataAnalysisEnabled
+    ? 'Data Analysis'
+    : multiChatEnabled
+    ? 'Multi Chat'
+    : coderEnabled
+    ? 'Coder'
+    : webFetcherEnabled
+    ? 'Web Fetcher'
+    : wikimediaEnabled
+    ? 'Wikimedia'
+    : null;
 
   const utteranceRef = useRef<SpeechSynthesisUtterance | null>(null);
   const edgeTtsAudioRef = useRef<HTMLAudioElement | null>(null);
@@ -324,106 +379,136 @@ export function AssistantPage() {
     setTimeout(() => setSettingsSavedToast(null), 3000);
   };
 
+  // Helper to ensure mutual exclusivity among the six Specialist Modes
+  const disableOtherSpecialistModes = (
+    except: 'architect' | 'dataAnalysis' | 'multiChat' | 'coder' | 'webFetcher' | 'wikimedia',
+  ) => {
+    if (except !== 'multiChat') {
+      setMultiChatEnabled(false);
+      storage.setAssistantMultiChatEnabled(false);
+    }
+    if (except !== 'architect') {
+      setArchitectEnabled(false);
+      storage.setAssistantArchitectEnabled(false);
+    }
+    if (except !== 'dataAnalysis') {
+      setDataAnalysisEnabled(false);
+      storage.setAssistantDataAnalysisEnabled(false);
+    }
+    if (except !== 'coder') {
+      setCoderEnabled(false);
+      storage.setAssistantCoderEnabled(false);
+    }
+    if (except !== 'webFetcher') {
+      setWebFetcherEnabled(false);
+      storage.setAssistantWebFetcherEnabled(false);
+    }
+    if (except !== 'wikimedia') {
+      setWikimediaEnabled(false);
+      storage.setAssistantWikimediaEnabled(false);
+    }
+  };
+
   const toggleMultiChat = () => {
-    setMultiChatEnabled((prev) => {
-      const next = !prev;
-      storage.setAssistantMultiChatEnabled(next);
-      triggerSettingsToast(
-        next
-          ? 'Multi Chat enabled: 3-Persona panel will process all messages'
-          : 'Multi Chat disabled: standard single assistant active',
-      );
-      return next;
-    });
+    const next = !multiChatEnabled;
+    if (next) {
+      disableOtherSpecialistModes('multiChat');
+    }
+    setMultiChatEnabled(next);
+    storage.setAssistantMultiChatEnabled(next);
+    triggerSettingsToast(
+      next
+        ? 'Multi Chat enabled: 3-Persona panel will process all messages'
+        : 'Multi Chat disabled: standard single assistant active',
+    );
   };
 
   const toggleArchitect = () => {
-    setArchitectEnabled((prev) => {
-      const next = !prev;
-      storage.setAssistantArchitectEnabled(next);
-      if (next) {
-        setWebSearchEnabled(false);
-        try {
-          localStorage.setItem(WEB_SEARCH_PREF_KEY, 'false');
-        } catch {
-          // Ignore
-        }
+    const next = !architectEnabled;
+    if (next) {
+      disableOtherSpecialistModes('architect');
+      setWebSearchEnabled(false);
+      try {
+        localStorage.setItem(WEB_SEARCH_PREF_KEY, 'false');
+      } catch {
+        // Ignore
       }
-      triggerSettingsToast(
-        next
-          ? 'Architect Mode enabled (automatic web search disabled)'
-          : 'Architect Mode disabled',
-      );
-      return next;
-    });
+    }
+    setArchitectEnabled(next);
+    storage.setAssistantArchitectEnabled(next);
+    triggerSettingsToast(
+      next
+        ? 'Architect Mode enabled (automatic web search disabled)'
+        : 'Architect Mode disabled',
+    );
   };
 
   const toggleDataAnalysis = () => {
-    setDataAnalysisEnabled((prev) => {
-      const next = !prev;
-      storage.setAssistantDataAnalysisEnabled(next);
-      if (next) {
-        setWebSearchEnabled(false);
-        try {
-          localStorage.setItem(WEB_SEARCH_PREF_KEY, 'false');
-        } catch {
-          // Ignore
-        }
+    const next = !dataAnalysisEnabled;
+    if (next) {
+      disableOtherSpecialistModes('dataAnalysis');
+      setWebSearchEnabled(false);
+      try {
+        localStorage.setItem(WEB_SEARCH_PREF_KEY, 'false');
+      } catch {
+        // Ignore
       }
-      triggerSettingsToast(
-        next
-          ? 'Data Analysis Mode enabled (automatic web search disabled)'
-          : 'Data Analysis Mode disabled',
-      );
-      return next;
-    });
+    }
+    setDataAnalysisEnabled(next);
+    storage.setAssistantDataAnalysisEnabled(next);
+    triggerSettingsToast(
+      next
+        ? 'Data Analysis Mode enabled (automatic web search disabled)'
+        : 'Data Analysis Mode disabled',
+    );
   };
 
   const toggleCoder = () => {
-    setCoderEnabled((prev) => {
-      const next = !prev;
-      storage.setAssistantCoderEnabled(next);
-      if (next) {
-        setWebSearchEnabled(false);
-        try {
-          localStorage.setItem(WEB_SEARCH_PREF_KEY, 'false');
-        } catch {
-          // Ignore
-        }
+    const next = !coderEnabled;
+    if (next) {
+      disableOtherSpecialistModes('coder');
+      setWebSearchEnabled(false);
+      try {
+        localStorage.setItem(WEB_SEARCH_PREF_KEY, 'false');
+      } catch {
+        // Ignore
       }
-      triggerSettingsToast(
-        next
-          ? 'Coder Mode enabled: research-grounded code pipeline active'
-          : 'Coder Mode disabled',
-      );
-      return next;
-    });
+    }
+    setCoderEnabled(next);
+    storage.setAssistantCoderEnabled(next);
+    triggerSettingsToast(
+      next
+        ? 'Coder Mode enabled: research-grounded code pipeline active'
+        : 'Coder Mode disabled',
+    );
   };
 
   const toggleWebFetcher = () => {
-    setWebFetcherEnabled((prev) => {
-      const next = !prev;
-      storage.setAssistantWebFetcherEnabled(next);
-      triggerSettingsToast(
-        next
-          ? 'Web Fetcher enabled: live URL content extraction active'
-          : 'Web Fetcher disabled',
-      );
-      return next;
-    });
+    const next = !webFetcherEnabled;
+    if (next) {
+      disableOtherSpecialistModes('webFetcher');
+    }
+    setWebFetcherEnabled(next);
+    storage.setAssistantWebFetcherEnabled(next);
+    triggerSettingsToast(
+      next
+        ? 'Web Fetcher enabled: live URL content extraction active'
+        : 'Web Fetcher disabled',
+    );
   };
 
   const toggleWikimedia = () => {
-    setWikimediaEnabled((prev) => {
-      const next = !prev;
-      storage.setAssistantWikimediaEnabled(next);
-      triggerSettingsToast(
-        next
-          ? 'Wikimedia Mode enabled: 5 real images from Wikimedia'
-          : 'Wikimedia Mode disabled',
-      );
-      return next;
-    });
+    const next = !wikimediaEnabled;
+    if (next) {
+      disableOtherSpecialistModes('wikimedia');
+    }
+    setWikimediaEnabled(next);
+    storage.setAssistantWikimediaEnabled(next);
+    triggerSettingsToast(
+      next
+        ? 'Wikimedia Mode enabled: 5 real images from Wikimedia'
+        : 'Wikimedia Mode disabled',
+    );
   };
 
   const getPersonaVoice = (personaId?: string): string => {
@@ -3870,7 +3955,7 @@ export function AssistantPage() {
                   title={
                     moreOptionsOpen
                       ? 'Close quick modes menu'
-                      : 'Specialist Modes: Architect, Data Analysis, Multi Chat, Coder, Web Fetcher, Wikimedia'
+                      : 'Specialist Modes (mutually exclusive): Architect, Data Analysis, Multi Chat, Coder, Web Fetcher, Wikimedia'
                   }
                   aria-label="More options"
                   aria-expanded={moreOptionsOpen}
@@ -3889,7 +3974,7 @@ export function AssistantPage() {
                 {/* Popup Menu */}
                 {moreOptionsOpen && (
                   <div
-                    className={`absolute bottom-full mb-3 right-0 w-64 p-2.5 rounded-2xl border shadow-2xl backdrop-blur-xl z-50 flex flex-col gap-1.5 ${
+                    className={`absolute bottom-full mb-3 right-0 w-64 sm:w-[268px] p-2 rounded-2xl border shadow-2xl backdrop-blur-xl z-50 flex flex-col max-h-[220px] overflow-hidden ${
                       theme === 'classic'
                         ? 'bg-slate-900/95 border-cyan-500/40 shadow-[0_8px_30px_rgba(6,182,212,0.25)]'
                         : theme === 'fulldark'
@@ -3897,10 +3982,16 @@ export function AssistantPage() {
                         : 'bg-zinc-900/95 border-zinc-700/80 shadow-2xl'
                     }`}
                   >
-                    <div className="px-2 py-1 flex items-center justify-between border-b border-zinc-800/80 mb-0.5">
-                      <span className="text-[11px] font-semibold uppercase tracking-wider text-zinc-400">
-                        Specialist Modes
-                      </span>
+                    {/* Fixed Header */}
+                    <div className="shrink-0 px-2 py-1 flex items-center justify-between border-b border-zinc-800/80 mb-1">
+                      <div className="flex items-center gap-1.5">
+                        <span className="text-[11px] font-semibold uppercase tracking-wider text-zinc-400">
+                          Specialist Modes
+                        </span>
+                        <span className="text-[9.5px] text-zinc-500 font-mono">
+                          (1 active)
+                        </span>
+                      </div>
                       <button
                         type="button"
                         onClick={() => {
@@ -3914,7 +4005,9 @@ export function AssistantPage() {
                       </button>
                     </div>
 
-                    {/* 1. Architect Toggle */}
+                    {/* Internal Scrollable Specialist Items List */}
+                    <div className="flex-1 overflow-y-auto pr-1 flex flex-col gap-1 specialist-popup-scroll">
+                      {/* 1. Architect Toggle */}
                     <button
                       type="button"
                       onClick={toggleArchitect}
@@ -4195,6 +4288,7 @@ export function AssistantPage() {
                         />
                       </div>
                     </button>
+                    </div>
                   </div>
                 )}
               </div>
@@ -4383,12 +4477,12 @@ export function AssistantPage() {
         </div>
       </main>
 
-      {/* Settings Modal (Language, Permanent Memories, Theme) */}
+      {/* Settings Modal (Language, Permanent Memories, Theme, Modes) */}
       {settingsOpen && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/75 backdrop-blur-sm animate-in fade-in duration-150">
-          <div className="w-full max-w-2xl rounded-2xl border border-zinc-700/80 bg-[#161618] text-zinc-200 p-6 shadow-2xl space-y-6 max-h-[88vh] overflow-y-auto">
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 md:p-6 lg:p-8 bg-black/75 backdrop-blur-sm animate-in fade-in duration-150 md:overflow-y-auto">
+          <div className="w-full max-w-2xl rounded-2xl border border-zinc-700/80 bg-[#161618] text-zinc-200 p-6 shadow-2xl space-y-6 max-h-[88vh] overflow-y-auto md:p-0 md:space-y-0 md:max-h-[min(86vh,780px)] md:flex md:flex-col md:overflow-hidden md:my-auto">
             {/* Modal Header */}
-            <div className="flex items-start justify-between pb-3 border-b border-zinc-800">
+            <div className="flex items-start justify-between pb-3 border-b border-zinc-800 md:p-6 md:pb-4 md:shrink-0">
               <div className="flex items-center gap-2.5">
                 <div className="p-2 rounded-xl bg-zinc-800/80 border border-zinc-700/60 text-zinc-200">
                   <SettingsIcon size={18} className="text-cyan-400" />
@@ -4398,7 +4492,7 @@ export function AssistantPage() {
                     AI Assistant Settings
                   </h3>
                   <p className="text-xs text-zinc-400 mt-0.5">
-                    Customize response language, permanent standing memories, and visual theme.
+                    Customize visual theme, language, permanent memories, and specialist modes.
                   </p>
                 </div>
               </div>
@@ -4414,13 +4508,15 @@ export function AssistantPage() {
 
             {/* Toast feedback inside modal if active */}
             {settingsSavedToast && (
-              <div className="px-3.5 py-2 rounded-lg bg-emerald-950/60 border border-emerald-700/60 text-emerald-300 text-xs flex items-center gap-2">
+              <div className="px-3.5 py-2 rounded-lg bg-emerald-950/60 border border-emerald-700/60 text-emerald-300 text-xs flex items-center gap-2 md:mx-6 md:mt-3 md:shrink-0">
                 <Check size={14} className="text-emerald-400 shrink-0" />
                 <span>{settingsSavedToast}</span>
               </div>
             )}
 
-            {/* Section 1: Visual Theme Selector */}
+            {/* Scrollable Content Body on Desktop / Normal Flow on Mobile */}
+            <div className="space-y-6 md:flex-1 md:overflow-y-auto md:p-6 md:space-y-6 specialist-popup-scroll">
+              {/* Section 1: Visual Theme Selector */}
             <div className="space-y-3">
               <div className="flex items-center gap-2">
                 <Palette size={15} className="text-purple-400" />
@@ -4735,468 +4831,536 @@ export function AssistantPage() {
 
             <div className="h-px bg-zinc-800" />
 
-            {/* Section 4: Multi Chat Mode Toggle */}
+            {/* Section 4: Modes (Collapsible Folder Grouping Specialist Toggles) */}
             <div className="space-y-3">
-              <div className="flex items-center justify-between">
-                <div className="flex items-center gap-2">
-                  <MessagesSquare size={15} className="text-cyan-400" />
-                  <h4 className="text-xs font-semibold uppercase tracking-wider text-zinc-300">
-                    Multi Chat (3-Persona Pipeline)
-                  </h4>
-                </div>
-                <span
-                  className={`text-[10px] font-mono font-semibold px-2 py-0.5 rounded-full border ${
-                    multiChatEnabled
-                      ? 'bg-cyan-950/80 text-cyan-300 border-cyan-500/50 shadow-[0_0_8px_rgba(6,182,212,0.2)]'
-                      : 'bg-zinc-800 text-zinc-500 border-zinc-700/60'
-                  }`}
+              <div className="rounded-2xl border border-zinc-800 bg-zinc-900/50 overflow-hidden transition-all shadow-sm">
+                {/* Collapsible Header */}
+                <button
+                  type="button"
+                  onClick={() => setModesSectionOpen((prev) => !prev)}
+                  className="w-full p-4 flex items-center justify-between text-left hover:bg-zinc-800/40 transition-colors"
+                  aria-expanded={modesSectionOpen}
                 >
-                  {multiChatEnabled ? 'ACTIVE' : 'DISABLED'}
-                </span>
-              </div>
-
-              <p className="text-xs text-zinc-400 leading-relaxed">
-                When enabled, every message sent in AI Assistant routes through the 3-persona sequential pipeline (NOVA 🧠 → ORBIT 😎 → COSMOS 🧘). Each persona builds upon prior reasoning and displays distinct response cards.
-              </p>
-
-              {/* Interactive Toggle Card */}
-              <div
-                onClick={toggleMultiChat}
-                className={`p-3.5 rounded-xl border flex items-center justify-between cursor-pointer transition-all ${
-                  multiChatEnabled
-                    ? 'border-cyan-500/40 bg-cyan-950/20 shadow-[0_0_15px_rgba(6,182,212,0.12)]'
-                    : 'border-zinc-800 bg-zinc-900/60 hover:bg-zinc-850 hover:border-zinc-700'
-                }`}
-              >
-                <div className="flex items-center gap-3">
-                  <div
-                    className={`w-9 h-9 rounded-xl grid place-items-center transition-colors ${
-                      multiChatEnabled
-                        ? 'bg-cyan-500/20 border border-cyan-500/40 text-cyan-300'
-                        : 'bg-zinc-800 border border-zinc-700 text-zinc-400'
-                    }`}
-                  >
-                    <Bot size={18} />
-                  </div>
-                  <div>
-                    <div className="text-xs font-semibold text-zinc-100 flex items-center gap-2">
-                      <span>Enable Multi Chat</span>
-                      {multiChatEnabled && (
-                        <span className="text-[10px] font-mono text-cyan-400 bg-cyan-950/80 px-1.5 py-0.2 rounded border border-cyan-500/40">
-                          NOVA → ORBIT → COSMOS
-                        </span>
-                      )}
+                  <div className="flex items-center gap-3 min-w-0">
+                    <div className="w-8 h-8 rounded-xl bg-zinc-800/90 border border-zinc-700/70 grid place-items-center text-amber-400 shrink-0">
+                      <Sliders size={15} />
                     </div>
-                    <p className="text-[11px] text-zinc-400 mt-0.5">
-                      {multiChatEnabled
-                        ? 'Connected 3-Persona sequential reasoning pipeline is active'
-                        : 'Standard single NEXUS AI Assistant responses'}
-                    </p>
+                    <div className="min-w-0">
+                      <div className="flex items-center gap-2">
+                        <h4 className="text-xs font-semibold uppercase tracking-wider text-zinc-200">
+                          Modes
+                        </h4>
+                        {activeSpecialistModeName ? (
+                          <span className="text-[10px] font-mono font-semibold px-2 py-0.5 rounded-full border bg-cyan-950/80 text-cyan-300 border-cyan-500/50 shadow-[0_0_8px_rgba(6,182,212,0.2)]">
+                            {activeSpecialistModeName} Active
+                          </span>
+                        ) : (
+                          <span className="text-[10px] font-mono text-zinc-500 bg-zinc-800/80 px-2 py-0.5 rounded-full border border-zinc-700/60">
+                            Standard
+                          </span>
+                        )}
+                      </div>
+                      <p className="text-[11.5px] text-zinc-400 mt-0.5 truncate">
+                        Multi Chat, Architect, Data Analysis, Coder, Web Fetcher, Wikimedia
+                      </p>
+                    </div>
                   </div>
-                </div>
+                  <div className="flex items-center gap-2 shrink-0 ml-3">
+                    <span className="text-[11px] text-zinc-500 hidden sm:inline">
+                      {modesSectionOpen ? 'Hide' : 'Expand'}
+                    </span>
+                    <ChevronDown
+                      size={16}
+                      className={`text-zinc-400 transition-transform duration-200 ${
+                        modesSectionOpen ? 'rotate-180 text-zinc-200' : ''
+                      }`}
+                    />
+                  </div>
+                </button>
 
-                {/* Toggle Switch */}
-                <div
-                  className={`w-11 h-6 rounded-full transition-colors relative flex items-center p-0.5 shrink-0 ${
-                    multiChatEnabled ? 'bg-cyan-500 shadow-[0_0_8px_rgba(6,182,212,0.4)]' : 'bg-zinc-700'
-                  }`}
-                >
-                  <div
-                    className={`w-5 h-5 rounded-full bg-white shadow-md transition-transform duration-200 ${
-                      multiChatEnabled ? 'translate-x-5' : 'translate-x-0'
-                    }`}
-                  />
-                </div>
+                {/* Collapsible Content */}
+                {modesSectionOpen && (
+                  <div className="p-4 pt-2 border-t border-zinc-800/80 space-y-4 animate-in fade-in duration-150">
+                    {/* Specialist Modes Mutually Exclusive Header Banner */}
+                    <div className="rounded-xl border border-zinc-800 bg-zinc-900/80 p-3 flex items-start gap-2.5">
+                      <span className="text-sm leading-none mt-0.5">⚡</span>
+                      <div className="text-xs text-zinc-400 leading-relaxed">
+                        <span className="font-semibold text-zinc-200 block mb-0.5">
+                          Specialist Modes (Mutually Exclusive)
+                        </span>
+                        Only 1 specialist mode can be active at a time (like radio buttons). Turning on any one mode automatically turns off whichever mode was previously active.
+                      </div>
+                    </div>
+
+                    {/* 1. Multi Chat Mode Toggle */}
+                    <div className="space-y-3">
+                      <div className="flex items-center justify-between">
+                        <div className="flex items-center gap-2">
+                          <MessagesSquare size={15} className="text-cyan-400" />
+                          <h4 className="text-xs font-semibold uppercase tracking-wider text-zinc-300">
+                            Multi Chat (3-Persona Pipeline)
+                          </h4>
+                        </div>
+                        <span
+                          className={`text-[10px] font-mono font-semibold px-2 py-0.5 rounded-full border ${
+                            multiChatEnabled
+                              ? 'bg-cyan-950/80 text-cyan-300 border-cyan-500/50 shadow-[0_0_8px_rgba(6,182,212,0.2)]'
+                              : 'bg-zinc-800 text-zinc-500 border-zinc-700/60'
+                          }`}
+                        >
+                          {multiChatEnabled ? 'ACTIVE' : 'DISABLED'}
+                        </span>
+                      </div>
+
+                      <p className="text-xs text-zinc-400 leading-relaxed">
+                        When enabled, every message sent in AI Assistant routes through the 3-persona sequential pipeline (NOVA 🧠 → ORBIT 😎 → COSMOS 🧘). Each persona builds upon prior reasoning and displays distinct response cards. (Mutually exclusive: turns off other specialist modes).
+                      </p>
+
+                      {/* Interactive Toggle Card */}
+                      <div
+                        onClick={toggleMultiChat}
+                        className={`p-3.5 rounded-xl border flex items-center justify-between cursor-pointer transition-all ${
+                          multiChatEnabled
+                            ? 'border-cyan-500/40 bg-cyan-950/20 shadow-[0_0_15px_rgba(6,182,212,0.12)]'
+                            : 'border-zinc-800 bg-zinc-900/60 hover:bg-zinc-850 hover:border-zinc-700'
+                        }`}
+                      >
+                        <div className="flex items-center gap-3">
+                          <div
+                            className={`w-9 h-9 rounded-xl grid place-items-center transition-colors ${
+                              multiChatEnabled
+                                ? 'bg-cyan-500/20 border border-cyan-500/40 text-cyan-300'
+                                : 'bg-zinc-800 border border-zinc-700 text-zinc-400'
+                            }`}
+                          >
+                            <Bot size={18} />
+                          </div>
+                          <div>
+                            <div className="text-xs font-semibold text-zinc-100 flex items-center gap-2">
+                              <span>Enable Multi Chat</span>
+                              {multiChatEnabled && (
+                                <span className="text-[10px] font-mono text-cyan-400 bg-cyan-950/80 px-1.5 py-0.2 rounded border border-cyan-500/40">
+                                  NOVA → ORBIT → COSMOS
+                                </span>
+                              )}
+                            </div>
+                            <p className="text-[11px] text-zinc-400 mt-0.5">
+                              {multiChatEnabled
+                                ? 'Connected 3-Persona sequential reasoning pipeline is active'
+                                : 'Standard single NEXUS AI Assistant responses'}
+                            </p>
+                          </div>
+                        </div>
+
+                        {/* Toggle Switch */}
+                        <div
+                          className={`w-11 h-6 rounded-full transition-colors relative flex items-center p-0.5 shrink-0 ${
+                            multiChatEnabled ? 'bg-cyan-500 shadow-[0_0_8px_rgba(6,182,212,0.4)]' : 'bg-zinc-700'
+                          }`}
+                        >
+                          <div
+                            className={`w-5 h-5 rounded-full bg-white shadow-md transition-transform duration-200 ${
+                              multiChatEnabled ? 'translate-x-5' : 'translate-x-0'
+                            }`}
+                          />
+                        </div>
+                      </div>
+                    </div>
+
+                    <div className="h-px bg-zinc-800/80" />
+
+                    {/* 2. Architect Toggle */}
+                    <div className="space-y-3">
+                      <div className="flex items-center justify-between">
+                        <div className="flex items-center gap-2">
+                          <Layers size={15} className="text-amber-400" />
+                          <h4 className="text-xs font-semibold uppercase tracking-wider text-zinc-300">
+                            Architect
+                          </h4>
+                        </div>
+                        <span
+                          className={`text-[10px] font-mono font-semibold px-2 py-0.5 rounded-full border ${
+                            architectEnabled
+                              ? 'bg-amber-950/80 text-amber-300 border-amber-500/50 shadow-[0_0_8px_rgba(245,158,11,0.2)]'
+                              : 'bg-zinc-800 text-zinc-500 border-zinc-700/60'
+                          }`}
+                        >
+                          {architectEnabled ? 'ACTIVE' : 'DISABLED'}
+                        </span>
+                      </div>
+
+                      <p className="text-xs text-zinc-400 leading-relaxed">
+                        When enabled, AI Assistant routes messages directly through the JARVIS Architect agent to generate interactive SVG architectural blueprints, workflow flowcharts, and system designs inline in chat. (Mutually exclusive: turns off other specialist modes).
+                      </p>
+
+                      {/* Interactive Toggle Card */}
+                      <div
+                        onClick={toggleArchitect}
+                        className={`p-3.5 rounded-xl border flex items-center justify-between cursor-pointer transition-all ${
+                          architectEnabled
+                            ? 'border-amber-500/40 bg-amber-950/20 shadow-[0_0_15px_rgba(245,158,11,0.12)]'
+                            : 'border-zinc-800 bg-zinc-900/60 hover:bg-zinc-850 hover:border-zinc-700'
+                        }`}
+                      >
+                        <div className="flex items-center gap-3">
+                          <div
+                            className={`w-9 h-9 rounded-xl grid place-items-center transition-colors ${
+                              architectEnabled
+                                ? 'bg-amber-500/20 border border-amber-500/40 text-amber-300'
+                                : 'bg-zinc-800 border border-zinc-700 text-zinc-400'
+                            }`}
+                          >
+                            <Layers size={18} />
+                          </div>
+                          <div>
+                            <div className="text-xs font-semibold text-zinc-100 flex items-center gap-2">
+                              <span>Enable Architect</span>
+                              {architectEnabled && (
+                                <span className="text-[10px] font-mono text-amber-400 bg-amber-950/80 px-1.5 py-0.2 rounded border border-amber-500/40">
+                                  SVG Blueprints
+                                </span>
+                              )}
+                            </div>
+                            <p className="text-[11px] text-zinc-400 mt-0.5">
+                              {architectEnabled
+                                ? 'JARVIS Architect agent generates vector system diagrams'
+                                : 'Standard textual technical responses'}
+                            </p>
+                          </div>
+                        </div>
+
+                        {/* Toggle Switch */}
+                        <div
+                          className={`w-11 h-6 rounded-full transition-colors relative flex items-center p-0.5 shrink-0 ${
+                            architectEnabled ? 'bg-amber-500 shadow-[0_0_8px_rgba(245,158,11,0.4)]' : 'bg-zinc-700'
+                          }`}
+                        >
+                          <div
+                            className={`w-5 h-5 rounded-full bg-white shadow-md transition-transform duration-200 ${
+                              architectEnabled ? 'translate-x-5' : 'translate-x-0'
+                            }`}
+                          />
+                        </div>
+                      </div>
+                    </div>
+
+                    <div className="h-px bg-zinc-800/80" />
+
+                    {/* 3. Data Analysis Toggle */}
+                    <div className="space-y-3">
+                      <div className="flex items-center justify-between">
+                        <div className="flex items-center gap-2">
+                          <BarChart3 size={15} className="text-sky-400" />
+                          <h4 className="text-xs font-semibold uppercase tracking-wider text-zinc-300">
+                            Data Analysis
+                          </h4>
+                        </div>
+                        <span
+                          className={`text-[10px] font-mono font-semibold px-2 py-0.5 rounded-full border ${
+                            dataAnalysisEnabled
+                              ? 'bg-sky-950/80 text-sky-300 border-sky-500/50 shadow-[0_0_8px_rgba(56,189,248,0.2)]'
+                              : 'bg-zinc-800 text-zinc-500 border-zinc-700/60'
+                          }`}
+                        >
+                          {dataAnalysisEnabled ? 'ACTIVE' : 'DISABLED'}
+                        </span>
+                      </div>
+
+                      <p className="text-xs text-zinc-400 leading-relaxed">
+                        When enabled, AI Assistant routes messages directly through the JARVIS Data Analyst agent to parse comparative metrics and render interactive Recharts visualizations (Bar &amp; Line charts) inline in chat. (Mutually exclusive: turns off other specialist modes).
+                      </p>
+
+                      {/* Interactive Toggle Card */}
+                      <div
+                        onClick={toggleDataAnalysis}
+                        className={`p-3.5 rounded-xl border flex items-center justify-between cursor-pointer transition-all ${
+                          dataAnalysisEnabled
+                            ? 'border-sky-500/40 bg-sky-950/20 shadow-[0_0_15px_rgba(56,189,248,0.12)]'
+                            : 'border-zinc-800 bg-zinc-900/60 hover:bg-zinc-850 hover:border-zinc-700'
+                        }`}
+                      >
+                        <div className="flex items-center gap-3">
+                          <div
+                            className={`w-9 h-9 rounded-xl grid place-items-center transition-colors ${
+                              dataAnalysisEnabled
+                                ? 'bg-sky-500/20 border border-sky-500/40 text-sky-300'
+                                : 'bg-zinc-800 border border-zinc-700 text-zinc-400'
+                            }`}
+                          >
+                            <BarChart3 size={18} />
+                          </div>
+                          <div>
+                            <div className="text-xs font-semibold text-zinc-100 flex items-center gap-2">
+                              <span>Enable Data Analysis</span>
+                              {dataAnalysisEnabled && (
+                                <span className="text-[10px] font-mono text-sky-400 bg-sky-950/80 px-1.5 py-0.2 rounded border border-sky-500/40">
+                                  Interactive Charts
+                                </span>
+                              )}
+                            </div>
+                            <p className="text-[11px] text-zinc-400 mt-0.5">
+                              {dataAnalysisEnabled
+                                ? 'JARVIS Data Analyst agent extracts quantitative data charts'
+                                : 'Standard textual analysis'}
+                            </p>
+                          </div>
+                        </div>
+
+                        {/* Toggle Switch */}
+                        <div
+                          className={`w-11 h-6 rounded-full transition-colors relative flex items-center p-0.5 shrink-0 ${
+                            dataAnalysisEnabled ? 'bg-sky-500 shadow-[0_0_8px_rgba(56,189,248,0.4)]' : 'bg-zinc-700'
+                          }`}
+                        >
+                          <div
+                            className={`w-5 h-5 rounded-full bg-white shadow-md transition-transform duration-200 ${
+                              dataAnalysisEnabled ? 'translate-x-5' : 'translate-x-0'
+                            }`}
+                          />
+                        </div>
+                      </div>
+                    </div>
+
+                    <div className="h-px bg-zinc-800/80" />
+
+                    {/* 4. Coder Toggle */}
+                    <div className="space-y-3">
+                      <div className="flex items-center justify-between">
+                        <div className="flex items-center gap-2">
+                          <Code2 size={15} className="text-emerald-400" />
+                          <h4 className="text-xs font-semibold uppercase tracking-wider text-zinc-300">
+                            Coder
+                          </h4>
+                        </div>
+                        <span
+                          className={`text-[10px] font-mono font-semibold px-2 py-0.5 rounded-full border ${
+                            coderEnabled
+                              ? 'bg-emerald-950/80 text-emerald-300 border-emerald-500/50 shadow-[0_0_8px_rgba(16,185,129,0.2)]'
+                              : 'bg-zinc-800 text-zinc-500 border-zinc-700/60'
+                          }`}
+                        >
+                          {coderEnabled ? 'ACTIVE' : 'DISABLED'}
+                        </span>
+                      </div>
+
+                      <p className="text-xs text-zinc-400 leading-relaxed">
+                        When enabled, AI Assistant routes messages through the research-grounded code pipeline (Planner → Researcher → Coder) using the /codeonline workflow to generate production-ready implementations. (Mutually exclusive: turns off other specialist modes).
+                      </p>
+
+                      {/* Interactive Toggle Card */}
+                      <div
+                        onClick={toggleCoder}
+                        className={`p-3.5 rounded-xl border flex items-center justify-between cursor-pointer transition-all ${
+                          coderEnabled
+                            ? 'border-emerald-500/40 bg-emerald-950/20 shadow-[0_0_15px_rgba(16,185,129,0.12)]'
+                            : 'border-zinc-800 bg-zinc-900/60 hover:bg-zinc-850 hover:border-zinc-700'
+                        }`}
+                      >
+                        <div className="flex items-center gap-3">
+                          <div
+                            className={`w-9 h-9 rounded-xl grid place-items-center transition-colors ${
+                              coderEnabled
+                                ? 'bg-emerald-500/20 border border-emerald-500/40 text-emerald-300'
+                                : 'bg-zinc-800 border border-zinc-700 text-zinc-400'
+                            }`}
+                          >
+                            <Code2 size={18} />
+                          </div>
+                          <div>
+                            <div className="text-xs font-semibold text-zinc-100 flex items-center gap-2">
+                              <span>Enable Coder</span>
+                              {coderEnabled && (
+                                <span className="text-[10px] font-mono text-emerald-400 bg-emerald-950/80 px-1.5 py-0.2 rounded border border-emerald-500/40">
+                                  Research Code
+                                </span>
+                              )}
+                            </div>
+                            <p className="text-[11px] text-zinc-400 mt-0.5">
+                              {coderEnabled
+                                ? 'Planner → Researcher → Coder pipeline is active'
+                                : 'Standard coding responses'}
+                            </p>
+                          </div>
+                        </div>
+
+                        {/* Toggle Switch */}
+                        <div
+                          className={`w-11 h-6 rounded-full transition-colors relative flex items-center p-0.5 shrink-0 ${
+                            coderEnabled ? 'bg-emerald-500 shadow-[0_0_8px_rgba(16,185,129,0.4)]' : 'bg-zinc-700'
+                          }`}
+                        >
+                          <div
+                            className={`w-5 h-5 rounded-full bg-white shadow-md transition-transform duration-200 ${
+                              coderEnabled ? 'translate-x-5' : 'translate-x-0'
+                            }`}
+                          />
+                        </div>
+                      </div>
+                    </div>
+
+                    <div className="h-px bg-zinc-800/80" />
+
+                    {/* 5. Web Fetcher Toggle */}
+                    <div className="space-y-3">
+                      <div className="flex items-center justify-between">
+                        <div className="flex items-center gap-2">
+                          <Globe size={15} className="text-teal-400" />
+                          <h4 className="text-xs font-semibold uppercase tracking-wider text-zinc-300">
+                            Web Fetcher
+                          </h4>
+                        </div>
+                        <span
+                          className={`text-[10px] font-mono font-semibold px-2 py-0.5 rounded-full border ${
+                            webFetcherEnabled
+                              ? 'bg-teal-950/80 text-teal-300 border-teal-500/50 shadow-[0_0_8px_rgba(20,184,166,0.2)]'
+                              : 'bg-zinc-800 text-zinc-500 border-zinc-700/60'
+                          }`}
+                        >
+                          {webFetcherEnabled ? 'ACTIVE' : 'DISABLED'}
+                        </span>
+                      </div>
+
+                      <p className="text-xs text-zinc-400 leading-relaxed">
+                        When enabled, AI Assistant reads and extracts full webpage content from any provided URL using the /web live extraction pipeline. (Mutually exclusive: turns off other specialist modes).
+                      </p>
+
+                      {/* Interactive Toggle Card */}
+                      <div
+                        onClick={toggleWebFetcher}
+                        className={`p-3.5 rounded-xl border flex items-center justify-between cursor-pointer transition-all ${
+                          webFetcherEnabled
+                            ? 'border-teal-500/40 bg-teal-950/20 shadow-[0_0_15px_rgba(20,184,166,0.12)]'
+                            : 'border-zinc-800 bg-zinc-900/60 hover:bg-zinc-850 hover:border-zinc-700'
+                        }`}
+                      >
+                        <div className="flex items-center gap-3">
+                          <div
+                            className={`w-9 h-9 rounded-xl grid place-items-center transition-colors ${
+                              webFetcherEnabled
+                                ? 'bg-teal-500/20 border border-teal-500/40 text-teal-300'
+                                : 'bg-zinc-800 border border-zinc-700 text-zinc-400'
+                            }`}
+                          >
+                            <Globe size={18} />
+                          </div>
+                          <div>
+                            <div className="text-xs font-semibold text-zinc-100 flex items-center gap-2">
+                              <span>Enable Web Fetcher</span>
+                              {webFetcherEnabled && (
+                                <span className="text-[10px] font-mono text-teal-400 bg-teal-950/80 px-1.5 py-0.2 rounded border border-teal-500/40">
+                                  URL Reader
+                                </span>
+                              )}
+                            </div>
+                            <p className="text-[11px] text-zinc-400 mt-0.5">
+                              {webFetcherEnabled
+                                ? 'Live webpage reader and content extraction'
+                                : 'Standard web search browsing'}
+                            </p>
+                          </div>
+                        </div>
+
+                        {/* Toggle Switch */}
+                        <div
+                          className={`w-11 h-6 rounded-full transition-colors relative flex items-center p-0.5 shrink-0 ${
+                            webFetcherEnabled ? 'bg-teal-500 shadow-[0_0_8px_rgba(20,184,166,0.4)]' : 'bg-zinc-700'
+                          }`}
+                        >
+                          <div
+                            className={`w-5 h-5 rounded-full bg-white shadow-md transition-transform duration-200 ${
+                              webFetcherEnabled ? 'translate-x-5' : 'translate-x-0'
+                            }`}
+                          />
+                        </div>
+                      </div>
+                    </div>
+
+                    <div className="h-px bg-zinc-800/80" />
+
+                    {/* 6. Wikimedia Toggle */}
+                    <div className="space-y-3">
+                      <div className="flex items-center justify-between">
+                        <div className="flex items-center gap-2">
+                          <ImageIcon size={15} className="text-violet-400" />
+                          <h4 className="text-xs font-semibold uppercase tracking-wider text-zinc-300">
+                            Wikimedia
+                          </h4>
+                        </div>
+                        <span
+                          className={`text-[10px] font-mono font-semibold px-2 py-0.5 rounded-full border ${
+                            wikimediaEnabled
+                              ? 'bg-violet-950/80 text-violet-300 border-violet-500/50 shadow-[0_0_8px_rgba(139,92,246,0.2)]'
+                              : 'bg-zinc-800 text-zinc-500 border-zinc-700/60'
+                          }`}
+                        >
+                          {wikimediaEnabled ? 'ACTIVE' : 'DISABLED'}
+                        </span>
+                      </div>
+
+                      <p className="text-xs text-zinc-400 leading-relaxed">
+                        When enabled, AI Assistant extracts the topic from your message and retrieves 5 real photographic images directly from Wikimedia Commons without invoking an AI model. (Mutually exclusive: turns off other specialist modes).
+                      </p>
+
+                      {/* Interactive Toggle Card */}
+                      <div
+                        onClick={toggleWikimedia}
+                        className={`p-3.5 rounded-xl border flex items-center justify-between cursor-pointer transition-all ${
+                          wikimediaEnabled
+                            ? 'border-violet-500/40 bg-violet-950/20 shadow-[0_0_15px_rgba(139,92,246,0.12)]'
+                            : 'border-zinc-800 bg-zinc-900/60 hover:bg-zinc-850 hover:border-zinc-700'
+                        }`}
+                      >
+                        <div className="flex items-center gap-3">
+                          <div
+                            className={`w-9 h-9 rounded-xl grid place-items-center transition-colors ${
+                              wikimediaEnabled
+                                ? 'bg-violet-500/20 border border-violet-500/40 text-violet-300'
+                                : 'bg-zinc-800 border border-zinc-700 text-zinc-400'
+                            }`}
+                          >
+                            <ImageIcon size={18} />
+                          </div>
+                          <div>
+                            <div className="text-xs font-semibold text-zinc-100 flex items-center gap-2">
+                              <span>Enable Wikimedia</span>
+                              {wikimediaEnabled && (
+                                <span className="text-[10px] font-mono text-violet-400 bg-violet-950/80 px-1.5 py-0.2 rounded border border-violet-500/40">
+                                  Real Images
+                                </span>
+                              )}
+                            </div>
+                            <p className="text-[11px] text-zinc-400 mt-0.5">
+                              {wikimediaEnabled
+                                ? '5 real images retrieved from Wikimedia Commons'
+                                : 'Standard conversational responses'}
+                            </p>
+                          </div>
+                        </div>
+
+                        {/* Toggle Switch */}
+                        <div
+                          className={`w-11 h-6 rounded-full transition-colors relative flex items-center p-0.5 shrink-0 ${
+                            wikimediaEnabled ? 'bg-violet-500 shadow-[0_0_8px_rgba(139,92,246,0.4)]' : 'bg-zinc-700'
+                          }`}
+                        >
+                          <div
+                            className={`w-5 h-5 rounded-full bg-white shadow-md transition-transform duration-200 ${
+                              wikimediaEnabled ? 'translate-x-5' : 'translate-x-0'
+                            }`}
+                          />
+                        </div>
+                      </div>
+                    </div>
+                  </div>
+                )}
               </div>
             </div>
 
-            <div className="h-px bg-zinc-800" />
-
-            {/* Section 5: Architect Toggle */}
-            <div className="space-y-3">
-              <div className="flex items-center justify-between">
-                <div className="flex items-center gap-2">
-                  <Layers size={15} className="text-amber-400" />
-                  <h4 className="text-xs font-semibold uppercase tracking-wider text-zinc-300">
-                    Architect
-                  </h4>
-                </div>
-                <span
-                  className={`text-[10px] font-mono font-semibold px-2 py-0.5 rounded-full border ${
-                    architectEnabled
-                      ? 'bg-amber-950/80 text-amber-300 border-amber-500/50 shadow-[0_0_8px_rgba(245,158,11,0.2)]'
-                      : 'bg-zinc-800 text-zinc-500 border-zinc-700/60'
-                  }`}
-                >
-                  {architectEnabled ? 'ACTIVE' : 'DISABLED'}
-                </span>
-              </div>
-
-              <p className="text-xs text-zinc-400 leading-relaxed">
-                When enabled, AI Assistant routes messages directly through the JARVIS Architect agent to generate interactive SVG architectural blueprints, workflow flowcharts, and system designs inline in chat.
-              </p>
-
-              {/* Interactive Toggle Card */}
-              <div
-                onClick={toggleArchitect}
-                className={`p-3.5 rounded-xl border flex items-center justify-between cursor-pointer transition-all ${
-                  architectEnabled
-                    ? 'border-amber-500/40 bg-amber-950/20 shadow-[0_0_15px_rgba(245,158,11,0.12)]'
-                    : 'border-zinc-800 bg-zinc-900/60 hover:bg-zinc-850 hover:border-zinc-700'
-                }`}
-              >
-                <div className="flex items-center gap-3">
-                  <div
-                    className={`w-9 h-9 rounded-xl grid place-items-center transition-colors ${
-                      architectEnabled
-                        ? 'bg-amber-500/20 border border-amber-500/40 text-amber-300'
-                        : 'bg-zinc-800 border border-zinc-700 text-zinc-400'
-                    }`}
-                  >
-                    <Layers size={18} />
-                  </div>
-                  <div>
-                    <div className="text-xs font-semibold text-zinc-100 flex items-center gap-2">
-                      <span>Enable Architect</span>
-                      {architectEnabled && (
-                        <span className="text-[10px] font-mono text-amber-400 bg-amber-950/80 px-1.5 py-0.2 rounded border border-amber-500/40">
-                          SVG Blueprints
-                        </span>
-                      )}
-                    </div>
-                    <p className="text-[11px] text-zinc-400 mt-0.5">
-                      {architectEnabled
-                        ? 'JARVIS Architect agent generates vector system diagrams'
-                        : 'Standard textual technical responses'}
-                    </p>
-                  </div>
-                </div>
-
-                {/* Toggle Switch */}
-                <div
-                  className={`w-11 h-6 rounded-full transition-colors relative flex items-center p-0.5 shrink-0 ${
-                    architectEnabled ? 'bg-amber-500 shadow-[0_0_8px_rgba(245,158,11,0.4)]' : 'bg-zinc-700'
-                  }`}
-                >
-                  <div
-                    className={`w-5 h-5 rounded-full bg-white shadow-md transition-transform duration-200 ${
-                      architectEnabled ? 'translate-x-5' : 'translate-x-0'
-                    }`}
-                  />
-                </div>
-              </div>
-            </div>
-
-            <div className="h-px bg-zinc-800" />
-
-            {/* Section 6: Data Analysis Toggle */}
-            <div className="space-y-3">
-              <div className="flex items-center justify-between">
-                <div className="flex items-center gap-2">
-                  <BarChart3 size={15} className="text-sky-400" />
-                  <h4 className="text-xs font-semibold uppercase tracking-wider text-zinc-300">
-                    Data Analysis
-                  </h4>
-                </div>
-                <span
-                  className={`text-[10px] font-mono font-semibold px-2 py-0.5 rounded-full border ${
-                    dataAnalysisEnabled
-                      ? 'bg-sky-950/80 text-sky-300 border-sky-500/50 shadow-[0_0_8px_rgba(56,189,248,0.2)]'
-                      : 'bg-zinc-800 text-zinc-500 border-zinc-700/60'
-                  }`}
-                >
-                  {dataAnalysisEnabled ? 'ACTIVE' : 'DISABLED'}
-                </span>
-              </div>
-
-              <p className="text-xs text-zinc-400 leading-relaxed">
-                When enabled, AI Assistant routes messages directly through the JARVIS Data Analyst agent to parse comparative metrics and render interactive Recharts visualizations (Bar &amp; Line charts) inline in chat.
-              </p>
-
-              {/* Interactive Toggle Card */}
-              <div
-                onClick={toggleDataAnalysis}
-                className={`p-3.5 rounded-xl border flex items-center justify-between cursor-pointer transition-all ${
-                  dataAnalysisEnabled
-                    ? 'border-sky-500/40 bg-sky-950/20 shadow-[0_0_15px_rgba(56,189,248,0.12)]'
-                    : 'border-zinc-800 bg-zinc-900/60 hover:bg-zinc-850 hover:border-zinc-700'
-                }`}
-              >
-                <div className="flex items-center gap-3">
-                  <div
-                    className={`w-9 h-9 rounded-xl grid place-items-center transition-colors ${
-                      dataAnalysisEnabled
-                        ? 'bg-sky-500/20 border border-sky-500/40 text-sky-300'
-                        : 'bg-zinc-800 border border-zinc-700 text-zinc-400'
-                    }`}
-                  >
-                    <BarChart3 size={18} />
-                  </div>
-                  <div>
-                    <div className="text-xs font-semibold text-zinc-100 flex items-center gap-2">
-                      <span>Enable Data Analysis</span>
-                      {dataAnalysisEnabled && (
-                        <span className="text-[10px] font-mono text-sky-400 bg-sky-950/80 px-1.5 py-0.2 rounded border border-sky-500/40">
-                          Interactive Charts
-                        </span>
-                      )}
-                    </div>
-                    <p className="text-[11px] text-zinc-400 mt-0.5">
-                      {dataAnalysisEnabled
-                        ? 'JARVIS Data Analyst agent extracts quantitative data charts'
-                        : 'Standard textual analysis'}
-                    </p>
-                  </div>
-                </div>
-
-                {/* Toggle Switch */}
-                <div
-                  className={`w-11 h-6 rounded-full transition-colors relative flex items-center p-0.5 shrink-0 ${
-                    dataAnalysisEnabled ? 'bg-sky-500 shadow-[0_0_8px_rgba(56,189,248,0.4)]' : 'bg-zinc-700'
-                  }`}
-                >
-                  <div
-                    className={`w-5 h-5 rounded-full bg-white shadow-md transition-transform duration-200 ${
-                      dataAnalysisEnabled ? 'translate-x-5' : 'translate-x-0'
-                    }`}
-                  />
-                </div>
-              </div>
-            </div>
-
-            <div className="h-px bg-zinc-800" />
-
-            {/* Section 7: Coder Toggle */}
-            <div className="space-y-3">
-              <div className="flex items-center justify-between">
-                <div className="flex items-center gap-2">
-                  <Code2 size={15} className="text-emerald-400" />
-                  <h4 className="text-xs font-semibold uppercase tracking-wider text-zinc-300">
-                    Coder
-                  </h4>
-                </div>
-                <span
-                  className={`text-[10px] font-mono font-semibold px-2 py-0.5 rounded-full border ${
-                    coderEnabled
-                      ? 'bg-emerald-950/80 text-emerald-300 border-emerald-500/50 shadow-[0_0_8px_rgba(16,185,129,0.2)]'
-                      : 'bg-zinc-800 text-zinc-500 border-zinc-700/60'
-                  }`}
-                >
-                  {coderEnabled ? 'ACTIVE' : 'DISABLED'}
-                </span>
-              </div>
-
-              <p className="text-xs text-zinc-400 leading-relaxed">
-                When enabled, AI Assistant routes messages through the research-grounded code pipeline (Planner → Researcher → Coder) using the /codeonline workflow to generate production-ready implementations.
-              </p>
-
-              {/* Interactive Toggle Card */}
-              <div
-                onClick={toggleCoder}
-                className={`p-3.5 rounded-xl border flex items-center justify-between cursor-pointer transition-all ${
-                  coderEnabled
-                    ? 'border-emerald-500/40 bg-emerald-950/20 shadow-[0_0_15px_rgba(16,185,129,0.12)]'
-                    : 'border-zinc-800 bg-zinc-900/60 hover:bg-zinc-850 hover:border-zinc-700'
-                }`}
-              >
-                <div className="flex items-center gap-3">
-                  <div
-                    className={`w-9 h-9 rounded-xl grid place-items-center transition-colors ${
-                      coderEnabled
-                        ? 'bg-emerald-500/20 border border-emerald-500/40 text-emerald-300'
-                        : 'bg-zinc-800 border border-zinc-700 text-zinc-400'
-                    }`}
-                  >
-                    <Code2 size={18} />
-                  </div>
-                  <div>
-                    <div className="text-xs font-semibold text-zinc-100 flex items-center gap-2">
-                      <span>Enable Coder</span>
-                      {coderEnabled && (
-                        <span className="text-[10px] font-mono text-emerald-400 bg-emerald-950/80 px-1.5 py-0.2 rounded border border-emerald-500/40">
-                          Research Code
-                        </span>
-                      )}
-                    </div>
-                    <p className="text-[11px] text-zinc-400 mt-0.5">
-                      {coderEnabled
-                        ? 'Planner → Researcher → Coder pipeline is active'
-                        : 'Standard coding responses'}
-                    </p>
-                  </div>
-                </div>
-
-                {/* Toggle Switch */}
-                <div
-                  className={`w-11 h-6 rounded-full transition-colors relative flex items-center p-0.5 shrink-0 ${
-                    coderEnabled ? 'bg-emerald-500 shadow-[0_0_8px_rgba(16,185,129,0.4)]' : 'bg-zinc-700'
-                  }`}
-                >
-                  <div
-                    className={`w-5 h-5 rounded-full bg-white shadow-md transition-transform duration-200 ${
-                      coderEnabled ? 'translate-x-5' : 'translate-x-0'
-                    }`}
-                  />
-                </div>
-              </div>
-            </div>
-
-            <div className="h-px bg-zinc-800" />
-
-            {/* Section 8: Web Fetcher Toggle */}
-            <div className="space-y-3">
-              <div className="flex items-center justify-between">
-                <div className="flex items-center gap-2">
-                  <Globe size={15} className="text-teal-400" />
-                  <h4 className="text-xs font-semibold uppercase tracking-wider text-zinc-300">
-                    Web Fetcher
-                  </h4>
-                </div>
-                <span
-                  className={`text-[10px] font-mono font-semibold px-2 py-0.5 rounded-full border ${
-                    webFetcherEnabled
-                      ? 'bg-teal-950/80 text-teal-300 border-teal-500/50 shadow-[0_0_8px_rgba(20,184,166,0.2)]'
-                      : 'bg-zinc-800 text-zinc-500 border-zinc-700/60'
-                  }`}
-                >
-                  {webFetcherEnabled ? 'ACTIVE' : 'DISABLED'}
-                </span>
-              </div>
-
-              <p className="text-xs text-zinc-400 leading-relaxed">
-                When enabled, AI Assistant reads and extracts full webpage content from any provided URL using the /web live extraction pipeline.
-              </p>
-
-              {/* Interactive Toggle Card */}
-              <div
-                onClick={toggleWebFetcher}
-                className={`p-3.5 rounded-xl border flex items-center justify-between cursor-pointer transition-all ${
-                  webFetcherEnabled
-                    ? 'border-teal-500/40 bg-teal-950/20 shadow-[0_0_15px_rgba(20,184,166,0.12)]'
-                    : 'border-zinc-800 bg-zinc-900/60 hover:bg-zinc-850 hover:border-zinc-700'
-                }`}
-              >
-                <div className="flex items-center gap-3">
-                  <div
-                    className={`w-9 h-9 rounded-xl grid place-items-center transition-colors ${
-                      webFetcherEnabled
-                        ? 'bg-teal-500/20 border border-teal-500/40 text-teal-300'
-                        : 'bg-zinc-800 border border-zinc-700 text-zinc-400'
-                    }`}
-                  >
-                    <Globe size={18} />
-                  </div>
-                  <div>
-                    <div className="text-xs font-semibold text-zinc-100 flex items-center gap-2">
-                      <span>Enable Web Fetcher</span>
-                      {webFetcherEnabled && (
-                        <span className="text-[10px] font-mono text-teal-400 bg-teal-950/80 px-1.5 py-0.2 rounded border border-teal-500/40">
-                          URL Reader
-                        </span>
-                      )}
-                    </div>
-                    <p className="text-[11px] text-zinc-400 mt-0.5">
-                      {webFetcherEnabled
-                        ? 'Live webpage reader and content extraction'
-                        : 'Standard web search browsing'}
-                    </p>
-                  </div>
-                </div>
-
-                {/* Toggle Switch */}
-                <div
-                  className={`w-11 h-6 rounded-full transition-colors relative flex items-center p-0.5 shrink-0 ${
-                    webFetcherEnabled ? 'bg-teal-500 shadow-[0_0_8px_rgba(20,184,166,0.4)]' : 'bg-zinc-700'
-                  }`}
-                >
-                  <div
-                    className={`w-5 h-5 rounded-full bg-white shadow-md transition-transform duration-200 ${
-                      webFetcherEnabled ? 'translate-x-5' : 'translate-x-0'
-                    }`}
-                  />
-                </div>
-              </div>
-            </div>
-
-            <div className="h-px bg-zinc-800" />
-
-            {/* Section 9: Wikimedia Toggle */}
-            <div className="space-y-3">
-              <div className="flex items-center justify-between">
-                <div className="flex items-center gap-2">
-                  <ImageIcon size={15} className="text-violet-400" />
-                  <h4 className="text-xs font-semibold uppercase tracking-wider text-zinc-300">
-                    Wikimedia
-                  </h4>
-                </div>
-                <span
-                  className={`text-[10px] font-mono font-semibold px-2 py-0.5 rounded-full border ${
-                    wikimediaEnabled
-                      ? 'bg-violet-950/80 text-violet-300 border-violet-500/50 shadow-[0_0_8px_rgba(139,92,246,0.2)]'
-                      : 'bg-zinc-800 text-zinc-500 border-zinc-700/60'
-                  }`}
-                >
-                  {wikimediaEnabled ? 'ACTIVE' : 'DISABLED'}
-                </span>
-              </div>
-
-              <p className="text-xs text-zinc-400 leading-relaxed">
-                When enabled, AI Assistant extracts the topic from your message and retrieves 5 real photographic images directly from Wikimedia Commons without invoking an AI model.
-              </p>
-
-              {/* Interactive Toggle Card */}
-              <div
-                onClick={toggleWikimedia}
-                className={`p-3.5 rounded-xl border flex items-center justify-between cursor-pointer transition-all ${
-                  wikimediaEnabled
-                    ? 'border-violet-500/40 bg-violet-950/20 shadow-[0_0_15px_rgba(139,92,246,0.12)]'
-                    : 'border-zinc-800 bg-zinc-900/60 hover:bg-zinc-850 hover:border-zinc-700'
-                }`}
-              >
-                <div className="flex items-center gap-3">
-                  <div
-                    className={`w-9 h-9 rounded-xl grid place-items-center transition-colors ${
-                      wikimediaEnabled
-                        ? 'bg-violet-500/20 border border-violet-500/40 text-violet-300'
-                        : 'bg-zinc-800 border border-zinc-700 text-zinc-400'
-                    }`}
-                  >
-                    <ImageIcon size={18} />
-                  </div>
-                  <div>
-                    <div className="text-xs font-semibold text-zinc-100 flex items-center gap-2">
-                      <span>Enable Wikimedia</span>
-                      {wikimediaEnabled && (
-                        <span className="text-[10px] font-mono text-violet-400 bg-violet-950/80 px-1.5 py-0.2 rounded border border-violet-500/40">
-                          Real Images
-                        </span>
-                      )}
-                    </div>
-                    <p className="text-[11px] text-zinc-400 mt-0.5">
-                      {wikimediaEnabled
-                        ? '5 real images retrieved from Wikimedia Commons'
-                        : 'Standard conversational responses'}
-                    </p>
-                  </div>
-                </div>
-
-                {/* Toggle Switch */}
-                <div
-                  className={`w-11 h-6 rounded-full transition-colors relative flex items-center p-0.5 shrink-0 ${
-                    wikimediaEnabled ? 'bg-violet-500 shadow-[0_0_8px_rgba(139,92,246,0.4)]' : 'bg-zinc-700'
-                  }`}
-                >
-                  <div
-                    className={`w-5 h-5 rounded-full bg-white shadow-md transition-transform duration-200 ${
-                      wikimediaEnabled ? 'translate-x-5' : 'translate-x-0'
-                    }`}
-                  />
-                </div>
-              </div>
+            {/* End of Scrollable Body */}
             </div>
 
             {/* Modal Footer */}
-            <div className="flex items-center justify-between pt-3 border-t border-zinc-800">
+            <div className="flex items-center justify-between pt-3 border-t border-zinc-800 md:p-6 md:py-3.5 md:shrink-0 md:bg-[#161618]">
               <span className="text-[11px] text-zinc-500">
                 All changes are saved automatically to your device.
               </span>

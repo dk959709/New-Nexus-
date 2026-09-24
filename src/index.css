@@ -4174,6 +4174,25 @@
   }
 }
 
+/* Specialist Modes Popup Minimal Scrollbar */
+.specialist-popup-scroll {
+  scrollbar-width: thin;
+  scrollbar-color: rgba(161, 161, 170, 0.3) transparent;
+}
+.specialist-popup-scroll::-webkit-scrollbar {
+  width: 5px;
+}
+.specialist-popup-scroll::-webkit-scrollbar-track {
+  background: transparent;
+}
+.specialist-popup-scroll::-webkit-scrollbar-thumb {
+  background: rgba(161, 161, 170, 0.25);
+  border-radius: 9999px;
+}
+.specialist-popup-scroll::-webkit-scrollbar-thumb:hover {
+  background: rgba(161, 161, 170, 0.5);
+}
+
 
 
 
