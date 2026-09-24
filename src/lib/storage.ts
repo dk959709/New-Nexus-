@@ -1949,6 +1949,22 @@ export const storage = {
     write('nexus-ai-wikimedia-toggle', enabled);
   },
 
+  getAssistantImageEnhanceEnabled(): boolean {
+    return read<boolean>('nexus-ai-image-enhance-toggle', false);
+  },
+
+  setAssistantImageEnhanceEnabled(enabled: boolean): void {
+    write('nexus-ai-image-enhance-toggle', enabled);
+  },
+
+  getAssistantImageEnhanceTipDismissed(): boolean {
+    return read<boolean>('nexus-ai-image-enhance-tip-seen', false);
+  },
+
+  setAssistantImageEnhanceTipDismissed(dismissed: boolean): void {
+    write('nexus-ai-image-enhance-tip-seen', dismissed);
+  },
+
   getMultiChatResponseLanguage(): string {
     const cfg = this.getMultiChatConfig();
     return cfg.responseLanguage || 'English';

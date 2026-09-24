@@ -23,8 +23,8 @@ import {
   Columns,
 } from 'lucide-react';
 import { storage } from '@/lib/storage';
-import { api } from '@/services/api';
 import { playTapSound } from '@/lib/audio';
+import { enhanceImagePromptWithAI } from '@/services/imageGenerationService';
 import {
   getStoredGeneratedImages,
   saveGeneratedImageToIndexedDb,
@@ -473,36 +473,11 @@ export function ImageStudio() {
     if (smartAiEnhance) {
       setLoadingPhase('enhancing');
       try {
-        const activeAiProvider = storage.getActiveAIProvider();
-        const enhanceRes = await api.jarvisAgentCall({
-          agentId: 'image-prompt-enhancer',
-          messages: [
-            {
-              role: 'system',
-              content:
-                'Fix any spelling/grammar mistakes in this image prompt, and rewrite it to be more vivid and descriptive for an AI image generator, while keeping the original meaning and subject. Return ONLY the improved prompt text, nothing else.',
-            },
-            {
-              role: 'user',
-              content: rawInputPrompt,
-            },
-          ],
-          providerConfig: activeAiProvider,
-          temperature: 0.7,
-          maxTokens: 350,
-          timeoutMs: 25000,
-        });
-
-        if (enhanceRes?.ok && enhanceRes.text && enhanceRes.text.trim().length > 0) {
-          let cleaned = enhanceRes.text.trim();
-          // Remove surrounding markdown quotes or prefixes if returned by LLM
-          cleaned = cleaned.replace(/^["'“”]+|["'“”]+$/g, '').trim();
-          cleaned = cleaned.replace(/^(?:Enhanced prompt|Improved prompt|Rewritten prompt|Prompt):\s*/i, '').trim();
-          if (cleaned.length > 0) {
-            promptToUse = cleaned;
-            enhancedPromptUsed = cleaned;
-            setLastEnhancedPrompt(cleaned);
-          }
+        const enhanced = await enhanceImagePromptWithAI(rawInputPrompt);
+        if (enhanced) {
+          promptToUse = enhanced;
+          enhancedPromptUsed = enhanced;
+          setLastEnhancedPrompt(enhanced);
         }
       } catch (enhanceErr) {
         console.warn('[ImageStudio] Smart AI Enhance failed, proceeding with original prompt:', enhanceErr);

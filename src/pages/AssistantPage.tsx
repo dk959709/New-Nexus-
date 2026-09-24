@@ -36,6 +36,7 @@ import {
   BarChart3,
   Code2,
   Sliders,
+  Wand2,
 } from 'lucide-react';
 import { Link } from 'react-router-dom';
 import { api } from '@/services/api';
@@ -45,7 +46,7 @@ import { playTapSound } from '@/lib/audio';
 import { ErrorMessage } from '@/components';
 import { FormattedText } from '@/components/jarvis/FormattedText';
 import { stripTierLabels, stripConversationalMetaText } from '@/lib/format';
-import { generateStudioImage } from '@/services/imageGenerationService';
+import { generateStudioImage, enhanceImagePromptWithAI } from '@/services/imageGenerationService';
 import { executeMultiChatTurn } from '@/services/multiChatOrchestrator';
 import { runJarvisPipeline } from '@/services/jarvisOrchestrator';
 import { JarvisSvgDiagram } from '@/components/jarvis/JarvisSvgDiagram';
@@ -250,6 +251,7 @@ export function AssistantPage() {
   const [smartMemory, setSmartMemory] = useState(loadSmartMemory);
   const [webSearchEnabled, setWebSearchEnabled] = useState(loadWebSearchToggle);
   const [imageGenEnabled, setImageGenEnabled] = useState(loadImageGenToggle);
+  const [imageEnhanceEnabled, setImageEnhanceEnabled] = useState<boolean>(() => storage.getAssistantImageEnhanceEnabled());
   const [deepResearchEnabled, setDeepResearchEnabled] = useState(loadDeepResearchToggle);
   const [deepResearchProgress, setDeepResearchProgress] = useState<number>(0);
   const [deepResearchPhase, setDeepResearchPhase] = useState<string>('');
@@ -675,6 +677,15 @@ export function AssistantPage() {
       } catch {
         // Ignore storage errors
       }
+      return next;
+    });
+  };
+
+  const toggleImageEnhance = () => {
+    setImageEnhanceEnabled((prev) => {
+      const next = !prev;
+      storage.setAssistantImageEnhanceEnabled(next);
+      triggerSettingsToast(`AI Prompt Enhancement ${next ? 'enabled' : 'disabled'}`);
       return next;
     });
   };
@@ -1494,15 +1505,34 @@ export function AssistantPage() {
     // If Image Generation mode is ON, route directly to Image Studio generation infrastructure
     if (imageGenEnabled) {
       console.log('[AI Assistant] Automatic search skipped: Image mode is active');
+
+      let promptToUse = message;
+      let enhancedPromptText: string | null = null;
+
+      if (imageEnhanceEnabled) {
+        setImageLoadingPhase('Enhancing prompt with AI...');
+        try {
+          const enhanced = await enhanceImagePromptWithAI(message);
+          if (enhanced && enhanced !== message) {
+            promptToUse = enhanced;
+            enhancedPromptText = enhanced;
+          }
+        } catch (enhanceErr) {
+          console.warn('[AssistantPage] AI Prompt Enhancement failed, falling back to original prompt', enhanceErr);
+        }
+      }
+
       setImageLoadingPhase('Initiating image synthesis...');
       try {
-        const imageResult = await generateStudioImage(message, {
+        const imageResult = await generateStudioImage(promptToUse, {
           onProgress: (phase) => setImageLoadingPhase(phase),
         });
 
         const assistantMessage: Message = {
           role: 'assistant',
-          content: `Here is your generated image for: "${message}"`,
+          content: enhancedPromptText
+            ? `Here is your generated image for: "${message}"\n\n*(Prompt enhanced with AI: "${enhancedPromptText}")*`
+            : `Here is your generated image for: "${message}"`,
           tool: 'image',
           image: {
             url: imageResult.url,
@@ -4317,6 +4347,37 @@ export function AssistantPage() {
                     <span className="w-1.5 h-1.5 rounded-full bg-purple-400 shadow-[0_0_6px_rgba(192,132,252,0.8)]" />
                   )}
                 </button>
+
+                {/* AI Prompt Enhancement Sub-toggle for Image Mode */}
+                {imageGenEnabled && !deepResearchEnabled && (
+                  <button
+                    type="button"
+                    onClick={toggleImageEnhance}
+                    className={`text-xs px-2 py-1.5 rounded-lg border transition-all flex items-center gap-1 animate-in fade-in zoom-in-95 duration-200 ${
+                      imageEnhanceEnabled
+                        ? 'bg-amber-500/20 text-amber-300 border-amber-500/40 font-medium shadow-[0_0_10px_rgba(245,158,11,0.2)]'
+                        : theme === 'classic'
+                        ? 'text-zinc-400 border-cyan-900/30 hover:text-cyan-300 hover:bg-cyan-950/30'
+                        : theme === 'fulldark'
+                        ? 'text-zinc-400 border-[#2a2a2a] hover:text-zinc-200 hover:bg-[#2a2a2a]'
+                        : 'text-zinc-400 border-zinc-800 hover:text-zinc-200 hover:bg-zinc-800/60'
+                    }`}
+                    title={
+                      imageEnhanceEnabled
+                        ? 'AI Prompt Enhancement is ON: Automatically improves image prompts with artistic details'
+                        : 'AI Prompt Enhancement is OFF: Uses prompt as-is'
+                    }
+                  >
+                    <Wand2
+                      size={12}
+                      className={imageEnhanceEnabled ? 'text-amber-400 animate-pulse' : 'text-zinc-400'}
+                    />
+                    <span>Enhance</span>
+                    {imageEnhanceEnabled && (
+                      <span className="w-1.5 h-1.5 rounded-full bg-amber-400 shadow-[0_0_6px_rgba(251,191,36,0.8)]" />
+                    )}
+                  </button>
+                )}
 
                 {responseLanguage && (
                   <button

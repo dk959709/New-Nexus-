@@ -1,4 +1,5 @@
 import { storage } from '@/lib/storage';
+import { api } from '@/services/api';
 import {
   buildImageRequestBody,
   buildImageRequestHeaders,
@@ -461,3 +462,49 @@ export async function generateStudioImage(
     new Error('All Image AI providers failed to generate an image. Please verify your provider settings.')
   );
 }
+
+/**
+ * Shared Smart AI Enhance logic for image prompts.
+ * Uses the active AI provider via the 'image-prompt-enhancer' agent with cleanup and fallback.
+ * Returns the enhanced prompt string, or null if enhance fails or returns empty.
+ */
+export async function enhanceImagePromptWithAI(rawPrompt: string): Promise<string | null> {
+  const trimmed = rawPrompt.trim();
+  if (!trimmed) return null;
+
+  try {
+    const activeAiProvider = storage.getActiveAIProvider();
+    const enhanceRes = await api.jarvisAgentCall({
+      agentId: 'image-prompt-enhancer',
+      messages: [
+        {
+          role: 'system',
+          content:
+            'Fix any spelling/grammar mistakes in this image prompt, and rewrite it to be more vivid and descriptive for an AI image generator, while keeping the original meaning and subject. Return ONLY the improved prompt text, nothing else.',
+        },
+        {
+          role: 'user',
+          content: trimmed,
+        },
+      ],
+      providerConfig: activeAiProvider,
+      temperature: 0.7,
+      maxTokens: 350,
+      timeoutMs: 25000,
+    });
+
+    if (enhanceRes?.ok && enhanceRes.text && enhanceRes.text.trim().length > 0) {
+      let cleaned = enhanceRes.text.trim();
+      // Remove surrounding markdown quotes or prefixes if returned by LLM
+      cleaned = cleaned.replace(/^["'“”]+|["'“”]+$/g, '').trim();
+      cleaned = cleaned.replace(/^(?:Enhanced prompt|Improved prompt|Rewritten prompt|Prompt):\s*/i, '').trim();
+      if (cleaned.length > 0) {
+        return cleaned;
+      }
+    }
+  } catch (enhanceErr) {
+    console.warn('[ImageEnhance] Smart AI Enhance failed, proceeding with original prompt:', enhanceErr);
+  }
+  return null;
+}
+
