@@ -2445,6 +2445,43 @@ export function parseResearcherOutput(
   return result;
 }
 
+function findNewestSourceDateInfo(sources: Array<Record<string, unknown>>): { dateStr: string; daysOld: number } | null {
+  if (!Array.isArray(sources) || sources.length === 0) return null;
+  const nowMs = Date.now();
+  let newestMs = 0;
+  let newestDateStr = '';
+
+  for (const s of sources) {
+    if (!s || typeof s !== 'object') continue;
+    const raw = String(s.publishedAt || s.date || s.eventDate || s.updatedAt || '').trim();
+    if (!raw) continue;
+
+    const isoMatch = raw.match(/\b(20\d\d)-(0[1-9]|1[0-2])-(0[1-9]|[12]\d|3[01])\b/);
+    if (isoMatch) {
+      const ms = Date.parse(isoMatch[0]);
+      if (!isNaN(ms) && ms > 0 && ms <= nowMs + 86400000 && ms > newestMs) {
+        newestMs = ms;
+        newestDateStr = isoMatch[0];
+      }
+      continue;
+    }
+
+    const ms = Date.parse(raw);
+    if (!isNaN(ms) && ms > 0 && ms <= nowMs + 86400000 && ms > newestMs) {
+      newestMs = ms;
+      try {
+        newestDateStr = new Date(ms).toISOString().slice(0, 10);
+      } catch {
+        newestDateStr = raw;
+      }
+    }
+  }
+
+  if (newestMs === 0 || !newestDateStr) return null;
+  const daysOld = (nowMs - newestMs) / (1000 * 60 * 60 * 24);
+  return { dateStr: newestDateStr, daysOld };
+}
+
 export async function runJarvisPipeline(
   query: string,
   config: JarvisSystemConfig,
@@ -3547,6 +3584,7 @@ Please synthesize the definitive comprehensive answer.`;
     };
   }
 
+  let isLatestTypeQuery = false;
   let plannerOutput: JarvisPlannerOutput = {
     task: isPureFileAnalysis
       ? (userExtractedQuery ? `Analyze attached file: ${userExtractedQuery}` : 'Analyze attached context files')
@@ -3718,11 +3756,11 @@ You are the JARVIS Planner. You MUST output ONLY a valid JSON object strictly ma
 }
 CRITICAL RULES:
 1. Under NO circumstance should "needsResearchQuery", "needsNewsQuery", "wikipediaQuery", "wikidataQuery", or "weatherLocation" be omitted from the JSON output. All string keys MUST always be present in the returned JSON object.
-2. When needsResearch is true, "needsResearchQuery" MUST be a clean, specific search phrase (not the full raw user question) that the Researcher agent should use for its web search — strip out conversational words, filler ("Is this true?", "Tell me about"), punctuation, and focus only on the actual topic being researched (e.g. for "This is true? Rich HTML can carry hidden dangerous code...", needsResearchQuery MUST be "HTML security risks hidden code tracking scripts"). If needsResearch is false, set it to "".
+2. When needsResearch is true, "needsResearchQuery" MUST be a clean, specific search phrase (not the full raw user question) that the Researcher agent should use for its web search — strip out conversational words, filler ("Is this true?", "Tell me about"), punctuation, and focus only on the actual topic being researched (e.g. for "This is true? Rich HTML can carry hidden dangerous code...", needsResearchQuery MUST be "HTML security risks hidden code tracking scripts"). For "latest / newest / recent / current / what's new" questions, needsResearchQuery MUST include the current month and year (e.g. "Claude AI latest updates September 2026"). If needsResearch is false, set it to "".
 3. When needsNews is true:
    - For general top/world news (e.g. "top 5 world news today", "what's happening in the world", "latest top headlines"): set "newsMode": "headlines", "newsCategory": "world" or "general", and "needsNewsQuery": "" (empty string). Do NOT generate a literal search phrase like "top 5 world news today".
    - For specific topic news (e.g. "SpaceX rocket launch news", "Apple earnings news", "Tesla recalls"): set "newsMode": "topic", "needsNewsQuery": "<clean topic>", and appropriate "newsCategory".
-   - CRITICAL: Queries asking for "latest updates from X", "what is latest update from X", "status update on X", or general updates regarding an entity/technology MUST NEVER set needsNews: true. They must ALWAYS set needsNews: false, needsNewsQuery: "", needsResearch: true, and needsResearchQuery: "<entity> latest updates".
+   - CRITICAL: Queries asking for "latest updates from X", "what is latest update from X", "status update on X", or "latest / newest / recent / current / what's new" regarding an entity/technology MUST NEVER set needsNews: true. They must ALWAYS set needsNews: false, needsNewsQuery: "", needsResearch: true, and needsResearchQuery: "<entity> latest updates <Current Month Year>" (including the current month and year, e.g. "Claude AI latest updates September 2026").
    If needsNews is false, set "needsNewsQuery": "", and omit/ignore newsMode/newsCategory.
 4. When needsWikipedia is true, "wikipediaQuery" MUST be the clean, concise subject/title (e.g. for "tell about brawl stars game", wikipediaQuery MUST be "Brawl Stars"). If needsWikipedia is false, set it to "".
 5. When needsWikidata is true, "wikidataQuery" MUST be the clean entity name. If needsWikidata is false, set it to "".
@@ -4007,19 +4045,29 @@ CRITICAL RULES:
       }
 
       // Enforce: Queries asking for latest updates from X must route to Researcher, never News
-      if (
+      isLatestTypeQuery =
+        /\b(latest|newest|recent|current|new|update|updates|whats\s+new|what's\s+new)\b/i.test(query) ||
+        /\b(latest|newest|recent|current|new|update|updates|whats\s+new|what's\s+new)\b/i.test(plannerOutput.task || '') ||
+        /\b(latest|newest|recent|current|new|update|updates|whats\s+new|what's\s+new)\b/i.test(strippedQuery) ||
         isLatestUpdatesInquiry(query) ||
         isLatestUpdatesInquiry(plannerOutput.task || '') ||
-        isLatestUpdatesInquiry(strippedQuery)
-      ) {
+        isLatestUpdatesInquiry(strippedQuery);
+
+      if (isLatestTypeQuery) {
         plannerOutput.needsNews = false;
         plannerOutput.needsNewsQuery = '';
         if (!plannerOutput.needsWeather) {
           plannerOutput.needsResearch = true;
           if (!plannerOutput.needsResearchQuery) {
             const { cleanedSearchQuery } = extractTopicKeywords(strippedQuery, plannerOutput.task);
-            plannerOutput.needsResearchQuery = `${cleanedSearchQuery || strippedQuery} latest updates`;
+            plannerOutput.needsResearchQuery = `${cleanedSearchQuery || strippedQuery} latest updates ${currentMonthYear}`;
           }
+        }
+      }
+
+      if (plannerOutput.needsResearch && plannerOutput.needsResearchQuery) {
+        if (isLatestTypeQuery && !/\b20\d\d\b/.test(plannerOutput.needsResearchQuery)) {
+          plannerOutput.needsResearchQuery = `${plannerOutput.needsResearchQuery.trim()} ${currentMonthYear}`.trim();
         }
       }
 
@@ -4748,7 +4796,9 @@ CRITICAL RULES:
       plannerOutput.needsResearch = true;
       if (!plannerOutput.needsResearchQuery) {
         const { cleanedSearchQuery } = extractTopicKeywords(strippedQuery, plannerOutput.task);
-        plannerOutput.needsResearchQuery = cleanedSearchQuery || strippedQuery;
+        plannerOutput.needsResearchQuery = `${cleanedSearchQuery || strippedQuery} latest updates ${currentMonthYear}`;
+      } else if (!/\b20\d\d\b/.test(plannerOutput.needsResearchQuery)) {
+        plannerOutput.needsResearchQuery = `${plannerOutput.needsResearchQuery.trim()} ${currentMonthYear}`.trim();
       }
     }
   }
@@ -6346,13 +6396,30 @@ This same strict self-check applies generally to ANY other library with a simila
           const metaStr = metaParts.length > 0 ? ` (${metaParts.join(', ')})` : '';
 
           let confirmedStr = '';
-          if (Array.isArray(vObj.confirmedBy) && vObj.confirmedBy.length > 0) {
-            const validConfirmed = vObj.confirmedBy.map(String).filter(Boolean);
-            if (validConfirmed.length > 0) {
-              confirmedStr = ` — Confirmed by: ${validConfirmed.join(', ')}`;
-            }
+          const primaryDomainLower = domain.toLowerCase().trim();
+          const primaryUrlLower = (vObj.url ? String(vObj.url) : '').toLowerCase().trim();
+
+          let rawConfirmed: string[] = [];
+          if (Array.isArray(vObj.confirmedBy)) {
+            rawConfirmed = vObj.confirmedBy.map(String).map((s) => s.trim()).filter(Boolean);
           } else if (typeof vObj.confirmedBy === 'string' && vObj.confirmedBy.trim()) {
-            confirmedStr = ` — Confirmed by: ${vObj.confirmedBy.trim()}`;
+            rawConfirmed = vObj.confirmedBy.split(/[,;]/).map((s) => s.trim()).filter(Boolean);
+          }
+
+          // Filter out the primary source domain/title itself so a source NEVER confirms itself
+          const distinctConfirmed = rawConfirmed.filter((c) => {
+            const cLower = c.toLowerCase().trim();
+            if (!cLower) return false;
+            if (cLower === 'single source, not independently confirmed') return false;
+            if (primaryDomainLower && (cLower === primaryDomainLower || cLower.includes(primaryDomainLower) || primaryDomainLower.includes(cLower))) return false;
+            if (primaryUrlLower && primaryUrlLower.includes(cLower)) return false;
+            return true;
+          });
+
+          if (distinctConfirmed.length > 0) {
+            confirmedStr = ` — Confirmed by: ${distinctConfirmed.join(', ')}`;
+          } else {
+            confirmedStr = ` — Single source, not independently confirmed`;
           }
 
           normalizedVerified.push(`${claimText}${metaStr}${confirmedStr}`.trim());
@@ -7133,7 +7200,8 @@ ${sourcesListText}${customInsightsBlock}${personalIdentityDirective}${architectu
       ? `\n\nCRITICAL LANGUAGE REQUIREMENT: You MUST write and deliver your ENTIRE final response to the user in **${synthResponseLang}**. Do not reply in English unless ${synthResponseLang} is English.`
       : '';
 
-    const fullSynthesizerSysPrompt = `Current date and time: ${currentDateTime}\n\n${activeSysPrompt}${synthLanguageInstruction}`;
+    const recencyOrderingDirective = `\n\n[RECENCY ORDERING DIRECTIVE]: Order all updates and news with the newest items listed first. Put older items under a short '### Earlier updates' heading.`;
+    const fullSynthesizerSysPrompt = `Current date and time: ${currentDateTime}\n\n${activeSysPrompt}${recencyOrderingDirective}${synthLanguageInstruction}`;
     const finalizedSynthesizerContext = applyTemplateVariables(
       rawSynthesizerContext,
       synthReplacements,
@@ -7214,6 +7282,21 @@ Please deliver your definitive final agent response summarizing and explaining t
 
     if (synthRes.ok && synthRes.text) {
       finalAnswer = synthRes.text;
+
+      // Recency check before Final Synthesis completion for "latest" type questions:
+      if (isLatestTypeQuery) {
+        const allSources = [
+          ...(Array.isArray(researcherOutput?.sources) ? researcherOutput.sources : []),
+          ...(Array.isArray(sourcesCollected) ? sourcesCollected : []),
+        ] as Array<Record<string, unknown>>;
+        const dateInfo = findNewestSourceDateInfo(allSources);
+        if (dateInfo && dateInfo.daysOld > 30) {
+          const notePrefix = `Note: the newest sources found are from ${dateInfo.dateStr}, so newer updates may exist.`;
+          if (!finalAnswer.startsWith('Note: the newest sources found are from')) {
+            finalAnswer = `${notePrefix}\n\n${finalAnswer}`;
+          }
+        }
+      }
       updateStep({
         agentId: 'finalSynthesizer',
         name: sCfg.name,

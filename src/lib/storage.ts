@@ -378,11 +378,11 @@ Decide execution strategy and output STRICT JSON:
 
 ROUTING FLAGS & RULES:
 - needsResearch: true if the query requires external factual data, current events, technical documentation, citations, or domain facts. Set false for casual greetings, opinions, self-referential questions about JARVIS, or personal/human-vs-AI comparisons involving the user ('me', 'myself', 'you and me', 'us', 'I').
-- needsResearchQuery: MANDATORY string. When needsResearch is true, generate a clean, specific search phrase focusing strictly on core topic keywords (no conversational filler or full questions). When false, set to "".
+- needsResearchQuery: MANDATORY string. When needsResearch is true, generate a clean, specific search phrase focusing strictly on core topic keywords (no conversational filler or full questions). For "latest / newest / recent / current / what's new" inquiries, needsResearchQuery MUST include the current month and year (e.g. "Claude AI latest updates September 2026"). When false, set to "".
 - needsNews: true ONLY for queries asking for breaking news, latest headlines, world events, or current events.
   * For general top/world news (no specific topic): set needsNews: true, needsNewsQuery: "", newsMode: "headlines", newsCategory: "world".
   * For specific topic news: set needsNews: true, needsNewsQuery: "<clean topic>", newsMode: "topic", newsCategory: "general" or appropriate category.
-  * CRITICAL: Queries asking for "latest updates from X", "what is latest update on X", or status updates regarding an entity/technology MUST set needsNews: false, needsNewsQuery: "", needsResearch: true, and needsResearchQuery: "<entity> latest updates".
+  * CRITICAL: Queries asking for "latest updates from X", "what is latest update on X", status updates, or "latest / newest / recent / current / what's new" regarding an entity/technology MUST set needsNews: false, needsNewsQuery: "", needsResearch: true, and needsResearchQuery: "<entity> latest updates <Current Month Year>" (including current month and year, e.g. "Claude AI latest updates September 2026").
 - needsNewsQuery: MANDATORY string. Topic search phrase if needsNews is true, or "" for general headlines or when false.
 - needsWeather: true if asking about weather, temperature, rain, forecast, or climate. Set weatherLocation to city/location name or "" if user's location. When needsWeather is true: set needsResearch: false, needsResearchQuery: "", needsNews: false, needsWikipedia: false, needsWikidata: false.
 - weatherLocation: MANDATORY string. Location name if needsWeather is true, or "" if not mentioned or when false.
@@ -554,6 +554,8 @@ Guidelines:
   - Grounded sources and citations are automatically parsed and displayed in a dedicated "GROUNDED SOURCES" section below your answer. Therefore, do NOT add a separate "### Sources", "## References", or "Sources:" list at the end of your markdown response. Present only the structured synthesis and findings.
 - CRITICAL USER IDENTITY & ANTI-MISATTRIBUTION RULE:
   You must NEVER state, imply, guess, or assume a specific personal identity, real name, LinkedIn profile, career, or personal biographical background for the user unless the user has explicitly stated that information themselves in the prompt/conversation. You must NEVER attribute an unrelated person's name or search snippet from external results to the user. For queries like "compare me and DeepSeek" or "compare you and me", treat the user respectfully and objectively as a human conversational partner, structuring the comparison around Human Intelligence vs Artificial Intelligence (DeepSeek / JARVIS) conceptually without fabricating or guessing personal identities.
+- CHRONOLOGICAL RECENCY ORDERING & EARLIER UPDATES (CRITICAL):
+  When synthesizing updates, news, version changelogs, or recent events, list the newest items first. If older items or previous updates are included, place them under a short '### Earlier updates' heading.
 - If the available information is incomplete or uncertain, say so honestly rather than filling gaps with confident-sounding guesses.
 - End with a natural conclusion - do not pad the response just to reach a target length.`;
 
@@ -699,7 +701,9 @@ Instructions:
    - "yesterday": event/article from yesterday
    - "older": event/article from earlier dates
    - "unknown": date not determinable from source data
-6. Multi-Outlet Verification: Confirm merged multi-source stories.
+6. Multi-Outlet Verification & Source Independence (CRITICAL):
+   - 'confirmedBy' MUST be a DIFFERENT source than the primary domain/source that made the claim. A source or domain must NEVER confirm itself!
+   - If only one source supports a claim, do NOT list the primary source in confirmedBy. Write "Single source, not independently confirmed" or set confirmedBy to an empty array. Never confirm a claim with itself.
 7. ISSUE SEVERITY & DISTINCTION CLASSIFICATION (CRITICAL):
    When auditing claims, distinguish strictly between two distinct severity categories and record each issue in the single "issues" array:
    - CRITICAL RULE: SINGLE-SOURCE CLAIMS ARE NOT AUTOMATICALLY FABRICATED:
