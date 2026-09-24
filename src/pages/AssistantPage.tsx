@@ -2095,19 +2095,10 @@ export function AssistantPage() {
 
             if (webFetcherCancelledRef.current) return;
 
-            let domainHost = '';
-            try {
-              domainHost = new URL(directUrl).hostname;
-            } catch {
-              domainHost = 'web';
-            }
-
             const assistantMessage: Message = {
               role: 'assistant',
               content: finalAnswerText,
               tool: 'none',
-              sources: [{ title: domainHost, url: directUrl, domain: domainHost }],
-              searchedWeb: true,
             };
 
             setMessages((current) => [...current, assistantMessage]);
@@ -2247,8 +2238,6 @@ export function AssistantPage() {
               role: 'assistant',
               content: finalAnswerText,
               tool: 'none',
-              sources: [{ title: pickedItem.title || pickedItem.domain, url: pickedItem.url, domain: pickedItem.domain }],
-              searchedWeb: true,
             };
 
             setMessages((current) => [...current, assistantMessage]);
@@ -3938,23 +3927,7 @@ export function AssistantPage() {
                                 : 'text-zinc-200'
                             }`}
                           >
-                            {message.content.startsWith('Read page: ') && (
-                              <div className="mb-2.5 inline-flex items-center gap-1.5 px-2.5 py-1 rounded-lg bg-teal-950/60 text-teal-300 border border-teal-500/30 text-xs font-medium">
-                                <Globe size={13} className="text-teal-400 shrink-0" />
-                                <span>
-                                  Read page:{' '}
-                                  <a
-                                    href={message.content.split('\n')[0].replace('Read page:', '').trim()}
-                                    target="_blank"
-                                    rel="noopener noreferrer"
-                                    className="underline hover:text-teal-200"
-                                  >
-                                    {message.content.split('\n')[0].replace('Read page:', '').trim()}
-                                  </a>
-                                </span>
-                              </div>
-                            )}
-                            <FormattedText content={stripTierLabels(message.content)} />
+                            <FormattedText content={stripTierLabels(message.content.replace(/^Read page:\s+[^\n]+\n\n?/, ''))} />
                           </div>
                         )}
 
