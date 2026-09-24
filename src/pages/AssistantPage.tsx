@@ -341,20 +341,6 @@ export function AssistantPage() {
   const [moreOptionsOpen, setMoreOptionsOpen] = useState(false);
   const [modesSectionOpen, setModesSectionOpen] = useState(false);
 
-  const activeSpecialistModeName = architectEnabled
-    ? 'Architect'
-    : dataAnalysisEnabled
-    ? 'Data Analysis'
-    : multiChatEnabled
-    ? 'Multi Chat'
-    : coderEnabled
-    ? 'Coder'
-    : webFetcherEnabled
-    ? 'Web Fetcher'
-    : wikimediaEnabled
-    ? 'Wikimedia'
-    : null;
-
   const utteranceRef = useRef<SpeechSynthesisUtterance | null>(null);
   const edgeTtsAudioRef = useRef<HTMLAudioElement | null>(null);
   const messagesEndRef = useRef<HTMLDivElement | null>(null);
@@ -510,6 +496,76 @@ export function AssistantPage() {
         : 'Wikimedia Mode disabled',
     );
   };
+
+  const activeSpecialistMode = architectEnabled
+    ? {
+        name: 'Architect',
+        toggle: toggleArchitect,
+        color:
+          theme === 'classic'
+            ? 'text-amber-300 border-amber-500/50 bg-amber-950/60 hover:bg-amber-900/70 shadow-[0_0_8px_rgba(245,158,11,0.25)]'
+            : theme === 'fulldark'
+            ? 'text-amber-300 border-amber-500/40 bg-[#251e12] hover:bg-[#342a18]'
+            : 'text-amber-300 border-amber-500/40 bg-amber-950/50 hover:bg-amber-900/60',
+      }
+    : dataAnalysisEnabled
+    ? {
+        name: 'Data Analysis',
+        toggle: toggleDataAnalysis,
+        color:
+          theme === 'classic'
+            ? 'text-sky-300 border-sky-500/50 bg-sky-950/60 hover:bg-sky-900/70 shadow-[0_0_8px_rgba(56,189,248,0.25)]'
+            : theme === 'fulldark'
+            ? 'text-sky-300 border-sky-500/40 bg-[#12232f] hover:bg-[#1a3243]'
+            : 'text-sky-300 border-sky-500/40 bg-sky-950/50 hover:bg-sky-900/60',
+      }
+    : multiChatEnabled
+    ? {
+        name: 'Multi Chat',
+        toggle: toggleMultiChat,
+        color:
+          theme === 'classic'
+            ? 'text-cyan-300 border-cyan-500/50 bg-cyan-950/60 hover:bg-cyan-900/70 shadow-[0_0_8px_rgba(6,182,212,0.25)]'
+            : theme === 'fulldark'
+            ? 'text-cyan-300 border-cyan-500/40 bg-[#102428] hover:bg-[#163339]'
+            : 'text-cyan-300 border-cyan-500/40 bg-cyan-950/50 hover:bg-cyan-900/60',
+      }
+    : coderEnabled
+    ? {
+        name: 'Coder',
+        toggle: toggleCoder,
+        color:
+          theme === 'classic'
+            ? 'text-emerald-300 border-emerald-500/50 bg-emerald-950/60 hover:bg-emerald-900/70 shadow-[0_0_8px_rgba(16,185,129,0.25)]'
+            : theme === 'fulldark'
+            ? 'text-emerald-300 border-emerald-500/40 bg-[#12251a] hover:bg-[#193525]'
+            : 'text-emerald-300 border-emerald-500/40 bg-emerald-950/50 hover:bg-emerald-900/60',
+      }
+    : webFetcherEnabled
+    ? {
+        name: 'Web Fetcher',
+        toggle: toggleWebFetcher,
+        color:
+          theme === 'classic'
+            ? 'text-teal-300 border-teal-500/50 bg-teal-950/60 hover:bg-teal-900/70 shadow-[0_0_8px_rgba(20,184,166,0.25)]'
+            : theme === 'fulldark'
+            ? 'text-teal-300 border-teal-500/40 bg-[#112423] hover:bg-[#183432]'
+            : 'text-teal-300 border-teal-500/40 bg-teal-950/50 hover:bg-teal-900/60',
+      }
+    : wikimediaEnabled
+    ? {
+        name: 'Wikimedia',
+        toggle: toggleWikimedia,
+        color:
+          theme === 'classic'
+            ? 'text-violet-300 border-violet-500/50 bg-violet-950/60 hover:bg-violet-900/70 shadow-[0_0_8px_rgba(139,92,246,0.25)]'
+            : theme === 'fulldark'
+            ? 'text-violet-300 border-violet-500/40 bg-[#21152d] hover:bg-[#2e1d3e]'
+            : 'text-violet-300 border-violet-500/40 bg-violet-950/50 hover:bg-violet-900/60',
+      }
+    : null;
+
+  const activeSpecialistModeName = activeSpecialistMode?.name ?? null;
 
   const getPersonaVoice = (personaId?: string): string => {
     const globalVoice = storage.getEdgeVoice();
@@ -3925,7 +3981,9 @@ export function AssistantPage() {
                 }
                 rows={1}
                 disabled={loading}
-                className={`w-full bg-transparent text-[14.5px] leading-relaxed resize-none outline-none px-2 pt-1 pb-1 pr-11 min-h-[44px] max-h-[180px] ${
+                className={`w-full bg-transparent text-[14.5px] leading-relaxed resize-none outline-none px-2 pt-1 pb-1 ${
+                  activeSpecialistMode ? 'pr-36 sm:pr-40' : 'pr-11'
+                } min-h-[44px] max-h-[180px] ${
                   theme === 'classic'
                     ? 'text-white placeholder-cyan-300/40'
                     : theme === 'fulldark'
@@ -3934,8 +3992,28 @@ export function AssistantPage() {
                 }`}
               />
 
-              {/* Expandable More Options (▲) Button & Popup in Top-Right (Red Spot) */}
-              <div ref={moreOptionsRef} className="absolute right-1 top-1 z-20 flex items-center">
+              {/* Expandable More Options (▲) Button & Popup in Top-Right with Active Mode Chip */}
+              <div ref={moreOptionsRef} className="absolute right-1 top-1 z-20 flex items-center gap-1.5">
+                {/* Active Mode Indicator Chip (shows currently active mode; one-tap to dismiss) */}
+                {activeSpecialistMode && (
+                  <button
+                    type="button"
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      activeSpecialistMode.toggle();
+                    }}
+                    title={`Turn off ${activeSpecialistMode.name} (click to disable)`}
+                    aria-label={`Turn off ${activeSpecialistMode.name}`}
+                    className={`group inline-flex items-center gap-1 px-2 py-0.5 rounded-lg text-[11px] font-medium border transition-all cursor-pointer active:scale-95 animate-in fade-in zoom-in-95 duration-150 ${activeSpecialistMode.color}`}
+                  >
+                    <span className="leading-none whitespace-nowrap select-none">{activeSpecialistMode.name}</span>
+                    <X
+                      size={11}
+                      className="opacity-65 group-hover:opacity-100 group-hover:scale-110 transition-all shrink-0 ml-0.5"
+                    />
+                  </button>
+                )}
+
                 <button
                   type="button"
                   onClick={() => setMoreOptionsOpen((prev) => !prev)}
