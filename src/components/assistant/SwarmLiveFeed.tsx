@@ -5,7 +5,6 @@ import { storage, DEFAULT_PARALLAX_AGENTS } from '@/lib/storage';
 import { AGENT_QUADRANTS } from '@/data/parallaxQuadrants';
 import { runParallaxSwarm } from '@/services/parallaxOrchestrator';
 import { ParallaxAgentAvatar } from '@/components/parallax/ParallaxAgentIcon';
-import { ParallaxSummaryCard } from '@/components/parallax/ParallaxSummaryCard';
 import type { ParallaxMessage, ParallaxSummary, ParallaxAgentConfig } from '@/types';
 
 interface SwarmLiveFeedProps {
@@ -268,9 +267,55 @@ export const SwarmLiveFeed: React.FC<SwarmLiveFeedProps> = ({
   };
 
   return (
-    <div className="w-full my-3 rounded-2xl border border-zinc-800/90 bg-[#0c0d11] text-zinc-100 overflow-hidden shadow-2xl flex flex-col animate-in fade-in slide-in-from-bottom-2 duration-300">
+    <div className="swarm-live-feed shrink-0 min-h-0 w-full my-3 rounded-2xl border border-zinc-800/90 bg-[#0c0d11] text-zinc-100 overflow-hidden shadow-2xl flex flex-col animate-in fade-in slide-in-from-bottom-2 duration-300">
+      <style>{`
+        @media (max-width: 768px) {
+          .swarm-live-feed {
+            height: 320px !important;
+            max-height: 40vh !important;
+            overflow-y: auto !important;
+            overflow-x: hidden !important;
+            flex-shrink: 0 !important;
+            min-height: 0 !important;
+          }
+          .swarm-live-message {
+            padding: 6px 8px !important;
+            margin-bottom: 4px !important;
+            font-size: 12px !important;
+            line-height: 1.35 !important;
+          }
+          .swarm-live-avatar {
+            width: 24px !important;
+            height: 24px !important;
+            font-size: 10px !important;
+          }
+          .swarm-live-agent-name {
+            font-size: 11px !important;
+          }
+          .swarm-live-round-badge {
+            font-size: 9px !important;
+            padding: 1px 4px !important;
+          }
+          .swarm-live-conviction {
+            font-size: 9px !important;
+          }
+          .swarm-live-header {
+            padding: 8px 10px !important;
+            font-size: 12px !important;
+          }
+          .swarm-live-status {
+            font-size: 11px !important;
+            padding: 6px 10px !important;
+          }
+          .swarm-live-summary {
+            font-size: 11px !important;
+            padding: 8px 10px !important;
+          }
+        }
+      `}</style>
+
       {/* YouTube Live Chat Style Header Bar */}
-      <div className="px-3.5 py-2.5 bg-zinc-950/90 border-b border-zinc-800/80 flex items-center justify-between gap-3 flex-wrap">
+      <div className="swarm-live-header px-3.5 py-2.5 bg-zinc-950/90 border-b border-zinc-800/80 flex items-center justify-between gap-3 flex-wrap">
         <div className="flex items-center gap-2.5 min-w-0">
           {/* Live Status Badge */}
           {status === 'running' ? (
@@ -360,7 +405,7 @@ export const SwarmLiveFeed: React.FC<SwarmLiveFeedProps> = ({
 
       {/* Live Stream Status Ticker */}
       {status === 'running' && (
-        <div className="px-3.5 py-1.5 bg-zinc-900/40 border-b border-zinc-800/40 flex items-center gap-2 text-[11px] text-zinc-400 truncate">
+        <div className="swarm-live-status px-3.5 py-1.5 bg-zinc-900/40 border-b border-zinc-800/40 flex items-center gap-2 text-[11px] text-zinc-400 truncate">
           <Loader2 size={12} className="animate-spin text-red-400 shrink-0" />
           <span className="truncate">{statusText}</span>
         </div>
@@ -370,7 +415,7 @@ export const SwarmLiveFeed: React.FC<SwarmLiveFeedProps> = ({
       <div
         ref={scrollContainerRef}
         onScroll={handleScroll}
-        className="flex-1 max-h-[460px] overflow-y-auto p-3.5 space-y-2.5 bg-[#090a0d] scroll-smooth"
+        className="flex-1 max-h-[460px] overflow-y-auto p-3.5 space-y-2.5 bg-[#090a0d] scroll-smooth min-h-0"
       >
         {messages.length === 0 ? (
           <div className="py-12 flex flex-col items-center justify-center text-center text-zinc-500 space-y-2">
@@ -388,10 +433,10 @@ export const SwarmLiveFeed: React.FC<SwarmLiveFeedProps> = ({
                   initial={{ opacity: 0, y: 10, scale: 0.98 }}
                   animate={{ opacity: 1, y: 0, scale: 1 }}
                   transition={{ duration: 0.2, ease: 'easeOut' }}
-                  className="flex items-start gap-2.5 text-xs group/msg"
+                  className="swarm-live-message flex items-start gap-2.5 text-xs group/msg"
                 >
                   {/* Avatar with icon/initial */}
-                  <div className="shrink-0 pt-0.5">
+                  <div className="swarm-live-avatar shrink-0 pt-0.5">
                     <ParallaxAgentAvatar
                       agentId={msg.agentId}
                       agentName={msg.agentName}
@@ -404,7 +449,7 @@ export const SwarmLiveFeed: React.FC<SwarmLiveFeedProps> = ({
                   <div className="flex-1 min-w-0">
                     <div className="flex items-center gap-2 mb-1 flex-wrap">
                       <span
-                        className="font-bold tracking-tight text-[12px]"
+                        className="swarm-live-agent-name font-bold tracking-tight text-[12px]"
                         style={{ color: nameColor }}
                       >
                         {msg.agentName}
@@ -417,13 +462,13 @@ export const SwarmLiveFeed: React.FC<SwarmLiveFeedProps> = ({
                       )}
 
                       {/* Round Badge */}
-                      <span className="px-1.5 py-0.2 rounded text-[9px] font-mono font-semibold bg-zinc-800/90 text-zinc-300 border border-zinc-700/60">
+                      <span className="swarm-live-round-badge px-1.5 py-0.2 rounded text-[9px] font-mono font-semibold bg-zinc-800/90 text-zinc-300 border border-zinc-700/60">
                         R{msg.round}
                       </span>
 
                       {/* Conviction & Mood */}
                       {msg.conviction !== undefined && (
-                        <span className="text-[10px] text-zinc-500 font-mono">
+                        <span className="swarm-live-conviction text-[10px] text-zinc-500 font-mono">
                           [{msg.conviction}/10{msg.mood ? ` ${msg.mood}` : ''}]
                         </span>
                       )}
@@ -448,16 +493,34 @@ export const SwarmLiveFeed: React.FC<SwarmLiveFeedProps> = ({
         )}
       </div>
 
-      {/* Parallax Summary Card (Rendered below feed when complete) */}
-      {summary && (
-        <div className="p-3.5 bg-zinc-950 border-t border-zinc-800/80">
-          <ParallaxSummaryCard
-            summary={summary}
-            topic={topic}
-            allMessages={messages}
-          />
-        </div>
-      )}
+      {/* Compact Text-Only Summary (Matching Chat Assistant Aesthetics) */}
+      {summary && (() => {
+        const rawVerdict = summary.verdict || (summary as unknown as { synthesisVerdict?: string }).synthesisVerdict || (summary as unknown as { overallVerdict?: string }).overallVerdict || 'Debate complete.';
+        const displayVerdict = rawVerdict.length > 200 ? rawVerdict.slice(0, 197) + '…' : rawVerdict;
+        const highlightsList = summary.highlights || (summary as unknown as { keyHighlights?: string[] }).keyHighlights || [];
+
+        return (
+          <div className="swarm-live-summary px-3.5 py-3 bg-zinc-950/95 border-t border-zinc-800/80 text-[13px] text-zinc-200 leading-relaxed">
+            <div className="flex items-center gap-1.5 font-semibold text-[#61d7c9] mb-1.5 text-xs tracking-wide">
+              <span>✦</span>
+              <span>Swarm Consensus</span>
+              {summary.consensusLean && (
+                <span className="text-[10px] font-mono font-normal text-zinc-400 px-1.5 py-0.5 rounded bg-zinc-800/80 border border-zinc-700/50 ml-auto">
+                  {summary.consensusLean}
+                </span>
+              )}
+            </div>
+            <p className="text-zinc-200 break-words line-clamp-3">
+              {displayVerdict}
+            </p>
+            {highlightsList.length > 0 && (
+              <div className="mt-2 pt-2 border-t border-zinc-800/50 text-[12px] text-zinc-400 line-clamp-2">
+                {highlightsList.slice(0, 2).join(' • ')}
+              </div>
+            )}
+          </div>
+        );
+      })()}
     </div>
   );
 };
