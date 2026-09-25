@@ -120,7 +120,7 @@ export const SwarmLiveFeed: React.FC<SwarmLiveFeedProps> = ({
 
   useEffect(() => {
     scrollToBottom(true);
-  }, [messages, statusText, currentRound, scrollToBottom]);
+  }, [messages, statusText, currentRound, summary, scrollToBottom]);
 
   // Execute swarm on mount (ONLY when savedState is NOT provided)
   useEffect(() => {
@@ -491,36 +491,50 @@ export const SwarmLiveFeed: React.FC<SwarmLiveFeedProps> = ({
             <span>{errorMessage}</span>
           </div>
         )}
-      </div>
 
-      {/* Compact Text-Only Summary (Matching Chat Assistant Aesthetics) */}
-      {summary && (() => {
-        const rawVerdict = summary.verdict || (summary as unknown as { synthesisVerdict?: string }).synthesisVerdict || (summary as unknown as { overallVerdict?: string }).overallVerdict || 'Debate complete.';
-        const displayVerdict = rawVerdict.length > 200 ? rawVerdict.slice(0, 197) + '…' : rawVerdict;
-        const highlightsList = summary.highlights || (summary as unknown as { keyHighlights?: string[] }).keyHighlights || [];
+        {/* Compact Text-Only Summary (Rendered in normal document flow below all messages) */}
+        {summary && (() => {
+          const rawVerdict =
+            summary.verdict ||
+            (summary as unknown as { synthesisVerdict?: string }).synthesisVerdict ||
+            (summary as unknown as { overallVerdict?: string }).overallVerdict ||
+            'Debate complete.';
+          const displayVerdict = rawVerdict.length > 200 ? rawVerdict.slice(0, 197) + '…' : rawVerdict;
+          const highlightsList =
+            summary.highlights ||
+            (summary as unknown as { keyHighlights?: string[] }).keyHighlights ||
+            [];
 
-        return (
-          <div className="swarm-live-summary px-3.5 py-3 bg-zinc-950/95 border-t border-zinc-800/80 text-[13px] text-zinc-200 leading-relaxed">
-            <div className="flex items-center gap-1.5 font-semibold text-[#61d7c9] mb-1.5 text-xs tracking-wide">
-              <span>✦</span>
-              <span>Swarm Consensus</span>
-              {summary.consensusLean && (
-                <span className="text-[10px] font-mono font-normal text-zinc-400 px-1.5 py-0.5 rounded bg-zinc-800/80 border border-zinc-700/50 ml-auto">
-                  {summary.consensusLean}
-                </span>
+          return (
+            <div
+              className="swarm-live-summary static z-auto mt-3 p-3.5 rounded-xl bg-zinc-950/95 border border-zinc-800/90 text-[13px] text-zinc-200 leading-relaxed shadow-sm"
+              style={{
+                position: 'static',
+                zIndex: 'auto',
+                borderTop: '2px solid rgba(97, 215, 201, 0.4)',
+              }}
+            >
+              <div className="flex items-center gap-1.5 font-semibold text-[#61d7c9] mb-1.5 text-xs tracking-wide">
+                <span>✦</span>
+                <span>Swarm Consensus</span>
+                {summary.consensusLean && (
+                  <span className="text-[10px] font-mono font-normal text-zinc-400 px-1.5 py-0.5 rounded bg-zinc-800/80 border border-zinc-700/50 ml-auto">
+                    {summary.consensusLean}
+                  </span>
+                )}
+              </div>
+              <p className="text-zinc-200 break-words line-clamp-3">
+                {displayVerdict}
+              </p>
+              {highlightsList.length > 0 && (
+                <div className="mt-2 pt-2 border-t border-zinc-800/50 text-[12px] text-zinc-400 line-clamp-2">
+                  {highlightsList.slice(0, 2).join(' • ')}
+                </div>
               )}
             </div>
-            <p className="text-zinc-200 break-words line-clamp-3">
-              {displayVerdict}
-            </p>
-            {highlightsList.length > 0 && (
-              <div className="mt-2 pt-2 border-t border-zinc-800/50 text-[12px] text-zinc-400 line-clamp-2">
-                {highlightsList.slice(0, 2).join(' • ')}
-              </div>
-            )}
-          </div>
-        );
-      })()}
+          );
+        })()}
+      </div>
     </div>
   );
 };
