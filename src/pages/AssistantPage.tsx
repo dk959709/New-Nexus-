@@ -542,6 +542,19 @@ export function AssistantPage() {
   const [showImageEnhanceTip, setShowImageEnhanceTip] = useState<boolean>(() => !storage.getAssistantImageEnhanceTipDismissed());
   const longPressTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const longPressTriggeredRef = useRef<boolean>(false);
+  const pendingSavesRef = useRef<Set<Promise<unknown>>>(new Set());
+
+  useEffect(() => {
+    const handleBeforeUnload = () => {
+      if (pendingSavesRef.current.size > 0) {
+        console.warn('[AssistantPage] Reload while an image was still saving');
+      }
+    };
+    window.addEventListener('beforeunload', handleBeforeUnload);
+    return () => {
+      window.removeEventListener('beforeunload', handleBeforeUnload);
+    };
+  }, []);
   const [deepResearchEnabled, setDeepResearchEnabled] = useState(loadDeepResearchToggle);
   const [deepResearchProgress, setDeepResearchProgress] = useState<number>(0);
   const [deepResearchPhase, setDeepResearchPhase] = useState<string>('');
@@ -2139,10 +2152,21 @@ export function AssistantPage() {
         if (imageResult.imageData) {
           if (isIndexedDbAvailable()) {
             const shortId = `img_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`;
-            saveImageToDb(shortId, imageResult.imageData).catch((dbErr) => {
-              console.warn('[AssistantPage] Background save to IndexedDB failed:', dbErr);
-            });
-            imagePayload.imageDataId = shortId;
+            const savePromise = saveImageToDb(shortId, imageResult.imageData);
+            pendingSavesRef.current.add(savePromise);
+            try {
+              const saved = await savePromise;
+              if (saved) {
+                imagePayload.imageDataId = shortId;
+              } else {
+                imagePayload.imageData = imageResult.imageData;
+              }
+            } catch (dbErr) {
+              console.warn('[AssistantPage] Save to IndexedDB failed, falling back to in-memory payload:', dbErr);
+              imagePayload.imageData = imageResult.imageData;
+            } finally {
+              pendingSavesRef.current.delete(savePromise);
+            }
           } else {
             imagePayload.imageData = imageResult.imageData;
           }
