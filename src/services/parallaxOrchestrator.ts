@@ -2,9 +2,20 @@ import { storage, DEFAULT_PARALLAX_AGENTS } from '@/lib/storage';
 import { api } from '@/services/api';
 import { applyReasoningConfig } from '@/lib/reasoningConfig';
 import { AGENT_QUADRANTS } from '@/data/parallaxQuadrants';
+import {
+  resolveParallaxEntity,
+  collectParallaxEvidencePool,
+  extractAndVerifyClaims,
+  detectDeliberationConflicts,
+  buildAgentGroundingConstraint,
+} from './parallaxEvidenceEngine';
 import type {
   AIProviderConfig,
   ParallaxAgentConfig,
+  ParallaxClaim,
+  ParallaxEntityResolution,
+  ParallaxEvidenceItem,
+  ParallaxEvidencePool,
   ParallaxMessage,
   ParallaxSpecialistDeliberation,
   ParallaxSpecialistOpinion,
@@ -344,6 +355,7 @@ export interface ParallaxRunOptions {
   onStatusUpdate?: (status: string) => void;
   onDynamicPersonasCreated?: (personas: ParallaxAgentConfig[]) => void;
   onSpecialistDeliberation?: (deliberation: ParallaxSpecialistDeliberation) => void;
+  onEvidencePoolReady?: (pool: ParallaxEvidencePool) => void;
   onComplete?: (summary: ParallaxSummary, allMessages: ParallaxMessage[], deliberation?: ParallaxSpecialistDeliberation) => void;
   onError?: (error: string) => void;
   signal?: AbortSignal;
@@ -1381,6 +1393,7 @@ async function executeAgentTurn(
   topic: string,
   peersSample: ParallaxMessage[],
   veritasGrounding: VeritasGroundingData | null,
+  groundingConstraint?: string,
   signal?: AbortSignal,
 ): Promise<ParallaxMessage> {
   const startTime = Date.now();
@@ -1397,13 +1410,8 @@ Constraint: Exactly 1-2 punchy sentences (<40 words). Speak directly; no greetin
     // ROUND 1 CONTEXT:
     // Only includes:
     // 1. System prompt: Persona identity, role, instruction, length constraint (~40 tokens)
-    // 2. User prompt: The debate topic + 1-sentence opening instruction (~30 tokens)
-    // Total Round 1 input: ~70-80 tokens per agent.
-    // Intentionally EXCLUDED to prevent token bloat:
-    // - Full 20-persona swarm roster lists or trait summaries
-    // - Pre-round topic analysis / gap check reasoning
-    // - Dynamic specialist metadata or flags
-    // - Raw search engine dumps (VERITAS receives ONLY its 1-sentence committed fact)
+    // 2. User prompt: The debate topic + 1-sentence opening instruction + optional lean grounding constraint (~30-40 tokens)
+    // Total Round 1 input: ~70-90 tokens per agent.
     // =========================================================================
     if (agent.id === 'veritas') {
       if (veritasGrounding && !veritasGrounding.failed && veritasGrounding.committedFact) {
@@ -1411,10 +1419,13 @@ Constraint: Exactly 1-2 punchy sentences (<40 words). Speak directly; no greetin
       } else {
         userPrompt = `Topic: "${topic}"\n\nProvide your initial 1-2 sentence perspective on this topic based on your fact-based, skeptical analysis as VERITAS.`;
       }
-    } else if (agent.isDynamic) {
-      userPrompt = `Topic: "${topic}"\nProvide your initial 1-2 sentence perspective on this topic strictly applying your specialized domain expertise as ${agent.name} (${agent.role}).`;
     } else {
-      userPrompt = `Topic: "${topic}"\nProvide your initial 1-2 sentence perspective on this topic based on your archetype.`;
+      const constraintLine = groundingConstraint ? `[Grounding Baseline]: ${groundingConstraint}\n\n` : '';
+      if (agent.isDynamic) {
+        userPrompt = `Topic: "${topic}"\n\n${constraintLine}Provide your initial 1-2 sentence perspective on this topic strictly applying your specialized domain expertise as ${agent.name} (${agent.role}).`;
+      } else {
+        userPrompt = `Topic: "${topic}"\n\n${constraintLine}Provide your initial 1-2 sentence perspective on this topic based on your archetype.`;
+      }
     }
   } else {
     // =========================================================================
@@ -1423,10 +1434,6 @@ Constraint: Exactly 1-2 punchy sentences (<40 words). Speak directly; no greetin
     // 1. System prompt: Persona identity, role, instruction, length constraint (~40 tokens)
     // 2. User prompt: Topic + capped sample of 2 peer quotes (<=115 chars each) + 1-sentence action (~75-90 tokens)
     // Total Round 2/3 input: ~115-135 tokens per agent.
-    // Intentionally EXCLUDED to prevent token bloat:
-    // - Full transcripts of prior rounds (strictly capped at 2 peer quotes)
-    // - Long quotes (strictly truncated to 115 characters)
-    // - Swarm roster lists or specialist metadata
     // =========================================================================
     const peerBullets = peersSample
       .slice(0, 2) // Strictly capped at 2 peer quotes (keeps prompt under ~130 tokens)
@@ -1441,12 +1448,14 @@ Constraint: Exactly 1-2 punchy sentences (<40 words). Speak directly; no greetin
         ? 'Rebut the view you most disagree with in 1-2 sharp sentences'
         : 'Deliver your final 1-2 sentence synthesis';
 
+    const constraintLine = groundingConstraint && agent.id !== 'veritas' ? `[Grounding Baseline]: ${groundingConstraint}\n\n` : '';
+
     if (agent.id === 'veritas' && veritasGrounding && !veritasGrounding.failed && veritasGrounding.committedFact) {
       userPrompt = `Topic: "${topic}"\n\n[Committed Verified Fact]: "${veritasGrounding.committedFact}"\n\nPeer points from Round ${round - 1}:\n${peerBullets}\n\n${action} as VERITAS, upholding your verified fact.`;
     } else if (agent.isDynamic) {
-      userPrompt = `Topic: "${topic}"\n\nPeer points from Round ${round - 1}:\n${peerBullets}\n\n${action} as ${agent.name} strictly applying your specialized domain expertise as ${agent.role}.`;
+      userPrompt = `Topic: "${topic}"\n\n${constraintLine}Peer points from Round ${round - 1}:\n${peerBullets}\n\n${action} as ${agent.name} strictly applying your specialized domain expertise as ${agent.role}.`;
     } else {
-      userPrompt = `Topic: "${topic}"\n\nPeer points from Round ${round - 1}:\n${peerBullets}\n\n${action} as ${agent.name}.`;
+      userPrompt = `Topic: "${topic}"\n\n${constraintLine}Peer points from Round ${round - 1}:\n${peerBullets}\n\n${action} as ${agent.name}.`;
     }
   }
 
@@ -1654,23 +1663,16 @@ function buildDynamicFallbackSummary(
 
 /**
  * Generates the Parallax Summary after Round 3 completes.
- * Sends curated representative quotes from Rounds 1, 2, and 3 to ensure highlights reflect the actual debate transcript.
+ * Incorporates resolved entities, verified empirical claims, and ideological value tensions into the report.
  */
 export async function generateParallaxSummary(
   topic: string,
   allMessages: ParallaxMessage[],
+  entityResolution?: ParallaxEntityResolution | null,
+  evidenceItems?: ParallaxEvidenceItem[] | null,
+  verifiedClaims?: ParallaxClaim[] | null,
+  conflicts?: { factualConflicts: string[]; valueConflicts: string[] } | null,
 ): Promise<ParallaxSummary> {
-  // =========================================================================
-  // SYNTHESIS REPORT CONTEXT:
-  // Only includes:
-  // 1. Topic definition + total message count.
-  // 2. Curated representative excerpts: exactly 6 concise quotes (2 per round, <=110 chars each)
-  //    plus at most 1 specialist quote if dynamic specialists participated.
-  // Total Synthesis input tokens: ~550-680 tokens. Max output tokens: 350.
-  // Intentionally EXCLUDED to prevent token bloat:
-  // - Full raw transcript of all 60+ contributions.
-  // - Uncut persona speeches or system prompt repetitions.
-  // =========================================================================
   const round1Msgs = allMessages.filter((m) => m.round === 1);
   const round2Msgs = allMessages.filter((m) => m.round === 2);
   const round3Msgs = allMessages.filter((m) => m.round === 3);
@@ -1720,20 +1722,50 @@ export async function generateParallaxSummary(
     }
   }
 
+  // Calculate overall grounding level
+  let groundingLevel: 'HIGH' | 'MODERATE' | 'SPECULATIVE' | 'REFUTED' = 'MODERATE';
+  if (verifiedClaims && verifiedClaims.length > 0) {
+    if (verifiedClaims.some((c) => c.status === 'REFUTED')) {
+      groundingLevel = 'REFUTED';
+    } else if (verifiedClaims.some((c) => c.status === 'VERIFIED')) {
+      groundingLevel = 'HIGH';
+    } else if (verifiedClaims.every((c) => c.status === 'UNVERIFIED')) {
+      groundingLevel = 'SPECULATIVE';
+    }
+  }
+
+  const evidenceSources = evidenceItems && evidenceItems.length > 0
+    ? evidenceItems.slice(0, 6).map((e) => ({
+        title: e.title,
+        url: e.url,
+        domain: e.domain,
+        tier: e.reliabilityTier,
+        evidenceType: e.evidenceType,
+      }))
+    : undefined;
+
+  const entityContextStr = entityResolution && entityResolution.canonicalEntity && entityResolution.canonicalEntity !== entityResolution.input
+    ? `\nResolved Canonical Entity: "${entityResolution.canonicalEntity}" (input: "${entityResolution.input}")\n`
+    : '';
+
+  const claimsContextStr = verifiedClaims && verifiedClaims.length > 0
+    ? `\nEmpirical Verified Claims:\n${verifiedClaims.map((c) => `• [${c.status}] ${c.claimText}`).join('\n')}\n`
+    : '';
+
   console.log(
     `[Parallax Synthesizer] Generating summary report for: "${topic}". Input excerpts (${excerpts.length} quotes):\n${excerpts.join('\n')}`,
   );
 
-  const prompt = `Synthesize this PARALLAX swarm debate on the topic: "${topic}" (${allMessages.length} total contributions).
-
+  const prompt = `Synthesize this PARALLAX evidence-grounded swarm debate on the topic: "${topic}" (${allMessages.length} total contributions).
+${entityContextStr}${claimsContextStr}
 Representative excerpts from Rounds 1-3:
 ${excerpts.join('\n')}
 
 Instructions:
-1. Base synthesis strictly on the persona claims above.
-2. In "highlights", write 4 concise bullet points (1 sentence each) citing specific personas and their arguments (core personas or dynamically generated specialists).
-3. In "verdict", write 1 objective sentence summarizing the swarm's actual final consensus or division.
-4. In "consensusLean", provide a 2-4 word descriptor (e.g. "Empirically Grounded Lean", "Cautiously Split", "Factually Polarized").
+1. Base synthesis strictly on empirical reality and persona claims above.
+2. In "highlights", write 4 concise bullet points (1 sentence each) citing specific personas and their arguments.
+3. In "verdict", write 1 objective sentence summarizing the swarm's actual final consensus or division, explicitly respecting verified facts vs speculation.
+4. In "consensusLean", provide a 2-4 word descriptor (e.g. "Empirically Grounded Lean", "Cautiously Split", "Factually Polarized", "Precautionary Consensus").
 
 Output JSON format only:
 {
@@ -1752,7 +1784,7 @@ Output JSON format only:
       messages: [
         {
           role: 'system',
-          content: 'You are the PARALLAX Debate Synthesizer. You produce strictly grounded JSON summaries based exclusively on provided debate transcripts.',
+          content: 'You are the PARALLAX Debate Synthesizer. You produce strictly grounded JSON summaries based exclusively on provided debate transcripts and verified claims.',
         },
         { role: 'user', content: prompt },
       ],
@@ -1773,6 +1805,12 @@ Output JSON format only:
           highlights: parsed.highlights.slice(0, 5),
           consensusLean: parsed.consensusLean || 'Deliberative Consensus',
           totalContributions: allMessages.length,
+          entityResolution: entityResolution || undefined,
+          verifiedClaims: verifiedClaims && verifiedClaims.length > 0 ? verifiedClaims : undefined,
+          factualConflicts: conflicts?.factualConflicts,
+          valueConflicts: conflicts?.valueConflicts,
+          groundingLevel,
+          evidenceSources,
         };
       }
     }
@@ -1780,19 +1818,36 @@ Output JSON format only:
     console.warn('[Parallax Synthesizer] LLM summary synthesis had error, using dynamic transcript synthesis:', err);
   }
 
-  // Fallback derived dynamically from actual debate messages (never generic or unrelated)
-  return buildDynamicFallbackSummary(topic, allMessages);
+  // Fallback derived dynamically from actual debate messages
+  const fallbackSummary = buildDynamicFallbackSummary(topic, allMessages);
+  return {
+    ...fallbackSummary,
+    entityResolution: entityResolution || undefined,
+    verifiedClaims: verifiedClaims && verifiedClaims.length > 0 ? verifiedClaims : undefined,
+    factualConflicts: conflicts?.factualConflicts,
+    valueConflicts: conflicts?.valueConflicts,
+    groundingLevel,
+    evidenceSources,
+  };
 }
 
 /**
  * Main Parallax Swarm Execution Engine.
  *
- * STRICT CONSTRAINTS ENFORCED IN CODE:
- * 1. Exactly 3 rounds (hard-capped loop).
- * 2. Auto-stops after Round 3.
- * 3. VERITAS receives exactly ONE tool call in Round 1 only.
- * 4. No other agent has tool or internet access.
- * 5. Agents cannot communicate directly or autonomously; all message-passing is strictly orchestrated by this loop.
+ * EVIDENCE-GROUNDED MULTI-AGENT PIPELINE:
+ * USER QUERY
+ *   ↓
+ * ENTITY RESOLUTION (Detects typos, aliases, canonical names e.g. "GTP 6 Astra" -> "GPT-6 Astra")
+ *   ↓
+ * SHARED RESEARCH / EVIDENCE COLLECTION (10 diverse web & wiki sources categorized by tier)
+ *   ↓
+ * CLAIM EXTRACTION & SOURCE VERIFICATION (Scores claims as VERIFIED, PLAUSIBLE, DISPUTED, REFUTED, UNVERIFIED)
+ *   ↓
+ * 23-AGENT / 3-ROUND PARALLAX DELIBERATION (Bounded by verified facts, Round 2 directed ideological rebuttals)
+ *   ↓
+ * CONFLICT DETECTION (Distinguishes factual dispute from ideological/value tensions)
+ *   ↓
+ * FINAL SYNTHESIS (Grounded Verdict + Verified Claims + Ideological Tensions + Evidence Sources)
  */
 export async function runParallaxSwarm(options: ParallaxRunOptions): Promise<void> {
   const {
@@ -1824,21 +1879,71 @@ export async function runParallaxSwarm(options: ParallaxRunOptions): Promise<voi
 
   try {
     // -------------------------------------------------------------
-    // LIVE WEB SEARCH GROUNDING FOR VERITAS
-    // Only search once per debate, before Round 1 begins.
-    // Injects 10 grounding sources into VERITAS only (not the other 19 personas).
+    // 1. ENTITY RESOLUTION BEFORE PARALLAX
+    // Normalize model names, typos, company aliases
     // -------------------------------------------------------------
-    let veritasGrounding: VeritasGroundingData | null = null;
-    const veritasAgent = enabledAgents.find((a) => a.id === 'veritas');
-    if (veritasAgent) {
-      onStatusUpdate?.('Initializing Parallax: Grounding VERITAS with live search (Tavily → Exa → DuckDuckGo → Wikipedia)...');
-      veritasGrounding = await fetchVeritasGrounding(topic, signal);
-      if (veritasGrounding.failed) {
-        onStatusUpdate?.('Live Search: Fallbacks returned 0 results. VERITAS proceeding with internal training baselines.');
-      } else {
-        onStatusUpdate?.(`Live Search: Successfully grounded VERITAS via ${veritasGrounding.searchSource} (${veritasGrounding.sourcesCount} sources).`);
-      }
+    onStatusUpdate?.('Initializing Parallax: Performing entity resolution and canonical name check...');
+    const entityResolution = await resolveParallaxEntity(topic, signal);
+
+    if (entityResolution.canonicalEntity && entityResolution.canonicalEntity.toLowerCase() !== topic.toLowerCase().trim()) {
+      onStatusUpdate?.(`Entity Resolution: Identified "${entityResolution.canonicalEntity}" (${entityResolution.entityType}, ${Math.round(entityResolution.confidence * 100)}% confidence).`);
     }
+
+    // -------------------------------------------------------------
+    // 2. SHARED RESEARCH & EVIDENCE COLLECTION
+    // Gather shared grounding evidence pool across Tavily, Exa, DDG, and Wikipedia
+    // -------------------------------------------------------------
+    onStatusUpdate?.('Pre-Deliberation: Gathering evidence from live web & knowledge sources...');
+    const { evidenceItems, searchSource } = await collectParallaxEvidencePool(topic, entityResolution, signal);
+
+    // -------------------------------------------------------------
+    // 3. & 4. CLAIM EXTRACTION & SOURCE VERIFICATION
+    // Deconstruct topic into claims and evaluate empirical grounding
+    // -------------------------------------------------------------
+    onStatusUpdate?.('Pre-Deliberation: Extracting and verifying candidate claims against evidence...');
+    const verifiedClaims = await extractAndVerifyClaims(topic, evidenceItems, entityResolution, signal);
+
+    const evidencePool: ParallaxEvidencePool = {
+      topic,
+      entityResolution,
+      evidenceItems,
+      claims: verifiedClaims,
+      searchSource,
+      timestamp: Date.now(),
+    };
+    options.onEvidencePoolReady?.(evidencePool);
+
+    // Build VERITAS grounding data using the shared evidence pool
+    const mappedRawResults: ParallaxToolRawResult[] = evidenceItems.map((e) => ({
+      title: e.title,
+      url: e.url,
+      snippet: e.snippet,
+      domain: e.domain,
+      date: e.date,
+    }));
+
+    const topVerifiedClaim = verifiedClaims.find((c) => c.status === 'VERIFIED') || verifiedClaims[0];
+    const committedFact = topVerifiedClaim ? topVerifiedClaim.claimText : (evidenceItems[0]?.snippet.slice(0, 150) || '');
+
+    const veritasGrounding: VeritasGroundingData = {
+      results: mappedRawResults,
+      searchSource,
+      query: topic,
+      formattedGrounding: evidenceItems.map((e, idx) => `[${idx + 1}] "${e.title}" (${e.domain}): ${e.snippet.slice(0, 140)}`).join('\n'),
+      sourcesCount: evidenceItems.length,
+      topFactSnippet: committedFact,
+      committedFact,
+      failed: evidenceItems.length === 0,
+      rawPayload: {
+        query: topic,
+        searchSource,
+        committedFact,
+        resultsCount: evidenceItems.length,
+        rawResults: mappedRawResults,
+      },
+    };
+
+    onStatusUpdate?.(`Evidence Grounding: ${evidenceItems.length} sources verified via ${searchSource}. Grounding 23-agent swarm...`);
 
     // -------------------------------------------------------------
     // DYNAMIC SPECIALIST CREATION (2-STEP HYBRID ARCHITECTURE):
@@ -1880,6 +1985,9 @@ export async function runParallaxSwarm(options: ParallaxRunOptions): Promise<voi
 
     const debateAgents: ParallaxAgentConfig[] = [...enabledAgents, ...dynamicAgents];
 
+    // Compute lean grounding constraint to bound all agents (~25-35 tokens) so they don't hallucinate fake claims
+    const groundingConstraint = buildAgentGroundingConstraint(entityResolution, verifiedClaims);
+
     // -------------------------------------------------------------
     // STRICT ROUND CAP: Exactly 3 rounds (1, 2, 3)
     // -------------------------------------------------------------
@@ -1895,7 +2003,7 @@ export async function runParallaxSwarm(options: ParallaxRunOptions): Promise<voi
 
       const roundMessages: ParallaxMessage[] = [];
 
-      // Execute agents in controlled batches of 4 for a responsive, live YouTube-feed streaming cadence
+      // Execute agents in controlled batches of 4 for a responsive, live streaming cadence
       const BATCH_SIZE = 4;
       for (let i = 0; i < debateAgents.length; i += BATCH_SIZE) {
         if (signal?.aborted) {
@@ -1940,7 +2048,6 @@ export async function runParallaxSwarm(options: ParallaxRunOptions): Promise<voi
             // Fallback for Round 2 (if fewer than 2 distant speakers exist / no quadrant data) or default rotating sampling for Round 3
             if (peersSample.length < 2 && prevRoundMsgs.length > 0) {
               const N = prevRoundMsgs.length;
-              // Deterministic rotating sampling with high diversity (strictly 2 peer views)
               const offset1 = currentRound === 2 ? 3 : 5;
               const offset2 = currentRound === 2 ? 7 : 11;
 
@@ -1956,10 +2063,7 @@ export async function runParallaxSwarm(options: ParallaxRunOptions): Promise<voi
             }
           }
 
-          // ONLY VERITAS receives the live search grounding data (never the other 19 personas).
-          // In Round 1: Receives the raw 10 sources + committed verified fact.
-          // In Rounds 2 & 3: Receives ONLY the committed verified fact (never re-searching),
-          // with strict instructions to remain consistent with its stated fact.
+          // VERITAS receives the full search grounding data
           const groundingForAgent = agent.id === 'veritas' ? veritasGrounding : null;
 
           const msg = await executeAgentTurn(
@@ -1968,6 +2072,7 @@ export async function runParallaxSwarm(options: ParallaxRunOptions): Promise<voi
             topic,
             peersSample,
             groundingForAgent,
+            groundingConstraint,
             signal,
           );
 
@@ -1978,7 +2083,6 @@ export async function runParallaxSwarm(options: ParallaxRunOptions): Promise<voi
 
         for (const msg of batchResults) {
           if (signal?.aborted) return;
-          // Capture VERITAS's Round 1 statement to ensure absolute consistency in Rounds 2 & 3
           if (currentRound === 1 && msg.agentId === 'veritas' && veritasGrounding) {
             veritasGrounding.round1Statement = msg.text;
           }
@@ -2008,11 +2112,25 @@ export async function runParallaxSwarm(options: ParallaxRunOptions): Promise<voi
     }
 
     // -------------------------------------------------------------
-    // HARD STOP: Exactly 3 rounds completed. Auto-stops here.
+    // 6. CONFLICT & DISAGREEMENT DETECTION
+    // Distinguish factual disputes from value / ideological tensions
     // -------------------------------------------------------------
-    onStatusUpdate?.('Round 3 complete. Hard stop engaged. Synthesizing Parallax Summary...');
+    onStatusUpdate?.('Round 3 complete. Hard stop engaged. Detecting factual vs value conflicts...');
+    const conflicts = await detectDeliberationConflicts(topic, verifiedClaims, allMessages, signal);
 
-    const summary = await generateParallaxSummary(topic, allMessages);
+    // -------------------------------------------------------------
+    // 7. FINAL SYNTHESIS UPGRADE
+    // Generate synthesis report with Grounded Verdict, Verified Claims, and Ideological Tensions
+    // -------------------------------------------------------------
+    onStatusUpdate?.('Synthesizing evidence-grounded Parallax Summary...');
+    const summary = await generateParallaxSummary(
+      topic,
+      allMessages,
+      entityResolution,
+      evidenceItems,
+      verifiedClaims,
+      conflicts,
+    );
 
     // Save session to local storage
     storage.saveParallaxSession({

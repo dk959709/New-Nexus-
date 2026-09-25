@@ -597,11 +597,84 @@ export interface ParallaxMessage {
   voice?: string;
 }
 
+export interface ParallaxEntityResolution {
+  input: string;
+  canonicalEntity: string;
+  entityType: 'model' | 'company' | 'product' | 'technology' | 'person' | 'concept' | 'policy' | 'general';
+  confidence: number;
+  aliases: string[];
+  ambiguous: boolean;
+  notes?: string;
+}
+
+export type ParallaxEvidenceType =
+  | 'official_release'
+  | 'news'
+  | 'benchmark'
+  | 'academic'
+  | 'speculation'
+  | 'rumor'
+  | 'general';
+
+export interface ParallaxEvidenceItem {
+  id: string;
+  snippet: string;
+  title: string;
+  url: string;
+  domain: string;
+  date?: string;
+  reliabilityScore: number;
+  reliabilityTier: 'high' | 'medium' | 'low';
+  evidenceType: ParallaxEvidenceType;
+}
+
+export type ParallaxClaimType =
+  | 'existence'
+  | 'release'
+  | 'benchmark'
+  | 'attribution'
+  | 'capability'
+  | 'policy'
+  | 'speculation';
+
+export type ParallaxVerificationStatus =
+  | 'VERIFIED'
+  | 'PLAUSIBLE'
+  | 'DISPUTED'
+  | 'REFUTED'
+  | 'UNVERIFIED';
+
+export interface ParallaxClaim {
+  id: string;
+  claimText: string;
+  claimType: ParallaxClaimType;
+  status: ParallaxVerificationStatus;
+  confidence: number;
+  supportingEvidenceIds: string[];
+  refutingEvidenceIds: string[];
+  reasoning: string;
+}
+
+export interface ParallaxEvidencePool {
+  topic: string;
+  entityResolution?: ParallaxEntityResolution;
+  evidenceItems: ParallaxEvidenceItem[];
+  claims: ParallaxClaim[];
+  searchSource: string;
+  timestamp: number;
+}
+
 export interface ParallaxSummary {
   verdict: string;
   highlights: string[];
   consensusLean: string;
   totalContributions: number;
+  entityResolution?: ParallaxEntityResolution;
+  verifiedClaims?: ParallaxClaim[];
+  factualConflicts?: string[];
+  valueConflicts?: string[];
+  groundingLevel?: 'HIGH' | 'MODERATE' | 'SPECULATIVE' | 'REFUTED';
+  evidenceSources?: Array<{ title: string; url: string; domain: string; tier: string; evidenceType?: string }>;
 }
 
 export interface ParallaxSpecialistOpinion {

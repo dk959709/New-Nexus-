@@ -12,6 +12,14 @@ import {
   Compass,
   Code2,
   FileText,
+  ShieldCheck,
+  CheckCircle2,
+  AlertTriangle,
+  XCircle,
+  HelpCircle,
+  Scale,
+  ExternalLink,
+  Search,
 } from 'lucide-react';
 import type { ParallaxSummary, ParallaxMessage } from '@/types';
 import { formatFullParallaxTranscript } from '@/data/parallaxVoices';
@@ -295,6 +303,38 @@ export const ParallaxSummaryCard: React.FC<ParallaxSummaryCardProps> = ({
           >
             &ldquo;{topic}&rdquo;
           </span>
+          {summary.entityResolution && summary.entityResolution.canonicalEntity && summary.entityResolution.canonicalEntity.toLowerCase() !== topic.toLowerCase().trim() && (
+            <span
+              style={{
+                fontSize: '11px',
+                fontFamily: 'DM Mono, monospace',
+                padding: '2px 8px',
+                borderRadius: '6px',
+                background: 'rgba(16, 185, 129, 0.2)',
+                color: '#6ee7b7',
+                border: '1px solid rgba(16, 185, 129, 0.4)',
+                fontWeight: 700,
+              }}
+            >
+              Entity Resolved: &ldquo;{summary.entityResolution.canonicalEntity}&rdquo;
+            </span>
+          )}
+          {summary.groundingLevel && (
+            <span
+              style={{
+                fontSize: '10px',
+                fontFamily: 'DM Mono, monospace',
+                padding: '2px 7px',
+                borderRadius: '6px',
+                background: summary.groundingLevel === 'HIGH' ? 'rgba(6, 182, 212, 0.2)' : summary.groundingLevel === 'REFUTED' ? 'rgba(239, 68, 68, 0.2)' : 'rgba(245, 158, 11, 0.2)',
+                color: summary.groundingLevel === 'HIGH' ? '#38bdf8' : summary.groundingLevel === 'REFUTED' ? '#f87171' : '#fbbf24',
+                border: `1px solid ${summary.groundingLevel === 'HIGH' ? 'rgba(6, 182, 212, 0.4)' : summary.groundingLevel === 'REFUTED' ? 'rgba(239, 68, 68, 0.4)' : 'rgba(245, 158, 11, 0.4)'}`,
+                fontWeight: 700,
+              }}
+            >
+              GROUNDING: {summary.groundingLevel}
+            </span>
+          )}
         </div>
       </div>
 
@@ -486,6 +526,148 @@ export const ParallaxSummaryCard: React.FC<ParallaxSummaryCardProps> = ({
         </p>
       </div>
 
+      {/* Verified Claims Section (Evidence Grounding) */}
+      {summary.verifiedClaims && summary.verifiedClaims.length > 0 && (
+        <div style={{ marginBottom: '20px' }}>
+          <div style={{ display: 'flex', alignItems: 'center', gap: '6px', marginBottom: '10px' }}>
+            <ShieldCheck size={15} color="#61d7c9" />
+            <span style={{ fontSize: '11px', fontFamily: 'DM Mono, monospace', color: '#61d7c9', fontWeight: 800, letterSpacing: '0.05em' }}>
+              VERIFIED EMPIRICAL CLAIMS ({summary.verifiedClaims.length})
+            </span>
+          </div>
+          <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
+            {summary.verifiedClaims.map((claim) => {
+              let badgeBg = 'rgba(6, 182, 212, 0.15)';
+              let badgeColor = '#38bdf8';
+              let badgeBorder = 'rgba(6, 182, 212, 0.35)';
+              let Icon = CheckCircle2;
+
+              if (claim.status === 'VERIFIED') {
+                badgeBg = 'rgba(16, 185, 129, 0.18)';
+                badgeColor = '#6ee7b7';
+                badgeBorder = 'rgba(16, 185, 129, 0.4)';
+                Icon = CheckCircle2;
+              } else if (claim.status === 'REFUTED') {
+                badgeBg = 'rgba(239, 68, 68, 0.18)';
+                badgeColor = '#f87171';
+                badgeBorder = 'rgba(239, 68, 68, 0.4)';
+                Icon = XCircle;
+              } else if (claim.status === 'DISPUTED') {
+                badgeBg = 'rgba(245, 158, 11, 0.18)';
+                badgeColor = '#fbbf24';
+                badgeBorder = 'rgba(245, 158, 11, 0.4)';
+                Icon = AlertTriangle;
+              } else if (claim.status === 'UNVERIFIED') {
+                badgeBg = 'rgba(148, 163, 184, 0.15)';
+                badgeColor = '#cbd5e1';
+                badgeBorder = 'rgba(148, 163, 184, 0.3)';
+                Icon = HelpCircle;
+              }
+
+              return (
+                <div
+                  key={claim.id}
+                  style={{
+                    padding: '10px 14px',
+                    borderRadius: '10px',
+                    background: 'rgba(15, 23, 42, 0.65)',
+                    border: '1px solid rgba(97, 215, 201, 0.2)',
+                    display: 'flex',
+                    flexDirection: 'column',
+                    gap: '4px',
+                  }}
+                >
+                  <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', flexWrap: 'wrap', gap: '6px' }}>
+                    <span
+                      style={{
+                        fontSize: '10px',
+                        fontFamily: 'DM Mono, monospace',
+                        fontWeight: 700,
+                        padding: '1px 6px',
+                        borderRadius: '4px',
+                        background: badgeBg,
+                        color: badgeColor,
+                        border: `1px solid ${badgeBorder}`,
+                        display: 'inline-flex',
+                        alignItems: 'center',
+                        gap: '4px',
+                      }}
+                    >
+                      <Icon size={11} />
+                      {claim.status} • {claim.claimType.toUpperCase()}
+                    </span>
+                    <span style={{ fontSize: '10px', fontFamily: 'DM Mono, monospace', color: '#94a3b8' }}>
+                      Confidence: {Math.round(claim.confidence * 100)}%
+                    </span>
+                  </div>
+                  <div style={{ fontSize: '13px', color: '#f1f5f9', fontWeight: 600, lineHeight: 1.4 }}>
+                    {claim.claimText}
+                  </div>
+                  {claim.reasoning && (
+                    <div style={{ fontSize: '11px', color: '#94a3b8', fontStyle: 'italic', lineHeight: 1.3 }}>
+                      {claim.reasoning}
+                    </div>
+                  )}
+                </div>
+              );
+            })}
+          </div>
+        </div>
+      )}
+
+      {/* Value vs Factual Conflicts Section */}
+      {((summary.factualConflicts && summary.factualConflicts.length > 0) ||
+        (summary.valueConflicts && summary.valueConflicts.length > 0)) && (
+        <div style={{ marginBottom: '20px' }}>
+          <div style={{ display: 'flex', alignItems: 'center', gap: '6px', marginBottom: '10px' }}>
+            <Scale size={15} color="#61d7c9" />
+            <span style={{ fontSize: '11px', fontFamily: 'DM Mono, monospace', color: '#61d7c9', fontWeight: 800, letterSpacing: '0.05em' }}>
+              CONFLICT & VALUE TENSIONS ANALYSIS
+            </span>
+          </div>
+          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(280px, 1fr))', gap: '10px' }}>
+            {summary.factualConflicts && summary.factualConflicts.length > 0 && (
+              <div
+                style={{
+                  padding: '12px 14px',
+                  borderRadius: '10px',
+                  background: 'rgba(239, 68, 68, 0.08)',
+                  border: '1px solid rgba(239, 68, 68, 0.25)',
+                }}
+              >
+                <span style={{ fontSize: '10px', fontFamily: 'DM Mono, monospace', color: '#f87171', fontWeight: 800 }}>
+                  FACTUAL DISPUTES:
+                </span>
+                <ul style={{ margin: '6px 0 0', paddingLeft: '16px', fontSize: '12px', color: '#fca5a5', lineHeight: 1.4 }}>
+                  {summary.factualConflicts.map((fc, i) => (
+                    <li key={i}>{fc}</li>
+                  ))}
+                </ul>
+              </div>
+            )}
+            {summary.valueConflicts && summary.valueConflicts.length > 0 && (
+              <div
+                style={{
+                  padding: '12px 14px',
+                  borderRadius: '10px',
+                  background: 'rgba(168, 85, 247, 0.08)',
+                  border: '1px solid rgba(168, 85, 247, 0.25)',
+                }}
+              >
+                <span style={{ fontSize: '10px', fontFamily: 'DM Mono, monospace', color: '#c084fc', fontWeight: 800 }}>
+                  VALUE & PHILOSOPHICAL TENSIONS:
+                </span>
+                <ul style={{ margin: '6px 0 0', paddingLeft: '16px', fontSize: '12px', color: '#d8b4fe', lineHeight: 1.4 }}>
+                  {summary.valueConflicts.map((vc, i) => (
+                    <li key={i}>{vc}</li>
+                  ))}
+                </ul>
+              </div>
+            )}
+          </div>
+        </div>
+      )}
+
       {/* Key Highlights (4-5 bullets citing specific agent names) */}
       <div style={{ marginBottom: '18px' }}>
         <h4
@@ -520,6 +702,49 @@ export const ParallaxSummaryCard: React.FC<ParallaxSummaryCardProps> = ({
           ))}
         </div>
       </div>
+
+      {/* Grounded Evidence Sources */}
+      {summary.evidenceSources && summary.evidenceSources.length > 0 && (
+        <div style={{ marginBottom: '18px' }}>
+          <div style={{ display: 'flex', alignItems: 'center', gap: '6px', marginBottom: '8px' }}>
+            <Search size={14} color="#61d7c9" />
+            <span style={{ fontSize: '11px', fontFamily: 'DM Mono, monospace', color: '#61d7c9', fontWeight: 800, letterSpacing: '0.05em' }}>
+              GROUNDED EVIDENCE CITATIONS ({summary.evidenceSources.length})
+            </span>
+          </div>
+          <div style={{ display: 'flex', flexWrap: 'wrap', gap: '6px' }}>
+            {summary.evidenceSources.map((source, sIdx) => (
+              <a
+                key={sIdx}
+                href={source.url || '#'}
+                target="_blank"
+                rel="noreferrer noopener"
+                style={{
+                  display: 'inline-flex',
+                  alignItems: 'center',
+                  gap: '5px',
+                  padding: '4px 9px',
+                  borderRadius: '6px',
+                  background: 'rgba(15, 23, 42, 0.7)',
+                  border: '1px solid rgba(97, 215, 201, 0.25)',
+                  color: '#cbd5e1',
+                  fontSize: '11px',
+                  textDecoration: 'none',
+                  transition: 'all 0.15s ease',
+                }}
+                className="hover:border-[#61d7c9] hover:text-white"
+                title={source.title}
+              >
+                <span>{source.title.length > 32 ? source.title.slice(0, 30) + '…' : source.title}</span>
+                <span style={{ fontSize: '9px', color: '#61d7c9', fontFamily: 'DM Mono, monospace' }}>
+                  ({source.domain})
+                </span>
+                <ExternalLink size={10} className="text-slate-400" />
+              </a>
+            ))}
+          </div>
+        </div>
+      )}
 
       {/* Expandable Full Conversation Transcript */}
       <div style={{ borderTop: '1px solid rgba(97, 215, 201, 0.15)', paddingTop: '14px' }}>

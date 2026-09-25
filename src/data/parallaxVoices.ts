@@ -246,6 +246,41 @@ export function formatFullParallaxTranscript(
     output += `PARALLAX SWARM SYNTHESIS REPORT\n`;
     output += `${divider}\n\n`;
 
+    if (summary.entityResolution && summary.entityResolution.canonicalEntity && summary.entityResolution.canonicalEntity.toLowerCase() !== topic.toLowerCase().trim()) {
+      output += `RESOLVED ENTITY:\n"${summary.entityResolution.input}" -> "${summary.entityResolution.canonicalEntity}" (${summary.entityResolution.entityType}, ${Math.round(summary.entityResolution.confidence * 100)}% confidence)\n\n`;
+    }
+
+    if (summary.groundingLevel) {
+      output += `GROUNDING LEVEL:\n${summary.groundingLevel}\n\n`;
+    }
+
+    if (summary.verifiedClaims && summary.verifiedClaims.length > 0) {
+      output += `VERIFIED EMPIRICAL CLAIMS:\n`;
+      for (const c of summary.verifiedClaims) {
+        output += `• [${c.status}] ${c.claimText} (Confidence: ${Math.round(c.confidence * 100)}%)\n`;
+        if (c.reasoning) {
+          output += `  Evidentiary Basis: ${c.reasoning}\n`;
+        }
+      }
+      output += `\n`;
+    }
+
+    if (summary.factualConflicts && summary.factualConflicts.length > 0) {
+      output += `FACTUAL CONFLICTS DETECTED:\n`;
+      for (const fc of summary.factualConflicts) {
+        output += `• ${fc}\n`;
+      }
+      output += `\n`;
+    }
+
+    if (summary.valueConflicts && summary.valueConflicts.length > 0) {
+      output += `VALUE & IDEOLOGICAL TENSIONS:\n`;
+      for (const vc of summary.valueConflicts) {
+        output += `• ${vc}\n`;
+      }
+      output += `\n`;
+    }
+
     output += `CONSENSUS LEAN:\n${summary.consensusLean}\n\n`;
     output += `SYNTHESIS VERDICT:\n${summary.verdict}\n\n`;
 
@@ -253,6 +288,14 @@ export function formatFullParallaxTranscript(
       output += `KEY DELIBERATION HIGHLIGHTS:\n`;
       for (const hl of summary.highlights) {
         output += `• ${hl}\n`;
+      }
+      output += `\n`;
+    }
+
+    if (summary.evidenceSources && summary.evidenceSources.length > 0) {
+      output += `EVIDENCE CITATIONS:\n`;
+      for (const es of summary.evidenceSources) {
+        output += `• "${es.title}" (${es.domain}) [Tier: ${es.tier.toUpperCase()}]\n  URL: ${es.url}\n`;
       }
       output += `\n`;
     }
