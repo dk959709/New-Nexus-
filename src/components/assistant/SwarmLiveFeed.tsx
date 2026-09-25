@@ -255,10 +255,71 @@ export const SwarmLiveFeed: React.FC<SwarmLiveFeedProps> = ({
   };
 
   const handleCopyAll = async () => {
-    if (messages.length === 0) return;
-    const text = messages.map((m) => `${m.agentName}: ${m.text}`).join('\n\n');
+    if (messages.length === 0 && !summary) return;
+
+    const exportTimestamp = messages[0]?.timestamp
+      ? new Date(messages[0].timestamp).toLocaleString()
+      : new Date().toLocaleString();
+
+    const sections: string[] = [];
+
+    // 1. Header Metadata with Date/Time and Query
+    sections.push(
+      `═══════════════════════════════════════════════════\n` +
+      `✦ PARALLAX MULTI-AGENT SWARM DELIBERATION\n` +
+      `═══════════════════════════════════════════════════\n` +
+      `Date & Time  : ${exportTimestamp}\n` +
+      `Topic / Query: ${topic}\n` +
+      `Status       : ${status.toUpperCase()}\n` +
+      `Total Turns  : ${messages.length}\n` +
+      `═══════════════════════════════════════════════════`
+    );
+
+    // 2. Deliberation Transcript
+    if (messages.length > 0) {
+      sections.push(
+        `--- DELIBERATION TRANSCRIPT ---\n\n` +
+        messages
+          .map((m) => {
+            const roleInfo = m.role ? ` (${m.role})` : '';
+            const roundTag = m.round ? `[R${m.round}] ` : '';
+            const convictionTag = m.conviction !== undefined ? ` [${m.conviction}/10${m.mood ? ` ${m.mood}` : ''}]` : '';
+            return `${roundTag}${m.agentName}${roleInfo}${convictionTag}:\n${m.text}`;
+          })
+          .join('\n\n')
+      );
+    }
+
+    // 3. Final Summary & Swarm Consensus
+    if (summary) {
+      const rawVerdict =
+        summary.verdict ||
+        (summary as unknown as { synthesisVerdict?: string }).synthesisVerdict ||
+        (summary as unknown as { overallVerdict?: string }).overallVerdict ||
+        'Debate complete.';
+      const highlightsList =
+        summary.highlights ||
+        (summary as unknown as { keyHighlights?: string[] }).keyHighlights ||
+        [];
+
+      let summarySection =
+        `═══════════════════════════════════════════════════\n` +
+        `✦ FINAL SWARM CONSENSUS\n` +
+        `═══════════════════════════════════════════════════\n` +
+        (summary.consensusLean ? `Consensus Lean: ${summary.consensusLean}\n\n` : '') +
+        `Verdict:\n${rawVerdict}`;
+
+      if (highlightsList.length > 0) {
+        summarySection += `\n\nKey Highlights:\n` + highlightsList.map((h) => `• ${h}`).join('\n');
+      }
+
+      sections.push(summarySection);
+    }
+
+    const fullExportText = sections.join('\n\n');
+
     try {
-      await navigator.clipboard.writeText(text);
+      await navigator.clipboard.writeText(fullExportText);
       setCopied(true);
       setTimeout(() => setCopied(false), 2000);
     } catch {
