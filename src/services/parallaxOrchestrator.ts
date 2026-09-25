@@ -1348,6 +1348,49 @@ function parseConvictionAndMood(raw: string, agentId: string, defaultMood?: stri
 }
 
 /**
+ * Helper to build a compressed grounding block from live search sources.
+ * Capped at 350 characters to keep agent input token footprints lean (~90 tokens).
+ */
+export const buildGroundingBlock = (
+  sources: Array<{ title: string; snippet: string; domain?: string }>,
+): string => {
+  if (!sources || sources.length === 0) return '';
+  const top3 = sources.slice(0, 3);
+  const bullets = top3
+    .map((s) => {
+      const snippet = s.snippet && s.snippet.length > 120 ? s.snippet.slice(0, 117) + '…' : s.snippet || '';
+      const domain = s.domain ? ` (${s.domain})` : '';
+      return `• ${s.title}: ${snippet}${domain}`;
+    })
+    .join('\n');
+
+  const block = `LIVE CONTEXT (verified ${new Date().toLocaleDateString()}):\n${bullets}`;
+  if (block.length > 350) {
+    const compactBullets = top3
+      .map((s) => {
+        const snippet = s.snippet && s.snippet.length > 70 ? s.snippet.slice(0, 67) + '…' : s.snippet || '';
+        const domain = s.domain ? ` (${s.domain})` : '';
+        return `• ${s.title.slice(0, 40)}: ${snippet}${domain}`;
+      })
+      .join('\n');
+    const compactBlock = `LIVE CONTEXT (verified ${new Date().toLocaleDateString()}):\n${compactBullets}`;
+    return compactBlock.length <= 350 ? compactBlock : '';
+  }
+  return block;
+};
+
+/**
+ * Helper to build a compressed single-line consensus facts string for Round 3.
+ * Capped at 200 characters (~50 tokens).
+ */
+export const buildConsensusFacts = (facts: string[]): string => {
+  if (!facts || facts.length === 0) return '';
+  const top2 = facts.slice(0, 2);
+  const line = top2.join(' | ');
+  return line.length > 200 ? line.slice(0, 197) + '…' : line;
+};
+
+/**
  * Pure helper function to compute ideological divergence using AGENT_QUADRANTS.
  * Calculates Euclidean distance Math.hypot(dx, dy) between agent and candidates.
  * Returns candidate IDs sorted by descending distance (most distant/opposing first).
@@ -1395,13 +1438,38 @@ async function executeAgentTurn(
   veritasGrounding: VeritasGroundingData | null,
   groundingConstraint?: string,
   signal?: AbortSignal,
+  sharedGroundingBlock?: string,
+  consensusFacts?: string,
 ): Promise<ParallaxMessage> {
   const startTime = Date.now();
   const { provider, model } = resolveParallaxProviderConfig(agent, 80);
 
   // Compact, high-signal system prompt with lightweight conviction & mood request (~40 tokens)
-  const systemPrompt = `Persona: ${agent.name} (${agent.role}). ${agent.systemInstruction}
+  let systemPrompt = `Persona: ${agent.name} (${agent.role}). ${agent.systemInstruction}
 Constraint: Exactly 1-2 punchy sentences (<40 words). Speak directly; no greeting, no intro, no self-naming. End with [conviction 1-10|mood emoji] (e.g. [9|🔥]).`;
+
+  // System prompt override for knowledge-cutoff personas in Round 1 only
+  if (round === 1 && sharedGroundingBlock && sharedGroundingBlock.trim().length > 0) {
+    const nameUpper = (agent.name || '').toUpperCase();
+    const idLower = (agent.id || '').toLowerCase();
+    const sysLower = (agent.systemInstruction || '').toLowerCase();
+    const roleLower = (agent.role || '').toLowerCase();
+    const isKnowledgeCutoffPersona =
+      nameUpper === 'AXIOM' ||
+      nameUpper === 'ORACLE' ||
+      nameUpper === 'CHRONOS' ||
+      idLower === 'axiom' ||
+      idLower === 'oracle' ||
+      idLower === 'chronos' ||
+      sysLower.includes('knowledge cutoff') ||
+      sysLower.includes('training data') ||
+      roleLower.includes('knowledge cutoff') ||
+      roleLower.includes('training data');
+
+    if (isKnowledgeCutoffPersona) {
+      systemPrompt += `\nYou have been provided live search context above. Use it as your primary factual basis.`;
+    }
+  }
 
   let userPrompt = '';
 
@@ -1410,8 +1478,7 @@ Constraint: Exactly 1-2 punchy sentences (<40 words). Speak directly; no greetin
     // ROUND 1 CONTEXT:
     // Only includes:
     // 1. System prompt: Persona identity, role, instruction, length constraint (~40 tokens)
-    // 2. User prompt: The debate topic + 1-sentence opening instruction + optional lean grounding constraint (~30-40 tokens)
-    // Total Round 1 input: ~70-90 tokens per agent.
+    // 2. User prompt: The debate topic + optional live grounding block + 1-sentence opening instruction (~70-90 tokens)
     // =========================================================================
     if (agent.id === 'veritas') {
       if (veritasGrounding && !veritasGrounding.failed && veritasGrounding.committedFact) {
@@ -1420,20 +1487,17 @@ Constraint: Exactly 1-2 punchy sentences (<40 words). Speak directly; no greetin
         userPrompt = `Topic: "${topic}"\n\nProvide your initial 1-2 sentence perspective on this topic based on your fact-based, skeptical analysis as VERITAS.`;
       }
     } else {
+      const groundingBlock = sharedGroundingBlock && sharedGroundingBlock.length <= 350 ? `\n${sharedGroundingBlock}\n` : '';
       const constraintLine = groundingConstraint ? `[Grounding Baseline]: ${groundingConstraint}\n\n` : '';
       if (agent.isDynamic) {
-        userPrompt = `Topic: "${topic}"\n\n${constraintLine}Provide your initial 1-2 sentence perspective on this topic strictly applying your specialized domain expertise as ${agent.name} (${agent.role}).`;
+        userPrompt = `Topic: "${topic}"${groundingBlock}\n${constraintLine}Provide your initial 1-2 sentence perspective on this topic strictly applying your specialized domain expertise as ${agent.name} (${agent.role}).`;
       } else {
-        userPrompt = `Topic: "${topic}"\n\n${constraintLine}Provide your initial 1-2 sentence perspective on this topic based on your archetype.`;
+        userPrompt = `Topic: "${topic}"${groundingBlock}\n${constraintLine}Provide your initial 1-2 sentence perspective on this topic based on your archetype.`;
       }
     }
   } else {
     // =========================================================================
     // ROUNDS 2 & 3 CONTEXT:
-    // Only includes:
-    // 1. System prompt: Persona identity, role, instruction, length constraint (~40 tokens)
-    // 2. User prompt: Topic + capped sample of 2 peer quotes (<=115 chars each) + 1-sentence action (~75-90 tokens)
-    // Total Round 2/3 input: ~115-135 tokens per agent.
     // =========================================================================
     const peerBullets = peersSample
       .slice(0, 2) // Strictly capped at 2 peer quotes (keeps prompt under ~130 tokens)
@@ -1446,16 +1510,28 @@ Constraint: Exactly 1-2 punchy sentences (<40 words). Speak directly; no greetin
     const action =
       round === 2
         ? 'Rebut the view you most disagree with in 1-2 sharp sentences'
-        : 'Deliver your final 1-2 sentence synthesis';
+        : 'Deliver your final 1-2 sentence position';
 
     const constraintLine = groundingConstraint && agent.id !== 'veritas' ? `[Grounding Baseline]: ${groundingConstraint}\n\n` : '';
 
-    if (agent.id === 'veritas' && veritasGrounding && !veritasGrounding.failed && veritasGrounding.committedFact) {
-      userPrompt = `Topic: "${topic}"\n\n[Committed Verified Fact]: "${veritasGrounding.committedFact}"\n\nPeer points from Round ${round - 1}:\n${peerBullets}\n\n${action} as VERITAS, upholding your verified fact.`;
-    } else if (agent.isDynamic) {
-      userPrompt = `Topic: "${topic}"\n\n${constraintLine}Peer points from Round ${round - 1}:\n${peerBullets}\n\n${action} as ${agent.name} strictly applying your specialized domain expertise as ${agent.role}.`;
+    if (round === 3) {
+      const factsLine = consensusFacts && consensusFacts.length <= 200 ? `\nVERIFIED FACTS: ${consensusFacts}\n` : '';
+      if (agent.id === 'veritas' && veritasGrounding && !veritasGrounding.failed && veritasGrounding.committedFact) {
+        userPrompt = `Topic: "${topic}"${factsLine}\n[Committed Verified Fact]: "${veritasGrounding.committedFact}"\n\nPeer points from Round 2:\n${peerBullets}\n\n${action} as VERITAS, upholding your verified fact.`;
+      } else if (agent.isDynamic) {
+        userPrompt = `Topic: "${topic}"${factsLine}\n${constraintLine}Peer points from Round 2:\n${peerBullets}\n\n${action} as ${agent.name} strictly applying your specialized domain expertise as ${agent.role}.`;
+      } else {
+        userPrompt = `Topic: "${topic}"${factsLine}\n${constraintLine}Peer points from Round 2:\n${peerBullets}\n\n${action} as ${agent.name}.`;
+      }
     } else {
-      userPrompt = `Topic: "${topic}"\n\n${constraintLine}Peer points from Round ${round - 1}:\n${peerBullets}\n\n${action} as ${agent.name}.`;
+      // Round 2
+      if (agent.id === 'veritas' && veritasGrounding && !veritasGrounding.failed && veritasGrounding.committedFact) {
+        userPrompt = `Topic: "${topic}"\n\n[Committed Verified Fact]: "${veritasGrounding.committedFact}"\n\nPeer points from Round 1:\n${peerBullets}\n\n${action} as VERITAS, upholding your verified fact.`;
+      } else if (agent.isDynamic) {
+        userPrompt = `Topic: "${topic}"\n\n${constraintLine}Peer points from Round 1:\n${peerBullets}\n\n${action} as ${agent.name} strictly applying your specialized domain expertise as ${agent.role}.`;
+      } else {
+        userPrompt = `Topic: "${topic}"\n\n${constraintLine}Peer points from Round 1:\n${peerBullets}\n\n${action} as ${agent.name}.`;
+      }
     }
   }
 
@@ -1988,6 +2064,15 @@ export async function runParallaxSwarm(options: ParallaxRunOptions): Promise<voi
     // Compute lean grounding constraint to bound all agents (~25-35 tokens) so they don't hallucinate fake claims
     const groundingConstraint = buildAgentGroundingConstraint(entityResolution, verifiedClaims);
 
+    // Build shared live grounding block for all agents in Round 1 (<350 characters / ~90 tokens)
+    let sharedGroundingBlock = '';
+    if (veritasGrounding && !veritasGrounding.failed && veritasGrounding.results && veritasGrounding.results.length > 0) {
+      sharedGroundingBlock = buildGroundingBlock(veritasGrounding.results);
+      if (sharedGroundingBlock.length > 350) {
+        sharedGroundingBlock = '';
+      }
+    }
+
     // -------------------------------------------------------------
     // STRICT ROUND CAP: Exactly 3 rounds (1, 2, 3)
     // -------------------------------------------------------------
@@ -2000,6 +2085,35 @@ export async function runParallaxSwarm(options: ParallaxRunOptions): Promise<voi
       const currentRound = roundNum as 1 | 2 | 3;
       onRoundStart?.(currentRound);
       onStatusUpdate?.(`Round ${currentRound} of 3: Mobilizing ${debateAgents.length} agents...`);
+
+      // Build consensus facts line for Round 3 (<200 characters / ~50 tokens)
+      let consensusFacts = '';
+      if (currentRound === 3) {
+        const candidateFacts: string[] = [];
+        if (veritasGrounding && !veritasGrounding.failed && veritasGrounding.committedFact) {
+          candidateFacts.push(veritasGrounding.committedFact);
+        }
+        if (verifiedClaims && verifiedClaims.length > 0) {
+          const verifiedTexts = verifiedClaims
+            .filter((c) => c.status === 'VERIFIED' || c.status === 'PLAUSIBLE')
+            .map((c) => c.claimText);
+          for (const vt of verifiedTexts) {
+            if (!candidateFacts.includes(vt)) {
+              candidateFacts.push(vt);
+            }
+          }
+        }
+        if (candidateFacts.length === 0 && allMessages.length > 0) {
+          const veritasMsgs = allMessages.filter((m) => m.agentId === 'veritas');
+          if (veritasMsgs.length > 0 && veritasMsgs[0].text) {
+            candidateFacts.push(veritasMsgs[0].text);
+          }
+        }
+        consensusFacts = buildConsensusFacts(candidateFacts);
+        if (consensusFacts.length > 200) {
+          consensusFacts = '';
+        }
+      }
 
       const roundMessages: ParallaxMessage[] = [];
 
@@ -2074,6 +2188,8 @@ export async function runParallaxSwarm(options: ParallaxRunOptions): Promise<voi
             groundingForAgent,
             groundingConstraint,
             signal,
+            sharedGroundingBlock,
+            consensusFacts,
           );
 
           return msg;
