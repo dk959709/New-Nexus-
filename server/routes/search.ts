@@ -1243,8 +1243,16 @@ export async function searchProvider(input: z.infer<typeof searchSchema>): Promi
 
   if (key && url) {
     try {
-      const isTavily = !isCustom && (url.includes('tavily.com') || Boolean(getBackendApiKey('TAVILY_API_KEY')));
-      const bodyPayload = isTavily
+      const isLangSearch = url.includes('langsearch.com');
+      const isTavily = !isLangSearch && !isCustom && (url.includes('tavily.com') || Boolean(getBackendApiKey('TAVILY_API_KEY')));
+      const bodyPayload = isLangSearch
+        ? {
+            query: input.query,
+            count: 50,
+            contents: { text: true },
+            freshness: 'noLimit',
+          }
+        : isTavily
         ? {
             api_key: key,
             query: input.query,
@@ -1265,7 +1273,9 @@ export async function searchProvider(input: z.infer<typeof searchSchema>): Promi
       const headers: Record<string, string> = {
         'Content-Type': 'application/json',
       };
-      if (isCustom || !isTavily) {
+      if (isLangSearch) {
+        headers['Authorization'] = `Bearer ${key}`;
+      } else if (isCustom || !isTavily) {
         headers['Authorization'] = `Bearer ${key}`;
         headers['X-API-Key'] = key;
       }
@@ -1294,8 +1304,21 @@ export async function searchProvider(input: z.infer<typeof searchSchema>): Promi
           results?: Array<Record<string, unknown>>;
           organic_results?: Array<Record<string, unknown>>;
           news?: Array<Record<string, unknown>>;
+          data?: {
+            webPages?: {
+              value?: Array<Record<string, unknown>>;
+            };
+          };
+          webPages?: {
+            value?: Array<Record<string, unknown>>;
+          };
         };
-        const items = payload.results ?? payload.organic_results ?? payload.news ?? (Array.isArray(payload) ? (payload as Array<Record<string, unknown>>) : []);
+        const items = isLangSearch
+          ? (payload.data?.webPages?.value ?? payload.webPages?.value ?? [])
+          : (payload.results ??
+            payload.organic_results ??
+            payload.news ??
+            (Array.isArray(payload) ? (payload as Array<Record<string, unknown>>) : []));
         const type: SearchResult['type'] =
           input.category === 'NEWS'
             ? 'news'
@@ -1310,12 +1333,14 @@ export async function searchProvider(input: z.infer<typeof searchSchema>): Promi
         primaryResults = items
           .map((item) => {
             const urlValue = String(item.url ?? item.link ?? '');
+            const titleValue = String(item.name ?? item.title ?? '');
+            const snippetValue = String(item.snippet ?? item.summary ?? item.content ?? item.description ?? '');
             return {
-              title: String(item.title ?? ''),
+              title: titleValue,
               url: urlValue,
               domain: domainOf(urlValue),
-              description: String(item.content ?? item.description ?? item.snippet ?? ''),
-              date: item.date ? String(item.date) : undefined,
+              description: snippetValue,
+              date: item.date ? String(item.date) : (item.dateLastCrawled ? String(item.dateLastCrawled) : (item.published ? String(item.published) : undefined)),
               image: item.image ? String(item.image) : (item.thumbnail ? String(item.thumbnail) : undefined),
               thumbnail: item.thumbnail ? String(item.thumbnail) : undefined,
               type,
@@ -2289,8 +2314,16 @@ export async function executeCustomSearchTest(
   const startTime = Date.now();
 
   try {
-    const isTavily = cleanUrl.includes('tavily.com');
-    const bodyPayload = isTavily
+    const isLangSearch = cleanUrl.includes('langsearch.com');
+    const isTavily = !isLangSearch && cleanUrl.includes('tavily.com');
+    const bodyPayload = isLangSearch
+      ? {
+          query: 'test',
+          count: 50,
+          contents: { text: true },
+          freshness: 'noLimit',
+        }
+      : isTavily
       ? {
           api_key: cleanKey,
           query: 'test',
@@ -2308,7 +2341,9 @@ export async function executeCustomSearchTest(
     const headers: Record<string, string> = {
       'Content-Type': 'application/json',
     };
-    if (!isTavily) {
+    if (isLangSearch) {
+      headers['Authorization'] = `Bearer ${cleanKey}`;
+    } else if (!isTavily) {
       headers['Authorization'] = `Bearer ${cleanKey}`;
       headers['X-API-Key'] = cleanKey;
     }
@@ -2336,15 +2371,24 @@ export async function executeCustomSearchTest(
       results?: Array<Record<string, unknown>>;
       organic_results?: Array<Record<string, unknown>>;
       news?: Array<Record<string, unknown>>;
+      data?: {
+        webPages?: {
+          value?: Array<Record<string, unknown>>;
+        };
+      };
+      webPages?: {
+        value?: Array<Record<string, unknown>>;
+      };
     };
-    const items =
-      payload.results ??
-      payload.organic_results ??
-      payload.news ??
-      (Array.isArray(payload) ? (payload as Array<Record<string, unknown>>) : []);
+    const items = isLangSearch
+      ? (payload.data?.webPages?.value ?? payload.webPages?.value ?? [])
+      : (payload.results ??
+        payload.organic_results ??
+        payload.news ??
+        (Array.isArray(payload) ? (payload as Array<Record<string, unknown>>) : []));
 
     const validItems = items.filter(
-      (item) => item && typeof item === 'object' && (item.title || item.url || item.link),
+      (item) => item && typeof item === 'object' && (item.title || item.name || item.url || item.link),
     );
 
     if (validItems.length === 0) {
