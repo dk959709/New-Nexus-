@@ -84,7 +84,7 @@ type Message = {
   id?: string;
   role: 'user' | 'assistant';
   content: string;
-  tool?: 'none' | 'search' | 'weather' | 'image' | 'multichat' | 'architect' | 'dataAnalyst' | 'agent' | 'coder' | 'wikimedia';
+  tool?: 'none' | 'search' | 'weather' | 'image' | 'multichat' | 'architect' | 'dataAnalyst' | 'agent' | 'coder' | 'wikimedia' | 'webfetcher';
   sources?: AISource[];
   weather?: unknown;
   searchedWeb?: boolean;
@@ -2256,7 +2256,7 @@ DIRECTIVES:
             const assistantMessage: Message = {
               role: 'assistant',
               content: finalAnswerText,
-              tool: 'none',
+              tool: 'webfetcher',
             };
 
             setMessages((current) => [...current, assistantMessage]);
@@ -2272,7 +2272,7 @@ DIRECTIVES:
             const assistantMessage: Message = {
               role: 'assistant',
               content: 'Could not read this page. Try another number.',
-              tool: 'none',
+              tool: 'webfetcher',
             };
             setMessages((current) => [...current, assistantMessage]);
             setLoading(false);
@@ -2286,7 +2286,7 @@ DIRECTIVES:
             const assistantMessage: Message = {
               role: 'assistant',
               content: 'There is no list yet. Ask for a website first, for example: list claude official web.',
-              tool: 'none',
+              tool: 'webfetcher',
             };
             setMessages((current) => [...current, assistantMessage]);
             setLoading(false);
@@ -2297,7 +2297,7 @@ DIRECTIVES:
             const assistantMessage: Message = {
               role: 'assistant',
               content: `Please send a number from 1 to ${webFetcherList.length}.`,
-              tool: 'none',
+              tool: 'webfetcher',
             };
             setMessages((current) => [...current, assistantMessage]);
             setLoading(false);
@@ -2410,7 +2410,7 @@ DIRECTIVES:
             const assistantMessage: Message = {
               role: 'assistant',
               content: finalAnswerText,
-              tool: 'none',
+              tool: 'webfetcher',
             };
 
             setMessages((current) => [...current, assistantMessage]);
@@ -2426,7 +2426,7 @@ DIRECTIVES:
             const assistantMessage: Message = {
               role: 'assistant',
               content: 'Could not read this page. Try another number.',
-              tool: 'none',
+              tool: 'webfetcher',
             };
             setMessages((current) => [...current, assistantMessage]);
             setLoading(false);
@@ -2529,7 +2529,7 @@ DIRECTIVES:
             const assistantMessage: Message = {
               role: 'assistant',
               content: 'No websites found. Try different words.',
-              tool: 'none',
+              tool: 'webfetcher',
             };
             setMessages((current) => [...current, assistantMessage]);
             setLoading(false);
@@ -2578,7 +2578,7 @@ DIRECTIVES:
           const assistantMessage: Message = {
             role: 'assistant',
             content: listContent,
-            tool: 'none',
+            tool: 'webfetcher',
             sources: items.map((i) => ({ title: i.title, url: i.url, domain: i.domain })),
             searchedWeb: true,
           };
@@ -2596,7 +2596,7 @@ DIRECTIVES:
           const assistantMessage: Message = {
             role: 'assistant',
             content: 'Web Fetcher is ON. Send a URL, ask for a website (for example: list claude official web), or send a number from the list.',
-            tool: 'none',
+            tool: 'webfetcher',
           };
           setMessages((current) => [...current, assistantMessage]);
           setLoading(false);
@@ -3842,6 +3842,24 @@ DIRECTIVES:
                             >
                               <Layers3 size={11} className="text-rose-400" />
                               <span>New Agent</span>
+                            </span>
+                          </div>
+                        )}
+
+                        {/* Web Fetcher Indicator Tag */}
+                        {message.tool === 'webfetcher' && (
+                          <div className="flex items-center gap-2 pt-1 pb-0.5">
+                            <span
+                              className={`inline-flex items-center gap-1.5 px-2 py-0.5 rounded-full text-[11px] font-medium border ${
+                                theme === 'classic'
+                                  ? 'bg-teal-950/70 text-teal-300 border-teal-500/40'
+                                  : theme === 'fulldark'
+                                  ? 'bg-[#1e1e1e] text-teal-300 border-[#2e2e2e]'
+                                  : 'bg-zinc-800 text-teal-300 border-zinc-700/60'
+                              }`}
+                            >
+                              <Globe size={11} className="text-teal-400" />
+                              <span>Web Fetcher</span>
                             </span>
                           </div>
                         )}
