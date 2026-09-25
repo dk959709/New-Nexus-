@@ -1244,11 +1244,11 @@ export async function searchProvider(input: z.infer<typeof searchSchema>): Promi
   if (key && url) {
     try {
       const isLangSearch = url.includes('langsearch.com');
-      const isTavily = !isLangSearch && !isCustom && (url.includes('tavily.com') || Boolean(getBackendApiKey('TAVILY_API_KEY')));
+      const isTavily = !isLangSearch && (url.includes('tavily.com') || (!isCustom && Boolean(getBackendApiKey('TAVILY_API_KEY'))));
       const bodyPayload = isLangSearch
         ? {
             query: input.query,
-            count: 50,
+            count: 10,
             contents: { text: true },
             freshness: 'noLimit',
           }
@@ -1275,7 +1275,7 @@ export async function searchProvider(input: z.infer<typeof searchSchema>): Promi
       };
       if (isLangSearch) {
         headers['Authorization'] = `Bearer ${key}`;
-      } else if (isCustom || !isTavily) {
+      } else if (!isTavily) {
         headers['Authorization'] = `Bearer ${key}`;
         headers['X-API-Key'] = key;
       }
@@ -2319,7 +2319,7 @@ export async function executeCustomSearchTest(
     const bodyPayload = isLangSearch
       ? {
           query: 'test',
-          count: 50,
+          count: 10,
           contents: { text: true },
           freshness: 'noLimit',
         }
