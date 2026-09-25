@@ -1,6 +1,7 @@
 import { storage, DEFAULT_PARALLAX_AGENTS } from '@/lib/storage';
 import { api } from '@/services/api';
 import { applyReasoningConfig } from '@/lib/reasoningConfig';
+import { AGENT_QUADRANTS } from '@/data/parallaxQuadrants';
 import type {
   AIProviderConfig,
   ParallaxAgentConfig,
@@ -1335,6 +1336,43 @@ function parseConvictionAndMood(raw: string, agentId: string, defaultMood?: stri
 }
 
 /**
+ * Pure helper function to compute ideological divergence using AGENT_QUADRANTS.
+ * Calculates Euclidean distance Math.hypot(dx, dy) between agent and candidates.
+ * Returns candidate IDs sorted by descending distance (most distant/opposing first).
+ * Returns empty array if agent or candidates have no quadrant entry.
+ */
+export function findIdeologicalOpponents(agentId: string, candidateIds: string[]): string[] {
+  if (!agentId || !candidateIds || candidateIds.length === 0) {
+    return [];
+  }
+
+  const currentQ = AGENT_QUADRANTS[agentId.toLowerCase()] || AGENT_QUADRANTS[agentId.toLowerCase().replace(/[-_]/g, '')];
+  if (!currentQ) {
+    return [];
+  }
+
+  const scored: { id: string; distance: number }[] = [];
+
+  for (const cid of candidateIds) {
+    if (!cid || cid.toLowerCase() === agentId.toLowerCase()) continue;
+    const candQ = AGENT_QUADRANTS[cid.toLowerCase()] || AGENT_QUADRANTS[cid.toLowerCase().replace(/[-_]/g, '')];
+    if (candQ) {
+      const dx = candQ.x - currentQ.x;
+      const dy = candQ.y - currentQ.y;
+      const distance = Math.hypot(dx, dy);
+      scored.push({ id: cid, distance });
+    }
+  }
+
+  if (scored.length === 0) {
+    return [];
+  }
+
+  scored.sort((a, b) => b.distance - a.distance);
+  return scored.map((s) => s.id);
+}
+
+/**
  * Executes a single agent reaction turn with ultra-compact token footprint.
  */
 async function executeAgentTurn(
@@ -1400,7 +1438,7 @@ Constraint: Exactly 1-2 punchy sentences (<40 words). Speak directly; no greetin
 
     const action =
       round === 2
-        ? 'React to these peer views in 1-2 sharp sentences'
+        ? 'Rebut the view you most disagree with in 1-2 sharp sentences'
         : 'Deliver your final 1-2 sentence synthesis';
 
     if (agent.id === 'veritas' && veritasGrounding && !veritasGrounding.failed && veritasGrounding.committedFact) {
@@ -1879,7 +1917,28 @@ export async function runParallaxSwarm(options: ParallaxRunOptions): Promise<voi
             const prevRoundNum = (currentRound - 1) as 1 | 2;
             const prevRoundMsgs = allMessages.filter((m) => m.round === prevRoundNum);
 
-            if (prevRoundMsgs.length > 0) {
+            // In Round 2: Select the top 2 most ideologically distant opponents from Round 1
+            if (currentRound === 2 && prevRoundMsgs.length > 0) {
+              const validSpeakerMsgs = prevRoundMsgs.filter(
+                (p) => p && p.agentId !== agent.id && p.text && p.text.trim().length > 0,
+              );
+              const speakerIds = validSpeakerMsgs.map((p) => p.agentId);
+              const opponentIds = findIdeologicalOpponents(agent.id, speakerIds);
+
+              if (opponentIds.length >= 2) {
+                const top2Opponents = opponentIds.slice(0, 2);
+                const matchedMsgs = top2Opponents
+                  .map((oppId) => validSpeakerMsgs.find((m) => m.agentId.toLowerCase() === oppId.toLowerCase()))
+                  .filter((m): m is ParallaxMessage => Boolean(m));
+
+                if (matchedMsgs.length >= 2) {
+                  peersSample = matchedMsgs.slice(0, 2);
+                }
+              }
+            }
+
+            // Fallback for Round 2 (if fewer than 2 distant speakers exist / no quadrant data) or default rotating sampling for Round 3
+            if (peersSample.length < 2 && prevRoundMsgs.length > 0) {
               const N = prevRoundMsgs.length;
               // Deterministic rotating sampling with high diversity (strictly 2 peer views)
               const offset1 = currentRound === 2 ? 3 : 5;

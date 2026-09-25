@@ -2010,6 +2010,14 @@ export const storage = {
     write('nexus-ai-new-agent-toggle', enabled);
   },
 
+  getAssistantSwarmLiveEnabled(): boolean {
+    return read<boolean>('nexus-ai-swarm-live-toggle', false);
+  },
+
+  setAssistantSwarmLiveEnabled(enabled: boolean): void {
+    write('nexus-ai-swarm-live-toggle', enabled);
+  },
+
   getAssistantAnswerTitleColor(): string | null {
     return read<string | null>('nexus-ai-answer-title-color', null);
   },

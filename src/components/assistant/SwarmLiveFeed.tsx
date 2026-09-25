@@ -1,0 +1,324 @@
+import React, { useEffect, useState, useRef, useCallback } from 'react';
+import { motion, AnimatePresence } from 'framer-motion';
+import { Square, X, Radio, Loader2, AlertCircle, CheckCircle2, Users } from 'lucide-react';
+import { storage, DEFAULT_PARALLAX_AGENTS } from '@/lib/storage';
+import { AGENT_QUADRANTS } from '@/data/parallaxQuadrants';
+import { runParallaxSwarm } from '@/services/parallaxOrchestrator';
+import { ParallaxAgentAvatar } from '@/components/parallax/ParallaxAgentIcon';
+import { ParallaxSummaryCard } from '@/components/parallax/ParallaxSummaryCard';
+import type { ParallaxMessage, ParallaxSummary, ParallaxAgentConfig } from '@/types';
+
+interface SwarmLiveFeedProps {
+  topic: string;
+  onClose?: () => void;
+}
+
+function getAgentQuadrantColor(agentId: string): string {
+  const rawId = (agentId || '').toLowerCase();
+  const stripped = rawId.replace(/[-_]/g, '');
+  const info = AGENT_QUADRANTS[stripped] || AGENT_QUADRANTS[rawId];
+
+  if (!info) {
+    return '#38bdf8'; // Sky/Cyan for dynamic/unmapped
+  }
+
+  switch (info.quadrant) {
+    case 'optimists':
+      return '#22d3ee'; // cyan-400
+    case 'realists':
+      return '#fbbf24'; // amber-400
+    case 'ethicists':
+      return '#a78bfa'; // violet-400
+    case 'visionaries':
+      return '#f472b6'; // pink-400
+    case 'anchors':
+      return '#f4f4f5'; // white/zinc-100
+    default:
+      return '#38bdf8';
+  }
+}
+
+export const SwarmLiveFeed: React.FC<SwarmLiveFeedProps> = ({ topic, onClose }) => {
+  const [messages, setMessages] = useState<ParallaxMessage[]>([]);
+  const [status, setStatus] = useState<'idle' | 'running' | 'completed' | 'aborted' | 'error'>('running');
+  const [currentRound, setCurrentRound] = useState<number>(1);
+  const [statusText, setStatusText] = useState<string>('Initializing Parallax Swarm...');
+  const [summary, setSummary] = useState<ParallaxSummary | null>(null);
+  const [errorMessage, setErrorMessage] = useState<string | null>(null);
+  const [totalAgentsCount, setTotalAgentsCount] = useState<number>(() => {
+    try {
+      const cfg = storage.getParallaxConfig();
+      const enabled = Object.values(cfg.agents || DEFAULT_PARALLAX_AGENTS).filter((a) => a.enabled !== false);
+      return enabled.length || 20;
+    } catch {
+      return 20;
+    }
+  });
+
+  const abortControllerRef = useRef<AbortController | null>(null);
+  const scrollContainerRef = useRef<HTMLDivElement>(null);
+  const isNearBottomRef = useRef<boolean>(true);
+
+  const handleScroll = useCallback(() => {
+    const el = scrollContainerRef.current;
+    if (!el) return;
+    const threshold = 80;
+    const isBottom = el.scrollHeight - el.scrollTop - el.clientHeight <= threshold;
+    isNearBottomRef.current = isBottom;
+  }, []);
+
+  const scrollToBottom = useCallback((smooth = true) => {
+    if (scrollContainerRef.current && isNearBottomRef.current) {
+      scrollContainerRef.current.scrollTo({
+        top: scrollContainerRef.current.scrollHeight,
+        behavior: smooth ? 'smooth' : 'auto',
+      });
+    }
+  }, []);
+
+  useEffect(() => {
+    scrollToBottom(true);
+  }, [messages, statusText, currentRound, scrollToBottom]);
+
+  // Execute swarm on mount
+  useEffect(() => {
+    const controller = new AbortController();
+    abortControllerRef.current = controller;
+    setStatus('running');
+    setErrorMessage(null);
+    setSummary(null);
+
+    const parallaxConfig = storage.getParallaxConfig();
+
+    runParallaxSwarm({
+      topic,
+      config: parallaxConfig,
+      signal: controller.signal,
+      onStatusUpdate: (msg) => {
+        setStatusText(msg);
+      },
+      onRoundStart: (round) => {
+        setCurrentRound(round);
+      },
+      onDynamicPersonasCreated: (dynamicSpecialists: ParallaxAgentConfig[]) => {
+        const enabledCore = Object.values(parallaxConfig.agents || DEFAULT_PARALLAX_AGENTS).filter(
+          (a) => a.enabled !== false,
+        );
+        setTotalAgentsCount(enabledCore.length + (dynamicSpecialists?.length || 0));
+      },
+      onMessage: (msg: ParallaxMessage) => {
+        setMessages((prev) => [...prev, msg]);
+      },
+      onComplete: (completedSummary: ParallaxSummary) => {
+        setSummary(completedSummary);
+        setStatus('completed');
+        setStatusText('Swarm debate completed successfully.');
+      },
+      onError: (errText: string) => {
+        if (controller.signal.aborted) {
+          setStatus('aborted');
+          setStatusText('Swarm stopped by user.');
+        } else {
+          setErrorMessage(errText);
+          setStatus('error');
+          setStatusText(`Error: ${errText}`);
+        }
+      },
+    }).catch((err: unknown) => {
+      if (controller.signal.aborted) {
+        setStatus('aborted');
+        setStatusText('Swarm stopped by user.');
+      } else {
+        const msg = err instanceof Error ? err.message : String(err);
+        setErrorMessage(msg);
+        setStatus('error');
+      }
+    });
+
+    return () => {
+      controller.abort();
+    };
+  }, [topic]);
+
+  const handleStop = () => {
+    if (abortControllerRef.current && status === 'running') {
+      abortControllerRef.current.abort();
+      setStatus('aborted');
+      setStatusText('Swarm stopped by user.');
+    }
+  };
+
+  return (
+    <div className="w-full my-3 rounded-2xl border border-zinc-800/90 bg-[#0c0d11] text-zinc-100 overflow-hidden shadow-2xl flex flex-col animate-in fade-in slide-in-from-bottom-2 duration-300">
+      {/* YouTube Live Chat Style Header Bar */}
+      <div className="px-3.5 py-2.5 bg-zinc-950/90 border-b border-zinc-800/80 flex items-center justify-between gap-3 flex-wrap">
+        <div className="flex items-center gap-2.5 min-w-0">
+          {/* Live Status Badge */}
+          {status === 'running' ? (
+            <span className="inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-full text-[10.5px] font-bold tracking-wider uppercase bg-red-950/80 text-red-400 border border-red-500/50 shadow-[0_0_10px_rgba(239,68,68,0.2)]">
+              <span className="w-2 h-2 rounded-full bg-red-500 animate-pulse" />
+              LIVE
+            </span>
+          ) : status === 'completed' ? (
+            <span className="inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-full text-[10.5px] font-bold tracking-wider uppercase bg-emerald-950/80 text-emerald-400 border border-emerald-500/50">
+              <CheckCircle2 size={12} />
+              DEBATE COMPLETE
+            </span>
+          ) : status === 'aborted' ? (
+            <span className="inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-full text-[10.5px] font-bold tracking-wider uppercase bg-zinc-800 text-zinc-400 border border-zinc-700">
+              STOPPED
+            </span>
+          ) : (
+            <span className="inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-full text-[10.5px] font-bold tracking-wider uppercase bg-amber-950/80 text-amber-400 border border-amber-500/50">
+              ERROR
+            </span>
+          )}
+
+          {/* Topic & Agent Count */}
+          <div className="min-w-0">
+            <div className="text-xs font-semibold text-zinc-100 truncate max-w-[260px] sm:max-w-[420px]" title={topic}>
+              {topic}
+            </div>
+            <div className="flex items-center gap-2 text-[10.5px] text-zinc-400">
+              <span className="flex items-center gap-1 font-mono">
+                <Users size={11} className="text-zinc-500" />
+                {totalAgentsCount} Agents
+              </span>
+              <span className="text-zinc-700">•</span>
+              <span className="font-mono text-zinc-400">Round {currentRound}/3</span>
+              <span className="text-zinc-700">•</span>
+              <span className="text-zinc-400">{messages.length} messages</span>
+            </div>
+          </div>
+        </div>
+
+        {/* Action Controls */}
+        <div className="flex items-center gap-2">
+          {status === 'running' && (
+            <button
+              type="button"
+              onClick={handleStop}
+              className="px-2.5 py-1 rounded-lg border border-red-500/40 bg-red-950/40 hover:bg-red-900/60 text-red-300 text-xs font-medium flex items-center gap-1.5 transition-all shadow-sm active:scale-95"
+              title="Stop live swarm"
+            >
+              <Square size={11} className="fill-current" />
+              <span>Stop</span>
+            </button>
+          )}
+
+          {onClose && (
+            <button
+              type="button"
+              onClick={onClose}
+              className="p-1 rounded-lg text-zinc-400 hover:text-zinc-200 hover:bg-zinc-800 transition-colors"
+              title="Close live feed"
+            >
+              <X size={14} />
+            </button>
+          )}
+        </div>
+      </div>
+
+      {/* Live Stream Status Ticker */}
+      {status === 'running' && (
+        <div className="px-3.5 py-1.5 bg-zinc-900/40 border-b border-zinc-800/40 flex items-center gap-2 text-[11px] text-zinc-400 truncate">
+          <Loader2 size={12} className="animate-spin text-red-400 shrink-0" />
+          <span className="truncate">{statusText}</span>
+        </div>
+      )}
+
+      {/* Scrollable Live Chat Feed */}
+      <div
+        ref={scrollContainerRef}
+        onScroll={handleScroll}
+        className="flex-1 max-h-[460px] overflow-y-auto p-3.5 space-y-2.5 bg-[#090a0d] scroll-smooth"
+      >
+        {messages.length === 0 ? (
+          <div className="py-12 flex flex-col items-center justify-center text-center text-zinc-500 space-y-2">
+            <Radio size={24} className="text-red-500/60 animate-pulse" />
+            <p className="text-xs">Connecting to Parallax 20+ Agent Swarm...</p>
+            <p className="text-[11px] text-zinc-600">Agents will begin posting live perspectives momentarily.</p>
+          </div>
+        ) : (
+          <AnimatePresence initial={false}>
+            {messages.map((msg) => {
+              const nameColor = getAgentQuadrantColor(msg.agentId);
+              return (
+                <motion.div
+                  key={msg.id}
+                  initial={{ opacity: 0, y: 10, scale: 0.98 }}
+                  animate={{ opacity: 1, y: 0, scale: 1 }}
+                  transition={{ duration: 0.2, ease: 'easeOut' }}
+                  className="flex items-start gap-2.5 text-xs group/msg"
+                >
+                  {/* Avatar with icon/initial */}
+                  <div className="shrink-0 pt-0.5">
+                    <ParallaxAgentAvatar
+                      agentId={msg.agentId}
+                      agentName={msg.agentName}
+                      accentColor={msg.accentColor || nameColor}
+                      size="sm"
+                    />
+                  </div>
+
+                  {/* Message Bubble */}
+                  <div className="flex-1 min-w-0">
+                    <div className="flex items-center gap-2 mb-1 flex-wrap">
+                      <span
+                        className="font-bold tracking-tight text-[12px]"
+                        style={{ color: nameColor }}
+                      >
+                        {msg.agentName}
+                      </span>
+
+                      {msg.role && (
+                        <span className="text-[10px] text-zinc-500 font-normal truncate max-w-[150px] hidden sm:inline">
+                          {msg.role}
+                        </span>
+                      )}
+
+                      {/* Round Badge */}
+                      <span className="px-1.5 py-0.2 rounded text-[9px] font-mono font-semibold bg-zinc-800/90 text-zinc-300 border border-zinc-700/60">
+                        R{msg.round}
+                      </span>
+
+                      {/* Conviction & Mood */}
+                      {msg.conviction !== undefined && (
+                        <span className="text-[10px] text-zinc-500 font-mono">
+                          [{msg.conviction}/10{msg.mood ? ` ${msg.mood}` : ''}]
+                        </span>
+                      )}
+                    </div>
+
+                    <div className="p-2.5 rounded-xl bg-zinc-900/80 border border-zinc-800/80 text-[13px] text-zinc-200 leading-relaxed break-words shadow-sm">
+                      {msg.text}
+                    </div>
+                  </div>
+                </motion.div>
+              );
+            })}
+          </AnimatePresence>
+        )}
+
+        {/* Inline Error Message */}
+        {errorMessage && (
+          <div className="p-3 rounded-xl bg-red-950/40 border border-red-500/40 text-red-300 text-xs flex items-center gap-2 mt-2">
+            <AlertCircle size={14} className="text-red-400 shrink-0" />
+            <span>{errorMessage}</span>
+          </div>
+        )}
+      </div>
+
+      {/* Parallax Summary Card (Rendered below feed when complete) */}
+      {summary && (
+        <div className="p-3.5 bg-zinc-950 border-t border-zinc-800/80">
+          <ParallaxSummaryCard
+            summary={summary}
+            topic={topic}
+            allMessages={messages}
+          />
+        </div>
+      )}
+    </div>
+  );
+};

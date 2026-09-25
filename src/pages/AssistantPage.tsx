@@ -65,6 +65,7 @@ import {
   deleteImageFromDb,
   isIndexedDbAvailable,
 } from '@/lib/imageDb';
+import { SwarmLiveFeed } from '@/components/assistant/SwarmLiveFeed';
 import type {
   AISource,
   MultiChatPersonaResponse,
@@ -91,7 +92,7 @@ type Message = {
   id?: string;
   role: 'user' | 'assistant';
   content: string;
-  tool?: 'none' | 'search' | 'weather' | 'image' | 'multichat' | 'architect' | 'dataAnalyst' | 'agent' | 'coder' | 'wikimedia' | 'webfetcher';
+  tool?: 'none' | 'search' | 'weather' | 'image' | 'multichat' | 'architect' | 'dataAnalyst' | 'agent' | 'coder' | 'wikimedia' | 'webfetcher' | 'swarmlive';
   sources?: AISource[];
   weather?: unknown;
   searchedWeb?: boolean;
@@ -103,6 +104,7 @@ type Message = {
   chartData?: JarvisChartData | null;
   wikimediaItems?: MediaItem[];
   wikimediaTopic?: string;
+  swarmLiveTopic?: string;
 };
 
 // Helper: Clean user's message into a concise search topic for Wikimedia Commons
@@ -603,6 +605,7 @@ export function AssistantPage() {
       webFetcher: storage.getAssistantWebFetcherEnabled(),
       wikimedia: storage.getAssistantWikimediaEnabled(),
       newAgent: storage.getAssistantNewAgentEnabled(),
+      swarmLive: storage.getAssistantSwarmLiveEnabled(),
     };
     let foundActive = false;
     const clean = { ...raw };
@@ -614,6 +617,7 @@ export function AssistantPage() {
       'webFetcher',
       'wikimedia',
       'newAgent',
+      'swarmLive',
     ];
     for (const key of order) {
       if (clean[key]) {
@@ -626,6 +630,7 @@ export function AssistantPage() {
           else if (key === 'webFetcher') storage.setAssistantWebFetcherEnabled(false);
           else if (key === 'wikimedia') storage.setAssistantWikimediaEnabled(false);
           else if (key === 'newAgent') storage.setAssistantNewAgentEnabled(false);
+          else if (key === 'swarmLive') storage.setAssistantSwarmLiveEnabled(false);
         } else {
           foundActive = true;
         }
@@ -641,6 +646,7 @@ export function AssistantPage() {
   const [webFetcherEnabled, setWebFetcherEnabled] = useState<boolean>(initialSpecialists.webFetcher);
   const [wikimediaEnabled, setWikimediaEnabled] = useState<boolean>(initialSpecialists.wikimedia);
   const [newAgentEnabled, setNewAgentEnabled] = useState<boolean>(initialSpecialists.newAgent);
+  const [swarmLiveEnabled, setSwarmLiveEnabled] = useState<boolean>(initialSpecialists.swarmLive);
   const [webFetcherList, setWebFetcherList] = useState<WebFetcherResultItem[]>([]);
   const [webFetcherOriginalRequest, setWebFetcherOriginalRequest] = useState<string>('');
   const [newMemoryInput, setNewMemoryInput] = useState('');
@@ -866,7 +872,7 @@ export function AssistantPage() {
 
   // Helper to ensure mutual exclusivity among the Specialist Modes
   const disableOtherSpecialistModes = (
-    except: 'architect' | 'dataAnalysis' | 'multiChat' | 'coder' | 'webFetcher' | 'wikimedia' | 'newAgent',
+    except: 'architect' | 'dataAnalysis' | 'multiChat' | 'coder' | 'webFetcher' | 'wikimedia' | 'newAgent' | 'swarmLive',
   ) => {
     if (except !== 'multiChat') {
       setMultiChatEnabled(false);
@@ -897,6 +903,10 @@ export function AssistantPage() {
     if (except !== 'newAgent') {
       setNewAgentEnabled(false);
       storage.setAssistantNewAgentEnabled(false);
+    }
+    if (except !== 'swarmLive') {
+      setSwarmLiveEnabled(false);
+      storage.setAssistantSwarmLiveEnabled(false);
     }
   };
 
@@ -1025,6 +1035,26 @@ export function AssistantPage() {
     );
   };
 
+  const toggleSwarmLive = () => {
+    const next = !swarmLiveEnabled;
+    if (next) {
+      disableOtherSpecialistModes('swarmLive');
+      setWebSearchEnabled(false);
+      try {
+        localStorage.setItem(WEB_SEARCH_PREF_KEY, 'false');
+      } catch {
+        // Ignore
+      }
+    }
+    setSwarmLiveEnabled(next);
+    storage.setAssistantSwarmLiveEnabled(next);
+    triggerSettingsToast(
+      next
+        ? 'Swarm Live enabled: 20+ Agent Live Debate Feed active'
+        : 'Swarm Live disabled',
+    );
+  };
+
   const activeSpecialistMode = architectEnabled
     ? {
         name: 'Architect',
@@ -1101,6 +1131,17 @@ export function AssistantPage() {
             : theme === 'fulldark'
             ? 'text-rose-300 border-rose-500/40 bg-[#281318] hover:bg-[#381a22]'
             : 'text-rose-300 border-rose-500/40 bg-rose-950/50 hover:bg-rose-900/60',
+      }
+    : swarmLiveEnabled
+    ? {
+        name: 'Swarm Live',
+        toggle: toggleSwarmLive,
+        color:
+          theme === 'classic'
+            ? 'text-red-300 border-red-500/50 bg-red-950/60 hover:bg-red-900/70 shadow-[0_0_8px_rgba(239,68,68,0.25)]'
+            : theme === 'fulldark'
+            ? 'text-red-300 border-red-500/40 bg-[#281313] hover:bg-[#381a1a]'
+            : 'text-red-300 border-red-500/40 bg-red-950/50 hover:bg-red-900/60',
       }
     : null;
 
@@ -1964,11 +2005,10 @@ export function AssistantPage() {
     try {
       const sanitizedMessages = messages.map((m) => {
         if (m.image && m.image.imageData) {
-          const { imageData: _removed, ...restImage } = m.image;
           return {
             ...m,
             image: {
-              ...restImage,
+              ...m.image,
               imageData: undefined,
             },
           };
@@ -2029,6 +2069,19 @@ export function AssistantPage() {
     setMessages((current) => [...current, userMessage]);
     setLoading(true);
     webFetcherCancelledRef.current = false;
+
+    // Swarm Live Specialist Mode (20+ Agent Live Debate Feed)
+    if (swarmLiveEnabled) {
+      const assistantMessage: Message = {
+        role: 'assistant',
+        content: message,
+        tool: 'swarmlive',
+        swarmLiveTopic: message,
+      };
+      setMessages((current) => [...current, assistantMessage]);
+      setLoading(false);
+      return;
+    }
 
     // If Deep Research mode is ON, route directly through JARVIS multi-agent research pipeline (takes top priority)
     if (deepResearchEnabled) {
@@ -2343,6 +2396,22 @@ export function AssistantPage() {
             ? mcErr.message
             : 'Multi Chat pipeline encountered an issue.';
         setError(errDetail);
+      } finally {
+        setLoading(false);
+      }
+      return;
+    }
+
+    // PRIORITY: Swarm Live (20+ Agent YouTube-Style Live Debate Feed)
+    if (swarmLiveEnabled) {
+      try {
+        const assistantMessage: Message = {
+          role: 'assistant',
+          content: message,
+          tool: 'swarmlive',
+          swarmLiveTopic: message,
+        };
+        setMessages((current) => [...current, assistantMessage]);
       } finally {
         setLoading(false);
       }
@@ -3822,6 +3891,66 @@ DIRECTIVES:
             </div>
           )}
 
+          {/* Swarm Live Mode Active Indicator Banner */}
+          {swarmLiveEnabled && (
+            <div
+              className={`px-3.5 py-2.5 rounded-xl border flex items-center justify-between gap-3 text-xs transition-all ${
+                theme === 'classic'
+                  ? 'bg-red-950/40 border-red-500/30 text-red-200 shadow-[0_0_15px_rgba(239,68,68,0.15)]'
+                  : theme === 'fulldark'
+                  ? 'bg-[#181818] border-[#2e2e2e] text-[#e0e0e0]'
+                  : 'bg-zinc-900/90 border-zinc-800 text-zinc-300'
+              }`}
+            >
+              <div className="flex items-center gap-2.5 min-w-0">
+                <div
+                  className={`w-6 h-6 rounded-lg grid place-items-center text-xs shrink-0 ${
+                    theme === 'classic'
+                      ? 'bg-red-500/20 text-red-300'
+                      : theme === 'fulldark'
+                      ? 'bg-zinc-800 text-red-400'
+                      : 'bg-zinc-800 text-red-400'
+                  }`}
+                >
+                  <Radio size={13} className="text-red-400 animate-pulse" />
+                </div>
+                <div className="flex items-center gap-2 flex-wrap">
+                  <span className="font-semibold text-zinc-100">Swarm Live Active:</span>
+                  <span className="text-[11px] opacity-90">
+                    20+ Agent Live Debate Feed (YouTube Chat style)
+                  </span>
+                </div>
+              </div>
+              <div className="flex items-center gap-1.5 shrink-0">
+                <button
+                  type="button"
+                  onClick={() => setSettingsOpen(true)}
+                  className="text-[11px] px-2.5 py-1 rounded-lg border border-zinc-700/60 bg-zinc-800/80 hover:bg-zinc-700 text-zinc-300 transition-colors flex items-center gap-1"
+                  title="Configure in Settings"
+                >
+                  <SettingsIcon size={11} />
+                  <span className="hidden sm:inline">Settings</span>
+                </button>
+                <button
+                  type="button"
+                  onClick={toggleSwarmLive}
+                  className={`text-[11px] px-2.5 py-1 rounded-lg border transition-all flex items-center gap-1 ${
+                    theme === 'classic'
+                      ? 'border-red-500/40 bg-red-950/70 text-red-200 hover:border-red-500/50 hover:bg-red-950/40 hover:text-red-300'
+                      : theme === 'fulldark'
+                      ? 'border-[#333] bg-[#222] text-[#ccc] hover:border-red-500/40 hover:bg-red-950/30 hover:text-red-300'
+                      : 'border-zinc-700/60 bg-zinc-800/80 text-zinc-300 hover:border-red-500/40 hover:bg-red-500/10 hover:text-red-300'
+                  }`}
+                  title="Disable Swarm Live mode"
+                  aria-label="Disable Swarm Live"
+                >
+                  <X size={12} />
+                  <span>Disable</span>
+                </button>
+              </div>
+            </div>
+          )}
+
           {/* Empty / Welcome state hero */}
           {isOnlyWelcome && (
             <div className="py-12 sm:py-20 text-center flex flex-col items-center justify-center">
@@ -4262,8 +4391,13 @@ DIRECTIVES:
                           );
                         })()}
 
-                        {/* 3-Persona Sequential Dialogue (if Multi Chat) or Standard Response Body */}
-                        {message.multiChatResponses && message.multiChatResponses.length > 0 ? (
+                        {/* Swarm Live (Parallax 20+ Agent YouTube-style Debate Feed) */}
+                        {message.tool === 'swarmlive' ? (
+                          <SwarmLiveFeed
+                            topic={message.swarmLiveTopic || message.content}
+                            onClose={() => handleDeleteMessage(index)}
+                          />
+                        ) : message.multiChatResponses && message.multiChatResponses.length > 0 ? (
                           <div className="space-y-4 pt-1">
                             {/* Simplified plain Multi-Chat Sequential Pipeline Indicator */}
                             <div className="flex items-center gap-2 text-xs text-zinc-400 pb-1 flex-wrap">
@@ -5000,7 +5134,7 @@ DIRECTIVES:
                   type="button"
                   onClick={() => setMoreOptionsOpen((prev) => !prev)}
                   className={`text-xs p-1.5 rounded-lg border transition-all flex items-center justify-center gap-1 ${
-                    moreOptionsOpen || architectEnabled || dataAnalysisEnabled || multiChatEnabled || coderEnabled || webFetcherEnabled || wikimediaEnabled || newAgentEnabled
+                    moreOptionsOpen || architectEnabled || dataAnalysisEnabled || multiChatEnabled || coderEnabled || webFetcherEnabled || wikimediaEnabled || newAgentEnabled || swarmLiveEnabled
                       ? theme === 'classic'
                         ? 'bg-cyan-500/15 text-cyan-200 border-cyan-500/40 shadow-[0_0_8px_rgba(6,182,212,0.2)]'
                         : theme === 'fulldark'
@@ -5015,7 +5149,7 @@ DIRECTIVES:
                   title={
                     moreOptionsOpen
                       ? 'Close quick modes menu'
-                      : 'Specialist Modes (mutually exclusive): Architect, Data Analysis, Multi Chat, Coder, Web Fetcher, Wikimedia, New Agent'
+                      : 'Specialist Modes (mutually exclusive): Architect, Data Analysis, Multi Chat, Coder, Web Fetcher, Wikimedia, New Agent, Swarm Live'
                   }
                   aria-label="More options"
                   aria-expanded={moreOptionsOpen}
@@ -5026,7 +5160,7 @@ DIRECTIVES:
                       moreOptionsOpen ? 'rotate-180 text-cyan-400' : ''
                     }`}
                   />
-                  {(architectEnabled || dataAnalysisEnabled || multiChatEnabled || coderEnabled || webFetcherEnabled || wikimediaEnabled || newAgentEnabled) && (
+                  {(architectEnabled || dataAnalysisEnabled || multiChatEnabled || coderEnabled || webFetcherEnabled || wikimediaEnabled || newAgentEnabled || swarmLiveEnabled) && (
                     <span className="w-1.5 h-1.5 rounded-full bg-cyan-400 shadow-[0_0_6px_rgba(6,182,212,0.8)]" />
                   )}
                 </button>
@@ -5391,6 +5525,53 @@ DIRECTIVES:
                         <div
                           className={`w-3 h-3 rounded-full bg-white shadow-sm transition-transform duration-150 ${
                             newAgentEnabled ? 'translate-x-4' : 'translate-x-0'
+                          }`}
+                        />
+                      </div>
+                    </button>
+
+                    {/* 8. Swarm Live Toggle */}
+                    <button
+                      type="button"
+                      onClick={toggleSwarmLive}
+                      className={`w-full p-2 rounded-xl border text-left flex items-center justify-between transition-all ${
+                        swarmLiveEnabled
+                          ? 'border-red-500/40 bg-red-950/30 text-red-200 shadow-[0_0_10px_rgba(239,68,68,0.15)]'
+                          : 'border-transparent hover:bg-zinc-800/60 text-zinc-300'
+                      }`}
+                    >
+                      <div className="flex items-center gap-2.5 min-w-0">
+                        <div
+                          className={`w-7 h-7 rounded-lg grid place-items-center shrink-0 ${
+                            swarmLiveEnabled
+                              ? 'bg-red-500/20 text-red-300 border border-red-500/30'
+                              : 'bg-zinc-800 text-zinc-400'
+                          }`}
+                        >
+                          <Radio size={13} />
+                        </div>
+                        <div className="min-w-0">
+                          <div className="text-xs font-semibold text-zinc-100 flex items-center gap-1.5">
+                            <span>Swarm Live</span>
+                            {swarmLiveEnabled && (
+                              <span className="text-[9px] font-mono font-semibold px-1.5 py-0.2 rounded bg-red-950 text-red-400 border border-red-500/40">
+                                ON
+                              </span>
+                            )}
+                          </div>
+                          <div className="text-[10.5px] text-zinc-400 truncate">
+                            20+ Agent Live Debate Feed
+                          </div>
+                        </div>
+                      </div>
+                      <div
+                        className={`w-8 h-4 rounded-full transition-colors relative flex items-center p-0.5 shrink-0 ${
+                          swarmLiveEnabled ? 'bg-red-500' : 'bg-zinc-700'
+                        }`}
+                      >
+                        <div
+                          className={`w-3 h-3 rounded-full bg-white shadow-sm transition-transform duration-150 ${
+                            swarmLiveEnabled ? 'translate-x-4' : 'translate-x-0'
                           }`}
                         />
                       </div>
@@ -6952,6 +7133,83 @@ DIRECTIVES:
                           <div
                             className={`w-5 h-5 rounded-full bg-white shadow-md transition-transform duration-200 ${
                               newAgentEnabled ? 'translate-x-5' : 'translate-x-0'
+                            }`}
+                          />
+                        </div>
+                      </div>
+                    </div>
+
+                    <div className="h-px bg-zinc-800/80" />
+
+                    {/* 8. Swarm Live Toggle */}
+                    <div className="space-y-3">
+                      <div className="flex items-center justify-between">
+                        <div className="flex items-center gap-2">
+                          <Radio size={15} className="text-red-400" />
+                          <h4 className="text-xs font-semibold uppercase tracking-wider text-zinc-300">
+                            Swarm Live
+                          </h4>
+                        </div>
+                        <span
+                          className={`text-[10px] font-mono font-semibold px-2 py-0.5 rounded-full border ${
+                            swarmLiveEnabled
+                              ? 'bg-red-950/80 text-red-300 border-red-500/50 shadow-[0_0_8px_rgba(239,68,68,0.2)]'
+                              : 'bg-zinc-800 text-zinc-500 border-zinc-700/60'
+                          }`}
+                        >
+                          {swarmLiveEnabled ? 'ACTIVE' : 'DISABLED'}
+                        </span>
+                      </div>
+
+                      <p className="text-xs text-zinc-400 leading-relaxed">
+                        When enabled, AI Assistant runs the 20+ agent Parallax debate engine and streams incoming agent perspectives in real time as a live feed styled like YouTube Live Chat. (Mutually exclusive: turns off other specialist modes).
+                      </p>
+
+                      {/* Interactive Toggle Card */}
+                      <div
+                        onClick={toggleSwarmLive}
+                        className={`p-3.5 rounded-xl border flex items-center justify-between cursor-pointer transition-all ${
+                          swarmLiveEnabled
+                            ? 'border-red-500/40 bg-red-950/20 shadow-[0_0_15px_rgba(239,68,68,0.12)]'
+                            : 'border-zinc-800 bg-zinc-900/60 hover:bg-zinc-850 hover:border-zinc-700'
+                        }`}
+                      >
+                        <div className="flex items-center gap-3">
+                          <div
+                            className={`w-9 h-9 rounded-xl grid place-items-center transition-colors ${
+                              swarmLiveEnabled
+                                ? 'bg-red-500/20 border border-red-500/40 text-red-300'
+                                : 'bg-zinc-800 border border-zinc-700 text-zinc-400'
+                            }`}
+                          >
+                            <Radio size={18} />
+                          </div>
+                          <div>
+                            <div className="text-xs font-semibold text-zinc-100 flex items-center gap-2">
+                              <span>Enable Swarm Live</span>
+                              {swarmLiveEnabled && (
+                                <span className="text-[10px] font-mono text-red-400 bg-red-950/80 px-1.5 py-0.2 rounded border border-red-500/40">
+                                  20+ Agent Live Feed
+                                </span>
+                              )}
+                            </div>
+                            <p className="text-[11px] text-zinc-400 mt-0.5">
+                              {swarmLiveEnabled
+                                ? '20+ Agent live debate feed active'
+                                : 'Standard single assistant responses'}
+                            </p>
+                          </div>
+                        </div>
+
+                        {/* Toggle Switch */}
+                        <div
+                          className={`w-11 h-6 rounded-full transition-colors relative flex items-center p-0.5 shrink-0 ${
+                            swarmLiveEnabled ? 'bg-red-500 shadow-[0_0_8px_rgba(239,68,68,0.4)]' : 'bg-zinc-700'
+                          }`}
+                        >
+                          <div
+                            className={`w-5 h-5 rounded-full bg-white shadow-md transition-transform duration-200 ${
+                              swarmLiveEnabled ? 'translate-x-5' : 'translate-x-0'
                             }`}
                           />
                         </div>
