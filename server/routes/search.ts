@@ -1245,12 +1245,13 @@ export async function searchProvider(input: z.infer<typeof searchSchema>): Promi
     try {
       const isLangSearch = url.includes('langsearch.com');
       const isTavily = !isLangSearch && (url.includes('tavily.com') || (!isCustom && Boolean(getBackendApiKey('TAVILY_API_KEY'))));
+      const isLatestQuery = /\b(latest|newest|recent|recently|current|currently|update|updates|what's new|whats new)\b/i.test(input.query) || input.category === 'NEWS';
       const bodyPayload = isLangSearch
         ? {
             query: input.query,
             count: Math.min(Math.max(requestedMax, 5), 25),
             contents: { text: true },
-            freshness: 'noLimit',
+            freshness: isLatestQuery ? 'oneMonth' : 'noLimit',
           }
         : isTavily
         ? {
