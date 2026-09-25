@@ -20,7 +20,7 @@ import {
 } from './state.js';
 import { mediaRouter } from './routes/media.js';
 import { weatherRouter, geocode, weatherProvider } from './routes/weather.js';
-import { createSearchRouter, searchProvider, fetchWikipediaSummary } from './routes/search.js';
+import { createSearchRouter, searchProvider, fetchWikipediaSummary, extractSignificantQueryWords, isResultTopicallyRelevant } from './routes/search.js';
 import { devicesRouter } from './routes/devices.js';
 import { telegramRouter, setTelegramAiHandler } from './routes/telegram.js';
 import { apiCatalogRouter, getBackendApiKey } from './apiCatalog.js';
@@ -3117,9 +3117,30 @@ async function processAiChatInternal(
 
       await Promise.allSettled(searchPromises);
 
-      // Order injected results so Tier 1 sources appear first, then Tier 2, then Tier 3 (preserve up to 10)
-      structuredSources.sort((a, b) => (a.trustTier ?? 2) - (b.trustTier ?? 2));
-      structuredSources = structuredSources.slice(0, 10);
+      // Topical relevance filter: extract significant query words and separate relevant from low-relevance
+      const queryWords = extractSignificantQueryWords(effectiveSearchQuery || trimmed);
+      const relevantSources: SmartAnswerSource[] = [];
+      const lowRelevanceSources: SmartAnswerSource[] = [];
+
+      for (const s of structuredSources) {
+        if (queryWords.length === 0 || isResultTopicallyRelevant(s, queryWords)) {
+          relevantSources.push(s);
+        } else {
+          lowRelevanceSources.push(s);
+        }
+      }
+
+      // Sort relevant sources by trust tier (Tier 1 first, then Tier 2, then Tier 3)
+      relevantSources.sort((a, b) => (a.trustTier ?? 2) - (b.trustTier ?? 2));
+      // Sort low-relevance sources by trust tier
+      lowRelevanceSources.sort((a, b) => (a.trustTier ?? 2) - (b.trustTier ?? 2));
+
+      // If at least 3 relevant sources exist, exclude low-relevance entirely; otherwise move them to the bottom
+      if (relevantSources.length >= 3) {
+        structuredSources = relevantSources.slice(0, 10);
+      } else {
+        structuredSources = [...relevantSources, ...lowRelevanceSources].slice(0, 10);
+      }
 
       if (structuredSources.length > 0) {
         const sourcesText = structuredSources

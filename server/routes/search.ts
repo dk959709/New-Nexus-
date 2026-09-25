@@ -1086,6 +1086,63 @@ export async function fetchNewsDataArticles(options: FetchNewsDataOptions = {}):
   };
 }
 
+export function extractSignificantQueryWords(query: string): string[] {
+  if (!query || typeof query !== 'string') return [];
+  const stopWords = new Set([
+    'the', 'is', 'what', 'whats', "what's", 'latest', 'update', 'updates', 'recent',
+    'recently', 'newest', 'new', 'news', 'current', 'currently', 'a', 'an', 'and',
+    'or', 'in', 'on', 'at', 'to', 'for', 'of', 'with', 'about', 'by', 'from', 'how',
+    'why', 'who', 'when', 'where', 'are', 'was', 'were', 'be', 'been', 'being',
+    'have', 'has', 'had', 'do', 'does', 'did', 'can', 'could', 'should', 'would',
+    'will', 'it', 'its', 'this', 'that', 'these', 'those', 'tell', 'show', 'give',
+    'me', 'my', 'your', 'which', 'there', 'their', 'they', 'our', 'us', 'today', 'now'
+  ]);
+
+  return query
+    .toLowerCase()
+    .replace(/[^a-z0-9\s]/g, ' ')
+    .split(/\s+/)
+    .filter((w) => w.length >= 2 && !stopWords.has(w));
+}
+
+export function isResultTopicallyRelevant(
+  item: { title?: string; name?: string; description?: string; snippet?: string; summary?: string; content?: string },
+  queryWords: string[],
+): boolean {
+  if (!queryWords || queryWords.length === 0) return true;
+  const title = String(item.title ?? item.name ?? '').toLowerCase();
+  const snippet = String(item.description ?? item.snippet ?? item.summary ?? item.content ?? '').toLowerCase();
+  const text = `${title} ${snippet}`;
+  return queryWords.some((w) => text.includes(w));
+}
+
+export function applyTopicalRelevanceFilter<T extends { title?: string; name?: string; description?: string; snippet?: string; summary?: string; content?: string }>(
+  results: T[],
+  query: string,
+): T[] {
+  const queryWords = extractSignificantQueryWords(query);
+  if (queryWords.length === 0 || results.length === 0) {
+    return results;
+  }
+
+  const relevant: T[] = [];
+  const lowRelevance: T[] = [];
+
+  for (const item of results) {
+    if (isResultTopicallyRelevant(item, queryWords)) {
+      relevant.push(item);
+    } else {
+      lowRelevance.push(item);
+    }
+  }
+
+  if (relevant.length >= 3) {
+    return relevant;
+  }
+
+  return [...relevant, ...lowRelevance];
+}
+
 export async function searchProvider(input: z.infer<typeof searchSchema>): Promise<{
   results: SearchResult[];
   searchSource: string;
@@ -1401,6 +1458,8 @@ export async function searchProvider(input: z.infer<typeof searchSchema>): Promi
             };
           })
           .filter((item) => item.title && item.url);
+
+        primaryResults = applyTopicalRelevanceFilter(primaryResults, input.query);
 
         if (isCustom && primaryResults.length === 0) {
           primaryFailed = true;
