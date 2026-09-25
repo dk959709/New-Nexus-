@@ -27,6 +27,7 @@ import {
   RotateCcw,
 } from 'lucide-react';
 import { api } from '@/services/api';
+import { storage } from '@/lib/storage';
 import type { ApiCatalogItem } from '@/types';
 
 export function ApiCatalogSettings() {
@@ -37,11 +38,26 @@ export function ApiCatalogSettings() {
   const [selectedCategory, setSelectedCategory] = useState<string>('all');
 
   // Global Web Search API State
-  const [globalSearchMode, setGlobalSearchMode] = useState<'default' | 'custom'>('default');
-  const [globalCustomUrl, setGlobalCustomUrl] = useState<string>('');
-  const [globalCustomKey, setGlobalCustomKey] = useState<string>('');
-  const [globalHasKey, setGlobalHasKey] = useState<boolean>(false);
-  const [webSearchCustomOpen, setWebSearchCustomOpen] = useState<boolean>(false);
+  const [globalSearchMode, setGlobalSearchMode] = useState<'default' | 'custom'>(() => {
+    const local = storage.getWebSearchApiState();
+    return local.mode || 'default';
+  });
+  const [globalCustomUrl, setGlobalCustomUrl] = useState<string>(() => {
+    const local = storage.getWebSearchApiState();
+    return local.customUrl || '';
+  });
+  const [globalCustomKey, setGlobalCustomKey] = useState<string>(() => {
+    const local = storage.getWebSearchApiState();
+    return local.customKey || '';
+  });
+  const [globalHasKey, setGlobalHasKey] = useState<boolean>(() => {
+    const local = storage.getWebSearchApiState();
+    return Boolean(local.customKey && local.customKey.trim());
+  });
+  const [webSearchCustomOpen, setWebSearchCustomOpen] = useState<boolean>(() => {
+    const local = storage.getWebSearchApiState();
+    return local.mode === 'custom';
+  });
   const [showGlobalSearchKey, setShowGlobalSearchKey] = useState<boolean>(false);
   const [testingGlobalSearch, setTestingGlobalSearch] = useState<boolean>(false);
   const [globalSearchTestResult, setGlobalSearchTestResult] = useState<{ ok: boolean; message: string } | null>(null);
@@ -107,12 +123,25 @@ export function ApiCatalogSettings() {
   };
 
   const fetchGlobalSearchConfig = async () => {
+    const local = storage.getWebSearchApiState();
+    if (local.mode === 'custom' || local.customUrl || local.customKey) {
+      setGlobalSearchMode(local.mode);
+      setGlobalCustomUrl(local.customUrl);
+      if (local.customKey) {
+        setGlobalCustomKey(local.customKey);
+        setGlobalHasKey(true);
+      }
+    }
+
     try {
       const res = await api.getGlobalSearchConfig();
       if (res && res.ok) {
-        setGlobalSearchMode(res.mode || 'default');
-        setGlobalCustomUrl(res.customUrl || '');
-        setGlobalHasKey(res.hasKey || false);
+        const currentLocal = storage.getWebSearchApiState();
+        if (currentLocal.mode === 'default' && !currentLocal.customUrl && !currentLocal.customKey) {
+          setGlobalSearchMode(res.mode || 'default');
+          setGlobalCustomUrl(res.customUrl || '');
+          setGlobalHasKey(res.hasKey || false);
+        }
       }
     } catch {
       // Ignore initial config load error
@@ -127,13 +156,30 @@ export function ApiCatalogSettings() {
   const handleSelectGlobalSearchMode = async (mode: 'default' | 'custom') => {
     setGlobalSearchMode(mode);
     setGlobalSearchTestResult(null);
+
+    const local = storage.getWebSearchApiState();
+    const effectiveUrl = globalCustomUrl.trim() || local.customUrl || '';
+    const effectiveKey = globalCustomKey.trim() || local.customKey || '';
+
+    // Primary: save to localStorage
+    storage.saveWebSearchApiState({
+      mode,
+      customUrl: effectiveUrl,
+      customKey: effectiveKey,
+    });
+
+    // Secondary: save to server vault
     try {
       setSavingGlobalSearch(true);
-      const res = await api.saveGlobalSearchConfig({ mode, customUrl: globalCustomUrl, customKey: globalCustomKey });
+      const res = await api.saveGlobalSearchConfig({
+        mode,
+        customUrl: effectiveUrl,
+        customKey: effectiveKey || undefined,
+      });
       if (res && res.ok) {
         setGlobalSearchMode(res.mode);
         setGlobalCustomUrl(res.customUrl);
-        setGlobalHasKey(res.hasKey);
+        setGlobalHasKey(res.hasKey || Boolean(effectiveKey));
         await fetchCatalog();
       }
     } catch (err: unknown) {
@@ -150,31 +196,45 @@ export function ApiCatalogSettings() {
     if (e) e.preventDefault();
     setGlobalSearchTestResult(null);
 
-    if (!globalCustomUrl.trim()) {
+    const cleanUrl = globalCustomUrl.trim();
+    if (!cleanUrl) {
       setActionNotice({ type: 'error', message: 'Please enter a valid Search API URL (must start with https://)' });
       return;
     }
 
+    const local = storage.getWebSearchApiState();
+    const cleanKey = globalCustomKey.trim() || local.customKey || '';
+
+    // Primary: save to localStorage
+    storage.saveWebSearchApiState({
+      mode: 'custom',
+      customUrl: cleanUrl,
+      customKey: cleanKey,
+    });
+
+    // Secondary: save to server vault
     try {
       setSavingGlobalSearch(true);
       const res = await api.saveGlobalSearchConfig({
         mode: 'custom',
-        customUrl: globalCustomUrl.trim(),
-        customKey: globalCustomKey.trim() || undefined,
+        customUrl: cleanUrl,
+        customKey: cleanKey || undefined,
       });
 
       if (res && res.ok) {
         setGlobalSearchMode('custom');
         setGlobalCustomUrl(res.customUrl);
-        setGlobalHasKey(res.hasKey);
-        setGlobalCustomKey('');
+        setGlobalHasKey(res.hasKey || Boolean(cleanKey));
+        if (cleanKey) {
+          setGlobalCustomKey(cleanKey);
+        }
         setActionNotice({ type: 'success', message: 'Global Web Search API settings saved.' });
         await fetchCatalog();
       }
     } catch (err: unknown) {
       setActionNotice({
-        type: 'error',
-        message: err instanceof Error ? err.message : 'Failed to save Web Search API settings',
+        type: 'success',
+        message: 'Saved in browser storage (server vault sync returned: ' + (err instanceof Error ? err.message : 'error') + ')',
       });
     } finally {
       setSavingGlobalSearch(false);
@@ -183,6 +243,15 @@ export function ApiCatalogSettings() {
 
   const handleResetGlobalSearch = async () => {
     setGlobalSearchTestResult(null);
+
+    // Primary: clear in localStorage
+    storage.saveWebSearchApiState({
+      mode: 'default',
+      customUrl: '',
+      customKey: '',
+    });
+
+    // Secondary: reset on server vault
     try {
       setSavingGlobalSearch(true);
       const res = await api.resetGlobalSearchConfig();
@@ -195,6 +264,10 @@ export function ApiCatalogSettings() {
         await fetchCatalog();
       }
     } catch (err: unknown) {
+      setGlobalSearchMode('default');
+      setGlobalCustomUrl('');
+      setGlobalCustomKey('');
+      setGlobalHasKey(false);
       setActionNotice({
         type: 'error',
         message: err instanceof Error ? err.message : 'Failed to reset Web Search API',
@@ -208,8 +281,9 @@ export function ApiCatalogSettings() {
     if (testingGlobalSearch) return;
     setGlobalSearchTestResult(null);
 
-    const urlToTest = globalCustomUrl.trim();
-    const keyToTest = globalCustomKey.trim();
+    const local = storage.getWebSearchApiState();
+    const urlToTest = globalCustomUrl.trim() || local.customUrl.trim();
+    const keyToTest = globalCustomKey.trim() || local.customKey.trim();
 
     if (!urlToTest) {
       setGlobalSearchTestResult({ ok: false, message: 'Invalid URL (must start with https://)' });

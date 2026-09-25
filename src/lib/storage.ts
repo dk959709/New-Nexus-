@@ -7,6 +7,7 @@ import type {
   ImageProviderConfig,
   VoiceProvidersState,
   VoiceProviderConfig,
+  WebSearchApiState,
   KeyHealthStatus,
   JarvisSystemConfig,
   JarvisMessage,
@@ -29,6 +30,7 @@ const KEYS = {
   aiProviders: 'nexus-ai-providers',
   imageProviders: 'nexus-image-providers',
   voiceProviders: 'nexus-voice-providers',
+  webSearchApi: 'nexus-web-search-api',
   jarvisConfig: 'nexus-jarvis-config-v1',
   jarvisMessages: 'nexus-jarvis-messages-v1',
   edgeVoice: 'nexus-edge-voice-v1',
@@ -1474,6 +1476,45 @@ export const storage = {
     } catch {
       // ignore
     }
+  },
+
+  getWebSearchApiState(): WebSearchApiState {
+    const defaultState: WebSearchApiState = {
+      mode: 'default',
+      customUrl: '',
+      customKey: '',
+    };
+    return read<WebSearchApiState>(KEYS.webSearchApi, defaultState);
+  },
+
+  saveWebSearchApiState(state: WebSearchApiState): void {
+    write(KEYS.webSearchApi, state);
+    if (typeof window !== 'undefined') {
+      window.dispatchEvent(new CustomEvent('nexus-web-search-api-updated', { detail: state }));
+      window.dispatchEvent(new Event('storage'));
+    }
+  },
+
+  getActiveWebSearchConfig(): { customUrl: string; customKey: string } | null {
+    // 1. API Catalog Web Search API state in localStorage (highest priority)
+    const state = this.getWebSearchApiState();
+    if (state.mode === 'custom' && state.customUrl.trim() && state.customKey.trim()) {
+      return {
+        customUrl: state.customUrl.trim(),
+        customKey: state.customKey.trim(),
+      };
+    }
+    // 2. AI Assistant per-device web api settings as fallback
+    const assistantMode = this.getAssistantWebApiMode();
+    const assistantUrl = this.getAssistantCustomSearchUrl();
+    const assistantKey = this.getAssistantCustomSearchKey();
+    if (assistantMode === 'custom' && assistantUrl.trim() && assistantKey.trim()) {
+      return {
+        customUrl: assistantUrl.trim(),
+        customKey: assistantKey.trim(),
+      };
+    }
+    return null;
   },
 
 

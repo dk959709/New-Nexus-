@@ -219,6 +219,12 @@ export interface VoiceProvidersState {
   providers: VoiceProviderConfig[];
 }
 
+export interface WebSearchApiState {
+  mode: 'default' | 'custom';
+  customUrl: string;
+  customKey: string;
+}
+
 export interface CloudVoiceItem {
   id: string;
   name: string;

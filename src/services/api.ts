@@ -120,6 +120,10 @@ export const api = {
     options?: { newsCategory?: string; newsMode?: 'headlines' | 'topic'; customSearchApiKey?: string; customSearchApiUrl?: string },
   ): Promise<SearchResult[] & { searchSource?: string; fallbackOccurred?: boolean; fallbackReason?: string }> {
     const url = BASE + '/api/search';
+    const activeSearch = storage.getActiveWebSearchConfig();
+    const customSearchApiKey = options?.customSearchApiKey || activeSearch?.customKey;
+    const customSearchApiUrl = options?.customSearchApiUrl || activeSearch?.customUrl;
+
     const res = await fetch(url, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
@@ -130,8 +134,8 @@ export const api = {
         max_results: maxResults,
         newsCategory: options?.newsCategory,
         newsMode: options?.newsMode,
-        customSearchApiKey: options?.customSearchApiKey,
-        customSearchApiUrl: options?.customSearchApiUrl,
+        customSearchApiKey,
+        customSearchApiUrl,
       }),
     });
     const body = (await res.json().catch(() => ({}))) as {
@@ -353,6 +357,10 @@ export const api = {
       }
     }
 
+    const activeSearch = storage.getActiveWebSearchConfig();
+    const customSearchApiKey = options?.customSearchApiKey || activeSearch?.customKey;
+    const customSearchApiUrl = options?.customSearchApiUrl || activeSearch?.customUrl;
+
     return call<{
       answer: string;
       model: string;
@@ -371,8 +379,8 @@ export const api = {
         webSearch: Boolean(webSearch),
         language: options?.language,
         permanentMemories: options?.permanentMemories,
-        customSearchApiKey: options?.customSearchApiKey,
-        customSearchApiUrl: options?.customSearchApiUrl,
+        customSearchApiKey,
+        customSearchApiUrl,
       }),
     });
   },
