@@ -1306,8 +1306,8 @@ export async function searchProvider(input: z.infer<typeof searchSchema>): Promi
       const bodyPayload = isLangSearch
         ? {
             query: input.query,
-            count: Math.min(Math.max(requestedMax, 5), 25),
-            contents: { text: true },
+            count: 10,
+            contents: { text: { maxCharacters: 3000 } },
             freshness: isLatestQuery ? 'oneMonth' : 'noLimit',
           }
         : isTavily
@@ -1410,8 +1410,8 @@ export async function searchProvider(input: z.infer<typeof searchSchema>): Promi
                   headers,
                   body: JSON.stringify({
                     query: input.query,
-                    count: Math.min(Math.max(requestedMax, 5), 25),
-                    contents: { text: true },
+                    count: 10,
+                    contents: { text: { maxCharacters: 3000 } },
                     freshness: 'noLimit',
                   }),
                   signal: AbortSignal.timeout(6000),
@@ -2433,7 +2433,7 @@ export async function executeCustomSearchTest(
       ? {
           query: 'test',
           count: 10,
-          contents: { text: true },
+          contents: { text: { maxCharacters: 3000 } },
           freshness: 'noLimit',
         }
       : isTavily
