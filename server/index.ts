@@ -2752,6 +2752,35 @@ async function executeSmartAnswerEngine(
 }
 
 /**
+ * Detects whether a search query candidate contains duplicated words or repeated multi-word phrase sequences.
+ */
+function hasQueryDuplication(query: string): boolean {
+  const words = query
+    .toLowerCase()
+    .replace(/[^a-z0-9\s]/g, ' ')
+    .trim()
+    .split(/\s+/)
+    .filter(Boolean);
+
+  if (words.length < 4) return false;
+
+  const halfLen = Math.floor(words.length / 2);
+  for (let len = 2; len <= halfLen; len++) {
+    for (let i = 0; i <= words.length - 2 * len; i++) {
+      const phrase1 = words.slice(i, i + len).join(' ');
+      for (let j = i + len; j <= words.length - len; j++) {
+        const phrase2 = words.slice(j, j + len).join(' ');
+        if (phrase1 === phrase2) {
+          return true;
+        }
+      }
+    }
+  }
+
+  return false;
+}
+
+/**
  * Reformulates a follow-up user query using recent conversation context into a standalone search query.
  * Keeps latency minimal by using a fast, lightweight completion call with strict timeout.
  */
@@ -2830,6 +2859,10 @@ async function reformulateSearchQueryWithContext(
         !cleaned.toLowerCase().includes('as an ai') &&
         !cleaned.toLowerCase().includes('here is')
       ) {
+        if (hasQueryDuplication(cleaned)) {
+          console.log('[AI Assistant Web Search] Reformulation rejected (duplicate detected), using raw query');
+          return { query: trimmed, reformulated: false };
+        }
         return {
           query: cleaned,
           reformulated: cleaned.toLowerCase() !== trimmed.toLowerCase(),
@@ -2853,10 +2886,28 @@ async function reformulateSearchQueryWithContext(
         .split(/[.?!,\n]/)[0]
         .trim();
       if (cleanPrev && cleanPrev.length > 2) {
-        const combined = `${trimmed.replace(/\b(this|that|it|these|those)\b/gi, cleanPrev)} ${cleanPrev}`
-          .replace(/\s+/g, ' ')
-          .trim();
-        return { query: combined, reformulated: true, reason: 'Heuristic Context Fallback' };
+        const lowerTrimmed = trimmed.toLowerCase();
+        const lowerCleanPrev = cleanPrev.toLowerCase();
+
+        let combined = trimmed;
+        if (hasPronounOrDeictic && /\b(this|that|it|these|those)\b/i.test(trimmed)) {
+          combined = trimmed.replace(/\b(this|that|it|these|those)\b/gi, cleanPrev);
+        } else if (!lowerTrimmed.includes(lowerCleanPrev)) {
+          const cleanPrevWords = lowerCleanPrev.split(/\s+/).filter((w) => w.length > 2);
+          const alreadyMatched = cleanPrevWords.filter((w) => lowerTrimmed.includes(w));
+          if (alreadyMatched.length < Math.max(1, Math.floor(cleanPrevWords.length / 2))) {
+            combined = `${trimmed} ${cleanPrev}`;
+          }
+        }
+        combined = combined.replace(/\s+/g, ' ').trim();
+
+        if (combined.toLowerCase() !== trimmed.toLowerCase()) {
+          if (hasQueryDuplication(combined)) {
+            console.log('[AI Assistant Web Search] Reformulation rejected (duplicate detected), using raw query');
+            return { query: trimmed, reformulated: false };
+          }
+          return { query: combined, reformulated: true, reason: 'Heuristic Context Fallback' };
+        }
       }
     }
   }
