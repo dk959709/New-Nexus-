@@ -42,6 +42,7 @@ import {
   AlertCircle,
   Key,
   Square,
+  Layers3,
 } from 'lucide-react';
 import { Haptics, ImpactStyle } from '@capacitor/haptics';
 import { Link } from 'react-router-dom';
@@ -424,6 +425,7 @@ export function AssistantPage() {
       coder: storage.getAssistantCoderEnabled(),
       webFetcher: storage.getAssistantWebFetcherEnabled(),
       wikimedia: storage.getAssistantWikimediaEnabled(),
+      newAgent: storage.getAssistantNewAgentEnabled(),
     };
     let foundActive = false;
     const clean = { ...raw };
@@ -434,6 +436,7 @@ export function AssistantPage() {
       'coder',
       'webFetcher',
       'wikimedia',
+      'newAgent',
     ];
     for (const key of order) {
       if (clean[key]) {
@@ -445,6 +448,7 @@ export function AssistantPage() {
           else if (key === 'coder') storage.setAssistantCoderEnabled(false);
           else if (key === 'webFetcher') storage.setAssistantWebFetcherEnabled(false);
           else if (key === 'wikimedia') storage.setAssistantWikimediaEnabled(false);
+          else if (key === 'newAgent') storage.setAssistantNewAgentEnabled(false);
         } else {
           foundActive = true;
         }
@@ -459,6 +463,7 @@ export function AssistantPage() {
   const [coderEnabled, setCoderEnabled] = useState<boolean>(initialSpecialists.coder);
   const [webFetcherEnabled, setWebFetcherEnabled] = useState<boolean>(initialSpecialists.webFetcher);
   const [wikimediaEnabled, setWikimediaEnabled] = useState<boolean>(initialSpecialists.wikimedia);
+  const [newAgentEnabled, setNewAgentEnabled] = useState<boolean>(initialSpecialists.newAgent);
   const [webFetcherList, setWebFetcherList] = useState<WebFetcherResultItem[]>([]);
   const [webFetcherOriginalRequest, setWebFetcherOriginalRequest] = useState<string>('');
   const [newMemoryInput, setNewMemoryInput] = useState('');
@@ -587,9 +592,9 @@ export function AssistantPage() {
     setTimeout(() => setSettingsSavedToast(null), 3000);
   };
 
-  // Helper to ensure mutual exclusivity among the six Specialist Modes
+  // Helper to ensure mutual exclusivity among the Specialist Modes
   const disableOtherSpecialistModes = (
-    except: 'architect' | 'dataAnalysis' | 'multiChat' | 'coder' | 'webFetcher' | 'wikimedia',
+    except: 'architect' | 'dataAnalysis' | 'multiChat' | 'coder' | 'webFetcher' | 'wikimedia' | 'newAgent',
   ) => {
     if (except !== 'multiChat') {
       setMultiChatEnabled(false);
@@ -616,6 +621,10 @@ export function AssistantPage() {
     if (except !== 'wikimedia') {
       setWikimediaEnabled(false);
       storage.setAssistantWikimediaEnabled(false);
+    }
+    if (except !== 'newAgent') {
+      setNewAgentEnabled(false);
+      storage.setAssistantNewAgentEnabled(false);
     }
   };
 
@@ -724,6 +733,26 @@ export function AssistantPage() {
     );
   };
 
+  const toggleNewAgent = () => {
+    const next = !newAgentEnabled;
+    if (next) {
+      disableOtherSpecialistModes('newAgent');
+      setWebSearchEnabled(false);
+      try {
+        localStorage.setItem(WEB_SEARCH_PREF_KEY, 'false');
+      } catch {
+        // Ignore
+      }
+    }
+    setNewAgentEnabled(next);
+    storage.setAssistantNewAgentEnabled(next);
+    triggerSettingsToast(
+      next
+        ? 'New Agent Mode enabled: dynamic 3-specialist pipeline active'
+        : 'New Agent Mode disabled',
+    );
+  };
+
   const activeSpecialistMode = architectEnabled
     ? {
         name: 'Architect',
@@ -789,6 +818,17 @@ export function AssistantPage() {
             : theme === 'fulldark'
             ? 'text-violet-300 border-violet-500/40 bg-[#21152d] hover:bg-[#2e1d3e]'
             : 'text-violet-300 border-violet-500/40 bg-violet-950/50 hover:bg-violet-900/60',
+      }
+    : newAgentEnabled
+    ? {
+        name: 'New Agent',
+        toggle: toggleNewAgent,
+        color:
+          theme === 'classic'
+            ? 'text-rose-300 border-rose-500/50 bg-rose-950/60 hover:bg-rose-900/70 shadow-[0_0_8px_rgba(244,63,94,0.25)]'
+            : theme === 'fulldark'
+            ? 'text-rose-300 border-rose-500/40 bg-[#281318] hover:bg-[#381a22]'
+            : 'text-rose-300 border-rose-500/40 bg-rose-950/50 hover:bg-rose-900/60',
       }
     : null;
 
@@ -1988,7 +2028,15 @@ export function AssistantPage() {
 
     // =========================================================================
     // SPECIALIST MODES PRIORITY & ROUTING
-    // Priority Order: Multi Chat (handled above) > Web Fetcher / Coder / Wikimedia / Architect / Data Analysis
+    // Priority Order:
+    // 1. Deep Research (top priority if enabled)
+    // 2. Image Generation (image studio generation pipeline)
+    // 3. Multi Chat (3-Persona panel mode, ignores single-specialists)
+    // 4. Web Fetcher (direct URL / site query / number selection)
+    // 5. Wikimedia (5 photo Commons retrieval, wins over New Agent / Coder)
+    // 6. New Agent (dynamic 3-specialist pipeline via /newagent, wins over Coder)
+    // 7. Coder (/codeonline research-grounded coding)
+    // 8. Architect / Data Analysis (vector SVG software blueprints / Recharts metrics)
     // =========================================================================
 
     // 1. Check Web Fetcher mode if enabled
@@ -2519,14 +2567,17 @@ DIRECTIVES:
       return;
     }
 
-    // 3. Check Coder, Architect, Data Analysis modes
-    const isOtherSpecialistActive = architectEnabled || dataAnalysisEnabled || coderEnabled;
+    // 3. Check New Agent, Coder, Architect, Data Analysis modes
+    const isOtherSpecialistActive = newAgentEnabled || coderEnabled || architectEnabled || dataAnalysisEnabled;
 
     if (isOtherSpecialistActive) {
       let effectiveMessage = message;
       let effectiveTool: Message['tool'] = 'agent';
 
-      if (coderEnabled) {
+      if (newAgentEnabled) {
+        effectiveMessage = /^\/(?:newagent|new_agent)(?:\s+|$)/i.test(message.trim()) ? message : `/newagent ${message}`;
+        effectiveTool = 'agent';
+      } else if (coderEnabled) {
         effectiveMessage = /^\/codeonline(?:\s+|$)/i.test(message.trim()) ? message : `/codeonline ${message}`;
         effectiveTool = 'coder';
       } else {
@@ -2535,7 +2586,9 @@ DIRECTIVES:
 
       setSpecialistProgress(10);
       setSpecialistPhase(
-        effectiveMessage.startsWith('/codeonline')
+        newAgentEnabled
+          ? 'Initializing Dynamic Agent pipeline (Planner analyzing domain & formulating 3 specialists)...'
+          : effectiveMessage.startsWith('/codeonline')
           ? 'Initializing Coder agent (Planner & Researcher formulating technical blueprint)...'
           : architectEnabled && dataAnalysisEnabled
           ? 'Initializing Architect & Data Analysis pipeline...'
@@ -2579,6 +2632,9 @@ DIRECTIVES:
             } else if (step.agentId === 'dataAnalyst') {
               pct = step.status === 'completed' ? 85 : 55;
               label = step.status === 'completed' ? 'Data Analyst extracted metrics' : 'Data Analyst structuring data points & chart series...';
+            } else if (step.agentId?.startsWith('specialist_') || step.agentId === 'dynamicSpecialist') {
+              pct = step.status === 'completed' ? 85 : 60;
+              label = `${step.name || 'Specialist'}: ${step.status === 'completed' ? 'Analysis complete' : 'Deliberating & analyzing domain context...'}`;
             } else if (step.agentId === 'finalSynthesizer') {
               pct = step.status === 'completed' ? 100 : 92;
               label = step.status === 'completed' ? 'Synthesis complete' : 'Final Synthesizer assembling complete response...';
@@ -3369,6 +3425,64 @@ DIRECTIVES:
                   }`}
                   title="Disable Wikimedia mode"
                   aria-label="Disable Wikimedia"
+                >
+                  <X size={12} />
+                  <span>Disable</span>
+                </button>
+              </div>
+            </div>
+          )}
+
+          {/* New Agent Mode Active Indicator Banner */}
+          {newAgentEnabled && (
+            <div
+              className={`px-3.5 py-2.5 rounded-xl border flex items-center justify-between gap-3 text-xs transition-all ${
+                theme === 'classic'
+                  ? 'bg-rose-950/40 border-rose-500/30 text-rose-200 shadow-[0_0_15px_rgba(244,63,94,0.15)]'
+                  : theme === 'fulldark'
+                  ? 'bg-[#181818] border-[#2e2e2e] text-[#e0e0e0]'
+                  : 'bg-zinc-900/90 border-zinc-800 text-zinc-300'
+              }`}
+            >
+              <div className="flex items-center gap-2.5 min-w-0">
+                <div
+                  className={`w-6 h-6 rounded-lg grid place-items-center text-xs shrink-0 ${
+                    theme === 'classic'
+                      ? 'bg-rose-500/20 text-rose-300'
+                      : 'bg-zinc-800 text-rose-400'
+                  }`}
+                >
+                  <Layers3 size={13} />
+                </div>
+                <div className="flex items-center gap-2 flex-wrap">
+                  <span className="font-semibold text-zinc-100">New Agent Active:</span>
+                  <span className="text-[11px] opacity-90">
+                    Dynamic 3-specialist pipeline (/newagent)
+                  </span>
+                </div>
+              </div>
+              <div className="flex items-center gap-1.5 shrink-0">
+                <button
+                  type="button"
+                  onClick={() => setSettingsOpen(true)}
+                  className="text-[11px] px-2.5 py-1 rounded-lg border border-zinc-700/60 bg-zinc-800/80 hover:bg-zinc-700 text-zinc-300 transition-colors flex items-center gap-1"
+                  title="Configure in Settings"
+                >
+                  <SettingsIcon size={11} />
+                  <span className="hidden sm:inline">Settings</span>
+                </button>
+                <button
+                  type="button"
+                  onClick={toggleNewAgent}
+                  className={`text-[11px] px-2.5 py-1 rounded-lg border transition-all flex items-center gap-1 ${
+                    theme === 'classic'
+                      ? 'border-rose-500/40 bg-rose-950/70 text-rose-200 hover:border-red-500/50 hover:bg-red-950/40 hover:text-red-300'
+                      : theme === 'fulldark'
+                      ? 'border-[#333] bg-[#222] text-[#ccc] hover:border-red-500/40 hover:bg-red-950/30 hover:text-red-300'
+                      : 'border-zinc-700/60 bg-zinc-800/80 text-zinc-300 hover:border-red-500/40 hover:bg-red-500/10 hover:text-red-300'
+                  }`}
+                  title="Disable New Agent mode"
+                  aria-label="Disable New Agent"
                 >
                   <X size={12} />
                   <span>Disable</span>
@@ -4351,6 +4465,8 @@ DIRECTIVES:
                 className={`flex items-center justify-between text-xs ${
                   deepResearchEnabled
                     ? 'text-emerald-300'
+                    : newAgentEnabled
+                    ? 'text-rose-300'
                     : wikimediaEnabled
                     ? 'text-violet-300'
                     : architectEnabled && dataAnalysisEnabled
@@ -4378,6 +4494,8 @@ DIRECTIVES:
                     className={`animate-spin shrink-0 ${
                       deepResearchEnabled
                         ? 'text-emerald-400'
+                        : newAgentEnabled
+                        ? 'text-rose-400'
                         : wikimediaEnabled
                         ? 'text-violet-400'
                         : architectEnabled && dataAnalysisEnabled
@@ -4400,6 +4518,8 @@ DIRECTIVES:
                   <span className="font-medium">
                     {deepResearchEnabled
                       ? deepResearchPhase || 'JARVIS Deep Research in progress...'
+                      : newAgentEnabled
+                      ? specialistPhase || 'Dynamic Agent pipeline in progress...'
                       : wikimediaEnabled
                       ? specialistPhase || 'Fetching real images from Wikimedia Commons...'
                       : (architectEnabled || dataAnalysisEnabled || coderEnabled || webFetcherEnabled)
@@ -4424,10 +4544,12 @@ DIRECTIVES:
                       {deepResearchProgress}%
                     </span>
                   )}
-                  {(architectEnabled || dataAnalysisEnabled || coderEnabled || webFetcherEnabled || wikimediaEnabled) && specialistProgress > 0 && (
+                  {(architectEnabled || dataAnalysisEnabled || coderEnabled || webFetcherEnabled || wikimediaEnabled || newAgentEnabled) && specialistProgress > 0 && (
                     <span
                       className={`text-[11px] font-mono font-semibold shrink-0 ${
-                        wikimediaEnabled
+                        newAgentEnabled
+                          ? 'text-rose-400'
+                          : wikimediaEnabled
                           ? 'text-violet-400'
                           : coderEnabled
                           ? 'text-emerald-400'
@@ -4468,11 +4590,13 @@ DIRECTIVES:
               )}
 
               {/* Specialist Modes Progress Bar */}
-              {(architectEnabled || dataAnalysisEnabled || coderEnabled || webFetcherEnabled || wikimediaEnabled) && specialistProgress > 0 && (
+              {(architectEnabled || dataAnalysisEnabled || coderEnabled || webFetcherEnabled || wikimediaEnabled || newAgentEnabled) && specialistProgress > 0 && (
                 <div className="w-full max-w-md h-1.5 rounded-full bg-zinc-800/80 overflow-hidden border border-zinc-700/50">
                   <div
                     className={`h-full transition-all duration-300 ease-out rounded-full ${
-                      wikimediaEnabled
+                      newAgentEnabled
+                        ? 'bg-gradient-to-r from-rose-500 via-pink-400 to-rose-300 shadow-[0_0_8px_rgba(244,63,94,0.5)]'
+                        : wikimediaEnabled
                         ? 'bg-gradient-to-r from-violet-500 via-purple-400 to-fuchsia-300 shadow-[0_0_8px_rgba(139,92,246,0.5)]'
                         : coderEnabled
                         ? 'bg-gradient-to-r from-emerald-500 via-teal-400 to-green-300 shadow-[0_0_8px_rgba(16,185,129,0.5)]'
@@ -4618,7 +4742,7 @@ DIRECTIVES:
                   type="button"
                   onClick={() => setMoreOptionsOpen((prev) => !prev)}
                   className={`text-xs p-1.5 rounded-lg border transition-all flex items-center justify-center gap-1 ${
-                    moreOptionsOpen || architectEnabled || dataAnalysisEnabled || multiChatEnabled || coderEnabled || webFetcherEnabled || wikimediaEnabled
+                    moreOptionsOpen || architectEnabled || dataAnalysisEnabled || multiChatEnabled || coderEnabled || webFetcherEnabled || wikimediaEnabled || newAgentEnabled
                       ? theme === 'classic'
                         ? 'bg-cyan-500/15 text-cyan-200 border-cyan-500/40 shadow-[0_0_8px_rgba(6,182,212,0.2)]'
                         : theme === 'fulldark'
@@ -4633,7 +4757,7 @@ DIRECTIVES:
                   title={
                     moreOptionsOpen
                       ? 'Close quick modes menu'
-                      : 'Specialist Modes (mutually exclusive): Architect, Data Analysis, Multi Chat, Coder, Web Fetcher, Wikimedia'
+                      : 'Specialist Modes (mutually exclusive): Architect, Data Analysis, Multi Chat, Coder, Web Fetcher, Wikimedia, New Agent'
                   }
                   aria-label="More options"
                   aria-expanded={moreOptionsOpen}
@@ -4644,7 +4768,7 @@ DIRECTIVES:
                       moreOptionsOpen ? 'rotate-180 text-cyan-400' : ''
                     }`}
                   />
-                  {(architectEnabled || dataAnalysisEnabled || multiChatEnabled || coderEnabled || webFetcherEnabled || wikimediaEnabled) && (
+                  {(architectEnabled || dataAnalysisEnabled || multiChatEnabled || coderEnabled || webFetcherEnabled || wikimediaEnabled || newAgentEnabled) && (
                     <span className="w-1.5 h-1.5 rounded-full bg-cyan-400 shadow-[0_0_6px_rgba(6,182,212,0.8)]" />
                   )}
                 </button>
@@ -4962,6 +5086,53 @@ DIRECTIVES:
                         <div
                           className={`w-3 h-3 rounded-full bg-white shadow-sm transition-transform duration-150 ${
                             wikimediaEnabled ? 'translate-x-4' : 'translate-x-0'
+                          }`}
+                        />
+                      </div>
+                    </button>
+
+                    {/* 7. New Agent Toggle */}
+                    <button
+                      type="button"
+                      onClick={toggleNewAgent}
+                      className={`w-full p-2 rounded-xl border text-left flex items-center justify-between transition-all ${
+                        newAgentEnabled
+                          ? 'border-rose-500/40 bg-rose-950/30 text-rose-200 shadow-[0_0_10px_rgba(244,63,94,0.15)]'
+                          : 'border-transparent hover:bg-zinc-800/60 text-zinc-300'
+                      }`}
+                    >
+                      <div className="flex items-center gap-2.5 min-w-0">
+                        <div
+                          className={`w-7 h-7 rounded-lg grid place-items-center shrink-0 ${
+                            newAgentEnabled
+                              ? 'bg-rose-500/20 text-rose-300 border border-rose-500/30'
+                              : 'bg-zinc-800 text-zinc-400'
+                          }`}
+                        >
+                          <Layers3 size={13} />
+                        </div>
+                        <div className="min-w-0">
+                          <div className="text-xs font-semibold text-zinc-100 flex items-center gap-1.5">
+                            <span>New Agent</span>
+                            {newAgentEnabled && (
+                              <span className="text-[9px] font-mono font-semibold px-1.5 py-0.2 rounded bg-rose-950 text-rose-400 border border-rose-500/40">
+                                ON
+                              </span>
+                            )}
+                          </div>
+                          <div className="text-[10.5px] text-zinc-400 truncate">
+                            Dynamic 3-specialist pipeline
+                          </div>
+                        </div>
+                      </div>
+                      <div
+                        className={`w-8 h-4 rounded-full transition-colors relative flex items-center p-0.5 shrink-0 ${
+                          newAgentEnabled ? 'bg-rose-500' : 'bg-zinc-700'
+                        }`}
+                      >
+                        <div
+                          className={`w-3 h-3 rounded-full bg-white shadow-sm transition-transform duration-150 ${
+                            newAgentEnabled ? 'translate-x-4' : 'translate-x-0'
                           }`}
                         />
                       </div>
@@ -6266,6 +6437,83 @@ DIRECTIVES:
                           <div
                             className={`w-5 h-5 rounded-full bg-white shadow-md transition-transform duration-200 ${
                               wikimediaEnabled ? 'translate-x-5' : 'translate-x-0'
+                            }`}
+                          />
+                        </div>
+                      </div>
+                    </div>
+
+                    <div className="h-px bg-zinc-800/80" />
+
+                    {/* 7. New Agent Toggle */}
+                    <div className="space-y-3">
+                      <div className="flex items-center justify-between">
+                        <div className="flex items-center gap-2">
+                          <Layers3 size={15} className="text-rose-400" />
+                          <h4 className="text-xs font-semibold uppercase tracking-wider text-zinc-300">
+                            New Agent
+                          </h4>
+                        </div>
+                        <span
+                          className={`text-[10px] font-mono font-semibold px-2 py-0.5 rounded-full border ${
+                            newAgentEnabled
+                              ? 'bg-rose-950/80 text-rose-300 border-rose-500/50 shadow-[0_0_8px_rgba(244,63,94,0.2)]'
+                              : 'bg-zinc-800 text-zinc-500 border-zinc-700/60'
+                          }`}
+                        >
+                          {newAgentEnabled ? 'ACTIVE' : 'DISABLED'}
+                        </span>
+                      </div>
+
+                      <p className="text-xs text-zinc-400 leading-relaxed">
+                        When enabled, AI Assistant routes all messages through the dynamic 3-specialist pipeline (/newagent). The Planner analyzes your domain and dynamically creates 3 specialized sub-agents that collaborate to synthesize your response. (Mutually exclusive: turns off other specialist modes).
+                      </p>
+
+                      {/* Interactive Toggle Card */}
+                      <div
+                        onClick={toggleNewAgent}
+                        className={`p-3.5 rounded-xl border flex items-center justify-between cursor-pointer transition-all ${
+                          newAgentEnabled
+                            ? 'border-rose-500/40 bg-rose-950/20 shadow-[0_0_15px_rgba(244,63,94,0.12)]'
+                            : 'border-zinc-800 bg-zinc-900/60 hover:bg-zinc-850 hover:border-zinc-700'
+                        }`}
+                      >
+                        <div className="flex items-center gap-3">
+                          <div
+                            className={`w-9 h-9 rounded-xl grid place-items-center transition-colors ${
+                              newAgentEnabled
+                                ? 'bg-rose-500/20 border border-rose-500/40 text-rose-300'
+                                : 'bg-zinc-800 border border-zinc-700 text-zinc-400'
+                            }`}
+                          >
+                            <Layers3 size={18} />
+                          </div>
+                          <div>
+                            <div className="text-xs font-semibold text-zinc-100 flex items-center gap-2">
+                              <span>Enable New Agent</span>
+                              {newAgentEnabled && (
+                                <span className="text-[10px] font-mono text-rose-400 bg-rose-950/80 px-1.5 py-0.2 rounded border border-rose-500/40">
+                                  Dynamic 3-Specialist
+                                </span>
+                              )}
+                            </div>
+                            <p className="text-[11px] text-zinc-400 mt-0.5">
+                              {newAgentEnabled
+                                ? 'Dynamic 3-specialist pipeline active'
+                                : 'Standard single assistant responses'}
+                            </p>
+                          </div>
+                        </div>
+
+                        {/* Toggle Switch */}
+                        <div
+                          className={`w-11 h-6 rounded-full transition-colors relative flex items-center p-0.5 shrink-0 ${
+                            newAgentEnabled ? 'bg-rose-500 shadow-[0_0_8px_rgba(244,63,94,0.4)]' : 'bg-zinc-700'
+                          }`}
+                        >
+                          <div
+                            className={`w-5 h-5 rounded-full bg-white shadow-md transition-transform duration-200 ${
+                              newAgentEnabled ? 'translate-x-5' : 'translate-x-0'
                             }`}
                           />
                         </div>

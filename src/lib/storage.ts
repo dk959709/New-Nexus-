@@ -1953,6 +1953,14 @@ export const storage = {
     write('nexus-ai-wikimedia-toggle', enabled);
   },
 
+  getAssistantNewAgentEnabled(): boolean {
+    return read<boolean>('nexus-ai-new-agent-toggle', false);
+  },
+
+  setAssistantNewAgentEnabled(enabled: boolean): void {
+    write('nexus-ai-new-agent-toggle', enabled);
+  },
+
   getAssistantImageEnhanceEnabled(): boolean {
     return read<boolean>('nexus-ai-image-enhance-toggle', false);
   },
