@@ -59,6 +59,12 @@ import { runJarvisPipeline } from '@/services/jarvisOrchestrator';
 import { JarvisSvgDiagram } from '@/components/jarvis/JarvisSvgDiagram';
 import { JarvisChartCard } from '@/components/jarvis/JarvisChartCard';
 import { searchWikimediaCommons } from '@/services/media';
+import {
+  saveImageToDb,
+  loadImageFromDb,
+  deleteImageFromDb,
+  isIndexedDbAvailable,
+} from '@/lib/imageDb';
 import type {
   AISource,
   MultiChatPersonaResponse,
@@ -72,6 +78,7 @@ import type {
 export interface AssistantGeneratedImage {
   url: string;
   imageData?: string;
+  imageDataId?: string;
   providerName: string;
   model?: string;
   width: number;
@@ -367,6 +374,163 @@ function buildLocalMemory(messages: Message[]): string {
     .join('\n');
 
   return text.slice(-MAX_MEMORY_LENGTH);
+}
+
+function AssistantImageCard({
+  image,
+  theme,
+  onFullscreen,
+  onDownload,
+}: {
+  image: AssistantGeneratedImage;
+  theme: 'minimal' | 'classic' | 'fulldark';
+  onFullscreen: (src: string) => void;
+  onDownload: (img: AssistantGeneratedImage) => void;
+}) {
+  const [loadedData, setLoadedData] = useState<string | null>(image.imageData || null);
+
+  useEffect(() => {
+    if (image.imageData) {
+      setLoadedData(image.imageData);
+      return;
+    }
+    if (image.imageDataId) {
+      let cancelled = false;
+      loadImageFromDb(image.imageDataId)
+        .then((data) => {
+          if (!cancelled && data) {
+            setLoadedData(data);
+          }
+        })
+        .catch((err) => {
+          console.warn('[AssistantImageCard] Failed to load image from IndexedDB:', err);
+        });
+      return () => {
+        cancelled = true;
+      };
+    }
+  }, [image.imageData, image.imageDataId]);
+
+  const activeSrc = loadedData || image.url;
+
+  return (
+    <div
+      className={`my-3 p-3 rounded-2xl border transition-all ${
+        theme === 'classic'
+          ? 'border-cyan-500/30 bg-slate-900/80 shadow-[0_4px_25px_rgba(6,182,212,0.15)]'
+          : theme === 'fulldark'
+          ? 'border-[#2a2a2a] bg-[#171717]'
+          : 'border-zinc-800 bg-zinc-900/90'
+      }`}
+    >
+      {/* Image preview with hover actions */}
+      <div className="relative group/img overflow-hidden rounded-xl bg-black/40 flex items-center justify-center">
+        <img
+          src={activeSrc}
+          alt={image.prompt}
+          className="w-full max-h-[440px] object-contain rounded-xl transition-transform duration-300 group-hover/img:scale-[1.01]"
+          loading="lazy"
+        />
+        <div className="absolute inset-0 bg-gradient-to-t from-black/80 via-transparent to-black/20 opacity-0 group-hover/img:opacity-100 transition-opacity flex flex-col justify-between p-3 pointer-events-none">
+          <div className="flex justify-end gap-2 pointer-events-auto">
+            <button
+              type="button"
+              onClick={() => onFullscreen(activeSrc)}
+              className="p-1.5 rounded-lg bg-black/70 text-white hover:bg-black/90 backdrop-blur-md transition-all shadow-md"
+              title="View Fullscreen"
+            >
+              <Maximize2 size={14} />
+            </button>
+          </div>
+          <div className="flex items-center justify-between text-xs text-white/90 pointer-events-auto">
+            <span className="truncate max-w-[240px] font-medium drop-shadow-sm">
+              {image.prompt}
+            </span>
+            <button
+              type="button"
+              onClick={() => onDownload(image)}
+              className="flex items-center gap-1 px-2.5 py-1 rounded-lg bg-white/20 hover:bg-white/30 backdrop-blur-md text-white text-xs font-medium transition-all"
+            >
+              <Download size={12} />
+              <span>Download</span>
+            </button>
+          </div>
+        </div>
+      </div>
+
+      {/* Metadata and Controls */}
+      <div className="mt-3 pt-2.5 border-t flex items-center justify-between flex-wrap gap-2 text-xs">
+        <div className="flex items-center gap-2 flex-wrap">
+          <span
+            className={`inline-flex items-center gap-1 px-2 py-0.5 rounded-md text-[11px] font-medium border ${
+              theme === 'classic'
+                ? 'bg-cyan-950/60 text-cyan-300 border-cyan-500/40'
+                : theme === 'fulldark'
+                ? 'bg-[#222] text-[#e0e0e0] border-[#333]'
+                : 'bg-zinc-800 text-zinc-300 border-zinc-700/60'
+            }`}
+          >
+            <Sparkles size={11} className={theme === 'classic' ? 'text-cyan-400' : 'text-purple-400'} />
+            <span>{image.providerName}</span>
+          </span>
+
+          {image.model && (
+            <span
+              className={`hidden sm:inline-flex items-center text-[10.5px] px-2 py-0.5 rounded-md border ${
+                theme === 'classic'
+                  ? 'bg-slate-900/60 text-slate-300 border-cyan-500/20'
+                  : theme === 'fulldark'
+                  ? 'bg-[#1a1a1a] text-[#aaa] border-[#292929]'
+                  : 'bg-zinc-950/60 text-zinc-400 border-zinc-800'
+              }`}
+            >
+              {image.model}
+            </span>
+          )}
+
+          <span
+            className={`text-[10.5px] opacity-75 ${
+              theme === 'classic' ? 'text-cyan-200/70' : 'text-zinc-400'
+            }`}
+          >
+            {image.width} × {image.height}
+          </span>
+        </div>
+
+        <div className="flex items-center gap-1.5">
+          <button
+            type="button"
+            onClick={() => onDownload(image)}
+            className={`px-2.5 py-1 rounded-lg border text-xs flex items-center gap-1.5 transition-all ${
+              theme === 'classic'
+                ? 'border-cyan-500/30 bg-cyan-950/40 text-cyan-200 hover:bg-cyan-900/50 hover:text-white'
+                : theme === 'fulldark'
+                ? 'border-[#333] bg-[#222] text-[#eee] hover:bg-[#2c2c2c] hover:text-white'
+                : 'border-zinc-700 bg-zinc-800 text-zinc-200 hover:bg-zinc-700 hover:text-white'
+            }`}
+            title="Download Image"
+          >
+            <Download size={12} />
+            <span className="hidden sm:inline">Download</span>
+          </button>
+
+          <Link
+            to={`/image-studio?prompt=${encodeURIComponent(image.prompt)}`}
+            className={`p-1.5 rounded-lg border transition-all ${
+              theme === 'classic'
+                ? 'border-cyan-500/20 text-cyan-300/80 hover:bg-cyan-950/40 hover:text-cyan-100'
+                : theme === 'fulldark'
+                ? 'border-[#2e2e2e] text-[#aaa] hover:bg-[#222] hover:text-white'
+                : 'border-zinc-800 text-zinc-400 hover:bg-zinc-800 hover:text-zinc-200'
+            }`}
+            title="Open in Image Studio"
+          >
+            <ExternalLink size={13} />
+          </Link>
+        </div>
+      </div>
+    </div>
+  );
 }
 
 export function AssistantPage() {
@@ -1128,15 +1292,23 @@ export function AssistantPage() {
         imgItem.prompt.slice(0, 32).replace(/[^a-zA-Z0-9_-]/g, '_') || 'generated_image';
       const fileName = `nexus_${sanitized}_${imgItem.seed}.jpg`;
 
-      if (imgItem.url.startsWith('blob:') || imgItem.url.startsWith('data:')) {
+      let targetUrl = imgItem.imageData || imgItem.url;
+      if (!imgItem.imageData && imgItem.imageDataId) {
+        const dbData = await loadImageFromDb(imgItem.imageDataId);
+        if (dbData) {
+          targetUrl = dbData;
+        }
+      }
+
+      if (targetUrl.startsWith('blob:') || targetUrl.startsWith('data:')) {
         const a = document.createElement('a');
-        a.href = imgItem.url;
+        a.href = targetUrl;
         a.download = fileName;
         document.body.appendChild(a);
         a.click();
         document.body.removeChild(a);
       } else {
-        const response = await fetch(imgItem.url, { mode: 'cors' });
+        const response = await fetch(targetUrl, { mode: 'cors' });
         if (!response.ok) {
           throw new Error(`Failed to fetch image: ${response.status}`);
         }
@@ -1402,6 +1574,10 @@ export function AssistantPage() {
         setEdgeTtsPlayingIndex(null);
       }
       setMessages((prev) => {
+        const targetMsg = prev[indexToDelete];
+        if (targetMsg?.image?.imageDataId) {
+          deleteImageFromDb(targetMsg.image.imageDataId).catch(() => {});
+        }
         const updated = prev.filter((_, i) => i !== indexToDelete);
         if (updated.length === 0 || updated.every((m) => m.isWelcome)) {
           return [
@@ -1950,22 +2126,35 @@ export function AssistantPage() {
           onProgress: (phase) => setImageLoadingPhase(phase),
         });
 
+        const imagePayload: AssistantGeneratedImage = {
+          url: imageResult.url,
+          providerName: imageResult.providerName,
+          model: imageResult.model,
+          width: imageResult.width,
+          height: imageResult.height,
+          seed: imageResult.seed,
+          prompt: imageResult.prompt,
+        };
+
+        if (imageResult.imageData) {
+          if (isIndexedDbAvailable()) {
+            const shortId = `img_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`;
+            saveImageToDb(shortId, imageResult.imageData).catch((dbErr) => {
+              console.warn('[AssistantPage] Background save to IndexedDB failed:', dbErr);
+            });
+            imagePayload.imageDataId = shortId;
+          } else {
+            imagePayload.imageData = imageResult.imageData;
+          }
+        }
+
         const assistantMessage: Message = {
           role: 'assistant',
           content: enhancedPromptText
             ? `Here is your generated image for: "${message}"\n\n*(Prompt enhanced with AI: "${enhancedPromptText}")*`
             : `Here is your generated image for: "${message}"`,
           tool: 'image',
-          image: {
-            url: imageResult.url,
-            imageData: imageResult.imageData,
-            providerName: imageResult.providerName,
-            model: imageResult.model,
-            width: imageResult.width,
-            height: imageResult.height,
-            seed: imageResult.seed,
-            prompt: imageResult.prompt,
-          },
+          image: imagePayload,
         };
 
         setMessages((current) => [...current, assistantMessage]);
@@ -2858,6 +3047,13 @@ DIRECTIVES:
   };
 
   const handleConfirmClearChat = () => {
+    // Delete persisted image blobs from IndexedDB
+    for (const msg of messages) {
+      if (msg.image?.imageDataId) {
+        deleteImageFromDb(msg.image.imageDataId).catch(() => {});
+      }
+    }
+
     setSmartMemory('');
     setMemoryDraft('');
     setMemoryEditorOpen(false);
@@ -4210,122 +4406,12 @@ DIRECTIVES:
 
                         {/* Generated Image Bubble (if present) */}
                         {message.image && (
-                          <div
-                            className={`my-3 p-3 rounded-2xl border transition-all ${
-                              theme === 'classic'
-                                ? 'border-cyan-500/30 bg-slate-900/80 shadow-[0_4px_25px_rgba(6,182,212,0.15)]'
-                                : theme === 'fulldark'
-                                ? 'border-[#2a2a2a] bg-[#171717]'
-                                : 'border-zinc-800 bg-zinc-900/90'
-                            }`}
-                          >
-                            {/* Image preview with hover actions */}
-                            <div className="relative group/img overflow-hidden rounded-xl bg-black/40 flex items-center justify-center">
-                              <img
-                                src={message.image.imageData || message.image.url}
-                                alt={message.image.prompt}
-                                className="w-full max-h-[440px] object-contain rounded-xl transition-transform duration-300 group-hover/img:scale-[1.01]"
-                                loading="lazy"
-                              />
-                              <div className="absolute inset-0 bg-gradient-to-t from-black/80 via-transparent to-black/20 opacity-0 group-hover/img:opacity-100 transition-opacity flex flex-col justify-between p-3 pointer-events-none">
-                                <div className="flex justify-end gap-2 pointer-events-auto">
-                                  <button
-                                    type="button"
-                                    onClick={() => setFullscreenModalImage(message.image?.url || message.image?.imageData || null)}
-                                    className="p-1.5 rounded-lg bg-black/70 text-white hover:bg-black/90 backdrop-blur-md transition-all shadow-md"
-                                    title="View Fullscreen"
-                                  >
-                                    <Maximize2 size={14} />
-                                  </button>
-                                </div>
-                                <div className="flex items-center justify-between text-xs text-white/90 pointer-events-auto">
-                                  <span className="truncate max-w-[240px] font-medium drop-shadow-sm">
-                                    {message.image.prompt}
-                                  </span>
-                                  <button
-                                    type="button"
-                                    onClick={() => handleDownloadImage(message.image!)}
-                                    className="flex items-center gap-1 px-2.5 py-1 rounded-lg bg-white/20 hover:bg-white/30 backdrop-blur-md text-white text-xs font-medium transition-all"
-                                  >
-                                    <Download size={12} />
-                                    <span>Download</span>
-                                  </button>
-                                </div>
-                              </div>
-                            </div>
-
-                            {/* Metadata and Controls */}
-                            <div className="mt-3 pt-2.5 border-t flex items-center justify-between flex-wrap gap-2 text-xs">
-                              <div className="flex items-center gap-2 flex-wrap">
-                                <span
-                                  className={`inline-flex items-center gap-1 px-2 py-0.5 rounded-md text-[11px] font-medium border ${
-                                    theme === 'classic'
-                                      ? 'bg-cyan-950/60 text-cyan-300 border-cyan-500/40'
-                                      : theme === 'fulldark'
-                                      ? 'bg-[#222] text-[#e0e0e0] border-[#333]'
-                                      : 'bg-zinc-800 text-zinc-300 border-zinc-700/60'
-                                  }`}
-                                >
-                                  <Sparkles size={11} className={theme === 'classic' ? 'text-cyan-400' : 'text-purple-400'} />
-                                  <span>{message.image.providerName}</span>
-                                </span>
-
-                                {message.image.model && (
-                                  <span
-                                    className={`hidden sm:inline-flex items-center text-[10.5px] px-2 py-0.5 rounded-md border ${
-                                      theme === 'classic'
-                                        ? 'bg-slate-900/60 text-slate-300 border-cyan-500/20'
-                                        : theme === 'fulldark'
-                                        ? 'bg-[#1a1a1a] text-[#aaa] border-[#292929]'
-                                        : 'bg-zinc-950/60 text-zinc-400 border-zinc-800'
-                                    }`}
-                                  >
-                                    {message.image.model}
-                                  </span>
-                                )}
-
-                                <span
-                                  className={`text-[10.5px] opacity-75 ${
-                                    theme === 'classic' ? 'text-cyan-200/70' : 'text-zinc-400'
-                                  }`}
-                                >
-                                  {message.image.width} × {message.image.height}
-                                </span>
-                              </div>
-
-                              <div className="flex items-center gap-1.5">
-                                <button
-                                  type="button"
-                                  onClick={() => handleDownloadImage(message.image!)}
-                                  className={`px-2.5 py-1 rounded-lg border text-xs flex items-center gap-1.5 transition-all ${
-                                    theme === 'classic'
-                                      ? 'border-cyan-500/30 bg-cyan-950/40 text-cyan-200 hover:bg-cyan-900/50 hover:text-white'
-                                      : theme === 'fulldark'
-                                      ? 'border-[#333] bg-[#222] text-[#eee] hover:bg-[#2c2c2c] hover:text-white'
-                                      : 'border-zinc-700 bg-zinc-800 text-zinc-200 hover:bg-zinc-700 hover:text-white'
-                                  }`}
-                                  title="Download Image"
-                                >
-                                  <Download size={12} />
-                                  <span className="hidden sm:inline">Download</span>
-                                </button>
-
-                                <Link
-                                  to={`/image-studio?prompt=${encodeURIComponent(message.image.prompt)}`}
-                                  className={`p-1.5 rounded-lg border transition-all ${
-                                    theme === 'classic'
-                                      ? 'border-cyan-500/20 text-cyan-300/80 hover:bg-cyan-950/40 hover:text-cyan-100'
-                                      : theme === 'fulldark'
-                                      ? 'border-[#2e2e2e] text-[#aaa] hover:bg-[#222] hover:text-white'
-                                      : 'border-zinc-800 text-zinc-400 hover:bg-zinc-800 hover:text-zinc-200'
-                                  }`}
-                                  title="Open in Image Studio"
-                                >
-                                  <ExternalLink size={13} />
-                                </Link>
-                              </div>
-                            </div>
-                          </div>
+                          <AssistantImageCard
+                            image={message.image}
+                            theme={theme}
+                            onFullscreen={(src) => setFullscreenModalImage(src)}
+                            onDownload={handleDownloadImage}
+                          />
                         )}
 
                         {/* Interactive Quantitative Chart Card */}
