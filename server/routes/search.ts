@@ -1314,12 +1314,65 @@ export async function searchProvider(input: z.infer<typeof searchSchema>): Promi
             value?: Array<Record<string, unknown>>;
           };
         };
-        const items = isLangSearch
+        let items = isLangSearch
           ? (payload.data?.webPages?.value ?? payload.webPages?.value ?? [])
           : (payload.results ??
             payload.organic_results ??
             payload.news ??
             (Array.isArray(payload) ? (payload as Array<Record<string, unknown>>) : []));
+
+        if (isLangSearch && isLatestQuery) {
+          const stopWords = new Set([
+            'the', 'is', 'what', 'whats', "what's", 'latest', 'update', 'updates', 'recent',
+            'recently', 'newest', 'new', 'news', 'current', 'currently', 'a', 'an', 'and',
+            'or', 'in', 'on', 'at', 'to', 'for', 'of', 'with', 'about', 'by', 'from', 'how',
+            'why', 'who', 'when', 'where', 'are', 'was', 'were', 'be', 'been', 'being',
+            'have', 'has', 'had', 'do', 'does', 'did', 'can', 'could', 'should', 'would',
+            'will', 'it', 'its', 'this', 'that', 'these', 'those', 'tell', 'show', 'give'
+          ]);
+
+          const queryTerms = input.query
+            .toLowerCase()
+            .replace(/[^a-z0-9\s]/g, ' ')
+            .split(/\s+/)
+            .filter((w) => w.length >= 2 && !stopWords.has(w));
+
+          if (queryTerms.length > 0) {
+            const relevantCount = items.filter((item) => {
+              const title = String(item.name ?? item.title ?? '').toLowerCase();
+              const snippet = String(item.snippet ?? item.summary ?? item.content ?? item.description ?? '').toLowerCase();
+              const text = `${title} ${snippet}`;
+              return queryTerms.some((term) => text.includes(term));
+            }).length;
+
+            if (relevantCount < 3) {
+              console.log('[LangSearch] oneMonth results seem irrelevant, retrying with noLimit');
+              try {
+                const retryResponse = await fetch(url, {
+                  method: 'POST',
+                  headers,
+                  body: JSON.stringify({
+                    query: input.query,
+                    count: Math.min(Math.max(requestedMax, 5), 25),
+                    contents: { text: true },
+                    freshness: 'noLimit',
+                  }),
+                  signal: AbortSignal.timeout(6000),
+                });
+                if (retryResponse.ok) {
+                  const retryPayload = (await retryResponse.json()) as {
+                    data?: { webPages?: { value?: Array<Record<string, unknown>> } };
+                    webPages?: { value?: Array<Record<string, unknown>> };
+                    results?: Array<Record<string, unknown>>;
+                  };
+                  items = retryPayload.data?.webPages?.value ?? retryPayload.webPages?.value ?? retryPayload.results ?? items;
+                }
+              } catch (retryErr) {
+                console.warn('[LangSearch] Retry with noLimit failed:', retryErr);
+              }
+            }
+          }
+        }
         const type: SearchResult['type'] =
           input.category === 'NEWS'
             ? 'news'
