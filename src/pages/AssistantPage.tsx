@@ -74,6 +74,8 @@ import type {
   JarvisChartData,
   SavedItem,
   MediaItem,
+  ParallaxMessage,
+  ParallaxSummary,
 } from '@/types';
 
 export interface AssistantGeneratedImage {
@@ -105,6 +107,10 @@ type Message = {
   wikimediaItems?: MediaItem[];
   wikimediaTopic?: string;
   swarmLiveTopic?: string;
+  swarmLiveMessages?: ParallaxMessage[];
+  swarmLiveStatus?: 'running' | 'completed' | 'aborted' | 'error';
+  swarmLiveSummary?: ParallaxSummary | null;
+  swarmLiveErrorMessage?: string | null;
 };
 
 // Helper: Clean user's message into a concise search topic for Wikimedia Commons
@@ -4393,10 +4399,41 @@ DIRECTIVES:
 
                         {/* Swarm Live (Parallax 20+ Agent YouTube-style Debate Feed) */}
                         {message.tool === 'swarmlive' ? (
-                          <SwarmLiveFeed
-                            topic={message.swarmLiveTopic || message.content}
-                            onClose={() => handleDeleteMessage(index)}
-                          />
+                          message.swarmLiveStatus === 'completed' ||
+                          message.swarmLiveStatus === 'aborted' ||
+                          message.swarmLiveStatus === 'error' ? (
+                            <SwarmLiveFeed
+                              topic={message.swarmLiveTopic || message.content}
+                              savedState={{
+                                messages: message.swarmLiveMessages || [],
+                                status: message.swarmLiveStatus,
+                                summary: message.swarmLiveSummary,
+                                errorMessage: message.swarmLiveErrorMessage,
+                              }}
+                              onClose={() => handleDeleteMessage(index)}
+                            />
+                          ) : (
+                            <SwarmLiveFeed
+                              topic={message.swarmLiveTopic || message.content}
+                              onStateChange={(state) => {
+                                setMessages((prev) =>
+                                  prev.map((msg, idx) => {
+                                    if (idx === index) {
+                                      return {
+                                        ...msg,
+                                        swarmLiveMessages: state.messages,
+                                        swarmLiveStatus: state.status,
+                                        swarmLiveSummary: state.summary,
+                                        swarmLiveErrorMessage: state.errorMessage,
+                                      };
+                                    }
+                                    return msg;
+                                  }),
+                                );
+                              }}
+                              onClose={() => handleDeleteMessage(index)}
+                            />
+                          )
                         ) : message.multiChatResponses && message.multiChatResponses.length > 0 ? (
                           <div className="space-y-4 pt-1">
                             {/* Simplified plain Multi-Chat Sequential Pipeline Indicator */}

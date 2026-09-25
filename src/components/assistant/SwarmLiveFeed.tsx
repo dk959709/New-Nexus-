@@ -1,6 +1,6 @@
 import React, { useEffect, useState, useRef, useCallback } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
-import { Square, X, Radio, Loader2, AlertCircle, CheckCircle2, Users } from 'lucide-react';
+import { Square, X, Radio, Loader2, AlertCircle, CheckCircle2, Users, Copy, Check } from 'lucide-react';
 import { storage, DEFAULT_PARALLAX_AGENTS } from '@/lib/storage';
 import { AGENT_QUADRANTS } from '@/data/parallaxQuadrants';
 import { runParallaxSwarm } from '@/services/parallaxOrchestrator';
@@ -11,6 +11,18 @@ import type { ParallaxMessage, ParallaxSummary, ParallaxAgentConfig } from '@/ty
 interface SwarmLiveFeedProps {
   topic: string;
   onClose?: () => void;
+  savedState?: {
+    messages: ParallaxMessage[];
+    status: 'completed' | 'aborted' | 'error';
+    summary?: ParallaxSummary | null;
+    errorMessage?: string | null;
+  };
+  onStateChange?: (state: {
+    messages: ParallaxMessage[];
+    status: 'running' | 'completed' | 'aborted' | 'error';
+    summary?: ParallaxSummary | null;
+    errorMessage?: string | null;
+  }) => void;
 }
 
 function getAgentQuadrantColor(agentId: string): string {
@@ -38,14 +50,40 @@ function getAgentQuadrantColor(agentId: string): string {
   }
 }
 
-export const SwarmLiveFeed: React.FC<SwarmLiveFeedProps> = ({ topic, onClose }) => {
-  const [messages, setMessages] = useState<ParallaxMessage[]>([]);
-  const [status, setStatus] = useState<'idle' | 'running' | 'completed' | 'aborted' | 'error'>('running');
-  const [currentRound, setCurrentRound] = useState<number>(1);
-  const [statusText, setStatusText] = useState<string>('Initializing Parallax Swarm...');
-  const [summary, setSummary] = useState<ParallaxSummary | null>(null);
-  const [errorMessage, setErrorMessage] = useState<string | null>(null);
+export const SwarmLiveFeed: React.FC<SwarmLiveFeedProps> = ({
+  topic,
+  onClose,
+  savedState,
+  onStateChange,
+}) => {
+  const [messages, setMessages] = useState<ParallaxMessage[]>(() => savedState?.messages || []);
+  const [status, setStatus] = useState<'idle' | 'running' | 'completed' | 'aborted' | 'error'>(
+    () => (savedState ? savedState.status : 'running'),
+  );
+  const [currentRound, setCurrentRound] = useState<number>(() => {
+    if (savedState?.messages && savedState.messages.length > 0) {
+      const maxR = Math.max(...savedState.messages.map((m) => m.round || 1));
+      return Math.min(Math.max(maxR, 1), 3);
+    }
+    return 1;
+  });
+  const [statusText, setStatusText] = useState<string>(() => {
+    if (savedState) {
+      if (savedState.status === 'completed') return 'Swarm debate completed.';
+      if (savedState.status === 'aborted') return 'Swarm stopped by user.';
+      if (savedState.status === 'error')
+        return savedState.errorMessage ? `Error: ${savedState.errorMessage}` : 'Error during debate.';
+    }
+    return 'Initializing Parallax Swarm...';
+  });
+  const [summary, setSummary] = useState<ParallaxSummary | null>(() => savedState?.summary || null);
+  const [errorMessage, setErrorMessage] = useState<string | null>(() => savedState?.errorMessage || null);
+  const [copied, setCopied] = useState<boolean>(false);
   const [totalAgentsCount, setTotalAgentsCount] = useState<number>(() => {
+    if (savedState?.messages && savedState.messages.length > 0) {
+      const unique = new Set(savedState.messages.map((m) => m.agentId));
+      if (unique.size > 0) return unique.size;
+    }
     try {
       const cfg = storage.getParallaxConfig();
       const enabled = Object.values(cfg.agents || DEFAULT_PARALLAX_AGENTS).filter((a) => a.enabled !== false);
@@ -58,6 +96,11 @@ export const SwarmLiveFeed: React.FC<SwarmLiveFeedProps> = ({ topic, onClose }) 
   const abortControllerRef = useRef<AbortController | null>(null);
   const scrollContainerRef = useRef<HTMLDivElement>(null);
   const isNearBottomRef = useRef<boolean>(true);
+  const messagesRef = useRef<ParallaxMessage[]>(messages);
+  messagesRef.current = messages;
+
+  const onStateChangeRef = useRef(onStateChange);
+  onStateChangeRef.current = onStateChange;
 
   const handleScroll = useCallback(() => {
     const el = scrollContainerRef.current;
@@ -80,8 +123,12 @@ export const SwarmLiveFeed: React.FC<SwarmLiveFeedProps> = ({ topic, onClose }) 
     scrollToBottom(true);
   }, [messages, statusText, currentRound, scrollToBottom]);
 
-  // Execute swarm on mount
+  // Execute swarm on mount (ONLY when savedState is NOT provided)
   useEffect(() => {
+    if (savedState) {
+      return;
+    }
+
     const controller = new AbortController();
     abortControllerRef.current = controller;
     setStatus('running');
@@ -107,44 +154,116 @@ export const SwarmLiveFeed: React.FC<SwarmLiveFeedProps> = ({ topic, onClose }) 
         setTotalAgentsCount(enabledCore.length + (dynamicSpecialists?.length || 0));
       },
       onMessage: (msg: ParallaxMessage) => {
-        setMessages((prev) => [...prev, msg]);
+        setMessages((prev) => {
+          const updated = [...prev, msg];
+          messagesRef.current = updated;
+          if (onStateChangeRef.current) {
+            onStateChangeRef.current({
+              messages: updated,
+              status: 'running',
+              summary: null,
+              errorMessage: null,
+            });
+          }
+          return updated;
+        });
       },
       onComplete: (completedSummary: ParallaxSummary) => {
         setSummary(completedSummary);
         setStatus('completed');
         setStatusText('Swarm debate completed successfully.');
+        if (onStateChangeRef.current) {
+          onStateChangeRef.current({
+            messages: messagesRef.current,
+            status: 'completed',
+            summary: completedSummary,
+            errorMessage: null,
+          });
+        }
       },
       onError: (errText: string) => {
         if (controller.signal.aborted) {
           setStatus('aborted');
           setStatusText('Swarm stopped by user.');
+          if (onStateChangeRef.current) {
+            onStateChangeRef.current({
+              messages: messagesRef.current,
+              status: 'aborted',
+              summary: null,
+              errorMessage: null,
+            });
+          }
         } else {
           setErrorMessage(errText);
           setStatus('error');
           setStatusText(`Error: ${errText}`);
+          if (onStateChangeRef.current) {
+            onStateChangeRef.current({
+              messages: messagesRef.current,
+              status: 'error',
+              summary: null,
+              errorMessage: errText,
+            });
+          }
         }
       },
     }).catch((err: unknown) => {
       if (controller.signal.aborted) {
         setStatus('aborted');
         setStatusText('Swarm stopped by user.');
+        if (onStateChangeRef.current) {
+          onStateChangeRef.current({
+            messages: messagesRef.current,
+            status: 'aborted',
+            summary: null,
+            errorMessage: null,
+          });
+        }
       } else {
         const msg = err instanceof Error ? err.message : String(err);
         setErrorMessage(msg);
         setStatus('error');
+        if (onStateChangeRef.current) {
+          onStateChangeRef.current({
+            messages: messagesRef.current,
+            status: 'error',
+            summary: null,
+            errorMessage: msg,
+          });
+        }
       }
     });
 
     return () => {
       controller.abort();
     };
-  }, [topic]);
+  }, [topic, savedState]);
 
   const handleStop = () => {
     if (abortControllerRef.current && status === 'running') {
       abortControllerRef.current.abort();
       setStatus('aborted');
       setStatusText('Swarm stopped by user.');
+      if (onStateChangeRef.current) {
+        onStateChangeRef.current({
+          messages: messagesRef.current,
+          status: 'aborted',
+          summary: null,
+          errorMessage: null,
+        });
+      }
+    }
+  };
+
+  const handleCopyAll = async () => {
+    if (messages.length === 0) return;
+    const text = messages.map((m) => `${m.agentName}: ${m.text}`).join('\n\n');
+    try {
+      await navigator.clipboard.writeText(text);
+      setCopied(true);
+      setTimeout(() => setCopied(false), 2000);
+    } catch {
+      // Fallback
     }
   };
 
@@ -193,7 +312,27 @@ export const SwarmLiveFeed: React.FC<SwarmLiveFeedProps> = ({ topic, onClose }) 
         </div>
 
         {/* Action Controls */}
-        <div className="flex items-center gap-2">
+        <div className="flex items-center gap-1.5">
+          {/* Copy All Button */}
+          {messages.length > 0 && (
+            <button
+              type="button"
+              onClick={handleCopyAll}
+              className="p-1.5 rounded-lg text-zinc-400 hover:text-zinc-200 hover:bg-zinc-800 transition-colors flex items-center gap-1 text-xs"
+              title="Copy all debate messages"
+              aria-label="Copy all messages"
+            >
+              {copied ? (
+                <>
+                  <Check size={13} className="text-emerald-400" />
+                  <span className="text-[11px] text-emerald-400 font-medium">Copied!</span>
+                </>
+              ) : (
+                <Copy size={13} />
+              )}
+            </button>
+          )}
+
           {status === 'running' && (
             <button
               type="button"
