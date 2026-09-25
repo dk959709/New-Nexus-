@@ -1962,7 +1962,20 @@ export function AssistantPage() {
 
   useEffect(() => {
     try {
-      localStorage.setItem(CHAT_KEY, JSON.stringify(messages));
+      const sanitizedMessages = messages.map((m) => {
+        if (m.image && m.image.imageData) {
+          const { imageData: _removed, ...restImage } = m.image;
+          return {
+            ...m,
+            image: {
+              ...restImage,
+              imageData: undefined,
+            },
+          };
+        }
+        return m;
+      });
+      localStorage.setItem(CHAT_KEY, JSON.stringify(sanitizedMessages));
     } catch {
       // Storage may be unavailable.
     }
@@ -2159,10 +2172,12 @@ export function AssistantPage() {
               if (saved) {
                 imagePayload.imageDataId = shortId;
               } else {
+                console.warn('[AssistantPage] Image save to IndexedDB failed for id ' + shortId + ', reason: saveImageToDb returned false');
                 imagePayload.imageData = imageResult.imageData;
               }
             } catch (dbErr) {
-              console.warn('[AssistantPage] Save to IndexedDB failed, falling back to in-memory payload:', dbErr);
+              const reason = dbErr instanceof Error ? dbErr.message : String(dbErr);
+              console.warn('[AssistantPage] Image save to IndexedDB failed for id ' + shortId + ', reason: ' + reason);
               imagePayload.imageData = imageResult.imageData;
             } finally {
               pendingSavesRef.current.delete(savePromise);
