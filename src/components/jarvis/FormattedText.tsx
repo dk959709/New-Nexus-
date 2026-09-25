@@ -42,7 +42,10 @@ export function JarvisCodeBlock({
 
   return (
     <div className="my-3 rounded-2xl overflow-hidden border border-cyan-500/30 shadow-lg">
-      <div className="bg-slate-950 px-4 py-1.5 border-b border-cyan-500/20 flex items-center justify-between text-[11px] font-mono text-cyan-300 font-semibold">
+      <div
+        className="px-4 py-1.5 border-b border-cyan-500/20 flex items-center justify-between text-[11px] font-mono text-cyan-300 font-semibold"
+        style={{ backgroundColor: 'var(--assistant-answer-box-bg, #020617)' }}
+      >
         <span className="flex items-center gap-1.5">
           <span className="w-2.5 h-2.5 rounded-full bg-rose-500/80 inline-block" />
           <span className="w-2.5 h-2.5 rounded-full bg-amber-500/80 inline-block" />
@@ -76,7 +79,10 @@ export function JarvisCodeBlock({
           </button>
         )}
       </div>
-      <pre className="p-4 bg-slate-950/90 text-cyan-200 font-mono text-xs overflow-x-auto m-0 leading-relaxed">
+      <pre
+        className="p-4 text-cyan-200 font-mono text-xs overflow-x-auto m-0 leading-relaxed"
+        style={{ backgroundColor: 'var(--assistant-answer-box-bg, rgba(2,6,23,0.9))' }}
+      >
         <code>{code}</code>
       </pre>
     </div>
@@ -145,8 +151,8 @@ function renderInline(text: string): React.ReactNode {
           key={i}
           className="px-2 py-0.5 mx-0.5 rounded-lg font-mono text-xs font-semibold"
           style={{
-            background: 'rgba(97,215,201,0.15)',
-            color: '#61d7c9',
+            background: 'var(--assistant-answer-box-bg, rgba(97,215,201,0.15))',
+            color: 'var(--assistant-answer-link-color, #61d7c9)',
             border: '1px solid rgba(97,215,201,0.3)',
           }}
         >
@@ -164,6 +170,10 @@ function renderInline(text: string): React.ReactNode {
           target="_blank"
           rel="noreferrer"
           className="text-cyan-300 hover:text-cyan-100 underline decoration-cyan-400/50 underline-offset-2 transition-colors font-medium inline-flex items-center gap-0.5"
+          style={{
+            color: 'var(--assistant-answer-link-color, inherit)',
+            textDecorationColor: 'var(--assistant-answer-link-color, currentColor)',
+          }}
         >
           <span>{linkMatch[1]}</span>
           <ExternalLink size={10} className="inline opacity-70 ml-0.5" />
@@ -239,7 +249,8 @@ export function FormattedText({
     elements.push(
       <div
         key={`table-${keyPrefix}`}
-        className="my-3.5 overflow-x-auto rounded-xl border border-cyan-500/25 bg-slate-950/60 shadow-md"
+        className="my-3.5 overflow-x-auto rounded-xl border border-cyan-500/25 shadow-md"
+        style={{ backgroundColor: 'var(--assistant-answer-box-bg, rgba(2,6,23,0.6))' }}
       >
         <table className="min-w-full divide-y divide-cyan-500/20 text-xs sm:text-sm">
           {headerRow && (
@@ -328,7 +339,10 @@ export function FormattedText({
       elements.push(
         <div key={idx} className="flex items-center gap-2 mt-3 mb-1.5">
           <span className="w-1.5 h-1.5 rounded-full bg-teal-400 shadow-[0_0_6px_#2dd4bf]" />
-          <h5 className="text-sm font-bold text-teal-300 m-0 tracking-wide">
+          <h5
+            className="text-sm font-bold text-teal-300 m-0 tracking-wide"
+            style={{ color: 'var(--assistant-answer-title-color, inherit)' }}
+          >
             {renderInline(trimmed.slice(5))}
           </h5>
         </div>,
@@ -340,7 +354,10 @@ export function FormattedText({
       elements.push(
         <div key={idx} className="flex items-center gap-2 mt-4 mb-2">
           <span className="w-2 h-2 rounded-full bg-cyan-400 shadow-[0_0_8px_#61d7c9]" />
-          <h4 className="text-base font-bold text-cyan-300 m-0 tracking-wide">
+          <h4
+            className="text-base font-bold text-cyan-300 m-0 tracking-wide"
+            style={{ color: 'var(--assistant-answer-title-color, inherit)' }}
+          >
             {renderInline(trimmed.slice(4))}
           </h4>
         </div>,
@@ -352,7 +369,10 @@ export function FormattedText({
       elements.push(
         <div key={idx} className="flex items-center gap-2.5 mt-5 mb-2.5 pt-2 border-t border-white/10">
           <span className="w-2.5 h-2.5 rounded-full bg-sky-400 shadow-[0_0_10px_#38bdf8]" />
-          <h3 className="text-lg font-black text-white m-0 tracking-tight">
+          <h3
+            className="text-lg font-black text-white m-0 tracking-tight"
+            style={{ color: 'var(--assistant-answer-title-color, inherit)' }}
+          >
             {renderInline(trimmed.slice(3))}
           </h3>
         </div>,
@@ -364,7 +384,10 @@ export function FormattedText({
       elements.push(
         <div key={idx} className="flex items-center gap-3 mt-6 mb-3">
           <span className="w-3 h-3 rounded-full bg-purple-400 shadow-[0_0_12px_#a855f7]" />
-          <h2 className="text-xl font-black text-white m-0 tracking-tight">
+          <h2
+            className="text-xl font-black text-white m-0 tracking-tight"
+            style={{ color: 'var(--assistant-answer-title-color, inherit)' }}
+          >
             {renderInline(trimmed.slice(2))}
           </h2>
         </div>,
@@ -378,7 +401,8 @@ export function FormattedText({
       elements.push(
         <blockquote
           key={idx}
-          className="my-2.5 pl-3.5 py-1.5 border-l-2 border-cyan-400/60 bg-cyan-950/20 rounded-r-lg text-cyan-100/90 text-sm italic"
+          className="my-2.5 pl-3.5 py-1.5 border-l-2 border-cyan-400/60 rounded-r-lg text-cyan-100/90 text-sm italic"
+          style={{ backgroundColor: 'var(--assistant-answer-box-bg, rgba(8,47,73,0.2))' }}
         >
           {renderInline(quoteText)}
         </blockquote>,

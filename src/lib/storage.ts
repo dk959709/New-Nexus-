@@ -1180,6 +1180,14 @@ function write(key: string, value: unknown): void {
   }
 }
 
+function remove(key: string): void {
+  try {
+    localStorage.removeItem(key);
+  } catch {
+    // storage may be unavailable
+  }
+}
+
 export const storage = {
   getSearches(): string[] {
     return read<string[]>(KEYS.searches, []);
@@ -1959,6 +1967,42 @@ export const storage = {
 
   setAssistantNewAgentEnabled(enabled: boolean): void {
     write('nexus-ai-new-agent-toggle', enabled);
+  },
+
+  getAssistantAnswerTitleColor(): string | null {
+    return read<string | null>('nexus-ai-answer-title-color', null);
+  },
+
+  setAssistantAnswerTitleColor(color: string | null): void {
+    if (color === null) {
+      remove('nexus-ai-answer-title-color');
+    } else {
+      write('nexus-ai-answer-title-color', color);
+    }
+  },
+
+  getAssistantAnswerBoxColor(): string | null {
+    return read<string | null>('nexus-ai-answer-box-color', null);
+  },
+
+  setAssistantAnswerBoxColor(color: string | null): void {
+    if (color === null) {
+      remove('nexus-ai-answer-box-color');
+    } else {
+      write('nexus-ai-answer-box-color', color);
+    }
+  },
+
+  getAssistantAnswerLinkColor(): string | null {
+    return read<string | null>('nexus-ai-answer-link-color', null);
+  },
+
+  setAssistantAnswerLinkColor(color: string | null): void {
+    if (color === null) {
+      remove('nexus-ai-answer-link-color');
+    } else {
+      write('nexus-ai-answer-link-color', color);
+    }
   },
 
   getAssistantImageEnhanceEnabled(): boolean {

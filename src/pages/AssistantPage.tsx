@@ -560,6 +560,101 @@ export function AssistantPage() {
     }
   };
 
+  // Chat Appearance Colors (Answer title, inner box bg, link color)
+  const [answerTitleColor, setAnswerTitleColor] = useState<string | null>(() => storage.getAssistantAnswerTitleColor());
+  const [answerBoxColor, setAnswerBoxColor] = useState<string | null>(() => storage.getAssistantAnswerBoxColor());
+  const [answerLinkColor, setAnswerLinkColor] = useState<string | null>(() => storage.getAssistantAnswerLinkColor());
+
+  const [titleColorInput, setTitleColorInput] = useState<string>(() => storage.getAssistantAnswerTitleColor() || '');
+  const [boxColorInput, setBoxColorInput] = useState<string>(() => storage.getAssistantAnswerBoxColor() || '');
+  const [linkColorInput, setLinkColorInput] = useState<string>(() => storage.getAssistantAnswerLinkColor() || '');
+
+  const [titleColorError, setTitleColorError] = useState<string>('');
+  const [boxColorError, setBoxColorError] = useState<string>('');
+  const [linkColorError, setLinkColorError] = useState<string>('');
+
+  const isValidHexColor = (hex: string) => /^#([0-9a-fA-F]{3}|[0-9a-fA-F]{6})$/.test(hex.trim());
+
+  const getThemeDefaultTitleColor = () => (theme === 'classic' ? '#67e8f9' : theme === 'fulldark' ? '#ececec' : '#ffffff');
+  const getThemeDefaultBoxColor = () => (theme === 'classic' ? '#020617' : theme === 'fulldark' ? '#141414' : '#18181b');
+  const getThemeDefaultLinkColor = () => (theme === 'classic' ? '#67e8f9' : '#38bdf8');
+
+  const handleTitleColorChange = (val: string) => {
+    setTitleColorInput(val);
+    const trimmed = val.trim();
+    if (!trimmed) {
+      setTitleColorError('');
+      setAnswerTitleColor(null);
+      storage.setAssistantAnswerTitleColor(null);
+      return;
+    }
+    if (isValidHexColor(trimmed)) {
+      setTitleColorError('');
+      setAnswerTitleColor(trimmed);
+      storage.setAssistantAnswerTitleColor(trimmed);
+    } else {
+      setTitleColorError('Please enter a valid hex color (e.g. #38bdf8 or #fff)');
+    }
+  };
+
+  const handleBoxColorChange = (val: string) => {
+    setBoxColorInput(val);
+    const trimmed = val.trim();
+    if (!trimmed) {
+      setBoxColorError('');
+      setAnswerBoxColor(null);
+      storage.setAssistantAnswerBoxColor(null);
+      return;
+    }
+    if (isValidHexColor(trimmed)) {
+      setBoxColorError('');
+      setAnswerBoxColor(trimmed);
+      storage.setAssistantAnswerBoxColor(trimmed);
+    } else {
+      setBoxColorError('Please enter a valid hex color (e.g. #020617 or #18181b)');
+    }
+  };
+
+  const handleLinkColorChange = (val: string) => {
+    setLinkColorInput(val);
+    const trimmed = val.trim();
+    if (!trimmed) {
+      setLinkColorError('');
+      setAnswerLinkColor(null);
+      storage.setAssistantAnswerLinkColor(null);
+      return;
+    }
+    if (isValidHexColor(trimmed)) {
+      setLinkColorError('');
+      setAnswerLinkColor(trimmed);
+      storage.setAssistantAnswerLinkColor(trimmed);
+    } else {
+      setLinkColorError('Please enter a valid hex color (e.g. #67e8f9 or #60a5fa)');
+    }
+  };
+
+  const handleResetAppearance = () => {
+    setAnswerTitleColor(null);
+    setAnswerBoxColor(null);
+    setAnswerLinkColor(null);
+    setTitleColorInput('');
+    setBoxColorInput('');
+    setLinkColorInput('');
+    setTitleColorError('');
+    setBoxColorError('');
+    setLinkColorError('');
+    storage.setAssistantAnswerTitleColor(null);
+    storage.setAssistantAnswerBoxColor(null);
+    storage.setAssistantAnswerLinkColor(null);
+    triggerSettingsToast('Appearance reset to theme defaults');
+  };
+
+  const assistantCustomStyles: React.CSSProperties = {
+    ...(answerTitleColor ? ({ '--assistant-answer-title-color': answerTitleColor } as React.CSSProperties) : {}),
+    ...(answerBoxColor ? ({ '--assistant-answer-box-bg': answerBoxColor } as React.CSSProperties) : {}),
+    ...(answerLinkColor ? ({ '--assistant-answer-link-color': answerLinkColor } as React.CSSProperties) : {}),
+  };
+
   const utteranceRef = useRef<SpeechSynthesisUtterance | null>(null);
   const edgeTtsAudioRef = useRef<HTMLAudioElement | null>(null);
   const messagesEndRef = useRef<HTMLDivElement | null>(null);
@@ -2568,14 +2663,15 @@ DIRECTIVES:
     }
 
     // 3. Check New Agent, Coder, Architect, Data Analysis modes
-    const isOtherSpecialistActive = newAgentEnabled || coderEnabled || architectEnabled || dataAnalysisEnabled;
+    const isNewAgentSlash = /^\/(?:newagent|new_agent)(?:\s+|$)/i.test(message.trim());
+    const isOtherSpecialistActive = newAgentEnabled || isNewAgentSlash || coderEnabled || architectEnabled || dataAnalysisEnabled;
 
     if (isOtherSpecialistActive) {
       let effectiveMessage = message;
       let effectiveTool: Message['tool'] = 'agent';
 
-      if (newAgentEnabled) {
-        effectiveMessage = /^\/(?:newagent|new_agent)(?:\s+|$)/i.test(message.trim()) ? message : `/newagent ${message}`;
+      if (newAgentEnabled || isNewAgentSlash) {
+        effectiveMessage = isNewAgentSlash ? message : `/newagent ${message}`;
         effectiveTool = 'agent';
       } else if (coderEnabled) {
         effectiveMessage = /^\/codeonline(?:\s+|$)/i.test(message.trim()) ? message : `/codeonline ${message}`;
@@ -2586,7 +2682,7 @@ DIRECTIVES:
 
       setSpecialistProgress(10);
       setSpecialistPhase(
-        newAgentEnabled
+        newAgentEnabled || isNewAgentSlash
           ? 'Initializing Dynamic Agent pipeline (Planner analyzing domain & formulating 3 specialists)...'
           : effectiveMessage.startsWith('/codeonline')
           ? 'Initializing Coder agent (Planner & Researcher formulating technical blueprint)...'
@@ -3602,6 +3698,7 @@ DIRECTIVES:
                     ) : (
                       /* Assistant Message */
                       <div
+                        style={assistantCustomStyles}
                         className={`w-full space-y-2 transition-all ${
                           theme === 'classic'
                             ? 'bg-slate-900/50 border border-cyan-500/20 backdrop-blur-md rounded-2xl p-4 sm:p-5 shadow-[0_4px_20px_rgba(0,0,0,0.35)]'
@@ -3727,6 +3824,24 @@ DIRECTIVES:
                             >
                               <ImageIcon size={11} className="text-violet-400" />
                               <span>Wikimedia Commons</span>
+                            </span>
+                          </div>
+                        )}
+
+                        {/* New Agent Indicator Tag */}
+                        {message.tool === 'agent' && (
+                          <div className="flex items-center gap-2 pt-1 pb-0.5">
+                            <span
+                              className={`inline-flex items-center gap-1.5 px-2 py-0.5 rounded-full text-[11px] font-medium border ${
+                                theme === 'classic'
+                                  ? 'bg-rose-950/70 text-rose-300 border-rose-500/40'
+                                  : theme === 'fulldark'
+                                  ? 'bg-[#1e1e1e] text-rose-300 border-[#2e2e2e]'
+                                  : 'bg-zinc-800 text-rose-300 border-zinc-700/60'
+                              }`}
+                            >
+                              <Layers3 size={11} className="text-rose-400" />
+                              <span>New Agent</span>
                             </span>
                           </div>
                         )}
@@ -5503,6 +5618,186 @@ DIRECTIVES:
                     <div className="h-full w-2/3 rounded bg-[#2f2f2f]" />
                   </div>
                 </button>
+              </div>
+            </div>
+
+            <div className="h-px bg-zinc-800" />
+
+            {/* Section 1.5: Chat Appearance (Answers Only) */}
+            <div className="space-y-4">
+              <div className="flex items-center justify-between flex-wrap gap-2">
+                <div className="flex items-center gap-2">
+                  <Palette size={15} className="text-cyan-400" />
+                  <h4 className="text-xs font-semibold uppercase tracking-wider text-zinc-300">
+                    Chat Appearance
+                  </h4>
+                </div>
+                {(answerTitleColor || answerBoxColor || answerLinkColor) ? (
+                  <button
+                    type="button"
+                    onClick={handleResetAppearance}
+                    className="text-[11px] px-2 py-0.5 rounded-lg border border-zinc-700 bg-zinc-800 text-zinc-300 hover:text-white hover:border-zinc-500 transition-colors flex items-center gap-1 cursor-pointer"
+                  >
+                    <RotateCcw size={11} /> Reset to theme default
+                  </button>
+                ) : (
+                  <span className="text-[11px] text-zinc-500">
+                    Theme Defaults
+                  </span>
+                )}
+              </div>
+
+              <p className="text-xs text-zinc-400 leading-relaxed">
+                Fine-tune colors strictly for AI Assistant answer titles, inner code/info boxes, and clickable links. Chat message backgrounds and the main theme remain unchanged.
+              </p>
+
+              <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
+                {/* 1. Answer title color */}
+                <div className="p-3 rounded-xl border border-zinc-800 bg-zinc-900/60 space-y-2">
+                  <div className="flex items-center justify-between">
+                    <label className="text-xs font-semibold text-zinc-200">Answer title color</label>
+                    {answerTitleColor && (
+                      <span className="text-[9px] font-mono px-1.5 py-0.2 rounded bg-cyan-950 text-cyan-300 border border-cyan-700/50">Custom</span>
+                    )}
+                  </div>
+                  <p className="text-[10.5px] text-zinc-400 leading-normal">
+                    Headings/titles inside AI answers (e.g. ### Overview).
+                  </p>
+                  <div className="flex items-center gap-2 pt-1">
+                    <div className="relative w-8 h-8 rounded-lg overflow-hidden border border-zinc-700 shrink-0 shadow-inner flex items-center justify-center">
+                      <input
+                        type="color"
+                        value={isValidHexColor(titleColorInput) ? (titleColorInput.length === 4 ? `#${titleColorInput[1]}${titleColorInput[1]}${titleColorInput[2]}${titleColorInput[2]}${titleColorInput[3]}${titleColorInput[3]}` : titleColorInput) : getThemeDefaultTitleColor()}
+                        onChange={(e) => handleTitleColorChange(e.target.value)}
+                        className="absolute inset-0 w-[150%] h-[150%] -top-1/4 -left-1/4 cursor-pointer opacity-100 border-0 p-0 m-0"
+                        title="Pick answer title color"
+                      />
+                    </div>
+                    <input
+                      type="text"
+                      value={titleColorInput}
+                      onChange={(e) => handleTitleColorChange(e.target.value)}
+                      placeholder={getThemeDefaultTitleColor()}
+                      className="flex-1 min-w-0 px-2.5 py-1.5 rounded-lg border border-zinc-700/70 bg-zinc-950 font-mono text-xs text-zinc-100 placeholder:text-zinc-600 focus:outline-none focus:border-cyan-500"
+                    />
+                  </div>
+                  {titleColorError && (
+                    <p className="text-[10px] text-rose-400 mt-1">{titleColorError}</p>
+                  )}
+                </div>
+
+                {/* 2. Answer box color */}
+                <div className="p-3 rounded-xl border border-zinc-800 bg-zinc-900/60 space-y-2">
+                  <div className="flex items-center justify-between">
+                    <label className="text-xs font-semibold text-zinc-200">Answer box color</label>
+                    {answerBoxColor && (
+                      <span className="text-[9px] font-mono px-1.5 py-0.2 rounded bg-cyan-950 text-cyan-300 border border-cyan-700/50">Custom</span>
+                    )}
+                  </div>
+                  <p className="text-[10.5px] text-zinc-400 leading-normal">
+                    Inner background of code blocks and blueprint cards.
+                  </p>
+                  <div className="flex items-center gap-2 pt-1">
+                    <div className="relative w-8 h-8 rounded-lg overflow-hidden border border-zinc-700 shrink-0 shadow-inner flex items-center justify-center">
+                      <input
+                        type="color"
+                        value={isValidHexColor(boxColorInput) ? (boxColorInput.length === 4 ? `#${boxColorInput[1]}${boxColorInput[1]}${boxColorInput[2]}${boxColorInput[2]}${boxColorInput[3]}${boxColorInput[3]}` : boxColorInput) : getThemeDefaultBoxColor()}
+                        onChange={(e) => handleBoxColorChange(e.target.value)}
+                        className="absolute inset-0 w-[150%] h-[150%] -top-1/4 -left-1/4 cursor-pointer opacity-100 border-0 p-0 m-0"
+                        title="Pick answer box color"
+                      />
+                    </div>
+                    <input
+                      type="text"
+                      value={boxColorInput}
+                      onChange={(e) => handleBoxColorChange(e.target.value)}
+                      placeholder={getThemeDefaultBoxColor()}
+                      className="flex-1 min-w-0 px-2.5 py-1.5 rounded-lg border border-zinc-700/70 bg-zinc-950 font-mono text-xs text-zinc-100 placeholder:text-zinc-600 focus:outline-none focus:border-cyan-500"
+                    />
+                  </div>
+                  {boxColorError && (
+                    <p className="text-[10px] text-rose-400 mt-1">{boxColorError}</p>
+                  )}
+                </div>
+
+                {/* 3. Link/URL color */}
+                <div className="p-3 rounded-xl border border-zinc-800 bg-zinc-900/60 space-y-2">
+                  <div className="flex items-center justify-between">
+                    <label className="text-xs font-semibold text-zinc-200">Link/URL color</label>
+                    {answerLinkColor && (
+                      <span className="text-[9px] font-mono px-1.5 py-0.2 rounded bg-cyan-950 text-cyan-300 border border-cyan-700/50">Custom</span>
+                    )}
+                  </div>
+                  <p className="text-[10.5px] text-zinc-400 leading-normal">
+                    Clickable links and citation URLs inside AI answers.
+                  </p>
+                  <div className="flex items-center gap-2 pt-1">
+                    <div className="relative w-8 h-8 rounded-lg overflow-hidden border border-zinc-700 shrink-0 shadow-inner flex items-center justify-center">
+                      <input
+                        type="color"
+                        value={isValidHexColor(linkColorInput) ? (linkColorInput.length === 4 ? `#${linkColorInput[1]}${linkColorInput[1]}${linkColorInput[2]}${linkColorInput[2]}${linkColorInput[3]}${linkColorInput[3]}` : linkColorInput) : getThemeDefaultLinkColor()}
+                        onChange={(e) => handleLinkColorChange(e.target.value)}
+                        className="absolute inset-0 w-[150%] h-[150%] -top-1/4 -left-1/4 cursor-pointer opacity-100 border-0 p-0 m-0"
+                        title="Pick link color"
+                      />
+                    </div>
+                    <input
+                      type="text"
+                      value={linkColorInput}
+                      onChange={(e) => handleLinkColorChange(e.target.value)}
+                      placeholder={getThemeDefaultLinkColor()}
+                      className="flex-1 min-w-0 px-2.5 py-1.5 rounded-lg border border-zinc-700/70 bg-zinc-950 font-mono text-xs text-zinc-100 placeholder:text-zinc-600 focus:outline-none focus:border-cyan-500"
+                    />
+                  </div>
+                  {linkColorError && (
+                    <p className="text-[10px] text-rose-400 mt-1">{linkColorError}</p>
+                  )}
+                </div>
+              </div>
+
+              {/* Live Preview Box */}
+              <div className="p-3.5 rounded-xl border border-zinc-800/90 bg-zinc-950/70 space-y-2.5">
+                <div className="flex items-center justify-between text-[11px] font-mono text-zinc-400">
+                  <span className="font-semibold uppercase tracking-wider text-zinc-400">Live Preview</span>
+                  <span className="text-zinc-500">Inside AI Answer</span>
+                </div>
+
+                <div className="p-3 rounded-lg border border-zinc-800 space-y-2">
+                  {/* Sample heading */}
+                  <div className="flex items-center gap-2">
+                    <span className="w-2 h-2 rounded-full bg-cyan-400" />
+                    <h4
+                      className="text-xs sm:text-sm font-bold m-0 tracking-wide transition-colors"
+                      style={{ color: answerTitleColor || getThemeDefaultTitleColor() }}
+                    >
+                      ### Overview of Quantum Computing Breakthroughs
+                    </h4>
+                  </div>
+
+                  {/* Sample inner code / info box */}
+                  <div
+                    className="p-2.5 rounded-lg border border-cyan-500/20 text-xs font-mono transition-colors"
+                    style={{ backgroundColor: answerBoxColor || getThemeDefaultBoxColor() }}
+                  >
+                    <div className="text-[11px] text-cyan-300 font-semibold mb-1">
+                      // Quantum State Teleportation Algorithm
+                    </div>
+                    <span className="text-zinc-300">const qubit = new QuantumRegister(2);</span>
+                  </div>
+
+                  {/* Sample clickable link */}
+                  <div className="text-xs pt-0.5">
+                    <span className="text-zinc-400">Documentation &amp; source citations: </span>
+                    <a
+                      href="#preview"
+                      onClick={(e) => e.preventDefault()}
+                      className="font-medium underline transition-colors"
+                      style={{ color: answerLinkColor || getThemeDefaultLinkColor() }}
+                    >
+                      https://quantum-research.org/v2/docs
+                    </a>
+                  </div>
+                </div>
               </div>
             </div>
 

@@ -103,6 +103,7 @@ export function JarvisSvgDiagram({
           : 'border-amber-500/30 bg-slate-950/70 shadow-lg'
       }`}
       style={{
+        backgroundColor: 'var(--assistant-answer-box-bg, rgba(2,6,23,0.7))',
         boxShadow: isFullscreen
           ? '0 24px 64px rgba(0,0,0,0.9), 0 0 32px rgba(245,158,11,0.2)'
           : '0 8px 32px rgba(0,0,0,0.4), 0 0 16px rgba(245,158,11,0.1)',
