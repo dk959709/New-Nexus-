@@ -1248,7 +1248,7 @@ export async function searchProvider(input: z.infer<typeof searchSchema>): Promi
       const bodyPayload = isLangSearch
         ? {
             query: input.query,
-            count: 10,
+            count: Math.min(Math.max(requestedMax, 5), 25),
             contents: { text: true },
             freshness: 'noLimit',
           }
