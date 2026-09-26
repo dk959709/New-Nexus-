@@ -204,8 +204,13 @@ export const CommanderLiveFeed: React.FC<CommanderLiveFeedProps> = ({
       return next;
     });
 
-    const remaining = ['commander', 'alpha', 'beta', 'synthesizer'].filter(
-      (id) => id !== stageId && !deletedStageIds.has(id),
+    const isAlphaEnabled = config.alphaEnabled !== false;
+    const isBetaEnabled = config.betaEnabled !== false;
+    const isSynthEnabled = (config.synthesizerEnabled !== false) && (isAlphaEnabled || isBetaEnabled);
+    const validStageIds = ['commander', ...(isAlphaEnabled ? ['alpha'] : []), ...(isBetaEnabled ? ['beta'] : []), ...(isSynthEnabled ? ['synthesizer'] : [])];
+
+    const remaining = validStageIds.filter(
+      (id) => id !== stageId && !next.has(id),
     );
     if (remaining.length === 0) {
       onClose?.();
@@ -276,6 +281,11 @@ export const CommanderLiveFeed: React.FC<CommanderLiveFeedProps> = ({
       });
   };
 
+  const isAlphaEnabled = config.alphaEnabled !== false;
+  const isBetaEnabled = config.betaEnabled !== false;
+  const isSynthEnabled = (config.synthesizerEnabled !== false) && (isAlphaEnabled || isBetaEnabled);
+  const bothSubAgentsDisabled = !isAlphaEnabled && !isBetaEnabled;
+
   const planStep = steps.find((s) => s.agentId === 'commander');
   const alphaStep = steps.find((s) => s.agentId === 'alpha');
   const betaStep = steps.find((s) => s.agentId === 'beta');
@@ -303,53 +313,65 @@ export const CommanderLiveFeed: React.FC<CommanderLiveFeedProps> = ({
       voiceId: 'commander',
       runningLabel: 'Formulating tactical plan...',
     },
-    {
-      id: 'alpha',
-      name: alphaDisplayName,
-      icon: <Search size={14} className="text-cyan-400 shrink-0" />,
-      accentColor: '#22d3ee',
-      content: alphaStep?.content || '',
-      status:
-        alphaStep?.status ||
-        (planStep?.status === 'completed' && status === 'running'
-          ? 'running'
-          : planStep?.status === 'completed'
-          ? 'completed'
-          : 'pending'),
-      voiceId: 'alpha',
-      runningLabel: 'Researching core vectors...',
-    },
-    {
-      id: 'beta',
-      name: betaDisplayName,
-      icon: <Scale size={14} className="text-purple-400 shrink-0" />,
-      accentColor: '#c084fc',
-      content: betaStep?.content || '',
-      status:
-        betaStep?.status ||
-        (alphaStep?.status === 'completed' && status === 'running'
-          ? 'running'
-          : alphaStep?.status === 'completed'
-          ? 'completed'
-          : 'pending'),
-      voiceId: 'beta',
-      runningLabel: 'Analyzing counter-perspectives...',
-    },
-    {
-      id: 'synthesizer',
-      name: 'Synthesis',
-      icon: <Sparkles size={14} className="text-emerald-400 shrink-0" />,
-      accentColor: '#34d399',
-      content: result?.synthesis || synthStep?.content || '',
-      status:
-        result?.synthesis || synthStep?.status === 'completed'
-          ? 'completed'
-          : betaStep?.status === 'completed' && status === 'running'
-          ? 'running'
-          : 'pending',
-      voiceId: 'synthesizer',
-      runningLabel: 'Synthesizing master response...',
-    },
+    ...(isAlphaEnabled
+      ? [
+          {
+            id: 'alpha',
+            name: alphaDisplayName,
+            icon: <Search size={14} className="text-cyan-400 shrink-0" />,
+            accentColor: '#22d3ee',
+            content: alphaStep?.content || '',
+            status:
+              alphaStep?.status ||
+              (planStep?.status === 'completed' && status === 'running'
+                ? 'running'
+                : planStep?.status === 'completed'
+                ? 'completed'
+                : 'pending'),
+            voiceId: 'alpha',
+            runningLabel: 'Researching core vectors...',
+          },
+        ]
+      : []),
+    ...(isBetaEnabled
+      ? [
+          {
+            id: 'beta',
+            name: betaDisplayName,
+            icon: <Scale size={14} className="text-purple-400 shrink-0" />,
+            accentColor: '#c084fc',
+            content: betaStep?.content || '',
+            status:
+              betaStep?.status ||
+              ((isAlphaEnabled ? alphaStep?.status === 'completed' : planStep?.status === 'completed') && status === 'running'
+                ? 'running'
+                : (isAlphaEnabled ? alphaStep?.status === 'completed' : planStep?.status === 'completed')
+                ? 'completed'
+                : 'pending'),
+            voiceId: 'beta',
+            runningLabel: 'Analyzing counter-perspectives...',
+          },
+        ]
+      : []),
+    ...(isSynthEnabled
+      ? [
+          {
+            id: 'synthesizer',
+            name: 'Synthesis',
+            icon: <Sparkles size={14} className="text-emerald-400 shrink-0" />,
+            accentColor: '#34d399',
+            content: result?.synthesis || synthStep?.content || '',
+            status:
+              result?.synthesis || synthStep?.status === 'completed'
+                ? 'completed'
+                : ((isBetaEnabled ? betaStep?.status === 'completed' : isAlphaEnabled ? alphaStep?.status === 'completed' : planStep?.status === 'completed') && status === 'running')
+                ? 'running'
+                : 'pending',
+            voiceId: 'synthesizer',
+            runningLabel: 'Synthesizing master response...',
+          },
+        ]
+      : []),
   ];
 
   const visibleStages = stages.filter((s) => !deletedStageIds.has(s.id));
@@ -365,12 +387,24 @@ export const CommanderLiveFeed: React.FC<CommanderLiveFeedProps> = ({
           <span className="text-zinc-600">·</span>
           <div className="flex items-center gap-1.5 text-[11px] font-mono flex-wrap">
             <span className="text-indigo-400 font-medium">Commander 🛡️</span>
-            <span className="text-zinc-600">→</span>
-            <span className="text-cyan-400 font-medium">Agent Alpha 🔍</span>
-            <span className="text-zinc-600">→</span>
-            <span className="text-purple-400 font-medium">Agent Beta ⚖️</span>
-            <span className="text-zinc-600">→</span>
-            <span className="text-emerald-400 font-medium">Synthesis ✨</span>
+            {isAlphaEnabled && (
+              <>
+                <span className="text-zinc-600">→</span>
+                <span className="text-cyan-400 font-medium">Agent Alpha 🔍</span>
+              </>
+            )}
+            {isBetaEnabled && (
+              <>
+                <span className="text-zinc-600">→</span>
+                <span className="text-purple-400 font-medium">Agent Beta ⚖️</span>
+              </>
+            )}
+            {isSynthEnabled && (
+              <>
+                <span className="text-zinc-600">→</span>
+                <span className="text-emerald-400 font-medium">Synthesis ✨</span>
+              </>
+            )}
           </div>
         </div>
 
@@ -386,6 +420,13 @@ export const CommanderLiveFeed: React.FC<CommanderLiveFeedProps> = ({
           </button>
         )}
       </div>
+
+      {bothSubAgentsDisabled && (
+        <div className="text-[11.5px] text-amber-300/90 bg-amber-950/20 border border-amber-500/20 rounded-md px-2 py-1 flex items-center gap-1.5">
+          <AlertCircle size={12} className="shrink-0 text-amber-400" />
+          <span>Agent Alpha and Agent Beta are disabled — showing Commander's plan directly.</span>
+        </div>
+      )}
 
       {status === 'aborted' && (
         <div className="text-xs text-amber-400 flex items-center gap-1.5 py-1">

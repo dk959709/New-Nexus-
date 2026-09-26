@@ -132,6 +132,12 @@ export async function runCommanderPipeline({
   signal,
 }: RunCommanderParams): Promise<CommanderResult> {
   const config = incomingConfig || storage.getCommanderConfig();
+  const isAlphaEnabled = config.alphaEnabled !== false;
+  const isBetaEnabled = config.betaEnabled !== false;
+  // If BOTH Agent Alpha and Agent Beta are disabled, Final Synthesizer is automatically skipped too (Requirement 2d)
+  const isSynthEnabled = (config.synthesizerEnabled !== false) && (isAlphaEnabled || isBetaEnabled);
+  const bothSubAgentsDisabled = !isAlphaEnabled && !isBetaEnabled;
+
   const commanderModel = config.modelId;
   const alphaModel = config.alphaModelId || config.manualConfig.alphaModelId;
   const betaModel = config.betaModelId || config.manualConfig.betaModelId;
@@ -200,11 +206,83 @@ export async function runCommanderPipeline({
 
     planStep.status = 'completed';
     planStep.task = `Manual Plan: ${plan}`;
-    planStep.content = `**Manual Directives Activated**\n- **Plan:** ${plan}\n- **Agent Alpha:** ${alphaRole} (Search: ${alphaSearchEnabled ? `"${alphaSearchQuery}"` : 'Off'})\n- **Agent Beta:** ${betaRole} (Search: ${betaSearchEnabled ? `"${betaSearchQuery}"` : 'Off'})`;
+    if (bothSubAgentsDisabled) {
+      planStep.content = plan;
+    } else if (isAlphaEnabled && !isBetaEnabled) {
+      planStep.content = `**Manual Directives Activated**\n- **Plan:** ${plan}\n- **Agent Alpha:** ${alphaRole} (Search: ${alphaSearchEnabled ? `"${alphaSearchQuery}"` : 'Off'})`;
+    } else if (!isAlphaEnabled && isBetaEnabled) {
+      planStep.content = `**Manual Directives Activated**\n- **Plan:** ${plan}\n- **Agent Beta:** ${betaRole} (Search: ${betaSearchEnabled ? `"${betaSearchQuery}"` : 'Off'})`;
+    } else {
+      planStep.content = `**Manual Directives Activated**\n- **Plan:** ${plan}\n- **Agent Alpha:** ${alphaRole} (Search: ${alphaSearchEnabled ? `"${alphaSearchQuery}"` : 'Off'})\n- **Agent Beta:** ${betaRole} (Search: ${betaSearchEnabled ? `"${betaSearchQuery}"` : 'Off'})`;
+    }
     updateStep({ ...planStep });
   } else {
     // AUTO MODE: Commander AI receives the user query and decides roles, tasks, and search queries at runtime
-    const autoPrompt = `You are the COMMANDER AI.
+    // Adjust prompt dynamically based on which subordinate agents are enabled
+    let autoPrompt = '';
+    if (bothSubAgentsDisabled) {
+      autoPrompt = `You are the COMMANDER AI.
+User Query: "${query}"
+
+Both subordinate agents (Agent Alpha and Agent Beta) are DISABLED for this mission. You operate as a solo strategic commander.
+Directly resolve the user inquiry with a comprehensive, decisive strategic mission plan and direct answer.
+
+Respond ONLY with valid JSON in this exact structure:
+{
+  "plan": "Decisive, comprehensive strategic answer and tactical plan addressing the inquiry directly."
+}`;
+    } else if (isAlphaEnabled && !isBetaEnabled) {
+      autoPrompt = `You are the COMMANDER AI.
+User Query: "${query}"
+
+Agent Beta is DISABLED for this mission. You have ONLY ONE subordinate agent available:
+- Agent Alpha: Primary technical/domain investigator.
+
+Decide:
+1. "plan": A 1-2 sentence decisive tactical mission plan for answering this query with Agent Alpha.
+2. "alpha":
+   - "role": Specific descriptive persona title (e.g. "Quantum Algorithm Specialist", "Clinical Pharmacologist", "Full-Stack System Architect").
+   - "task": Concrete investigation directives (1-2 sentences).
+   - "search": Boolean (true if live or up-to-date web data is helpful, false otherwise).
+   - "searchQuery": Concise search query string if search is true, or empty string.
+
+Respond ONLY with valid JSON in this exact structure:
+{
+  "plan": "...",
+  "alpha": {
+    "role": "...",
+    "task": "...",
+    "search": true,
+    "searchQuery": "..."
+  }
+}`;
+    } else if (!isAlphaEnabled && isBetaEnabled) {
+      autoPrompt = `You are the COMMANDER AI.
+User Query: "${query}"
+
+Agent Alpha is DISABLED for this mission. You have ONLY ONE subordinate agent available:
+- Agent Beta: Critical validator, counter-perspective specialist, or edge-case auditor.
+
+Decide:
+1. "plan": A 1-2 sentence decisive tactical mission plan for answering this query with Agent Beta.
+2. "beta":
+   - "role": Counter-perspective or critical auditing role title (e.g. "Hardware Scalability Critic", "Toxicology & Risk Auditor", "Security Vulnerability Assessor").
+   - "task": Specific stress-testing directives (1-2 sentences).
+   - "search": Boolean (true if supplementary search is helpful, false otherwise).
+   - "searchQuery": Concise search query string if search is true, or empty string.
+
+Respond ONLY with valid JSON in this exact structure:
+{
+  "plan": "...",
+  "beta": {
+    "role": "...",
+    "task": "...",
+    "search": false,
+    "searchQuery": ""
+  }
+}`;
+    } else {
+      autoPrompt = `You are the COMMANDER AI.
 User Query: "${query}"
 
 Analyze this query and decompose it for two elite subordinate agents:
@@ -240,6 +318,7 @@ Respond ONLY with valid JSON in this exact structure:
     "searchQuery": ""
   }
 }`;
+    }
 
     try {
       const commanderRes = await api.jarvisAgentCall({
@@ -272,70 +351,79 @@ Respond ONLY with valid JSON in this exact structure:
       }
 
       if (parsedJson) {
-        plan = parsedJson.plan?.trim() || `Investigate "${query}" with dual specialized perspectives.`;
-        if (parsedJson.alpha) {
+        plan = parsedJson.plan?.trim() || `Investigate "${query}" strategically.`;
+        if (parsedJson.alpha && isAlphaEnabled) {
           alphaRole = parsedJson.alpha.role?.trim() || alphaRole;
           alphaTask = parsedJson.alpha.task?.trim() || alphaTask;
           alphaSearchEnabled = Boolean(parsedJson.alpha.search);
           alphaSearchQuery = parsedJson.alpha.searchQuery?.trim() || query;
         }
-        if (parsedJson.beta) {
+        if (parsedJson.beta && isBetaEnabled) {
           betaRole = parsedJson.beta.role?.trim() || betaRole;
           betaTask = parsedJson.beta.task?.trim() || betaTask;
           betaSearchEnabled = Boolean(parsedJson.beta.search);
           betaSearchQuery = parsedJson.beta.searchQuery?.trim() || query;
         }
       } else {
-        plan = `Investigate and validate the core aspects of "${query}".`;
+        plan = `Investigate and resolve "${query}".`;
       }
     } catch (cmdErr) {
       if (signal?.aborted) throw cmdErr;
       console.warn('[CommanderOrchestrator] Commander planning fallback used:', cmdErr);
-      plan = `Investigate "${query}" with rigorous primary analysis and counter-validation.`;
+      plan = `Investigate "${query}" with strategic mission analysis.`;
     }
 
     planStep.status = 'completed';
     planStep.task = `Tactical Plan: ${plan}`;
-    planStep.content = `**Tactical Mission Plan:** ${plan}\n\n- **Agent Alpha:** Assigned as **${alphaRole}** ${alphaSearchEnabled ? `(Search: "${alphaSearchQuery}")` : '(Internal Knowledge)'}\n- **Agent Beta:** Assigned as **${betaRole}** ${betaSearchEnabled ? `(Search: "${betaSearchQuery}")` : '(Internal Knowledge)'}`;
+    if (bothSubAgentsDisabled) {
+      planStep.content = plan;
+    } else if (isAlphaEnabled && !isBetaEnabled) {
+      planStep.content = `**Tactical Mission Plan:** ${plan}\n\n- **Agent Alpha:** Assigned as **${alphaRole}** ${alphaSearchEnabled ? `(Search: "${alphaSearchQuery}")` : '(Internal Knowledge)'}`;
+    } else if (!isAlphaEnabled && isBetaEnabled) {
+      planStep.content = `**Tactical Mission Plan:** ${plan}\n\n- **Agent Beta:** Assigned as **${betaRole}** ${betaSearchEnabled ? `(Search: "${betaSearchQuery}")` : '(Internal Knowledge)'}`;
+    } else {
+      planStep.content = `**Tactical Mission Plan:** ${plan}\n\n- **Agent Alpha:** Assigned as **${alphaRole}** ${alphaSearchEnabled ? `(Search: "${alphaSearchQuery}")` : '(Internal Knowledge)'}\n- **Agent Beta:** Assigned as **${betaRole}** ${betaSearchEnabled ? `(Search: "${betaSearchQuery}")` : '(Internal Knowledge)'}`;
+    }
     updateStep({ ...planStep });
   }
 
   if (signal?.aborted) throw new Error('Aborted');
 
   // --------------------------------------------------------------------------
-  // STEP 2: AGENT ALPHA EXECUTION
+  // STEP 2: AGENT ALPHA EXECUTION (Skipped if disabled)
   // --------------------------------------------------------------------------
-  const alphaStep: CommanderExecutionStep = {
-    id: 'step_agent_alpha',
-    agentId: 'alpha',
-    name: `Agent Alpha: ${alphaRole}`,
-    role: alphaRole,
-    task: alphaTask,
-    searchEnabled: alphaSearchEnabled,
-    searchQuery: alphaSearchEnabled ? alphaSearchQuery : undefined,
-    status: 'running',
-    timestamp: Date.now(),
-  };
-  updateStep(alphaStep);
-
-  let alphaGrounding = '';
-  let alphaSources: AISource[] = [];
-  if (alphaSearchEnabled) {
-    try {
-      const searchRes = await executeCommanderSearch(alphaSearchQuery, signal);
-      alphaGrounding = searchRes.grounding;
-      alphaSources = searchRes.sources;
-      allSources.push(...alphaSources);
-      alphaStep.sources = alphaSources;
-      updateStep({ ...alphaStep });
-    } catch (searchErr) {
-      if (signal?.aborted) throw searchErr;
-      console.warn('[CommanderOrchestrator] Alpha search warning:', searchErr);
-    }
-  }
-
   let alphaFindings = '';
-  const alphaUserPrompt = `You are deployed as: ${alphaRole}
+  if (isAlphaEnabled) {
+    const alphaStep: CommanderExecutionStep = {
+      id: 'step_agent_alpha',
+      agentId: 'alpha',
+      name: `Agent Alpha: ${alphaRole}`,
+      role: alphaRole,
+      task: alphaTask,
+      searchEnabled: alphaSearchEnabled,
+      searchQuery: alphaSearchEnabled ? alphaSearchQuery : undefined,
+      status: 'running',
+      timestamp: Date.now(),
+    };
+    updateStep(alphaStep);
+
+    let alphaGrounding = '';
+    let alphaSources: AISource[] = [];
+    if (alphaSearchEnabled) {
+      try {
+        const searchRes = await executeCommanderSearch(alphaSearchQuery, signal);
+        alphaGrounding = searchRes.grounding;
+        alphaSources = searchRes.sources;
+        allSources.push(...alphaSources);
+        alphaStep.sources = alphaSources;
+        updateStep({ ...alphaStep });
+      } catch (searchErr) {
+        if (signal?.aborted) throw searchErr;
+        console.warn('[CommanderOrchestrator] Alpha search warning:', searchErr);
+      }
+    }
+
+    const alphaUserPrompt = `You are deployed as: ${alphaRole}
 Your Assigned Mission:
 ${alphaTask}
 
@@ -347,68 +435,71 @@ INSTRUCTIONS:
 2. Provide technical clarity, specific data points, and structural insights.
 3. Be direct, authoritative, and factual.`;
 
-  try {
-    const alphaRes = await api.jarvisAgentCall({
-      agentId: 'commander_alpha',
-      messages: [
-        { role: 'system', content: config.systemPrompts.alpha },
-        { role: 'user', content: alphaUserPrompt },
-      ],
-      providerConfig: alphaProvider,
-      temperature: 0.4,
-      maxTokens: 900,
-      timeoutMs: 30000,
-      signal,
-    });
-
-    alphaFindings = stripTierLabels(alphaRes.text || alphaRes.content || '').trim();
-    alphaStep.status = 'completed';
-    alphaStep.content = alphaFindings;
-    updateStep({ ...alphaStep });
-  } catch (alphaErr) {
-    if (signal?.aborted) throw alphaErr;
-    alphaStep.status = 'error';
-    alphaStep.content = `Agent Alpha encountered an error: ${alphaErr instanceof Error ? alphaErr.message : 'Execution failed'}`;
-    updateStep({ ...alphaStep });
-    alphaFindings = 'Agent Alpha was unable to complete the investigation.';
-  }
-
-  if (signal?.aborted) throw new Error('Aborted');
-
-  // --------------------------------------------------------------------------
-  // STEP 3: AGENT BETA EXECUTION
-  // --------------------------------------------------------------------------
-  const betaStep: CommanderExecutionStep = {
-    id: 'step_agent_beta',
-    agentId: 'beta',
-    name: `Agent Beta: ${betaRole}`,
-    role: betaRole,
-    task: betaTask,
-    searchEnabled: betaSearchEnabled,
-    searchQuery: betaSearchEnabled ? betaSearchQuery : undefined,
-    status: 'running',
-    timestamp: Date.now(),
-  };
-  updateStep(betaStep);
-
-  let betaGrounding = '';
-  let betaSources: AISource[] = [];
-  if (betaSearchEnabled) {
     try {
-      const searchRes = await executeCommanderSearch(betaSearchQuery, signal);
-      betaGrounding = searchRes.grounding;
-      betaSources = searchRes.sources;
-      allSources.push(...betaSources);
-      betaStep.sources = betaSources;
-      updateStep({ ...betaStep });
-    } catch (searchErr) {
-      if (signal?.aborted) throw searchErr;
-      console.warn('[CommanderOrchestrator] Beta search warning:', searchErr);
+      const alphaRes = await api.jarvisAgentCall({
+        agentId: 'commander_alpha',
+        messages: [
+          { role: 'system', content: config.systemPrompts.alpha },
+          { role: 'user', content: alphaUserPrompt },
+        ],
+        providerConfig: alphaProvider,
+        temperature: 0.4,
+        maxTokens: 900,
+        timeoutMs: 30000,
+        signal,
+      });
+
+      alphaFindings = stripTierLabels(alphaRes.text || alphaRes.content || '').trim();
+      alphaStep.status = 'completed';
+      alphaStep.content = alphaFindings;
+      updateStep({ ...alphaStep });
+    } catch (alphaErr) {
+      if (signal?.aborted) throw alphaErr;
+      alphaStep.status = 'error';
+      alphaStep.content = `Agent Alpha encountered an error: ${alphaErr instanceof Error ? alphaErr.message : 'Execution failed'}`;
+      updateStep({ ...alphaStep });
+      alphaFindings = 'Agent Alpha was unable to complete the investigation.';
     }
+
+    if (signal?.aborted) throw new Error('Aborted');
   }
 
+  // --------------------------------------------------------------------------
+  // STEP 3: AGENT BETA EXECUTION (Skipped if disabled)
+  // --------------------------------------------------------------------------
   let betaFindings = '';
-  const betaUserPrompt = `You are deployed as: ${betaRole}
+  if (isBetaEnabled) {
+    const betaStep: CommanderExecutionStep = {
+      id: 'step_agent_beta',
+      agentId: 'beta',
+      name: `Agent Beta: ${betaRole}`,
+      role: betaRole,
+      task: betaTask,
+      searchEnabled: betaSearchEnabled,
+      searchQuery: betaSearchEnabled ? betaSearchQuery : undefined,
+      status: 'running',
+      timestamp: Date.now(),
+    };
+    updateStep(betaStep);
+
+    let betaGrounding = '';
+    let betaSources: AISource[] = [];
+    if (betaSearchEnabled) {
+      try {
+        const searchRes = await executeCommanderSearch(betaSearchQuery, signal);
+        betaGrounding = searchRes.grounding;
+        betaSources = searchRes.sources;
+        allSources.push(...betaSources);
+        betaStep.sources = betaSources;
+        updateStep({ ...betaStep });
+      } catch (searchErr) {
+        if (signal?.aborted) throw searchErr;
+        console.warn('[CommanderOrchestrator] Beta search warning:', searchErr);
+      }
+    }
+
+    const betaUserPrompt = isAlphaEnabled && alphaFindings
+      ? `You are deployed as: ${betaRole}
 Your Assigned Mission:
 ${betaTask}
 
@@ -423,55 +514,71 @@ ${betaGrounding ? `\n--- VERIFIED SEARCH GROUNDING ---\n${betaGrounding}\n` : ''
 INSTRUCTIONS:
 1. Stress-test Agent Alpha's findings from your specialist angle.
 2. Identify overlooked caveats, edge cases, risks, counter-arguments, and practical constraints.
-3. Be constructive, rigorous, and intellectually honest.`;
+3. Be constructive, rigorous, and intellectually honest.`
+      : `You are deployed as: ${betaRole}
+Your Assigned Mission:
+${betaTask}
 
-  try {
-    const betaRes = await api.jarvisAgentCall({
-      agentId: 'commander_beta',
-      messages: [
-        { role: 'system', content: config.systemPrompts.beta },
-        { role: 'user', content: betaUserPrompt },
-      ],
-      providerConfig: betaProvider,
-      temperature: 0.4,
-      maxTokens: 900,
-      timeoutMs: 30000,
-      signal,
-    });
+User Inquiry: "${query}"
+Commander Mission Plan: "${plan}"
+${betaGrounding ? `\n--- VERIFIED SEARCH GROUNDING ---\n${betaGrounding}\n` : ''}
+INSTRUCTIONS:
+1. Conduct an in-depth critical analysis and evaluation of the user inquiry from your assigned specialist perspective.
+2. Identify caveats, edge cases, risks, counter-perspectives, and practical constraints.
+3. Be direct, authoritative, and factual.`;
 
-    betaFindings = stripTierLabels(betaRes.text || betaRes.content || '').trim();
-    betaStep.status = 'completed';
-    betaStep.content = betaFindings;
-    updateStep({ ...betaStep });
-  } catch (betaErr) {
-    if (signal?.aborted) throw betaErr;
-    betaStep.status = 'error';
-    betaStep.content = `Agent Beta encountered an error: ${betaErr instanceof Error ? betaErr.message : 'Execution failed'}`;
-    updateStep({ ...betaStep });
-    betaFindings = 'Agent Beta was unable to complete the counter-analysis.';
+    try {
+      const betaRes = await api.jarvisAgentCall({
+        agentId: 'commander_beta',
+        messages: [
+          { role: 'system', content: config.systemPrompts.beta },
+          { role: 'user', content: betaUserPrompt },
+        ],
+        providerConfig: betaProvider,
+        temperature: 0.4,
+        maxTokens: 900,
+        timeoutMs: 30000,
+        signal,
+      });
+
+      betaFindings = stripTierLabels(betaRes.text || betaRes.content || '').trim();
+      betaStep.status = 'completed';
+      betaStep.content = betaFindings;
+      updateStep({ ...betaStep });
+    } catch (betaErr) {
+      if (signal?.aborted) throw betaErr;
+      betaStep.status = 'error';
+      betaStep.content = `Agent Beta encountered an error: ${betaErr instanceof Error ? betaErr.message : 'Execution failed'}`;
+      updateStep({ ...betaStep });
+      betaFindings = 'Agent Beta was unable to complete the counter-analysis.';
+    }
+
+    if (signal?.aborted) throw new Error('Aborted');
   }
 
-  if (signal?.aborted) throw new Error('Aborted');
-
   // --------------------------------------------------------------------------
-  // STEP 4: FINAL SYNTHESIS (COMMANDER)
+  // STEP 4: FINAL SYNTHESIS (COMMANDER) (Skipped if disabled or both sub-agents disabled)
   // --------------------------------------------------------------------------
-  const synthStep: CommanderExecutionStep = {
-    id: 'step_commander_synthesis',
-    agentId: 'synthesizer',
-    name: 'Commander Final Synthesis',
-    role: 'Supreme Commander & Synthesizer',
-    status: 'running',
-    timestamp: Date.now(),
-  };
-  updateStep(synthStep);
+  let finalSynthesis = '';
+  if (isSynthEnabled) {
+    const synthStep: CommanderExecutionStep = {
+      id: 'step_commander_synthesis',
+      agentId: 'synthesizer',
+      name: 'Commander Final Synthesis',
+      role: 'Supreme Commander & Synthesizer',
+      status: 'running',
+      timestamp: Date.now(),
+    };
+    updateStep(synthStep);
 
-  const manualSynthDirectives =
-    config.mode === 'manual' && config.manualConfig.synthesizerDirectives?.trim()
-      ? `\nSPECIAL USER DIRECTIVES FOR SYNTHESIS:\n${config.manualConfig.synthesizerDirectives.trim()}\n`
-      : '';
+    const manualSynthDirectives =
+      config.mode === 'manual' && config.manualConfig.synthesizerDirectives?.trim()
+        ? `\nSPECIAL USER DIRECTIVES FOR SYNTHESIS:\n${config.manualConfig.synthesizerDirectives.trim()}\n`
+        : '';
 
-  const synthPrompt = `ORIGINAL USER INQUIRY: "${query}"
+    let synthPrompt = '';
+    if (isAlphaEnabled && isBetaEnabled) {
+      synthPrompt = `ORIGINAL USER INQUIRY: "${query}"
 
 COMMANDER MISSION PLAN:
 ${plan}
@@ -491,36 +598,73 @@ DIRECTIVES FOR FINAL SYNTHESIS:
 2. Deliver a clear, authoritative, beautifully structured response in clean Markdown.
 3. Explicitly balance the technical facts with the real-world trade-offs, constraints, and recommendations.
 4. Do not include meta system labels or internal pipeline markers. Deliver the complete, definitive answer directly for the user.`;
+    } else if (isAlphaEnabled) {
+      synthPrompt = `ORIGINAL USER INQUIRY: "${query}"
 
-  let finalSynthesis = '';
-  try {
-    const synthRes = await api.jarvisAgentCall({
-      agentId: 'commander_synthesizer',
-      messages: [
-        {
-          role: 'system',
-          content: config.systemPrompts.synthesizer || config.systemPrompts.commander,
-        },
-        { role: 'user', content: synthPrompt },
-      ],
-      providerConfig: synthProvider,
-      temperature: 0.35,
-      maxTokens: 1800,
-      timeoutMs: 40000,
-      signal,
-    });
+COMMANDER MISSION PLAN:
+${plan}
 
-    finalSynthesis = stripTierLabels(synthRes.text || synthRes.content || '').trim();
-    synthStep.status = 'completed';
-    synthStep.content = finalSynthesis;
-    updateStep({ ...synthStep });
-  } catch (synthErr) {
-    if (signal?.aborted) throw synthErr;
-    synthStep.status = 'error';
-    synthStep.content = `Synthesis encountered an error: ${synthErr instanceof Error ? synthErr.message : 'Synthesis failed'}`;
-    updateStep({ ...synthStep });
-    // Fallback: concatenate findings cleanly
-    finalSynthesis = `### Commander Synthesis\n\n**Agent Alpha (${alphaRole}):**\n${alphaFindings}\n\n**Agent Beta (${betaRole}):**\n${betaFindings}`;
+AGENT ALPHA (${alphaRole}) INVESTIGATION:
+"""
+${alphaFindings}
+"""
+${manualSynthDirectives}
+DIRECTIVES FOR FINAL SYNTHESIS:
+1. Synthesize and elevate Agent Alpha's empirical findings into a comprehensive, authoritative master response.
+2. Deliver a clear, beautifully structured response in clean Markdown.
+3. Ensure the answer thoroughly resolves the user inquiry with actionable conclusions.
+4. Do not include meta system labels or internal pipeline markers. Deliver the complete, definitive answer directly for the user.`;
+    } else {
+      synthPrompt = `ORIGINAL USER INQUIRY: "${query}"
+
+COMMANDER MISSION PLAN:
+${plan}
+
+AGENT BETA (${betaRole}) INVESTIGATION & COUNTER-ANALYSIS:
+"""
+${betaFindings}
+"""
+${manualSynthDirectives}
+DIRECTIVES FOR FINAL SYNTHESIS:
+1. Synthesize and elevate Agent Beta's critical findings into a comprehensive, authoritative master response.
+2. Deliver a clear, beautifully structured response in clean Markdown.
+3. Ensure the answer thoroughly resolves the user inquiry with balanced considerations and actionable conclusions.
+4. Do not include meta system labels or internal pipeline markers. Deliver the complete, definitive answer directly for the user.`;
+    }
+
+    try {
+      const synthRes = await api.jarvisAgentCall({
+        agentId: 'commander_synthesizer',
+        messages: [
+          {
+            role: 'system',
+            content: config.systemPrompts.synthesizer || config.systemPrompts.commander,
+          },
+          { role: 'user', content: synthPrompt },
+        ],
+        providerConfig: synthProvider,
+        temperature: 0.35,
+        maxTokens: 1800,
+        timeoutMs: 40000,
+        signal,
+      });
+
+      finalSynthesis = stripTierLabels(synthRes.text || synthRes.content || '').trim();
+      synthStep.status = 'completed';
+      synthStep.content = finalSynthesis;
+      updateStep({ ...synthStep });
+    } catch (synthErr) {
+      if (signal?.aborted) throw synthErr;
+      synthStep.status = 'error';
+      synthStep.content = `Synthesis encountered an error: ${synthErr instanceof Error ? synthErr.message : 'Synthesis failed'}`;
+      updateStep({ ...synthStep });
+      // Fallback: concatenate findings cleanly
+      finalSynthesis = isAlphaEnabled && isBetaEnabled
+        ? `### Commander Synthesis\n\n**Agent Alpha (${alphaRole}):**\n${alphaFindings}\n\n**Agent Beta (${betaRole}):**\n${betaFindings}`
+        : isAlphaEnabled
+        ? `### Commander Synthesis\n\n**Agent Alpha (${alphaRole}):**\n${alphaFindings}`
+        : `### Commander Synthesis\n\n**Agent Beta (${betaRole}):**\n${betaFindings}`;
+    }
   }
 
   // Deduplicate sources by URL

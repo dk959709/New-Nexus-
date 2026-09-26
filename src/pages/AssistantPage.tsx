@@ -5542,7 +5542,12 @@ DIRECTIVES:
                                     return {
                                       ...msg,
                                       commanderSavedState: state,
-                                      content: state.result?.synthesis || msg.content,
+                                      content:
+                                        state.result?.synthesis ||
+                                        state.result?.betaFindings ||
+                                        state.result?.alphaFindings ||
+                                        state.result?.plan ||
+                                        msg.content,
                                     };
                                   }
                                   return msg;
@@ -8832,10 +8837,13 @@ DIRECTIVES:
                         </div>
 
                         {/* Agent Alpha Configuration */}
-                        <div className="p-2.5 rounded-lg border border-cyan-500/20 bg-cyan-950/10 space-y-2">
+                        <div className={`p-2.5 rounded-lg border border-cyan-500/20 bg-cyan-950/10 space-y-2 transition-opacity ${commanderConfig.alphaEnabled === false ? 'opacity-65' : ''}`}>
                           <div className="text-[11px] font-semibold text-cyan-300 flex flex-wrap items-center justify-between gap-1.5">
                             <div className="flex items-center gap-1.5">
                               <span>Agent Alpha (Specialist 1)</span>
+                              {commanderConfig.alphaEnabled === false && (
+                                <span className="text-[10px] text-zinc-500 font-normal font-mono">(Disabled)</span>
+                              )}
                               {enhancingAlphaDirectives && (
                                 <span className="text-[10px] text-cyan-400 flex items-center gap-1 font-mono font-normal">
                                   <Loader2 size={10} className="animate-spin" />
@@ -8844,6 +8852,19 @@ DIRECTIVES:
                               )}
                             </div>
                             <div className="flex items-center gap-2">
+                              <label className="flex items-center gap-1.5 cursor-pointer text-[10.5px] text-cyan-300 font-medium select-none">
+                                <input
+                                  type="checkbox"
+                                  checked={commanderConfig.alphaEnabled !== false}
+                                  onChange={(e) => {
+                                    const updated = storage.setCommanderAgentEnabled('alpha', e.target.checked);
+                                    setCommanderConfig(updated);
+                                    triggerSettingsToast(e.target.checked ? 'Agent Alpha enabled' : 'Agent Alpha disabled');
+                                  }}
+                                  className="rounded border-zinc-700 text-cyan-500 focus:ring-0"
+                                />
+                                <span>Enabled</span>
+                              </label>
                               <button
                                 type="button"
                                 onClick={handleResetAlphaToDefault}
@@ -9017,10 +9038,13 @@ DIRECTIVES:
                         </div>
 
                         {/* Agent Beta Configuration */}
-                        <div className="p-2.5 rounded-lg border border-purple-500/20 bg-purple-950/10 space-y-2">
+                        <div className={`p-2.5 rounded-lg border border-purple-500/20 bg-purple-950/10 space-y-2 transition-opacity ${commanderConfig.betaEnabled === false ? 'opacity-65' : ''}`}>
                           <div className="text-[11px] font-semibold text-purple-300 flex flex-wrap items-center justify-between gap-1.5">
                             <div className="flex items-center gap-1.5">
                               <span>Agent Beta (Counter-Perspective / Specialist 2)</span>
+                              {commanderConfig.betaEnabled === false && (
+                                <span className="text-[10px] text-zinc-500 font-normal font-mono">(Disabled)</span>
+                              )}
                               {enhancingBetaDirectives && (
                                 <span className="text-[10px] text-purple-400 flex items-center gap-1 font-mono font-normal">
                                   <Loader2 size={10} className="animate-spin" />
@@ -9029,6 +9053,19 @@ DIRECTIVES:
                               )}
                             </div>
                             <div className="flex items-center gap-2">
+                              <label className="flex items-center gap-1.5 cursor-pointer text-[10.5px] text-purple-300 font-medium select-none">
+                                <input
+                                  type="checkbox"
+                                  checked={commanderConfig.betaEnabled !== false}
+                                  onChange={(e) => {
+                                    const updated = storage.setCommanderAgentEnabled('beta', e.target.checked);
+                                    setCommanderConfig(updated);
+                                    triggerSettingsToast(e.target.checked ? 'Agent Beta enabled' : 'Agent Beta disabled');
+                                  }}
+                                  className="rounded border-zinc-700 text-purple-500 focus:ring-0"
+                                />
+                                <span>Enabled</span>
+                              </label>
                               <button
                                 type="button"
                                 onClick={handleResetBetaToDefault}
@@ -9202,10 +9239,13 @@ DIRECTIVES:
                         </div>
 
                         {/* Final Synthesizer Configuration */}
-                        <div className="p-2.5 rounded-lg border border-emerald-500/20 bg-emerald-950/10 space-y-2">
+                        <div className={`p-2.5 rounded-lg border border-emerald-500/20 bg-emerald-950/10 space-y-2 transition-opacity ${commanderConfig.synthesizerEnabled === false ? 'opacity-65' : ''}`}>
                           <div className="text-[11px] font-semibold text-emerald-300 flex flex-wrap items-center justify-between gap-1.5">
                             <div className="flex items-center gap-1.5">
                               <span>Final Synthesizer (Supreme Master Synthesis)</span>
+                              {commanderConfig.synthesizerEnabled === false && (
+                                <span className="text-[10px] text-zinc-500 font-normal font-mono">(Disabled)</span>
+                              )}
                               {enhancingSynthDirectives && (
                                 <span className="text-[10px] text-emerald-400 flex items-center gap-1 font-mono font-normal">
                                   <Loader2 size={10} className="animate-spin" />
@@ -9214,6 +9254,19 @@ DIRECTIVES:
                               )}
                             </div>
                             <div className="flex items-center gap-2">
+                              <label className="flex items-center gap-1.5 cursor-pointer text-[10.5px] text-emerald-300 font-medium select-none">
+                                <input
+                                  type="checkbox"
+                                  checked={commanderConfig.synthesizerEnabled !== false}
+                                  onChange={(e) => {
+                                    const updated = storage.setCommanderAgentEnabled('synthesizer', e.target.checked);
+                                    setCommanderConfig(updated);
+                                    triggerSettingsToast(e.target.checked ? 'Final Synthesizer enabled' : 'Final Synthesizer disabled');
+                                  }}
+                                  className="rounded border-zinc-700 text-emerald-500 focus:ring-0"
+                                />
+                                <span>Enabled</span>
+                              </label>
                               <button
                                 type="button"
                                 onClick={handleResetSynthToDefault}

@@ -339,6 +339,9 @@ export const DEFAULT_COMMANDER_CONFIG: CommanderConfig = {
   alphaModelId: '',
   betaModelId: '',
   synthesizerModelId: '',
+  alphaEnabled: true,
+  betaEnabled: true,
+  synthesizerEnabled: true,
   systemPrompts: {
     commander: `You are the COMMANDER, the supreme strategic director of an elite 3-agent intelligence unit. Your mandate is to analyze the user's objective, break down complexities, and coordinate specialized autonomous agents (Agent Alpha and Agent Beta) to investigate distinct angles. When evaluating inquiries, formulate a decisive tactical mission plan, delegate complementary research vectors, and enforce rigorous factual accuracy and intellectual rigor.`,
     alpha: `You are AGENT ALPHA, the lead investigative operative and primary domain specialist of the Commander unit. Your mission is to tackle the core technical, empirical, or factual requirements of the commander's directive. Conduct thorough analysis, verify all claims with precision, extract critical data points, and deliver direct, unvarnished intelligence with structural clarity and actionable insight.`,
@@ -2257,6 +2260,9 @@ export const storage = {
       alphaModelId: stored.alphaModelId || manualConfig.alphaModelId || '',
       betaModelId: stored.betaModelId || manualConfig.betaModelId || '',
       synthesizerModelId: stored.synthesizerModelId || manualConfig.synthesizerModelId || '',
+      alphaEnabled: stored.alphaEnabled !== undefined ? Boolean(stored.alphaEnabled) : true,
+      betaEnabled: stored.betaEnabled !== undefined ? Boolean(stored.betaEnabled) : true,
+      synthesizerEnabled: stored.synthesizerEnabled !== undefined ? Boolean(stored.synthesizerEnabled) : true,
       systemPrompts: {
         ...DEFAULT_COMMANDER_CONFIG.systemPrompts,
         ...(stored.systemPrompts || {}),
@@ -2279,6 +2285,27 @@ export const storage = {
   resetCommanderConfig(): CommanderConfig {
     write(KEYS.commanderConfig, DEFAULT_COMMANDER_CONFIG);
     return DEFAULT_COMMANDER_CONFIG;
+  },
+
+  getCommanderAgentEnabled(agentId: 'alpha' | 'beta' | 'synthesizer'): boolean {
+    const cfg = this.getCommanderConfig();
+    if (agentId === 'alpha') return cfg.alphaEnabled ?? true;
+    if (agentId === 'beta') return cfg.betaEnabled ?? true;
+    if (agentId === 'synthesizer') return cfg.synthesizerEnabled ?? true;
+    return true;
+  },
+
+  setCommanderAgentEnabled(agentId: 'alpha' | 'beta' | 'synthesizer', enabled: boolean): CommanderConfig {
+    const cfg = this.getCommanderConfig();
+    if (agentId === 'alpha') {
+      cfg.alphaEnabled = enabled;
+    } else if (agentId === 'beta') {
+      cfg.betaEnabled = enabled;
+    } else if (agentId === 'synthesizer') {
+      cfg.synthesizerEnabled = enabled;
+    }
+    this.saveCommanderConfig(cfg);
+    return cfg;
   },
 
   getCommanderAgentModel(agentId: 'commander' | 'alpha' | 'beta' | 'synthesizer'): string {

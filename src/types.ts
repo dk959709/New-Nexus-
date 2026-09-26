@@ -1103,6 +1103,9 @@ export interface CommanderConfig {
   alphaModelId?: string;
   betaModelId?: string;
   synthesizerModelId?: string;
+  alphaEnabled?: boolean;
+  betaEnabled?: boolean;
+  synthesizerEnabled?: boolean;
   systemPrompts: CommanderSystemPrompts;
   manualConfig: CommanderManualConfig;
 }
