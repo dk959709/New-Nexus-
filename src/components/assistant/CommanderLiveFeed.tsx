@@ -391,9 +391,39 @@ export const CommanderLiveFeed: React.FC<CommanderLiveFeedProps> = ({
 
     if (completedStages.length === 0) return;
 
-    const formattedBlock = completedStages
+    const modeLabel = config.mode === 'manual' ? 'Manual Mode' : 'Auto Mode';
+    const headerLines = [
+      `=== COMMANDER PIPELINE ===`,
+      `Mode: ${modeLabel}`,
+      topic?.trim() ? `Topic: ${topic.trim()}` : '',
+    ]
+      .filter(Boolean)
+      .join('\n');
+
+    const stagesBlock = completedStages
       .map((item) => `=== ${item.stage.name.toUpperCase()} ===\n${item.text}`)
       .join('\n\n');
+
+    const allSources =
+      sources && sources.length > 0
+        ? sources
+        : result?.sources || savedState?.sources || [];
+
+    let sourcesBlock = '';
+    if (allSources.length > 0) {
+      const sourceList = allSources
+        .map((s, idx) => {
+          const lines = [`[${idx + 1}] ${s.title || 'Source'}`];
+          if (s.url) lines.push(`URL: ${s.url}`);
+          if (s.domain && s.domain !== 'web') lines.push(`Domain: ${s.domain}`);
+          if (s.snippet) lines.push(`Snippet: ${s.snippet.trim()}`);
+          return lines.join('\n');
+        })
+        .join('\n\n');
+      sourcesBlock = `\n\n=== SOURCES ===\n${sourceList}`;
+    }
+
+    const formattedBlock = `${headerLines}\n\n${stagesBlock}${sourcesBlock}`;
 
     await copyToClipboard(formattedBlock);
     setCopiedAll(true);

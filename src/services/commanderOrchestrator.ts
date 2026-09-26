@@ -118,6 +118,26 @@ async function executeCommanderSearch(
   return { grounding, sources };
 }
 
+/**
+ * Formats raw retrieved search citations (title, URL, domain, snippet) into explicit grounding context
+ * so the Final Synthesizer can evaluate the verified empirical evidence directly.
+ */
+function formatSearchEvidence(agentLabel: string, sources: AISource[]): string {
+  if (!sources || sources.length === 0) return '';
+  const formatted = sources
+    .map(
+      (s, idx) =>
+        `[${agentLabel} Citation ${idx + 1}]
+Source Title: ${s.title}
+Domain: ${s.domain}
+Source URL: ${s.url}
+Evidence / Snippet:
+${s.snippet}`
+    )
+    .join('\n\n');
+  return `=== VERIFIED REAL-TIME SEARCH GROUNDING & CITATIONS FOR ${agentLabel.toUpperCase()} ===\n${formatted}`;
+}
+
 interface RunCommanderParams {
   query: string;
   config?: CommanderConfig;
@@ -393,6 +413,8 @@ Respond ONLY with valid JSON in this exact structure:
   // STEP 2: AGENT ALPHA EXECUTION (Skipped if disabled)
   // --------------------------------------------------------------------------
   let alphaFindings = '';
+  let alphaGrounding = '';
+  let alphaSources: AISource[] = [];
   if (isAlphaEnabled) {
     const alphaStep: CommanderExecutionStep = {
       id: 'step_agent_alpha',
@@ -407,8 +429,6 @@ Respond ONLY with valid JSON in this exact structure:
     };
     updateStep(alphaStep);
 
-    let alphaGrounding = '';
-    let alphaSources: AISource[] = [];
     if (alphaSearchEnabled) {
       try {
         const searchRes = await executeCommanderSearch(alphaSearchQuery, signal);
@@ -468,6 +488,8 @@ INSTRUCTIONS:
   // STEP 3: AGENT BETA EXECUTION (Skipped if disabled)
   // --------------------------------------------------------------------------
   let betaFindings = '';
+  let betaGrounding = '';
+  let betaSources: AISource[] = [];
   if (isBetaEnabled) {
     const betaStep: CommanderExecutionStep = {
       id: 'step_agent_beta',
@@ -482,8 +504,6 @@ INSTRUCTIONS:
     };
     updateStep(betaStep);
 
-    let betaGrounding = '';
-    let betaSources: AISource[] = [];
     if (betaSearchEnabled) {
       try {
         const searchRes = await executeCommanderSearch(betaSearchQuery, signal);
@@ -576,6 +596,12 @@ INSTRUCTIONS:
         ? `\nSPECIAL USER DIRECTIVES FOR SYNTHESIS:\n${config.manualConfig.synthesizerDirectives.trim()}\n`
         : '';
 
+    // Include the raw search results/citations Agent Alpha and Agent Beta actually retrieved
+    // (URLs, source domains, snippets) as explicit grounding context
+    const alphaEvidence = formatSearchEvidence(`Agent Alpha (${alphaRole})`, alphaSources);
+    const betaEvidence = formatSearchEvidence(`Agent Beta (${betaRole})`, betaSources);
+    const combinedLiveEvidence = [alphaEvidence, betaEvidence].filter(Boolean).join('\n\n');
+
     let synthPrompt = '';
     if (isAlphaEnabled && isBetaEnabled) {
       synthPrompt = `ORIGINAL USER INQUIRY: "${query}"
@@ -592,12 +618,14 @@ AGENT BETA (${betaRole}) COUNTER-ANALYSIS & VALIDATION:
 """
 ${betaFindings}
 """
+${combinedLiveEvidence ? `\n--- VERIFIED LIVE WEB SEARCH EVIDENCE & CITATIONS ---\n${combinedLiveEvidence}\n` : ''}
 ${manualSynthDirectives}
 DIRECTIVES FOR FINAL SYNTHESIS:
 1. Harmonize Agent Alpha's core findings with Agent Beta's critical stress-tests into a master answer of the highest quality.
-2. Deliver a clear, authoritative, beautifully structured response in clean Markdown.
-3. Explicitly balance the technical facts with the real-world trade-offs, constraints, and recommendations.
-4. Do not include meta system labels or internal pipeline markers. Deliver the complete, definitive answer directly for the user.`;
+2. If live web search citations and empirical evidence snippets are provided above, treat them as authoritative and factual ground truth. Incorporate the empirical facts and preserve relevant source URLs/citations where valuable.
+3. Deliver a clear, authoritative, beautifully structured response in clean Markdown.
+4. Explicitly balance the technical facts with the real-world trade-offs, constraints, and recommendations.
+5. Do not include meta system labels or internal pipeline markers. Deliver the complete, definitive answer directly for the user.`;
     } else if (isAlphaEnabled) {
       synthPrompt = `ORIGINAL USER INQUIRY: "${query}"
 
@@ -608,12 +636,14 @@ AGENT ALPHA (${alphaRole}) INVESTIGATION:
 """
 ${alphaFindings}
 """
+${alphaEvidence ? `\n--- VERIFIED LIVE WEB SEARCH EVIDENCE & CITATIONS ---\n${alphaEvidence}\n` : ''}
 ${manualSynthDirectives}
 DIRECTIVES FOR FINAL SYNTHESIS:
 1. Synthesize and elevate Agent Alpha's empirical findings into a comprehensive, authoritative master response.
-2. Deliver a clear, beautifully structured response in clean Markdown.
-3. Ensure the answer thoroughly resolves the user inquiry with actionable conclusions.
-4. Do not include meta system labels or internal pipeline markers. Deliver the complete, definitive answer directly for the user.`;
+2. If live web search citations and empirical evidence snippets are provided above, treat them as authoritative and factual ground truth. Incorporate the empirical facts and preserve relevant source URLs/citations where valuable.
+3. Deliver a clear, beautifully structured response in clean Markdown.
+4. Ensure the answer thoroughly resolves the user inquiry with actionable conclusions.
+5. Do not include meta system labels or internal pipeline markers. Deliver the complete, definitive answer directly for the user.`;
     } else {
       synthPrompt = `ORIGINAL USER INQUIRY: "${query}"
 
@@ -624,13 +654,33 @@ AGENT BETA (${betaRole}) INVESTIGATION & COUNTER-ANALYSIS:
 """
 ${betaFindings}
 """
+${betaEvidence ? `\n--- VERIFIED LIVE WEB SEARCH EVIDENCE & CITATIONS ---\n${betaEvidence}\n` : ''}
 ${manualSynthDirectives}
 DIRECTIVES FOR FINAL SYNTHESIS:
 1. Synthesize and elevate Agent Beta's critical findings into a comprehensive, authoritative master response.
-2. Deliver a clear, beautifully structured response in clean Markdown.
-3. Ensure the answer thoroughly resolves the user inquiry with balanced considerations and actionable conclusions.
-4. Do not include meta system labels or internal pipeline markers. Deliver the complete, definitive answer directly for the user.`;
+2. If live web search citations and empirical evidence snippets are provided above, treat them as authoritative and factual ground truth. Incorporate the empirical facts and preserve relevant source URLs/citations where valuable.
+3. Deliver a clear, beautifully structured response in clean Markdown.
+4. Ensure the answer thoroughly resolves the user inquiry with balanced considerations and actionable conclusions.
+5. Do not include meta system labels or internal pipeline markers. Deliver the complete, definitive answer directly for the user.`;
     }
+
+    // Add today's actual current date and the hard grounding rule to the Final Synthesizer's system prompt
+    const currentDate = new Date().toLocaleDateString('en-US', {
+      weekday: 'long',
+      year: 'numeric',
+      month: 'long',
+      day: 'numeric',
+    });
+
+    const HARD_SYNTH_GROUNDING_RULE = `You have a training knowledge cutoff that may be outdated. If an agent's findings are backed by live web search citations (real URLs/sources shown to you), you MUST treat those citations as more current and more trustworthy than your own internal/training knowledge — especially for questions about recent releases, current events, or anything time-sensitive. Never declare something 'does not exist' or 'is unverified' solely because it contradicts your own training knowledge, when real search citations say otherwise. If you are uncertain, say so neutrally — do not confidently override cited, sourced evidence with your own memory.`;
+
+    const baseSynthPrompt = config.systemPrompts.synthesizer || config.systemPrompts.commander;
+    const finalSynthSystemPrompt = `Today's current date is ${currentDate}.
+
+${baseSynthPrompt}
+
+CRITICAL GROUNDING & KNOWLEDGE CUTOFF RULE:
+${HARD_SYNTH_GROUNDING_RULE}`;
 
     try {
       const synthRes = await api.jarvisAgentCall({
@@ -638,7 +688,7 @@ DIRECTIVES FOR FINAL SYNTHESIS:
         messages: [
           {
             role: 'system',
-            content: config.systemPrompts.synthesizer || config.systemPrompts.commander,
+            content: finalSynthSystemPrompt,
           },
           { role: 'user', content: synthPrompt },
         ],
