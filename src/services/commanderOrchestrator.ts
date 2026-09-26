@@ -185,14 +185,26 @@ export async function runCommanderPipeline({
   // STEP 1: COMMANDER PLANNING & ALLOCATION (AUTO or MANUAL)
   // --------------------------------------------------------------------------
   let plan = '';
-  let alphaRole = 'Lead Technical Investigator';
-  let alphaTask = 'Analyze the core mechanics and factual evidence for the query.';
+  let alphaRole =
+    isAlphaEnabled && !isBetaEnabled && config.mode !== 'manual'
+      ? 'Lead Investigator & Risk Auditor'
+      : 'Lead Technical Investigator';
+  let alphaTask =
+    isAlphaEnabled && !isBetaEnabled && config.mode !== 'manual'
+      ? 'Conduct a comprehensive investigation of core factual evidence while critically auditing counter-perspectives, trade-offs, and risk factors.'
+      : 'Analyze the core mechanics and factual evidence for the query.';
   let alphaSearchEnabled = true;
   let alphaSearchQuery = query;
 
-  let betaRole = 'Counter-Perspective & Risk Analyst';
-  let betaTask = 'Challenge assumptions, assess constraints, and provide alternative viewpoints.';
-  let betaSearchEnabled = false;
+  let betaRole =
+    !isAlphaEnabled && isBetaEnabled && config.mode !== 'manual'
+      ? 'Lead Investigator & Risk Auditor'
+      : 'Counter-Perspective & Risk Analyst';
+  let betaTask =
+    !isAlphaEnabled && isBetaEnabled && config.mode !== 'manual'
+      ? 'Conduct a comprehensive investigation of core factual evidence while critically auditing counter-perspectives, trade-offs, and risk factors.'
+      : 'Challenge assumptions, assess constraints, and provide alternative viewpoints.';
+  let betaSearchEnabled = !isAlphaEnabled && isBetaEnabled ? true : false;
   let betaSearchQuery = query;
 
   const planStep: CommanderExecutionStep = {
@@ -255,14 +267,16 @@ Respond ONLY with valid JSON in this exact structure:
       autoPrompt = `You are the COMMANDER AI.
 User Query: "${query}"
 
-Agent Beta is DISABLED for this mission. You have ONLY ONE subordinate agent available:
-- Agent Alpha: Primary technical/domain investigator.
+Only one specialist agent is available this run. Assign it a COMBINED task covering both the primary investigation angle AND the counter-perspective/risk-auditing angle that would normally be split across two agents — do not narrow its scope to just one half.
+
+You have ONLY ONE subordinate agent available:
+- Agent Alpha: Combined Specialist (handling both primary technical investigation AND counter-perspective/risk-auditing).
 
 Decide:
-1. "plan": A 1-2 sentence decisive tactical mission plan for answering this query with Agent Alpha.
+1. "plan": A 1-2 sentence decisive tactical mission plan for answering this query with Agent Alpha handling both angles.
 2. "alpha":
-   - "role": Specific descriptive persona title (e.g. "Quantum Algorithm Specialist", "Clinical Pharmacologist", "Full-Stack System Architect").
-   - "task": Concrete investigation directives (1-2 sentences).
+   - "role": Descriptive combined persona title reflecting both investigation and critical analysis (e.g. "Lead Technical Investigator & Risk Auditor", "Systems Architect & Constraints Critic", "Clinical Evaluator & Safety Auditor").
+   - "task": Concrete combined directives covering both the primary investigation and counter-perspective/risk auditing (2-3 sentences).
    - "search": Boolean (true if live or up-to-date web data is helpful, false otherwise).
    - "searchQuery": Concise search query string if search is true, or empty string.
 
@@ -280,15 +294,17 @@ Respond ONLY with valid JSON in this exact structure:
       autoPrompt = `You are the COMMANDER AI.
 User Query: "${query}"
 
-Agent Alpha is DISABLED for this mission. You have ONLY ONE subordinate agent available:
-- Agent Beta: Critical validator, counter-perspective specialist, or edge-case auditor.
+Only one specialist agent is available this run. Assign it a COMBINED task covering both the primary investigation angle AND the counter-perspective/risk-auditing angle that would normally be split across two agents — do not narrow its scope to just one half.
+
+You have ONLY ONE subordinate agent available:
+- Agent Beta: Combined Specialist (handling both primary technical investigation AND counter-perspective/risk-auditing).
 
 Decide:
-1. "plan": A 1-2 sentence decisive tactical mission plan for answering this query with Agent Beta.
+1. "plan": A 1-2 sentence decisive tactical mission plan for answering this query with Agent Beta handling both angles.
 2. "beta":
-   - "role": Counter-perspective or critical auditing role title (e.g. "Hardware Scalability Critic", "Toxicology & Risk Auditor", "Security Vulnerability Assessor").
-   - "task": Specific stress-testing directives (1-2 sentences).
-   - "search": Boolean (true if supplementary search is helpful, false otherwise).
+   - "role": Descriptive combined persona title reflecting both investigation and critical analysis (e.g. "Lead Technical Investigator & Risk Auditor", "Systems Architect & Constraints Critic", "Clinical Evaluator & Safety Auditor").
+   - "task": Concrete combined directives covering both the primary investigation and counter-perspective/risk auditing (2-3 sentences).
+   - "search": Boolean (true if live or up-to-date web data is helpful, false otherwise).
    - "searchQuery": Concise search query string if search is true, or empty string.
 
 Respond ONLY with valid JSON in this exact structure:
@@ -297,8 +313,8 @@ Respond ONLY with valid JSON in this exact structure:
   "beta": {
     "role": "...",
     "task": "...",
-    "search": false,
-    "searchQuery": ""
+    "search": true,
+    "searchQuery": "..."
   }
 }`;
     } else {
@@ -443,7 +459,29 @@ Respond ONLY with valid JSON in this exact structure:
       }
     }
 
-    const alphaUserPrompt = `You are deployed as: ${alphaRole}
+    let alphaSystemPrompt = config.systemPrompts.alpha;
+    if (config.mode !== 'manual' && isAlphaEnabled && !isBetaEnabled) {
+      alphaSystemPrompt = `${config.systemPrompts.alpha}
+
+SPECIAL COMBINED OPERATIONAL MANDATE:
+Only one specialist agent is available this run. Assign it a COMBINED task covering both the primary investigation angle AND the counter-perspective/risk-auditing angle that would normally be split across two agents — do not narrow its scope to just one half.
+You are operating as both the primary technical investigator and the critical counter-perspective auditor. Deliver deep technical rigor and empirical evidence while actively stress-testing assumptions, highlighting risks, caveats, counter-arguments, and trade-offs.`;
+    }
+
+    const alphaUserPrompt = !isBetaEnabled && config.mode !== 'manual'
+      ? `You are deployed as: ${alphaRole}
+Your Assigned Combined Mission:
+${alphaTask}
+
+User Inquiry: "${query}"
+Commander Mission Plan: "${plan}"
+${alphaGrounding ? `\n--- VERIFIED SEARCH GROUNDING ---\n${alphaGrounding}\n` : ''}
+INSTRUCTIONS:
+1. Deliver a concentrated, high-density domain report directly fulfilling your combined mission.
+2. Address BOTH the primary empirical investigation AND the critical counter-perspectives, trade-offs, caveats, and risk factors.
+3. Provide technical clarity, specific data points, structural insights, and honest critical evaluation.
+4. Be direct, authoritative, and factual.`
+      : `You are deployed as: ${alphaRole}
 Your Assigned Mission:
 ${alphaTask}
 
@@ -459,7 +497,7 @@ INSTRUCTIONS:
       const alphaRes = await api.jarvisAgentCall({
         agentId: 'commander_alpha',
         messages: [
-          { role: 'system', content: config.systemPrompts.alpha },
+          { role: 'system', content: alphaSystemPrompt },
           { role: 'user', content: alphaUserPrompt },
         ],
         providerConfig: alphaProvider,
@@ -518,6 +556,15 @@ INSTRUCTIONS:
       }
     }
 
+    let betaSystemPrompt = config.systemPrompts.beta;
+    if (config.mode !== 'manual' && !isAlphaEnabled && isBetaEnabled) {
+      betaSystemPrompt = `${config.systemPrompts.beta}
+
+SPECIAL COMBINED OPERATIONAL MANDATE:
+Only one specialist agent is available this run. Assign it a COMBINED task covering both the primary investigation angle AND the counter-perspective/risk-auditing angle that would normally be split across two agents — do not narrow its scope to just one half.
+You are operating as both the primary technical investigator and the critical counter-perspective auditor. Deliver deep technical rigor and empirical evidence while actively stress-testing assumptions, highlighting risks, caveats, counter-arguments, and trade-offs.`;
+    }
+
     const betaUserPrompt = isAlphaEnabled && alphaFindings
       ? `You are deployed as: ${betaRole}
 Your Assigned Mission:
@@ -535,6 +582,19 @@ INSTRUCTIONS:
 1. Stress-test Agent Alpha's findings from your specialist angle.
 2. Identify overlooked caveats, edge cases, risks, counter-arguments, and practical constraints.
 3. Be constructive, rigorous, and intellectually honest.`
+      : !isAlphaEnabled && config.mode !== 'manual'
+      ? `You are deployed as: ${betaRole}
+Your Assigned Combined Mission:
+${betaTask}
+
+User Inquiry: "${query}"
+Commander Mission Plan: "${plan}"
+${betaGrounding ? `\n--- VERIFIED SEARCH GROUNDING ---\n${betaGrounding}\n` : ''}
+INSTRUCTIONS:
+1. Deliver a concentrated, high-density domain report directly fulfilling your combined mission.
+2. Address BOTH the primary empirical investigation AND the critical counter-perspectives, trade-offs, risks, and constraints.
+3. Provide technical clarity, specific data points, structural insights, and honest critical evaluation.
+4. Be direct, authoritative, and factual.`
       : `You are deployed as: ${betaRole}
 Your Assigned Mission:
 ${betaTask}
@@ -551,7 +611,7 @@ INSTRUCTIONS:
       const betaRes = await api.jarvisAgentCall({
         agentId: 'commander_beta',
         messages: [
-          { role: 'system', content: config.systemPrompts.beta },
+          { role: 'system', content: betaSystemPrompt },
           { role: 'user', content: betaUserPrompt },
         ],
         providerConfig: betaProvider,
@@ -714,6 +774,20 @@ ${HARD_SYNTH_GROUNDING_RULE}`;
         : isAlphaEnabled
         ? `### Commander Synthesis\n\n**Agent Alpha (${alphaRole}):**\n${alphaFindings}`
         : `### Commander Synthesis\n\n**Agent Beta (${betaRole}):**\n${betaFindings}`;
+    }
+  } else {
+    // If Synthesizer is OFF:
+    // - If exactly one sub-agent is enabled, its combined-scope output is shown directly as the final answer
+    // - If both sub-agents are disabled, Commander's own plan is the final answer
+    // - If both sub-agents are enabled, concatenate both findings cleanly
+    if (bothSubAgentsDisabled) {
+      finalSynthesis = plan;
+    } else if (isAlphaEnabled && !isBetaEnabled) {
+      finalSynthesis = alphaFindings;
+    } else if (!isAlphaEnabled && isBetaEnabled) {
+      finalSynthesis = betaFindings;
+    } else if (isAlphaEnabled && isBetaEnabled) {
+      finalSynthesis = `**Agent Alpha (${alphaRole}):**\n${alphaFindings}\n\n**Agent Beta (${betaRole}):**\n${betaFindings}`;
     }
   }
 

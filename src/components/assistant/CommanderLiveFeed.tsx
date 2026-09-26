@@ -373,11 +373,15 @@ export const CommanderLiveFeed: React.FC<CommanderLiveFeedProps> = ({
   const alphaRoleName = alphaStep?.role || config.manualConfig?.alphaRole;
   const alphaDisplayName = alphaRoleName
     ? `Agent Alpha — ${alphaRoleName}`
+    : !isBetaEnabled && config.mode !== 'manual'
+    ? 'Agent Alpha (Combined Specialist)'
     : 'Agent Alpha (Specialist 1)';
 
   const betaRoleName = betaStep?.role || config.manualConfig?.betaRole;
   const betaDisplayName = betaRoleName
     ? `Agent Beta — ${betaRoleName}`
+    : !isAlphaEnabled && config.mode !== 'manual'
+    ? 'Agent Beta (Combined Specialist)'
     : 'Agent Beta (Counter-Perspective)';
 
   const stages = [
@@ -407,7 +411,10 @@ export const CommanderLiveFeed: React.FC<CommanderLiveFeedProps> = ({
                 ? 'completed'
                 : 'pending'),
             voiceId: 'alpha',
-            runningLabel: 'Researching core vectors...',
+            runningLabel:
+              !isBetaEnabled && config.mode !== 'manual'
+                ? 'Investigating & auditing risks...'
+                : 'Researching core vectors...',
           },
         ]
       : []),
@@ -427,7 +434,10 @@ export const CommanderLiveFeed: React.FC<CommanderLiveFeedProps> = ({
                 ? 'completed'
                 : 'pending'),
             voiceId: 'beta',
-            runningLabel: 'Analyzing counter-perspectives...',
+            runningLabel:
+              !isAlphaEnabled && config.mode !== 'manual'
+                ? 'Investigating & auditing risks...'
+                : 'Analyzing counter-perspectives...',
           },
         ]
       : []),
