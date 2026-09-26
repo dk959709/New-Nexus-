@@ -313,6 +313,12 @@ export const SwarmLiveFeed: React.FC<SwarmLiveFeedProps> = ({
         summarySection += `\n\nKey Highlights:\n` + highlightsList.map((h) => `• ${h}`).join('\n');
       }
 
+      if (summary.verifiedClaims && summary.verifiedClaims.length > 0) {
+        summarySection +=
+          `\n\nVerified Empirical Claims:\n` +
+          summary.verifiedClaims.map((c) => `• [${c.status}] ${c.claimText}`).join('\n');
+      }
+
       sections.push(summarySection);
     }
 
@@ -553,14 +559,13 @@ export const SwarmLiveFeed: React.FC<SwarmLiveFeedProps> = ({
           </div>
         )}
 
-        {/* Compact Text-Only Summary (Rendered in normal document flow below all messages) */}
+        {/* Full Text Swarm Consensus Summary (Matching Chat Assistant Aesthetics) */}
         {summary && (() => {
           const rawVerdict =
             summary.verdict ||
             (summary as unknown as { synthesisVerdict?: string }).synthesisVerdict ||
             (summary as unknown as { overallVerdict?: string }).overallVerdict ||
             'Debate complete.';
-          const displayVerdict = rawVerdict.length > 200 ? rawVerdict.slice(0, 197) + '…' : rawVerdict;
           const highlightsList =
             summary.highlights ||
             (summary as unknown as { keyHighlights?: string[] }).keyHighlights ||
@@ -568,28 +573,85 @@ export const SwarmLiveFeed: React.FC<SwarmLiveFeedProps> = ({
 
           return (
             <div
-              className="swarm-live-summary static z-auto mt-3 p-3.5 rounded-xl bg-zinc-950/95 border border-zinc-800/90 text-[13px] text-zinc-200 leading-relaxed shadow-sm"
+              className="swarm-live-summary static z-auto mt-3 p-3.5 rounded-xl bg-zinc-950/95 border border-zinc-800/90 text-[13px] text-zinc-200 leading-relaxed shadow-sm space-y-2.5"
               style={{
                 position: 'static',
                 zIndex: 'auto',
                 borderTop: '2px solid rgba(97, 215, 201, 0.4)',
               }}
             >
-              <div className="flex items-center gap-1.5 font-semibold text-[#61d7c9] mb-1.5 text-xs tracking-wide">
-                <span>✦</span>
+              {/* Header Bar with Badges */}
+              <div className="flex items-center gap-1.5 font-semibold text-[#61d7c9] text-xs tracking-wide flex-wrap">
+                <span className="text-[#61d7c9]">✦</span>
                 <span>Swarm Consensus</span>
+
+                {summary.groundingLevel && (
+                  <span className={`text-[9.5px] font-mono font-semibold px-1.5 py-0.2 rounded border uppercase ${
+                    summary.groundingLevel === 'HIGH'
+                      ? 'bg-emerald-950/60 text-emerald-300 border-emerald-500/40'
+                      : summary.groundingLevel === 'REFUTED'
+                      ? 'bg-red-950/60 text-red-300 border-red-500/40'
+                      : summary.groundingLevel === 'SPECULATIVE'
+                      ? 'bg-amber-950/60 text-amber-300 border-amber-500/40'
+                      : 'bg-cyan-950/60 text-cyan-300 border-cyan-500/40'
+                  }`}>
+                    {summary.groundingLevel} Grounding
+                  </span>
+                )}
+
                 {summary.consensusLean && (
-                  <span className="text-[10px] font-mono font-normal text-zinc-400 px-1.5 py-0.5 rounded bg-zinc-800/80 border border-zinc-700/50 ml-auto">
+                  <span className="text-[10px] font-mono font-normal text-zinc-300 px-1.5 py-0.5 rounded bg-zinc-800/90 border border-zinc-700/60 ml-auto">
                     {summary.consensusLean}
                   </span>
                 )}
               </div>
-              <p className="text-zinc-200 break-words line-clamp-3">
-                {displayVerdict}
+
+              {/* Full Verdict */}
+              <p className="text-zinc-100 break-words leading-relaxed text-[13px]">
+                {rawVerdict}
               </p>
+
+              {/* Full Key Highlights */}
               {highlightsList.length > 0 && (
-                <div className="mt-2 pt-2 border-t border-zinc-800/50 text-[12px] text-zinc-400 line-clamp-2">
-                  {highlightsList.slice(0, 2).join(' • ')}
+                <div className="pt-2 border-t border-zinc-800/60 space-y-1.5">
+                  <div className="text-[10.5px] font-semibold text-zinc-400 uppercase tracking-wider">
+                    Key Highlights & Agent Arguments
+                  </div>
+                  <div className="space-y-1.5 text-[12.5px] text-zinc-300">
+                    {highlightsList.map((highlight, idx) => (
+                      <div key={idx} className="flex items-start gap-2 leading-relaxed">
+                        <span className="text-[#61d7c9] shrink-0 font-bold">•</span>
+                        <span>{highlight}</span>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              )}
+
+              {/* Verified Claims (if available) */}
+              {summary.verifiedClaims && summary.verifiedClaims.length > 0 && (
+                <div className="pt-2 border-t border-zinc-800/60 space-y-1.5">
+                  <div className="text-[10.5px] font-semibold text-zinc-400 uppercase tracking-wider">
+                    Verified Empirical Claims
+                  </div>
+                  <div className="space-y-1 text-[12px]">
+                    {summary.verifiedClaims.map((claim, idx) => (
+                      <div key={idx} className="flex items-start gap-1.5 leading-snug">
+                        <span className={`text-[9px] font-mono px-1 py-0.2 rounded font-semibold uppercase shrink-0 mt-0.5 border ${
+                          claim.status === 'VERIFIED'
+                            ? 'bg-emerald-950/70 text-emerald-300 border-emerald-500/40'
+                            : claim.status === 'REFUTED'
+                            ? 'bg-red-950/70 text-red-300 border-red-500/40'
+                            : claim.status === 'PLAUSIBLE'
+                            ? 'bg-cyan-950/70 text-cyan-300 border-cyan-500/40'
+                            : 'bg-zinc-800 text-zinc-400 border-zinc-700'
+                        }`}>
+                          {claim.status}
+                        </span>
+                        <span className="text-zinc-300">{claim.claimText}</span>
+                      </div>
+                    ))}
+                  </div>
                 </div>
               )}
             </div>
