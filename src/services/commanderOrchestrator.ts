@@ -233,6 +233,7 @@ export async function runCommanderPipeline({
     isAlphaEnabled && !isBetaEnabled && config.mode !== 'manual'
       ? `Investigate core dimensions and complementary considerations for "${query}".`
       : `Investigate the primary questions and key elements of "${query}".`;
+  let alphaSystemPrompt = config.systemPrompts.alpha;
   let alphaSearchEnabled = true;
   let alphaSearchQuery = query;
 
@@ -244,6 +245,7 @@ export async function runCommanderPipeline({
     !isAlphaEnabled && isBetaEnabled && config.mode !== 'manual'
       ? `Investigate core dimensions and complementary considerations for "${query}".`
       : `Examine the complementary perspective, practical nuances, and trade-offs for "${query}".`;
+  let betaSystemPrompt = config.systemPrompts.beta;
   let betaSearchEnabled = !isAlphaEnabled && isBetaEnabled ? true : false;
   let betaSearchQuery = query;
 
@@ -300,6 +302,9 @@ You must decide BOTH agents' roles fresh, specifically tailored to what this par
     const TASK_DIVERSITY_RULE = `CRITICAL TASK SPECIFICITY RULE:
 You must write BOTH Agent Alpha's and Agent Beta's TASK INSTRUCTIONS fresh, specifically tailored to what this exact question needs — not a generic template reused across different topics. Agent Alpha's task should describe the specific primary investigation this topic calls for (which could be technical analysis, creative generation, factual research, comparison, historical context, etc., depending on the topic). Agent Beta's task should describe the specific complementary angle this topic calls for (which could be risk-auditing, but could equally be a different technical angle, a market/business angle, a creative variation, a practical how-to angle, etc.) — do not default Beta's task to 'identify risks/edge cases/limitations' unless the topic genuinely calls for that kind of scrutiny. Both task descriptions must read as if written specifically for THIS question, not as if a template was filled in.`;
 
+    const SYSTEM_PROMPT_DIVERSITY_RULE = `CRITICAL SYSTEM PROMPT SPECIFICITY RULE:
+In addition to each agent's role and task, also write a fresh SYSTEM PROMPT for Agent Alpha and Agent Beta that defines their analytical approach and expertise framing specifically for this topic — do not reuse a fixed default system prompt template. This system prompt should feel purpose-built for the current question, consistent with the role and task you've assigned.`;
+
     let autoPrompt = '';
     if (bothSubAgentsDisabled) {
       autoPrompt = `Today's current date is ${currentDate}.
@@ -326,6 +331,8 @@ ${ROLE_DIVERSITY_RULE}
 
 ${TASK_DIVERSITY_RULE}
 
+${SYSTEM_PROMPT_DIVERSITY_RULE}
+
 Only one specialist agent is available this run. Assign it a COMBINED task covering both the primary investigation angle AND a complementary perspective or practical trade-offs that would normally be split across two agents — do not narrow its scope to just one half.
 
 You have ONLY ONE subordinate agent available:
@@ -336,6 +343,7 @@ Decide:
 2. "alpha":
    - "role": Descriptive combined persona title tailored to this topic reflecting both primary and complementary analysis.
    - "task": Write fresh, specific directives describing exactly what primary investigation and complementary dimensions to address for this specific inquiry (2-3 sentences, tailored directly to this question without generic templates).
+   - "systemPrompt": Fresh topic-specific system prompt defining Agent Alpha's analytical mindset, domain expertise framing, and behavioral instructions for this inquiry (2-4 sentences).
    - "search": Boolean (true if live or up-to-date web data is helpful, false otherwise).
    - "searchQuery": Concise search query string if search is true, or empty string. <use the actual current year, not an example>
 
@@ -345,6 +353,7 @@ Respond ONLY with valid JSON in this exact structure:
   "alpha": {
     "role": "...",
     "task": "...",
+    "systemPrompt": "...",
     "search": true,
     "searchQuery": "..."
   }
@@ -361,6 +370,8 @@ ${ROLE_DIVERSITY_RULE}
 
 ${TASK_DIVERSITY_RULE}
 
+${SYSTEM_PROMPT_DIVERSITY_RULE}
+
 Only one specialist agent is available this run. Assign it a COMBINED task covering both the primary investigation angle AND a complementary perspective or practical trade-offs that would normally be split across two agents — do not narrow its scope to just one half.
 
 You have ONLY ONE subordinate agent available:
@@ -371,6 +382,7 @@ Decide:
 2. "beta":
    - "role": Descriptive combined persona title tailored to this topic reflecting both primary and complementary analysis.
    - "task": Write fresh, specific directives describing exactly what primary investigation and complementary dimensions to address for this specific inquiry (2-3 sentences, tailored directly to this question without generic templates).
+   - "systemPrompt": Fresh topic-specific system prompt defining Agent Beta's analytical mindset, domain expertise framing, and behavioral instructions for this inquiry (2-4 sentences).
    - "search": Boolean (true if live or up-to-date web data is helpful, false otherwise).
    - "searchQuery": Concise search query string if search is true, or empty string. <use the actual current year, not an example>
 
@@ -380,6 +392,7 @@ Respond ONLY with valid JSON in this exact structure:
   "beta": {
     "role": "...",
     "task": "...",
+    "systemPrompt": "...",
     "search": true,
     "searchQuery": "..."
   }
@@ -396,6 +409,8 @@ ${ROLE_DIVERSITY_RULE}
 
 ${TASK_DIVERSITY_RULE}
 
+${SYSTEM_PROMPT_DIVERSITY_RULE}
+
 Analyze this query and decompose it into two distinct, high-impact specialist vectors:
 - Agent Alpha: First specialized investigation angle addressing the core dimensions of the inquiry.
 - Agent Beta: Second distinct, complementary specialist angle chosen specifically to round out this topic.
@@ -405,11 +420,13 @@ Decide:
 2. "alpha":
    - "role": Descriptive persona title tailored specifically to this inquiry's first vector (avoid generic templates).
    - "task": Specific primary investigation directives written fresh for this exact question (1-2 sentences, avoiding generic template text).
+   - "systemPrompt": Fresh topic-specific system prompt defining Agent Alpha's analytical mindset, domain expertise framing, and behavioral approach for this angle (2-4 sentences).
    - "search": Boolean (true if live or up-to-date web data is helpful, false otherwise).
    - "searchQuery": Concise search query string if search is true, or empty string. <use the actual current year, not an example>
 3. "beta":
    - "role": Descriptive persona title tailored specifically to this inquiry's second complementary vector (distinct from Alpha, avoiding generic auditor defaults).
    - "task": Specific complementary investigation directives written fresh for this exact question (1-2 sentences, avoiding generic 'identify risks/limitations' templates).
+   - "systemPrompt": Fresh topic-specific system prompt defining Agent Beta's analytical mindset, domain expertise framing, and behavioral approach for this angle (2-4 sentences).
    - "search": Boolean (true if supplementary search is helpful, false otherwise).
    - "searchQuery": Concise search query string if search is true, or empty string. <use the actual current year, not an example>
 
@@ -419,12 +436,14 @@ Respond ONLY with valid JSON in this exact structure:
   "alpha": {
     "role": "...",
     "task": "...",
+    "systemPrompt": "...",
     "search": true,
     "searchQuery": "..."
   },
   "beta": {
     "role": "...",
     "task": "...",
+    "systemPrompt": "...",
     "search": false,
     "searchQuery": ""
   }
@@ -440,7 +459,9 @@ ${SEARCH_QUERY_DATE_RULE}
 
 ${ROLE_DIVERSITY_RULE}
 
-${TASK_DIVERSITY_RULE}`;
+${TASK_DIVERSITY_RULE}
+
+${SYSTEM_PROMPT_DIVERSITY_RULE}`;
 
       const plannerMaxTokens = bothSubAgentsDisabled
         ? effortLevel === 'small'
@@ -449,10 +470,10 @@ ${TASK_DIVERSITY_RULE}`;
           ? 1800
           : 900
         : effortLevel === 'small'
-        ? 300
+        ? 600
         : effortLevel === 'high'
-        ? 800
-        : 500;
+        ? 1400
+        : 900;
 
       const commanderRes = await api.jarvisAgentCall({
         agentId: 'commander_planner',
@@ -470,8 +491,8 @@ ${TASK_DIVERSITY_RULE}`;
       const raw = (commanderRes.text || commanderRes.content || '').trim();
       let parsedJson: {
         plan?: string;
-        alpha?: { role?: string; task?: string; search?: boolean; searchQuery?: string };
-        beta?: { role?: string; task?: string; search?: boolean; searchQuery?: string };
+        alpha?: { role?: string; task?: string; systemPrompt?: string; search?: boolean; searchQuery?: string };
+        beta?: { role?: string; task?: string; systemPrompt?: string; search?: boolean; searchQuery?: string };
       } | null = null;
 
       try {
@@ -488,6 +509,9 @@ ${TASK_DIVERSITY_RULE}`;
         if (parsedJson.alpha && isAlphaEnabled) {
           alphaRole = parsedJson.alpha.role?.trim() || alphaRole;
           alphaTask = parsedJson.alpha.task?.trim() || alphaTask;
+          if (parsedJson.alpha.systemPrompt?.trim()) {
+            alphaSystemPrompt = parsedJson.alpha.systemPrompt.trim();
+          }
           alphaSearchEnabled = Boolean(parsedJson.alpha.search);
           const rawAlphaQuery = parsedJson.alpha.searchQuery?.trim() || query;
           const cleanedAlpha = stripStaleYearsFromQuery(rawAlphaQuery, query);
@@ -496,6 +520,9 @@ ${TASK_DIVERSITY_RULE}`;
         if (parsedJson.beta && isBetaEnabled) {
           betaRole = parsedJson.beta.role?.trim() || betaRole;
           betaTask = parsedJson.beta.task?.trim() || betaTask;
+          if (parsedJson.beta.systemPrompt?.trim()) {
+            betaSystemPrompt = parsedJson.beta.systemPrompt.trim();
+          }
           betaSearchEnabled = Boolean(parsedJson.beta.search);
           const rawBetaQuery = parsedJson.beta.searchQuery?.trim() || query;
           const cleanedBeta = stripStaleYearsFromQuery(rawBetaQuery, query);
@@ -565,16 +592,16 @@ ${TASK_DIVERSITY_RULE}`;
       }
     }
 
-    let alphaSystemPrompt = config.systemPrompts.alpha;
-    if (config.mode !== 'manual' && isAlphaEnabled && !isBetaEnabled) {
-      alphaSystemPrompt = `${config.systemPrompts.alpha}
+    let finalAlphaSystemPrompt = alphaSystemPrompt || config.systemPrompts.alpha;
+    if (config.mode !== 'manual' && isAlphaEnabled && !isBetaEnabled && (!parsedJson?.alpha?.systemPrompt)) {
+      finalAlphaSystemPrompt = `${finalAlphaSystemPrompt}
 
 SPECIAL COMBINED OPERATIONAL MANDATE:
 Only one specialist agent is available this run. Assign it a COMBINED task covering both the primary investigation angle AND the counter-perspective/risk-auditing angle that would normally be split across two agents — do not narrow its scope to just one half.
 You are operating as both the primary investigator and the complementary specialist. Deliver thorough domain intelligence while addressing practical nuances, alternative perspectives, and trade-offs tailored to the inquiry.`;
     }
     if (effortInstruction) {
-      alphaSystemPrompt = `${alphaSystemPrompt}${effortInstruction}`;
+      finalAlphaSystemPrompt = `${finalAlphaSystemPrompt}${effortInstruction}`;
     }
 
     const alphaUserPrompt = !isBetaEnabled && config.mode !== 'manual'
@@ -609,7 +636,7 @@ INSTRUCTIONS:
       const alphaRes = await api.jarvisAgentCall({
         agentId: 'commander_alpha',
         messages: [
-          { role: 'system', content: alphaSystemPrompt },
+          { role: 'system', content: finalAlphaSystemPrompt },
           { role: 'user', content: alphaUserPrompt },
         ],
         providerConfig: alphaProvider,
@@ -673,16 +700,16 @@ INSTRUCTIONS:
       }
     }
 
-    let betaSystemPrompt = config.systemPrompts.beta;
-    if (config.mode !== 'manual' && !isAlphaEnabled && isBetaEnabled) {
-      betaSystemPrompt = `${config.systemPrompts.beta}
+    let finalBetaSystemPrompt = betaSystemPrompt || config.systemPrompts.beta;
+    if (config.mode !== 'manual' && !isAlphaEnabled && isBetaEnabled && (!parsedJson?.beta?.systemPrompt)) {
+      finalBetaSystemPrompt = `${finalBetaSystemPrompt}
 
 SPECIAL COMBINED OPERATIONAL MANDATE:
 Only one specialist agent is available this run. Assign it a COMBINED task covering both the primary investigation angle AND the counter-perspective/risk-auditing angle that would normally be split across two agents — do not narrow its scope to just one half.
 You are operating as both the primary investigator and the complementary specialist. Deliver thorough domain intelligence while addressing practical nuances, alternative perspectives, and trade-offs tailored to the inquiry.`;
     }
     if (effortInstruction) {
-      betaSystemPrompt = `${betaSystemPrompt}${effortInstruction}`;
+      finalBetaSystemPrompt = `${finalBetaSystemPrompt}${effortInstruction}`;
     }
 
     const betaUserPrompt = isAlphaEnabled && alphaFindings
@@ -734,7 +761,7 @@ INSTRUCTIONS:
       const betaRes = await api.jarvisAgentCall({
         agentId: 'commander_beta',
         messages: [
-          { role: 'system', content: betaSystemPrompt },
+          { role: 'system', content: finalBetaSystemPrompt },
           { role: 'user', content: betaUserPrompt },
         ],
         providerConfig: betaProvider,
