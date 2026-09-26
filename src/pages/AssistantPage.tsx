@@ -77,6 +77,10 @@ import {
   enhanceAlphaDirectives,
   enhanceBetaDirectives,
   enhanceSynthesizerDirectives,
+  enhanceUniversalCommanderPlan,
+  enhanceUniversalAlphaDirectives,
+  enhanceUniversalBetaDirectives,
+  enhanceUniversalSynthesizerDirectives,
   enhanceCommanderSystemPrompt,
   enhanceAlphaSystemPrompt,
   enhanceBetaSystemPrompt,
@@ -973,19 +977,23 @@ export function AssistantPage() {
     const isAlphaSearchOn = Boolean(commanderConfig.manualConfig.alphaSearchEnabled);
     const isBetaSearchOn = Boolean(commanderConfig.manualConfig.betaSearchEnabled);
 
-    // Call A: Commander Strategic Plan
-    enhanceCommanderPlan({
+    // Call A: Commander Strategic Plan & System Prompt
+    enhanceUniversalCommanderPlan({
       idea: rawIdea,
       providerConfig: commanderProvider,
     })
-      .then((newPlan) => {
-        if (newPlan) {
+      .then((res) => {
+        if (res.plan) {
           setCommanderConfig((prev) => {
             const updated: CommanderConfig = {
               ...prev,
               manualConfig: {
                 ...prev.manualConfig,
-                commanderPlan: newPlan,
+                commanderPlan: res.plan,
+              },
+              systemPrompts: {
+                ...prev.systemPrompts,
+                ...(res.systemPrompt ? { commander: res.systemPrompt } : {}),
               },
             };
             storage.saveCommanderConfig(updated);
@@ -1001,8 +1009,8 @@ export function AssistantPage() {
         setEnhancingCommanderPlan(false);
       });
 
-    // Call B: Agent Alpha (Specialist 1)
-    enhanceAlphaDirectives({
+    // Call B: Agent Alpha (Specialist 1 & System Prompt)
+    enhanceUniversalAlphaDirectives({
       idea: rawIdea,
       searchEnabled: isAlphaSearchOn,
       providerConfig: alphaProvider,
@@ -1019,6 +1027,10 @@ export function AssistantPage() {
                 ? { alphaSearchQuery: alphaData.searchQuery }
                 : {}),
             },
+            systemPrompts: {
+              ...prev.systemPrompts,
+              ...(alphaData.systemPrompt ? { alpha: alphaData.systemPrompt } : {}),
+            },
           };
           storage.saveCommanderConfig(updated);
           return updated;
@@ -1032,8 +1044,8 @@ export function AssistantPage() {
         setEnhancingAlphaDirectives(false);
       });
 
-    // Call C: Agent Beta (Counter-Perspective / Specialist 2)
-    enhanceBetaDirectives({
+    // Call C: Agent Beta (Counter-Perspective / Specialist 2 & System Prompt)
+    enhanceUniversalBetaDirectives({
       idea: rawIdea,
       searchEnabled: isBetaSearchOn,
       providerConfig: betaProvider,
@@ -1050,6 +1062,10 @@ export function AssistantPage() {
                 ? { betaSearchQuery: betaData.searchQuery }
                 : {}),
             },
+            systemPrompts: {
+              ...prev.systemPrompts,
+              ...(betaData.systemPrompt ? { beta: betaData.systemPrompt } : {}),
+            },
           };
           storage.saveCommanderConfig(updated);
           return updated;
@@ -1063,19 +1079,23 @@ export function AssistantPage() {
         setEnhancingBetaDirectives(false);
       });
 
-    // Call D: Final Synthesizer (Synthesis Directives)
-    enhanceSynthesizerDirectives({
+    // Call D: Final Synthesizer (Synthesis Directives & System Prompt)
+    enhanceUniversalSynthesizerDirectives({
       idea: rawIdea,
       providerConfig: synthProvider,
     })
-      .then((newDirectives) => {
-        if (newDirectives) {
+      .then((res) => {
+        if (res.directives) {
           setCommanderConfig((prev) => {
             const updated: CommanderConfig = {
               ...prev,
               manualConfig: {
                 ...prev.manualConfig,
-                synthesizerDirectives: newDirectives,
+                synthesizerDirectives: res.directives,
+              },
+              systemPrompts: {
+                ...prev.systemPrompts,
+                ...(res.systemPrompt ? { synthesizer: res.systemPrompt } : {}),
               },
             };
             storage.saveCommanderConfig(updated);
