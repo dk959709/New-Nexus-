@@ -564,8 +564,16 @@ function loadMessages(): Message[] {
       )
       .map((item) => {
         const rawItem = item as unknown as Record<string, unknown>;
-        const commanderStatus = (rawItem.commanderStatus as Message['commanderStatus']) ?? item.commanderStatus;
-        const commanderSavedState = (rawItem.commanderSavedState as Message['commanderSavedState']) ?? item.commanderSavedState;
+        let commanderStatus = (rawItem.commanderStatus as Message['commanderStatus']) ?? item.commanderStatus;
+        let commanderSavedState = (rawItem.commanderSavedState as Message['commanderSavedState']) ?? item.commanderSavedState;
+
+        // Sanitize: never restore a running Commander pipeline
+        if (item.tool === 'commander' && (commanderStatus === 'running' || commanderSavedState?.status === 'running')) {
+          commanderStatus = 'aborted' as const;
+          commanderSavedState = commanderSavedState
+            ? { ...commanderSavedState, status: 'aborted' as const }
+            : undefined;
+        }
 
         return {
           ...item,
@@ -2706,17 +2714,53 @@ ${commanderConfig.systemPrompts.synthesizer?.trim() || '(Default system prompt)'
           deleteImageFromDb(targetMsg.image.imageDataId).catch(() => {});
         }
         const updated = prev.filter((_, i) => i !== indexToDelete);
-        if (updated.length === 0 || updated.every((m) => m.isWelcome)) {
-          return [
-            {
-              id: 'welcome-0',
-              role: 'assistant',
-              content: '',
-              isWelcome: true,
-            },
-          ];
+        const finalMessages =
+          updated.length === 0 || updated.every((m) => m.isWelcome)
+            ? [
+                {
+                  id: 'welcome-0',
+                  role: 'assistant',
+                  content: '',
+                  isWelcome: true,
+                },
+              ]
+            : updated;
+
+        try {
+          const sanitized = finalMessages.map((m) => {
+            let msg = m;
+            if (msg.image && msg.image.imageData) {
+              msg = {
+                ...msg,
+                image: {
+                  ...msg.image,
+                  imageData: undefined,
+                },
+              };
+            }
+            if (msg.tool === 'commander') {
+              return {
+                ...msg,
+                commanderStatus: msg.commanderStatus === 'running' ? 'aborted' : msg.commanderStatus,
+                commanderSavedState: msg.commanderSavedState
+                  ? {
+                      ...msg.commanderSavedState,
+                      status:
+                        msg.commanderStatus === 'running' || msg.commanderSavedState.status === 'running'
+                          ? 'aborted'
+                          : msg.commanderSavedState.status,
+                    }
+                  : undefined,
+              };
+            }
+            return msg;
+          });
+          localStorage.setItem(CHAT_KEY, JSON.stringify(sanitized));
+        } catch {
+          // Ignore
         }
-        return updated;
+
+        return finalMessages;
       });
       triggerSettingsToast('Message deleted from conversation');
     },
@@ -3077,16 +3121,32 @@ ${commanderConfig.systemPrompts.synthesizer?.trim() || '(Default system prompt)'
   useEffect(() => {
     try {
       const sanitizedMessages = messages.map((m) => {
-        if (m.image && m.image.imageData) {
-          return {
-            ...m,
+        let msg = m;
+        if (msg.image && msg.image.imageData) {
+          msg = {
+            ...msg,
             image: {
-              ...m.image,
+              ...msg.image,
               imageData: undefined,
             },
           };
         }
-        return m;
+        if (msg.tool === 'commander') {
+          return {
+            ...msg,
+            commanderStatus: msg.commanderStatus === 'running' ? 'aborted' : msg.commanderStatus,
+            commanderSavedState: msg.commanderSavedState
+              ? {
+                  ...msg.commanderSavedState,
+                  status:
+                    msg.commanderStatus === 'running' || msg.commanderSavedState.status === 'running'
+                      ? 'aborted'
+                      : msg.commanderSavedState.status,
+                }
+              : undefined,
+          };
+        }
+        return msg;
       });
       localStorage.setItem(CHAT_KEY, JSON.stringify(sanitizedMessages));
     } catch {

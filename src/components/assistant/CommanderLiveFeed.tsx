@@ -173,8 +173,17 @@ export const CommanderLiveFeed: React.FC<CommanderLiveFeedProps> = ({
     [],
   );
 
-  // Execute commander pipeline on mount (ONLY when savedState is NOT provided)
+  // Guard against auto-running on page reload if restored
+  const wasRestored = useRef(savedState?.status === 'running');
+
+  // Execute commander pipeline on mount (ONLY when savedState is NOT provided and not restored)
   useEffect(() => {
+    // Only auto-run if NOT restored from localStorage
+    if (wasRestored.current) {
+      wasRestored.current = false; // consume the flag
+      return; // don't auto-run on reload
+    }
+
     if (savedState || status === 'completed' || status === 'aborted' || status === 'error') {
       return;
     }
