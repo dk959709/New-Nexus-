@@ -1140,6 +1140,7 @@ export interface CommanderFeedSavedState {
   errorMessage?: string | null;
   sources?: AISource[];
   mode?: CommanderMode;
+  deletedStageIds?: string[];
 }
 
 

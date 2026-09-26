@@ -2767,6 +2767,58 @@ ${commanderConfig.systemPrompts.synthesizer?.trim() || '(Default system prompt)'
     [speakingIndex, edgeTtsPlayingIndex, stopSpeak],
   );
 
+  const handleCommanderStateChange = useCallback((state: CommanderFeedSavedState, targetIndex: number) => {
+    setMessages((prev) => {
+      const updated = prev.map((msg, idx) => {
+        if (idx === targetIndex) {
+          return {
+            ...msg,
+            commanderStatus: state.status,
+            commanderSavedState: state,
+            sources: state.sources || msg.sources,
+            content:
+              state.result?.synthesis ||
+              state.result?.betaFindings ||
+              state.result?.alphaFindings ||
+              state.result?.plan ||
+              msg.content,
+          };
+        }
+        return msg;
+      });
+
+      try {
+        const sanitized = updated.map((m) => {
+          let item = m;
+          if (item.image && item.image.imageData) {
+            item = { ...item, image: { ...item.image, imageData: undefined } };
+          }
+          if (item.tool === 'commander') {
+            return {
+              ...item,
+              commanderStatus: item.commanderStatus === 'running' ? 'aborted' : item.commanderStatus,
+              commanderSavedState: item.commanderSavedState
+                ? {
+                    ...item.commanderSavedState,
+                    status:
+                      item.commanderStatus === 'running' || item.commanderSavedState.status === 'running'
+                        ? 'aborted'
+                        : item.commanderSavedState.status,
+                  }
+                : undefined,
+            };
+          }
+          return item;
+        });
+        localStorage.setItem(CHAT_KEY, JSON.stringify(sanitized));
+      } catch {
+        // Storage may be unavailable.
+      }
+
+      return updated;
+    });
+  }, []);
+
   const handleDeletePersonaResponse = useCallback(
     (msgIndex: number, personaIndex: number) => {
       playTapSound();
@@ -5626,6 +5678,7 @@ DIRECTIVES:
                               onPlayAudio={(text, idKey, stageId) => handlePlayPersonaAudio(text, idKey, stageId)}
                               isAudioPlayingKey={personaAudioPlayingKey}
                               isAudioLoadingKey={personaAudioLoadingKey}
+                              onStateChange={(state) => handleCommanderStateChange(state, index)}
                               onClose={() => handleDeleteMessage(index)}
                             />
                           ) : (
@@ -5638,53 +5691,7 @@ DIRECTIVES:
                               onPlayAudio={(text, idKey, stageId) => handlePlayPersonaAudio(text, idKey, stageId)}
                               isAudioPlayingKey={personaAudioPlayingKey}
                               isAudioLoadingKey={personaAudioLoadingKey}
-                              onStateChange={(state) => {
-                                setMessages((prev) => {
-                                  const updated = prev.map((msg, idx) => {
-                                    if (idx === index) {
-                                      return {
-                                        ...msg,
-                                        commanderStatus: state.status,
-                                        commanderSavedState: state,
-                                        sources: state.sources || msg.sources,
-                                        content:
-                                          state.result?.synthesis ||
-                                          state.result?.betaFindings ||
-                                          state.result?.alphaFindings ||
-                                          state.result?.plan ||
-                                          msg.content,
-                                      };
-                                    }
-                                    return msg;
-                                  });
-
-                                  if (
-                                    state.status === 'completed' ||
-                                    state.status === 'aborted' ||
-                                    state.status === 'error'
-                                  ) {
-                                    try {
-                                      const sanitized = updated.map((m) => {
-                                        if (m.image && m.image.imageData) {
-                                          return {
-                                            ...m,
-                                            image: {
-                                              ...m.image,
-                                              imageData: undefined,
-                                            },
-                                          };
-                                        }
-                                        return m;
-                                      });
-                                      localStorage.setItem(CHAT_KEY, JSON.stringify(sanitized));
-                                    } catch {
-                                      // Storage may be unavailable.
-                                    }
-                                  }
-
-                                  return updated;
-                                });
-                              }}
+                              onStateChange={(state) => handleCommanderStateChange(state, index)}
                               onClose={() => handleDeleteMessage(index)}
                             />
                           )
@@ -6039,8 +6046,8 @@ DIRECTIVES:
                           </div>
                         )}
 
-                        {/* Message Action Toolbar (Only for standard non-MultiChat and non-Commander messages; MultiChat personas and Commander stages have individual toolbars) */}
-                        {(!message.multiChatResponses || message.multiChatResponses.length === 0) && message.tool !== 'commander' && (
+                        {/* Message Action Toolbar (Only for standard non-MultiChat messages; MultiChat personas have individual toolbars) */}
+                        {(!message.multiChatResponses || message.multiChatResponses.length === 0) && (
                           <div
                             className={`flex items-center gap-1.5 pt-1 opacity-70 group-hover:opacity-100 transition-opacity flex-wrap ${
                               theme === 'fulldark' ? 'text-[#888]' : 'text-zinc-400'

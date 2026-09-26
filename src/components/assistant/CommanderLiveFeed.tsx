@@ -32,6 +32,7 @@ export interface CommanderFeedSavedState {
   errorMessage?: string | null;
   sources?: AISource[];
   mode?: 'auto' | 'manual';
+  deletedStageIds?: string[];
 }
 
 interface CommanderLiveFeedProps {
@@ -133,7 +134,13 @@ export const CommanderLiveFeed: React.FC<CommanderLiveFeedProps> = ({
 
   const [copiedStageId, setCopiedStageId] = useState<string | null>(null);
   const [copiedAll, setCopiedAll] = useState<boolean>(false);
-  const [deletedStageIds, setDeletedStageIds] = useState<Set<string>>(new Set());
+  const [deletedStageIds, setDeletedStageIds] = useState<Set<string>>(
+    () => new Set(savedState?.deletedStageIds || []),
+  );
+  const deletedStageIdsRef = useRef(deletedStageIds);
+  deletedStageIdsRef.current = deletedStageIds;
+
+  const isUnmountedRef = useRef(false);
 
   // Internal audio player fallback if onPlayAudio prop not provided
   const [internalAudioLoadingKey, setInternalAudioLoadingKey] = useState<string | null>(null);
@@ -160,7 +167,9 @@ export const CommanderLiveFeed: React.FC<CommanderLiveFeedProps> = ({
       newResult?: CommanderResult | null,
       newError?: string | null,
       newSources?: AISource[],
+      newDeletedStageIds?: string[],
     ) => {
+      if (isUnmountedRef.current) return;
       onStateChangeRef.current?.({
         status: newStatus,
         steps: newSteps,
@@ -168,6 +177,7 @@ export const CommanderLiveFeed: React.FC<CommanderLiveFeedProps> = ({
         errorMessage: newError ?? null,
         sources: newSources || [],
         mode: configRef.current.mode,
+        deletedStageIds: newDeletedStageIds ?? Array.from(deletedStageIdsRef.current),
       });
     },
     [],
@@ -236,12 +246,14 @@ export const CommanderLiveFeed: React.FC<CommanderLiveFeedProps> = ({
       },
     })
       .then((res) => {
+        if (isUnmountedRef.current) return;
         setStatus('completed');
         setResult(res);
         setSources(res.sources || []);
         emitStateChange('completed', res.steps, res, null, res.sources || []);
       })
       .catch((err) => {
+        if (isUnmountedRef.current) return;
         if (controller.signal.aborted) {
           setStatus('aborted');
           emitStateChange('aborted', stepsRef.current, null, 'Mission stopped by user.', sourcesRef.current);
@@ -254,6 +266,7 @@ export const CommanderLiveFeed: React.FC<CommanderLiveFeedProps> = ({
       });
 
     return () => {
+      isUnmountedRef.current = true;
       controller.abort();
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -285,23 +298,49 @@ export const CommanderLiveFeed: React.FC<CommanderLiveFeedProps> = ({
   };
 
   const handleDeleteStage = (stageId: string) => {
-    setDeletedStageIds((prev) => {
-      const next = new Set(prev);
-      next.add(stageId);
-      return next;
-    });
+    const nextSet = new Set(deletedStageIds);
+    nextSet.add(stageId);
+    setDeletedStageIds(nextSet);
+    deletedStageIdsRef.current = nextSet;
 
     const isAlphaEnabled = config.alphaEnabled !== false;
     const isBetaEnabled = config.betaEnabled !== false;
     const isSynthEnabled = (config.synthesizerEnabled !== false) && (isAlphaEnabled || isBetaEnabled);
-    const validStageIds = ['commander', ...(isAlphaEnabled ? ['alpha'] : []), ...(isBetaEnabled ? ['beta'] : []), ...(isSynthEnabled ? ['synthesizer'] : [])];
+    const validStageIds = [
+      'commander',
+      ...(isAlphaEnabled ? ['alpha'] : []),
+      ...(isBetaEnabled ? ['beta'] : []),
+      ...(isSynthEnabled ? ['synthesizer'] : []),
+    ];
 
-    const remaining = validStageIds.filter(
-      (id) => id !== stageId && !next.has(id),
-    );
+    const remaining = validStageIds.filter((id) => !nextSet.has(id));
     if (remaining.length === 0) {
       onClose?.();
+      return;
     }
+
+    const updatedSteps = stepsRef.current.filter((s) => s.id !== stageId && s.agentId !== stageId);
+    setSteps(updatedSteps);
+    stepsRef.current = updatedSteps;
+
+    const updatedResult = result ? { ...result } : null;
+    if (updatedResult) {
+      if (stageId === 'commander') updatedResult.plan = '';
+      if (stageId === 'alpha') updatedResult.alphaFindings = '';
+      if (stageId === 'beta') updatedResult.betaFindings = '';
+      if (stageId === 'synthesizer') updatedResult.synthesis = '';
+      updatedResult.steps = updatedSteps;
+      setResult(updatedResult);
+    }
+
+    emitStateChange(
+      status,
+      updatedSteps,
+      updatedResult,
+      errorMessage,
+      sourcesRef.current,
+      Array.from(nextSet),
+    );
   };
 
   const handlePlayAudio = (text: string, stageKey: string, voiceId: string) => {
@@ -593,17 +632,35 @@ export const CommanderLiveFeed: React.FC<CommanderLiveFeedProps> = ({
           </div>
         </div>
 
-        {status === 'running' && (
-          <button
-            type="button"
-            onClick={handleStop}
-            className="px-2 py-0.5 rounded text-[11px] font-medium text-rose-300 bg-rose-950/60 hover:bg-rose-900/80 border border-rose-500/40 flex items-center gap-1 transition-colors"
-            title="Stop Execution"
-          >
-            <Square size={10} className="fill-current" />
-            <span>Stop</span>
-          </button>
-        )}
+        <div className="flex items-center gap-1.5 shrink-0">
+          {status === 'running' && (
+            <button
+              type="button"
+              onClick={handleStop}
+              className="px-2 py-0.5 rounded text-[11px] font-medium text-rose-300 bg-rose-950/60 hover:bg-rose-900/80 border border-rose-500/40 flex items-center gap-1 transition-colors"
+              title="Stop Execution"
+            >
+              <Square size={10} className="fill-current" />
+              <span>Stop</span>
+            </button>
+          )}
+
+          {onClose && (
+            <button
+              type="button"
+              onClick={onClose}
+              className={`p-1 rounded-md transition-colors flex items-center gap-1 text-xs ${
+                theme === 'fulldark'
+                  ? 'text-zinc-500 hover:text-red-400 hover:bg-red-500/10'
+                  : 'text-zinc-400 hover:text-red-400 hover:bg-red-500/10'
+              }`}
+              title="Delete Commander Pipeline answer"
+              aria-label="Delete Commander Pipeline answer"
+            >
+              <Trash2 size={13} />
+            </button>
+          )}
+        </div>
       </div>
 
       {bothSubAgentsDisabled && (
