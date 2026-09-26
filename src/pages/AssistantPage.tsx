@@ -903,6 +903,12 @@ export function AssistantPage() {
   const [betaEnhanceError, setBetaEnhanceError] = useState<string | null>(null);
   const [synthEnhanceError, setSynthEnhanceError] = useState<string | null>(null);
 
+  // Independent per-agent AI Enhance idea inputs
+  const [singleCommanderIdea, setSingleCommanderIdea] = useState<string>('');
+  const [singleAlphaIdea, setSingleAlphaIdea] = useState<string>('');
+  const [singleBetaIdea, setSingleBetaIdea] = useState<string>('');
+  const [singleSynthIdea, setSingleSynthIdea] = useState<string>('');
+
   const isEnhancingCommanderAny =
     enhancingCommanderPlan ||
     enhancingAlphaDirectives ||
@@ -1059,6 +1065,175 @@ export function AssistantPage() {
       })
       .catch((err: unknown) => {
         console.warn('[Commander Enhance] Final Synthesizer failed:', err);
+        setSynthEnhanceError(err instanceof Error ? err.message : 'Synthesis enhancement failed');
+      })
+      .finally(() => {
+        setEnhancingSynthDirectives(false);
+      });
+  };
+
+  const handleSingleEnhanceCommander = () => {
+    const rawIdea = singleCommanderIdea.trim();
+    if (!rawIdea || enhancingCommanderPlan) return;
+
+    setCommanderEnhanceError(null);
+    setEnhancingCommanderPlan(true);
+
+    const commanderModel = commanderConfig.modelId || storage.getCommanderAgentModel('commander');
+    const commanderProvider = getTargetProviderConfig(commanderModel);
+
+    enhanceCommanderPlan({
+      idea: rawIdea,
+      providerConfig: commanderProvider,
+    })
+      .then((newPlan) => {
+        if (newPlan) {
+          setCommanderConfig((prev) => {
+            const updated: CommanderConfig = {
+              ...prev,
+              manualConfig: {
+                ...prev.manualConfig,
+                commanderPlan: newPlan,
+              },
+            };
+            storage.saveCommanderConfig(updated);
+            return updated;
+          });
+        }
+      })
+      .catch((err: unknown) => {
+        console.warn('[Commander Enhance Single] Commander plan failed:', err);
+        setCommanderEnhanceError(err instanceof Error ? err.message : 'Plan enhancement failed');
+      })
+      .finally(() => {
+        setEnhancingCommanderPlan(false);
+      });
+  };
+
+  const handleSingleEnhanceAlpha = () => {
+    const rawIdea = singleAlphaIdea.trim();
+    if (!rawIdea || enhancingAlphaDirectives) return;
+
+    setAlphaEnhanceError(null);
+    setEnhancingAlphaDirectives(true);
+
+    const alphaModel =
+      commanderConfig.alphaModelId ||
+      commanderConfig.manualConfig.alphaModelId ||
+      storage.getCommanderAgentModel('alpha');
+    const alphaProvider = getTargetProviderConfig(alphaModel);
+    const isAlphaSearchOn = Boolean(commanderConfig.manualConfig.alphaSearchEnabled);
+
+    enhanceAlphaDirectives({
+      idea: rawIdea,
+      searchEnabled: isAlphaSearchOn,
+      providerConfig: alphaProvider,
+    })
+      .then((alphaData) => {
+        setCommanderConfig((prev) => {
+          const updated: CommanderConfig = {
+            ...prev,
+            manualConfig: {
+              ...prev.manualConfig,
+              ...(alphaData.role ? { alphaRole: alphaData.role } : {}),
+              ...(alphaData.task ? { alphaTask: alphaData.task } : {}),
+              ...(isAlphaSearchOn && alphaData.searchQuery
+                ? { alphaSearchQuery: alphaData.searchQuery }
+                : {}),
+            },
+          };
+          storage.saveCommanderConfig(updated);
+          return updated;
+        });
+      })
+      .catch((err: unknown) => {
+        console.warn('[Commander Enhance Single] Agent Alpha failed:', err);
+        setAlphaEnhanceError(err instanceof Error ? err.message : 'Alpha enhancement failed');
+      })
+      .finally(() => {
+        setEnhancingAlphaDirectives(false);
+      });
+  };
+
+  const handleSingleEnhanceBeta = () => {
+    const rawIdea = singleBetaIdea.trim();
+    if (!rawIdea || enhancingBetaDirectives) return;
+
+    setBetaEnhanceError(null);
+    setEnhancingBetaDirectives(true);
+
+    const betaModel =
+      commanderConfig.betaModelId ||
+      commanderConfig.manualConfig.betaModelId ||
+      storage.getCommanderAgentModel('beta');
+    const betaProvider = getTargetProviderConfig(betaModel);
+    const isBetaSearchOn = Boolean(commanderConfig.manualConfig.betaSearchEnabled);
+
+    enhanceBetaDirectives({
+      idea: rawIdea,
+      searchEnabled: isBetaSearchOn,
+      providerConfig: betaProvider,
+    })
+      .then((betaData) => {
+        setCommanderConfig((prev) => {
+          const updated: CommanderConfig = {
+            ...prev,
+            manualConfig: {
+              ...prev.manualConfig,
+              ...(betaData.role ? { betaRole: betaData.role } : {}),
+              ...(betaData.task ? { betaTask: betaData.task } : {}),
+              ...(isBetaSearchOn && betaData.searchQuery
+                ? { betaSearchQuery: betaData.searchQuery }
+                : {}),
+            },
+          };
+          storage.saveCommanderConfig(updated);
+          return updated;
+        });
+      })
+      .catch((err: unknown) => {
+        console.warn('[Commander Enhance Single] Agent Beta failed:', err);
+        setBetaEnhanceError(err instanceof Error ? err.message : 'Beta enhancement failed');
+      })
+      .finally(() => {
+        setEnhancingBetaDirectives(false);
+      });
+  };
+
+  const handleSingleEnhanceSynth = () => {
+    const rawIdea = singleSynthIdea.trim();
+    if (!rawIdea || enhancingSynthDirectives) return;
+
+    setSynthEnhanceError(null);
+    setEnhancingSynthDirectives(true);
+
+    const synthModel =
+      commanderConfig.synthesizerModelId ||
+      commanderConfig.manualConfig.synthesizerModelId ||
+      storage.getCommanderAgentModel('synthesizer');
+    const synthProvider = getTargetProviderConfig(synthModel);
+
+    enhanceSynthesizerDirectives({
+      idea: rawIdea,
+      providerConfig: synthProvider,
+    })
+      .then((newDirectives) => {
+        if (newDirectives) {
+          setCommanderConfig((prev) => {
+            const updated: CommanderConfig = {
+              ...prev,
+              manualConfig: {
+                ...prev.manualConfig,
+                synthesizerDirectives: newDirectives,
+              },
+            };
+            storage.saveCommanderConfig(updated);
+            return updated;
+          });
+        }
+      })
+      .catch((err: unknown) => {
+        console.warn('[Commander Enhance Single] Final Synthesizer failed:', err);
         setSynthEnhanceError(err instanceof Error ? err.message : 'Synthesis enhancement failed');
       })
       .finally(() => {
@@ -8211,42 +8386,98 @@ DIRECTIVES:
                           </div>
                         </div>
 
-                        {/* Commander Fixed Plan */}
-                        <div className="space-y-1">
-                          <div className="flex items-center justify-between">
-                            <label className="text-[11px] font-medium text-indigo-300">
-                              Commander's Fixed Plan / Task:
+                        {/* Commander Configuration */}
+                        <div className="p-2.5 rounded-lg border border-indigo-500/20 bg-indigo-950/10 space-y-2">
+                          <div className="text-[11px] font-semibold text-indigo-300 flex items-center justify-between">
+                            <div className="flex items-center gap-1.5">
+                              <span>Commander (Supreme Strategic Director)</span>
+                              {enhancingCommanderPlan && (
+                                <span className="text-[10px] text-indigo-400 flex items-center gap-1 font-mono font-normal">
+                                  <Loader2 size={10} className="animate-spin" />
+                                  <span>Enhancing...</span>
+                                </span>
+                              )}
+                            </div>
+                            <span className="text-[10px] text-zinc-400 font-mono">STEP 1</span>
+                          </div>
+
+                          {/* Nested compact AI Enhance for Commander */}
+                          <div className="p-2 rounded-md border border-indigo-500/20 bg-black/40 space-y-1.5">
+                            <div className="flex items-center justify-between">
+                              <label className="text-[10.5px] font-semibold text-indigo-300 flex items-center gap-1">
+                                <Sparkles size={11} className="text-amber-400" />
+                                <span>Describe your idea</span>
+                                <span className="text-zinc-500 text-[9.5px] font-normal">(Commander plan only)</span>
+                              </label>
+                            </div>
+                            <div className="flex flex-col sm:flex-row gap-1.5">
+                              <input
+                                type="text"
+                                value={singleCommanderIdea}
+                                onChange={(e) => {
+                                  setSingleCommanderIdea(e.target.value);
+                                  if (commanderEnhanceError) setCommanderEnhanceError(null);
+                                }}
+                                onKeyDown={(e) => {
+                                  if (e.key === 'Enter') {
+                                    e.preventDefault();
+                                    handleSingleEnhanceCommander();
+                                  }
+                                }}
+                                placeholder="Describe idea for Commander's tactical plan..."
+                                className="flex-1 rounded-md border border-zinc-700/80 bg-zinc-900/90 px-2.5 py-1 text-xs text-zinc-100 placeholder-zinc-600 outline-none focus:border-indigo-500"
+                              />
+                              <button
+                                type="button"
+                                onClick={handleSingleEnhanceCommander}
+                                disabled={!singleCommanderIdea.trim() || enhancingCommanderPlan}
+                                className={`px-2.5 py-1 rounded-md border text-[11px] font-medium flex items-center justify-center gap-1 transition-all shrink-0 ${
+                                  enhancingCommanderPlan
+                                    ? 'border-indigo-500/30 bg-indigo-950/40 text-indigo-300/60 cursor-not-allowed'
+                                    : !singleCommanderIdea.trim()
+                                    ? 'border-zinc-800 bg-zinc-900/50 text-zinc-500 cursor-not-allowed'
+                                    : 'border-indigo-500/50 bg-indigo-600/30 hover:bg-indigo-600/50 text-indigo-200 hover:text-white shadow-[0_0_8px_rgba(99,102,241,0.2)] active:scale-95'
+                                }`}
+                                title={!singleCommanderIdea.trim() ? 'Type your idea first' : 'AI Enhance Commander Plan only'}
+                              >
+                                {enhancingCommanderPlan ? (
+                                  <Loader2 size={11} className="animate-spin text-indigo-300" />
+                                ) : (
+                                  <Sparkles size={11} className="text-amber-400" />
+                                )}
+                                <span>{enhancingCommanderPlan ? 'Enhancing...' : 'AI Enhance'}</span>
+                              </button>
+                            </div>
+                          </div>
+
+                          <div className="space-y-1">
+                            <label className="text-[10px] text-zinc-400 block mb-0.5">
+                              Commander's Fixed Plan / Task
                             </label>
-                            {enhancingCommanderPlan && (
-                              <span className="text-[10px] text-indigo-400 flex items-center gap-1 font-mono">
-                                <Loader2 size={10} className="animate-spin" />
-                                <span>Enhancing plan...</span>
-                              </span>
+                            <textarea
+                              value={commanderConfig.manualConfig.commanderPlan}
+                              onChange={(e) => {
+                                const updated: CommanderConfig = {
+                                  ...commanderConfig,
+                                  manualConfig: {
+                                    ...commanderConfig.manualConfig,
+                                    commanderPlan: e.target.value,
+                                  },
+                                };
+                                setCommanderConfig(updated);
+                                storage.saveCommanderConfig(updated);
+                              }}
+                              rows={2}
+                              placeholder="Commander tactical directive..."
+                              className="w-full rounded-lg border border-zinc-700 bg-zinc-900 p-2 text-xs text-zinc-100 placeholder-zinc-600 outline-none focus:border-indigo-500 resize-none font-sans"
+                            />
+                            {commanderEnhanceError && (
+                              <p className="text-[10.5px] text-red-400 flex items-center gap-1 pt-0.5">
+                                <AlertCircle size={10} />
+                                <span>{commanderEnhanceError}</span>
+                              </p>
                             )}
                           </div>
-                          <textarea
-                            value={commanderConfig.manualConfig.commanderPlan}
-                            onChange={(e) => {
-                              const updated: CommanderConfig = {
-                                ...commanderConfig,
-                                manualConfig: {
-                                  ...commanderConfig.manualConfig,
-                                  commanderPlan: e.target.value,
-                                },
-                              };
-                              setCommanderConfig(updated);
-                              storage.saveCommanderConfig(updated);
-                            }}
-                            rows={2}
-                            placeholder="Commander tactical directive..."
-                            className="w-full rounded-xl border border-zinc-700 bg-zinc-900/90 p-2.5 text-xs text-zinc-100 placeholder-zinc-600 outline-none focus:border-indigo-500 resize-none font-sans"
-                          />
-                          {commanderEnhanceError && (
-                            <p className="text-[10.5px] text-red-400 flex items-center gap-1 pt-0.5">
-                              <AlertCircle size={10} />
-                              <span>{commanderEnhanceError}</span>
-                            </p>
-                          )}
                         </div>
 
                         {/* Agent Alpha Configuration */}
@@ -8280,6 +8511,55 @@ DIRECTIVES:
                               />
                               <span>Web Search</span>
                             </label>
+                          </div>
+
+                          {/* Nested compact AI Enhance for Agent Alpha */}
+                          <div className="p-2 rounded-md border border-cyan-500/20 bg-black/40 space-y-1.5">
+                            <div className="flex items-center justify-between">
+                              <label className="text-[10.5px] font-semibold text-cyan-300 flex items-center gap-1">
+                                <Sparkles size={11} className="text-amber-400" />
+                                <span>Describe your idea</span>
+                                <span className="text-zinc-500 text-[9.5px] font-normal">(Alpha directives only)</span>
+                              </label>
+                            </div>
+                            <div className="flex flex-col sm:flex-row gap-1.5">
+                              <input
+                                type="text"
+                                value={singleAlphaIdea}
+                                onChange={(e) => {
+                                  setSingleAlphaIdea(e.target.value);
+                                  if (alphaEnhanceError) setAlphaEnhanceError(null);
+                                }}
+                                onKeyDown={(e) => {
+                                  if (e.key === 'Enter') {
+                                    e.preventDefault();
+                                    handleSingleEnhanceAlpha();
+                                  }
+                                }}
+                                placeholder="Describe idea for Alpha's role, task & search query..."
+                                className="flex-1 rounded-md border border-zinc-700/80 bg-zinc-900/90 px-2.5 py-1 text-xs text-zinc-100 placeholder-zinc-600 outline-none focus:border-cyan-500"
+                              />
+                              <button
+                                type="button"
+                                onClick={handleSingleEnhanceAlpha}
+                                disabled={!singleAlphaIdea.trim() || enhancingAlphaDirectives}
+                                className={`px-2.5 py-1 rounded-md border text-[11px] font-medium flex items-center justify-center gap-1 transition-all shrink-0 ${
+                                  enhancingAlphaDirectives
+                                    ? 'border-cyan-500/30 bg-cyan-950/40 text-cyan-300/60 cursor-not-allowed'
+                                    : !singleAlphaIdea.trim()
+                                    ? 'border-zinc-800 bg-zinc-900/50 text-zinc-500 cursor-not-allowed'
+                                    : 'border-cyan-500/50 bg-cyan-600/30 hover:bg-cyan-600/50 text-cyan-200 hover:text-white shadow-[0_0_8px_rgba(6,182,212,0.2)] active:scale-95'
+                                }`}
+                                title={!singleAlphaIdea.trim() ? 'Type your idea first' : 'AI Enhance Agent Alpha only'}
+                              >
+                                {enhancingAlphaDirectives ? (
+                                  <Loader2 size={11} className="animate-spin text-cyan-300" />
+                                ) : (
+                                  <Sparkles size={11} className="text-amber-400" />
+                                )}
+                                <span>{enhancingAlphaDirectives ? 'Enhancing...' : 'AI Enhance'}</span>
+                              </button>
+                            </div>
                           </div>
 
                           <div className="space-y-1.5">
@@ -8407,6 +8687,55 @@ DIRECTIVES:
                             </label>
                           </div>
 
+                          {/* Nested compact AI Enhance for Agent Beta */}
+                          <div className="p-2 rounded-md border border-purple-500/20 bg-black/40 space-y-1.5">
+                            <div className="flex items-center justify-between">
+                              <label className="text-[10.5px] font-semibold text-purple-300 flex items-center gap-1">
+                                <Sparkles size={11} className="text-amber-400" />
+                                <span>Describe your idea</span>
+                                <span className="text-zinc-500 text-[9.5px] font-normal">(Beta directives only)</span>
+                              </label>
+                            </div>
+                            <div className="flex flex-col sm:flex-row gap-1.5">
+                              <input
+                                type="text"
+                                value={singleBetaIdea}
+                                onChange={(e) => {
+                                  setSingleBetaIdea(e.target.value);
+                                  if (betaEnhanceError) setBetaEnhanceError(null);
+                                }}
+                                onKeyDown={(e) => {
+                                  if (e.key === 'Enter') {
+                                    e.preventDefault();
+                                    handleSingleEnhanceBeta();
+                                  }
+                                }}
+                                placeholder="Describe idea for Beta's counter-angle, task & search query..."
+                                className="flex-1 rounded-md border border-zinc-700/80 bg-zinc-900/90 px-2.5 py-1 text-xs text-zinc-100 placeholder-zinc-600 outline-none focus:border-purple-500"
+                              />
+                              <button
+                                type="button"
+                                onClick={handleSingleEnhanceBeta}
+                                disabled={!singleBetaIdea.trim() || enhancingBetaDirectives}
+                                className={`px-2.5 py-1 rounded-md border text-[11px] font-medium flex items-center justify-center gap-1 transition-all shrink-0 ${
+                                  enhancingBetaDirectives
+                                    ? 'border-purple-500/30 bg-purple-950/40 text-purple-300/60 cursor-not-allowed'
+                                    : !singleBetaIdea.trim()
+                                    ? 'border-zinc-800 bg-zinc-900/50 text-zinc-500 cursor-not-allowed'
+                                    : 'border-purple-500/50 bg-purple-600/30 hover:bg-purple-600/50 text-purple-200 hover:text-white shadow-[0_0_8px_rgba(168,85,247,0.2)] active:scale-95'
+                                }`}
+                                title={!singleBetaIdea.trim() ? 'Type your idea first' : 'AI Enhance Agent Beta only'}
+                              >
+                                {enhancingBetaDirectives ? (
+                                  <Loader2 size={11} className="animate-spin text-purple-300" />
+                                ) : (
+                                  <Sparkles size={11} className="text-amber-400" />
+                                )}
+                                <span>{enhancingBetaDirectives ? 'Enhancing...' : 'AI Enhance'}</span>
+                              </button>
+                            </div>
+                          </div>
+
                           <div className="space-y-1.5">
                             <div>
                               <label className="text-[10px] text-zinc-400 block mb-0.5">
@@ -8527,6 +8856,55 @@ DIRECTIVES:
                               setCommanderConfig(updated);
                             }}
                           />
+
+                          {/* Nested compact AI Enhance for Final Synthesizer */}
+                          <div className="p-2 rounded-md border border-emerald-500/20 bg-black/40 space-y-1.5">
+                            <div className="flex items-center justify-between">
+                              <label className="text-[10.5px] font-semibold text-emerald-300 flex items-center gap-1">
+                                <Sparkles size={11} className="text-amber-400" />
+                                <span>Describe your idea</span>
+                                <span className="text-zinc-500 text-[9.5px] font-normal">(Synthesis focus only)</span>
+                              </label>
+                            </div>
+                            <div className="flex flex-col sm:flex-row gap-1.5">
+                              <input
+                                type="text"
+                                value={singleSynthIdea}
+                                onChange={(e) => {
+                                  setSingleSynthIdea(e.target.value);
+                                  if (synthEnhanceError) setSynthEnhanceError(null);
+                                }}
+                                onKeyDown={(e) => {
+                                  if (e.key === 'Enter') {
+                                    e.preventDefault();
+                                    handleSingleEnhanceSynth();
+                                  }
+                                }}
+                                placeholder="Describe idea for synthesis focus and harmonization..."
+                                className="flex-1 rounded-md border border-zinc-700/80 bg-zinc-900/90 px-2.5 py-1 text-xs text-zinc-100 placeholder-zinc-600 outline-none focus:border-emerald-500"
+                              />
+                              <button
+                                type="button"
+                                onClick={handleSingleEnhanceSynth}
+                                disabled={!singleSynthIdea.trim() || enhancingSynthDirectives}
+                                className={`px-2.5 py-1 rounded-md border text-[11px] font-medium flex items-center justify-center gap-1 transition-all shrink-0 ${
+                                  enhancingSynthDirectives
+                                    ? 'border-emerald-500/30 bg-emerald-950/40 text-emerald-300/60 cursor-not-allowed'
+                                    : !singleSynthIdea.trim()
+                                    ? 'border-zinc-800 bg-zinc-900/50 text-zinc-500 cursor-not-allowed'
+                                    : 'border-emerald-500/50 bg-emerald-600/30 hover:bg-emerald-600/50 text-emerald-200 hover:text-white shadow-[0_0_8px_rgba(16,185,129,0.2)] active:scale-95'
+                                }`}
+                                title={!singleSynthIdea.trim() ? 'Type your idea first' : 'AI Enhance Synthesizer only'}
+                              >
+                                {enhancingSynthDirectives ? (
+                                  <Loader2 size={11} className="animate-spin text-emerald-300" />
+                                ) : (
+                                  <Sparkles size={11} className="text-amber-400" />
+                                )}
+                                <span>{enhancingSynthDirectives ? 'Enhancing...' : 'AI Enhance'}</span>
+                              </button>
+                            </div>
+                          </div>
 
                           <div>
                             <label className="text-[10px] text-zinc-400 block mb-0.5">
