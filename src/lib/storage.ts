@@ -335,6 +335,7 @@ export const DEFAULT_PARALLAX_CONFIG: ParallaxSystemConfig = {
 
 export const DEFAULT_COMMANDER_CONFIG: CommanderConfig = {
   mode: 'auto',
+  effortLevel: 'medium',
   modelId: '',
   alphaModelId: '',
   betaModelId: '',
@@ -2259,6 +2260,7 @@ export const storage = {
     const manualConfig = stored.manualConfig || {};
     return {
       mode: stored.mode === 'manual' ? 'manual' : 'auto',
+      effortLevel: stored.effortLevel === 'small' || stored.effortLevel === 'high' ? stored.effortLevel : 'medium',
       modelId: stored.modelId || '',
       alphaModelId: stored.alphaModelId || manualConfig.alphaModelId || '',
       betaModelId: stored.betaModelId || manualConfig.betaModelId || '',
@@ -2288,6 +2290,18 @@ export const storage = {
   resetCommanderConfig(): CommanderConfig {
     write(KEYS.commanderConfig, DEFAULT_COMMANDER_CONFIG);
     return DEFAULT_COMMANDER_CONFIG;
+  },
+
+  getCommanderEffortLevel(): CommanderEffortLevel {
+    const cfg = this.getCommanderConfig();
+    return cfg.effortLevel || 'medium';
+  },
+
+  setCommanderEffortLevel(level: CommanderEffortLevel): CommanderConfig {
+    const cfg = this.getCommanderConfig();
+    cfg.effortLevel = level;
+    this.saveCommanderConfig(cfg);
+    return cfg;
   },
 
   getCommanderAgentEnabled(agentId: 'alpha' | 'beta' | 'synthesizer'): boolean {

@@ -1073,6 +1073,7 @@ export interface DocumentLibraryStats {
 // ==========================================
 
 export type CommanderMode = 'auto' | 'manual';
+export type CommanderEffortLevel = 'small' | 'medium' | 'high';
 
 export interface CommanderSystemPrompts {
   commander: string;
@@ -1099,6 +1100,7 @@ export interface CommanderManualConfig {
 
 export interface CommanderConfig {
   mode: CommanderMode;
+  effortLevel?: CommanderEffortLevel;
   modelId?: string;
   alphaModelId?: string;
   betaModelId?: string;
@@ -1140,6 +1142,7 @@ export interface CommanderFeedSavedState {
   errorMessage?: string | null;
   sources?: AISource[];
   mode?: CommanderMode;
+  effortLevel?: CommanderEffortLevel;
   deletedStageIds?: string[];
 }
 

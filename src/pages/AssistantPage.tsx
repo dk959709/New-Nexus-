@@ -8693,6 +8693,84 @@ DIRECTIVES:
                         </div>
                       </div>
 
+                      {/* Effort Level Selector: Small vs Medium vs High */}
+                      <div className="p-3 rounded-xl border border-zinc-800 bg-black/40 space-y-3">
+                        <div className="flex items-center justify-between">
+                          <span className="text-xs font-semibold text-zinc-200">
+                            Effort Level
+                          </span>
+                          <span className="text-[11px] text-zinc-400">
+                            {commanderConfig.effortLevel === 'small'
+                              ? 'Short, concise output (bullet points, no filler)'
+                              : commanderConfig.effortLevel === 'high'
+                              ? 'Detailed, thorough deep-dive'
+                              : 'Balanced length & depth (default)'}
+                          </span>
+                        </div>
+
+                        <div className="grid grid-cols-3 gap-2">
+                          <button
+                            type="button"
+                            onClick={() => {
+                              const updated: CommanderConfig = { ...commanderConfig, effortLevel: 'small' };
+                              setCommanderConfig(updated);
+                              storage.saveCommanderConfig(updated);
+                              triggerSettingsToast('Effort level set to Small (Concise output)');
+                            }}
+                            className={`p-2.5 rounded-xl border text-xs font-medium flex flex-col items-center gap-1 transition-all ${
+                              commanderConfig.effortLevel === 'small'
+                                ? 'bg-indigo-950/70 border-indigo-500/60 text-indigo-200 shadow-[0_0_12px_rgba(99,102,241,0.25)]'
+                                : 'bg-zinc-900 border-zinc-800 text-zinc-400 hover:text-zinc-200'
+                            }`}
+                          >
+                            <span className="font-semibold text-sm">⚡ Small</span>
+                            <span className="text-[10px] opacity-80 text-center">
+                              Short & Concise
+                            </span>
+                          </button>
+
+                          <button
+                            type="button"
+                            onClick={() => {
+                              const updated: CommanderConfig = { ...commanderConfig, effortLevel: 'medium' };
+                              setCommanderConfig(updated);
+                              storage.saveCommanderConfig(updated);
+                              triggerSettingsToast('Effort level set to Medium (Balanced output)');
+                            }}
+                            className={`p-2.5 rounded-xl border text-xs font-medium flex flex-col items-center gap-1 transition-all ${
+                              (!commanderConfig.effortLevel || commanderConfig.effortLevel === 'medium')
+                                ? 'bg-indigo-950/70 border-indigo-500/60 text-indigo-200 shadow-[0_0_12px_rgba(99,102,241,0.25)]'
+                                : 'bg-zinc-900 border-zinc-800 text-zinc-400 hover:text-zinc-200'
+                            }`}
+                          >
+                            <span className="font-semibold text-sm">⚖ Medium</span>
+                            <span className="text-[10px] opacity-80 text-center">
+                              Balanced (Default)
+                            </span>
+                          </button>
+
+                          <button
+                            type="button"
+                            onClick={() => {
+                              const updated: CommanderConfig = { ...commanderConfig, effortLevel: 'high' };
+                              setCommanderConfig(updated);
+                              storage.saveCommanderConfig(updated);
+                              triggerSettingsToast('Effort level set to High (Thorough & Detailed)');
+                            }}
+                            className={`p-2.5 rounded-xl border text-xs font-medium flex flex-col items-center gap-1 transition-all ${
+                              commanderConfig.effortLevel === 'high'
+                                ? 'bg-indigo-950/70 border-indigo-500/60 text-indigo-200 shadow-[0_0_12px_rgba(99,102,241,0.25)]'
+                                : 'bg-zinc-900 border-zinc-800 text-zinc-400 hover:text-zinc-200'
+                            }`}
+                          >
+                            <span className="font-semibold text-sm">🔥 High</span>
+                            <span className="text-[10px] opacity-80 text-center">
+                              Detailed & In-Depth
+                            </span>
+                          </button>
+                        </div>
+                      </div>
+
                       {/* AI Model Allocation (4-Agent Specialist Pipeline) */}
                       <div className="p-3 rounded-xl border border-zinc-800 bg-black/40 space-y-3">
                         <div className="flex items-center justify-between pb-1 border-b border-zinc-800/80">

@@ -3,6 +3,7 @@ import { storage } from '@/lib/storage';
 import { stripTierLabels } from '@/lib/format';
 import type {
   CommanderConfig,
+  CommanderEffortLevel,
   CommanderExecutionStep,
   CommanderResult,
   AISource,
@@ -41,6 +42,30 @@ export function getTargetProviderConfig(providerOrModelOverride?: string): AIPro
     keyStrategy: 'failover',
     keys: [],
   };
+}
+
+/**
+ * Safety net: strips 4-digit years from a search query that are NOT the current year
+ * and ARE more than 1 year in the past (e.g., "2024" or "2023" when the actual year is 2026),
+ * unless the user's query specifically asked about that past year.
+ */
+export function stripStaleYearsFromQuery(generatedQuery: string, userQuery?: string): string {
+  if (!generatedQuery) return '';
+  const currentYear = new Date().getFullYear();
+
+  const cleaned = generatedQuery.replace(/\b(19\d{2}|20\d{2})\b/g, (match) => {
+    const year = parseInt(match, 10);
+    // If year is NOT the current year and IS more than 1 year in the past:
+    if (year < currentYear - 1) {
+      if (userQuery && userQuery.includes(match)) {
+        return match;
+      }
+      return '';
+    }
+    return match;
+  });
+
+  return cleaned.replace(/\s{2,}/g, ' ').trim();
 }
 
 /**
@@ -157,6 +182,14 @@ export async function runCommanderPipeline({
   // If BOTH Agent Alpha and Agent Beta are disabled, Final Synthesizer is automatically skipped too (Requirement 2d)
   const isSynthEnabled = (config.synthesizerEnabled !== false) && (isAlphaEnabled || isBetaEnabled);
   const bothSubAgentsDisabled = !isAlphaEnabled && !isBetaEnabled;
+  const effortLevel: CommanderEffortLevel = config.effortLevel || 'medium';
+
+  const effortInstruction =
+    effortLevel === 'small'
+      ? '\n\nEFFORT LEVEL DIRECTIVE (CONCISE):\nKeep your response brief and concise — short paragraphs or bullet points only, no filler, cover only the most essential points.'
+      : effortLevel === 'high'
+      ? '\n\nEFFORT LEVEL DIRECTIVE (DETAILED):\nProvide a thorough, detailed response covering nuances, context, and supporting detail.'
+      : '';
 
   const commanderModel = config.modelId;
   const alphaModel = config.alphaModelId || config.manualConfig.alphaModelId;
@@ -170,6 +203,13 @@ export async function runCommanderPipeline({
 
   const steps: CommanderExecutionStep[] = [];
   const allSources: AISource[] = [];
+
+  const currentDate = new Date().toLocaleDateString('en-US', {
+    weekday: 'long',
+    year: 'numeric',
+    month: 'long',
+    day: 'numeric',
+  });
 
   const updateStep = (step: CommanderExecutionStep) => {
     const existingIdx = steps.findIndex((s) => s.id === step.id);
@@ -251,9 +291,14 @@ export async function runCommanderPipeline({
   } else {
     // AUTO MODE: Commander AI receives the user query and decides roles, tasks, and search queries at runtime
     // Adjust prompt dynamically based on which subordinate agents are enabled
+    const SEARCH_QUERY_DATE_RULE = `CRITICAL SEARCH QUERY RULE:
+When constructing search queries for Agent Alpha or Agent Beta, always use the ACTUAL current year and month (already provided to you as today's date) — never hardcode or reuse past years like 2024 or 2025 in a query unless the user's question is specifically about that past year. For 'latest/current/recent' type queries, bias toward the current year only.`;
+
     let autoPrompt = '';
     if (bothSubAgentsDisabled) {
-      autoPrompt = `You are the COMMANDER AI.
+      autoPrompt = `Today's current date is ${currentDate}.
+
+You are the COMMANDER AI.
 User Query: "${query}"
 
 Both subordinate agents (Agent Alpha and Agent Beta) are DISABLED for this mission. You operate as a solo strategic commander.
@@ -264,8 +309,12 @@ Respond ONLY with valid JSON in this exact structure:
   "plan": "Decisive, comprehensive strategic answer and tactical plan addressing the inquiry directly."
 }`;
     } else if (isAlphaEnabled && !isBetaEnabled) {
-      autoPrompt = `You are the COMMANDER AI.
+      autoPrompt = `Today's current date is ${currentDate}.
+
+You are the COMMANDER AI.
 User Query: "${query}"
+
+${SEARCH_QUERY_DATE_RULE}
 
 Only one specialist agent is available this run. Assign it a COMBINED task covering both the primary investigation angle AND the counter-perspective/risk-auditing angle that would normally be split across two agents — do not narrow its scope to just one half.
 
@@ -278,7 +327,7 @@ Decide:
    - "role": Descriptive combined persona title reflecting both investigation and critical analysis (e.g. "Lead Technical Investigator & Risk Auditor", "Systems Architect & Constraints Critic", "Clinical Evaluator & Safety Auditor").
    - "task": Concrete combined directives covering both the primary investigation and counter-perspective/risk auditing (2-3 sentences).
    - "search": Boolean (true if live or up-to-date web data is helpful, false otherwise).
-   - "searchQuery": Concise search query string if search is true, or empty string.
+   - "searchQuery": Concise search query string if search is true, or empty string. <use the actual current year, not an example>
 
 Respond ONLY with valid JSON in this exact structure:
 {
@@ -291,8 +340,12 @@ Respond ONLY with valid JSON in this exact structure:
   }
 }`;
     } else if (!isAlphaEnabled && isBetaEnabled) {
-      autoPrompt = `You are the COMMANDER AI.
+      autoPrompt = `Today's current date is ${currentDate}.
+
+You are the COMMANDER AI.
 User Query: "${query}"
+
+${SEARCH_QUERY_DATE_RULE}
 
 Only one specialist agent is available this run. Assign it a COMBINED task covering both the primary investigation angle AND the counter-perspective/risk-auditing angle that would normally be split across two agents — do not narrow its scope to just one half.
 
@@ -305,7 +358,7 @@ Decide:
    - "role": Descriptive combined persona title reflecting both investigation and critical analysis (e.g. "Lead Technical Investigator & Risk Auditor", "Systems Architect & Constraints Critic", "Clinical Evaluator & Safety Auditor").
    - "task": Concrete combined directives covering both the primary investigation and counter-perspective/risk auditing (2-3 sentences).
    - "search": Boolean (true if live or up-to-date web data is helpful, false otherwise).
-   - "searchQuery": Concise search query string if search is true, or empty string.
+   - "searchQuery": Concise search query string if search is true, or empty string. <use the actual current year, not an example>
 
 Respond ONLY with valid JSON in this exact structure:
 {
@@ -318,8 +371,12 @@ Respond ONLY with valid JSON in this exact structure:
   }
 }`;
     } else {
-      autoPrompt = `You are the COMMANDER AI.
+      autoPrompt = `Today's current date is ${currentDate}.
+
+You are the COMMANDER AI.
 User Query: "${query}"
+
+${SEARCH_QUERY_DATE_RULE}
 
 Analyze this query and decompose it for two elite subordinate agents:
 - Agent Alpha: Primary technical/domain investigator.
@@ -331,12 +388,12 @@ Decide:
    - "role": Specific descriptive persona title (e.g. "Quantum Algorithm Specialist", "Clinical Pharmacologist", "Full-Stack System Architect").
    - "task": Concrete investigation directives (1-2 sentences).
    - "search": Boolean (true if live or up-to-date web data is helpful, false otherwise).
-   - "searchQuery": Concise search query string if search is true, or empty string.
+   - "searchQuery": Concise search query string if search is true, or empty string. <use the actual current year, not an example>
 3. "beta":
    - "role": Counter-perspective or critical auditing role title (e.g. "Hardware Scalability Critic", "Toxicology & Risk Auditor", "Security Vulnerability Assessor").
    - "task": Specific stress-testing directives (1-2 sentences).
    - "search": Boolean (true if supplementary search is helpful, false otherwise).
-   - "searchQuery": Concise search query string if search is true, or empty string.
+   - "searchQuery": Concise search query string if search is true, or empty string. <use the actual current year, not an example>
 
 Respond ONLY with valid JSON in this exact structure:
 {
@@ -357,15 +414,33 @@ Respond ONLY with valid JSON in this exact structure:
     }
 
     try {
+      const commanderSystemPrompt = `Today's current date is ${currentDate}.
+
+${config.systemPrompts.commander}${effortInstruction}
+
+${SEARCH_QUERY_DATE_RULE}`;
+
+      const plannerMaxTokens = bothSubAgentsDisabled
+        ? effortLevel === 'small'
+          ? 400
+          : effortLevel === 'high'
+          ? 1800
+          : 900
+        : effortLevel === 'small'
+        ? 300
+        : effortLevel === 'high'
+        ? 800
+        : 500;
+
       const commanderRes = await api.jarvisAgentCall({
         agentId: 'commander_planner',
         messages: [
-          { role: 'system', content: config.systemPrompts.commander },
+          { role: 'system', content: commanderSystemPrompt },
           { role: 'user', content: autoPrompt },
         ],
         providerConfig: commanderProvider,
         temperature: 0.3,
-        maxTokens: 500,
+        maxTokens: plannerMaxTokens,
         timeoutMs: 25000,
         signal,
       });
@@ -392,13 +467,17 @@ Respond ONLY with valid JSON in this exact structure:
           alphaRole = parsedJson.alpha.role?.trim() || alphaRole;
           alphaTask = parsedJson.alpha.task?.trim() || alphaTask;
           alphaSearchEnabled = Boolean(parsedJson.alpha.search);
-          alphaSearchQuery = parsedJson.alpha.searchQuery?.trim() || query;
+          const rawAlphaQuery = parsedJson.alpha.searchQuery?.trim() || query;
+          const cleanedAlpha = stripStaleYearsFromQuery(rawAlphaQuery, query);
+          alphaSearchQuery = cleanedAlpha.length > 0 ? cleanedAlpha : query;
         }
         if (parsedJson.beta && isBetaEnabled) {
           betaRole = parsedJson.beta.role?.trim() || betaRole;
           betaTask = parsedJson.beta.task?.trim() || betaTask;
           betaSearchEnabled = Boolean(parsedJson.beta.search);
-          betaSearchQuery = parsedJson.beta.searchQuery?.trim() || query;
+          const rawBetaQuery = parsedJson.beta.searchQuery?.trim() || query;
+          const cleanedBeta = stripStaleYearsFromQuery(rawBetaQuery, query);
+          betaSearchQuery = cleanedBeta.length > 0 ? cleanedBeta : query;
         }
       } else {
         plan = `Investigate and resolve "${query}".`;
@@ -447,6 +526,11 @@ Respond ONLY with valid JSON in this exact structure:
 
     if (alphaSearchEnabled) {
       try {
+        const cleanedAlpha = stripStaleYearsFromQuery(alphaSearchQuery, query);
+        if (cleanedAlpha.length > 0) {
+          alphaSearchQuery = cleanedAlpha;
+          alphaStep.searchQuery = cleanedAlpha;
+        }
         const searchRes = await executeCommanderSearch(alphaSearchQuery, signal);
         alphaGrounding = searchRes.grounding;
         alphaSources = searchRes.sources;
@@ -466,6 +550,9 @@ Respond ONLY with valid JSON in this exact structure:
 SPECIAL COMBINED OPERATIONAL MANDATE:
 Only one specialist agent is available this run. Assign it a COMBINED task covering both the primary investigation angle AND the counter-perspective/risk-auditing angle that would normally be split across two agents — do not narrow its scope to just one half.
 You are operating as both the primary technical investigator and the critical counter-perspective auditor. Deliver deep technical rigor and empirical evidence while actively stress-testing assumptions, highlighting risks, caveats, counter-arguments, and trade-offs.`;
+    }
+    if (effortInstruction) {
+      alphaSystemPrompt = `${alphaSystemPrompt}${effortInstruction}`;
     }
 
     const alphaUserPrompt = !isBetaEnabled && config.mode !== 'manual'
@@ -493,6 +580,9 @@ INSTRUCTIONS:
 2. Provide technical clarity, specific data points, and structural insights.
 3. Be direct, authoritative, and factual.`;
 
+    const alphaMaxTokens =
+      effortLevel === 'small' ? 450 : effortLevel === 'high' ? 1800 : 900;
+
     try {
       const alphaRes = await api.jarvisAgentCall({
         agentId: 'commander_alpha',
@@ -502,7 +592,7 @@ INSTRUCTIONS:
         ],
         providerConfig: alphaProvider,
         temperature: 0.4,
-        maxTokens: 900,
+        maxTokens: alphaMaxTokens,
         timeoutMs: 30000,
         signal,
       });
@@ -544,6 +634,11 @@ INSTRUCTIONS:
 
     if (betaSearchEnabled) {
       try {
+        const cleanedBeta = stripStaleYearsFromQuery(betaSearchQuery, query);
+        if (cleanedBeta.length > 0) {
+          betaSearchQuery = cleanedBeta;
+          betaStep.searchQuery = cleanedBeta;
+        }
         const searchRes = await executeCommanderSearch(betaSearchQuery, signal);
         betaGrounding = searchRes.grounding;
         betaSources = searchRes.sources;
@@ -563,6 +658,9 @@ INSTRUCTIONS:
 SPECIAL COMBINED OPERATIONAL MANDATE:
 Only one specialist agent is available this run. Assign it a COMBINED task covering both the primary investigation angle AND the counter-perspective/risk-auditing angle that would normally be split across two agents — do not narrow its scope to just one half.
 You are operating as both the primary technical investigator and the critical counter-perspective auditor. Deliver deep technical rigor and empirical evidence while actively stress-testing assumptions, highlighting risks, caveats, counter-arguments, and trade-offs.`;
+    }
+    if (effortInstruction) {
+      betaSystemPrompt = `${betaSystemPrompt}${effortInstruction}`;
     }
 
     const betaUserPrompt = isAlphaEnabled && alphaFindings
@@ -607,6 +705,9 @@ INSTRUCTIONS:
 2. Identify caveats, edge cases, risks, counter-perspectives, and practical constraints.
 3. Be direct, authoritative, and factual.`;
 
+    const betaMaxTokens =
+      effortLevel === 'small' ? 450 : effortLevel === 'high' ? 1800 : 900;
+
     try {
       const betaRes = await api.jarvisAgentCall({
         agentId: 'commander_beta',
@@ -616,7 +717,7 @@ INSTRUCTIONS:
         ],
         providerConfig: betaProvider,
         temperature: 0.4,
-        maxTokens: 900,
+        maxTokens: betaMaxTokens,
         timeoutMs: 30000,
         signal,
       });
@@ -735,12 +836,18 @@ DIRECTIVES FOR FINAL SYNTHESIS:
     const HARD_SYNTH_GROUNDING_RULE = `You have a training knowledge cutoff that may be outdated. If an agent's findings are backed by live web search citations (real URLs/sources shown to you), you MUST treat those citations as more current and more trustworthy than your own internal/training knowledge — especially for questions about recent releases, current events, or anything time-sensitive. Never declare something 'does not exist' or 'is unverified' solely because it contradicts your own training knowledge, when real search citations say otherwise. If you are uncertain, say so neutrally — do not confidently override cited, sourced evidence with your own memory.`;
 
     const baseSynthPrompt = config.systemPrompts.synthesizer || config.systemPrompts.commander;
-    const finalSynthSystemPrompt = `Today's current date is ${currentDate}.
+    let finalSynthSystemPrompt = `Today's current date is ${currentDate}.
 
 ${baseSynthPrompt}
 
 CRITICAL GROUNDING & KNOWLEDGE CUTOFF RULE:
 ${HARD_SYNTH_GROUNDING_RULE}`;
+    if (effortInstruction) {
+      finalSynthSystemPrompt = `${finalSynthSystemPrompt}${effortInstruction}`;
+    }
+
+    const synthMaxTokens =
+      effortLevel === 'small' ? 900 : effortLevel === 'high' ? 3600 : 1800;
 
     try {
       const synthRes = await api.jarvisAgentCall({
@@ -754,7 +861,7 @@ ${HARD_SYNTH_GROUNDING_RULE}`;
         ],
         providerConfig: synthProvider,
         temperature: 0.35,
-        maxTokens: 1800,
+        maxTokens: synthMaxTokens,
         timeoutMs: 40000,
         signal,
       });
