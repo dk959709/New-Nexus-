@@ -246,3 +246,160 @@ export async function enhanceSynthesizerDirectives({
   }
   return cleaned;
 }
+
+/**
+ * AI Enhance System Prompt: Commander (Strategic Planner)
+ */
+export async function enhanceCommanderSystemPrompt({
+  idea,
+  providerConfig,
+  signal,
+}: EnhanceCommanderOptions): Promise<string> {
+  const res = await api.jarvisAgentCall({
+    agentId: 'commander_system_prompt_enhancer',
+    messages: [
+      {
+        role: 'system',
+        content:
+          'You are an expert AI prompt engineer configuring the COMMANDER (the supreme strategic director of an elite multi-agent intelligence unit).\nGiven the user\'s idea or desired focus, generate an authoritative, rigorous system prompt (1 cohesive paragraph, ~50-80 words) for the Commander.\nThe prompt must establish the Commander\'s mandate: analyze the objective, formulate a decisive tactical mission plan, delegate complementary research vectors to Agent Alpha (lead investigator) and Agent Beta (critical validator), and enforce factual accuracy.\nOutput ONLY the enhanced system prompt text itself, with no greetings, preamble, quotes, or markdown bullets.',
+      },
+      {
+        role: 'user',
+        content: `Desired focus/idea: "${idea}"`,
+      },
+    ],
+    providerConfig,
+    temperature: 0.4,
+    maxTokens: 280,
+    timeoutMs: 10000,
+    signal,
+  });
+
+  if (!res.ok) {
+    throw new Error(res.error || 'Failed to generate Commander system prompt');
+  }
+
+  const cleaned = cleanText(res.text || res.content);
+  if (!cleaned) {
+    throw new Error('Received empty system prompt from model');
+  }
+  return cleaned;
+}
+
+/**
+ * AI Enhance System Prompt: Agent Alpha (Lead Investigator)
+ */
+export async function enhanceAlphaSystemPrompt({
+  idea,
+  providerConfig,
+  signal,
+}: EnhanceCommanderOptions): Promise<string> {
+  const res = await api.jarvisAgentCall({
+    agentId: 'alpha_system_prompt_enhancer',
+    messages: [
+      {
+        role: 'system',
+        content:
+          'You are an expert AI prompt engineer configuring AGENT ALPHA (the lead investigative operative and primary domain specialist of a Commander unit).\nGiven the user\'s idea or desired focus, generate a sharp, analytical system prompt (1 cohesive paragraph, ~50-80 words) for Agent Alpha.\nThe prompt must establish Alpha\'s mandate: tackle the core empirical, technical, or factual vectors of the mission, conduct thorough analysis, extract critical data, verify claims with precision, and deliver direct unvarnished intelligence.\nOutput ONLY the enhanced system prompt text itself, with no greetings, preamble, quotes, or markdown bullets.',
+      },
+      {
+        role: 'user',
+        content: `Desired focus/idea: "${idea}"`,
+      },
+    ],
+    providerConfig,
+    temperature: 0.4,
+    maxTokens: 280,
+    timeoutMs: 10000,
+    signal,
+  });
+
+  if (!res.ok) {
+    throw new Error(res.error || 'Failed to generate Agent Alpha system prompt');
+  }
+
+  const cleaned = cleanText(res.text || res.content);
+  if (!cleaned) {
+    throw new Error('Received empty system prompt from model');
+  }
+  return cleaned;
+}
+
+/**
+ * AI Enhance System Prompt: Agent Beta (Counter-Perspective / Validator)
+ */
+export async function enhanceBetaSystemPrompt({
+  idea,
+  providerConfig,
+  signal,
+}: EnhanceCommanderOptions): Promise<string> {
+  const res = await api.jarvisAgentCall({
+    agentId: 'beta_system_prompt_enhancer',
+    messages: [
+      {
+        role: 'system',
+        content:
+          'You are an expert AI prompt engineer configuring AGENT BETA (the critical validator, counter-perspective specialist, and risk analyst of a Commander unit).\nGiven the user\'s idea or desired focus, generate a sharp, rigorous system prompt (1 cohesive paragraph, ~50-80 words) for Agent Beta.\nThe prompt must establish Beta\'s mandate: stress-test hypotheses, identify edge cases, uncover alternative viewpoints or hidden trade-offs, scrutinize assumptions, and supply essential balance to Agent Alpha\'s findings.\nOutput ONLY the enhanced system prompt text itself, with no greetings, preamble, quotes, or markdown bullets.',
+      },
+      {
+        role: 'user',
+        content: `Desired focus/idea: "${idea}"`,
+      },
+    ],
+    providerConfig,
+    temperature: 0.4,
+    maxTokens: 280,
+    timeoutMs: 10000,
+    signal,
+  });
+
+  if (!res.ok) {
+    throw new Error(res.error || 'Failed to generate Agent Beta system prompt');
+  }
+
+  const cleaned = cleanText(res.text || res.content);
+  if (!cleaned) {
+    throw new Error('Received empty system prompt from model');
+  }
+  return cleaned;
+}
+
+/**
+ * AI Enhance System Prompt: Final Synthesizer (Master Synthesis)
+ */
+export async function enhanceSynthesizerSystemPrompt({
+  idea,
+  providerConfig,
+  signal,
+}: EnhanceCommanderOptions): Promise<string> {
+  const res = await api.jarvisAgentCall({
+    agentId: 'synthesizer_system_prompt_enhancer',
+    messages: [
+      {
+        role: 'system',
+        content:
+          'You are an expert AI prompt engineer configuring the FINAL SYNTHESIZER presiding over the definitive intelligence resolution in a multi-agent unit.\nGiven the user\'s idea or desired focus, generate an authoritative, master-level system prompt (1 cohesive paragraph, ~50-80 words) for the Final Synthesizer.\nThe prompt must establish the Synthesizer\'s mandate: synthesize raw intelligence from Agent Alpha and critical stress-tests from Agent Beta, harmonize competing perspectives, resolve trade-offs, and deliver a comprehensive, authoritative, beautifully structured master verdict.\nOutput ONLY the enhanced system prompt text itself, with no greetings, preamble, quotes, or markdown bullets.',
+      },
+      {
+        role: 'user',
+        content: `Desired focus/idea: "${idea}"`,
+      },
+    ],
+    providerConfig,
+    temperature: 0.4,
+    maxTokens: 280,
+    timeoutMs: 10000,
+    signal,
+  });
+
+  if (!res.ok) {
+    throw new Error(res.error || 'Failed to generate Final Synthesizer system prompt');
+  }
+
+  const cleaned = cleanText(res.text || res.content);
+  if (!cleaned) {
+    throw new Error('Received empty system prompt from model');
+  }
+  return cleaned;
+}
+

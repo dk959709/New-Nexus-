@@ -77,6 +77,10 @@ import {
   enhanceAlphaDirectives,
   enhanceBetaDirectives,
   enhanceSynthesizerDirectives,
+  enhanceCommanderSystemPrompt,
+  enhanceAlphaSystemPrompt,
+  enhanceBetaSystemPrompt,
+  enhanceSynthesizerSystemPrompt,
 } from '@/services/commanderEnhanceService';
 import type {
   AISource,
@@ -908,6 +912,22 @@ export function AssistantPage() {
   const [singleAlphaIdea, setSingleAlphaIdea] = useState<string>('');
   const [singleBetaIdea, setSingleBetaIdea] = useState<string>('');
   const [singleSynthIdea, setSingleSynthIdea] = useState<string>('');
+
+  // 4 Agent System Prompt AI Enhance states
+  const [singleCommanderSystemPromptIdea, setSingleCommanderSystemPromptIdea] = useState<string>('');
+  const [singleAlphaSystemPromptIdea, setSingleAlphaSystemPromptIdea] = useState<string>('');
+  const [singleBetaSystemPromptIdea, setSingleBetaSystemPromptIdea] = useState<string>('');
+  const [singleSynthSystemPromptIdea, setSingleSynthSystemPromptIdea] = useState<string>('');
+
+  const [enhancingCommanderSystemPrompt, setEnhancingCommanderSystemPrompt] = useState<boolean>(false);
+  const [enhancingAlphaSystemPrompt, setEnhancingAlphaSystemPrompt] = useState<boolean>(false);
+  const [enhancingBetaSystemPrompt, setEnhancingBetaSystemPrompt] = useState<boolean>(false);
+  const [enhancingSynthSystemPrompt, setEnhancingSynthSystemPrompt] = useState<boolean>(false);
+
+  const [commanderSystemPromptError, setCommanderSystemPromptError] = useState<string | null>(null);
+  const [alphaSystemPromptError, setAlphaSystemPromptError] = useState<string | null>(null);
+  const [betaSystemPromptError, setBetaSystemPromptError] = useState<string | null>(null);
+  const [synthSystemPromptError, setSynthSystemPromptError] = useState<string | null>(null);
 
   const isEnhancingCommanderAny =
     enhancingCommanderPlan ||
@@ -1832,6 +1852,236 @@ ${commanderConfig.systemPrompts.synthesizer?.trim() || '(Default system prompt)'
     });
     setSynthEnhanceError(null);
     triggerSettingsToast('Final Synthesizer directives reset to default.');
+  };
+
+  // 4 Agent System Prompt AI Enhance Handlers
+  const handleEnhanceCommanderSystemPrompt = () => {
+    const rawIdea = singleCommanderSystemPromptIdea.trim();
+    if (!rawIdea || enhancingCommanderSystemPrompt) return;
+
+    setCommanderSystemPromptError(null);
+    setEnhancingCommanderSystemPrompt(true);
+
+    const commanderModel = commanderConfig.modelId || storage.getCommanderAgentModel('commander');
+    const commanderProvider = getTargetProviderConfig(commanderModel);
+
+    enhanceCommanderSystemPrompt({
+      idea: rawIdea,
+      providerConfig: commanderProvider,
+    })
+      .then((newPrompt) => {
+        if (newPrompt) {
+          setCommanderConfig((prev) => {
+            const updated: CommanderConfig = {
+              ...prev,
+              systemPrompts: {
+                ...prev.systemPrompts,
+                commander: newPrompt,
+              },
+            };
+            storage.saveCommanderConfig(updated);
+            return updated;
+          });
+          triggerSettingsToast('Commander system prompt enhanced!');
+        }
+      })
+      .catch((err: unknown) => {
+        console.warn('[Commander System Prompt Enhance] Failed:', err);
+        setCommanderSystemPromptError(err instanceof Error ? err.message : 'Enhancement failed');
+      })
+      .finally(() => {
+        setEnhancingCommanderSystemPrompt(false);
+      });
+  };
+
+  const handleEnhanceAlphaSystemPrompt = () => {
+    const rawIdea = singleAlphaSystemPromptIdea.trim();
+    if (!rawIdea || enhancingAlphaSystemPrompt) return;
+
+    setAlphaSystemPromptError(null);
+    setEnhancingAlphaSystemPrompt(true);
+
+    const alphaModel =
+      commanderConfig.alphaModelId ||
+      commanderConfig.manualConfig.alphaModelId ||
+      storage.getCommanderAgentModel('alpha');
+    const alphaProvider = getTargetProviderConfig(alphaModel);
+
+    enhanceAlphaSystemPrompt({
+      idea: rawIdea,
+      providerConfig: alphaProvider,
+    })
+      .then((newPrompt) => {
+        if (newPrompt) {
+          setCommanderConfig((prev) => {
+            const updated: CommanderConfig = {
+              ...prev,
+              systemPrompts: {
+                ...prev.systemPrompts,
+                alpha: newPrompt,
+              },
+            };
+            storage.saveCommanderConfig(updated);
+            return updated;
+          });
+          triggerSettingsToast('Agent Alpha system prompt enhanced!');
+        }
+      })
+      .catch((err: unknown) => {
+        console.warn('[Alpha System Prompt Enhance] Failed:', err);
+        setAlphaSystemPromptError(err instanceof Error ? err.message : 'Enhancement failed');
+      })
+      .finally(() => {
+        setEnhancingAlphaSystemPrompt(false);
+      });
+  };
+
+  const handleEnhanceBetaSystemPrompt = () => {
+    const rawIdea = singleBetaSystemPromptIdea.trim();
+    if (!rawIdea || enhancingBetaSystemPrompt) return;
+
+    setBetaSystemPromptError(null);
+    setEnhancingBetaSystemPrompt(true);
+
+    const betaModel =
+      commanderConfig.betaModelId ||
+      commanderConfig.manualConfig.betaModelId ||
+      storage.getCommanderAgentModel('beta');
+    const betaProvider = getTargetProviderConfig(betaModel);
+
+    enhanceBetaSystemPrompt({
+      idea: rawIdea,
+      providerConfig: betaProvider,
+    })
+      .then((newPrompt) => {
+        if (newPrompt) {
+          setCommanderConfig((prev) => {
+            const updated: CommanderConfig = {
+              ...prev,
+              systemPrompts: {
+                ...prev.systemPrompts,
+                beta: newPrompt,
+              },
+            };
+            storage.saveCommanderConfig(updated);
+            return updated;
+          });
+          triggerSettingsToast('Agent Beta system prompt enhanced!');
+        }
+      })
+      .catch((err: unknown) => {
+        console.warn('[Beta System Prompt Enhance] Failed:', err);
+        setBetaSystemPromptError(err instanceof Error ? err.message : 'Enhancement failed');
+      })
+      .finally(() => {
+        setEnhancingBetaSystemPrompt(false);
+      });
+  };
+
+  const handleEnhanceSynthSystemPrompt = () => {
+    const rawIdea = singleSynthSystemPromptIdea.trim();
+    if (!rawIdea || enhancingSynthSystemPrompt) return;
+
+    setSynthSystemPromptError(null);
+    setEnhancingSynthSystemPrompt(true);
+
+    const synthModel =
+      commanderConfig.synthesizerModelId ||
+      commanderConfig.manualConfig.synthesizerModelId ||
+      storage.getCommanderAgentModel('synthesizer');
+    const synthProvider = getTargetProviderConfig(synthModel);
+
+    enhanceSynthesizerSystemPrompt({
+      idea: rawIdea,
+      providerConfig: synthProvider,
+    })
+      .then((newPrompt) => {
+        if (newPrompt) {
+          setCommanderConfig((prev) => {
+            const updated: CommanderConfig = {
+              ...prev,
+              systemPrompts: {
+                ...prev.systemPrompts,
+                synthesizer: newPrompt,
+              },
+            };
+            storage.saveCommanderConfig(updated);
+            return updated;
+          });
+          triggerSettingsToast('Final Synthesizer system prompt enhanced!');
+        }
+      })
+      .catch((err: unknown) => {
+        console.warn('[Synthesizer System Prompt Enhance] Failed:', err);
+        setSynthSystemPromptError(err instanceof Error ? err.message : 'Enhancement failed');
+      })
+      .finally(() => {
+        setEnhancingSynthSystemPrompt(false);
+      });
+  };
+
+  const handleResetCommanderSystemPrompt = () => {
+    setCommanderConfig((prev) => {
+      const updated: CommanderConfig = {
+        ...prev,
+        systemPrompts: {
+          ...prev.systemPrompts,
+          commander: DEFAULT_COMMANDER_CONFIG.systemPrompts.commander,
+        },
+      };
+      storage.saveCommanderConfig(updated);
+      return updated;
+    });
+    setCommanderSystemPromptError(null);
+    triggerSettingsToast('Commander system prompt reset to default.');
+  };
+
+  const handleResetAlphaSystemPrompt = () => {
+    setCommanderConfig((prev) => {
+      const updated: CommanderConfig = {
+        ...prev,
+        systemPrompts: {
+          ...prev.systemPrompts,
+          alpha: DEFAULT_COMMANDER_CONFIG.systemPrompts.alpha,
+        },
+      };
+      storage.saveCommanderConfig(updated);
+      return updated;
+    });
+    setAlphaSystemPromptError(null);
+    triggerSettingsToast('Agent Alpha system prompt reset to default.');
+  };
+
+  const handleResetBetaSystemPrompt = () => {
+    setCommanderConfig((prev) => {
+      const updated: CommanderConfig = {
+        ...prev,
+        systemPrompts: {
+          ...prev.systemPrompts,
+          beta: DEFAULT_COMMANDER_CONFIG.systemPrompts.beta,
+        },
+      };
+      storage.saveCommanderConfig(updated);
+      return updated;
+    });
+    setBetaSystemPromptError(null);
+    triggerSettingsToast('Agent Beta system prompt reset to default.');
+  };
+
+  const handleResetSynthSystemPrompt = () => {
+    setCommanderConfig((prev) => {
+      const updated: CommanderConfig = {
+        ...prev,
+        systemPrompts: {
+          ...prev.systemPrompts,
+          synthesizer: DEFAULT_COMMANDER_CONFIG.systemPrompts.synthesizer,
+        },
+      };
+      storage.saveCommanderConfig(updated);
+      return updated;
+    });
+    setSynthSystemPromptError(null);
+    triggerSettingsToast('Final Synthesizer system prompt reset to default.');
   };
 
   const activeSpecialistMode = architectEnabled
@@ -9102,10 +9352,76 @@ DIRECTIVES:
                         {commanderPromptsExpanded && (
                           <div className="p-3 space-y-3 border-t border-zinc-800/80 text-xs">
                             {/* Commander Prompt */}
-                            <div className="space-y-1">
-                              <label className="text-[11px] font-medium text-indigo-300">
-                                Commander System Prompt (Strategic Planner):
-                              </label>
+                            <div className="p-2.5 rounded-lg border border-indigo-500/20 bg-indigo-950/10 space-y-2">
+                              <div className="text-[11px] font-semibold text-indigo-300 flex flex-wrap items-center justify-between gap-1.5">
+                                <div className="flex items-center gap-1.5">
+                                  <span>Commander System Prompt (Strategic Planner)</span>
+                                  {enhancingCommanderSystemPrompt && (
+                                    <span className="text-[10px] text-indigo-400 flex items-center gap-1 font-mono font-normal">
+                                      <Loader2 size={10} className="animate-spin" />
+                                      <span>Enhancing...</span>
+                                    </span>
+                                  )}
+                                </div>
+                                <button
+                                  type="button"
+                                  onClick={handleResetCommanderSystemPrompt}
+                                  className="text-[10px] font-medium text-zinc-400 hover:text-indigo-200 px-2 py-0.5 rounded border border-zinc-700/60 hover:border-indigo-500/40 bg-zinc-900/80 hover:bg-indigo-950/40 flex items-center gap-1 transition-colors"
+                                  title="Reset Commander system prompt to default"
+                                >
+                                  <RotateCcw size={10} />
+                                  <span>Reset</span>
+                                </button>
+                              </div>
+
+                              {/* Nested compact AI Enhance for Commander System Prompt */}
+                              <div className="p-2 rounded-md border border-indigo-500/20 bg-black/40 space-y-1.5">
+                                <div className="flex items-center justify-between">
+                                  <label className="text-[10.5px] font-semibold text-indigo-300 flex items-center gap-1">
+                                    <Sparkles size={11} className="text-amber-400" />
+                                    <span>Describe prompt focus / persona style</span>
+                                  </label>
+                                </div>
+                                <div className="flex flex-col sm:flex-row gap-1.5">
+                                  <input
+                                    type="text"
+                                    value={singleCommanderSystemPromptIdea}
+                                    onChange={(e) => {
+                                      setSingleCommanderSystemPromptIdea(e.target.value);
+                                      if (commanderSystemPromptError) setCommanderSystemPromptError(null);
+                                    }}
+                                    onKeyDown={(e) => {
+                                      if (e.key === 'Enter') {
+                                        e.preventDefault();
+                                        handleEnhanceCommanderSystemPrompt();
+                                      }
+                                    }}
+                                    placeholder="e.g. Focus on military precision, operational delegation, and zero ambiguity..."
+                                    className="flex-1 rounded-md border border-zinc-700/80 bg-zinc-900/90 px-2.5 py-1 text-xs text-zinc-100 placeholder-zinc-600 outline-none focus:border-indigo-500"
+                                  />
+                                  <button
+                                    type="button"
+                                    onClick={handleEnhanceCommanderSystemPrompt}
+                                    disabled={!singleCommanderSystemPromptIdea.trim() || enhancingCommanderSystemPrompt}
+                                    className={`px-2.5 py-1 rounded-md border text-[11px] font-medium flex items-center justify-center gap-1 transition-all shrink-0 ${
+                                      enhancingCommanderSystemPrompt
+                                        ? 'border-indigo-500/30 bg-indigo-950/40 text-indigo-300/60 cursor-not-allowed'
+                                        : !singleCommanderSystemPromptIdea.trim()
+                                        ? 'border-zinc-800 bg-zinc-900/50 text-zinc-500 cursor-not-allowed'
+                                        : 'border-indigo-500/50 bg-indigo-600/30 hover:bg-indigo-600/50 text-indigo-200 hover:text-white shadow-[0_0_8px_rgba(99,102,241,0.2)] active:scale-95'
+                                    }`}
+                                    title={!singleCommanderSystemPromptIdea.trim() ? 'Type prompt idea first' : 'AI Enhance Commander System Prompt'}
+                                  >
+                                    {enhancingCommanderSystemPrompt ? (
+                                      <Loader2 size={11} className="animate-spin text-indigo-300" />
+                                    ) : (
+                                      <Sparkles size={11} className="text-amber-400" />
+                                    )}
+                                    <span>{enhancingCommanderSystemPrompt ? 'Enhancing...' : 'AI Enhance'}</span>
+                                  </button>
+                                </div>
+                              </div>
+
                               <textarea
                                 value={commanderConfig.systemPrompts.commander}
                                 onChange={(e) => {
@@ -9120,15 +9436,87 @@ DIRECTIVES:
                                   storage.saveCommanderConfig(updated);
                                 }}
                                 rows={3}
-                                className="w-full rounded-xl border border-zinc-700 bg-zinc-900/90 p-2.5 text-xs text-zinc-100 placeholder-zinc-600 outline-none focus:border-indigo-500 resize-none font-sans"
+                                className="w-full rounded-lg border border-zinc-700 bg-zinc-900 p-2 text-xs text-zinc-100 placeholder-zinc-600 outline-none focus:border-indigo-500 resize-none font-sans"
                               />
+                              {commanderSystemPromptError && (
+                                <p className="text-[10.5px] text-red-400 flex items-center gap-1 pt-0.5">
+                                  <AlertCircle size={10} />
+                                  <span>{commanderSystemPromptError}</span>
+                                </p>
+                              )}
                             </div>
 
                             {/* Alpha Prompt */}
-                            <div className="space-y-1">
-                              <label className="text-[11px] font-medium text-cyan-300">
-                                Agent Alpha System Prompt (Lead Investigator):
-                              </label>
+                            <div className="p-2.5 rounded-lg border border-cyan-500/20 bg-cyan-950/10 space-y-2">
+                              <div className="text-[11px] font-semibold text-cyan-300 flex flex-wrap items-center justify-between gap-1.5">
+                                <div className="flex items-center gap-1.5">
+                                  <span>Agent Alpha System Prompt (Lead Investigator)</span>
+                                  {enhancingAlphaSystemPrompt && (
+                                    <span className="text-[10px] text-cyan-400 flex items-center gap-1 font-mono font-normal">
+                                      <Loader2 size={10} className="animate-spin" />
+                                      <span>Enhancing...</span>
+                                    </span>
+                                  )}
+                                </div>
+                                <button
+                                  type="button"
+                                  onClick={handleResetAlphaSystemPrompt}
+                                  className="text-[10px] font-medium text-zinc-400 hover:text-cyan-200 px-2 py-0.5 rounded border border-zinc-700/60 hover:border-cyan-500/40 bg-zinc-900/80 hover:bg-cyan-950/40 flex items-center gap-1 transition-colors"
+                                  title="Reset Agent Alpha system prompt to default"
+                                >
+                                  <RotateCcw size={10} />
+                                  <span>Reset</span>
+                                </button>
+                              </div>
+
+                              {/* Nested compact AI Enhance for Alpha System Prompt */}
+                              <div className="p-2 rounded-md border border-cyan-500/20 bg-black/40 space-y-1.5">
+                                <div className="flex items-center justify-between">
+                                  <label className="text-[10.5px] font-semibold text-cyan-300 flex items-center gap-1">
+                                    <Sparkles size={11} className="text-amber-400" />
+                                    <span>Describe prompt focus / persona style</span>
+                                  </label>
+                                </div>
+                                <div className="flex flex-col sm:flex-row gap-1.5">
+                                  <input
+                                    type="text"
+                                    value={singleAlphaSystemPromptIdea}
+                                    onChange={(e) => {
+                                      setSingleAlphaSystemPromptIdea(e.target.value);
+                                      if (alphaSystemPromptError) setAlphaSystemPromptError(null);
+                                    }}
+                                    onKeyDown={(e) => {
+                                      if (e.key === 'Enter') {
+                                        e.preventDefault();
+                                        handleEnhanceAlphaSystemPrompt();
+                                      }
+                                    }}
+                                    placeholder="e.g. Focus on deep-tech engineering, empirical benchmarks, and code analysis..."
+                                    className="flex-1 rounded-md border border-zinc-700/80 bg-zinc-900/90 px-2.5 py-1 text-xs text-zinc-100 placeholder-zinc-600 outline-none focus:border-cyan-500"
+                                  />
+                                  <button
+                                    type="button"
+                                    onClick={handleEnhanceAlphaSystemPrompt}
+                                    disabled={!singleAlphaSystemPromptIdea.trim() || enhancingAlphaSystemPrompt}
+                                    className={`px-2.5 py-1 rounded-md border text-[11px] font-medium flex items-center justify-center gap-1 transition-all shrink-0 ${
+                                      enhancingAlphaSystemPrompt
+                                        ? 'border-cyan-500/30 bg-cyan-950/40 text-cyan-300/60 cursor-not-allowed'
+                                        : !singleAlphaSystemPromptIdea.trim()
+                                        ? 'border-zinc-800 bg-zinc-900/50 text-zinc-500 cursor-not-allowed'
+                                        : 'border-cyan-500/50 bg-cyan-600/30 hover:bg-cyan-600/50 text-cyan-200 hover:text-white shadow-[0_0_8px_rgba(6,182,212,0.2)] active:scale-95'
+                                    }`}
+                                    title={!singleAlphaSystemPromptIdea.trim() ? 'Type prompt idea first' : 'AI Enhance Agent Alpha System Prompt'}
+                                  >
+                                    {enhancingAlphaSystemPrompt ? (
+                                      <Loader2 size={11} className="animate-spin text-cyan-300" />
+                                    ) : (
+                                      <Sparkles size={11} className="text-amber-400" />
+                                    )}
+                                    <span>{enhancingAlphaSystemPrompt ? 'Enhancing...' : 'AI Enhance'}</span>
+                                  </button>
+                                </div>
+                              </div>
+
                               <textarea
                                 value={commanderConfig.systemPrompts.alpha}
                                 onChange={(e) => {
@@ -9143,15 +9531,87 @@ DIRECTIVES:
                                   storage.saveCommanderConfig(updated);
                                 }}
                                 rows={3}
-                                className="w-full rounded-xl border border-zinc-700 bg-zinc-900/90 p-2.5 text-xs text-zinc-100 placeholder-zinc-600 outline-none focus:border-cyan-500 resize-none font-sans"
+                                className="w-full rounded-lg border border-zinc-700 bg-zinc-900 p-2 text-xs text-zinc-100 placeholder-zinc-600 outline-none focus:border-cyan-500 resize-none font-sans"
                               />
+                              {alphaSystemPromptError && (
+                                <p className="text-[10.5px] text-red-400 flex items-center gap-1 pt-0.5">
+                                  <AlertCircle size={10} />
+                                  <span>{alphaSystemPromptError}</span>
+                                </p>
+                              )}
                             </div>
 
                             {/* Beta Prompt */}
-                            <div className="space-y-1">
-                              <label className="text-[11px] font-medium text-purple-300">
-                                Agent Beta System Prompt (Counter-Perspective / Validator):
-                              </label>
+                            <div className="p-2.5 rounded-lg border border-purple-500/20 bg-purple-950/10 space-y-2">
+                              <div className="text-[11px] font-semibold text-purple-300 flex flex-wrap items-center justify-between gap-1.5">
+                                <div className="flex items-center gap-1.5">
+                                  <span>Agent Beta System Prompt (Counter-Perspective / Validator)</span>
+                                  {enhancingBetaSystemPrompt && (
+                                    <span className="text-[10px] text-purple-400 flex items-center gap-1 font-mono font-normal">
+                                      <Loader2 size={10} className="animate-spin" />
+                                      <span>Enhancing...</span>
+                                    </span>
+                                  )}
+                                </div>
+                                <button
+                                  type="button"
+                                  onClick={handleResetBetaSystemPrompt}
+                                  className="text-[10px] font-medium text-zinc-400 hover:text-purple-200 px-2 py-0.5 rounded border border-zinc-700/60 hover:border-purple-500/40 bg-zinc-900/80 hover:bg-purple-950/40 flex items-center gap-1 transition-colors"
+                                  title="Reset Agent Beta system prompt to default"
+                                >
+                                  <RotateCcw size={10} />
+                                  <span>Reset</span>
+                                </button>
+                              </div>
+
+                              {/* Nested compact AI Enhance for Beta System Prompt */}
+                              <div className="p-2 rounded-md border border-purple-500/20 bg-black/40 space-y-1.5">
+                                <div className="flex items-center justify-between">
+                                  <label className="text-[10.5px] font-semibold text-purple-300 flex items-center gap-1">
+                                    <Sparkles size={11} className="text-amber-400" />
+                                    <span>Describe prompt focus / persona style</span>
+                                  </label>
+                                </div>
+                                <div className="flex flex-col sm:flex-row gap-1.5">
+                                  <input
+                                    type="text"
+                                    value={singleBetaSystemPromptIdea}
+                                    onChange={(e) => {
+                                      setSingleBetaSystemPromptIdea(e.target.value);
+                                      if (betaSystemPromptError) setBetaSystemPromptError(null);
+                                    }}
+                                    onKeyDown={(e) => {
+                                      if (e.key === 'Enter') {
+                                        e.preventDefault();
+                                        handleEnhanceBetaSystemPrompt();
+                                      }
+                                    }}
+                                    placeholder="e.g. Focus on cynical risk evaluation, failure modes, and security vulnerabilities..."
+                                    className="flex-1 rounded-md border border-zinc-700/80 bg-zinc-900/90 px-2.5 py-1 text-xs text-zinc-100 placeholder-zinc-600 outline-none focus:border-purple-500"
+                                  />
+                                  <button
+                                    type="button"
+                                    onClick={handleEnhanceBetaSystemPrompt}
+                                    disabled={!singleBetaSystemPromptIdea.trim() || enhancingBetaSystemPrompt}
+                                    className={`px-2.5 py-1 rounded-md border text-[11px] font-medium flex items-center justify-center gap-1 transition-all shrink-0 ${
+                                      enhancingBetaSystemPrompt
+                                        ? 'border-purple-500/30 bg-purple-950/40 text-purple-300/60 cursor-not-allowed'
+                                        : !singleBetaSystemPromptIdea.trim()
+                                        ? 'border-zinc-800 bg-zinc-900/50 text-zinc-500 cursor-not-allowed'
+                                        : 'border-purple-500/50 bg-purple-600/30 hover:bg-purple-600/50 text-purple-200 hover:text-white shadow-[0_0_8px_rgba(168,85,247,0.2)] active:scale-95'
+                                    }`}
+                                    title={!singleBetaSystemPromptIdea.trim() ? 'Type prompt idea first' : 'AI Enhance Agent Beta System Prompt'}
+                                  >
+                                    {enhancingBetaSystemPrompt ? (
+                                      <Loader2 size={11} className="animate-spin text-purple-300" />
+                                    ) : (
+                                      <Sparkles size={11} className="text-amber-400" />
+                                    )}
+                                    <span>{enhancingBetaSystemPrompt ? 'Enhancing...' : 'AI Enhance'}</span>
+                                  </button>
+                                </div>
+                              </div>
+
                               <textarea
                                 value={commanderConfig.systemPrompts.beta}
                                 onChange={(e) => {
@@ -9166,15 +9626,87 @@ DIRECTIVES:
                                   storage.saveCommanderConfig(updated);
                                 }}
                                 rows={3}
-                                className="w-full rounded-xl border border-zinc-700 bg-zinc-900/90 p-2.5 text-xs text-zinc-100 placeholder-zinc-600 outline-none focus:border-purple-500 resize-none font-sans"
+                                className="w-full rounded-lg border border-zinc-700 bg-zinc-900 p-2 text-xs text-zinc-100 placeholder-zinc-600 outline-none focus:border-purple-500 resize-none font-sans"
                               />
+                              {betaSystemPromptError && (
+                                <p className="text-[10.5px] text-red-400 flex items-center gap-1 pt-0.5">
+                                  <AlertCircle size={10} />
+                                  <span>{betaSystemPromptError}</span>
+                                </p>
+                              )}
                             </div>
 
                             {/* Synthesizer Prompt */}
-                            <div className="space-y-1">
-                              <label className="text-[11px] font-medium text-emerald-300">
-                                Commander Final Synthesizer System Prompt:
-                              </label>
+                            <div className="p-2.5 rounded-lg border border-emerald-500/20 bg-emerald-950/10 space-y-2">
+                              <div className="text-[11px] font-semibold text-emerald-300 flex flex-wrap items-center justify-between gap-1.5">
+                                <div className="flex items-center gap-1.5">
+                                  <span>Commander Final Synthesizer System Prompt</span>
+                                  {enhancingSynthSystemPrompt && (
+                                    <span className="text-[10px] text-emerald-400 flex items-center gap-1 font-mono font-normal">
+                                      <Loader2 size={10} className="animate-spin" />
+                                      <span>Enhancing...</span>
+                                    </span>
+                                  )}
+                                </div>
+                                <button
+                                  type="button"
+                                  onClick={handleResetSynthSystemPrompt}
+                                  className="text-[10px] font-medium text-zinc-400 hover:text-emerald-200 px-2 py-0.5 rounded border border-zinc-700/60 hover:border-emerald-500/40 bg-zinc-900/80 hover:bg-emerald-950/40 flex items-center gap-1 transition-colors"
+                                  title="Reset Final Synthesizer system prompt to default"
+                                >
+                                  <RotateCcw size={10} />
+                                  <span>Reset</span>
+                                </button>
+                              </div>
+
+                              {/* Nested compact AI Enhance for Synthesizer System Prompt */}
+                              <div className="p-2 rounded-md border border-emerald-500/20 bg-black/40 space-y-1.5">
+                                <div className="flex items-center justify-between">
+                                  <label className="text-[10.5px] font-semibold text-emerald-300 flex items-center gap-1">
+                                    <Sparkles size={11} className="text-amber-400" />
+                                    <span>Describe prompt focus / persona style</span>
+                                  </label>
+                                </div>
+                                <div className="flex flex-col sm:flex-row gap-1.5">
+                                  <input
+                                    type="text"
+                                    value={singleSynthSystemPromptIdea}
+                                    onChange={(e) => {
+                                      setSingleSynthSystemPromptIdea(e.target.value);
+                                      if (synthSystemPromptError) setSynthSystemPromptError(null);
+                                    }}
+                                    onKeyDown={(e) => {
+                                      if (e.key === 'Enter') {
+                                        e.preventDefault();
+                                        handleEnhanceSynthSystemPrompt();
+                                      }
+                                    }}
+                                    placeholder="e.g. Focus on executive briefings, crystal-clear decision matrices, and definitive summaries..."
+                                    className="flex-1 rounded-md border border-zinc-700/80 bg-zinc-900/90 px-2.5 py-1 text-xs text-zinc-100 placeholder-zinc-600 outline-none focus:border-emerald-500"
+                                  />
+                                  <button
+                                    type="button"
+                                    onClick={handleEnhanceSynthSystemPrompt}
+                                    disabled={!singleSynthSystemPromptIdea.trim() || enhancingSynthSystemPrompt}
+                                    className={`px-2.5 py-1 rounded-md border text-[11px] font-medium flex items-center justify-center gap-1 transition-all shrink-0 ${
+                                      enhancingSynthSystemPrompt
+                                        ? 'border-emerald-500/30 bg-emerald-950/40 text-emerald-300/60 cursor-not-allowed'
+                                        : !singleSynthSystemPromptIdea.trim()
+                                        ? 'border-zinc-800 bg-zinc-900/50 text-zinc-500 cursor-not-allowed'
+                                        : 'border-emerald-500/50 bg-emerald-600/30 hover:bg-emerald-600/50 text-emerald-200 hover:text-white shadow-[0_0_8px_rgba(16,185,129,0.2)] active:scale-95'
+                                    }`}
+                                    title={!singleSynthSystemPromptIdea.trim() ? 'Type prompt idea first' : 'AI Enhance Synthesizer System Prompt'}
+                                  >
+                                    {enhancingSynthSystemPrompt ? (
+                                      <Loader2 size={11} className="animate-spin text-emerald-300" />
+                                    ) : (
+                                      <Sparkles size={11} className="text-amber-400" />
+                                    )}
+                                    <span>{enhancingSynthSystemPrompt ? 'Enhancing...' : 'AI Enhance'}</span>
+                                  </button>
+                                </div>
+                              </div>
+
                               <textarea
                                 value={commanderConfig.systemPrompts.synthesizer}
                                 onChange={(e) => {
@@ -9189,8 +9721,14 @@ DIRECTIVES:
                                   storage.saveCommanderConfig(updated);
                                 }}
                                 rows={3}
-                                className="w-full rounded-xl border border-zinc-700 bg-zinc-900/90 p-2.5 text-xs text-zinc-100 placeholder-zinc-600 outline-none focus:border-emerald-500 resize-none font-sans"
+                                className="w-full rounded-lg border border-zinc-700 bg-zinc-900 p-2 text-xs text-zinc-100 placeholder-zinc-600 outline-none focus:border-emerald-500 resize-none font-sans"
                               />
+                              {synthSystemPromptError && (
+                                <p className="text-[10.5px] text-red-400 flex items-center gap-1 pt-0.5">
+                                  <AlertCircle size={10} />
+                                  <span>{synthSystemPromptError}</span>
+                                </p>
+                              )}
                             </div>
                           </div>
                         )}
