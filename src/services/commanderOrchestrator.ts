@@ -231,8 +231,8 @@ export async function runCommanderPipeline({
       : 'Primary Domain Specialist';
   let alphaTask =
     isAlphaEnabled && !isBetaEnabled && config.mode !== 'manual'
-      ? 'Conduct a comprehensive investigation of core factual evidence and practical trade-offs for this topic.'
-      : 'Analyze the core mechanics and factual evidence for the query.';
+      ? `Investigate core dimensions and complementary considerations for "${query}".`
+      : `Investigate the primary questions and key elements of "${query}".`;
   let alphaSearchEnabled = true;
   let alphaSearchQuery = query;
 
@@ -242,8 +242,8 @@ export async function runCommanderPipeline({
       : 'Complementary Specialist';
   let betaTask =
     !isAlphaEnabled && isBetaEnabled && config.mode !== 'manual'
-      ? 'Conduct a comprehensive investigation of core factual evidence and practical trade-offs for this topic.'
-      : 'Analyze the complementary perspective, practical implications, and trade-offs.';
+      ? `Investigate core dimensions and complementary considerations for "${query}".`
+      : `Examine the complementary perspective, practical nuances, and trade-offs for "${query}".`;
   let betaSearchEnabled = !isAlphaEnabled && isBetaEnabled ? true : false;
   let betaSearchQuery = query;
 
@@ -297,6 +297,9 @@ When constructing search queries for Agent Alpha or Agent Beta, always use the A
     const ROLE_DIVERSITY_RULE = `CRITICAL ROLE & VECTOR ALLOCATION RULE:
 You must decide BOTH agents' roles fresh, specifically tailored to what this particular question actually needs — do not default to a generic 'auditor' or 'fact-checker' role for Agent Beta unless the question is genuinely about verifying a specific claim. Instead, choose whatever second distinct, complementary angle would most usefully round out the investigation for THIS topic — examples of the kind of variety to draw from (not a fixed list, just illustrating the range): a technical/implementation angle, a business/market angle, a user-experience angle, a historical/comparative angle, a regulatory/legal angle, a creative/design angle, a competitive-landscape angle, a practical/how-to angle, a risk-auditing angle (when genuinely warranted), etc. The two agents' roles should feel meaningfully different from each other AND different from what you'd assign for a completely different topic.`;
 
+    const TASK_DIVERSITY_RULE = `CRITICAL TASK SPECIFICITY RULE:
+You must write BOTH Agent Alpha's and Agent Beta's TASK INSTRUCTIONS fresh, specifically tailored to what this exact question needs — not a generic template reused across different topics. Agent Alpha's task should describe the specific primary investigation this topic calls for (which could be technical analysis, creative generation, factual research, comparison, historical context, etc., depending on the topic). Agent Beta's task should describe the specific complementary angle this topic calls for (which could be risk-auditing, but could equally be a different technical angle, a market/business angle, a creative variation, a practical how-to angle, etc.) — do not default Beta's task to 'identify risks/edge cases/limitations' unless the topic genuinely calls for that kind of scrutiny. Both task descriptions must read as if written specifically for THIS question, not as if a template was filled in.`;
+
     let autoPrompt = '';
     if (bothSubAgentsDisabled) {
       autoPrompt = `Today's current date is ${currentDate}.
@@ -321,6 +324,8 @@ ${SEARCH_QUERY_DATE_RULE}
 
 ${ROLE_DIVERSITY_RULE}
 
+${TASK_DIVERSITY_RULE}
+
 Only one specialist agent is available this run. Assign it a COMBINED task covering both the primary investigation angle AND a complementary perspective or practical trade-offs that would normally be split across two agents — do not narrow its scope to just one half.
 
 You have ONLY ONE subordinate agent available:
@@ -330,7 +335,7 @@ Decide:
 1. "plan": A 1-2 sentence decisive tactical mission plan for answering this query with Agent Alpha handling both angles.
 2. "alpha":
    - "role": Descriptive combined persona title tailored to this topic reflecting both primary and complementary analysis.
-   - "task": Concrete combined directives covering both the primary investigation and complementary considerations (2-3 sentences).
+   - "task": Write fresh, specific directives describing exactly what primary investigation and complementary dimensions to address for this specific inquiry (2-3 sentences, tailored directly to this question without generic templates).
    - "search": Boolean (true if live or up-to-date web data is helpful, false otherwise).
    - "searchQuery": Concise search query string if search is true, or empty string. <use the actual current year, not an example>
 
@@ -354,6 +359,8 @@ ${SEARCH_QUERY_DATE_RULE}
 
 ${ROLE_DIVERSITY_RULE}
 
+${TASK_DIVERSITY_RULE}
+
 Only one specialist agent is available this run. Assign it a COMBINED task covering both the primary investigation angle AND a complementary perspective or practical trade-offs that would normally be split across two agents — do not narrow its scope to just one half.
 
 You have ONLY ONE subordinate agent available:
@@ -363,7 +370,7 @@ Decide:
 1. "plan": A 1-2 sentence decisive tactical mission plan for answering this query with Agent Beta handling both angles.
 2. "beta":
    - "role": Descriptive combined persona title tailored to this topic reflecting both primary and complementary analysis.
-   - "task": Concrete combined directives covering both the primary investigation and complementary considerations (2-3 sentences).
+   - "task": Write fresh, specific directives describing exactly what primary investigation and complementary dimensions to address for this specific inquiry (2-3 sentences, tailored directly to this question without generic templates).
    - "search": Boolean (true if live or up-to-date web data is helpful, false otherwise).
    - "searchQuery": Concise search query string if search is true, or empty string. <use the actual current year, not an example>
 
@@ -387,6 +394,8 @@ ${SEARCH_QUERY_DATE_RULE}
 
 ${ROLE_DIVERSITY_RULE}
 
+${TASK_DIVERSITY_RULE}
+
 Analyze this query and decompose it into two distinct, high-impact specialist vectors:
 - Agent Alpha: First specialized investigation angle addressing the core dimensions of the inquiry.
 - Agent Beta: Second distinct, complementary specialist angle chosen specifically to round out this topic.
@@ -395,12 +404,12 @@ Decide:
 1. "plan": A 1-2 sentence decisive tactical mission plan for answering this query.
 2. "alpha":
    - "role": Descriptive persona title tailored specifically to this inquiry's first vector (avoid generic templates).
-   - "task": Concrete investigation directives for this first angle (1-2 sentences).
+   - "task": Specific primary investigation directives written fresh for this exact question (1-2 sentences, avoiding generic template text).
    - "search": Boolean (true if live or up-to-date web data is helpful, false otherwise).
    - "searchQuery": Concise search query string if search is true, or empty string. <use the actual current year, not an example>
 3. "beta":
    - "role": Descriptive persona title tailored specifically to this inquiry's second complementary vector (distinct from Alpha, avoiding generic auditor defaults).
-   - "task": Concrete investigation directives for this second angle (1-2 sentences).
+   - "task": Specific complementary investigation directives written fresh for this exact question (1-2 sentences, avoiding generic 'identify risks/limitations' templates).
    - "search": Boolean (true if supplementary search is helpful, false otherwise).
    - "searchQuery": Concise search query string if search is true, or empty string. <use the actual current year, not an example>
 
@@ -429,7 +438,9 @@ ${config.systemPrompts.commander}${effortInstruction}
 
 ${SEARCH_QUERY_DATE_RULE}
 
-${ROLE_DIVERSITY_RULE}`;
+${ROLE_DIVERSITY_RULE}
+
+${TASK_DIVERSITY_RULE}`;
 
       const plannerMaxTokens = bothSubAgentsDisabled
         ? effortLevel === 'small'
@@ -560,7 +571,7 @@ ${ROLE_DIVERSITY_RULE}`;
 
 SPECIAL COMBINED OPERATIONAL MANDATE:
 Only one specialist agent is available this run. Assign it a COMBINED task covering both the primary investigation angle AND the counter-perspective/risk-auditing angle that would normally be split across two agents — do not narrow its scope to just one half.
-You are operating as both the primary technical investigator and the critical counter-perspective auditor. Deliver deep technical rigor and empirical evidence while actively stress-testing assumptions, highlighting risks, caveats, counter-arguments, and trade-offs.`;
+You are operating as both the primary investigator and the complementary specialist. Deliver thorough domain intelligence while addressing practical nuances, alternative perspectives, and trade-offs tailored to the inquiry.`;
     }
     if (effortInstruction) {
       alphaSystemPrompt = `${alphaSystemPrompt}${effortInstruction}`;
@@ -576,7 +587,7 @@ Commander Mission Plan: "${plan}"
 ${alphaGrounding ? `\n--- VERIFIED SEARCH GROUNDING ---\n${alphaGrounding}\n` : ''}
 INSTRUCTIONS:
 1. Deliver a concentrated, high-density domain report directly fulfilling your combined mission.
-2. Address BOTH the primary empirical investigation AND the critical counter-perspectives, trade-offs, caveats, and risk factors.
+2. Address BOTH the primary empirical investigation AND the complementary dimensions, practical trade-offs, and considerations.
 3. Provide technical clarity, specific data points, structural insights, and honest critical evaluation.
 4. Be direct, authoritative, and factual.`
       : `You are deployed as: ${alphaRole}
@@ -668,7 +679,7 @@ INSTRUCTIONS:
 
 SPECIAL COMBINED OPERATIONAL MANDATE:
 Only one specialist agent is available this run. Assign it a COMBINED task covering both the primary investigation angle AND the counter-perspective/risk-auditing angle that would normally be split across two agents — do not narrow its scope to just one half.
-You are operating as both the primary technical investigator and the critical counter-perspective auditor. Deliver deep technical rigor and empirical evidence while actively stress-testing assumptions, highlighting risks, caveats, counter-arguments, and trade-offs.`;
+You are operating as both the primary investigator and the complementary specialist. Deliver thorough domain intelligence while addressing practical nuances, alternative perspectives, and trade-offs tailored to the inquiry.`;
     }
     if (effortInstruction) {
       betaSystemPrompt = `${betaSystemPrompt}${effortInstruction}`;
@@ -688,8 +699,8 @@ ${alphaFindings}
 """
 ${betaGrounding ? `\n--- VERIFIED SEARCH GROUNDING ---\n${betaGrounding}\n` : ''}
 INSTRUCTIONS:
-1. Stress-test Agent Alpha's findings from your specialist angle.
-2. Identify overlooked caveats, edge cases, risks, counter-arguments, and practical constraints.
+1. Examine Agent Alpha's findings from your specific assigned specialist angle.
+2. Directly fulfill your assigned mission, providing complementary depth, alternative insights, or practical trade-offs.
 3. Be constructive, rigorous, and intellectually honest.`
       : !isAlphaEnabled && config.mode !== 'manual'
       ? `You are deployed as: ${betaRole}
@@ -701,7 +712,7 @@ Commander Mission Plan: "${plan}"
 ${betaGrounding ? `\n--- VERIFIED SEARCH GROUNDING ---\n${betaGrounding}\n` : ''}
 INSTRUCTIONS:
 1. Deliver a concentrated, high-density domain report directly fulfilling your combined mission.
-2. Address BOTH the primary empirical investigation AND the critical counter-perspectives, trade-offs, risks, and constraints.
+2. Address BOTH the primary empirical investigation AND the complementary dimensions, practical trade-offs, and considerations.
 3. Provide technical clarity, specific data points, structural insights, and honest critical evaluation.
 4. Be direct, authoritative, and factual.`
       : `You are deployed as: ${betaRole}
@@ -712,8 +723,8 @@ User Inquiry: "${query}"
 Commander Mission Plan: "${plan}"
 ${betaGrounding ? `\n--- VERIFIED SEARCH GROUNDING ---\n${betaGrounding}\n` : ''}
 INSTRUCTIONS:
-1. Conduct an in-depth critical analysis and evaluation of the user inquiry from your assigned specialist perspective.
-2. Identify caveats, edge cases, risks, counter-perspectives, and practical constraints.
+1. Conduct an in-depth analysis and evaluation of the user inquiry from your assigned specialist perspective.
+2. Directly fulfill your assigned mission, providing complementary depth, practical trade-offs, and nuanced insights.
 3. Be direct, authoritative, and factual.`;
 
     const betaMaxTokens =
