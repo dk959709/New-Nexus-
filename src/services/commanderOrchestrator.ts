@@ -227,23 +227,23 @@ export async function runCommanderPipeline({
   let plan = '';
   let alphaRole =
     isAlphaEnabled && !isBetaEnabled && config.mode !== 'manual'
-      ? 'Lead Investigator & Risk Auditor'
-      : 'Lead Technical Investigator';
+      ? 'Lead Domain Specialist'
+      : 'Primary Domain Specialist';
   let alphaTask =
     isAlphaEnabled && !isBetaEnabled && config.mode !== 'manual'
-      ? 'Conduct a comprehensive investigation of core factual evidence while critically auditing counter-perspectives, trade-offs, and risk factors.'
+      ? 'Conduct a comprehensive investigation of core factual evidence and practical trade-offs for this topic.'
       : 'Analyze the core mechanics and factual evidence for the query.';
   let alphaSearchEnabled = true;
   let alphaSearchQuery = query;
 
   let betaRole =
     !isAlphaEnabled && isBetaEnabled && config.mode !== 'manual'
-      ? 'Lead Investigator & Risk Auditor'
-      : 'Counter-Perspective & Risk Analyst';
+      ? 'Lead Domain Specialist'
+      : 'Complementary Specialist';
   let betaTask =
     !isAlphaEnabled && isBetaEnabled && config.mode !== 'manual'
-      ? 'Conduct a comprehensive investigation of core factual evidence while critically auditing counter-perspectives, trade-offs, and risk factors.'
-      : 'Challenge assumptions, assess constraints, and provide alternative viewpoints.';
+      ? 'Conduct a comprehensive investigation of core factual evidence and practical trade-offs for this topic.'
+      : 'Analyze the complementary perspective, practical implications, and trade-offs.';
   let betaSearchEnabled = !isAlphaEnabled && isBetaEnabled ? true : false;
   let betaSearchQuery = query;
 
@@ -294,6 +294,9 @@ export async function runCommanderPipeline({
     const SEARCH_QUERY_DATE_RULE = `CRITICAL SEARCH QUERY RULE:
 When constructing search queries for Agent Alpha or Agent Beta, always use the ACTUAL current year and month (already provided to you as today's date) — never hardcode or reuse past years like 2024 or 2025 in a query unless the user's question is specifically about that past year. For 'latest/current/recent' type queries, bias toward the current year only.`;
 
+    const ROLE_DIVERSITY_RULE = `CRITICAL ROLE & VECTOR ALLOCATION RULE:
+You must decide BOTH agents' roles fresh, specifically tailored to what this particular question actually needs — do not default to a generic 'auditor' or 'fact-checker' role for Agent Beta unless the question is genuinely about verifying a specific claim. Instead, choose whatever second distinct, complementary angle would most usefully round out the investigation for THIS topic — examples of the kind of variety to draw from (not a fixed list, just illustrating the range): a technical/implementation angle, a business/market angle, a user-experience angle, a historical/comparative angle, a regulatory/legal angle, a creative/design angle, a competitive-landscape angle, a practical/how-to angle, a risk-auditing angle (when genuinely warranted), etc. The two agents' roles should feel meaningfully different from each other AND different from what you'd assign for a completely different topic.`;
+
     let autoPrompt = '';
     if (bothSubAgentsDisabled) {
       autoPrompt = `Today's current date is ${currentDate}.
@@ -316,16 +319,18 @@ User Query: "${query}"
 
 ${SEARCH_QUERY_DATE_RULE}
 
-Only one specialist agent is available this run. Assign it a COMBINED task covering both the primary investigation angle AND the counter-perspective/risk-auditing angle that would normally be split across two agents — do not narrow its scope to just one half.
+${ROLE_DIVERSITY_RULE}
+
+Only one specialist agent is available this run. Assign it a COMBINED task covering both the primary investigation angle AND a complementary perspective or practical trade-offs that would normally be split across two agents — do not narrow its scope to just one half.
 
 You have ONLY ONE subordinate agent available:
-- Agent Alpha: Combined Specialist (handling both primary technical investigation AND counter-perspective/risk-auditing).
+- Agent Alpha: Combined Specialist (handling both primary domain investigation and complementary analysis).
 
 Decide:
 1. "plan": A 1-2 sentence decisive tactical mission plan for answering this query with Agent Alpha handling both angles.
 2. "alpha":
-   - "role": Descriptive combined persona title reflecting both investigation and critical analysis (e.g. "Lead Technical Investigator & Risk Auditor", "Systems Architect & Constraints Critic", "Clinical Evaluator & Safety Auditor").
-   - "task": Concrete combined directives covering both the primary investigation and counter-perspective/risk auditing (2-3 sentences).
+   - "role": Descriptive combined persona title tailored to this topic reflecting both primary and complementary analysis.
+   - "task": Concrete combined directives covering both the primary investigation and complementary considerations (2-3 sentences).
    - "search": Boolean (true if live or up-to-date web data is helpful, false otherwise).
    - "searchQuery": Concise search query string if search is true, or empty string. <use the actual current year, not an example>
 
@@ -347,16 +352,18 @@ User Query: "${query}"
 
 ${SEARCH_QUERY_DATE_RULE}
 
-Only one specialist agent is available this run. Assign it a COMBINED task covering both the primary investigation angle AND the counter-perspective/risk-auditing angle that would normally be split across two agents — do not narrow its scope to just one half.
+${ROLE_DIVERSITY_RULE}
+
+Only one specialist agent is available this run. Assign it a COMBINED task covering both the primary investigation angle AND a complementary perspective or practical trade-offs that would normally be split across two agents — do not narrow its scope to just one half.
 
 You have ONLY ONE subordinate agent available:
-- Agent Beta: Combined Specialist (handling both primary technical investigation AND counter-perspective/risk-auditing).
+- Agent Beta: Combined Specialist (handling both primary domain investigation and complementary analysis).
 
 Decide:
 1. "plan": A 1-2 sentence decisive tactical mission plan for answering this query with Agent Beta handling both angles.
 2. "beta":
-   - "role": Descriptive combined persona title reflecting both investigation and critical analysis (e.g. "Lead Technical Investigator & Risk Auditor", "Systems Architect & Constraints Critic", "Clinical Evaluator & Safety Auditor").
-   - "task": Concrete combined directives covering both the primary investigation and counter-perspective/risk auditing (2-3 sentences).
+   - "role": Descriptive combined persona title tailored to this topic reflecting both primary and complementary analysis.
+   - "task": Concrete combined directives covering both the primary investigation and complementary considerations (2-3 sentences).
    - "search": Boolean (true if live or up-to-date web data is helpful, false otherwise).
    - "searchQuery": Concise search query string if search is true, or empty string. <use the actual current year, not an example>
 
@@ -378,20 +385,22 @@ User Query: "${query}"
 
 ${SEARCH_QUERY_DATE_RULE}
 
-Analyze this query and decompose it for two elite subordinate agents:
-- Agent Alpha: Primary technical/domain investigator.
-- Agent Beta: Critical validator, counter-perspective specialist, or edge-case auditor.
+${ROLE_DIVERSITY_RULE}
+
+Analyze this query and decompose it into two distinct, high-impact specialist vectors:
+- Agent Alpha: First specialized investigation angle addressing the core dimensions of the inquiry.
+- Agent Beta: Second distinct, complementary specialist angle chosen specifically to round out this topic.
 
 Decide:
 1. "plan": A 1-2 sentence decisive tactical mission plan for answering this query.
 2. "alpha":
-   - "role": Specific descriptive persona title (e.g. "Quantum Algorithm Specialist", "Clinical Pharmacologist", "Full-Stack System Architect").
-   - "task": Concrete investigation directives (1-2 sentences).
+   - "role": Descriptive persona title tailored specifically to this inquiry's first vector (avoid generic templates).
+   - "task": Concrete investigation directives for this first angle (1-2 sentences).
    - "search": Boolean (true if live or up-to-date web data is helpful, false otherwise).
    - "searchQuery": Concise search query string if search is true, or empty string. <use the actual current year, not an example>
 3. "beta":
-   - "role": Counter-perspective or critical auditing role title (e.g. "Hardware Scalability Critic", "Toxicology & Risk Auditor", "Security Vulnerability Assessor").
-   - "task": Specific stress-testing directives (1-2 sentences).
+   - "role": Descriptive persona title tailored specifically to this inquiry's second complementary vector (distinct from Alpha, avoiding generic auditor defaults).
+   - "task": Concrete investigation directives for this second angle (1-2 sentences).
    - "search": Boolean (true if supplementary search is helpful, false otherwise).
    - "searchQuery": Concise search query string if search is true, or empty string. <use the actual current year, not an example>
 
@@ -418,7 +427,9 @@ Respond ONLY with valid JSON in this exact structure:
 
 ${config.systemPrompts.commander}${effortInstruction}
 
-${SEARCH_QUERY_DATE_RULE}`;
+${SEARCH_QUERY_DATE_RULE}
+
+${ROLE_DIVERSITY_RULE}`;
 
       const plannerMaxTokens = bothSubAgentsDisabled
         ? effortLevel === 'small'
