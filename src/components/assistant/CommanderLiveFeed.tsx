@@ -175,7 +175,7 @@ export const CommanderLiveFeed: React.FC<CommanderLiveFeedProps> = ({
 
   // Execute commander pipeline on mount (ONLY when savedState is NOT provided)
   useEffect(() => {
-    if (savedState) {
+    if (savedState || status === 'completed' || status === 'aborted' || status === 'error') {
       return;
     }
 

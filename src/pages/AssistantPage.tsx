@@ -563,66 +563,9 @@ function loadMessages(): Message[] {
           typeof (item as { content?: unknown }).content === 'string',
       )
       .map((item) => {
-        let commanderStatus = item.commanderStatus;
-        let commanderSavedState = item.commanderSavedState;
-
-        // If this is an existing Commander message restored from localStorage:
-        if (item.tool === 'commander') {
-          // If status was left undefined or 'running', mark as completed (or aborted) so it NEVER re-executes on reload
-          if (!commanderStatus || commanderStatus === 'running') {
-            if (commanderSavedState?.status && commanderSavedState.status !== 'running') {
-              commanderStatus = commanderSavedState.status;
-            } else if (
-              commanderSavedState?.result ||
-              (commanderSavedState?.steps && commanderSavedState.steps.length > 0) ||
-              (item.content && item.content.trim().length > 0)
-            ) {
-              commanderStatus = 'completed';
-            } else {
-              commanderStatus = 'aborted';
-            }
-          }
-
-          if (commanderSavedState) {
-            commanderSavedState = {
-              ...commanderSavedState,
-              status: commanderStatus || commanderSavedState.status || 'completed',
-            };
-          } else if (commanderStatus && commanderStatus !== 'running') {
-            commanderSavedState = {
-              steps: [
-                {
-                  id: 'commander',
-                  name: 'Commander',
-                  agentId: 'commander',
-                  status: 'completed',
-                  role: 'Commander',
-                  content: 'Pipeline execution recorded from earlier session.',
-                  timestamp: Date.now(),
-                },
-                {
-                  id: 'synthesizer',
-                  name: 'Synthesis',
-                  agentId: 'synthesizer',
-                  status: 'completed',
-                  content: item.content,
-                  timestamp: Date.now(),
-                },
-              ],
-              status: commanderStatus,
-              result: {
-                synthesis: item.content,
-                plan: '',
-                alphaFindings: '',
-                betaFindings: '',
-                steps: [],
-                sources: item.sources || [],
-              },
-              sources: item.sources || [],
-              mode: 'auto',
-            };
-          }
-        }
+        const rawItem = item as unknown as Record<string, unknown>;
+        const commanderStatus = (rawItem.commanderStatus as Message['commanderStatus']) ?? item.commanderStatus;
+        const commanderSavedState = (rawItem.commanderSavedState as Message['commanderSavedState']) ?? item.commanderSavedState;
 
         return {
           ...item,
@@ -5599,6 +5542,7 @@ DIRECTIVES:
                           message.commanderStatus === 'error' ||
                           (message.commanderSavedState && message.commanderSavedState.status !== 'running') ? (
                             <CommanderLiveFeed
+                              key={`commander-${index}-${message.commanderStatus || 'live'}`}
                               topic={message.commanderTopic || message.content}
                               config={commanderConfig}
                               savedState={
@@ -5626,6 +5570,7 @@ DIRECTIVES:
                             />
                           ) : (
                             <CommanderLiveFeed
+                              key={`commander-${index}-${message.commanderStatus || 'live'}`}
                               topic={message.commanderTopic || message.content}
                               config={commanderConfig}
                               messageIndex={index}
@@ -5634,8 +5579,8 @@ DIRECTIVES:
                               isAudioPlayingKey={personaAudioPlayingKey}
                               isAudioLoadingKey={personaAudioLoadingKey}
                               onStateChange={(state) => {
-                                setMessages((prev) =>
-                                  prev.map((msg, idx) => {
+                                setMessages((prev) => {
+                                  const updated = prev.map((msg, idx) => {
                                     if (idx === index) {
                                       return {
                                         ...msg,
@@ -5651,8 +5596,34 @@ DIRECTIVES:
                                       };
                                     }
                                     return msg;
-                                  }),
-                                );
+                                  });
+
+                                  if (
+                                    state.status === 'completed' ||
+                                    state.status === 'aborted' ||
+                                    state.status === 'error'
+                                  ) {
+                                    try {
+                                      const sanitized = updated.map((m) => {
+                                        if (m.image && m.image.imageData) {
+                                          return {
+                                            ...m,
+                                            image: {
+                                              ...m.image,
+                                              imageData: undefined,
+                                            },
+                                          };
+                                        }
+                                        return m;
+                                      });
+                                      localStorage.setItem(CHAT_KEY, JSON.stringify(sanitized));
+                                    } catch {
+                                      // Storage may be unavailable.
+                                    }
+                                  }
+
+                                  return updated;
+                                });
                               }}
                               onClose={() => handleDeleteMessage(index)}
                             />
