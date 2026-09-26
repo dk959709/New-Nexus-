@@ -136,6 +136,7 @@ type Message = {
   swarmLiveErrorMessage?: string | null;
   swarmLiveEvidenceItems?: ParallaxEvidenceItem[];
   commanderTopic?: string;
+  commanderStatus?: 'running' | 'completed' | 'aborted' | 'error';
   commanderSavedState?: CommanderFeedSavedState;
 };
 
@@ -561,10 +562,75 @@ function loadMessages(): Message[] {
             (item as { role?: unknown }).role === 'assistant') &&
           typeof (item as { content?: unknown }).content === 'string',
       )
-      .map((item) => ({
-        ...item,
-        content: item.role === 'assistant' ? stripTierLabels(item.content) : item.content,
-      }));
+      .map((item) => {
+        let commanderStatus = item.commanderStatus;
+        let commanderSavedState = item.commanderSavedState;
+
+        // If this is an existing Commander message restored from localStorage:
+        if (item.tool === 'commander') {
+          // If status was left undefined or 'running', mark as completed (or aborted) so it NEVER re-executes on reload
+          if (!commanderStatus || commanderStatus === 'running') {
+            if (commanderSavedState?.status && commanderSavedState.status !== 'running') {
+              commanderStatus = commanderSavedState.status;
+            } else if (
+              commanderSavedState?.result ||
+              (commanderSavedState?.steps && commanderSavedState.steps.length > 0) ||
+              (item.content && item.content.trim().length > 0)
+            ) {
+              commanderStatus = 'completed';
+            } else {
+              commanderStatus = 'aborted';
+            }
+          }
+
+          if (commanderSavedState) {
+            commanderSavedState = {
+              ...commanderSavedState,
+              status: commanderStatus || commanderSavedState.status || 'completed',
+            };
+          } else if (commanderStatus && commanderStatus !== 'running') {
+            commanderSavedState = {
+              steps: [
+                {
+                  id: 'commander',
+                  name: 'Commander',
+                  agentId: 'commander',
+                  status: 'completed',
+                  role: 'Commander',
+                  content: 'Pipeline execution recorded from earlier session.',
+                  timestamp: Date.now(),
+                },
+                {
+                  id: 'synthesizer',
+                  name: 'Synthesis',
+                  agentId: 'synthesizer',
+                  status: 'completed',
+                  content: item.content,
+                  timestamp: Date.now(),
+                },
+              ],
+              status: commanderStatus,
+              result: {
+                synthesis: item.content,
+                plan: '',
+                alphaFindings: '',
+                betaFindings: '',
+                steps: [],
+                sources: item.sources || [],
+              },
+              sources: item.sources || [],
+              mode: 'auto',
+            };
+          }
+        }
+
+        return {
+          ...item,
+          commanderStatus,
+          commanderSavedState,
+          content: item.role === 'assistant' ? stripTierLabels(item.content) : item.content,
+        };
+      });
 
     return messages.length ? messages : [welcomeMessage];
   } catch {
@@ -3154,6 +3220,7 @@ ${commanderConfig.systemPrompts.synthesizer?.trim() || '(Default system prompt)'
         content: message,
         tool: 'commander',
         commanderTopic: message,
+        commanderStatus: 'running',
       };
       setMessages((current) => [...current, assistantMessage]);
       setLoading(false);
@@ -3503,6 +3570,7 @@ ${commanderConfig.systemPrompts.synthesizer?.trim() || '(Default system prompt)'
           content: message,
           tool: 'commander',
           commanderTopic: message,
+          commanderStatus: 'running',
         };
         setMessages((current) => [...current, assistantMessage]);
       } finally {
@@ -5526,36 +5594,69 @@ DIRECTIVES:
                             />
                           )
                         ) : message.tool === 'commander' ? (
-                          <CommanderLiveFeed
-                            topic={message.commanderTopic || message.content}
-                            config={commanderConfig}
-                            savedState={message.commanderSavedState}
-                            messageIndex={index}
-                            theme={theme}
-                            onPlayAudio={(text, idKey, stageId) => handlePlayPersonaAudio(text, idKey, stageId)}
-                            isAudioPlayingKey={personaAudioPlayingKey}
-                            isAudioLoadingKey={personaAudioLoadingKey}
-                            onStateChange={(state) => {
-                              setMessages((prev) =>
-                                prev.map((msg, idx) => {
-                                  if (idx === index) {
-                                    return {
-                                      ...msg,
-                                      commanderSavedState: state,
-                                      content:
-                                        state.result?.synthesis ||
-                                        state.result?.betaFindings ||
-                                        state.result?.alphaFindings ||
-                                        state.result?.plan ||
-                                        msg.content,
-                                    };
-                                  }
-                                  return msg;
-                                }),
-                              );
-                            }}
-                            onClose={() => handleDeleteMessage(index)}
-                          />
+                          message.commanderStatus === 'completed' ||
+                          message.commanderStatus === 'aborted' ||
+                          message.commanderStatus === 'error' ||
+                          (message.commanderSavedState && message.commanderSavedState.status !== 'running') ? (
+                            <CommanderLiveFeed
+                              topic={message.commanderTopic || message.content}
+                              config={commanderConfig}
+                              savedState={
+                                message.commanderSavedState || {
+                                  steps: [],
+                                  status: message.commanderStatus || 'completed',
+                                  result: {
+                                    synthesis: message.content,
+                                    plan: '',
+                                    alphaFindings: '',
+                                    betaFindings: '',
+                                    steps: [],
+                                    sources: message.sources || [],
+                                  },
+                                  sources: message.sources || [],
+                                  mode: commanderConfig.mode,
+                                }
+                              }
+                              messageIndex={index}
+                              theme={theme}
+                              onPlayAudio={(text, idKey, stageId) => handlePlayPersonaAudio(text, idKey, stageId)}
+                              isAudioPlayingKey={personaAudioPlayingKey}
+                              isAudioLoadingKey={personaAudioLoadingKey}
+                              onClose={() => handleDeleteMessage(index)}
+                            />
+                          ) : (
+                            <CommanderLiveFeed
+                              topic={message.commanderTopic || message.content}
+                              config={commanderConfig}
+                              messageIndex={index}
+                              theme={theme}
+                              onPlayAudio={(text, idKey, stageId) => handlePlayPersonaAudio(text, idKey, stageId)}
+                              isAudioPlayingKey={personaAudioPlayingKey}
+                              isAudioLoadingKey={personaAudioLoadingKey}
+                              onStateChange={(state) => {
+                                setMessages((prev) =>
+                                  prev.map((msg, idx) => {
+                                    if (idx === index) {
+                                      return {
+                                        ...msg,
+                                        commanderStatus: state.status,
+                                        commanderSavedState: state,
+                                        sources: state.sources || msg.sources,
+                                        content:
+                                          state.result?.synthesis ||
+                                          state.result?.betaFindings ||
+                                          state.result?.alphaFindings ||
+                                          state.result?.plan ||
+                                          msg.content,
+                                      };
+                                    }
+                                    return msg;
+                                  }),
+                                );
+                              }}
+                              onClose={() => handleDeleteMessage(index)}
+                            />
+                          )
                         ) : message.multiChatResponses && message.multiChatResponses.length > 0 ? (
                           <div className="space-y-4 pt-1">
                             {/* Simplified plain Multi-Chat Sequential Pipeline Indicator */}

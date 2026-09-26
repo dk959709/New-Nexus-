@@ -31,6 +31,7 @@ export interface CommanderFeedSavedState {
   result?: CommanderResult | null;
   errorMessage?: string | null;
   sources?: AISource[];
+  mode?: 'auto' | 'manual';
 }
 
 interface CommanderLiveFeedProps {
@@ -58,8 +59,67 @@ export const CommanderLiveFeed: React.FC<CommanderLiveFeedProps> = ({
   isAudioPlayingKey,
   isAudioLoadingKey,
 }) => {
-  const [config] = useState<CommanderConfig>(() => propConfig || storage.getCommanderConfig());
-  const [steps, setSteps] = useState<CommanderExecutionStep[]>(() => savedState?.steps || []);
+  const [config] = useState<CommanderConfig>(() => {
+    const base = propConfig || storage.getCommanderConfig();
+    if (savedState?.mode) {
+      return { ...base, mode: savedState.mode };
+    }
+    return base;
+  });
+  const [steps, setSteps] = useState<CommanderExecutionStep[]>(() => {
+    if (savedState?.steps && savedState.steps.length > 0) {
+      return savedState.steps;
+    }
+    if (savedState?.result) {
+      const res = savedState.result;
+      const synthSteps: CommanderExecutionStep[] = [];
+      if (res.plan) {
+        synthSteps.push({
+          id: 'commander',
+          name: 'Commander',
+          agentId: 'commander',
+          role: 'Commander',
+          status: 'completed',
+          content: res.plan,
+          timestamp: Date.now(),
+        });
+      }
+      if (res.alphaFindings) {
+        synthSteps.push({
+          id: 'alpha',
+          name: 'Agent Alpha',
+          agentId: 'alpha',
+          role: 'Specialist 1',
+          status: 'completed',
+          content: res.alphaFindings,
+          timestamp: Date.now(),
+        });
+      }
+      if (res.betaFindings) {
+        synthSteps.push({
+          id: 'beta',
+          name: 'Agent Beta',
+          agentId: 'beta',
+          role: 'Counter-Perspective',
+          status: 'completed',
+          content: res.betaFindings,
+          timestamp: Date.now(),
+        });
+      }
+      if (res.synthesis) {
+        synthSteps.push({
+          id: 'synthesizer',
+          name: 'Synthesis',
+          agentId: 'synthesizer',
+          status: 'completed',
+          content: res.synthesis,
+          timestamp: Date.now(),
+        });
+      }
+      return synthSteps;
+    }
+    return [];
+  });
   const [status, setStatus] = useState<'running' | 'completed' | 'aborted' | 'error'>(
     () => savedState?.status || 'running',
   );
@@ -67,7 +127,9 @@ export const CommanderLiveFeed: React.FC<CommanderLiveFeedProps> = ({
   const [errorMessage, setErrorMessage] = useState<string | null>(
     () => savedState?.errorMessage || null,
   );
-  const [sources, setSources] = useState<AISource[]>(() => savedState?.sources || []);
+  const [sources, setSources] = useState<AISource[]>(
+    () => savedState?.sources || savedState?.result?.sources || [],
+  );
 
   const [copiedStageId, setCopiedStageId] = useState<string | null>(null);
   const [copiedAll, setCopiedAll] = useState<boolean>(false);
@@ -105,14 +167,15 @@ export const CommanderLiveFeed: React.FC<CommanderLiveFeedProps> = ({
         result: newResult ?? null,
         errorMessage: newError ?? null,
         sources: newSources || [],
+        mode: configRef.current.mode,
       });
     },
     [],
   );
 
+  // Execute commander pipeline on mount (ONLY when savedState is NOT provided)
   useEffect(() => {
-    // If we already have a terminal saved state, don't re-run
-    if (savedState && savedState.status !== 'running') {
+    if (savedState) {
       return;
     }
 
@@ -120,6 +183,11 @@ export const CommanderLiveFeed: React.FC<CommanderLiveFeedProps> = ({
     abortControllerRef.current = controller;
 
     setStatus('running');
+    setErrorMessage(null);
+    setResult(null);
+
+    // Initial state emit for new live execution
+    emitStateChange('running', [], null, null, []);
 
     runCommanderPipeline({
       query: topic,
@@ -134,6 +202,7 @@ export const CommanderLiveFeed: React.FC<CommanderLiveFeedProps> = ({
           } else {
             next.push(updatedStep);
           }
+          let currentSources = sourcesRef.current;
           if (updatedStep.sources && updatedStep.sources.length > 0) {
             setSources((sPrev) => {
               const merged = [...sPrev];
@@ -144,7 +213,15 @@ export const CommanderLiveFeed: React.FC<CommanderLiveFeedProps> = ({
               }
               return merged;
             });
+            const mergedSources = [...sourcesRef.current];
+            for (const s of updatedStep.sources || []) {
+              if (!mergedSources.some((m) => m.url === s.url)) {
+                mergedSources.push(s);
+              }
+            }
+            currentSources = mergedSources;
           }
+          emitStateChange('running', next, null, null, currentSources);
           return next;
         });
       },
@@ -158,7 +235,7 @@ export const CommanderLiveFeed: React.FC<CommanderLiveFeedProps> = ({
       .catch((err) => {
         if (controller.signal.aborted) {
           setStatus('aborted');
-          emitStateChange('aborted', stepsRef.current, null, 'Mission aborted by user.', sourcesRef.current);
+          emitStateChange('aborted', stepsRef.current, null, 'Mission stopped by user.', sourcesRef.current);
         } else {
           const msg = err instanceof Error ? err.message : 'Execution failed';
           setStatus('error');

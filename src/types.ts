@@ -1133,6 +1133,15 @@ export interface CommanderResult {
   sources?: AISource[];
 }
 
+export interface CommanderFeedSavedState {
+  steps: CommanderExecutionStep[];
+  status: 'running' | 'completed' | 'aborted' | 'error';
+  result?: CommanderResult | null;
+  errorMessage?: string | null;
+  sources?: AISource[];
+  mode?: CommanderMode;
+}
+
 
 
 
