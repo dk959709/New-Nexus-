@@ -48,7 +48,7 @@ import {
 import { Haptics, ImpactStyle } from '@capacitor/haptics';
 import { Link } from 'react-router-dom';
 import { api } from '@/services/api';
-import { storage } from '@/lib/storage';
+import { storage, DEFAULT_COMMANDER_CONFIG } from '@/lib/storage';
 import { copyToClipboard, formatMarkdownToRichHtml } from '@/lib/clipboard';
 import { playTapSound } from '@/lib/audio';
 import { ErrorMessage } from '@/components';
@@ -1762,6 +1762,76 @@ ${commanderConfig.systemPrompts.synthesizer?.trim() || '(Default system prompt)'
         ? 'Commander Mode enabled: 3-agent tactical intelligence pipeline active'
         : 'Commander Mode disabled',
     );
+  };
+
+  const handleResetCommanderPlanToDefault = () => {
+    setCommanderConfig((prev) => {
+      const updated: CommanderConfig = {
+        ...prev,
+        manualConfig: {
+          ...prev.manualConfig,
+          commanderPlan: DEFAULT_COMMANDER_CONFIG.manualConfig.commanderPlan,
+        },
+      };
+      storage.saveCommanderConfig(updated);
+      return updated;
+    });
+    setCommanderEnhanceError(null);
+    triggerSettingsToast("Commander's tactical plan reset to default.");
+  };
+
+  const handleResetAlphaToDefault = () => {
+    setCommanderConfig((prev) => {
+      const updated: CommanderConfig = {
+        ...prev,
+        manualConfig: {
+          ...prev.manualConfig,
+          alphaRole: DEFAULT_COMMANDER_CONFIG.manualConfig.alphaRole,
+          alphaTask: DEFAULT_COMMANDER_CONFIG.manualConfig.alphaTask,
+          alphaSearchQuery: DEFAULT_COMMANDER_CONFIG.manualConfig.alphaSearchQuery,
+          alphaSearchEnabled: DEFAULT_COMMANDER_CONFIG.manualConfig.alphaSearchEnabled,
+        },
+      };
+      storage.saveCommanderConfig(updated);
+      return updated;
+    });
+    setAlphaEnhanceError(null);
+    triggerSettingsToast('Agent Alpha directives and search reset to default.');
+  };
+
+  const handleResetBetaToDefault = () => {
+    setCommanderConfig((prev) => {
+      const updated: CommanderConfig = {
+        ...prev,
+        manualConfig: {
+          ...prev.manualConfig,
+          betaRole: DEFAULT_COMMANDER_CONFIG.manualConfig.betaRole,
+          betaTask: DEFAULT_COMMANDER_CONFIG.manualConfig.betaTask,
+          betaSearchQuery: DEFAULT_COMMANDER_CONFIG.manualConfig.betaSearchQuery,
+          betaSearchEnabled: DEFAULT_COMMANDER_CONFIG.manualConfig.betaSearchEnabled,
+        },
+      };
+      storage.saveCommanderConfig(updated);
+      return updated;
+    });
+    setBetaEnhanceError(null);
+    triggerSettingsToast('Agent Beta directives and search reset to default.');
+  };
+
+  const handleResetSynthToDefault = () => {
+    setCommanderConfig((prev) => {
+      const updated: CommanderConfig = {
+        ...prev,
+        manualConfig: {
+          ...prev.manualConfig,
+          synthesizerDirectives: DEFAULT_COMMANDER_CONFIG.manualConfig.synthesizerDirectives,
+        },
+      };
+      storage.saveCommanderConfig(updated);
+      return updated;
+    });
+    setSynthEnhanceError(null);
+    triggerSettingsToast('Final Synthesizer directives reset to default.');
   };
 
   const activeSpecialistMode = architectEnabled
@@ -8388,7 +8458,7 @@ DIRECTIVES:
 
                         {/* Commander Configuration */}
                         <div className="p-2.5 rounded-lg border border-indigo-500/20 bg-indigo-950/10 space-y-2">
-                          <div className="text-[11px] font-semibold text-indigo-300 flex items-center justify-between">
+                          <div className="text-[11px] font-semibold text-indigo-300 flex flex-wrap items-center justify-between gap-1.5">
                             <div className="flex items-center gap-1.5">
                               <span>Commander (Supreme Strategic Director)</span>
                               {enhancingCommanderPlan && (
@@ -8398,7 +8468,18 @@ DIRECTIVES:
                                 </span>
                               )}
                             </div>
-                            <span className="text-[10px] text-zinc-400 font-mono">STEP 1</span>
+                            <div className="flex items-center gap-2">
+                              <button
+                                type="button"
+                                onClick={handleResetCommanderPlanToDefault}
+                                className="text-[10px] font-medium text-zinc-400 hover:text-indigo-200 px-2 py-0.5 rounded border border-zinc-700/60 hover:border-indigo-500/40 bg-zinc-900/80 hover:bg-indigo-950/40 flex items-center gap-1 transition-colors"
+                                title="Reset Commander's tactical plan to default"
+                              >
+                                <RotateCcw size={10} />
+                                <span>Reset to Default</span>
+                              </button>
+                              <span className="text-[10px] text-zinc-400 font-mono">STEP 1</span>
+                            </div>
                           </div>
 
                           {/* Nested compact AI Enhance for Commander */}
@@ -8482,7 +8563,7 @@ DIRECTIVES:
 
                         {/* Agent Alpha Configuration */}
                         <div className="p-2.5 rounded-lg border border-cyan-500/20 bg-cyan-950/10 space-y-2">
-                          <div className="text-[11px] font-semibold text-cyan-300 flex items-center justify-between">
+                          <div className="text-[11px] font-semibold text-cyan-300 flex flex-wrap items-center justify-between gap-1.5">
                             <div className="flex items-center gap-1.5">
                               <span>Agent Alpha (Specialist 1)</span>
                               {enhancingAlphaDirectives && (
@@ -8492,25 +8573,36 @@ DIRECTIVES:
                                 </span>
                               )}
                             </div>
-                            <label className="flex items-center gap-1.5 cursor-pointer text-[10.5px] text-zinc-300">
-                              <input
-                                type="checkbox"
-                                checked={commanderConfig.manualConfig.alphaSearchEnabled}
-                                onChange={(e) => {
-                                  const updated: CommanderConfig = {
-                                    ...commanderConfig,
-                                    manualConfig: {
-                                      ...commanderConfig.manualConfig,
-                                      alphaSearchEnabled: e.target.checked,
-                                    },
-                                  };
-                                  setCommanderConfig(updated);
-                                  storage.saveCommanderConfig(updated);
-                                }}
-                                className="rounded border-zinc-700 text-cyan-500 focus:ring-0"
-                              />
-                              <span>Web Search</span>
-                            </label>
+                            <div className="flex items-center gap-2">
+                              <button
+                                type="button"
+                                onClick={handleResetAlphaToDefault}
+                                className="text-[10px] font-medium text-zinc-400 hover:text-cyan-200 px-2 py-0.5 rounded border border-zinc-700/60 hover:border-cyan-500/40 bg-zinc-900/80 hover:bg-cyan-950/40 flex items-center gap-1 transition-colors"
+                                title="Reset Agent Alpha fields & search to defaults"
+                              >
+                                <RotateCcw size={10} />
+                                <span>Reset to Default</span>
+                              </button>
+                              <label className="flex items-center gap-1.5 cursor-pointer text-[10.5px] text-zinc-300">
+                                <input
+                                  type="checkbox"
+                                  checked={commanderConfig.manualConfig.alphaSearchEnabled}
+                                  onChange={(e) => {
+                                    const updated: CommanderConfig = {
+                                      ...commanderConfig,
+                                      manualConfig: {
+                                        ...commanderConfig.manualConfig,
+                                        alphaSearchEnabled: e.target.checked,
+                                      },
+                                    };
+                                    setCommanderConfig(updated);
+                                    storage.saveCommanderConfig(updated);
+                                  }}
+                                  className="rounded border-zinc-700 text-cyan-500 focus:ring-0"
+                                />
+                                <span>Web Search</span>
+                              </label>
+                            </div>
                           </div>
 
                           {/* Nested compact AI Enhance for Agent Alpha */}
@@ -8656,7 +8748,7 @@ DIRECTIVES:
 
                         {/* Agent Beta Configuration */}
                         <div className="p-2.5 rounded-lg border border-purple-500/20 bg-purple-950/10 space-y-2">
-                          <div className="text-[11px] font-semibold text-purple-300 flex items-center justify-between">
+                          <div className="text-[11px] font-semibold text-purple-300 flex flex-wrap items-center justify-between gap-1.5">
                             <div className="flex items-center gap-1.5">
                               <span>Agent Beta (Counter-Perspective / Specialist 2)</span>
                               {enhancingBetaDirectives && (
@@ -8666,25 +8758,36 @@ DIRECTIVES:
                                 </span>
                               )}
                             </div>
-                            <label className="flex items-center gap-1.5 cursor-pointer text-[10.5px] text-zinc-300">
-                              <input
-                                type="checkbox"
-                                checked={commanderConfig.manualConfig.betaSearchEnabled}
-                                onChange={(e) => {
-                                  const updated: CommanderConfig = {
-                                    ...commanderConfig,
-                                    manualConfig: {
-                                      ...commanderConfig.manualConfig,
-                                      betaSearchEnabled: e.target.checked,
-                                    },
-                                  };
-                                  setCommanderConfig(updated);
-                                  storage.saveCommanderConfig(updated);
-                                }}
-                                className="rounded border-zinc-700 text-purple-500 focus:ring-0"
-                              />
-                              <span>Web Search</span>
-                            </label>
+                            <div className="flex items-center gap-2">
+                              <button
+                                type="button"
+                                onClick={handleResetBetaToDefault}
+                                className="text-[10px] font-medium text-zinc-400 hover:text-purple-200 px-2 py-0.5 rounded border border-zinc-700/60 hover:border-purple-500/40 bg-zinc-900/80 hover:bg-purple-950/40 flex items-center gap-1 transition-colors"
+                                title="Reset Agent Beta fields & search to defaults"
+                              >
+                                <RotateCcw size={10} />
+                                <span>Reset to Default</span>
+                              </button>
+                              <label className="flex items-center gap-1.5 cursor-pointer text-[10.5px] text-zinc-300">
+                                <input
+                                  type="checkbox"
+                                  checked={commanderConfig.manualConfig.betaSearchEnabled}
+                                  onChange={(e) => {
+                                    const updated: CommanderConfig = {
+                                      ...commanderConfig,
+                                      manualConfig: {
+                                        ...commanderConfig.manualConfig,
+                                        betaSearchEnabled: e.target.checked,
+                                      },
+                                    };
+                                    setCommanderConfig(updated);
+                                    storage.saveCommanderConfig(updated);
+                                  }}
+                                  className="rounded border-zinc-700 text-purple-500 focus:ring-0"
+                                />
+                                <span>Web Search</span>
+                              </label>
+                            </div>
                           </div>
 
                           {/* Nested compact AI Enhance for Agent Beta */}
@@ -8830,7 +8933,7 @@ DIRECTIVES:
 
                         {/* Final Synthesizer Configuration */}
                         <div className="p-2.5 rounded-lg border border-emerald-500/20 bg-emerald-950/10 space-y-2">
-                          <div className="text-[11px] font-semibold text-emerald-300 flex items-center justify-between">
+                          <div className="text-[11px] font-semibold text-emerald-300 flex flex-wrap items-center justify-between gap-1.5">
                             <div className="flex items-center gap-1.5">
                               <span>Final Synthesizer (Supreme Master Synthesis)</span>
                               {enhancingSynthDirectives && (
@@ -8840,7 +8943,18 @@ DIRECTIVES:
                                 </span>
                               )}
                             </div>
-                            <span className="text-[10px] text-zinc-400 font-mono">STEP 4</span>
+                            <div className="flex items-center gap-2">
+                              <button
+                                type="button"
+                                onClick={handleResetSynthToDefault}
+                                className="text-[10px] font-medium text-zinc-400 hover:text-emerald-200 px-2 py-0.5 rounded border border-zinc-700/60 hover:border-emerald-500/40 bg-zinc-900/80 hover:bg-emerald-950/40 flex items-center gap-1 transition-colors"
+                                title="Reset Final Synthesizer directives to default"
+                              >
+                                <RotateCcw size={10} />
+                                <span>Reset to Default</span>
+                              </button>
+                              <span className="text-[10px] text-zinc-400 font-mono">STEP 4</span>
+                            </div>
                           </div>
 
                           <CommanderModelSelector
