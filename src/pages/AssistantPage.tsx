@@ -1697,6 +1697,10 @@ ${commanderConfig.systemPrompts.synthesizer?.trim() || '(Default system prompt)'
     if (personaId === 'nova') return 'en-US-JennyNeural';
     if (personaId === 'orbit') return 'en-US-GuyNeural';
     if (personaId === 'cosmos') return 'en-US-EricNeural';
+    if (personaId === 'commander') return 'en-US-GuyNeural';
+    if (personaId === 'alpha') return 'en-US-JennyNeural';
+    if (personaId === 'beta') return 'en-US-EricNeural';
+    if (personaId === 'synthesizer') return 'en-US-AriaNeural';
     return globalVoice || 'en-US-AriaNeural';
   };
 
@@ -5011,6 +5015,11 @@ DIRECTIVES:
                             topic={message.commanderTopic || message.content}
                             config={commanderConfig}
                             savedState={message.commanderSavedState}
+                            messageIndex={index}
+                            theme={theme}
+                            onPlayAudio={(text, idKey, stageId) => handlePlayPersonaAudio(text, idKey, stageId)}
+                            isAudioPlayingKey={personaAudioPlayingKey}
+                            isAudioLoadingKey={personaAudioLoadingKey}
                             onStateChange={(state) => {
                               setMessages((prev) =>
                                 prev.map((msg, idx) => {
@@ -5378,8 +5387,8 @@ DIRECTIVES:
                           </div>
                         )}
 
-                        {/* Message Action Toolbar (Only for standard non-MultiChat messages; MultiChat personas have individual toolbars) */}
-                        {(!message.multiChatResponses || message.multiChatResponses.length === 0) && (
+                        {/* Message Action Toolbar (Only for standard non-MultiChat and non-Commander messages; MultiChat personas and Commander stages have individual toolbars) */}
+                        {(!message.multiChatResponses || message.multiChatResponses.length === 0) && message.tool !== 'commander' && (
                           <div
                             className={`flex items-center gap-1.5 pt-1 opacity-70 group-hover:opacity-100 transition-opacity flex-wrap ${
                               theme === 'fulldark' ? 'text-[#888]' : 'text-zinc-400'
