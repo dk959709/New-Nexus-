@@ -76,6 +76,7 @@ import type {
   MediaItem,
   ParallaxMessage,
   ParallaxSummary,
+  ParallaxEvidenceItem,
 } from '@/types';
 
 export interface AssistantGeneratedImage {
@@ -111,6 +112,7 @@ type Message = {
   swarmLiveStatus?: 'running' | 'completed' | 'aborted' | 'error';
   swarmLiveSummary?: ParallaxSummary | null;
   swarmLiveErrorMessage?: string | null;
+  swarmLiveEvidenceItems?: ParallaxEvidenceItem[];
 };
 
 // Helper: Clean user's message into a concise search topic for Wikimedia Commons
@@ -4404,17 +4406,20 @@ DIRECTIVES:
                           message.swarmLiveStatus === 'error' ? (
                             <SwarmLiveFeed
                               topic={message.swarmLiveTopic || message.content}
+                              evidenceItems={message.swarmLiveEvidenceItems}
                               savedState={{
                                 messages: message.swarmLiveMessages || [],
                                 status: message.swarmLiveStatus,
                                 summary: message.swarmLiveSummary,
                                 errorMessage: message.swarmLiveErrorMessage,
+                                evidenceItems: message.swarmLiveEvidenceItems,
                               }}
                               onClose={() => handleDeleteMessage(index)}
                             />
                           ) : (
                             <SwarmLiveFeed
                               topic={message.swarmLiveTopic || message.content}
+                              evidenceItems={message.swarmLiveEvidenceItems}
                               onStateChange={(state) => {
                                 setMessages((prev) =>
                                   prev.map((msg, idx) => {
@@ -4425,6 +4430,7 @@ DIRECTIVES:
                                         swarmLiveStatus: state.status,
                                         swarmLiveSummary: state.summary,
                                         swarmLiveErrorMessage: state.errorMessage,
+                                        swarmLiveEvidenceItems: state.evidenceItems,
                                       };
                                     }
                                     return msg;

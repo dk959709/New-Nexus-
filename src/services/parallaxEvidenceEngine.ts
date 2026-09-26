@@ -536,8 +536,9 @@ Output JSON only:
 }
 
 /**
- * Builds ultra-compact grounding constraint for persona turn (~25-35 tokens).
- * Ensures agents DO NOT hallucinate fake facts while preserving their distinct ideological archetype.
+ * Builds grounding constraint for persona turns.
+ * Ensures agents DO NOT hallucinate fake facts while preserving their distinct ideological archetype,
+ * and strictly prevents personas from declaring unconfirmed details to be non-existent unless explicitly contradicted.
  */
 export function buildAgentGroundingConstraint(
   entityResolution?: ParallaxEntityResolution | null,
@@ -554,9 +555,11 @@ export function buildAgentGroundingConstraint(
     if (unverifiedOrRefuted.length > 0) {
       const topIssue = unverifiedOrRefuted[0];
       if (topIssue.status === 'REFUTED') {
-        parts.push(`Grounding Alert: Claim "${topIssue.claimText}" is REFUTED by evidence.`);
+        parts.push(`Grounding Alert: Claim "${topIssue.claimText}" is explicitly contradicted/REFUTED by primary evidence.`);
       } else if (topIssue.status === 'UNVERIFIED') {
-        parts.push(`Grounding Alert: Premise "${topIssue.claimText}" is UNVERIFIED/SPECULATIVE; treat with analytical caution.`);
+        parts.push(`Grounding Alert: Premise "${topIssue.claimText}" is not explicitly confirmed in the brief snippets. Do not declare this does not exist or call it a hallucination just because it is not explicitly named in the evidence snippets — evidence snippets are short excerpts, not full pages. If uncertain about a specific detail, say so neutrally, without asserting non-existence.`);
+      } else if (topIssue.status === 'DISPUTED') {
+        parts.push(`Grounding Alert: Claim "${topIssue.claimText}" is DISPUTED across sources; evaluate neutrally.`);
       }
     } else {
       const verified = claims.find((c) => c.status === 'VERIFIED');
@@ -564,6 +567,8 @@ export function buildAgentGroundingConstraint(
         parts.push(`Verified Fact: ${verified.claimText.slice(0, 90)}`);
       }
     }
+  } else {
+    parts.push(`Do not declare this does not exist or call it a hallucination just because it is not explicitly named in the evidence snippets — evidence snippets are short excerpts, not full pages. If uncertain about a specific detail, say so neutrally, without asserting non-existence.`);
   }
 
   return parts.join(' ');

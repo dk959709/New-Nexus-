@@ -5,22 +5,25 @@ import { storage, DEFAULT_PARALLAX_AGENTS } from '@/lib/storage';
 import { AGENT_QUADRANTS } from '@/data/parallaxQuadrants';
 import { runParallaxSwarm } from '@/services/parallaxOrchestrator';
 import { ParallaxAgentAvatar } from '@/components/parallax/ParallaxAgentIcon';
-import type { ParallaxMessage, ParallaxSummary, ParallaxAgentConfig } from '@/types';
+import type { ParallaxMessage, ParallaxSummary, ParallaxAgentConfig, ParallaxEvidenceItem } from '@/types';
 
 interface SwarmLiveFeedProps {
   topic: string;
   onClose?: () => void;
+  evidenceItems?: ParallaxEvidenceItem[];
   savedState?: {
     messages: ParallaxMessage[];
     status: 'completed' | 'aborted' | 'error';
     summary?: ParallaxSummary | null;
     errorMessage?: string | null;
+    evidenceItems?: ParallaxEvidenceItem[];
   };
   onStateChange?: (state: {
     messages: ParallaxMessage[];
     status: 'running' | 'completed' | 'aborted' | 'error';
     summary?: ParallaxSummary | null;
     errorMessage?: string | null;
+    evidenceItems?: ParallaxEvidenceItem[];
   }) => void;
 }
 
@@ -52,10 +55,14 @@ function getAgentQuadrantColor(agentId: string): string {
 export const SwarmLiveFeed: React.FC<SwarmLiveFeedProps> = ({
   topic,
   onClose,
+  evidenceItems: initialEvidenceItems,
   savedState,
   onStateChange,
 }) => {
   const [messages, setMessages] = useState<ParallaxMessage[]>(() => savedState?.messages || []);
+  const [evidenceItems, setEvidenceItems] = useState<ParallaxEvidenceItem[]>(
+    () => initialEvidenceItems || savedState?.evidenceItems || []
+  );
   const [status, setStatus] = useState<'idle' | 'running' | 'completed' | 'aborted' | 'error'>(
     () => (savedState ? savedState.status : 'running'),
   );
@@ -97,6 +104,18 @@ export const SwarmLiveFeed: React.FC<SwarmLiveFeedProps> = ({
   const isNearBottomRef = useRef<boolean>(true);
   const messagesRef = useRef<ParallaxMessage[]>(messages);
   messagesRef.current = messages;
+
+  const evidenceItemsRef = useRef<ParallaxEvidenceItem[]>(evidenceItems);
+  evidenceItemsRef.current = evidenceItems;
+
+  const statusRef = useRef(status);
+  statusRef.current = status;
+
+  const summaryRef = useRef(summary);
+  summaryRef.current = summary;
+
+  const errorMessageRef = useRef(errorMessage);
+  errorMessageRef.current = errorMessage;
 
   const onStateChangeRef = useRef(onStateChange);
   onStateChangeRef.current = onStateChange;
@@ -140,6 +159,20 @@ export const SwarmLiveFeed: React.FC<SwarmLiveFeedProps> = ({
       topic,
       config: parallaxConfig,
       signal: controller.signal,
+      onEvidencePoolReady: (pool) => {
+        const items = pool.evidenceItems || [];
+        setEvidenceItems(items);
+        evidenceItemsRef.current = items;
+        if (onStateChangeRef.current) {
+          onStateChangeRef.current({
+            messages: messagesRef.current,
+            status: 'running',
+            summary: null,
+            errorMessage: null,
+            evidenceItems: items,
+          });
+        }
+      },
       onStatusUpdate: (msg) => {
         setStatusText(msg);
       },
@@ -162,6 +195,7 @@ export const SwarmLiveFeed: React.FC<SwarmLiveFeedProps> = ({
               status: 'running',
               summary: null,
               errorMessage: null,
+              evidenceItems: evidenceItemsRef.current,
             });
           }
           return updated;
@@ -177,6 +211,7 @@ export const SwarmLiveFeed: React.FC<SwarmLiveFeedProps> = ({
             status: 'completed',
             summary: completedSummary,
             errorMessage: null,
+            evidenceItems: evidenceItemsRef.current,
           });
         }
       },
@@ -190,6 +225,7 @@ export const SwarmLiveFeed: React.FC<SwarmLiveFeedProps> = ({
               status: 'aborted',
               summary: null,
               errorMessage: null,
+              evidenceItems: evidenceItemsRef.current,
             });
           }
         } else {
@@ -202,6 +238,7 @@ export const SwarmLiveFeed: React.FC<SwarmLiveFeedProps> = ({
               status: 'error',
               summary: null,
               errorMessage: errText,
+              evidenceItems: evidenceItemsRef.current,
             });
           }
         }
@@ -216,6 +253,7 @@ export const SwarmLiveFeed: React.FC<SwarmLiveFeedProps> = ({
             status: 'aborted',
             summary: null,
             errorMessage: null,
+            evidenceItems: evidenceItemsRef.current,
           });
         }
       } else {
@@ -228,6 +266,7 @@ export const SwarmLiveFeed: React.FC<SwarmLiveFeedProps> = ({
             status: 'error',
             summary: null,
             errorMessage: msg,
+            evidenceItems: evidenceItemsRef.current,
           });
         }
       }
@@ -249,6 +288,7 @@ export const SwarmLiveFeed: React.FC<SwarmLiveFeedProps> = ({
           status: 'aborted',
           summary: null,
           errorMessage: null,
+          evidenceItems: evidenceItemsRef.current,
         });
       }
     }
@@ -275,7 +315,35 @@ export const SwarmLiveFeed: React.FC<SwarmLiveFeedProps> = ({
       `═══════════════════════════════════════════════════`
     );
 
-    // 2. Deliberation Transcript
+    // 2. Evidence Sources (up to 10 sources)
+    const rawSources =
+      evidenceItems && evidenceItems.length > 0
+        ? evidenceItems
+        : summary?.evidenceSources
+        ? summary.evidenceSources.map((s, idx) => ({
+            id: `s_${idx}`,
+            title: s.title,
+            url: s.url,
+            domain: s.domain,
+          }))
+        : [];
+
+    const validSources = rawSources.filter((s) => s && s.title && (s.url || s.domain)).slice(0, 10);
+    if (validSources.length > 0) {
+      const sourceLines = validSources
+        .map((s, idx) => {
+          const domainStr = s.domain ? ` (${s.domain})` : '';
+          const urlStr = s.url ? ` - ${s.url}` : '';
+          return `${idx + 1}. ${s.title}${domainStr}${urlStr}`;
+        })
+        .join('\n');
+
+      sections.push(
+        `--- EVIDENCE SOURCES (${validSources.length}) ---\n\n${sourceLines}`
+      );
+    }
+
+    // 3. Deliberation Transcript
     if (messages.length > 0) {
       sections.push(
         `--- DELIBERATION TRANSCRIPT ---\n\n` +
@@ -290,7 +358,7 @@ export const SwarmLiveFeed: React.FC<SwarmLiveFeedProps> = ({
       );
     }
 
-    // 3. Final Summary & Swarm Consensus
+    // 4. Final Summary & Swarm Consensus
     if (summary) {
       const rawVerdict =
         summary.verdict ||
