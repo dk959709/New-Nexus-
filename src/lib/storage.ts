@@ -19,6 +19,7 @@ import type {
   ParallaxSystemConfig,
   ParallaxAgentConfig,
   ParallaxSession,
+  CommanderConfig,
 } from '@/types';
 import { DEFAULT_PARALLAX_VOICES } from '@/data/parallaxVoices';
 
@@ -42,6 +43,7 @@ const KEYS = {
   documentRagSettings: 'nexus-document-rag-settings-v1',
   parallaxConfig: 'nexus-parallax-config-v1',
   parallaxSessions: 'nexus-parallax-sessions-v1',
+  commanderConfig: 'nexus-ai-commander-config-v1',
 } as const;
 
 export const DEFAULT_PARALLAX_AGENTS: Record<string, ParallaxAgentConfig> = {
@@ -329,6 +331,35 @@ export const DEFAULT_PARALLAX_AGENTS: Record<string, ParallaxAgentConfig> = {
 
 export const DEFAULT_PARALLAX_CONFIG: ParallaxSystemConfig = {
   agents: DEFAULT_PARALLAX_AGENTS,
+};
+
+export const DEFAULT_COMMANDER_CONFIG: CommanderConfig = {
+  mode: 'auto',
+  modelId: '',
+  alphaModelId: '',
+  betaModelId: '',
+  synthesizerModelId: '',
+  systemPrompts: {
+    commander: `You are the COMMANDER, the supreme strategic director of an elite 3-agent intelligence unit. Your mandate is to analyze the user's objective, break down complexities, and coordinate specialized autonomous agents (Agent Alpha and Agent Beta) to investigate distinct angles. When evaluating inquiries, formulate a decisive tactical mission plan, delegate complementary research vectors, and enforce rigorous factual accuracy and intellectual rigor.`,
+    alpha: `You are AGENT ALPHA, the lead investigative operative and primary domain specialist of the Commander unit. Your mission is to tackle the core technical, empirical, or factual requirements of the commander's directive. Conduct thorough analysis, verify all claims with precision, extract critical data points, and deliver direct, unvarnished intelligence with structural clarity and actionable insight.`,
+    beta: `You are AGENT BETA, the critical validator, counter-perspective specialist, and risk analyst of the Commander unit. Your mission is to stress-test hypotheses, identify edge cases, uncover alternative viewpoints or hidden trade-offs, and supply essential balance to Agent Alpha's findings. Challenge weak assumptions constructively and highlight practical constraints or contrasting evidence.`,
+    synthesizer: `You are the COMMANDER presiding over the final intelligence synthesis. You have gathered raw intelligence from Agent Alpha and critical validation from Agent Beta. Your mission is to harmonize both perspectives into a single master response of the highest caliber. Deliver a comprehensive, authoritative, beautifully structured answer that directly resolves the user's inquiry with nuanced depth, clear trade-offs, and conclusive verdicts.`,
+  },
+  manualConfig: {
+    commanderPlan: 'Execute strategic intelligence assessment and counter-analysis on the specified query.',
+    alphaRole: 'Lead Technical Investigator',
+    alphaTask: 'Analyze the core query in detail, identify key mechanisms, and present factual evidence and recommendations.',
+    alphaSearchEnabled: true,
+    alphaSearchQuery: '',
+    alphaModelId: '',
+    betaRole: 'Counter-Perspective & Risk Analyst',
+    betaTask: 'Identify critical risks, alternative methods, edge cases, and limitations to balance the primary perspective.',
+    betaSearchEnabled: false,
+    betaSearchQuery: '',
+    betaModelId: '',
+    synthesizerModelId: '',
+    synthesizerDirectives: 'Harmonize empirical findings with stress-tests to provide balanced, definitive intelligence.',
+  },
 };
 
 export const DEFAULT_IMAGE_PROVIDERS: ImageProviderConfig[] = [
@@ -2204,5 +2235,82 @@ export const storage = {
     const list = this.getParallaxSessions();
     const updated = list.filter((s) => s.id !== id);
     write(KEYS.parallaxSessions, updated);
+  },
+
+  getAssistantCommanderEnabled(): boolean {
+    return read<boolean>('nexus-ai-commander-toggle', false);
+  },
+
+  setAssistantCommanderEnabled(enabled: boolean): void {
+    write('nexus-ai-commander-toggle', enabled);
+  },
+
+  getCommanderConfig(): CommanderConfig {
+    const stored = read<Partial<CommanderConfig> | null>(KEYS.commanderConfig, null);
+    if (!stored) {
+      return DEFAULT_COMMANDER_CONFIG;
+    }
+    const manualConfig = stored.manualConfig || {};
+    return {
+      mode: stored.mode === 'manual' ? 'manual' : 'auto',
+      modelId: stored.modelId || '',
+      alphaModelId: stored.alphaModelId || manualConfig.alphaModelId || '',
+      betaModelId: stored.betaModelId || manualConfig.betaModelId || '',
+      synthesizerModelId: stored.synthesizerModelId || manualConfig.synthesizerModelId || '',
+      systemPrompts: {
+        ...DEFAULT_COMMANDER_CONFIG.systemPrompts,
+        ...(stored.systemPrompts || {}),
+      },
+      manualConfig: {
+        ...DEFAULT_COMMANDER_CONFIG.manualConfig,
+        ...manualConfig,
+        alphaModelId: manualConfig.alphaModelId || stored.alphaModelId || '',
+        betaModelId: manualConfig.betaModelId || stored.betaModelId || '',
+        synthesizerModelId: manualConfig.synthesizerModelId || stored.synthesizerModelId || '',
+        synthesizerDirectives: manualConfig.synthesizerDirectives ?? DEFAULT_COMMANDER_CONFIG.manualConfig.synthesizerDirectives,
+      },
+    };
+  },
+
+  saveCommanderConfig(config: CommanderConfig): void {
+    write(KEYS.commanderConfig, config);
+  },
+
+  resetCommanderConfig(): CommanderConfig {
+    write(KEYS.commanderConfig, DEFAULT_COMMANDER_CONFIG);
+    return DEFAULT_COMMANDER_CONFIG;
+  },
+
+  getCommanderAgentModel(agentId: 'commander' | 'alpha' | 'beta' | 'synthesizer'): string {
+    const cfg = this.getCommanderConfig();
+    if (agentId === 'commander') {
+      return cfg.modelId || '';
+    } else if (agentId === 'alpha') {
+      return cfg.alphaModelId || cfg.manualConfig.alphaModelId || '';
+    } else if (agentId === 'beta') {
+      return cfg.betaModelId || cfg.manualConfig.betaModelId || '';
+    } else if (agentId === 'synthesizer') {
+      return cfg.synthesizerModelId || cfg.manualConfig.synthesizerModelId || '';
+    }
+    return '';
+  },
+
+  setCommanderAgentModel(agentId: 'commander' | 'alpha' | 'beta' | 'synthesizer', modelId: string): CommanderConfig {
+    const cfg = this.getCommanderConfig();
+    const cleanId = (modelId || '').trim();
+    if (agentId === 'commander') {
+      cfg.modelId = cleanId;
+    } else if (agentId === 'alpha') {
+      cfg.alphaModelId = cleanId;
+      cfg.manualConfig.alphaModelId = cleanId;
+    } else if (agentId === 'beta') {
+      cfg.betaModelId = cleanId;
+      cfg.manualConfig.betaModelId = cleanId;
+    } else if (agentId === 'synthesizer') {
+      cfg.synthesizerModelId = cleanId;
+      cfg.manualConfig.synthesizerModelId = cleanId;
+    }
+    this.saveCommanderConfig(cfg);
+    return cfg;
   },
 };

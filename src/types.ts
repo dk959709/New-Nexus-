@@ -1068,6 +1068,68 @@ export interface DocumentLibraryStats {
   activeDocuments: number;
 }
 
+// ==========================================
+// COMMANDER SPECIALIST MODE TYPES
+// ==========================================
+
+export type CommanderMode = 'auto' | 'manual';
+
+export interface CommanderSystemPrompts {
+  commander: string;
+  alpha: string;
+  beta: string;
+  synthesizer: string;
+}
+
+export interface CommanderManualConfig {
+  commanderPlan: string;
+  alphaRole: string;
+  alphaTask: string;
+  alphaSearchEnabled: boolean;
+  alphaSearchQuery: string;
+  alphaModelId?: string;
+  betaRole: string;
+  betaTask: string;
+  betaSearchEnabled: boolean;
+  betaSearchQuery: string;
+  betaModelId?: string;
+  synthesizerModelId?: string;
+  synthesizerDirectives?: string;
+}
+
+export interface CommanderConfig {
+  mode: CommanderMode;
+  modelId?: string;
+  alphaModelId?: string;
+  betaModelId?: string;
+  synthesizerModelId?: string;
+  systemPrompts: CommanderSystemPrompts;
+  manualConfig: CommanderManualConfig;
+}
+
+export interface CommanderExecutionStep {
+  id: string;
+  agentId: 'commander' | 'alpha' | 'beta' | 'synthesizer';
+  name: string;
+  role?: string;
+  task?: string;
+  searchEnabled?: boolean;
+  searchQuery?: string;
+  status: 'pending' | 'running' | 'completed' | 'error';
+  content?: string;
+  sources?: AISource[];
+  timestamp: number;
+}
+
+export interface CommanderResult {
+  synthesis: string;
+  plan: string;
+  alphaFindings: string;
+  betaFindings: string;
+  steps: CommanderExecutionStep[];
+  sources?: AISource[];
+}
+
 
 
 

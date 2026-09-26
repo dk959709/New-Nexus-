@@ -43,6 +43,7 @@ import {
   Key,
   Square,
   Layers3,
+  Shield,
 } from 'lucide-react';
 import { Haptics, ImpactStyle } from '@capacitor/haptics';
 import { Link } from 'react-router-dom';
@@ -66,6 +67,17 @@ import {
   isIndexedDbAvailable,
 } from '@/lib/imageDb';
 import { SwarmLiveFeed } from '@/components/assistant/SwarmLiveFeed';
+import {
+  CommanderLiveFeed,
+  type CommanderFeedSavedState,
+} from '@/components/assistant/CommanderLiveFeed';
+import { getTargetProviderConfig } from '@/services/commanderOrchestrator';
+import {
+  enhanceCommanderPlan,
+  enhanceAlphaDirectives,
+  enhanceBetaDirectives,
+  enhanceSynthesizerDirectives,
+} from '@/services/commanderEnhanceService';
 import type {
   AISource,
   MultiChatPersonaResponse,
@@ -77,6 +89,8 @@ import type {
   ParallaxMessage,
   ParallaxSummary,
   ParallaxEvidenceItem,
+  CommanderConfig,
+  AIProviderConfig,
 } from '@/types';
 
 export interface AssistantGeneratedImage {
@@ -95,7 +109,7 @@ type Message = {
   id?: string;
   role: 'user' | 'assistant';
   content: string;
-  tool?: 'none' | 'search' | 'weather' | 'image' | 'multichat' | 'architect' | 'dataAnalyst' | 'agent' | 'coder' | 'wikimedia' | 'webfetcher' | 'swarmlive';
+  tool?: 'none' | 'search' | 'weather' | 'image' | 'multichat' | 'architect' | 'dataAnalyst' | 'agent' | 'coder' | 'wikimedia' | 'webfetcher' | 'swarmlive' | 'commander';
   sources?: AISource[];
   weather?: unknown;
   searchedWeb?: boolean;
@@ -113,6 +127,8 @@ type Message = {
   swarmLiveSummary?: ParallaxSummary | null;
   swarmLiveErrorMessage?: string | null;
   swarmLiveEvidenceItems?: ParallaxEvidenceItem[];
+  commanderTopic?: string;
+  commanderSavedState?: CommanderFeedSavedState;
 };
 
 // Helper: Clean user's message into a concise search topic for Wikimedia Commons
@@ -269,6 +285,217 @@ interface WebFetcherResultItem {
   snippet: string;
   isOfficial?: boolean;
 }
+
+const POPULAR_COMMANDER_MODELS = [
+  { id: 'gemini-2.5-flash', name: 'Gemini 2.5 Flash' },
+  { id: 'gemini-2.5-pro', name: 'Gemini 2.5 Pro' },
+  { id: 'gpt-4o', name: 'GPT-4o' },
+  { id: 'gpt-4o-mini', name: 'GPT-4o Mini' },
+  { id: 'claude-3-7-sonnet', name: 'Claude 3.7 Sonnet' },
+  { id: 'claude-3-5-haiku', name: 'Claude 3.5 Haiku' },
+  { id: 'deepseek-chat', name: 'DeepSeek Chat (V3)' },
+  { id: 'deepseek-reasoner', name: 'DeepSeek Reasoner (R1)' },
+  { id: 'llama-3.3-70b-versatile', name: 'Llama 3.3 70B' },
+];
+
+interface CommanderModelSelectorProps {
+  agentKey: 'commander' | 'alpha' | 'beta' | 'synthesizer';
+  title: string;
+  roleSubtitle?: string;
+  themeColor: 'indigo' | 'cyan' | 'purple' | 'emerald';
+  value: string;
+  configuredProviders: AIProviderConfig[];
+  onChange: (modelId: string) => void;
+  compact?: boolean;
+}
+
+const CommanderModelSelector: React.FC<CommanderModelSelectorProps> = ({
+  title,
+  roleSubtitle,
+  themeColor,
+  value,
+  configuredProviders,
+  onChange,
+  compact = false,
+}) => {
+  const [manualInputOpen, setManualInputOpen] = useState(false);
+
+  const colors = {
+    indigo: {
+      border: 'border-indigo-500/30',
+      borderFocus: 'focus:border-indigo-500',
+      badge: 'bg-indigo-950/60 text-indigo-300 border-indigo-500/40',
+      chip: 'hover:border-indigo-400 hover:text-indigo-300',
+      dot: 'bg-indigo-400',
+    },
+    cyan: {
+      border: 'border-cyan-500/30',
+      borderFocus: 'focus:border-cyan-500',
+      badge: 'bg-cyan-950/60 text-cyan-300 border-cyan-500/40',
+      chip: 'hover:border-cyan-400 hover:text-cyan-300',
+      dot: 'bg-cyan-400',
+    },
+    purple: {
+      border: 'border-purple-500/30',
+      borderFocus: 'focus:border-purple-500',
+      badge: 'bg-purple-950/60 text-purple-300 border-purple-500/40',
+      chip: 'hover:border-purple-400 hover:text-purple-300',
+      dot: 'bg-purple-400',
+    },
+    emerald: {
+      border: 'border-emerald-500/30',
+      borderFocus: 'focus:border-emerald-500',
+      badge: 'bg-emerald-950/60 text-emerald-300 border-emerald-500/40',
+      chip: 'hover:border-emerald-400 hover:text-emerald-300',
+      dot: 'bg-emerald-400',
+    },
+  }[themeColor];
+
+  const matchedProvider = configuredProviders.find((p) => p.id === value);
+  const matchedPreset = POPULAR_COMMANDER_MODELS.find((m) => m.id === value);
+  const isCustom = Boolean(value) && !matchedProvider && !matchedPreset;
+
+  const currentDisplayName = matchedProvider
+    ? `${matchedProvider.name}${matchedProvider.model ? ` (${matchedProvider.model})` : ''}`
+    : matchedPreset
+    ? matchedPreset.name
+    : value
+    ? `${value} (Manual Model)`
+    : 'Default Active Provider';
+
+  return (
+    <div className={`p-2.5 sm:p-3 rounded-xl border ${colors.border} bg-black/40 space-y-2`}>
+      <div className="flex items-center justify-between gap-1.5 flex-wrap">
+        <div className="flex items-center gap-1.5">
+          <span className={`w-2 h-2 rounded-full ${colors.dot} shrink-0`} />
+          <span className="text-xs font-semibold text-zinc-200">{title}</span>
+        </div>
+        <div className="flex items-center gap-1">
+          <span
+            className={`text-[10px] px-1.5 py-0.5 rounded border font-mono truncate max-w-[150px] ${colors.badge}`}
+            title={currentDisplayName}
+          >
+            {value ? (matchedProvider ? matchedProvider.name : value) : 'Active Default'}
+          </span>
+          {value && (
+            <button
+              type="button"
+              onClick={() => onChange('')}
+              title="Reset to default active provider"
+              className="p-0.5 rounded text-zinc-400 hover:text-zinc-200 hover:bg-zinc-800 transition-colors"
+            >
+              <RotateCcw size={10} />
+            </button>
+          )}
+        </div>
+      </div>
+
+      {!compact && roleSubtitle && (
+        <p className="text-[10px] text-zinc-400 leading-tight">
+          {roleSubtitle}
+        </p>
+      )}
+
+      {/* Selector controls: Dropdown + Manual Toggle */}
+      <div className="space-y-1.5">
+        <div className="flex items-center gap-1.5">
+          <select
+            value={matchedProvider ? matchedProvider.id : matchedPreset ? matchedPreset.id : value ? '__custom__' : ''}
+            onChange={(e) => {
+              const val = e.target.value;
+              if (val === '__custom__') {
+                setManualInputOpen(true);
+              } else {
+                onChange(val);
+              }
+            }}
+            className={`flex-1 min-w-0 rounded-lg border border-zinc-700 bg-zinc-900 px-2 py-1.5 text-xs text-zinc-100 outline-none ${colors.borderFocus} cursor-pointer`}
+          >
+            <option value="">⚡ Default Active Provider</option>
+            {configuredProviders.length > 0 && (
+              <optgroup label="Configured AI Providers">
+                {configuredProviders.map((p) => {
+                  const label = p.name ? (p.model ? `${p.name} (${p.model})` : p.name) : (p.model || p.id);
+                  return (
+                    <option key={p.id} value={p.id}>
+                      {label}
+                    </option>
+                  );
+                })}
+              </optgroup>
+            )}
+            <optgroup label="Popular Model Presets">
+              {POPULAR_COMMANDER_MODELS.map((m) => (
+                <option key={m.id} value={m.id}>
+                  {m.name} ({m.id})
+                </option>
+              ))}
+            </optgroup>
+            <option value="__custom__">
+              {isCustom ? `✏️ Manual Model: "${value}"` : '✏️ Manual / Custom Model Input...'}
+            </option>
+          </select>
+
+          <button
+            type="button"
+            onClick={() => setManualInputOpen((prev) => !prev)}
+            title={manualInputOpen ? 'Hide manual text input' : 'Enter model ID manually'}
+            className={`px-2 py-1.5 rounded-lg border text-xs flex items-center gap-1 transition-colors shrink-0 ${
+              manualInputOpen || isCustom
+                ? 'bg-zinc-800 border-zinc-600 text-zinc-100'
+                : 'bg-zinc-900 border-zinc-700 text-zinc-400 hover:text-zinc-200'
+            }`}
+          >
+            <Edit3 size={11} />
+            <span className="hidden sm:inline text-[10.5px]">Manual</span>
+          </button>
+        </div>
+
+        {/* Manual Text Input Field (Visible on toggle or if custom string is active) */}
+        {(manualInputOpen || isCustom) && (
+          <div className="relative">
+            <input
+              type="text"
+              value={value}
+              onChange={(e) => onChange(e.target.value)}
+              placeholder="Type model manually (e.g. gpt-4o, gemini-2.5-pro, claude-3-7-sonnet)..."
+              className={`w-full rounded-lg border border-zinc-700 bg-zinc-900/90 pl-7 pr-7 py-1.5 text-xs text-zinc-100 placeholder-zinc-500 font-mono outline-none ${colors.borderFocus}`}
+              autoFocus={manualInputOpen && !value}
+            />
+            <Edit3 size={11} className="absolute left-2.5 top-1/2 -translate-y-1/2 text-zinc-500 pointer-events-none" />
+            {value && (
+              <button
+                type="button"
+                onClick={() => onChange('')}
+                title="Clear to default active provider"
+                className="absolute right-2 top-1/2 -translate-y-1/2 text-zinc-400 hover:text-white"
+              >
+                <X size={12} />
+              </button>
+            )}
+          </div>
+        )}
+
+        {/* Quick Click Preset Chips */}
+        <div className="flex items-center gap-1 overflow-x-auto py-0.5 no-scrollbar text-[10px]">
+          <span className="text-zinc-500 shrink-0 text-[9.5px]">Quick:</span>
+          {['gemini-2.5-flash', 'gemini-2.5-pro', 'gpt-4o', 'claude-3-7-sonnet', 'deepseek-chat'].map((mid) => (
+            <button
+              key={mid}
+              type="button"
+              onClick={() => onChange(mid)}
+              className={`px-1.5 py-0.5 rounded border border-zinc-800 bg-zinc-900/80 text-zinc-400 shrink-0 transition-colors ${colors.chip} ${
+                value === mid ? 'border-zinc-500 text-zinc-100 bg-zinc-800 font-medium' : ''
+              }`}
+            >
+              {mid.replace('-sonnet', '')}
+            </button>
+          ))}
+        </div>
+      </div>
+    </div>
+  );
+};
 
 const CHAT_KEY = 'nexus-ai-conversation-v2';
 const MEMORY_KEY = 'nexus-ai-smart-memory-v1';
@@ -614,6 +841,7 @@ export function AssistantPage() {
       wikimedia: storage.getAssistantWikimediaEnabled(),
       newAgent: storage.getAssistantNewAgentEnabled(),
       swarmLive: storage.getAssistantSwarmLiveEnabled(),
+      commander: storage.getAssistantCommanderEnabled(),
     };
     let foundActive = false;
     const clean = { ...raw };
@@ -626,6 +854,7 @@ export function AssistantPage() {
       'wikimedia',
       'newAgent',
       'swarmLive',
+      'commander',
     ];
     for (const key of order) {
       if (clean[key]) {
@@ -639,6 +868,7 @@ export function AssistantPage() {
           else if (key === 'wikimedia') storage.setAssistantWikimediaEnabled(false);
           else if (key === 'newAgent') storage.setAssistantNewAgentEnabled(false);
           else if (key === 'swarmLive') storage.setAssistantSwarmLiveEnabled(false);
+          else if (key === 'commander') storage.setAssistantCommanderEnabled(false);
         } else {
           foundActive = true;
         }
@@ -655,6 +885,278 @@ export function AssistantPage() {
   const [wikimediaEnabled, setWikimediaEnabled] = useState<boolean>(initialSpecialists.wikimedia);
   const [newAgentEnabled, setNewAgentEnabled] = useState<boolean>(initialSpecialists.newAgent);
   const [swarmLiveEnabled, setSwarmLiveEnabled] = useState<boolean>(initialSpecialists.swarmLive);
+  const [commanderEnabled, setCommanderEnabled] = useState<boolean>(initialSpecialists.commander);
+  const [commanderConfig, setCommanderConfig] = useState<CommanderConfig>(() => storage.getCommanderConfig());
+  const [commanderPromptsExpanded, setCommanderPromptsExpanded] = useState<boolean>(false);
+  const [configuredAIProviders, setConfiguredAIProviders] = useState<AIProviderConfig[]>(
+    () => storage.getAIProvidersState().providers || []
+  );
+
+  // Commander Manual Directives AI Enhance state
+  const [commanderEnhanceIdea, setCommanderEnhanceIdea] = useState<string>('');
+  const [enhancingCommanderPlan, setEnhancingCommanderPlan] = useState<boolean>(false);
+  const [enhancingAlphaDirectives, setEnhancingAlphaDirectives] = useState<boolean>(false);
+  const [enhancingBetaDirectives, setEnhancingBetaDirectives] = useState<boolean>(false);
+  const [enhancingSynthDirectives, setEnhancingSynthDirectives] = useState<boolean>(false);
+  const [commanderEnhanceError, setCommanderEnhanceError] = useState<string | null>(null);
+  const [alphaEnhanceError, setAlphaEnhanceError] = useState<string | null>(null);
+  const [betaEnhanceError, setBetaEnhanceError] = useState<string | null>(null);
+  const [synthEnhanceError, setSynthEnhanceError] = useState<string | null>(null);
+
+  const isEnhancingCommanderAny =
+    enhancingCommanderPlan ||
+    enhancingAlphaDirectives ||
+    enhancingBetaDirectives ||
+    enhancingSynthDirectives;
+
+  const handleEnhanceCommanderDirectives = () => {
+    const rawIdea = commanderEnhanceIdea.trim();
+    if (!rawIdea || isEnhancingCommanderAny) return;
+
+    // Reset error states
+    setCommanderEnhanceError(null);
+    setAlphaEnhanceError(null);
+    setBetaEnhanceError(null);
+    setSynthEnhanceError(null);
+
+    // Set individual progress spinners
+    setEnhancingCommanderPlan(true);
+    setEnhancingAlphaDirectives(true);
+    setEnhancingBetaDirectives(true);
+    setEnhancingSynthDirectives(true);
+
+    const commanderModel = commanderConfig.modelId || storage.getCommanderAgentModel('commander');
+    const alphaModel =
+      commanderConfig.alphaModelId ||
+      commanderConfig.manualConfig.alphaModelId ||
+      storage.getCommanderAgentModel('alpha');
+    const betaModel =
+      commanderConfig.betaModelId ||
+      commanderConfig.manualConfig.betaModelId ||
+      storage.getCommanderAgentModel('beta');
+    const synthModel =
+      commanderConfig.synthesizerModelId ||
+      commanderConfig.manualConfig.synthesizerModelId ||
+      storage.getCommanderAgentModel('synthesizer');
+
+    const commanderProvider = getTargetProviderConfig(commanderModel);
+    const alphaProvider = getTargetProviderConfig(alphaModel);
+    const betaProvider = getTargetProviderConfig(betaModel);
+    const synthProvider = getTargetProviderConfig(synthModel);
+
+    const isAlphaSearchOn = Boolean(commanderConfig.manualConfig.alphaSearchEnabled);
+    const isBetaSearchOn = Boolean(commanderConfig.manualConfig.betaSearchEnabled);
+
+    // Call A: Commander Strategic Plan
+    enhanceCommanderPlan({
+      idea: rawIdea,
+      providerConfig: commanderProvider,
+    })
+      .then((newPlan) => {
+        if (newPlan) {
+          setCommanderConfig((prev) => {
+            const updated: CommanderConfig = {
+              ...prev,
+              manualConfig: {
+                ...prev.manualConfig,
+                commanderPlan: newPlan,
+              },
+            };
+            storage.saveCommanderConfig(updated);
+            return updated;
+          });
+        }
+      })
+      .catch((err: unknown) => {
+        console.warn('[Commander Enhance] Commander plan failed:', err);
+        setCommanderEnhanceError(err instanceof Error ? err.message : 'Plan enhancement failed');
+      })
+      .finally(() => {
+        setEnhancingCommanderPlan(false);
+      });
+
+    // Call B: Agent Alpha (Specialist 1)
+    enhanceAlphaDirectives({
+      idea: rawIdea,
+      searchEnabled: isAlphaSearchOn,
+      providerConfig: alphaProvider,
+    })
+      .then((alphaData) => {
+        setCommanderConfig((prev) => {
+          const updated: CommanderConfig = {
+            ...prev,
+            manualConfig: {
+              ...prev.manualConfig,
+              ...(alphaData.role ? { alphaRole: alphaData.role } : {}),
+              ...(alphaData.task ? { alphaTask: alphaData.task } : {}),
+              ...(isAlphaSearchOn && alphaData.searchQuery
+                ? { alphaSearchQuery: alphaData.searchQuery }
+                : {}),
+            },
+          };
+          storage.saveCommanderConfig(updated);
+          return updated;
+        });
+      })
+      .catch((err: unknown) => {
+        console.warn('[Commander Enhance] Agent Alpha failed:', err);
+        setAlphaEnhanceError(err instanceof Error ? err.message : 'Alpha enhancement failed');
+      })
+      .finally(() => {
+        setEnhancingAlphaDirectives(false);
+      });
+
+    // Call C: Agent Beta (Counter-Perspective / Specialist 2)
+    enhanceBetaDirectives({
+      idea: rawIdea,
+      searchEnabled: isBetaSearchOn,
+      providerConfig: betaProvider,
+    })
+      .then((betaData) => {
+        setCommanderConfig((prev) => {
+          const updated: CommanderConfig = {
+            ...prev,
+            manualConfig: {
+              ...prev.manualConfig,
+              ...(betaData.role ? { betaRole: betaData.role } : {}),
+              ...(betaData.task ? { betaTask: betaData.task } : {}),
+              ...(isBetaSearchOn && betaData.searchQuery
+                ? { betaSearchQuery: betaData.searchQuery }
+                : {}),
+            },
+          };
+          storage.saveCommanderConfig(updated);
+          return updated;
+        });
+      })
+      .catch((err: unknown) => {
+        console.warn('[Commander Enhance] Agent Beta failed:', err);
+        setBetaEnhanceError(err instanceof Error ? err.message : 'Beta enhancement failed');
+      })
+      .finally(() => {
+        setEnhancingBetaDirectives(false);
+      });
+
+    // Call D: Final Synthesizer (Synthesis Directives)
+    enhanceSynthesizerDirectives({
+      idea: rawIdea,
+      providerConfig: synthProvider,
+    })
+      .then((newDirectives) => {
+        if (newDirectives) {
+          setCommanderConfig((prev) => {
+            const updated: CommanderConfig = {
+              ...prev,
+              manualConfig: {
+                ...prev.manualConfig,
+                synthesizerDirectives: newDirectives,
+              },
+            };
+            storage.saveCommanderConfig(updated);
+            return updated;
+          });
+        }
+      })
+      .catch((err: unknown) => {
+        console.warn('[Commander Enhance] Final Synthesizer failed:', err);
+        setSynthEnhanceError(err instanceof Error ? err.message : 'Synthesis enhancement failed');
+      })
+      .finally(() => {
+        setEnhancingSynthDirectives(false);
+      });
+  };
+
+  const [copiedCommanderDirectives, setCopiedCommanderDirectives] = useState<boolean>(false);
+
+  const handleCopyCommanderManualSettings = async () => {
+    const commanderModel =
+      commanderConfig.modelId || storage.getCommanderAgentModel('commander') || 'Active Default Provider';
+    const alphaModel =
+      commanderConfig.alphaModelId ||
+      commanderConfig.manualConfig.alphaModelId ||
+      storage.getCommanderAgentModel('alpha') ||
+      'Active Default Provider';
+    const betaModel =
+      commanderConfig.betaModelId ||
+      commanderConfig.manualConfig.betaModelId ||
+      storage.getCommanderAgentModel('beta') ||
+      'Active Default Provider';
+    const synthModel =
+      commanderConfig.synthesizerModelId ||
+      commanderConfig.manualConfig.synthesizerModelId ||
+      storage.getCommanderAgentModel('synthesizer') ||
+      'Active Default Provider';
+
+    const textToCopy = `=== COMMANDER MODE: 4-AGENT MANUAL CONFIGURATION & DIRECTIVES ===
+
+[1. COMMANDER — Strategic Director]
+• Role: Strategic Mission Director
+• Model: ${commanderModel}
+• Tactical Plan / Task:
+${commanderConfig.manualConfig.commanderPlan?.trim() || '(No plan specified)'}
+
+• System Prompt:
+${commanderConfig.systemPrompts.commander?.trim() || '(Default system prompt)'}
+
+==================================================
+
+[2. AGENT ALPHA — Specialist 1 / Lead Investigator]
+• Role: ${commanderConfig.manualConfig.alphaRole?.trim() || 'Lead Technical Investigator'}
+• Model: ${alphaModel}
+• Web Search: ${commanderConfig.manualConfig.alphaSearchEnabled ? 'Enabled' : 'Disabled'}
+• Search Query: ${commanderConfig.manualConfig.alphaSearchQuery?.trim() || '(Blank = inherits user query)'}
+• Task Instructions:
+${commanderConfig.manualConfig.alphaTask?.trim() || '(No task instructions specified)'}
+
+• System Prompt:
+${commanderConfig.systemPrompts.alpha?.trim() || '(Default system prompt)'}
+
+==================================================
+
+[3. AGENT BETA — Specialist 2 / Counter-Perspective & Risk Analyst]
+• Role: ${commanderConfig.manualConfig.betaRole?.trim() || 'Counter-Perspective & Risk Analyst'}
+• Model: ${betaModel}
+• Web Search: ${commanderConfig.manualConfig.betaSearchEnabled ? 'Enabled' : 'Disabled'}
+• Search Query: ${commanderConfig.manualConfig.betaSearchQuery?.trim() || '(Blank = inherits user query)'}
+• Task Instructions:
+${commanderConfig.manualConfig.betaTask?.trim() || '(No task instructions specified)'}
+
+• System Prompt:
+${commanderConfig.systemPrompts.beta?.trim() || '(Default system prompt)'}
+
+==================================================
+
+[4. FINAL SYNTHESIZER — Supreme Master Resolution]
+• Role: Final Synthesizer (Harmonization & Supreme Resolution)
+• Model: ${synthModel}
+• Task / Synthesis Directives:
+${commanderConfig.manualConfig.synthesizerDirectives?.trim() || '(Default harmonization focus)'}
+
+• System Prompt:
+${commanderConfig.systemPrompts.synthesizer?.trim() || '(Default system prompt)'}
+`;
+
+    const success = await copyToClipboard(textToCopy);
+    if (success) {
+      setCopiedCommanderDirectives(true);
+      triggerSettingsToast('Copied all 4 agent system prompts, roles, tasks & search queries to clipboard!');
+      setTimeout(() => {
+        setCopiedCommanderDirectives(false);
+      }, 2500);
+    }
+  };
+
+  useEffect(() => {
+    const handleSyncAIProviders = () => {
+      setConfiguredAIProviders(storage.getAIProvidersState().providers || []);
+    };
+    window.addEventListener('storage', handleSyncAIProviders);
+    window.addEventListener('nexus-ai-providers-updated', handleSyncAIProviders);
+    return () => {
+      window.removeEventListener('storage', handleSyncAIProviders);
+      window.removeEventListener('nexus-ai-providers-updated', handleSyncAIProviders);
+    };
+  }, []);
   const [webFetcherList, setWebFetcherList] = useState<WebFetcherResultItem[]>([]);
   const [webFetcherOriginalRequest, setWebFetcherOriginalRequest] = useState<string>('');
   const [newMemoryInput, setNewMemoryInput] = useState('');
@@ -880,7 +1382,7 @@ export function AssistantPage() {
 
   // Helper to ensure mutual exclusivity among the Specialist Modes
   const disableOtherSpecialistModes = (
-    except: 'architect' | 'dataAnalysis' | 'multiChat' | 'coder' | 'webFetcher' | 'wikimedia' | 'newAgent' | 'swarmLive',
+    except: 'architect' | 'dataAnalysis' | 'multiChat' | 'coder' | 'webFetcher' | 'wikimedia' | 'newAgent' | 'swarmLive' | 'commander',
   ) => {
     if (except !== 'multiChat') {
       setMultiChatEnabled(false);
@@ -915,6 +1417,10 @@ export function AssistantPage() {
     if (except !== 'swarmLive') {
       setSwarmLiveEnabled(false);
       storage.setAssistantSwarmLiveEnabled(false);
+    }
+    if (except !== 'commander') {
+      setCommanderEnabled(false);
+      storage.setAssistantCommanderEnabled(false);
     }
   };
 
@@ -1063,6 +1569,26 @@ export function AssistantPage() {
     );
   };
 
+  const toggleCommander = () => {
+    const next = !commanderEnabled;
+    if (next) {
+      disableOtherSpecialistModes('commander');
+      setWebSearchEnabled(false);
+      try {
+        localStorage.setItem(WEB_SEARCH_PREF_KEY, 'false');
+      } catch {
+        // Ignore
+      }
+    }
+    setCommanderEnabled(next);
+    storage.setAssistantCommanderEnabled(next);
+    triggerSettingsToast(
+      next
+        ? 'Commander Mode enabled: 3-agent tactical intelligence pipeline active'
+        : 'Commander Mode disabled',
+    );
+  };
+
   const activeSpecialistMode = architectEnabled
     ? {
         name: 'Architect',
@@ -1150,6 +1676,17 @@ export function AssistantPage() {
             : theme === 'fulldark'
             ? 'text-red-300 border-red-500/40 bg-[#281313] hover:bg-[#381a1a]'
             : 'text-red-300 border-red-500/40 bg-red-950/50 hover:bg-red-900/60',
+      }
+    : commanderEnabled
+    ? {
+        name: 'Commander',
+        toggle: toggleCommander,
+        color:
+          theme === 'classic'
+            ? 'text-indigo-300 border-indigo-500/50 bg-indigo-950/60 hover:bg-indigo-900/70 shadow-[0_0_8px_rgba(99,102,241,0.25)]'
+            : theme === 'fulldark'
+            ? 'text-indigo-300 border-indigo-500/40 bg-[#16172e] hover:bg-[#1f2040]'
+            : 'text-indigo-300 border-indigo-500/40 bg-indigo-950/50 hover:bg-indigo-900/60',
       }
     : null;
 
@@ -2091,6 +2628,19 @@ export function AssistantPage() {
       return;
     }
 
+    // Commander Specialist Mode (3-Agent Tactical Intelligence Pipeline)
+    if (commanderEnabled) {
+      const assistantMessage: Message = {
+        role: 'assistant',
+        content: message,
+        tool: 'commander',
+        commanderTopic: message,
+      };
+      setMessages((current) => [...current, assistantMessage]);
+      setLoading(false);
+      return;
+    }
+
     // If Deep Research mode is ON, route directly through JARVIS multi-agent research pipeline (takes top priority)
     if (deepResearchEnabled) {
       console.log('[AI Assistant] Automatic search skipped: Deep Research mode is active (handled by JARVIS pipeline internally)');
@@ -2418,6 +2968,22 @@ export function AssistantPage() {
           content: message,
           tool: 'swarmlive',
           swarmLiveTopic: message,
+        };
+        setMessages((current) => [...current, assistantMessage]);
+      } finally {
+        setLoading(false);
+      }
+      return;
+    }
+
+    // PRIORITY: Commander Mode (3-Agent Tactical Intelligence Pipeline)
+    if (commanderEnabled) {
+      try {
+        const assistantMessage: Message = {
+          role: 'assistant',
+          content: message,
+          tool: 'commander',
+          commanderTopic: message,
         };
         setMessages((current) => [...current, assistantMessage]);
       } finally {
@@ -4440,6 +5006,27 @@ DIRECTIVES:
                               onClose={() => handleDeleteMessage(index)}
                             />
                           )
+                        ) : message.tool === 'commander' ? (
+                          <CommanderLiveFeed
+                            topic={message.commanderTopic || message.content}
+                            config={commanderConfig}
+                            savedState={message.commanderSavedState}
+                            onStateChange={(state) => {
+                              setMessages((prev) =>
+                                prev.map((msg, idx) => {
+                                  if (idx === index) {
+                                    return {
+                                      ...msg,
+                                      commanderSavedState: state,
+                                      content: state.result?.synthesis || msg.content,
+                                    };
+                                  }
+                                  return msg;
+                                }),
+                              );
+                            }}
+                            onClose={() => handleDeleteMessage(index)}
+                          />
                         ) : message.multiChatResponses && message.multiChatResponses.length > 0 ? (
                           <div className="space-y-4 pt-1">
                             {/* Simplified plain Multi-Chat Sequential Pipeline Indicator */}
@@ -5177,7 +5764,7 @@ DIRECTIVES:
                   type="button"
                   onClick={() => setMoreOptionsOpen((prev) => !prev)}
                   className={`text-xs p-1.5 rounded-lg border transition-all flex items-center justify-center gap-1 ${
-                    moreOptionsOpen || architectEnabled || dataAnalysisEnabled || multiChatEnabled || coderEnabled || webFetcherEnabled || wikimediaEnabled || newAgentEnabled || swarmLiveEnabled
+                    moreOptionsOpen || architectEnabled || dataAnalysisEnabled || multiChatEnabled || coderEnabled || webFetcherEnabled || wikimediaEnabled || newAgentEnabled || swarmLiveEnabled || commanderEnabled
                       ? theme === 'classic'
                         ? 'bg-cyan-500/15 text-cyan-200 border-cyan-500/40 shadow-[0_0_8px_rgba(6,182,212,0.2)]'
                         : theme === 'fulldark'
@@ -5192,7 +5779,7 @@ DIRECTIVES:
                   title={
                     moreOptionsOpen
                       ? 'Close quick modes menu'
-                      : 'Specialist Modes (mutually exclusive): Architect, Data Analysis, Multi Chat, Coder, Web Fetcher, Wikimedia, New Agent, Swarm Live'
+                      : 'Specialist Modes (mutually exclusive): Architect, Data Analysis, Multi Chat, Coder, Web Fetcher, Wikimedia, New Agent, Swarm Live, Commander'
                   }
                   aria-label="More options"
                   aria-expanded={moreOptionsOpen}
@@ -5203,7 +5790,7 @@ DIRECTIVES:
                       moreOptionsOpen ? 'rotate-180 text-cyan-400' : ''
                     }`}
                   />
-                  {(architectEnabled || dataAnalysisEnabled || multiChatEnabled || coderEnabled || webFetcherEnabled || wikimediaEnabled || newAgentEnabled || swarmLiveEnabled) && (
+                  {(architectEnabled || dataAnalysisEnabled || multiChatEnabled || coderEnabled || webFetcherEnabled || wikimediaEnabled || newAgentEnabled || swarmLiveEnabled || commanderEnabled) && (
                     <span className="w-1.5 h-1.5 rounded-full bg-cyan-400 shadow-[0_0_6px_rgba(6,182,212,0.8)]" />
                   )}
                 </button>
@@ -5615,6 +6202,53 @@ DIRECTIVES:
                         <div
                           className={`w-3 h-3 rounded-full bg-white shadow-sm transition-transform duration-150 ${
                             swarmLiveEnabled ? 'translate-x-4' : 'translate-x-0'
+                          }`}
+                        />
+                      </div>
+                    </button>
+
+                    {/* 9. Commander Toggle */}
+                    <button
+                      type="button"
+                      onClick={toggleCommander}
+                      className={`w-full p-2 rounded-xl border text-left flex items-center justify-between transition-all ${
+                        commanderEnabled
+                          ? 'border-indigo-500/40 bg-indigo-950/30 text-indigo-200 shadow-[0_0_10px_rgba(99,102,241,0.15)]'
+                          : 'border-transparent hover:bg-zinc-800/60 text-zinc-300'
+                      }`}
+                    >
+                      <div className="flex items-center gap-2.5 min-w-0">
+                        <div
+                          className={`w-7 h-7 rounded-lg grid place-items-center shrink-0 ${
+                            commanderEnabled
+                              ? 'bg-indigo-500/20 text-indigo-300 border border-indigo-500/30'
+                              : 'bg-zinc-800 text-zinc-400'
+                          }`}
+                        >
+                          <Shield size={13} />
+                        </div>
+                        <div className="min-w-0">
+                          <div className="text-xs font-semibold text-zinc-100 flex items-center gap-1.5">
+                            <span>Commander</span>
+                            {commanderEnabled && (
+                              <span className="text-[9px] font-mono font-semibold px-1.5 py-0.2 rounded bg-indigo-950 text-indigo-300 border border-indigo-500/40">
+                                ON
+                              </span>
+                            )}
+                          </div>
+                          <div className="text-[10.5px] text-zinc-400 truncate">
+                            3-Agent Tactical Pipeline
+                          </div>
+                        </div>
+                      </div>
+                      <div
+                        className={`w-8 h-4 rounded-full transition-colors relative flex items-center p-0.5 shrink-0 ${
+                          commanderEnabled ? 'bg-indigo-500' : 'bg-zinc-700'
+                        }`}
+                      >
+                        <div
+                          className={`w-3 h-3 rounded-full bg-white shadow-sm transition-transform duration-150 ${
+                            commanderEnabled ? 'translate-x-4' : 'translate-x-0'
                           }`}
                         />
                       </div>
@@ -7256,6 +7890,825 @@ DIRECTIVES:
                             }`}
                           />
                         </div>
+                      </div>
+                    </div>
+
+                    <div className="h-px bg-zinc-800/80" />
+
+                    {/* 9. Commander Mode (Specialist Mode & Pipeline Configuration) */}
+                    <div className="space-y-4">
+                      <div className="flex items-center justify-between">
+                        <div className="flex items-center gap-2">
+                          <Shield size={15} className="text-indigo-400" />
+                          <h4 className="text-xs font-semibold uppercase tracking-wider text-zinc-300">
+                            Commander Mode
+                          </h4>
+                        </div>
+                        <span
+                          className={`text-[10px] font-mono font-semibold px-2 py-0.5 rounded-full border ${
+                            commanderEnabled
+                              ? 'bg-indigo-950/80 text-indigo-300 border-indigo-500/50 shadow-[0_0_8px_rgba(99,102,241,0.2)]'
+                              : 'bg-zinc-800 text-zinc-500 border-zinc-700/60'
+                          }`}
+                        >
+                          {commanderEnabled ? 'ACTIVE' : 'DISABLED'}
+                        </span>
+                      </div>
+
+                      <p className="text-xs text-zinc-400 leading-relaxed">
+                        Dedicated 3-agent tactical intelligence unit (Commander, Agent Alpha, Agent Beta). Auto mode empowers Commander AI to dynamically allocate roles, tasks, and live search queries at runtime. Manual mode executes your fixed plan, roles, and search queries.
+                      </p>
+
+                      {/* Interactive Toggle Card */}
+                      <div
+                        onClick={toggleCommander}
+                        className={`p-3.5 rounded-xl border flex items-center justify-between cursor-pointer transition-all ${
+                          commanderEnabled
+                            ? 'border-indigo-500/40 bg-indigo-950/20 shadow-[0_0_15px_rgba(99,102,241,0.12)]'
+                            : 'border-zinc-800 bg-zinc-900/60 hover:bg-zinc-850 hover:border-zinc-700'
+                        }`}
+                      >
+                        <div className="flex items-center gap-3">
+                          <div
+                            className={`w-9 h-9 rounded-xl grid place-items-center transition-colors ${
+                              commanderEnabled
+                                ? 'bg-indigo-500/20 border border-indigo-500/40 text-indigo-300'
+                                : 'bg-zinc-800 border border-zinc-700 text-zinc-400'
+                            }`}
+                          >
+                            <Shield size={18} />
+                          </div>
+                          <div>
+                            <div className="text-xs font-semibold text-zinc-100 flex items-center gap-2">
+                              <span>Enable Commander Mode</span>
+                              {commanderEnabled && (
+                                <span className="text-[10px] font-mono text-indigo-400 bg-indigo-950/80 px-1.5 py-0.2 rounded border border-indigo-500/40">
+                                  3-Agent Unit Active
+                                </span>
+                              )}
+                            </div>
+                            <p className="text-[11px] text-zinc-400 mt-0.5">
+                              {commanderEnabled
+                                ? `Active (${commanderConfig.mode.toUpperCase()} mode)`
+                                : 'Standard single assistant responses'}
+                            </p>
+                          </div>
+                        </div>
+
+                        {/* Toggle Switch */}
+                        <div
+                          className={`w-11 h-6 rounded-full transition-colors relative flex items-center p-0.5 shrink-0 ${
+                            commanderEnabled ? 'bg-indigo-500 shadow-[0_0_8px_rgba(99,102,241,0.4)]' : 'bg-zinc-700'
+                          }`}
+                        >
+                          <div
+                            className={`w-5 h-5 rounded-full bg-white shadow-md transition-transform duration-200 ${
+                              commanderEnabled ? 'translate-x-5' : 'translate-x-0'
+                            }`}
+                          />
+                        </div>
+                      </div>
+
+                      {/* Operational Mode Toggle: Auto vs Manual */}
+                      <div className="p-3 rounded-xl border border-zinc-800 bg-black/40 space-y-3">
+                        <div className="flex items-center justify-between">
+                          <span className="text-xs font-semibold text-zinc-200">
+                            Operational Mode
+                          </span>
+                          <span className="text-[11px] text-zinc-400">
+                            {commanderConfig.mode === 'auto'
+                              ? 'Commander AI determines roles & tasks at runtime'
+                              : 'Fixed user directives & roles from Settings'}
+                          </span>
+                        </div>
+
+                        <div className="grid grid-cols-2 gap-2">
+                          <button
+                            type="button"
+                            onClick={() => {
+                              const updated: CommanderConfig = { ...commanderConfig, mode: 'auto' };
+                              setCommanderConfig(updated);
+                              storage.saveCommanderConfig(updated);
+                              triggerSettingsToast('Commander set to AUTO mode (AI decides)');
+                            }}
+                            className={`p-2.5 rounded-xl border text-xs font-medium flex flex-col items-center gap-1 transition-all ${
+                              commanderConfig.mode === 'auto'
+                                ? 'bg-indigo-950/70 border-indigo-500/60 text-indigo-200 shadow-[0_0_12px_rgba(99,102,241,0.25)]'
+                                : 'bg-zinc-900 border-zinc-800 text-zinc-400 hover:text-zinc-200'
+                            }`}
+                          >
+                            <span className="font-semibold text-sm">✦ AUTO</span>
+                            <span className="text-[10.5px] opacity-80 text-center">
+                              Commander AI Decides
+                            </span>
+                          </button>
+
+                          <button
+                            type="button"
+                            onClick={() => {
+                              const updated: CommanderConfig = { ...commanderConfig, mode: 'manual' };
+                              setCommanderConfig(updated);
+                              storage.saveCommanderConfig(updated);
+                              triggerSettingsToast('Commander set to MANUAL mode (User controls all)');
+                            }}
+                            className={`p-2.5 rounded-xl border text-xs font-medium flex flex-col items-center gap-1 transition-all ${
+                              commanderConfig.mode === 'manual'
+                                ? 'bg-indigo-950/70 border-indigo-500/60 text-indigo-200 shadow-[0_0_12px_rgba(99,102,241,0.25)]'
+                                : 'bg-zinc-900 border-zinc-800 text-zinc-400 hover:text-zinc-200'
+                            }`}
+                          >
+                            <span className="font-semibold text-sm">⚙ MANUAL</span>
+                            <span className="text-[10.5px] opacity-80 text-center">
+                              User Decides Everything
+                            </span>
+                          </button>
+                        </div>
+                      </div>
+
+                      {/* AI Model Allocation (4-Agent Specialist Pipeline) */}
+                      <div className="p-3 rounded-xl border border-zinc-800 bg-black/40 space-y-3">
+                        <div className="flex items-center justify-between pb-1 border-b border-zinc-800/80">
+                          <div className="flex items-center gap-1.5">
+                            <Sliders size={13} className="text-indigo-400" />
+                            <span className="text-xs font-semibold text-zinc-200">
+                              AI Model Allocation (4-Agent Pipeline)
+                            </span>
+                          </div>
+                          <span className="text-[10px] text-zinc-400">
+                            Select provider or type custom model manually
+                          </span>
+                        </div>
+
+                        <div className="grid grid-cols-1 sm:grid-cols-2 gap-2.5">
+                          {/* 1. Commander */}
+                          <CommanderModelSelector
+                            agentKey="commander"
+                            title="Commander (Director)"
+                            roleSubtitle="Strategic decomposition, mission allocation & orchestration"
+                            themeColor="indigo"
+                            value={storage.getCommanderAgentModel('commander')}
+                            configuredProviders={configuredAIProviders}
+                            onChange={(val) => {
+                              const updated = storage.setCommanderAgentModel('commander', val);
+                              setCommanderConfig(updated);
+                            }}
+                          />
+
+                          {/* 2. Agent Alpha */}
+                          <CommanderModelSelector
+                            agentKey="alpha"
+                            title="Agent Alpha (Specialist 1)"
+                            roleSubtitle="Lead empirical investigation, technical deep-dive"
+                            themeColor="cyan"
+                            value={storage.getCommanderAgentModel('alpha')}
+                            configuredProviders={configuredAIProviders}
+                            onChange={(val) => {
+                              const updated = storage.setCommanderAgentModel('alpha', val);
+                              setCommanderConfig(updated);
+                            }}
+                          />
+
+                          {/* 3. Agent Beta */}
+                          <CommanderModelSelector
+                            agentKey="beta"
+                            title="Agent Beta (Specialist 2)"
+                            roleSubtitle="Counter-perspective, stress-testing, caveats & risk audit"
+                            themeColor="purple"
+                            value={storage.getCommanderAgentModel('beta')}
+                            configuredProviders={configuredAIProviders}
+                            onChange={(val) => {
+                              const updated = storage.setCommanderAgentModel('beta', val);
+                              setCommanderConfig(updated);
+                            }}
+                          />
+
+                          {/* 4. Final Synthesizer */}
+                          <CommanderModelSelector
+                            agentKey="synthesizer"
+                            title="Final Synthesizer"
+                            roleSubtitle="Harmonizes Alpha & Beta findings into master resolution"
+                            themeColor="emerald"
+                            value={storage.getCommanderAgentModel('synthesizer')}
+                            configuredProviders={configuredAIProviders}
+                            onChange={(val) => {
+                              const updated = storage.setCommanderAgentModel('synthesizer', val);
+                              setCommanderConfig(updated);
+                            }}
+                          />
+                        </div>
+                      </div>
+
+                      {/* Manual Configuration Fields (Active / Pre-fillable) */}
+                      <div className="p-3 rounded-xl border border-zinc-800 bg-black/40 space-y-3">
+                        <div className="flex items-center justify-between pb-1 border-b border-zinc-800/80">
+                          <div className="flex items-center gap-1.5">
+                            <span className="text-xs font-semibold text-zinc-200">
+                              Manual Pipeline Directives
+                            </span>
+                            {commanderConfig.mode === 'manual' && (
+                              <span className="text-[10px] font-mono px-1.5 py-0.2 rounded bg-indigo-950 text-indigo-300 border border-indigo-500/40">
+                                ACTIVE
+                              </span>
+                            )}
+                          </div>
+                          <div className="flex items-center gap-2">
+                            <button
+                              type="button"
+                              onClick={handleCopyCommanderManualSettings}
+                              className={`px-2.5 py-1 rounded-lg border text-[11px] font-medium flex items-center gap-1.5 transition-all shadow-sm active:scale-95 ${
+                                copiedCommanderDirectives
+                                  ? 'border-emerald-500/50 bg-emerald-950/60 text-emerald-300'
+                                  : 'border-zinc-700 hover:border-zinc-500 bg-zinc-850 hover:bg-zinc-800 text-zinc-300 hover:text-white'
+                              }`}
+                              title="Copy all 4 agent system prompts, roles, task instructions, and search queries to clipboard"
+                            >
+                              {copiedCommanderDirectives ? (
+                                <>
+                                  <Check size={12} className="text-emerald-400" />
+                                  <span className="text-emerald-300 font-medium">Copied All!</span>
+                                </>
+                              ) : (
+                                <>
+                                  <Copy size={12} className="text-indigo-400" />
+                                  <span>Copy All Prompts & Directives</span>
+                                </>
+                              )}
+                            </button>
+                            <span className="text-[10.5px] text-zinc-400 hidden sm:inline">
+                              Executed when in Manual mode
+                            </span>
+                          </div>
+                        </div>
+
+                        {/* AI Enhance Manual Directives */}
+                        <div className="p-2.5 rounded-lg border border-indigo-500/30 bg-gradient-to-r from-indigo-950/40 via-purple-950/20 to-black/40 space-y-2">
+                          <div className="flex items-center justify-between">
+                            <label className="text-[11px] font-semibold text-indigo-300 flex items-center gap-1.5">
+                              <Sparkles size={12} className="text-amber-400" />
+                              <span>Describe your idea</span>
+                            </label>
+                            {isEnhancingCommanderAny && (
+                              <span className="text-[10px] text-indigo-300 flex items-center gap-1 font-mono">
+                                <Loader2 size={10} className="animate-spin text-indigo-400" />
+                                <span>Enhancing 4 agents...</span>
+                              </span>
+                            )}
+                          </div>
+
+                          <div className="flex flex-col sm:flex-row gap-2">
+                            <textarea
+                              value={commanderEnhanceIdea}
+                              onChange={(e) => {
+                                setCommanderEnhanceIdea(e.target.value);
+                                if (commanderEnhanceError) setCommanderEnhanceError(null);
+                                if (alphaEnhanceError) setAlphaEnhanceError(null);
+                                if (betaEnhanceError) setBetaEnhanceError(null);
+                                if (synthEnhanceError) setSynthEnhanceError(null);
+                              }}
+                              onKeyDown={(e) => {
+                                if (e.key === 'Enter' && (e.metaKey || e.ctrlKey)) {
+                                  e.preventDefault();
+                                  handleEnhanceCommanderDirectives();
+                                }
+                              }}
+                              rows={2}
+                              placeholder="Describe your idea to automatically tailor directives for Commander, Alpha, Beta, and Synthesizer..."
+                              className="w-full sm:flex-1 rounded-lg border border-zinc-700 bg-zinc-900/90 p-2 text-xs text-zinc-100 placeholder-zinc-600 outline-none focus:border-indigo-500 resize-none font-sans"
+                            />
+                            <button
+                              type="button"
+                              onClick={handleEnhanceCommanderDirectives}
+                              disabled={!commanderEnhanceIdea.trim() || isEnhancingCommanderAny}
+                              className={`px-3.5 py-2 rounded-lg border text-xs font-medium flex items-center justify-center gap-1.5 transition-all shrink-0 self-stretch sm:self-auto ${
+                                isEnhancingCommanderAny
+                                  ? 'border-indigo-500/30 bg-indigo-950/40 text-indigo-300/60 cursor-not-allowed'
+                                  : !commanderEnhanceIdea.trim()
+                                  ? 'border-zinc-800 bg-zinc-900/50 text-zinc-500 cursor-not-allowed'
+                                  : 'border-indigo-500/50 bg-indigo-600/30 hover:bg-indigo-600/50 text-indigo-200 hover:text-white shadow-[0_0_12px_rgba(99,102,241,0.25)] active:scale-95'
+                              }`}
+                              title={
+                                !commanderEnhanceIdea.trim()
+                                  ? 'Type your raw idea first'
+                                  : 'AI Enhance: independently generate Commander plan, Alpha directives, Beta directives, and Synthesizer directives'
+                              }
+                            >
+                              {isEnhancingCommanderAny ? (
+                                <Loader2 size={13} className="animate-spin text-indigo-300" />
+                              ) : (
+                                <Sparkles size={13} className="text-amber-400" />
+                              )}
+                              <span>{isEnhancingCommanderAny ? 'Enhancing...' : 'AI Enhance'}</span>
+                            </button>
+                          </div>
+                        </div>
+
+                        {/* Commander Fixed Plan */}
+                        <div className="space-y-1">
+                          <div className="flex items-center justify-between">
+                            <label className="text-[11px] font-medium text-indigo-300">
+                              Commander's Fixed Plan / Task:
+                            </label>
+                            {enhancingCommanderPlan && (
+                              <span className="text-[10px] text-indigo-400 flex items-center gap-1 font-mono">
+                                <Loader2 size={10} className="animate-spin" />
+                                <span>Enhancing plan...</span>
+                              </span>
+                            )}
+                          </div>
+                          <textarea
+                            value={commanderConfig.manualConfig.commanderPlan}
+                            onChange={(e) => {
+                              const updated: CommanderConfig = {
+                                ...commanderConfig,
+                                manualConfig: {
+                                  ...commanderConfig.manualConfig,
+                                  commanderPlan: e.target.value,
+                                },
+                              };
+                              setCommanderConfig(updated);
+                              storage.saveCommanderConfig(updated);
+                            }}
+                            rows={2}
+                            placeholder="Commander tactical directive..."
+                            className="w-full rounded-xl border border-zinc-700 bg-zinc-900/90 p-2.5 text-xs text-zinc-100 placeholder-zinc-600 outline-none focus:border-indigo-500 resize-none font-sans"
+                          />
+                          {commanderEnhanceError && (
+                            <p className="text-[10.5px] text-red-400 flex items-center gap-1 pt-0.5">
+                              <AlertCircle size={10} />
+                              <span>{commanderEnhanceError}</span>
+                            </p>
+                          )}
+                        </div>
+
+                        {/* Agent Alpha Configuration */}
+                        <div className="p-2.5 rounded-lg border border-cyan-500/20 bg-cyan-950/10 space-y-2">
+                          <div className="text-[11px] font-semibold text-cyan-300 flex items-center justify-between">
+                            <div className="flex items-center gap-1.5">
+                              <span>Agent Alpha (Specialist 1)</span>
+                              {enhancingAlphaDirectives && (
+                                <span className="text-[10px] text-cyan-400 flex items-center gap-1 font-mono font-normal">
+                                  <Loader2 size={10} className="animate-spin" />
+                                  <span>Enhancing...</span>
+                                </span>
+                              )}
+                            </div>
+                            <label className="flex items-center gap-1.5 cursor-pointer text-[10.5px] text-zinc-300">
+                              <input
+                                type="checkbox"
+                                checked={commanderConfig.manualConfig.alphaSearchEnabled}
+                                onChange={(e) => {
+                                  const updated: CommanderConfig = {
+                                    ...commanderConfig,
+                                    manualConfig: {
+                                      ...commanderConfig.manualConfig,
+                                      alphaSearchEnabled: e.target.checked,
+                                    },
+                                  };
+                                  setCommanderConfig(updated);
+                                  storage.saveCommanderConfig(updated);
+                                }}
+                                className="rounded border-zinc-700 text-cyan-500 focus:ring-0"
+                              />
+                              <span>Web Search</span>
+                            </label>
+                          </div>
+
+                          <div className="space-y-1.5">
+                            <div>
+                              <label className="text-[10px] text-zinc-400 block mb-0.5">
+                                Role Name
+                              </label>
+                              <input
+                                type="text"
+                                value={commanderConfig.manualConfig.alphaRole}
+                                onChange={(e) => {
+                                  const updated: CommanderConfig = {
+                                    ...commanderConfig,
+                                    manualConfig: {
+                                      ...commanderConfig.manualConfig,
+                                      alphaRole: e.target.value,
+                                    },
+                                  };
+                                  setCommanderConfig(updated);
+                                  storage.saveCommanderConfig(updated);
+                                }}
+                                placeholder="e.g. Lead Technical Investigator"
+                                className="w-full rounded-lg border border-zinc-700 bg-zinc-900 px-2 py-1.5 text-xs text-zinc-100 placeholder-zinc-600 outline-none focus:border-cyan-500"
+                              />
+                            </div>
+
+                            <CommanderModelSelector
+                              agentKey="alpha"
+                              title="Agent Alpha Model"
+                              roleSubtitle="Specialist 1 Investigation Model"
+                              themeColor="cyan"
+                              compact
+                              value={storage.getCommanderAgentModel('alpha')}
+                              configuredProviders={configuredAIProviders}
+                              onChange={(val) => {
+                                const updated = storage.setCommanderAgentModel('alpha', val);
+                                setCommanderConfig(updated);
+                              }}
+                            />
+                          </div>
+
+                          <div>
+                            <label className="text-[10px] text-zinc-400 block mb-0.5">
+                              Search Query (optional)
+                            </label>
+                            <input
+                              type="text"
+                              value={commanderConfig.manualConfig.alphaSearchQuery}
+                              onChange={(e) => {
+                                const updated: CommanderConfig = {
+                                  ...commanderConfig,
+                                  manualConfig: {
+                                    ...commanderConfig.manualConfig,
+                                    alphaSearchQuery: e.target.value,
+                                  },
+                                };
+                                setCommanderConfig(updated);
+                                storage.saveCommanderConfig(updated);
+                              }}
+                              placeholder="Blank = inherits user query"
+                              className="w-full rounded-lg border border-zinc-700 bg-zinc-900 px-2 py-1.5 text-xs text-zinc-100 placeholder-zinc-600 outline-none focus:border-cyan-500"
+                            />
+                          </div>
+
+                          <div>
+                            <label className="text-[10px] text-zinc-400 block mb-0.5">
+                              Task Instructions
+                            </label>
+                            <textarea
+                              value={commanderConfig.manualConfig.alphaTask}
+                              onChange={(e) => {
+                                const updated: CommanderConfig = {
+                                  ...commanderConfig,
+                                  manualConfig: {
+                                    ...commanderConfig.manualConfig,
+                                    alphaTask: e.target.value,
+                                  },
+                                };
+                                setCommanderConfig(updated);
+                                storage.saveCommanderConfig(updated);
+                              }}
+                              rows={2}
+                              placeholder="Alpha task directives..."
+                              className="w-full rounded-lg border border-zinc-700 bg-zinc-900 p-2 text-xs text-zinc-100 placeholder-zinc-600 outline-none focus:border-cyan-500 resize-none font-sans"
+                            />
+                          </div>
+                          {alphaEnhanceError && (
+                            <p className="text-[10.5px] text-red-400 flex items-center gap-1 pt-0.5">
+                              <AlertCircle size={10} />
+                              <span>{alphaEnhanceError}</span>
+                            </p>
+                          )}
+                        </div>
+
+                        {/* Agent Beta Configuration */}
+                        <div className="p-2.5 rounded-lg border border-purple-500/20 bg-purple-950/10 space-y-2">
+                          <div className="text-[11px] font-semibold text-purple-300 flex items-center justify-between">
+                            <div className="flex items-center gap-1.5">
+                              <span>Agent Beta (Counter-Perspective / Specialist 2)</span>
+                              {enhancingBetaDirectives && (
+                                <span className="text-[10px] text-purple-400 flex items-center gap-1 font-mono font-normal">
+                                  <Loader2 size={10} className="animate-spin" />
+                                  <span>Enhancing...</span>
+                                </span>
+                              )}
+                            </div>
+                            <label className="flex items-center gap-1.5 cursor-pointer text-[10.5px] text-zinc-300">
+                              <input
+                                type="checkbox"
+                                checked={commanderConfig.manualConfig.betaSearchEnabled}
+                                onChange={(e) => {
+                                  const updated: CommanderConfig = {
+                                    ...commanderConfig,
+                                    manualConfig: {
+                                      ...commanderConfig.manualConfig,
+                                      betaSearchEnabled: e.target.checked,
+                                    },
+                                  };
+                                  setCommanderConfig(updated);
+                                  storage.saveCommanderConfig(updated);
+                                }}
+                                className="rounded border-zinc-700 text-purple-500 focus:ring-0"
+                              />
+                              <span>Web Search</span>
+                            </label>
+                          </div>
+
+                          <div className="space-y-1.5">
+                            <div>
+                              <label className="text-[10px] text-zinc-400 block mb-0.5">
+                                Role Name
+                              </label>
+                              <input
+                                type="text"
+                                value={commanderConfig.manualConfig.betaRole}
+                                onChange={(e) => {
+                                  const updated: CommanderConfig = {
+                                    ...commanderConfig,
+                                    manualConfig: {
+                                      ...commanderConfig.manualConfig,
+                                      betaRole: e.target.value,
+                                    },
+                                  };
+                                  setCommanderConfig(updated);
+                                  storage.saveCommanderConfig(updated);
+                                }}
+                                placeholder="e.g. Counter-Perspective & Risk Analyst"
+                                className="w-full rounded-lg border border-zinc-700 bg-zinc-900 px-2 py-1.5 text-xs text-zinc-100 placeholder-zinc-600 outline-none focus:border-purple-500"
+                              />
+                            </div>
+
+                            <CommanderModelSelector
+                              agentKey="beta"
+                              title="Agent Beta Model"
+                              roleSubtitle="Specialist 2 Counter-Analysis Model"
+                              themeColor="purple"
+                              compact
+                              value={storage.getCommanderAgentModel('beta')}
+                              configuredProviders={configuredAIProviders}
+                              onChange={(val) => {
+                                const updated = storage.setCommanderAgentModel('beta', val);
+                                setCommanderConfig(updated);
+                              }}
+                            />
+                          </div>
+
+                          <div>
+                            <label className="text-[10px] text-zinc-400 block mb-0.5">
+                              Search Query (optional)
+                            </label>
+                            <input
+                              type="text"
+                              value={commanderConfig.manualConfig.betaSearchQuery}
+                              onChange={(e) => {
+                                const updated: CommanderConfig = {
+                                  ...commanderConfig,
+                                  manualConfig: {
+                                    ...commanderConfig.manualConfig,
+                                    betaSearchQuery: e.target.value,
+                                  },
+                                };
+                                setCommanderConfig(updated);
+                                storage.saveCommanderConfig(updated);
+                              }}
+                              placeholder="Blank = inherits user query"
+                              className="w-full rounded-lg border border-zinc-700 bg-zinc-900 px-2 py-1.5 text-xs text-zinc-100 placeholder-zinc-600 outline-none focus:border-purple-500"
+                            />
+                          </div>
+
+                          <div>
+                            <label className="text-[10px] text-zinc-400 block mb-0.5">
+                              Task Instructions
+                            </label>
+                            <textarea
+                              value={commanderConfig.manualConfig.betaTask}
+                              onChange={(e) => {
+                                const updated: CommanderConfig = {
+                                  ...commanderConfig,
+                                  manualConfig: {
+                                    ...commanderConfig.manualConfig,
+                                    betaTask: e.target.value,
+                                  },
+                                };
+                                setCommanderConfig(updated);
+                                storage.saveCommanderConfig(updated);
+                              }}
+                              rows={2}
+                              placeholder="Beta task directives..."
+                              className="w-full rounded-lg border border-zinc-700 bg-zinc-900 p-2 text-xs text-zinc-100 placeholder-zinc-600 outline-none focus:border-purple-500 resize-none font-sans"
+                            />
+                          </div>
+                          {betaEnhanceError && (
+                            <p className="text-[10.5px] text-red-400 flex items-center gap-1 pt-0.5">
+                              <AlertCircle size={10} />
+                              <span>{betaEnhanceError}</span>
+                            </p>
+                          )}
+                        </div>
+
+                        {/* Final Synthesizer Configuration */}
+                        <div className="p-2.5 rounded-lg border border-emerald-500/20 bg-emerald-950/10 space-y-2">
+                          <div className="text-[11px] font-semibold text-emerald-300 flex items-center justify-between">
+                            <div className="flex items-center gap-1.5">
+                              <span>Final Synthesizer (Supreme Master Synthesis)</span>
+                              {enhancingSynthDirectives && (
+                                <span className="text-[10px] text-emerald-400 flex items-center gap-1 font-mono font-normal">
+                                  <Loader2 size={10} className="animate-spin" />
+                                  <span>Enhancing...</span>
+                                </span>
+                              )}
+                            </div>
+                            <span className="text-[10px] text-zinc-400 font-mono">STEP 4</span>
+                          </div>
+
+                          <CommanderModelSelector
+                            agentKey="synthesizer"
+                            title="Final Synthesizer Model"
+                            roleSubtitle="Harmonizes Alpha & Beta findings into definitive intelligence"
+                            themeColor="emerald"
+                            compact
+                            value={storage.getCommanderAgentModel('synthesizer')}
+                            configuredProviders={configuredAIProviders}
+                            onChange={(val) => {
+                              const updated = storage.setCommanderAgentModel('synthesizer', val);
+                              setCommanderConfig(updated);
+                            }}
+                          />
+
+                          <div>
+                            <label className="text-[10px] text-zinc-400 block mb-0.5">
+                              Synthesis Directives / Focus (optional)
+                            </label>
+                            <textarea
+                              value={commanderConfig.manualConfig.synthesizerDirectives || ''}
+                              onChange={(e) => {
+                                const updated: CommanderConfig = {
+                                  ...commanderConfig,
+                                  manualConfig: {
+                                    ...commanderConfig.manualConfig,
+                                    synthesizerDirectives: e.target.value,
+                                  },
+                                };
+                                setCommanderConfig(updated);
+                                storage.saveCommanderConfig(updated);
+                              }}
+                              rows={2}
+                              placeholder="e.g. Harmonize empirical findings with stress-tests to provide balanced, definitive intelligence..."
+                              className="w-full rounded-lg border border-zinc-700 bg-zinc-900 p-2 text-xs text-zinc-100 placeholder-zinc-600 outline-none focus:border-emerald-500 resize-none font-sans"
+                            />
+                          </div>
+                          {synthEnhanceError && (
+                            <p className="text-[10.5px] text-red-400 flex items-center gap-1 pt-0.5">
+                              <AlertCircle size={10} />
+                              <span>{synthEnhanceError}</span>
+                            </p>
+                          )}
+                        </div>
+                      </div>
+
+                      {/* Editable System Prompts Accordion */}
+                      <div className="rounded-xl border border-zinc-800 bg-black/40 overflow-hidden">
+                        <div className="w-full p-3 text-xs font-semibold text-zinc-200 flex items-center justify-between transition-colors bg-zinc-900/60 hover:bg-zinc-850">
+                          <button
+                            type="button"
+                            onClick={() => setCommanderPromptsExpanded((prev) => !prev)}
+                            className="flex items-center gap-2 hover:text-white flex-1 text-left"
+                          >
+                            <Shield size={13} className="text-indigo-400 shrink-0" />
+                            <span>System Prompts (Commander, Alpha, Beta, Synthesizer)</span>
+                          </button>
+                          <div className="flex items-center gap-2">
+                            <button
+                              type="button"
+                              onClick={(e) => {
+                                e.stopPropagation();
+                                handleCopyCommanderManualSettings();
+                              }}
+                              className={`px-2 py-0.5 rounded border text-[10.5px] font-medium flex items-center gap-1 transition-all ${
+                                copiedCommanderDirectives
+                                  ? 'border-emerald-500/50 bg-emerald-950/60 text-emerald-300'
+                                  : 'border-zinc-700 hover:border-zinc-500 bg-zinc-800 hover:bg-zinc-750 text-zinc-300 hover:text-white'
+                              }`}
+                              title="Copy all 4 agent system prompts and manual directives"
+                            >
+                              {copiedCommanderDirectives ? (
+                                <>
+                                  <Check size={11} className="text-emerald-400" />
+                                  <span>Copied</span>
+                                </>
+                              ) : (
+                                <>
+                                  <Copy size={11} className="text-indigo-400" />
+                                  <span>Copy All</span>
+                                </>
+                              )}
+                            </button>
+                            <button
+                              type="button"
+                              onClick={() => setCommanderPromptsExpanded((prev) => !prev)}
+                              className="text-zinc-400 hover:text-white pl-1"
+                              aria-label="Toggle prompts accordion"
+                            >
+                              {commanderPromptsExpanded ? <ChevronUp size={14} /> : <ChevronDown size={14} />}
+                            </button>
+                          </div>
+                        </div>
+
+                        {commanderPromptsExpanded && (
+                          <div className="p-3 space-y-3 border-t border-zinc-800/80 text-xs">
+                            {/* Commander Prompt */}
+                            <div className="space-y-1">
+                              <label className="text-[11px] font-medium text-indigo-300">
+                                Commander System Prompt (Strategic Planner):
+                              </label>
+                              <textarea
+                                value={commanderConfig.systemPrompts.commander}
+                                onChange={(e) => {
+                                  const updated: CommanderConfig = {
+                                    ...commanderConfig,
+                                    systemPrompts: {
+                                      ...commanderConfig.systemPrompts,
+                                      commander: e.target.value,
+                                    },
+                                  };
+                                  setCommanderConfig(updated);
+                                  storage.saveCommanderConfig(updated);
+                                }}
+                                rows={3}
+                                className="w-full rounded-xl border border-zinc-700 bg-zinc-900/90 p-2.5 text-xs text-zinc-100 placeholder-zinc-600 outline-none focus:border-indigo-500 resize-none font-sans"
+                              />
+                            </div>
+
+                            {/* Alpha Prompt */}
+                            <div className="space-y-1">
+                              <label className="text-[11px] font-medium text-cyan-300">
+                                Agent Alpha System Prompt (Lead Investigator):
+                              </label>
+                              <textarea
+                                value={commanderConfig.systemPrompts.alpha}
+                                onChange={(e) => {
+                                  const updated: CommanderConfig = {
+                                    ...commanderConfig,
+                                    systemPrompts: {
+                                      ...commanderConfig.systemPrompts,
+                                      alpha: e.target.value,
+                                    },
+                                  };
+                                  setCommanderConfig(updated);
+                                  storage.saveCommanderConfig(updated);
+                                }}
+                                rows={3}
+                                className="w-full rounded-xl border border-zinc-700 bg-zinc-900/90 p-2.5 text-xs text-zinc-100 placeholder-zinc-600 outline-none focus:border-cyan-500 resize-none font-sans"
+                              />
+                            </div>
+
+                            {/* Beta Prompt */}
+                            <div className="space-y-1">
+                              <label className="text-[11px] font-medium text-purple-300">
+                                Agent Beta System Prompt (Counter-Perspective / Validator):
+                              </label>
+                              <textarea
+                                value={commanderConfig.systemPrompts.beta}
+                                onChange={(e) => {
+                                  const updated: CommanderConfig = {
+                                    ...commanderConfig,
+                                    systemPrompts: {
+                                      ...commanderConfig.systemPrompts,
+                                      beta: e.target.value,
+                                    },
+                                  };
+                                  setCommanderConfig(updated);
+                                  storage.saveCommanderConfig(updated);
+                                }}
+                                rows={3}
+                                className="w-full rounded-xl border border-zinc-700 bg-zinc-900/90 p-2.5 text-xs text-zinc-100 placeholder-zinc-600 outline-none focus:border-purple-500 resize-none font-sans"
+                              />
+                            </div>
+
+                            {/* Synthesizer Prompt */}
+                            <div className="space-y-1">
+                              <label className="text-[11px] font-medium text-emerald-300">
+                                Commander Final Synthesizer System Prompt:
+                              </label>
+                              <textarea
+                                value={commanderConfig.systemPrompts.synthesizer}
+                                onChange={(e) => {
+                                  const updated: CommanderConfig = {
+                                    ...commanderConfig,
+                                    systemPrompts: {
+                                      ...commanderConfig.systemPrompts,
+                                      synthesizer: e.target.value,
+                                    },
+                                  };
+                                  setCommanderConfig(updated);
+                                  storage.saveCommanderConfig(updated);
+                                }}
+                                rows={3}
+                                className="w-full rounded-xl border border-zinc-700 bg-zinc-900/90 p-2.5 text-xs text-zinc-100 placeholder-zinc-600 outline-none focus:border-emerald-500 resize-none font-sans"
+                              />
+                            </div>
+                          </div>
+                        )}
+                      </div>
+
+                      {/* Reset to Defaults button */}
+                      <div className="flex justify-end pt-1">
+                        <button
+                          type="button"
+                          onClick={() => {
+                            const def = storage.resetCommanderConfig();
+                            setCommanderConfig(def);
+                            triggerSettingsToast('Commander Mode settings and all 4 agent models reset to default.');
+                          }}
+                          className="px-3 py-1.5 text-xs font-medium text-zinc-400 hover:text-white rounded-lg bg-zinc-800/80 hover:bg-zinc-700 border border-zinc-700/60 flex items-center gap-1.5 transition-colors"
+                        >
+                          <RotateCcw size={12} />
+                          <span>Reset Commander to Defaults</span>
+                        </button>
                       </div>
                     </div>
                   </div>
