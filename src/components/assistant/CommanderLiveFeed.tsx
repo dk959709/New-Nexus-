@@ -70,6 +70,7 @@ export const CommanderLiveFeed: React.FC<CommanderLiveFeedProps> = ({
   const [sources, setSources] = useState<AISource[]>(() => savedState?.sources || []);
 
   const [copiedStageId, setCopiedStageId] = useState<string | null>(null);
+  const [copiedAll, setCopiedAll] = useState<boolean>(false);
   const [deletedStageIds, setDeletedStageIds] = useState<Set<string>>(new Set());
 
   // Internal audio player fallback if onPlayAudio prop not provided
@@ -376,14 +377,72 @@ export const CommanderLiveFeed: React.FC<CommanderLiveFeedProps> = ({
 
   const visibleStages = stages.filter((s) => !deletedStageIds.has(s.id));
 
+  const hasAnyStageContent = visibleStages.some(
+    (s) => (s.content || '').trim().length > 0,
+  );
+
+  const handleCopyAllStages = async () => {
+    const completedStages = visibleStages
+      .map((s) => {
+        const text = (s.content || '').trim();
+        return { stage: s, text };
+      })
+      .filter((item) => item.text.length > 0);
+
+    if (completedStages.length === 0) return;
+
+    const formattedBlock = completedStages
+      .map((item) => `=== ${item.stage.name.toUpperCase()} ===\n${item.text}`)
+      .join('\n\n');
+
+    await copyToClipboard(formattedBlock);
+    setCopiedAll(true);
+    setTimeout(() => {
+      setCopiedAll(false);
+    }, 2000);
+  };
+
   return (
     <div className="space-y-4 pt-1 font-sans">
       {/* Sequence Header Line matching Multi Chat style */}
       <div className="flex items-center justify-between gap-2 text-xs text-zinc-400 pb-1 flex-wrap">
         <div className="flex items-center gap-2 flex-wrap">
-          <span className="font-semibold text-[11px] tracking-wide uppercase text-zinc-300">
-            Commander Pipeline
-          </span>
+          <div className="flex items-center gap-1.5">
+            <span className="font-semibold text-[11px] tracking-wide uppercase text-zinc-300">
+              Commander Pipeline
+            </span>
+            <button
+              type="button"
+              onClick={handleCopyAllStages}
+              disabled={!hasAnyStageContent}
+              className={`p-1 rounded-md transition-all flex items-center gap-1 text-xs ${
+                copiedAll
+                  ? 'text-emerald-400 bg-emerald-500/10'
+                  : !hasAnyStageContent
+                  ? 'text-zinc-600 opacity-40 cursor-not-allowed'
+                  : theme === 'fulldark'
+                  ? 'text-zinc-400 hover:text-white hover:bg-[#282828] active:scale-95'
+                  : 'text-zinc-400 hover:text-zinc-200 hover:bg-zinc-800 active:scale-95'
+              }`}
+              title={
+                copiedAll
+                  ? 'Copied all agent answers!'
+                  : hasAnyStageContent
+                  ? 'Copy all agent answers to clipboard'
+                  : 'Waiting for agent answers...'
+              }
+              aria-label="Copy all agent answers"
+            >
+              {copiedAll ? (
+                <>
+                  <Check size={12} className="text-emerald-400" />
+                  <span className="text-[10px] text-emerald-400 font-medium font-mono">Copied All</span>
+                </>
+              ) : (
+                <Copy size={12} />
+              )}
+            </button>
+          </div>
           <span className="text-zinc-600">·</span>
           <div className="flex items-center gap-1.5 text-[11px] font-mono flex-wrap">
             <span className="text-indigo-400 font-medium">Commander 🛡️</span>
