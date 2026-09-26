@@ -593,7 +593,7 @@ ${SYSTEM_PROMPT_DIVERSITY_RULE}`;
     }
 
     let finalAlphaSystemPrompt = alphaSystemPrompt || config.systemPrompts.alpha;
-    if (config.mode !== 'manual' && isAlphaEnabled && !isBetaEnabled && (!parsedJson?.alpha?.systemPrompt)) {
+    if (config.mode !== 'manual' && isAlphaEnabled && !isBetaEnabled && alphaSystemPrompt === config.systemPrompts.alpha) {
       finalAlphaSystemPrompt = `${finalAlphaSystemPrompt}
 
 SPECIAL COMBINED OPERATIONAL MANDATE:
@@ -701,7 +701,7 @@ INSTRUCTIONS:
     }
 
     let finalBetaSystemPrompt = betaSystemPrompt || config.systemPrompts.beta;
-    if (config.mode !== 'manual' && !isAlphaEnabled && isBetaEnabled && (!parsedJson?.beta?.systemPrompt)) {
+    if (config.mode !== 'manual' && !isAlphaEnabled && isBetaEnabled && betaSystemPrompt === config.systemPrompts.beta) {
       finalBetaSystemPrompt = `${finalBetaSystemPrompt}
 
 SPECIAL COMBINED OPERATIONAL MANDATE:
