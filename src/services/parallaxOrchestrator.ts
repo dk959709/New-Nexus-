@@ -1448,8 +1448,8 @@ async function executeAgentTurn(
   let systemPrompt = `Persona: ${agent.name} (${agent.role}). ${agent.systemInstruction}
 Constraint: Exactly 1-2 punchy sentences (<40 words). Speak directly; no greeting, no intro, no self-naming. End with [conviction 1-10|mood emoji] (e.g. [9|🔥]).`;
 
-  // System prompt override for knowledge-cutoff personas in Round 1 only
-  if (round === 1 && sharedGroundingBlock && sharedGroundingBlock.trim().length > 0) {
+  // System prompt override for knowledge-cutoff personas when live grounding is provided
+  if (sharedGroundingBlock && sharedGroundingBlock.trim().length > 0) {
     const nameUpper = (agent.name || '').toUpperCase();
     const idLower = (agent.id || '').toLowerCase();
     const sysLower = (agent.systemInstruction || '').toLowerCase();
@@ -1472,6 +1472,7 @@ Constraint: Exactly 1-2 punchy sentences (<40 words). Speak directly; no greetin
   }
 
   let userPrompt = '';
+  const groundingBlock = sharedGroundingBlock && sharedGroundingBlock.length <= 350 ? `\n${sharedGroundingBlock}\n` : '';
 
   if (round === 1) {
     // =========================================================================
@@ -1487,7 +1488,6 @@ Constraint: Exactly 1-2 punchy sentences (<40 words). Speak directly; no greetin
         userPrompt = `Topic: "${topic}"\n\nProvide your initial 1-2 sentence perspective on this topic based on your fact-based, skeptical analysis as VERITAS.`;
       }
     } else {
-      const groundingBlock = sharedGroundingBlock && sharedGroundingBlock.length <= 350 ? `\n${sharedGroundingBlock}\n` : '';
       const constraintLine = groundingConstraint ? `[Grounding Baseline]: ${groundingConstraint}\n\n` : '';
       if (agent.isDynamic) {
         userPrompt = `Topic: "${topic}"${groundingBlock}\n${constraintLine}Provide your initial 1-2 sentence perspective on this topic strictly applying your specialized domain expertise as ${agent.name} (${agent.role}).`;
@@ -1517,20 +1517,20 @@ Constraint: Exactly 1-2 punchy sentences (<40 words). Speak directly; no greetin
     if (round === 3) {
       const factsLine = consensusFacts && consensusFacts.length <= 200 ? `\nVERIFIED FACTS: ${consensusFacts}\n` : '';
       if (agent.id === 'veritas' && veritasGrounding && !veritasGrounding.failed && veritasGrounding.committedFact) {
-        userPrompt = `Topic: "${topic}"${factsLine}\n[Committed Verified Fact]: "${veritasGrounding.committedFact}"\n\nPeer points from Round 2:\n${peerBullets}\n\n${action} as VERITAS, upholding your verified fact.`;
+        userPrompt = `Topic: "${topic}"${groundingBlock}\n${factsLine}[Committed Verified Fact]: "${veritasGrounding.committedFact}"\n\nPeer points from Round 2:\n${peerBullets}\n\n${action} as VERITAS, upholding your verified fact.`;
       } else if (agent.isDynamic) {
-        userPrompt = `Topic: "${topic}"${factsLine}\n${constraintLine}Peer points from Round 2:\n${peerBullets}\n\n${action} as ${agent.name} strictly applying your specialized domain expertise as ${agent.role}.`;
+        userPrompt = `Topic: "${topic}"${groundingBlock}\n${factsLine}${constraintLine}Peer points from Round 2:\n${peerBullets}\n\n${action} as ${agent.name} strictly applying your specialized domain expertise as ${agent.role}.`;
       } else {
-        userPrompt = `Topic: "${topic}"${factsLine}\n${constraintLine}Peer points from Round 2:\n${peerBullets}\n\n${action} as ${agent.name}.`;
+        userPrompt = `Topic: "${topic}"${groundingBlock}\n${factsLine}${constraintLine}Peer points from Round 2:\n${peerBullets}\n\n${action} as ${agent.name}.`;
       }
     } else {
       // Round 2
       if (agent.id === 'veritas' && veritasGrounding && !veritasGrounding.failed && veritasGrounding.committedFact) {
-        userPrompt = `Topic: "${topic}"\n\n[Committed Verified Fact]: "${veritasGrounding.committedFact}"\n\nPeer points from Round 1:\n${peerBullets}\n\n${action} as VERITAS, upholding your verified fact.`;
+        userPrompt = `Topic: "${topic}"${groundingBlock}\n[Committed Verified Fact]: "${veritasGrounding.committedFact}"\n\nPeer points from Round 1:\n${peerBullets}\n\n${action} as VERITAS, upholding your verified fact.`;
       } else if (agent.isDynamic) {
-        userPrompt = `Topic: "${topic}"\n\n${constraintLine}Peer points from Round 1:\n${peerBullets}\n\n${action} as ${agent.name} strictly applying your specialized domain expertise as ${agent.role}.`;
+        userPrompt = `Topic: "${topic}"${groundingBlock}\n${constraintLine}Peer points from Round 1:\n${peerBullets}\n\n${action} as ${agent.name} strictly applying your specialized domain expertise as ${agent.role}.`;
       } else {
-        userPrompt = `Topic: "${topic}"\n\n${constraintLine}Peer points from Round 1:\n${peerBullets}\n\n${action} as ${agent.name}.`;
+        userPrompt = `Topic: "${topic}"${groundingBlock}\n${constraintLine}Peer points from Round 1:\n${peerBullets}\n\n${action} as ${agent.name}.`;
       }
     }
   }
