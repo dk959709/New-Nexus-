@@ -2989,9 +2989,12 @@ async function processAiChatInternal(
   permanentMemories: string[] = [],
   customSearchApiKey?: string,
   customSearchApiUrl?: string,
+  searchMaxResults?: number,
+  extendedSearch?: boolean,
 ) {
   const trimmed = message.trim();
   const activeModel = providerConfig?.model || process.env.AI_MODEL || 'deepseek/deepseek-chat';
+  const targetSourcesCount = searchMaxResults || (extendedSearch ? 20 : 10);
 
   // Check if query is factual or web search is forced
   let sourceContext = '';
@@ -3058,8 +3061,8 @@ async function processAiChatInternal(
           query: effectiveSearchQuery,
           page: 1,
           category: 'ALL',
-          max_results: 10,
-          maxResults: 10,
+          max_results: targetSourcesCount,
+          maxResults: targetSourcesCount,
           customSearchApiKey,
           customSearchApiUrl,
         })
@@ -3071,7 +3074,7 @@ async function processAiChatInternal(
               activeFallbackNotice = 'Custom search API failed, used fallback';
             }
             const webItems = webRes?.results ?? [];
-            for (const item of webItems.slice(0, 10)) {
+            for (const item of webItems.slice(0, targetSourcesCount)) {
               if (!structuredSources.some((s) => s.url === item.url)) {
                 const cleanDesc = (item.description || '').slice(0, 300).trim();
                 const domainName = item.domain || domainOf(item.url) || 'web';
@@ -3137,9 +3140,9 @@ async function processAiChatInternal(
 
       // If at least 3 relevant sources exist, exclude low-relevance entirely; otherwise move them to the bottom
       if (relevantSources.length >= 3) {
-        structuredSources = relevantSources.slice(0, 10);
+        structuredSources = relevantSources.slice(0, targetSourcesCount);
       } else {
-        structuredSources = [...relevantSources, ...lowRelevanceSources].slice(0, 10);
+        structuredSources = [...relevantSources, ...lowRelevanceSources].slice(0, targetSourcesCount);
       }
 
       if (structuredSources.length > 0) {
@@ -3474,6 +3477,8 @@ const aiChatSchema = z.object({
   permanentMemories: z.array(z.string().max(500)).max(50).optional(),
   customSearchApiKey: z.string().optional(),
   customSearchApiUrl: z.string().optional(),
+  searchMaxResults: z.number().min(1).max(50).optional(),
+  extendedSearch: z.boolean().optional(),
 });
 
 
@@ -3793,6 +3798,8 @@ async function startServer() {
         parsed.data.permanentMemories ?? [],
         parsed.data.customSearchApiKey,
         parsed.data.customSearchApiUrl,
+        parsed.data.searchMaxResults,
+        parsed.data.extendedSearch,
       );
       return res.json({ data: result });
     } catch (err: unknown) {

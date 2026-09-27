@@ -802,8 +802,11 @@ export function AssistantPage() {
   const [imageGenEnabled, setImageGenEnabled] = useState(loadImageGenToggle);
   const [imageEnhanceEnabled, setImageEnhanceEnabled] = useState<boolean>(() => storage.getAssistantImageEnhanceEnabled());
   const [showImageEnhanceTip, setShowImageEnhanceTip] = useState<boolean>(() => !storage.getAssistantImageEnhanceTipDismissed());
+  const [webSearchExtendedEnabled, setWebSearchExtendedEnabled] = useState<boolean>(() => storage.getAssistantWebSearchExtendedEnabled());
   const longPressTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const longPressTriggeredRef = useRef<boolean>(false);
+  const webSearchLongPressTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const webSearchLongPressTriggeredRef = useRef<boolean>(false);
   const pendingSavesRef = useRef<Set<Promise<unknown>>>(new Set());
 
   useEffect(() => {
@@ -2535,8 +2538,66 @@ ${commanderConfig.systemPrompts.synthesizer?.trim() || '(Default system prompt)'
     scrollToBottom('smooth');
   }, [messages, loading, scrollToBottom]);
 
-  const toggleWebSearch = () => {
+  const handleWebSearchPointerDown = () => {
     if (deepResearchEnabled || architectEnabled || dataAnalysisEnabled) return;
+    webSearchLongPressTriggeredRef.current = false;
+    if (webSearchLongPressTimerRef.current) {
+      clearTimeout(webSearchLongPressTimerRef.current);
+    }
+
+    webSearchLongPressTimerRef.current = setTimeout(() => {
+      webSearchLongPressTriggeredRef.current = true;
+
+      try {
+        Haptics.impact({ style: ImpactStyle.Light });
+      } catch {
+        if (typeof navigator !== 'undefined' && navigator.vibrate) {
+          navigator.vibrate(40);
+        }
+      }
+
+      setWebSearchExtendedEnabled((prevExtended) => {
+        const nextExtended = !prevExtended;
+        storage.setAssistantWebSearchExtendedEnabled(nextExtended);
+        triggerSettingsToast(
+          nextExtended
+            ? 'Extended Web Search enabled (20 sources)'
+            : 'Extended Web Search disabled (10 sources)'
+        );
+        return nextExtended;
+      });
+
+      setWebSearchEnabled((prevSearch) => {
+        if (!prevSearch) {
+          try {
+            localStorage.setItem(WEB_SEARCH_PREF_KEY, 'true');
+          } catch {
+            // Ignore
+          }
+          return true;
+        }
+        return prevSearch;
+      });
+    }, 500);
+  };
+
+  const cancelWebSearchPointer = () => {
+    if (webSearchLongPressTimerRef.current) {
+      clearTimeout(webSearchLongPressTimerRef.current);
+      webSearchLongPressTimerRef.current = null;
+    }
+  };
+
+  const handleWebSearchClick = (e: React.MouseEvent) => {
+    if (deepResearchEnabled || architectEnabled || dataAnalysisEnabled) return;
+
+    if (webSearchLongPressTriggeredRef.current) {
+      webSearchLongPressTriggeredRef.current = false;
+      e.preventDefault();
+      e.stopPropagation();
+      return;
+    }
+
     setWebSearchEnabled((prev) => {
       const next = !prev;
       try {
@@ -4317,6 +4378,8 @@ DIRECTIVES:
           permanentMemories: currentPermanentMemories,
           customSearchApiKey: customKeyPayload,
           customSearchApiUrl: customUrlPayload,
+          extendedSearch: webSearchExtendedEnabled,
+          searchMaxResults: webSearchExtendedEnabled ? 20 : 10,
         },
       );
 
@@ -6989,14 +7052,22 @@ DIRECTIVES:
                   )}
                 </button>
 
-                {/* Web Search Toggle */}
+                {/* Web Search Toggle (Tap to toggle / Hold for Extended Search) */}
                 <button
                   type="button"
-                  onClick={toggleWebSearch}
+                  onClick={handleWebSearchClick}
+                  onPointerDown={handleWebSearchPointerDown}
+                  onPointerUp={cancelWebSearchPointer}
+                  onPointerLeave={cancelWebSearchPointer}
+                  onPointerCancel={cancelWebSearchPointer}
+                  onContextMenu={(e) => e.preventDefault()}
                   disabled={deepResearchEnabled || architectEnabled || dataAnalysisEnabled}
-                  className={`text-[11px] sm:text-xs px-2 sm:px-2.5 py-1 sm:py-1.5 rounded-lg border transition-all flex items-center gap-1 sm:gap-1.5 shrink-0 ${
+                  style={{ WebkitTouchCallout: 'none', userSelect: 'none' }}
+                  className={`text-[11px] sm:text-xs px-2 sm:px-2.5 py-1 sm:py-1.5 rounded-lg border transition-all flex items-center gap-1 sm:gap-1.5 shrink-0 select-none ${
                     deepResearchEnabled || architectEnabled || dataAnalysisEnabled
                       ? 'opacity-35 cursor-not-allowed border-transparent text-zinc-500 pointer-events-none'
+                      : webSearchEnabled && webSearchExtendedEnabled
+                      ? 'bg-cyan-500/20 text-cyan-200 border-cyan-400/50 shadow-[0_0_10px_rgba(6,182,212,0.25)] font-medium'
                       : webSearchEnabled
                       ? 'bg-cyan-500/15 text-cyan-300 border-cyan-500/30'
                       : theme === 'classic'
@@ -7012,22 +7083,37 @@ DIRECTIVES:
                       ? 'Disabled while Architect is ON (Specialist diagram agent active without automatic search)'
                       : dataAnalysisEnabled
                       ? 'Disabled while Data Analysis is ON (Specialist data agent active without automatic search)'
+                      : webSearchEnabled && webSearchExtendedEnabled
+                      ? 'Web Search is ON (Extended Mode: 20 sources). Tap to toggle • Hold for Standard Search (10 sources).'
                       : webSearchEnabled
-                      ? 'Web Search is ON: forces live search on every request'
-                      : 'Web Search is Auto: searches when needed'
+                      ? 'Web Search is ON (10 sources). Tap to toggle • Hold for Extended Search (20 sources).'
+                      : 'Web Search is Auto. Tap to turn ON • Hold for Extended Search (20 sources).'
                   }
                 >
                   <Globe
                     size={12}
                     className={
                       !deepResearchEnabled && !architectEnabled && !dataAnalysisEnabled && webSearchEnabled
-                        ? 'text-cyan-400'
+                        ? webSearchExtendedEnabled
+                          ? 'text-cyan-300'
+                          : 'text-cyan-400'
                         : 'text-zinc-400'
                     }
                   />
                   <span>Web Search</span>
                   {!deepResearchEnabled && !architectEnabled && !dataAnalysisEnabled && webSearchEnabled && (
-                    <span className="w-1.5 h-1.5 rounded-full bg-cyan-400" />
+                    <span
+                      className={`w-1.5 h-1.5 rounded-full ${
+                        webSearchExtendedEnabled
+                          ? 'bg-cyan-300 shadow-[0_0_6px_rgba(103,232,249,0.9)]'
+                          : 'bg-cyan-400'
+                      }`}
+                    />
+                  )}
+                  {!deepResearchEnabled && !architectEnabled && !dataAnalysisEnabled && webSearchEnabled && webSearchExtendedEnabled && (
+                    <span className="text-[9px] font-bold px-1 py-0.2 rounded bg-cyan-500/30 text-cyan-200 border border-cyan-400/40 leading-none shrink-0">
+                      20
+                    </span>
                   )}
                 </button>
 
@@ -7121,7 +7207,21 @@ DIRECTIVES:
           <div className="text-center pt-2 pb-0.5 text-[11px] text-zinc-500 flex items-center justify-center gap-2 flex-wrap">
             <span>NEXUS AI</span>
             <span>·</span>
-            <span>{multiChatEnabled ? 'Multi Chat (3-Persona Pipeline)' : deepResearchEnabled ? 'Deep Research (JARVIS Multi-Agent)' : imageGenEnabled ? 'Image Generation Mode Active' : webSearchEnabled ? 'Live Web Search Active' : 'Automatic Web Search'}</span>
+            <span>
+              {multiChatEnabled
+                ? 'Multi Chat (3-Persona Pipeline)'
+                : deepResearchEnabled
+                ? 'Deep Research (JARVIS Multi-Agent)'
+                : imageGenEnabled
+                ? imageEnhanceEnabled
+                  ? 'Image Gen (AI Enhanced)'
+                  : 'Image Generation Mode Active'
+                : webSearchEnabled
+                ? webSearchExtendedEnabled
+                  ? 'Live Web Search (Extended: 20 Sources)'
+                  : 'Live Web Search Active (10 Sources)'
+                : 'Automatic Web Search'}
+            </span>
             <span>·</span>
             <span>Theme: {theme === 'classic' ? 'NEXUS Classic' : theme === 'fulldark' ? 'Full Dark' : 'NEXUS Minimal'}</span>
             {responseLanguage && (

@@ -34,8 +34,16 @@ export interface SynthesizerUniversalResult {
 function cleanText(raw?: string): string {
   if (!raw) return '';
   let cleaned = raw.trim();
-  cleaned = cleaned.replace(/^["'“”]+|["'“”]+$/g, '').trim();
+  // Strip code fences
+  cleaned = cleaned.replace(/^```(?:json)?\s*/i, '').replace(/\s*```$/i, '').trim();
+  // Strip word count annotations like "word(1)", "word(2)", "Word1 Word2 Word3"
+  cleaned = cleaned.replace(/\b([A-Za-z]+)\(\d+\)/g, '$1');
+  // Strip common prompt header labels
   cleaned = cleaned.replace(/^(?:Commander(?:'s)? Plan|Tactical Plan|Plan|Synthesis Directives|Directives|Focus):\s*/i, '').trim();
+  // Strip leading/trailing quotes
+  cleaned = cleaned.replace(/^["'“”]+|["'“”]+$/g, '').trim();
+  // Strip meta phrases if accidentally included
+  cleaned = cleaned.replace(/^(?:You are configuring|Here is the|We need to produce|Output ONLY)[\s\S]*?:\s*/i, '').trim();
   return cleaned;
 }
 
@@ -282,7 +290,7 @@ export async function enhanceSynthesizerDirectives({
       {
         role: 'system',
         content:
-          'You are configuring the Final Synthesizer in a multi-agent system.\nGiven the raw idea, write synthesis directives / focus instructions (1-2 sentences) detailing how Agent Alpha\'s primary technical findings and Agent Beta\'s critical counter-perspectives should be reconciled, balanced, and harmonized to deliver a definitive master resolution.\nOutput ONLY the directives text itself, with no greetings, preamble, quotes, or markdown bullets.',
+          'You are configuring the Final Synthesizer in a multi-agent system.\nGiven the raw idea or inquiry, write concrete synthesis directives / focus instructions (1-2 sentences) detailing how findings should be reconciled, balanced, and harmonized to deliver a definitive master resolution.\nCRITICAL: Output ONLY content-focused synthesis instructions (e.g. "Harmonize core technical mechanics with critical constraints and provide an authoritative resolution"). NEVER include meta-instructions about JSON, fields, formatting schemas, word counts, or system prompts.\nOutput ONLY the plain directive text itself, with no greetings, preamble, quotes, or markdown bullets.',
       },
       {
         role: 'user',
@@ -632,9 +640,9 @@ export async function enhanceUniversalSynthesizerDirectives({
       {
         role: 'system',
         content: `You are configuring the Final Synthesizer in a multi-agent system.
-Given the raw idea, you must generate TWO fields:
-1. "directives": Synthesis directives / focus instructions (1-2 sentences) detailing how Agent Alpha's primary technical findings and Agent Beta's critical counter-perspectives should be reconciled, balanced, and harmonized to deliver a definitive master resolution.
-2. "systemPrompt": A master-level system prompt (1 cohesive paragraph, ~50-80 words) instructing the Synthesizer presiding over the final intelligence synthesis to harmonize both perspectives into a single master resolution with trade-offs and conclusive verdicts.
+Given the raw idea or inquiry, you must generate TWO fields:
+1. "directives": Concrete content-focused synthesis directives / focus instructions (1-2 sentences) detailing how findings should be reconciled and balanced to deliver an authoritative resolution. CRITICAL: The "directives" string must ONLY describe what content to synthesize (e.g. "Harmonize core findings with practical trade-offs and provide a definitive recommendation"). NEVER include meta-rules about JSON fields, schemas, or formatting in the directives string.
+2. "systemPrompt": An authoritative master-level system prompt (1 cohesive paragraph, ~50-80 words) for the Final Synthesizer presiding over the master intelligence resolution.
 
 Respond ONLY with valid JSON in this exact structure:
 {

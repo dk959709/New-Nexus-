@@ -144,6 +144,80 @@ async function executeCommanderSearch(
 }
 
 /**
+ * Sanitizes manual synthesis directives to ensure no accidentally saved meta instructions or raw JSON leaked in
+ */
+export function sanitizeSynthesizerDirectives(rawDirectives?: string): string {
+  if (!rawDirectives || !rawDirectives.trim()) return '';
+  let cleaned = rawDirectives.trim();
+
+  // If the user's directive contains raw JSON block, extract only the directive content
+  try {
+    const match = cleaned.match(/\{[\s\S]*\}/);
+    if (match) {
+      const parsed = JSON.parse(match[0]);
+      if (parsed.directives) {
+        cleaned = String(parsed.directives).trim();
+      } else if (parsed.task) {
+        cleaned = String(parsed.task).trim();
+      }
+    }
+  } catch {
+    // continue
+  }
+
+  // Remove code fences & word-by-word counts
+  cleaned = cleaned.replace(/^```(?:json)?\s*/i, '').replace(/\s*```$/i, '').trim();
+  cleaned = cleaned.replace(/\b([A-Za-z]+)\(\d+\)/g, '$1');
+
+  // Strip meta phrases if accidentally stored
+  cleaned = cleaned
+    .replace(/(?:Respond ONLY with valid JSON|You are configuring the Final Synthesizer|Output ONLY the (?:directives|enhanced)|Generate a (?:systemPrompt|master-level)|systemPrompt["']?\s*:\s*["'][^"']+["'])[\s\S]*/gi, '')
+    .trim();
+
+  return cleaned;
+}
+
+/**
+ * Validates whether the Synthesizer output contains raw internal scratchpad reasoning,
+ * word-by-word counting, or JSON schema generation text instead of a synthesized answer.
+ */
+export function isInvalidSynthesisOutput(output: string): boolean {
+  if (!output || !output.trim()) return true;
+  const trimmed = output.trim();
+
+  // Check 1: Explicit word counting patterns like "You(1) are(2) the(3)..." or "You1 are2 the3 Synthesizer4"
+  const parentheticalWordCountMatch = trimmed.match(/\b[A-Za-z]+\(\d+\)\b/g);
+  if (parentheticalWordCountMatch && parentheticalWordCountMatch.length >= 3) {
+    return true;
+  }
+  const trailingDigitWordCountMatch = trimmed.match(/\b[A-Za-z]+[0-9]{1,3}\b/g);
+  if (trailingDigitWordCountMatch && trailingDigitWordCountMatch.length >= 6) {
+    return true;
+  }
+
+  // Check 2: Explicit planning/scratchpad talk about producing JSON or field names
+  if (
+    /\b(?:we need to produce json|produce json with fields|generate (?:a |the )?systemprompt|output json in this (?:exact )?structure|valid json in this exact structure|respond only with valid json)\b/i.test(
+      trimmed,
+    )
+  ) {
+    return true;
+  }
+
+  // Check 3: Raw JSON object output containing meta fields instead of markdown answer
+  if (/^\s*\{[\s\S]*"(?:directives|systemPrompt|plan)"\s*:/i.test(trimmed)) {
+    return true;
+  }
+
+  // Check 4: Starts with field labels/schema rather than substantive answer
+  if (/^(?:Field|Schema|Directives):\s*["']?(?:directives|systemPrompt)/i.test(trimmed)) {
+    return true;
+  }
+
+  return false;
+}
+
+/**
  * Formats raw retrieved search citations (title, URL, domain, snippet) into explicit grounding context
  * so the Final Synthesizer can evaluate the verified empirical evidence directly.
  */
@@ -801,10 +875,14 @@ INSTRUCTIONS:
     };
     updateStep(synthStep);
 
-    const manualSynthDirectives =
-      config.mode === 'manual' && config.manualConfig.synthesizerDirectives?.trim()
-        ? `\nSPECIAL USER DIRECTIVES FOR SYNTHESIS:\n${config.manualConfig.synthesizerDirectives.trim()}\n`
+    const cleanManualDirectives = sanitizeSynthesizerDirectives(config.manualConfig.synthesizerDirectives);
+    const manualDirectivesSection =
+      config.mode === 'manual' && cleanManualDirectives
+        ? `\nFOCUS DIRECTIVES FOR SYNTHESIS:\n${cleanManualDirectives}\n`
         : '';
+
+    const CORE_SYNTHESIS_EXECUTION_MANDATE = `CORE SYNTHESIS MANDATE:
+Using the directives below as your approach, now WRITE THE FINAL SYNTHESIZED ANSWER combining Agent Alpha's and Agent Beta's findings. Output ONLY the final answer text for the user in clean, beautifully structured Markdown — do not output JSON, do not output reasoning about word counts or field names, do not repeat these instructions back.`;
 
     // Include the raw search results/citations Agent Alpha and Agent Beta actually retrieved
     // (URLs, source domains, snippets) as explicit grounding context
@@ -829,13 +907,15 @@ AGENT BETA (${betaRole}) COUNTER-ANALYSIS & VALIDATION:
 ${betaFindings}
 """
 ${combinedLiveEvidence ? `\n--- VERIFIED LIVE WEB SEARCH EVIDENCE & CITATIONS ---\n${combinedLiveEvidence}\n` : ''}
-${manualSynthDirectives}
+${manualDirectivesSection}
 DIRECTIVES FOR FINAL SYNTHESIS:
 1. Harmonize Agent Alpha's core findings with Agent Beta's critical stress-tests into a master answer of the highest quality.
 2. If live web search citations and empirical evidence snippets are provided above, treat them as authoritative and factual ground truth. Incorporate the empirical facts and preserve relevant source URLs/citations where valuable.
 3. Deliver a clear, authoritative, beautifully structured response in clean Markdown.
 4. Explicitly balance the technical facts with the real-world trade-offs, constraints, and recommendations.
-5. Do not include meta system labels or internal pipeline markers. Deliver the complete, definitive answer directly for the user.`;
+5. Do not include meta system labels, internal pipeline markers, or scratchpad reasoning. Deliver the complete, definitive answer directly for the user.
+
+${CORE_SYNTHESIS_EXECUTION_MANDATE}`;
     } else if (isAlphaEnabled) {
       synthPrompt = `ORIGINAL USER INQUIRY: "${query}"
 
@@ -847,13 +927,15 @@ AGENT ALPHA (${alphaRole}) INVESTIGATION:
 ${alphaFindings}
 """
 ${alphaEvidence ? `\n--- VERIFIED LIVE WEB SEARCH EVIDENCE & CITATIONS ---\n${alphaEvidence}\n` : ''}
-${manualSynthDirectives}
+${manualDirectivesSection}
 DIRECTIVES FOR FINAL SYNTHESIS:
 1. Synthesize and elevate Agent Alpha's empirical findings into a comprehensive, authoritative master response.
 2. If live web search citations and empirical evidence snippets are provided above, treat them as authoritative and factual ground truth. Incorporate the empirical facts and preserve relevant source URLs/citations where valuable.
 3. Deliver a clear, beautifully structured response in clean Markdown.
 4. Ensure the answer thoroughly resolves the user inquiry with actionable conclusions.
-5. Do not include meta system labels or internal pipeline markers. Deliver the complete, definitive answer directly for the user.`;
+5. Do not include meta system labels, internal pipeline markers, or scratchpad reasoning. Deliver the complete, definitive answer directly for the user.
+
+${CORE_SYNTHESIS_EXECUTION_MANDATE}`;
     } else {
       synthPrompt = `ORIGINAL USER INQUIRY: "${query}"
 
@@ -865,13 +947,15 @@ AGENT BETA (${betaRole}) INVESTIGATION & COUNTER-ANALYSIS:
 ${betaFindings}
 """
 ${betaEvidence ? `\n--- VERIFIED LIVE WEB SEARCH EVIDENCE & CITATIONS ---\n${betaEvidence}\n` : ''}
-${manualSynthDirectives}
+${manualDirectivesSection}
 DIRECTIVES FOR FINAL SYNTHESIS:
 1. Synthesize and elevate Agent Beta's critical findings into a comprehensive, authoritative master response.
 2. If live web search citations and empirical evidence snippets are provided above, treat them as authoritative and factual ground truth. Incorporate the empirical facts and preserve relevant source URLs/citations where valuable.
 3. Deliver a clear, beautifully structured response in clean Markdown.
 4. Ensure the answer thoroughly resolves the user inquiry with balanced considerations and actionable conclusions.
-5. Do not include meta system labels or internal pipeline markers. Deliver the complete, definitive answer directly for the user.`;
+5. Do not include meta system labels, internal pipeline markers, or scratchpad reasoning. Deliver the complete, definitive answer directly for the user.
+
+${CORE_SYNTHESIS_EXECUTION_MANDATE}`;
     }
 
     // Add today's actual current date and the hard grounding rule to the Final Synthesizer's system prompt
@@ -915,10 +999,66 @@ ${HARD_SYNTH_GROUNDING_RULE}`;
         signal,
       });
 
-      finalSynthesis = stripTierLabels(synthRes.text || synthRes.content || '').trim();
-      synthStep.status = 'completed';
-      synthStep.content = finalSynthesis;
-      updateStep({ ...synthStep });
+      let rawSynth = stripTierLabels(synthRes.text || synthRes.content || '').trim();
+
+      // Output validation: check if model returned internal scratchpad / JSON planning text
+      if (isInvalidSynthesisOutput(rawSynth)) {
+        console.warn('[CommanderOrchestrator] Synthesis output contained internal scratchpad / meta text. Retrying with strict synthesis prompt...');
+
+        const strictRetryPrompt = `${synthPrompt}
+
+CRITICAL CORRECTION REQUIRED:
+Your previous output was rejected because it contained internal model reasoning, word counts, or JSON schema text instead of answering the user.
+You MUST write the complete, direct, synthesized final answer to "${query}" in clean, formatted Markdown now.
+Do NOT output JSON, do NOT count words (e.g. word(1)), do NOT mention fields or schemas. Output ONLY the final answer for the user.`;
+
+        try {
+          const retryRes = await api.jarvisAgentCall({
+            agentId: 'commander_synthesizer_retry',
+            messages: [
+              {
+                role: 'system',
+                content: finalSynthSystemPrompt,
+              },
+              { role: 'user', content: strictRetryPrompt },
+            ],
+            providerConfig: synthProvider,
+            temperature: 0.2,
+            maxTokens: synthMaxTokens,
+            timeoutMs: 35000,
+            signal,
+          });
+
+          const retryText = stripTierLabels(retryRes.text || retryRes.content || '').trim();
+          if (!isInvalidSynthesisOutput(retryText)) {
+            rawSynth = retryText;
+          } else {
+            console.warn('[CommanderOrchestrator] Retry synthesis still invalid. Falling back to displaying specialist findings directly.');
+            rawSynth = '';
+          }
+        } catch (retryErr) {
+          if (signal?.aborted) throw retryErr;
+          console.warn('[CommanderOrchestrator] Synthesis retry call failed:', retryErr);
+          rawSynth = '';
+        }
+      }
+
+      if (rawSynth && rawSynth.length > 0) {
+        finalSynthesis = rawSynth;
+        synthStep.status = 'completed';
+        synthStep.content = finalSynthesis;
+        updateStep({ ...synthStep });
+      } else {
+        // Fall back to showing Agent Alpha and Agent Beta findings directly rather than broken scratchpad text
+        synthStep.status = 'completed';
+        finalSynthesis = isAlphaEnabled && isBetaEnabled
+          ? `### Key Intelligence Findings\n\n**Agent Alpha (${alphaRole}):**\n${alphaFindings}\n\n**Agent Beta (${betaRole}):**\n${betaFindings}`
+          : isAlphaEnabled
+          ? `### Key Intelligence Findings\n\n**Agent Alpha (${alphaRole}):**\n${alphaFindings}`
+          : `### Key Intelligence Findings\n\n**Agent Beta (${betaRole}):**\n${betaFindings}`;
+        synthStep.content = finalSynthesis;
+        updateStep({ ...synthStep });
+      }
     } catch (synthErr) {
       if (signal?.aborted) throw synthErr;
       synthStep.status = 'error';
@@ -926,10 +1066,10 @@ ${HARD_SYNTH_GROUNDING_RULE}`;
       updateStep({ ...synthStep });
       // Fallback: concatenate findings cleanly
       finalSynthesis = isAlphaEnabled && isBetaEnabled
-        ? `### Commander Synthesis\n\n**Agent Alpha (${alphaRole}):**\n${alphaFindings}\n\n**Agent Beta (${betaRole}):**\n${betaFindings}`
+        ? `### Key Intelligence Findings\n\n**Agent Alpha (${alphaRole}):**\n${alphaFindings}\n\n**Agent Beta (${betaRole}):**\n${betaFindings}`
         : isAlphaEnabled
-        ? `### Commander Synthesis\n\n**Agent Alpha (${alphaRole}):**\n${alphaFindings}`
-        : `### Commander Synthesis\n\n**Agent Beta (${betaRole}):**\n${betaFindings}`;
+        ? `### Key Intelligence Findings\n\n**Agent Alpha (${alphaRole}):**\n${alphaFindings}`
+        : `### Key Intelligence Findings\n\n**Agent Beta (${betaRole}):**\n${betaFindings}`;
     }
   } else {
     // If Synthesizer is OFF:

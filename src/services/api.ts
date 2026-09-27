@@ -327,6 +327,8 @@ export const api = {
       permanentMemories?: string[];
       customSearchApiKey?: string;
       customSearchApiUrl?: string;
+      searchMaxResults?: number;
+      extendedSearch?: boolean;
     },
   ): Promise<{
     answer: string;
@@ -381,6 +383,8 @@ export const api = {
         permanentMemories: options?.permanentMemories,
         customSearchApiKey,
         customSearchApiUrl,
+        searchMaxResults: options?.searchMaxResults,
+        extendedSearch: options?.extendedSearch,
       }),
     });
   },

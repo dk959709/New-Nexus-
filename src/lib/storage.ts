@@ -2108,6 +2108,22 @@ export const storage = {
     write('nexus-ai-image-enhance-tip-seen', dismissed);
   },
 
+  getAssistantWebSearchExtendedEnabled(): boolean {
+    return read<boolean>('nexus-ai-web-search-extended-toggle', false);
+  },
+
+  setAssistantWebSearchExtendedEnabled(enabled: boolean): void {
+    write('nexus-ai-web-search-extended-toggle', enabled);
+  },
+
+  getAssistantWebSearchExtendedTipDismissed(): boolean {
+    return read<boolean>('nexus-ai-web-search-extended-tip-seen', false);
+  },
+
+  setAssistantWebSearchExtendedTipDismissed(dismissed: boolean): void {
+    write('nexus-ai-web-search-extended-tip-seen', dismissed);
+  },
+
   getAssistantWebApiMode(): 'default' | 'custom' {
     const val = read<string>('nexus-ai-assistant-web-api-mode', 'default');
     return val === 'custom' ? 'custom' : 'default';
