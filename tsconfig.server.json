@@ -10,5 +10,5 @@
     "skipLibCheck": true,
     "types": ["node"]
   },
-  "include": ["server/**/*.ts"]
+  "include": ["server/**/*.ts", "src/lib/searchFilter.ts"]
 }
