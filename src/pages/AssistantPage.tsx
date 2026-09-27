@@ -44,6 +44,7 @@ import {
   Square,
   Layers3,
   Shield,
+  ArrowUp,
 } from 'lucide-react';
 import { Haptics, ImpactStyle } from '@capacitor/haptics';
 import { Link } from 'react-router-dom';
@@ -1586,6 +1587,7 @@ ${commanderConfig.systemPrompts.synthesizer?.trim() || '(Default system prompt)'
   const utteranceRef = useRef<SpeechSynthesisUtterance | null>(null);
   const edgeTtsAudioRef = useRef<HTMLAudioElement | null>(null);
   const messagesEndRef = useRef<HTMLDivElement | null>(null);
+  const chatTopRef = useRef<HTMLDivElement | null>(null);
   const textareaRef = useRef<HTMLTextAreaElement | null>(null);
   const moreOptionsRef = useRef<HTMLDivElement | null>(null);
   const webFetcherCancelledRef = useRef<boolean>(false);
@@ -2532,6 +2534,36 @@ ${commanderConfig.systemPrompts.synthesizer?.trim() || '(Default system prompt)'
 
   const scrollToBottom = useCallback((behavior: ScrollBehavior = 'smooth') => {
     messagesEndRef.current?.scrollIntoView({ behavior });
+  }, []);
+
+  const scrollToTop = useCallback((behavior: ScrollBehavior = 'smooth') => {
+    // 1. Smoothly scroll window / viewport
+    if (typeof window !== 'undefined') {
+      try {
+        window.scrollTo({ top: 0, left: 0, behavior });
+      } catch {
+        window.scrollTo(0, 0);
+      }
+    }
+    // 2. Smoothly scroll the chatTopRef anchor if present
+    if (chatTopRef.current) {
+      chatTopRef.current.scrollIntoView({ behavior, block: 'start' });
+    }
+    // 3. Smoothly scroll any potential scrollable ancestor container (e.g., main or page-content or document.documentElement)
+    try {
+      if (document.documentElement && document.documentElement.scrollTop > 0) {
+        document.documentElement.scrollTo({ top: 0, behavior });
+      }
+      if (document.body && document.body.scrollTop > 0) {
+        document.body.scrollTo({ top: 0, behavior });
+      }
+      const mainEl = document.querySelector('main');
+      if (mainEl && mainEl.scrollTop > 0) {
+        mainEl.scrollTo({ top: 0, behavior });
+      }
+    } catch {
+      // Ignore scroll container errors
+    }
   }, []);
 
   useEffect(() => {
@@ -4502,6 +4534,9 @@ DIRECTIVES:
           : 'theme-minimal bg-[#111113] text-[#e3e3e7]'
       }`}
     >
+      {/* Top anchor for reliable smooth scroll to top */}
+      <div ref={chatTopRef} className="h-0 w-0 pointer-events-none -mt-4 opacity-0" aria-hidden="true" />
+
       {/* Top Navigation Header */}
       <header
         className={`max-w-4xl w-full mx-auto flex items-center justify-between pb-3 pt-1 transition-colors ${
@@ -7204,8 +7239,20 @@ DIRECTIVES:
           </form>
 
           {/* Subtext info */}
-          <div className="text-center pt-2 pb-0.5 text-[11px] text-zinc-500 flex items-center justify-center gap-2 flex-wrap">
-            <span>NEXUS AI</span>
+          <div className="text-center pt-2 pb-0.5 text-[11px] text-zinc-500 flex items-center justify-center gap-2 flex-wrap select-none">
+            <button
+              type="button"
+              onClick={() => scrollToTop('smooth')}
+              className="inline-flex items-center gap-1 font-semibold text-zinc-400 hover:text-zinc-200 active:text-white transition-all cursor-pointer group/scrolltop focus:outline-none focus-visible:ring-1 focus-visible:ring-zinc-500 rounded px-1 -mx-1 py-0.5 active:scale-95 hover:underline underline-offset-2"
+              title="Scroll to top of chat"
+              aria-label="Scroll to top of chat"
+            >
+              <span>NEXUS AI</span>
+              <ArrowUp
+                size={10}
+                className="opacity-60 group-hover/scrolltop:opacity-100 group-hover/scrolltop:-translate-y-0.5 transition-all text-zinc-400 group-hover/scrolltop:text-zinc-200"
+              />
+            </button>
             <span>·</span>
             <span>
               {multiChatEnabled
