@@ -58,6 +58,7 @@ import { ErrorMessage } from '@/components';
 import { FormattedText } from '@/components/jarvis/FormattedText';
 import { stripTierLabels, cleanMarkdownForSpeech } from '@/lib/format';
 import { synthesizeCloudVoiceAudio } from '@/lib/voiceProviderUtils';
+import { synthesizeEdgeAudio } from '@/lib/edgeTtsUtils';
 import { generateStudioImage, enhanceImagePromptWithAI } from '@/services/imageGenerationService';
 import { executeMultiChatTurn } from '@/services/multiChatOrchestrator';
 import { runJarvisPipeline } from '@/services/jarvisOrchestrator';
@@ -935,10 +936,13 @@ export function AssistantPage() {
   const [swarmLiveEnabled, setSwarmLiveEnabled] = useState<boolean>(initialSpecialists.swarmLive);
   const [commanderEnabled, setCommanderEnabled] = useState<boolean>(initialSpecialists.commander);
   const [voiceAiEnabled, setVoiceAiEnabled] = useState<boolean>(initialSpecialists.voiceAi);
+  const [voiceAiEngine, setVoiceAiEngine] = useState<'cloud' | 'edge'>('cloud');
   const [voiceAiPlaying, setVoiceAiPlaying] = useState<boolean>(false);
   const [voiceAiLoading, setVoiceAiLoading] = useState<boolean>(false);
   const [voiceAiError, setVoiceAiError] = useState<string | null>(null);
   const voiceAiAudioRef = useRef<HTMLAudioElement | null>(null);
+  const voiceAiHoldTimerRef = useRef<NodeJS.Timeout | null>(null);
+  const voiceAiHoldTriggeredRef = useRef<boolean>(false);
   const [commanderConfig, setCommanderConfig] = useState<CommanderConfig>(() => storage.getCommanderConfig());
   const [commanderPromptsExpanded, setCommanderPromptsExpanded] = useState<boolean>(false);
   const [configuredAIProviders, setConfiguredAIProviders] = useState<AIProviderConfig[]>(
@@ -1869,20 +1873,43 @@ ${commanderConfig.systemPrompts.synthesizer?.trim() || '(Default system prompt)'
     setVoiceAiLoading(false);
   };
 
-  const speakWithCloudVoice = async (text: string) => {
-    if (!text || !text.trim()) return;
-    const activeVoiceProvider = storage.getActiveVoiceProvider();
-    if (!activeVoiceProvider) {
-      setVoiceAiError('No active Cloud Voice AI provider configured. Please configure an active voice provider in AI Providers Settings.');
-      return;
+  const handleVoiceAiHoldStart = () => {
+    voiceAiHoldTriggeredRef.current = false;
+    if (voiceAiHoldTimerRef.current) {
+      clearTimeout(voiceAiHoldTimerRef.current);
     }
+    voiceAiHoldTimerRef.current = setTimeout(() => {
+      voiceAiHoldTriggeredRef.current = true;
+      setVoiceAiEngine((prev) => {
+        const next = prev === 'cloud' ? 'edge' : 'cloud';
+        try {
+          Haptics.impact({ style: ImpactStyle.Medium }).catch(() => {});
+        } catch {
+          // ignore
+        }
+        triggerSettingsToast(
+          next === 'edge'
+            ? 'Voice AI: switched to Microsoft Edge TTS engine (Free / Unlimited)'
+            : 'Voice AI: switched to Cloud Voice AI engine (ElevenLabs)'
+        );
+        return next;
+      });
+      // Ensure Voice AI is turned ON
+      setVoiceAiEnabled(true);
+      storage.setAssistantVoiceAiEnabled(true);
+      disableOtherSpecialistModes('voiceAi');
+    }, 5000);
+  };
 
-    const selectedCloudVoice = storage.getCloudVoice() || activeVoiceProvider.defaultVoice || 'EXAVITQu4vr4xnSDxMaL';
-    const studioSettings = {
-      stability: 0.5,
-      similarityBoost: 0.75,
-      speed: 1.0,
-    };
+  const handleVoiceAiHoldEnd = () => {
+    if (voiceAiHoldTimerRef.current) {
+      clearTimeout(voiceAiHoldTimerRef.current);
+      voiceAiHoldTimerRef.current = null;
+    }
+  };
+
+  const speakWithVoiceAi = async (text: string) => {
+    if (!text || !text.trim()) return;
 
     stopVoiceAiAudio();
     setVoiceAiError(null);
@@ -1894,15 +1921,38 @@ ${commanderConfig.systemPrompts.synthesizer?.trim() || '(Default system prompt)'
         setVoiceAiLoading(false);
         return;
       }
-      const result = await synthesizeCloudVoiceAudio(
-        activeVoiceProvider,
-        cleaned,
-        selectedCloudVoice,
-        undefined,
-        studioSettings
-      );
 
-      const url = URL.createObjectURL(result.blob);
+      let audioBlob: Blob;
+
+      if (voiceAiEngine === 'edge') {
+        const edgeVoice = storage.getEdgeVoice() || 'en-US-AriaNeural';
+        audioBlob = await synthesizeEdgeAudio(cleaned, edgeVoice);
+      } else {
+        const activeVoiceProvider = storage.getActiveVoiceProvider();
+        if (!activeVoiceProvider) {
+          setVoiceAiError('No active Cloud Voice AI provider configured. Please configure an active voice provider in AI Providers Settings.');
+          setVoiceAiLoading(false);
+          return;
+        }
+
+        const selectedCloudVoice = storage.getCloudVoice() || activeVoiceProvider.defaultVoice || 'EXAVITQu4vr4xnSDxMaL';
+        const studioSettings = {
+          stability: 0.5,
+          similarityBoost: 0.75,
+          speed: 1.0,
+        };
+
+        const result = await synthesizeCloudVoiceAudio(
+          activeVoiceProvider,
+          cleaned,
+          selectedCloudVoice,
+          undefined,
+          studioSettings
+        );
+        audioBlob = result.blob;
+      }
+
+      const url = URL.createObjectURL(audioBlob);
       const audio = new Audio(url);
       voiceAiAudioRef.current = audio;
 
@@ -3767,7 +3817,7 @@ ${commanderConfig.systemPrompts.synthesizer?.trim() || '(Default system prompt)'
 
         setMessages((current) => [...current, assistantMessage]);
         if (voiceAiEnabled) {
-          speakWithCloudVoice(assistantMessage.content);
+          speakWithVoiceAi(assistantMessage.content);
         }
 
         const updatedConversation = [
@@ -4571,7 +4621,7 @@ DIRECTIVES:
           };
           setMessages((current) => [...current, assistantMessage]);
           if (voiceAiEnabled) {
-            speakWithCloudVoice(assistantMessage.content);
+            speakWithVoiceAi(assistantMessage.content);
           }
 
           const updatedConversation = [
@@ -4692,7 +4742,7 @@ DIRECTIVES:
 
         setMessages((current) => [...current, assistantMessage]);
         if (voiceAiEnabled) {
-          speakWithCloudVoice(assistantMessage.content);
+          speakWithVoiceAi(assistantMessage.content);
         }
 
         const updatedConversation = [
@@ -4783,7 +4833,7 @@ DIRECTIVES:
 
       setMessages((current) => [...current, assistantMessage]);
       if (voiceAiEnabled) {
-        speakWithCloudVoice(response.answer);
+        speakWithVoiceAi(response.answer);
       }
 
       const updatedConversation = [
@@ -5230,9 +5280,13 @@ DIRECTIVES:
                   <Volume2 size={13} className={voiceAiPlaying ? 'animate-pulse' : ''} />
                 </div>
                 <div className="flex items-center gap-2 flex-wrap">
-                  <span className="font-semibold text-zinc-100">Voice AI Active:</span>
+                  <span className="font-semibold text-zinc-100">
+                    Voice AI Active ({voiceAiEngine === 'edge' ? 'Edge TTS' : 'Cloud Voice'}):
+                  </span>
                   <span className="text-[11px] opacity-90">
-                    Automatic speech synthesis using Cloud Voice AI (ElevenLabs standard generation)
+                    {voiceAiEngine === 'edge'
+                      ? 'Automatic neural speech synthesis using Microsoft Edge TTS'
+                      : 'Automatic speech synthesis using Cloud Voice AI (ElevenLabs standard generation)'}
                   </span>
                   {voiceAiPlaying && (
                     <span className="text-[10px] font-mono px-1.5 py-0.2 rounded bg-purple-950 text-purple-300 border border-purple-500/40 animate-pulse">
@@ -6984,7 +7038,9 @@ DIRECTIVES:
                     className={`text-purple-400 shrink-0 ${voiceAiPlaying ? 'animate-pulse' : ''}`}
                   />
                   <span className="truncate font-medium text-[11.5px]">
-                    {voiceAiLoading ? 'Synthesizing voice with Cloud Voice AI...' : 'Speaking response with Cloud Voice AI'}
+                    {voiceAiLoading
+                      ? `Synthesizing voice with ${voiceAiEngine === 'edge' ? 'Edge TTS' : 'Cloud Voice AI'}...`
+                      : `Speaking response with ${voiceAiEngine === 'edge' ? 'Edge TTS' : 'Cloud Voice AI'}`}
                   </span>
                 </div>
                 <button
@@ -7362,15 +7418,28 @@ DIRECTIVES:
                       </div>
                     </button>
 
-                    {/* 3b. Voice AI Toggle */}
+                    {/* 3b. Voice AI Toggle with 5-second hold engine switch */}
                     <button
                       type="button"
-                      onClick={toggleVoiceAi}
-                      className={`w-full p-2 rounded-xl border text-left flex items-center justify-between transition-all ${
+                      onClick={() => {
+                        if (voiceAiHoldTriggeredRef.current) {
+                          voiceAiHoldTriggeredRef.current = false;
+                          return;
+                        }
+                        toggleVoiceAi();
+                      }}
+                      onMouseDown={handleVoiceAiHoldStart}
+                      onMouseUp={handleVoiceAiHoldEnd}
+                      onMouseLeave={handleVoiceAiHoldEnd}
+                      onTouchStart={handleVoiceAiHoldStart}
+                      onTouchEnd={handleVoiceAiHoldEnd}
+                      onTouchCancel={handleVoiceAiHoldEnd}
+                      className={`w-full p-2 rounded-xl border text-left flex items-center justify-between transition-all select-none ${
                         voiceAiEnabled
                           ? 'border-purple-500/40 bg-purple-950/30 text-purple-200 shadow-[0_0_10px_rgba(168,85,247,0.15)]'
                           : 'border-transparent hover:bg-zinc-800/60 text-zinc-300'
                       }`}
+                      title="Tap to toggle Voice AI on/off. Press and hold 5 seconds to switch between Cloud Voice AI and Edge TTS."
                     >
                       <div className="flex items-center gap-2.5 min-w-0">
                         <div
@@ -7387,12 +7456,12 @@ DIRECTIVES:
                             <span>Voice AI</span>
                             {voiceAiEnabled && (
                               <span className="text-[9px] font-mono font-semibold px-1.5 py-0.2 rounded bg-purple-950 text-purple-400 border border-purple-500/40">
-                                ON
+                                ON ({voiceAiEngine === 'edge' ? 'Edge' : 'Cloud'})
                               </span>
                             )}
                           </div>
                           <div className="text-[10.5px] text-zinc-400 truncate">
-                            Cloud Voice Neural Speech
+                            {voiceAiEngine === 'edge' ? 'Microsoft Edge TTS' : 'Cloud Voice Neural Speech'} (hold 5s to switch)
                           </div>
                         </div>
                       </div>
