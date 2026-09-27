@@ -45,6 +45,8 @@ import {
   Layers3,
   Shield,
   ArrowUp,
+  Paperclip,
+  FileText,
 } from 'lucide-react';
 import { Haptics, ImpactStyle } from '@capacitor/haptics';
 import { Link } from 'react-router-dom';
@@ -61,6 +63,7 @@ import { runJarvisPipeline } from '@/services/jarvisOrchestrator';
 import { JarvisSvgDiagram } from '@/components/jarvis/JarvisSvgDiagram';
 import { JarvisChartCard } from '@/components/jarvis/JarvisChartCard';
 import { searchWikimediaCommons } from '@/services/media';
+import { extractPdfText, formatAttachmentSize, formatPromptWithAttachments } from '@/services/jarvisAttachmentService';
 import {
   saveImageToDb,
   loadImageFromDb,
@@ -125,6 +128,18 @@ type Message = {
   searchSource?: string;
   searchNotice?: string;
   image?: AssistantGeneratedImage;
+  attachedImage?: {
+    dataUrl: string;
+    name: string;
+    width?: number;
+    height?: number;
+    resized?: boolean;
+  };
+  attachedDocument?: {
+    name: string;
+    size: number;
+    extension: string;
+  };
   multiChatResponses?: MultiChatPersonaResponse[];
   diagramSvg?: string;
   chartData?: JarvisChartData | null;
@@ -1590,7 +1605,145 @@ ${commanderConfig.systemPrompts.synthesizer?.trim() || '(Default system prompt)'
   const chatTopRef = useRef<HTMLDivElement | null>(null);
   const textareaRef = useRef<HTMLTextAreaElement | null>(null);
   const moreOptionsRef = useRef<HTMLDivElement | null>(null);
+  const fileInputRef = useRef<HTMLInputElement | null>(null);
   const webFetcherCancelledRef = useRef<boolean>(false);
+
+  // Attached file state (Images with client-side <=1024px resizing, PDF/MD/TXT document context)
+  interface AttachedFileItem {
+    type: 'image' | 'document';
+    name: string;
+    size: number;
+    dataUrl?: string;
+    width?: number;
+    height?: number;
+    resized?: boolean;
+    content?: string;
+    extension?: string;
+  }
+  const [attachedFile, setAttachedFile] = useState<AttachedFileItem | null>(null);
+  const [attachmentLoading, setAttachmentLoading] = useState(false);
+  const [attachmentError, setAttachmentError] = useState<string | null>(null);
+
+  /**
+   * Client-side image processor: checks dimensions and downscales on canvas
+   * so the longer side is at most 1024px, keeping aspect ratio and reducing token cost.
+   */
+  const processSelectedImageFile = (file: File): Promise<AttachedFileItem> => {
+    return new Promise((resolve, reject) => {
+      const reader = new FileReader();
+      reader.onerror = () => reject(new Error('Failed to read image file.'));
+      reader.onload = () => {
+        const originalDataUrl = reader.result as string;
+        const img = new Image();
+        img.onerror = () => reject(new Error('Failed to load image for processing.'));
+        img.onload = () => {
+          const origW = img.naturalWidth || img.width;
+          const origH = img.naturalHeight || img.height;
+          const maxSide = Math.max(origW, origH);
+
+          if (maxSide > 1024) {
+            let newW = origW;
+            let newH = origH;
+            if (origW >= origH) {
+              newW = 1024;
+              newH = Math.round((origH * 1024) / origW);
+            } else {
+              newH = 1024;
+              newW = Math.round((origW * 1024) / origH);
+            }
+
+            const canvas = document.createElement('canvas');
+            canvas.width = newW;
+            canvas.height = newH;
+            const ctx = canvas.getContext('2d');
+            if (!ctx) {
+              resolve({
+                type: 'image',
+                name: file.name,
+                size: file.size,
+                dataUrl: originalDataUrl,
+                width: origW,
+                height: origH,
+                resized: false,
+              });
+              return;
+            }
+            ctx.drawImage(img, 0, 0, newW, newH);
+            const mime = file.type && file.type.startsWith('image/') ? file.type : 'image/jpeg';
+            const resizedDataUrl = canvas.toDataURL(mime, 0.92);
+            resolve({
+              type: 'image',
+              name: file.name,
+              size: file.size,
+              dataUrl: resizedDataUrl,
+              width: newW,
+              height: newH,
+              resized: true,
+            });
+          } else {
+            resolve({
+              type: 'image',
+              name: file.name,
+              size: file.size,
+              dataUrl: originalDataUrl,
+              width: origW,
+              height: origH,
+              resized: false,
+            });
+          }
+        };
+        img.src = originalDataUrl;
+      };
+      reader.readAsDataURL(file);
+    });
+  };
+
+  const handleFilePick = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+
+    setAttachmentError(null);
+    setAttachmentLoading(true);
+
+    try {
+      const ext = (file.name.split('.').pop() || '').toLowerCase();
+      const isImg =
+        ['jpg', 'jpeg', 'png', 'webp', 'gif'].includes(ext) ||
+        (file.type && file.type.startsWith('image/'));
+      const isDoc =
+        ['pdf', 'md', 'markdown', 'txt'].includes(ext) ||
+        (file.type && (file.type.startsWith('text/') || file.type === 'application/pdf'));
+
+      if (isImg) {
+        const processedImg = await processSelectedImageFile(file);
+        setAttachedFile(processedImg);
+      } else if (isDoc) {
+        let content = '';
+        if (ext === 'pdf' || file.type === 'application/pdf') {
+          content = await extractPdfText(file);
+        } else {
+          content = await file.text();
+        }
+        setAttachedFile({
+          type: 'document',
+          name: file.name,
+          size: file.size,
+          extension: ext,
+          content,
+        });
+      } else {
+        setAttachmentError('Unsupported file type. Please attach an image (.jpg, .png, .webp, .gif), PDF, Markdown, or text file.');
+      }
+    } catch (err: unknown) {
+      const msg = err instanceof Error ? err.message : 'Failed to process attached file';
+      setAttachmentError(msg);
+    } finally {
+      setAttachmentLoading(false);
+      if (fileInputRef.current) {
+        fileInputRef.current.value = '';
+      }
+    }
+  };
 
   const handleStopWebFetcher = () => {
     webFetcherCancelledRef.current = true;
@@ -3325,10 +3478,15 @@ ${commanderConfig.systemPrompts.synthesizer?.trim() || '(Default system prompt)'
   };
 
   const sendMessage = async (value = input) => {
-    const message = value.trim();
+    const rawMessage = value.trim();
+    const fileToSend = attachedFile;
 
-    if (!message || loading) return;
+    if ((!rawMessage && !fileToSend) || loading) return;
 
+    const message = rawMessage || (fileToSend ? `Please analyze the attached ${fileToSend.type === 'image' ? 'image' : 'file'}.` : '');
+
+    setAttachedFile(null);
+    setAttachmentError(null);
     setInput('');
     if (textareaRef.current) {
       textareaRef.current.style.height = 'auto';
@@ -3337,7 +3495,25 @@ ${commanderConfig.systemPrompts.synthesizer?.trim() || '(Default system prompt)'
 
     const userMessage: Message = {
       role: 'user',
-      content: message,
+      content: rawMessage || (fileToSend ? `Attached ${fileToSend.name}` : message),
+      attachedImage:
+        fileToSend?.type === 'image' && fileToSend.dataUrl
+          ? {
+              dataUrl: fileToSend.dataUrl,
+              name: fileToSend.name,
+              width: fileToSend.width,
+              height: fileToSend.height,
+              resized: fileToSend.resized,
+            }
+          : undefined,
+      attachedDocument:
+        fileToSend?.type === 'document'
+          ? {
+              name: fileToSend.name,
+              size: fileToSend.size,
+              extension: fileToSend.extension || 'txt',
+            }
+          : undefined,
     };
 
     const historyForRequest = messages
@@ -4399,8 +4575,22 @@ DIRECTIVES:
       const customKeyPayload = isCustomSearchActive ? customSearchKey.trim() : undefined;
       const customUrlPayload = isCustomSearchActive ? customSearchUrl.trim() : undefined;
 
+      let effectiveTurnMessage = message;
+      if (fileToSend?.type === 'document' && fileToSend.content) {
+        effectiveTurnMessage = formatPromptWithAttachments(message, [
+          {
+            id: `doc-${Date.now()}`,
+            name: fileToSend.name,
+            size: fileToSend.size,
+            type: 'text/plain',
+            extension: fileToSend.extension || 'txt',
+            content: fileToSend.content,
+          },
+        ]);
+      }
+
       const response = await api.aiChat(
-        message,
+        effectiveTurnMessage,
         historyForRequest,
         smartMemory,
         undefined,
@@ -4412,6 +4602,7 @@ DIRECTIVES:
           customSearchApiUrl: customUrlPayload,
           extendedSearch: webSearchExtendedEnabled,
           searchMaxResults: webSearchExtendedEnabled ? 20 : 10,
+          image: fileToSend?.type === 'image' ? fileToSend.dataUrl : undefined,
         },
       );
 
@@ -5322,6 +5513,35 @@ DIRECTIVES:
                     {/* User Message Bubble */}
                     {isUser ? (
                       <div className="flex flex-col items-end gap-1 group/user">
+                        {/* Attached Image Preview in User Message Bubble */}
+                        {message.attachedImage && (
+                          <div className="mb-1 max-w-xs rounded-2xl overflow-hidden border border-zinc-700/70 shadow-md bg-black/40">
+                            <img
+                              src={message.attachedImage.dataUrl}
+                              alt={message.attachedImage.name}
+                              className="w-full max-h-64 object-contain rounded-2xl cursor-pointer hover:opacity-95 transition-opacity"
+                              onClick={() => message.attachedImage?.dataUrl && setFullscreenImage(message.attachedImage.dataUrl)}
+                            />
+                            <div className="px-2.5 py-1 text-[10.5px] text-zinc-400 bg-zinc-900/90 flex items-center justify-between border-t border-zinc-800">
+                              <span className="truncate max-w-[170px]">{message.attachedImage.name}</span>
+                              {message.attachedImage.resized && (
+                                <span className="text-[9.5px] text-cyan-400 font-mono bg-cyan-950/80 px-1 py-0.2 rounded border border-cyan-500/30 shrink-0 ml-1">
+                                  1024px max
+                                </span>
+                              )}
+                            </div>
+                          </div>
+                        )}
+
+                        {/* Attached Document Preview Badge in User Message Bubble */}
+                        {message.attachedDocument && (
+                          <div className="mb-1 inline-flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-zinc-900/90 border border-zinc-700/70 text-xs text-cyan-300 shadow-sm">
+                            <FileText size={13} className="text-cyan-400 shrink-0" />
+                            <span className="font-semibold truncate max-w-[200px]">{message.attachedDocument.name}</span>
+                            <span className="text-[10px] text-zinc-400 font-mono">({formatAttachmentSize(message.attachedDocument.size)})</span>
+                          </div>
+                        )}
+
                         <div
                           className={`leading-relaxed break-words whitespace-pre-wrap transition-all ${
                             theme === 'classic'
@@ -6465,6 +6685,101 @@ DIRECTIVES:
                 : 'rounded-2xl border border-zinc-700/70 bg-[#1e1e21] shadow-lg focus-within:border-zinc-500 p-2.5 flex flex-col gap-2'
             }`}
           >
+            {/* Hidden File Input for Attachments (JPG, PNG, WebP, GIF, PDF, MD, TXT) */}
+            <input
+              ref={fileInputRef}
+              type="file"
+              accept=".jpg,.jpeg,.png,.webp,.gif,.pdf,.md,.markdown,.txt,image/*,application/pdf,text/plain,text/markdown"
+              onChange={handleFilePick}
+              className="hidden"
+              tabIndex={-1}
+              aria-hidden="true"
+            />
+
+            {/* Attachment Processing Loading Banner */}
+            {attachmentLoading && (
+              <div className="flex items-center gap-2 px-3 py-1.5 rounded-xl bg-zinc-800/90 border border-zinc-700/60 text-xs text-zinc-300 animate-pulse mb-1">
+                <Loader2 size={13} className="animate-spin text-cyan-400" />
+                <span>Reading and optimizing attached file...</span>
+              </div>
+            )}
+
+            {/* Attachment Error Banner */}
+            {attachmentError && (
+              <div className="flex items-center justify-between gap-2 px-3 py-1.5 rounded-xl bg-rose-950/80 border border-rose-500/40 text-xs text-rose-200 mb-1">
+                <div className="flex items-center gap-1.5 min-w-0">
+                  <AlertCircle size={13} className="text-rose-400 shrink-0" />
+                  <span className="truncate">{attachmentError}</span>
+                </div>
+                <button
+                  type="button"
+                  onClick={() => setAttachmentError(null)}
+                  className="p-0.5 hover:text-white text-rose-300 transition-colors"
+                  aria-label="Dismiss error"
+                >
+                  <X size={12} />
+                </button>
+              </div>
+            )}
+
+            {/* Attached File Preview Chip */}
+            {attachedFile && !attachmentLoading && (
+              <div className="flex items-center justify-between gap-2 p-2 rounded-xl bg-zinc-900/95 border border-zinc-700/80 text-xs text-zinc-200 mb-1 shadow-sm">
+                <div className="flex items-center gap-2.5 min-w-0">
+                  {attachedFile.type === 'image' && attachedFile.dataUrl ? (
+                    <div className="relative w-9 h-9 rounded-lg overflow-hidden border border-zinc-700/70 shrink-0 bg-black/40">
+                      <img
+                        src={attachedFile.dataUrl}
+                        alt={attachedFile.name}
+                        className="w-full h-full object-cover"
+                      />
+                    </div>
+                  ) : (
+                    <div className="w-9 h-9 rounded-lg bg-zinc-800 border border-zinc-700/70 flex items-center justify-center text-cyan-400 shrink-0">
+                      <FileText size={16} />
+                    </div>
+                  )}
+                  <div className="min-w-0 flex flex-col">
+                    <div className="flex items-center gap-1.5 truncate">
+                      <span className="font-semibold text-zinc-100 truncate max-w-[180px] sm:max-w-[280px]">
+                        {attachedFile.name}
+                      </span>
+                      <span className="text-[10px] text-zinc-400 font-mono">
+                        ({formatAttachmentSize(attachedFile.size)})
+                      </span>
+                    </div>
+                    <div className="text-[10.5px] text-zinc-400 flex items-center gap-1.5 flex-wrap">
+                      {attachedFile.type === 'image' ? (
+                        <>
+                          {attachedFile.width && attachedFile.height && (
+                            <span>{attachedFile.width} × {attachedFile.height}px</span>
+                          )}
+                          {attachedFile.resized && (
+                            <span className="text-cyan-300 bg-cyan-950/80 px-1.5 py-0.2 rounded border border-cyan-500/40 text-[9.5px] font-mono">
+                              Resized to 1024px for efficiency
+                            </span>
+                          )}
+                        </>
+                      ) : (
+                        <span className="text-zinc-400">
+                          {attachedFile.extension?.toUpperCase() || 'DOC'} document attached
+                        </span>
+                      )}
+                    </div>
+                  </div>
+                </div>
+                <button
+                  type="button"
+                  onClick={() => setAttachedFile(null)}
+                  className="p-1 rounded-lg hover:bg-zinc-800 text-zinc-400 hover:text-white transition-colors"
+                  title="Remove attachment"
+                  aria-label="Remove attachment"
+                >
+                  <X size={14} />
+                </button>
+              </div>
+            )}
+
             {/* Input Textarea & Top-Right More Options Button */}
             <div className="relative flex items-start">
               <textarea
@@ -6597,6 +6912,36 @@ DIRECTIVES:
 
                     {/* Internal Scrollable Specialist Items List */}
                     <div className="flex-1 overflow-y-auto pr-1 flex flex-col gap-1 specialist-popup-scroll">
+                      {/* 0. Attach File Action (One-tap action: opens file picker & closes popup) */}
+                      <button
+                        type="button"
+                        onClick={() => {
+                          setMoreOptionsOpen(false);
+                          fileInputRef.current?.click();
+                        }}
+                        className="w-full p-2 rounded-xl border border-transparent hover:bg-zinc-800/60 text-zinc-300 text-left flex items-center justify-between transition-all group cursor-pointer"
+                      >
+                        <div className="flex items-center gap-2.5 min-w-0">
+                          <div className="w-7 h-7 rounded-lg grid place-items-center shrink-0 bg-zinc-800 text-zinc-400 group-hover:bg-cyan-500/20 group-hover:text-cyan-300 transition-colors">
+                            <Paperclip size={13} />
+                          </div>
+                          <div className="min-w-0">
+                            <div className="text-xs font-semibold text-zinc-100 flex items-center gap-1.5">
+                              <span>Attach</span>
+                              <span className="text-[9px] font-mono text-zinc-500 uppercase px-1 py-0.2 rounded bg-zinc-800/80">
+                                File
+                              </span>
+                            </div>
+                            <div className="text-[10.5px] text-zinc-400 truncate">
+                              Add an image, PDF, or text file
+                            </div>
+                          </div>
+                        </div>
+                        <div className="text-[10px] text-cyan-400 opacity-80 group-hover:opacity-100 font-mono px-1.5 py-0.5 rounded bg-cyan-950/40 border border-cyan-500/20 shrink-0">
+                          Pick
+                        </div>
+                      </button>
+
                       {/* 1. Architect Toggle */}
                     <button
                       type="button"
@@ -7212,9 +7557,9 @@ DIRECTIVES:
               <div className="flex items-center gap-2">
                 <button
                   type="submit"
-                  disabled={!input.trim() || loading}
+                  disabled={(!input.trim() && !attachedFile) || loading}
                   className={`w-8 h-8 rounded-full flex items-center justify-center transition-all ${
-                    input.trim() && !loading
+                    (input.trim() || attachedFile) && !loading
                       ? theme === 'classic'
                         ? 'bg-cyan-500 text-slate-950 hover:bg-cyan-400 shadow-[0_0_12px_rgba(6,182,212,0.4)] cursor-pointer'
                         : theme === 'fulldark'

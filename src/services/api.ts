@@ -329,6 +329,7 @@ export const api = {
       customSearchApiUrl?: string;
       searchMaxResults?: number;
       extendedSearch?: boolean;
+      image?: string;
     },
   ): Promise<{
     answer: string;
@@ -385,6 +386,7 @@ export const api = {
         customSearchApiUrl,
         searchMaxResults: options?.searchMaxResults,
         extendedSearch: options?.extendedSearch,
+        image: options?.image,
       }),
     });
   },

@@ -81,6 +81,7 @@ interface ProviderRequestOptions {
   maxTokens?: number;
   timeoutMs?: number;
   extraParams?: Record<string, unknown>;
+  image?: string;
 }
 
 interface ProviderRequestResult {
@@ -102,6 +103,7 @@ async function executeProviderChatRequest({
   maxTokens = 128,
   timeoutMs = 25000,
   extraParams,
+  image,
 }: ProviderRequestOptions): Promise<ProviderRequestResult> {
   const url = normalizeProviderUrl(rawUrl);
   const model = (rawModel || 'deepseek/deepseek-chat').trim();
@@ -188,9 +190,26 @@ async function executeProviderChatRequest({
         }
       }
 
+      const outgoingMessages = image
+        ? sanitized.map((m, idx, arr) => {
+            const isLastUser =
+              m.role === 'user' && idx === arr.map((x) => x.role).lastIndexOf('user');
+            if (isLastUser) {
+              return {
+                role: 'user',
+                content: [
+                  { type: 'text', text: m.content },
+                  { type: 'image_url', image_url: { url: image } },
+                ],
+              };
+            }
+            return m;
+          })
+        : sanitized;
+
       const requestBody: Record<string, unknown> = {
         model,
-        messages: sanitized,
+        messages: outgoingMessages,
         temperature,
         max_tokens: maxTokens,
         ...(outgoingExtraParams || {}),
@@ -1331,10 +1350,12 @@ async function generateWithGemini({
   messages,
   temperature = 0.4,
   maxTokens = 2400,
+  image,
 }: {
   messages: Array<{ role: string; content: string }>;
   temperature?: number;
   maxTokens?: number;
+  image?: string;
 }): Promise<{ text: string; model: string } | null> {
   const client = getGeminiClient();
   if (!client) return null;
@@ -1344,10 +1365,25 @@ async function generateWithGemini({
 
   const contents = chatMsgs.map((m) => ({
     role: m.role === 'assistant' ? 'model' : 'user',
-    parts: [{ text: m.content }],
+    parts: [{ text: m.content } as { text?: string; inlineData?: { mimeType: string; data: string } }],
   }));
 
   if (contents.length === 0) return null;
+
+  if (image) {
+    const match = image.match(/^data:([^;]+);base64,(.+)$/);
+    if (match) {
+      const lastUser = contents.filter((c) => c.role === 'user').pop();
+      if (lastUser) {
+        lastUser.parts.push({
+          inlineData: {
+            mimeType: match[1],
+            data: match[2],
+          },
+        });
+      }
+    }
+  }
 
   // Primary model and fallback models supporting current API specifications
   const candidateModels = [
@@ -1620,15 +1656,17 @@ async function generateOpenRouterOrCustomAi({
   temperature = 0.3,
   maxTokens = 128,
   timeoutMs = 35000,
+  image,
 }: {
   messages: Array<{ role: string; content: string }>;
   temperature?: number;
   maxTokens?: number;
   timeoutMs?: number;
+  image?: string;
 }): Promise<{ text: string; content?: string; reasoning?: string; model: string } | null> {
   // Try Gemini first if key is available
   if (process.env.GEMINI_API_KEY) {
-    const geminiRes = await generateWithGemini({ messages, temperature, maxTokens });
+    const geminiRes = await generateWithGemini({ messages, temperature, maxTokens, image });
     if (geminiRes && geminiRes.text) {
       return {
         text: geminiRes.text,
@@ -1657,6 +1695,7 @@ async function generateOpenRouterOrCustomAi({
       temperature,
       maxTokens,
       timeoutMs: timeoutMs || 35000,
+      image,
     });
 
     if (result.ok && result.text) {
@@ -1723,12 +1762,14 @@ async function executeAiWithProviderOrFallback({
   maxTokens = 128,
   providerConfig,
   timeoutMs = 35000,
+  image,
 }: {
   messages: Array<{ role: string; content: string }>;
   temperature?: number;
   maxTokens?: number | null;
   providerConfig?: CustomProviderPayload | null;
   timeoutMs?: number;
+  image?: string;
 }): Promise<{
   text: string;
   content?: string;
@@ -1766,6 +1807,7 @@ async function executeAiWithProviderOrFallback({
       temperature,
       maxTokens: effectiveMaxTokens,
       timeoutMs: effectiveTimeout,
+      image,
     });
     if (builtInResult) {
       return {
@@ -1811,6 +1853,7 @@ async function executeAiWithProviderOrFallback({
         maxTokens: effectiveMaxTokens,
         timeoutMs: effectiveTimeout,
         extraParams,
+        image,
       });
 
       if (serverResult.ok && serverResult.text) {
@@ -1903,6 +1946,7 @@ async function executeAiWithProviderOrFallback({
       maxTokens: effectiveMaxTokens,
       timeoutMs: effectiveTimeout,
       extraParams,
+      image,
     });
 
     if (result.ok && result.text && result.text.trim().length > 0) {
@@ -2991,6 +3035,7 @@ async function processAiChatInternal(
   customSearchApiUrl?: string,
   searchMaxResults?: number,
   extendedSearch?: boolean,
+  image?: string,
 ) {
   const trimmed = message.trim();
   const activeModel = providerConfig?.model || process.env.AI_MODEL || 'deepseek/deepseek-chat';
@@ -3354,6 +3399,7 @@ async function processAiChatInternal(
     temperature: 0.4,
     maxTokens: providerConfig?.maxTokens || 512,
     providerConfig,
+    image,
   });
 
   if (aiResult && aiResult.text) {
@@ -3479,6 +3525,7 @@ const aiChatSchema = z.object({
   customSearchApiUrl: z.string().optional(),
   searchMaxResults: z.number().min(1).max(50).optional(),
   extendedSearch: z.boolean().optional(),
+  image: z.string().optional(),
 });
 
 
@@ -3800,6 +3847,7 @@ async function startServer() {
         parsed.data.customSearchApiUrl,
         parsed.data.searchMaxResults,
         parsed.data.extendedSearch,
+        parsed.data.image,
       );
       return res.json({ data: result });
     } catch (err: unknown) {
