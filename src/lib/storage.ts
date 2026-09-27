@@ -2056,6 +2056,14 @@ export const storage = {
     write('nexus-ai-swarm-live-toggle', enabled);
   },
 
+  getAssistantVoiceAiEnabled(): boolean {
+    return read<boolean>('nexus-ai-voice-ai-toggle', false);
+  },
+
+  setAssistantVoiceAiEnabled(enabled: boolean): void {
+    write('nexus-ai-voice-ai-toggle', enabled);
+  },
+
   getAssistantAnswerTitleColor(): string | null {
     return read<string | null>('nexus-ai-answer-title-color', null);
   },

@@ -56,7 +56,8 @@ import { copyToClipboard, formatMarkdownToRichHtml } from '@/lib/clipboard';
 import { playTapSound } from '@/lib/audio';
 import { ErrorMessage } from '@/components';
 import { FormattedText } from '@/components/jarvis/FormattedText';
-import { stripTierLabels } from '@/lib/format';
+import { stripTierLabels, cleanMarkdownForSpeech } from '@/lib/format';
+import { synthesizeCloudVoiceAudio } from '@/lib/voiceProviderUtils';
 import { generateStudioImage, enhanceImagePromptWithAI } from '@/services/imageGenerationService';
 import { executeMultiChatTurn } from '@/services/multiChatOrchestrator';
 import { runJarvisPipeline } from '@/services/jarvisOrchestrator';
@@ -886,6 +887,7 @@ export function AssistantPage() {
       newAgent: storage.getAssistantNewAgentEnabled(),
       swarmLive: storage.getAssistantSwarmLiveEnabled(),
       commander: storage.getAssistantCommanderEnabled(),
+      voiceAi: storage.getAssistantVoiceAiEnabled(),
     };
     let foundActive = false;
     const clean = { ...raw };
@@ -899,6 +901,7 @@ export function AssistantPage() {
       'newAgent',
       'swarmLive',
       'commander',
+      'voiceAi',
     ];
     for (const key of order) {
       if (clean[key]) {
@@ -913,6 +916,7 @@ export function AssistantPage() {
           else if (key === 'newAgent') storage.setAssistantNewAgentEnabled(false);
           else if (key === 'swarmLive') storage.setAssistantSwarmLiveEnabled(false);
           else if (key === 'commander') storage.setAssistantCommanderEnabled(false);
+          else if (key === 'voiceAi') storage.setAssistantVoiceAiEnabled(false);
         } else {
           foundActive = true;
         }
@@ -930,6 +934,11 @@ export function AssistantPage() {
   const [newAgentEnabled, setNewAgentEnabled] = useState<boolean>(initialSpecialists.newAgent);
   const [swarmLiveEnabled, setSwarmLiveEnabled] = useState<boolean>(initialSpecialists.swarmLive);
   const [commanderEnabled, setCommanderEnabled] = useState<boolean>(initialSpecialists.commander);
+  const [voiceAiEnabled, setVoiceAiEnabled] = useState<boolean>(initialSpecialists.voiceAi);
+  const [voiceAiPlaying, setVoiceAiPlaying] = useState<boolean>(false);
+  const [voiceAiLoading, setVoiceAiLoading] = useState<boolean>(false);
+  const [voiceAiError, setVoiceAiError] = useState<string | null>(null);
+  const voiceAiAudioRef = useRef<HTMLAudioElement | null>(null);
   const [commanderConfig, setCommanderConfig] = useState<CommanderConfig>(() => storage.getCommanderConfig());
   const [commanderPromptsExpanded, setCommanderPromptsExpanded] = useState<boolean>(false);
   const [configuredAIProviders, setConfiguredAIProviders] = useState<AIProviderConfig[]>(
@@ -1745,6 +1754,38 @@ ${commanderConfig.systemPrompts.synthesizer?.trim() || '(Default system prompt)'
     }
   };
 
+  const handleInputPaste = async (e: React.ClipboardEvent<HTMLTextAreaElement>) => {
+    const items = e.clipboardData?.items;
+    if (!items) return;
+
+    let imageFile: File | null = null;
+    for (let i = 0; i < items.length; i++) {
+      const item = items[i];
+      if (item.type && item.type.startsWith('image/')) {
+        const file = item.getAsFile();
+        if (file) {
+          imageFile = file;
+          break;
+        }
+      }
+    }
+
+    if (imageFile) {
+      e.preventDefault();
+      setAttachmentError(null);
+      setAttachmentLoading(true);
+      try {
+        const processedImg = await processSelectedImageFile(imageFile);
+        setAttachedFile(processedImg);
+      } catch (err: unknown) {
+        const msg = err instanceof Error ? err.message : 'Failed to process pasted image';
+        setAttachmentError(msg);
+      } finally {
+        setAttachmentLoading(false);
+      }
+    }
+  };
+
   const handleStopWebFetcher = () => {
     webFetcherCancelledRef.current = true;
     setLoading(false);
@@ -1772,7 +1813,7 @@ ${commanderConfig.systemPrompts.synthesizer?.trim() || '(Default system prompt)'
 
   // Helper to ensure mutual exclusivity among the Specialist Modes
   const disableOtherSpecialistModes = (
-    except: 'architect' | 'dataAnalysis' | 'multiChat' | 'coder' | 'webFetcher' | 'wikimedia' | 'newAgent' | 'swarmLive' | 'commander',
+    except: 'architect' | 'dataAnalysis' | 'multiChat' | 'coder' | 'webFetcher' | 'wikimedia' | 'newAgent' | 'swarmLive' | 'commander' | 'voiceAi',
   ) => {
     if (except !== 'multiChat') {
       setMultiChatEnabled(false);
@@ -1812,6 +1853,100 @@ ${commanderConfig.systemPrompts.synthesizer?.trim() || '(Default system prompt)'
       setCommanderEnabled(false);
       storage.setAssistantCommanderEnabled(false);
     }
+    if (except !== 'voiceAi') {
+      setVoiceAiEnabled(false);
+      storage.setAssistantVoiceAiEnabled(false);
+      stopVoiceAiAudio();
+    }
+  };
+
+  const stopVoiceAiAudio = () => {
+    if (voiceAiAudioRef.current) {
+      voiceAiAudioRef.current.pause();
+      voiceAiAudioRef.current = null;
+    }
+    setVoiceAiPlaying(false);
+    setVoiceAiLoading(false);
+  };
+
+  const speakWithCloudVoice = async (text: string) => {
+    if (!text || !text.trim()) return;
+    const activeVoiceProvider = storage.getActiveVoiceProvider();
+    if (!activeVoiceProvider) {
+      setVoiceAiError('No active Cloud Voice AI provider configured. Please configure an active voice provider in AI Providers Settings.');
+      return;
+    }
+
+    const selectedCloudVoice = storage.getCloudVoice() || activeVoiceProvider.defaultVoice || 'EXAVITQu4vr4xnSDxMaL';
+    const studioSettings = {
+      stability: 0.5,
+      similarityBoost: 0.75,
+      speed: 1.0,
+    };
+
+    stopVoiceAiAudio();
+    setVoiceAiError(null);
+    setVoiceAiLoading(true);
+
+    try {
+      const cleaned = cleanMarkdownForSpeech(text);
+      if (!cleaned.trim()) {
+        setVoiceAiLoading(false);
+        return;
+      }
+      const result = await synthesizeCloudVoiceAudio(
+        activeVoiceProvider,
+        cleaned,
+        selectedCloudVoice,
+        undefined,
+        studioSettings
+      );
+
+      const url = URL.createObjectURL(result.blob);
+      const audio = new Audio(url);
+      voiceAiAudioRef.current = audio;
+
+      audio.onplay = () => {
+        setVoiceAiPlaying(true);
+        setVoiceAiLoading(false);
+      };
+      audio.onended = () => {
+        setVoiceAiPlaying(false);
+        setVoiceAiLoading(false);
+        voiceAiAudioRef.current = null;
+        URL.revokeObjectURL(url);
+      };
+      audio.onerror = () => {
+        setVoiceAiPlaying(false);
+        setVoiceAiLoading(false);
+        voiceAiAudioRef.current = null;
+        URL.revokeObjectURL(url);
+      };
+
+      await audio.play();
+    } catch (err: unknown) {
+      console.error('[Voice AI Specialist] Speech error:', err);
+      const msg = err instanceof Error ? err.message : String(err);
+      setVoiceAiError(msg);
+      setVoiceAiLoading(false);
+      setVoiceAiPlaying(false);
+    }
+  };
+
+  const toggleVoiceAi = () => {
+    const next = !voiceAiEnabled;
+    if (next) {
+      disableOtherSpecialistModes('voiceAi');
+    } else {
+      stopVoiceAiAudio();
+    }
+    setVoiceAiEnabled(next);
+    storage.setAssistantVoiceAiEnabled(next);
+    triggerSettingsToast(
+      next
+        ? 'Voice AI enabled: assistant answers will be spoken with Cloud Voice AI'
+        : 'Voice AI disabled',
+    );
   };
 
   const toggleMultiChat = () => {
@@ -2311,6 +2446,17 @@ ${commanderConfig.systemPrompts.synthesizer?.trim() || '(Default system prompt)'
             : theme === 'fulldark'
             ? 'text-cyan-300 border-cyan-500/40 bg-[#102428] hover:bg-[#163339]'
             : 'text-cyan-300 border-cyan-500/40 bg-cyan-950/50 hover:bg-cyan-900/60',
+      }
+    : voiceAiEnabled
+    ? {
+        name: 'Voice AI',
+        toggle: toggleVoiceAi,
+        color:
+          theme === 'classic'
+            ? 'text-purple-300 border-purple-500/50 bg-purple-950/60 hover:bg-purple-900/70 shadow-[0_0_8px_rgba(168,85,247,0.25)]'
+            : theme === 'fulldark'
+            ? 'text-purple-300 border-purple-500/40 bg-[#22132d] hover:bg-[#301b3f]'
+            : 'text-purple-300 border-purple-500/40 bg-purple-950/50 hover:bg-purple-900/60',
       }
     : coderEnabled
     ? {
@@ -3413,6 +3559,10 @@ ${commanderConfig.systemPrompts.synthesizer?.trim() || '(Default system prompt)'
         edgeTtsAudioRef.current.pause();
         edgeTtsAudioRef.current = null;
       }
+      if (voiceAiAudioRef.current) {
+        voiceAiAudioRef.current.pause();
+        voiceAiAudioRef.current = null;
+      }
     };
   }, []);
 
@@ -3616,6 +3766,9 @@ ${commanderConfig.systemPrompts.synthesizer?.trim() || '(Default system prompt)'
         };
 
         setMessages((current) => [...current, assistantMessage]);
+        if (voiceAiEnabled) {
+          speakWithCloudVoice(assistantMessage.content);
+        }
 
         const updatedConversation = [
           ...messages,
@@ -4417,6 +4570,9 @@ DIRECTIVES:
             wikimediaTopic: cleanTopic,
           };
           setMessages((current) => [...current, assistantMessage]);
+          if (voiceAiEnabled) {
+            speakWithCloudVoice(assistantMessage.content);
+          }
 
           const updatedConversation = [
             ...messages,
@@ -4535,6 +4691,9 @@ DIRECTIVES:
         };
 
         setMessages((current) => [...current, assistantMessage]);
+        if (voiceAiEnabled) {
+          speakWithCloudVoice(assistantMessage.content);
+        }
 
         const updatedConversation = [
           ...messages,
@@ -4623,6 +4782,9 @@ DIRECTIVES:
       };
 
       setMessages((current) => [...current, assistantMessage]);
+      if (voiceAiEnabled) {
+        speakWithCloudVoice(response.answer);
+      }
 
       const updatedConversation = [
         ...messages,
@@ -5036,6 +5198,79 @@ DIRECTIVES:
                   }`}
                   title="Disable Multi Chat mode"
                   aria-label="Disable Multi Chat"
+                >
+                  <X size={12} />
+                  <span>Disable</span>
+                </button>
+              </div>
+            </div>
+          )}
+
+          {/* Voice AI Active Indicator Banner */}
+          {voiceAiEnabled && (
+            <div
+              className={`px-3.5 py-2.5 rounded-xl border flex items-center justify-between gap-3 text-xs transition-all ${
+                theme === 'classic'
+                  ? 'bg-purple-950/40 border-purple-500/30 text-purple-200 shadow-[0_0_15px_rgba(168,85,247,0.15)]'
+                  : theme === 'fulldark'
+                  ? 'bg-[#1e1328] border-[#38204d] text-[#e6d9f2]'
+                  : 'bg-zinc-900/90 border-zinc-800 text-zinc-300'
+              }`}
+            >
+              <div className="flex items-center gap-2.5 min-w-0">
+                <div
+                  className={`w-6 h-6 rounded-lg grid place-items-center text-xs shrink-0 ${
+                    theme === 'classic'
+                      ? 'bg-purple-500/20 text-purple-300'
+                      : theme === 'fulldark'
+                      ? 'bg-zinc-800 text-purple-400'
+                      : 'bg-zinc-800 text-purple-400'
+                  }`}
+                >
+                  <Volume2 size={13} className={voiceAiPlaying ? 'animate-pulse' : ''} />
+                </div>
+                <div className="flex items-center gap-2 flex-wrap">
+                  <span className="font-semibold text-zinc-100">Voice AI Active:</span>
+                  <span className="text-[11px] opacity-90">
+                    Automatic speech synthesis using Cloud Voice AI (ElevenLabs standard generation)
+                  </span>
+                  {voiceAiPlaying && (
+                    <span className="text-[10px] font-mono px-1.5 py-0.2 rounded bg-purple-950 text-purple-300 border border-purple-500/40 animate-pulse">
+                      SPEAKING
+                    </span>
+                  )}
+                  {voiceAiLoading && (
+                    <span className="text-[10px] font-mono px-1.5 py-0.2 rounded bg-purple-950 text-purple-300 border border-purple-500/40">
+                      SYNTHESIZING...
+                    </span>
+                  )}
+                </div>
+              </div>
+              <div className="flex items-center gap-1.5 shrink-0">
+                {voiceAiPlaying && (
+                  <button
+                    type="button"
+                    onClick={stopVoiceAiAudio}
+                    className="text-[11px] px-2.5 py-1 rounded-lg border border-purple-500/40 bg-purple-950/80 hover:bg-purple-900 text-purple-200 transition-colors flex items-center gap-1"
+                    title="Stop Voice AI audio"
+                    aria-label="Stop audio"
+                  >
+                    <Square size={10} className="fill-current" />
+                    <span>Stop</span>
+                  </button>
+                )}
+                <button
+                  type="button"
+                  onClick={toggleVoiceAi}
+                  className={`text-[11px] px-2.5 py-1 rounded-lg border transition-all flex items-center gap-1 ${
+                    theme === 'classic'
+                      ? 'border-purple-500/40 bg-purple-950/70 text-purple-200 hover:border-red-500/50 hover:bg-red-950/40 hover:text-red-300'
+                      : theme === 'fulldark'
+                      ? 'border-[#333] bg-[#222] text-[#ccc] hover:border-red-500/40 hover:bg-red-950/30 hover:text-red-300'
+                      : 'border-zinc-700/60 bg-zinc-800/80 text-zinc-300 hover:border-red-500/40 hover:bg-red-500/10 hover:text-red-300'
+                  }`}
+                  title="Disable Voice AI mode"
+                  aria-label="Disable Voice AI"
                 >
                   <X size={12} />
                   <span>Disable</span>
@@ -6722,6 +6957,49 @@ DIRECTIVES:
               </div>
             )}
 
+            {/* Voice AI Error Banner */}
+            {voiceAiError && (
+              <div className="flex items-center justify-between gap-2 px-3 py-1.5 rounded-xl bg-rose-950/80 border border-rose-500/40 text-xs text-rose-200 mb-1 shadow-sm">
+                <div className="flex items-center gap-1.5 min-w-0">
+                  <AlertCircle size={13} className="text-rose-400 shrink-0" />
+                  <span className="truncate">{voiceAiError}</span>
+                </div>
+                <button
+                  type="button"
+                  onClick={() => setVoiceAiError(null)}
+                  className="p-0.5 hover:text-white text-rose-300 transition-colors"
+                  aria-label="Dismiss Voice AI error"
+                >
+                  <X size={12} />
+                </button>
+              </div>
+            )}
+
+            {/* Voice AI Status Indicator Chip (Compact speaker + subtle pulse + stop/mute button) */}
+            {voiceAiEnabled && (voiceAiLoading || voiceAiPlaying) && (
+              <div className="flex items-center justify-between gap-2 px-3 py-1.5 rounded-xl bg-purple-950/70 border border-purple-500/40 text-xs text-purple-200 mb-1 shadow-sm animate-in fade-in">
+                <div className="flex items-center gap-2 min-w-0">
+                  <Volume2
+                    size={13}
+                    className={`text-purple-400 shrink-0 ${voiceAiPlaying ? 'animate-pulse' : ''}`}
+                  />
+                  <span className="truncate font-medium text-[11.5px]">
+                    {voiceAiLoading ? 'Synthesizing voice with Cloud Voice AI...' : 'Speaking response with Cloud Voice AI'}
+                  </span>
+                </div>
+                <button
+                  type="button"
+                  onClick={stopVoiceAiAudio}
+                  className="px-2 py-0.5 rounded-md bg-purple-900/80 hover:bg-purple-800 text-purple-200 hover:text-white transition-colors flex items-center gap-1 text-[11px] font-medium shrink-0 border border-purple-500/30"
+                  title="Stop speech"
+                  aria-label="Stop speech"
+                >
+                  <Square size={9} className="fill-current" />
+                  <span>Stop</span>
+                </button>
+              </div>
+            )}
+
             {/* Attached File Preview Chip */}
             {attachedFile && !attachmentLoading && (
               <div className="flex items-center justify-between gap-2 p-2 rounded-xl bg-zinc-900/95 border border-zinc-700/80 text-xs text-zinc-200 mb-1 shadow-sm">
@@ -6786,6 +7064,7 @@ DIRECTIVES:
                 ref={textareaRef}
                 value={input}
                 onChange={handleInputChange}
+                onPaste={handleInputPaste}
                 onKeyDown={(e) => {
                   if (e.key === 'Enter' && !e.shiftKey) {
                     e.preventDefault();
@@ -6845,7 +7124,7 @@ DIRECTIVES:
                   type="button"
                   onClick={() => setMoreOptionsOpen((prev) => !prev)}
                   className={`text-xs p-1.5 rounded-lg border transition-all flex items-center justify-center gap-1 ${
-                    moreOptionsOpen || architectEnabled || dataAnalysisEnabled || multiChatEnabled || coderEnabled || webFetcherEnabled || wikimediaEnabled || newAgentEnabled || swarmLiveEnabled || commanderEnabled
+                    moreOptionsOpen || architectEnabled || dataAnalysisEnabled || multiChatEnabled || voiceAiEnabled || coderEnabled || webFetcherEnabled || wikimediaEnabled || newAgentEnabled || swarmLiveEnabled || commanderEnabled
                       ? theme === 'classic'
                         ? 'bg-cyan-500/15 text-cyan-200 border-cyan-500/40 shadow-[0_0_8px_rgba(6,182,212,0.2)]'
                         : theme === 'fulldark'
@@ -6860,7 +7139,7 @@ DIRECTIVES:
                   title={
                     moreOptionsOpen
                       ? 'Close quick modes menu'
-                      : 'Specialist Modes (mutually exclusive): Architect, Data Analysis, Multi Chat, Coder, Web Fetcher, Wikimedia, New Agent, Swarm Live, Commander'
+                      : 'Specialist Modes (mutually exclusive): Architect, Data Analysis, Multi Chat, Voice AI, Coder, Web Fetcher, Wikimedia, New Agent, Swarm Live, Commander'
                   }
                   aria-label="More options"
                   aria-expanded={moreOptionsOpen}
@@ -6871,7 +7150,7 @@ DIRECTIVES:
                       moreOptionsOpen ? 'rotate-180 text-cyan-400' : ''
                     }`}
                   />
-                  {(architectEnabled || dataAnalysisEnabled || multiChatEnabled || coderEnabled || webFetcherEnabled || wikimediaEnabled || newAgentEnabled || swarmLiveEnabled || commanderEnabled) && (
+                  {(architectEnabled || dataAnalysisEnabled || multiChatEnabled || voiceAiEnabled || coderEnabled || webFetcherEnabled || wikimediaEnabled || newAgentEnabled || swarmLiveEnabled || commanderEnabled) && (
                     <span className="w-1.5 h-1.5 rounded-full bg-cyan-400 shadow-[0_0_6px_rgba(6,182,212,0.8)]" />
                   )}
                 </button>
@@ -7078,6 +7357,53 @@ DIRECTIVES:
                         <div
                           className={`w-3 h-3 rounded-full bg-white shadow-sm transition-transform duration-150 ${
                             multiChatEnabled ? 'translate-x-4' : 'translate-x-0'
+                          }`}
+                        />
+                      </div>
+                    </button>
+
+                    {/* 3b. Voice AI Toggle */}
+                    <button
+                      type="button"
+                      onClick={toggleVoiceAi}
+                      className={`w-full p-2 rounded-xl border text-left flex items-center justify-between transition-all ${
+                        voiceAiEnabled
+                          ? 'border-purple-500/40 bg-purple-950/30 text-purple-200 shadow-[0_0_10px_rgba(168,85,247,0.15)]'
+                          : 'border-transparent hover:bg-zinc-800/60 text-zinc-300'
+                      }`}
+                    >
+                      <div className="flex items-center gap-2.5 min-w-0">
+                        <div
+                          className={`w-7 h-7 rounded-lg grid place-items-center shrink-0 ${
+                            voiceAiEnabled
+                              ? 'bg-purple-500/20 text-purple-300 border border-purple-500/30'
+                              : 'bg-zinc-800 text-zinc-400'
+                          }`}
+                        >
+                          <Volume2 size={13} />
+                        </div>
+                        <div className="min-w-0">
+                          <div className="text-xs font-semibold text-zinc-100 flex items-center gap-1.5">
+                            <span>Voice AI</span>
+                            {voiceAiEnabled && (
+                              <span className="text-[9px] font-mono font-semibold px-1.5 py-0.2 rounded bg-purple-950 text-purple-400 border border-purple-500/40">
+                                ON
+                              </span>
+                            )}
+                          </div>
+                          <div className="text-[10.5px] text-zinc-400 truncate">
+                            Cloud Voice Neural Speech
+                          </div>
+                        </div>
+                      </div>
+                      <div
+                        className={`w-8 h-4 rounded-full transition-colors relative flex items-center p-0.5 shrink-0 ${
+                          voiceAiEnabled ? 'bg-purple-500' : 'bg-zinc-700'
+                        }`}
+                      >
+                        <div
+                          className={`w-3 h-3 rounded-full bg-white shadow-sm transition-transform duration-150 ${
+                            voiceAiEnabled ? 'translate-x-4' : 'translate-x-0'
                           }`}
                         />
                       </div>
@@ -8508,6 +8834,83 @@ DIRECTIVES:
                           <div
                             className={`w-5 h-5 rounded-full bg-white shadow-md transition-transform duration-200 ${
                               multiChatEnabled ? 'translate-x-5' : 'translate-x-0'
+                            }`}
+                          />
+                        </div>
+                      </div>
+                    </div>
+
+                    <div className="h-px bg-zinc-800/80" />
+
+                    {/* 1b. Voice AI Specialist Toggle Card */}
+                    <div className="space-y-3">
+                      <div className="flex items-center justify-between">
+                        <div className="flex items-center gap-2">
+                          <Volume2 size={15} className="text-purple-400" />
+                          <h4 className="text-xs font-semibold uppercase tracking-wider text-zinc-300">
+                            Voice AI (Cloud Generation)
+                          </h4>
+                        </div>
+                        <span
+                          className={`text-[10px] font-mono font-semibold px-2 py-0.5 rounded-full border ${
+                            voiceAiEnabled
+                              ? 'bg-purple-950/80 text-purple-300 border-purple-500/50 shadow-[0_0_8px_rgba(168,85,247,0.2)]'
+                              : 'bg-zinc-800 text-zinc-500 border-zinc-700/60'
+                          }`}
+                        >
+                          {voiceAiEnabled ? 'ACTIVE' : 'DISABLED'}
+                        </span>
+                      </div>
+
+                      <p className="text-xs text-zinc-400 leading-relaxed">
+                        When enabled, every assistant response is automatically synthesized and spoken aloud using your active Cloud Voice AI provider (ElevenLabs). (Mutually exclusive: turns off other specialist modes).
+                      </p>
+
+                      {/* Interactive Toggle Card */}
+                      <div
+                        onClick={toggleVoiceAi}
+                        className={`p-3.5 rounded-xl border flex items-center justify-between cursor-pointer transition-all ${
+                          voiceAiEnabled
+                            ? 'border-purple-500/40 bg-purple-950/20 shadow-[0_0_15px_rgba(168,85,247,0.12)]'
+                            : 'border-zinc-800 bg-zinc-900/60 hover:bg-zinc-850 hover:border-zinc-700'
+                        }`}
+                      >
+                        <div className="flex items-center gap-3">
+                          <div
+                            className={`w-9 h-9 rounded-xl grid place-items-center transition-colors ${
+                              voiceAiEnabled
+                                ? 'bg-purple-500/20 border border-purple-500/40 text-purple-300'
+                                : 'bg-zinc-800 border border-zinc-700 text-zinc-400'
+                            }`}
+                          >
+                            <Volume2 size={18} />
+                          </div>
+                          <div>
+                            <div className="text-xs font-semibold text-zinc-100 flex items-center gap-2">
+                              <span>Enable Voice AI</span>
+                              {voiceAiEnabled && (
+                                <span className="text-[10px] font-mono text-purple-400 bg-purple-950/80 px-1.5 py-0.2 rounded border border-purple-500/40">
+                                  Cloud Voice Active
+                                </span>
+                              )}
+                            </div>
+                            <p className="text-[11px] text-zinc-400 mt-0.5">
+                              {voiceAiEnabled
+                                ? 'Automatic neural speech playback is active'
+                                : 'Silent text-only responses'}
+                            </p>
+                          </div>
+                        </div>
+
+                        {/* Toggle Switch */}
+                        <div
+                          className={`w-11 h-6 rounded-full transition-colors relative flex items-center p-0.5 shrink-0 ${
+                            voiceAiEnabled ? 'bg-purple-500 shadow-[0_0_8px_rgba(168,85,247,0.4)]' : 'bg-zinc-700'
+                          }`}
+                        >
+                          <div
+                            className={`w-5 h-5 rounded-full bg-white shadow-md transition-transform duration-200 ${
+                              voiceAiEnabled ? 'translate-x-5' : 'translate-x-0'
                             }`}
                           />
                         </div>
