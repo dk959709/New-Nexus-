@@ -937,12 +937,22 @@ export function AssistantPage() {
   const [commanderEnabled, setCommanderEnabled] = useState<boolean>(initialSpecialists.commander);
   const [voiceAiEnabled, setVoiceAiEnabled] = useState<boolean>(initialSpecialists.voiceAi);
   const [voiceAiEngine, setVoiceAiEngine] = useState<'cloud' | 'edge'>('cloud');
+  const voiceAiEngineRef = useRef<'cloud' | 'edge'>('cloud');
+  const voiceAiEnabledRef = useRef<boolean>(initialSpecialists.voiceAi);
   const [voiceAiPlaying, setVoiceAiPlaying] = useState<boolean>(false);
   const [voiceAiLoading, setVoiceAiLoading] = useState<boolean>(false);
   const [voiceAiError, setVoiceAiError] = useState<string | null>(null);
   const voiceAiAudioRef = useRef<HTMLAudioElement | null>(null);
   const voiceAiHoldTimerRef = useRef<NodeJS.Timeout | null>(null);
   const voiceAiHoldTriggeredRef = useRef<boolean>(false);
+
+  useEffect(() => {
+    voiceAiEngineRef.current = voiceAiEngine;
+  }, [voiceAiEngine]);
+
+  useEffect(() => {
+    voiceAiEnabledRef.current = voiceAiEnabled;
+  }, [voiceAiEnabled]);
   const [commanderConfig, setCommanderConfig] = useState<CommanderConfig>(() => storage.getCommanderConfig());
   const [commanderPromptsExpanded, setCommanderPromptsExpanded] = useState<boolean>(false);
   const [configuredAIProviders, setConfiguredAIProviders] = useState<AIProviderConfig[]>(
@@ -1877,11 +1887,13 @@ ${commanderConfig.systemPrompts.synthesizer?.trim() || '(Default system prompt)'
     voiceAiHoldTriggeredRef.current = false;
     if (voiceAiHoldTimerRef.current) {
       clearTimeout(voiceAiHoldTimerRef.current);
+      voiceAiHoldTimerRef.current = null;
     }
     voiceAiHoldTimerRef.current = setTimeout(() => {
       voiceAiHoldTriggeredRef.current = true;
       setVoiceAiEngine((prev) => {
         const next = prev === 'cloud' ? 'edge' : 'cloud';
+        voiceAiEngineRef.current = next;
         try {
           Haptics.impact({ style: ImpactStyle.Medium }).catch(() => {});
         } catch {
@@ -1896,15 +1908,24 @@ ${commanderConfig.systemPrompts.synthesizer?.trim() || '(Default system prompt)'
       });
       // Ensure Voice AI is turned ON
       setVoiceAiEnabled(true);
+      voiceAiEnabledRef.current = true;
       storage.setAssistantVoiceAiEnabled(true);
       disableOtherSpecialistModes('voiceAi');
     }, 5000);
   };
 
-  const handleVoiceAiHoldEnd = () => {
+  const handleVoiceAiHoldEnd = (e?: React.TouchEvent | React.MouseEvent) => {
     if (voiceAiHoldTimerRef.current) {
       clearTimeout(voiceAiHoldTimerRef.current);
       voiceAiHoldTimerRef.current = null;
+    }
+    if (voiceAiHoldTriggeredRef.current) {
+      if (e && 'cancelable' in e && e.cancelable) {
+        e.preventDefault();
+      }
+      setTimeout(() => {
+        voiceAiHoldTriggeredRef.current = false;
+      }, 300);
     }
   };
 
@@ -1923,8 +1944,9 @@ ${commanderConfig.systemPrompts.synthesizer?.trim() || '(Default system prompt)'
       }
 
       let audioBlob: Blob;
+      const currentEngine = voiceAiEngineRef.current;
 
-      if (voiceAiEngine === 'edge') {
+      if (currentEngine === 'edge') {
         const edgeVoice = storage.getEdgeVoice() || 'en-US-AriaNeural';
         audioBlob = await synthesizeEdgeAudio(cleaned, edgeVoice);
       } else {
@@ -1991,10 +2013,11 @@ ${commanderConfig.systemPrompts.synthesizer?.trim() || '(Default system prompt)'
       stopVoiceAiAudio();
     }
     setVoiceAiEnabled(next);
+    voiceAiEnabledRef.current = next;
     storage.setAssistantVoiceAiEnabled(next);
     triggerSettingsToast(
       next
-        ? 'Voice AI enabled: assistant answers will be spoken with Cloud Voice AI'
+        ? `Voice AI enabled: assistant answers will be spoken with ${voiceAiEngineRef.current === 'edge' ? 'Edge TTS' : 'Cloud Voice AI'}`
         : 'Voice AI disabled',
     );
   };
@@ -3816,7 +3839,7 @@ ${commanderConfig.systemPrompts.synthesizer?.trim() || '(Default system prompt)'
         };
 
         setMessages((current) => [...current, assistantMessage]);
-        if (voiceAiEnabled) {
+        if (voiceAiEnabled || voiceAiEnabledRef.current) {
           speakWithVoiceAi(assistantMessage.content);
         }
 
@@ -4620,7 +4643,7 @@ DIRECTIVES:
             wikimediaTopic: cleanTopic,
           };
           setMessages((current) => [...current, assistantMessage]);
-          if (voiceAiEnabled) {
+          if (voiceAiEnabled || voiceAiEnabledRef.current) {
             speakWithVoiceAi(assistantMessage.content);
           }
 
@@ -4741,7 +4764,7 @@ DIRECTIVES:
         };
 
         setMessages((current) => [...current, assistantMessage]);
-        if (voiceAiEnabled) {
+        if (voiceAiEnabled || voiceAiEnabledRef.current) {
           speakWithVoiceAi(assistantMessage.content);
         }
 
@@ -4832,7 +4855,7 @@ DIRECTIVES:
       };
 
       setMessages((current) => [...current, assistantMessage]);
-      if (voiceAiEnabled) {
+      if (voiceAiEnabled || voiceAiEnabledRef.current) {
         speakWithVoiceAi(response.answer);
       }
 
@@ -7421,9 +7444,10 @@ DIRECTIVES:
                     {/* 3b. Voice AI Toggle with 5-second hold engine switch */}
                     <button
                       type="button"
-                      onClick={() => {
+                      onClick={(e) => {
                         if (voiceAiHoldTriggeredRef.current) {
-                          voiceAiHoldTriggeredRef.current = false;
+                          e.preventDefault();
+                          e.stopPropagation();
                           return;
                         }
                         toggleVoiceAi();
@@ -8959,7 +8983,7 @@ DIRECTIVES:
                               <span>Enable Voice AI</span>
                               {voiceAiEnabled && (
                                 <span className="text-[10px] font-mono text-purple-400 bg-purple-950/80 px-1.5 py-0.2 rounded border border-purple-500/40">
-                                  Cloud Voice Active
+                                  {voiceAiEngine === 'edge' ? 'Edge TTS Active' : 'Cloud Voice Active'}
                                 </span>
                               )}
                             </div>
