@@ -3160,7 +3160,7 @@ ${commanderConfig.systemPrompts.synthesizer?.trim() || '(Default system prompt)'
       setEdgeTtsLoadingIndex(index);
       try {
         const edgeVoice = storage.getEdgeVoice() || 'en-US-AriaNeural';
-        const blob = await synthesizeEdgeAudio(text, edgeVoice);
+        const blob = await synthesizeEdgeAudio(cleanText, edgeVoice);
         const url = URL.createObjectURL(blob);
 
         const audio = new Audio(url);
