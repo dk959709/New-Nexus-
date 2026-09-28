@@ -3938,7 +3938,7 @@ async function startServer() {
     const synthesizeSingleChunk = async (chunkText: string, v: string): Promise<Buffer> => {
       const tts = new MsEdgeTTS();
       await tts.setMetadata(v, OUTPUT_FORMAT.AUDIO_24KHZ_48KBITRATE_MONO_MP3);
-      const { audioStream } = tts.toStream(chunkText);
+      const { audioStream } = tts.toStream(escapeXml(chunkText));
       const chunks: Buffer[] = [];
 
       return new Promise<Buffer>((resolve, reject) => {
