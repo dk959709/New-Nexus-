@@ -946,6 +946,20 @@ export function AssistantPage() {
   const voiceAiHoldTimerRef = useRef<NodeJS.Timeout | null>(null);
   const voiceAiHoldTriggeredRef = useRef<boolean>(false);
 
+  // Audio Section: Auto-speak answers settings
+  const [autoSpeakEnabled, setAutoSpeakEnabled] = useState<boolean>(() => storage.getAssistantAudioAutoSpeak());
+  const [autoSpeakEngine, setAutoSpeakEngine] = useState<'edge' | 'browser'>(() => storage.getAssistantAudioEngine());
+  const autoSpeakEnabledRef = useRef<boolean>(autoSpeakEnabled);
+  const autoSpeakEngineRef = useRef<'edge' | 'browser'>(autoSpeakEngine);
+
+  useEffect(() => {
+    autoSpeakEnabledRef.current = autoSpeakEnabled;
+  }, [autoSpeakEnabled]);
+
+  useEffect(() => {
+    autoSpeakEngineRef.current = autoSpeakEngine;
+  }, [autoSpeakEngine]);
+
   useEffect(() => {
     voiceAiEngineRef.current = voiceAiEngine;
   }, [voiceAiEngine]);
@@ -2016,6 +2030,37 @@ ${commanderConfig.systemPrompts.synthesizer?.trim() || '(Default system prompt)'
       next
         ? `Voice AI enabled: assistant answers will be spoken with ${voiceAiEngineRef.current === 'edge' ? 'Edge TTS' : 'Cloud Voice AI'}`
         : 'Voice AI disabled',
+    );
+  };
+
+  const toggleAutoSpeak = () => {
+    const next = !autoSpeakEnabled;
+    setAutoSpeakEnabled(next);
+    autoSpeakEnabledRef.current = next;
+    storage.setAssistantAudioAutoSpeak(next);
+    if (!next) {
+      stopSpeak();
+      if (edgeTtsAudioRef.current) {
+        edgeTtsAudioRef.current.pause();
+        edgeTtsAudioRef.current.src = '';
+        edgeTtsAudioRef.current = null;
+      }
+      setEdgeTtsPlayingIndex(null);
+      setEdgeTtsLoadingIndex(null);
+    }
+    triggerSettingsToast(
+      next
+        ? `Auto-speak answers enabled (${autoSpeakEngineRef.current === 'edge' ? 'Edge TTS' : 'Browser Speaker'})`
+        : 'Auto-speak answers disabled',
+    );
+  };
+
+  const handleAudioEngineChange = (engine: 'edge' | 'browser') => {
+    setAutoSpeakEngine(engine);
+    autoSpeakEngineRef.current = engine;
+    storage.setAssistantAudioEngine(engine);
+    triggerSettingsToast(
+      `Auto-speak engine: ${engine === 'edge' ? 'Microsoft Edge TTS' : 'Browser Speaker'}`,
     );
   };
 
@@ -3156,6 +3201,25 @@ ${commanderConfig.systemPrompts.synthesizer?.trim() || '(Default system prompt)'
     [edgeTtsPlayingIndex, stopSpeak],
   );
 
+  const triggerAutoSpeakOnAnswer = useCallback(
+    (answerText: string, messageIndex: number) => {
+      // Voice AI Specialist Mode wins: If the "Voice AI" Specialist Mode is ON, do NOT also auto-speak from this Audio setting
+      if (voiceAiEnabled || voiceAiEnabledRef.current) {
+        return;
+      }
+      if (!autoSpeakEnabledRef.current) {
+        return;
+      }
+      const engine = autoSpeakEngineRef.current;
+      if (engine === 'browser') {
+        toggleBrowserSpeak(answerText, messageIndex);
+      } else {
+        handleEdgeTtsSpeak(answerText, messageIndex);
+      }
+    },
+    [voiceAiEnabled, toggleBrowserSpeak, handleEdgeTtsSpeak],
+  );
+
   const handleCopyText = useCallback(async (text: string, index: number) => {
     playTapSound();
     const clean = stripTierLabels(text);
@@ -3851,7 +3915,11 @@ ${commanderConfig.systemPrompts.synthesizer?.trim() || '(Default system prompt)'
           chartData: result.chartData,
         };
 
-        setMessages((current) => [...current, assistantMessage]);
+        setMessages((current) => {
+          const newIdx = current.length;
+          triggerAutoSpeakOnAnswer(assistantMessage.content, newIdx);
+          return [...current, assistantMessage];
+        });
         if (voiceAiEnabled || voiceAiEnabledRef.current) {
           speakWithVoiceAi(assistantMessage.content);
         }
@@ -4655,7 +4723,11 @@ DIRECTIVES:
             wikimediaItems: photoImages,
             wikimediaTopic: cleanTopic,
           };
-          setMessages((current) => [...current, assistantMessage]);
+          setMessages((current) => {
+            const newIdx = current.length;
+            triggerAutoSpeakOnAnswer(assistantMessage.content, newIdx);
+            return [...current, assistantMessage];
+          });
           if (voiceAiEnabled || voiceAiEnabledRef.current) {
             speakWithVoiceAi(assistantMessage.content);
           }
@@ -4776,7 +4848,11 @@ DIRECTIVES:
           chartData: result.chartData,
         };
 
-        setMessages((current) => [...current, assistantMessage]);
+        setMessages((current) => {
+          const newIdx = current.length;
+          triggerAutoSpeakOnAnswer(assistantMessage.content, newIdx);
+          return [...current, assistantMessage];
+        });
         if (voiceAiEnabled || voiceAiEnabledRef.current) {
           speakWithVoiceAi(assistantMessage.content);
         }
@@ -4867,7 +4943,11 @@ DIRECTIVES:
         searchNotice: response.searchNotice,
       };
 
-      setMessages((current) => [...current, assistantMessage]);
+      setMessages((current) => {
+        const newIdx = current.length;
+        triggerAutoSpeakOnAnswer(response.answer, newIdx);
+        return [...current, assistantMessage];
+      });
       if (voiceAiEnabled || voiceAiEnabledRef.current) {
         speakWithVoiceAi(response.answer);
       }
@@ -8805,6 +8885,136 @@ DIRECTIVES:
                     </div>
                   )}
                 </div>
+              </div>
+            </div>
+
+            <div className="h-px bg-zinc-800" />
+
+            {/* Section: Audio (Auto-speak answers) */}
+            <div className="space-y-3">
+              <div className="flex items-center justify-between">
+                <div className="flex items-center gap-2">
+                  <Volume2 size={15} className="text-cyan-400" />
+                  <h4 className="text-xs font-semibold uppercase tracking-wider text-zinc-300">
+                    Audio
+                  </h4>
+                </div>
+                <span
+                  className={`text-[10px] font-mono font-semibold px-2 py-0.5 rounded-full border ${
+                    autoSpeakEnabled
+                      ? 'bg-cyan-950/80 text-cyan-300 border-cyan-500/50 shadow-[0_0_8px_rgba(6,182,212,0.2)]'
+                      : 'bg-zinc-800 text-zinc-500 border-zinc-700/60'
+                  }`}
+                >
+                  {autoSpeakEnabled ? 'ACTIVE' : 'DISABLED'}
+                </span>
+              </div>
+
+              <p className="text-xs text-zinc-400 leading-relaxed">
+                Automatically read aloud incoming AI Assistant answers as soon as they are generated.
+              </p>
+
+              {/* Audio Card */}
+              <div className="p-3.5 rounded-xl border border-zinc-800 bg-zinc-900/60 space-y-3">
+                {/* Auto-speak answers toggle row */}
+                <div
+                  onClick={toggleAutoSpeak}
+                  className="flex items-center justify-between cursor-pointer select-none"
+                >
+                  <div className="flex items-center gap-3">
+                    <div
+                      className={`w-9 h-9 rounded-xl grid place-items-center transition-colors ${
+                        autoSpeakEnabled
+                          ? 'bg-cyan-500/20 border border-cyan-500/40 text-cyan-300'
+                          : 'bg-zinc-800 border border-zinc-700 text-zinc-400'
+                      }`}
+                    >
+                      <Volume2 size={18} />
+                    </div>
+                    <div>
+                      <div className="text-xs font-semibold text-zinc-100 flex items-center gap-2">
+                        <span>Auto-speak answers</span>
+                        {autoSpeakEnabled && (
+                          <span className="text-[10px] font-mono text-cyan-400 bg-cyan-950/80 px-1.5 py-0.2 rounded border border-cyan-500/40">
+                            {autoSpeakEngine === 'edge' ? 'Edge TTS' : 'Browser Speaker'}
+                          </span>
+                        )}
+                      </div>
+                      <p className="text-[11px] text-zinc-400 mt-0.5">
+                        {autoSpeakEnabled
+                          ? `Automatically speaking new answers using ${autoSpeakEngine === 'edge' ? 'Microsoft Edge TTS' : 'Browser Speaker'}`
+                          : 'Answers are displayed as text only'}
+                      </p>
+                    </div>
+                  </div>
+
+                  {/* Toggle Switch */}
+                  <div
+                    className={`w-11 h-6 rounded-full transition-colors relative flex items-center p-0.5 shrink-0 ${
+                      autoSpeakEnabled ? 'bg-cyan-500 shadow-[0_0_8px_rgba(6,182,212,0.4)]' : 'bg-zinc-700'
+                    }`}
+                  >
+                    <div
+                      className={`w-5 h-5 rounded-full bg-white shadow-md transition-transform duration-200 ${
+                        autoSpeakEnabled ? 'translate-x-5' : 'translate-x-0'
+                      }`}
+                    />
+                  </div>
+                </div>
+
+                {/* Two Engine Choices when ON */}
+                {autoSpeakEnabled && (
+                  <div className="pt-2.5 border-t border-zinc-800/80 space-y-2">
+                    <label className="text-[11px] font-semibold text-zinc-300 block">
+                      Voice Engine
+                    </label>
+                    <div className="grid grid-cols-2 gap-2">
+                      <button
+                        type="button"
+                        onClick={() => handleAudioEngineChange('edge')}
+                        className={`p-2.5 rounded-xl border text-left transition-all flex items-center justify-between ${
+                          autoSpeakEngine === 'edge'
+                            ? 'bg-cyan-950/60 border-cyan-500/60 text-cyan-200 shadow-[0_0_12px_rgba(6,182,212,0.2)]'
+                            : 'bg-zinc-850/60 border-zinc-750 text-zinc-400 hover:text-zinc-200 hover:border-zinc-700'
+                        }`}
+                      >
+                        <div className="min-w-0">
+                          <div className="text-xs font-semibold flex items-center gap-1.5">
+                            <span>Edge TTS</span>
+                            {autoSpeakEngine === 'edge' && (
+                              <Check size={12} className="text-cyan-400" />
+                            )}
+                          </div>
+                          <p className="text-[10.5px] text-zinc-400 mt-0.5">
+                            Neural online voice
+                          </p>
+                        </div>
+                      </button>
+
+                      <button
+                        type="button"
+                        onClick={() => handleAudioEngineChange('browser')}
+                        className={`p-2.5 rounded-xl border text-left transition-all flex items-center justify-between ${
+                          autoSpeakEngine === 'browser'
+                            ? 'bg-cyan-950/60 border-cyan-500/60 text-cyan-200 shadow-[0_0_12px_rgba(6,182,212,0.2)]'
+                            : 'bg-zinc-850/60 border-zinc-750 text-zinc-400 hover:text-zinc-200 hover:border-zinc-700'
+                        }`}
+                      >
+                        <div className="min-w-0">
+                          <div className="text-xs font-semibold flex items-center gap-1.5">
+                            <span>Browser Speaker</span>
+                            {autoSpeakEngine === 'browser' && (
+                              <Check size={12} className="text-cyan-400" />
+                            )}
+                          </div>
+                          <p className="text-[10.5px] text-zinc-400 mt-0.5">
+                            Local system speech
+                          </p>
+                        </div>
+                      </button>
+                    </div>
+                  </div>
+                )}
               </div>
             </div>
 

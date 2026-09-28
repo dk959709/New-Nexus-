@@ -2064,6 +2064,22 @@ export const storage = {
     write('nexus-ai-voice-ai-toggle', enabled);
   },
 
+  getAssistantAudioAutoSpeak(): boolean {
+    return read<boolean>('nexus-ai-audio-auto-speak', false);
+  },
+
+  setAssistantAudioAutoSpeak(enabled: boolean): void {
+    write('nexus-ai-audio-auto-speak', enabled);
+  },
+
+  getAssistantAudioEngine(): 'edge' | 'browser' {
+    return read<'edge' | 'browser'>('nexus-ai-audio-engine', 'edge');
+  },
+
+  setAssistantAudioEngine(engine: 'edge' | 'browser'): void {
+    write('nexus-ai-audio-engine', engine);
+  },
+
   getAssistantAnswerTitleColor(): string | null {
     return read<string | null>('nexus-ai-answer-title-color', null);
   },
