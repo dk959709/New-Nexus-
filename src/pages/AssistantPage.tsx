@@ -1914,15 +1914,12 @@ ${commanderConfig.systemPrompts.synthesizer?.trim() || '(Default system prompt)'
     }, 5000);
   };
 
-  const handleVoiceAiHoldEnd = (e?: React.TouchEvent | React.MouseEvent) => {
+  const handleVoiceAiHoldEnd = () => {
     if (voiceAiHoldTimerRef.current) {
       clearTimeout(voiceAiHoldTimerRef.current);
       voiceAiHoldTimerRef.current = null;
     }
     if (voiceAiHoldTriggeredRef.current) {
-      if (e && 'cancelable' in e && e.cancelable) {
-        e.preventDefault();
-      }
       setTimeout(() => {
         voiceAiHoldTriggeredRef.current = false;
       }, 300);
@@ -7452,12 +7449,12 @@ DIRECTIVES:
                         }
                         toggleVoiceAi();
                       }}
-                      onMouseDown={handleVoiceAiHoldStart}
-                      onMouseUp={handleVoiceAiHoldEnd}
-                      onMouseLeave={handleVoiceAiHoldEnd}
-                      onTouchStart={handleVoiceAiHoldStart}
-                      onTouchEnd={handleVoiceAiHoldEnd}
-                      onTouchCancel={handleVoiceAiHoldEnd}
+                      onPointerDown={handleVoiceAiHoldStart}
+                      onPointerUp={handleVoiceAiHoldEnd}
+                      onPointerLeave={handleVoiceAiHoldEnd}
+                      onPointerCancel={handleVoiceAiHoldEnd}
+                      onContextMenu={(e) => e.preventDefault()}
+                      style={{ WebkitTouchCallout: 'none', userSelect: 'none', touchAction: 'manipulation' }}
                       className={`w-full p-2 rounded-xl border text-left flex items-center justify-between transition-all select-none ${
                         voiceAiEnabled
                           ? 'border-purple-500/40 bg-purple-950/30 text-purple-200 shadow-[0_0_10px_rgba(168,85,247,0.15)]'
