@@ -1,6 +1,7 @@
 import { useState, useRef, useCallback, useEffect } from 'react';
 import { storage } from '@/lib/storage';
 import { cleanMarkdownForSpeech } from '@/lib/format';
+import { synthesizeEdgeAudio } from '@/lib/edgeTtsUtils';
 
 export interface UseEdgeTtsOptions {
   onStopBrowserSpeech?: () => void;
@@ -17,6 +18,7 @@ export function useEdgeTts(options?: UseEdgeTtsOptions) {
     if (edgeTtsAudioRef.current) {
       edgeTtsAudioRef.current.pause();
       edgeTtsAudioRef.current.currentTime = 0;
+      edgeTtsAudioRef.current.src = '';
       edgeTtsAudioRef.current = null;
     }
     setEdgeTtsPlayingId(null);
@@ -42,21 +44,8 @@ export function useEdgeTts(options?: UseEdgeTtsOptions) {
 
       setEdgeTtsLoadingId(id);
       try {
-        const response = await fetch('/api/edge-tts', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({
-            text: cleanText.slice(0, 1500),
-            voice: storage.getEdgeVoice(),
-          }),
-        });
-
-        if (!response.ok) {
-          const data = await response.json().catch(() => ({}));
-          throw new Error(data.error || `Server responded with status ${response.status}`);
-        }
-
-        const blob = await response.blob();
+        const edgeVoice = storage.getEdgeVoice() || 'en-US-AriaNeural';
+        const blob = await synthesizeEdgeAudio(text, edgeVoice);
         const url = URL.createObjectURL(blob);
 
         const audio = new Audio(url);
@@ -68,13 +57,17 @@ export function useEdgeTts(options?: UseEdgeTtsOptions) {
 
         audio.onended = () => {
           setEdgeTtsPlayingId(null);
-          edgeTtsAudioRef.current = null;
+          if (edgeTtsAudioRef.current === audio) {
+            edgeTtsAudioRef.current = null;
+          }
           URL.revokeObjectURL(url);
         };
 
         audio.onerror = () => {
           setEdgeTtsPlayingId(null);
-          edgeTtsAudioRef.current = null;
+          if (edgeTtsAudioRef.current === audio) {
+            edgeTtsAudioRef.current = null;
+          }
           URL.revokeObjectURL(url);
         };
 
@@ -97,21 +90,8 @@ export function useEdgeTts(options?: UseEdgeTtsOptions) {
 
       setDownloadingAudioId(id);
       try {
-        const response = await fetch('/api/edge-tts', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({
-            text: cleanText.slice(0, 1500),
-            voice: storage.getEdgeVoice(),
-          }),
-        });
-
-        if (!response.ok) {
-          const data = await response.json().catch(() => ({}));
-          throw new Error(data.error || `Server responded with status ${response.status}`);
-        }
-
-        const blob = await response.blob();
+        const edgeVoice = storage.getEdgeVoice() || 'en-US-AriaNeural';
+        const blob = await synthesizeEdgeAudio(text, edgeVoice);
         const url = URL.createObjectURL(blob);
         const a = document.createElement('a');
         a.href = url;
@@ -143,6 +123,7 @@ export function useEdgeTts(options?: UseEdgeTtsOptions) {
     return () => {
       if (edgeTtsAudioRef.current) {
         edgeTtsAudioRef.current.pause();
+        edgeTtsAudioRef.current.src = '';
         edgeTtsAudioRef.current = null;
       }
     };

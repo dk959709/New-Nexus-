@@ -2614,6 +2614,7 @@ ${commanderConfig.systemPrompts.synthesizer?.trim() || '(Default system prompt)'
     if (personaAudioPlayingKey === idKey) {
       if (edgeTtsAudioRef.current) {
         edgeTtsAudioRef.current.pause();
+        edgeTtsAudioRef.current.src = '';
         edgeTtsAudioRef.current = null;
       }
       setPersonaAudioPlayingKey(null);
@@ -2622,43 +2623,48 @@ ${commanderConfig.systemPrompts.synthesizer?.trim() || '(Default system prompt)'
 
     if (edgeTtsAudioRef.current) {
       edgeTtsAudioRef.current.pause();
+      edgeTtsAudioRef.current.src = '';
       edgeTtsAudioRef.current = null;
     }
+    if (voiceAiAudioRef.current) {
+      voiceAiAudioRef.current.pause();
+      voiceAiAudioRef.current.src = '';
+      voiceAiAudioRef.current = null;
+    }
+    setVoiceAiPlaying(false);
+    setVoiceAiLoading(false);
     if (typeof window !== 'undefined' && 'speechSynthesis' in window) {
-      window.speechSynthesis.cancel();
+      try {
+        window.speechSynthesis.cancel();
+      } catch {
+        // Safe fallback
+      }
     }
     setSpeakingIndex(null);
     setEdgeTtsPlayingIndex(null);
+    setUniversalEdgeTtsPlaying(false);
 
     setPersonaAudioLoadingKey(idKey);
     try {
       const voice = getPersonaVoice(personaId);
-      const cleanText = text.replace(/[*_#`~[\]()]/g, '').trim();
-      const response = await fetch('/api/edge-tts', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          text: cleanText.slice(0, 4000),
-          voice,
-        }),
-      });
-
-      if (!response.ok) {
-        throw new Error(`Edge TTS failed: ${response.status}`);
-      }
-
-      const blob = await response.blob();
+      const blob = await synthesizeEdgeAudio(text, voice);
       const audioUrl = URL.createObjectURL(blob);
       const audio = new Audio(audioUrl);
       edgeTtsAudioRef.current = audio;
 
       audio.onended = () => {
         setPersonaAudioPlayingKey(null);
+        if (edgeTtsAudioRef.current === audio) {
+          edgeTtsAudioRef.current = null;
+        }
         URL.revokeObjectURL(audioUrl);
       };
 
       audio.onerror = () => {
         setPersonaAudioPlayingKey(null);
+        if (edgeTtsAudioRef.current === audio) {
+          edgeTtsAudioRef.current = null;
+        }
         URL.revokeObjectURL(audioUrl);
       };
 
@@ -2666,6 +2672,8 @@ ${commanderConfig.systemPrompts.synthesizer?.trim() || '(Default system prompt)'
       setPersonaAudioPlayingKey(idKey);
     } catch (err) {
       console.error('Persona TTS failed:', err);
+      const errMsg = err instanceof Error ? err.message : String(err);
+      triggerSettingsToast(`Edge TTS: ${errMsg || 'Playback failed'}`);
       setPersonaAudioPlayingKey(null);
     } finally {
       setPersonaAudioLoadingKey(null);
@@ -3075,42 +3083,39 @@ ${commanderConfig.systemPrompts.synthesizer?.trim() || '(Default system prompt)'
         if (edgeTtsAudioRef.current) {
           edgeTtsAudioRef.current.pause();
           edgeTtsAudioRef.current.currentTime = 0;
+          edgeTtsAudioRef.current.src = '';
+          edgeTtsAudioRef.current = null;
         }
         setEdgeTtsPlayingIndex(null);
         return;
       }
 
       stopSpeak();
+      if (voiceAiAudioRef.current) {
+        voiceAiAudioRef.current.pause();
+        voiceAiAudioRef.current.src = '';
+        voiceAiAudioRef.current = null;
+      }
+      setVoiceAiPlaying(false);
+      setVoiceAiLoading(false);
+
       if (edgeTtsAudioRef.current) {
         edgeTtsAudioRef.current.pause();
+        edgeTtsAudioRef.current.src = '';
         edgeTtsAudioRef.current = null;
       }
+      setUniversalEdgeTtsPlaying(false);
 
-      const cleanText = text
-        .replace(/```[\s\S]*?```/g, ' Code snippet omitted. ')
-        .replace(/[*#`_~>[\]()]/g, '')
-        .replace(/\s+/g, ' ')
-        .trim();
-
-      if (!cleanText) return;
+      const cleanText = cleanMarkdownForSpeech(text);
+      if (!cleanText) {
+        triggerSettingsToast('No readable text to speak.');
+        return;
+      }
 
       setEdgeTtsLoadingIndex(index);
       try {
-        const response = await fetch('/api/edge-tts', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({
-            text: cleanText.slice(0, 4000),
-            voice: storage.getEdgeVoice(),
-          }),
-        });
-
-        if (!response.ok) {
-          const data = await response.json().catch(() => ({}));
-          throw new Error(data.error || `Server responded with status ${response.status}`);
-        }
-
-        const blob = await response.blob();
+        const edgeVoice = storage.getEdgeVoice() || 'en-US-AriaNeural';
+        const blob = await synthesizeEdgeAudio(text, edgeVoice);
         const url = URL.createObjectURL(blob);
 
         const audio = new Audio(url);
@@ -3122,20 +3127,27 @@ ${commanderConfig.systemPrompts.synthesizer?.trim() || '(Default system prompt)'
 
         audio.onended = () => {
           setEdgeTtsPlayingIndex(null);
-          edgeTtsAudioRef.current = null;
+          if (edgeTtsAudioRef.current === audio) {
+            edgeTtsAudioRef.current = null;
+          }
           URL.revokeObjectURL(url);
         };
 
-        audio.onerror = () => {
+        audio.onerror = (e) => {
+          console.error('[Assistant] Edge TTS playback error:', e);
           setEdgeTtsPlayingIndex(null);
-          edgeTtsAudioRef.current = null;
+          if (edgeTtsAudioRef.current === audio) {
+            edgeTtsAudioRef.current = null;
+          }
           URL.revokeObjectURL(url);
         };
 
         await audio.play();
         setEdgeTtsPlayingIndex(index);
-      } catch (err) {
+      } catch (err: unknown) {
         console.error('[Assistant] Edge TTS error:', err);
+        const errMsg = err instanceof Error ? err.message : String(err);
+        triggerSettingsToast(`Edge TTS: ${errMsg || 'Playback failed'}`);
         setEdgeTtsPlayingIndex(null);
       } finally {
         setEdgeTtsLoadingIndex(null);
@@ -3522,6 +3534,7 @@ ${commanderConfig.systemPrompts.synthesizer?.trim() || '(Default system prompt)'
       if (edgeTtsAudioRef.current) {
         edgeTtsAudioRef.current.pause();
         edgeTtsAudioRef.current.currentTime = 0;
+        edgeTtsAudioRef.current.src = '';
         edgeTtsAudioRef.current = null;
       }
       setUniversalEdgeTtsPlaying(false);
@@ -3541,35 +3554,31 @@ ${commanderConfig.systemPrompts.synthesizer?.trim() || '(Default system prompt)'
     const combinedAssistantSpeech = assistantTextList.join('. Next response: ');
 
     stopSpeak();
+    if (voiceAiAudioRef.current) {
+      voiceAiAudioRef.current.pause();
+      voiceAiAudioRef.current.src = '';
+      voiceAiAudioRef.current = null;
+    }
+    setVoiceAiPlaying(false);
+    setVoiceAiLoading(false);
+
     if (edgeTtsAudioRef.current) {
       edgeTtsAudioRef.current.pause();
+      edgeTtsAudioRef.current.src = '';
       edgeTtsAudioRef.current = null;
     }
+    setEdgeTtsPlayingIndex(null);
 
-    const cleanText = combinedAssistantSpeech
-      .replace(/```[\s\S]*?```/g, ' Code snippet omitted. ')
-      .replace(/[*#`_~>[\]()]/g, '')
-      .replace(/\s+/g, ' ')
-      .trim();
-
-    if (!cleanText) return;
+    const cleanText = cleanMarkdownForSpeech(combinedAssistantSpeech);
+    if (!cleanText) {
+      triggerSettingsToast('No readable text to speak.');
+      return;
+    }
 
     setUniversalEdgeTtsLoading(true);
     try {
-      const response = await fetch('/api/edge-tts', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          text: cleanText.slice(0, 4000),
-          voice: storage.getEdgeVoice(),
-        }),
-      });
-
-      if (!response.ok) {
-        throw new Error(`Edge TTS error: ${response.status}`);
-      }
-
-      const blob = await response.blob();
+      const edgeVoice = storage.getEdgeVoice() || 'en-US-AriaNeural';
+      const blob = await synthesizeEdgeAudio(combinedAssistantSpeech, edgeVoice);
       const url = URL.createObjectURL(blob);
       const audio = new Audio(url);
       edgeTtsAudioRef.current = audio;
@@ -3580,21 +3589,28 @@ ${commanderConfig.systemPrompts.synthesizer?.trim() || '(Default system prompt)'
 
       audio.onended = () => {
         setUniversalEdgeTtsPlaying(false);
-        edgeTtsAudioRef.current = null;
+        if (edgeTtsAudioRef.current === audio) {
+          edgeTtsAudioRef.current = null;
+        }
         URL.revokeObjectURL(url);
       };
 
-      audio.onerror = () => {
+      audio.onerror = (e) => {
+        console.error('[Universal Edge TTS] Playback error:', e);
         setUniversalEdgeTtsPlaying(false);
-        edgeTtsAudioRef.current = null;
+        if (edgeTtsAudioRef.current === audio) {
+          edgeTtsAudioRef.current = null;
+        }
         URL.revokeObjectURL(url);
       };
 
       await audio.play();
       setUniversalEdgeTtsPlaying(true);
       triggerSettingsToast('Universal Edge TTS: Reading all AI Assistant answers aloud...');
-    } catch (err) {
+    } catch (err: unknown) {
       console.error('[Universal Edge TTS] Error:', err);
+      const errMsg = err instanceof Error ? err.message : String(err);
+      triggerSettingsToast(`Universal Edge TTS: ${errMsg || 'Playback failed'}`);
       setUniversalEdgeTtsPlaying(false);
     } finally {
       setUniversalEdgeTtsLoading(false);
