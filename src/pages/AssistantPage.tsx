@@ -545,20 +545,21 @@ export interface ArchivedChatSession {
   updatedAt: number;
 }
 
-export function loadActiveSessionId(): string | null {
+export function generateSessionId(): string {
+  return `chat-${Date.now()}-${Math.random().toString(36).substring(2, 7)}`;
+}
+
+export function loadActiveSessionId(): string {
   try {
     const savedId = localStorage.getItem(ACTIVE_SESSION_KEY);
-    if (!savedId) return null;
-    const existingSessions = loadChatSessions();
-    if (existingSessions.some((s) => s.id === savedId)) {
-      return savedId;
+    if (savedId && typeof savedId === 'string' && savedId.trim()) {
+      return savedId.trim();
     }
-    localStorage.removeItem(ACTIVE_SESSION_KEY);
-    localStorage.removeItem(CHAT_KEY);
-    localStorage.removeItem(MEMORY_KEY);
-    return null;
+    const newId = generateSessionId();
+    localStorage.setItem(ACTIVE_SESSION_KEY, newId);
+    return newId;
   } catch {
-    return null;
+    return generateSessionId();
   }
 }
 
@@ -620,15 +621,159 @@ export function saveChatSessions(sessions: ArchivedChatSession[]): void {
   }
 }
 
+export function isMessageEqual(a: Message, b: Message): boolean {
+  if (a.role !== b.role) return false;
+  let contentA = a.content ? a.content : '';
+  let contentB = b.content ? b.content : '';
+  if (a.role === 'assistant') {
+    contentA = stripTierLabels(contentA);
+    contentB = stripTierLabels(contentB);
+  }
+  contentA = contentA.replace(/\s+/g, ' ').trim();
+  contentB = contentB.replace(/\s+/g, ' ').trim();
+  if (contentA !== contentB) return false;
+  if (Boolean(a.image?.url || a.image?.imageDataId) !== Boolean(b.image?.url || b.image?.imageDataId)) {
+    return false;
+  }
+  return true;
+}
+
+export function getFirstUserMessage(msgs: Message[]): Message | null {
+  return msgs.find((m) => m.role === 'user' && m.content && m.content.trim()) || null;
+}
+
+export function isSameConversationPrefix(msgsA: Message[], msgsB: Message[]): boolean {
+  const firstUserA = getFirstUserMessage(msgsA);
+  const firstUserB = getFirstUserMessage(msgsB);
+  if (!firstUserA || !firstUserB) return false;
+
+  const contentA = firstUserA.content ? firstUserA.content.replace(/\s+/g, ' ').trim() : '';
+  const contentB = firstUserB.content ? firstUserB.content.replace(/\s+/g, ' ').trim() : '';
+  if (contentA !== contentB) return false;
+
+  const minLen = Math.min(msgsA.length, msgsB.length);
+  if (minLen === 0) return false;
+
+  for (let i = 0; i < minLen; i++) {
+    if (!isMessageEqual(msgsA[i], msgsB[i])) {
+      return false;
+    }
+  }
+  return true;
+}
+
+export function cleanupDuplicateSessions(sessions: ArchivedChatSession[]): {
+  cleaned: ArchivedChatSession[];
+  remappedIds: Map<string, string>;
+} {
+  const remappedIds = new Map<string, string>();
+  if (sessions.length <= 1) {
+    return { cleaned: sessions, remappedIds };
+  }
+
+  const groups: ArchivedChatSession[][] = [];
+
+  for (const session of sessions) {
+    let matchedGroup: ArchivedChatSession[] | null = null;
+    for (const group of groups) {
+      if (group.some((member) => isSameConversationPrefix(member.messages, session.messages))) {
+        matchedGroup = group;
+        break;
+      }
+    }
+    if (matchedGroup) {
+      matchedGroup.push(session);
+    } else {
+      groups.push([session]);
+    }
+  }
+
+  const cleaned: ArchivedChatSession[] = [];
+
+  for (const group of groups) {
+    if (group.length === 1) {
+      cleaned.push(group[0]);
+      continue;
+    }
+
+    // Keep the one with the most messages
+    group.sort((a, b) => {
+      if (b.messages.length !== a.messages.length) {
+        return b.messages.length - a.messages.length;
+      }
+      return (b.updatedAt || 0) - (a.updatedAt || 0);
+    });
+
+    const kept = group[0];
+    const duplicates = group.slice(1);
+
+    // Keep custom title, memory, provider and model
+    const customTitleSession = group.find((s) => s.titleEdited);
+    const finalTitle = kept.titleEdited
+      ? kept.title
+      : customTitleSession?.title || kept.title;
+    const finalTitleEdited = kept.titleEdited || Boolean(customTitleSession?.titleEdited);
+
+    const memorySession = group.find((s) => s.smartMemory && s.smartMemory.trim());
+    const finalMemory = (kept.smartMemory && kept.smartMemory.trim())
+      ? kept.smartMemory
+      : memorySession?.smartMemory || '';
+    const finalMaxLen = kept.smartMemoryMaxLength || memorySession?.smartMemoryMaxLength;
+
+    const providerSession = group.find((s) => s.providerId && s.providerId !== 'existing');
+    const finalProviderId = (kept.providerId && kept.providerId !== 'existing')
+      ? kept.providerId
+      : providerSession?.providerId || kept.providerId || 'existing';
+
+    const modelSession = group.find((s) => s.modelId && s.modelId.trim());
+    const finalModelId = (kept.modelId && kept.modelId.trim())
+      ? kept.modelId
+      : modelSession?.modelId || '';
+
+    const mergedSession: ArchivedChatSession = {
+      ...kept,
+      title: finalTitle,
+      titleEdited: finalTitleEdited,
+      smartMemory: finalMemory,
+      smartMemoryMaxLength: finalMaxLen,
+      providerId: finalProviderId,
+      modelId: finalModelId,
+      updatedAt: Math.max(...group.map((s) => s.updatedAt || 0)),
+    };
+
+    cleaned.push(mergedSession);
+
+    for (const dup of duplicates) {
+      remappedIds.set(dup.id, kept.id);
+    }
+  }
+
+  return { cleaned, remappedIds };
+}
+
+export function initializeAndDeduplicateSessions(): ArchivedChatSession[] {
+  const rawSessions = loadChatSessions();
+  const { cleaned, remappedIds } = cleanupDuplicateSessions(rawSessions);
+  if (remappedIds.size > 0 || cleaned.length !== rawSessions.length) {
+    saveChatSessions(cleaned);
+    try {
+      const activeId = localStorage.getItem(ACTIVE_SESSION_KEY);
+      if (activeId && remappedIds.has(activeId)) {
+        const newActiveId = remappedIds.get(activeId)!;
+        localStorage.setItem(ACTIVE_SESSION_KEY, newActiveId);
+      }
+    } catch {
+      // Ignore
+    }
+  }
+  return cleaned;
+}
+
 export function areMessagesEqual(a: Message[], b: Message[]): boolean {
   if (a.length !== b.length) return false;
   if (a.length === 0) return true;
   for (let i = 0; i < a.length; i++) {
-    const msgA = a[i];
-    const msgB = b[i];
-    if (msgA.role !== msgB.role) return false;
-    if (msgA.content !== msgB.content) return false;
-    if (Boolean(msgA.image?.url || msgA.image?.imageDataId) !== Boolean(msgB.image?.url || msgB.image?.imageDataId)) {
+    if (!isMessageEqual(a[i], b[i])) {
       return false;
     }
   }
@@ -696,29 +841,34 @@ export function archiveCurrentSession(
     }
   }
 
-  // 2. Guard against duplicate: Check if ANY session in stored list has identical message content
-  const identicalIdx = sessions.findIndex((s) => areMessagesEqual(s.messages, sanitized));
-  if (identicalIdx !== -1) {
-    // Update existing session in place instead of creating duplicate
-    const existing = sessions[identicalIdx];
-    sessions[identicalIdx] = {
+  // 2. Safety net: when a save has no matching ID, check the saved chats before creating a new one.
+  // If a saved chat has the same first user message and one conversation is the start of the other
+  // (one has more messages than the other but the earlier messages are the same), treat them as the
+  // same chat and update that one with the longer conversation. Keep its title, renamed title, memory,
+  // provider and model. Do not create a new entry.
+  const prefixMatchIdx = sessions.findIndex((s) => isSameConversationPrefix(s.messages, sanitized));
+  if (prefixMatchIdx !== -1) {
+    const existing = sessions[prefixMatchIdx];
+    const longerMessages = sanitized.length >= existing.messages.length ? sanitized : existing.messages;
+    sessions[prefixMatchIdx] = {
       ...existing,
-      title: existing.titleEdited ? existing.title : title,
+      messages: longerMessages,
+      title: existing.titleEdited ? existing.title : (existing.title || title),
       titleEdited: existing.titleEdited,
-      messages: sanitized,
-      smartMemory: memoryToSave,
-      smartMemoryMaxLength: currentMaxLength || existing.smartMemoryMaxLength || memoryLengthToSave,
-      providerId: currentProviderId || existing.providerId || providerToSave,
-      modelId: currentModelId || existing.modelId || modelToSave,
+      smartMemory: existing.smartMemory || memoryToSave,
+      smartMemoryMaxLength: existing.smartMemoryMaxLength || currentMaxLength || memoryLengthToSave,
+      providerId: (existing.providerId && existing.providerId !== 'existing') ? existing.providerId : (currentProviderId || providerToSave),
+      modelId: existing.modelId || currentModelId || modelToSave,
       updatedAt: now,
     };
     saveChatSessions(sessions);
-    return sessions[identicalIdx].id;
+    return existing.id;
   }
 
-  // 3. New unique session creation
+  // 3. New unique session creation under permanent existingSessionId
+  const newId = existingSessionId || generateSessionId();
   const newSession: ArchivedChatSession = {
-    id: `chat-${now}-${Math.random().toString(36).substring(2, 7)}`,
+    id: newId,
     title,
     messages: sanitized,
     smartMemory: memoryToSave,
@@ -730,7 +880,7 @@ export function archiveCurrentSession(
 
   const updated = [newSession, ...sessions].slice(0, 60);
   saveChatSessions(updated);
-  return newSession.id;
+  return newId;
 }
 
 export function deleteChatSession(id: string): void {
@@ -1069,8 +1219,8 @@ function AssistantImageCard({
 
 export function AssistantPage() {
   const [messages, setMessages] = useState<Message[]>(loadMessages);
-  const [sessions, setSessions] = useState<ArchivedChatSession[]>(() => loadChatSessions());
-  const [activeSessionId, setActiveSessionId] = useState<string | null>(() => loadActiveSessionId());
+  const [sessions, setSessions] = useState<ArchivedChatSession[]>(() => initializeAndDeduplicateSessions());
+  const [activeSessionId, setActiveSessionId] = useState<string>(() => loadActiveSessionId());
   const [activeProviderId, setActiveProviderId] = useState<string>(() => {
     const id = loadActiveSessionId();
     if (id) {
@@ -4056,10 +4206,27 @@ ${commanderConfig.systemPrompts.synthesizer?.trim() || '(Default system prompt)'
         return msg;
       });
       localStorage.setItem(CHAT_KEY, JSON.stringify(sanitizedMessages));
+
+      // Save current chat under its permanent ID every time it changes
+      if (activeSessionId && getSessionTitle(sanitizedMessages)) {
+        const savedId = archiveCurrentSession(
+          sanitizedMessages,
+          smartMemory,
+          activeSessionId,
+          smartMemoryMaxLength,
+          activeProviderId,
+          activeModelId,
+        );
+        if (savedId && savedId !== activeSessionId) {
+          setActiveSessionId(savedId);
+          saveActiveSessionId(savedId);
+        }
+        setSessions(loadChatSessions());
+      }
     } catch {
       // Storage may be unavailable.
     }
-  }, [messages]);
+  }, [messages, activeSessionId, smartMemory, smartMemoryMaxLength, activeProviderId, activeModelId]);
 
   useEffect(() => {
     try {
@@ -4068,10 +4235,23 @@ ${commanderConfig.systemPrompts.synthesizer?.trim() || '(Default system prompt)'
       } else {
         localStorage.removeItem(MEMORY_KEY);
       }
+
+      // Keep saved session memory scratchpad synced
+      if (activeSessionId && getSessionTitle(messages)) {
+        archiveCurrentSession(
+          messages,
+          smartMemory,
+          activeSessionId,
+          smartMemoryMaxLength,
+          activeProviderId,
+          activeModelId,
+        );
+        setSessions(loadChatSessions());
+      }
     } catch {
       // Ignore storage errors.
     }
-  }, [smartMemory]);
+  }, [smartMemory, activeSessionId, messages, smartMemoryMaxLength, activeProviderId, activeModelId]);
 
   const adjustTextareaHeight = () => {
     if (textareaRef.current) {
@@ -5296,8 +5476,9 @@ DIRECTIVES:
   };
 
   const resetWorkingChat = () => {
-    setActiveSessionId(null);
-    saveActiveSessionId(null);
+    const newId = generateSessionId();
+    setActiveSessionId(newId);
+    saveActiveSessionId(newId);
     setActiveProviderId('existing');
     setActiveModelId('');
     setSmartMemoryMaxLength(storage.getSmartMemoryMaxLength());
@@ -5308,7 +5489,6 @@ DIRECTIVES:
     try {
       localStorage.removeItem(CHAT_KEY);
       localStorage.removeItem(MEMORY_KEY);
-      localStorage.removeItem(ACTIVE_SESSION_KEY);
     } catch {
       // Ignore
     }
@@ -5891,7 +6071,7 @@ DIRECTIVES:
                           e.stopPropagation();
                           playTapSound();
                           if (window.confirm('Delete all saved chat history?')) {
-                            const wasSavedChatOpen = Boolean(activeSessionId);
+                            const wasSavedChatOpen = Boolean(activeSessionId && sessions.some((s) => s.id === activeSessionId));
                             saveChatSessions([]);
                             setSessions([]);
                             setDeletingSessionId(null);
