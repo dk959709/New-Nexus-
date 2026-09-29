@@ -47,6 +47,7 @@ import {
   ArrowUp,
   Paperclip,
   FileText,
+  History,
 } from 'lucide-react';
 import { Haptics, ImpactStyle } from '@capacitor/haptics';
 import { Link } from 'react-router-dom';
@@ -525,10 +526,109 @@ const CommanderModelSelector: React.FC<CommanderModelSelectorProps> = ({
 };
 
 const CHAT_KEY = 'nexus-ai-conversation-v2';
+const CHAT_SESSIONS_KEY = 'nexus-ai-chat-sessions-v1';
 const MEMORY_KEY = 'nexus-ai-smart-memory-v1';
 const WEB_SEARCH_PREF_KEY = 'nexus-ai-web-search-toggle';
 const IMAGE_GEN_PREF_KEY = 'nexus-ai-image-gen-toggle';
 const DEEP_RESEARCH_PREF_KEY = 'nexus-ai-deep-research-toggle';
+
+export interface ArchivedChatSession {
+  id: string;
+  title: string;
+  messages: Message[];
+  updatedAt: number;
+}
+
+export function loadChatSessions(): ArchivedChatSession[] {
+  try {
+    const raw = localStorage.getItem(CHAT_SESSIONS_KEY);
+    if (!raw) return [];
+    const parsed = JSON.parse(raw) as unknown;
+    if (!Array.isArray(parsed)) return [];
+    return parsed.filter(
+      (s): s is ArchivedChatSession =>
+        typeof s === 'object' &&
+        s !== null &&
+        typeof (s as ArchivedChatSession).id === 'string' &&
+        typeof (s as ArchivedChatSession).title === 'string' &&
+        Array.isArray((s as ArchivedChatSession).messages),
+    );
+  } catch {
+    return [];
+  }
+}
+
+export function saveChatSessions(sessions: ArchivedChatSession[]): void {
+  try {
+    localStorage.setItem(CHAT_SESSIONS_KEY, JSON.stringify(sessions));
+  } catch (err) {
+    console.error('Failed to save chat sessions:', err);
+  }
+}
+
+export function getSessionTitle(msgs: Message[]): string | null {
+  const firstUserMsg = msgs.find((m) => m.role === 'user' && m.content && m.content.trim());
+  if (!firstUserMsg) return null;
+  const clean = firstUserMsg.content.replace(/\s+/g, ' ').trim();
+  if (!clean) return null;
+  return clean.length > 40 ? clean.slice(0, 40) + '...' : clean;
+}
+
+export function archiveCurrentSession(msgs: Message[]): string | null {
+  const title = getSessionTitle(msgs);
+  if (!title) return null; // skip archiving if empty or only contains welcome message
+
+  const sanitized = msgs.map((msg) => {
+    if (msg.image && msg.image.url && msg.image.url.startsWith('data:') && msg.image.imageDataId) {
+      return {
+        ...msg,
+        image: {
+          ...msg.image,
+          url: '',
+        },
+      };
+    }
+    return msg;
+  });
+
+  const sessions = loadChatSessions();
+  const now = Date.now();
+
+  // Avoid creating identical duplicate on subsequent triggers
+  const topSession = sessions[0];
+  if (topSession && topSession.title === title && JSON.stringify(topSession.messages) === JSON.stringify(sanitized)) {
+    return topSession.id;
+  }
+
+  const newSession: ArchivedChatSession = {
+    id: `chat-${now}-${Math.random().toString(36).substring(2, 7)}`,
+    title,
+    messages: sanitized,
+    updatedAt: now,
+  };
+
+  const updated = [newSession, ...sessions].slice(0, 60);
+  saveChatSessions(updated);
+  return newSession.id;
+}
+
+export function deleteChatSession(id: string): void {
+  const sessions = loadChatSessions();
+  const filtered = sessions.filter((s) => s.id !== id);
+  saveChatSessions(filtered);
+}
+
+function formatRelativeTime(timestamp: number): string {
+  const diffSec = Math.max(0, Math.floor((Date.now() - timestamp) / 1000));
+  if (diffSec < 60) return 'just now';
+  const diffMin = Math.floor(diffSec / 60);
+  if (diffMin < 60) return `${diffMin}m ago`;
+  const diffHr = Math.floor(diffMin / 60);
+  if (diffHr < 24) return `${diffHr}h ago`;
+  const diffDays = Math.floor(diffHr / 24);
+  if (diffDays < 7) return `${diffDays}d ago`;
+  return new Date(timestamp).toLocaleDateString(undefined, { month: 'short', day: 'numeric' });
+}
 
 const RECENT_MESSAGES = 8;
 const MAX_MEMORY_LENGTH = 2200;
@@ -815,6 +915,10 @@ function AssistantImageCard({
 
 export function AssistantPage() {
   const [messages, setMessages] = useState<Message[]>(loadMessages);
+  const [sessions, setSessions] = useState<ArchivedChatSession[]>(() => loadChatSessions());
+  const [historyOpen, setHistoryOpen] = useState<boolean>(false);
+  const [deletingSessionId, setDeletingSessionId] = useState<string | null>(null);
+  const historyDropdownRef = useRef<HTMLDivElement>(null);
   const [smartMemory, setSmartMemory] = useState(loadSmartMemory);
   const [webSearchEnabled, setWebSearchEnabled] = useState(loadWebSearchToggle);
   const [imageGenEnabled, setImageGenEnabled] = useState(loadImageGenToggle);
@@ -838,6 +942,18 @@ export function AssistantPage() {
       window.removeEventListener('beforeunload', handleBeforeUnload);
     };
   }, []);
+
+  useEffect(() => {
+    if (!historyOpen) return;
+    const handleClickOutside = (e: MouseEvent) => {
+      if (historyDropdownRef.current && !historyDropdownRef.current.contains(e.target as Node)) {
+        setHistoryOpen(false);
+        setDeletingSessionId(null);
+      }
+    };
+    document.addEventListener('mousedown', handleClickOutside);
+    return () => document.removeEventListener('mousedown', handleClickOutside);
+  }, [historyOpen]);
   const [deepResearchEnabled, setDeepResearchEnabled] = useState(loadDeepResearchToggle);
   const [deepResearchProgress, setDeepResearchProgress] = useState<number>(0);
   const [deepResearchPhase, setDeepResearchPhase] = useState<string>('');
@@ -4984,6 +5100,48 @@ DIRECTIVES:
     setShowClearConfirm(false);
   };
 
+  const handleNewChatClick = () => {
+    playTapSound();
+    archiveCurrentSession(messages);
+    setSessions(loadChatSessions());
+    newChat();
+    try {
+      localStorage.removeItem(CHAT_KEY);
+    } catch {
+      // Ignore
+    }
+  };
+
+  const handleSelectSession = (session: ArchivedChatSession) => {
+    playTapSound();
+    archiveCurrentSession(messages);
+    setMessages(session.messages);
+    try {
+      localStorage.setItem(CHAT_KEY, JSON.stringify(session.messages));
+    } catch {
+      // Ignore
+    }
+    setError('');
+    setWebFetcherList([]);
+    setWebFetcherOriginalRequest('');
+    setSessions(loadChatSessions());
+    setHistoryOpen(false);
+    setDeletingSessionId(null);
+  };
+
+  const handleConfirmDeleteSession = (e: React.MouseEvent, id: string) => {
+    e.stopPropagation();
+    playTapSound();
+    deleteChatSession(id);
+    setSessions(loadChatSessions());
+    setDeletingSessionId(null);
+  };
+
+  const handleCancelDeleteSession = (e: React.MouseEvent) => {
+    e.stopPropagation();
+    setDeletingSessionId(null);
+  };
+
   const handleConfirmClearChat = () => {
     // Delete persisted image blobs from IndexedDB
     for (const msg of messages) {
@@ -5240,10 +5398,166 @@ DIRECTIVES:
             <span className="hidden sm:inline">Memory</span>
           </button>
 
+          {/* Chat History Dropdown */}
+          <div className="relative" ref={historyDropdownRef}>
+            <button
+              type="button"
+              onClick={() => {
+                playTapSound();
+                setSessions(loadChatSessions());
+                setHistoryOpen((prev) => !prev);
+                setDeletingSessionId(null);
+              }}
+              className={`text-xs px-2.5 py-1.5 rounded-lg transition-all flex items-center gap-1.5 ${
+                historyOpen
+                  ? theme === 'classic'
+                    ? 'bg-cyan-950/80 text-cyan-200 border border-cyan-500/40'
+                    : 'bg-zinc-800 text-white border border-zinc-700'
+                  : theme === 'classic'
+                  ? 'text-cyan-200 hover:text-white hover:bg-cyan-950/50'
+                  : theme === 'fulldark'
+                  ? 'text-[#ececec] hover:bg-[#212121]'
+                  : 'text-zinc-300 hover:text-white hover:bg-zinc-800'
+              }`}
+              title="View saved chat history"
+              aria-expanded={historyOpen}
+            >
+              <History size={13} className={sessions.length > 0 ? 'text-cyan-400' : 'text-zinc-400'} />
+              <span className="hidden sm:inline">History</span>
+              {sessions.length > 0 && (
+                <span className="text-[10px] font-mono px-1.5 py-0.2 rounded-full bg-cyan-950/80 text-cyan-300 border border-cyan-500/30">
+                  {sessions.length}
+                </span>
+              )}
+            </button>
+
+            {/* History Dropdown Panel */}
+            {historyOpen && (
+              <div
+                className={`absolute right-0 mt-2 w-72 sm:w-84 max-h-96 rounded-xl shadow-2xl border z-50 flex flex-col overflow-hidden animate-in fade-in zoom-in-95 duration-150 ${
+                  theme === 'classic'
+                    ? 'bg-[#091824]/98 border-cyan-500/40 backdrop-blur-md'
+                    : theme === 'fulldark'
+                    ? 'bg-[#18181b]/98 border-[#27272a] backdrop-blur-md'
+                    : 'bg-zinc-900/98 border-zinc-800 backdrop-blur-md'
+                }`}
+              >
+                <div className="p-3 border-b border-zinc-800/80 flex items-center justify-between">
+                  <div className="flex items-center gap-2">
+                    <History size={14} className="text-cyan-400" />
+                    <span className="text-xs font-semibold text-zinc-100">Saved Chats</span>
+                    <span className="text-[10px] px-1.5 py-0.2 rounded-full bg-cyan-950/80 text-cyan-300 border border-cyan-500/30">
+                      {sessions.length}
+                    </span>
+                  </div>
+                  <div className="flex items-center gap-1.5">
+                    {sessions.length > 0 && (
+                      <button
+                        type="button"
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          playTapSound();
+                          if (window.confirm('Delete all saved chat history?')) {
+                            saveChatSessions([]);
+                            setSessions([]);
+                            setDeletingSessionId(null);
+                          }
+                        }}
+                        className="text-[11px] text-zinc-400 hover:text-red-400 hover:bg-red-500/10 px-2 py-1 rounded transition-colors flex items-center gap-1"
+                        title="Delete all saved chats"
+                      >
+                        <Trash2 size={12} />
+                        <span>Clear All</span>
+                      </button>
+                    )}
+                    <button
+                      type="button"
+                      onClick={() => {
+                        playTapSound();
+                        setHistoryOpen(false);
+                      }}
+                      className="text-zinc-400 hover:text-zinc-200 p-1 rounded-md"
+                      title="Close"
+                    >
+                      <X size={13} />
+                    </button>
+                  </div>
+                </div>
+
+                <div className="flex-1 overflow-y-auto divide-y divide-zinc-800/60 p-1.5 space-y-0.5">
+                  {sessions.length === 0 ? (
+                    <div className="p-6 text-center text-zinc-500 text-xs">
+                      <History size={24} className="mx-auto mb-2 opacity-40 text-zinc-400" />
+                      <p className="font-medium text-zinc-300">No saved chats yet</p>
+                      <p className="text-[11px] text-zinc-500 mt-1 leading-relaxed">
+                        Clicking "+ New Chat" will automatically archive your current conversation here.
+                      </p>
+                    </div>
+                  ) : (
+                    sessions.map((session) => (
+                      <div
+                        key={session.id}
+                        onClick={() => handleSelectSession(session)}
+                        className="p-2.5 hover:bg-zinc-800/60 rounded-lg cursor-pointer transition-colors group flex items-center justify-between gap-2.5"
+                      >
+                        <div className="min-w-0 flex-1">
+                          <div className="text-xs font-medium text-zinc-200 truncate group-hover:text-cyan-300">
+                            {session.title}
+                          </div>
+                          <div className="text-[10.5px] text-zinc-500 mt-0.5 flex items-center gap-2">
+                            <span>{formatRelativeTime(session.updatedAt)}</span>
+                            <span>•</span>
+                            <span>{session.messages.length} msg{session.messages.length === 1 ? '' : 's'}</span>
+                          </div>
+                        </div>
+
+                        {deletingSessionId === session.id ? (
+                          <div
+                            className="flex items-center gap-1 shrink-0"
+                            onClick={(e) => e.stopPropagation()}
+                          >
+                            <button
+                              type="button"
+                              onClick={(e) => handleConfirmDeleteSession(e, session.id)}
+                              className="text-[10px] font-medium px-2 py-1 bg-red-500/25 text-red-300 border border-red-500/50 rounded-md hover:bg-red-500/40 shadow-sm"
+                            >
+                              Delete
+                            </button>
+                            <button
+                              type="button"
+                              onClick={handleCancelDeleteSession}
+                              className="text-[10px] px-1.5 py-1 text-zinc-400 hover:text-zinc-200"
+                            >
+                              Cancel
+                            </button>
+                          </div>
+                        ) : (
+                          <button
+                            type="button"
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              playTapSound();
+                              setDeletingSessionId(session.id);
+                            }}
+                            className="p-1.5 text-zinc-400 hover:text-red-400 hover:bg-red-500/15 rounded-md transition-all shrink-0"
+                            title="Delete this chat session"
+                            aria-label="Delete chat session"
+                          >
+                            <Trash2 size={13.5} />
+                          </button>
+                        )}
+                      </div>
+                    ))
+                  )}
+                </div>
+              </div>
+            )}
+          </div>
+
           {/* New Chat */}
           <button
             type="button"
-            onClick={newChat}
+            onClick={handleNewChatClick}
             className={`text-xs px-2.5 py-1.5 rounded-lg transition-all flex items-center gap-1.5 ${
               theme === 'classic'
                 ? 'text-cyan-200 hover:text-white hover:bg-cyan-950/50'
@@ -5251,7 +5565,7 @@ DIRECTIVES:
                 ? 'text-[#ececec] hover:bg-[#212121]'
                 : 'text-zinc-300 hover:text-white hover:bg-zinc-800'
             }`}
-            title="Start a new chat"
+            title="Archive current conversation and start a new chat"
           >
             <Plus size={14} />
             <span className="hidden sm:inline">New chat</span>
