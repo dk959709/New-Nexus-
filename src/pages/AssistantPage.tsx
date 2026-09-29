@@ -842,6 +842,16 @@ function buildLocalMemory(messages: Message[], maxLength?: number): string {
   return text.slice(-limit);
 }
 
+function getProviderModels(provider: AIProviderConfig): Array<{ id: string; name: string }> {
+  if (Array.isArray(provider.models) && provider.models.length > 0) {
+    return provider.models.map((m) => ({ id: m.id, name: m.name || m.id }));
+  }
+  if (provider.model && provider.model.trim()) {
+    return [{ id: provider.model.trim(), name: provider.model.trim() }];
+  }
+  return [];
+}
+
 function AssistantImageCard({
   image,
   theme,
@@ -1003,6 +1013,8 @@ export function AssistantPage() {
   const [messages, setMessages] = useState<Message[]>(loadMessages);
   const [sessions, setSessions] = useState<ArchivedChatSession[]>(() => loadChatSessions());
   const [activeSessionId, setActiveSessionId] = useState<string | null>(null);
+  const [activeProviderId, setActiveProviderId] = useState<string>('existing');
+  const [activeModelId, setActiveModelId] = useState<string>('');
   const [historyOpen, setHistoryOpen] = useState<boolean>(false);
   const [deletingSessionId, setDeletingSessionId] = useState<string | null>(null);
   const [editingSessionId, setEditingSessionId] = useState<string | null>(null);
@@ -5124,11 +5136,13 @@ DIRECTIVES:
         ]);
       }
 
+      const sessionProvider = storage.getProviderForSession(activeProviderId, activeModelId);
+
       const response = await api.aiChat(
         effectiveTurnMessage,
         historyForRequest,
         smartMemory,
-        undefined,
+        sessionProvider,
         isWebSearchForced,
         {
           language: currentLanguage,
@@ -5200,8 +5214,10 @@ DIRECTIVES:
 
   const handleNewChatClick = () => {
     playTapSound();
-    archiveCurrentSession(messages, smartMemory, activeSessionId, smartMemoryMaxLength);
+    archiveCurrentSession(messages, smartMemory, activeSessionId, smartMemoryMaxLength, activeProviderId, activeModelId);
     setActiveSessionId(null);
+    setActiveProviderId('existing');
+    setActiveModelId('');
     setSessions(loadChatSessions());
     newChat();
     // Reset short-term memory scratchpad for new chat session
@@ -5219,7 +5235,7 @@ DIRECTIVES:
   const handleSelectSession = (session: ArchivedChatSession) => {
     playTapSound();
     // 1. Archive current conversation and its separate scratchpad memory using current activeSessionId & max length
-    archiveCurrentSession(messages, smartMemory, activeSessionId, smartMemoryMaxLength);
+    archiveCurrentSession(messages, smartMemory, activeSessionId, smartMemoryMaxLength, activeProviderId, activeModelId);
 
     // 2. Track the newly active session ID
     setActiveSessionId(session.id);
@@ -5251,12 +5267,9 @@ DIRECTIVES:
       // Ignore
     }
 
-    // 6. Apply session's custom AI Provider & Model if configured
-    if (session.providerId) {
-      storage.setActiveAIProvider(session.providerId, session.modelId || '');
-      window.dispatchEvent(new Event('nexus-ai-providers-updated'));
-      window.dispatchEvent(new Event('storage'));
-    }
+    // 6. Track session's custom AI Provider & Model in active session state (without modifying global settings)
+    setActiveProviderId(session.providerId || 'existing');
+    setActiveModelId(session.modelId || '');
 
     setError('');
     setWebFetcherList([]);
@@ -5392,9 +5405,10 @@ DIRECTIVES:
     setEditingSessionId(null);
     setSessionMemoryEditingTarget(null);
     setSessionModelEditingTarget(session);
-    const activeP = storage.getActiveAIProvider();
-    const currentProviderId = session.providerId || (activeP ? activeP.id : 'existing');
-    const currentModelId = session.modelId || (activeP?.models?.[0]?.id || '');
+    const currentProviderId = session.providerId || 'existing';
+    const provider = configuredAIProviders.find((p) => p.id === currentProviderId);
+    const defaultModel = provider ? getProviderModels(provider)[0]?.id || provider.model || '' : '';
+    const currentModelId = session.modelId || defaultModel;
     setSessionModelProviderDraft(currentProviderId);
     setSessionModelIdDraft(currentModelId);
   };
@@ -5403,24 +5417,32 @@ DIRECTIVES:
     playTapSound();
     if (!sessionModelEditingTarget) return;
     const targetId = sessionModelEditingTarget.id;
+
+    let finalModel = sessionModelIdDraft.trim();
+    if (!finalModel && sessionModelProviderDraft !== 'existing') {
+      const provider = configuredAIProviders.find((p) => p.id === sessionModelProviderDraft);
+      if (provider) {
+        finalModel = getProviderModels(provider)[0]?.id || provider.model || '';
+      }
+    }
+
     const currentSessions = loadChatSessions();
     const idx = currentSessions.findIndex((s) => s.id === targetId);
     if (idx !== -1) {
       currentSessions[idx] = {
         ...currentSessions[idx],
         providerId: sessionModelProviderDraft,
-        modelId: sessionModelIdDraft,
+        modelId: finalModel,
         updatedAt: Date.now(),
       };
       saveChatSessions(currentSessions);
       setSessions(currentSessions);
     }
 
-    // If currently active session, sync active provider in storage and emit events
+    // If currently active session, sync active session provider/model in state (without modifying global settings)
     if (activeSessionId === targetId) {
-      storage.setActiveAIProvider(sessionModelProviderDraft, sessionModelIdDraft);
-      window.dispatchEvent(new Event('nexus-ai-providers-updated'));
-      window.dispatchEvent(new Event('storage'));
+      setActiveProviderId(sessionModelProviderDraft);
+      setActiveModelId(finalModel);
     }
 
     setSessionModelEditingTarget(null);
@@ -5518,8 +5540,10 @@ DIRECTIVES:
     });
   };
 
-  const activeProvider = storage.getActiveAIProvider();
-  const providerLabel = activeProvider ? activeProvider.name : 'NEXUS Standard';
+  const activeTurnProvider = storage.getProviderForSession(activeProviderId, activeModelId);
+  const providerLabel = activeTurnProvider
+    ? `${activeTurnProvider.name}${activeTurnProvider.model ? ` (${activeTurnProvider.model})` : ''}`
+    : 'NEXUS Standard';
 
   const isOnlyWelcome =
     messages.length === 1 &&
@@ -12373,14 +12397,16 @@ DIRECTIVES:
                   {/* Configured AI Providers from settings */}
                   {configuredAIProviders.map((provider) => {
                     const isSelected = sessionModelProviderDraft === provider.id;
+                    const models = getProviderModels(provider);
+                    const modelCount = models.length;
                     return (
                       <button
                         key={provider.id}
                         type="button"
                         onClick={() => {
                           setSessionModelProviderDraft(provider.id);
-                          const firstModel = provider.models?.[0]?.id || '';
-                          setSessionModelIdDraft(firstModel);
+                          const defaultModel = models[0]?.id || provider.model || '';
+                          setSessionModelIdDraft(defaultModel);
                         }}
                         className={`p-2.5 rounded-xl border text-left transition-all flex items-center justify-between ${
                           isSelected
@@ -12393,7 +12419,7 @@ DIRECTIVES:
                           <div className="min-w-0">
                             <div className="text-xs font-medium text-zinc-100 truncate">{provider.name}</div>
                             <div className="text-[10px] text-zinc-500 truncate">
-                              {provider.models?.length || 0} models available
+                              {modelCount} {modelCount === 1 ? 'model' : 'models'} available
                             </div>
                           </div>
                         </div>
@@ -12420,7 +12446,7 @@ DIRECTIVES:
 
                   {(() => {
                     const provider = configuredAIProviders.find((p) => p.id === sessionModelProviderDraft);
-                    const models = provider?.models || [];
+                    const models = provider ? getProviderModels(provider) : [];
 
                     return (
                       <div className="space-y-2">

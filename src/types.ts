@@ -159,6 +159,7 @@ export interface AIProviderConfig {
   name: string;
   url: string;
   model: string;
+  models?: Array<{ id: string; name?: string }>;
   maxTokens?: number;
   keyStrategy: KeyStrategy;
   preferredKeyId?: string;

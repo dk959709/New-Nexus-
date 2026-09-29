@@ -1330,6 +1330,22 @@ export const storage = {
     return state.providers.find((p) => p.id === state.activeProviderId) || null;
   },
 
+  getProviderForSession(providerId?: string, modelId?: string): AIProviderConfig | null {
+    if (!providerId || providerId === 'existing') {
+      return this.getActiveAIProvider();
+    }
+    const state = this.getAIProvidersState();
+    const provider = state.providers.find((p) => p.id === providerId);
+    if (!provider) {
+      return this.getActiveAIProvider();
+    }
+    const targetModel = modelId && modelId.trim() ? modelId.trim() : provider.model;
+    return {
+      ...provider,
+      model: targetModel,
+    };
+  },
+
   updateKeyHealth(providerId: string, keyId: string, status: KeyHealthStatus, errorMsg?: string): void {
     const state = this.getAIProvidersState();
     const providerIndex = state.providers.findIndex((p) => p.id === providerId);
