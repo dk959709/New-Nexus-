@@ -21,6 +21,8 @@ import {
   ImagePlus,
   ArrowRightLeft,
   Columns,
+  ChevronLeft,
+  ChevronRight,
 } from 'lucide-react';
 import { storage } from '@/lib/storage';
 import { playTapSound } from '@/lib/audio';
@@ -172,7 +174,75 @@ export function ImageStudio() {
   const [currentImage, setCurrentImage] = useState<GeneratedImageItem | null>(null);
   const [history, setHistory] = useState<GeneratedImageItem[]>([]);
   const [fullscreenImage, setFullscreenImage] = useState<GeneratedImageItem | null>(null);
+  const [isTrueFullscreen, setIsTrueFullscreen] = useState<boolean>(false);
+  const touchStartXRef = useRef<number | null>(null);
   const [galleryModalOpen, setGalleryModalOpen] = useState<boolean>(false);
+
+  // Reset isTrueFullscreen whenever fullscreenImage changes or closes
+  useEffect(() => {
+    setIsTrueFullscreen(false);
+  }, [fullscreenImage]);
+
+  const currentFullscreenIndex = history.findIndex((item) => item.id === fullscreenImage?.id);
+
+  const handlePrevFullscreenImage = (e?: React.MouseEvent) => {
+    if (e) e.stopPropagation();
+    if (history.length <= 1) return;
+    playTapSound();
+    setIsTrueFullscreen(false);
+    const prevIdx = currentFullscreenIndex <= 0 ? history.length - 1 : currentFullscreenIndex - 1;
+    setFullscreenImage(history[prevIdx]);
+  };
+
+  const handleNextFullscreenImage = (e?: React.MouseEvent) => {
+    if (e) e.stopPropagation();
+    if (history.length <= 1) return;
+    playTapSound();
+    setIsTrueFullscreen(false);
+    const nextIdx = (currentFullscreenIndex + 1) % history.length;
+    setFullscreenImage(history[nextIdx]);
+  };
+
+  const handleTouchStart = (e: React.TouchEvent) => {
+    if (e.touches && e.touches.length > 0) {
+      touchStartXRef.current = e.touches[0].clientX;
+    }
+  };
+
+  const handleTouchEnd = (e: React.TouchEvent) => {
+    if (touchStartXRef.current === null) return;
+    if (e.changedTouches && e.changedTouches.length > 0) {
+      const diffX = e.changedTouches[0].clientX - touchStartXRef.current;
+      const threshold = 50; // px
+      if (Math.abs(diffX) > threshold) {
+        if (diffX > 0) {
+          // swiped right -> previous image
+          handlePrevFullscreenImage();
+        } else {
+          // swiped left -> next image
+          handleNextFullscreenImage();
+        }
+      }
+    }
+    touchStartXRef.current = null;
+  };
+
+  // Keyboard navigation for fullscreen viewer
+  useEffect(() => {
+    if (!fullscreenImage) return;
+    const handleKeyDown = (e: KeyboardEvent) => {
+      if (e.key === 'Escape') {
+        setFullscreenImage(null);
+        setIsTrueFullscreen(false);
+      } else if (e.key === 'ArrowLeft') {
+        handlePrevFullscreenImage();
+      } else if (e.key === 'ArrowRight') {
+        handleNextFullscreenImage();
+      }
+    };
+    window.addEventListener('keydown', handleKeyDown);
+    return () => window.removeEventListener('keydown', handleKeyDown);
+  }, [fullscreenImage, currentFullscreenIndex, history]);
   const [hasDismissedPuterNotice, setHasDismissedPuterNotice] = useState<boolean>(() => {
     try {
       return localStorage.getItem('nexus_seen_puter_notice') === 'true';
@@ -3490,93 +3560,207 @@ export function ImageStudio() {
         </div>
       )}
 
-      {/* Fullscreen Modal View */}
+      {/* Fullscreen Modal View with True Edge-to-Edge & Swipe Navigation */}
       {fullscreenImage && (
         <div
           style={{
             position: 'fixed',
             inset: 0,
-            background: 'rgba(0,0,0,0.92)',
-            backdropFilter: 'blur(8px)',
+            background: isTrueFullscreen ? '#000000' : 'rgba(0,0,0,0.92)',
+            backdropFilter: isTrueFullscreen ? 'none' : 'blur(8px)',
             display: 'grid',
             placeItems: 'center',
             zIndex: 99999,
-            padding: '24px',
+            padding: isTrueFullscreen ? 0 : '24px',
+            overflow: 'hidden',
+            userSelect: 'none',
+            touchAction: 'pan-y',
           }}
-          onClick={() => setFullscreenImage(null)}
+          onClick={() => {
+            if (isTrueFullscreen) {
+              setIsTrueFullscreen(false);
+            } else {
+              setFullscreenImage(null);
+            }
+          }}
+          onTouchStart={handleTouchStart}
+          onTouchEnd={handleTouchEnd}
         >
+          {/* Previous image arrow button (desktop/mouse) */}
+          {history.length > 1 && (
+            <button
+              type="button"
+              onClick={handlePrevFullscreenImage}
+              className="hidden sm:flex"
+              style={{
+                position: 'fixed',
+                left: '16px',
+                top: '50%',
+                transform: 'translateY(-50%)',
+                background: 'rgba(0,0,0,0.5)',
+                border: '1px solid rgba(255,255,255,0.2)',
+                borderRadius: '50%',
+                color: '#fff',
+                width: '42px',
+                height: '42px',
+                alignItems: 'center',
+                justifyContent: 'center',
+                cursor: 'pointer',
+                opacity: 0.65,
+                transition: 'all 0.15s ease',
+                zIndex: 100000,
+                backdropFilter: 'blur(6px)',
+              }}
+              onMouseEnter={(e) => (e.currentTarget.style.opacity = '1')}
+              onMouseLeave={(e) => (e.currentTarget.style.opacity = '0.65')}
+              title="Previous image (Swipe right or Left Arrow)"
+              aria-label="Previous image"
+            >
+              <ChevronLeft size={22} />
+            </button>
+          )}
+
+          {/* Next image arrow button (desktop/mouse) */}
+          {history.length > 1 && (
+            <button
+              type="button"
+              onClick={handleNextFullscreenImage}
+              className="hidden sm:flex"
+              style={{
+                position: 'fixed',
+                right: '16px',
+                top: '50%',
+                transform: 'translateY(-50%)',
+                background: 'rgba(0,0,0,0.5)',
+                border: '1px solid rgba(255,255,255,0.2)',
+                borderRadius: '50%',
+                color: '#fff',
+                width: '42px',
+                height: '42px',
+                alignItems: 'center',
+                justifyContent: 'center',
+                cursor: 'pointer',
+                opacity: 0.65,
+                transition: 'all 0.15s ease',
+                zIndex: 100000,
+                backdropFilter: 'blur(6px)',
+              }}
+              onMouseEnter={(e) => (e.currentTarget.style.opacity = '1')}
+              onMouseLeave={(e) => (e.currentTarget.style.opacity = '0.65')}
+              title="Next image (Swipe left or Right Arrow)"
+              aria-label="Next image"
+            >
+              <ChevronRight size={22} />
+            </button>
+          )}
+
           <div
             style={{
               position: 'relative',
-              maxWidth: '90vw',
-              maxHeight: '90vh',
+              maxWidth: isTrueFullscreen ? '100vw' : '90vw',
+              maxHeight: isTrueFullscreen ? '100vh' : '90vh',
+              width: isTrueFullscreen ? '100vw' : 'auto',
+              height: isTrueFullscreen ? '100vh' : 'auto',
               display: 'flex',
               flexDirection: 'column',
               alignItems: 'center',
+              justifyContent: 'center',
             }}
-            onClick={(e) => e.stopPropagation()}
+            onClick={(e) => {
+              if (!isTrueFullscreen) {
+                e.stopPropagation();
+              }
+            }}
           >
+            {/* Close ✕ Button */}
             <button
               type="button"
-              onClick={() => setFullscreenImage(null)}
+              onClick={(e) => {
+                e.stopPropagation();
+                setFullscreenImage(null);
+                setIsTrueFullscreen(false);
+              }}
               style={{
-                position: 'absolute',
-                top: '-40px',
-                right: '0',
-                background: 'rgba(255,255,255,0.15)',
-                border: 0,
+                position: isTrueFullscreen ? 'fixed' : 'absolute',
+                top: isTrueFullscreen ? '16px' : '-40px',
+                right: isTrueFullscreen ? '16px' : '0',
+                background: 'rgba(0,0,0,0.55)',
+                border: '1px solid rgba(255,255,255,0.2)',
                 borderRadius: '50%',
                 color: '#fff',
-                width: '32px',
-                height: '32px',
+                width: '34px',
+                height: '34px',
                 display: 'grid',
                 placeItems: 'center',
                 cursor: 'pointer',
+                zIndex: 100001,
+                backdropFilter: 'blur(6px)',
+                opacity: isTrueFullscreen ? 0.75 : 1,
+                transition: 'opacity 0.15s ease',
               }}
+              onMouseEnter={(e) => (e.currentTarget.style.opacity = '1')}
+              onMouseLeave={(e) => (e.currentTarget.style.opacity = isTrueFullscreen ? '0.75' : '1')}
+              title="Close viewer (Escape)"
+              aria-label="Close viewer"
             >
               <X size={18} />
             </button>
+
+            {/* Main Fullscreen Image with Click-to-toggle True Fullscreen */}
             <img
               src={fullscreenImage.url}
               alt={fullscreenImage.prompt}
-              style={{
-                maxWidth: '90vw',
-                maxHeight: '76vh',
-                borderRadius: '12px',
-                objectFit: 'contain',
-                boxShadow: '0 16px 48px rgba(0,0,0,0.8)',
+              onClick={(e) => {
+                e.stopPropagation();
+                setIsTrueFullscreen((prev) => !prev);
               }}
+              style={{
+                width: isTrueFullscreen ? '100vw' : 'auto',
+                height: isTrueFullscreen ? '100vh' : 'auto',
+                maxWidth: isTrueFullscreen ? '100vw' : '90vw',
+                maxHeight: isTrueFullscreen ? '100vh' : '76vh',
+                borderRadius: isTrueFullscreen ? '0px' : '12px',
+                objectFit: 'contain',
+                boxShadow: isTrueFullscreen ? 'none' : '0 16px 48px rgba(0,0,0,0.8)',
+                cursor: 'pointer',
+                display: 'block',
+              }}
+              title={isTrueFullscreen ? 'Tap to exit full-screen view' : 'Tap to expand edge-to-edge full screen'}
             />
-            <div style={{ marginTop: '14px', textAlign: 'center', maxWidth: '680px', display: 'grid', gap: '4px' }}>
-              {fullscreenImage.enhancedPrompt && (
-                <div>
-                  <span
-                    style={{
-                      fontSize: '10px',
-                      fontWeight: 700,
-                      background: 'rgba(168,85,247,0.25)',
-                      color: '#c084fc',
-                      padding: '2px 7px',
-                      borderRadius: '4px',
-                      border: '1px solid rgba(168,85,247,0.4)',
-                      display: 'inline-flex',
-                      alignItems: 'center',
-                      gap: '4px',
-                    }}
-                  >
-                    <Wand2 size={10} /> Smart AI Enhanced Prompt
-                  </span>
-                </div>
-              )}
-              <p style={{ margin: 0, color: '#fff', fontSize: '13px', lineHeight: 1.5 }}>
-                "{fullscreenImage.prompt}"
-              </p>
-              {fullscreenImage.originalPrompt && fullscreenImage.originalPrompt !== fullscreenImage.prompt && (
-                <p style={{ margin: 0, color: 'var(--muted)', fontSize: '11px', fontStyle: 'italic' }}>
-                  Original: "{fullscreenImage.originalPrompt}"
+
+            {/* Prompt & Details Caption (Hidden in True Fullscreen) */}
+            {!isTrueFullscreen && (
+              <div style={{ marginTop: '14px', textAlign: 'center', maxWidth: '680px', display: 'grid', gap: '4px' }}>
+                {fullscreenImage.enhancedPrompt && (
+                  <div>
+                    <span
+                      style={{
+                        fontSize: '10px',
+                        fontWeight: 700,
+                        background: 'rgba(168,85,247,0.25)',
+                        color: '#c084fc',
+                        padding: '2px 7px',
+                        borderRadius: '4px',
+                        border: '1px solid rgba(168,85,247,0.4)',
+                        display: 'inline-flex',
+                        alignItems: 'center',
+                        gap: '4px',
+                      }}
+                    >
+                      <Wand2 size={10} /> Smart AI Enhanced Prompt
+                    </span>
+                  </div>
+                )}
+                <p style={{ margin: 0, color: '#fff', fontSize: '13px', lineHeight: 1.5 }}>
+                  "{fullscreenImage.prompt}"
                 </p>
-              )}
-            </div>
+                {fullscreenImage.originalPrompt && fullscreenImage.originalPrompt !== fullscreenImage.prompt && (
+                  <p style={{ margin: 0, color: 'var(--muted)', fontSize: '11px', fontStyle: 'italic' }}>
+                    Original: "{fullscreenImage.originalPrompt}"
+                  </p>
+                )}
+              </div>
+            )}
           </div>
         </div>
       )}
