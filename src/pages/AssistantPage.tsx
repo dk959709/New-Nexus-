@@ -536,6 +536,7 @@ export interface ArchivedChatSession {
   id: string;
   title: string;
   messages: Message[];
+  smartMemory?: string;
   updatedAt: number;
 }
 
@@ -574,7 +575,7 @@ export function getSessionTitle(msgs: Message[]): string | null {
   return clean.length > 40 ? clean.slice(0, 40) + '...' : clean;
 }
 
-export function archiveCurrentSession(msgs: Message[]): string | null {
+export function archiveCurrentSession(msgs: Message[], currentMemory?: string): string | null {
   const title = getSessionTitle(msgs);
   if (!title) return null; // skip archiving if empty or only contains welcome message
 
@@ -593,10 +594,16 @@ export function archiveCurrentSession(msgs: Message[]): string | null {
 
   const sessions = loadChatSessions();
   const now = Date.now();
+  const memoryToSave = currentMemory || '';
 
   // Avoid creating identical duplicate on subsequent triggers
   const topSession = sessions[0];
-  if (topSession && topSession.title === title && JSON.stringify(topSession.messages) === JSON.stringify(sanitized)) {
+  if (
+    topSession &&
+    topSession.title === title &&
+    JSON.stringify(topSession.messages) === JSON.stringify(sanitized) &&
+    (topSession.smartMemory || '') === memoryToSave
+  ) {
     return topSession.id;
   }
 
@@ -604,6 +611,7 @@ export function archiveCurrentSession(msgs: Message[]): string | null {
     id: `chat-${now}-${Math.random().toString(36).substring(2, 7)}`,
     title,
     messages: sanitized,
+    smartMemory: memoryToSave,
     updatedAt: now,
   };
 
@@ -5102,11 +5110,16 @@ DIRECTIVES:
 
   const handleNewChatClick = () => {
     playTapSound();
-    archiveCurrentSession(messages);
+    archiveCurrentSession(messages, smartMemory);
     setSessions(loadChatSessions());
     newChat();
+    // Reset short-term memory scratchpad for new chat session
+    setSmartMemory('');
+    setMemoryDraft('');
+    setMemoryEditorOpen(false);
     try {
       localStorage.removeItem(CHAT_KEY);
+      localStorage.removeItem(MEMORY_KEY);
     } catch {
       // Ignore
     }
@@ -5114,13 +5127,31 @@ DIRECTIVES:
 
   const handleSelectSession = (session: ArchivedChatSession) => {
     playTapSound();
-    archiveCurrentSession(messages);
+    // 1. Archive current conversation and its separate scratchpad memory
+    archiveCurrentSession(messages, smartMemory);
+
+    // 2. Load the selected session's messages
     setMessages(session.messages);
     try {
       localStorage.setItem(CHAT_KEY, JSON.stringify(session.messages));
     } catch {
       // Ignore
     }
+
+    // 3. Load the selected session's separate scratchpad memory
+    const sessionMemory = session.smartMemory || '';
+    setSmartMemory(sessionMemory);
+    setMemoryDraft(sessionMemory);
+    try {
+      if (sessionMemory) {
+        localStorage.setItem(MEMORY_KEY, sessionMemory);
+      } else {
+        localStorage.removeItem(MEMORY_KEY);
+      }
+    } catch {
+      // Ignore
+    }
+
     setError('');
     setWebFetcherList([]);
     setWebFetcherOriginalRequest('');
@@ -5508,6 +5539,14 @@ DIRECTIVES:
                             <span>{formatRelativeTime(session.updatedAt)}</span>
                             <span>•</span>
                             <span>{session.messages.length} msg{session.messages.length === 1 ? '' : 's'}</span>
+                            {Boolean(session.smartMemory?.trim()) && (
+                              <>
+                                <span>•</span>
+                                <span className="text-cyan-400/90 inline-flex items-center gap-0.5 font-medium">
+                                  <Brain size={10} /> Memory
+                                </span>
+                              </>
+                            )}
                           </div>
                         </div>
 
