@@ -986,6 +986,8 @@ export function AssistantPage() {
   const [activeSessionId, setActiveSessionId] = useState<string | null>(null);
   const [historyOpen, setHistoryOpen] = useState<boolean>(false);
   const [deletingSessionId, setDeletingSessionId] = useState<string | null>(null);
+  const [editingSessionId, setEditingSessionId] = useState<string | null>(null);
+  const [editingSessionTitleDraft, setEditingSessionTitleDraft] = useState<string>('');
   const historyDropdownRef = useRef<HTMLDivElement>(null);
   const [smartMemory, setSmartMemory] = useState(loadSmartMemory);
   const [smartMemoryMaxLength, setSmartMemoryMaxLength] = useState<number>(() => storage.getSmartMemoryMaxLength());
@@ -1018,6 +1020,8 @@ export function AssistantPage() {
       if (historyDropdownRef.current && !historyDropdownRef.current.contains(e.target as Node)) {
         setHistoryOpen(false);
         setDeletingSessionId(null);
+        setEditingSessionId(null);
+        setEditingSessionTitleDraft('');
       }
     };
     document.addEventListener('mousedown', handleClickOutside);
@@ -5238,6 +5242,43 @@ DIRECTIVES:
     setDeletingSessionId(null);
   };
 
+  const handleStartEditSession = (e: React.MouseEvent, session: ArchivedChatSession) => {
+    e.stopPropagation();
+    playTapSound();
+    setDeletingSessionId(null);
+    setEditingSessionId(session.id);
+    setEditingSessionTitleDraft(session.title);
+  };
+
+  const handleSaveEditSession = (e?: React.MouseEvent | React.FormEvent, id?: string) => {
+    if (e) e.stopPropagation();
+    playTapSound();
+    const targetId = id || editingSessionId;
+    if (!targetId) return;
+    const trimmed = editingSessionTitleDraft.trim();
+    if (trimmed) {
+      const currentSessions = loadChatSessions();
+      const idx = currentSessions.findIndex((s) => s.id === targetId);
+      if (idx !== -1) {
+        currentSessions[idx] = {
+          ...currentSessions[idx],
+          title: trimmed.length > 60 ? trimmed.slice(0, 60) : trimmed,
+          updatedAt: Date.now(),
+        };
+        saveChatSessions(currentSessions);
+        setSessions(currentSessions);
+      }
+    }
+    setEditingSessionId(null);
+    setEditingSessionTitleDraft('');
+  };
+
+  const handleCancelEditSession = (e?: React.MouseEvent) => {
+    if (e) e.stopPropagation();
+    setEditingSessionId(null);
+    setEditingSessionTitleDraft('');
+  };
+
   const handleConfirmClearChat = () => {
     // Delete persisted image blobs from IndexedDB
     for (const msg of messages) {
@@ -5630,62 +5671,123 @@ DIRECTIVES:
                     sessions.map((session) => (
                       <div
                         key={session.id}
-                        onClick={() => handleSelectSession(session)}
+                        onClick={() => {
+                          if (editingSessionId !== session.id) {
+                            handleSelectSession(session);
+                          }
+                        }}
                         className="p-2.5 hover:bg-zinc-800/60 rounded-lg cursor-pointer transition-colors group flex items-center justify-between gap-2.5"
                       >
-                        <div className="min-w-0 flex-1">
-                          <div className="text-xs font-medium text-zinc-200 truncate group-hover:text-cyan-300">
-                            {session.title}
-                          </div>
-                          <div className="text-[10.5px] text-zinc-500 mt-0.5 flex items-center gap-2">
-                            <span>{formatRelativeTime(session.updatedAt)}</span>
-                            <span>•</span>
-                            <span>{session.messages.length} msg{session.messages.length === 1 ? '' : 's'}</span>
-                            {Boolean(session.smartMemory?.trim()) && (
-                              <>
-                                <span>•</span>
-                                <span className="text-cyan-400/90 inline-flex items-center gap-0.5 font-medium">
-                                  <Brain size={10} /> Memory
-                                </span>
-                              </>
-                            )}
-                          </div>
-                        </div>
-
-                        {deletingSessionId === session.id ? (
+                        {editingSessionId === session.id ? (
                           <div
-                            className="flex items-center gap-1 shrink-0"
+                            className="flex-1 flex items-center gap-1.5 min-w-0"
                             onClick={(e) => e.stopPropagation()}
                           >
+                            <input
+                              type="text"
+                              value={editingSessionTitleDraft}
+                              onChange={(e) => setEditingSessionTitleDraft(e.target.value)}
+                              onKeyDown={(e) => {
+                                e.stopPropagation();
+                                if (e.key === 'Enter') {
+                                  e.preventDefault();
+                                  handleSaveEditSession(undefined, session.id);
+                                } else if (e.key === 'Escape') {
+                                  e.preventDefault();
+                                  handleCancelEditSession();
+                                }
+                              }}
+                              className="w-full px-2 py-1 text-xs rounded-md bg-zinc-800 border border-zinc-600 text-zinc-100 outline-none focus:border-cyan-400 font-medium"
+                              autoFocus
+                              maxLength={60}
+                              placeholder="Session title..."
+                            />
                             <button
                               type="button"
-                              onClick={(e) => handleConfirmDeleteSession(e, session.id)}
-                              className="text-[10px] font-medium px-2 py-1 bg-red-500/25 text-red-300 border border-red-500/50 rounded-md hover:bg-red-500/40 shadow-sm"
+                              onClick={(e) => handleSaveEditSession(e, session.id)}
+                              className="p-1 rounded bg-cyan-600/80 hover:bg-cyan-500 text-white shrink-0"
+                              title="Save title"
                             >
-                              Delete
+                              <Check size={12} />
                             </button>
                             <button
                               type="button"
-                              onClick={handleCancelDeleteSession}
-                              className="text-[10px] px-1.5 py-1 text-zinc-400 hover:text-zinc-200"
+                              onClick={handleCancelEditSession}
+                              className="p-1 rounded bg-zinc-700 hover:bg-zinc-600 text-zinc-300 shrink-0"
+                              title="Cancel"
                             >
-                              Cancel
+                              <X size={12} />
                             </button>
                           </div>
                         ) : (
-                          <button
-                            type="button"
-                            onClick={(e) => {
-                              e.stopPropagation();
-                              playTapSound();
-                              setDeletingSessionId(session.id);
-                            }}
-                            className="p-1.5 text-zinc-400 hover:text-red-400 hover:bg-red-500/15 rounded-md transition-all shrink-0"
-                            title="Delete this chat session"
-                            aria-label="Delete chat session"
-                          >
-                            <Trash2 size={13.5} />
-                          </button>
+                          <>
+                            <div className="min-w-0 flex-1">
+                              <div className="text-xs font-medium text-zinc-200 truncate group-hover:text-cyan-300">
+                                {session.title}
+                              </div>
+                              <div className="text-[10.5px] text-zinc-500 mt-0.5 flex items-center gap-2">
+                                <span>{formatRelativeTime(session.updatedAt)}</span>
+                                <span>•</span>
+                                <span>{session.messages.length} msg{session.messages.length === 1 ? '' : 's'}</span>
+                                {Boolean(session.smartMemory?.trim()) && (
+                                  <>
+                                    <span>•</span>
+                                    <span className="text-cyan-400/90 inline-flex items-center gap-0.5 font-medium">
+                                      <Brain size={10} /> Memory
+                                    </span>
+                                  </>
+                                )}
+                              </div>
+                            </div>
+
+                            {deletingSessionId === session.id ? (
+                              <div
+                                className="flex items-center gap-1 shrink-0"
+                                onClick={(e) => e.stopPropagation()}
+                              >
+                                <button
+                                  type="button"
+                                  onClick={(e) => handleConfirmDeleteSession(e, session.id)}
+                                  className="text-[10px] font-medium px-2 py-1 bg-red-500/25 text-red-300 border border-red-500/50 rounded-md hover:bg-red-500/40 shadow-sm"
+                                >
+                                  Delete
+                                </button>
+                                <button
+                                  type="button"
+                                  onClick={handleCancelDeleteSession}
+                                  className="text-[10px] px-1.5 py-1 text-zinc-400 hover:text-zinc-200"
+                                >
+                                  Cancel
+                                </button>
+                              </div>
+                            ) : (
+                              <div className="flex items-center gap-0.5 shrink-0" onClick={(e) => e.stopPropagation()}>
+                                <button
+                                  type="button"
+                                  onClick={(e) => handleStartEditSession(e, session)}
+                                  className="p-1.5 text-zinc-400 hover:text-cyan-300 hover:bg-cyan-500/15 rounded-md transition-all shrink-0"
+                                  title="Rewrite session title"
+                                  aria-label="Rename session"
+                                >
+                                  <Edit3 size={13} />
+                                </button>
+                                <button
+                                  type="button"
+                                  onClick={(e) => {
+                                    e.stopPropagation();
+                                    playTapSound();
+                                    setEditingSessionId(null);
+                                    setDeletingSessionId(session.id);
+                                  }}
+                                  className="p-1.5 text-zinc-400 hover:text-red-400 hover:bg-red-500/15 rounded-md transition-all shrink-0"
+                                  title="Delete this chat session"
+                                  aria-label="Delete chat session"
+                                >
+                                  <Trash2 size={13.5} />
+                                </button>
+                              </div>
+                            )}
+                          </>
                         )}
                       </div>
                     ))
