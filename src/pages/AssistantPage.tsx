@@ -9142,9 +9142,28 @@ DIRECTIVES:
                     Short-Term Memory Size
                   </h4>
                 </div>
-                <span className="text-xs font-mono font-semibold text-cyan-400 bg-cyan-950/80 px-2.5 py-0.5 rounded-full border border-cyan-500/30">
-                  {smartMemoryMaxLength.toLocaleString()} chars
-                </span>
+                <div className="flex items-center gap-2">
+                  <span className="text-xs font-mono font-semibold text-cyan-400 bg-cyan-950/80 px-2.5 py-0.5 rounded-full border border-cyan-500/30">
+                    {smartMemoryMaxLength.toLocaleString()} chars
+                  </span>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      playTapSound();
+                      handleSmartMemoryMaxLengthChange(2200);
+                    }}
+                    disabled={smartMemoryMaxLength === 2200}
+                    className={`text-[11px] px-2.5 py-0.5 rounded-full border flex items-center gap-1 transition-all ${
+                      smartMemoryMaxLength === 2200
+                        ? 'border-zinc-800 bg-zinc-900/40 text-zinc-600 cursor-not-allowed opacity-50'
+                        : 'border-zinc-700 bg-zinc-800 text-zinc-300 hover:bg-zinc-700 hover:text-white cursor-pointer'
+                    }`}
+                    title="Reset to default (2,200 chars)"
+                  >
+                    <RotateCcw size={10} />
+                    <span>Reset</span>
+                  </button>
+                </div>
               </div>
 
               <p className="text-xs text-zinc-400 leading-relaxed">
