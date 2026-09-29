@@ -537,6 +537,9 @@ export interface ArchivedChatSession {
   title: string;
   messages: Message[];
   smartMemory?: string;
+  smartMemoryMaxLength?: number;
+  providerId?: string;
+  modelId?: string;
   updatedAt: number;
 }
 
@@ -613,6 +616,9 @@ export function archiveCurrentSession(
   msgs: Message[],
   currentMemory?: string,
   existingSessionId?: string | null,
+  currentMaxLength?: number,
+  currentProviderId?: string,
+  currentModelId?: string,
 ): string | null {
   const title = getSessionTitle(msgs);
   if (!title) return null; // skip archiving if empty or only contains welcome message
@@ -633,6 +639,10 @@ export function archiveCurrentSession(
   const sessions = loadChatSessions();
   const now = Date.now();
   const memoryToSave = currentMemory || '';
+  const memoryLengthToSave = currentMaxLength || storage.getSmartMemoryMaxLength();
+  const activeP = storage.getActiveAIProvider();
+  const providerToSave = currentProviderId || (activeP ? activeP.id : 'existing');
+  const modelToSave = currentModelId || (activeP?.models?.[0]?.id || '');
 
   // 1. Guard against duplicate: Check if explicit existingSessionId matches an item in sessions
   if (existingSessionId) {
@@ -643,6 +653,9 @@ export function archiveCurrentSession(
         title,
         messages: sanitized,
         smartMemory: memoryToSave,
+        smartMemoryMaxLength: currentMaxLength || sessions[matchIdx].smartMemoryMaxLength || memoryLengthToSave,
+        providerId: currentProviderId || sessions[matchIdx].providerId || providerToSave,
+        modelId: currentModelId || sessions[matchIdx].modelId || modelToSave,
         updatedAt: now,
       };
       saveChatSessions(sessions);
@@ -659,6 +672,9 @@ export function archiveCurrentSession(
       title,
       messages: sanitized,
       smartMemory: memoryToSave,
+      smartMemoryMaxLength: currentMaxLength || sessions[identicalIdx].smartMemoryMaxLength || memoryLengthToSave,
+      providerId: currentProviderId || sessions[identicalIdx].providerId || providerToSave,
+      modelId: currentModelId || sessions[identicalIdx].modelId || modelToSave,
       updatedAt: now,
     };
     saveChatSessions(sessions);
@@ -671,6 +687,9 @@ export function archiveCurrentSession(
     title,
     messages: sanitized,
     smartMemory: memoryToSave,
+    smartMemoryMaxLength: memoryLengthToSave,
+    providerId: providerToSave,
+    modelId: modelToSave,
     updatedAt: now,
   };
 
@@ -988,6 +1007,12 @@ export function AssistantPage() {
   const [deletingSessionId, setDeletingSessionId] = useState<string | null>(null);
   const [editingSessionId, setEditingSessionId] = useState<string | null>(null);
   const [editingSessionTitleDraft, setEditingSessionTitleDraft] = useState<string>('');
+  const [sessionMemoryEditingTarget, setSessionMemoryEditingTarget] = useState<ArchivedChatSession | null>(null);
+  const [sessionMemoryDraft, setSessionMemoryDraft] = useState<string>('');
+  const [sessionMemoryDraftMaxLength, setSessionMemoryDraftMaxLength] = useState<number>(2200);
+  const [sessionModelEditingTarget, setSessionModelEditingTarget] = useState<ArchivedChatSession | null>(null);
+  const [sessionModelProviderDraft, setSessionModelProviderDraft] = useState<string>('existing');
+  const [sessionModelIdDraft, setSessionModelIdDraft] = useState<string>('');
   const historyDropdownRef = useRef<HTMLDivElement>(null);
   const [smartMemory, setSmartMemory] = useState(loadSmartMemory);
   const [smartMemoryMaxLength, setSmartMemoryMaxLength] = useState<number>(() => storage.getSmartMemoryMaxLength());
@@ -5175,7 +5200,7 @@ DIRECTIVES:
 
   const handleNewChatClick = () => {
     playTapSound();
-    archiveCurrentSession(messages, smartMemory, activeSessionId);
+    archiveCurrentSession(messages, smartMemory, activeSessionId, smartMemoryMaxLength);
     setActiveSessionId(null);
     setSessions(loadChatSessions());
     newChat();
@@ -5193,8 +5218,8 @@ DIRECTIVES:
 
   const handleSelectSession = (session: ArchivedChatSession) => {
     playTapSound();
-    // 1. Archive current conversation and its separate scratchpad memory using current activeSessionId
-    archiveCurrentSession(messages, smartMemory, activeSessionId);
+    // 1. Archive current conversation and its separate scratchpad memory using current activeSessionId & max length
+    archiveCurrentSession(messages, smartMemory, activeSessionId, smartMemoryMaxLength);
 
     // 2. Track the newly active session ID
     setActiveSessionId(session.id);
@@ -5207,7 +5232,12 @@ DIRECTIVES:
       // Ignore
     }
 
-    // 4. Load the selected session's separate scratchpad memory
+    // 4. Load the selected session's custom memory limit if configured
+    const sessionMaxLen = session.smartMemoryMaxLength || storage.getSmartMemoryMaxLength();
+    setSmartMemoryMaxLength(sessionMaxLen);
+    storage.setSmartMemoryMaxLength(sessionMaxLen);
+
+    // 5. Load the selected session's separate scratchpad memory
     const sessionMemory = session.smartMemory || '';
     setSmartMemory(sessionMemory);
     setMemoryDraft(sessionMemory);
@@ -5219,6 +5249,13 @@ DIRECTIVES:
       }
     } catch {
       // Ignore
+    }
+
+    // 6. Apply session's custom AI Provider & Model if configured
+    if (session.providerId) {
+      storage.setActiveAIProvider(session.providerId, session.modelId || '');
+      window.dispatchEvent(new Event('nexus-ai-providers-updated'));
+      window.dispatchEvent(new Event('storage'));
     }
 
     setError('');
@@ -5277,6 +5314,121 @@ DIRECTIVES:
     if (e) e.stopPropagation();
     setEditingSessionId(null);
     setEditingSessionTitleDraft('');
+  };
+
+  const handleOpenSessionMemoryEditor = (e: React.MouseEvent, session: ArchivedChatSession) => {
+    e.stopPropagation();
+    playTapSound();
+    setDeletingSessionId(null);
+    setEditingSessionId(null);
+    setSessionMemoryEditingTarget(session);
+    setSessionMemoryDraft(session.smartMemory || '');
+    setSessionMemoryDraftMaxLength(session.smartMemoryMaxLength || smartMemoryMaxLength || 2200);
+  };
+
+  const handleSessionMemoryDraftMaxLengthChange = (newVal: number) => {
+    const clamped = Math.max(500, Math.min(15000, Math.round(newVal)));
+    setSessionMemoryDraftMaxLength(clamped);
+    setSessionMemoryDraft((prev) => (prev.length > clamped ? prev.slice(-clamped) : prev));
+  };
+
+  const handleSaveSessionMemory = () => {
+    playTapSound();
+    if (!sessionMemoryEditingTarget) return;
+    const targetId = sessionMemoryEditingTarget.id;
+    const clampedMax = Math.max(500, Math.min(15000, sessionMemoryDraftMaxLength));
+    const cleaned = sessionMemoryDraft.trim().slice(-clampedMax);
+
+    // Update in saved sessions list
+    const currentSessions = loadChatSessions();
+    const idx = currentSessions.findIndex((s) => s.id === targetId);
+    if (idx !== -1) {
+      currentSessions[idx] = {
+        ...currentSessions[idx],
+        smartMemory: cleaned,
+        smartMemoryMaxLength: clampedMax,
+        updatedAt: Date.now(),
+      };
+      saveChatSessions(currentSessions);
+      setSessions(currentSessions);
+    }
+
+    // If this session is currently active, sync active state & storage
+    if (activeSessionId === targetId) {
+      setSmartMemory(cleaned);
+      setMemoryDraft(cleaned);
+      setSmartMemoryMaxLength(clampedMax);
+      storage.setSmartMemoryMaxLength(clampedMax);
+      try {
+        if (cleaned) {
+          localStorage.setItem(MEMORY_KEY, cleaned);
+        } else {
+          localStorage.removeItem(MEMORY_KEY);
+        }
+      } catch {
+        // Ignore
+      }
+    }
+
+    setSessionMemoryEditingTarget(null);
+    setSessionMemoryDraft('');
+  };
+
+  const handleClearSessionMemory = () => {
+    playTapSound();
+    setSessionMemoryDraft('');
+  };
+
+  const handleCloseSessionMemoryEditor = () => {
+    playTapSound();
+    setSessionMemoryEditingTarget(null);
+    setSessionMemoryDraft('');
+  };
+
+  const handleOpenSessionModelEditor = (e: React.MouseEvent, session: ArchivedChatSession) => {
+    e.stopPropagation();
+    playTapSound();
+    setDeletingSessionId(null);
+    setEditingSessionId(null);
+    setSessionMemoryEditingTarget(null);
+    setSessionModelEditingTarget(session);
+    const activeP = storage.getActiveAIProvider();
+    const currentProviderId = session.providerId || (activeP ? activeP.id : 'existing');
+    const currentModelId = session.modelId || (activeP?.models?.[0]?.id || '');
+    setSessionModelProviderDraft(currentProviderId);
+    setSessionModelIdDraft(currentModelId);
+  };
+
+  const handleSaveSessionModel = () => {
+    playTapSound();
+    if (!sessionModelEditingTarget) return;
+    const targetId = sessionModelEditingTarget.id;
+    const currentSessions = loadChatSessions();
+    const idx = currentSessions.findIndex((s) => s.id === targetId);
+    if (idx !== -1) {
+      currentSessions[idx] = {
+        ...currentSessions[idx],
+        providerId: sessionModelProviderDraft,
+        modelId: sessionModelIdDraft,
+        updatedAt: Date.now(),
+      };
+      saveChatSessions(currentSessions);
+      setSessions(currentSessions);
+    }
+
+    // If currently active session, sync active provider in storage and emit events
+    if (activeSessionId === targetId) {
+      storage.setActiveAIProvider(sessionModelProviderDraft, sessionModelIdDraft);
+      window.dispatchEvent(new Event('nexus-ai-providers-updated'));
+      window.dispatchEvent(new Event('storage'));
+    }
+
+    setSessionModelEditingTarget(null);
+  };
+
+  const handleCloseSessionModelEditor = () => {
+    playTapSound();
+    setSessionModelEditingTarget(null);
   };
 
   const handleConfirmClearChat = () => {
@@ -5725,7 +5877,7 @@ DIRECTIVES:
                               <div className="text-xs font-medium text-zinc-200 truncate group-hover:text-cyan-300">
                                 {session.title}
                               </div>
-                              <div className="text-[10.5px] text-zinc-500 mt-0.5 flex items-center gap-2">
+                              <div className="text-[10.5px] text-zinc-500 mt-0.5 flex items-center gap-2 flex-wrap">
                                 <span>{formatRelativeTime(session.updatedAt)}</span>
                                 <span>•</span>
                                 <span>{session.messages.length} msg{session.messages.length === 1 ? '' : 's'}</span>
@@ -5734,6 +5886,14 @@ DIRECTIVES:
                                     <span>•</span>
                                     <span className="text-cyan-400/90 inline-flex items-center gap-0.5 font-medium">
                                       <Brain size={10} /> Memory
+                                    </span>
+                                  </>
+                                )}
+                                {Boolean(session.modelId || (session.providerId && session.providerId !== 'existing')) && (
+                                  <>
+                                    <span>•</span>
+                                    <span className="text-purple-400/90 inline-flex items-center gap-0.5 font-medium truncate max-w-[110px]" title={session.modelId || session.providerId}>
+                                      <Bot size={10} /> {session.modelId || session.providerId}
                                     </span>
                                   </>
                                 )}
@@ -5762,6 +5922,36 @@ DIRECTIVES:
                               </div>
                             ) : (
                               <div className="flex items-center gap-0.5 shrink-0" onClick={(e) => e.stopPropagation()}>
+                                <button
+                                  type="button"
+                                  onClick={(e) => handleOpenSessionModelEditor(e, session)}
+                                  className={`p-1.5 rounded-md transition-all shrink-0 ${
+                                    session.providerId && session.providerId !== 'existing'
+                                      ? 'text-purple-400 hover:text-purple-300 hover:bg-purple-500/15'
+                                      : 'text-zinc-400 hover:text-purple-300 hover:bg-purple-500/15'
+                                  }`}
+                                  title={
+                                    session.modelId || (session.providerId && session.providerId !== 'existing')
+                                      ? `Model: ${session.modelId || session.providerId}`
+                                      : "Select AI Provider & Model for this session"
+                                  }
+                                  aria-label="Select session AI Model"
+                                >
+                                  <Bot size={13} />
+                                </button>
+                                <button
+                                  type="button"
+                                  onClick={(e) => handleOpenSessionMemoryEditor(e, session)}
+                                  className={`p-1.5 rounded-md transition-all shrink-0 ${
+                                    session.smartMemory?.trim()
+                                      ? 'text-cyan-400 hover:text-cyan-300 hover:bg-cyan-500/15'
+                                      : 'text-zinc-400 hover:text-cyan-300 hover:bg-cyan-500/15'
+                                  }`}
+                                  title={session.smartMemory?.trim() ? "Edit session Memory Scratchpad" : "Add Memory Scratchpad to this session"}
+                                  aria-label="Edit session memory"
+                                >
+                                  <Brain size={13} />
+                                </button>
                                 <button
                                   type="button"
                                   onClick={(e) => handleStartEditSession(e, session)}
@@ -11966,6 +12156,355 @@ DIRECTIVES:
                   className="text-xs font-medium px-4 py-1.5 rounded-lg bg-zinc-100 text-zinc-900 hover:bg-white transition-colors"
                 >
                   Save
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Per-Session Memory Management Modal */}
+      {sessionMemoryEditingTarget && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/60 backdrop-blur-sm animate-in fade-in duration-150">
+          <div className="w-full max-w-lg rounded-2xl border border-zinc-700/80 bg-[#19191c] p-5 shadow-2xl space-y-4">
+            <div className="flex items-center justify-between pb-2 border-b border-zinc-800">
+              <div className="flex items-center gap-2 min-w-0">
+                <Brain size={16} className="text-cyan-400 shrink-0" />
+                <div className="min-w-0">
+                  <h3 className="text-sm font-semibold text-zinc-100 truncate">
+                    Memory Scratchpad & Size
+                  </h3>
+                  <p className="text-[11px] text-zinc-400 truncate">
+                    {sessionMemoryEditingTarget.title}
+                  </p>
+                </div>
+              </div>
+              <div className="flex items-center gap-2 shrink-0">
+                <span className="text-[11px] text-cyan-300 font-mono bg-cyan-950/80 px-2 py-0.5 rounded border border-cyan-500/30">
+                  {sessionMemoryDraft.length}/{sessionMemoryDraftMaxLength.toLocaleString()}
+                </span>
+                <button
+                  type="button"
+                  onClick={handleCloseSessionMemoryEditor}
+                  className="p-1 text-zinc-400 hover:text-zinc-200 rounded-md transition-colors"
+                  title="Close"
+                >
+                  <X size={15} />
+                </button>
+              </div>
+            </div>
+
+            {/* Session Memory Size Limit Slider (500 - 15,000) */}
+            <div className="p-3 rounded-xl border border-zinc-800 bg-zinc-900/70 space-y-2.5">
+              <div className="flex items-center justify-between">
+                <span className="text-xs font-semibold text-zinc-200">
+                  Session Memory Capacity
+                </span>
+                <div className="flex items-center gap-2">
+                  <span className="text-xs font-mono font-semibold text-cyan-400 bg-cyan-950/80 px-2 py-0.5 rounded-md border border-cyan-500/30">
+                    {sessionMemoryDraftMaxLength.toLocaleString()} chars
+                  </span>
+                  <button
+                    type="button"
+                    onClick={() => handleSessionMemoryDraftMaxLengthChange(2200)}
+                    disabled={sessionMemoryDraftMaxLength === 2200}
+                    className={`text-[10.5px] px-2 py-0.5 rounded-md border flex items-center gap-1 transition-all ${
+                      sessionMemoryDraftMaxLength === 2200
+                        ? 'border-zinc-800 bg-zinc-900/40 text-zinc-600 cursor-not-allowed opacity-50'
+                        : 'border-zinc-700 bg-zinc-800 text-zinc-300 hover:bg-zinc-700 hover:text-white cursor-pointer'
+                    }`}
+                    title="Reset this session to 2,200 chars"
+                  >
+                    <RotateCcw size={10} />
+                    <span>2.2k</span>
+                  </button>
+                </div>
+              </div>
+
+              <div className="flex items-center gap-3">
+                <input
+                  type="range"
+                  min={500}
+                  max={15000}
+                  step={500}
+                  value={sessionMemoryDraftMaxLength}
+                  onChange={(e) => handleSessionMemoryDraftMaxLengthChange(Number(e.target.value))}
+                  className="w-full h-1.5 bg-zinc-700 rounded-lg appearance-none cursor-pointer accent-cyan-400"
+                />
+                <div className="flex items-center gap-1 shrink-0">
+                  <input
+                    type="number"
+                    min={500}
+                    max={15000}
+                    step={500}
+                    value={sessionMemoryDraftMaxLength}
+                    onChange={(e) => {
+                      const val = Number(e.target.value);
+                      if (!isNaN(val)) {
+                        handleSessionMemoryDraftMaxLengthChange(val);
+                      }
+                    }}
+                    className="w-18 px-2 py-0.5 text-xs font-mono rounded-lg border border-zinc-700 bg-zinc-800 text-zinc-100 text-right outline-none focus:border-cyan-500"
+                  />
+                  <span className="text-[10px] text-zinc-500">chars</span>
+                </div>
+              </div>
+
+              <div className="flex items-center justify-between text-[10.5px] text-zinc-500">
+                <span>Range: 500 – 15,000 chars</span>
+                <span className="text-cyan-400/90 font-medium">
+                  ≈ {Math.round(sessionMemoryDraftMaxLength / 4)} tokens context
+                </span>
+              </div>
+            </div>
+
+            <div className="space-y-1.5">
+              <label className="text-xs font-medium text-zinc-300">
+                Scratchpad Notes for This Session:
+              </label>
+              <textarea
+                value={sessionMemoryDraft}
+                onChange={(e) => setSessionMemoryDraft(e.target.value)}
+                maxLength={sessionMemoryDraftMaxLength}
+                placeholder="e.g. User prefers concise bullet points and TypeScript examples..."
+                rows={5}
+                className="w-full rounded-xl border border-zinc-700 bg-zinc-900/90 p-3 text-xs text-zinc-100 placeholder-zinc-600 outline-none focus:border-cyan-500 resize-none font-sans"
+                autoFocus
+              />
+            </div>
+
+            <div className="flex items-center justify-between pt-1">
+              <button
+                type="button"
+                onClick={handleClearSessionMemory}
+                className="text-xs text-red-400 hover:text-red-300 px-2.5 py-1.5 rounded-lg hover:bg-red-500/10 flex items-center gap-1 transition-colors"
+              >
+                <Trash2 size={13} />
+                Clear
+              </button>
+
+              <div className="flex items-center gap-2">
+                <button
+                  type="button"
+                  onClick={handleCloseSessionMemoryEditor}
+                  className="text-xs text-zinc-400 hover:text-zinc-200 px-3 py-1.5 rounded-lg hover:bg-zinc-800 transition-colors"
+                >
+                  Cancel
+                </button>
+                <button
+                  type="button"
+                  onClick={handleSaveSessionMemory}
+                  className="text-xs px-3.5 py-1.5 rounded-lg bg-cyan-600 hover:bg-cyan-500 text-white font-medium transition-colors"
+                >
+                  Save
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Per-Session AI Model & Provider Selector Modal */}
+      {sessionModelEditingTarget && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/60 backdrop-blur-sm animate-in fade-in duration-150">
+          <div className="w-full max-w-lg rounded-2xl border border-zinc-700/80 bg-[#19191c] p-5 shadow-2xl space-y-4 max-h-[85vh] flex flex-col overflow-hidden">
+            {/* Header */}
+            <div className="flex items-center justify-between pb-2 border-b border-zinc-800 shrink-0">
+              <div className="flex items-center gap-2 min-w-0">
+                <div className="w-7 h-7 rounded-lg bg-purple-500/20 text-purple-300 border border-purple-500/30 grid place-items-center shrink-0">
+                  <Bot size={15} />
+                </div>
+                <div className="min-w-0">
+                  <h3 className="text-sm font-semibold text-zinc-100 truncate">
+                    Session AI Model
+                  </h3>
+                  <p className="text-[11px] text-zinc-400 truncate">
+                    {sessionModelEditingTarget.title}
+                  </p>
+                </div>
+              </div>
+              <button
+                type="button"
+                onClick={handleCloseSessionModelEditor}
+                className="p-1 text-zinc-400 hover:text-zinc-200 rounded-md transition-colors"
+                title="Close"
+              >
+                <X size={15} />
+              </button>
+            </div>
+
+            <p className="text-xs text-zinc-400 shrink-0">
+              Assign a dedicated AI Provider and Model from your configured AI Providers specifically for this chat session.
+            </p>
+
+            {/* Scrollable Body */}
+            <div className="flex-1 overflow-y-auto space-y-3.5 pr-1 specialist-popup-scroll">
+              {/* Provider Selection */}
+              <div className="space-y-1.5">
+                <label className="text-xs font-semibold uppercase tracking-wider text-zinc-300">
+                  Select AI Provider:
+                </label>
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
+                  {/* Option 1: Default / Global Provider */}
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setSessionModelProviderDraft('existing');
+                      setSessionModelIdDraft('');
+                    }}
+                    className={`p-2.5 rounded-xl border text-left transition-all flex items-center justify-between ${
+                      sessionModelProviderDraft === 'existing'
+                        ? 'border-cyan-500/60 bg-cyan-950/40 text-cyan-200 ring-1 ring-cyan-500/40'
+                        : 'border-zinc-800 bg-zinc-900/60 hover:bg-zinc-800/60 text-zinc-300'
+                    }`}
+                  >
+                    <div className="flex items-center gap-2 min-w-0">
+                      <Cpu size={14} className={sessionModelProviderDraft === 'existing' ? 'text-cyan-400' : 'text-zinc-400'} />
+                      <div className="min-w-0">
+                        <div className="text-xs font-medium text-zinc-100">Global Default</div>
+                        <div className="text-[10px] text-zinc-500 truncate">Use active setting</div>
+                      </div>
+                    </div>
+                    {sessionModelProviderDraft === 'existing' && (
+                      <Check size={13} className="text-cyan-400 shrink-0" />
+                    )}
+                  </button>
+
+                  {/* Configured AI Providers from settings */}
+                  {configuredAIProviders.map((provider) => {
+                    const isSelected = sessionModelProviderDraft === provider.id;
+                    return (
+                      <button
+                        key={provider.id}
+                        type="button"
+                        onClick={() => {
+                          setSessionModelProviderDraft(provider.id);
+                          const firstModel = provider.models?.[0]?.id || '';
+                          setSessionModelIdDraft(firstModel);
+                        }}
+                        className={`p-2.5 rounded-xl border text-left transition-all flex items-center justify-between ${
+                          isSelected
+                            ? 'border-purple-500/60 bg-purple-950/40 text-purple-200 ring-1 ring-purple-500/40'
+                            : 'border-zinc-800 bg-zinc-900/60 hover:bg-zinc-800/60 text-zinc-300'
+                        }`}
+                      >
+                        <div className="flex items-center gap-2 min-w-0">
+                          <Bot size={14} className={isSelected ? 'text-purple-400' : 'text-zinc-400'} />
+                          <div className="min-w-0">
+                            <div className="text-xs font-medium text-zinc-100 truncate">{provider.name}</div>
+                            <div className="text-[10px] text-zinc-500 truncate">
+                              {provider.models?.length || 0} models available
+                            </div>
+                          </div>
+                        </div>
+                        {isSelected && (
+                          <Check size={13} className="text-purple-400 shrink-0" />
+                        )}
+                      </button>
+                    );
+                  })}
+                </div>
+              </div>
+
+              {/* Model Selection for Selected Provider */}
+              {sessionModelProviderDraft !== 'existing' && (
+                <div className="space-y-2 pt-1 border-t border-zinc-800/80">
+                  <div className="flex items-center justify-between">
+                    <label className="text-xs font-semibold uppercase tracking-wider text-zinc-300">
+                      Select Model:
+                    </label>
+                    <span className="text-[10.5px] font-mono text-purple-400 bg-purple-950/60 px-2 py-0.5 rounded border border-purple-500/30 truncate max-w-[200px]">
+                      {sessionModelIdDraft || 'None selected'}
+                    </span>
+                  </div>
+
+                  {(() => {
+                    const provider = configuredAIProviders.find((p) => p.id === sessionModelProviderDraft);
+                    const models = provider?.models || [];
+
+                    return (
+                      <div className="space-y-2">
+                        {models.length > 0 ? (
+                          <div className="grid grid-cols-1 sm:grid-cols-2 gap-1.5 max-h-48 overflow-y-auto pr-1 specialist-popup-scroll">
+                            {models.map((m) => {
+                              const isSelected = sessionModelIdDraft === m.id;
+                              return (
+                                <button
+                                  key={m.id}
+                                  type="button"
+                                  onClick={() => setSessionModelIdDraft(m.id)}
+                                  className={`p-2 rounded-lg border text-left text-xs transition-all flex items-center justify-between ${
+                                    isSelected
+                                      ? 'border-purple-500 bg-purple-900/30 text-purple-200 font-medium'
+                                      : 'border-zinc-800 bg-zinc-900/40 hover:bg-zinc-800/60 text-zinc-300'
+                                  }`}
+                                >
+                                  <div className="min-w-0 flex-1">
+                                    <div className="truncate">{m.name || m.id}</div>
+                                    {m.name && m.name !== m.id && (
+                                      <div className="text-[10px] text-zinc-500 font-mono truncate">{m.id}</div>
+                                    )}
+                                  </div>
+                                  {isSelected && <Check size={12} className="text-purple-400 shrink-0 ml-1" />}
+                                </button>
+                              );
+                            })}
+                          </div>
+                        ) : (
+                          <p className="text-xs text-zinc-500 italic p-2 bg-zinc-900/50 rounded-lg border border-zinc-800">
+                            No predefined models for this provider. Enter a custom model ID below:
+                          </p>
+                        )}
+
+                        {/* Custom Model ID override */}
+                        <div className="pt-1">
+                          <label className="text-[11px] text-zinc-400 block mb-1">
+                            Or custom model ID:
+                          </label>
+                          <input
+                            type="text"
+                            value={sessionModelIdDraft}
+                            onChange={(e) => setSessionModelIdDraft(e.target.value.trim())}
+                            placeholder="e.g. gpt-4o, claude-3-5-sonnet-20241022, deepseek/deepseek-chat..."
+                            className="w-full px-3 py-1.5 rounded-lg border border-zinc-700 bg-zinc-900 text-xs text-zinc-100 placeholder-zinc-600 outline-none focus:border-purple-500 font-mono"
+                          />
+                        </div>
+                      </div>
+                    );
+                  })()}
+                </div>
+              )}
+            </div>
+
+            {/* Footer */}
+            <div className="flex items-center justify-between pt-2 border-t border-zinc-800 shrink-0">
+              <button
+                type="button"
+                onClick={() => {
+                  setSessionModelProviderDraft('existing');
+                  setSessionModelIdDraft('');
+                }}
+                className="text-xs text-zinc-400 hover:text-zinc-200 px-2.5 py-1.5 rounded-lg hover:bg-zinc-800 flex items-center gap-1 transition-colors"
+                title="Reset to Global Default"
+              >
+                <RotateCcw size={12} />
+                <span>Reset to Default</span>
+              </button>
+
+              <div className="flex items-center gap-2">
+                <button
+                  type="button"
+                  onClick={handleCloseSessionModelEditor}
+                  className="text-xs text-zinc-400 hover:text-zinc-200 px-3 py-1.5 rounded-lg hover:bg-zinc-800 transition-colors"
+                >
+                  Cancel
+                </button>
+                <button
+                  type="button"
+                  onClick={handleSaveSessionModel}
+                  className="text-xs px-3.5 py-1.5 rounded-lg bg-purple-600 hover:bg-purple-500 text-white font-medium transition-colors"
+                >
+                  Save Model
                 </button>
               </div>
             </div>
