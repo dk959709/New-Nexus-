@@ -190,6 +190,17 @@ export function ImageStudio() {
   const [galleryModalOpen, setGalleryModalOpen] = useState<boolean>(false);
   const [gallerySortOrder, setGallerySortOrder] = useState<'newest' | 'oldest'>('newest');
   const [galleryModelFilter, setGalleryModelFilter] = useState<string | null>(null);
+  const [copiedPromptId, setCopiedPromptId] = useState<string | null>(null);
+
+  const handleCopyGalleryPrompt = (e: React.MouseEvent, promptText: string, id: string) => {
+    e.stopPropagation();
+    playTapSound();
+    navigator.clipboard.writeText(promptText);
+    setCopiedPromptId(id);
+    setTimeout(() => {
+      setCopiedPromptId(null);
+    }, 1800);
+  };
 
   const distinctGalleryModels = useMemo(() => {
     const models = new Set<string>();
@@ -3861,6 +3872,48 @@ export function ImageStudio() {
                         </div>
                       </div>
 
+                      {/* Copy Prompt Button */}
+                      <button
+                        type="button"
+                        onClick={(e) => handleCopyGalleryPrompt(e, item.prompt, item.id)}
+                        style={{
+                          position: 'absolute',
+                          top: '6px',
+                          right: '6px',
+                          background: copiedPromptId === item.id ? 'rgba(16, 185, 129, 0.9)' : 'rgba(0, 0, 0, 0.65)',
+                          border: copiedPromptId === item.id ? '1px solid rgba(16, 185, 129, 0.8)' : '1px solid rgba(255, 255, 255, 0.25)',
+                          borderRadius: '6px',
+                          color: '#fff',
+                          width: '26px',
+                          height: '26px',
+                          display: 'grid',
+                          placeItems: 'center',
+                          cursor: 'pointer',
+                          zIndex: 10,
+                          backdropFilter: 'blur(4px)',
+                          boxShadow: '0 2px 6px rgba(0,0,0,0.4)',
+                          transition: 'all 0.15s ease',
+                        }}
+                        onMouseEnter={(e) => {
+                          if (copiedPromptId !== item.id) {
+                            e.currentTarget.style.background = 'rgba(56, 189, 248, 0.85)';
+                          }
+                        }}
+                        onMouseLeave={(e) => {
+                          if (copiedPromptId !== item.id) {
+                            e.currentTarget.style.background = 'rgba(0, 0, 0, 0.65)';
+                          }
+                        }}
+                        title={copiedPromptId === item.id ? 'Prompt copied to clipboard!' : 'Copy prompt'}
+                        aria-label="Copy prompt"
+                      >
+                        {copiedPromptId === item.id ? (
+                          <Check size={13} style={{ color: '#fff' }} />
+                        ) : (
+                          <Copy size={13} />
+                        )}
+                      </button>
+
                       {/* Image Edit tag */}
                       {(item.isEdit || item.referenceImageUrl) && (
                         <div
@@ -4015,149 +4068,6 @@ export function ImageStudio() {
             </button>
           )}
 
-          {/* Floating Zoom & Scroll/Pan Controls Bar */}
-          <div
-            style={{
-              position: 'fixed',
-              bottom: isTrueFullscreen ? '20px' : '28px',
-              left: '50%',
-              transform: 'translateX(-50%)',
-              background: 'rgba(15, 23, 42, 0.88)',
-              backdropFilter: 'blur(12px)',
-              border: '1px solid rgba(255, 255, 255, 0.15)',
-              borderRadius: '30px',
-              padding: '6px 14px',
-              display: 'flex',
-              alignItems: 'center',
-              gap: '8px',
-              zIndex: 100002,
-              boxShadow: '0 8px 32px rgba(0,0,0,0.6)',
-              userSelect: 'none',
-            }}
-            onClick={(e) => e.stopPropagation()}
-          >
-            {/* Zoom Out Button */}
-            <button
-              type="button"
-              onClick={handleZoomOut}
-              disabled={zoomLevel <= 1}
-              style={{
-                background: 'rgba(255,255,255,0.1)',
-                border: 'none',
-                borderRadius: '50%',
-                color: zoomLevel <= 1 ? 'rgba(255,255,255,0.3)' : '#fff',
-                width: '30px',
-                height: '30px',
-                display: 'grid',
-                placeItems: 'center',
-                cursor: zoomLevel <= 1 ? 'default' : 'pointer',
-                transition: 'all 0.15s ease',
-              }}
-              title="Zoom Out (-)"
-              aria-label="Zoom Out"
-            >
-              <ZoomOut size={15} />
-            </button>
-
-            {/* Zoom Percentage / Toggle Button */}
-            <button
-              type="button"
-              onClick={handleToggleZoom}
-              style={{
-                background: 'transparent',
-                border: 'none',
-                color: zoomLevel > 1 ? '#38bdf8' : '#e2e8f0',
-                fontSize: '12px',
-                fontWeight: 600,
-                padding: '2px 6px',
-                minWidth: '48px',
-                textAlign: 'center',
-                cursor: 'pointer',
-                fontFamily: 'monospace',
-              }}
-              title="Click to toggle 100% / 250% zoom"
-            >
-              {Math.round(zoomLevel * 100)}%
-            </button>
-
-            {/* Zoom In Button */}
-            <button
-              type="button"
-              onClick={handleZoomIn}
-              disabled={zoomLevel >= 4}
-              style={{
-                background: 'rgba(255,255,255,0.1)',
-                border: 'none',
-                borderRadius: '50%',
-                color: zoomLevel >= 4 ? 'rgba(255,255,255,0.3)' : '#fff',
-                width: '30px',
-                height: '30px',
-                display: 'grid',
-                placeItems: 'center',
-                cursor: zoomLevel >= 4 ? 'default' : 'pointer',
-                transition: 'all 0.15s ease',
-              }}
-              title="Zoom In (+)"
-              aria-label="Zoom In"
-            >
-              <ZoomIn size={15} />
-            </button>
-
-            {/* Reset Zoom Button */}
-            {zoomLevel > 1 && (
-              <button
-                type="button"
-                onClick={handleResetZoom}
-                style={{
-                  background: 'rgba(56, 189, 248, 0.2)',
-                  border: '1px solid rgba(56, 189, 248, 0.4)',
-                  borderRadius: '16px',
-                  color: '#38bdf8',
-                  padding: '3px 8px',
-                  display: 'inline-flex',
-                  alignItems: 'center',
-                  gap: '4px',
-                  fontSize: '11px',
-                  fontWeight: 500,
-                  cursor: 'pointer',
-                }}
-                title="Reset Zoom to 100% (0)"
-              >
-                <RotateCcw size={11} /> Reset
-              </button>
-            )}
-
-            <div style={{ width: '1px', height: '16px', background: 'rgba(255,255,255,0.15)', margin: '0 2px' }} />
-
-            {/* Toggle Edge-to-Edge Fullscreen Button */}
-            <button
-              type="button"
-              onClick={(e) => {
-                e.stopPropagation();
-                playTapSound();
-                setIsTrueFullscreen((prev) => !prev);
-              }}
-              style={{
-                background: isTrueFullscreen ? 'rgba(168, 85, 247, 0.25)' : 'rgba(255,255,255,0.1)',
-                border: isTrueFullscreen ? '1px solid rgba(168, 85, 247, 0.5)' : '1px solid rgba(255,255,255,0.15)',
-                borderRadius: '16px',
-                color: isTrueFullscreen ? '#c084fc' : '#fff',
-                padding: '3px 9px',
-                display: 'inline-flex',
-                alignItems: 'center',
-                gap: '5px',
-                fontSize: '11px',
-                fontWeight: 500,
-                cursor: 'pointer',
-                transition: 'all 0.15s ease',
-              }}
-              title={isTrueFullscreen ? 'Switch to Standard view' : 'Switch to Edge-to-Edge Full Screen view'}
-            >
-              <Maximize2 size={12} />
-              <span>{isTrueFullscreen ? 'Standard' : 'Edge-to-Edge'}</span>
-            </button>
-          </div>
-
           <div
             style={{
               position: 'relative',
@@ -4291,9 +4201,41 @@ export function ImageStudio() {
                     </span>
                   </div>
                 )}
-                <p style={{ margin: 0, color: '#fff', fontSize: '13px', lineHeight: 1.5 }}>
-                  "{fullscreenImage.prompt}"
-                </p>
+                <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '8px', flexWrap: 'wrap' }}>
+                  <p style={{ margin: 0, color: '#fff', fontSize: '13px', lineHeight: 1.5, display: 'inline' }}>
+                    "{fullscreenImage.prompt}"
+                  </p>
+                  <button
+                    type="button"
+                    onClick={(e) => handleCopyGalleryPrompt(e, fullscreenImage.prompt, fullscreenImage.id)}
+                    style={{
+                      background: copiedPromptId === fullscreenImage.id ? 'rgba(16, 185, 129, 0.25)' : 'rgba(255, 255, 255, 0.1)',
+                      border: copiedPromptId === fullscreenImage.id ? '1px solid rgba(16, 185, 129, 0.5)' : '1px solid rgba(255, 255, 255, 0.2)',
+                      borderRadius: '6px',
+                      color: copiedPromptId === fullscreenImage.id ? '#34d399' : '#fff',
+                      padding: '3px 8px',
+                      display: 'inline-flex',
+                      alignItems: 'center',
+                      gap: '4px',
+                      cursor: 'pointer',
+                      fontSize: '11px',
+                      fontWeight: 500,
+                      transition: 'all 0.15s ease',
+                      flexShrink: 0,
+                    }}
+                    title={copiedPromptId === fullscreenImage.id ? 'Prompt copied!' : 'Copy prompt to clipboard'}
+                  >
+                    {copiedPromptId === fullscreenImage.id ? (
+                      <>
+                        <Check size={12} style={{ color: '#34d399' }} /> Copied
+                      </>
+                    ) : (
+                      <>
+                        <Copy size={12} /> Copy Prompt
+                      </>
+                    )}
+                  </button>
+                </div>
                 {fullscreenImage.originalPrompt && fullscreenImage.originalPrompt !== fullscreenImage.prompt && (
                   <p style={{ margin: 0, color: 'var(--muted)', fontSize: '11px', fontStyle: 'italic' }}>
                     Original: "{fullscreenImage.originalPrompt}"
