@@ -698,7 +698,6 @@ function formatRelativeTime(timestamp: number): string {
 }
 
 const RECENT_MESSAGES = 8;
-const MAX_MEMORY_LENGTH = 2200;
 
 const QUICK_PROMPTS = [
   'Explain quantum computing simply',
@@ -806,7 +805,7 @@ function loadDeepResearchToggle(): boolean {
   }
 }
 
-function buildLocalMemory(messages: Message[]): string {
+function buildLocalMemory(messages: Message[], maxLength?: number): string {
   const useful = messages
     .filter((message) => message.content.trim())
     .slice(-12);
@@ -820,7 +819,8 @@ function buildLocalMemory(messages: Message[]): string {
     })
     .join('\n');
 
-  return text.slice(-MAX_MEMORY_LENGTH);
+  const limit = typeof maxLength === 'number' ? maxLength : storage.getSmartMemoryMaxLength();
+  return text.slice(-limit);
 }
 
 function AssistantImageCard({
@@ -988,6 +988,7 @@ export function AssistantPage() {
   const [deletingSessionId, setDeletingSessionId] = useState<string | null>(null);
   const historyDropdownRef = useRef<HTMLDivElement>(null);
   const [smartMemory, setSmartMemory] = useState(loadSmartMemory);
+  const [smartMemoryMaxLength, setSmartMemoryMaxLength] = useState<number>(() => storage.getSmartMemoryMaxLength());
   const [webSearchEnabled, setWebSearchEnabled] = useState(loadWebSearchToggle);
   const [imageGenEnabled, setImageGenEnabled] = useState(loadImageGenToggle);
   const [imageEnhanceEnabled, setImageEnhanceEnabled] = useState<boolean>(() => storage.getAssistantImageEnhanceEnabled());
@@ -5281,10 +5282,47 @@ DIRECTIVES:
   };
 
   const saveMemory = () => {
-    const cleaned = memoryDraft.trim().slice(-MAX_MEMORY_LENGTH);
+    const cleaned = memoryDraft.trim().slice(-smartMemoryMaxLength);
     setSmartMemory(cleaned);
     setMemoryDraft(cleaned);
+    try {
+      if (cleaned) {
+        localStorage.setItem(MEMORY_KEY, cleaned);
+      } else {
+        localStorage.removeItem(MEMORY_KEY);
+      }
+    } catch {
+      // Ignore
+    }
     setMemoryEditorOpen(false);
+  };
+
+  const handleSmartMemoryMaxLengthChange = (newVal: number) => {
+    const clamped = Math.max(500, Math.min(15000, Math.round(newVal)));
+    setSmartMemoryMaxLength(clamped);
+    storage.setSmartMemoryMaxLength(clamped);
+
+    // If current smartMemory is longer than newly lowered max, trim to fit
+    setSmartMemory((prevMem) => {
+      if (prevMem && prevMem.length > clamped) {
+        const trimmed = prevMem.slice(-clamped);
+        try {
+          localStorage.setItem(MEMORY_KEY, trimmed);
+        } catch {
+          // Ignore
+        }
+        return trimmed;
+      }
+      return prevMem;
+    });
+
+    // Also trim memoryDraft if open or stored
+    setMemoryDraft((prevDraft) => {
+      if (prevDraft && prevDraft.length > clamped) {
+        return prevDraft.slice(-clamped);
+      }
+      return prevDraft;
+    });
   };
 
   const activeProvider = storage.getActiveAIProvider();
@@ -9095,6 +9133,67 @@ DIRECTIVES:
 
             <div className="h-px bg-zinc-800" />
 
+            {/* Section: Short-Term Memory Size */}
+            <div className="space-y-3">
+              <div className="flex items-center justify-between">
+                <div className="flex items-center gap-2">
+                  <Brain size={15} className="text-cyan-400" />
+                  <h4 className="text-xs font-semibold uppercase tracking-wider text-zinc-300">
+                    Short-Term Memory Size
+                  </h4>
+                </div>
+                <span className="text-xs font-mono font-semibold text-cyan-400 bg-cyan-950/80 px-2.5 py-0.5 rounded-full border border-cyan-500/30">
+                  {smartMemoryMaxLength.toLocaleString()} chars
+                </span>
+              </div>
+
+              <p className="text-xs text-zinc-400 leading-relaxed">
+                Controls how much short-term context the Memory Scratchpad can hold. Higher = more remembered context, but more tokens used on every message.
+              </p>
+
+              <div className="p-3.5 rounded-xl border border-zinc-800 bg-zinc-900/60 space-y-3">
+                <div className="flex items-center justify-between gap-4">
+                  <div className="flex items-center gap-3 flex-1">
+                    <input
+                      type="range"
+                      min={500}
+                      max={15000}
+                      step={500}
+                      value={smartMemoryMaxLength}
+                      onChange={(e) => handleSmartMemoryMaxLengthChange(Number(e.target.value))}
+                      className="w-full h-1.5 bg-zinc-700 rounded-lg appearance-none cursor-pointer accent-cyan-400"
+                    />
+                  </div>
+                  <div className="flex items-center gap-1.5 shrink-0">
+                    <input
+                      type="number"
+                      min={500}
+                      max={15000}
+                      step={500}
+                      value={smartMemoryMaxLength}
+                      onChange={(e) => {
+                        const val = Number(e.target.value);
+                        if (!isNaN(val)) {
+                          handleSmartMemoryMaxLengthChange(val);
+                        }
+                      }}
+                      className="w-20 px-2 py-1 text-xs font-mono rounded-lg border border-zinc-700 bg-zinc-800 text-zinc-100 text-right outline-none focus:border-cyan-500"
+                    />
+                    <span className="text-[11px] text-zinc-500">chars</span>
+                  </div>
+                </div>
+
+                <div className="flex items-center justify-between text-[11px] text-zinc-400 pt-1 border-t border-zinc-800/60">
+                  <span className="text-zinc-500 font-mono">Min: 500 • Default: 2,200 • Max: 15,000</span>
+                  <span className="text-cyan-300 font-medium">
+                    ≈ {Math.round(smartMemoryMaxLength / 4)} tokens added to every message
+                  </span>
+                </div>
+              </div>
+            </div>
+
+            <div className="h-px bg-zinc-800" />
+
             {/* Section 4: Web API */}
             <div className="space-y-3">
               <div className="flex items-center justify-between">
@@ -11704,8 +11803,8 @@ DIRECTIVES:
                   Short-Term Memory Scratchpad
                 </h3>
               </div>
-              <span className="text-[11px] text-zinc-500">
-                {memoryDraft.length}/{MAX_MEMORY_LENGTH}
+              <span className="text-[11px] text-zinc-500 font-mono">
+                {memoryDraft.length}/{smartMemoryMaxLength.toLocaleString()}
               </span>
             </div>
 
@@ -11716,7 +11815,7 @@ DIRECTIVES:
             <textarea
               value={memoryDraft}
               onChange={(e) => setMemoryDraft(e.target.value)}
-              maxLength={MAX_MEMORY_LENGTH}
+              maxLength={smartMemoryMaxLength}
               placeholder="e.g. My preferred tech stack is TypeScript and React. Always explain complex concepts concisely."
               rows={6}
               className="w-full rounded-xl border border-zinc-700 bg-zinc-900/80 p-3 text-xs text-zinc-100 placeholder-zinc-600 outline-none focus:border-zinc-500 resize-none font-sans"

@@ -2173,6 +2173,18 @@ export const storage = {
     write('nexus-ai-assistant-custom-search-url', url);
   },
 
+  getSmartMemoryMaxLength(): number {
+    const val = read<number>('nexus-ai-smart-memory-max-length', 2200);
+    if (typeof val !== 'number' || isNaN(val)) return 2200;
+    return Math.max(500, Math.min(15000, Math.round(val)));
+  },
+
+  setSmartMemoryMaxLength(value: number): number {
+    const clamped = Math.max(500, Math.min(15000, Math.round(value)));
+    write('nexus-ai-smart-memory-max-length', clamped);
+    return clamped;
+  },
+
   getMultiChatResponseLanguage(): string {
     const cfg = this.getMultiChatConfig();
     return cfg.responseLanguage || 'English';
