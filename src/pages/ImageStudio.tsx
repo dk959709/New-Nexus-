@@ -172,6 +172,7 @@ export function ImageStudio() {
   const [currentImage, setCurrentImage] = useState<GeneratedImageItem | null>(null);
   const [history, setHistory] = useState<GeneratedImageItem[]>([]);
   const [fullscreenImage, setFullscreenImage] = useState<GeneratedImageItem | null>(null);
+  const [galleryModalOpen, setGalleryModalOpen] = useState<boolean>(false);
   const [hasDismissedPuterNotice, setHasDismissedPuterNotice] = useState<boolean>(() => {
     try {
       return localStorage.getItem('nexus_seen_puter_notice') === 'true';
@@ -3051,7 +3052,7 @@ export function ImageStudio() {
                   gap: '8px',
                 }}
               >
-                <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                <div style={{ display: 'flex', alignItems: 'center', gap: '8px', flexWrap: 'wrap' }}>
                   <span style={{ fontSize: '12px', fontWeight: 600, color: 'var(--text)' }}>
                     Recent Generations ({history.length})
                   </span>
@@ -3069,6 +3070,29 @@ export function ImageStudio() {
                   >
                     <Database size={10} style={{ color: '#34d399' }} /> IndexedDB
                   </span>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      playTapSound();
+                      setGalleryModalOpen(true);
+                    }}
+                    className="secondary-button"
+                    style={{
+                      fontSize: '11px',
+                      padding: '3px 9px',
+                      borderRadius: '6px',
+                      display: 'inline-flex',
+                      alignItems: 'center',
+                      gap: '5px',
+                      color: '#38bdf8',
+                      borderColor: 'rgba(56,189,248,0.3)',
+                      background: 'rgba(56,189,248,0.08)',
+                      cursor: 'pointer',
+                    }}
+                    title="Open full photo gallery grid view"
+                  >
+                    <ImageIcon size={12} /> See Full Gallery
+                  </button>
                 </div>
 
                 <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
@@ -3206,6 +3230,265 @@ export function ImageStudio() {
           )}
         </div>
       </div>
+
+      {/* Full Gallery Overlay Modal */}
+      {galleryModalOpen && (
+        <div
+          style={{
+            position: 'fixed',
+            inset: 0,
+            background: 'rgba(5, 10, 16, 0.95)',
+            backdropFilter: 'blur(12px)',
+            zIndex: 99990,
+            display: 'flex',
+            flexDirection: 'column',
+            overflow: 'hidden',
+          }}
+          onClick={() => setGalleryModalOpen(false)}
+        >
+          <div
+            style={{
+              width: '100%',
+              height: '100%',
+              display: 'flex',
+              flexDirection: 'column',
+              maxWidth: '1440px',
+              margin: '0 auto',
+            }}
+            onClick={(e) => e.stopPropagation()}
+          >
+            {/* Gallery Header Bar */}
+            <div
+              style={{
+                display: 'flex',
+                alignItems: 'center',
+                justifyContent: 'space-between',
+                padding: '16px 20px',
+                borderBottom: '1px solid rgba(255, 255, 255, 0.1)',
+                background: 'rgba(14, 31, 39, 0.7)',
+                backdropFilter: 'blur(10px)',
+                flexShrink: 0,
+              }}
+            >
+              <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
+                <div
+                  style={{
+                    width: '32px',
+                    height: '32px',
+                    borderRadius: '8px',
+                    background: 'rgba(56, 189, 248, 0.15)',
+                    border: '1px solid rgba(56, 189, 248, 0.3)',
+                    display: 'grid',
+                    placeItems: 'center',
+                    color: '#38bdf8',
+                  }}
+                >
+                  <ImageIcon size={18} />
+                </div>
+                <div>
+                  <h3 style={{ margin: 0, fontSize: '15px', fontWeight: 600, color: '#fff', display: 'flex', alignItems: 'center', gap: '8px' }}>
+                    Photo Gallery
+                    <span
+                      style={{
+                        fontSize: '11px',
+                        color: 'var(--muted)',
+                        background: 'rgba(255,255,255,0.08)',
+                        padding: '1px 8px',
+                        borderRadius: '10px',
+                        fontWeight: 500,
+                      }}
+                    >
+                      {history.length} {history.length === 1 ? 'image' : 'images'}
+                    </span>
+                  </h3>
+                  <p style={{ margin: '2px 0 0', fontSize: '11px', color: 'var(--muted)' }}>
+                    All saved AI generations in IndexedDB • Click any thumbnail to view full resolution & details
+                  </p>
+                </div>
+              </div>
+
+              <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
+                <button
+                  type="button"
+                  onClick={() => {
+                    playTapSound();
+                    setGalleryModalOpen(false);
+                  }}
+                  style={{
+                    background: 'rgba(255,255,255,0.1)',
+                    border: '1px solid rgba(255,255,255,0.15)',
+                    borderRadius: '8px',
+                    color: '#fff',
+                    padding: '6px 12px',
+                    display: 'inline-flex',
+                    alignItems: 'center',
+                    gap: '6px',
+                    cursor: 'pointer',
+                    fontSize: '12px',
+                    fontWeight: 500,
+                    transition: 'all 0.15s ease',
+                  }}
+                  title="Close gallery"
+                >
+                  <X size={16} /> Close
+                </button>
+              </div>
+            </div>
+
+            {/* Gallery Grid Body */}
+            <div
+              style={{
+                flex: 1,
+                overflowY: 'auto',
+                padding: '20px',
+              }}
+            >
+              {history.length === 0 ? (
+                <div
+                  style={{
+                    height: '100%',
+                    minHeight: '300px',
+                    display: 'flex',
+                    flexDirection: 'column',
+                    alignItems: 'center',
+                    justifyContent: 'center',
+                    color: 'var(--muted)',
+                    gap: '12px',
+                  }}
+                >
+                  <ImageIcon size={48} style={{ opacity: 0.3 }} />
+                  <p style={{ fontSize: '14px', margin: 0 }}>No saved images found in gallery yet.</p>
+                </div>
+              ) : (
+                <div
+                  className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 xl:grid-cols-6 gap-3 sm:gap-4"
+                >
+                  {history.map((item) => (
+                    <div
+                      key={`gallery-grid-${item.id}`}
+                      onClick={() => {
+                        playTapSound();
+                        setFullscreenImage(item);
+                      }}
+                      className="group"
+                      style={{
+                        position: 'relative',
+                        aspectRatio: '1 / 1',
+                        borderRadius: '10px',
+                        overflow: 'hidden',
+                        cursor: 'pointer',
+                        background: 'rgba(255,255,255,0.03)',
+                        border: '1px solid rgba(255,255,255,0.08)',
+                        boxShadow: '0 4px 16px rgba(0,0,0,0.35)',
+                        transition: 'transform 0.15s ease, border-color 0.15s ease, box-shadow 0.15s ease',
+                      }}
+                      title={`"${item.prompt}"\nProvider: ${item.providerName || 'AI Studio'} (Seed: ${item.seed})`}
+                    >
+                      <img
+                        src={item.url}
+                        alt={item.prompt}
+                        style={{
+                          width: '100%',
+                          height: '100%',
+                          objectFit: 'cover',
+                          transition: 'transform 0.25s ease',
+                        }}
+                        className="group-hover:scale-105"
+                        loading="lazy"
+                      />
+
+                      {/* Subtle hover overlay with prompt snippet */}
+                      <div
+                        style={{
+                          position: 'absolute',
+                          inset: 0,
+                          background: 'linear-gradient(to top, rgba(0,0,0,0.85) 0%, rgba(0,0,0,0.2) 50%, rgba(0,0,0,0) 100%)',
+                          opacity: 0,
+                          transition: 'opacity 0.2s ease',
+                          display: 'flex',
+                          flexDirection: 'column',
+                          justifyContent: 'flex-end',
+                          padding: '8px',
+                          pointerEvents: 'none',
+                        }}
+                        className="group-hover:!opacity-100"
+                      >
+                        <p
+                          style={{
+                            margin: 0,
+                            color: '#fff',
+                            fontSize: '10.5px',
+                            lineHeight: 1.3,
+                            display: '-webkit-box',
+                            WebkitLineClamp: 2,
+                            WebkitBoxOrient: 'vertical',
+                            overflow: 'hidden',
+                            textShadow: '0 1px 3px rgba(0,0,0,0.8)',
+                          }}
+                        >
+                          "{item.prompt}"
+                        </p>
+                        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginTop: '4px', fontSize: '9px', color: 'rgba(255,255,255,0.7)' }}>
+                          <span style={{ textTransform: 'capitalize' }}>{item.providerName || 'AI'}</span>
+                          <span>Seed: {item.seed}</span>
+                        </div>
+                      </div>
+
+                      {/* Image Edit tag */}
+                      {(item.isEdit || item.referenceImageUrl) && (
+                        <div
+                          style={{
+                            position: 'absolute',
+                            top: '6px',
+                            left: '6px',
+                            background: 'rgba(236,72,153,0.9)',
+                            borderRadius: '4px',
+                            padding: '1px 5px',
+                            color: '#fff',
+                            fontSize: '9px',
+                            fontWeight: 700,
+                            display: 'inline-flex',
+                            alignItems: 'center',
+                            gap: '3px',
+                            boxShadow: '0 2px 6px rgba(0,0,0,0.4)',
+                          }}
+                          title="Image Edit (img2img)"
+                        >
+                          <Wand2 size={9} /> Edit
+                        </div>
+                      )}
+
+                      {/* AI Enhanced icon tag */}
+                      {item.enhancedPrompt && !(item.isEdit || item.referenceImageUrl) && (
+                        <div
+                          style={{
+                            position: 'absolute',
+                            top: '6px',
+                            left: '6px',
+                            background: 'rgba(168,85,247,0.9)',
+                            borderRadius: '4px',
+                            padding: '2px 5px',
+                            color: '#fff',
+                            fontSize: '9px',
+                            fontWeight: 600,
+                            display: 'inline-flex',
+                            alignItems: 'center',
+                            gap: '3px',
+                            boxShadow: '0 2px 6px rgba(0,0,0,0.4)',
+                          }}
+                          title="Smart AI Enhanced prompt"
+                        >
+                          <Wand2 size={9} /> Enhanced
+                        </div>
+                      )}
+                    </div>
+                  ))}
+                </div>
+              )}
+            </div>
+          </div>
+        </div>
+      )}
 
       {/* Fullscreen Modal View */}
       {fullscreenImage && (
