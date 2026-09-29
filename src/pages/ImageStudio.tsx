@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback, useRef } from 'react';
+import { useState, useEffect, useCallback, useRef, useMemo } from 'react';
 import { Link, useSearchParams } from 'react-router-dom';
 import {
   Image as ImageIcon,
@@ -23,6 +23,10 @@ import {
   Columns,
   ChevronLeft,
   ChevronRight,
+  ZoomIn,
+  ZoomOut,
+  RotateCcw,
+  Filter,
 } from 'lucide-react';
 import { storage } from '@/lib/storage';
 import { playTapSound } from '@/lib/audio';
@@ -175,74 +179,251 @@ export function ImageStudio() {
   const [history, setHistory] = useState<GeneratedImageItem[]>([]);
   const [fullscreenImage, setFullscreenImage] = useState<GeneratedImageItem | null>(null);
   const [isTrueFullscreen, setIsTrueFullscreen] = useState<boolean>(false);
-  const touchStartXRef = useRef<number | null>(null);
+  const [zoomLevel, setZoomLevel] = useState<number>(1);
+  const [panOffset, setPanOffset] = useState<{ x: number; y: number }>({ x: 0, y: 0 });
+  const [isPanning, setIsPanning] = useState<boolean>(false);
+  const panStartRef = useRef<{ x: number; y: number }>({ x: 0, y: 0 });
+  const initialPanOffsetRef = useRef<{ x: number; y: number }>({ x: 0, y: 0 });
+  const touchStartPosRef = useRef<{ x: number; y: number } | null>(null);
+  const pinchStartDistRef = useRef<number | null>(null);
+  const initialPinchZoomRef = useRef<number>(1);
   const [galleryModalOpen, setGalleryModalOpen] = useState<boolean>(false);
+  const [gallerySortOrder, setGallerySortOrder] = useState<'newest' | 'oldest'>('newest');
+  const [galleryModelFilter, setGalleryModelFilter] = useState<string | null>(null);
 
-  // Reset isTrueFullscreen whenever fullscreenImage changes or closes
+  const distinctGalleryModels = useMemo(() => {
+    const models = new Set<string>();
+    history.forEach((item) => {
+      const m = item.model || item.providerName;
+      if (m && m.trim()) {
+        models.add(m.trim());
+      }
+    });
+    return Array.from(models);
+  }, [history]);
+
+  const displayedGalleryImages = useMemo(() => {
+    let list = [...history];
+    if (galleryModelFilter) {
+      list = list.filter((item) => (item.model || item.providerName) === galleryModelFilter);
+    }
+    list.sort((a, b) => {
+      const timeA = a.timestamp || 0;
+      const timeB = b.timestamp || 0;
+      return gallerySortOrder === 'newest' ? timeB - timeA : timeA - timeB;
+    });
+    return list;
+  }, [history, galleryModelFilter, gallerySortOrder]);
+
+  // Reset isTrueFullscreen, zoom, and pan whenever fullscreenImage changes or closes
   useEffect(() => {
     setIsTrueFullscreen(false);
+    setZoomLevel(1);
+    setPanOffset({ x: 0, y: 0 });
+    setIsPanning(false);
   }, [fullscreenImage]);
 
-  const currentFullscreenIndex = history.findIndex((item) => item.id === fullscreenImage?.id);
+  const navigationImagesList = displayedGalleryImages.length > 0 ? displayedGalleryImages : history;
+  const currentFullscreenIndex = navigationImagesList.findIndex((item) => item.id === fullscreenImage?.id);
 
   const handlePrevFullscreenImage = (e?: React.MouseEvent) => {
     if (e) e.stopPropagation();
-    if (history.length <= 1) return;
+    if (navigationImagesList.length <= 1) return;
     playTapSound();
     setIsTrueFullscreen(false);
-    const prevIdx = currentFullscreenIndex <= 0 ? history.length - 1 : currentFullscreenIndex - 1;
-    setFullscreenImage(history[prevIdx]);
+    setZoomLevel(1);
+    setPanOffset({ x: 0, y: 0 });
+    const prevIdx = currentFullscreenIndex <= 0 ? navigationImagesList.length - 1 : currentFullscreenIndex - 1;
+    setFullscreenImage(navigationImagesList[prevIdx]);
   };
 
   const handleNextFullscreenImage = (e?: React.MouseEvent) => {
     if (e) e.stopPropagation();
-    if (history.length <= 1) return;
+    if (navigationImagesList.length <= 1) return;
     playTapSound();
     setIsTrueFullscreen(false);
-    const nextIdx = (currentFullscreenIndex + 1) % history.length;
-    setFullscreenImage(history[nextIdx]);
+    setZoomLevel(1);
+    setPanOffset({ x: 0, y: 0 });
+    const nextIdx = (currentFullscreenIndex + 1) % navigationImagesList.length;
+    setFullscreenImage(navigationImagesList[nextIdx]);
   };
 
+  const handleZoomIn = (e?: React.MouseEvent) => {
+    if (e) e.stopPropagation();
+    playTapSound();
+    setZoomLevel((prev) => Math.min(Number((prev + 0.5).toFixed(1)), 4));
+  };
+
+  const handleZoomOut = (e?: React.MouseEvent) => {
+    if (e) e.stopPropagation();
+    playTapSound();
+    setZoomLevel((prev) => {
+      const next = Math.max(Number((prev - 0.5).toFixed(1)), 1);
+      if (next === 1) {
+        setPanOffset({ x: 0, y: 0 });
+      }
+      return next;
+    });
+  };
+
+  const handleResetZoom = (e?: React.MouseEvent) => {
+    if (e) e.stopPropagation();
+    playTapSound();
+    setZoomLevel(1);
+    setPanOffset({ x: 0, y: 0 });
+  };
+
+  const handleToggleZoom = (e?: React.MouseEvent) => {
+    if (e) e.stopPropagation();
+    playTapSound();
+    if (zoomLevel > 1) {
+      setZoomLevel(1);
+      setPanOffset({ x: 0, y: 0 });
+    } else {
+      setZoomLevel(2.5);
+    }
+  };
+
+  // Mouse wheel zoom
+  const handleWheelZoom = (e: React.WheelEvent) => {
+    e.preventDefault();
+    const delta = e.deltaY < 0 ? 0.25 : -0.25;
+    setZoomLevel((prev) => {
+      const next = Math.min(Math.max(Number((prev + delta).toFixed(2)), 1), 4);
+      if (next === 1) {
+        setPanOffset({ x: 0, y: 0 });
+      }
+      return next;
+    });
+  };
+
+  // Mouse drag panning when zoomed
+  const handleMouseDown = (e: React.MouseEvent) => {
+    if (zoomLevel > 1) {
+      e.preventDefault();
+      setIsPanning(true);
+      panStartRef.current = { x: e.clientX, y: e.clientY };
+      initialPanOffsetRef.current = { ...panOffset };
+    }
+  };
+
+  const handleMouseMove = (e: React.MouseEvent) => {
+    if (isPanning && zoomLevel > 1) {
+      e.preventDefault();
+      const dx = e.clientX - panStartRef.current.x;
+      const dy = e.clientY - panStartRef.current.y;
+      setPanOffset({
+        x: initialPanOffsetRef.current.x + dx,
+        y: initialPanOffsetRef.current.y + dy,
+      });
+    }
+  };
+
+  const handleMouseUp = () => {
+    setIsPanning(false);
+  };
+
+  // Touch handlers for Pan, Pinch-to-Zoom, and Swipe
   const handleTouchStart = (e: React.TouchEvent) => {
-    if (e.touches && e.touches.length > 0) {
-      touchStartXRef.current = e.touches[0].clientX;
+    if (e.touches.length === 2) {
+      const dist = Math.hypot(
+        e.touches[0].clientX - e.touches[1].clientX,
+        e.touches[0].clientY - e.touches[1].clientY,
+      );
+      pinchStartDistRef.current = dist;
+      initialPinchZoomRef.current = zoomLevel;
+    } else if (e.touches.length === 1) {
+      const touch = e.touches[0];
+      touchStartPosRef.current = { x: touch.clientX, y: touch.clientY };
+      if (zoomLevel > 1) {
+        setIsPanning(true);
+        panStartRef.current = { x: touch.clientX, y: touch.clientY };
+        initialPanOffsetRef.current = { ...panOffset };
+      }
+    }
+  };
+
+  const handleTouchMove = (e: React.TouchEvent) => {
+    if (e.touches.length === 2 && pinchStartDistRef.current !== null) {
+      const dist = Math.hypot(
+        e.touches[0].clientX - e.touches[1].clientX,
+        e.touches[0].clientY - e.touches[1].clientY,
+      );
+      const scaleFactor = dist / pinchStartDistRef.current;
+      const nextZoom = Math.min(Math.max(Number((initialPinchZoomRef.current * scaleFactor).toFixed(2)), 1), 4);
+      setZoomLevel(nextZoom);
+      if (nextZoom === 1) {
+        setPanOffset({ x: 0, y: 0 });
+      }
+    } else if (e.touches.length === 1 && isPanning && zoomLevel > 1) {
+      const touch = e.touches[0];
+      const dx = touch.clientX - panStartRef.current.x;
+      const dy = touch.clientY - panStartRef.current.y;
+      setPanOffset({
+        x: initialPanOffsetRef.current.x + dx,
+        y: initialPanOffsetRef.current.y + dy,
+      });
     }
   };
 
   const handleTouchEnd = (e: React.TouchEvent) => {
-    if (touchStartXRef.current === null) return;
-    if (e.changedTouches && e.changedTouches.length > 0) {
-      const diffX = e.changedTouches[0].clientX - touchStartXRef.current;
+    pinchStartDistRef.current = null;
+    setIsPanning(false);
+
+    if (zoomLevel <= 1 && touchStartPosRef.current !== null && e.changedTouches.length > 0) {
+      const diffX = e.changedTouches[0].clientX - touchStartPosRef.current.x;
+      const diffY = e.changedTouches[0].clientY - touchStartPosRef.current.y;
       const threshold = 50; // px
-      if (Math.abs(diffX) > threshold) {
+      if (Math.abs(diffX) > threshold && Math.abs(diffX) > Math.abs(diffY)) {
         if (diffX > 0) {
-          // swiped right -> previous image
           handlePrevFullscreenImage();
         } else {
-          // swiped left -> next image
           handleNextFullscreenImage();
         }
       }
     }
-    touchStartXRef.current = null;
+    touchStartPosRef.current = null;
   };
 
-  // Keyboard navigation for fullscreen viewer
+  // Keyboard navigation & zoom shortcuts for fullscreen viewer
   useEffect(() => {
     if (!fullscreenImage) return;
     const handleKeyDown = (e: KeyboardEvent) => {
       if (e.key === 'Escape') {
-        setFullscreenImage(null);
-        setIsTrueFullscreen(false);
+        if (zoomLevel > 1) {
+          setZoomLevel(1);
+          setPanOffset({ x: 0, y: 0 });
+        } else {
+          setFullscreenImage(null);
+          setIsTrueFullscreen(false);
+        }
       } else if (e.key === 'ArrowLeft') {
-        handlePrevFullscreenImage();
+        if (zoomLevel <= 1) {
+          handlePrevFullscreenImage();
+        } else {
+          setPanOffset((prev) => ({ ...prev, x: prev.x + 40 }));
+        }
       } else if (e.key === 'ArrowRight') {
-        handleNextFullscreenImage();
+        if (zoomLevel <= 1) {
+          handleNextFullscreenImage();
+        } else {
+          setPanOffset((prev) => ({ ...prev, x: prev.x - 40 }));
+        }
+      } else if (e.key === 'ArrowUp' && zoomLevel > 1) {
+        setPanOffset((prev) => ({ ...prev, y: prev.y + 40 }));
+      } else if (e.key === 'ArrowDown' && zoomLevel > 1) {
+        setPanOffset((prev) => ({ ...prev, y: prev.y - 40 }));
+      } else if (e.key === '+' || e.key === '=') {
+        handleZoomIn();
+      } else if (e.key === '-' || e.key === '_') {
+        handleZoomOut();
+      } else if (e.key === '0') {
+        handleResetZoom();
       }
     };
     window.addEventListener('keydown', handleKeyDown);
     return () => window.removeEventListener('keydown', handleKeyDown);
-  }, [fullscreenImage, currentFullscreenIndex, history]);
+  }, [fullscreenImage, currentFullscreenIndex, history, zoomLevel]);
   const [hasDismissedPuterNotice, setHasDismissedPuterNotice] = useState<boolean>(() => {
     try {
       return localStorage.getItem('nexus_seen_puter_notice') === 'true';
@@ -3113,12 +3294,12 @@ export function ImageStudio() {
                 gap: '12px',
               }}
             >
+              {/* Top row: Title on left, "See Full Gallery" on right (exactly in top-right area) */}
               <div
                 style={{
                   display: 'flex',
                   justifyContent: 'space-between',
                   alignItems: 'center',
-                  flexWrap: 'wrap',
                   gap: '8px',
                 }}
               >
@@ -3140,54 +3321,64 @@ export function ImageStudio() {
                   >
                     <Database size={10} style={{ color: '#34d399' }} /> IndexedDB
                   </span>
-                  <button
-                    type="button"
-                    onClick={() => {
-                      playTapSound();
-                      setGalleryModalOpen(true);
-                    }}
-                    className="secondary-button"
-                    style={{
-                      fontSize: '11px',
-                      padding: '3px 9px',
-                      borderRadius: '6px',
-                      display: 'inline-flex',
-                      alignItems: 'center',
-                      gap: '5px',
-                      color: '#38bdf8',
-                      borderColor: 'rgba(56,189,248,0.3)',
-                      background: 'rgba(56,189,248,0.08)',
-                      cursor: 'pointer',
-                    }}
-                    title="Open full photo gallery grid view"
-                  >
-                    <ImageIcon size={12} /> See Full Gallery
-                  </button>
                 </div>
 
-                <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
-                  <span style={{ fontSize: '11px', color: 'var(--muted)' }}>Click to view</span>
-                  <button
-                    id="clear-image-history-btn"
-                    type="button"
-                    onClick={handleClearHistory}
-                    className="secondary-button"
-                    style={{
-                      fontSize: '11px',
-                      padding: '4px 10px',
-                      borderRadius: '6px',
-                      display: 'inline-flex',
-                      alignItems: 'center',
-                      gap: '5px',
-                      color: '#f87171',
-                      borderColor: 'rgba(248,113,113,0.3)',
-                      cursor: 'pointer',
-                    }}
-                    title="Delete all saved generations from IndexedDB"
-                  >
-                    <Trash2 size={12} /> Clear History
-                  </button>
-                </div>
+                <button
+                  type="button"
+                  onClick={() => {
+                    playTapSound();
+                    setGalleryModalOpen(true);
+                  }}
+                  className="secondary-button"
+                  style={{
+                    fontSize: '11px',
+                    padding: '3px 9px',
+                    borderRadius: '6px',
+                    display: 'inline-flex',
+                    alignItems: 'center',
+                    gap: '5px',
+                    color: '#38bdf8',
+                    borderColor: 'rgba(56,189,248,0.3)',
+                    background: 'rgba(56,189,248,0.08)',
+                    cursor: 'pointer',
+                    flexShrink: 0,
+                  }}
+                  title="Open full photo gallery grid view"
+                >
+                  <ImageIcon size={12} /> See Full Gallery
+                </button>
+              </div>
+
+              {/* Sub-bar: "Click to view" and "Clear History" */}
+              <div
+                style={{
+                  display: 'flex',
+                  justifyContent: 'space-between',
+                  alignItems: 'center',
+                  gap: '8px',
+                }}
+              >
+                <span style={{ fontSize: '11px', color: 'var(--muted)' }}>Click to view</span>
+                <button
+                  id="clear-image-history-btn"
+                  type="button"
+                  onClick={handleClearHistory}
+                  className="secondary-button"
+                  style={{
+                    fontSize: '11px',
+                    padding: '3px 8px',
+                    borderRadius: '6px',
+                    display: 'inline-flex',
+                    alignItems: 'center',
+                    gap: '4px',
+                    color: '#f87171',
+                    borderColor: 'rgba(248,113,113,0.3)',
+                    cursor: 'pointer',
+                  }}
+                  title="Delete all saved generations from IndexedDB"
+                >
+                  <Trash2 size={11} /> Clear History
+                </button>
               </div>
 
               <div
@@ -3327,81 +3518,213 @@ export function ImageStudio() {
             }}
             onClick={(e) => e.stopPropagation()}
           >
-            {/* Gallery Header Bar */}
+            {/* Gallery Header Bar with Sort & Filter Toolbar */}
             <div
               style={{
                 display: 'flex',
-                alignItems: 'center',
-                justifyContent: 'space-between',
+                flexDirection: 'column',
+                gap: '12px',
                 padding: '16px 20px',
                 borderBottom: '1px solid rgba(255, 255, 255, 0.1)',
-                background: 'rgba(14, 31, 39, 0.7)',
+                background: 'rgba(14, 31, 39, 0.85)',
                 backdropFilter: 'blur(10px)',
                 flexShrink: 0,
               }}
             >
-              <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
-                <div
-                  style={{
-                    width: '32px',
-                    height: '32px',
-                    borderRadius: '8px',
-                    background: 'rgba(56, 189, 248, 0.15)',
-                    border: '1px solid rgba(56, 189, 248, 0.3)',
-                    display: 'grid',
-                    placeItems: 'center',
-                    color: '#38bdf8',
-                  }}
-                >
-                  <ImageIcon size={18} />
+              {/* Title & Close Row */}
+              <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', width: '100%' }}>
+                <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
+                  <div
+                    style={{
+                      width: '32px',
+                      height: '32px',
+                      borderRadius: '8px',
+                      background: 'rgba(56, 189, 248, 0.15)',
+                      border: '1px solid rgba(56, 189, 248, 0.3)',
+                      display: 'grid',
+                      placeItems: 'center',
+                      color: '#38bdf8',
+                    }}
+                  >
+                    <ImageIcon size={18} />
+                  </div>
+                  <div>
+                    <h3 style={{ margin: 0, fontSize: '15px', fontWeight: 600, color: '#fff', display: 'flex', alignItems: 'center', gap: '8px' }}>
+                      Photo Gallery
+                      <span
+                        style={{
+                          fontSize: '11px',
+                          color: galleryModelFilter ? '#38bdf8' : 'var(--muted)',
+                          background: galleryModelFilter ? 'rgba(56, 189, 248, 0.15)' : 'rgba(255,255,255,0.08)',
+                          border: galleryModelFilter ? '1px solid rgba(56, 189, 248, 0.3)' : 'none',
+                          padding: '1px 8px',
+                          borderRadius: '10px',
+                          fontWeight: 500,
+                        }}
+                      >
+                        {displayedGalleryImages.length} {displayedGalleryImages.length === 1 ? 'image' : 'images'}
+                        {galleryModelFilter && ` (filtered from ${history.length})`}
+                      </span>
+                    </h3>
+                    <p style={{ margin: '2px 0 0', fontSize: '11px', color: 'var(--muted)' }}>
+                      All saved AI generations in IndexedDB • Click any thumbnail to view full resolution & details
+                    </p>
+                  </div>
                 </div>
-                <div>
-                  <h3 style={{ margin: 0, fontSize: '15px', fontWeight: 600, color: '#fff', display: 'flex', alignItems: 'center', gap: '8px' }}>
-                    Photo Gallery
-                    <span
-                      style={{
-                        fontSize: '11px',
-                        color: 'var(--muted)',
-                        background: 'rgba(255,255,255,0.08)',
-                        padding: '1px 8px',
-                        borderRadius: '10px',
-                        fontWeight: 500,
-                      }}
-                    >
-                      {history.length} {history.length === 1 ? 'image' : 'images'}
-                    </span>
-                  </h3>
-                  <p style={{ margin: '2px 0 0', fontSize: '11px', color: 'var(--muted)' }}>
-                    All saved AI generations in IndexedDB • Click any thumbnail to view full resolution & details
-                  </p>
+
+                <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      playTapSound();
+                      setGalleryModalOpen(false);
+                    }}
+                    style={{
+                      background: 'rgba(255,255,255,0.1)',
+                      border: '1px solid rgba(255,255,255,0.15)',
+                      borderRadius: '8px',
+                      color: '#fff',
+                      padding: '6px 12px',
+                      display: 'inline-flex',
+                      alignItems: 'center',
+                      gap: '6px',
+                      cursor: 'pointer',
+                      fontSize: '12px',
+                      fontWeight: 500,
+                      transition: 'all 0.15s ease',
+                    }}
+                    title="Close gallery"
+                  >
+                    <X size={16} /> Close
+                  </button>
                 </div>
               </div>
 
-              <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
-                <button
-                  type="button"
-                  onClick={() => {
-                    playTapSound();
-                    setGalleryModalOpen(false);
-                  }}
-                  style={{
-                    background: 'rgba(255,255,255,0.1)',
-                    border: '1px solid rgba(255,255,255,0.15)',
-                    borderRadius: '8px',
-                    color: '#fff',
-                    padding: '6px 12px',
-                    display: 'inline-flex',
-                    alignItems: 'center',
-                    gap: '6px',
-                    cursor: 'pointer',
-                    fontSize: '12px',
-                    fontWeight: 500,
-                    transition: 'all 0.15s ease',
-                  }}
-                  title="Close gallery"
-                >
-                  <X size={16} /> Close
-                </button>
+              {/* Sort & Filter Controls Toolbar */}
+              <div
+                style={{
+                  display: 'flex',
+                  alignItems: 'center',
+                  justifyContent: 'space-between',
+                  flexWrap: 'wrap',
+                  gap: '10px',
+                  paddingTop: '8px',
+                  borderTop: '1px solid rgba(255, 255, 255, 0.08)',
+                }}
+              >
+                {/* Left: Model Filter Dropdown */}
+                <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                  <span style={{ fontSize: '11.5px', color: 'var(--muted)', fontWeight: 500, display: 'inline-flex', alignItems: 'center', gap: '4px' }}>
+                    <Filter size={12} /> Model:
+                  </span>
+                  <select
+                    value={galleryModelFilter || 'all'}
+                    onChange={(e) => {
+                      playTapSound();
+                      setGalleryModelFilter(e.target.value === 'all' ? null : e.target.value);
+                    }}
+                    style={{
+                      background: 'rgba(15, 23, 42, 0.85)',
+                      border: '1px solid rgba(255, 255, 255, 0.15)',
+                      borderRadius: '6px',
+                      color: '#e2e8f0',
+                      fontSize: '11.5px',
+                      padding: '4px 10px',
+                      outline: 'none',
+                      cursor: 'pointer',
+                    }}
+                  >
+                    <option value="all">All Models ({history.length})</option>
+                    {distinctGalleryModels.map((m) => {
+                      const count = history.filter((item) => (item.model || item.providerName) === m).length;
+                      return (
+                        <option key={`filter-model-${m}`} value={m}>
+                          {m} ({count})
+                        </option>
+                      );
+                    })}
+                  </select>
+
+                  {galleryModelFilter && (
+                    <button
+                      type="button"
+                      onClick={() => {
+                        playTapSound();
+                        setGalleryModelFilter(null);
+                      }}
+                      style={{
+                        background: 'transparent',
+                        border: 'none',
+                        color: '#38bdf8',
+                        fontSize: '11px',
+                        cursor: 'pointer',
+                        padding: '2px 6px',
+                        textDecoration: 'underline',
+                      }}
+                    >
+                      Clear filter
+                    </button>
+                  )}
+                </div>
+
+                {/* Right: Sort Pill Buttons */}
+                <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
+                  <span style={{ fontSize: '11.5px', color: 'var(--muted)', fontWeight: 500 }}>
+                    Sort:
+                  </span>
+                  <div
+                    style={{
+                      display: 'inline-flex',
+                      background: 'rgba(0, 0, 0, 0.35)',
+                      border: '1px solid rgba(255, 255, 255, 0.1)',
+                      borderRadius: '7px',
+                      padding: '2px',
+                      gap: '2px',
+                    }}
+                  >
+                    <button
+                      type="button"
+                      onClick={() => {
+                        playTapSound();
+                        setGallerySortOrder('newest');
+                      }}
+                      style={{
+                        background: gallerySortOrder === 'newest' ? 'rgba(56, 189, 248, 0.2)' : 'transparent',
+                        border: gallerySortOrder === 'newest' ? '1px solid rgba(56, 189, 248, 0.4)' : '1px solid transparent',
+                        borderRadius: '5px',
+                        color: gallerySortOrder === 'newest' ? '#38bdf8' : 'var(--muted)',
+                        fontSize: '11px',
+                        fontWeight: gallerySortOrder === 'newest' ? 600 : 400,
+                        padding: '3px 10px',
+                        cursor: 'pointer',
+                        transition: 'all 0.15s ease',
+                      }}
+                    >
+                      Newest
+                    </button>
+
+                    <button
+                      type="button"
+                      onClick={() => {
+                        playTapSound();
+                        setGallerySortOrder('oldest');
+                      }}
+                      style={{
+                        background: gallerySortOrder === 'oldest' ? 'rgba(56, 189, 248, 0.2)' : 'transparent',
+                        border: gallerySortOrder === 'oldest' ? '1px solid rgba(56, 189, 248, 0.4)' : '1px solid transparent',
+                        borderRadius: '5px',
+                        color: gallerySortOrder === 'oldest' ? '#38bdf8' : 'var(--muted)',
+                        fontSize: '11px',
+                        fontWeight: gallerySortOrder === 'oldest' ? 600 : 400,
+                        padding: '3px 10px',
+                        cursor: 'pointer',
+                        transition: 'all 0.15s ease',
+                      }}
+                    >
+                      Oldest
+                    </button>
+                  </div>
+                </div>
               </div>
             </div>
 
@@ -3429,11 +3752,45 @@ export function ImageStudio() {
                   <ImageIcon size={48} style={{ opacity: 0.3 }} />
                   <p style={{ fontSize: '14px', margin: 0 }}>No saved images found in gallery yet.</p>
                 </div>
+              ) : displayedGalleryImages.length === 0 ? (
+                <div
+                  style={{
+                    height: '100%',
+                    minHeight: '300px',
+                    display: 'flex',
+                    flexDirection: 'column',
+                    alignItems: 'center',
+                    justifyContent: 'center',
+                    color: 'var(--muted)',
+                    gap: '12px',
+                  }}
+                >
+                  <ImageIcon size={48} style={{ opacity: 0.3 }} />
+                  <p style={{ fontSize: '14px', margin: 0 }}>No images from this model yet.</p>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      playTapSound();
+                      setGalleryModelFilter(null);
+                    }}
+                    style={{
+                      fontSize: '12px',
+                      color: '#38bdf8',
+                      background: 'rgba(56,189,248,0.1)',
+                      border: '1px solid rgba(56,189,248,0.3)',
+                      borderRadius: '6px',
+                      padding: '4px 12px',
+                      cursor: 'pointer',
+                    }}
+                  >
+                    Show all models
+                  </button>
+                </div>
               ) : (
                 <div
                   className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 xl:grid-cols-6 gap-3 sm:gap-4"
                 >
-                  {history.map((item) => (
+                  {displayedGalleryImages.map((item) => (
                     <div
                       key={`gallery-grid-${item.id}`}
                       onClick={() => {
@@ -3560,7 +3917,7 @@ export function ImageStudio() {
         </div>
       )}
 
-      {/* Fullscreen Modal View with True Edge-to-Edge & Swipe Navigation */}
+      {/* Fullscreen Modal View with True Edge-to-Edge, Zoom & Pan, and Swipe Navigation */}
       {fullscreenImage && (
         <div
           style={{
@@ -3574,20 +3931,24 @@ export function ImageStudio() {
             padding: isTrueFullscreen ? 0 : '24px',
             overflow: 'hidden',
             userSelect: 'none',
-            touchAction: 'pan-y',
+            touchAction: zoomLevel > 1 ? 'none' : 'pan-y',
           }}
           onClick={() => {
-            if (isTrueFullscreen) {
+            if (zoomLevel > 1) {
+              setZoomLevel(1);
+              setPanOffset({ x: 0, y: 0 });
+            } else if (isTrueFullscreen) {
               setIsTrueFullscreen(false);
             } else {
               setFullscreenImage(null);
             }
           }}
           onTouchStart={handleTouchStart}
+          onTouchMove={handleTouchMove}
           onTouchEnd={handleTouchEnd}
         >
           {/* Previous image arrow button (desktop/mouse) */}
-          {history.length > 1 && (
+          {navigationImagesList.length > 1 && (
             <button
               type="button"
               onClick={handlePrevFullscreenImage}
@@ -3621,7 +3982,7 @@ export function ImageStudio() {
           )}
 
           {/* Next image arrow button (desktop/mouse) */}
-          {history.length > 1 && (
+          {navigationImagesList.length > 1 && (
             <button
               type="button"
               onClick={handleNextFullscreenImage}
@@ -3654,6 +4015,149 @@ export function ImageStudio() {
             </button>
           )}
 
+          {/* Floating Zoom & Scroll/Pan Controls Bar */}
+          <div
+            style={{
+              position: 'fixed',
+              bottom: isTrueFullscreen ? '20px' : '28px',
+              left: '50%',
+              transform: 'translateX(-50%)',
+              background: 'rgba(15, 23, 42, 0.88)',
+              backdropFilter: 'blur(12px)',
+              border: '1px solid rgba(255, 255, 255, 0.15)',
+              borderRadius: '30px',
+              padding: '6px 14px',
+              display: 'flex',
+              alignItems: 'center',
+              gap: '8px',
+              zIndex: 100002,
+              boxShadow: '0 8px 32px rgba(0,0,0,0.6)',
+              userSelect: 'none',
+            }}
+            onClick={(e) => e.stopPropagation()}
+          >
+            {/* Zoom Out Button */}
+            <button
+              type="button"
+              onClick={handleZoomOut}
+              disabled={zoomLevel <= 1}
+              style={{
+                background: 'rgba(255,255,255,0.1)',
+                border: 'none',
+                borderRadius: '50%',
+                color: zoomLevel <= 1 ? 'rgba(255,255,255,0.3)' : '#fff',
+                width: '30px',
+                height: '30px',
+                display: 'grid',
+                placeItems: 'center',
+                cursor: zoomLevel <= 1 ? 'default' : 'pointer',
+                transition: 'all 0.15s ease',
+              }}
+              title="Zoom Out (-)"
+              aria-label="Zoom Out"
+            >
+              <ZoomOut size={15} />
+            </button>
+
+            {/* Zoom Percentage / Toggle Button */}
+            <button
+              type="button"
+              onClick={handleToggleZoom}
+              style={{
+                background: 'transparent',
+                border: 'none',
+                color: zoomLevel > 1 ? '#38bdf8' : '#e2e8f0',
+                fontSize: '12px',
+                fontWeight: 600,
+                padding: '2px 6px',
+                minWidth: '48px',
+                textAlign: 'center',
+                cursor: 'pointer',
+                fontFamily: 'monospace',
+              }}
+              title="Click to toggle 100% / 250% zoom"
+            >
+              {Math.round(zoomLevel * 100)}%
+            </button>
+
+            {/* Zoom In Button */}
+            <button
+              type="button"
+              onClick={handleZoomIn}
+              disabled={zoomLevel >= 4}
+              style={{
+                background: 'rgba(255,255,255,0.1)',
+                border: 'none',
+                borderRadius: '50%',
+                color: zoomLevel >= 4 ? 'rgba(255,255,255,0.3)' : '#fff',
+                width: '30px',
+                height: '30px',
+                display: 'grid',
+                placeItems: 'center',
+                cursor: zoomLevel >= 4 ? 'default' : 'pointer',
+                transition: 'all 0.15s ease',
+              }}
+              title="Zoom In (+)"
+              aria-label="Zoom In"
+            >
+              <ZoomIn size={15} />
+            </button>
+
+            {/* Reset Zoom Button */}
+            {zoomLevel > 1 && (
+              <button
+                type="button"
+                onClick={handleResetZoom}
+                style={{
+                  background: 'rgba(56, 189, 248, 0.2)',
+                  border: '1px solid rgba(56, 189, 248, 0.4)',
+                  borderRadius: '16px',
+                  color: '#38bdf8',
+                  padding: '3px 8px',
+                  display: 'inline-flex',
+                  alignItems: 'center',
+                  gap: '4px',
+                  fontSize: '11px',
+                  fontWeight: 500,
+                  cursor: 'pointer',
+                }}
+                title="Reset Zoom to 100% (0)"
+              >
+                <RotateCcw size={11} /> Reset
+              </button>
+            )}
+
+            <div style={{ width: '1px', height: '16px', background: 'rgba(255,255,255,0.15)', margin: '0 2px' }} />
+
+            {/* Toggle Edge-to-Edge Fullscreen Button */}
+            <button
+              type="button"
+              onClick={(e) => {
+                e.stopPropagation();
+                playTapSound();
+                setIsTrueFullscreen((prev) => !prev);
+              }}
+              style={{
+                background: isTrueFullscreen ? 'rgba(168, 85, 247, 0.25)' : 'rgba(255,255,255,0.1)',
+                border: isTrueFullscreen ? '1px solid rgba(168, 85, 247, 0.5)' : '1px solid rgba(255,255,255,0.15)',
+                borderRadius: '16px',
+                color: isTrueFullscreen ? '#c084fc' : '#fff',
+                padding: '3px 9px',
+                display: 'inline-flex',
+                alignItems: 'center',
+                gap: '5px',
+                fontSize: '11px',
+                fontWeight: 500,
+                cursor: 'pointer',
+                transition: 'all 0.15s ease',
+              }}
+              title={isTrueFullscreen ? 'Switch to Standard view' : 'Switch to Edge-to-Edge Full Screen view'}
+            >
+              <Maximize2 size={12} />
+              <span>{isTrueFullscreen ? 'Standard' : 'Edge-to-Edge'}</span>
+            </button>
+          </div>
+
           <div
             style={{
               position: 'relative',
@@ -3667,7 +4171,7 @@ export function ImageStudio() {
               justifyContent: 'center',
             }}
             onClick={(e) => {
-              if (!isTrueFullscreen) {
+              if (!isTrueFullscreen && zoomLevel <= 1) {
                 e.stopPropagation();
               }
             }}
@@ -3679,6 +4183,8 @@ export function ImageStudio() {
                 e.stopPropagation();
                 setFullscreenImage(null);
                 setIsTrueFullscreen(false);
+                setZoomLevel(1);
+                setPanOffset({ x: 0, y: 0 });
               }}
               style={{
                 position: isTrueFullscreen ? 'fixed' : 'absolute',
@@ -3706,30 +4212,64 @@ export function ImageStudio() {
               <X size={18} />
             </button>
 
-            {/* Main Fullscreen Image with Click-to-toggle True Fullscreen */}
-            <img
-              src={fullscreenImage.url}
-              alt={fullscreenImage.prompt}
-              onClick={(e) => {
-                e.stopPropagation();
-                setIsTrueFullscreen((prev) => !prev);
-              }}
+            {/* Pannable / Scrollable & Zoomable Image Viewport Container */}
+            <div
               style={{
-                width: isTrueFullscreen ? '100vw' : 'auto',
-                height: isTrueFullscreen ? '100vh' : 'auto',
-                maxWidth: isTrueFullscreen ? '100vw' : '90vw',
-                maxHeight: isTrueFullscreen ? '100vh' : '76vh',
-                borderRadius: isTrueFullscreen ? '0px' : '12px',
-                objectFit: 'contain',
-                boxShadow: isTrueFullscreen ? 'none' : '0 16px 48px rgba(0,0,0,0.8)',
-                cursor: 'pointer',
-                display: 'block',
+                position: 'relative',
+                display: 'flex',
+                alignItems: 'center',
+                justifyContent: 'center',
+                overflow: 'visible',
+                cursor: zoomLevel > 1 ? (isPanning ? 'grabbing' : 'grab') : 'zoom-in',
+                userSelect: 'none',
               }}
-              title={isTrueFullscreen ? 'Tap to exit full-screen view' : 'Tap to expand edge-to-edge full screen'}
-            />
+              onMouseDown={handleMouseDown}
+              onMouseMove={handleMouseMove}
+              onMouseUp={handleMouseUp}
+              onMouseLeave={handleMouseUp}
+              onWheel={handleWheelZoom}
+              onClick={(e) => {
+                if (zoomLevel <= 1) {
+                  e.stopPropagation();
+                  setIsTrueFullscreen((prev) => !prev);
+                }
+              }}
+              onDoubleClick={(e) => {
+                e.stopPropagation();
+                handleToggleZoom();
+              }}
+            >
+              <img
+                src={fullscreenImage.url}
+                alt={fullscreenImage.prompt}
+                style={{
+                  width: isTrueFullscreen ? '100vw' : 'auto',
+                  height: isTrueFullscreen ? '100vh' : 'auto',
+                  maxWidth: isTrueFullscreen ? '100vw' : '90vw',
+                  maxHeight: isTrueFullscreen ? '100vh' : '76vh',
+                  borderRadius: isTrueFullscreen ? '0px' : '12px',
+                  objectFit: 'contain',
+                  boxShadow: isTrueFullscreen ? 'none' : '0 16px 48px rgba(0,0,0,0.8)',
+                  transform: `translate(${panOffset.x}px, ${panOffset.y}px) scale(${zoomLevel})`,
+                  transformOrigin: 'center center',
+                  transition: isPanning ? 'none' : 'transform 0.15s ease-out',
+                  display: 'block',
+                  pointerEvents: 'auto',
+                  touchAction: zoomLevel > 1 ? 'none' : 'pan-y',
+                }}
+                draggable={false}
+                title={
+                  zoomLevel > 1
+                    ? 'Drag / scroll to pan image • Double click to reset'
+                    : isTrueFullscreen
+                    ? 'Click to toggle standard view • Double click to zoom'
+                    : 'Click to expand edge-to-edge • Double click or scroll wheel to zoom'
+                }
+              />
+            </div>
 
-            {/* Prompt & Details Caption (Hidden in True Fullscreen) */}
-            {!isTrueFullscreen && (
+            {/* Prompt & Details Caption (Hidden in True Fullscreen or when Zoomed) */}
+            {!isTrueFullscreen && zoomLevel <= 1 && (
               <div style={{ marginTop: '14px', textAlign: 'center', maxWidth: '680px', display: 'grid', gap: '4px' }}>
                 {fullscreenImage.enhancedPrompt && (
                   <div>
