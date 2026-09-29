@@ -23,9 +23,6 @@ import {
   Columns,
   ChevronLeft,
   ChevronRight,
-  ZoomIn,
-  ZoomOut,
-  RotateCcw,
   Filter,
 } from 'lucide-react';
 import { storage } from '@/lib/storage';

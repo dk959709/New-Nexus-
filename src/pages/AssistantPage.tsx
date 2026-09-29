@@ -527,6 +527,7 @@ const CommanderModelSelector: React.FC<CommanderModelSelectorProps> = ({
 
 const CHAT_KEY = 'nexus-ai-conversation-v2';
 const CHAT_SESSIONS_KEY = 'nexus-ai-chat-sessions-v1';
+const ACTIVE_SESSION_KEY = 'nexus-ai-active-session-id';
 const MEMORY_KEY = 'nexus-ai-smart-memory-v1';
 const WEB_SEARCH_PREF_KEY = 'nexus-ai-web-search-toggle';
 const IMAGE_GEN_PREF_KEY = 'nexus-ai-image-gen-toggle';
@@ -535,12 +536,42 @@ const DEEP_RESEARCH_PREF_KEY = 'nexus-ai-deep-research-toggle';
 export interface ArchivedChatSession {
   id: string;
   title: string;
+  titleEdited?: boolean;
   messages: Message[];
   smartMemory?: string;
   smartMemoryMaxLength?: number;
   providerId?: string;
   modelId?: string;
   updatedAt: number;
+}
+
+export function loadActiveSessionId(): string | null {
+  try {
+    const savedId = localStorage.getItem(ACTIVE_SESSION_KEY);
+    if (!savedId) return null;
+    const existingSessions = loadChatSessions();
+    if (existingSessions.some((s) => s.id === savedId)) {
+      return savedId;
+    }
+    localStorage.removeItem(ACTIVE_SESSION_KEY);
+    localStorage.removeItem(CHAT_KEY);
+    localStorage.removeItem(MEMORY_KEY);
+    return null;
+  } catch {
+    return null;
+  }
+}
+
+export function saveActiveSessionId(id: string | null): void {
+  try {
+    if (id) {
+      localStorage.setItem(ACTIVE_SESSION_KEY, id);
+    } else {
+      localStorage.removeItem(ACTIVE_SESSION_KEY);
+    }
+  } catch {
+    // Ignore storage errors
+  }
 }
 
 export function loadChatSessions(): ArchivedChatSession[] {
@@ -648,14 +679,16 @@ export function archiveCurrentSession(
   if (existingSessionId) {
     const matchIdx = sessions.findIndex((s) => s.id === existingSessionId);
     if (matchIdx !== -1) {
+      const existing = sessions[matchIdx];
       sessions[matchIdx] = {
-        ...sessions[matchIdx],
-        title,
+        ...existing,
+        title: existing.titleEdited ? existing.title : title,
+        titleEdited: existing.titleEdited,
         messages: sanitized,
         smartMemory: memoryToSave,
-        smartMemoryMaxLength: currentMaxLength || sessions[matchIdx].smartMemoryMaxLength || memoryLengthToSave,
-        providerId: currentProviderId || sessions[matchIdx].providerId || providerToSave,
-        modelId: currentModelId || sessions[matchIdx].modelId || modelToSave,
+        smartMemoryMaxLength: currentMaxLength || existing.smartMemoryMaxLength || memoryLengthToSave,
+        providerId: currentProviderId || existing.providerId || providerToSave,
+        modelId: currentModelId || existing.modelId || modelToSave,
         updatedAt: now,
       };
       saveChatSessions(sessions);
@@ -667,14 +700,16 @@ export function archiveCurrentSession(
   const identicalIdx = sessions.findIndex((s) => areMessagesEqual(s.messages, sanitized));
   if (identicalIdx !== -1) {
     // Update existing session in place instead of creating duplicate
+    const existing = sessions[identicalIdx];
     sessions[identicalIdx] = {
-      ...sessions[identicalIdx],
-      title,
+      ...existing,
+      title: existing.titleEdited ? existing.title : title,
+      titleEdited: existing.titleEdited,
       messages: sanitized,
       smartMemory: memoryToSave,
-      smartMemoryMaxLength: currentMaxLength || sessions[identicalIdx].smartMemoryMaxLength || memoryLengthToSave,
-      providerId: currentProviderId || sessions[identicalIdx].providerId || providerToSave,
-      modelId: currentModelId || sessions[identicalIdx].modelId || modelToSave,
+      smartMemoryMaxLength: currentMaxLength || existing.smartMemoryMaxLength || memoryLengthToSave,
+      providerId: currentProviderId || existing.providerId || providerToSave,
+      modelId: currentModelId || existing.modelId || modelToSave,
       updatedAt: now,
     };
     saveChatSessions(sessions);
@@ -702,6 +737,13 @@ export function deleteChatSession(id: string): void {
   const sessions = loadChatSessions();
   const filtered = sessions.filter((s) => s.id !== id);
   saveChatSessions(filtered);
+  try {
+    if (localStorage.getItem(ACTIVE_SESSION_KEY) === id) {
+      saveActiveSessionId(null);
+    }
+  } catch {
+    // Ignore
+  }
 }
 
 function formatRelativeTime(timestamp: number): string {
@@ -748,7 +790,16 @@ const welcomeMessage: Message = {
 function loadMessages(): Message[] {
   try {
     const raw = localStorage.getItem(CHAT_KEY);
-    if (!raw) return [welcomeMessage];
+    if (!raw) {
+      const activeId = loadActiveSessionId();
+      if (activeId) {
+        const s = loadChatSessions().find((item) => item.id === activeId);
+        if (s && s.messages && s.messages.length > 0) {
+          return s.messages;
+        }
+      }
+      return [welcomeMessage];
+    }
 
     const parsed = JSON.parse(raw) as unknown;
 
@@ -794,7 +845,14 @@ function loadMessages(): Message[] {
 
 function loadSmartMemory(): string {
   try {
-    return localStorage.getItem(MEMORY_KEY) ?? '';
+    const mem = localStorage.getItem(MEMORY_KEY);
+    if (mem !== null && mem !== undefined && mem !== '') return mem;
+    const activeId = loadActiveSessionId();
+    if (activeId) {
+      const s = loadChatSessions().find((item) => item.id === activeId);
+      if (s?.smartMemory) return s.smartMemory;
+    }
+    return '';
   } catch {
     return '';
   }
@@ -1012,9 +1070,23 @@ function AssistantImageCard({
 export function AssistantPage() {
   const [messages, setMessages] = useState<Message[]>(loadMessages);
   const [sessions, setSessions] = useState<ArchivedChatSession[]>(() => loadChatSessions());
-  const [activeSessionId, setActiveSessionId] = useState<string | null>(null);
-  const [activeProviderId, setActiveProviderId] = useState<string>('existing');
-  const [activeModelId, setActiveModelId] = useState<string>('');
+  const [activeSessionId, setActiveSessionId] = useState<string | null>(() => loadActiveSessionId());
+  const [activeProviderId, setActiveProviderId] = useState<string>(() => {
+    const id = loadActiveSessionId();
+    if (id) {
+      const s = loadChatSessions().find((item) => item.id === id);
+      if (s?.providerId) return s.providerId;
+    }
+    return 'existing';
+  });
+  const [activeModelId, setActiveModelId] = useState<string>(() => {
+    const id = loadActiveSessionId();
+    if (id) {
+      const s = loadChatSessions().find((item) => item.id === id);
+      if (s?.modelId) return s.modelId;
+    }
+    return '';
+  });
   const [historyOpen, setHistoryOpen] = useState<boolean>(false);
   const [deletingSessionId, setDeletingSessionId] = useState<string | null>(null);
   const [editingSessionId, setEditingSessionId] = useState<string | null>(null);
@@ -1027,8 +1099,19 @@ export function AssistantPage() {
   const [sessionModelIdDraft, setSessionModelIdDraft] = useState<string>('');
   const historyDropdownRef = useRef<HTMLDivElement>(null);
   const [smartMemory, setSmartMemory] = useState(loadSmartMemory);
-  const [smartMemoryMaxLength, setSmartMemoryMaxLength] = useState<number>(() => storage.getSmartMemoryMaxLength());
+  const [smartMemoryMaxLength, setSmartMemoryMaxLength] = useState<number>(() => {
+    const id = loadActiveSessionId();
+    if (id) {
+      const s = loadChatSessions().find((item) => item.id === id);
+      if (s?.smartMemoryMaxLength) return s.smartMemoryMaxLength;
+    }
+    return storage.getSmartMemoryMaxLength();
+  });
   const [webSearchEnabled, setWebSearchEnabled] = useState(loadWebSearchToggle);
+
+  useEffect(() => {
+    saveActiveSessionId(activeSessionId);
+  }, [activeSessionId]);
   const [imageGenEnabled, setImageGenEnabled] = useState(loadImageGenToggle);
   const [imageEnhanceEnabled, setImageEnhanceEnabled] = useState<boolean>(() => storage.getAssistantImageEnhanceEnabled());
   const [showImageEnhanceTip, setShowImageEnhanceTip] = useState<boolean>(() => !storage.getAssistantImageEnhanceTipDismissed());
@@ -5212,24 +5295,30 @@ DIRECTIVES:
     setShowClearConfirm(false);
   };
 
-  const handleNewChatClick = () => {
-    playTapSound();
-    archiveCurrentSession(messages, smartMemory, activeSessionId, smartMemoryMaxLength, activeProviderId, activeModelId);
+  const resetWorkingChat = () => {
     setActiveSessionId(null);
+    saveActiveSessionId(null);
     setActiveProviderId('existing');
     setActiveModelId('');
-    setSessions(loadChatSessions());
-    newChat();
-    // Reset short-term memory scratchpad for new chat session
+    setSmartMemoryMaxLength(storage.getSmartMemoryMaxLength());
     setSmartMemory('');
     setMemoryDraft('');
     setMemoryEditorOpen(false);
+    newChat();
     try {
       localStorage.removeItem(CHAT_KEY);
       localStorage.removeItem(MEMORY_KEY);
+      localStorage.removeItem(ACTIVE_SESSION_KEY);
     } catch {
       // Ignore
     }
+  };
+
+  const handleNewChatClick = () => {
+    playTapSound();
+    archiveCurrentSession(messages, smartMemory, activeSessionId, smartMemoryMaxLength, activeProviderId, activeModelId);
+    resetWorkingChat();
+    setSessions(loadChatSessions());
   };
 
   const handleSelectSession = (session: ArchivedChatSession) => {
@@ -5239,6 +5328,7 @@ DIRECTIVES:
 
     // 2. Track the newly active session ID
     setActiveSessionId(session.id);
+    saveActiveSessionId(session.id);
 
     // 3. Load the selected session's messages
     setMessages(session.messages);
@@ -5285,6 +5375,12 @@ DIRECTIVES:
     deleteChatSession(id);
     setSessions(loadChatSessions());
     setDeletingSessionId(null);
+
+    // When the open chat is deleted, reset the working chat to a new empty chat.
+    // Deleting a different chat must not touch the open one.
+    if (activeSessionId === id) {
+      resetWorkingChat();
+    }
   };
 
   const handleCancelDeleteSession = (e: React.MouseEvent) => {
@@ -5313,6 +5409,7 @@ DIRECTIVES:
         currentSessions[idx] = {
           ...currentSessions[idx],
           title: trimmed.length > 60 ? trimmed.slice(0, 60) : trimmed,
+          titleEdited: true,
           updatedAt: Date.now(),
         };
         saveChatSessions(currentSessions);
@@ -5461,23 +5558,9 @@ DIRECTIVES:
       }
     }
 
-    setSmartMemory('');
-    setMemoryDraft('');
-    setMemoryEditorOpen(false);
-    setMessages([welcomeMessage]);
-    setWebFetcherList([]);
-    setWebFetcherOriginalRequest('');
-    setError('');
-    setShowClearConfirm(false);
+    resetWorkingChat();
     setClearedToast(true);
     setTimeout(() => setClearedToast(false), 3000);
-
-    try {
-      localStorage.removeItem(CHAT_KEY);
-      localStorage.removeItem(MEMORY_KEY);
-    } catch {
-      // Ignore storage errors.
-    }
   };
 
   const openMemoryEditor = () => {
@@ -5808,9 +5891,13 @@ DIRECTIVES:
                           e.stopPropagation();
                           playTapSound();
                           if (window.confirm('Delete all saved chat history?')) {
+                            const wasSavedChatOpen = Boolean(activeSessionId);
                             saveChatSessions([]);
                             setSessions([]);
                             setDeletingSessionId(null);
+                            if (wasSavedChatOpen) {
+                              resetWorkingChat();
+                            }
                           }
                         }}
                         className="text-[11px] text-zinc-400 hover:text-red-400 hover:bg-red-500/10 px-2 py-1 rounded transition-colors flex items-center gap-1"
