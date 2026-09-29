@@ -546,14 +546,24 @@ export function loadChatSessions(): ArchivedChatSession[] {
     if (!raw) return [];
     const parsed = JSON.parse(raw) as unknown;
     if (!Array.isArray(parsed)) return [];
-    return parsed.filter(
-      (s): s is ArchivedChatSession =>
+    const valid: ArchivedChatSession[] = [];
+    const seenIds = new Set<string>();
+    for (const s of parsed) {
+      if (
         typeof s === 'object' &&
         s !== null &&
         typeof (s as ArchivedChatSession).id === 'string' &&
         typeof (s as ArchivedChatSession).title === 'string' &&
-        Array.isArray((s as ArchivedChatSession).messages),
-    );
+        Array.isArray((s as ArchivedChatSession).messages)
+      ) {
+        const item = s as ArchivedChatSession;
+        if (!seenIds.has(item.id)) {
+          seenIds.add(item.id);
+          valid.push(item);
+        }
+      }
+    }
+    return valid;
   } catch {
     return [];
   }
@@ -561,10 +571,34 @@ export function loadChatSessions(): ArchivedChatSession[] {
 
 export function saveChatSessions(sessions: ArchivedChatSession[]): void {
   try {
-    localStorage.setItem(CHAT_SESSIONS_KEY, JSON.stringify(sessions));
+    const seenIds = new Set<string>();
+    const deduped: ArchivedChatSession[] = [];
+    for (const s of sessions) {
+      if (!s || !s.id || typeof s.id !== 'string') continue;
+      if (!seenIds.has(s.id)) {
+        seenIds.add(s.id);
+        deduped.push(s);
+      }
+    }
+    localStorage.setItem(CHAT_SESSIONS_KEY, JSON.stringify(deduped));
   } catch (err) {
     console.error('Failed to save chat sessions:', err);
   }
+}
+
+export function areMessagesEqual(a: Message[], b: Message[]): boolean {
+  if (a.length !== b.length) return false;
+  if (a.length === 0) return true;
+  for (let i = 0; i < a.length; i++) {
+    const msgA = a[i];
+    const msgB = b[i];
+    if (msgA.role !== msgB.role) return false;
+    if (msgA.content !== msgB.content) return false;
+    if (Boolean(msgA.image?.url || msgA.image?.imageDataId) !== Boolean(msgB.image?.url || msgB.image?.imageDataId)) {
+      return false;
+    }
+  }
+  return true;
 }
 
 export function getSessionTitle(msgs: Message[]): string | null {
@@ -575,7 +609,11 @@ export function getSessionTitle(msgs: Message[]): string | null {
   return clean.length > 40 ? clean.slice(0, 40) + '...' : clean;
 }
 
-export function archiveCurrentSession(msgs: Message[], currentMemory?: string): string | null {
+export function archiveCurrentSession(
+  msgs: Message[],
+  currentMemory?: string,
+  existingSessionId?: string | null,
+): string | null {
   const title = getSessionTitle(msgs);
   if (!title) return null; // skip archiving if empty or only contains welcome message
 
@@ -596,17 +634,38 @@ export function archiveCurrentSession(msgs: Message[], currentMemory?: string): 
   const now = Date.now();
   const memoryToSave = currentMemory || '';
 
-  // Avoid creating identical duplicate on subsequent triggers
-  const topSession = sessions[0];
-  if (
-    topSession &&
-    topSession.title === title &&
-    JSON.stringify(topSession.messages) === JSON.stringify(sanitized) &&
-    (topSession.smartMemory || '') === memoryToSave
-  ) {
-    return topSession.id;
+  // 1. Guard against duplicate: Check if explicit existingSessionId matches an item in sessions
+  if (existingSessionId) {
+    const matchIdx = sessions.findIndex((s) => s.id === existingSessionId);
+    if (matchIdx !== -1) {
+      sessions[matchIdx] = {
+        ...sessions[matchIdx],
+        title,
+        messages: sanitized,
+        smartMemory: memoryToSave,
+        updatedAt: now,
+      };
+      saveChatSessions(sessions);
+      return sessions[matchIdx].id;
+    }
   }
 
+  // 2. Guard against duplicate: Check if ANY session in stored list has identical message content
+  const identicalIdx = sessions.findIndex((s) => areMessagesEqual(s.messages, sanitized));
+  if (identicalIdx !== -1) {
+    // Update existing session in place instead of creating duplicate
+    sessions[identicalIdx] = {
+      ...sessions[identicalIdx],
+      title,
+      messages: sanitized,
+      smartMemory: memoryToSave,
+      updatedAt: now,
+    };
+    saveChatSessions(sessions);
+    return sessions[identicalIdx].id;
+  }
+
+  // 3. New unique session creation
   const newSession: ArchivedChatSession = {
     id: `chat-${now}-${Math.random().toString(36).substring(2, 7)}`,
     title,
@@ -924,6 +983,7 @@ function AssistantImageCard({
 export function AssistantPage() {
   const [messages, setMessages] = useState<Message[]>(loadMessages);
   const [sessions, setSessions] = useState<ArchivedChatSession[]>(() => loadChatSessions());
+  const [activeSessionId, setActiveSessionId] = useState<string | null>(null);
   const [historyOpen, setHistoryOpen] = useState<boolean>(false);
   const [deletingSessionId, setDeletingSessionId] = useState<string | null>(null);
   const historyDropdownRef = useRef<HTMLDivElement>(null);
@@ -5110,7 +5170,8 @@ DIRECTIVES:
 
   const handleNewChatClick = () => {
     playTapSound();
-    archiveCurrentSession(messages, smartMemory);
+    archiveCurrentSession(messages, smartMemory, activeSessionId);
+    setActiveSessionId(null);
     setSessions(loadChatSessions());
     newChat();
     // Reset short-term memory scratchpad for new chat session
@@ -5127,10 +5188,13 @@ DIRECTIVES:
 
   const handleSelectSession = (session: ArchivedChatSession) => {
     playTapSound();
-    // 1. Archive current conversation and its separate scratchpad memory
-    archiveCurrentSession(messages, smartMemory);
+    // 1. Archive current conversation and its separate scratchpad memory using current activeSessionId
+    archiveCurrentSession(messages, smartMemory, activeSessionId);
 
-    // 2. Load the selected session's messages
+    // 2. Track the newly active session ID
+    setActiveSessionId(session.id);
+
+    // 3. Load the selected session's messages
     setMessages(session.messages);
     try {
       localStorage.setItem(CHAT_KEY, JSON.stringify(session.messages));
@@ -5138,7 +5202,7 @@ DIRECTIVES:
       // Ignore
     }
 
-    // 3. Load the selected session's separate scratchpad memory
+    // 4. Load the selected session's separate scratchpad memory
     const sessionMemory = session.smartMemory || '';
     setSmartMemory(sessionMemory);
     setMemoryDraft(sessionMemory);
