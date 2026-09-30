@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useRef } from 'react';
 import {
   Plus,
   Trash2,
@@ -11,7 +11,15 @@ import {
   Key,
   Image as ImageIcon,
   Volume2,
+  Download,
+  Upload,
+  Database,
+  AlertTriangle,
+  Check,
+  AlertCircle,
+  X,
 } from 'lucide-react';
+import { playTapSound } from '@/lib/audio';
 import type {
   AIProviderConfig,
   ImageProviderConfig,
@@ -88,6 +96,15 @@ export function AIProvidersSettings() {
   const [notificationMessage, setNotificationMessage] = useState<string | null>(null);
   const [formError, setFormError] = useState<string | null>(null);
 
+  // Providers Backup & Restore states
+  const [backupExporting, setBackupExporting] = useState<boolean>(false);
+  const [backupImporting, setBackupImporting] = useState<boolean>(false);
+  const [backupStatus, setBackupStatus] = useState<{
+    type: 'success' | 'error' | 'info' | 'progress';
+    message: string;
+  } | null>(null);
+  const providersFileInputRef = useRef<HTMLInputElement>(null);
+
   // Sync state to storage
   const updateProvidersState = (newState: AIProvidersState) => {
     setProvidersState(newState);
@@ -102,6 +119,603 @@ export function AIProvidersSettings() {
   const updateVoiceProvidersState = (newState: VoiceProvidersState) => {
     setVoiceProvidersState(newState);
     storage.saveVoiceProvidersState(newState);
+  };
+
+  // Download full providers backup into a single JSON file
+  const handleDownloadProvidersBackup = async () => {
+    if (backupExporting || backupImporting) return;
+    playTapSound();
+    setBackupExporting(true);
+    setBackupStatus({
+      type: 'progress',
+      message: 'Packaging AI providers configuration...',
+    });
+
+    try {
+      // Small non-blocking tick so UI updates
+      await new Promise((resolve) => setTimeout(resolve, 60));
+
+      const currentText = storage.getAIProvidersState();
+      const currentImage = storage.getImageProvidersState();
+      const currentVoice = storage.getVoiceProvidersState();
+
+      // Format Text Providers: name, category, base URL/endpoint, model, max tokens, request method, strategy, force-on/off state, health status, per-key strategy, and real API key values
+      const exportedText = currentText.providers.map((p) => {
+        const overallHealth: KeyHealthStatus = p.keys.some((k) => k.status === 'rate_limited')
+          ? 'rate_limited'
+          : p.keys.some((k) => k.status === 'error')
+          ? 'error'
+          : p.keys.some((k) => k.status === 'healthy')
+          ? 'healthy'
+          : 'untested';
+        const rateLimitStatus = p.keys.some((k) => k.status === 'rate_limited') ? 'rate_limited' : 'normal';
+        const forceOnOff = p.reasoningOverride === 'force_on' ? 'force-on' : p.reasoningOverride === 'force_off' ? 'force-off' : (p.reasoningOverride || 'auto');
+        const strat = p.keyStrategy === 'round_robin' ? 'round-robin' : (p.keyStrategy || 'failover');
+
+        return {
+          id: p.id,
+          name: p.name,
+          category: 'text' as const,
+          url: p.url,
+          baseUrl: p.url,
+          endpoint: p.url,
+          model: p.model,
+          models: p.models,
+          maxTokens: p.maxTokens,
+          requestMethod: 'POST/JSON',
+          strategy: strat,
+          perKeyStrategy: strat,
+          keyStrategy: p.keyStrategy,
+          preferredKeyId: p.preferredKeyId,
+          reasoningOverride: p.reasoningOverride || 'auto',
+          forceState: forceOnOff,
+          forceOnOffState: forceOnOff,
+          healthStatus: overallHealth,
+          rateLimitStatus: rateLimitStatus,
+          capabilities: p.capabilities,
+          isDefault: p.isDefault,
+          extraParams: p.extraParams,
+          reasoningParams: p.reasoningParams,
+          apiKeys: p.keys.map((k) => k.key),
+          keys: p.keys.map((k) => ({
+            id: k.id,
+            key: k.key, // real API key value in plaintext
+            label: k.label,
+            status: k.status, // health/rate-limit status
+            lastTested: k.lastTested,
+            lastError: k.lastError,
+            cooldownUntil: k.cooldownUntil,
+          })),
+        };
+      });
+
+      // Format Image Providers: name, category, base URL/endpoint, model, request method, strategy, health status, per-key strategy, and real API key values
+      const exportedImage = currentImage.providers.map((p) => {
+        const overallHealth: KeyHealthStatus = p.keys.some((k) => k.status === 'rate_limited')
+          ? 'rate_limited'
+          : p.keys.some((k) => k.status === 'error')
+          ? 'error'
+          : p.keys.some((k) => k.status === 'healthy')
+          ? 'healthy'
+          : 'untested';
+        const rateLimitStatus = p.keys.some((k) => k.status === 'rate_limited') ? 'rate_limited' : 'normal';
+        const strat = p.keyStrategy === 'round_robin' ? 'round-robin' : (p.keyStrategy || 'failover');
+        const reqMethod = p.requestType === 'get' ? 'GET/URL' : p.requestType === 'sdk' ? 'SDK' : 'POST/JSON';
+
+        return {
+          id: p.id,
+          name: p.name,
+          category: 'image' as const,
+          url: p.url,
+          baseUrl: p.url,
+          endpoint: p.url,
+          model: p.model,
+          requestType: p.requestType || 'post',
+          requestMethod: reqMethod,
+          customHeaderName: p.customHeaderName,
+          requestBodyTemplate: p.requestBodyTemplate,
+          strategy: strat,
+          perKeyStrategy: strat,
+          keyStrategy: p.keyStrategy,
+          preferredKeyId: p.preferredKeyId,
+          forceState: 'n/a',
+          forceOnOffState: 'n/a',
+          healthStatus: overallHealth,
+          rateLimitStatus: rateLimitStatus,
+          isDefault: p.isDefault,
+          apiKeys: p.keys.map((k) => k.key),
+          keys: p.keys.map((k) => ({
+            id: k.id,
+            key: k.key, // real API key value in plaintext
+            label: k.label,
+            status: k.status, // health/rate-limit status
+            lastTested: k.lastTested,
+            lastError: k.lastError,
+            cooldownUntil: k.cooldownUntil,
+          })),
+        };
+      });
+
+      // Format Voice Providers: name, category, base URL/endpoint, model, voiceId, request method, strategy, health status, per-key strategy, and real API key values
+      const exportedVoice = currentVoice.providers.map((p) => {
+        const overallHealth: KeyHealthStatus = p.keys.some((k) => k.status === 'rate_limited')
+          ? 'rate_limited'
+          : p.keys.some((k) => k.status === 'error')
+          ? 'error'
+          : p.keys.some((k) => k.status === 'healthy')
+          ? 'healthy'
+          : 'untested';
+        const rateLimitStatus = p.keys.some((k) => k.status === 'rate_limited') ? 'rate_limited' : 'normal';
+        const strat = p.keyStrategy === 'round_robin' ? 'round-robin' : (p.keyStrategy || 'failover');
+        const reqMethod = p.requestType === 'get' ? 'GET/URL' : 'POST/JSON';
+
+        return {
+          id: p.id,
+          name: p.name,
+          category: 'voice' as const,
+          url: p.url,
+          baseUrl: p.url,
+          endpoint: p.url,
+          voicesUrl: p.voicesUrl,
+          model: p.model,
+          voiceId: p.voiceId,
+          requestType: p.requestType || 'post',
+          requestMethod: reqMethod,
+          customHeaderName: p.customHeaderName,
+          requestBodyTemplate: p.requestBodyTemplate,
+          strategy: strat,
+          perKeyStrategy: strat,
+          keyStrategy: p.keyStrategy,
+          preferredKeyId: p.preferredKeyId,
+          forceState: 'n/a',
+          forceOnOffState: 'n/a',
+          healthStatus: overallHealth,
+          rateLimitStatus: rateLimitStatus,
+          isDefault: p.isDefault,
+          apiKeys: p.keys.map((k) => k.key),
+          keys: p.keys.map((k) => ({
+            id: k.id,
+            key: k.key, // real API key value in plaintext
+            label: k.label,
+            status: k.status, // health/rate-limit status
+            lastTested: k.lastTested,
+            lastError: k.lastError,
+            cooldownUntil: k.cooldownUntil,
+          })),
+        };
+      });
+
+      // Record which provider is currently marked "Active" in each of the three sections
+      const activeChatProvider = currentText.providers.find((p) => p.id === currentText.activeProviderId);
+      const activeImageProvider = currentImage.providers.find((p) => p.id === currentImage.activeProviderId);
+      const activeVoiceProvider = currentVoice.providers.find((p) => p.id === currentVoice.activeProviderId);
+
+      const activeSelections = {
+        activeChatProviderId: currentText.activeProviderId || 'existing',
+        activeChatProviderName: currentText.activeProviderId === 'existing' ? 'Existing AI' : (activeChatProvider?.name || 'Existing AI'),
+        activeChatAIProvider: currentText.activeProviderId === 'existing' ? 'Existing AI' : (activeChatProvider?.name || 'Existing AI'),
+        activeImageProviderId: currentImage.activeProviderId || '',
+        activeImageProviderName: activeImageProvider?.name || '',
+        activeImageProvider: activeImageProvider?.name || '',
+        activeVoiceProviderId: currentVoice.activeProviderId || '',
+        activeVoiceProviderName: activeVoiceProvider?.name || '',
+        activeVoiceAIEngine: activeVoiceProvider?.name || '',
+      };
+
+      const backupPayload = {
+        version: 1,
+        type: 'NEXUS_PROVIDERS_BACKUP',
+        exportedAt: new Date().toISOString(),
+        activeSelections,
+        textProviders: exportedText,
+        imageProviders: exportedImage,
+        voiceProviders: exportedVoice,
+      };
+
+      const dateStr = new Date().toISOString().slice(0, 10);
+      const filename = `nexus-ai-providers-${dateStr}.json`;
+
+      const jsonStr = JSON.stringify(backupPayload, null, 2);
+      const blob = new Blob([jsonStr], { type: 'application/json' });
+      const downloadUrl = URL.createObjectURL(blob);
+
+      const link = document.createElement('a');
+      link.href = downloadUrl;
+      link.download = filename;
+      document.body.appendChild(link);
+      link.click();
+      document.body.removeChild(link);
+
+      setTimeout(() => {
+        URL.revokeObjectURL(downloadUrl);
+      }, 15000);
+
+      const totalCount = exportedText.length + exportedImage.length + exportedVoice.length;
+      setBackupStatus({
+        type: 'success',
+        message: `Exported ${totalCount} providers (${exportedText.length} text, ${exportedImage.length} image, ${exportedVoice.length} voice) to ${filename}`,
+      });
+    } catch (err: unknown) {
+      console.error('[AIProvidersSettings] Backup export error:', err);
+      const msg = err instanceof Error ? err.message : String(err);
+      setBackupStatus({
+        type: 'error',
+        message: `Failed to export providers backup: ${msg}`,
+      });
+    } finally {
+      setBackupExporting(false);
+    }
+  };
+
+  // Upload and restore providers from backup file
+  const handleUploadProvidersBackup = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+
+    playTapSound();
+    setBackupImporting(true);
+    setBackupStatus({
+      type: 'progress',
+      message: 'Reading providers backup file...',
+    });
+
+    try {
+      const text = await file.text();
+      let parsed: Record<string, unknown> | null = null;
+      try {
+        parsed = JSON.parse(text) as Record<string, unknown>;
+      } catch {
+        setBackupStatus({
+          type: 'error',
+          message: 'The selected file is not valid JSON. Please select a valid NEXUS providers backup file.',
+        });
+        setBackupImporting(false);
+        if (e.target) e.target.value = '';
+        return;
+      }
+
+      // Validate schema
+      if (!parsed || typeof parsed !== 'object' || parsed.type !== 'NEXUS_PROVIDERS_BACKUP') {
+        setBackupStatus({
+          type: 'error',
+          message: 'Invalid backup file: Not a recognized NEXUS_PROVIDERS_BACKUP file.',
+        });
+        setBackupImporting(false);
+        if (e.target) e.target.value = '';
+        return;
+      }
+
+      setBackupStatus({
+        type: 'progress',
+        message: 'Analyzing providers and checking duplicates...',
+      });
+
+      // Non-blocking tick so UI updates
+      await new Promise((resolve) => setTimeout(resolve, 60));
+
+      const currentText = storage.getAIProvidersState();
+      const currentImage = storage.getImageProvidersState();
+      const currentVoice = storage.getVoiceProvidersState();
+
+      const normalizeName = (name?: string) => (name || '').trim().toLowerCase();
+      const normalizeUrl = (url?: string) => (url || '').trim().replace(/\/+$/, '').toLowerCase();
+      const isMatch = (aName?: string, aUrl?: string, bName?: string, bUrl?: string) => {
+        return normalizeName(aName) === normalizeName(bName) && normalizeUrl(aUrl) === normalizeUrl(bUrl);
+      };
+
+      const updatedTextList: AIProviderConfig[] = [...currentText.providers];
+      const updatedImageList: ImageProviderConfig[] = [...currentImage.providers];
+      const updatedVoiceList: VoiceProviderConfig[] = [...currentVoice.providers];
+
+      let addedText = 0;
+      let skippedText = 0;
+      let addedImage = 0;
+      let skippedImage = 0;
+      let addedVoice = 0;
+      let skippedVoice = 0;
+
+      const idMapText: Record<string, string> = {};
+      const idMapImage: Record<string, string> = {};
+      const idMapVoice: Record<string, string> = {};
+
+      // 1. Process Text Providers (skip duplicates matching provider name + base URL within category)
+      const incomingText = Array.isArray(parsed.textProviders) ? (parsed.textProviders as Record<string, unknown>[]) : [];
+      for (let i = 0; i < incomingText.length; i++) {
+        const item = incomingText[i];
+        if (!item || typeof item !== 'object') continue;
+
+        const name = (item.name as string) || '';
+        const url = (item.url as string) || (item.baseUrl as string) || (item.endpoint as string) || '';
+
+        const existingMatch = updatedTextList.find((p) => isMatch(p.name, p.url, name, url));
+        if (existingMatch) {
+          skippedText++;
+          if (typeof item.id === 'string') idMapText[item.id] = existingMatch.id;
+        } else {
+          const originalId = typeof item.id === 'string' ? item.id : '';
+          const finalId = originalId && !updatedTextList.some((p) => p.id === originalId)
+            ? originalId
+            : `provider_${Date.now()}_${Math.random().toString(36).slice(2, 6)}`;
+
+          let rawKeys: Record<string, unknown>[] = [];
+          if (Array.isArray(item.keys)) {
+            rawKeys = item.keys as Record<string, unknown>[];
+          } else if (Array.isArray(item.apiKeys)) {
+            rawKeys = (item.apiKeys as string[]).map((k, idx) => ({ key: k, label: `API Key ${idx + 1}`, status: 'untested' }));
+          } else if (typeof item.apiKey === 'string' && item.apiKey) {
+            rawKeys = [{ key: item.apiKey, label: 'API Key 1', status: 'untested' }];
+          }
+
+          const textStrat: KeyStrategy = (item.keyStrategy === 'round_robin' || item.strategy === 'round-robin' || item.perKeyStrategy === 'round-robin') ? 'round_robin' : 'failover';
+          const reasoningMode: ReasoningOverrideMode = (item.forceState === 'force-on' || item.forceOnOffState === 'force-on' || item.reasoningOverride === 'force_on')
+            ? 'force_on'
+            : (item.forceState === 'force-off' || item.forceOnOffState === 'force-off' || item.reasoningOverride === 'force_off')
+            ? 'force_off'
+            : 'auto';
+
+          const newProvider: AIProviderConfig = {
+            id: finalId,
+            name: name || 'Imported Text Provider',
+            url: url || 'https://openrouter.ai/api/v1/chat/completions',
+            model: (item.model as string) || 'deepseek/deepseek-chat',
+            models: Array.isArray(item.models) ? (item.models as Array<{ id: string; name?: string }>) : undefined,
+            maxTokens: typeof item.maxTokens === 'number' ? item.maxTokens : undefined,
+            keyStrategy: textStrat,
+            preferredKeyId: typeof item.preferredKeyId === 'string' ? item.preferredKeyId : undefined,
+            keys: rawKeys.map((k, idx) => ({
+              id: typeof k.id === 'string' ? k.id : `key_${Date.now()}_${idx}`,
+              key: typeof k.key === 'string' ? k.key : typeof k.apiKey === 'string' ? k.apiKey : typeof k.value === 'string' ? k.value : '',
+              label: typeof k.label === 'string' ? k.label : `API Key ${idx + 1}`,
+              status: (k.status as KeyHealthStatus) || 'untested',
+              lastTested: typeof k.lastTested === 'number' ? k.lastTested : undefined,
+              lastError: typeof k.lastError === 'string' ? k.lastError : undefined,
+              cooldownUntil: typeof k.cooldownUntil === 'number' ? k.cooldownUntil : undefined,
+            })),
+            capabilities: (item.capabilities as AIProviderConfig['capabilities']) || { text: true, tools: true, web: true, wikipedia: true, memory: true },
+            isDefault: Boolean(item.isDefault),
+            extraParams: (item.extraParams as Record<string, unknown>) || undefined,
+            reasoningParams: (item.reasoningParams as Record<string, unknown>) || undefined,
+            reasoningOverride: reasoningMode,
+          };
+
+          updatedTextList.push(newProvider);
+          addedText++;
+          if (originalId) idMapText[originalId] = finalId;
+        }
+
+        if (i % 3 === 0) {
+          // Yield to event loop
+          await new Promise((resolve) => setTimeout(resolve, 0));
+        }
+      }
+
+      // 2. Process Image Providers (skip duplicates matching provider name + base URL within category)
+      const incomingImage = Array.isArray(parsed.imageProviders) ? (parsed.imageProviders as Record<string, unknown>[]) : [];
+      for (let i = 0; i < incomingImage.length; i++) {
+        const item = incomingImage[i];
+        if (!item || typeof item !== 'object') continue;
+
+        const name = (item.name as string) || '';
+        const url = (item.url as string) || (item.baseUrl as string) || (item.endpoint as string) || '';
+
+        const existingMatch = updatedImageList.find((p) => isMatch(p.name, p.url, name, url));
+        if (existingMatch) {
+          skippedImage++;
+          if (typeof item.id === 'string') idMapImage[item.id] = existingMatch.id;
+        } else {
+          const originalId = typeof item.id === 'string' ? item.id : '';
+          const finalId = originalId && !updatedImageList.some((p) => p.id === originalId)
+            ? originalId
+            : `img_prov_${Date.now()}_${Math.random().toString(36).slice(2, 6)}`;
+
+          let rawKeys: Record<string, unknown>[] = [];
+          if (Array.isArray(item.keys)) {
+            rawKeys = item.keys as Record<string, unknown>[];
+          } else if (Array.isArray(item.apiKeys)) {
+            rawKeys = (item.apiKeys as string[]).map((k, idx) => ({ key: k, label: `API Key ${idx + 1}`, status: 'untested' }));
+          } else if (typeof item.apiKey === 'string' && item.apiKey) {
+            rawKeys = [{ key: item.apiKey, label: 'API Key 1', status: 'untested' }];
+          }
+
+          const imgStrat: KeyStrategy = (item.keyStrategy === 'round_robin' || item.strategy === 'round-robin' || item.perKeyStrategy === 'round-robin') ? 'round_robin' : 'failover';
+
+          const newProvider: ImageProviderConfig = {
+            id: finalId,
+            name: name || 'Imported Image Provider',
+            url: url,
+            model: typeof item.model === 'string' ? item.model : undefined,
+            requestType: (item.requestType as ImageProviderConfig['requestType']) || (item.requestMethod === 'GET/URL' ? 'get' : item.requestMethod === 'SDK' ? 'sdk' : 'post'),
+            customHeaderName: typeof item.customHeaderName === 'string' ? item.customHeaderName : undefined,
+            requestBodyTemplate: typeof item.requestBodyTemplate === 'string' ? item.requestBodyTemplate : undefined,
+            keyStrategy: imgStrat,
+            preferredKeyId: typeof item.preferredKeyId === 'string' ? item.preferredKeyId : undefined,
+            keys: rawKeys.map((k, idx) => ({
+              id: typeof k.id === 'string' ? k.id : `key_${Date.now()}_${idx}`,
+              key: typeof k.key === 'string' ? k.key : typeof k.apiKey === 'string' ? k.apiKey : typeof k.value === 'string' ? k.value : '',
+              label: typeof k.label === 'string' ? k.label : `API Key ${idx + 1}`,
+              status: (k.status as KeyHealthStatus) || 'untested',
+              lastTested: typeof k.lastTested === 'number' ? k.lastTested : undefined,
+              lastError: typeof k.lastError === 'string' ? k.lastError : undefined,
+              cooldownUntil: typeof k.cooldownUntil === 'number' ? k.cooldownUntil : undefined,
+            })),
+            isDefault: Boolean(item.isDefault),
+          };
+
+          updatedImageList.push(newProvider);
+          addedImage++;
+          if (originalId) idMapImage[originalId] = finalId;
+        }
+
+        if (i % 3 === 0) {
+          // Yield to event loop
+          await new Promise((resolve) => setTimeout(resolve, 0));
+        }
+      }
+
+      // 3. Process Voice Providers (skip duplicates matching provider name + base URL within category)
+      const incomingVoice = Array.isArray(parsed.voiceProviders) ? (parsed.voiceProviders as Record<string, unknown>[]) : [];
+      for (let i = 0; i < incomingVoice.length; i++) {
+        const item = incomingVoice[i];
+        if (!item || typeof item !== 'object') continue;
+
+        const name = (item.name as string) || '';
+        const url = (item.url as string) || (item.baseUrl as string) || (item.endpoint as string) || '';
+
+        const existingMatch = updatedVoiceList.find((p) => isMatch(p.name, p.url, name, url));
+        if (existingMatch) {
+          skippedVoice++;
+          if (typeof item.id === 'string') idMapVoice[item.id] = existingMatch.id;
+        } else {
+          const originalId = typeof item.id === 'string' ? item.id : '';
+          const finalId = originalId && !updatedVoiceList.some((p) => p.id === originalId)
+            ? originalId
+            : `voice_prov_${Date.now()}_${Math.random().toString(36).slice(2, 6)}`;
+
+          let rawKeys: Record<string, unknown>[] = [];
+          if (Array.isArray(item.keys)) {
+            rawKeys = item.keys as Record<string, unknown>[];
+          } else if (Array.isArray(item.apiKeys)) {
+            rawKeys = (item.apiKeys as string[]).map((k, idx) => ({ key: k, label: `API Key ${idx + 1}`, status: 'untested' }));
+          } else if (typeof item.apiKey === 'string' && item.apiKey) {
+            rawKeys = [{ key: item.apiKey, label: 'API Key 1', status: 'untested' }];
+          }
+
+          const voiceStrat: KeyStrategy = (item.keyStrategy === 'round_robin' || item.strategy === 'round-robin' || item.perKeyStrategy === 'round-robin') ? 'round_robin' : 'failover';
+
+          const newProvider: VoiceProviderConfig = {
+            id: finalId,
+            name: name || 'Imported Voice Provider',
+            url: url,
+            voicesUrl: typeof item.voicesUrl === 'string' ? item.voicesUrl : undefined,
+            model: typeof item.model === 'string' ? item.model : undefined,
+            voiceId: typeof item.voiceId === 'string' ? item.voiceId : undefined,
+            requestType: (item.requestType as VoiceProviderConfig['requestType']) || (item.requestMethod === 'GET/URL' ? 'get' : 'post'),
+            customHeaderName: typeof item.customHeaderName === 'string' ? item.customHeaderName : undefined,
+            requestBodyTemplate: typeof item.requestBodyTemplate === 'string' ? item.requestBodyTemplate : undefined,
+            keyStrategy: voiceStrat,
+            preferredKeyId: typeof item.preferredKeyId === 'string' ? item.preferredKeyId : undefined,
+            keys: rawKeys.map((k, idx) => ({
+              id: typeof k.id === 'string' ? k.id : `key_${Date.now()}_${idx}`,
+              key: typeof k.key === 'string' ? k.key : typeof k.apiKey === 'string' ? k.apiKey : typeof k.value === 'string' ? k.value : '',
+              label: typeof k.label === 'string' ? k.label : `API Key ${idx + 1}`,
+              status: (k.status as KeyHealthStatus) || 'untested',
+              lastTested: typeof k.lastTested === 'number' ? k.lastTested : undefined,
+              lastError: typeof k.lastError === 'string' ? k.lastError : undefined,
+              cooldownUntil: typeof k.cooldownUntil === 'number' ? k.cooldownUntil : undefined,
+            })),
+            isDefault: Boolean(item.isDefault),
+          };
+
+          updatedVoiceList.push(newProvider);
+          addedVoice++;
+          if (originalId) idMapVoice[originalId] = finalId;
+        }
+
+        if (i % 3 === 0) {
+          // Yield to event loop
+          await new Promise((resolve) => setTimeout(resolve, 0));
+        }
+      }
+
+      // 4. Restore Active Selections per section
+      const activeSelections = (parsed.activeSelections as Record<string, string>) || {};
+
+      // Text / Active Chat AI Provider selection
+      let newActiveText = currentText.activeProviderId;
+      const requestedChatId = activeSelections.activeChatProviderId || activeSelections.activeChatAIProvider;
+      const requestedChatName = activeSelections.activeChatProviderName || activeSelections.activeChatAIProvider;
+      if (requestedChatId === 'existing' || requestedChatName === 'Existing AI') {
+        newActiveText = 'existing';
+      } else if (requestedChatId) {
+        const mappedId = idMapText[requestedChatId] || requestedChatId;
+        const found = updatedTextList.find(
+          (p) =>
+            p.id === mappedId ||
+            (requestedChatName &&
+              normalizeName(p.name) === normalizeName(requestedChatName))
+        );
+        if (found) {
+          newActiveText = found.id;
+        }
+      }
+
+      // Image / Active Image Provider selection
+      let newActiveImage = currentImage.activeProviderId;
+      const requestedImageId = activeSelections.activeImageProviderId || activeSelections.activeImageProvider;
+      const requestedImageName = activeSelections.activeImageProviderName || activeSelections.activeImageProvider;
+      if (requestedImageId) {
+        const mappedId = idMapImage[requestedImageId] || requestedImageId;
+        const found = updatedImageList.find(
+          (p) =>
+            p.id === mappedId ||
+            (requestedImageName &&
+              normalizeName(p.name) === normalizeName(requestedImageName))
+        );
+        if (found) {
+          newActiveImage = found.id;
+        }
+      }
+
+      // Voice / Active Voice AI Engine selection
+      let newActiveVoice = currentVoice.activeProviderId;
+      const requestedVoiceId = activeSelections.activeVoiceProviderId || activeSelections.activeVoiceAIEngine;
+      const requestedVoiceName = activeSelections.activeVoiceProviderName || activeSelections.activeVoiceAIEngine;
+      if (requestedVoiceId) {
+        const mappedId = idMapVoice[requestedVoiceId] || requestedVoiceId;
+        const found = updatedVoiceList.find(
+          (p) =>
+            p.id === mappedId ||
+            (requestedVoiceName &&
+              normalizeName(p.name) === normalizeName(requestedVoiceName))
+        );
+        if (found) {
+          newActiveVoice = found.id;
+        }
+      }
+
+      // Save all updated states
+      const nextTextState: AIProvidersState = {
+        activeProviderId: newActiveText,
+        providers: updatedTextList,
+      };
+      const nextImageState: ImageProvidersState = {
+        activeProviderId: newActiveImage,
+        providers: updatedImageList,
+      };
+      const nextVoiceState: VoiceProvidersState = {
+        activeProviderId: newActiveVoice,
+        providers: updatedVoiceList,
+      };
+
+      updateProvidersState(nextTextState);
+      updateImageProvidersState(nextImageState);
+      updateVoiceProvidersState(nextVoiceState);
+
+      const totalAdded = addedText + addedImage + addedVoice;
+      const totalSkipped = skippedText + skippedImage + skippedVoice;
+
+      if (totalAdded > 0) {
+        setBackupStatus({
+          type: 'success',
+          message: `Providers backup restored: ${totalAdded} added (${addedText} text, ${addedImage} image, ${addedVoice} voice), ${totalSkipped} duplicate(s) skipped. Active selections restored.`,
+        });
+      } else {
+        setBackupStatus({
+          type: 'info',
+          message: `All providers from backup already exist (${totalSkipped} duplicate(s) skipped). Active selections restored.`,
+        });
+      }
+    } catch (err: unknown) {
+      console.error('[AIProvidersSettings] Backup import error:', err);
+      const msg = err instanceof Error ? err.message : String(err);
+      setBackupStatus({
+        type: 'error',
+        message: `Failed to restore providers backup: ${msg}`,
+      });
+    } finally {
+      setBackupImporting(false);
+      if (e.target) e.target.value = '';
+    }
   };
 
   // Keep state synchronized with storage events
@@ -1469,6 +2083,225 @@ export function AIProvidersSettings() {
           </button>
         </div>
       )}
+
+      {/* SECTION 0: AI Providers Backup & Restore */}
+      <div
+        style={{
+          padding: '16px 20px',
+          borderRadius: '12px',
+          background: 'linear-gradient(135deg, rgba(14,31,39,0.85) 0%, rgba(20,28,48,0.85) 100%)',
+          border: '1px solid var(--line)',
+          display: 'flex',
+          flexDirection: 'column',
+          gap: '12px',
+          boxShadow: '0 4px 20px rgba(0,0,0,0.25)',
+        }}
+      >
+        <div
+          style={{
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'space-between',
+            flexWrap: 'wrap',
+            gap: '10px',
+          }}
+        >
+          <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+            <Database size={16} style={{ color: '#38bdf8' }} />
+            <div>
+              <h3 style={{ margin: 0, fontSize: '15px', fontWeight: 600, color: '#fff' }}>
+                AI Providers Backup
+              </h3>
+              <p style={{ margin: '2px 0 0', fontSize: '12px', color: 'var(--muted)' }}>
+                Export or restore your Text, Image, and Voice AI providers, API keys, and active selections.
+              </p>
+            </div>
+          </div>
+
+          <div
+            style={{
+              fontSize: '11px',
+              color: 'var(--muted)',
+              background: 'rgba(255,255,255,0.06)',
+              padding: '3px 9px',
+              borderRadius: '6px',
+              fontFamily: 'DM Mono, monospace',
+            }}
+          >
+            {providersState.providers.length + imageProvidersState.providers.length + voiceProvidersState.providers.length} total providers
+          </div>
+        </div>
+
+        {/* Buttons and persistent note row */}
+        <div
+          style={{
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'space-between',
+            flexWrap: 'wrap',
+            gap: '12px',
+            paddingTop: '4px',
+          }}
+        >
+          <div style={{ display: 'flex', alignItems: 'center', gap: '10px', flexWrap: 'wrap' }}>
+            <button
+              type="button"
+              onClick={handleDownloadProvidersBackup}
+              disabled={backupExporting || backupImporting}
+              className="secondary-button"
+              style={{
+                display: 'inline-flex',
+                alignItems: 'center',
+                gap: '6px',
+                padding: '8px 14px',
+                borderRadius: '8px',
+                fontSize: '12px',
+                fontWeight: 600,
+                color: 'var(--text)',
+                cursor: backupExporting || backupImporting ? 'not-allowed' : 'pointer',
+                opacity: backupExporting || backupImporting ? 0.6 : 1,
+                background: 'rgba(56, 189, 248, 0.09)',
+                borderColor: 'rgba(56, 189, 248, 0.3)',
+                boxShadow: '0 2px 8px rgba(0,0,0,0.2)',
+              }}
+              title="Download full JSON backup of all Text, Image, and Voice AI providers"
+            >
+              {backupExporting ? (
+                <RotateCw size={14} className="animate-spin" style={{ color: '#38bdf8' }} />
+              ) : (
+                <Download size={14} style={{ color: '#38bdf8' }} />
+              )}
+              {backupExporting ? 'Exporting Providers...' : 'Download Providers Backup'}
+            </button>
+
+            <button
+              type="button"
+              onClick={() => providersFileInputRef.current?.click()}
+              disabled={backupExporting || backupImporting}
+              className="secondary-button"
+              style={{
+                display: 'inline-flex',
+                alignItems: 'center',
+                gap: '6px',
+                padding: '8px 14px',
+                borderRadius: '8px',
+                fontSize: '12px',
+                fontWeight: 600,
+                color: 'var(--text)',
+                cursor: backupExporting || backupImporting ? 'not-allowed' : 'pointer',
+                opacity: backupExporting || backupImporting ? 0.6 : 1,
+                background: 'rgba(168, 85, 247, 0.09)',
+                borderColor: 'rgba(168, 85, 247, 0.3)',
+                boxShadow: '0 2px 8px rgba(0,0,0,0.2)',
+              }}
+              title="Upload JSON backup to restore providers and active selections"
+            >
+              {backupImporting ? (
+                <RotateCw size={14} className="animate-spin" style={{ color: '#a855f7' }} />
+              ) : (
+                <Upload size={14} style={{ color: '#a855f7' }} />
+              )}
+              {backupImporting ? 'Restoring Providers...' : 'Upload Providers Backup'}
+            </button>
+
+            <input
+              ref={providersFileInputRef}
+              type="file"
+              accept=".json,application/json"
+              style={{ display: 'none' }}
+              onChange={handleUploadProvidersBackup}
+            />
+          </div>
+
+          {/* Persistent inline note near the Download button */}
+          <div
+            style={{
+              display: 'inline-flex',
+              alignItems: 'center',
+              gap: '6px',
+              padding: '6px 10px',
+              borderRadius: '6px',
+              background: 'rgba(245, 158, 11, 0.1)',
+              border: '1px solid rgba(245, 158, 11, 0.25)',
+              fontSize: '11px',
+              color: '#fbbf24',
+              lineHeight: 1.3,
+            }}
+          >
+            <AlertTriangle size={13} style={{ color: '#fbbf24', flexShrink: 0 }} />
+            <span>This file contains your API keys in plaintext — store it securely.</span>
+          </div>
+        </div>
+
+        {/* Status / Progress Banner */}
+        {backupStatus && (
+          <div
+            style={{
+              display: 'flex',
+              alignItems: 'center',
+              justifyContent: 'space-between',
+              gap: '8px',
+              padding: '8px 12px',
+              borderRadius: '7px',
+              fontSize: '11.5px',
+              marginTop: '4px',
+              background:
+                backupStatus.type === 'error'
+                  ? 'rgba(239, 68, 68, 0.15)'
+                  : backupStatus.type === 'success'
+                  ? 'rgba(34, 197, 94, 0.15)'
+                  : backupStatus.type === 'info'
+                  ? 'rgba(56, 189, 248, 0.15)'
+                  : 'rgba(168, 85, 247, 0.15)',
+              border:
+                backupStatus.type === 'error'
+                  ? '1px solid rgba(239, 68, 68, 0.3)'
+                  : backupStatus.type === 'success'
+                  ? '1px solid rgba(34, 197, 94, 0.3)'
+                  : backupStatus.type === 'info'
+                  ? '1px solid rgba(56, 189, 248, 0.3)'
+                  : '1px solid rgba(168, 85, 247, 0.3)',
+              color:
+                backupStatus.type === 'error'
+                  ? '#fca5a5'
+                  : backupStatus.type === 'success'
+                  ? '#86efac'
+                  : backupStatus.type === 'info'
+                  ? '#7dd3fc'
+                  : '#d8b4fe',
+            }}
+          >
+            <div style={{ display: 'flex', alignItems: 'center', gap: '8px', minWidth: 0 }}>
+              {backupStatus.type === 'progress' && (
+                <RotateCw size={13} className="animate-spin shrink-0" />
+              )}
+              {backupStatus.type === 'success' && <Check size={13} className="shrink-0" />}
+              {backupStatus.type === 'error' && <AlertCircle size={13} className="shrink-0" />}
+              <span style={{ wordBreak: 'break-word', lineHeight: 1.35 }}>
+                {backupStatus.message}
+              </span>
+            </div>
+            {backupStatus.type !== 'progress' && (
+              <button
+                type="button"
+                onClick={() => setBackupStatus(null)}
+                style={{
+                  background: 'none',
+                  border: 'none',
+                  padding: 0,
+                  cursor: 'pointer',
+                  color: 'inherit',
+                  opacity: 0.75,
+                  display: 'flex',
+                }}
+                title="Dismiss"
+              >
+                <X size={13} />
+              </button>
+            )}
+          </div>
+        )}
+      </div>
 
       {/* SECTION 1: Active Text AI Provider Overview */}
       <div
