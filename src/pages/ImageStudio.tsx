@@ -25,6 +25,7 @@ import {
   ChevronLeft,
   ChevronRight,
   Filter,
+  Heart,
 } from 'lucide-react';
 import { storage } from '@/lib/storage';
 import { playTapSound } from '@/lib/audio';
@@ -32,6 +33,7 @@ import { enhanceImagePromptWithAI } from '@/services/imageGenerationService';
 import {
   getStoredGeneratedImages,
   saveGeneratedImageToIndexedDb,
+  updateImageFavoriteInIndexedDb,
   deleteGeneratedImageFromIndexedDb,
   clearAllGeneratedImagesFromIndexedDb,
 } from '@/services/imageIndexedDb';
@@ -188,6 +190,7 @@ export function ImageStudio() {
   const [galleryModalOpen, setGalleryModalOpen] = useState<boolean>(false);
   const [gallerySortOrder, setGallerySortOrder] = useState<'newest' | 'oldest'>('newest');
   const [galleryModelFilter, setGalleryModelFilter] = useState<string | null>(null);
+  const [galleryFavoritesOnly, setGalleryFavoritesOnly] = useState<boolean>(false);
   const [copiedPromptId, setCopiedPromptId] = useState<string | null>(null);
 
   // Gallery Backup states & handlers
@@ -245,6 +248,7 @@ export function ImageStudio() {
         url: item.url || item.imageData || '',
         referenceImageUrl: item.referenceImageUrl || undefined,
         isEdit: Boolean(item.isEdit),
+        isFavorite: Boolean(item.isFavorite),
       }));
 
       const dateStr = new Date().toISOString().slice(0, 10);
@@ -399,6 +403,7 @@ export function ImageStudio() {
           if (!isNaN(parsedTime)) itemTimestamp = parsedTime;
         }
         const itemPrompt = (item.prompt as string) || '';
+        const incomingFavorite = Boolean(item.isFavorite);
 
         const sig = makeSignature(itemPrompt, itemSeed, itemTimestamp);
         const sigExact = makeExactSignature(itemPrompt, itemSeed, itemTimestamp);
@@ -406,6 +411,19 @@ export function ImageStudio() {
         // Deduplication: match by image ID, or by the same prompt, seed and date
         if (existingIds.has(itemId) || existingSignatures.has(sig) || existingSignatures.has(sigExact)) {
           skippedCount++;
+          // When merging, if an image already exists and the file marks it as a favorite, mark it as a favorite too.
+          if (incomingFavorite) {
+            const existingItem = currentStored.find(
+              (cs) =>
+                cs.id === itemId ||
+                makeSignature(cs.prompt, cs.seed, cs.timestamp) === sig ||
+                makeExactSignature(cs.prompt, cs.seed, cs.timestamp) === sigExact
+            );
+            if (existingItem && !existingItem.isFavorite) {
+              existingItem.isFavorite = true;
+              await updateImageFavoriteInIndexedDb(existingItem.id, true);
+            }
+          }
           continue;
         }
 
@@ -424,6 +442,7 @@ export function ImageStudio() {
           timestamp: itemTimestamp,
           referenceImageUrl: (item.referenceImageUrl as string) || undefined,
           isEdit: Boolean(item.isEdit),
+          isFavorite: incomingFavorite,
         };
 
         toAdd.push(validItem);
@@ -433,6 +452,9 @@ export function ImageStudio() {
       }
 
       if (toAdd.length === 0) {
+        // Refresh Recent Generations and Full Gallery immediately to reflect any favorites updated during merge
+        const updatedHistory = await getStoredGeneratedImages();
+        setHistory(updatedHistory);
         setBackupStatus({
           type: 'info',
           message: `All ${validRecords.length} images are already in your gallery (${skippedCount} duplicates skipped).`,
@@ -491,6 +513,36 @@ export function ImageStudio() {
     }, 1800);
   };
 
+  const handleToggleFavorite = async (e: React.MouseEvent, id: string) => {
+    e.stopPropagation();
+    playTapSound();
+    const item = history.find((img) => img.id === id);
+    if (!item) return;
+    const newStatus = !item.isFavorite;
+
+    // Optimistically update React state immediately across all relevant image references
+    setHistory((prev) =>
+      prev.map((img) => (img.id === id ? { ...img, isFavorite: newStatus } : img))
+    );
+    if (fullscreenImage && fullscreenImage.id === id) {
+      setFullscreenImage((prev) => (prev ? { ...prev, isFavorite: newStatus } : null));
+    }
+    if (currentImage && currentImage.id === id) {
+      setCurrentImage((prev) => (prev ? { ...prev, isFavorite: newStatus } : null));
+    }
+
+    // Persist permanently in IndexedDB
+    try {
+      await updateImageFavoriteInIndexedDb(id, newStatus);
+    } catch (err) {
+      console.error('[ImageStudio] Error updating favorite status in IndexedDB:', err);
+    }
+  };
+
+  const favoritesCount = useMemo(() => {
+    return history.filter((item) => Boolean(item.isFavorite)).length;
+  }, [history]);
+
   const distinctGalleryModels = useMemo(() => {
     const models = new Set<string>();
     history.forEach((item) => {
@@ -504,6 +556,9 @@ export function ImageStudio() {
 
   const displayedGalleryImages = useMemo(() => {
     let list = [...history];
+    if (galleryFavoritesOnly) {
+      list = list.filter((item) => Boolean(item.isFavorite));
+    }
     if (galleryModelFilter) {
       list = list.filter((item) => (item.model || item.providerName) === galleryModelFilter);
     }
@@ -513,7 +568,7 @@ export function ImageStudio() {
       return gallerySortOrder === 'newest' ? timeB - timeA : timeA - timeB;
     });
     return list;
-  }, [history, galleryModelFilter, gallerySortOrder]);
+  }, [history, galleryFavoritesOnly, galleryModelFilter, gallerySortOrder]);
 
   // Reset isTrueFullscreen, zoom, and pan whenever fullscreenImage changes or closes
   useEffect(() => {
@@ -4164,8 +4219,48 @@ export function ImageStudio() {
                   )}
                 </div>
 
-                {/* Right: Sort Pill Buttons */}
-                <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
+                {/* Right: Favorites Toggle & Sort Pill Buttons */}
+                <div style={{ display: 'flex', alignItems: 'center', gap: '8px', flexWrap: 'wrap' }}>
+                  {/* Favorites Toggle Button */}
+                  <button
+                    type="button"
+                    onClick={() => {
+                      playTapSound();
+                      setGalleryFavoritesOnly((prev) => !prev);
+                    }}
+                    style={{
+                      background: galleryFavoritesOnly
+                        ? 'rgba(6, 182, 212, 0.22)'
+                        : 'rgba(0, 0, 0, 0.35)',
+                      border: galleryFavoritesOnly
+                        ? '1px solid rgba(34, 211, 238, 0.6)'
+                        : '1px solid rgba(255, 255, 255, 0.1)',
+                      borderRadius: '7px',
+                      color: galleryFavoritesOnly ? '#22d3ee' : 'var(--muted)',
+                      fontSize: '11px',
+                      fontWeight: galleryFavoritesOnly ? 600 : 400,
+                      padding: '3px 10px',
+                      cursor: 'pointer',
+                      transition: 'all 0.15s ease',
+                      display: 'inline-flex',
+                      alignItems: 'center',
+                      gap: '5px',
+                      boxShadow: galleryFavoritesOnly
+                        ? '0 0 10px rgba(34, 211, 238, 0.25)'
+                        : 'none',
+                    }}
+                    title={galleryFavoritesOnly ? 'Show all images' : 'Show only favorites'}
+                  >
+                    <Heart
+                      size={12}
+                      style={{
+                        color: galleryFavoritesOnly ? '#22d3ee' : 'var(--muted)',
+                        fill: galleryFavoritesOnly ? 'currentColor' : 'none',
+                      }}
+                    />
+                    Favorites ({favoritesCount})
+                  </button>
+
                   <span style={{ fontSize: '11.5px', color: 'var(--muted)', fontWeight: 500 }}>
                     Sort:
                   </span>
@@ -4262,26 +4357,56 @@ export function ImageStudio() {
                     gap: '12px',
                   }}
                 >
-                  <ImageIcon size={48} style={{ opacity: 0.3 }} />
-                  <p style={{ fontSize: '14px', margin: 0 }}>No images from this model yet.</p>
-                  <button
-                    type="button"
-                    onClick={() => {
-                      playTapSound();
-                      setGalleryModelFilter(null);
-                    }}
-                    style={{
-                      fontSize: '12px',
-                      color: '#38bdf8',
-                      background: 'rgba(56,189,248,0.1)',
-                      border: '1px solid rgba(56,189,248,0.3)',
-                      borderRadius: '6px',
-                      padding: '4px 12px',
-                      cursor: 'pointer',
-                    }}
-                  >
-                    Show all models
-                  </button>
+                  {galleryFavoritesOnly ? (
+                    <>
+                      <Heart size={44} style={{ color: '#22d3ee', opacity: 0.4 }} />
+                      <p style={{ fontSize: '14px', margin: 0, color: '#e2e8f0', fontWeight: 500 }}>No favorites yet</p>
+                      <p style={{ fontSize: '11.5px', margin: 0, color: 'var(--muted)' }}>
+                        Tap the heart icon on any image thumbnail to add it to your favorites.
+                      </p>
+                      <button
+                        type="button"
+                        onClick={() => {
+                          playTapSound();
+                          setGalleryFavoritesOnly(false);
+                        }}
+                        style={{
+                          fontSize: '12px',
+                          color: '#22d3ee',
+                          background: 'rgba(6,182,212,0.12)',
+                          border: '1px solid rgba(34,211,238,0.3)',
+                          borderRadius: '6px',
+                          padding: '4px 12px',
+                          cursor: 'pointer',
+                        }}
+                      >
+                        Show all images
+                      </button>
+                    </>
+                  ) : (
+                    <>
+                      <ImageIcon size={48} style={{ opacity: 0.3 }} />
+                      <p style={{ fontSize: '14px', margin: 0 }}>No images from this model yet.</p>
+                      <button
+                        type="button"
+                        onClick={() => {
+                          playTapSound();
+                          setGalleryModelFilter(null);
+                        }}
+                        style={{
+                          fontSize: '12px',
+                          color: '#38bdf8',
+                          background: 'rgba(56,189,248,0.1)',
+                          border: '1px solid rgba(56,189,248,0.3)',
+                          borderRadius: '6px',
+                          padding: '4px 12px',
+                          cursor: 'pointer',
+                        }}
+                      >
+                        Show all models
+                      </button>
+                    </>
+                  )}
                 </div>
               ) : (
                 <div
@@ -4447,6 +4572,46 @@ export function ImageStudio() {
                           <Wand2 size={9} /> Enhanced
                         </div>
                       )}
+
+                      {/* Favorite Heart Button (Bottom Right Corner) */}
+                      <button
+                        type="button"
+                        onClick={(e) => handleToggleFavorite(e, item.id)}
+                        style={{
+                          position: 'absolute',
+                          bottom: '6px',
+                          right: '6px',
+                          width: '30px',
+                          height: '30px',
+                          borderRadius: '6px',
+                          touchAction: 'manipulation',
+                          background: item.isFavorite
+                            ? 'rgba(6, 182, 212, 0.32)'
+                            : 'rgba(0, 0, 0, 0.45)',
+                          border: item.isFavorite
+                            ? '1px solid rgba(34, 211, 238, 0.85)'
+                            : '1px solid rgba(255, 255, 255, 0.25)',
+                          color: item.isFavorite ? '#22d3ee' : 'rgba(255, 255, 255, 0.75)',
+                          boxShadow: item.isFavorite
+                            ? '0 0 10px rgba(34, 211, 238, 0.55), 0 2px 6px rgba(0,0,0,0.5)'
+                            : '0 2px 6px rgba(0,0,0,0.4)',
+                          display: 'grid',
+                          placeItems: 'center',
+                          cursor: 'pointer',
+                          zIndex: 10,
+                          backdropFilter: 'blur(4px)',
+                          transition: 'all 0.15s ease',
+                        }}
+                        title={item.isFavorite ? 'Remove from favorites' : 'Add to favorites'}
+                        aria-label={item.isFavorite ? 'Remove from favorites' : 'Add to favorites'}
+                      >
+                        <Heart
+                          size={15}
+                          style={{
+                            fill: item.isFavorite ? 'currentColor' : 'none',
+                          }}
+                        />
+                      </button>
                     </div>
                   ))}
                 </div>
@@ -4572,6 +4737,46 @@ export function ImageStudio() {
               }
             }}
           >
+            {/* Favorite Heart Button */}
+            <button
+              type="button"
+              onClick={(e) => handleToggleFavorite(e, fullscreenImage.id)}
+              style={{
+                position: isTrueFullscreen ? 'fixed' : 'absolute',
+                top: isTrueFullscreen ? '16px' : '-40px',
+                right: isTrueFullscreen ? '58px' : '42px',
+                background: fullscreenImage.isFavorite
+                  ? 'rgba(6, 182, 212, 0.35)'
+                  : 'rgba(0,0,0,0.55)',
+                border: fullscreenImage.isFavorite
+                  ? '1px solid rgba(34, 211, 238, 0.8)'
+                  : '1px solid rgba(255,255,255,0.2)',
+                borderRadius: '50%',
+                color: fullscreenImage.isFavorite ? '#22d3ee' : '#fff',
+                boxShadow: fullscreenImage.isFavorite
+                  ? '0 0 12px rgba(34, 211, 238, 0.6)'
+                  : 'none',
+                width: '34px',
+                height: '34px',
+                display: 'grid',
+                placeItems: 'center',
+                cursor: 'pointer',
+                zIndex: 100001,
+                backdropFilter: 'blur(6px)',
+                opacity: 1,
+                transition: 'all 0.15s ease',
+              }}
+              title={fullscreenImage.isFavorite ? 'Remove from favorites' : 'Add to favorites'}
+              aria-label={fullscreenImage.isFavorite ? 'Remove from favorites' : 'Add to favorites'}
+            >
+              <Heart
+                size={16}
+                style={{
+                  fill: fullscreenImage.isFavorite ? 'currentColor' : 'none',
+                }}
+              />
+            </button>
+
             {/* Close ✕ Button */}
             <button
               type="button"
@@ -4691,6 +4896,43 @@ export function ImageStudio() {
                   <p style={{ margin: 0, color: '#fff', fontSize: '13px', lineHeight: 1.5, display: 'inline' }}>
                     "{fullscreenImage.prompt}"
                   </p>
+                  <button
+                    type="button"
+                    onClick={(e) => handleToggleFavorite(e, fullscreenImage.id)}
+                    style={{
+                      background: fullscreenImage.isFavorite
+                        ? 'rgba(6, 182, 212, 0.25)'
+                        : 'rgba(255, 255, 255, 0.1)',
+                      border: fullscreenImage.isFavorite
+                        ? '1px solid rgba(34, 211, 238, 0.6)'
+                        : '1px solid rgba(255, 255, 255, 0.2)',
+                      borderRadius: '6px',
+                      color: fullscreenImage.isFavorite ? '#22d3ee' : '#fff',
+                      boxShadow: fullscreenImage.isFavorite
+                        ? '0 0 10px rgba(34, 211, 238, 0.4)'
+                        : 'none',
+                      padding: '3px 8px',
+                      display: 'inline-flex',
+                      alignItems: 'center',
+                      gap: '4px',
+                      cursor: 'pointer',
+                      fontSize: '11px',
+                      fontWeight: 500,
+                      transition: 'all 0.15s ease',
+                      flexShrink: 0,
+                    }}
+                    title={fullscreenImage.isFavorite ? 'Remove from favorites' : 'Add to favorites'}
+                  >
+                    <Heart
+                      size={12}
+                      style={{
+                        color: fullscreenImage.isFavorite ? '#22d3ee' : '#fff',
+                        fill: fullscreenImage.isFavorite ? 'currentColor' : 'none',
+                      }}
+                    />
+                    {fullscreenImage.isFavorite ? 'Favorited' : 'Favorite'}
+                  </button>
+
                   <button
                     type="button"
                     onClick={(e) => handleCopyGalleryPrompt(e, fullscreenImage.prompt, fullscreenImage.id)}
