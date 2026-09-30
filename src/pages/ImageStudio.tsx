@@ -18,6 +18,7 @@ import {
   Database,
   Wand2,
   UploadCloud,
+  Upload,
   ImagePlus,
   ArrowRightLeft,
   Columns,
@@ -188,6 +189,297 @@ export function ImageStudio() {
   const [gallerySortOrder, setGallerySortOrder] = useState<'newest' | 'oldest'>('newest');
   const [galleryModelFilter, setGalleryModelFilter] = useState<string | null>(null);
   const [copiedPromptId, setCopiedPromptId] = useState<string | null>(null);
+
+  // Gallery Backup states & handlers
+  const [backupExporting, setBackupExporting] = useState<boolean>(false);
+  const [backupImporting, setBackupImporting] = useState<boolean>(false);
+  const [backupStatus, setBackupStatus] = useState<{
+    type: 'success' | 'error' | 'info' | 'progress';
+    message: string;
+  } | null>(null);
+  const backupFileInputRef = useRef<HTMLInputElement>(null);
+
+  const handleDownloadBackup = async () => {
+    if (backupExporting || backupImporting) return;
+    playTapSound();
+    setBackupExporting(true);
+    setBackupStatus({
+      type: 'progress',
+      message: 'Reading gallery from IndexedDB...',
+    });
+
+    try {
+      const stored = await getStoredGeneratedImages();
+      if (!stored || stored.length === 0) {
+        setBackupStatus({
+          type: 'info',
+          message: 'No images in gallery to export.',
+        });
+        setBackupExporting(false);
+        return;
+      }
+
+      setBackupStatus({
+        type: 'progress',
+        message: `Packaging ${stored.length} ${stored.length === 1 ? 'image' : 'images'}...`,
+      });
+
+      // Small tick so UI reflects progress message
+      await new Promise((resolve) => setTimeout(resolve, 60));
+
+      // Sanitize each image: prompt, provider, model, seed, dimensions, created date, and image data itself
+      // Strictly exclude any API keys, provider settings, or confidential secrets.
+      const sanitizedImages = stored.map((item) => ({
+        id: item.id,
+        prompt: item.prompt || '',
+        originalPrompt: item.originalPrompt || undefined,
+        enhancedPrompt: item.enhancedPrompt || undefined,
+        providerName: item.providerName || 'AI Image Provider',
+        model: item.model || '',
+        seed: typeof item.seed === 'number' ? item.seed : 0,
+        width: typeof item.width === 'number' ? item.width : 1024,
+        height: typeof item.height === 'number' ? item.height : 1024,
+        timestamp: typeof item.timestamp === 'number' ? item.timestamp : Date.now(),
+        createdAt: new Date(item.timestamp || Date.now()).toISOString(),
+        imageData: item.imageData || item.url || '',
+        url: item.url || item.imageData || '',
+        referenceImageUrl: item.referenceImageUrl || undefined,
+        isEdit: Boolean(item.isEdit),
+      }));
+
+      const dateStr = new Date().toISOString().slice(0, 10);
+      const filename = `nexus-image-gallery-${dateStr}.json`;
+
+      const backupPayload = {
+        version: 1,
+        type: 'NEXUS_IMAGE_GALLERY_BACKUP',
+        exportedAt: new Date().toISOString(),
+        count: sanitizedImages.length,
+        images: sanitizedImages,
+      };
+
+      const jsonStr = JSON.stringify(backupPayload, null, 2);
+      const blob = new Blob([jsonStr], { type: 'application/json' });
+      const downloadUrl = URL.createObjectURL(blob);
+
+      const link = document.createElement('a');
+      link.href = downloadUrl;
+      link.download = filename;
+      document.body.appendChild(link);
+      link.click();
+      document.body.removeChild(link);
+
+      setTimeout(() => {
+        URL.revokeObjectURL(downloadUrl);
+      }, 15000);
+
+      setBackupStatus({
+        type: 'success',
+        message: `Exported ${sanitizedImages.length} ${sanitizedImages.length === 1 ? 'image' : 'images'} to ${filename}`,
+      });
+    } catch (err: unknown) {
+      console.error('[ImageStudio] Backup export error:', err);
+      const msg = err instanceof Error ? err.message : String(err);
+      setBackupStatus({
+        type: 'error',
+        message: `Failed to export gallery backup: ${msg}`,
+      });
+    } finally {
+      setBackupExporting(false);
+    }
+  };
+
+  const handleUploadBackup = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+
+    playTapSound();
+    setBackupImporting(true);
+    setBackupStatus({
+      type: 'progress',
+      message: 'Reading backup file...',
+    });
+
+    try {
+      const text = await file.text();
+      let parsed: unknown;
+      try {
+        parsed = JSON.parse(text);
+      } catch {
+        setBackupStatus({
+          type: 'error',
+          message: 'The selected file is not valid JSON. Please select a valid NEXUS gallery backup file.',
+        });
+        setBackupImporting(false);
+        if (e.target) e.target.value = '';
+        return;
+      }
+
+      // Validate NEXUS gallery backup format
+      let incomingImages: unknown[] | null = null;
+      if (parsed && typeof parsed === 'object') {
+        const obj = parsed as Record<string, unknown>;
+        if (obj.type === 'NEXUS_IMAGE_GALLERY_BACKUP' && Array.isArray(obj.images)) {
+          incomingImages = obj.images;
+        } else if (Array.isArray(obj.images)) {
+          incomingImages = obj.images;
+        } else if (Array.isArray(parsed)) {
+          incomingImages = parsed;
+        }
+      }
+
+      if (!incomingImages || !Array.isArray(incomingImages) || incomingImages.length === 0) {
+        setBackupStatus({
+          type: 'error',
+          message: 'Invalid or damaged backup file: Not a recognized NEXUS gallery backup.',
+        });
+        setBackupImporting(false);
+        if (e.target) e.target.value = '';
+        return;
+      }
+
+      // Check that at least some items have valid image data and prompt
+      const validRecords = incomingImages.filter((raw): raw is Record<string, unknown> => {
+        if (!raw || typeof raw !== 'object') return false;
+        const item = raw as Record<string, unknown>;
+        return Boolean((item.imageData || item.url) && typeof item.prompt === 'string');
+      });
+
+      if (validRecords.length === 0) {
+        setBackupStatus({
+          type: 'error',
+          message: 'Damaged backup file: No valid image records found in this backup.',
+        });
+        setBackupImporting(false);
+        if (e.target) e.target.value = '';
+        return;
+      }
+
+      setBackupStatus({
+        type: 'progress',
+        message: `Analyzing ${validRecords.length} images...`,
+      });
+
+      // Fetch currently stored images from IndexedDB to check for duplicates
+      const currentStored = await getStoredGeneratedImages();
+      const existingIds = new Set<string>();
+      const existingSignatures = new Set<string>();
+
+      const makeSignature = (prompt: string, seed: unknown, timestamp: unknown) => {
+        const p = (prompt || '').replace(/\s+/g, ' ').trim();
+        const s = String(seed ?? '');
+        const dateStr = typeof timestamp === 'number' && timestamp > 0 ? new Date(timestamp).toISOString().slice(0, 10) : '';
+        return `${p}__${s}__${dateStr}`;
+      };
+
+      const makeExactSignature = (prompt: string, seed: unknown, timestamp: unknown) => {
+        const p = (prompt || '').replace(/\s+/g, ' ').trim();
+        const s = String(seed ?? '');
+        return `${p}__${s}__${timestamp ?? ''}`;
+      };
+
+      for (const item of currentStored) {
+        if (item.id) existingIds.add(item.id);
+        existingSignatures.add(makeSignature(item.prompt, item.seed, item.timestamp));
+        existingSignatures.add(makeExactSignature(item.prompt, item.seed, item.timestamp));
+      }
+
+      const toAdd: GeneratedImageItem[] = [];
+      let skippedCount = incomingImages.length - validRecords.length;
+
+      for (const item of validRecords) {
+        const imgData = (item.imageData as string) || (item.url as string);
+        const itemId = (item.id as string) || `img_${Date.now()}_${Math.random().toString(36).slice(2, 7)}`;
+        const itemSeed = typeof item.seed === 'number' ? item.seed : 0;
+        let itemTimestamp = Date.now();
+        if (typeof item.timestamp === 'number' && item.timestamp > 0) {
+          itemTimestamp = item.timestamp;
+        } else if (typeof item.createdAt === 'string' && item.createdAt) {
+          const parsedTime = new Date(item.createdAt).getTime();
+          if (!isNaN(parsedTime)) itemTimestamp = parsedTime;
+        }
+        const itemPrompt = (item.prompt as string) || '';
+
+        const sig = makeSignature(itemPrompt, itemSeed, itemTimestamp);
+        const sigExact = makeExactSignature(itemPrompt, itemSeed, itemTimestamp);
+
+        // Deduplication: match by image ID, or by the same prompt, seed and date
+        if (existingIds.has(itemId) || existingSignatures.has(sig) || existingSignatures.has(sigExact)) {
+          skippedCount++;
+          continue;
+        }
+
+        const validItem: GeneratedImageItem = {
+          id: itemId,
+          url: (item.url as string) || imgData,
+          imageData: imgData,
+          prompt: itemPrompt,
+          originalPrompt: (item.originalPrompt as string) || undefined,
+          enhancedPrompt: (item.enhancedPrompt as string) || undefined,
+          providerName: (item.providerName as string) || 'Imported Provider',
+          model: (item.model as string) || '',
+          width: typeof item.width === 'number' ? item.width : 1024,
+          height: typeof item.height === 'number' ? item.height : 1024,
+          seed: itemSeed,
+          timestamp: itemTimestamp,
+          referenceImageUrl: (item.referenceImageUrl as string) || undefined,
+          isEdit: Boolean(item.isEdit),
+        };
+
+        toAdd.push(validItem);
+        existingIds.add(itemId);
+        existingSignatures.add(sig);
+        existingSignatures.add(sigExact);
+      }
+
+      if (toAdd.length === 0) {
+        setBackupStatus({
+          type: 'info',
+          message: `All ${validRecords.length} images are already in your gallery (${skippedCount} duplicates skipped).`,
+        });
+        setBackupImporting(false);
+        if (e.target) e.target.value = '';
+        return;
+      }
+
+      // Add to IndexedDB in responsive non-blocking chunks to keep the browser responsive
+      let addedCount = 0;
+      for (let i = 0; i < toAdd.length; i++) {
+        await saveGeneratedImageToIndexedDb(toAdd[i]);
+        addedCount++;
+
+        if (i % 4 === 0 || i === toAdd.length - 1) {
+          const pct = Math.round((addedCount / toAdd.length) * 100);
+          setBackupStatus({
+            type: 'progress',
+            message: `Importing images... ${addedCount} of ${toAdd.length} (${pct}%)`,
+          });
+          // Yield to event loop to prevent UI freezing on large gallery backups
+          await new Promise((resolve) => setTimeout(resolve, 0));
+        }
+      }
+
+      // Refresh Recent Generations and Full Gallery immediately without page reload
+      const updatedHistory = await getStoredGeneratedImages();
+      setHistory(updatedHistory);
+      setCurrentImage((prev) => prev || updatedHistory[0] || null);
+
+      setBackupStatus({
+        type: 'success',
+        message: `Gallery backup imported: ${addedCount} added, ${skippedCount} skipped.`,
+      });
+    } catch (err: unknown) {
+      console.error('[ImageStudio] Backup import error:', err);
+      const msg = err instanceof Error ? err.message : String(err);
+      setBackupStatus({
+        type: 'error',
+        message: `Failed to import backup: ${msg}`,
+      });
+    } finally {
+      setBackupImporting(false);
+      if (e.target) e.target.value = '';
+    }
+  };
 
   const handleCopyGalleryPrompt = (e: React.MouseEvent, promptText: string, id: string) => {
     e.stopPropagation();
@@ -1631,8 +1923,17 @@ export function ImageStudio() {
           </p>
         </div>
 
-        {/* Quick link to Settings */}
-        <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
+        {/* Quick link to Settings & Gallery Backup */}
+        <div
+          style={{
+            display: 'flex',
+            flexDirection: 'column',
+            alignItems: 'flex-start',
+            gap: '8px',
+            maxWidth: '100%',
+          }}
+          className="sm:items-end"
+        >
           <Link
             to="/settings?category=ai"
             className="secondary-button"
@@ -1650,6 +1951,194 @@ export function ImageStudio() {
           >
             <Settings size={14} /> Configure Image Providers
           </Link>
+
+          {/* Gallery Backup section */}
+          <div
+            style={{
+              display: 'flex',
+              flexDirection: 'column',
+              gap: '8px',
+              padding: '10px 14px',
+              borderRadius: '12px',
+              background: 'linear-gradient(135deg, rgba(14,31,39,0.85) 0%, rgba(20,28,48,0.85) 100%)',
+              border: '1px solid var(--line)',
+              boxShadow: '0 4px 20px rgba(0,0,0,0.25)',
+              maxWidth: '100%',
+            }}
+          >
+            <div
+              style={{
+                display: 'flex',
+                alignItems: 'center',
+                justifyContent: 'space-between',
+                gap: '8px',
+              }}
+            >
+              <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
+                <Database size={13} style={{ color: '#f472b6' }} />
+                <span
+                  style={{
+                    fontSize: '11px',
+                    fontWeight: 700,
+                    color: 'var(--text)',
+                    letterSpacing: '0.04em',
+                    textTransform: 'uppercase',
+                  }}
+                >
+                  Gallery Backup
+                </span>
+              </div>
+              <span
+                style={{
+                  fontSize: '10px',
+                  color: 'var(--muted)',
+                  background: 'rgba(255,255,255,0.06)',
+                  padding: '2px 7px',
+                  borderRadius: '5px',
+                  fontFamily: 'DM Mono, monospace',
+                }}
+              >
+                {history.length} {history.length === 1 ? 'image' : 'images'}
+              </span>
+            </div>
+
+            <div style={{ display: 'flex', alignItems: 'center', gap: '8px', flexWrap: 'wrap' }}>
+              <button
+                type="button"
+                onClick={handleDownloadBackup}
+                disabled={backupExporting || backupImporting}
+                className="secondary-button"
+                style={{
+                  display: 'inline-flex',
+                  alignItems: 'center',
+                  gap: '6px',
+                  padding: '7px 12px',
+                  borderRadius: '8px',
+                  fontSize: '11.5px',
+                  fontWeight: 600,
+                  color: 'var(--text)',
+                  cursor: backupExporting || backupImporting ? 'not-allowed' : 'pointer',
+                  opacity: backupExporting || backupImporting ? 0.6 : 1,
+                  background: 'rgba(56, 189, 248, 0.08)',
+                  borderColor: 'rgba(56, 189, 248, 0.25)',
+                }}
+                title="Export all saved generations into a JSON backup file"
+              >
+                {backupExporting ? (
+                  <RotateCw size={13} className="animate-spin" style={{ color: '#38bdf8' }} />
+                ) : (
+                  <Download size={13} style={{ color: '#38bdf8' }} />
+                )}
+                {backupExporting ? 'Exporting...' : 'Download Backup'}
+              </button>
+
+              <button
+                type="button"
+                onClick={() => backupFileInputRef.current?.click()}
+                disabled={backupExporting || backupImporting}
+                className="secondary-button"
+                style={{
+                  display: 'inline-flex',
+                  alignItems: 'center',
+                  gap: '6px',
+                  padding: '7px 12px',
+                  borderRadius: '8px',
+                  fontSize: '11.5px',
+                  fontWeight: 600,
+                  color: 'var(--text)',
+                  cursor: backupExporting || backupImporting ? 'not-allowed' : 'pointer',
+                  opacity: backupExporting || backupImporting ? 0.6 : 1,
+                  background: 'rgba(168, 85, 247, 0.08)',
+                  borderColor: 'rgba(168, 85, 247, 0.25)',
+                }}
+                title="Restore and merge images from a gallery backup file"
+              >
+                {backupImporting ? (
+                  <RotateCw size={13} className="animate-spin" style={{ color: '#a855f7' }} />
+                ) : (
+                  <Upload size={13} style={{ color: '#a855f7' }} />
+                )}
+                {backupImporting ? 'Importing...' : 'Upload Backup'}
+              </button>
+
+              <input
+                ref={backupFileInputRef}
+                type="file"
+                accept=".json,application/json"
+                style={{ display: 'none' }}
+                onChange={handleUploadBackup}
+              />
+            </div>
+
+            {/* Status or Progress banner */}
+            {backupStatus && (
+              <div
+                style={{
+                  display: 'flex',
+                  alignItems: 'center',
+                  justifyContent: 'space-between',
+                  gap: '8px',
+                  padding: '6px 10px',
+                  borderRadius: '7px',
+                  fontSize: '11px',
+                  marginTop: '2px',
+                  background:
+                    backupStatus.type === 'error'
+                      ? 'rgba(239, 68, 68, 0.15)'
+                      : backupStatus.type === 'success'
+                      ? 'rgba(34, 197, 94, 0.15)'
+                      : backupStatus.type === 'info'
+                      ? 'rgba(56, 189, 248, 0.15)'
+                      : 'rgba(168, 85, 247, 0.15)',
+                  border:
+                    backupStatus.type === 'error'
+                      ? '1px solid rgba(239, 68, 68, 0.3)'
+                      : backupStatus.type === 'success'
+                      ? '1px solid rgba(34, 197, 94, 0.3)'
+                      : backupStatus.type === 'info'
+                      ? '1px solid rgba(56, 189, 248, 0.3)'
+                      : '1px solid rgba(168, 85, 247, 0.3)',
+                  color:
+                    backupStatus.type === 'error'
+                      ? '#fca5a5'
+                      : backupStatus.type === 'success'
+                      ? '#86efac'
+                      : backupStatus.type === 'info'
+                      ? '#7dd3fc'
+                      : '#d8b4fe',
+                }}
+              >
+                <div style={{ display: 'flex', alignItems: 'center', gap: '6px', minWidth: 0 }}>
+                  {backupStatus.type === 'progress' && (
+                    <RotateCw size={12} className="animate-spin shrink-0" />
+                  )}
+                  {backupStatus.type === 'success' && <Check size={12} className="shrink-0" />}
+                  {backupStatus.type === 'error' && <AlertCircle size={12} className="shrink-0" />}
+                  <span style={{ wordBreak: 'break-word', lineHeight: 1.3 }}>
+                    {backupStatus.message}
+                  </span>
+                </div>
+                {backupStatus.type !== 'progress' && (
+                  <button
+                    type="button"
+                    onClick={() => setBackupStatus(null)}
+                    style={{
+                      background: 'none',
+                      border: 'none',
+                      padding: 0,
+                      cursor: 'pointer',
+                      color: 'inherit',
+                      opacity: 0.7,
+                      display: 'flex',
+                    }}
+                    title="Dismiss"
+                  >
+                    <X size={12} />
+                  </button>
+                )}
+              </div>
+            )}
+          </div>
         </div>
       </header>
 
