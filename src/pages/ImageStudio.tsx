@@ -26,6 +26,7 @@ import {
   ChevronRight,
   Filter,
   Heart,
+  CheckSquare,
 } from 'lucide-react';
 import { storage } from '@/lib/storage';
 import { playTapSound } from '@/lib/audio';
@@ -193,6 +194,10 @@ export function ImageStudio() {
   const [galleryFavoritesOnly, setGalleryFavoritesOnly] = useState<boolean>(false);
   const [copiedPromptId, setCopiedPromptId] = useState<string | null>(null);
 
+  // Gallery Selection Mode states
+  const [gallerySelectionMode, setGallerySelectionMode] = useState<boolean>(false);
+  const [selectedImageIds, setSelectedImageIds] = useState<Set<string>>(new Set());
+
   // Gallery Backup states & handlers
   const [backupExporting, setBackupExporting] = useState<boolean>(false);
   const [backupImporting, setBackupImporting] = useState<boolean>(false);
@@ -202,37 +207,34 @@ export function ImageStudio() {
   } | null>(null);
   const backupFileInputRef = useRef<HTMLInputElement>(null);
 
-  const handleDownloadBackup = async () => {
+  const exportImagesToJson = async (
+    imagesToExport: GeneratedImageItem[],
+    filename: string
+  ) => {
     if (backupExporting || backupImporting) return;
     playTapSound();
     setBackupExporting(true);
     setBackupStatus({
       type: 'progress',
-      message: 'Reading gallery from IndexedDB...',
+      message: `Packaging ${imagesToExport.length} ${imagesToExport.length === 1 ? 'image' : 'images'}...`,
     });
 
     try {
-      const stored = await getStoredGeneratedImages();
-      if (!stored || stored.length === 0) {
+      if (imagesToExport.length === 0) {
         setBackupStatus({
           type: 'info',
-          message: 'No images in gallery to export.',
+          message: 'No images to export.',
         });
         setBackupExporting(false);
         return;
       }
-
-      setBackupStatus({
-        type: 'progress',
-        message: `Packaging ${stored.length} ${stored.length === 1 ? 'image' : 'images'}...`,
-      });
 
       // Small tick so UI reflects progress message
       await new Promise((resolve) => setTimeout(resolve, 60));
 
       // Sanitize each image: prompt, provider, model, seed, dimensions, created date, and image data itself
       // Strictly exclude any API keys, provider settings, or confidential secrets.
-      const sanitizedImages = stored.map((item) => ({
+      const sanitizedImages = imagesToExport.map((item) => ({
         id: item.id,
         prompt: item.prompt || '',
         originalPrompt: item.originalPrompt || undefined,
@@ -250,9 +252,6 @@ export function ImageStudio() {
         isEdit: Boolean(item.isEdit),
         isFavorite: Boolean(item.isFavorite),
       }));
-
-      const dateStr = new Date().toISOString().slice(0, 10);
-      const filename = `nexus-image-gallery-${dateStr}.json`;
 
       const backupPayload = {
         version: 1,
@@ -293,77 +292,117 @@ export function ImageStudio() {
     }
   };
 
-  const handleUploadBackup = async (e: React.ChangeEvent<HTMLInputElement>) => {
-    const file = e.target.files?.[0];
-    if (!file) return;
+  const handleDownloadAllImages = async () => {
+    if (backupExporting || backupImporting) return;
+    playTapSound();
+    setBackupExporting(true);
+    setBackupStatus({
+      type: 'progress',
+      message: 'Reading gallery from IndexedDB...',
+    });
 
+    try {
+      const stored = await getStoredGeneratedImages();
+      if (!stored || stored.length === 0) {
+        setBackupStatus({
+          type: 'info',
+          message: 'No images in gallery to export.',
+        });
+        setBackupExporting(false);
+        return;
+      }
+
+      const dateStr = new Date().toISOString().slice(0, 10);
+      const filename = `nexus-image-gallery-${dateStr}.json`;
+      await exportImagesToJson(stored, filename);
+    } catch (err: unknown) {
+      console.error('[ImageStudio] Backup export error:', err);
+      const msg = err instanceof Error ? err.message : String(err);
+      setBackupStatus({
+        type: 'error',
+        message: `Failed to export gallery backup: ${msg}`,
+      });
+      setBackupExporting(false);
+    }
+  };
+
+  const handleOpenSelectionMode = () => {
+    playTapSound();
+    setGalleryModalOpen(true);
+    setGallerySelectionMode(true);
+  };
+
+  const handleToggleSelectImage = (id: string) => {
+    playTapSound();
+    setSelectedImageIds((prev) => {
+      const next = new Set(prev);
+      if (next.has(id)) {
+        next.delete(id);
+      } else {
+        next.add(id);
+      }
+      return next;
+    });
+  };
+
+  const handleSelectAllDisplayed = () => {
+    playTapSound();
+    setSelectedImageIds((prev) => {
+      const next = new Set(prev);
+      displayedGalleryImages.forEach((img) => next.add(img.id));
+      return next;
+    });
+  };
+
+  const handleClearSelection = () => {
+    playTapSound();
+    setSelectedImageIds(new Set());
+  };
+
+  const handleCancelSelectionMode = () => {
+    playTapSound();
+    setGallerySelectionMode(false);
+    setSelectedImageIds(new Set());
+  };
+
+  const handleDownloadSelected = async () => {
+    if (backupExporting || backupImporting) return;
+    if (selectedImageIds.size === 0) {
+      setBackupStatus({
+        type: 'info',
+        message: 'No images selected. Please select at least one image to download.',
+      });
+      return;
+    }
+    const selectedItems = history.filter((img) => selectedImageIds.has(img.id));
+    if (selectedItems.length === 0) {
+      setBackupStatus({
+        type: 'info',
+        message: 'No selected images found in current gallery.',
+      });
+      return;
+    }
+    const dateStr = new Date().toISOString().slice(0, 10);
+    const count = selectedItems.length;
+    const countSuffix = count === 1 ? '1-image' : `${count}-images`;
+    const filename = `nexus-image-gallery-${dateStr}-${countSuffix}.json`;
+
+    await exportImagesToJson(selectedItems, filename);
+  };
+
+  const handleUploadBackup = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const fileList = e.target.files;
+    if (!fileList || fileList.length === 0) return;
+
+    const files = Array.from(fileList);
     playTapSound();
     setBackupImporting(true);
     setBackupStatus({
       type: 'progress',
-      message: 'Reading backup file...',
+      message: files.length > 1 ? `Preparing ${files.length} backup files...` : 'Reading backup file...',
     });
 
     try {
-      const text = await file.text();
-      let parsed: unknown;
-      try {
-        parsed = JSON.parse(text);
-      } catch {
-        setBackupStatus({
-          type: 'error',
-          message: 'The selected file is not valid JSON. Please select a valid NEXUS gallery backup file.',
-        });
-        setBackupImporting(false);
-        if (e.target) e.target.value = '';
-        return;
-      }
-
-      // Validate NEXUS gallery backup format
-      let incomingImages: unknown[] | null = null;
-      if (parsed && typeof parsed === 'object') {
-        const obj = parsed as Record<string, unknown>;
-        if (obj.type === 'NEXUS_IMAGE_GALLERY_BACKUP' && Array.isArray(obj.images)) {
-          incomingImages = obj.images;
-        } else if (Array.isArray(obj.images)) {
-          incomingImages = obj.images;
-        } else if (Array.isArray(parsed)) {
-          incomingImages = parsed;
-        }
-      }
-
-      if (!incomingImages || !Array.isArray(incomingImages) || incomingImages.length === 0) {
-        setBackupStatus({
-          type: 'error',
-          message: 'Invalid or damaged backup file: Not a recognized NEXUS gallery backup.',
-        });
-        setBackupImporting(false);
-        if (e.target) e.target.value = '';
-        return;
-      }
-
-      // Check that at least some items have valid image data and prompt
-      const validRecords = incomingImages.filter((raw): raw is Record<string, unknown> => {
-        if (!raw || typeof raw !== 'object') return false;
-        const item = raw as Record<string, unknown>;
-        return Boolean((item.imageData || item.url) && typeof item.prompt === 'string');
-      });
-
-      if (validRecords.length === 0) {
-        setBackupStatus({
-          type: 'error',
-          message: 'Damaged backup file: No valid image records found in this backup.',
-        });
-        setBackupImporting(false);
-        if (e.target) e.target.value = '';
-        return;
-      }
-
-      setBackupStatus({
-        type: 'progress',
-        message: `Analyzing ${validRecords.length} images...`,
-      });
-
       // Fetch currently stored images from IndexedDB to check for duplicates
       const currentStored = await getStoredGeneratedImages();
       const existingIds = new Set<string>();
@@ -388,96 +427,139 @@ export function ImageStudio() {
         existingSignatures.add(makeExactSignature(item.prompt, item.seed, item.timestamp));
       }
 
-      const toAdd: GeneratedImageItem[] = [];
-      let skippedCount = incomingImages.length - validRecords.length;
+      let totalAdded = 0;
+      let totalSkipped = 0;
+      const failedFiles: string[] = [];
 
-      for (const item of validRecords) {
-        const imgData = (item.imageData as string) || (item.url as string);
-        const itemId = (item.id as string) || `img_${Date.now()}_${Math.random().toString(36).slice(2, 7)}`;
-        const itemSeed = typeof item.seed === 'number' ? item.seed : 0;
-        let itemTimestamp = Date.now();
-        if (typeof item.timestamp === 'number' && item.timestamp > 0) {
-          itemTimestamp = item.timestamp;
-        } else if (typeof item.createdAt === 'string' && item.createdAt) {
-          const parsedTime = new Date(item.createdAt).getTime();
-          if (!isNaN(parsedTime)) itemTimestamp = parsedTime;
-        }
-        const itemPrompt = (item.prompt as string) || '';
-        const incomingFavorite = Boolean(item.isFavorite);
+      for (let fIdx = 0; fIdx < files.length; fIdx++) {
+        const file = files[fIdx];
+        setBackupStatus({
+          type: 'progress',
+          message: files.length > 1
+            ? `Processing file ${fIdx + 1} of ${files.length}: "${file.name}"...`
+            : `Reading backup file "${file.name}"...`,
+        });
+        await new Promise((resolve) => setTimeout(resolve, 10));
 
-        const sig = makeSignature(itemPrompt, itemSeed, itemTimestamp);
-        const sigExact = makeExactSignature(itemPrompt, itemSeed, itemTimestamp);
+        try {
+          const text = await file.text();
+          let parsed: unknown;
+          try {
+            parsed = JSON.parse(text);
+          } catch {
+            failedFiles.push(file.name);
+            continue;
+          }
 
-        // Deduplication: match by image ID, or by the same prompt, seed and date
-        if (existingIds.has(itemId) || existingSignatures.has(sig) || existingSignatures.has(sigExact)) {
-          skippedCount++;
-          // When merging, if an image already exists and the file marks it as a favorite, mark it as a favorite too.
-          if (incomingFavorite) {
-            const existingItem = currentStored.find(
-              (cs) =>
-                cs.id === itemId ||
-                makeSignature(cs.prompt, cs.seed, cs.timestamp) === sig ||
-                makeExactSignature(cs.prompt, cs.seed, cs.timestamp) === sigExact
-            );
-            if (existingItem && !existingItem.isFavorite) {
-              existingItem.isFavorite = true;
-              await updateImageFavoriteInIndexedDb(existingItem.id, true);
+          // Validate NEXUS gallery backup format
+          let incomingImages: unknown[] | null = null;
+          if (parsed && typeof parsed === 'object') {
+            const obj = parsed as Record<string, unknown>;
+            if (obj.type === 'NEXUS_IMAGE_GALLERY_BACKUP' && Array.isArray(obj.images)) {
+              incomingImages = obj.images;
+            } else if (Array.isArray(obj.images)) {
+              incomingImages = obj.images;
+            } else if (Array.isArray(parsed)) {
+              incomingImages = parsed;
             }
           }
-          continue;
-        }
 
-        const validItem: GeneratedImageItem = {
-          id: itemId,
-          url: (item.url as string) || imgData,
-          imageData: imgData,
-          prompt: itemPrompt,
-          originalPrompt: (item.originalPrompt as string) || undefined,
-          enhancedPrompt: (item.enhancedPrompt as string) || undefined,
-          providerName: (item.providerName as string) || 'Imported Provider',
-          model: (item.model as string) || '',
-          width: typeof item.width === 'number' ? item.width : 1024,
-          height: typeof item.height === 'number' ? item.height : 1024,
-          seed: itemSeed,
-          timestamp: itemTimestamp,
-          referenceImageUrl: (item.referenceImageUrl as string) || undefined,
-          isEdit: Boolean(item.isEdit),
-          isFavorite: incomingFavorite,
-        };
+          if (!incomingImages || !Array.isArray(incomingImages) || incomingImages.length === 0) {
+            failedFiles.push(file.name);
+            continue;
+          }
 
-        toAdd.push(validItem);
-        existingIds.add(itemId);
-        existingSignatures.add(sig);
-        existingSignatures.add(sigExact);
-      }
-
-      if (toAdd.length === 0) {
-        // Refresh Recent Generations and Full Gallery immediately to reflect any favorites updated during merge
-        const updatedHistory = await getStoredGeneratedImages();
-        setHistory(updatedHistory);
-        setBackupStatus({
-          type: 'info',
-          message: `All ${validRecords.length} images are already in your gallery (${skippedCount} duplicates skipped).`,
-        });
-        setBackupImporting(false);
-        if (e.target) e.target.value = '';
-        return;
-      }
-
-      // Add to IndexedDB in responsive non-blocking chunks to keep the browser responsive
-      let addedCount = 0;
-      for (let i = 0; i < toAdd.length; i++) {
-        await saveGeneratedImageToIndexedDb(toAdd[i]);
-        addedCount++;
-
-        if (i % 4 === 0 || i === toAdd.length - 1) {
-          const pct = Math.round((addedCount / toAdd.length) * 100);
-          setBackupStatus({
-            type: 'progress',
-            message: `Importing images... ${addedCount} of ${toAdd.length} (${pct}%)`,
+          const validRecords = incomingImages.filter((raw): raw is Record<string, unknown> => {
+            if (!raw || typeof raw !== 'object') return false;
+            const item = raw as Record<string, unknown>;
+            return Boolean((item.imageData || item.url) && typeof item.prompt === 'string');
           });
-          // Yield to event loop to prevent UI freezing on large gallery backups
-          await new Promise((resolve) => setTimeout(resolve, 0));
+
+          if (validRecords.length === 0) {
+            failedFiles.push(file.name);
+            continue;
+          }
+
+          // Any malformed records in the file count as skipped
+          totalSkipped += (incomingImages.length - validRecords.length);
+
+          for (let rIdx = 0; rIdx < validRecords.length; rIdx++) {
+            const item = validRecords[rIdx];
+            const imgData = (item.imageData as string) || (item.url as string);
+            const itemId = (item.id as string) || `img_${Date.now()}_${Math.random().toString(36).slice(2, 7)}`;
+            const itemSeed = typeof item.seed === 'number' ? item.seed : 0;
+            let itemTimestamp = Date.now();
+            if (typeof item.timestamp === 'number' && item.timestamp > 0) {
+              itemTimestamp = item.timestamp;
+            } else if (typeof item.createdAt === 'string' && item.createdAt) {
+              const parsedTime = new Date(item.createdAt).getTime();
+              if (!isNaN(parsedTime)) itemTimestamp = parsedTime;
+            }
+            const itemPrompt = (item.prompt as string) || '';
+            const incomingFavorite = Boolean(item.isFavorite);
+
+            const sig = makeSignature(itemPrompt, itemSeed, itemTimestamp);
+            const sigExact = makeExactSignature(itemPrompt, itemSeed, itemTimestamp);
+
+            // Deduplication: match by image ID, or by the same prompt, seed and date
+            // (including matching against images added in earlier files of this batch)
+            if (existingIds.has(itemId) || existingSignatures.has(sig) || existingSignatures.has(sigExact)) {
+              totalSkipped++;
+              // When merging, if an image already exists and the file marks it as a favorite, mark it as a favorite too.
+              if (incomingFavorite) {
+                const existingItem = currentStored.find(
+                  (cs) =>
+                    cs.id === itemId ||
+                    makeSignature(cs.prompt, cs.seed, cs.timestamp) === sig ||
+                    makeExactSignature(cs.prompt, cs.seed, cs.timestamp) === sigExact
+                );
+                if (existingItem && !existingItem.isFavorite) {
+                  existingItem.isFavorite = true;
+                  await updateImageFavoriteInIndexedDb(existingItem.id, true);
+                }
+              }
+              continue;
+            }
+
+            const validItem: GeneratedImageItem = {
+              id: itemId,
+              url: (item.url as string) || imgData,
+              imageData: imgData,
+              prompt: itemPrompt,
+              originalPrompt: (item.originalPrompt as string) || undefined,
+              enhancedPrompt: (item.enhancedPrompt as string) || undefined,
+              providerName: (item.providerName as string) || 'Imported Provider',
+              model: (item.model as string) || '',
+              width: typeof item.width === 'number' ? item.width : 1024,
+              height: typeof item.height === 'number' ? item.height : 1024,
+              seed: itemSeed,
+              timestamp: itemTimestamp,
+              referenceImageUrl: (item.referenceImageUrl as string) || undefined,
+              isEdit: Boolean(item.isEdit),
+              isFavorite: incomingFavorite,
+            };
+
+            await saveGeneratedImageToIndexedDb(validItem);
+            totalAdded++;
+            currentStored.push(validItem);
+            existingIds.add(itemId);
+            existingSignatures.add(sig);
+            existingSignatures.add(sigExact);
+
+            if (totalAdded % 4 === 0) {
+              setBackupStatus({
+                type: 'progress',
+                message: files.length > 1
+                  ? `Importing file ${fIdx + 1} of ${files.length}: ${totalAdded} images added...`
+                  : `Importing images... ${totalAdded} added so far`,
+              });
+              // Yield to event loop to prevent UI freezing on large gallery backups
+              await new Promise((resolve) => setTimeout(resolve, 0));
+            }
+          }
+        } catch (fileErr) {
+          console.error(`[ImageStudio] Error processing backup file "${file.name}":`, fileErr);
+          failedFiles.push(file.name);
         }
       }
 
@@ -486,12 +568,17 @@ export function ImageStudio() {
       setHistory(updatedHistory);
       setCurrentImage((prev) => prev || updatedHistory[0] || null);
 
+      // Build single consolidated summary
+      const failedCount = failedFiles.length;
+      const failedNames = failedCount > 0 ? ` (${failedFiles.join(', ')})` : '';
+      const summaryMsg = `Gallery backup summary: ${totalAdded} added, ${totalSkipped} skipped as duplicates, ${failedCount} ${failedCount === 1 ? 'file' : 'files'} failed${failedNames}.`;
+
       setBackupStatus({
-        type: 'success',
-        message: `Gallery backup imported: ${addedCount} added, ${skippedCount} skipped.`,
+        type: failedCount > 0 && totalAdded === 0 && totalSkipped === 0 ? 'error' : failedCount > 0 ? 'info' : 'success',
+        message: summaryMsg,
       });
     } catch (err: unknown) {
-      console.error('[ImageStudio] Backup import error:', err);
+      console.error('[ImageStudio] Backup import overall error:', err);
       const msg = err instanceof Error ? err.message : String(err);
       setBackupStatus({
         type: 'error',
@@ -2060,7 +2147,7 @@ export function ImageStudio() {
             <div style={{ display: 'flex', alignItems: 'center', gap: '8px', flexWrap: 'wrap' }}>
               <button
                 type="button"
-                onClick={handleDownloadBackup}
+                onClick={handleDownloadAllImages}
                 disabled={backupExporting || backupImporting}
                 className="secondary-button"
                 style={{
@@ -2084,7 +2171,32 @@ export function ImageStudio() {
                 ) : (
                   <Download size={13} style={{ color: '#38bdf8' }} />
                 )}
-                {backupExporting ? 'Exporting...' : 'Download Backup'}
+                {backupExporting ? 'Exporting...' : 'Download All Images'}
+              </button>
+
+              <button
+                type="button"
+                onClick={handleOpenSelectionMode}
+                disabled={backupExporting || backupImporting}
+                className="secondary-button"
+                style={{
+                  display: 'inline-flex',
+                  alignItems: 'center',
+                  gap: '6px',
+                  padding: '7px 12px',
+                  borderRadius: '8px',
+                  fontSize: '11.5px',
+                  fontWeight: 600,
+                  color: 'var(--text)',
+                  cursor: backupExporting || backupImporting ? 'not-allowed' : 'pointer',
+                  opacity: backupExporting || backupImporting ? 0.6 : 1,
+                  background: 'rgba(56, 189, 248, 0.08)',
+                  borderColor: 'rgba(56, 189, 248, 0.25)',
+                }}
+                title="Select specific images in the gallery to download"
+              >
+                <CheckSquare size={13} style={{ color: '#38bdf8' }} />
+                Select Images to Download
               </button>
 
               <button
@@ -2106,7 +2218,7 @@ export function ImageStudio() {
                   background: 'rgba(168, 85, 247, 0.08)',
                   borderColor: 'rgba(168, 85, 247, 0.25)',
                 }}
-                title="Restore and merge images from a gallery backup file"
+                title="Restore and merge images from one or more gallery backup files"
               >
                 {backupImporting ? (
                   <RotateCw size={13} className="animate-spin" style={{ color: '#a855f7' }} />
@@ -2120,6 +2232,7 @@ export function ImageStudio() {
                 ref={backupFileInputRef}
                 type="file"
                 accept=".json,application/json"
+                multiple
                 style={{ display: 'none' }}
                 onChange={handleUploadBackup}
               />
@@ -4124,12 +4237,38 @@ export function ImageStudio() {
                   </div>
                 </div>
 
-                <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
+                <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                  {!gallerySelectionMode && (
+                    <button
+                      type="button"
+                      onClick={handleOpenSelectionMode}
+                      style={{
+                        background: 'rgba(56, 189, 248, 0.1)',
+                        border: '1px solid rgba(56, 189, 248, 0.3)',
+                        borderRadius: '8px',
+                        color: '#38bdf8',
+                        padding: '6px 12px',
+                        display: 'inline-flex',
+                        alignItems: 'center',
+                        gap: '6px',
+                        cursor: 'pointer',
+                        fontSize: '12px',
+                        fontWeight: 500,
+                        transition: 'all 0.15s ease',
+                      }}
+                      title="Select images to download"
+                    >
+                      <CheckSquare size={14} /> Select Images
+                    </button>
+                  )}
+
                   <button
                     type="button"
                     onClick={() => {
                       playTapSound();
                       setGalleryModalOpen(false);
+                      setGallerySelectionMode(false);
+                      setSelectedImageIds(new Set());
                     }}
                     style={{
                       background: 'rgba(255,255,255,0.1)',
@@ -4151,6 +4290,148 @@ export function ImageStudio() {
                   </button>
                 </div>
               </div>
+
+              {/* Selection Mode Bar */}
+              {gallerySelectionMode && (
+                <div
+                  style={{
+                    display: 'flex',
+                    alignItems: 'center',
+                    justifyContent: 'space-between',
+                    flexWrap: 'wrap',
+                    gap: '10px',
+                    padding: '10px 14px',
+                    borderRadius: '8px',
+                    background: 'linear-gradient(90deg, rgba(6, 182, 212, 0.18) 0%, rgba(56, 189, 248, 0.12) 100%)',
+                    border: '1px solid rgba(34, 211, 238, 0.4)',
+                    boxShadow: '0 0 16px rgba(34, 211, 238, 0.15)',
+                  }}
+                >
+                  {/* Left: Count */}
+                  <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                    <div
+                      style={{
+                        width: '24px',
+                        height: '24px',
+                        borderRadius: '5px',
+                        background: '#06b6d4',
+                        display: 'grid',
+                        placeItems: 'center',
+                        color: '#fff',
+                        boxShadow: '0 0 8px rgba(34, 211, 238, 0.5)',
+                      }}
+                    >
+                      <Check size={14} strokeWidth={3} />
+                    </div>
+                    <span style={{ fontSize: '13px', fontWeight: 600, color: '#fff' }}>
+                      {selectedImageIds.size} {selectedImageIds.size === 1 ? 'image' : 'images'} selected
+                    </span>
+                    <span style={{ fontSize: '11px', color: 'var(--muted)' }} className="hidden sm:inline">
+                      • Tap thumbnails to toggle
+                    </span>
+                  </div>
+
+                  {/* Right: Actions */}
+                  <div style={{ display: 'flex', alignItems: 'center', gap: '8px', flexWrap: 'wrap' }}>
+                    {/* Select All */}
+                    <button
+                      type="button"
+                      onClick={handleSelectAllDisplayed}
+                      style={{
+                        background: 'rgba(255, 255, 255, 0.08)',
+                        border: '1px solid rgba(255, 255, 255, 0.18)',
+                        borderRadius: '6px',
+                        color: '#e2e8f0',
+                        padding: '5px 10px',
+                        fontSize: '11.5px',
+                        fontWeight: 500,
+                        cursor: 'pointer',
+                        display: 'inline-flex',
+                        alignItems: 'center',
+                        gap: '5px',
+                      }}
+                      title="Select all images currently displayed"
+                    >
+                      <CheckSquare size={13} />
+                      Select All ({displayedGalleryImages.length})
+                    </button>
+
+                    {/* Clear */}
+                    <button
+                      type="button"
+                      onClick={handleClearSelection}
+                      disabled={selectedImageIds.size === 0}
+                      style={{
+                        background: 'transparent',
+                        border: '1px solid rgba(255, 255, 255, 0.15)',
+                        borderRadius: '6px',
+                        color: selectedImageIds.size === 0 ? 'rgba(255,255,255,0.3)' : '#e2e8f0',
+                        padding: '5px 10px',
+                        fontSize: '11.5px',
+                        fontWeight: 500,
+                        cursor: selectedImageIds.size === 0 ? 'not-allowed' : 'pointer',
+                        opacity: selectedImageIds.size === 0 ? 0.5 : 1,
+                      }}
+                      title="Clear all selections"
+                    >
+                      Clear
+                    </button>
+
+                    {/* Download Selected */}
+                    <button
+                      type="button"
+                      onClick={handleDownloadSelected}
+                      disabled={selectedImageIds.size === 0 || backupExporting}
+                      style={{
+                        background: selectedImageIds.size === 0
+                          ? 'rgba(6, 182, 212, 0.12)'
+                          : 'linear-gradient(135deg, #06b6d4 0%, #0284c7 100%)',
+                        border: selectedImageIds.size === 0
+                          ? '1px solid rgba(34, 211, 238, 0.25)'
+                          : '1px solid rgba(34, 211, 238, 0.65)',
+                        borderRadius: '6px',
+                        color: selectedImageIds.size === 0 ? 'rgba(255,255,255,0.45)' : '#fff',
+                        padding: '5px 12px',
+                        fontSize: '11.5px',
+                        fontWeight: 600,
+                        display: 'inline-flex',
+                        alignItems: 'center',
+                        gap: '6px',
+                        cursor: selectedImageIds.size === 0 || backupExporting ? 'not-allowed' : 'pointer',
+                        opacity: selectedImageIds.size === 0 || backupExporting ? 0.6 : 1,
+                        boxShadow: selectedImageIds.size > 0 ? '0 0 12px rgba(6, 182, 212, 0.45)' : 'none',
+                      }}
+                      title="Download selected images into a backup JSON file"
+                    >
+                      {backupExporting ? (
+                        <RotateCw size={13} className="animate-spin" />
+                      ) : (
+                        <Download size={13} />
+                      )}
+                      Download Selected {selectedImageIds.size > 0 && `(${selectedImageIds.size})`}
+                    </button>
+
+                    {/* Cancel */}
+                    <button
+                      type="button"
+                      onClick={handleCancelSelectionMode}
+                      style={{
+                        background: 'rgba(239, 68, 68, 0.12)',
+                        border: '1px solid rgba(239, 68, 68, 0.3)',
+                        borderRadius: '6px',
+                        color: '#fca5a5',
+                        padding: '5px 10px',
+                        fontSize: '11.5px',
+                        fontWeight: 500,
+                        cursor: 'pointer',
+                      }}
+                      title="Leave selection mode"
+                    >
+                      Cancel
+                    </button>
+                  </div>
+                </div>
+              )}
 
               {/* Sort & Filter Controls Toolbar */}
               <div
@@ -4416,6 +4697,10 @@ export function ImageStudio() {
                     <div
                       key={`gallery-grid-${item.id}`}
                       onClick={() => {
+                        if (gallerySelectionMode) {
+                          handleToggleSelectImage(item.id);
+                          return;
+                        }
                         playTapSound();
                         setFullscreenImage(item);
                       }}
@@ -4427,11 +4712,17 @@ export function ImageStudio() {
                         overflow: 'hidden',
                         cursor: 'pointer',
                         background: 'rgba(255,255,255,0.03)',
-                        border: '1px solid rgba(255,255,255,0.08)',
-                        boxShadow: '0 4px 16px rgba(0,0,0,0.35)',
+                        border: gallerySelectionMode && selectedImageIds.has(item.id)
+                          ? '2px solid #22d3ee'
+                          : '1px solid rgba(255,255,255,0.08)',
+                        boxShadow: gallerySelectionMode && selectedImageIds.has(item.id)
+                          ? '0 0 16px rgba(34, 211, 238, 0.4)'
+                          : '0 4px 16px rgba(0,0,0,0.35)',
                         transition: 'transform 0.15s ease, border-color 0.15s ease, box-shadow 0.15s ease',
                       }}
-                      title={`"${item.prompt}"\nProvider: ${item.providerName || 'AI Studio'} (Seed: ${item.seed})`}
+                      title={gallerySelectionMode
+                        ? (selectedImageIds.has(item.id) ? 'Selected - tap to deselect' : 'Tap to select')
+                        : `"${item.prompt}"\nProvider: ${item.providerName || 'AI Studio'} (Seed: ${item.seed})`}
                     >
                       <img
                         src={item.url}
@@ -4445,6 +4736,62 @@ export function ImageStudio() {
                         className="group-hover:scale-105"
                         loading="lazy"
                       />
+
+                      {/* Selection Mode Overlay & Tick Mark */}
+                      {gallerySelectionMode && (
+                        <>
+                          {selectedImageIds.has(item.id) && (
+                            <div
+                              style={{
+                                position: 'absolute',
+                                inset: 0,
+                                background: 'rgba(6, 182, 212, 0.16)',
+                                pointerEvents: 'none',
+                                zIndex: 6,
+                              }}
+                            />
+                          )}
+                          <div
+                            style={{
+                              position: 'absolute',
+                              bottom: '6px',
+                              left: '6px',
+                              width: '28px',
+                              height: '28px',
+                              borderRadius: '6px',
+                              background: selectedImageIds.has(item.id)
+                                ? '#06b6d4'
+                                : 'rgba(0, 0, 0, 0.65)',
+                              border: selectedImageIds.has(item.id)
+                                ? '1px solid #22d3ee'
+                                : '1px solid rgba(255, 255, 255, 0.4)',
+                              boxShadow: selectedImageIds.has(item.id)
+                                ? '0 0 10px rgba(34, 211, 238, 0.7)'
+                                : 'none',
+                              display: 'grid',
+                              placeItems: 'center',
+                              color: '#fff',
+                              zIndex: 15,
+                              backdropFilter: 'blur(4px)',
+                              transition: 'all 0.15s ease',
+                              pointerEvents: 'none',
+                            }}
+                          >
+                            {selectedImageIds.has(item.id) ? (
+                              <Check size={16} strokeWidth={3} style={{ color: '#fff' }} />
+                            ) : (
+                              <div
+                                style={{
+                                  width: '10px',
+                                  height: '10px',
+                                  borderRadius: '2px',
+                                  border: '1.5px solid rgba(255, 255, 255, 0.5)',
+                                }}
+                              />
+                            )}
+                          </div>
+                        </>
+                      )}
 
                       {/* Subtle hover overlay with prompt snippet */}
                       <div
