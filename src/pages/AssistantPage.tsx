@@ -6111,67 +6111,85 @@ DIRECTIVES:
                       </p>
                     </div>
                   ) : (
-                    sessions.map((session) => (
-                      <div
-                        key={session.id}
-                        onClick={() => {
-                          if (editingSessionId !== session.id) {
-                            handleSelectSession(session);
-                          }
-                        }}
-                        className="p-2.5 hover:bg-zinc-800/60 rounded-lg cursor-pointer transition-colors group flex items-center justify-between gap-2.5"
-                      >
-                        {editingSessionId === session.id ? (
-                          <div
-                            className="flex-1 flex items-center gap-1.5 min-w-0"
-                            onClick={(e) => e.stopPropagation()}
-                          >
-                            <input
-                              type="text"
-                              value={editingSessionTitleDraft}
-                              onChange={(e) => setEditingSessionTitleDraft(e.target.value)}
-                              onKeyDown={(e) => {
-                                e.stopPropagation();
-                                if (e.key === 'Enter') {
-                                  e.preventDefault();
-                                  handleSaveEditSession(undefined, session.id);
-                                } else if (e.key === 'Escape') {
-                                  e.preventDefault();
-                                  handleCancelEditSession();
-                                }
-                              }}
-                              className="w-full px-2 py-1 text-xs rounded-md bg-zinc-800 border border-zinc-600 text-zinc-100 outline-none focus:border-cyan-400 font-medium"
-                              autoFocus
-                              maxLength={60}
-                              placeholder="Session title..."
-                            />
-                            <button
-                              type="button"
-                              onClick={(e) => handleSaveEditSession(e, session.id)}
-                              className="p-1 rounded bg-cyan-600/80 hover:bg-cyan-500 text-white shrink-0"
-                              title="Save title"
+                    sessions.map((session) => {
+                      const isCurrent = session.id === activeSessionId;
+                      return (
+                        <div
+                          key={session.id}
+                          onClick={() => {
+                            if (editingSessionId !== session.id) {
+                              handleSelectSession(session);
+                            }
+                          }}
+                          className={`p-2.5 rounded-lg cursor-pointer transition-all group flex items-center justify-between gap-2.5 ${
+                            isCurrent
+                              ? 'bg-cyan-950/30 hover:bg-cyan-950/45 border border-cyan-500/40 shadow-[0_0_12px_rgba(6,182,212,0.14)]'
+                              : 'hover:bg-zinc-800/60 bg-transparent border border-transparent'
+                          }`}
+                        >
+                          {editingSessionId === session.id ? (
+                            <div
+                              className="flex-1 flex items-center gap-1.5 min-w-0"
+                              onClick={(e) => e.stopPropagation()}
                             >
-                              <Check size={12} />
-                            </button>
-                            <button
-                              type="button"
-                              onClick={handleCancelEditSession}
-                              className="p-1 rounded bg-zinc-700 hover:bg-zinc-600 text-zinc-300 shrink-0"
-                              title="Cancel"
-                            >
-                              <X size={12} />
-                            </button>
-                          </div>
-                        ) : (
-                          <>
-                            <div className="min-w-0 flex-1">
-                              <div className="text-xs font-medium text-zinc-200 truncate group-hover:text-cyan-300">
-                                {session.title}
-                              </div>
-                              <div className="text-[10.5px] text-zinc-500 mt-0.5 flex items-center gap-2 flex-wrap">
-                                <span>{formatRelativeTime(session.updatedAt)}</span>
-                                <span>•</span>
-                                <span>{session.messages.length} msg{session.messages.length === 1 ? '' : 's'}</span>
+                              <input
+                                type="text"
+                                value={editingSessionTitleDraft}
+                                onChange={(e) => setEditingSessionTitleDraft(e.target.value)}
+                                onKeyDown={(e) => {
+                                  e.stopPropagation();
+                                  if (e.key === 'Enter') {
+                                    e.preventDefault();
+                                    handleSaveEditSession(undefined, session.id);
+                                  } else if (e.key === 'Escape') {
+                                    e.preventDefault();
+                                    handleCancelEditSession();
+                                  }
+                                }}
+                                className="w-full px-2 py-1 text-xs rounded-md bg-zinc-800 border border-zinc-600 text-zinc-100 outline-none focus:border-cyan-400 font-medium"
+                                autoFocus
+                                maxLength={60}
+                                placeholder="Session title..."
+                              />
+                              <button
+                                type="button"
+                                onClick={(e) => handleSaveEditSession(e, session.id)}
+                                className="p-1 rounded bg-cyan-600/80 hover:bg-cyan-500 text-white shrink-0"
+                                title="Save title"
+                              >
+                                <Check size={12} />
+                              </button>
+                              <button
+                                type="button"
+                                onClick={handleCancelEditSession}
+                                className="p-1 rounded bg-zinc-700 hover:bg-zinc-600 text-zinc-300 shrink-0"
+                                title="Cancel"
+                              >
+                                <X size={12} />
+                              </button>
+                            </div>
+                          ) : (
+                            <>
+                              <div className="min-w-0 flex-1">
+                                <div
+                                  className={`text-xs truncate ${
+                                    isCurrent
+                                      ? 'text-cyan-300 font-semibold'
+                                      : 'text-zinc-200 font-medium group-hover:text-cyan-300'
+                                  }`}
+                                >
+                                  {session.title}
+                                </div>
+                                <div className="text-[10.5px] text-zinc-500 mt-0.5 flex items-center gap-2 flex-wrap">
+                                  {isCurrent && (
+                                    <span className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded-full text-[9.5px] font-semibold bg-cyan-500/15 text-cyan-300 border border-cyan-500/30">
+                                      <span className="w-1.5 h-1.5 rounded-full bg-cyan-400 shadow-[0_0_6px_rgba(34,211,238,0.8)] animate-pulse" />
+                                      Current
+                                    </span>
+                                  )}
+                                  <span>{formatRelativeTime(session.updatedAt)}</span>
+                                  <span>•</span>
+                                  <span>{session.messages.length} msg{session.messages.length === 1 ? '' : 's'}</span>
                                 {Boolean(session.smartMemory?.trim()) && (
                                   <>
                                     <span>•</span>
@@ -6271,7 +6289,8 @@ DIRECTIVES:
                           </>
                         )}
                       </div>
-                    ))
+                    );
+                  })
                   )}
                 </div>
               </div>
