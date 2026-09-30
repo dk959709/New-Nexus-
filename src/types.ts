@@ -260,6 +260,7 @@ export interface GeneratedImageItem {
   seed: number;
   model?: string;
   timestamp: number;
+  isFavorite?: boolean;
 }
 
 export type JarvisAgentId =

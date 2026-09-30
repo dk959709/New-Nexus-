@@ -555,6 +555,20 @@ export function loadActiveSessionId(): string {
     if (savedId && typeof savedId === 'string' && savedId.trim()) {
       return savedId.trim();
     }
+    // Also check if stored together with current conversation in CHAT_KEY
+    const rawChat = localStorage.getItem(CHAT_KEY);
+    if (rawChat) {
+      try {
+        const parsed = JSON.parse(rawChat) as { id?: unknown };
+        if (parsed && typeof parsed.id === 'string' && parsed.id.trim()) {
+          const id = parsed.id.trim();
+          localStorage.setItem(ACTIVE_SESSION_KEY, id);
+          return id;
+        }
+      } catch {
+        // Ignore
+      }
+    }
     const newId = generateSessionId();
     localStorage.setItem(ACTIVE_SESSION_KEY, newId);
     return newId;
@@ -621,13 +635,22 @@ export function saveChatSessions(sessions: ArchivedChatSession[]): void {
   }
 }
 
+export function extractConversationMessages(msgs: Message[]): Message[] {
+  if (!Array.isArray(msgs)) return [];
+  const firstUserIdx = msgs.findIndex(
+    (m) => m && m.role === 'user' && typeof m.content === 'string' && m.content.trim().length > 0
+  );
+  if (firstUserIdx === -1) return [];
+  return msgs.slice(firstUserIdx);
+}
+
 export function isMessageEqual(a: Message, b: Message): boolean {
   if (a.role !== b.role) return false;
   let contentA = a.content ? a.content : '';
   let contentB = b.content ? b.content : '';
   if (a.role === 'assistant') {
-    contentA = stripTierLabels(contentA);
-    contentB = stripTierLabels(contentB);
+    contentA = stripTierLabels(contentA).replace(/[▌▋■█]+$/, '');
+    contentB = stripTierLabels(contentB).replace(/[▌▋■█]+$/, '');
   }
   contentA = contentA.replace(/\s+/g, ' ').trim();
   contentB = contentB.replace(/\s+/g, ' ').trim();
@@ -643,22 +666,38 @@ export function getFirstUserMessage(msgs: Message[]): Message | null {
 }
 
 export function isSameConversationPrefix(msgsA: Message[], msgsB: Message[]): boolean {
-  const firstUserA = getFirstUserMessage(msgsA);
-  const firstUserB = getFirstUserMessage(msgsB);
-  if (!firstUserA || !firstUserB) return false;
+  const convA = extractConversationMessages(msgsA);
+  const convB = extractConversationMessages(msgsB);
+  if (convA.length === 0 || convB.length === 0) return false;
 
-  const contentA = firstUserA.content ? firstUserA.content.replace(/\s+/g, ' ').trim() : '';
-  const contentB = firstUserB.content ? firstUserB.content.replace(/\s+/g, ' ').trim() : '';
-  if (contentA !== contentB) return false;
-
-  const minLen = Math.min(msgsA.length, msgsB.length);
-  if (minLen === 0) return false;
-
-  for (let i = 0; i < minLen; i++) {
-    if (!isMessageEqual(msgsA[i], msgsB[i])) {
-      return false;
-    }
+  // 1. Same first user message
+  if (!isMessageEqual(convA[0], convB[0])) {
+    return false;
   }
+
+  // 2. One conversation is the start of the other
+  const minLen = Math.min(convA.length, convB.length);
+  for (let i = 0; i < minLen; i++) {
+    const msgA = convA[i];
+    const msgB = convB[i];
+    if (isMessageEqual(msgA, msgB)) {
+      continue;
+    }
+    // Allow prefix match on the trailing assistant message of the shorter conversation
+    if (i === minLen - 1 && msgA.role === 'assistant' && msgB.role === 'assistant') {
+      const textA = msgA.content
+        ? stripTierLabels(msgA.content).replace(/[▌▋■█]+$/, '').replace(/\s+/g, ' ').trim()
+        : '';
+      const textB = msgB.content
+        ? stripTierLabels(msgB.content).replace(/[▌▋■█]+$/, '').replace(/\s+/g, ' ').trim()
+        : '';
+      if (textA.startsWith(textB) || textB.startsWith(textA)) {
+        continue;
+      }
+    }
+    return false;
+  }
+
   return true;
 }
 
@@ -696,8 +735,13 @@ export function cleanupDuplicateSessions(sessions: ArchivedChatSession[]): {
       continue;
     }
 
-    // Keep the one with the most messages
+    // Keep the one with the most messages (counting actual conversation messages)
     group.sort((a, b) => {
+      const countA = extractConversationMessages(a.messages).length;
+      const countB = extractConversationMessages(b.messages).length;
+      if (countB !== countA) {
+        return countB - countA;
+      }
       if (b.messages.length !== a.messages.length) {
         return b.messages.length - a.messages.length;
       }
@@ -849,7 +893,10 @@ export function archiveCurrentSession(
   const prefixMatchIdx = sessions.findIndex((s) => isSameConversationPrefix(s.messages, sanitized));
   if (prefixMatchIdx !== -1) {
     const existing = sessions[prefixMatchIdx];
-    const longerMessages = sanitized.length >= existing.messages.length ? sanitized : existing.messages;
+    const longerMessages =
+      extractConversationMessages(sanitized).length >= extractConversationMessages(existing.messages).length
+        ? sanitized
+        : existing.messages;
     sessions[prefixMatchIdx] = {
       ...existing,
       messages: longerMessages,
@@ -939,6 +986,7 @@ const welcomeMessage: Message = {
 
 function loadMessages(): Message[] {
   try {
+    initializeAndDeduplicateSessions();
     const raw = localStorage.getItem(CHAT_KEY);
     if (!raw) {
       const activeId = loadActiveSessionId();
@@ -953,9 +1001,29 @@ function loadMessages(): Message[] {
 
     const parsed = JSON.parse(raw) as unknown;
 
-    if (!Array.isArray(parsed)) return [welcomeMessage];
+    let messageList: unknown[] = [];
+    if (Array.isArray(parsed)) {
+      messageList = parsed;
+    } else if (
+      parsed &&
+      typeof parsed === 'object' &&
+      'messages' in parsed &&
+      Array.isArray((parsed as { messages: unknown }).messages)
+    ) {
+      messageList = (parsed as { messages: unknown[] }).messages;
+      const storedId = (parsed as { id?: unknown }).id;
+      if (typeof storedId === 'string' && storedId.trim()) {
+        try {
+          localStorage.setItem(ACTIVE_SESSION_KEY, storedId.trim());
+        } catch {
+          // Ignore
+        }
+      }
+    } else {
+      return [welcomeMessage];
+    }
 
-    const messages = parsed
+    const messages = messageList
       .filter(
         (item): item is Message =>
           typeof item === 'object' &&
@@ -4205,7 +4273,11 @@ ${commanderConfig.systemPrompts.synthesizer?.trim() || '(Default system prompt)'
         }
         return msg;
       });
-      localStorage.setItem(CHAT_KEY, JSON.stringify(sanitizedMessages));
+      localStorage.setItem(
+        CHAT_KEY,
+        JSON.stringify({ id: activeSessionId, messages: sanitizedMessages })
+      );
+      saveActiveSessionId(activeSessionId);
 
       // Save current chat under its permanent ID every time it changes
       if (activeSessionId && getSessionTitle(sanitizedMessages)) {
@@ -4220,6 +4292,14 @@ ${commanderConfig.systemPrompts.synthesizer?.trim() || '(Default system prompt)'
         if (savedId && savedId !== activeSessionId) {
           setActiveSessionId(savedId);
           saveActiveSessionId(savedId);
+          try {
+            localStorage.setItem(
+              CHAT_KEY,
+              JSON.stringify({ id: savedId, messages: sanitizedMessages })
+            );
+          } catch {
+            // Ignore
+          }
         }
         setSessions(loadChatSessions());
       }
@@ -4235,23 +4315,10 @@ ${commanderConfig.systemPrompts.synthesizer?.trim() || '(Default system prompt)'
       } else {
         localStorage.removeItem(MEMORY_KEY);
       }
-
-      // Keep saved session memory scratchpad synced
-      if (activeSessionId && getSessionTitle(messages)) {
-        archiveCurrentSession(
-          messages,
-          smartMemory,
-          activeSessionId,
-          smartMemoryMaxLength,
-          activeProviderId,
-          activeModelId,
-        );
-        setSessions(loadChatSessions());
-      }
     } catch {
       // Ignore storage errors.
     }
-  }, [smartMemory, activeSessionId, messages, smartMemoryMaxLength, activeProviderId, activeModelId]);
+  }, [smartMemory]);
 
   const adjustTextareaHeight = () => {
     if (textareaRef.current) {
@@ -5513,7 +5580,7 @@ DIRECTIVES:
     // 3. Load the selected session's messages
     setMessages(session.messages);
     try {
-      localStorage.setItem(CHAT_KEY, JSON.stringify(session.messages));
+      localStorage.setItem(CHAT_KEY, JSON.stringify({ id: session.id, messages: session.messages }));
     } catch {
       // Ignore
     }
@@ -5738,6 +5805,10 @@ DIRECTIVES:
       }
     }
 
+    if (activeSessionId) {
+      deleteChatSession(activeSessionId);
+      setSessions(loadChatSessions());
+    }
     resetWorkingChat();
     setClearedToast(true);
     setTimeout(() => setClearedToast(false), 3000);

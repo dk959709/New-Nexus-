@@ -156,6 +156,50 @@ export async function saveGeneratedImageToIndexedDb(item: GeneratedImageItem): P
 }
 
 /**
+ * Update the favorite status of a specific generated image in IndexedDB
+ */
+export async function updateImageFavoriteInIndexedDb(id: string, isFavorite: boolean): Promise<void> {
+  try {
+    const db = await getImageDb();
+    return new Promise<void>((resolve, reject) => {
+      const tx = db.transaction([STORE_IMAGES], 'readwrite');
+      const store = tx.objectStore(STORE_IMAGES);
+      const getReq = store.get(id);
+
+      getReq.onsuccess = () => {
+        const item = getReq.result as GeneratedImageItem | undefined;
+        if (item) {
+          item.isFavorite = isFavorite;
+          const putReq = store.put(item);
+          putReq.onsuccess = () => resolve();
+          putReq.onerror = () => reject(putReq.error || new Error(`Failed to update favorite status for ${id}`));
+        } else {
+          if (memoryFallback.has(id)) {
+            const fallbackItem = memoryFallback.get(id)!;
+            fallbackItem.isFavorite = isFavorite;
+          }
+          resolve();
+        }
+      };
+
+      getReq.onerror = () => {
+        if (memoryFallback.has(id)) {
+          const fallbackItem = memoryFallback.get(id)!;
+          fallbackItem.isFavorite = isFavorite;
+        }
+        resolve();
+      };
+    });
+  } catch (err) {
+    if (memoryFallback.has(id)) {
+      const fallbackItem = memoryFallback.get(id)!;
+      fallbackItem.isFavorite = isFavorite;
+    }
+    console.warn('[ImageIndexedDB] Favorite updated in memory fallback:', err);
+  }
+}
+
+/**
  * Delete a specific generated image by ID
  */
 export async function deleteGeneratedImageFromIndexedDb(id: string): Promise<void> {
