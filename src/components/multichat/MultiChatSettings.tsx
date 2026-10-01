@@ -8,33 +8,42 @@ import {
   ChevronUp,
   FileCode2,
   AlertCircle,
-  Sparkles,
   Bookmark,
   Languages,
   Plus,
   Trash2,
+  Brain,
+  Smile,
+  Compass,
+  CheckCircle2,
 } from 'lucide-react';
-import { storage, DEFAULT_MULTICHAT_CONFIG, DEFAULT_MULTICHAT_SYSTEM_PROMPTS } from '@/lib/storage';
+import { storage, DEFAULT_MULTICHAT_CONFIG } from '@/lib/storage';
 import type { MultiChatSystemConfig, MultiChatPersonaConfig, AIProvidersState } from '@/types';
 
 interface MultiChatSettingsProps {
   onSaved?: (config: MultiChatSystemConfig) => void;
 }
 
-const MODEL_PRESETS = [
-  'nvidia/nemotron-3-nano-30b-a3b',
-  'nemotron-3-nano-30b-a3b',
-  'gemini-3.6-flash',
-  'deepseek/deepseek-chat',
-  'deepseek/deepseek-r1',
-  'google/gemini-2.5-flash',
-  'anthropic/claude-3.5-sonnet',
-  'openai/gpt-4o',
-  'openai/gpt-4o-mini',
-  'meta-llama/llama-3.3-70b-instruct',
-  'mistralai/mistral-large-2411',
-  'qwen/qwen-2.5-72b-instruct',
-];
+const PERSONA_THEMES: Record<string, { icon: React.ElementType; color: string; bg: string; border: string }> = {
+  nova: {
+    icon: Brain,
+    color: '#00f0ff',
+    bg: 'rgba(0, 240, 255, 0.08)',
+    border: 'rgba(0, 240, 255, 0.3)',
+  },
+  orbit: {
+    icon: Smile,
+    color: '#f59e0b',
+    bg: 'rgba(245, 158, 11, 0.08)',
+    border: 'rgba(245, 158, 11, 0.3)',
+  },
+  cosmos: {
+    icon: Compass,
+    color: '#c084fc',
+    bg: 'rgba(192, 132, 252, 0.08)',
+    border: 'rgba(192, 132, 252, 0.3)',
+  },
+};
 
 export function MultiChatSettings({ onSaved }: MultiChatSettingsProps) {
   const [config, setConfig] = useState<MultiChatSystemConfig>(() => storage.getMultiChatConfig());
@@ -81,16 +90,6 @@ export function MultiChatSettings({ onSaved }: MultiChatSettingsProps) {
     const updated: MultiChatSystemConfig = {
       ...config,
       responseLanguage: val,
-    };
-    setConfig(updated);
-    storage.saveMultiChatConfig(updated);
-    onSaved?.(updated);
-  };
-
-  const handleResetResponseLanguage = () => {
-    const updated: MultiChatSystemConfig = {
-      ...config,
-      responseLanguage: 'English',
     };
     setConfig(updated);
     storage.saveMultiChatConfig(updated);
@@ -159,906 +158,264 @@ export function MultiChatSettings({ onSaved }: MultiChatSettingsProps) {
   const availableProviders = [
     {
       id: 'existing',
-      name: 'Built-in AI (DeepSeek / Server Default)',
-      model: 'deepseek/deepseek-chat',
-      keyCount: 1,
+      name: 'Default Active AI Provider (Global Settings)',
     },
     ...providersState.providers.map((p) => ({
       id: p.id,
-      name: p.name,
-      model: p.model,
-      keyCount: p.keys.length,
+      name: `${p.name} (${p.model || 'default model'})`,
     })),
   ];
 
-  const personasList = Object.values(config.personas);
-  const enabledCount = personasList.filter((p) => p.enabled).length;
-
   return (
-    <div className="flex flex-col gap-6" style={{ maxWidth: '1160px', margin: '0 auto' }}>
-      {/* Settings Top Bar */}
+    <div id="nexus-multichat-settings" className="space-y-6 max-w-5xl mx-auto font-mono text-xs">
+      {/* Top Banner & Global Actions */}
       <div
-        style={{
-          display: 'flex',
-          justifyContent: 'space-between',
-          alignItems: 'center',
-          flexWrap: 'wrap',
-          gap: '16px',
-          padding: '16px 20px',
-          background: 'linear-gradient(135deg, rgba(8, 22, 34, 0.85) 0%, rgba(5, 14, 22, 0.95) 100%)',
-          borderRadius: '16px',
-          border: '1px solid rgba(97, 215, 201, 0.25)',
-          boxShadow: '0 8px 32px rgba(0, 0, 0, 0.35)',
-        }}
+        className="nexus-corner-bracket relative rounded-2xl p-4 sm:p-6 bg-slate-950/90 border border-cyan-500/25 shadow-xl flex flex-col md:flex-row items-start md:items-center justify-between gap-4"
       >
-        <div style={{ display: 'flex', alignItems: 'center', gap: '14px' }}>
-          <div
-            style={{
-              width: '42px',
-              height: '42px',
-              borderRadius: '12px',
-              background: 'linear-gradient(135deg, rgba(97,215,201,0.2) 0%, rgba(129,140,248,0.2) 100%)',
-              border: '1px solid rgba(97,215,201,0.4)',
-              display: 'grid',
-              placeItems: 'center',
-              boxShadow: '0 0 16px rgba(97,215,201,0.2)',
-            }}
-          >
-            <Sliders size={22} className="text-cyan-400" />
-          </div>
-          <div>
-            <h2 style={{ margin: 0, fontSize: '18px', fontWeight: 800, color: '#fff', letterSpacing: '-0.02em' }}>
-              Multi Chat Persona Configurations
+        <div>
+          <div className="flex items-center gap-2 mb-1">
+            <Sliders size={18} className="text-cyan-400" />
+            <h2 className="m-0 text-base sm:text-lg font-black text-white uppercase tracking-wider">
+              PERSONA ORCHESTRATION & MEMORY MATRIX
             </h2>
-            <p style={{ margin: '4px 0 0', fontSize: '13px', color: 'var(--muted)' }}>
-              Configure AI providers, models, token limits, and prompt baselines for NOVA, ORBIT, and COSMOS.
-            </p>
           </div>
+          <p className="m-0 text-slate-400 font-sans text-xs">
+            Fine-tune prompts, token budgets, AI engine models, and permanent memories across the 3 cognitive personas.
+          </p>
         </div>
 
-        <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
-          <span
-            style={{
-              fontSize: '11px',
-              fontFamily: 'DM Mono',
-              padding: '6px 12px',
-              borderRadius: '8px',
-              background: enabledCount > 0 ? 'rgba(97,215,201,0.15)' : 'rgba(239,68,68,0.15)',
-              color: enabledCount > 0 ? '#61d7c9' : '#f87171',
-              border: `1px solid ${enabledCount > 0 ? 'rgba(97,215,201,0.3)' : 'rgba(239,68,68,0.3)'}`,
-              fontWeight: 700,
-            }}
-          >
-            {enabledCount} of {personasList.length} Personas Active
-          </span>
-
+        <div className="flex items-center gap-2 flex-wrap self-end md:self-auto">
           <button
             type="button"
             onClick={() => setShowResetModal(true)}
-            style={{
-              display: 'inline-flex',
-              alignItems: 'center',
-              gap: '6px',
-              padding: '8px 14px',
-              borderRadius: '8px',
-              background: 'rgba(255, 255, 255, 0.05)',
-              border: '1px solid rgba(255, 255, 255, 0.15)',
-              color: '#cbd5e1',
-              fontSize: '12px',
-              fontWeight: 600,
-              cursor: 'pointer',
-              transition: 'all 0.2s',
-            }}
-            title="Reset all personas to factory default prompts and parameters"
+            className="px-3.5 py-2 rounded-xl bg-white/5 border border-white/10 hover:border-rose-500/50 text-slate-300 hover:text-white font-bold cursor-pointer transition-colors flex items-center gap-1.5"
           >
-            <RotateCcw size={14} />
-            Reset All to Default
+            <RotateCcw size={13} />
+            <span>Reset Baseline</span>
           </button>
 
           <button
             type="button"
             onClick={handleSave}
-            style={{
-              display: 'inline-flex',
-              alignItems: 'center',
-              gap: '6px',
-              padding: '8px 18px',
-              borderRadius: '8px',
-              background: isSavedRecently
-                ? 'linear-gradient(135deg, #10b981 0%, #059669 100%)'
-                : 'linear-gradient(135deg, var(--accent) 0%, #38bdf8 100%)',
-              border: 'none',
-              color: '#04121a',
-              fontSize: '13px',
-              fontWeight: 800,
-              cursor: 'pointer',
-              boxShadow: isSavedRecently
-                ? '0 0 16px rgba(16,185,129,0.4)'
-                : '0 0 16px rgba(97,215,201,0.3)',
-              transition: 'all 0.2s',
-            }}
+            className={`px-4 py-2 rounded-xl font-bold transition-all cursor-pointer flex items-center gap-1.5 shadow-lg ${
+              isSavedRecently
+                ? 'bg-emerald-500 text-black shadow-[0_0_15px_#10b981]'
+                : 'bg-gradient-to-r from-cyan-500 to-sky-600 text-black hover:opacity-90 active:scale-95 shadow-[0_0_15px_rgba(0,240,255,0.4)]'
+            }`}
           >
-            {isSavedRecently ? <Check size={16} /> : <Save size={16} />}
-            {isSavedRecently ? 'Saved ✓' : 'Save Configurations'}
+            {isSavedRecently ? <Check size={14} /> : <Save size={14} />}
+            <span>{isSavedRecently ? 'Saved!' : 'Save Configurations'}</span>
           </button>
         </div>
       </div>
 
-      {/* Save Status Notification */}
+      {/* Save Status Notification Banner */}
       {saveStatus && (
-        <div
-          style={{
-            padding: '12px 18px',
-            borderRadius: '10px',
-            background: 'rgba(97, 215, 201, 0.15)',
-            border: '1px solid rgba(97, 215, 201, 0.4)',
-            color: '#61d7c9',
-            fontSize: '13px',
-            fontWeight: 600,
-            display: 'flex',
-            alignItems: 'center',
-            gap: '8px',
-          }}
-        >
-          <Check size={16} />
-          {saveStatus}
+        <div className="p-3 rounded-xl bg-emerald-500/15 border border-emerald-500/30 text-emerald-300 flex items-center gap-2 animate-fadeIn">
+          <CheckCircle2 size={15} />
+          <span className="font-bold">{saveStatus}</span>
         </div>
       )}
 
-      {/* Connected Sequential Pipeline Callout */}
-      <div
-        style={{
-          padding: '14px 18px',
-          borderRadius: '14px',
-          background: 'linear-gradient(135deg, rgba(6, 182, 212, 0.08) 0%, rgba(15, 23, 42, 0.75) 100%)',
-          border: '1px solid rgba(6, 182, 212, 0.25)',
-          display: 'flex',
-          alignItems: 'center',
-          justifyContent: 'space-between',
-          flexWrap: 'wrap',
-          gap: '12px',
-        }}
-      >
-        <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
-          <div
-            style={{
-              width: '36px',
-              height: '36px',
-              borderRadius: '10px',
-              background: 'rgba(6, 182, 212, 0.15)',
-              border: '1px solid rgba(6, 182, 212, 0.35)',
-              display: 'grid',
-              placeItems: 'center',
-              color: '#67e8f9',
-              flexShrink: 0,
-            }}
-          >
-            <Sparkles size={18} />
+      {/* Response Language & Global Defaults */}
+      <div className="rounded-xl p-4 sm:p-5 bg-black/60 border border-white/10 space-y-3">
+        <div className="flex items-center justify-between gap-2 flex-wrap">
+          <div className="flex items-center gap-2">
+            <Languages size={16} className="text-cyan-400" />
+            <span className="font-bold text-white uppercase tracking-wider">
+              GLOBAL RESPONSE LANGUAGE
+            </span>
           </div>
-          <div>
-            <div style={{ display: 'flex', alignItems: 'center', gap: '8px', flexWrap: 'wrap' }}>
-              <span style={{ fontSize: '13px', fontWeight: 800, color: '#fff', letterSpacing: '-0.01em' }}>
-                Connected Sequential Pipeline
-              </span>
-              <span
-                style={{
-                  padding: '2px 8px',
-                  borderRadius: '999px',
-                  background: 'rgba(6, 182, 212, 0.2)',
-                  color: '#67e8f9',
-                  fontSize: '11px',
-                  fontFamily: 'DM Mono, monospace',
-                  fontWeight: 700,
-                  border: '1px solid rgba(6, 182, 212, 0.3)',
-                }}
-              >
-                NOVA 🧠 → ORBIT 😎 → COSMOS 🧘
-              </span>
-            </div>
-            <p style={{ margin: '4px 0 0', fontSize: '12px', color: '#94a3b8', lineHeight: 1.5 }}>
-              Personas respond in sequence instead of in a vacuum. NOVA answers first; ORBIT receives NOVA's answer to react or build upon it; COSMOS receives both answers to reflect and synthesize. Note: Responses are generated one after another.
-            </p>
-          </div>
-        </div>
-      </div>
-
-      {/* Permanent Memories Section */}
-      <div
-        id="multichat-permanent-memories-card"
-        style={{
-          padding: '18px 20px',
-          borderRadius: '16px',
-          background: 'linear-gradient(145deg, rgba(8, 22, 34, 0.85) 0%, rgba(4, 12, 18, 0.92) 100%)',
-          border: '1px solid rgba(97, 215, 201, 0.28)',
-          boxShadow: '0 4px 20px rgba(0, 0, 0, 0.35)',
-        }}
-      >
-        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '14px', flexWrap: 'wrap', gap: '8px' }}>
-          <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
-            <div
-              style={{
-                width: '34px',
-                height: '34px',
-                borderRadius: '10px',
-                background: 'rgba(97, 215, 201, 0.15)',
-                border: '1px solid rgba(97, 215, 201, 0.35)',
-                display: 'grid',
-                placeItems: 'center',
-                color: '#61d7c9',
-                flexShrink: 0,
-              }}
-            >
-              <Bookmark size={18} />
-            </div>
-            <div>
-              <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
-                <span style={{ fontSize: '14px', fontWeight: 800, color: '#fff', letterSpacing: '-0.01em' }}>
-                  Permanent Memories
-                </span>
-                <span
-                  style={{
-                    padding: '2px 8px',
-                    borderRadius: '999px',
-                    background: memories.length > 0 ? 'rgba(97, 215, 201, 0.2)' : 'rgba(148, 163, 184, 0.15)',
-                    color: memories.length > 0 ? '#61d7c9' : '#94a3b8',
-                    fontSize: '11px',
-                    fontFamily: 'DM Mono, monospace',
-                    fontWeight: 700,
-                    border: `1px solid ${memories.length > 0 ? 'rgba(97, 215, 201, 0.35)' : 'rgba(148, 163, 184, 0.25)'}`,
-                  }}
-                >
-                  {memories.length} saved
-                </span>
-              </div>
-              <p style={{ margin: '3px 0 0', fontSize: '12px', color: '#94a3b8', lineHeight: 1.4 }}>
-                Facts about you that all 3 personas (NOVA, ORBIT, COSMOS) will always remember, even after old messages roll off.
-              </p>
-            </div>
-          </div>
+          <span className="text-[10px] text-slate-400">
+            Forces all 3 personas to communicate strictly in the chosen language
+          </span>
         </div>
 
-        {/* Input box */}
-        <div style={{ marginBottom: '14px' }}>
-          <label
-            htmlFor="multichat-memory-input"
-            style={{
-              display: 'block',
-              fontSize: '12px',
-              fontWeight: 600,
-              color: '#cbd5e1',
-              marginBottom: '6px',
-            }}
-          >
-            Add a memory (e.g. My name is DK):
-          </label>
-          <div style={{ display: 'flex', gap: '8px' }}>
-            <input
-              id="multichat-memory-input"
-              type="text"
-              value={newMemoryInput}
-              onChange={(e) => setNewMemoryInput(e.target.value)}
-              onKeyDown={(e) => {
-                if (e.key === 'Enter') {
-                  e.preventDefault();
-                  handleAddMemory();
-                }
-              }}
-              placeholder="Type a fact (e.g. My name is DK)..."
-              style={{
-                flex: 1,
-                padding: '9px 14px',
-                borderRadius: '10px',
-                background: 'rgba(15, 23, 42, 0.75)',
-                border: '1px solid rgba(165, 207, 214, 0.25)',
-                color: '#fff',
-                fontSize: '13px',
-                outline: 'none',
-              }}
-              className="focus:border-[#61d7c9] transition-colors"
-            />
-            <button
-              id="multichat-add-memory-btn"
-              type="button"
-              onClick={handleAddMemory}
-              disabled={!newMemoryInput.trim()}
-              style={{
-                padding: '9px 18px',
-                borderRadius: '10px',
-                background: newMemoryInput.trim() ? '#61d7c9' : 'rgba(97, 215, 201, 0.2)',
-                color: newMemoryInput.trim() ? '#04181a' : '#61d7c9',
-                border: 'none',
-                fontSize: '13px',
-                fontWeight: 700,
-                cursor: newMemoryInput.trim() ? 'pointer' : 'not-allowed',
-                display: 'flex',
-                alignItems: 'center',
-                gap: '6px',
-                transition: 'all 0.15s ease',
-              }}
-            >
-              <Plus size={16} />
-              Add
-            </button>
-          </div>
-        </div>
-
-        {/* List of currently saved memories */}
-        <div>
-          {memories.length === 0 ? (
-            <div
-              style={{
-                padding: '12px 14px',
-                borderRadius: '10px',
-                background: 'rgba(15, 23, 42, 0.5)',
-                border: '1px dashed rgba(165, 207, 214, 0.2)',
-                color: '#94a3b8',
-                fontSize: '12px',
-                textAlign: 'center',
-              }}
-            >
-              No permanent memories saved yet. Add facts above to have NOVA, ORBIT, and COSMOS always remember them.
-            </div>
-          ) : (
-            <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
-              {memories.map((mem, index) => (
-                <div
-                  key={`${index}-${mem}`}
-                  id={`multichat-memory-item-${index}`}
-                  style={{
-                    padding: '8px 12px',
-                    borderRadius: '10px',
-                    background: 'rgba(15, 23, 42, 0.7)',
-                    border: '1px solid rgba(165, 207, 214, 0.18)',
-                    display: 'flex',
-                    alignItems: 'center',
-                    justifyContent: 'space-between',
-                    gap: '12px',
-                  }}
-                >
-                  <div style={{ display: 'flex', alignItems: 'center', gap: '8px', overflow: 'hidden' }}>
-                    <span
-                      style={{
-                        width: '6px',
-                        height: '6px',
-                        borderRadius: '50%',
-                        background: '#61d7c9',
-                        flexShrink: 0,
-                      }}
-                    />
-                    <span
-                      style={{
-                        fontSize: '13px',
-                        color: '#e2e8f0',
-                        wordBreak: 'break-word',
-                      }}
-                    >
-                      {mem}
-                    </span>
-                  </div>
-                  <button
-                    id={`multichat-delete-memory-btn-${index}`}
-                    type="button"
-                    onClick={() => handleDeleteMemory(index)}
-                    title="Remove memory"
-                    style={{
-                      padding: '5px',
-                      borderRadius: '6px',
-                      background: 'transparent',
-                      border: 'none',
-                      color: '#94a3b8',
-                      cursor: 'pointer',
-                      display: 'grid',
-                      placeItems: 'center',
-                      flexShrink: 0,
-                      transition: 'all 0.15s ease',
-                    }}
-                    className="hover:text-red-400 hover:bg-red-500/10"
-                  >
-                    <Trash2 size={15} />
-                  </button>
-                </div>
-              ))}
-            </div>
-          )}
-        </div>
-      </div>
-
-      {/* Response Language Section */}
-      <div
-        id="multichat-response-language-card"
-        style={{
-          padding: '18px 20px',
-          borderRadius: '16px',
-          background: 'linear-gradient(145deg, rgba(8, 22, 34, 0.85) 0%, rgba(4, 12, 18, 0.92) 100%)',
-          border: '1px solid rgba(97, 215, 201, 0.28)',
-          boxShadow: '0 4px 20px rgba(0, 0, 0, 0.35)',
-        }}
-      >
-        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '14px', flexWrap: 'wrap', gap: '8px' }}>
-          <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
-            <div
-              style={{
-                width: '34px',
-                height: '34px',
-                borderRadius: '10px',
-                background: 'rgba(97, 215, 201, 0.15)',
-                border: '1px solid rgba(97, 215, 201, 0.35)',
-                display: 'grid',
-                placeItems: 'center',
-                color: '#61d7c9',
-                flexShrink: 0,
-              }}
-            >
-              <Languages size={18} />
-            </div>
-            <div>
-              <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
-                <span style={{ fontSize: '14px', fontWeight: 800, color: '#fff', letterSpacing: '-0.01em' }}>
-                  RESPONSE LANGUAGE
-                </span>
-                <span
-                  style={{
-                    padding: '2px 8px',
-                    borderRadius: '999px',
-                    background: (config.responseLanguage || 'English').toLowerCase() !== 'english' ? 'rgba(97, 215, 201, 0.2)' : 'rgba(148, 163, 184, 0.15)',
-                    color: (config.responseLanguage || 'English').toLowerCase() !== 'english' ? '#61d7c9' : '#94a3b8',
-                    fontSize: '11px',
-                    fontFamily: 'DM Mono, monospace',
-                    fontWeight: 700,
-                    border: `1px solid ${(config.responseLanguage || 'English').toLowerCase() !== 'english' ? 'rgba(97, 215, 201, 0.35)' : 'rgba(148, 163, 184, 0.25)'}`,
-                  }}
-                >
-                  {config.responseLanguage || 'English'}
-                </span>
-              </div>
-            </div>
-          </div>
-        </div>
-
-        {/* Input box + Reset to English button */}
-        <div style={{ display: 'flex', gap: '8px', alignItems: 'center' }}>
+        <div className="flex items-center gap-3 flex-wrap">
           <input
-            id="multichat-response-language-input"
             type="text"
-            value={config.responseLanguage !== undefined ? config.responseLanguage : 'English'}
+            value={config.responseLanguage || 'English'}
             onChange={(e) => handleResponseLanguageChange(e.target.value)}
-            placeholder="English"
-            style={{
-              flex: 1,
-              padding: '9px 14px',
-              borderRadius: '10px',
-              background: 'rgba(15, 23, 42, 0.75)',
-              border: '1px solid rgba(165, 207, 214, 0.25)',
-              color: '#fff',
-              fontSize: '13px',
-              outline: 'none',
-            }}
-            className="focus:border-[#61d7c9] transition-colors"
+            placeholder="e.g. English, Spanish, French, Japanese, German..."
+            className="flex-1 min-w-[200px] px-3.5 py-2 rounded-xl bg-slate-900 border border-white/15 text-white focus:outline-none focus:border-cyan-400 font-mono text-xs"
           />
-          <button
-            id="multichat-reset-language-btn"
-            type="button"
-            onClick={handleResetResponseLanguage}
-            title="Reset Response Language to English"
-            style={{
-              padding: '9px 16px',
-              borderRadius: '10px',
-              background: 'rgba(15, 23, 42, 0.8)',
-              color: '#cbd5e1',
-              border: '1px solid rgba(165, 207, 214, 0.25)',
-              fontSize: '13px',
-              fontWeight: 600,
-              cursor: 'pointer',
-              display: 'flex',
-              alignItems: 'center',
-              gap: '6px',
-              whiteSpace: 'nowrap',
-              transition: 'all 0.15s ease',
-            }}
-            className="hover:border-[#61d7c9] hover:text-[#61d7c9]"
-          >
-            <RotateCcw size={14} />
-            Reset to English
-          </button>
+          <div className="flex items-center gap-1.5 flex-wrap">
+            {['English', 'Spanish', 'French', 'German', 'Japanese', 'Chinese'].map((lang) => (
+              <button
+                key={lang}
+                type="button"
+                onClick={() => handleResponseLanguageChange(lang)}
+                className={`px-2.5 py-1 rounded-lg text-[11px] font-bold cursor-pointer transition-colors ${
+                  (config.responseLanguage || 'English').toLowerCase() === lang.toLowerCase()
+                    ? 'bg-cyan-500/20 text-cyan-300 border border-cyan-400'
+                    : 'bg-white/5 text-slate-400 border border-white/5 hover:text-white'
+                }`}
+              >
+                {lang}
+              </button>
+            ))}
+          </div>
         </div>
-        <p style={{ margin: '8px 0 0', fontSize: '12px', color: '#94a3b8', lineHeight: 1.4 }}>
-          Type any language (e.g. &quot;Japanese&quot;, &quot;France&quot;, &quot;Formal English&quot;). All 3 personas will respond in this language.
-        </p>
       </div>
 
-      {/* 3 Persona Cards Grid */}
-      <div className="grid grid-cols-1 gap-6">
-        {personasList.map((persona) => {
-          const isPromptOpen = Boolean(expandedPrompts[persona.id]);
-          const defaultPrompt = DEFAULT_MULTICHAT_SYSTEM_PROMPTS[persona.id] || '';
-          const isCustomized = (persona.systemPrompt || '').trim() !== defaultPrompt.trim();
+      {/* THREE PERSONA CONFIGURATION CARDS */}
+      <div className="space-y-5">
+        {(['nova', 'orbit', 'cosmos'] as const).map((personaId) => {
+          const persona = config.personas[personaId];
+          if (!persona) return null;
+
+          const theme = PERSONA_THEMES[personaId] || PERSONA_THEMES.nova;
+          const Icon = theme.icon;
+          const isPromptExpanded = Boolean(expandedPrompts[personaId]);
 
           return (
             <div
-              key={persona.id}
+              key={personaId}
+              id={`multichat-config-${personaId}`}
+              className="nexus-corner-bracket relative rounded-2xl overflow-hidden bg-slate-950/80 border transition-all"
               style={{
-                borderRadius: '16px',
-                background: 'linear-gradient(145deg, rgba(8, 22, 34, 0.75) 0%, rgba(4, 12, 18, 0.85) 100%)',
-                border: `1px solid ${persona.enabled ? persona.accentColor + '55' : 'rgba(165, 207, 214, 0.15)'}`,
-                boxShadow: persona.enabled
-                  ? `0 4px 24px ${persona.accentColor}18`
-                  : 'none',
-                transition: 'all 0.25s ease',
-                overflow: 'hidden',
+                borderColor: theme.border,
+                boxShadow: `0 8px 32px rgba(0, 0, 0, 0.5), inset 0 0 20px ${theme.bg}`,
               }}
             >
-              {/* Persona Card Header */}
+              {/* Persona Section Header */}
               <div
-                style={{
-                  padding: '16px 20px',
-                  background: 'rgba(10, 26, 40, 0.65)',
-                  borderBottom: '1px solid rgba(165, 207, 214, 0.12)',
-                  display: 'flex',
-                  justifyContent: 'space-between',
-                  alignItems: 'center',
-                  flexWrap: 'wrap',
-                  gap: '12px',
-                }}
+                className="p-4 sm:p-5 bg-black/60 border-b border-white/10 flex items-center justify-between flex-wrap gap-3"
               >
-                <div style={{ display: 'flex', alignItems: 'center', gap: '14px' }}>
+                <div className="flex items-center gap-3 min-w-0">
                   <div
+                    className="w-10 h-10 rounded-xl flex items-center justify-center shrink-0 font-bold text-base shadow-md"
                     style={{
-                      width: '42px',
-                      height: '42px',
-                      borderRadius: '12px',
-                      background: `${persona.accentColor}22`,
-                      border: `1.5px solid ${persona.accentColor}66`,
-                      display: 'grid',
-                      placeItems: 'center',
-                      fontSize: '22px',
-                      boxShadow: `0 0 16px ${persona.accentColor}33`,
+                      background: theme.bg,
+                      border: `1.5px solid ${theme.color}`,
+                      color: theme.color,
                     }}
                   >
-                    {persona.icon}
+                    <Icon size={20} />
                   </div>
-                  <div>
-                    <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
-                      <h3 style={{ margin: 0, fontSize: '18px', fontWeight: 800, color: '#fff' }}>
+
+                  <div className="min-w-0">
+                    <div className="flex items-center gap-2">
+                      <span className="text-base font-black text-white">
                         {persona.name}
-                      </h3>
+                      </span>
                       <span
+                        className="text-[9px] px-2 py-0.5 rounded font-bold uppercase"
                         style={{
-                          fontSize: '11px',
-                          fontFamily: 'DM Mono',
-                          padding: '2px 8px',
-                          borderRadius: '6px',
-                          background: `${persona.accentColor}20`,
-                          color: persona.accentColor,
-                          border: `1px solid ${persona.accentColor}40`,
-                          fontWeight: 700,
+                          background: `${theme.color}20`,
+                          color: theme.color,
+                          border: `1px solid ${theme.color}40`,
                         }}
                       >
                         {persona.toneBadge}
                       </span>
                     </div>
-                    <p style={{ margin: '3px 0 0', fontSize: '12px', color: 'var(--muted)' }}>
-                      {persona.description}
-                    </p>
+                    <div className="text-xs text-slate-400">
+                      {persona.role} • {persona.description}
+                    </div>
                   </div>
                 </div>
 
-                {/* Enable / Disable Switch */}
-                <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
-                  <span
-                    style={{
-                      fontSize: '12px',
-                      fontWeight: 700,
-                      fontFamily: 'DM Mono',
-                      color: persona.enabled ? persona.accentColor : 'var(--muted)',
-                    }}
+                {/* Enable / Disable Toggle & Reset Single */}
+                <div className="flex items-center gap-2.5">
+                  <button
+                    type="button"
+                    onClick={() => handleResetSinglePersona(personaId)}
+                    className="px-2.5 py-1.5 rounded-lg bg-white/5 border border-white/10 hover:border-cyan-400/40 text-slate-400 hover:text-white transition-colors cursor-pointer text-[11px]"
+                    title="Reset this persona prompt and defaults"
                   >
-                    {persona.enabled ? 'ACTIVE' : 'DISABLED'}
-                  </span>
-                  <label
-                    style={{
-                      position: 'relative',
-                      display: 'inline-block',
-                      width: '46px',
-                      height: '24px',
-                      cursor: 'pointer',
-                    }}
-                  >
+                    Reset Persona
+                  </button>
+
+                  <label className="flex items-center gap-2 cursor-pointer p-1.5 rounded-xl bg-white/5 border border-white/10">
                     <input
                       type="checkbox"
                       checked={persona.enabled}
-                      onChange={(e) => handlePersonaChange(persona.id, { enabled: e.target.checked })}
-                      style={{ opacity: 0, width: 0, height: 0 }}
+                      onChange={(e) => handlePersonaChange(personaId, { enabled: e.target.checked })}
+                      className="accent-cyan-400 w-4 h-4 cursor-pointer"
                     />
-                    <span
-                      style={{
-                        position: 'absolute',
-                        top: 0,
-                        left: 0,
-                        right: 0,
-                        bottom: 0,
-                        backgroundColor: persona.enabled ? persona.accentColor : 'rgba(255,255,255,0.15)',
-                        transition: '.3s',
-                        borderRadius: '24px',
-                        boxShadow: persona.enabled ? `0 0 10px ${persona.accentColor}66` : 'none',
-                      }}
-                    >
-                      <span
-                        style={{
-                          position: 'absolute',
-                          height: '18px',
-                          width: '18px',
-                          left: persona.enabled ? '24px' : '3px',
-                          bottom: '3px',
-                          backgroundColor: '#fff',
-                          transition: '.3s',
-                          borderRadius: '50%',
-                        }}
-                      />
+                    <span className={`text-xs font-bold ${persona.enabled ? 'text-cyan-300' : 'text-slate-500'}`}>
+                      {persona.enabled ? 'ENABLED' : 'DISABLED'}
                     </span>
                   </label>
                 </div>
               </div>
 
-              {/* Persona Controls Body */}
-              <div style={{ padding: '20px', display: 'flex', flexDirection: 'column', gap: '16px' }}>
-                {/* 2-Column Settings Grid */}
-                <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(280px, 1fr))', gap: '16px' }}>
-                  {/* Primary AI Provider */}
+              {/* Persona Engine Controls Grid */}
+              <div className="p-4 sm:p-5 space-y-4">
+                <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+                  {/* Provider Selector */}
                   <div>
-                    <label
-                      style={{
-                        display: 'block',
-                        fontSize: '11px',
-                        fontFamily: 'DM Mono',
-                        color: 'var(--accent)',
-                        marginBottom: '6px',
-                        letterSpacing: '0.05em',
-                        fontWeight: 700,
-                      }}
-                    >
-                      AI PROVIDER
+                    <label className="block text-[10px] uppercase font-bold text-slate-400 mb-1.5">
+                      AI PROVIDER:
                     </label>
                     <select
-                      value={persona.providerId}
-                      onChange={(e) => {
-                        const newProvId = e.target.value;
-                        const prov = providersState.providers.find((p) => p.id === newProvId);
-                        handlePersonaChange(persona.id, {
-                          providerId: newProvId,
-                          modelId: prov ? prov.model : persona.modelId || 'deepseek/deepseek-chat',
-                        });
-                      }}
-                      style={{
-                        width: '100%',
-                        padding: '10px 12px',
-                        borderRadius: '8px',
-                        background: 'rgba(6,16,24,0.85)',
-                        border: '1px solid rgba(165,207,214,0.25)',
-                        color: '#e7eef2',
-                        fontSize: '13px',
-                        outline: 'none',
-                      }}
+                      value={persona.providerId || 'existing'}
+                      onChange={(e) => handlePersonaChange(personaId, { providerId: e.target.value })}
+                      className="w-full px-3 py-2 rounded-xl bg-slate-900 border border-white/15 text-white focus:outline-none focus:border-cyan-400 font-mono text-xs"
                     >
                       {availableProviders.map((p) => (
                         <option key={p.id} value={p.id}>
-                          {p.name} {p.keyCount > 0 ? `(${p.keyCount} key)` : ''}
+                          {p.name}
                         </option>
                       ))}
                     </select>
                   </div>
 
-                  {/* Model Identifier */}
+                  {/* Model Name */}
                   <div>
-                    <label
-                      style={{
-                        display: 'block',
-                        fontSize: '11px',
-                        fontFamily: 'DM Mono',
-                        color: 'var(--accent)',
-                        marginBottom: '6px',
-                        letterSpacing: '0.05em',
-                        fontWeight: 700,
-                      }}
-                    >
-                      MODEL IDENTIFIER
+                    <label className="block text-[10px] uppercase font-bold text-slate-400 mb-1.5">
+                      MODEL NAME:
                     </label>
-                    <div style={{ display: 'flex', gap: '8px' }}>
-                      <input
-                        type="text"
-                        value={persona.modelId}
-                        onChange={(e) => handlePersonaChange(persona.id, { modelId: e.target.value })}
-                        placeholder="e.g. deepseek/deepseek-chat"
-                        style={{
-                          flex: 1,
-                          padding: '10px 12px',
-                          borderRadius: '8px',
-                          background: 'rgba(6,16,24,0.85)',
-                          border: '1px solid rgba(165,207,214,0.25)',
-                          color: '#e7eef2',
-                          fontSize: '13px',
-                          outline: 'none',
-                          fontFamily: 'DM Mono',
-                        }}
-                      />
-
-                      <select
-                        aria-label="Select model preset"
-                        value=""
-                        onChange={(e) => {
-                          if (e.target.value) {
-                            handlePersonaChange(persona.id, { modelId: e.target.value });
-                          }
-                        }}
-                        style={{
-                          width: '42px',
-                          borderRadius: '8px',
-                          background: 'rgba(14,31,48,0.9)',
-                          border: '1px solid rgba(165,207,214,0.25)',
-                          color: 'var(--accent)',
-                          fontSize: '12px',
-                          cursor: 'pointer',
-                        }}
-                        title="Choose model preset"
-                      >
-                        <option value="">▼</option>
-                        {MODEL_PRESETS.map((m) => (
-                          <option key={m} value={m}>
-                            {m}
-                          </option>
-                        ))}
-                      </select>
-                    </div>
-                  </div>
-                </div>
-
-                {/* Max Output Tokens Slider & Number Input */}
-                <div>
-                  <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '6px' }}>
-                    <label
-                      style={{
-                        fontSize: '11px',
-                        fontFamily: 'DM Mono',
-                        color: 'var(--accent)',
-                        letterSpacing: '0.05em',
-                        fontWeight: 700,
-                      }}
-                    >
-                      MAX OUTPUT TOKENS
-                    </label>
-                    <span style={{ fontSize: '11px', fontFamily: 'DM Mono', color: 'var(--muted)' }}>
-                      {persona.maxTokens} tokens
-                    </span>
-                  </div>
-                  <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
                     <input
-                      type="range"
-                      min={40}
-                      max={2000}
-                      step={10}
-                      value={persona.maxTokens}
-                      onChange={(e) =>
-                        handlePersonaChange(persona.id, { maxTokens: parseInt(e.target.value, 10) })
-                      }
-                      style={{ flex: 1, accentColor: persona.accentColor }}
+                      type="text"
+                      value={persona.modelId || ''}
+                      onChange={(e) => handlePersonaChange(personaId, { modelId: e.target.value })}
+                      placeholder="e.g. deepseek/deepseek-chat"
+                      className="w-full px-3 py-2 rounded-xl bg-slate-900 border border-white/15 text-white focus:outline-none focus:border-cyan-400 font-mono text-xs"
                     />
+                  </div>
+
+                  {/* Max Tokens Budget */}
+                  <div>
+                    <label className="block text-[10px] uppercase font-bold text-slate-400 mb-1.5">
+                      MAX TOKENS BUDGET: ({persona.maxTokens || 350})
+                    </label>
                     <input
                       type="number"
-                      min={40}
+                      min={100}
                       max={4000}
-                      value={persona.maxTokens}
+                      step={50}
+                      value={persona.maxTokens || 350}
                       onChange={(e) =>
-                        handlePersonaChange(persona.id, {
-                          maxTokens: Math.max(40, parseInt(e.target.value, 10) || 250),
-                        })
+                        handlePersonaChange(personaId, { maxTokens: parseInt(e.target.value, 10) || 350 })
                       }
-                      style={{
-                        width: '80px',
-                        padding: '6px 8px',
-                        borderRadius: '6px',
-                        background: 'rgba(6,16,24,0.85)',
-                        border: '1px solid rgba(165,207,214,0.2)',
-                        color: '#e7eef2',
-                        fontSize: '12px',
-                        fontFamily: 'DM Mono',
-                        textAlign: 'center',
-                      }}
+                      className="w-full px-3 py-2 rounded-xl bg-slate-900 border border-white/15 text-white focus:outline-none focus:border-cyan-400 font-mono text-xs"
                     />
                   </div>
                 </div>
 
-                {/* Editable System Prompt Section */}
-                <div
-                  style={{
-                    borderRadius: '12px',
-                    background: 'rgba(5,13,22,0.85)',
-                    border: '1px solid rgba(97,215,201,0.25)',
-                    overflow: 'hidden',
-                  }}
-                >
-                  {/* Prompt Header */}
-                  <div
-                    style={{
-                      padding: '12px 16px',
-                      background: 'rgba(10,22,36,0.9)',
-                      borderBottom: isPromptOpen ? '1px solid rgba(97,215,201,0.2)' : 'none',
-                      display: 'flex',
-                      alignItems: 'center',
-                      justifyContent: 'space-between',
-                      flexWrap: 'wrap',
-                      gap: '10px',
-                    }}
+                {/* System Prompt Accordion */}
+                <div className="rounded-xl border border-white/10 bg-black/40 overflow-hidden">
+                  <button
+                    type="button"
+                    onClick={() => togglePromptExpanded(personaId)}
+                    className="w-full p-3 flex items-center justify-between text-left font-bold text-slate-300 hover:text-white hover:bg-white/5 transition-colors cursor-pointer"
                   >
-                    <div
-                      onClick={() => togglePromptExpanded(persona.id)}
-                      style={{
-                        display: 'flex',
-                        alignItems: 'center',
-                        gap: '8px',
-                        cursor: 'pointer',
-                        userSelect: 'none',
-                      }}
-                    >
-                      <FileCode2 size={16} className="text-cyan-400" />
-                      <span style={{ fontSize: '12px', fontWeight: 700, fontFamily: 'DM Mono', color: '#61d7c9' }}>
-                        SYSTEM PROMPT / INSTRUCTIONS
-                      </span>
-                      <span style={{ fontSize: '11px', color: 'var(--muted)', fontFamily: 'DM Mono' }}>
-                        ({(persona.systemPrompt || '').length} chars)
-                      </span>
-                      {isPromptOpen ? <ChevronUp size={15} /> : <ChevronDown size={15} />}
+                    <div className="flex items-center gap-2">
+                      <FileCode2 size={13} style={{ color: theme.color }} />
+                      <span>SYSTEM PROMPT INSTRUCTION</span>
                     </div>
+                    {isPromptExpanded ? <ChevronUp size={14} /> : <ChevronDown size={14} />}
+                  </button>
 
-                    <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
-                      {isCustomized && (
-                        <span style={{ fontSize: '11px', color: '#fbbf24', fontFamily: 'DM Mono' }}>
-                          ● Custom Prompt
-                        </span>
-                      )}
-                      <button
-                        type="button"
-                        onClick={() => handleResetSinglePersona(persona.id)}
-                        style={{
-                          padding: '4px 10px',
-                          fontSize: '11px',
-                          fontFamily: 'DM Mono',
-                          borderRadius: '6px',
-                          background: 'rgba(255,255,255,0.06)',
-                          border: '1px solid rgba(255,255,255,0.18)',
-                          color: '#cbd5e1',
-                          cursor: 'pointer',
-                          display: 'inline-flex',
-                          alignItems: 'center',
-                          gap: '4px',
-                        }}
-                        title="Reset this persona prompt to factory default"
-                      >
-                        <RotateCcw size={12} />
-                        Reset to Default
-                      </button>
-                    </div>
-                  </div>
-
-                  {/* Prompt Textarea */}
-                  {isPromptOpen && (
-                    <div style={{ padding: '12px' }}>
+                  {isPromptExpanded && (
+                    <div className="p-3 pt-0 border-t border-white/5">
                       <textarea
-                        rows={6}
+                        rows={7}
                         value={persona.systemPrompt || ''}
-                        onChange={(e) => handlePersonaChange(persona.id, { systemPrompt: e.target.value })}
-                        placeholder="Define system persona directives..."
-                        style={{
-                          width: '100%',
-                          padding: '12px',
-                          borderRadius: '8px',
-                          background: 'rgba(4,10,16,0.95)',
-                          border: '1px solid rgba(165,207,214,0.18)',
-                          color: '#e2e8f0',
-                          fontSize: '13px',
-                          lineHeight: '1.6',
-                          fontFamily: 'DM Mono, monospace',
-                          resize: 'vertical',
-                          outline: 'none',
-                        }}
+                        onChange={(e) => handlePersonaChange(personaId, { systemPrompt: e.target.value })}
+                        className="w-full p-3 rounded-lg bg-slate-950 border border-white/10 text-slate-200 font-mono text-xs leading-relaxed focus:outline-none focus:border-cyan-400 resize-y"
                       />
                     </div>
                   )}
@@ -1069,72 +426,111 @@ export function MultiChatSettings({ onSaved }: MultiChatSettingsProps) {
         })}
       </div>
 
-      {/* Confirmation Modal for Reset All */}
-      {showResetModal && (
-        <div
-          style={{
-            position: 'fixed',
-            inset: 0,
-            zIndex: 9999,
-            display: 'grid',
-            placeItems: 'center',
-            background: 'rgba(0,0,0,0.75)',
-            backdropFilter: 'blur(4px)',
-            padding: '16px',
-          }}
-        >
-          <div
-            style={{
-              maxWidth: '460px',
-              width: '100%',
-              background: '#071622',
-              borderRadius: '16px',
-              border: '1px solid rgba(239,68,68,0.4)',
-              padding: '24px',
-              boxShadow: '0 16px 48px rgba(0,0,0,0.6)',
+      {/* PERMANENT MEMORIES SECTION */}
+      <div
+        id="multichat-memories-section"
+        className="nexus-corner-bracket relative rounded-2xl p-4 sm:p-6 bg-slate-950/80 border border-cyan-500/25 shadow-xl space-y-4 font-mono"
+      >
+        <div className="flex items-center justify-between gap-2 border-b border-white/10 pb-3 flex-wrap">
+          <div className="flex items-center gap-2">
+            <Bookmark size={18} className="text-cyan-400" />
+            <h3 className="m-0 text-sm sm:text-base font-black text-white uppercase tracking-wider">
+              PERMANENT MEMORIES & USER FACTS ({memories.length})
+            </h3>
+          </div>
+          <span className="text-[10px] text-slate-400">
+            Injected automatically into all 3 personas as foundational user context
+          </span>
+        </div>
+
+        {/* Add Memory Row */}
+        <div className="flex items-center gap-2">
+          <input
+            type="text"
+            value={newMemoryInput}
+            onChange={(e) => setNewMemoryInput(e.target.value)}
+            onKeyDown={(e) => {
+              if (e.key === 'Enter' && newMemoryInput.trim()) {
+                e.preventDefault();
+                handleAddMemory();
+              }
             }}
+            placeholder="Add permanent user fact (e.g. 'I am building a Next.js robotics dashboard in Tokyo')..."
+            className="flex-1 px-3.5 py-2.5 rounded-xl bg-black/70 border border-cyan-500/30 text-white placeholder-slate-500 focus:outline-none focus:border-cyan-400 text-xs"
+          />
+          <button
+            type="button"
+            disabled={!newMemoryInput.trim()}
+            onClick={handleAddMemory}
+            className="px-4 py-2.5 rounded-xl bg-cyan-500/20 text-cyan-200 border border-cyan-400 hover:bg-cyan-500/30 disabled:opacity-40 disabled:cursor-not-allowed font-bold cursor-pointer transition-colors flex items-center gap-1.5"
           >
-            <div style={{ display: 'flex', alignItems: 'center', gap: '12px', color: '#f87171', marginBottom: '14px' }}>
-              <AlertCircle size={24} />
-              <h3 style={{ margin: 0, fontSize: '18px', fontWeight: 800, color: '#fff' }}>
-                Reset All Personas?
-              </h3>
+            <Plus size={14} />
+            <span>Add Fact</span>
+          </button>
+        </div>
+
+        {/* Memories List */}
+        {memories.length === 0 ? (
+          <div className="p-6 text-center text-slate-500 italic text-xs rounded-xl bg-black/40 border border-white/5">
+            No permanent memories recorded yet. Add facts above to ground NOVA, ORBIT, and COSMOS in your context.
+          </div>
+        ) : (
+          <div className="space-y-2">
+            {memories.map((mem, idx) => (
+              <div
+                key={idx}
+                className="p-3 rounded-xl bg-black/50 border border-white/10 flex items-center justify-between gap-3 text-slate-200 font-sans text-xs group"
+              >
+                <div className="flex items-center gap-2 min-w-0">
+                  <span className="w-1.5 h-1.5 rounded-full bg-cyan-400 shrink-0" />
+                  <span className="leading-relaxed">{mem}</span>
+                </div>
+                <button
+                  type="button"
+                  onClick={() => handleDeleteMemory(idx)}
+                  className="text-slate-500 hover:text-rose-400 p-1 rounded cursor-pointer transition-colors shrink-0"
+                  title="Delete memory"
+                >
+                  <Trash2 size={13} />
+                </button>
+              </div>
+            ))}
+          </div>
+        )}
+      </div>
+
+      {/* Reset Confirmation Modal */}
+      {showResetModal && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/80 backdrop-blur-md animate-fadeIn">
+          <div className="nexus-corner-bracket relative w-full max-w-md rounded-2xl p-6 bg-slate-950 border border-rose-500/50 shadow-2xl space-y-4">
+            <div className="flex items-center gap-3">
+              <div className="w-10 h-10 rounded-xl bg-rose-500/20 border border-rose-500 text-rose-400 flex items-center justify-center">
+                <AlertCircle size={20} />
+              </div>
+              <div>
+                <h3 className="m-0 text-base font-black text-white font-mono">
+                  RESET ALL TO DEFAULT?
+                </h3>
+                <p className="m-0 text-xs text-slate-400 font-sans">
+                  This will restore NOVA, ORBIT, and COSMOS system prompts and baseline settings.
+                </p>
+              </div>
             </div>
-            <p style={{ fontSize: '14px', color: '#cbd5e1', lineHeight: 1.6, margin: '0 0 20px' }}>
-              This will restore NOVA, ORBIT, and COSMOS to their initial factory default system prompts, providers, and token limits. Any custom edits you made will be overwritten.
-            </p>
-            <div style={{ display: 'flex', justifyContent: 'flex-end', gap: '10px' }}>
+
+            <div className="flex items-center justify-end gap-2 pt-2">
               <button
                 type="button"
                 onClick={() => setShowResetModal(false)}
-                style={{
-                  padding: '8px 16px',
-                  borderRadius: '8px',
-                  background: 'rgba(255,255,255,0.08)',
-                  border: '1px solid rgba(255,255,255,0.15)',
-                  color: '#cbd5e1',
-                  fontSize: '13px',
-                  fontWeight: 600,
-                  cursor: 'pointer',
-                }}
+                className="px-4 py-2 rounded-xl bg-white/5 border border-white/10 text-slate-300 hover:text-white font-bold cursor-pointer"
               >
                 Cancel
               </button>
               <button
                 type="button"
                 onClick={handleResetAllToDefault}
-                style={{
-                  padding: '8px 18px',
-                  borderRadius: '8px',
-                  background: '#ef4444',
-                  border: 'none',
-                  color: '#fff',
-                  fontSize: '13px',
-                  fontWeight: 700,
-                  cursor: 'pointer',
-                }}
+                className="px-4 py-2 rounded-xl bg-rose-500 text-white font-bold cursor-pointer hover:bg-rose-600 transition-colors"
               >
-                Reset Everything
+                Reset All Personas
               </button>
             </div>
           </div>

@@ -2,6 +2,7 @@ import { storage } from '@/lib/storage';
 import { api } from '@/services/api';
 import { searchDocumentLibrary } from '@/services/documentLibraryService';
 import { applyReasoningConfig } from '@/lib/reasoningConfig';
+import { getCategoryById } from '@/data/multiChatCategories';
 import type {
   AIProviderConfig,
   MultiChatMessage,
@@ -10,6 +11,7 @@ import type {
   MultiChatSystemConfig,
   MultiChatBranchTurn,
   DocumentRetrievalResult,
+  MultiChatCategoryId,
 } from '@/types';
 
 /**
@@ -904,6 +906,7 @@ export async function executeSinglePersona(
   permanentMemories?: string[],
   responseLanguage?: string,
   documentChunks?: DocumentRetrievalResult[],
+  category?: MultiChatCategoryId | string,
 ): Promise<MultiChatPersonaResponse> {
   const startTime = Date.now();
   const baseResponse: MultiChatPersonaResponse = {
@@ -961,6 +964,14 @@ export async function executeSinglePersona(
   const lang = (typeof rawLang === 'string' && rawLang.trim()) ? rawLang.trim() : 'English';
   if (lang) {
     systemContent += `\n\nRespond only in: ${lang}. Strictly output your response in ${lang} while maintaining your personality style and adhering to your adaptive length rules.`;
+  }
+
+  // Inject conversation domain context if category preset is provided
+  if (category && category !== 'general') {
+    const catConfig = getCategoryById(category);
+    if (catConfig) {
+      systemContent += `\n\n[CONVERSATION DOMAIN: ${catConfig.label.toUpperCase()}]: ${catConfig.promptContext}`;
+    }
   }
 
   // Inject mandatory current turn directive based on detected intent
@@ -1355,6 +1366,7 @@ export async function executeMultiChatTurn({
   permanentMemories,
   responseLanguage,
   enableDocLens = false,
+  category,
 }: {
   query: string;
   conversationHistory: MultiChatMessage[];
@@ -1363,6 +1375,7 @@ export async function executeMultiChatTurn({
   permanentMemories?: string[];
   responseLanguage?: string;
   enableDocLens?: boolean;
+  category?: MultiChatCategoryId | string;
 }): Promise<{ responses: MultiChatPersonaResponse[]; docChunks?: DocumentRetrievalResult[] }> {
   const activeMemories = permanentMemories ?? storage.getMultiChatMemories();
   const activeLanguage = responseLanguage ?? config.responseLanguage ?? storage.getMultiChatResponseLanguage();
@@ -1434,6 +1447,7 @@ export async function executeMultiChatTurn({
       activeMemories,
       activeLanguage,
       retrievedChunks,
+      category,
     );
 
     results.push(result);

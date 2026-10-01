@@ -39,6 +39,7 @@ const KEYS = {
   multiChatConfig: 'nexus-multichat-config-v1',
   multiChatMessages: 'nexus-multichat-messages-v1',
   multiChatMemories: 'nexus-multichat-memories-v1',
+  multiChatCategory: 'nexus-multichat-category-v1',
   documentLibrary: 'nexus-document-library-v1',
   documentRagSettings: 'nexus-document-rag-settings-v1',
   parallaxConfig: 'nexus-parallax-config-v1',
@@ -1934,6 +1935,14 @@ export const storage = {
     const current = read<MultiChatMessage[]>(KEYS.multiChatMessages, []);
     const filtered = current.filter((m) => m.id !== messageId);
     write(KEYS.multiChatMessages, filtered);
+  },
+
+  getMultiChatCategory(): string {
+    return read<string>(KEYS.multiChatCategory, 'general');
+  },
+
+  saveMultiChatCategory(category: string): void {
+    write(KEYS.multiChatCategory, category);
   },
 
   getMultiChatMemories(): string[] {

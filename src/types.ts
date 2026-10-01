@@ -496,6 +496,26 @@ export interface MultiChatPersonaResponse {
   branches?: MultiChatBranchTurn[];
 }
 
+export type MultiChatCategoryId =
+  | 'general'
+  | 'research'
+  | 'technology'
+  | 'science'
+  | 'strategy'
+  | 'learning'
+  | 'creative'
+  | 'philosophy';
+
+export interface MultiChatCategoryConfig {
+  id: MultiChatCategoryId;
+  label: string;
+  iconName: string;
+  badge: string;
+  description: string;
+  promptContext: string;
+  suggestedQuestions: string[];
+}
+
 export interface MultiChatMessage {
   id: string;
   query: string;
@@ -503,6 +523,7 @@ export interface MultiChatMessage {
   responses: MultiChatPersonaResponse[];
   docChunks?: DocumentRetrievalResult[];
   docLensEnabled?: boolean;
+  category?: MultiChatCategoryId | string;
 }
 
 export type ParallaxAgentId =
