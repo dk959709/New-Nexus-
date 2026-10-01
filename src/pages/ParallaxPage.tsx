@@ -1,34 +1,24 @@
 import React, { useState, useEffect, useRef } from 'react';
 import {
-  Network,
   Sparkles,
   Square,
-  ChevronDown,
-  ChevronUp,
   Settings2,
   MessageSquare,
   Archive,
   Trash2,
   Info,
-  Search,
-  AlertCircle,
-  Volume2,
-  Play,
-  Download,
-  Copy,
-  Check,
-  Loader2,
-  Code2,
-  FileText,
 } from 'lucide-react';
 import { storage } from '@/lib/storage';
 import { runParallaxSwarm } from '@/services/parallaxOrchestrator';
-import { ParallaxSummaryCard } from '@/components/parallax/ParallaxSummaryCard';
+import { ParallaxHeader } from '@/components/parallax/ParallaxHeader';
+import { ParallaxOrbitalCore } from '@/components/parallax/ParallaxOrbitalCore';
+import { ParallaxLiveActivity } from '@/components/parallax/ParallaxLiveActivity';
+import { ParallaxTimeline } from '@/components/parallax/ParallaxTimeline';
+import { ParallaxAgentMatrix } from '@/components/parallax/ParallaxAgentMatrix';
+import { ParallaxDeliberationStream } from '@/components/parallax/ParallaxDeliberationStream';
+import { ParallaxTelemetry } from '@/components/parallax/ParallaxTelemetry';
+import { ParallaxSynthesisReport } from '@/components/parallax/ParallaxSynthesisReport';
 import { ParallaxSettings } from '@/components/parallax/ParallaxSettings';
-import { ParallaxAgentAvatar } from '@/components/parallax/ParallaxAgentIcon';
-import { ParallaxSwarmConstellation } from '@/components/parallax/ParallaxSwarmConstellation';
-import { AGENT_QUADRANTS } from '@/data/parallaxQuadrants';
-import { ParallaxRoundTracker } from '@/components/parallax/ParallaxRoundTracker';
 import { ParallaxAudioVisualizer } from '@/components/parallax/ParallaxAudioVisualizer';
 import { getParallaxAgentVoice, formatFullParallaxTranscript } from '@/data/parallaxVoices';
 import { cleanMarkdownForSpeech } from '@/lib/format';
@@ -608,151 +598,18 @@ export const ParallaxPage: React.FC = () => {
         fontFamily: 'Inter, system-ui, sans-serif',
       }}
     >
-      {/* Top HUD Header */}
-      <div
-        id="parallax-header"
-        style={{
-          borderRadius: '16px',
-          padding: '20px 24px',
-          background: 'linear-gradient(135deg, rgba(8, 22, 34, 0.95) 0%, rgba(4, 12, 18, 0.98) 100%)',
-          border: '1.5px solid rgba(97, 215, 201, 0.35)',
-          boxShadow: '0 8px 32px rgba(0, 0, 0, 0.45)',
-          marginBottom: '20px',
-          display: 'flex',
-          justifyContent: 'space-between',
-          alignItems: 'center',
-          flexWrap: 'wrap',
-          gap: '16px',
-        }}
-      >
-        <div style={{ display: 'flex', alignItems: 'center', gap: '14px' }}>
-          <div
-            style={{
-              width: '46px',
-              height: '46px',
-              borderRadius: '14px',
-              background: 'linear-gradient(135deg, rgba(6, 182, 212, 0.25) 0%, rgba(97, 215, 201, 0.25) 100%)',
-              border: '1.5px solid rgba(97, 215, 201, 0.5)',
-              display: 'grid',
-              placeItems: 'center',
-              color: '#61d7c9',
-              boxShadow: '0 0 20px rgba(6, 182, 212, 0.3)',
-            }}
-          >
-            <Network size={24} />
-          </div>
-          <div>
-            <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
-              <h1 style={{ margin: 0, fontSize: '22px', fontWeight: 900, letterSpacing: '-0.02em', color: '#fff' }}>
-                PARALLAX
-              </h1>
-              <span
-                style={{
-                  fontSize: '11px',
-                  fontFamily: 'DM Mono, monospace',
-                  fontWeight: 800,
-                  padding: '2px 8px',
-                  borderRadius: '6px',
-                  background: 'rgba(97, 215, 201, 0.15)',
-                  color: '#61d7c9',
-                  border: '1px solid rgba(97, 215, 201, 0.35)',
-                }}
-              >
-                SWARM MATRIX v1.0
-              </span>
-            </div>
-            <p style={{ margin: '3px 0 0', fontSize: '13px', color: '#94a3b8' }}>
-              20-Persona High-Velocity Swarm Discussion • 3-Round Hard Cap • VERITAS Tool Grounding
-            </p>
-          </div>
-        </div>
-
-        {/* HUD Badges & Round Tracker */}
-        <div style={{ display: 'flex', alignItems: 'center', gap: '10px', flexWrap: 'wrap' }}>
-          {/* Round Indicator Pill */}
-          <div
-            id="parallax-round-indicator"
-            style={{
-              padding: '6px 14px',
-              borderRadius: '999px',
-              background: isRunning
-                ? 'rgba(6, 182, 212, 0.2)'
-                : summary
-                ? 'rgba(34, 197, 94, 0.2)'
-                : 'rgba(15, 23, 42, 0.8)',
-              border: `1px solid ${
-                isRunning
-                  ? 'rgba(6, 182, 212, 0.5)'
-                  : wasStoppedEarly
-                  ? 'rgba(244, 63, 94, 0.5)'
-                  : summary
-                  ? 'rgba(34, 197, 94, 0.5)'
-                  : 'rgba(165, 207, 214, 0.2)'
-              }`,
-              display: 'flex',
-              alignItems: 'center',
-              gap: '8px',
-              fontSize: '12px',
-              fontWeight: 700,
-              fontFamily: 'DM Mono, monospace',
-              color: isRunning ? '#38bdf8' : wasStoppedEarly ? '#fb7185' : summary ? '#4ade80' : '#cbd5e1',
-            }}
-          >
-            {isRunning && (
-              <span
-                style={{
-                  width: '8px',
-                  height: '8px',
-                  borderRadius: '50%',
-                  background: '#38bdf8',
-                  boxShadow: '0 0 8px #38bdf8',
-                  animation: 'pulse 1.5s infinite',
-                }}
-              />
-            )}
-            {isRunning
-              ? `ROUND ${currentRound || 1} OF 3`
-              : wasStoppedEarly
-              ? 'SWARM STOPPED'
-              : summary
-              ? 'SWARM COMPLETE (3/3)'
-              : 'READY (3 ROUNDS)'}
-          </div>
-
-          {/* Active Agents Badge */}
-          <div
-            style={{
-              padding: '6px 12px',
-              borderRadius: '999px',
-              background: 'rgba(15, 23, 42, 0.8)',
-              border: '1px solid rgba(165, 207, 214, 0.2)',
-              fontSize: '12px',
-              fontFamily: 'DM Mono, monospace',
-              color: '#94a3b8',
-              display: 'flex',
-              alignItems: 'center',
-              gap: '6px',
-            }}
-          >
-            <strong style={{ color: '#61d7c9' }}>{enabledAgentsCount}</strong>/20 Personas
-            <span
-              id="parallax-dynamic-count-badge"
-              style={{
-                color: '#c084fc',
-                background: 'rgba(192, 132, 252, 0.15)',
-                padding: '1px 7px',
-                borderRadius: '999px',
-                fontSize: '11px',
-                border: '1px solid rgba(192, 132, 252, 0.3)',
-                fontWeight: 600,
-              }}
-              title="Mandatory dynamic topic specialists (guaranteed 3 minimum, up to 5 max per debate)"
-            >
-              +{dynamicPersonasCount >= 3 ? Math.min(5, dynamicPersonasCount) : dynamicPersonasCount > 0 ? 3 : '3–5'} Specialists
-            </span>
-          </div>
-        </div>
-      </div>
+      {/* NEXUS COMMAND CENTER: Top Futuristic Header (Requirement 2) */}
+      <ParallaxHeader
+        isRunning={isRunning}
+        currentRound={currentRound}
+        isComplete={Boolean(summary)}
+        wasStoppedEarly={wasStoppedEarly}
+        totalAgentsCount={enabledAgentsCount}
+        dynamicSpecialistsCount={dynamicPersonasCount}
+        factsCount={messages.filter((m) => Boolean(m.toolUsed)).length}
+        activeProviderName="OpenRouter / Swarm Matrix"
+        activeModelName={config.specialistModel || 'Llama 3.3 70B'}
+      />
 
       {/* Tabs Navigation */}
       <div
@@ -848,9 +705,20 @@ export const ParallaxPage: React.FC = () => {
         </button>
       </div>
 
-      {/* TAB CONTENT: SETTINGS */}
+      {/* TAB CONTENT: SETTINGS & AGENT MATRIX (Requirement 6) */}
       {activeTab === 'settings' && (
-        <ParallaxSettings config={config} onConfigChange={(newCfg) => setConfig(newCfg)} />
+        <div className="space-y-6 flex flex-col gap-6">
+          <ParallaxAgentMatrix
+            agents={config.agents}
+            messages={messages}
+            selectedAgentId={selectedAgentFilter}
+            activeSpeakingAgentId={activeSpeakingAgent?.agentId}
+            onSelectAgent={(agentId) => setSelectedAgentFilter(agentId)}
+            dynamicPersonas={dynamicPersonas}
+            onPlayVoice={handlePlayMessageAudio}
+          />
+          <ParallaxSettings config={config} onConfigChange={(newCfg) => setConfig(newCfg)} />
+        </div>
       )}
 
       {/* TAB CONTENT: ARCHIVE */}
@@ -1238,8 +1106,20 @@ export const ParallaxPage: React.FC = () => {
             </div>
           )}
 
-          {/* Interactive 3-Round Timeline Graphics */}
-          <ParallaxRoundTracker
+          {/* LIVE TELEMETRY STRIP (Requirement 8) */}
+          <ParallaxTelemetry
+            totalAgentsCount={enabledAgentsCount}
+            activeCount={isRunning ? 1 : 0}
+            completedRepliesCount={messages.length}
+            currentRound={currentRound}
+            sourcesCount={messages.reduce((acc, m) => acc + (m.toolUsed?.sourcesCount || (m.toolUsed ? 1 : 0)), 0)}
+            isRunning={isRunning}
+            isComplete={Boolean(summary)}
+            activeModel={config.specialistModel || 'Llama 3.3 70B'}
+          />
+
+          {/* MISSION CHRONOLOGY TIMELINE (Requirement 5) */}
+          <ParallaxTimeline
             currentRound={currentRound}
             isRunning={isRunning}
             isComplete={Boolean(summary)}
@@ -1247,17 +1127,33 @@ export const ParallaxPage: React.FC = () => {
             messages={messages}
           />
 
-          {/* Dynamic 20-Persona Swarm Constellation Radar & Ideology Matrix */}
-          <ParallaxSwarmConstellation
-            agents={config.agents}
-            messages={messages}
-            currentRound={currentRound}
-            isRunning={isRunning}
-            activeSpeakingAgentId={activeSpeakingAgent?.agentId}
-            selectedAgentId={selectedAgentFilter}
-            onSelectAgent={(agentId) => setSelectedAgentFilter(agentId)}
-            topic={currentTopic || topicInput}
-          />
+          {/* MAIN HERO — SWARM ORBITAL CORE & LIVE SWARM ACTIVITY (Requirement 3 & 4) */}
+          <div className="grid grid-cols-1 lg:grid-cols-12 gap-5 mb-2 items-start">
+            <div className="lg:col-span-7">
+              <ParallaxOrbitalCore
+                agents={config.agents}
+                messages={messages}
+                currentRound={currentRound}
+                isRunning={isRunning}
+                activeSpeakingAgentId={activeSpeakingAgent?.agentId}
+                selectedAgentId={selectedAgentFilter}
+                onSelectAgent={(agentId) => setSelectedAgentFilter(agentId)}
+                topic={currentTopic || topicInput}
+                dynamicPersonas={dynamicPersonas}
+              />
+            </div>
+            <div className="lg:col-span-5">
+              <ParallaxLiveActivity
+                messages={messages}
+                activeSpeakingAgentId={activeSpeakingAgent?.agentId}
+                isRunning={isRunning}
+                currentRound={currentRound}
+                agents={config.agents}
+                onPlayVoice={handlePlayMessageAudio}
+                playingAudioKey={playingAudioKey}
+              />
+            </div>
+          </div>
 
           {/* Real-time Audio Waveform Visualizer HUD */}
           {(playingAudioKey || loadingAudioKey) && (
@@ -1270,7 +1166,7 @@ export const ParallaxPage: React.FC = () => {
                   : activeSpeakingAgent?.agentName || 'Swarm Speaker'
               }
               activeAgentId={activeSpeakingAgent?.agentId}
-              accentColor={activeSpeakingAgent?.accentColor || '#61d7c9'}
+              accentColor={activeSpeakingAgent?.accentColor || '#00f0ff'}
               voiceName={
                 activeSpeakingAgent
                   ? config.agents[activeSpeakingAgent.agentId]?.voice || getParallaxAgentVoice(activeSpeakingAgent.agentId)
@@ -1287,1274 +1183,130 @@ export const ParallaxPage: React.FC = () => {
             />
           )}
 
-          {/* Live YouTube-Style Swarm Feed */}
-          <div
-            id="parallax-live-feed-container"
-            style={{
-              borderRadius: '16px',
-              background: 'rgba(4, 12, 18, 0.95)',
-              border: '1px solid rgba(97, 215, 201, 0.25)',
-              boxShadow: '0 8px 32px rgba(0, 0, 0, 0.5)',
-              minHeight: '380px',
-              maxHeight: '680px',
-              overflowY: 'auto',
-              position: 'relative',
-            }}
-          >
-            {messages.length === 0 && !isRunning ? (
-              <div
-                style={{
-                  margin: 'auto',
-                  textAlign: 'center',
-                  padding: '60px 20px',
-                  color: '#94a3b8',
-                }}
-              >
-                <Network size={42} color="rgba(97, 215, 201, 0.4)" style={{ margin: '0 auto 16px' }} />
-                <h3 style={{ margin: '0 0 6px', fontSize: '16px', fontWeight: 700, color: '#e2e8f0' }}>
-                  No Active Swarm
-                </h3>
-                <p style={{ margin: 0, fontSize: '13px', maxWidth: '420px', lineHeight: 1.5 }}>
-                  Enter a topic above and tap <strong>Start Parallax</strong>. Exactly 20 small AI personas will react across 3 rounds, then auto-stop and generate a consensus summary.
-                </p>
-              </div>
-            ) : (
-              <>
-                {/* Compact Sticky Swarm Feed Toolbar */}
-                <div
-                  id="parallax-feed-toolbar"
-                  style={{
-                    position: 'sticky',
-                    top: 0,
-                    zIndex: 30,
-                    background: 'rgba(4, 12, 18, 0.96)',
-                    backdropFilter: 'blur(16px)',
-                    WebkitBackdropFilter: 'blur(16px)',
-                    borderBottom: '1px solid rgba(97, 215, 201, 0.25)',
-                    padding: '10px 16px',
-                    display: 'flex',
-                    flexDirection: 'column',
-                    gap: '10px',
-                    boxShadow: '0 4px 20px rgba(0, 0, 0, 0.45)',
-                  }}
-                >
-                  <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', flexWrap: 'wrap', gap: '8px' }}>
-                    <div style={{ display: 'flex', alignItems: 'center', gap: '8px', flexWrap: 'wrap' }}>
-                      <span style={{ fontSize: '13px', fontWeight: 700, color: '#f1f5f9', letterSpacing: '-0.01em' }}>
-                        Deliberation Feed
-                      </span>
-                      <span
-                        style={{
-                          fontSize: '11px',
-                          fontFamily: 'DM Mono, monospace',
-                          padding: '2px 8px',
-                          borderRadius: '999px',
-                          background: 'rgba(6, 182, 212, 0.15)',
-                          color: '#61d7c9',
-                          border: '1px solid rgba(6, 182, 212, 0.35)',
-                          fontWeight: 700,
-                        }}
-                      >
-                        {messages.length} messages
-                      </span>
-                      {wasStoppedEarly && (
-                        <span
-                          style={{
-                            fontSize: '11px',
-                            fontFamily: 'DM Mono, monospace',
-                            padding: '2px 8px',
-                            borderRadius: '999px',
-                            background: 'rgba(244, 63, 94, 0.15)',
-                            color: '#fb7185',
-                            border: '1px solid rgba(244, 63, 94, 0.4)',
-                            fontWeight: 700,
-                          }}
-                        >
-                          Swarm stopped early by user
-                        </span>
-                      )}
-                      {fullSwarmProgress && (
-                        <span
-                          style={{
-                            fontSize: '11px',
-                            color: '#38bdf8',
-                            fontFamily: 'DM Mono, monospace',
-                            display: 'flex',
-                            alignItems: 'center',
-                            gap: '5px',
-                          }}
-                        >
-                          <Loader2 size={12} className="animate-spin" />
-                          Synthesizing audio: {fullSwarmProgress.current} / {fullSwarmProgress.total}
-                        </span>
-                      )}
-                    </div>
+          {/* DELIBERATION STREAM: Terminal-style live stream (Requirement 7) */}
+          <ParallaxDeliberationStream
+            messages={messages}
+            agents={config.agents}
+            isRunning={isRunning}
+            currentRound={currentRound}
+            wasStoppedEarly={wasStoppedEarly}
+            specialistDeliberation={specialistDeliberation}
+            roundFilter={roundFilter}
+            groupFilter={groupFilter}
+            selectedAgentFilter={selectedAgentFilter}
+            expandedRounds={expandedRounds}
+            playingAudioKey={playingAudioKey}
+            loadingAudioKey={loadingAudioKey}
+            fullSwarmProgress={fullSwarmProgress}
+            copiedSwarmTranscript={copiedSwarmTranscript}
+            isDownloadingSwarmMp3={isDownloadingSwarmMp3}
+            rawJsonOpenMap={rawJsonOpenMap}
+            copiedRawJsonId={copiedRawJsonId}
+            currentTopic={currentTopic}
+            onSetRoundFilter={(r) => setRoundFilter(r)}
+            onSetGroupFilter={(g) => setGroupFilter(g)}
+            onSetSelectedAgentFilter={(id) => setSelectedAgentFilter(id)}
+            onToggleRoundExpand={toggleRoundExpand}
+            onPlayMessageAudio={handlePlayMessageAudio}
+            onListenToFullSwarm={handleListenToFullSwarm}
+            onDownloadSwarmMp3={handleDownloadSwarmMp3}
+            onCopyFullSwarm={handleCopyFullSwarm}
+            onStopSwarm={handleStopSwarm}
+            onToggleRawJsonView={toggleRawJsonView}
+            onCopyRawJson={handleCopyRawJson}
+            feedEndRef={feedEndRef}
+          />
 
-                    {/* Actions: Stop Swarm (if running), Copy Full Swarm, Listen to Full Swarm, Download MP3 */}
-                    <div
-                      id="parallax-feed-actions-cluster"
-                      style={{ display: 'flex', alignItems: 'center', gap: '6px', flexWrap: 'wrap' }}
-                      className="w-full sm:w-auto justify-start sm:justify-end"
-                    >
-                      {/* Live Stop Swarm Button in Feed Toolbar */}
-                      {isRunning && (
-                        <button
-                          id="parallax-feed-stop-swarm-btn"
-                          type="button"
-                          onClick={handleStopSwarm}
-                          title="Immediately halt the running swarm and retain completed messages"
-                          style={{
-                            padding: '6px 12px',
-                            borderRadius: '8px',
-                            background: 'linear-gradient(135deg, rgba(239, 68, 68, 0.3) 0%, rgba(185, 28, 28, 0.4) 100%)',
-                            border: '1.5px solid rgba(239, 68, 68, 0.7)',
-                            color: '#fecdd3',
-                            fontSize: '11px',
-                            fontWeight: 700,
-                            cursor: 'pointer',
-                            display: 'flex',
-                            alignItems: 'center',
-                            gap: '5px',
-                            transition: 'all 0.15s ease',
-                            boxShadow: '0 0 12px rgba(239, 68, 68, 0.25)',
-                            whiteSpace: 'nowrap',
-                          }}
-                          className="hover:bg-red-900/60 hover:text-white active:scale-95"
-                        >
-                          <Square size={11} fill="currentColor" />
-                          <span>Stop Swarm</span>
-                        </button>
-                      )}
+          {/* FINAL SYNTHESIS: Polished Intelligence Report (Requirement 9) */}
+          {summary && (
+            <ParallaxSynthesisReport
+              summary={summary}
+              topic={currentTopic}
+              allMessages={messages}
+              onNewTopic={() => {
+                setTopicInput('');
+                setMessages([]);
+                setSummary(null);
+                setWasStoppedEarly(false);
+              }}
+              onRerun={() => handleStartSwarm(currentTopic)}
+              onExportMp3={handleDownloadSwarmMp3}
+              onSave={() => {
+                setSessions(storage.getParallaxSessions());
+              }}
+            />
+          )}
 
-                      {/* Copy Full Swarm Button */}
-                      <button
-                        id="parallax-copy-full-swarm-btn"
-                        type="button"
-                        onClick={handleCopyFullSwarm}
-                        title="Copy complete transcript including all rounds and summary"
-                        style={{
-                          padding: '6px 12px',
-                          borderRadius: '8px',
-                          background: copiedSwarmTranscript ? 'rgba(16, 185, 129, 0.2)' : 'rgba(15, 23, 42, 0.8)',
-                          border: `1px solid ${copiedSwarmTranscript ? '#10b981' : 'rgba(97, 215, 201, 0.3)'}`,
-                          color: copiedSwarmTranscript ? '#10b981' : '#cbd5e1',
-                          fontSize: '11px',
-                          fontWeight: 700,
-                          cursor: 'pointer',
-                          display: 'flex',
-                          alignItems: 'center',
-                          gap: '5px',
-                          transition: 'all 0.15s ease',
-                          whiteSpace: 'nowrap',
-                        }}
-                        className="hover:border-[#61d7c9] hover:text-white active:scale-95"
-                      >
-                        {copiedSwarmTranscript ? <Check size={13} /> : <Copy size={13} />}
-                        <span>{copiedSwarmTranscript ? 'Copied Full Swarm!' : 'Copy Full Swarm'}</span>
-                      </button>
-
-                      {/* Listen to Full Swarm Button */}
-                      <button
-                        id="parallax-listen-full-swarm-btn"
-                        type="button"
-                        onClick={handleListenToFullSwarm}
-                        disabled={loadingAudioKey === 'full_swarm' && !fullSwarmProgress}
-                        title={playingAudioKey === 'full_swarm' ? 'Stop audio' : 'Listen to all 20 agents back-to-back'}
-                        style={{
-                          padding: '6px 12px',
-                          borderRadius: '8px',
-                          background: playingAudioKey === 'full_swarm'
-                            ? 'rgba(16, 185, 129, 0.2)'
-                            : 'linear-gradient(135deg, rgba(6, 182, 212, 0.2) 0%, rgba(97, 215, 201, 0.25) 100%)',
-                          border: `1px solid ${playingAudioKey === 'full_swarm' ? '#10b981' : 'rgba(97, 215, 201, 0.5)'}`,
-                          color: playingAudioKey === 'full_swarm' ? '#4ade80' : '#61d7c9',
-                          fontSize: '11px',
-                          fontWeight: 700,
-                          cursor: 'pointer',
-                          display: 'flex',
-                          alignItems: 'center',
-                          gap: '5px',
-                          transition: 'all 0.15s ease',
-                          whiteSpace: 'nowrap',
-                        }}
-                        className="hover:border-[#61d7c9] hover:brightness-110 active:scale-95"
-                      >
-                        {loadingAudioKey === 'full_swarm' ? (
-                          <Loader2 size={13} className="animate-spin text-cyan-400" />
-                        ) : playingAudioKey === 'full_swarm' ? (
-                          <Square size={12} fill="currentColor" />
-                        ) : (
-                          <Play size={12} fill="currentColor" />
-                        )}
-                        <span>
-                          {loadingAudioKey === 'full_swarm'
-                            ? fullSwarmProgress
-                              ? `Synthesizing (${fullSwarmProgress.current}/${fullSwarmProgress.total})...`
-                              : 'Synthesizing...'
-                            : playingAudioKey === 'full_swarm'
-                            ? 'Stop Deliberation'
-                            : 'Listen to Full Swarm'}
-                        </span>
-                      </button>
-
-                      {/* Download as MP3 Button */}
-                      <button
-                        id="parallax-download-swarm-mp3-btn"
-                        type="button"
-                        onClick={handleDownloadSwarmMp3}
-                        disabled={isDownloadingSwarmMp3}
-                        title="Stitch and download all 20 agents as a contiguous MP3"
-                        style={{
-                          padding: '6px 12px',
-                          borderRadius: '8px',
-                          background: 'rgba(15, 23, 42, 0.8)',
-                          border: '1px solid rgba(165, 207, 214, 0.25)',
-                          color: '#cbd5e1',
-                          fontSize: '11px',
-                          fontWeight: 700,
-                          cursor: isDownloadingSwarmMp3 ? 'not-allowed' : 'pointer',
-                          display: 'flex',
-                          alignItems: 'center',
-                          gap: '5px',
-                          transition: 'all 0.15s ease',
-                          whiteSpace: 'nowrap',
-                        }}
-                        className="hover:border-[#61d7c9] hover:text-white active:scale-95"
-                      >
-                        {isDownloadingSwarmMp3 ? (
-                          <Loader2 size={13} className="animate-spin text-cyan-400" />
-                        ) : (
-                          <Download size={13} />
-                        )}
-                        <span>{isDownloadingSwarmMp3 ? 'Exporting MP3...' : 'Download MP3'}</span>
-                      </button>
-                    </div>
-                  </div>
-
-                  {/* UI Filter Toolbar: Filter by Round, Cluster, or Specific Agent */}
+          {/* Swarm Stopped Early State (Shown instead of summary when user halts) */}
+          {wasStoppedEarly && !summary && (
+            <div
+              id="parallax-stopped-early-card"
+              className="nexus-corner-bracket relative rounded-2xl overflow-hidden my-6 p-6"
+              style={{
+                background: 'linear-gradient(135deg, rgba(30, 20, 26, 0.95) 0%, rgba(18, 12, 16, 0.98) 100%)',
+                border: '1.5px solid rgba(244, 63, 94, 0.45)',
+                boxShadow: '0 12px 40px rgba(0, 0, 0, 0.6), 0 0 24px rgba(244, 63, 94, 0.15)',
+              }}
+            >
+              <div className="flex items-center justify-between flex-wrap gap-3 mb-3">
+                <div className="flex items-center gap-3">
                   <div
-                    id="parallax-feed-filter-bar"
+                    className="w-9 h-9 rounded-xl flex items-center justify-center text-rose-400"
                     style={{
-                      display: 'flex',
-                      alignItems: 'center',
-                      justifyContent: 'space-between',
-                      flexWrap: 'wrap',
-                      gap: '8px',
-                      paddingTop: '6px',
-                      borderTop: '1px solid rgba(165, 207, 214, 0.1)',
-                      fontSize: '11px',
-                      fontFamily: 'DM Mono, monospace',
+                      background: 'rgba(244, 63, 94, 0.2)',
+                      border: '1px solid rgba(244, 63, 94, 0.5)',
                     }}
                   >
-                    {/* Round Filter Pills */}
-                    <div className="parallax-filter-row" style={{ display: 'flex', alignItems: 'center', gap: '4px', flexWrap: 'wrap' }}>
-                      <span style={{ color: '#64748b', marginRight: '4px' }}>Round:</span>
-                      {(['all', 1, 2, 3] as const).map((r) => (
-                        <button
-                          key={r}
-                          id={`parallax-filter-round-${r}`}
-                          type="button"
-                          onClick={() => setRoundFilter(r)}
-                          style={{
-                            padding: '2px 8px',
-                            borderRadius: '6px',
-                            background: roundFilter === r ? 'rgba(6, 182, 212, 0.25)' : 'rgba(15, 23, 42, 0.6)',
-                            border: `1px solid ${roundFilter === r ? '#06b6d4' : 'rgba(165, 207, 214, 0.15)'}`,
-                            color: roundFilter === r ? '#61d7c9' : '#94a3b8',
-                            fontSize: '10px',
-                            cursor: 'pointer',
-                            fontWeight: roundFilter === r ? 700 : 500,
-                          }}
-                        >
-                          {r === 'all' ? 'All (3 Rounds)' : `R${r}`}
-                        </button>
-                      ))}
+                    <Square size={16} fill="currentColor" />
+                  </div>
+                  <div>
+                    <div className="text-base font-black text-rose-200 tracking-tight font-sans">
+                      SWARM DELIBERATION HALTED EARLY
                     </div>
-
-                    {/* Cluster / Ideology Filter Pills */}
-                    <div className="parallax-group-filter" style={{ display: 'flex', alignItems: 'center', gap: '4px', flexWrap: 'wrap' }}>
-                      <span style={{ color: '#64748b', marginRight: '4px' }}>Cluster:</span>
-                      {[
-                        { key: 'all', label: 'All' },
-                        { key: 'optimists', label: 'Optimists' },
-                        { key: 'realists', label: 'Realists' },
-                        { key: 'ethicists', label: 'Ethicists' },
-                        { key: 'visionaries', label: 'Visionaries' },
-                        { key: 'anchors', label: 'Anchors' },
-                        { key: 'facts', label: 'Facts' },
-                      ].map((item) => (
-                        <button
-                          key={item.key}
-                          id={`parallax-filter-group-${item.key}`}
-                          type="button"
-                          onClick={() => setGroupFilter(item.key as 'all' | 'optimists' | 'realists' | 'ethicists' | 'visionaries' | 'anchors' | 'facts')}
-                          style={{
-                            padding: '2px 8px',
-                            borderRadius: '6px',
-                            background: groupFilter === item.key ? 'rgba(97, 215, 201, 0.25)' : 'rgba(15, 23, 42, 0.6)',
-                            border: `1px solid ${groupFilter === item.key ? '#61d7c9' : 'rgba(165, 207, 214, 0.15)'}`,
-                            color: groupFilter === item.key ? '#61d7c9' : '#94a3b8',
-                            fontSize: '10px',
-                            cursor: 'pointer',
-                            fontWeight: groupFilter === item.key ? 700 : 500,
-                          }}
-                        >
-                          {item.label}
-                        </button>
-                      ))}
-
-                      {/* Selected Agent Active Filter Tag */}
-                      {selectedAgentFilter && (
-                        <div
-                          style={{
-                            display: 'flex',
-                            alignItems: 'center',
-                            gap: '4px',
-                            background: 'rgba(6, 182, 212, 0.2)',
-                            border: '1px solid #06b6d4',
-                            borderRadius: '999px',
-                            padding: '2px 8px',
-                            color: '#61d7c9',
-                            fontWeight: 700,
-                            fontSize: '10px',
-                          }}
-                        >
-                          <span>{config.agents[selectedAgentFilter]?.name || selectedAgentFilter}</span>
-                          <button
-                            type="button"
-                            title="Clear agent filter"
-                            onClick={() => setSelectedAgentFilter(null)}
-                            style={{
-                              background: 'transparent',
-                              border: 'none',
-                              color: '#fff',
-                              cursor: 'pointer',
-                              padding: 0,
-                              fontSize: '11px',
-                              lineHeight: 1,
-                            }}
-                          >
-                            ✕
-                          </button>
-                        </div>
-                      )}
+                    <div className="text-xs text-slate-400 font-mono">
+                      User intervention executed • {messages.length} agent {messages.length === 1 ? 'turn' : 'turns'} recorded
                     </div>
                   </div>
                 </div>
 
-                {/* Scrollable Deliberation Content */}
-                <div
-                  id="parallax-feed-content"
-                  style={{
-                    padding: '16px 20px 24px 20px',
-                    display: 'flex',
-                    flexDirection: 'column',
-                    gap: '24px',
-                  }}
-                >
-                  {/* PRE-ROUND: 5-PERSONA SPECIALIST DELIBERATION & COMPILATION */}
-                  {(roundFilter === 'all' || roundFilter === 1) && specialistDeliberation && (
-                    <div
-                      id="parallax-pre-round-deliberation"
-                      style={{
-                        borderRadius: '14px',
-                        background: 'linear-gradient(135deg, rgba(8, 22, 34, 0.95) 0%, rgba(4, 12, 18, 0.98) 100%)',
-                        border: '1.5px solid rgba(168, 85, 247, 0.35)',
-                        padding: '18px 20px',
-                        boxShadow: '0 8px 28px rgba(0, 0, 0, 0.35)',
-                        display: 'flex',
-                        flexDirection: 'column',
-                        gap: '14px',
-                      }}
-                    >
-                      {/* Header */}
-                      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: '10px' }}>
-                        <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
-                          <div
-                            style={{
-                              width: '30px',
-                              height: '30px',
-                              borderRadius: '8px',
-                              background: 'rgba(168, 85, 247, 0.2)',
-                              border: '1px solid rgba(168, 85, 247, 0.5)',
-                              display: 'grid',
-                              placeItems: 'center',
-                              color: '#c084fc',
-                            }}
-                          >
-                            <Sparkles size={16} />
-                          </div>
-                          <div>
-                            <div style={{ display: 'flex', alignItems: 'center', gap: '8px', flexWrap: 'wrap' }}>
-                              <span style={{ fontSize: '13px', fontWeight: 800, color: '#f8fafc', letterSpacing: '-0.01em' }}>
-                                PRE-ROUND • DYNAMIC SPECIALIST DELIBERATION
-                              </span>
-                              <span
-                                style={{
-                                  fontSize: '10px',
-                                  fontFamily: 'DM Mono, monospace',
-                                  fontWeight: 800,
-                                  padding: '2px 7px',
-                                  borderRadius: '5px',
-                                  background: 'rgba(168, 85, 247, 0.18)',
-                                  color: '#c084fc',
-                                  border: '1px solid rgba(168, 85, 247, 0.4)',
-                                }}
-                              >
-                                5 OPINIONS • 3 MANDATORY COMPILED
-                              </span>
-                            </div>
-                            <p style={{ margin: '2px 0 0', fontSize: '11px', color: '#94a3b8' }}>
-                              VERITAS, AXIOM, SOCRATES, HARMONY, and NEXUS-9 each contributed specialist proposals before Round 1.
-                            </p>
-                          </div>
-                        </div>
-                      </div>
-
-                      {/* The 5 Persona Opinions */}
-                      {specialistDeliberation.opinions && specialistDeliberation.opinions.length > 0 && (
-                        <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
-                          <span style={{ fontSize: '11px', fontWeight: 700, color: '#94a3b8', textTransform: 'uppercase', letterSpacing: '0.04em' }}>
-                            5 Core Persona Recommendations:
-                          </span>
-                          <div
-                            style={{
-                              display: 'grid',
-                              gridTemplateColumns: 'repeat(auto-fit, minmax(280px, 1fr))',
-                              gap: '10px',
-                            }}
-                          >
-                            {specialistDeliberation.opinions.map((op, idx) => (
-                              <div
-                                key={op.agentId || idx}
-                                id={`deliberation-opinion-${op.agentId}`}
-                                style={{
-                                  padding: '10px 12px',
-                                  borderRadius: '10px',
-                                  background: 'rgba(15, 23, 42, 0.65)',
-                                  border: `1px solid ${op.accentColor ? `${op.accentColor}40` : 'rgba(255,255,255,0.1)'}`,
-                                  display: 'flex',
-                                  flexDirection: 'column',
-                                  gap: '6px',
-                                }}
-                              >
-                                <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: '8px' }}>
-                                  <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
-                                    <span style={{ fontSize: '14px' }}>{op.emoji}</span>
-                                    <span style={{ fontSize: '12px', fontWeight: 800, color: op.accentColor || '#fff' }}>
-                                      {op.agentName}
-                                    </span>
-                                  </div>
-                                  <span style={{ fontSize: '10px', color: '#94a3b8', fontStyle: 'italic' }}>
-                                    {op.role}
-                                  </span>
-                                </div>
-                                <div style={{ fontSize: '11px', color: '#cbd5e1', lineHeight: 1.4 }}>
-                                  <span style={{ color: '#67e8f9', fontWeight: 700 }}>Suggests: </span>
-                                  <span style={{ fontWeight: 600, color: '#f1f5f9' }}>{op.suggestedSpecialist}</span>
-                                </div>
-                                <div style={{ fontSize: '11px', color: '#94a3b8', fontStyle: 'italic', lineHeight: 1.35 }}>
-                                  &ldquo;{op.reason}&rdquo;
-                                </div>
-                              </div>
-                            ))}
-                          </div>
-                        </div>
-                      )}
-
-                      {/* Compiled 3 Mandatory Specialists */}
-                      {specialistDeliberation.selectedMandatory && specialistDeliberation.selectedMandatory.length > 0 && (
-                        <div style={{ display: 'flex', flexDirection: 'column', gap: '8px', paddingTop: '4px' }}>
-                          <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
-                            <span style={{ fontSize: '11px', fontWeight: 700, color: '#94a3b8', textTransform: 'uppercase', letterSpacing: '0.04em' }}>
-                              Compiled Mandatory Specialists (Top 3 Distinct Picks):
-                            </span>
-                            <span style={{ fontSize: '10px', color: '#10b981', fontWeight: 700, fontFamily: 'DM Mono, monospace' }}>
-                              Active in all 3 Rounds
-                            </span>
-                          </div>
-                          {specialistDeliberation.compilerReasoning && (
-                            <div
-                              style={{
-                                fontSize: '11px',
-                                color: '#94a3b8',
-                                lineHeight: 1.4,
-                                padding: '6px 10px',
-                                borderRadius: '8px',
-                                background: 'rgba(16, 185, 129, 0.05)',
-                                border: '1px solid rgba(16, 185, 129, 0.2)',
-                              }}
-                            >
-                              <span style={{ fontWeight: 700, color: '#a7f3d0' }}>Compiler Strategy: </span>
-                              <span>{specialistDeliberation.compilerReasoning}</span>
-                            </div>
-                          )}
-                          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(260px, 1fr))', gap: '10px' }}>
-                            {specialistDeliberation.selectedMandatory.map((spec, sIdx) => (
-                              <div
-                                key={spec.id || sIdx}
-                                id={`mandatory-specialist-${spec.id}`}
-                                style={{
-                                  padding: '10px 12px',
-                                  borderRadius: '10px',
-                                  background: 'rgba(16, 185, 129, 0.08)',
-                                  border: '1px solid rgba(16, 185, 129, 0.35)',
-                                  display: 'flex',
-                                  flexDirection: 'column',
-                                  gap: '4px',
-                                }}
-                              >
-                                <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
-                                  <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
-                                    <span>{spec.mood || '✨'}</span>
-                                    <span style={{ fontSize: '12px', fontWeight: 800, color: '#10b981' }}>{spec.name}</span>
-                                    <span
-                                      style={{
-                                        fontSize: '9px',
-                                        padding: '1px 5px',
-                                        borderRadius: '4px',
-                                        background: 'rgba(16, 185, 129, 0.2)',
-                                        color: '#a7f3d0',
-                                        border: '1px solid rgba(16, 185, 129, 0.4)',
-                                      }}
-                                    >
-                                      MANDATORY
-                                    </span>
-                                  </div>
-                                  <span style={{ fontSize: '10px', color: '#94a3b8' }}>#{sIdx + 1}</span>
-                                </div>
-                                <div style={{ fontSize: '11px', fontWeight: 600, color: '#e2e8f0' }}>
-                                  {spec.role}
-                                </div>
-                                {spec.selectionReason && (
-                                  <div style={{ fontSize: '10px', color: '#6ee7b7', lineHeight: 1.35, fontStyle: 'italic' }}>
-                                    <span style={{ fontWeight: 700, color: '#34d399', fontStyle: 'normal' }}>Rationale: </span>
-                                    {spec.selectionReason}
-                                  </div>
-                                )}
-                                <div style={{ fontSize: '10px', color: '#94a3b8', lineHeight: 1.35 }}>
-                                  {spec.systemInstruction}
-                                </div>
-                              </div>
-                            ))}
-                          </div>
-                        </div>
-                      )}
-
-                      {/* Additional Specialists from Invisible System */}
-                      <div style={{ paddingTop: '2px' }}>
-                        {specialistDeliberation.additionalSpecialists && specialistDeliberation.additionalSpecialists.length > 0 ? (
-                          <div style={{ display: 'flex', flexDirection: 'column', gap: '6px' }}>
-                            <span style={{ fontSize: '11px', fontWeight: 700, color: '#94a3b8', textTransform: 'uppercase', letterSpacing: '0.04em' }}>
-                              Additional Specialists (Invisible Gap Assessment: +{specialistDeliberation.additionalSpecialists.length}):
-                            </span>
-                            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(260px, 1fr))', gap: '10px' }}>
-                              {specialistDeliberation.additionalSpecialists.map((spec, aIdx) => (
-                                <div
-                                  key={spec.id || aIdx}
-                                  id={`additional-specialist-${spec.id}`}
-                                  style={{
-                                    padding: '10px 12px',
-                                    borderRadius: '10px',
-                                    background: 'rgba(245, 158, 11, 0.08)',
-                                    border: '1px solid rgba(245, 158, 11, 0.35)',
-                                    display: 'flex',
-                                    flexDirection: 'column',
-                                    gap: '4px',
-                                  }}
-                                >
-                                  <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
-                                    <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
-                                      <span>{spec.mood || '✨'}</span>
-                                      <span style={{ fontSize: '12px', fontWeight: 800, color: '#f59e0b' }}>{spec.name}</span>
-                                      <span
-                                        style={{
-                                          fontSize: '9px',
-                                          padding: '1px 5px',
-                                          borderRadius: '4px',
-                                          background: 'rgba(245, 158, 11, 0.2)',
-                                          color: '#fde68a',
-                                          border: '1px solid rgba(245, 158, 11, 0.4)',
-                                        }}
-                                      >
-                                        GAP MOBILIZATION
-                                      </span>
-                                    </div>
-                                  </div>
-                                  <div style={{ fontSize: '11px', fontWeight: 600, color: '#e2e8f0' }}>
-                                    {spec.role}
-                                  </div>
-                                  <div style={{ fontSize: '10px', color: '#94a3b8', lineHeight: 1.35 }}>
-                                    {spec.systemInstruction}
-                                  </div>
-                                </div>
-                              ))}
-                            </div>
-                          </div>
-                        ) : (
-                          <div style={{ fontSize: '11px', color: '#64748b', fontStyle: 'italic', display: 'flex', alignItems: 'center', gap: '6px' }}>
-                            <Check size={12} style={{ color: '#10b981' }} />
-                            <span>Invisible Gap Assessment: Full domain coverage achieved (0 additional specialists needed beyond the 3 mandatory).</span>
-                          </div>
-                        )}
-                      </div>
-                    </div>
-                  )}
-
-                  {/* RENDER BY ROUND WITH INLINE CURATION (first 4-5 inline, rest collapsed) */}
-                {([1, 2, 3] as const).map((roundNum) => {
-                  if (roundFilter !== 'all' && roundFilter !== roundNum) return null;
-
-                  const roundMsgs = messages.filter((m) => {
-                    if (m.round !== roundNum) return false;
-                    if (selectedAgentFilter && m.agentId !== selectedAgentFilter) return false;
-                    if (groupFilter !== 'all') {
-                      if (groupFilter === 'facts') {
-                        if (!m.toolUsed) return false;
-                      } else {
-                        const q = AGENT_QUADRANTS[m.agentId]?.quadrant;
-                        if (q !== groupFilter) return false;
-                      }
-                    }
-                    return true;
-                  });
-
-                  if (roundMsgs.length === 0) return null;
-
-                  const isExpanded = Boolean(expandedRounds[roundNum]);
-                  const CURATED_COUNT = 5;
-                  const visibleMsgs = isExpanded ? roundMsgs : roundMsgs.slice(0, CURATED_COUNT);
-                  const hiddenCount = Math.max(0, roundMsgs.length - CURATED_COUNT);
-
-                  return (
-                    <div key={roundNum} id={`parallax-round-section-${roundNum}`}>
-                      {/* Round Header Divider */}
-                      <div
-                        className="parallax-round-divider"
-                        style={{
-                          display: 'flex',
-                          alignItems: 'center',
-                          gap: '12px',
-                          marginBottom: '14px',
-                          paddingBottom: '8px',
-                          borderBottom: '1px solid rgba(165, 207, 214, 0.15)',
-                        }}
-                      >
-                        <div
-                          style={{
-                            padding: '3px 10px',
-                            borderRadius: '6px',
-                            background: 'rgba(6, 182, 212, 0.2)',
-                            border: '1px solid rgba(6, 182, 212, 0.4)',
-                            fontSize: '11px',
-                            fontFamily: 'DM Mono, monospace',
-                            fontWeight: 800,
-                            color: '#38bdf8',
-                          }}
-                        >
-                          ROUND {roundNum} OF 3
-                        </div>
-                        <span style={{ fontSize: '12px', color: '#94a3b8' }}>
-                          {roundNum === 1
-                            ? 'Initial reactions to topic (VERITAS tool grounding)'
-                            : roundNum === 2
-                            ? 'Reacting to peer statements from Round 1'
-                            : 'Final synthesis reactions before hard stop'}
-                        </span>
-                        <span
-                          style={{
-                            marginLeft: 'auto',
-                            fontSize: '11px',
-                            fontFamily: 'DM Mono, monospace',
-                            color: '#61d7c9',
-                          }}
-                        >
-                          {roundMsgs.length} replies
-                        </span>
-                      </div>
-
-                      {/* YouTube Chat Style Message Stream */}
-                      <div style={{ display: 'flex', flexDirection: 'column', gap: '10px' }}>
-                        {visibleMsgs.map((msg) => (
-                          <div
-                            key={msg.id}
-                            className="parallax-message-item transition-all duration-200"
-                            style={{
-                              display: 'flex',
-                              alignItems: 'flex-start',
-                              gap: '10px',
-                              padding: '8px 12px',
-                              borderRadius: '10px',
-                              background: 'rgba(8, 22, 34, 0.65)',
-                              borderLeft: `3px solid ${msg.accentColor}`,
-                            }}
-                          >
-                            {/* Agent Icon Avatar */}
-                            <ParallaxAgentAvatar
-                              agentId={msg.agentId}
-                              agentName={msg.agentName}
-                              accentColor={msg.accentColor}
-                              size="sm"
-                              style={{ marginTop: '2px' }}
-                            />
-
-                            {/* Message Content */}
-                            <div style={{ flex: 1, minWidth: 0 }}>
-                              <div
-                                style={{
-                                  display: 'flex',
-                                  alignItems: 'center',
-                                  gap: '8px',
-                                  flexWrap: 'wrap',
-                                  marginBottom: '2px',
-                                }}
-                              >
-                                <span
-                                  className="parallax-agent-name"
-                                  style={{
-                                    fontSize: '12px',
-                                    fontWeight: 800,
-                                    color: msg.accentColor,
-                                    fontFamily: 'DM Mono, monospace',
-                                    display: 'inline-flex',
-                                    alignItems: 'center',
-                                    gap: '5px',
-                                  }}
-                                >
-                                  {msg.agentName}
-                                  {msg.agentId === 'veritas' ? (
-                                    <span
-                                      id={`parallax-msg-mood-${msg.id}`}
-                                      title="Veritas: Fact-based, skeptical analysis"
-                                      style={{ fontSize: '13px', lineHeight: 1, userSelect: 'none' }}
-                                    >
-                                      🧠
-                                    </span>
-                                  ) : (
-                                    msg.mood && (
-                                      <span
-                                        id={`parallax-msg-mood-${msg.id}`}
-                                        title={`Tone: ${msg.mood}`}
-                                        style={{ fontSize: '13px', lineHeight: 1, userSelect: 'none' }}
-                                      >
-                                        {msg.mood}
-                                      </span>
-                                    )
-                                  )}
-                                </span>
-
-                                {/* Persona description / role tag */}
-                                {msg.agentId === 'veritas' ? (
-                                  <span
-                                    className="text-slate-400 font-sans hidden sm:inline"
-                                    style={{ fontSize: '11px', color: '#94a3b8' }}
-                                  >
-                                    (Fact-based, skeptical analysis)
-                                  </span>
-                                ) : (
-                                  (msg.role || config.agents[msg.agentId]?.role) && (
-                                    <span
-                                      className="text-slate-400 font-sans hidden md:inline"
-                                      style={{ fontSize: '11px', color: '#94a3b8' }}
-                                    >
-                                      ({msg.role || config.agents[msg.agentId]?.role})
-                                    </span>
-                                  )
-                                )}
-
-                                {/* Dynamically Generated Badge */}
-                                {msg.isDynamic && (
-                                  <span
-                                    id={`parallax-dynamic-badge-${msg.id}`}
-                                    className="px-1.5 py-0.5 rounded text-[10px] font-mono font-medium tracking-tight bg-purple-500/20 text-purple-300 border border-purple-500/35 inline-flex items-center gap-1 shadow-sm"
-                                    title="Dynamically generated specialist persona for this debate only"
-                                  >
-                                    <span>[Dynamically Generated]</span>
-                                  </span>
-                                )}
-
-                                <span
-                                  style={{
-                                    fontSize: '10px',
-                                    fontFamily: 'DM Mono, monospace',
-                                    padding: '1px 5px',
-                                    borderRadius: '4px',
-                                    background: 'rgba(148, 163, 184, 0.1)',
-                                    color: '#94a3b8',
-                                  }}
-                                >
-                                  R{msg.round}
-                                </span>
-
-                                {msg.conviction !== undefined && (
-                                  <span
-                                    id={`parallax-conviction-badge-${msg.id}`}
-                                    title={`Conviction: ${msg.conviction}/10`}
-                                    style={{
-                                      fontSize: '10px',
-                                      fontFamily: 'DM Mono, monospace',
-                                      padding: '1px 6px',
-                                      borderRadius: '4px',
-                                      background:
-                                        msg.conviction >= 8
-                                          ? 'rgba(239, 68, 68, 0.15)'
-                                          : msg.conviction >= 5
-                                          ? 'rgba(234, 179, 8, 0.15)'
-                                          : 'rgba(59, 130, 246, 0.15)',
-                                      color:
-                                        msg.conviction >= 8
-                                          ? '#f87171'
-                                          : msg.conviction >= 5
-                                          ? '#facc15'
-                                          : '#60a5fa',
-                                      border: `1px solid ${
-                                        msg.conviction >= 8
-                                          ? 'rgba(239, 68, 68, 0.3)'
-                                          : msg.conviction >= 5
-                                          ? 'rgba(234, 179, 8, 0.3)'
-                                          : 'rgba(59, 130, 246, 0.3)'
-                                      }`,
-                                      fontWeight: 600,
-                                      display: 'inline-flex',
-                                      alignItems: 'center',
-                                      gap: '2px',
-                                    }}
-                                  >
-                                    Conviction: {msg.conviction}/10
-                                  </span>
-                                )}
-
-                                {msg.toolUsed && (
-                                  <span
-                                    id={`parallax-tool-badge-${msg.id}`}
-                                    title={
-                                      msg.toolUsed.failed
-                                        ? 'Live search returned 0 results across fallbacks; reasoned via baseline knowledge'
-                                        : `Live Search grounded via ${msg.toolUsed.searchSource || 'Live Web'}${msg.toolUsed.sourcesCount ? ` (${msg.toolUsed.sourcesCount} sources)` : ''}`
-                                    }
-                                    style={{
-                                      fontSize: '10px',
-                                      fontFamily: 'DM Mono, monospace',
-                                      padding: '1px 7px',
-                                      borderRadius: '4px',
-                                      background: msg.toolUsed.failed ? 'rgba(234, 179, 8, 0.15)' : 'rgba(6, 182, 212, 0.18)',
-                                      color: msg.toolUsed.failed ? '#fbbf24' : '#38bdf8',
-                                      border: `1px solid ${msg.toolUsed.failed ? 'rgba(234, 179, 8, 0.35)' : 'rgba(6, 182, 212, 0.4)'}`,
-                                      display: 'inline-flex',
-                                      alignItems: 'center',
-                                      gap: '4px',
-                                      fontWeight: 600,
-                                    }}
-                                  >
-                                    {msg.toolUsed.failed ? (
-                                      <>
-                                        <AlertCircle size={10} />
-                                        <span>[Live Search: ⚠️ No results found]</span>
-                                      </>
-                                    ) : (
-                                      <>
-                                        <Search size={10} />
-                                        <span>[Live Search: ✅ {msg.toolUsed.searchSource || 'Tavily'}]</span>
-                                      </>
-                                    )}
-                                  </span>
-                                )}
-
-                                {/* Raw JSON view & Copy toggle for VERITAS (Round 1 grounding telemetry) */}
-                                {msg.round === 1 && msg.agentId === 'veritas' && msg.toolUsed && (
-                                  <div className="inline-flex items-center gap-1.5 shrink-0 not-prose">
-                                    <button
-                                      id={`parallax-raw-json-btn-${msg.id}`}
-                                      type="button"
-                                      onClick={() => toggleRawJsonView(msg.id)}
-                                      className="px-2 py-0.5 rounded text-[10px] font-mono flex items-center gap-1 bg-black/40 border border-white/15 text-slate-300 hover:text-white hover:border-white/30 backdrop-blur-sm transition-all cursor-pointer"
-                                      title={rawJsonOpenMap[msg.id] ? 'Switch to Formatted View' : 'Switch to Raw JSON View'}
-                                    >
-                                      {rawJsonOpenMap[msg.id] ? (
-                                        <>
-                                          <FileText size={11} className="text-cyan-300" />
-                                          <span>Formatted</span>
-                                        </>
-                                      ) : (
-                                        <>
-                                          <Code2 size={11} className="text-cyan-300" />
-                                          <span>Raw JSON</span>
-                                        </>
-                                      )}
-                                    </button>
-
-                                    <button
-                                      id={`parallax-copy-json-btn-${msg.id}`}
-                                      type="button"
-                                      onClick={(e) => {
-                                        const payload = {
-                                          query: msg.toolUsed?.query || msg.toolUsed?.rawPayload?.query || currentTopic,
-                                          searchSource: msg.toolUsed?.searchSource || msg.toolUsed?.rawPayload?.searchSource || 'Tavily',
-                                          committedFact: msg.toolUsed?.committedFact || msg.toolUsed?.rawPayload?.committedFact || msg.toolUsed?.fact || '',
-                                          resultsCount: msg.toolUsed?.rawResults?.length ?? msg.toolUsed?.rawPayload?.resultsCount ?? msg.toolUsed?.sourcesCount ?? 0,
-                                          rawResults: msg.toolUsed?.rawResults || msg.toolUsed?.rawPayload?.rawResults || [],
-                                        };
-                                        handleCopyRawJson(JSON.stringify(payload, null, 2), msg.id, e);
-                                      }}
-                                      className="p-1 rounded text-slate-300 hover:text-white hover:bg-white/10 active:scale-95 transition-all flex items-center gap-1 text-[10px] font-mono bg-black/40 border border-white/10 cursor-pointer"
-                                      title="Copy raw search JSON"
-                                    >
-                                      {copiedRawJsonId === msg.id ? (
-                                        <>
-                                          <Check size={11} className="text-emerald-400" />
-                                          <span className="text-emerald-300 text-[9px]">Copied</span>
-                                        </>
-                                      ) : (
-                                        <>
-                                          <Copy size={11} />
-                                          <span className="text-[9px] hidden sm:inline">Copy</span>
-                                        </>
-                                      )}
-                                    </button>
-                                  </div>
-                                )}
-
-                                <div style={{ marginLeft: 'auto', display: 'flex', alignItems: 'center', gap: '8px' }}>
-                                  {/* Speaker / Voice Playback Button */}
-                                  <button
-                                    id={`parallax-msg-voice-${msg.id}`}
-                                    type="button"
-                                    onClick={() => handlePlayMessageAudio(msg)}
-                                    title={
-                                      playingAudioKey === msg.id
-                                        ? 'Stop voice playback'
-                                        : `Listen to ${msg.agentName} (${msg.voice || config.agents[msg.agentId]?.voice || getParallaxAgentVoice(msg.agentId)})`
-                                    }
-                                    style={{
-                                      display: 'flex',
-                                      alignItems: 'center',
-                                      gap: '4px',
-                                      background: playingAudioKey === msg.id ? 'rgba(16, 185, 129, 0.25)' : 'rgba(15, 23, 42, 0.75)',
-                                      border: `1px solid ${playingAudioKey === msg.id ? '#10b981' : 'rgba(165, 207, 214, 0.25)'}`,
-                                      borderRadius: '5px',
-                                      padding: '2px 7px',
-                                      color: playingAudioKey === msg.id ? '#4ade80' : '#94a3b8',
-                                      cursor: 'pointer',
-                                      fontSize: '10px',
-                                      fontFamily: 'DM Mono, monospace',
-                                      fontWeight: 600,
-                                      transition: 'all 0.15s ease',
-                                    }}
-                                    className="parallax-voice-btn hover:text-[#61d7c9] hover:border-[#61d7c9]"
-                                  >
-                                    {loadingAudioKey === msg.id ? (
-                                      <Loader2 size={10} className="animate-spin text-cyan-400" />
-                                    ) : playingAudioKey === msg.id ? (
-                                      <>
-                                        <Square size={9} fill="currentColor" />
-                                        <span>Stop</span>
-                                      </>
-                                    ) : (
-                                      <>
-                                        <Volume2 size={10} />
-                                        <span>Voice</span>
-                                      </>
-                                    )}
-                                  </button>
-
-                                  <span
-                                    style={{
-                                      fontSize: '10px',
-                                      color: '#64748b',
-                                      fontFamily: 'DM Mono, monospace',
-                                    }}
-                                  >
-                                    {new Date(msg.timestamp).toLocaleTimeString([], {
-                                      hour: '2-digit',
-                                      minute: '2-digit',
-                                      second: '2-digit',
-                                    })}
-                                  </span>
-                                </div>
-                              </div>
-
-                              <p
-                                className="parallax-message-text"
-                                style={{
-                                  margin: 0,
-                                  fontSize: '13px',
-                                  color: '#e2e8f0',
-                                  lineHeight: 1.5,
-                                  wordBreak: 'break-word',
-                                }}
-                              >
-                                {msg.text}
-                              </p>
-
-                              {/* Tool snippet preview if used */}
-                              {msg.toolUsed && (
-                                <div
-                                  className="parallax-verified-fact"
-                                  style={{
-                                    marginTop: '6px',
-                                    padding: '5px 10px',
-                                    borderRadius: '6px',
-                                    background: msg.toolUsed.failed ? 'rgba(234, 179, 8, 0.08)' : 'rgba(6, 182, 212, 0.08)',
-                                    border: `1px solid ${msg.toolUsed.failed ? 'rgba(234, 179, 8, 0.25)' : 'rgba(6, 182, 212, 0.2)'}`,
-                                    fontSize: '11px',
-                                    color: '#cbd5e1',
-                                    fontStyle: 'normal',
-                                  }}
-                                >
-                                  {msg.toolUsed.failed ? (
-                                    <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
-                                      <span style={{ color: '#fbbf24', fontWeight: 600 }}>⚠️ Live Search Notice:</span>
-                                      <span style={{ color: '#94a3b8' }}>All search fallbacks returned 0 results for &ldquo;{msg.toolUsed.query}&rdquo;. VERITAS formulated this assessment using internal knowledge baselines.</span>
-                                    </div>
-                                  ) : (
-                                    <div>
-                                      🔍 <strong style={{ color: '#38bdf8' }}>Live Grounding ({msg.toolUsed.searchSource || 'Live Web'}{msg.toolUsed.sourcesCount ? ` • ${msg.toolUsed.sourcesCount} sources` : ''}):</strong>{' '}
-                                      <span style={{ color: '#94a3b8', fontStyle: 'italic' }}>&ldquo;{msg.toolUsed.fact}&rdquo;</span>
-                                    </div>
-                                  )}
-                                </div>
-                              )}
-
-                              {/* Collapsible Raw JSON Telemetry View for VERITAS */}
-                              {msg.round === 1 && msg.agentId === 'veritas' && msg.toolUsed && rawJsonOpenMap[msg.id] && (() => {
-                                const payload = {
-                                  query: msg.toolUsed.query || msg.toolUsed.rawPayload?.query || currentTopic,
-                                  searchSource: msg.toolUsed.searchSource || msg.toolUsed.rawPayload?.searchSource || 'Tavily',
-                                  committedFact: msg.toolUsed.committedFact || msg.toolUsed.rawPayload?.committedFact || msg.toolUsed.fact || '',
-                                  resultsCount: msg.toolUsed.rawResults?.length ?? msg.toolUsed.rawPayload?.resultsCount ?? msg.toolUsed.sourcesCount ?? 0,
-                                  rawResults: msg.toolUsed.rawResults || msg.toolUsed.rawPayload?.rawResults || [],
-                                };
-                                const jsonStr = JSON.stringify(payload, null, 2);
-
-                                return (
-                                  <div
-                                    id={`parallax-raw-json-panel-${msg.id}`}
-                                    className="mt-2.5 rounded-xl bg-black/80 border border-cyan-500/30 p-3 overflow-hidden shadow-2xl backdrop-blur-md transition-all"
-                                  >
-                                    <div className="flex items-center justify-between pb-2 mb-2 border-b border-white/10 text-[11px] font-mono">
-                                      <div className="flex items-center gap-2 text-slate-300">
-                                        <Code2 size={12} className="text-cyan-400" />
-                                        <span className="text-cyan-300 font-semibold">VERITAS GROUNDING TELEMETRY (RAW JSON)</span>
-                                        <span className="text-slate-600">•</span>
-                                        <span className="text-slate-400 text-[10px]">
-                                          {payload.searchSource} ({payload.resultsCount} raw sources)
-                                        </span>
-                                      </div>
-                                      <button
-                                        type="button"
-                                        onClick={(e) => handleCopyRawJson(jsonStr, msg.id, e)}
-                                        className="px-2 py-0.5 rounded text-[10px] font-mono flex items-center gap-1 bg-white/5 border border-white/10 text-slate-300 hover:text-white hover:bg-white/10 active:scale-95 transition-all cursor-pointer"
-                                        title="Copy raw JSON"
-                                      >
-                                        {copiedRawJsonId === msg.id ? (
-                                          <>
-                                            <Check size={11} className="text-emerald-400" />
-                                            <span className="text-emerald-300">Copied</span>
-                                          </>
-                                        ) : (
-                                          <>
-                                            <Copy size={11} />
-                                            <span>Copy JSON</span>
-                                          </>
-                                        )}
-                                      </button>
-                                    </div>
-
-                                    <div className="rounded-lg bg-black/60 border border-white/10 p-3 overflow-x-auto max-h-[360px] overflow-y-auto">
-                                      <pre className="font-mono text-xs text-cyan-200 leading-relaxed whitespace-pre-wrap break-words m-0 select-text">
-                                        {jsonStr}
-                                      </pre>
-                                    </div>
-                                  </div>
-                                );
-                              })()}
-                            </div>
-                          </div>
-                        ))}
-                      </div>
-
-                      {/* Expand / Collapse Button for this Round */}
-                      {hiddenCount > 0 && (
-                        <button
-                          id={`parallax-toggle-round-${roundNum}-btn`}
-                          type="button"
-                          onClick={() => toggleRoundExpand(roundNum)}
-                          style={{
-                            marginTop: '10px',
-                            width: '100%',
-                            padding: '8px 12px',
-                            borderRadius: '8px',
-                            background: 'rgba(15, 23, 42, 0.7)',
-                            border: '1px dashed rgba(97, 215, 201, 0.3)',
-                            color: '#61d7c9',
-                            fontSize: '12px',
-                            fontWeight: 600,
-                            cursor: 'pointer',
-                            display: 'flex',
-                            alignItems: 'center',
-                            justifyContent: 'center',
-                            gap: '6px',
-                            transition: 'all 0.15s ease',
-                          }}
-                          className="hover:bg-[rgba(97,215,201,0.1)]"
-                        >
-                          {isExpanded ? (
-                            <>
-                              <ChevronUp size={14} />
-                              Collapse Round {roundNum} (Showing all {roundMsgs.length} replies)
-                            </>
-                          ) : (
-                            <>
-                              <ChevronDown size={14} />+{hiddenCount} more agents replied in Round {roundNum} (Click to expand)
-                            </>
-                          )}
-                        </button>
-                      )}
-                    </div>
-                  );
-                })}
-
-                {/* Parallax Summary Card (Appears after Round 3) */}
-                {summary && (
-                  <ParallaxSummaryCard
-                    summary={summary}
-                    topic={currentTopic}
-                    allMessages={messages}
-                    onNewTopic={() => {
-                      setTopicInput('');
-                      setMessages([]);
-                      setSummary(null);
-                      setWasStoppedEarly(false);
-                    }}
-                    onRerun={() => handleStartSwarm(currentTopic)}
-                  />
-                )}
-
-                {/* Swarm Stopped Early State (Shown instead of summary when user halts) */}
-                {wasStoppedEarly && !summary && (
-                  <div
-                    id="parallax-stopped-early-card"
-                    style={{
-                      marginTop: '20px',
-                      padding: '20px 24px',
-                      borderRadius: '16px',
-                      background: 'linear-gradient(135deg, rgba(30, 20, 26, 0.9) 0%, rgba(18, 12, 16, 0.95) 100%)',
-                      border: '1.5px solid rgba(244, 63, 94, 0.45)',
-                      boxShadow: '0 8px 32px rgba(0, 0, 0, 0.45)',
-                      display: 'flex',
-                      flexDirection: 'column',
-                      gap: '12px',
-                    }}
-                  >
-                    <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', flexWrap: 'wrap', gap: '10px' }}>
-                      <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
-                        <div
-                          style={{
-                            width: '32px',
-                            height: '32px',
-                            borderRadius: '8px',
-                            background: 'rgba(244, 63, 94, 0.2)',
-                            border: '1px solid rgba(244, 63, 94, 0.5)',
-                            display: 'flex',
-                            alignItems: 'center',
-                            justifyContent: 'center',
-                            color: '#fb7185',
-                          }}
-                        >
-                          <Square size={16} fill="currentColor" />
-                        </div>
-                        <div>
-                          <div style={{ fontSize: '15px', fontWeight: 800, color: '#fecdd3', letterSpacing: '-0.01em' }}>
-                            Swarm stopped early by user
-                          </div>
-                          <div style={{ fontSize: '12px', color: '#94a3b8' }}>
-                            Deliberation halted • {messages.length} agent {messages.length === 1 ? 'message' : 'messages'} completed
-                          </div>
-                        </div>
-                      </div>
-
-                      <div
-                        style={{
-                          fontSize: '11px',
-                          fontFamily: 'DM Mono, monospace',
-                          padding: '4px 10px',
-                          borderRadius: '999px',
-                          background: 'rgba(244, 63, 94, 0.12)',
-                          color: '#fb7185',
-                          border: '1px solid rgba(244, 63, 94, 0.35)',
-                          fontWeight: 700,
-                        }}
-                      >
-                        SWARM STOPPED
-                      </div>
-                    </div>
-
-                    <p style={{ margin: 0, fontSize: '13px', color: '#cbd5e1', lineHeight: 1.6 }}>
-                      The swarm progression was stopped before finishing all 3 rounds. Completed agent replies up to the stop point are preserved above. Final Parallax Summary synthesis was omitted because the transcript is incomplete.
-                    </p>
-
-                    <div style={{ display: 'flex', alignItems: 'center', gap: '10px', flexWrap: 'wrap', paddingTop: '4px' }}>
-                      <button
-                        id="parallax-rerun-stopped-swarm-btn"
-                        type="button"
-                        onClick={() => handleStartSwarm(currentTopic)}
-                        style={{
-                          padding: '8px 16px',
-                          borderRadius: '10px',
-                          background: 'linear-gradient(135deg, #06b6d4 0%, #0891b2 100%)',
-                          border: 'none',
-                          color: '#fff',
-                          fontSize: '12px',
-                          fontWeight: 700,
-                          cursor: 'pointer',
-                          display: 'flex',
-                          alignItems: 'center',
-                          gap: '6px',
-                          boxShadow: '0 0 15px rgba(6, 182, 212, 0.3)',
-                        }}
-                        className="hover:opacity-90 active:scale-95"
-                      >
-                        <Sparkles size={14} />
-                        Rerun Swarm (3 Rounds)
-                      </button>
-
-                      <button
-                        id="parallax-clear-stopped-swarm-btn"
-                        type="button"
-                        onClick={() => {
-                          setMessages([]);
-                          setWasStoppedEarly(false);
-                          setTopicInput('');
-                          setCurrentTopic('');
-                          setStatusText('Ready to mobilize 20-agent swarm.');
-                        }}
-                        style={{
-                          padding: '8px 16px',
-                          borderRadius: '10px',
-                          background: 'rgba(15, 23, 42, 0.8)',
-                          border: '1px solid rgba(165, 207, 214, 0.25)',
-                          color: '#cbd5e1',
-                          fontSize: '12px',
-                          fontWeight: 700,
-                          cursor: 'pointer',
-                          display: 'flex',
-                          alignItems: 'center',
-                          gap: '6px',
-                        }}
-                        className="hover:border-[#61d7c9] hover:text-white"
-                      >
-                        <Trash2 size={13} />
-                        Discard & New Topic
-                      </button>
-                    </div>
-                  </div>
-                )}
-
-                <div ref={feedEndRef} />
+                <div className="text-xs font-mono px-3 py-1 rounded-full bg-rose-500/15 text-rose-300 border border-rose-500/40 font-bold">
+                  ● HALTED
+                </div>
               </div>
-            </>
+
+              <p className="m-0 text-xs sm:text-sm text-slate-300 leading-relaxed font-sans mb-4">
+                The swarm execution was stopped prior to completing all 3 deliberation rounds. Completed turns up to the stop point have been preserved in the deliberation stream.
+              </p>
+
+              <div className="flex items-center gap-3 flex-wrap font-mono text-xs">
+                <button
+                  id="parallax-rerun-stopped-swarm-btn"
+                  type="button"
+                  onClick={() => handleStartSwarm(currentTopic)}
+                  className="px-4 py-2 rounded-xl bg-gradient-to-r from-cyan-500 to-blue-600 text-white font-bold cursor-pointer hover:opacity-90 active:scale-95 transition-all shadow-[0_0_15px_rgba(6,182,212,0.3)] flex items-center gap-2"
+                >
+                  <Sparkles size={14} />
+                  <span>Rerun Swarm (3 Rounds)</span>
+                </button>
+
+                <button
+                  id="parallax-clear-stopped-swarm-btn"
+                  type="button"
+                  onClick={() => {
+                    setMessages([]);
+                    setWasStoppedEarly(false);
+                    setTopicInput('');
+                    setCurrentTopic('');
+                    setStatusText('Ready to mobilize 20-agent swarm.');
+                  }}
+                  className="px-4 py-2 rounded-xl bg-white/5 border border-white/10 hover:border-cyan-400/40 text-slate-300 hover:text-white font-bold cursor-pointer transition-all flex items-center gap-2"
+                >
+                  <Trash2 size={13} />
+                  <span>Discard & New Topic</span>
+                </button>
+              </div>
+            </div>
           )}
-        </div>
         </div>
       )}
     </div>

@@ -4197,6 +4197,197 @@
   background: rgba(161, 161, 170, 0.5);
 }
 
+/* ========================================================
+   NEXUS PARALLAX COMMAND CENTER DESIGN SYSTEM
+   ======================================================== */
+:root {
+  --nexus-bg: #030712;
+  --nexus-bg-deep: #020617;
+  --nexus-panel: rgba(8, 20, 32, 0.88);
+  --nexus-panel-glass: rgba(6, 16, 26, 0.72);
+  --nexus-cyan: #00f0ff;
+  --nexus-cyan-glow: rgba(0, 240, 255, 0.35);
+  --nexus-blue: #38bdf8;
+  --nexus-blue-electric: #2563eb;
+  --nexus-purple: #c084fc;
+  --nexus-magenta: #e879f9;
+  --nexus-green: #10b981;
+  --nexus-green-glow: rgba(16, 185, 129, 0.3);
+  --nexus-warning: #f59e0b;
+  --nexus-danger: #f43f5e;
+  --nexus-text: #f8fafc;
+  --nexus-text-bright: #ffffff;
+  --nexus-muted: #94a3b8;
+  --nexus-border: rgba(0, 240, 255, 0.22);
+  --nexus-border-strong: rgba(0, 240, 255, 0.45);
+}
+
+/* Holographic Scanning Line */
+@keyframes nexusScanline {
+  0% {
+    transform: translateY(-100%);
+    opacity: 0;
+  }
+  40% {
+    opacity: 0.8;
+  }
+  100% {
+    transform: translateY(1000%);
+    opacity: 0;
+  }
+}
+
+.nexus-header-scanline {
+  position: absolute;
+  left: 0;
+  right: 0;
+  height: 2px;
+  background: linear-gradient(90deg, transparent 0%, rgba(0, 240, 255, 0.8) 50%, transparent 100%);
+  filter: drop-shadow(0 0 6px rgba(0, 240, 255, 0.9));
+  pointer-events: none;
+  animation: nexusScanline 7s cubic-bezier(0.4, 0, 0.2, 1) infinite;
+}
+
+/* Pulsing radar sweep */
+@keyframes nexusRadarSweep {
+  0% {
+    transform: rotate(0deg);
+  }
+  100% {
+    transform: rotate(360deg);
+  }
+}
+
+.nexus-radar-sweep {
+  transform-origin: center center;
+  animation: nexusRadarSweep 8s linear infinite;
+  will-change: transform;
+}
+
+/* Orbital slow rotation */
+@keyframes nexusOrbitalSpin {
+  from {
+    transform: rotate(0deg);
+  }
+  to {
+    transform: rotate(360deg);
+  }
+}
+
+@keyframes nexusOrbitalSpinReverse {
+  from {
+    transform: rotate(360deg);
+  }
+  to {
+    transform: rotate(0deg);
+  }
+}
+
+.nexus-orbit-spin-slow {
+  transform-origin: center center;
+  animation: nexusOrbitalSpin 60s linear infinite;
+  will-change: transform;
+}
+
+.nexus-orbit-spin-reverse {
+  transform-origin: center center;
+  animation: nexusOrbitalSpinReverse 80s linear infinite;
+  will-change: transform;
+}
+
+/* Active agent node pulse */
+@keyframes nexusNodePulse {
+  0%, 100% {
+    transform: scale(1);
+    filter: drop-shadow(0 0 8px rgba(0, 240, 255, 0.7));
+  }
+  50% {
+    transform: scale(1.15);
+    filter: drop-shadow(0 0 18px rgba(0, 240, 255, 1)) drop-shadow(0 0 28px rgba(37, 99, 235, 0.7));
+  }
+}
+
+.nexus-node-active-pulse {
+  animation: nexusNodePulse 2.4s ease-in-out infinite;
+  will-change: transform, filter;
+}
+
+/* Starfield / grid ambient layer */
+.nexus-holo-grid {
+  background-image: 
+    radial-gradient(rgba(0, 240, 255, 0.12) 1px, transparent 1px),
+    radial-gradient(rgba(37, 99, 235, 0.08) 1px, transparent 1px);
+  background-size: 28px 28px;
+  background-position: 0 0, 14px 14px;
+}
+
+/* Holographic card border glow */
+.nexus-card-glow {
+  background: linear-gradient(135deg, rgba(8, 20, 32, 0.92) 0%, rgba(4, 12, 20, 0.96) 100%);
+  border: 1px solid rgba(0, 240, 255, 0.22);
+  box-shadow: 0 8px 32px rgba(0, 0, 0, 0.5), inset 0 0 24px rgba(0, 240, 255, 0.04);
+  transition: all 0.25s cubic-bezier(0.4, 0, 0.2, 1);
+}
+
+.nexus-card-glow:hover {
+  border-color: rgba(0, 240, 255, 0.45);
+  box-shadow: 0 12px 40px rgba(0, 0, 0, 0.6), 0 0 20px rgba(0, 240, 255, 0.15), inset 0 0 32px rgba(0, 240, 255, 0.08);
+}
+
+/* Corner bracket accents */
+.nexus-corner-bracket {
+  position: relative;
+}
+.nexus-corner-bracket::before {
+  content: '';
+  position: absolute;
+  top: -1px;
+  left: -1px;
+  width: 10px;
+  height: 10px;
+  border-top: 2px solid var(--nexus-cyan);
+  border-left: 2px solid var(--nexus-cyan);
+  pointer-events: none;
+}
+.nexus-corner-bracket::after {
+  content: '';
+  position: absolute;
+  bottom: -1px;
+  right: -1px;
+  width: 10px;
+  height: 10px;
+  border-bottom: 2px solid var(--nexus-cyan);
+  border-right: 2px solid var(--nexus-cyan);
+  pointer-events: none;
+}
+
+/* Deliberation Terminal scanline overlay */
+.nexus-terminal-scanlines {
+  background: linear-gradient(
+    rgba(18, 16, 16, 0) 50%, 
+    rgba(0, 0, 0, 0.25) 50%
+  ), linear-gradient(
+    90deg,
+    rgba(255, 0, 0, 0.02),
+    rgba(0, 255, 0, 0.01),
+    rgba(0, 0, 255, 0.02)
+  );
+  background-size: 100% 3px, 6px 100%;
+  pointer-events: none;
+}
+
+/* Reduced motion preference */
+@media (prefers-reduced-motion: reduce) {
+  .nexus-header-scanline,
+  .nexus-radar-sweep,
+  .nexus-orbit-spin-slow,
+  .nexus-orbit-spin-reverse,
+  .nexus-node-active-pulse {
+    animation: none !important;
+  }
+}
+
+
 
 
 
