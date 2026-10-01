@@ -7,6 +7,8 @@ import {
   Volume2,
   Radio,
   Sparkles,
+  Clock,
+  Cpu,
 } from 'lucide-react';
 import { AGENT_QUADRANTS } from '@/data/parallaxQuadrants';
 import type { ParallaxAgentConfig, ParallaxMessage } from '@/types';
@@ -30,7 +32,9 @@ export const ParallaxAgentMatrix: React.FC<ParallaxAgentMatrixProps> = ({
   dynamicPersonas = [],
   onPlayVoice,
 }) => {
-  const [clusterFilter, setClusterFilter] = useState<'all' | 'optimists' | 'realists' | 'ethicists' | 'visionaries' | 'anchors' | 'specialists'>('all');
+  const [clusterFilter, setClusterFilter] = useState<
+    'all' | 'optimists' | 'realists' | 'ethicists' | 'visionaries' | 'anchors' | 'specialists'
+  >('all');
   const [searchQuery, setSearchQuery] = useState('');
 
   // Map messages per agent
@@ -112,7 +116,7 @@ export const ParallaxAgentMatrix: React.FC<ParallaxAgentMatrixProps> = ({
         <div className="flex items-center gap-2.5">
           <Users size={16} className="text-cyan-400" />
           <h2 className="m-0 text-xs font-mono font-black uppercase text-white tracking-wider">
-            AGENT MATRIX
+            AGENT MATRIX & CONFIGURATION
           </h2>
           <span className="text-[10px] font-mono px-2 py-0.5 rounded-full bg-cyan-500/10 text-cyan-300 border border-cyan-500/20 font-bold">
             {filteredAgents.length} / {combinedAgents.length} ACTIVE
@@ -178,11 +182,11 @@ export const ParallaxAgentMatrix: React.FC<ParallaxAgentMatrixProps> = ({
               <div
                 key={agent.id}
                 onClick={() => onSelectAgent?.(isSelected ? null : agent.id)}
-                className={`p-3 rounded-xl cursor-pointer transition-all duration-200 font-mono relative flex flex-col justify-between ${
+                className={`p-3.5 rounded-xl cursor-pointer transition-all duration-200 font-mono relative flex flex-col justify-between ${
                   isSelected
-                    ? 'border-2 border-cyan-400 bg-cyan-950/30 shadow-[0_0_20px_rgba(0,240,255,0.3)]'
+                    ? 'border-2 border-cyan-400 bg-cyan-950/40 shadow-[0_0_20px_rgba(0,240,255,0.3)]'
                     : isSpeaking
-                    ? 'border border-cyan-400 bg-cyan-950/20 animate-pulse shadow-[0_0_15px_rgba(0,240,255,0.2)]'
+                    ? 'border border-cyan-400 bg-cyan-950/25 animate-pulse shadow-[0_0_15px_rgba(0,240,255,0.2)]'
                     : hasCompleted
                     ? 'border border-emerald-500/30 bg-white/[0.02] hover:border-cyan-400/40 hover:bg-white/[0.04]'
                     : 'border border-white/10 bg-white/[0.01] hover:border-white/20'
@@ -191,9 +195,9 @@ export const ParallaxAgentMatrix: React.FC<ParallaxAgentMatrixProps> = ({
                   borderLeft: `3px solid ${accentColor}`,
                 }}
               >
-                {/* Top Row: Icon + Name + Status */}
+                {/* Top Row: Icon + Name + Role + Status */}
                 <div>
-                  <div className="flex items-center justify-between gap-2 mb-1.5">
+                  <div className="flex items-center justify-between gap-2 mb-2">
                     <div className="flex items-center gap-2 min-w-0">
                       <div
                         className="w-7 h-7 rounded-lg flex items-center justify-center font-bold text-xs shrink-0"
@@ -227,15 +231,19 @@ export const ParallaxAgentMatrix: React.FC<ParallaxAgentMatrixProps> = ({
                           {replies.length} R
                         </span>
                       ) : (
-                        <span className="text-[10px] text-slate-500">STANDBY</span>
+                        <span className="inline-flex items-center gap-1 text-[10px] text-slate-500">
+                          <Clock size={10} />
+                          STANDBY
+                        </span>
                       )}
                     </div>
                   </div>
 
-                  {/* Model Engine Tag */}
+                  {/* Model & Capability Badges */}
                   <div className="flex items-center gap-1.5 mt-2 flex-wrap">
-                    <span className="text-[9px] px-1.5 py-0.5 rounded bg-white/5 text-slate-400 border border-white/10 truncate max-w-[140px]">
-                      {agent.modelId || 'LLAMA 3.3 70B'}
+                    <span className="text-[9px] px-1.5 py-0.5 rounded bg-white/5 text-slate-300 border border-white/10 truncate max-w-[140px] flex items-center gap-1">
+                      <Cpu size={9} className="text-slate-400" />
+                      <span>{agent.modelId || 'Llama 3.3 70B'}</span>
                     </span>
                     {agent.hasToolAccess && (
                       <span className="text-[9px] px-1.5 py-0.5 rounded bg-cyan-500/20 text-cyan-300 border border-cyan-500/40 font-bold flex items-center gap-0.5">
@@ -252,10 +260,13 @@ export const ParallaxAgentMatrix: React.FC<ParallaxAgentMatrixProps> = ({
                   </div>
                 </div>
 
-                {/* Bottom Row: Current Task / Latest Argument snippet */}
+                {/* Bottom Row: Current Activity / Latest Argument snippet */}
                 <div className="mt-2.5 pt-2 border-t border-white/5 text-[11px]">
+                  <div className="text-[9px] text-slate-500 font-bold uppercase tracking-wider mb-0.5">
+                    CURRENT ACTIVITY:
+                  </div>
                   {lastReply ? (
-                    <div className="text-slate-300 font-sans line-clamp-2 leading-relaxed">
+                    <div className="text-slate-300 font-sans line-clamp-2 leading-relaxed text-[11px]">
                       &ldquo;{lastReply.text}&rdquo;
                     </div>
                   ) : (
@@ -266,7 +277,7 @@ export const ParallaxAgentMatrix: React.FC<ParallaxAgentMatrixProps> = ({
 
                   {/* Audio voice preview if replied */}
                   {lastReply && onPlayVoice && (
-                    <div className="mt-1.5 flex items-center justify-between text-[10px] font-mono">
+                    <div className="mt-2 flex items-center justify-between text-[10px] font-mono pt-1.5 border-t border-white/5">
                       <span className="text-slate-400">
                         {lastReply.mood ? `Mood: ${lastReply.mood}` : 'Voice ready'}
                       </span>
@@ -276,7 +287,7 @@ export const ParallaxAgentMatrix: React.FC<ParallaxAgentMatrixProps> = ({
                           e.stopPropagation();
                           onPlayVoice(lastReply);
                         }}
-                        className="text-cyan-400 hover:text-cyan-200 flex items-center gap-1 cursor-pointer"
+                        className="text-cyan-400 hover:text-cyan-200 flex items-center gap-1 cursor-pointer font-bold"
                       >
                         <Volume2 size={11} />
                         <span>Listen</span>

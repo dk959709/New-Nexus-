@@ -522,7 +522,7 @@ export const ParallaxPage: React.FC = () => {
     setCurrentTopic(targetTopic);
     setIsRunning(true);
     setCurrentRound(1);
-    setStatusText('Mobilizing 20-agent cognitive mesh...');
+    setStatusText('INITIALIZING PARALLAX CORE • CONNECTING AGENTS...');
     setExpandedRounds({ 1: false, 2: false, 3: false });
     setAutoScroll(true);
 
@@ -535,9 +535,17 @@ export const ParallaxPage: React.FC = () => {
       signal: controller.signal,
       onRoundStart: (r) => {
         setCurrentRound(r);
+        if (r === 1) {
+          setStatusText('PLANNER ONLINE • RESEARCH SWARM ONLINE • ROUND 01');
+        } else if (r === 2) {
+          setStatusText('DELIBERATION ACTIVE • CROSS-EXAMINATION • ROUND 02');
+        } else if (r === 3) {
+          setStatusText('DELIBERATION ACTIVE • CONVERGENCE RESOLUTION • ROUND 03');
+        }
       },
       onSpecialistDeliberation: (deliberation) => {
         setSpecialistDeliberation(deliberation);
+        setStatusText('CONNECTING AGENTS • SPECIALISTS COMPILED');
       },
       onDynamicPersonasCreated: (personas) => {
         setDynamicPersonas(personas);
@@ -555,11 +563,13 @@ export const ParallaxPage: React.FC = () => {
         }
         setWasStoppedEarly(false);
         setIsRunning(false);
+        setStatusText('SYNTHESIS READY • COMPLETE');
         setSessions(storage.getParallaxSessions());
       },
       onError: (err) => {
         setErrorText(err);
         setIsRunning(false);
+        setStatusText('Swarm error encountered.');
       },
     });
 
@@ -589,16 +599,35 @@ export const ParallaxPage: React.FC = () => {
 
   return (
     <div
-      id="parallax-page"
+      id="parallax-page-wrapper"
+      className="min-h-screen relative w-full overflow-x-hidden"
       style={{
-        maxWidth: '1280px',
-        margin: '0 auto',
-        padding: '24px 20px 80px',
-        color: '#f8fafc',
-        fontFamily: 'Inter, system-ui, sans-serif',
+        background: 'radial-gradient(ellipse at 50% 0%, rgba(3, 14, 26, 0.8) 0%, rgba(2, 6, 12, 1) 100%)',
       }}
     >
-      {/* NEXUS COMMAND CENTER: Top Futuristic Header (Requirement 2) */}
+      {/* Ambient background tactical grid & atmospheric glow */}
+      <div
+        className="fixed inset-0 pointer-events-none opacity-20"
+        style={{
+          backgroundImage:
+            'radial-gradient(rgba(0, 240, 255, 0.12) 1px, transparent 1px), radial-gradient(rgba(37, 99, 235, 0.08) 1px, transparent 1px)',
+          backgroundSize: '32px 32px',
+          backgroundPosition: '0 0, 16px 16px',
+        }}
+      />
+
+      <div
+        id="parallax-page"
+        className="relative z-10 w-full"
+        style={{
+          maxWidth: '1280px',
+          margin: '0 auto',
+          padding: '24px 16px 80px',
+          color: '#f8fafc',
+          fontFamily: 'Inter, system-ui, sans-serif',
+        }}
+      >
+        {/* NEXUS COMMAND CENTER: Top Futuristic Header */}
       <ParallaxHeader
         isRunning={isRunning}
         currentRound={currentRound}
@@ -1106,19 +1135,7 @@ export const ParallaxPage: React.FC = () => {
             </div>
           )}
 
-          {/* LIVE TELEMETRY STRIP (Requirement 8) */}
-          <ParallaxTelemetry
-            totalAgentsCount={enabledAgentsCount}
-            activeCount={isRunning ? 1 : 0}
-            completedRepliesCount={messages.length}
-            currentRound={currentRound}
-            sourcesCount={messages.reduce((acc, m) => acc + (m.toolUsed?.sourcesCount || (m.toolUsed ? 1 : 0)), 0)}
-            isRunning={isRunning}
-            isComplete={Boolean(summary)}
-            activeModel={config.specialistModel || 'Llama 3.3 70B'}
-          />
-
-          {/* MISSION CHRONOLOGY TIMELINE (Requirement 5) */}
+          {/* MISSION CHRONOLOGY TIMELINE (Stage / Timeline) */}
           <ParallaxTimeline
             currentRound={currentRound}
             isRunning={isRunning}
@@ -1127,7 +1144,7 @@ export const ParallaxPage: React.FC = () => {
             messages={messages}
           />
 
-          {/* MAIN HERO — SWARM ORBITAL CORE & LIVE SWARM ACTIVITY (Requirement 3 & 4) */}
+          {/* MAIN HERO — SWARM ORBITAL CORE & LIVE SWARM ACTIVITY (Active Agents) */}
           <div className="grid grid-cols-1 lg:grid-cols-12 gap-5 mb-2 items-start">
             <div className="lg:col-span-7">
               <ParallaxOrbitalCore
@@ -1183,7 +1200,7 @@ export const ParallaxPage: React.FC = () => {
             />
           )}
 
-          {/* DELIBERATION STREAM: Terminal-style live stream (Requirement 7) */}
+          {/* DELIBERATION STREAM: Terminal-style live stream */}
           <ParallaxDeliberationStream
             messages={messages}
             agents={config.agents}
@@ -1215,6 +1232,18 @@ export const ParallaxPage: React.FC = () => {
             onToggleRawJsonView={toggleRawJsonView}
             onCopyRawJson={handleCopyRawJson}
             feedEndRef={feedEndRef}
+          />
+
+          {/* LIVE TELEMETRY STRIP */}
+          <ParallaxTelemetry
+            totalAgentsCount={enabledAgentsCount}
+            activeCount={isRunning ? 1 : 0}
+            completedRepliesCount={messages.length}
+            currentRound={currentRound}
+            sourcesCount={messages.reduce((acc, m) => acc + (m.toolUsed?.sourcesCount || (m.toolUsed ? 1 : 0)), 0)}
+            isRunning={isRunning}
+            isComplete={Boolean(summary)}
+            activeModel={config.specialistModel || 'Llama 3.3 70B'}
           />
 
           {/* FINAL SYNTHESIS: Polished Intelligence Report (Requirement 9) */}
@@ -1309,6 +1338,7 @@ export const ParallaxPage: React.FC = () => {
           )}
         </div>
       )}
+      </div>
     </div>
   );
 };

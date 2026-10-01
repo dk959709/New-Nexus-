@@ -39,7 +39,7 @@ export const ParallaxOrbitalCore: React.FC<ParallaxOrbitalCoreProps> = ({
   const [isExpanded, setIsExpanded] = useState(false);
   const requestRef = useRef<number | null>(null);
 
-  // Smooth orbital drift animation loop (respects prefers-reduced-motion)
+  // Smooth majestic orbital drift loop (respects user interaction)
   useEffect(() => {
     let lastTime = performance.now();
     const animate = (time: number) => {
@@ -47,8 +47,8 @@ export const ParallaxOrbitalCore: React.FC<ParallaxOrbitalCoreProps> = ({
       lastTime = time;
 
       if (isOrbiting) {
-        // Slow majestic drift: 3 degrees per second
-        setOrbitAngle((prev) => (prev + delta * 3) % 360);
+        // Controlled slow rotation: 2.8 degrees per second
+        setOrbitAngle((prev) => (prev + delta * 2.8) % 360);
       }
       requestRef.current = requestAnimationFrame(animate);
     };
@@ -59,9 +59,9 @@ export const ParallaxOrbitalCore: React.FC<ParallaxOrbitalCoreProps> = ({
     };
   }, [isOrbiting]);
 
-  // Combine static agents with dynamic specialists
+  // Combine static agents with dynamic topic specialists
   const allAgentsList = useMemo(() => {
-    const list: Array<ParallaxAgentConfig & { angleOffset: number; ring: 1 | 2 | 3 }> = [];
+    const list: Array<ParallaxAgentConfig & { angleOffset: number; ring: 1 | 2 | 3; clusterName: string }> = [];
 
     // Core 20 agents
     Object.keys(agents).forEach((key) => {
@@ -69,15 +69,17 @@ export const ParallaxOrbitalCore: React.FC<ParallaxOrbitalCoreProps> = ({
       const q = AGENT_QUADRANTS[key];
       if (!config || !q) return;
 
-      const ring: 1 | 2 | 3 = q.quadrant === 'anchors' ? 1 : q.quadrant === 'realists' || q.quadrant === 'optimists' ? 2 : 3;
+      const ring: 1 | 2 | 3 =
+        q.quadrant === 'anchors' ? 1 : q.quadrant === 'realists' || q.quadrant === 'optimists' ? 2 : 3;
       list.push({
         ...config,
         angleOffset: q.angle,
         ring,
+        clusterName: q.quadrant.toUpperCase(),
       });
     });
 
-    // Dynamic Specialists (distributed in ring 1 or 2)
+    // Dynamic Specialists (distributed in inner orbit)
     dynamicPersonas.forEach((spec, idx) => {
       const existing = list.find((a) => a.id === spec.id);
       if (!existing) {
@@ -85,6 +87,7 @@ export const ParallaxOrbitalCore: React.FC<ParallaxOrbitalCoreProps> = ({
           ...spec,
           angleOffset: (idx * 72 + 45) % 360,
           ring: 1,
+          clusterName: 'SPECIALIST',
         });
       }
     });
@@ -112,10 +115,10 @@ export const ParallaxOrbitalCore: React.FC<ParallaxOrbitalCoreProps> = ({
     ? [...(agentRepliesMap.get(activeAgentKey) || [])].pop() || null
     : null;
 
-  // Collaborating connection pairs (agents that spoke in the same round)
+  // Collaborating connection pairs (agents that spoke in recent turns)
   const collaborationLinks = useMemo(() => {
     if (messages.length < 2) return [];
-    const recent = messages.slice(-8);
+    const recent = messages.slice(-10);
     const links: Array<{ from: string; to: string }> = [];
 
     for (let i = 0; i < recent.length - 1; i++) {
@@ -130,24 +133,23 @@ export const ParallaxOrbitalCore: React.FC<ParallaxOrbitalCoreProps> = ({
 
   // SVG dimensions
   const viewBoxWidth = 840;
-  const viewBoxHeight = isExpanded ? 640 : 480;
+  const viewBoxHeight = isExpanded ? 640 : 490;
   const centerX = viewBoxWidth / 2;
   const centerY = viewBoxHeight / 2;
 
-  // Ring radii
-  const r1 = 85; // Core Anchors & Specialists
-  const r2 = 160; // Inner Swarm Orbit
-  const r3 = 230; // Outer Swarm Orbit
+  // Ring radii with dimensional depth
+  const r1 = 88; // Core Anchors & Specialists
+  const r2 = 164; // Middle Orbit
+  const r3 = 236; // Outer Swarm Orbit
 
-  // Coordinate calculator helper
+  // Coordinate calculator helper (applies slight perspective compression 0.88)
   const getNodeCoordinates = (ring: 1 | 2 | 3, baseAngle: number) => {
     const currentRot = isOrbiting ? (baseAngle + orbitAngle) % 360 : baseAngle;
     const rad = (currentRot * Math.PI) / 180;
     const radius = ring === 1 ? r1 : ring === 2 ? r2 : r3;
-    // Slight vertical compression (0.86) gives a gorgeous dimensional command view
     return {
       x: centerX + Math.cos(rad) * radius,
-      y: centerY + Math.sin(rad) * radius * 0.86,
+      y: centerY + Math.sin(rad) * radius * 0.88,
       angle: currentRot,
     };
   };
@@ -155,7 +157,7 @@ export const ParallaxOrbitalCore: React.FC<ParallaxOrbitalCoreProps> = ({
   return (
     <div
       id="parallax-orbital-core"
-      className="nexus-corner-bracket relative rounded-2xl overflow-hidden mb-6 select-none transition-all duration-300"
+      className="nexus-corner-bracket relative rounded-2xl overflow-hidden mb-5 select-none transition-all duration-300"
       style={{
         background: 'linear-gradient(145deg, rgba(3, 10, 18, 0.96) 0%, rgba(2, 6, 12, 0.99) 100%)',
         border: '1.5px solid rgba(0, 240, 255, 0.28)',
@@ -164,7 +166,7 @@ export const ParallaxOrbitalCore: React.FC<ParallaxOrbitalCoreProps> = ({
     >
       {/* Background Holographic Starfield & Polar Grid */}
       <div
-        className="absolute inset-0 pointer-events-none opacity-30"
+        className="absolute inset-0 pointer-events-none opacity-25"
         style={{
           backgroundImage:
             'radial-gradient(rgba(0, 240, 255, 0.15) 1px, transparent 1px), radial-gradient(rgba(37, 99, 235, 0.1) 1px, transparent 1px)',
@@ -254,27 +256,27 @@ export const ParallaxOrbitalCore: React.FC<ParallaxOrbitalCoreProps> = ({
           <defs>
             {/* Holographic Radial Core Glow */}
             <radialGradient id="nexusCorePulse" cx="50%" cy="50%" r="50%">
-              <stop offset="0%" stopColor="#00f0ff" stopOpacity="0.45" />
-              <stop offset="40%" stopColor="#0284c7" stopOpacity="0.25" />
-              <stop offset="80%" stopColor="#1e1b4b" stopOpacity="0.1" />
+              <stop offset="0%" stopColor="#00f0ff" stopOpacity="0.4" />
+              <stop offset="40%" stopColor="#0284c7" stopOpacity="0.2" />
+              <stop offset="80%" stopColor="#1e1b4b" stopOpacity="0.08" />
               <stop offset="100%" stopColor="transparent" stopOpacity="0" />
             </radialGradient>
 
             {/* Radar sweep gradient */}
             <linearGradient id="nexusRadarSweepGrad" x1="0%" y1="0%" x2="100%" y2="100%">
-              <stop offset="0%" stopColor="#00f0ff" stopOpacity="0.35" />
+              <stop offset="0%" stopColor="#00f0ff" stopOpacity="0.28" />
               <stop offset="100%" stopColor="transparent" stopOpacity="0" />
             </linearGradient>
 
             {/* Speaking beam gradient */}
             <linearGradient id="speakingBeamGrad" x1="0%" y1="0%" x2="100%" y2="100%">
-              <stop offset="0%" stopColor="#00f0ff" stopOpacity="0.9" />
-              <stop offset="100%" stopColor="#c084fc" stopOpacity="0.3" />
+              <stop offset="0%" stopColor="#00f0ff" stopOpacity="0.85" />
+              <stop offset="100%" stopColor="#c084fc" stopOpacity="0.25" />
             </linearGradient>
           </defs>
 
           {/* Background Polar Coordinate Grid */}
-          <g opacity="0.35">
+          <g opacity="0.3">
             {/* Crosshairs */}
             <line
               x1="40"
@@ -322,7 +324,7 @@ export const ParallaxOrbitalCore: React.FC<ParallaxOrbitalCoreProps> = ({
               cx={centerX}
               cy={centerY}
               rx={r3}
-              ry={r3 * 0.86}
+              ry={r3 * 0.88}
               fill="none"
               stroke={selectedAgentId ? 'rgba(0, 240, 255, 0.12)' : 'rgba(0, 240, 255, 0.22)'}
               strokeWidth="1.2"
@@ -334,7 +336,7 @@ export const ParallaxOrbitalCore: React.FC<ParallaxOrbitalCoreProps> = ({
               cx={centerX}
               cy={centerY}
               rx={r2}
-              ry={r2 * 0.86}
+              ry={r2 * 0.88}
               fill="none"
               stroke={selectedAgentId ? 'rgba(0, 240, 255, 0.15)' : 'rgba(0, 240, 255, 0.28)'}
               strokeWidth="1.4"
@@ -345,7 +347,7 @@ export const ParallaxOrbitalCore: React.FC<ParallaxOrbitalCoreProps> = ({
               cx={centerX}
               cy={centerY}
               rx={r1}
-              ry={r1 * 0.86}
+              ry={r1 * 0.88}
               fill="none"
               stroke="rgba(0, 240, 255, 0.38)"
               strokeWidth="1.6"
@@ -356,7 +358,7 @@ export const ParallaxOrbitalCore: React.FC<ParallaxOrbitalCoreProps> = ({
           {/* Radar Sweep Wedge */}
           <g className="nexus-radar-sweep" style={{ transformOrigin: `${centerX}px ${centerY}px` }}>
             <path
-              d={`M ${centerX} ${centerY} L ${centerX + r3} ${centerY} A ${r3} ${r3 * 0.86} 0 0 0 ${centerX + Math.cos(0.5) * r3} ${centerY - Math.sin(0.5) * r3 * 0.86} Z`}
+              d={`M ${centerX} ${centerY} L ${centerX + r3} ${centerY} A ${r3} ${r3 * 0.88} 0 0 0 ${centerX + Math.cos(0.5) * r3} ${centerY - Math.sin(0.5) * r3 * 0.88} Z`}
               fill="url(#nexusRadarSweepGrad)"
               pointerEvents="none"
             />
@@ -390,8 +392,8 @@ export const ParallaxOrbitalCore: React.FC<ParallaxOrbitalCoreProps> = ({
               strokeWidth="2"
               style={{
                 filter: isRunning
-                  ? 'drop-shadow(0 0 12px rgba(0, 240, 255, 0.9))'
-                  : 'drop-shadow(0 0 6px rgba(0, 240, 255, 0.4))',
+                  ? 'drop-shadow(0 0 12px rgba(0, 240, 255, 0.8))'
+                  : 'drop-shadow(0 0 6px rgba(0, 240, 255, 0.35))',
               }}
             />
 
@@ -433,7 +435,7 @@ export const ParallaxOrbitalCore: React.FC<ParallaxOrbitalCoreProps> = ({
           </g>
 
           {/* Collaboration Connection Lines between communicating agents */}
-          <g pointerEvents="none" opacity="0.6">
+          <g pointerEvents="none" opacity="0.55">
             {collaborationLinks.map((link, idx) => {
               const fromAgent = allAgentsList.find((a) => a.id === link.from);
               const toAgent = allAgentsList.find((a) => a.id === link.to);
@@ -478,7 +480,7 @@ export const ParallaxOrbitalCore: React.FC<ParallaxOrbitalCoreProps> = ({
                 onMouseLeave={() => setHoveredAgentId(null)}
                 className="cursor-pointer"
                 style={{
-                  opacity: selectedAgentId && !isSelected ? 0.45 : 1,
+                  opacity: selectedAgentId && !isSelected ? 0.4 : 1,
                   transition: 'opacity 0.25s ease',
                 }}
               >
@@ -506,7 +508,7 @@ export const ParallaxOrbitalCore: React.FC<ParallaxOrbitalCoreProps> = ({
                       fill="none"
                       stroke={accentColor}
                       strokeWidth="1.5"
-                      opacity="0.5"
+                      opacity="0.45"
                       className="animate-ping"
                     />
                     <circle
@@ -516,7 +518,7 @@ export const ParallaxOrbitalCore: React.FC<ParallaxOrbitalCoreProps> = ({
                       fill="none"
                       stroke="#00f0ff"
                       strokeWidth="2"
-                      opacity="0.8"
+                      opacity="0.75"
                     />
                   </>
                 )}
@@ -531,7 +533,7 @@ export const ParallaxOrbitalCore: React.FC<ParallaxOrbitalCoreProps> = ({
                   strokeWidth={isSelected ? '2.5' : isSpeaking ? '2' : '1.5'}
                   style={{
                     filter: isSpeaking
-                      ? `drop-shadow(0 0 12px ${accentColor}) drop-shadow(0 0 20px #00f0ff)`
+                      ? `drop-shadow(0 0 10px ${accentColor}) drop-shadow(0 0 16px #00f0ff)`
                       : isSelected
                       ? `drop-shadow(0 0 10px ${accentColor})`
                       : hasCompleted

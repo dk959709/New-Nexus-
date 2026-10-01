@@ -519,7 +519,7 @@ export const ParallaxSummaryCard: React.FC<ParallaxSummaryCardProps> = ({
             letterSpacing: '0.05em',
           }}
         >
-          OVERALL VERDICT / SYNTHESIS:
+          FINAL INTELLIGENCE SYNTHESIS / RESEARCH CONCLUSION:
         </span>
         <p style={{ margin: 0, fontSize: '15px', color: '#f1f5f9', fontWeight: 600, lineHeight: 1.5 }}>
           {summary.verdict}

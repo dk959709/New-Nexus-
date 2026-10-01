@@ -8,13 +8,12 @@ import {
   Download,
   Loader2,
   Search,
-  AlertCircle,
-  FileText,
   Code2,
   Volume2,
   ChevronDown,
   ChevronUp,
   Sparkles,
+  Zap,
 } from 'lucide-react';
 import { AGENT_QUADRANTS } from '@/data/parallaxQuadrants';
 import { ParallaxAgentAvatar } from './ParallaxAgentIcon';
@@ -42,7 +41,6 @@ export interface ParallaxDeliberationStreamProps {
   isDownloadingSwarmMp3: boolean;
   rawJsonOpenMap: Record<string, boolean>;
   copiedRawJsonId: string | null;
-  currentTopic: string;
   onSetRoundFilter: (r: 'all' | 1 | 2 | 3) => void;
   onSetGroupFilter: (g: 'all' | 'optimists' | 'realists' | 'ethicists' | 'visionaries' | 'anchors' | 'facts') => void;
   onSetSelectedAgentFilter: (id: string | null) => void;
@@ -75,7 +73,6 @@ export const ParallaxDeliberationStream: React.FC<ParallaxDeliberationStreamProp
   isDownloadingSwarmMp3,
   rawJsonOpenMap,
   copiedRawJsonId,
-  currentTopic,
   onSetRoundFilter,
   onSetGroupFilter,
   onSetSelectedAgentFilter,
@@ -103,7 +100,7 @@ export const ParallaxDeliberationStream: React.FC<ParallaxDeliberationStreamProp
       }}
     >
       {/* Deliberation Terminal scanline overlay */}
-      <div className="nexus-terminal-scanlines absolute inset-0 z-10 pointer-events-none opacity-20" />
+      <div className="nexus-terminal-scanlines absolute inset-0 z-10 pointer-events-none opacity-15" />
 
       {/* Terminal Title & Sticky Actions Toolbar */}
       <div
@@ -117,7 +114,7 @@ export const ParallaxDeliberationStream: React.FC<ParallaxDeliberationStreamProp
             <h2 className="m-0 text-xs font-mono font-black uppercase text-white tracking-widest flex items-center gap-2 truncate">
               <span>&gt; PARALLAX DELIBERATION STREAM</span>
               <span className="text-[10px] font-bold px-2 py-0.5 rounded bg-cyan-500/15 text-cyan-300 border border-cyan-500/30">
-                {messages.length} TURNS{currentRound ? ` • ROUND ${currentRound}` : ''}
+                {messages.length} TURNS{currentRound ? ` • ROUND 0${currentRound}` : ''}
               </span>
             </h2>
 
@@ -148,103 +145,116 @@ export const ParallaxDeliberationStream: React.FC<ParallaxDeliberationStreamProp
                 className="px-3 py-1.5 rounded-lg bg-rose-950/60 border border-rose-500/70 text-rose-200 font-bold hover:bg-rose-900/80 active:scale-95 transition-all cursor-pointer flex items-center gap-1.5 shadow-[0_0_12px_rgba(244,63,94,0.3)]"
               >
                 <Square size={11} fill="currentColor" />
-                <span>Halt Swarm</span>
+                <span>Stop Swarm</span>
               </button>
             )}
 
-            {/* Copy Full Swarm Button */}
-            <button
-              type="button"
-              onClick={onCopyFullSwarm}
-              className={`px-3 py-1.5 rounded-lg border font-bold transition-all cursor-pointer flex items-center gap-1.5 ${
-                copiedSwarmTranscript
-                  ? 'bg-emerald-950/60 border-emerald-400 text-emerald-300'
-                  : 'bg-white/5 border-white/10 hover:border-cyan-400 text-slate-300 hover:text-white'
-              }`}
-            >
-              {copiedSwarmTranscript ? <Check size={12} /> : <Copy size={12} />}
-              <span>{copiedSwarmTranscript ? 'Copied Full Swarm!' : 'Copy Transcript'}</span>
-            </button>
+            {/* Listen to Full Swarm button */}
+            {messages.length > 0 && (
+              <button
+                id="parallax-listen-full-swarm-btn"
+                type="button"
+                onClick={onListenToFullSwarm}
+                disabled={loadingAudioKey === 'full_swarm'}
+                className="px-3 py-1.5 rounded-lg bg-cyan-500/20 border border-cyan-400 text-cyan-200 hover:bg-cyan-500/30 active:scale-95 transition-all cursor-pointer flex items-center gap-1.5 font-bold shadow-[0_0_12px_rgba(0,240,255,0.2)]"
+              >
+                {loadingAudioKey === 'full_swarm' ? (
+                  <Loader2 size={12} className="animate-spin text-cyan-300" />
+                ) : playingAudioKey === 'full_swarm' ? (
+                  <Square size={11} fill="currentColor" className="text-cyan-300" />
+                ) : (
+                  <Play size={11} fill="currentColor" className="text-cyan-300" />
+                )}
+                <span>
+                  {loadingAudioKey === 'full_swarm'
+                    ? 'Synthesizing Audio...'
+                    : playingAudioKey === 'full_swarm'
+                    ? 'Stop Full Audio'
+                    : 'Listen Full Swarm'}
+                </span>
+              </button>
+            )}
 
-            {/* Listen to Full Swarm Button */}
-            <button
-              type="button"
-              onClick={onListenToFullSwarm}
-              disabled={loadingAudioKey === 'full_swarm' && !fullSwarmProgress}
-              className={`px-3 py-1.5 rounded-lg border font-bold transition-all cursor-pointer flex items-center gap-1.5 ${
-                playingAudioKey === 'full_swarm'
-                  ? 'bg-emerald-950/60 border-emerald-400 text-emerald-300 shadow-[0_0_12px_rgba(16,185,129,0.3)]'
-                  : 'bg-cyan-500/20 border-cyan-400 text-cyan-200 hover:bg-cyan-500/30'
-              }`}
-            >
-              {loadingAudioKey === 'full_swarm' ? (
-                <Loader2 size={12} className="animate-spin text-cyan-300" />
-              ) : playingAudioKey === 'full_swarm' ? (
-                <Square size={11} fill="currentColor" />
-              ) : (
-                <Play size={11} fill="currentColor" />
-              )}
-              <span>
-                {loadingAudioKey === 'full_swarm'
-                  ? 'Synthesizing Audio...'
-                  : playingAudioKey === 'full_swarm'
-                  ? 'Stop Voice'
-                  : 'Listen Full Swarm'}
-              </span>
-            </button>
+            {/* Download Swarm MP3 */}
+            {messages.length > 0 && (
+              <button
+                id="parallax-download-mp3-btn"
+                type="button"
+                onClick={onDownloadSwarmMp3}
+                disabled={isDownloadingSwarmMp3}
+                className="px-2.5 py-1.5 rounded-lg bg-white/5 border border-white/10 hover:border-cyan-400/40 text-slate-300 hover:text-white transition-all cursor-pointer flex items-center gap-1"
+                title="Download full multi-voice MP3 stitched discussion"
+              >
+                {isDownloadingSwarmMp3 ? (
+                  <Loader2 size={12} className="animate-spin text-cyan-300" />
+                ) : (
+                  <Download size={12} />
+                )}
+                <span className="hidden sm:inline">
+                  {isDownloadingSwarmMp3 ? 'Building MP3...' : 'Download MP3'}
+                </span>
+              </button>
+            )}
 
-            {/* Download as MP3 Button */}
-            <button
-              type="button"
-              onClick={onDownloadSwarmMp3}
-              disabled={isDownloadingSwarmMp3}
-              className="px-3 py-1.5 rounded-lg bg-white/5 border border-white/10 hover:border-cyan-400 text-slate-300 hover:text-white font-bold transition-all cursor-pointer flex items-center gap-1.5"
-            >
-              {isDownloadingSwarmMp3 ? (
-                <Loader2 size={12} className="animate-spin text-cyan-300" />
-              ) : (
-                <Download size={12} />
-              )}
-              <span>{isDownloadingSwarmMp3 ? 'Exporting MP3...' : 'Download MP3'}</span>
-            </button>
+            {/* Copy full transcript */}
+            {messages.length > 0 && (
+              <button
+                id="parallax-copy-transcript-btn"
+                type="button"
+                onClick={onCopyFullSwarm}
+                className="px-2.5 py-1.5 rounded-lg bg-white/5 border border-white/10 hover:border-cyan-400/40 text-slate-300 hover:text-white transition-all cursor-pointer flex items-center gap-1"
+                title="Copy entire discussion transcript formatted with headers"
+              >
+                {copiedSwarmTranscript ? (
+                  <Check size={12} className="text-emerald-400" />
+                ) : (
+                  <Copy size={12} />
+                )}
+                <span className="hidden sm:inline">
+                  {copiedSwarmTranscript ? 'Copied' : 'Copy Text'}
+                </span>
+              </button>
+            )}
           </div>
         </div>
 
-        {/* Filter Pills Bar */}
-        <div
-          id="parallax-feed-filter-bar"
-          className="mt-2.5 pt-2 border-t border-white/10 flex items-center justify-between flex-wrap gap-2 text-[11px] font-mono"
-        >
+        {/* Curation & Filter Strip */}
+        <div className="mt-3 pt-2.5 border-t border-white/10 flex items-center justify-between flex-wrap gap-2 text-xs font-mono">
           {/* Round Filter */}
-          <div className="flex items-center gap-1.5 flex-wrap">
-            <span className="text-slate-500 text-[10px] mr-0.5">ROUND:</span>
-            {(['all', 1, 2, 3] as const).map((r) => (
+          <div className="flex items-center gap-1.5">
+            <span className="text-slate-400 text-[11px]">ROUND:</span>
+            {[
+              { key: 'all', label: 'All Rounds' },
+              { key: 1, label: 'Round 01' },
+              { key: 2, label: 'Round 02' },
+              { key: 3, label: 'Round 03' },
+            ].map((r) => (
               <button
-                key={r}
+                key={r.key}
                 type="button"
-                onClick={() => onSetRoundFilter(r)}
+                onClick={() => onSetRoundFilter(r.key as typeof roundFilter)}
                 className={`px-2 py-0.5 rounded text-[10px] font-bold cursor-pointer transition-all ${
-                  roundFilter === r
+                  roundFilter === r.key
                     ? 'bg-cyan-500/20 text-cyan-300 border border-cyan-400/50'
                     : 'bg-white/5 text-slate-400 border border-white/5 hover:text-white'
                 }`}
               >
-                {r === 'all' ? 'All (3 Rounds)' : `R0${r}`}
+                {r.label}
               </button>
             ))}
           </div>
 
           {/* Cluster Filter */}
           <div className="flex items-center gap-1.5 flex-wrap">
-            <span className="text-slate-500 text-[10px] mr-0.5">CLUSTER:</span>
+            <span className="text-slate-400 text-[11px]">FILTER:</span>
             {[
-              { key: 'all', label: 'All' },
+              { key: 'all', label: 'All Agents' },
+              { key: 'facts', label: 'Tool Grounded' },
+              { key: 'anchors', label: 'Anchors' },
               { key: 'optimists', label: 'Optimists' },
               { key: 'realists', label: 'Realists' },
               { key: 'ethicists', label: 'Ethicists' },
               { key: 'visionaries', label: 'Visionaries' },
-              { key: 'anchors', label: 'Anchors' },
-              { key: 'facts', label: 'Facts' },
             ].map((c) => (
               <button
                 key={c.key}
@@ -309,7 +319,7 @@ export const ParallaxDeliberationStream: React.FC<ParallaxDeliberationStreamProp
                       PRE-ROUND • SPECIALIST TOPIC COMPILATION
                     </span>
                     <span className="text-[10px] px-2 py-0.5 rounded bg-purple-500/20 text-purple-300 border border-purple-500/40 font-bold">
-                      3 MANDATORY COMPILED
+                      3 COMPILED SPECIALISTS
                     </span>
                   </div>
                 </div>
@@ -363,7 +373,7 @@ export const ParallaxDeliberationStream: React.FC<ParallaxDeliberationStreamProp
               if (roundMsgs.length === 0) return null;
 
               const isExpanded = Boolean(expandedRounds[roundNum]);
-              const CURATED_COUNT = 5;
+              const CURATED_COUNT = 6;
               const visibleMsgs = isExpanded ? roundMsgs : roundMsgs.slice(0, CURATED_COUNT);
               const hiddenCount = Math.max(0, roundMsgs.length - CURATED_COUNT);
 
@@ -390,29 +400,40 @@ export const ParallaxDeliberationStream: React.FC<ParallaxDeliberationStreamProp
                   </div>
 
                   {/* Messages list */}
-                  <div className="space-y-2">
+                  <div className="space-y-2.5">
                     {visibleMsgs.map((msg) => {
                       const isVoicePlaying = playingAudioKey === msg.id;
                       const isVoiceLoading = loadingAudioKey === msg.id;
 
+                      // Event type label based on tool use or rebuttal
+                      const eventType = msg.toolUsed
+                        ? 'SOURCE VERIFICATION / GROUNDING'
+                        : msg.rebuttalTarget
+                        ? `CROSS-EXAMINATION / VS ${msg.rebuttalTarget.toUpperCase()}`
+                        : roundNum === 1
+                        ? 'INITIAL THESIS PROPOSAL'
+                        : roundNum === 2
+                        ? 'DIALECTICAL REBUTTAL'
+                        : 'CONVERGENCE DELIBERATION';
+
                       return (
                         <div
                           key={msg.id}
-                          className="p-3 rounded-xl bg-white/[0.02] border border-white/5 hover:border-cyan-500/30 transition-all font-mono"
+                          className="p-3.5 rounded-xl bg-white/[0.02] border border-white/5 hover:border-cyan-500/30 transition-all font-mono"
                           style={{
                             borderLeft: `3px solid ${msg.accentColor}`,
                           }}
                         >
-                          {/* Top Row: Timestamp, Label, Role, Badges, Audio */}
-                          <div className="flex items-center justify-between flex-wrap gap-2 mb-1.5">
+                          {/* Top Feed Header: TIMESTAMP • AGENT • EVENT • ROUND */}
+                          <div className="flex items-center justify-between flex-wrap gap-2 mb-2 pb-1.5 border-b border-white/5">
                             <div className="flex items-center gap-2 flex-wrap">
                               {/* Monospace Timestamp */}
-                              <span className="text-[10px] text-slate-500">
-                                [{new Date(msg.timestamp).toLocaleTimeString([], {
+                              <span className="text-[10px] text-cyan-400/80 font-bold bg-black/40 px-1.5 py-0.5 rounded border border-white/5">
+                                {new Date(msg.timestamp).toLocaleTimeString([], {
                                   hour: '2-digit',
                                   minute: '2-digit',
                                   second: '2-digit',
-                                })}]
+                                })}
                               </span>
 
                               {/* Agent Avatar & Name */}
@@ -427,175 +448,164 @@ export const ParallaxDeliberationStream: React.FC<ParallaxDeliberationStreamProp
                                 className="text-xs font-black tracking-wide"
                                 style={{ color: msg.accentColor }}
                               >
-                                [{msg.agentName.toUpperCase()}]
+                                {msg.agentName.toUpperCase()}
                               </span>
 
-                              {msg.mood && (
-                                <span className="text-[10px] text-slate-400">
-                                  {msg.mood}
-                                </span>
-                              )}
+                              {/* Role */}
+                              <span className="text-[10px] text-slate-400 font-sans">
+                                ({msg.role})
+                              </span>
 
-                              {/* Dynamic badge */}
+                              {/* Event tag */}
+                              <span className="text-[9px] px-2 py-0.5 rounded bg-cyan-500/10 text-cyan-300 border border-cyan-500/20 font-bold">
+                                {eventType}
+                              </span>
+
+                              {/* Round tag */}
+                              <span className="text-[9px] px-1.5 py-0.5 rounded bg-white/5 text-slate-400 border border-white/10">
+                                ROUND 0{msg.round}
+                              </span>
+
+                              {/* Dynamic specialist badge */}
                               {msg.isDynamic && (
                                 <span className="text-[9px] px-1.5 py-0.5 rounded bg-purple-500/20 text-purple-300 border border-purple-500/30 font-bold">
                                   SPECIALIST
                                 </span>
                               )}
-
-                              {/* Conviction score */}
-                              {msg.conviction !== undefined && (
-                                <span className="text-[9px] px-1.5 py-0.5 rounded bg-white/5 text-slate-300 border border-white/10 font-bold">
-                                  Conviction: {msg.conviction}/10
-                                </span>
-                              )}
-
-                              {/* Tool used badge */}
-                              {msg.toolUsed && (
-                                <span className="text-[9px] px-1.5 py-0.5 rounded bg-cyan-500/15 text-cyan-300 border border-cyan-500/30 font-bold flex items-center gap-1">
-                                  <Search size={9} />
-                                  <span>{msg.toolUsed.searchSource || 'Live Web'}</span>
-                                </span>
-                              )}
                             </div>
 
-                            {/* Voice Button */}
-                            <div className="flex items-center gap-2">
-                              {msg.round === 1 && msg.agentId === 'veritas' && msg.toolUsed && (
-                                <button
-                                  type="button"
-                                  onClick={() => onToggleRawJsonView(msg.id)}
-                                  className="px-2 py-0.5 rounded text-[10px] font-mono flex items-center gap-1 bg-white/5 border border-white/10 text-slate-300 hover:text-white cursor-pointer"
-                                >
-                                  {rawJsonOpenMap[msg.id] ? (
-                                    <>
-                                      <FileText size={10} className="text-cyan-400" />
-                                      <span>Formatted</span>
-                                    </>
-                                  ) : (
-                                    <>
-                                      <Code2 size={10} className="text-cyan-400" />
-                                      <span>Raw JSON</span>
-                                    </>
-                                  )}
-                                </button>
+                            {/* Audio Action & JSON toggles */}
+                            <div className="flex items-center gap-1.5">
+                              {msg.conviction !== undefined && (
+                                <span className="text-[9px] px-1.5 py-0.5 rounded bg-white/5 text-slate-300 border border-white/10 font-bold mr-1">
+                                  Conviction: {msg.conviction}/10
+                                </span>
                               )}
 
                               <button
                                 type="button"
                                 onClick={() => onPlayMessageAudio(msg)}
-                                className={`px-2 py-0.5 rounded text-[10px] font-mono font-bold flex items-center gap-1 cursor-pointer transition-all ${
+                                disabled={isVoiceLoading}
+                                className={`px-2 py-1 rounded text-[10px] font-bold cursor-pointer transition-all flex items-center gap-1 ${
                                   isVoicePlaying
-                                    ? 'bg-emerald-500/25 border border-emerald-400 text-emerald-300 shadow-[0_0_8px_#10b981]'
-                                    : 'bg-white/5 border border-white/10 text-slate-300 hover:text-cyan-300'
+                                    ? 'bg-cyan-500/30 text-cyan-200 border border-cyan-400'
+                                    : 'bg-white/5 hover:bg-white/10 text-slate-300 border border-white/10'
                                 }`}
+                                title="Listen to this agent's synthesized speech"
                               >
                                 {isVoiceLoading ? (
-                                  <Loader2 size={10} className="animate-spin text-cyan-400" />
+                                  <Loader2 size={10} className="animate-spin text-cyan-300" />
                                 ) : isVoicePlaying ? (
-                                  <>
-                                    <Square size={9} fill="currentColor" />
-                                    <span>Stop</span>
-                                  </>
+                                  <Square size={9} fill="currentColor" />
                                 ) : (
-                                  <>
-                                    <Volume2 size={10} />
-                                    <span>Voice</span>
-                                  </>
+                                  <Volume2 size={10} />
                                 )}
+                                <span>{isVoicePlaying ? 'Stop' : 'Voice'}</span>
+                              </button>
+
+                              <button
+                                type="button"
+                                onClick={() => onToggleRawJsonView(msg.id)}
+                                className="p-1 rounded bg-white/5 hover:bg-white/10 text-slate-400 hover:text-white border border-white/10 cursor-pointer"
+                                title="Toggle Raw JSON Data"
+                              >
+                                <Code2 size={11} />
                               </button>
                             </div>
                           </div>
 
-                          {/* Message Text */}
-                          <p className="m-0 text-xs sm:text-[13px] text-slate-200 font-sans leading-relaxed break-words">
-                            {msg.text}
-                          </p>
+                          {/* Rebuttal Target Indicator (if Round 2 peer pushback) */}
+                          {msg.rebuttalTarget && (
+                            <div className="mb-2 px-2.5 py-1 rounded bg-cyan-950/30 border border-cyan-500/20 text-[11px] text-cyan-200 font-sans flex items-center gap-1.5">
+                              <Zap size={11} className="text-cyan-400" />
+                              <span>
+                                Direct peer rebuttal challenging{' '}
+                                <strong className="font-mono text-white">{msg.rebuttalTarget}</strong>
+                              </span>
+                            </div>
+                          )}
 
-                          {/* Veritas Live Grounding Preview */}
+                          {/* VERITAS Grounding Preview (if web/wiki tool used) */}
                           {msg.toolUsed && (
-                            <div className="mt-2 p-2 rounded-lg bg-cyan-950/20 border border-cyan-500/20 text-xs text-slate-300 font-sans">
-                              {msg.toolUsed.failed ? (
-                                <div className="text-amber-400 flex items-center gap-1.5">
-                                  <AlertCircle size={12} />
-                                  <span>Search fallback notice: zero results for &ldquo;{msg.toolUsed.query}&rdquo;</span>
-                                </div>
-                              ) : (
-                                <div className="text-cyan-200">
-                                  🔍 <strong className="text-cyan-400">Grounding ({msg.toolUsed.searchSource || 'Live Web'}):</strong>{' '}
-                                  <span className="text-slate-300 italic">&ldquo;{msg.toolUsed.fact}&rdquo;</span>
-                                </div>
+                            <div className="mb-2 p-2.5 rounded-lg bg-black/40 border border-cyan-500/25 text-[11px] space-y-1 font-sans">
+                              <div className="flex items-center gap-1.5 text-cyan-300 font-mono text-[10px] font-bold">
+                                <Search size={11} />
+                                <span>VERITAS GROUNDING ENGINE</span>
+                                <span className="text-slate-500">•</span>
+                                <span className="text-slate-400">
+                                  Query: &ldquo;{msg.toolUsed.query}&rdquo;
+                                </span>
+                              </div>
+                              {msg.toolUsed.groundedSnippet && (
+                                <p className="m-0 text-slate-300 text-[11px] italic">
+                                  &ldquo;{msg.toolUsed.groundedSnippet}&rdquo;
+                                </p>
                               )}
                             </div>
                           )}
 
-                          {/* Raw JSON View for Veritas */}
-                          {msg.round === 1 && msg.agentId === 'veritas' && msg.toolUsed && rawJsonOpenMap[msg.id] && (() => {
-                            const payload = {
-                              query: msg.toolUsed.query || msg.toolUsed.rawPayload?.query || currentTopic,
-                              searchSource: msg.toolUsed.searchSource || msg.toolUsed.rawPayload?.searchSource || 'Tavily',
-                              committedFact: msg.toolUsed.committedFact || msg.toolUsed.rawPayload?.committedFact || msg.toolUsed.fact || '',
-                              resultsCount: msg.toolUsed.rawResults?.length ?? msg.toolUsed.rawPayload?.resultsCount ?? msg.toolUsed.sourcesCount ?? 0,
-                              rawResults: msg.toolUsed.rawResults || msg.toolUsed.rawPayload?.rawResults || [],
-                            };
-                            const jsonStr = JSON.stringify(payload, null, 2);
+                          {/* Message Text Body */}
+                          <p className="m-0 text-xs sm:text-[13px] text-slate-200 font-sans leading-relaxed whitespace-pre-wrap">
+                            {msg.text}
+                          </p>
 
-                            return (
-                              <div className="mt-2.5 rounded-xl bg-black/85 border border-cyan-500/30 p-3 overflow-hidden shadow-2xl">
-                                <div className="flex items-center justify-between pb-2 mb-2 border-b border-white/10 text-[10px] font-mono">
-                                  <span className="text-cyan-300 font-bold">
-                                    VERITAS GROUNDING TELEMETRY (RAW JSON)
-                                  </span>
-                                  <button
-                                    type="button"
-                                    onClick={(e) => onCopyRawJson(jsonStr, msg.id, e)}
-                                    className="px-2 py-0.5 rounded text-[10px] bg-white/5 border border-white/10 text-slate-300 hover:text-white cursor-pointer"
-                                  >
-                                    {copiedRawJsonId === msg.id ? (
-                                      <span className="text-emerald-300">✓ Copied</span>
-                                    ) : (
-                                      <span>Copy JSON</span>
-                                    )}
-                                  </button>
-                                </div>
-                                <pre className="font-mono text-xs text-cyan-200 max-h-[300px] overflow-y-auto whitespace-pre-wrap m-0">
-                                  {jsonStr}
-                                </pre>
+                          {/* Raw JSON inspection view */}
+                          {rawJsonOpenMap[msg.id] && (
+                            <div className="mt-3 p-3 rounded-lg bg-black/80 border border-cyan-500/30 font-mono text-[10px] space-y-2">
+                              <div className="flex items-center justify-between text-slate-400">
+                                <span>RAW JSON PAYLOAD ({msg.id})</span>
+                                <button
+                                  type="button"
+                                  onClick={(e) => onCopyRawJson(JSON.stringify(msg, null, 2), msg.id, e)}
+                                  className="text-cyan-400 hover:text-cyan-200 flex items-center gap-1 cursor-pointer"
+                                >
+                                  {copiedRawJsonId === msg.id ? (
+                                    <Check size={10} className="text-emerald-400" />
+                                  ) : (
+                                    <Copy size={10} />
+                                  )}
+                                  <span>{copiedRawJsonId === msg.id ? 'Copied' : 'Copy'}</span>
+                                </button>
                               </div>
-                            );
-                          })()}
+                              <pre className="m-0 overflow-x-auto text-cyan-200/90 max-h-48">
+                                {JSON.stringify(msg, null, 2)}
+                              </pre>
+                            </div>
+                          )}
                         </div>
                       );
                     })}
                   </div>
 
-                  {/* Expand / Collapse Button for Round */}
-                  {hiddenCount > 0 && (
-                    <button
-                      type="button"
-                      onClick={() => onToggleRoundExpand(roundNum)}
-                      className="w-full py-2 px-3 rounded-lg bg-white/5 border border-dashed border-cyan-500/30 text-cyan-300 hover:bg-cyan-500/10 font-mono text-xs font-bold transition-all cursor-pointer flex items-center justify-center gap-1.5"
-                    >
-                      {isExpanded ? (
-                        <>
-                          <ChevronUp size={14} />
-                          <span>Collapse Round {roundNum}</span>
-                        </>
-                      ) : (
-                        <>
-                          <ChevronDown size={14} />
-                          <span>+{hiddenCount} more agent turns in Round {roundNum} (Click to expand)</span>
-                        </>
-                      )}
-                    </button>
+                  {/* Expand / Collapse Curated Turns Toggle */}
+                  {roundMsgs.length > CURATED_COUNT && (
+                    <div className="pt-1 text-center">
+                      <button
+                        type="button"
+                        onClick={() => onToggleRoundExpand(roundNum)}
+                        className="px-3 py-1.5 rounded-lg bg-white/5 border border-white/10 hover:border-cyan-400/40 text-slate-300 hover:text-white font-mono text-xs font-bold transition-all cursor-pointer inline-flex items-center gap-1.5"
+                      >
+                        {isExpanded ? (
+                          <>
+                            <ChevronUp size={13} />
+                            <span>Collapse to 6 Curated Turns</span>
+                          </>
+                        ) : (
+                          <>
+                            <ChevronDown size={13} />
+                            <span>View All {roundMsgs.length} Turns (+{hiddenCount} more)</span>
+                          </>
+                        )}
+                      </button>
+                    </div>
                   )}
                 </div>
               );
             })}
-
-            <div ref={feedEndRef} />
           </>
         )}
+
+        <div ref={feedEndRef} />
       </div>
     </div>
   );

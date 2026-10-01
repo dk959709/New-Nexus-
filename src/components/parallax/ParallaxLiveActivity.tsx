@@ -1,5 +1,5 @@
 import React from 'react';
-import { Radio, Search, CheckCircle2, AlertCircle, Clock, Volume2 } from 'lucide-react';
+import { Radio, Search, CheckCircle2, Clock, Volume2 } from 'lucide-react';
 import type { ParallaxMessage, ParallaxAgentConfig } from '@/types';
 
 export interface ParallaxLiveActivityProps {
@@ -40,7 +40,7 @@ export const ParallaxLiveActivity: React.FC<ParallaxLiveActivityProps> = ({
   return (
     <div
       id="parallax-live-swarm-activity"
-      className="nexus-corner-bracket relative rounded-2xl overflow-hidden mb-6"
+      className="nexus-corner-bracket relative rounded-2xl overflow-hidden mb-5"
       style={{
         background: 'linear-gradient(135deg, rgba(6, 16, 26, 0.94) 0%, rgba(3, 10, 18, 0.98) 100%)',
         border: '1px solid rgba(0, 240, 255, 0.25)',
@@ -55,7 +55,7 @@ export const ParallaxLiveActivity: React.FC<ParallaxLiveActivityProps> = ({
             LIVE SWARM ACTIVITY
           </h2>
           <span className="text-[10px] font-mono px-2 py-0.5 rounded-full bg-cyan-500/10 text-cyan-300 border border-cyan-500/20 font-bold">
-            {messages.length} EVENTS RECORDED
+            {messages.length} EVENTS
           </span>
         </div>
 
@@ -78,20 +78,20 @@ export const ParallaxLiveActivity: React.FC<ParallaxLiveActivityProps> = ({
             </p>
           </div>
         ) : (
-          <div className="space-y-2 min-w-[620px]">
+          <div className="space-y-2 min-w-[580px]">
             {/* Header Columns */}
-            <div className="grid grid-cols-12 gap-3 px-3 py-1.5 text-[10px] font-mono font-bold uppercase tracking-wider text-slate-400 border-b border-white/10">
+            <div className="grid grid-cols-12 gap-2.5 px-3 py-1.5 text-[10px] font-mono font-bold uppercase tracking-wider text-slate-400 border-b border-white/10">
               <div className="col-span-3">AGENT / ROLE</div>
               <div className="col-span-2">STATUS</div>
-              <div className="col-span-2">ROUND</div>
-              <div className="col-span-4">ACTIVITY</div>
+              <div className="col-span-2">ROUND / MODEL</div>
+              <div className="col-span-4">CURRENT ACTIVITY</div>
               <div className="col-span-1 text-right">TIME</div>
             </div>
 
             {/* Currently Active Row (if running) */}
             {isRunning && activeAgentConfig && (
               <div
-                className="grid grid-cols-12 gap-3 items-center px-3 py-2.5 rounded-xl border border-cyan-400/60 bg-cyan-500/10 animate-pulse"
+                className="grid grid-cols-12 gap-2.5 items-center px-3 py-2.5 rounded-xl border border-cyan-400/60 bg-cyan-500/10 animate-pulse"
                 style={{
                   boxShadow: '0 0 16px rgba(0, 240, 255, 0.15)',
                 }}
@@ -124,8 +124,11 @@ export const ParallaxLiveActivity: React.FC<ParallaxLiveActivityProps> = ({
                   </span>
                 </div>
 
-                <div className="col-span-2 text-xs font-mono font-bold text-slate-200">
-                  ROUND {currentRound ? `0${currentRound}` : '01'}
+                <div className="col-span-2 text-[10px] font-mono font-bold text-slate-200">
+                  <div>ROUND {currentRound ? `0${currentRound}` : '01'}</div>
+                  <div className="text-[9px] text-slate-400 font-normal truncate">
+                    {activeAgentConfig.modelId || 'LLAMA 3.3 70B'}
+                  </div>
                 </div>
 
                 <div className="col-span-4 text-xs text-cyan-100 font-sans truncate flex items-center gap-1.5">
@@ -152,76 +155,79 @@ export const ParallaxLiveActivity: React.FC<ParallaxLiveActivityProps> = ({
               return (
                 <div
                   key={msg.id}
-                  className="grid grid-cols-12 gap-3 items-center px-3 py-2 rounded-xl bg-white/[0.03] border border-white/5 hover:border-cyan-500/30 transition-all font-mono"
+                  className="grid grid-cols-12 gap-2.5 items-center px-3 py-2 rounded-xl bg-white/[0.03] border border-white/5 hover:border-cyan-500/30 transition-all font-mono"
                 >
                   {/* Agent & Role */}
                   <div className="col-span-3 flex items-center gap-2 min-w-0">
                     <div
                       className="w-6 h-6 rounded-md flex items-center justify-center text-[10px] font-bold shrink-0"
                       style={{
-                        background: `${msg.accentColor}20`,
-                        border: `1px solid ${msg.accentColor}60`,
+                        background: `${msg.accentColor}25`,
+                        border: `1px solid ${msg.accentColor}`,
                         color: msg.accentColor,
                       }}
                     >
-                      {msg.initials}
+                      {msg.agentName.slice(0, 2)}
                     </div>
                     <div className="min-w-0">
-                      <div
-                        className="text-xs font-bold truncate"
-                        style={{ color: msg.accentColor }}
-                      >
+                      <div className="text-xs font-bold text-slate-200 truncate">
                         {msg.agentName}
                       </div>
                       <div className="text-[10px] text-slate-400 truncate">
-                        {msg.role || agents[msg.agentId]?.role || 'Persona'}
+                        {msg.role}
                       </div>
                     </div>
                   </div>
 
-                  {/* Status */}
+                  {/* Status badge */}
                   <div className="col-span-2">
+                    <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-bold bg-emerald-500/15 text-emerald-300 border border-emerald-500/30">
+                      <CheckCircle2 size={10} />
+                      COMPLETED
+                    </span>
+                  </div>
+
+                  {/* Round & Model */}
+                  <div className="col-span-2 text-[10px] text-slate-300 font-bold">
+                    <div>ROUND 0{msg.round}</div>
+                    <div className="text-[9px] text-slate-400 font-normal truncate">
+                      {msg.model || 'Llama 3.3 70B'}
+                    </div>
+                  </div>
+
+                  {/* Activity Summary */}
+                  <div className="col-span-4 text-[11px] text-slate-300 font-sans truncate flex items-center gap-2">
                     {msg.toolUsed ? (
-                      <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded text-[10px] font-bold bg-amber-500/15 text-amber-300 border border-amber-500/30">
-                        {msg.toolUsed.failed ? <AlertCircle size={10} /> : <Search size={10} />}
-                        <span>VERIFIED</span>
+                      <span className="inline-flex items-center gap-1 text-[10px] font-mono px-1.5 py-0.5 rounded bg-cyan-500/15 text-cyan-300 border border-cyan-500/30 shrink-0">
+                        <Search size={9} />
+                        VERITAS
                       </span>
-                    ) : (
-                      <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded text-[10px] font-bold bg-emerald-500/15 text-emerald-300 border border-emerald-500/30">
-                        <CheckCircle2 size={10} />
-                        <span>COMPLETED</span>
-                      </span>
-                    )}
+                    ) : null}
+                    <span className="truncate">&ldquo;{msg.text.slice(0, 90)}&rdquo;</span>
                   </div>
 
-                  {/* Round */}
-                  <div className="col-span-2 text-xs font-bold text-slate-300">
-                    ROUND 0{msg.round}
-                  </div>
-
-                  {/* Activity snippet */}
-                  <div className="col-span-4 text-xs text-slate-300 truncate font-sans flex items-center gap-2">
+                  {/* Timestamp & Play Voice */}
+                  <div className="col-span-1 text-right flex items-center justify-end gap-1.5">
+                    <span className="text-[10px] text-slate-500 font-mono">
+                      {new Date(msg.timestamp).toLocaleTimeString([], {
+                        minute: '2-digit',
+                        second: '2-digit',
+                      })}
+                    </span>
                     {onPlayVoice && (
                       <button
                         type="button"
                         onClick={() => onPlayVoice(msg)}
-                        title={isVoicePlaying ? 'Stop Voice' : 'Listen to Agent'}
-                        className="p-1 rounded bg-white/5 hover:bg-white/10 text-slate-300 hover:text-cyan-300 transition-colors shrink-0 cursor-pointer"
+                        className={`p-1 rounded cursor-pointer transition-colors ${
+                          isVoicePlaying
+                            ? 'text-cyan-300 bg-cyan-500/20'
+                            : 'text-slate-500 hover:text-cyan-300 hover:bg-white/5'
+                        }`}
+                        title="Listen to agent audio"
                       >
-                        <Volume2 size={12} className={isVoicePlaying ? 'text-emerald-400 animate-pulse' : ''} />
+                        <Volume2 size={11} />
                       </button>
                     )}
-                    <span className="truncate">
-                      {msg.toolUsed?.fact ? `🔍 Grounding: "${msg.toolUsed.fact}"` : msg.text}
-                    </span>
-                  </div>
-
-                  {/* Time */}
-                  <div className="col-span-1 text-right text-[10px] text-slate-400">
-                    {new Date(msg.timestamp).toLocaleTimeString([], {
-                      minute: '2-digit',
-                      second: '2-digit',
-                    })}
                   </div>
                 </div>
               );

@@ -282,7 +282,7 @@ export function formatFullParallaxTranscript(
     }
 
     output += `CONSENSUS LEAN:\n${summary.consensusLean}\n\n`;
-    output += `SYNTHESIS VERDICT:\n${summary.verdict}\n\n`;
+    output += `FINAL INTELLIGENCE SYNTHESIS / RESEARCH CONCLUSION:\n${summary.verdict}\n\n`;
 
     if (summary.highlights && summary.highlights.length > 0) {
       output += `KEY DELIBERATION HIGHLIGHTS:\n`;
