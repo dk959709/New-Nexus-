@@ -14,6 +14,9 @@ import {
   ChevronUp,
   Sparkles,
   Zap,
+  User,
+  ShieldAlert,
+  Flame,
 } from 'lucide-react';
 import { AGENT_QUADRANTS } from '@/data/parallaxQuadrants';
 import { ParallaxAgentAvatar } from './ParallaxAgentIcon';
@@ -404,24 +407,43 @@ export const ParallaxDeliberationStream: React.FC<ParallaxDeliberationStreamProp
                     {visibleMsgs.map((msg) => {
                       const isVoicePlaying = playingAudioKey === msg.id;
                       const isVoiceLoading = loadingAudioKey === msg.id;
+                      const isHuman = msg.isHuman || msg.agentId === 'human';
+                      const isDevilsAdvocate = msg.isDevilsAdvocate || msg.agentId === 'devils_advocate';
 
                       // Event type label based on tool use or rebuttal
-                      const eventType = msg.toolUsed
+                      const eventType = isHuman
+                        ? 'HUMAN OPERATOR INTERVENTION'
+                        : isDevilsAdvocate
+                        ? 'CONTRARIAN CROSS-EXAMINATION'
+                        : msg.toolUsed
                         ? 'SOURCE VERIFICATION / GROUNDING'
-                        : msg.rebuttalTarget
-                        ? `CROSS-EXAMINATION / VS ${msg.rebuttalTarget.toUpperCase()}`
+                        : msg.replyToAgentName
+                        ? `CROSS-EXAMINATION / VS @${msg.replyToAgentName.toUpperCase()}`
                         : roundNum === 1
                         ? 'INITIAL THESIS PROPOSAL'
                         : roundNum === 2
                         ? 'DIALECTICAL REBUTTAL'
                         : 'CONVERGENCE DELIBERATION';
 
+                      const borderLeftColor = isHuman
+                        ? '#f59e0b'
+                        : isDevilsAdvocate
+                        ? '#f43f5e'
+                        : msg.accentColor;
+
                       return (
                         <div
                           key={msg.id}
-                          className="p-3.5 rounded-xl bg-white/[0.02] border border-white/5 hover:border-cyan-500/30 transition-all font-mono"
+                          id={`parallax-msg-${msg.id}`}
+                          className={`p-3.5 rounded-xl border transition-all font-mono scroll-mt-24 ${
+                            isHuman
+                              ? 'bg-amber-950/20 border-amber-500/40 shadow-[0_0_20px_rgba(245,158,11,0.15)]'
+                              : isDevilsAdvocate
+                              ? 'bg-rose-950/25 border-rose-500/40 shadow-[0_0_20px_rgba(244,63,94,0.15)]'
+                              : 'bg-white/[0.02] border-white/5 hover:border-cyan-500/30'
+                          }`}
                           style={{
-                            borderLeft: `3px solid ${msg.accentColor}`,
+                            borderLeft: `3px solid ${borderLeftColor}`,
                           }}
                         >
                           {/* Top Feed Header: TIMESTAMP • AGENT • EVENT • ROUND */}
@@ -437,27 +459,45 @@ export const ParallaxDeliberationStream: React.FC<ParallaxDeliberationStreamProp
                               </span>
 
                               {/* Agent Avatar & Name */}
-                              <ParallaxAgentAvatar
-                                agentId={msg.agentId}
-                                agentName={msg.agentName}
-                                accentColor={msg.accentColor}
-                                size="sm"
-                              />
+                              {isHuman ? (
+                                <div className="w-6 h-6 rounded-lg bg-amber-500/20 border border-amber-500/50 grid place-items-center text-amber-400 font-black text-xs shrink-0">
+                                  <User size={13} />
+                                </div>
+                              ) : isDevilsAdvocate ? (
+                                <div className="w-6 h-6 rounded-lg bg-rose-500/20 border border-rose-500/50 grid place-items-center text-rose-400 font-black text-xs shrink-0">
+                                  <Flame size={13} />
+                                </div>
+                              ) : (
+                                <ParallaxAgentAvatar
+                                  agentId={msg.agentId}
+                                  agentName={msg.agentName}
+                                  accentColor={msg.accentColor}
+                                  size="sm"
+                                />
+                              )}
 
                               <span
                                 className="text-xs font-black tracking-wide"
-                                style={{ color: msg.accentColor }}
+                                style={{ color: borderLeftColor }}
                               >
                                 {msg.agentName.toUpperCase()}
                               </span>
 
                               {/* Role */}
                               <span className="text-[10px] text-slate-400 font-sans">
-                                ({msg.role})
+                                ({msg.role || (isHuman ? 'Human Directive' : 'AI Specialist')})
                               </span>
 
                               {/* Event tag */}
-                              <span className="text-[9px] px-2 py-0.5 rounded bg-cyan-500/10 text-cyan-300 border border-cyan-500/20 font-bold">
+                              <span
+                                className={`text-[9px] px-2 py-0.5 rounded font-bold ${
+                                  isHuman
+                                    ? 'bg-amber-500/20 text-amber-300 border border-amber-500/30'
+                                    : isDevilsAdvocate
+                                    ? 'bg-rose-500/20 text-rose-300 border border-rose-500/30'
+                                    : 'bg-cyan-500/10 text-cyan-300 border border-cyan-500/20'
+                                }`}
+                              >
                                 {eventType}
                               </span>
 
@@ -466,42 +506,53 @@ export const ParallaxDeliberationStream: React.FC<ParallaxDeliberationStreamProp
                                 ROUND 0{msg.round}
                               </span>
 
-                              {/* Dynamic specialist badge */}
-                              {msg.isDynamic && (
+                              {/* Dynamic / Devil's Advocate / Human badge */}
+                              {isHuman ? (
+                                <span className="text-[9px] px-1.5 py-0.5 rounded bg-amber-500/25 text-amber-200 border border-amber-500/40 font-bold">
+                                  DIRECTIVE
+                                </span>
+                              ) : isDevilsAdvocate ? (
+                                <span className="text-[9px] px-1.5 py-0.5 rounded bg-rose-500/25 text-rose-200 border border-rose-500/40 font-bold flex items-center gap-1">
+                                  <ShieldAlert size={10} />
+                                  <span>CONTRARIAN</span>
+                                </span>
+                              ) : msg.isDynamic ? (
                                 <span className="text-[9px] px-1.5 py-0.5 rounded bg-purple-500/20 text-purple-300 border border-purple-500/30 font-bold">
                                   SPECIALIST
                                 </span>
-                              )}
+                              ) : null}
                             </div>
 
                             {/* Audio Action & JSON toggles */}
                             <div className="flex items-center gap-1.5">
-                              {msg.conviction !== undefined && (
+                              {msg.conviction !== undefined && !isHuman && (
                                 <span className="text-[9px] px-1.5 py-0.5 rounded bg-white/5 text-slate-300 border border-white/10 font-bold mr-1">
                                   Conviction: {msg.conviction}/10
                                 </span>
                               )}
 
-                              <button
-                                type="button"
-                                onClick={() => onPlayMessageAudio(msg)}
-                                disabled={isVoiceLoading}
-                                className={`px-2 py-1 rounded text-[10px] font-bold cursor-pointer transition-all flex items-center gap-1 ${
-                                  isVoicePlaying
-                                    ? 'bg-cyan-500/30 text-cyan-200 border border-cyan-400'
-                                    : 'bg-white/5 hover:bg-white/10 text-slate-300 border border-white/10'
-                                }`}
-                                title="Listen to this agent's synthesized speech"
-                              >
-                                {isVoiceLoading ? (
-                                  <Loader2 size={10} className="animate-spin text-cyan-300" />
-                                ) : isVoicePlaying ? (
-                                  <Square size={9} fill="currentColor" />
-                                ) : (
-                                  <Volume2 size={10} />
-                                )}
-                                <span>{isVoicePlaying ? 'Stop' : 'Voice'}</span>
-                              </button>
+                              {!isHuman && (
+                                <button
+                                  type="button"
+                                  onClick={() => onPlayMessageAudio(msg)}
+                                  disabled={isVoiceLoading}
+                                  className={`px-2 py-1 rounded text-[10px] font-bold cursor-pointer transition-all flex items-center gap-1 ${
+                                    isVoicePlaying
+                                      ? 'bg-cyan-500/30 text-cyan-200 border border-cyan-400'
+                                      : 'bg-white/5 hover:bg-white/10 text-slate-300 border border-white/10'
+                                  }`}
+                                  title="Listen to this agent's synthesized speech"
+                                >
+                                  {isVoiceLoading ? (
+                                    <Loader2 size={10} className="animate-spin text-cyan-300" />
+                                  ) : isVoicePlaying ? (
+                                    <Square size={9} fill="currentColor" />
+                                  ) : (
+                                    <Volume2 size={10} />
+                                  )}
+                                  <span>{isVoicePlaying ? 'Stop' : 'Voice'}</span>
+                                </button>
+                              )}
 
                               <button
                                 type="button"
@@ -515,13 +566,31 @@ export const ParallaxDeliberationStream: React.FC<ParallaxDeliberationStreamProp
                           </div>
 
                           {/* Rebuttal Target Indicator (if Round 2 peer pushback) */}
-                          {msg.rebuttalTarget && (
-                            <div className="mb-2 px-2.5 py-1 rounded bg-cyan-950/30 border border-cyan-500/20 text-[11px] text-cyan-200 font-sans flex items-center gap-1.5">
-                              <Zap size={11} className="text-cyan-400" />
-                              <span>
-                                Direct peer rebuttal challenging{' '}
-                                <strong className="font-mono text-white">{msg.rebuttalTarget}</strong>
-                              </span>
+                          {msg.replyToAgentName && (
+                            <div className="mb-2 px-2.5 py-1 rounded bg-cyan-950/30 border border-cyan-500/20 text-[11px] text-cyan-200 font-sans flex items-center justify-between gap-1.5">
+                              <div className="flex items-center gap-1.5">
+                                <Zap size={11} className="text-cyan-400" />
+                                <span>
+                                  Cross-examining ideological opponent{' '}
+                                  <strong className="font-mono text-cyan-300">@{msg.replyToAgentName}</strong>
+                                </span>
+                              </div>
+                              {msg.replyToMessageId && (
+                                <button
+                                  type="button"
+                                  onClick={() => {
+                                    const el = document.getElementById(`parallax-msg-${msg.replyToMessageId}`);
+                                    if (el) {
+                                      el.scrollIntoView({ behavior: 'smooth', block: 'center' });
+                                      el.classList.add('ring-2', 'ring-cyan-400');
+                                      setTimeout(() => el.classList.remove('ring-2', 'ring-cyan-400'), 2500);
+                                    }
+                                  }}
+                                  className="text-[10px] text-cyan-400 hover:underline font-mono cursor-pointer"
+                                >
+                                  View quoted statement ➔
+                                </button>
+                              )}
                             </div>
                           )}
 
@@ -536,18 +605,56 @@ export const ParallaxDeliberationStream: React.FC<ParallaxDeliberationStreamProp
                                   Query: &ldquo;{msg.toolUsed.query}&rdquo;
                                 </span>
                               </div>
-                              {msg.toolUsed.groundedSnippet && (
+                              {msg.toolUsed.committedFact && (
                                 <p className="m-0 text-slate-300 text-[11px] italic">
-                                  &ldquo;{msg.toolUsed.groundedSnippet}&rdquo;
+                                  &ldquo;{msg.toolUsed.committedFact}&rdquo;
                                 </p>
                               )}
                             </div>
                           )}
 
-                          {/* Message Text Body */}
-                          <p className="m-0 text-xs sm:text-[13px] text-slate-200 font-sans leading-relaxed whitespace-pre-wrap">
-                            {msg.text}
-                          </p>
+                          {/* Message Text Body with interactive @mention chips */}
+                          <div className="text-xs sm:text-[13px] text-slate-200 font-sans leading-relaxed whitespace-pre-wrap">
+                            {msg.text.split(/(@[a-zA-Z0-9_-]+)/g).map((part, pIdx) => {
+                              if (part.startsWith('@')) {
+                                const targetName = part.slice(1);
+                                const targetMsg =
+                                  (msg.replyToMessageId
+                                    ? messages.find((m) => m.id === msg.replyToMessageId)
+                                    : null) ||
+                                  messages.find(
+                                    (m) =>
+                                      m.agentName.toLowerCase() === targetName.toLowerCase() ||
+                                      m.agentId.toLowerCase() === targetName.toLowerCase(),
+                                  );
+
+                                return (
+                                  <span
+                                    key={pIdx}
+                                    onClick={() => {
+                                      if (targetMsg) {
+                                        const el = document.getElementById(`parallax-msg-${targetMsg.id}`);
+                                        if (el) {
+                                          el.scrollIntoView({ behavior: 'smooth', block: 'center' });
+                                          el.classList.add('ring-2', 'ring-cyan-400');
+                                          setTimeout(() => el.classList.remove('ring-2', 'ring-cyan-400'), 2500);
+                                        }
+                                      }
+                                    }}
+                                    className="inline-flex items-center gap-0.5 px-1.5 py-0.2 rounded bg-cyan-500/20 text-cyan-300 border border-cyan-400/40 font-mono text-[11px] font-bold cursor-pointer hover:bg-cyan-500/35 hover:scale-105 transition-all mx-0.5 shadow-sm"
+                                    title={
+                                      targetMsg
+                                        ? `Jump to @${targetName}'s prior argument in Round ${targetMsg.round}`
+                                        : `Referencing @${targetName}`
+                                    }
+                                  >
+                                    <span>{part}</span>
+                                  </span>
+                                );
+                              }
+                              return <span key={pIdx}>{part}</span>;
+                            })}
+                          </div>
 
                           {/* Raw JSON inspection view */}
                           {rawJsonOpenMap[msg.id] && (

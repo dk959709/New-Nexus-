@@ -2,20 +2,27 @@ import { storage, DEFAULT_PARALLAX_AGENTS } from '@/lib/storage';
 import { api } from '@/services/api';
 import { applyReasoningConfig } from '@/lib/reasoningConfig';
 import { AGENT_QUADRANTS } from '@/data/parallaxQuadrants';
+import { getDebateModeConfig } from '@/data/parallaxDebateModes';
 import {
   resolveParallaxEntity,
   collectParallaxEvidencePool,
   extractAndVerifyClaims,
   detectDeliberationConflicts,
   buildAgentGroundingConstraint,
+  generateIntelligenceBriefing,
+  computeConfidenceWeightedVerdict,
 } from './parallaxEvidenceEngine';
 import type {
   AIProviderConfig,
   ParallaxAgentConfig,
   ParallaxClaim,
+  ParallaxDebateMode,
+  ParallaxDevilsAdvocateTrigger,
   ParallaxEntityResolution,
   ParallaxEvidenceItem,
   ParallaxEvidencePool,
+  ParallaxHumanInjection,
+  ParallaxIntelligenceBriefing,
   ParallaxMessage,
   ParallaxSpecialistDeliberation,
   ParallaxSpecialistOpinion,
@@ -349,6 +356,8 @@ export async function fetchVeritasFact(topic: string): Promise<{ fact: string; s
 export interface ParallaxRunOptions {
   topic: string;
   config?: ParallaxSystemConfig;
+  debateMode?: ParallaxDebateMode;
+  humanInjections?: ParallaxHumanInjection[];
   onMessage: (message: ParallaxMessage) => void;
   onRoundStart?: (round: 1 | 2 | 3) => void;
   onRoundComplete?: (round: 1 | 2 | 3, roundMessages: ParallaxMessage[]) => void;
@@ -356,6 +365,8 @@ export interface ParallaxRunOptions {
   onDynamicPersonasCreated?: (personas: ParallaxAgentConfig[]) => void;
   onSpecialistDeliberation?: (deliberation: ParallaxSpecialistDeliberation) => void;
   onEvidencePoolReady?: (pool: ParallaxEvidencePool) => void;
+  onIntelligenceBriefingReady?: (briefing: ParallaxIntelligenceBriefing) => void;
+  onDevilsAdvocateTriggered?: (trigger: ParallaxDevilsAdvocateTrigger) => void;
   onComplete?: (summary: ParallaxSummary, allMessages: ParallaxMessage[], deliberation?: ParallaxSpecialistDeliberation) => void;
   onError?: (error: string) => void;
   signal?: AbortSignal;
@@ -1440,6 +1451,8 @@ async function executeAgentTurn(
   signal?: AbortSignal,
   sharedGroundingBlock?: string,
   consensusFacts?: string,
+  debateMode?: ParallaxDebateMode,
+  humanDirective?: ParallaxHumanInjection | null,
 ): Promise<ParallaxMessage> {
   const startTime = Date.now();
   const { provider, model } = resolveParallaxProviderConfig(agent, 80);
@@ -1447,6 +1460,14 @@ async function executeAgentTurn(
   // Compact, high-signal system prompt with lightweight conviction & mood request (~40 tokens)
   let systemPrompt = `Persona: ${agent.name} (${agent.role}). ${agent.systemInstruction}
 Constraint: Exactly 1-2 punchy sentences (<40 words). Speak directly; no greeting, no intro, no self-naming. End with [conviction 1-10|mood emoji] (e.g. [9|🔥]).`;
+
+  // Apply debate mode protocol if configured
+  if (debateMode && debateMode !== 'default') {
+    const modeConfig = getDebateModeConfig(debateMode);
+    if (modeConfig && modeConfig.promptInstruction) {
+      systemPrompt += `\n[DEBATE PROTOCOL - ${modeConfig.label}]: ${modeConfig.promptInstruction}`;
+    }
+  }
 
   // System prompt override for knowledge-cutoff personas when live grounding is provided
   if (sharedGroundingBlock && sharedGroundingBlock.trim().length > 0) {
@@ -1473,65 +1494,67 @@ Constraint: Exactly 1-2 punchy sentences (<40 words). Speak directly; no greetin
 
   let userPrompt = '';
   const groundingBlock = sharedGroundingBlock && sharedGroundingBlock.length <= 350 ? `\n${sharedGroundingBlock}\n` : '';
+  const humanDirectiveBlock = humanDirective ? `\n[HUMAN OPERATOR DIRECTIVE (${humanDirective.authorName})]: "${humanDirective.text}"\nDirectly address this operator challenge in your response.\n` : '';
+
+  // Identify primary opponent for Round 2 cross-examination
+  const primaryOpponent = round === 2 && peersSample && peersSample.length > 0 ? peersSample[0] : null;
 
   if (round === 1) {
     // =========================================================================
     // ROUND 1 CONTEXT:
-    // Only includes:
-    // 1. System prompt: Persona identity, role, instruction, length constraint (~40 tokens)
-    // 2. User prompt: The debate topic + optional live grounding block + 1-sentence opening instruction (~70-90 tokens)
     // =========================================================================
     if (agent.id === 'veritas') {
       if (veritasGrounding && !veritasGrounding.failed && veritasGrounding.committedFact) {
-        userPrompt = `Topic: "${topic}"\n\n[Verified Grounding Fact (${veritasGrounding.searchSource})]:\n"${veritasGrounding.committedFact}"\n\nState your opening 1-2 sentence perspective grounded strictly on this verified fact as VERITAS.`;
+        userPrompt = `Topic: "${topic}"${humanDirectiveBlock}\n\n[Verified Grounding Fact (${veritasGrounding.searchSource})]:\n"${veritasGrounding.committedFact}"\n\nState your opening 1-2 sentence perspective grounded strictly on this verified fact as VERITAS.`;
       } else {
-        userPrompt = `Topic: "${topic}"\n\nProvide your initial 1-2 sentence perspective on this topic based on your fact-based, skeptical analysis as VERITAS.`;
+        userPrompt = `Topic: "${topic}"${humanDirectiveBlock}\n\nProvide your initial 1-2 sentence perspective on this topic based on your fact-based, skeptical analysis as VERITAS.`;
       }
     } else {
       const constraintLine = groundingConstraint ? `[Grounding Baseline]: ${groundingConstraint}\n\n` : '';
       if (agent.isDynamic) {
-        userPrompt = `Topic: "${topic}"${groundingBlock}\n${constraintLine}Provide your initial 1-2 sentence perspective on this topic strictly applying your specialized domain expertise as ${agent.name} (${agent.role}).`;
+        userPrompt = `Topic: "${topic}"${groundingBlock}${humanDirectiveBlock}\n${constraintLine}Provide your initial 1-2 sentence perspective on this topic strictly applying your specialized domain expertise as ${agent.name} (${agent.role}).`;
       } else {
-        userPrompt = `Topic: "${topic}"${groundingBlock}\n${constraintLine}Provide your initial 1-2 sentence perspective on this topic based on your archetype.`;
+        userPrompt = `Topic: "${topic}"${groundingBlock}${humanDirectiveBlock}\n${constraintLine}Provide your initial 1-2 sentence perspective on this topic based on your archetype.`;
       }
+    }
+  } else if (round === 2) {
+    // =========================================================================
+    // ROUND 2 CONTEXT: Directed Cross-Examination with @Mentions
+    // =========================================================================
+    const constraintLine = groundingConstraint && agent.id !== 'veritas' ? `[Grounding Baseline]: ${groundingConstraint}\n\n` : '';
+    
+    if (primaryOpponent) {
+      const oppQuote = primaryOpponent.text.length > 80 ? primaryOpponent.text.slice(0, 77) + '…' : primaryOpponent.text;
+      const veritasFact = agent.id === 'veritas' && veritasGrounding && !veritasGrounding.failed && veritasGrounding.committedFact ? `[Committed Fact]: "${veritasGrounding.committedFact}"\n` : '';
+      userPrompt = `Topic: "${topic}"${groundingBlock}${humanDirectiveBlock}\n${veritasFact}${constraintLine}[Cross-Examination Target]: @${primaryOpponent.agentName} argued: "${oppQuote}"\n\nRebuttal Requirement: Directly cross-examine @${primaryOpponent.agentName}, explicitly mention @${primaryOpponent.agentName}, and challenge their core thesis in 1-2 sharp sentences.`;
+    } else {
+      const peerBullets = peersSample
+        .slice(0, 2)
+        .map((p) => `• ${p.agentName}: "${p.text.length > 100 ? p.text.slice(0, 97) + '…' : p.text}"`)
+        .join('\n');
+      userPrompt = `Topic: "${topic}"${groundingBlock}${humanDirectiveBlock}\n${constraintLine}Peer points from Round 1:\n${peerBullets}\n\nRebut the view you most disagree with in 1-2 sharp sentences as ${agent.name}.`;
     }
   } else {
     // =========================================================================
-    // ROUNDS 2 & 3 CONTEXT:
+    // ROUND 3 CONTEXT: Convergence & Final Synthesis
     // =========================================================================
     const peerBullets = peersSample
-      .slice(0, 2) // Strictly capped at 2 peer quotes (keeps prompt under ~130 tokens)
+      .slice(0, 2)
       .map((p) => {
         const text = p.text.length > 115 ? p.text.slice(0, 112) + '…' : p.text;
         return `• ${p.agentName}: "${text}"`;
       })
       .join('\n');
 
-    const action =
-      round === 2
-        ? 'Rebut the view you most disagree with in 1-2 sharp sentences'
-        : 'Deliver your final 1-2 sentence position';
-
     const constraintLine = groundingConstraint && agent.id !== 'veritas' ? `[Grounding Baseline]: ${groundingConstraint}\n\n` : '';
+    const factsLine = consensusFacts && consensusFacts.length <= 200 ? `\nVERIFIED FACTS: ${consensusFacts}\n` : '';
 
-    if (round === 3) {
-      const factsLine = consensusFacts && consensusFacts.length <= 200 ? `\nVERIFIED FACTS: ${consensusFacts}\n` : '';
-      if (agent.id === 'veritas' && veritasGrounding && !veritasGrounding.failed && veritasGrounding.committedFact) {
-        userPrompt = `Topic: "${topic}"${groundingBlock}\n${factsLine}[Committed Verified Fact]: "${veritasGrounding.committedFact}"\n\nPeer points from Round 2:\n${peerBullets}\n\n${action} as VERITAS, upholding your verified fact.`;
-      } else if (agent.isDynamic) {
-        userPrompt = `Topic: "${topic}"${groundingBlock}\n${factsLine}${constraintLine}Peer points from Round 2:\n${peerBullets}\n\n${action} as ${agent.name} strictly applying your specialized domain expertise as ${agent.role}.`;
-      } else {
-        userPrompt = `Topic: "${topic}"${groundingBlock}\n${factsLine}${constraintLine}Peer points from Round 2:\n${peerBullets}\n\n${action} as ${agent.name}.`;
-      }
+    if (agent.id === 'veritas' && veritasGrounding && !veritasGrounding.failed && veritasGrounding.committedFact) {
+      userPrompt = `Topic: "${topic}"${groundingBlock}${humanDirectiveBlock}\n${factsLine}[Committed Verified Fact]: "${veritasGrounding.committedFact}"\n\nPeer points from Round 2:\n${peerBullets}\n\nDeliver your final 1-2 sentence position as VERITAS, upholding your verified fact.`;
+    } else if (agent.isDynamic) {
+      userPrompt = `Topic: "${topic}"${groundingBlock}${humanDirectiveBlock}\n${factsLine}${constraintLine}Peer points from Round 2:\n${peerBullets}\n\nDeliver your final 1-2 sentence position as ${agent.name} strictly applying your specialized domain expertise as ${agent.role}.`;
     } else {
-      // Round 2
-      if (agent.id === 'veritas' && veritasGrounding && !veritasGrounding.failed && veritasGrounding.committedFact) {
-        userPrompt = `Topic: "${topic}"${groundingBlock}\n[Committed Verified Fact]: "${veritasGrounding.committedFact}"\n\nPeer points from Round 1:\n${peerBullets}\n\n${action} as VERITAS, upholding your verified fact.`;
-      } else if (agent.isDynamic) {
-        userPrompt = `Topic: "${topic}"${groundingBlock}\n${constraintLine}Peer points from Round 1:\n${peerBullets}\n\n${action} as ${agent.name} strictly applying your specialized domain expertise as ${agent.role}.`;
-      } else {
-        userPrompt = `Topic: "${topic}"${groundingBlock}\n${constraintLine}Peer points from Round 1:\n${peerBullets}\n\n${action} as ${agent.name}.`;
-      }
+      userPrompt = `Topic: "${topic}"${groundingBlock}${humanDirectiveBlock}\n${factsLine}${constraintLine}Peer points from Round 2:\n${peerBullets}\n\nDeliver your final 1-2 sentence position as ${agent.name}.`;
     }
   }
 
@@ -1555,7 +1578,12 @@ Constraint: Exactly 1-2 punchy sentences (<40 words). Speak directly; no greetin
 
     const rawText = response.text || response.content || '';
     const { cleanText: rawWithoutMeta, conviction, mood } = parseConvictionAndMood(rawText, agent.id, agent.mood);
-    const cleaned = cleanReactionText(rawWithoutMeta, agent.name);
+    let cleaned = cleanReactionText(rawWithoutMeta, agent.name);
+
+    // If Round 2 and agent did not include @OpponentName in text, prepend it naturally
+    if (round === 2 && primaryOpponent && !cleaned.toLowerCase().includes(`@${primaryOpponent.agentName.toLowerCase()}`)) {
+      cleaned = `@${primaryOpponent.agentName} ${cleaned}`;
+    }
 
     return {
       id: `plx_${agent.id}_r${round}_${Date.now()}_${Math.random().toString(36).slice(2, 6)}`,
@@ -1568,6 +1596,11 @@ Constraint: Exactly 1-2 punchy sentences (<40 words). Speak directly; no greetin
       conviction,
       mood: mood || agent.mood,
       isDynamic: Boolean(agent.isDynamic),
+      isDevilsAdvocate: Boolean(agent.isDevilsAdvocate),
+      replyToAgentId: primaryOpponent?.agentId,
+      replyToAgentName: primaryOpponent?.agentName,
+      replyToMessageId: primaryOpponent?.id,
+      quotedSnippet: primaryOpponent ? primaryOpponent.text.slice(0, 100) : undefined,
       role: agent.role,
       voice: agent.voice,
       timestamp: Date.now(),
@@ -1598,7 +1631,11 @@ Constraint: Exactly 1-2 punchy sentences (<40 words). Speak directly; no greetin
     }
 
     // Graceful fallback reaction reflecting the agent's core disposition
-    const fallbackText = getFallbackReaction(agent, round, topic);
+    let fallbackText = getFallbackReaction(agent, round, topic);
+    if (round === 2 && primaryOpponent && !fallbackText.includes(`@${primaryOpponent.agentName}`)) {
+      fallbackText = `@${primaryOpponent.agentName} ${fallbackText}`;
+    }
+
     const fallbackMeta = DEFAULT_AGENT_METRICS[agent.id.toLowerCase()] || { conviction: 7, mood: '⚡' };
     return {
       id: `plx_${agent.id}_r${round}_fallback_${Date.now()}`,
@@ -1611,6 +1648,11 @@ Constraint: Exactly 1-2 punchy sentences (<40 words). Speak directly; no greetin
       conviction: fallbackMeta.conviction,
       mood: agent.mood || fallbackMeta.mood,
       isDynamic: Boolean(agent.isDynamic),
+      isDevilsAdvocate: Boolean(agent.isDevilsAdvocate),
+      replyToAgentId: primaryOpponent?.agentId,
+      replyToAgentName: primaryOpponent?.agentName,
+      replyToMessageId: primaryOpponent?.id,
+      quotedSnippet: primaryOpponent ? primaryOpponent.text.slice(0, 100) : undefined,
       role: agent.role,
       voice: agent.voice,
       timestamp: Date.now(),
@@ -1979,6 +2021,15 @@ export async function runParallaxSwarm(options: ParallaxRunOptions): Promise<voi
     onStatusUpdate?.('Pre-Deliberation: Extracting and verifying candidate claims against evidence...');
     const verifiedClaims = await extractAndVerifyClaims(topic, evidenceItems, entityResolution, signal);
 
+    // FEATURE 1: Generate Round 0 Intelligence Briefing
+    const intelligenceBriefing = generateIntelligenceBriefing(
+      topic,
+      entityResolution,
+      evidenceItems,
+      verifiedClaims,
+    );
+    options.onIntelligenceBriefingReady?.(intelligenceBriefing);
+
     const evidencePool: ParallaxEvidencePool = {
       topic,
       entityResolution,
@@ -1986,6 +2037,7 @@ export async function runParallaxSwarm(options: ParallaxRunOptions): Promise<voi
       claims: verifiedClaims,
       searchSource,
       timestamp: Date.now(),
+      intelligenceBriefing,
     };
     options.onEvidencePoolReady?.(evidencePool);
 
@@ -2179,6 +2231,10 @@ export async function runParallaxSwarm(options: ParallaxRunOptions): Promise<voi
 
           // VERITAS receives the full search grounding data
           const groundingForAgent = agent.id === 'veritas' ? veritasGrounding : null;
+          const activeHumanDirective =
+            options.humanInjections && options.humanInjections.length > 0
+              ? options.humanInjections[options.humanInjections.length - 1]
+              : null;
 
           const msg = await executeAgentTurn(
             agent,
@@ -2190,6 +2246,8 @@ export async function runParallaxSwarm(options: ParallaxRunOptions): Promise<voi
             signal,
             sharedGroundingBlock,
             consensusFacts,
+            options.debateMode,
+            activeHumanDirective,
           );
 
           return msg;
@@ -2210,6 +2268,81 @@ export async function runParallaxSwarm(options: ParallaxRunOptions): Promise<voi
         // Brief natural pause between batches for smooth streaming visual rhythm
         if (i + BATCH_SIZE < debateAgents.length) {
           await abortableSleep(350, signal);
+        }
+      }
+
+      // FEATURE 3: Devil's Advocate Auto-Injection after Round 2 if consensus > 75%
+      let devilsAdvocateTrigger: ParallaxDevilsAdvocateTrigger | undefined;
+      if (currentRound === 2) {
+        const r1r2Msgs = allMessages.filter((m) => (m.round === 1 || m.round === 2) && !m.isHuman);
+        const validScores = r1r2Msgs.filter((m) => typeof m.conviction === 'number');
+        if (validScores.length > 0) {
+          const highConvictionCount = validScores.filter((m) => (m.conviction || 0) >= 6).length;
+          const ratio = highConvictionCount / validScores.length;
+
+          if (ratio > 0.75 || ratio < 0.25) {
+            const majorityLean = ratio > 0.75 ? 'PRO' : 'CON';
+            const consensusStrength = Math.round((ratio > 0.75 ? ratio : 1 - ratio) * 100);
+
+            onStatusUpdate?.(
+              `Consensus polarization alert (${consensusStrength}% majority lean ${majorityLean}). Auto-injecting Devil's Advocate contrarian specialist...`
+            );
+
+            const weakestClaim =
+              verifiedClaims.find((c) => c.status === 'UNVERIFIED' || c.status === 'DISPUTED' || c.status === 'REFUTED') ||
+              verifiedClaims[0];
+            const weakestClaimText = weakestClaim?.claimText || topic;
+
+            const devilsAdvocateAgent: ParallaxAgentConfig = {
+              id: 'devils_advocate' as ParallaxAgentConfig['id'],
+              name: 'DIABOLUS',
+              initials: 'DA',
+              role: "Devil's Advocate & Contrarian Analyst",
+              accentColor: '#f43f5e',
+              hasToolAccess: false,
+              providerId: enabledAgents[0]?.providerId || 'existing',
+              modelId: enabledAgents[0]?.modelId || 'deepseek/deepseek-chat',
+              enabled: true,
+              systemInstruction: `You are DIABOLUS, the sworn contrarian Devil's Advocate. Aggressively attack the dominant ${majorityLean} consensus on "${topic}". Focus your critique on the majority's weakest claim: "${weakestClaimText}". Deliver 1-2 piercing, uncompromising sentences. End with [10|🔥].`,
+              selectionReason: `Auto-injected due to ${consensusStrength}% consensus polarization to eliminate groupthink.`,
+              maxTokens: 100,
+              voice: 'en-GB-RyanNeural',
+              isDynamic: true,
+              isDevilsAdvocate: true,
+              mood: '🔥',
+            };
+
+            try {
+              const contrarianMsg = await executeAgentTurn(
+                devilsAdvocateAgent,
+                2,
+                topic,
+                r1r2Msgs.slice(-2),
+                null,
+                groundingConstraint,
+                signal,
+                sharedGroundingBlock,
+                consensusFacts,
+                options.debateMode,
+                null,
+              );
+              contrarianMsg.isDevilsAdvocate = true;
+              roundMessages.push(contrarianMsg);
+              allMessages.push(contrarianMsg);
+              onMessage(contrarianMsg);
+
+              devilsAdvocateTrigger = {
+                triggered: true,
+                majorityLean: majorityLean === 'PRO' ? 'PRO' : 'CON',
+                consensusStrength,
+                weakestClaim: weakestClaimText,
+                injectedMessageId: contrarianMsg.id,
+              };
+              options.onDevilsAdvocateTriggered?.(devilsAdvocateTrigger);
+            } catch (daErr) {
+              console.warn('[Parallax] Devil\'s Advocate injection error:', daErr);
+            }
+          }
         }
       }
 
@@ -2248,6 +2381,13 @@ export async function runParallaxSwarm(options: ParallaxRunOptions): Promise<voi
       conflicts,
     );
 
+    // Attach extended metadata & confidence verdict
+    const confidenceVerdict = computeConfidenceWeightedVerdict(verifiedClaims, allMessages);
+    summary.confidenceVerdict = confidenceVerdict;
+    summary.intelligenceBriefing = intelligenceBriefing;
+    summary.debateMode = options.debateMode;
+    summary.humanInjections = options.humanInjections;
+
     // Save session to local storage
     storage.saveParallaxSession({
       id: `session_${Date.now()}`,
@@ -2257,6 +2397,9 @@ export async function runParallaxSwarm(options: ParallaxRunOptions): Promise<voi
       messages: allMessages,
       summary,
       specialistDeliberation: specialistDeliberation || undefined,
+      intelligenceBriefing,
+      humanInjections: options.humanInjections,
+      debateMode: options.debateMode,
     });
 
     onStatusUpdate?.('Parallax Swarm complete. Auto-stopped after Round 3.');

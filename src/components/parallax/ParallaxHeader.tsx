@@ -7,7 +7,13 @@ import {
   Sparkles,
   Zap,
   Globe2,
+  Gavel,
+  Landmark,
+  Rocket,
+  Newspaper,
 } from 'lucide-react';
+import { getDebateModeConfig } from '@/data/parallaxDebateModes';
+import type { ParallaxDebateMode } from '@/types';
 
 interface ParallaxHeaderProps {
   isRunning: boolean;
@@ -19,6 +25,7 @@ interface ParallaxHeaderProps {
   factsCount?: number;
   activeProviderName?: string;
   activeModelName?: string;
+  debateMode?: ParallaxDebateMode;
 }
 
 export const ParallaxHeader: React.FC<ParallaxHeaderProps> = ({
@@ -31,7 +38,10 @@ export const ParallaxHeader: React.FC<ParallaxHeaderProps> = ({
   factsCount = 0,
   activeProviderName = 'OpenRouter',
   activeModelName = 'Llama 3.3 70B',
+  debateMode = 'default',
 }) => {
+  const modeConfig = getDebateModeConfig(debateMode);
+
   // Determine overall status text
   const swarmStatus = isRunning
     ? 'SWARM ACTIVE'
@@ -39,15 +49,27 @@ export const ParallaxHeader: React.FC<ParallaxHeaderProps> = ({
     ? 'SYNTHESIS COMPLETE'
     : wasStoppedEarly
     ? 'SWARM HALTED'
-    : 'SWARM ONLINE';
+    : `${modeConfig.label} ONLINE`;
 
   const statusColor = isRunning
-    ? 'var(--nexus-cyan)'
+    ? (modeConfig.accentColor || 'var(--nexus-cyan)')
     : isComplete
     ? 'var(--nexus-green)'
     : wasStoppedEarly
     ? 'var(--nexus-warning)'
-    : 'var(--nexus-cyan)';
+    : (modeConfig.accentColor || 'var(--nexus-cyan)');
+
+  // Dynamic Mode Icon
+  const ModeIcon =
+    debateMode === 'courtroom'
+      ? Gavel
+      : debateMode === 'senate'
+      ? Landmark
+      : debateMode === 'scifi'
+      ? Rocket
+      : debateMode === 'news'
+      ? Newspaper
+      : Cpu;
 
   // Status strip state resolution
   // Stages: CORE ONLINE, RESEARCH ACTIVE, FACT CHECKING, DELIBERATION, SYNTHESIS
@@ -85,13 +107,13 @@ export const ParallaxHeader: React.FC<ParallaxHeaderProps> = ({
           <div
             className="w-11 h-11 rounded-xl flex items-center justify-center shrink-0"
             style={{
-              background: 'radial-gradient(circle at center, rgba(0, 240, 255, 0.3) 0%, rgba(6, 16, 26, 0.9) 100%)',
-              border: '1.5px solid rgba(0, 240, 255, 0.6)',
-              boxShadow: '0 0 20px rgba(0, 240, 255, 0.35)',
+              background: `radial-gradient(circle at center, ${modeConfig.accentColor}35 0%, rgba(6, 16, 26, 0.9) 100%)`,
+              border: `1.5px solid ${modeConfig.accentColor}70`,
+              boxShadow: `0 0 20px ${modeConfig.accentColor}40`,
             }}
           >
             <div className="relative">
-              <Cpu size={22} className="text-cyan-300" />
+              <ModeIcon size={22} style={{ color: modeConfig.accentColor }} />
               {isRunning && (
                 <span className="absolute -top-1 -right-1 w-2 h-2 rounded-full bg-cyan-400 animate-ping" />
               )}
@@ -102,8 +124,15 @@ export const ParallaxHeader: React.FC<ParallaxHeaderProps> = ({
             <div className="flex items-center gap-2.5 flex-wrap">
               <h1 className="m-0 text-xl sm:text-2xl font-black tracking-tight text-white font-mono flex items-center gap-2">
                 <span>PARALLAX</span>
-                <span className="text-[10px] uppercase font-bold tracking-widest px-2 py-0.5 rounded-full bg-cyan-500/15 text-cyan-300 border border-cyan-500/30">
-                  Swarm OS
+                <span
+                  className="text-[10px] uppercase font-bold tracking-widest px-2 py-0.5 rounded-full"
+                  style={{
+                    background: `${modeConfig.accentColor}20`,
+                    color: modeConfig.accentColor,
+                    border: `1px solid ${modeConfig.accentColor}45`,
+                  }}
+                >
+                  {modeConfig.label}
                 </span>
               </h1>
             </div>

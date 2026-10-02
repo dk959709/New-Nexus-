@@ -573,3 +573,143 @@ export function buildAgentGroundingConstraint(
 
   return parts.join(' ');
 }
+
+/**
+ * FEATURE 1: Generates Round 0 Pre-Debate Intelligence Briefing
+ */
+export function generateIntelligenceBriefing(
+  topic: string,
+  entityResolution?: ParallaxEntityResolution | null,
+  evidenceItems: ParallaxEvidenceItem[] = [],
+  claims: ParallaxClaim[] = [],
+): import('@/types').ParallaxIntelligenceBriefing {
+  const keyFacts: string[] = [];
+
+  // 1. Gather confirmed facts from verified claims
+  const verifiedList = claims.filter((c) => c.status === 'VERIFIED' || c.status === 'PLAUSIBLE');
+  for (const c of verifiedList) {
+    if (keyFacts.length < 7 && !keyFacts.some((f) => f.toLowerCase() === c.claimText.toLowerCase())) {
+      keyFacts.push(c.claimText);
+    }
+  }
+
+  // 2. Supplement with high-reliability evidence snippets if needed
+  if (keyFacts.length < 5 && evidenceItems.length > 0) {
+    const sorted = [...evidenceItems].sort((a, b) => b.reliabilityScore - a.reliabilityScore);
+    for (const item of sorted) {
+      if (keyFacts.length >= 7) break;
+      const cleanSnippet = item.snippet.replace(/^\[\d+\]\s*/, '').trim();
+      const firstSentence = cleanSnippet.split(/(?<=[.?!])\s+/)[0] || cleanSnippet;
+      if (firstSentence.length > 25 && !keyFacts.some((f) => f.includes(firstSentence.slice(0, 30)))) {
+        keyFacts.push(firstSentence.length > 140 ? `${firstSentence.slice(0, 137)}...` : firstSentence);
+      }
+    }
+  }
+
+  // Fallback if sparse results
+  if (keyFacts.length === 0) {
+    keyFacts.push(`Primary subject under inquiry: "${topic}" across verified empirical dimensions.`);
+    keyFacts.push('Cross-quadrant analysis established to balance empirical evidence against theoretical limits.');
+  }
+
+  // Extract key entities
+  const keyEntities: string[] = [];
+  if (entityResolution?.canonicalEntity) {
+    keyEntities.push(entityResolution.canonicalEntity);
+  }
+  if (entityResolution?.aliases) {
+    for (const a of entityResolution.aliases) {
+      if (!keyEntities.includes(a)) keyEntities.push(a);
+    }
+  }
+
+  // Map sources with reliability scores
+  const sources = evidenceItems.map((e) => ({
+    title: e.title || e.domain,
+    url: e.url,
+    domain: e.domain,
+    tier: e.reliabilityTier,
+    reliabilityScore: e.reliabilityScore,
+  }));
+
+  const summary = entityResolution?.canonicalEntity
+    ? `Intelligence orientation prepared for ${entityResolution.canonicalEntity} (${entityResolution.entityType}) based on ${evidenceItems.length} real-time data points.`
+    : `Intelligence baseline compiled from ${evidenceItems.length} sources to ground 20-agent deliberation.`;
+
+  return {
+    topic,
+    keyFacts,
+    keyEntities,
+    sources,
+    liveSearchCount: evidenceItems.length,
+    timestamp: Date.now(),
+    summary,
+  };
+}
+
+/**
+ * FEATURE 5: Computes Confidence-Weighted Verdict Meter
+ * Evaluates conviction scores weighted by empirical claim verification
+ */
+export function computeConfidenceWeightedVerdict(
+  claims: ParallaxClaim[] = [],
+  messages: ParallaxMessage[] = [],
+): import('@/types').ParallaxConfidenceVerdict {
+  const verifiedSupportCount = claims.filter((c) => c.status === 'VERIFIED' || c.status === 'PLAUSIBLE').length;
+  const refutedCount = claims.filter((c) => c.status === 'REFUTED' || c.status === 'DISPUTED').length;
+  const totalClaimsChecked = claims.length;
+
+  // Gather round 3 (or latest) agent convictions
+  const r3Msgs = messages.filter((m) => m.round === 3);
+  const targetMsgs = r3Msgs.length > 0 ? r3Msgs : messages;
+
+  let weightedProSum = 0;
+  let weightedConSum = 0;
+  let weightedUndecidedSum = 0;
+  for (const msg of targetMsgs) {
+    const rawConviction = typeof msg.conviction === 'number' ? msg.conviction : 0;
+    const absScore = Math.abs(rawConviction);
+
+    // Evidence weight multiplier: if agent is in Veritas or grounded quadrant
+    let weight = 1.0;
+    if (msg.agentId === 'veritas' || msg.agentId === 'axiom') weight += 0.3;
+    if (msg.isDynamic) weight += 0.15;
+
+    if (rawConviction > 15) {
+      weightedProSum += (absScore / 100) * weight;
+    } else if (rawConviction < -15) {
+      weightedConSum += (absScore / 100) * weight;
+    } else {
+      weightedUndecidedSum += weight * 0.8;
+    }
+  }
+
+  // Factor in claim verification bias
+  if (totalClaimsChecked > 0) {
+    const claimRatio = (verifiedSupportCount - refutedCount) / totalClaimsChecked;
+    if (claimRatio > 0.2) weightedProSum += claimRatio * 2;
+    if (claimRatio < -0.2) weightedConSum += Math.abs(claimRatio) * 2;
+  }
+
+  const grandTotal = (weightedProSum + weightedConSum + weightedUndecidedSum) || 1;
+  const proPercent = Math.min(95, Math.max(5, Math.round((weightedProSum / grandTotal) * 100)));
+  const conPercent = Math.min(95 - proPercent, Math.max(5, Math.round((weightedConSum / grandTotal) * 100)));
+  const undecidedPercent = Math.max(0, 100 - proPercent - conPercent);
+
+  const weightedScore = proPercent - conPercent;
+  let dominantLean: 'PRO' | 'CON' | 'UNDECIDED' = 'UNDECIDED';
+  if (proPercent > conPercent && proPercent >= 45) dominantLean = 'PRO';
+  else if (conPercent > proPercent && conPercent >= 45) dominantLean = 'CON';
+
+  return {
+    proPercent,
+    conPercent,
+    undecidedPercent,
+    weightedScore,
+    dominantLean,
+    totalClaimsChecked,
+    verifiedSupportCount,
+    refutedCount,
+  };
+}
+

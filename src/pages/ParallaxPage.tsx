@@ -7,6 +7,7 @@ import {
   Archive,
   Trash2,
   Info,
+  UserPlus,
 } from 'lucide-react';
 import { storage } from '@/lib/storage';
 import { runParallaxSwarm } from '@/services/parallaxOrchestrator';
@@ -20,6 +21,10 @@ import { ParallaxTelemetry } from '@/components/parallax/ParallaxTelemetry';
 import { ParallaxSynthesisReport } from '@/components/parallax/ParallaxSynthesisReport';
 import { ParallaxSettings } from '@/components/parallax/ParallaxSettings';
 import { ParallaxAudioVisualizer } from '@/components/parallax/ParallaxAudioVisualizer';
+import { ParallaxIntelligenceBriefing } from '@/components/parallax/ParallaxIntelligenceBriefing';
+import { ParallaxConvictionChart } from '@/components/parallax/ParallaxConvictionChart';
+import { ParallaxDebateModeSelector } from '@/components/parallax/ParallaxDebateModeSelector';
+import { ParallaxHumanInjectionModal } from '@/components/parallax/ParallaxHumanInjectionModal';
 import { getParallaxAgentVoice, formatFullParallaxTranscript } from '@/data/parallaxVoices';
 import { cleanMarkdownForSpeech } from '@/lib/format';
 import type {
@@ -29,6 +34,10 @@ import type {
   ParallaxSummary,
   ParallaxSystemConfig,
   ParallaxSession,
+  ParallaxDebateMode,
+  ParallaxIntelligenceBriefing as IntelligenceBriefingType,
+  ParallaxHumanInjection,
+  ParallaxDevilsAdvocateTrigger,
 } from '@/types';
 
 const SAMPLE_TOPICS = [
@@ -50,6 +59,17 @@ export const ParallaxPage: React.FC = () => {
   const [statusText, setStatusText] = useState<string>('Ready to mobilize 20-agent swarm.');
   const [errorText, setErrorText] = useState<string | null>(null);
   const [wasStoppedEarly, setWasStoppedEarly] = useState<boolean>(false);
+
+  // FEATURE 7: Debate Mode Preset state
+  const [debateMode, setDebateMode] = useState<ParallaxDebateMode>('default');
+
+  // FEATURE 1: Intelligence Briefing state
+  const [intelligenceBriefing, setIntelligenceBriefing] = useState<IntelligenceBriefingType | null>(null);
+
+  // FEATURE 3 & 4: Human Directives and Devil's Advocate triggers
+  const [isHumanModalOpen, setIsHumanModalOpen] = useState(false);
+  const [humanInjections, setHumanInjections] = useState<ParallaxHumanInjection[]>([]);
+  const [, setDevilsAdvocateTrigger] = useState<ParallaxDevilsAdvocateTrigger | null>(null);
 
   // Graphics & Filter state
   const [selectedAgentFilter, setSelectedAgentFilter] = useState<string | null>(null);
@@ -209,7 +229,7 @@ export const ParallaxPage: React.FC = () => {
     }
   };
 
-  // Listen to entire 20-agent swarm deliberation back-to-back
+  // FEATURE 8: Upgraded Podcast Mode Deliberation Audio Player with Narrator Intro & Outro
   const handleListenToFullSwarm = async () => {
     if (playingAudioKey === 'full_swarm') {
       stopAllAudio();
@@ -249,71 +269,74 @@ export const ParallaxPage: React.FC = () => {
       return;
     }
 
-    // Otherwise, stream message-by-message sequentially so audio begins playing in < 1 second!
+    // Otherwise, stream with narrator intro + message turns + outro sequentially
     setLoadingAudioKey('full_swarm');
-    setFullSwarmProgress({ current: 1, total: messages.length });
+    setFullSwarmProgress({ current: 1, total: messages.length + 2 });
 
     const audioBlobs: Blob[] = [];
 
-    // Helper to fetch audio blob for a single message
-    const fetchBlobForMessage = async (msg: ParallaxMessage): Promise<Blob | null> => {
-      const rawClean = cleanMarkdownForSpeech(msg.text);
-      if (!rawClean) return null;
-      const spokenIntro = `${msg.agentName} in round ${msg.round}. `;
-      const fullSpeechText = cleanMarkdownForSpeech(spokenIntro + rawClean);
-      const voice = msg.voice || config.agents[msg.agentId]?.voice || getParallaxAgentVoice(msg.agentId);
-
+    // Helper to fetch audio blob
+    const fetchCustomBlob = async (text: string, voice: string): Promise<Blob | null> => {
+      const clean = cleanMarkdownForSpeech(text);
+      if (!clean) return null;
       try {
-        const response = await fetch('/api/edge-tts', {
+        const res = await fetch('/api/edge-tts', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({
-            text: fullSpeechText.slice(0, 3500),
-            voice,
-          }),
+          body: JSON.stringify({ text: clean.slice(0, 3500), voice }),
         });
-        if (response.ok) {
-          return await response.blob();
-        }
+        if (res.ok) return await res.blob();
       } catch (e) {
-        console.warn(`[Parallax] Speech fetch failed for ${msg.agentName}:`, e);
+        console.warn('[Parallax] Audio fetch error:', e);
       }
       return null;
     };
 
     try {
-      // Pre-fetch cache: stores promises for upcoming audio chunks
-      const prefetchPromises = new Map<number, Promise<Blob | null>>();
+      // 1. Play Narrator Intro
+      const introText = `Welcome to NEXUS Parallax. Today, twenty AI agents debate: ${currentTopic || topicInput}.`;
+      const introBlob = await fetchCustomBlob(introText, 'en-US-ChristopherNeural');
+      if (introBlob && !swarmPlaybackCancelledRef.current) {
+        audioBlobs.push(introBlob);
+        await new Promise<void>((resolve) => {
+          const url = URL.createObjectURL(introBlob);
+          const audio = new Audio(url);
+          audioRef.current = audio;
+          audio.onplay = () => {
+            setLoadingAudioKey(null);
+            setPlayingAudioKey('full_swarm');
+          };
+          const finish = () => {
+            URL.revokeObjectURL(url);
+            audioRef.current = null;
+            resolve();
+          };
+          audio.onended = finish;
+          audio.onerror = finish;
+          audio.play().catch(finish);
+        });
+      }
 
-      // Kick off prefetch for message 0 and message 1
-      if (messages[0]) prefetchPromises.set(0, fetchBlobForMessage(messages[0]));
-      if (messages[1]) prefetchPromises.set(1, fetchBlobForMessage(messages[1]));
-
+      // 2. Play Message Turns
       for (let i = 0; i < messages.length; i++) {
         if (swarmPlaybackCancelledRef.current) break;
 
         const msg = messages[i];
-        setFullSwarmProgress({ current: i + 1, total: messages.length });
+        setFullSwarmProgress({ current: i + 1, total: messages.length + 1 });
 
-        // Trigger pre-fetch for i + 2 while i is preparing / playing
-        if (i + 2 < messages.length && !prefetchPromises.has(i + 2)) {
-          prefetchPromises.set(i + 2, fetchBlobForMessage(messages[i + 2]));
-        }
+        const rawClean = cleanMarkdownForSpeech(msg.text);
+        if (!rawClean) continue;
 
-        // Await blob for current message
-        const currentPromise = prefetchPromises.get(i) || fetchBlobForMessage(msg);
-        const blob = await currentPromise;
+        const spokenIntro = `${msg.agentName} in round ${msg.round}. `;
+        const fullSpeechText = cleanMarkdownForSpeech(spokenIntro + rawClean);
+        const voice = msg.voice || config.agents[msg.agentId]?.voice || getParallaxAgentVoice(msg.agentId);
 
+        const blob = await fetchCustomBlob(fullSpeechText, voice);
         if (swarmPlaybackCancelledRef.current) break;
-
-        if (!blob) {
-          // If fetch failed, skip gracefully to next agent so listening continues
-          continue;
-        }
+        if (!blob) continue;
 
         audioBlobs.push(blob);
 
-        // Play current agent's audio
         await new Promise<void>((resolve) => {
           if (swarmPlaybackCancelledRef.current) {
             resolve();
@@ -337,17 +360,32 @@ export const ParallaxPage: React.FC = () => {
 
           audio.onended = handleFinish;
           audio.onerror = handleFinish;
-
-          audio.play().catch((playErr) => {
-            console.warn('[Parallax] Play error for chunk:', playErr);
-            handleFinish();
-          });
+          audio.play().catch(handleFinish);
         });
-
-        if (swarmPlaybackCancelledRef.current) break;
       }
 
-      // If deliberation finished naturally and collected blobs, cache stitched blob
+      // 3. Play Narrator Outro
+      if (!swarmPlaybackCancelledRef.current && summary?.verdict) {
+        const outroText = `This concludes the NEXUS Parallax swarm deliberation. Final consensus: ${summary.consensusLean || 'Balanced'}. Verdict: ${summary.verdict}`;
+        const outroBlob = await fetchCustomBlob(outroText, 'en-US-ChristopherNeural');
+        if (outroBlob && !swarmPlaybackCancelledRef.current) {
+          audioBlobs.push(outroBlob);
+          await new Promise<void>((resolve) => {
+            const url = URL.createObjectURL(outroBlob);
+            const audio = new Audio(url);
+            audioRef.current = audio;
+            const finish = () => {
+              URL.revokeObjectURL(url);
+              audioRef.current = null;
+              resolve();
+            };
+            audio.onended = finish;
+            audio.onerror = finish;
+            audio.play().catch(finish);
+          });
+        }
+      }
+
       if (!swarmPlaybackCancelledRef.current && audioBlobs.length > 0) {
         const stitched = new Blob(audioBlobs, { type: 'audio/mpeg' });
         setStitchedSwarmBlob(stitched);
@@ -363,7 +401,7 @@ export const ParallaxPage: React.FC = () => {
     }
   };
 
-  // Download entire deliberation as a single high-quality contiguous MP3 file
+  // FEATURE 8: Download upgraded contiguous podcast MP3 with intro + outro narration
   const handleDownloadSwarmMp3 = async () => {
     if (messages.length === 0) return;
     setIsDownloadingSwarmMp3(true);
@@ -371,25 +409,39 @@ export const ParallaxPage: React.FC = () => {
       let blobToDownload = stitchedSwarmBlob;
 
       if (!blobToDownload) {
-        setFullSwarmProgress({ current: 0, total: messages.length });
+        setFullSwarmProgress({ current: 0, total: messages.length + 2 });
 
-        // 1. Fast server-side batch synthesis
-        try {
-          const items = messages
-            .map((msg) => {
-              const rawClean = cleanMarkdownForSpeech(msg.text);
-              if (!rawClean) return null;
-              const spokenIntro = `${msg.agentName} in round ${msg.round}. `;
-              const fullSpeechText = cleanMarkdownForSpeech(spokenIntro + rawClean);
-              const voice = msg.voice || config.agents[msg.agentId]?.voice || getParallaxAgentVoice(msg.agentId);
-              return {
-                text: fullSpeechText.slice(0, 3500),
-                voice,
-              };
-            })
-            .filter((item): item is { text: string; voice: string } => item !== null && item.text.trim().length > 0);
+        const items: Array<{ text: string; voice: string }> = [];
 
-          if (items.length > 0) {
+        // Intro item
+        const introSpeech = cleanMarkdownForSpeech(`Welcome to NEXUS Parallax. Today, twenty AI agents debate: ${currentTopic || topicInput}.`);
+        if (introSpeech) {
+          items.push({ text: introSpeech.slice(0, 3500), voice: 'en-US-ChristopherNeural' });
+        }
+
+        // Swarm turns
+        for (const msg of messages) {
+          const rawClean = cleanMarkdownForSpeech(msg.text);
+          if (!rawClean) continue;
+          const spokenIntro = `${msg.agentName} in round ${msg.round}. `;
+          const fullSpeechText = cleanMarkdownForSpeech(spokenIntro + rawClean);
+          const voice = msg.voice || config.agents[msg.agentId]?.voice || getParallaxAgentVoice(msg.agentId);
+          items.push({ text: fullSpeechText.slice(0, 3500), voice });
+        }
+
+        // Outro item
+        if (summary?.verdict) {
+          const outroSpeech = cleanMarkdownForSpeech(
+            `This concludes the NEXUS Parallax swarm deliberation. Final consensus: ${summary.consensusLean || 'Balanced'}. Verdict: ${summary.verdict}`,
+          );
+          if (outroSpeech) {
+            items.push({ text: outroSpeech.slice(0, 3500), voice: 'en-US-ChristopherNeural' });
+          }
+        }
+
+        // Batch synthesis call
+        if (items.length > 0) {
+          try {
             const response = await fetch('/api/edge-tts/batch', {
               method: 'POST',
               headers: { 'Content-Type': 'application/json' },
@@ -400,49 +452,8 @@ export const ParallaxPage: React.FC = () => {
               blobToDownload = await response.blob();
               setStitchedSwarmBlob(blobToDownload);
             }
-          }
-        } catch (batchErr) {
-          console.warn('[Parallax] Batch endpoint error, trying fallback:', batchErr);
-        }
-
-        // 2. Sequential fallback if batch did not produce blob
-        if (!blobToDownload) {
-          const audioBlobs: Blob[] = [];
-          const total = messages.length;
-
-          for (let i = 0; i < messages.length; i++) {
-            const msg = messages[i];
-            setFullSwarmProgress({ current: i + 1, total });
-
-            const rawClean = cleanMarkdownForSpeech(msg.text);
-            if (!rawClean) continue;
-
-            const spokenIntro = `${msg.agentName} in round ${msg.round}. `;
-            const fullSpeechText = cleanMarkdownForSpeech(spokenIntro + rawClean);
-            const voice = msg.voice || config.agents[msg.agentId]?.voice || getParallaxAgentVoice(msg.agentId);
-
-            try {
-              const response = await fetch('/api/edge-tts', {
-                method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({
-                  text: fullSpeechText.slice(0, 3500),
-                  voice,
-                }),
-              });
-
-              if (response.ok) {
-                const b = await response.blob();
-                audioBlobs.push(b);
-              }
-            } catch (chunkErr) {
-              console.warn(`[Parallax] Chunk download failed for ${msg.agentName}:`, chunkErr);
-            }
-          }
-
-          if (audioBlobs.length > 0) {
-            blobToDownload = new Blob(audioBlobs, { type: 'audio/mpeg' });
-            setStitchedSwarmBlob(blobToDownload);
+          } catch (batchErr) {
+            console.warn('[Parallax] Batch endpoint error, trying fallback:', batchErr);
           }
         }
       }
@@ -454,12 +465,12 @@ export const ParallaxPage: React.FC = () => {
       const url = URL.createObjectURL(blobToDownload);
       const a = document.createElement('a');
       a.href = url;
-      const safeTopic = (currentTopic || topicInput || 'swarm')
-        .slice(0, 30)
+      const safeTopic = (currentTopic || topicInput || 'debate')
+        .slice(0, 35)
         .trim()
-        .replace(/[^a-zA-Z0-9_-]+/g, '_')
+        .replace(/[^a-zA-Z0-9_-]+/g, '-')
         .toLowerCase();
-      a.download = `nexus_parallax_swarm_${safeTopic}_${Date.now()}.mp3`;
+      a.download = `parallax-${safeTopic}.mp3`;
       document.body.appendChild(a);
       a.click();
       document.body.removeChild(a);
@@ -483,6 +494,28 @@ export const ParallaxPage: React.FC = () => {
     navigator.clipboard.writeText(transcript);
     setCopiedSwarmTranscript(true);
     setTimeout(() => setCopiedSwarmTranscript(false), 2500);
+  };
+
+  // FEATURE 4: Handle Human Operator Directive Injection
+  const handleHumanInjection = (injection: ParallaxHumanInjection) => {
+    const humanMsg: ParallaxMessage = {
+      id: injection.id,
+      agentId: 'human',
+      agentName: injection.authorName || 'HUMAN OPERATOR',
+      initials: 'HU',
+      accentColor: '#f59e0b',
+      round: (currentRound || 1) as 1 | 2 | 3,
+      text: injection.text,
+      isHuman: true,
+      timestamp: Date.now(),
+      role: 'Human Operator Directive',
+      model: 'Human Operator',
+      providerName: 'Operator Console',
+    };
+
+    setMessages((prev) => [...prev, humanMsg]);
+    setHumanInjections((prev) => [...prev, injection]);
+    setStatusText(`HUMAN OPERATOR INJECTED DIRECTIVE • RE-ROUTING SWARM FOCUS`);
   };
 
   // Sync config from storage
@@ -519,6 +552,9 @@ export const ParallaxPage: React.FC = () => {
     setMessages([]);
     setDynamicPersonas([]);
     setSpecialistDeliberation(null);
+    setIntelligenceBriefing(null);
+    setHumanInjections([]);
+    setDevilsAdvocateTrigger(null);
     setCurrentTopic(targetTopic);
     setIsRunning(true);
     setCurrentRound(1);
@@ -532,6 +568,8 @@ export const ParallaxPage: React.FC = () => {
     await runParallaxSwarm({
       topic: targetTopic,
       config,
+      debateMode,
+      humanInjections,
       signal: controller.signal,
       onRoundStart: (r) => {
         setCurrentRound(r);
@@ -543,12 +581,20 @@ export const ParallaxPage: React.FC = () => {
           setStatusText('DELIBERATION ACTIVE • CONVERGENCE RESOLUTION • ROUND 03');
         }
       },
+      onIntelligenceBriefingReady: (briefing) => {
+        setIntelligenceBriefing(briefing);
+        setStatusText('ROUND 00 COMPLETE • INTELLIGENCE BRIEFING READY');
+      },
       onSpecialistDeliberation: (deliberation) => {
         setSpecialistDeliberation(deliberation);
         setStatusText('CONNECTING AGENTS • SPECIALISTS COMPILED');
       },
       onDynamicPersonasCreated: (personas) => {
         setDynamicPersonas(personas);
+      },
+      onDevilsAdvocateTriggered: (trigger) => {
+        setDevilsAdvocateTrigger(trigger);
+        setStatusText(`DEVIL'S ADVOCATE INJECTED • CONTRARIAN STRESS-TEST ACTIVE`);
       },
       onMessage: (msg) => {
         setMessages((prev) => [...prev, msg]);
@@ -600,7 +646,7 @@ export const ParallaxPage: React.FC = () => {
   return (
     <div
       id="parallax-page-wrapper"
-      className="min-h-screen relative w-full overflow-x-hidden"
+      className="min-h-screen relative w-full overflow-x-hidden p-2 sm:p-0"
       style={{
         background: 'radial-gradient(ellipse at 50% 0%, rgba(3, 14, 26, 0.8) 0%, rgba(2, 6, 12, 1) 100%)',
       }}
@@ -622,722 +668,767 @@ export const ParallaxPage: React.FC = () => {
         style={{
           maxWidth: '1280px',
           margin: '0 auto',
-          padding: '24px 16px 80px',
+          padding: '16px 8px 80px',
           color: '#f8fafc',
           fontFamily: 'Inter, system-ui, sans-serif',
         }}
       >
-        {/* NEXUS COMMAND CENTER: Top Futuristic Header */}
-      <ParallaxHeader
-        isRunning={isRunning}
-        currentRound={currentRound}
-        isComplete={Boolean(summary)}
-        wasStoppedEarly={wasStoppedEarly}
-        totalAgentsCount={enabledAgentsCount}
-        dynamicSpecialistsCount={dynamicPersonasCount}
-        factsCount={messages.filter((m) => Boolean(m.toolUsed)).length}
-        activeProviderName="OpenRouter / Swarm Matrix"
-        activeModelName={config.specialistModel || 'Llama 3.3 70B'}
-      />
+        {/* Top Futuristic Header with Debate Mode Theme */}
+        <ParallaxHeader
+          isRunning={isRunning}
+          currentRound={currentRound}
+          isComplete={Boolean(summary)}
+          wasStoppedEarly={wasStoppedEarly}
+          totalAgentsCount={enabledAgentsCount}
+          dynamicSpecialistsCount={dynamicPersonasCount}
+          factsCount={messages.filter((m) => Boolean(m.toolUsed)).length}
+          activeProviderName="OpenRouter / Swarm Matrix"
+          activeModelName={config.specialistModel || 'Llama 3.3 70B'}
+          debateMode={debateMode}
+        />
 
-      {/* Tabs Navigation */}
-      <div
-        id="parallax-tabs-nav"
-        style={{
-          display: 'flex',
-          gap: '8px',
-          borderBottom: '1px solid rgba(165, 207, 214, 0.15)',
-          paddingBottom: '12px',
-          marginBottom: '20px',
-        }}
-      >
-        <button
-          id="parallax-tab-feed"
-          type="button"
-          onClick={() => setActiveTab('feed')}
+        {/* Tabs Navigation */}
+        <div
+          id="parallax-tabs-nav"
           style={{
-            padding: '8px 16px',
-            borderRadius: '10px',
-            background: activeTab === 'feed' ? 'rgba(6, 182, 212, 0.2)' : 'transparent',
-            border: `1px solid ${activeTab === 'feed' ? 'rgba(6, 182, 212, 0.4)' : 'transparent'}`,
-            color: activeTab === 'feed' ? '#61d7c9' : '#94a3b8',
-            fontSize: '13px',
-            fontWeight: 700,
-            cursor: 'pointer',
             display: 'flex',
-            alignItems: 'center',
             gap: '8px',
-            transition: 'all 0.15s ease',
+            borderBottom: '1px solid rgba(165, 207, 214, 0.15)',
+            paddingBottom: '12px',
+            marginBottom: '20px',
           }}
         >
-          <MessageSquare size={16} />
-          Swarm Live Feed
-          {messages.length > 0 && (
-            <span
-              style={{
-                fontSize: '10px',
-                padding: '1px 6px',
-                borderRadius: '999px',
-                background: '#0891b2',
-                color: '#fff',
-              }}
-            >
-              {messages.length}
-            </span>
-          )}
-        </button>
-
-        <button
-          id="parallax-tab-settings"
-          type="button"
-          onClick={() => setActiveTab('settings')}
-          style={{
-            padding: '8px 16px',
-            borderRadius: '10px',
-            background: activeTab === 'settings' ? 'rgba(6, 182, 212, 0.2)' : 'transparent',
-            border: `1px solid ${activeTab === 'settings' ? 'rgba(6, 182, 212, 0.4)' : 'transparent'}`,
-            color: activeTab === 'settings' ? '#61d7c9' : '#94a3b8',
-            fontSize: '13px',
-            fontWeight: 700,
-            cursor: 'pointer',
-            display: 'flex',
-            alignItems: 'center',
-            gap: '8px',
-            transition: 'all 0.15s ease',
-          }}
-        >
-          <Settings2 size={16} />
-          Agent Configurations (20)
-        </button>
-
-        <button
-          id="parallax-tab-archive"
-          type="button"
-          onClick={() => setActiveTab('archive')}
-          style={{
-            padding: '8px 16px',
-            borderRadius: '10px',
-            background: activeTab === 'archive' ? 'rgba(6, 182, 212, 0.2)' : 'transparent',
-            border: `1px solid ${activeTab === 'archive' ? 'rgba(6, 182, 212, 0.4)' : 'transparent'}`,
-            color: activeTab === 'archive' ? '#61d7c9' : '#94a3b8',
-            fontSize: '13px',
-            fontWeight: 700,
-            cursor: 'pointer',
-            display: 'flex',
-            alignItems: 'center',
-            gap: '8px',
-            transition: 'all 0.15s ease',
-          }}
-        >
-          <Archive size={16} />
-          Past Swarms ({sessions.length})
-        </button>
-      </div>
-
-      {/* TAB CONTENT: SETTINGS & AGENT MATRIX (Requirement 6) */}
-      {activeTab === 'settings' && (
-        <div className="space-y-6 flex flex-col gap-6">
-          <ParallaxAgentMatrix
-            agents={config.agents}
-            messages={messages}
-            selectedAgentId={selectedAgentFilter}
-            activeSpeakingAgentId={activeSpeakingAgent?.agentId}
-            onSelectAgent={(agentId) => setSelectedAgentFilter(agentId)}
-            dynamicPersonas={dynamicPersonas}
-            onPlayVoice={handlePlayMessageAudio}
-          />
-          <ParallaxSettings config={config} onConfigChange={(newCfg) => setConfig(newCfg)} />
-        </div>
-      )}
-
-      {/* TAB CONTENT: ARCHIVE */}
-      {activeTab === 'archive' && (
-        <div id="parallax-archive-tab" style={{ display: 'flex', flexDirection: 'column', gap: '16px' }}>
-          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-            <h3 style={{ margin: 0, fontSize: '16px', fontWeight: 700, color: '#fff' }}>
-              Saved Swarm Discussions ({sessions.length})
-            </h3>
-            {sessions.length > 0 && (
-              <button
-                id="parallax-clear-archive-btn"
-                type="button"
-                onClick={() => {
-                  storage.clearParallaxSessions();
-                  setSessions([]);
-                  setConfirmDeleteId(null);
-                }}
-                style={{
-                  padding: '6px 12px',
-                  borderRadius: '8px',
-                  background: 'rgba(239, 68, 68, 0.15)',
-                  border: '1px solid rgba(239, 68, 68, 0.3)',
-                  color: '#f87171',
-                  fontSize: '12px',
-                  cursor: 'pointer',
-                  display: 'flex',
-                  alignItems: 'center',
-                  gap: '6px',
-                }}
-              >
-                <Trash2 size={14} />
-                Clear Archive
-              </button>
-            )}
-          </div>
-
-          {sessions.length === 0 ? (
-            <div
-              style={{
-                padding: '40px 20px',
-                textAlign: 'center',
-                color: '#94a3b8',
-                borderRadius: '12px',
-                background: 'rgba(8, 22, 34, 0.5)',
-                border: '1px dashed rgba(165, 207, 214, 0.2)',
-              }}
-            >
-              No archived sessions yet. Run a swarm from the Live Feed tab to see past synthesis reports here.
-            </div>
-          ) : (
-            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(360px, 1fr))', gap: '16px' }}>
-              {sessions.map((sess) => (
-                <div
-                  key={sess.id}
-                  id={`parallax-saved-swarm-${sess.id}`}
-                  style={{
-                    padding: '16px',
-                    borderRadius: '12px',
-                    background: 'rgba(8, 22, 34, 0.8)',
-                    border: '1px solid rgba(97, 215, 201, 0.25)',
-                    display: 'flex',
-                    flexDirection: 'column',
-                    gap: '10px',
-                  }}
-                >
-                  <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start' }}>
-                    <span style={{ fontSize: '14px', fontWeight: 800, color: '#fff', lineHeight: 1.4 }}>
-                      &ldquo;{sess.topic}&rdquo;
-                    </span>
-                    <span style={{ fontSize: '11px', color: '#94a3b8', fontFamily: 'DM Mono, monospace' }}>
-                      {new Date(sess.timestamp).toLocaleDateString()}
-                    </span>
-                  </div>
-                  {sess.summary && (
-                    <div style={{ fontSize: '12px', color: '#cbd5e1', lineHeight: 1.4 }}>
-                      <strong style={{ color: '#61d7c9' }}>Lean:</strong> {sess.summary.consensusLean}
-                    </div>
-                  )}
-                  <div
-                    style={{
-                      display: 'flex',
-                      alignItems: 'center',
-                      justifyContent: 'space-between',
-                      marginTop: '4px',
-                      flexWrap: 'wrap',
-                      gap: '8px',
-                    }}
-                  >
-                    <span style={{ fontSize: '11px', color: '#94a3b8', fontFamily: 'DM Mono, monospace' }}>
-                      {sess.messages.length} messages (3 rounds)
-                    </span>
-
-                    {confirmDeleteId === sess.id ? (
-                      <div
-                        id={`confirm-delete-swarm-prompt-${sess.id}`}
-                        style={{
-                          display: 'flex',
-                          alignItems: 'center',
-                          gap: '6px',
-                          background: 'rgba(239, 68, 68, 0.15)',
-                          border: '1px solid rgba(239, 68, 68, 0.4)',
-                          borderRadius: '6px',
-                          padding: '3px 8px',
-                        }}
-                      >
-                        <span style={{ fontSize: '11px', color: '#fca5a5', fontWeight: 600 }}>
-                          Delete this swarm discussion?
-                        </span>
-                        <button
-                          id={`confirm-delete-yes-${sess.id}`}
-                          type="button"
-                          onClick={() => {
-                            storage.deleteParallaxSession(sess.id);
-                            setSessions(storage.getParallaxSessions());
-                            setConfirmDeleteId(null);
-                          }}
-                          style={{
-                            padding: '2px 7px',
-                            borderRadius: '4px',
-                            background: '#ef4444',
-                            border: 'none',
-                            color: '#fff',
-                            fontSize: '11px',
-                            fontWeight: 700,
-                            cursor: 'pointer',
-                          }}
-                        >
-                          Delete
-                        </button>
-                        <button
-                          id={`confirm-delete-cancel-${sess.id}`}
-                          type="button"
-                          onClick={() => setConfirmDeleteId(null)}
-                          style={{
-                            padding: '2px 6px',
-                            borderRadius: '4px',
-                            background: 'rgba(255, 255, 255, 0.1)',
-                            border: '1px solid rgba(255, 255, 255, 0.2)',
-                            color: '#cbd5e1',
-                            fontSize: '11px',
-                            cursor: 'pointer',
-                          }}
-                        >
-                          Cancel
-                        </button>
-                      </div>
-                    ) : (
-                      <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
-                        <button
-                          type="button"
-                          onClick={() => {
-                            stopAllAudio();
-                            setStitchedSwarmBlob(null);
-                            setMessages(sess.messages);
-                            setSummary(sess.summary || null);
-                            setSpecialistDeliberation(sess.specialistDeliberation || null);
-                            setWasStoppedEarly(false);
-                            setCurrentTopic(sess.topic);
-                            setActiveTab('feed');
-                          }}
-                          style={{
-                            padding: '5px 12px',
-                            borderRadius: '6px',
-                            background: 'rgba(6, 182, 212, 0.2)',
-                            border: '1px solid rgba(6, 182, 212, 0.4)',
-                            color: '#61d7c9',
-                            fontSize: '11px',
-                            fontWeight: 700,
-                            cursor: 'pointer',
-                          }}
-                        >
-                          Load in Feed
-                        </button>
-                        <button
-                          id={`delete-individual-swarm-${sess.id}`}
-                          type="button"
-                          title="Delete this swarm discussion"
-                          aria-label="Delete this swarm discussion"
-                          onClick={() => setConfirmDeleteId(sess.id)}
-                          style={{
-                            padding: '5px 8px',
-                            borderRadius: '6px',
-                            background: 'rgba(239, 68, 68, 0.12)',
-                            border: '1px solid rgba(239, 68, 68, 0.3)',
-                            color: '#f87171',
-                            fontSize: '11px',
-                            cursor: 'pointer',
-                            display: 'flex',
-                            alignItems: 'center',
-                            justifyContent: 'center',
-                            transition: 'all 0.15s ease',
-                          }}
-                        >
-                          <Trash2 size={13} />
-                        </button>
-                      </div>
-                    )}
-                  </div>
-                </div>
-              ))}
-            </div>
-          )}
-        </div>
-      )}
-
-      {/* TAB CONTENT: FEED */}
-      {activeTab === 'feed' && (
-        <div id="parallax-feed-view" style={{ display: 'flex', flexDirection: 'column', gap: '20px' }}>
-          {/* Topic Input Bar & Presets */}
-          <div
-            id="parallax-input-container"
+          <button
+            id="parallax-tab-feed"
+            type="button"
+            onClick={() => setActiveTab('feed')}
             style={{
-              padding: '16px 20px',
-              borderRadius: '16px',
-              background: 'linear-gradient(145deg, rgba(8, 22, 34, 0.9) 0%, rgba(4, 12, 18, 0.95) 100%)',
-              border: '1px solid rgba(97, 215, 201, 0.3)',
-              boxShadow: '0 4px 20px rgba(0, 0, 0, 0.3)',
+              padding: '8px 16px',
+              borderRadius: '10px',
+              background: activeTab === 'feed' ? 'rgba(6, 182, 212, 0.2)' : 'transparent',
+              border: `1px solid ${activeTab === 'feed' ? 'rgba(6, 182, 212, 0.4)' : 'transparent'}`,
+              color: activeTab === 'feed' ? '#61d7c9' : '#94a3b8',
+              fontSize: '13px',
+              fontWeight: 700,
+              cursor: 'pointer',
+              display: 'flex',
+              alignItems: 'center',
+              gap: '8px',
+              transition: 'all 0.15s ease',
             }}
           >
-            {/* Input Row */}
-            <div className="parallax-input-row" style={{ display: 'flex', gap: '10px', alignItems: 'center' }}>
-              <input
-                id="parallax-topic-input"
-                type="text"
-                value={topicInput}
-                onChange={(e) => setTopicInput(e.target.value)}
-                onKeyDown={(e) => {
-                  if (e.key === 'Enter' && !isRunning) {
-                    e.preventDefault();
-                    handleStartSwarm();
-                  }
-                }}
-                disabled={isRunning}
-                placeholder="Enter topic for 20-agent swarm discussion (e.g. Will humanoid robots replace household chores?)..."
+            <MessageSquare size={16} />
+            Swarm Live Feed
+            {messages.length > 0 && (
+              <span
                 style={{
-                  flex: 1,
-                  padding: '12px 16px',
-                  borderRadius: '12px',
-                  background: 'rgba(15, 23, 42, 0.85)',
-                  border: '1.5px solid rgba(165, 207, 214, 0.25)',
+                  fontSize: '10px',
+                  padding: '1px 6px',
+                  borderRadius: '999px',
+                  background: '#0891b2',
                   color: '#fff',
-                  fontSize: '14px',
-                  outline: 'none',
                 }}
-                className="focus:border-[#61d7c9] transition-colors"
-              />
+              >
+                {messages.length}
+              </span>
+            )}
+          </button>
 
-              {isRunning ? (
+          <button
+            id="parallax-tab-settings"
+            type="button"
+            onClick={() => setActiveTab('settings')}
+            style={{
+              padding: '8px 16px',
+              borderRadius: '10px',
+              background: activeTab === 'settings' ? 'rgba(6, 182, 212, 0.2)' : 'transparent',
+              border: `1px solid ${activeTab === 'settings' ? 'rgba(6, 182, 212, 0.4)' : 'transparent'}`,
+              color: activeTab === 'settings' ? '#61d7c9' : '#94a3b8',
+              fontSize: '13px',
+              fontWeight: 700,
+              cursor: 'pointer',
+              display: 'flex',
+              alignItems: 'center',
+              gap: '8px',
+              transition: 'all 0.15s ease',
+            }}
+          >
+            <Settings2 size={16} />
+            Agent Configurations (20)
+          </button>
+
+          <button
+            id="parallax-tab-archive"
+            type="button"
+            onClick={() => setActiveTab('archive')}
+            style={{
+              padding: '8px 16px',
+              borderRadius: '10px',
+              background: activeTab === 'archive' ? 'rgba(6, 182, 212, 0.2)' : 'transparent',
+              border: `1px solid ${activeTab === 'archive' ? 'rgba(6, 182, 212, 0.4)' : 'transparent'}`,
+              color: activeTab === 'archive' ? '#61d7c9' : '#94a3b8',
+              fontSize: '13px',
+              fontWeight: 700,
+              cursor: 'pointer',
+              display: 'flex',
+              alignItems: 'center',
+              gap: '8px',
+              transition: 'all 0.15s ease',
+            }}
+          >
+            <Archive size={16} />
+            Past Swarms ({sessions.length})
+          </button>
+        </div>
+
+        {/* TAB CONTENT: SETTINGS & AGENT MATRIX */}
+        {activeTab === 'settings' && (
+          <div className="space-y-6 flex flex-col gap-6">
+            <ParallaxAgentMatrix
+              agents={config.agents}
+              messages={messages}
+              selectedAgentId={selectedAgentFilter}
+              activeSpeakingAgentId={activeSpeakingAgent?.agentId}
+              onSelectAgent={(agentId) => setSelectedAgentFilter(agentId)}
+              dynamicPersonas={dynamicPersonas}
+              onPlayVoice={handlePlayMessageAudio}
+            />
+            <ParallaxSettings config={config} onConfigChange={(newCfg) => setConfig(newCfg)} />
+          </div>
+        )}
+
+        {/* TAB CONTENT: ARCHIVE */}
+        {activeTab === 'archive' && (
+          <div id="parallax-archive-tab" style={{ display: 'flex', flexDirection: 'column', gap: '16px' }}>
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+              <h3 style={{ margin: 0, fontSize: '16px', fontWeight: 700, color: '#fff' }}>
+                Saved Swarm Discussions ({sessions.length})
+              </h3>
+              {sessions.length > 0 && (
                 <button
-                  id="parallax-stop-swarm-btn"
+                  id="parallax-clear-archive-btn"
                   type="button"
-                  onClick={handleStopSwarm}
-                  title="Immediately halt the running swarm and keep completed messages"
+                  onClick={() => {
+                    storage.clearParallaxSessions();
+                    setSessions([]);
+                    setConfirmDeleteId(null);
+                  }}
                   style={{
-                    padding: '12px 24px',
-                    borderRadius: '12px',
-                    background: 'linear-gradient(135deg, rgba(239, 68, 68, 0.3) 0%, rgba(185, 28, 28, 0.4) 100%)',
-                    border: '1.5px solid rgba(239, 68, 68, 0.7)',
-                    color: '#fecdd3',
-                    fontSize: '14px',
-                    fontWeight: 700,
+                    padding: '6px 12px',
+                    borderRadius: '8px',
+                    background: 'rgba(239, 68, 68, 0.15)',
+                    border: '1px solid rgba(239, 68, 68, 0.3)',
+                    color: '#f87171',
+                    fontSize: '12px',
                     cursor: 'pointer',
                     display: 'flex',
                     alignItems: 'center',
-                    gap: '8px',
-                    whiteSpace: 'nowrap',
-                    boxShadow: '0 0 16px rgba(239, 68, 68, 0.25)',
-                    transition: 'all 0.15s ease',
+                    gap: '6px',
                   }}
-                  className="hover:bg-red-900/60 hover:text-white active:scale-95"
                 >
-                  <Square size={15} fill="currentColor" />
-                  Stop Swarm
-                </button>
-              ) : (
-                <button
-                  id="parallax-start-swarm-btn"
-                  type="button"
-                  onClick={() => handleStartSwarm()}
-                  disabled={!topicInput.trim()}
-                  style={{
-                    padding: '12px 26px',
-                    borderRadius: '12px',
-                    background: topicInput.trim()
-                      ? 'linear-gradient(135deg, #06b6d4 0%, #0891b2 100%)'
-                      : 'rgba(15, 23, 42, 0.6)',
-                    border: 'none',
-                    color: topicInput.trim() ? '#fff' : '#64748b',
-                    fontSize: '14px',
-                    fontWeight: 800,
-                    cursor: topicInput.trim() ? 'pointer' : 'not-allowed',
-                    display: 'flex',
-                    alignItems: 'center',
-                    gap: '8px',
-                    whiteSpace: 'nowrap',
-                    boxShadow: topicInput.trim() ? '0 0 20px rgba(6, 182, 212, 0.4)' : 'none',
-                    transition: 'all 0.2s ease',
-                  }}
-                  className={topicInput.trim() ? 'hover:opacity-90 active:scale-95' : ''}
-                >
-                  <Sparkles size={16} />
-                  Start Parallax
+                  <Trash2 size={14} />
+                  Clear Archive
                 </button>
               )}
             </div>
 
-            {/* Starter Presets */}
-            <div className="parallax-popular-topics" style={{ marginTop: '12px', display: 'flex', alignItems: 'center', gap: '8px', flexWrap: 'wrap' }}>
-              <span style={{ fontSize: '11px', fontFamily: 'DM Mono, monospace', color: '#94a3b8', fontWeight: 600 }}>
-                POPULAR TOPICS:
-              </span>
-              {SAMPLE_TOPICS.map((topic, i) => (
-                <button
-                  key={i}
-                  type="button"
-                  disabled={isRunning}
-                  onClick={() => {
-                    setTopicInput(topic);
-                    handleStartSwarm(topic);
-                  }}
-                  style={{
-                    padding: '4px 10px',
-                    borderRadius: '999px',
-                    background: 'rgba(15, 23, 42, 0.7)',
-                    border: '1px solid rgba(165, 207, 214, 0.2)',
-                    color: '#cbd5e1',
-                    fontSize: '11px',
-                    cursor: isRunning ? 'not-allowed' : 'pointer',
-                    transition: 'all 0.15s ease',
-                  }}
-                  className="hover:border-[#61d7c9] hover:text-[#61d7c9]"
-                >
-                  {topic}
-                </button>
-              ))}
-            </div>
-          </div>
-
-          {/* Current Swarm Status Bar */}
-          <div
-            id="parallax-status-bar"
-            style={{
-              padding: '10px 18px',
-              borderRadius: '10px',
-              background: 'rgba(6, 16, 24, 0.75)',
-              border: '1px solid rgba(97, 215, 201, 0.2)',
-              display: 'flex',
-              alignItems: 'center',
-              justifyContent: 'space-between',
-              flexWrap: 'wrap',
-              gap: '10px',
-              fontSize: '12px',
-            }}
-          >
-            <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
-              <Info size={14} color="#61d7c9" />
-              <span style={{ color: '#e2e8f0', fontWeight: 600 }}>{statusText}</span>
-            </div>
-
-            <div style={{ display: 'flex', alignItems: 'center', gap: '12px', color: '#94a3b8' }}>
-              <span style={{ fontFamily: 'DM Mono, monospace' }}>
-                <strong style={{ color: '#61d7c9' }}>{enabledAgentsCount}</strong> agents active
-              </span>
-              <span>•</span>
-              <span style={{ fontFamily: 'DM Mono, monospace', color: '#38bdf8' }}>
-                Auto-stops after round 3
-              </span>
-            </div>
-          </div>
-
-          {/* Error Banner */}
-          {errorText && (
-            <div
-              style={{
-                padding: '12px 16px',
-                borderRadius: '10px',
-                background: 'rgba(239, 68, 68, 0.15)',
-                border: '1px solid rgba(239, 68, 68, 0.4)',
-                color: '#f87171',
-                fontSize: '13px',
-              }}
-            >
-              {errorText}
-            </div>
-          )}
-
-          {/* MISSION CHRONOLOGY TIMELINE (Stage / Timeline) */}
-          <ParallaxTimeline
-            currentRound={currentRound}
-            isRunning={isRunning}
-            isComplete={Boolean(summary)}
-            wasStoppedEarly={wasStoppedEarly}
-            messages={messages}
-          />
-
-          {/* MAIN HERO — SWARM ORBITAL CORE & LIVE SWARM ACTIVITY (Active Agents) */}
-          <div className="grid grid-cols-1 lg:grid-cols-12 gap-5 mb-2 items-start">
-            <div className="lg:col-span-7">
-              <ParallaxOrbitalCore
-                agents={config.agents}
-                messages={messages}
-                currentRound={currentRound}
-                isRunning={isRunning}
-                activeSpeakingAgentId={activeSpeakingAgent?.agentId}
-                selectedAgentId={selectedAgentFilter}
-                onSelectAgent={(agentId) => setSelectedAgentFilter(agentId)}
-                topic={currentTopic || topicInput}
-                dynamicPersonas={dynamicPersonas}
-              />
-            </div>
-            <div className="lg:col-span-5">
-              <ParallaxLiveActivity
-                messages={messages}
-                activeSpeakingAgentId={activeSpeakingAgent?.agentId}
-                isRunning={isRunning}
-                currentRound={currentRound}
-                agents={config.agents}
-                onPlayVoice={handlePlayMessageAudio}
-                playingAudioKey={playingAudioKey}
-              />
-            </div>
-          </div>
-
-          {/* Real-time Audio Waveform Visualizer HUD */}
-          {(playingAudioKey || loadingAudioKey) && (
-            <ParallaxAudioVisualizer
-              isPlaying={Boolean(playingAudioKey)}
-              activeKey={playingAudioKey || loadingAudioKey}
-              activeAgentName={
-                playingAudioKey === 'full_swarm' || loadingAudioKey === 'full_swarm'
-                  ? 'Full Swarm Deliberation'
-                  : activeSpeakingAgent?.agentName || 'Swarm Speaker'
-              }
-              activeAgentId={activeSpeakingAgent?.agentId}
-              accentColor={activeSpeakingAgent?.accentColor || '#00f0ff'}
-              voiceName={
-                activeSpeakingAgent
-                  ? config.agents[activeSpeakingAgent.agentId]?.voice || getParallaxAgentVoice(activeSpeakingAgent.agentId)
-                  : undefined
-              }
-              progressText={
-                fullSwarmProgress
-                  ? `Turn ${fullSwarmProgress.current} / ${fullSwarmProgress.total}`
-                  : loadingAudioKey
-                  ? 'Synthesizing voice...'
-                  : undefined
-              }
-              onStop={stopAllAudio}
-            />
-          )}
-
-          {/* DELIBERATION STREAM: Terminal-style live stream */}
-          <ParallaxDeliberationStream
-            messages={messages}
-            agents={config.agents}
-            isRunning={isRunning}
-            currentRound={currentRound}
-            wasStoppedEarly={wasStoppedEarly}
-            specialistDeliberation={specialistDeliberation}
-            roundFilter={roundFilter}
-            groupFilter={groupFilter}
-            selectedAgentFilter={selectedAgentFilter}
-            expandedRounds={expandedRounds}
-            playingAudioKey={playingAudioKey}
-            loadingAudioKey={loadingAudioKey}
-            fullSwarmProgress={fullSwarmProgress}
-            copiedSwarmTranscript={copiedSwarmTranscript}
-            isDownloadingSwarmMp3={isDownloadingSwarmMp3}
-            rawJsonOpenMap={rawJsonOpenMap}
-            copiedRawJsonId={copiedRawJsonId}
-            currentTopic={currentTopic}
-            onSetRoundFilter={(r) => setRoundFilter(r)}
-            onSetGroupFilter={(g) => setGroupFilter(g)}
-            onSetSelectedAgentFilter={(id) => setSelectedAgentFilter(id)}
-            onToggleRoundExpand={toggleRoundExpand}
-            onPlayMessageAudio={handlePlayMessageAudio}
-            onListenToFullSwarm={handleListenToFullSwarm}
-            onDownloadSwarmMp3={handleDownloadSwarmMp3}
-            onCopyFullSwarm={handleCopyFullSwarm}
-            onStopSwarm={handleStopSwarm}
-            onToggleRawJsonView={toggleRawJsonView}
-            onCopyRawJson={handleCopyRawJson}
-            feedEndRef={feedEndRef}
-          />
-
-          {/* LIVE TELEMETRY STRIP */}
-          <ParallaxTelemetry
-            totalAgentsCount={enabledAgentsCount}
-            activeCount={isRunning ? 1 : 0}
-            completedRepliesCount={messages.length}
-            currentRound={currentRound}
-            sourcesCount={messages.reduce((acc, m) => acc + (m.toolUsed?.sourcesCount || (m.toolUsed ? 1 : 0)), 0)}
-            isRunning={isRunning}
-            isComplete={Boolean(summary)}
-            activeModel={config.specialistModel || 'Llama 3.3 70B'}
-          />
-
-          {/* FINAL SYNTHESIS: Polished Intelligence Report (Requirement 9) */}
-          {summary && (
-            <ParallaxSynthesisReport
-              summary={summary}
-              topic={currentTopic}
-              allMessages={messages}
-              onNewTopic={() => {
-                setTopicInput('');
-                setMessages([]);
-                setSummary(null);
-                setWasStoppedEarly(false);
-              }}
-              onRerun={() => handleStartSwarm(currentTopic)}
-              onExportMp3={handleDownloadSwarmMp3}
-              onSave={() => {
-                setSessions(storage.getParallaxSessions());
-              }}
-            />
-          )}
-
-          {/* Swarm Stopped Early State (Shown instead of summary when user halts) */}
-          {wasStoppedEarly && !summary && (
-            <div
-              id="parallax-stopped-early-card"
-              className="nexus-corner-bracket relative rounded-2xl overflow-hidden my-6 p-6"
-              style={{
-                background: 'linear-gradient(135deg, rgba(30, 20, 26, 0.95) 0%, rgba(18, 12, 16, 0.98) 100%)',
-                border: '1.5px solid rgba(244, 63, 94, 0.45)',
-                boxShadow: '0 12px 40px rgba(0, 0, 0, 0.6), 0 0 24px rgba(244, 63, 94, 0.15)',
-              }}
-            >
-              <div className="flex items-center justify-between flex-wrap gap-3 mb-3">
-                <div className="flex items-center gap-3">
+            {sessions.length === 0 ? (
+              <div
+                style={{
+                  padding: '40px 20px',
+                  textAlign: 'center',
+                  color: '#94a3b8',
+                  borderRadius: '12px',
+                  background: 'rgba(8, 22, 34, 0.5)',
+                  border: '1px dashed rgba(165, 207, 214, 0.2)',
+                }}
+              >
+                No archived sessions yet. Run a swarm from the Live Feed tab to see past synthesis reports here.
+              </div>
+            ) : (
+              <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(360px, 1fr))', gap: '16px' }}>
+                {sessions.map((sess) => (
                   <div
-                    className="w-9 h-9 rounded-xl flex items-center justify-center text-rose-400"
+                    key={sess.id}
+                    id={`parallax-saved-swarm-${sess.id}`}
                     style={{
-                      background: 'rgba(244, 63, 94, 0.2)',
-                      border: '1px solid rgba(244, 63, 94, 0.5)',
+                      padding: '16px',
+                      borderRadius: '12px',
+                      background: 'rgba(8, 22, 34, 0.8)',
+                      border: '1px solid rgba(97, 215, 201, 0.25)',
+                      display: 'flex',
+                      flexDirection: 'column',
+                      gap: '10px',
                     }}
                   >
-                    <Square size={16} fill="currentColor" />
-                  </div>
-                  <div>
-                    <div className="text-base font-black text-rose-200 tracking-tight font-sans">
-                      SWARM DELIBERATION HALTED EARLY
+                    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start' }}>
+                      <span style={{ fontSize: '14px', fontWeight: 800, color: '#fff', lineHeight: 1.4 }}>
+                        &ldquo;{sess.topic}&rdquo;
+                      </span>
+                      <span style={{ fontSize: '11px', color: '#94a3b8', fontFamily: 'DM Mono, monospace' }}>
+                        {new Date(sess.timestamp).toLocaleDateString()}
+                      </span>
                     </div>
-                    <div className="text-xs text-slate-400 font-mono">
-                      User intervention executed • {messages.length} agent {messages.length === 1 ? 'turn' : 'turns'} recorded
-                    </div>
-                  </div>
-                </div>
+                    {sess.summary && (
+                      <div style={{ fontSize: '12px', color: '#cbd5e1', lineHeight: 1.4 }}>
+                        <strong style={{ color: '#61d7c9' }}>Lean:</strong> {sess.summary.consensusLean}
+                      </div>
+                    )}
+                    <div
+                      style={{
+                        display: 'flex',
+                        alignItems: 'center',
+                        justifyContent: 'space-between',
+                        marginTop: '4px',
+                        flexWrap: 'wrap',
+                        gap: '8px',
+                      }}
+                    >
+                      <span style={{ fontSize: '11px', color: '#94a3b8', fontFamily: 'DM Mono, monospace' }}>
+                        {sess.messages.length} messages (3 rounds)
+                      </span>
 
-                <div className="text-xs font-mono px-3 py-1 rounded-full bg-rose-500/15 text-rose-300 border border-rose-500/40 font-bold">
-                  ● HALTED
-                </div>
+                      {confirmDeleteId === sess.id ? (
+                        <div
+                          id={`confirm-delete-swarm-prompt-${sess.id}`}
+                          style={{
+                            display: 'flex',
+                            alignItems: 'center',
+                            gap: '6px',
+                            background: 'rgba(239, 68, 68, 0.15)',
+                            border: '1px solid rgba(239, 68, 68, 0.4)',
+                            borderRadius: '6px',
+                            padding: '3px 8px',
+                          }}
+                        >
+                          <span style={{ fontSize: '11px', color: '#fca5a5', fontWeight: 600 }}>
+                            Delete this swarm discussion?
+                          </span>
+                          <button
+                            id={`confirm-delete-yes-${sess.id}`}
+                            type="button"
+                            onClick={() => {
+                              storage.deleteParallaxSession(sess.id);
+                              setSessions(storage.getParallaxSessions());
+                              setConfirmDeleteId(null);
+                            }}
+                            style={{
+                              padding: '2px 7px',
+                              borderRadius: '4px',
+                              background: '#ef4444',
+                              border: 'none',
+                              color: '#fff',
+                              fontSize: '11px',
+                              fontWeight: 700,
+                              cursor: 'pointer',
+                            }}
+                          >
+                            Delete
+                          </button>
+                          <button
+                            id={`confirm-delete-cancel-${sess.id}`}
+                            type="button"
+                            onClick={() => setConfirmDeleteId(null)}
+                            style={{
+                              padding: '2px 6px',
+                              borderRadius: '4px',
+                              background: 'rgba(255, 255, 255, 0.1)',
+                              border: '1px solid rgba(255, 255, 255, 0.2)',
+                              color: '#cbd5e1',
+                              fontSize: '11px',
+                              cursor: 'pointer',
+                            }}
+                          >
+                            Cancel
+                          </button>
+                        </div>
+                      ) : (
+                        <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                          <button
+                            type="button"
+                            onClick={() => {
+                              stopAllAudio();
+                              setStitchedSwarmBlob(null);
+                              setMessages(sess.messages);
+                              setSummary(sess.summary || null);
+                              setSpecialistDeliberation(sess.specialistDeliberation || null);
+                              setIntelligenceBriefing(sess.intelligenceBriefing || null);
+                              setHumanInjections(sess.humanInjections || []);
+                              setDevilsAdvocateTrigger(sess.devilsAdvocateTrigger || null);
+                              if (sess.debateMode) setDebateMode(sess.debateMode);
+                              setWasStoppedEarly(false);
+                              setCurrentTopic(sess.topic);
+                              setActiveTab('feed');
+                            }}
+                            style={{
+                              padding: '5px 12px',
+                              borderRadius: '6px',
+                              background: 'rgba(6, 182, 212, 0.2)',
+                              border: '1px solid rgba(6, 182, 212, 0.4)',
+                              color: '#61d7c9',
+                              fontSize: '11px',
+                              fontWeight: 700,
+                              cursor: 'pointer',
+                            }}
+                          >
+                            Load in Feed
+                          </button>
+                          <button
+                            id={`delete-individual-swarm-${sess.id}`}
+                            type="button"
+                            title="Delete this swarm discussion"
+                            aria-label="Delete this swarm discussion"
+                            onClick={() => setConfirmDeleteId(sess.id)}
+                            style={{
+                              padding: '5px 8px',
+                              borderRadius: '6px',
+                              background: 'rgba(239, 68, 68, 0.12)',
+                              border: '1px solid rgba(239, 68, 68, 0.3)',
+                              color: '#f87171',
+                              fontSize: '11px',
+                              cursor: 'pointer',
+                              display: 'flex',
+                              alignItems: 'center',
+                              justifyContent: 'center',
+                              transition: 'all 0.15s ease',
+                            }}
+                          >
+                            <Trash2 size={13} />
+                          </button>
+                        </div>
+                      )}
+                    </div>
+                  </div>
+                ))}
+              </div>
+            )}
+          </div>
+        )}
+
+        {/* TAB CONTENT: FEED */}
+        {activeTab === 'feed' && (
+          <div id="parallax-feed-view" style={{ display: 'flex', flexDirection: 'column', gap: '20px' }}>
+            {/* FEATURE 7: Debate Mode Preset Selector */}
+            <ParallaxDebateModeSelector
+              selectedMode={debateMode}
+              onSelectMode={setDebateMode}
+              disabled={isRunning}
+            />
+
+            {/* Topic Input Bar & Presets */}
+            <div
+              id="parallax-input-container"
+              style={{
+                padding: '16px 20px',
+                borderRadius: '16px',
+                background: 'linear-gradient(145deg, rgba(8, 22, 34, 0.9) 0%, rgba(4, 12, 18, 0.95) 100%)',
+                border: '1px solid rgba(97, 215, 201, 0.3)',
+                boxShadow: '0 4px 20px rgba(0, 0, 0, 0.3)',
+              }}
+            >
+              {/* Input Row */}
+              <div className="parallax-input-row" style={{ display: 'flex', gap: '10px', alignItems: 'center' }}>
+                <input
+                  id="parallax-topic-input"
+                  type="text"
+                  value={topicInput}
+                  onChange={(e) => setTopicInput(e.target.value)}
+                  onKeyDown={(e) => {
+                    if (e.key === 'Enter' && !isRunning) {
+                      e.preventDefault();
+                      handleStartSwarm();
+                    }
+                  }}
+                  disabled={isRunning}
+                  placeholder="Enter topic for 20-agent swarm discussion (e.g. Will humanoid robots replace household chores?)..."
+                  style={{
+                    flex: 1,
+                    padding: '12px 16px',
+                    borderRadius: '12px',
+                    background: 'rgba(15, 23, 42, 0.85)',
+                    border: '1.5px solid rgba(165, 207, 214, 0.25)',
+                    color: '#fff',
+                    fontSize: '14px',
+                    outline: 'none',
+                  }}
+                  className="focus:border-[#61d7c9] transition-colors"
+                />
+
+                {isRunning ? (
+                  <button
+                    id="parallax-stop-swarm-btn"
+                    type="button"
+                    onClick={handleStopSwarm}
+                    title="Immediately halt the running swarm and keep completed messages"
+                    style={{
+                      padding: '12px 24px',
+                      borderRadius: '12px',
+                      background: 'linear-gradient(135deg, rgba(239, 68, 68, 0.3) 0%, rgba(185, 28, 28, 0.4) 100%)',
+                      border: '1.5px solid rgba(239, 68, 68, 0.7)',
+                      color: '#fecdd3',
+                      fontSize: '14px',
+                      fontWeight: 700,
+                      cursor: 'pointer',
+                      display: 'flex',
+                      alignItems: 'center',
+                      gap: '8px',
+                      whiteSpace: 'nowrap',
+                      boxShadow: '0 0 16px rgba(239, 68, 68, 0.25)',
+                      transition: 'all 0.15s ease',
+                    }}
+                    className="hover:bg-red-900/60 hover:text-white active:scale-95"
+                  >
+                    <Square size={15} fill="currentColor" />
+                    Stop Swarm
+                  </button>
+                ) : (
+                  <button
+                    id="parallax-start-swarm-btn"
+                    type="button"
+                    onClick={() => handleStartSwarm()}
+                    disabled={!topicInput.trim()}
+                    style={{
+                      padding: '12px 26px',
+                      borderRadius: '12px',
+                      background: topicInput.trim()
+                        ? 'linear-gradient(135deg, #06b6d4 0%, #0891b2 100%)'
+                        : 'rgba(15, 23, 42, 0.6)',
+                      border: 'none',
+                      color: topicInput.trim() ? '#fff' : '#64748b',
+                      fontSize: '14px',
+                      fontWeight: 800,
+                      cursor: topicInput.trim() ? 'pointer' : 'not-allowed',
+                      display: 'flex',
+                      alignItems: 'center',
+                      gap: '8px',
+                      whiteSpace: 'nowrap',
+                      boxShadow: topicInput.trim() ? '0 0 20px rgba(6, 182, 212, 0.4)' : 'none',
+                      transition: 'all 0.2s ease',
+                    }}
+                    className={topicInput.trim() ? 'hover:opacity-90 active:scale-95' : ''}
+                  >
+                    <Sparkles size={16} />
+                    Start Parallax
+                  </button>
+                )}
               </div>
 
-              <p className="m-0 text-xs sm:text-sm text-slate-300 leading-relaxed font-sans mb-4">
-                The swarm execution was stopped prior to completing all 3 deliberation rounds. Completed turns up to the stop point have been preserved in the deliberation stream.
-              </p>
-
-              <div className="flex items-center gap-3 flex-wrap font-mono text-xs">
-                <button
-                  id="parallax-rerun-stopped-swarm-btn"
-                  type="button"
-                  onClick={() => handleStartSwarm(currentTopic)}
-                  className="px-4 py-2 rounded-xl bg-gradient-to-r from-cyan-500 to-blue-600 text-white font-bold cursor-pointer hover:opacity-90 active:scale-95 transition-all shadow-[0_0_15px_rgba(6,182,212,0.3)] flex items-center gap-2"
-                >
-                  <Sparkles size={14} />
-                  <span>Rerun Swarm (3 Rounds)</span>
-                </button>
-
-                <button
-                  id="parallax-clear-stopped-swarm-btn"
-                  type="button"
-                  onClick={() => {
-                    setMessages([]);
-                    setWasStoppedEarly(false);
-                    setTopicInput('');
-                    setCurrentTopic('');
-                    setStatusText('Ready to mobilize 20-agent swarm.');
-                  }}
-                  className="px-4 py-2 rounded-xl bg-white/5 border border-white/10 hover:border-cyan-400/40 text-slate-300 hover:text-white font-bold cursor-pointer transition-all flex items-center gap-2"
-                >
-                  <Trash2 size={13} />
-                  <span>Discard & New Topic</span>
-                </button>
+              {/* Starter Presets */}
+              <div className="parallax-popular-topics" style={{ marginTop: '12px', display: 'flex', alignItems: 'center', gap: '8px', flexWrap: 'wrap' }}>
+                <span style={{ fontSize: '11px', fontFamily: 'DM Mono, monospace', color: '#94a3b8', fontWeight: 600 }}>
+                  POPULAR TOPICS:
+                </span>
+                {SAMPLE_TOPICS.map((topic, i) => (
+                  <button
+                    key={i}
+                    type="button"
+                    disabled={isRunning}
+                    onClick={() => {
+                      setTopicInput(topic);
+                      handleStartSwarm(topic);
+                    }}
+                    style={{
+                      padding: '4px 10px',
+                      borderRadius: '999px',
+                      background: 'rgba(15, 23, 42, 0.7)',
+                      border: '1px solid rgba(165, 207, 214, 0.2)',
+                      color: '#cbd5e1',
+                      fontSize: '11px',
+                      cursor: isRunning ? 'not-allowed' : 'pointer',
+                      transition: 'all 0.15s ease',
+                    }}
+                    className="hover:border-[#61d7c9] hover:text-[#61d7c9]"
+                  >
+                    {topic}
+                  </button>
+                ))}
               </div>
             </div>
-          )}
-        </div>
-      )}
+
+            {/* Current Swarm Status Bar */}
+            <div
+              id="parallax-status-bar"
+              style={{
+                padding: '10px 18px',
+                borderRadius: '10px',
+                background: 'rgba(6, 16, 24, 0.75)',
+                border: '1px solid rgba(97, 215, 201, 0.2)',
+                display: 'flex',
+                alignItems: 'center',
+                justifyContent: 'space-between',
+                flexWrap: 'wrap',
+                gap: '10px',
+                fontSize: '12px',
+              }}
+            >
+              <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                <Info size={14} color="#61d7c9" />
+                <span style={{ color: '#e2e8f0', fontWeight: 600 }}>{statusText}</span>
+              </div>
+
+              <div style={{ display: 'flex', alignItems: 'center', gap: '12px', color: '#94a3b8' }}>
+                <span style={{ fontFamily: 'DM Mono, monospace' }}>
+                  <strong style={{ color: '#61d7c9' }}>{enabledAgentsCount}</strong> agents active
+                </span>
+                <span>•</span>
+                <span style={{ fontFamily: 'DM Mono, monospace', color: '#38bdf8' }}>
+                  Auto-stops after round 3
+                </span>
+              </div>
+            </div>
+
+            {/* Error Banner */}
+            {errorText && (
+              <div
+                style={{
+                  padding: '12px 16px',
+                  borderRadius: '10px',
+                  background: 'rgba(239, 68, 68, 0.15)',
+                  border: '1px solid rgba(239, 68, 68, 0.4)',
+                  color: '#f87171',
+                  fontSize: '13px',
+                }}
+              >
+                {errorText}
+              </div>
+            )}
+
+            {/* FEATURE 1: Round 0 Intelligence Briefing Collapsible Card */}
+            {intelligenceBriefing && (
+              <ParallaxIntelligenceBriefing briefing={intelligenceBriefing} defaultExpanded={true} />
+            )}
+
+            {/* MISSION CHRONOLOGY TIMELINE */}
+            <ParallaxTimeline
+              currentRound={currentRound}
+              isRunning={isRunning}
+              isComplete={Boolean(summary)}
+              wasStoppedEarly={wasStoppedEarly}
+              messages={messages}
+            />
+
+            {/* MAIN HERO — SWARM ORBITAL CORE & LIVE SWARM ACTIVITY */}
+            <div className="grid grid-cols-1 lg:grid-cols-12 gap-5 mb-2 items-start">
+              <div className="lg:col-span-7">
+                <ParallaxOrbitalCore
+                  agents={config.agents}
+                  messages={messages}
+                  currentRound={currentRound}
+                  isRunning={isRunning}
+                  activeSpeakingAgentId={activeSpeakingAgent?.agentId}
+                  selectedAgentId={selectedAgentFilter}
+                  onSelectAgent={(agentId) => setSelectedAgentFilter(agentId)}
+                  topic={currentTopic || topicInput}
+                  dynamicPersonas={dynamicPersonas}
+                />
+              </div>
+              <div className="lg:col-span-5">
+                <ParallaxLiveActivity
+                  messages={messages}
+                  activeSpeakingAgentId={activeSpeakingAgent?.agentId}
+                  isRunning={isRunning}
+                  currentRound={currentRound}
+                  agents={config.agents}
+                  onPlayVoice={handlePlayMessageAudio}
+                  playingAudioKey={playingAudioKey}
+                />
+              </div>
+            </div>
+
+            {/* Real-time Audio Waveform Visualizer HUD */}
+            {(playingAudioKey || loadingAudioKey) && (
+              <ParallaxAudioVisualizer
+                isPlaying={Boolean(playingAudioKey)}
+                activeKey={playingAudioKey || loadingAudioKey}
+                activeAgentName={
+                  playingAudioKey === 'full_swarm' || loadingAudioKey === 'full_swarm'
+                    ? 'Full Swarm Deliberation'
+                    : activeSpeakingAgent?.agentName || 'Swarm Speaker'
+                }
+                activeAgentId={activeSpeakingAgent?.agentId}
+                accentColor={activeSpeakingAgent?.accentColor || '#00f0ff'}
+                voiceName={
+                  activeSpeakingAgent
+                    ? config.agents[activeSpeakingAgent.agentId]?.voice || getParallaxAgentVoice(activeSpeakingAgent.agentId)
+                    : undefined
+                }
+                progressText={
+                  fullSwarmProgress
+                    ? `Turn ${fullSwarmProgress.current} / ${fullSwarmProgress.total}`
+                    : loadingAudioKey
+                    ? 'Synthesizing voice...'
+                    : undefined
+                }
+                onStop={stopAllAudio}
+              />
+            )}
+
+            {/* DELIBERATION STREAM: Terminal-style live stream */}
+            <ParallaxDeliberationStream
+              messages={messages}
+              agents={config.agents}
+              isRunning={isRunning}
+              currentRound={currentRound}
+              wasStoppedEarly={wasStoppedEarly}
+              specialistDeliberation={specialistDeliberation}
+              roundFilter={roundFilter}
+              groupFilter={groupFilter}
+              selectedAgentFilter={selectedAgentFilter}
+              expandedRounds={expandedRounds}
+              playingAudioKey={playingAudioKey}
+              loadingAudioKey={loadingAudioKey}
+              fullSwarmProgress={fullSwarmProgress}
+              copiedSwarmTranscript={copiedSwarmTranscript}
+              isDownloadingSwarmMp3={isDownloadingSwarmMp3}
+              rawJsonOpenMap={rawJsonOpenMap}
+              copiedRawJsonId={copiedRawJsonId}
+              currentTopic={currentTopic}
+              onSetRoundFilter={(r) => setRoundFilter(r)}
+              onSetGroupFilter={(g) => setGroupFilter(g)}
+              onSetSelectedAgentFilter={(id) => setSelectedAgentFilter(id)}
+              onToggleRoundExpand={toggleRoundExpand}
+              onPlayMessageAudio={handlePlayMessageAudio}
+              onListenToFullSwarm={handleListenToFullSwarm}
+              onDownloadSwarmMp3={handleDownloadSwarmMp3}
+              onCopyFullSwarm={handleCopyFullSwarm}
+              onStopSwarm={handleStopSwarm}
+              onToggleRawJsonView={toggleRawJsonView}
+              onCopyRawJson={handleCopyRawJson}
+              feedEndRef={feedEndRef}
+            />
+
+            {/* FEATURE 6: Conviction Shift Chart across Rounds */}
+            {messages.length > 0 && (
+              <ParallaxConvictionChart messages={messages} />
+            )}
+
+            {/* LIVE TELEMETRY STRIP */}
+            <ParallaxTelemetry
+              totalAgentsCount={enabledAgentsCount}
+              activeCount={isRunning ? 1 : 0}
+              completedRepliesCount={messages.length}
+              currentRound={currentRound}
+              sourcesCount={messages.reduce((acc, m) => acc + (m.toolUsed?.sourcesCount || (m.toolUsed ? 1 : 0)), 0)}
+              isRunning={isRunning}
+              isComplete={Boolean(summary)}
+              activeModel={config.specialistModel || 'Llama 3.3 70B'}
+            />
+
+            {/* FINAL SYNTHESIS: Polished Intelligence Report with Confidence Verdict Meter */}
+            {summary && (
+              <ParallaxSynthesisReport
+                summary={summary}
+                topic={currentTopic}
+                allMessages={messages}
+                onNewTopic={() => {
+                  setTopicInput('');
+                  setMessages([]);
+                  setSummary(null);
+                  setIntelligenceBriefing(null);
+                  setWasStoppedEarly(false);
+                }}
+                onRerun={() => handleStartSwarm(currentTopic)}
+                onExportMp3={handleDownloadSwarmMp3}
+                onSave={() => {
+                  setSessions(storage.getParallaxSessions());
+                }}
+              />
+            )}
+
+            {/* Swarm Stopped Early State (Shown instead of summary when user halts) */}
+            {wasStoppedEarly && !summary && (
+              <div
+                id="parallax-stopped-early-card"
+                className="nexus-corner-bracket relative rounded-2xl overflow-hidden my-6 p-6"
+                style={{
+                  background: 'linear-gradient(135deg, rgba(30, 20, 26, 0.95) 0%, rgba(18, 12, 16, 0.98) 100%)',
+                  border: '1.5px solid rgba(244, 63, 94, 0.45)',
+                  boxShadow: '0 12px 40px rgba(0, 0, 0, 0.6), 0 0 24px rgba(244, 63, 94, 0.15)',
+                }}
+              >
+                <div className="flex items-center justify-between flex-wrap gap-3 mb-3">
+                  <div className="flex items-center gap-3">
+                    <div
+                      className="w-9 h-9 rounded-xl flex items-center justify-center text-rose-400"
+                      style={{
+                        background: 'rgba(244, 63, 94, 0.2)',
+                        border: '1px solid rgba(244, 63, 94, 0.5)',
+                      }}
+                    >
+                      <Square size={16} fill="currentColor" />
+                    </div>
+                    <div>
+                      <div className="text-base font-black text-rose-200 tracking-tight font-sans">
+                        SWARM DELIBERATION HALTED EARLY
+                      </div>
+                      <div className="text-xs text-slate-400 font-mono">
+                        User intervention executed • {messages.length} agent {messages.length === 1 ? 'turn' : 'turns'} recorded
+                      </div>
+                    </div>
+                  </div>
+
+                  <div className="text-xs font-mono px-3 py-1 rounded-full bg-rose-500/15 text-rose-300 border border-rose-500/40 font-bold">
+                    ● HALTED
+                  </div>
+                </div>
+
+                <p className="m-0 text-xs sm:text-sm text-slate-300 leading-relaxed font-sans mb-4">
+                  The swarm execution was stopped prior to completing all 3 deliberation rounds. Completed turns up to the stop point have been preserved in the deliberation stream.
+                </p>
+
+                <div className="flex items-center gap-3 flex-wrap font-mono text-xs">
+                  <button
+                    id="parallax-rerun-stopped-swarm-btn"
+                    type="button"
+                    onClick={() => handleStartSwarm(currentTopic)}
+                    className="px-4 py-2 rounded-xl bg-gradient-to-r from-cyan-500 to-blue-600 text-white font-bold cursor-pointer hover:opacity-90 active:scale-95 transition-all shadow-[0_0_15px_rgba(6,182,212,0.3)] flex items-center gap-2"
+                  >
+                    <Sparkles size={14} />
+                    <span>Rerun Swarm (3 Rounds)</span>
+                  </button>
+
+                  <button
+                    id="parallax-clear-stopped-swarm-btn"
+                    type="button"
+                    onClick={() => {
+                      setMessages([]);
+                      setWasStoppedEarly(false);
+                      setTopicInput('');
+                      setCurrentTopic('');
+                      setStatusText('Ready to mobilize 20-agent swarm.');
+                    }}
+                    className="px-4 py-2 rounded-xl bg-white/5 border border-white/10 hover:border-cyan-400/40 text-slate-300 hover:text-white font-bold cursor-pointer transition-all flex items-center gap-2"
+                  >
+                    <Trash2 size={13} />
+                    <span>Discard & New Topic</span>
+                  </button>
+                </div>
+              </div>
+            )}
+          </div>
+        )}
+
+        {/* FEATURE 4: Floating Human Operator Injection Button */}
+        {isRunning && (
+          <button
+            id="parallax-floating-inject-btn"
+            type="button"
+            onClick={() => setIsHumanModalOpen(true)}
+            className="fixed bottom-6 right-6 z-40 px-3.5 py-2 sm:px-4 sm:py-2.5 rounded-xl bg-gradient-to-r from-amber-500 to-amber-600 hover:from-amber-400 hover:to-amber-500 text-black font-mono font-black text-xs shadow-[0_0_24px_rgba(245,158,11,0.6)] border border-amber-300 flex items-center gap-2 hover:scale-105 active:scale-95 transition-all cursor-pointer animate-pulse"
+            title="Inject a direct operator assertion or counter-argument into live deliberation"
+          >
+            <UserPlus size={15} />
+            <span>INJECT OPINION</span>
+          </button>
+        )}
+
+        {/* FEATURE 4: Human Operator Directive Injection Modal */}
+        <ParallaxHumanInjectionModal
+          isOpen={isHumanModalOpen}
+          onClose={() => setIsHumanModalOpen(false)}
+          onSubmit={handleHumanInjection}
+          currentRound={currentRound || 1}
+        />
       </div>
     </div>
   );

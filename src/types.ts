@@ -563,6 +563,8 @@ export interface ParallaxAgentConfig {
   maxTokens: number;
   voice?: string; // Edge TTS neural voice ID
   isDynamic?: boolean;
+  isHuman?: boolean;
+  isDevilsAdvocate?: boolean;
   mood?: string;
   selectionReason?: string;
 }
@@ -616,8 +618,67 @@ export interface ParallaxMessage {
   conviction?: number;
   mood?: string;
   isDynamic?: boolean;
+  isHuman?: boolean;
+  isDevilsAdvocate?: boolean;
+  replyToAgentId?: string;
+  replyToAgentName?: string;
+  replyToMessageId?: string;
+  quotedSnippet?: string;
   role?: string;
   voice?: string;
+}
+
+export interface ParallaxIntelligenceBriefing {
+  topic: string;
+  keyFacts: string[];
+  keyEntities: string[];
+  sources: Array<{ title: string; url: string; domain: string; tier?: string; reliabilityScore?: number }>;
+  liveSearchCount: number;
+  timestamp: number;
+  summary?: string;
+}
+
+export type ParallaxDebateMode =
+  | 'default'
+  | 'courtroom'
+  | 'senate'
+  | 'scifi'
+  | 'news';
+
+export interface ParallaxDebateModeConfig {
+  id: ParallaxDebateMode;
+  label: string;
+  subtitle: string;
+  iconName: string;
+  accentColor: string;
+  promptInstruction: string;
+}
+
+export interface ParallaxHumanInjection {
+  id: string;
+  text: string;
+  timestamp: number;
+  authorName: string;
+  roundInjected: number;
+}
+
+export interface ParallaxDevilsAdvocateTrigger {
+  triggered: boolean;
+  majorityLean: 'PRO' | 'CON' | 'SPECULATIVE' | 'NEUTRAL';
+  consensusStrength: number;
+  weakestClaim: string;
+  injectedMessageId?: string;
+}
+
+export interface ParallaxConfidenceVerdict {
+  proPercent: number;
+  conPercent: number;
+  undecidedPercent: number;
+  weightedScore: number; // -100 to +100
+  dominantLean: 'PRO' | 'CON' | 'UNDECIDED';
+  totalClaimsChecked: number;
+  verifiedSupportCount: number;
+  refutedCount: number;
 }
 
 export interface ParallaxEntityResolution {
@@ -685,6 +746,7 @@ export interface ParallaxEvidencePool {
   claims: ParallaxClaim[];
   searchSource: string;
   timestamp: number;
+  intelligenceBriefing?: ParallaxIntelligenceBriefing;
 }
 
 export interface ParallaxSummary {
@@ -698,6 +760,11 @@ export interface ParallaxSummary {
   valueConflicts?: string[];
   groundingLevel?: 'HIGH' | 'MODERATE' | 'SPECULATIVE' | 'REFUTED';
   evidenceSources?: Array<{ title: string; url: string; domain: string; tier: string; evidenceType?: string }>;
+  confidenceVerdict?: ParallaxConfidenceVerdict;
+  intelligenceBriefing?: ParallaxIntelligenceBriefing;
+  humanInjections?: ParallaxHumanInjection[];
+  devilsAdvocateTrigger?: ParallaxDevilsAdvocateTrigger;
+  debateMode?: ParallaxDebateMode;
 }
 
 export interface ParallaxSpecialistOpinion {
@@ -727,6 +794,10 @@ export interface ParallaxSession {
   messages: ParallaxMessage[];
   summary?: ParallaxSummary;
   specialistDeliberation?: ParallaxSpecialistDeliberation;
+  intelligenceBriefing?: ParallaxIntelligenceBriefing;
+  humanInjections?: ParallaxHumanInjection[];
+  devilsAdvocateTrigger?: ParallaxDevilsAdvocateTrigger;
+  debateMode?: ParallaxDebateMode;
 }
 
 export interface Settings {

@@ -13,6 +13,8 @@ import {
 } from 'lucide-react';
 import type { ParallaxSummary, ParallaxMessage } from '@/types';
 import { formatFullParallaxTranscript } from '@/data/parallaxVoices';
+import { ParallaxConfidenceMeter } from './ParallaxConfidenceMeter';
+import { computeConfidenceWeightedVerdict } from '@/services/parallaxEvidenceEngine';
 
 export interface ParallaxSynthesisReportProps {
   summary: ParallaxSummary;
@@ -283,6 +285,14 @@ export const ParallaxSynthesisReport: React.FC<ParallaxSynthesisReportProps> = (
               <div className="p-3.5 rounded-lg bg-cyan-950/20 border border-cyan-500/25 text-slate-100 text-sm leading-relaxed">
                 {summary.verdict}
               </div>
+
+              {/* Confidence Weighted Verdict Meter */}
+              <ParallaxConfidenceMeter
+                verdict={
+                  summary.confidenceVerdict ||
+                  computeConfidenceWeightedVerdict(summary.verifiedClaims || [], allMessages)
+                }
+              />
 
               <div className="grid grid-cols-2 sm:grid-cols-4 gap-2 font-mono text-[11px]">
                 <div className="p-2.5 rounded bg-black/40 border border-white/10 text-center">
