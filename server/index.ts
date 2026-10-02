@@ -25,6 +25,7 @@ import { devicesRouter } from './routes/devices.js';
 import { telegramRouter, setTelegramAiHandler } from './routes/telegram.js';
 import { apiCatalogRouter, getBackendApiKey } from './apiCatalog.js';
 import { documentsRouter } from './routes/documents.js';
+import { fluxSchnellRouter } from './routes/fluxSchnell.js';
 
 
 function sanitizeChatMessages(
@@ -3589,6 +3590,7 @@ async function startServer() {
   app.use(createSearchRouter({ generateSummaryAi: generateOpenRouterOrCustomAi }));
   app.use(devicesRouter);
   app.use(telegramRouter);
+  app.use(fluxSchnellRouter);
 
   // Connect Telegram AI chat handler
   setTelegramAiHandler(async (msg) => {

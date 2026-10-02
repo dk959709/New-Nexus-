@@ -988,8 +988,13 @@ export function AIProvidersSettings() {
         key: k.key.trim(),
       }));
 
-    const finalKeys: AIKeyItem[] = isSdk
-      ? []
+    const isNoKeyRequired =
+      isSdk ||
+      editingImageProvider.url?.toLowerCase().includes('flux-schnell') ||
+      editingImageProvider.name?.toLowerCase().includes('flux.1-schnell');
+
+    const finalKeys: AIKeyItem[] = isNoKeyRequired
+      ? cleanedKeys
       : cleanedKeys.length > 0
         ? cleanedKeys
         : [
@@ -2945,6 +2950,19 @@ export function AIProvidersSettings() {
                       >
                         Free Guest Sessions (No Key)
                       </span>
+                    ) : p.url?.toLowerCase().includes('flux-schnell') || p.name?.toLowerCase().includes('flux.1-schnell') ? (
+                      <span
+                        style={{
+                          fontSize: '10px',
+                          padding: '2px 8px',
+                          borderRadius: '12px',
+                          background: 'rgba(52,211,153,0.15)',
+                          color: '#34d399',
+                          fontWeight: 600,
+                        }}
+                      >
+                        Free Unlimited (Community Queue)
+                      </span>
                     ) : (
                       <>
                         <span
@@ -3021,6 +3039,10 @@ export function AIProvidersSettings() {
                     {p.requestType === 'sdk' ? (
                       <span style={{ color: '#38bdf8', display: 'flex', alignItems: 'center', gap: '4px' }}>
                         ⚡ Free Unlimited Client-Side SDK
+                      </span>
+                    ) : p.url?.toLowerCase().includes('flux-schnell') || p.name?.toLowerCase().includes('flux.1-schnell') ? (
+                      <span style={{ color: '#34d399', display: 'flex', alignItems: 'center', gap: '4px' }}>
+                        ⚡ Free Unlimited (Community Queue)
                       </span>
                     ) : (
                       <>
@@ -3756,6 +3778,25 @@ export function AIProvidersSettings() {
                 onClick={() => {
                   setEditingImageProvider({
                     ...editingImageProvider,
+                    name: 'FLUX.1-schnell (Free)',
+                    url: '/api/image/flux-schnell',
+                    requestType: 'post',
+                    model: 'black-forest-labs/FLUX.1-schnell',
+                    customHeaderName: '',
+                    requestBodyTemplate: '{\n  "prompt": "{prompt}",\n  "width": {width},\n  "height": {height}\n}',
+                    keys: [],
+                  });
+                }}
+                className="secondary-button"
+                style={{ fontSize: '11px', padding: '4px 10px', borderRadius: '5px', borderColor: 'rgba(52,211,153,0.35)', color: '#34d399' }}
+              >
+                ⚡ FLUX.1-schnell (Free)
+              </button>
+              <button
+                type="button"
+                onClick={() => {
+                  setEditingImageProvider({
+                    ...editingImageProvider,
                     name: 'Pixazo AI',
                     url: 'https://gateway.pixazo.ai/flux-1-schnell/v1/getData',
                     requestType: 'post',
@@ -4325,6 +4366,22 @@ export function AIProvidersSettings() {
                       }}
                     >
                       ⚠️ <strong>Action Required:</strong> Please replace <code>YOUR_ACCOUNT_ID</code> in the API URL with your actual Cloudflare account ID before saving. Enter your Cloudflare API Token in the Bearer token API key field below.
+                    </div>
+                  )}
+                  {(editingImageProvider.url?.toLowerCase().includes('flux-schnell') || editingImageProvider.name?.toLowerCase().includes('flux.1-schnell')) && (
+                    <div
+                      style={{
+                        marginTop: '8px',
+                        padding: '10px 12px',
+                        borderRadius: '8px',
+                        background: 'rgba(52,211,153,0.12)',
+                        border: '1px solid rgba(52,211,153,0.35)',
+                        color: '#6ee7b7',
+                        fontSize: '12px',
+                        lineHeight: 1.5,
+                      }}
+                    >
+                      ⚡ <strong>Free Unlimited (Community Queue):</strong> Calls Hugging Face Gradio Space (<code>black-forest-labs/FLUX.1-schnell</code>) via internal queue-based backend proxy. No API key required.
                     </div>
                   )}
                 </div>
