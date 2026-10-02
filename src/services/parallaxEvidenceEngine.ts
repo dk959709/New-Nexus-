@@ -575,6 +575,53 @@ export function buildAgentGroundingConstraint(
 }
 
 /**
+ * Authoritative Key Facts Block:
+ * - One line: what the topic really is (using entityResolution.canonicalEntity & entityType)
+ * - Up to 4 claims with status VERIFIED (if fewer, uses first evidenceItems titles + snippets)
+ * - Max 600 characters total
+ */
+export function buildKeyFactsBlock(
+  entityResolution?: ParallaxEntityResolution | null,
+  claims?: ParallaxClaim[] | null,
+  evidenceItems?: ParallaxEvidenceItem[] | null,
+): string {
+  const lines: string[] = [];
+
+  // One line: what the topic really is
+  if (entityResolution?.canonicalEntity) {
+    const typeLabel = entityResolution.entityType ? ` (${entityResolution.entityType})` : '';
+    lines.push(`Topic Identity: "${entityResolution.canonicalEntity}"${typeLabel}`);
+  }
+
+  // Up to 4 claims with status VERIFIED
+  const verifiedList = (claims || []).filter((c) => c.status === 'VERIFIED');
+  for (const c of verifiedList.slice(0, 4)) {
+    lines.push(`• ${c.claimText}`);
+  }
+
+  // If fewer than 4 verified claims, use the first evidenceItems titles + snippets
+  if (verifiedList.length < 4 && evidenceItems && evidenceItems.length > 0) {
+    const sorted = [...evidenceItems].sort((a, b) => b.reliabilityScore - a.reliabilityScore);
+    for (const item of sorted) {
+      if (lines.length >= 1 + 4) break;
+      const cleanSnippet = (item.snippet || '').replace(/^\[\d+\]\s*/, '').replace(/\s+/g, ' ').trim();
+      const firstSentence = cleanSnippet.split(/(?<=[.?!])\s+/)[0] || cleanSnippet;
+      const title = item.title ? item.title.trim() : item.domain;
+      const text = `${title}: ${firstSentence}`.trim();
+      if (!lines.some((l) => l.includes(title) || l.includes(firstSentence.slice(0, 30)))) {
+        lines.push(`• ${text}`);
+      }
+    }
+  }
+
+  let result = lines.join('\n');
+  if (result.length > 600) {
+    result = result.slice(0, 597).replace(/\s+\S*$/, '') + '…';
+  }
+  return result;
+}
+
+/**
  * FEATURE 1: Generates Round 0 Pre-Debate Intelligence Briefing
  */
 export function generateIntelligenceBriefing(

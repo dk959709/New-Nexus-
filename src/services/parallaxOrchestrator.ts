@@ -9,6 +9,7 @@ import {
   extractAndVerifyClaims,
   detectDeliberationConflicts,
   buildAgentGroundingConstraint,
+  buildKeyFactsBlock,
   generateIntelligenceBriefing,
   computeConfidenceWeightedVerdict,
 } from './parallaxEvidenceEngine';
@@ -762,6 +763,7 @@ export async function fetchPersonaSpecialistOpinions(
   topic: string,
   existingAgents: ParallaxAgentConfig[],
   signal?: AbortSignal,
+  topicContext?: string,
 ): Promise<ParallaxSpecialistOpinion[]> {
   const baseAgent = existingAgents[0] || DEFAULT_PARALLAX_AGENTS.veritas;
   const { provider } = resolveParallaxProviderConfig(baseAgent, 150);
@@ -785,7 +787,11 @@ FORMAT STRICTLY (No preamble, no markdown formatting):
 Specialist: [Precise Domain Specialist Title]
 Reason: [Sentence 1 explaining the specific domain gap. Sentence 2 explaining how this specialist resolves it.]`;
 
-    const userContent = `Debate Topic: "${topic}"
+    const contextLine = topicContext && topicContext.trim()
+      ? `\nWhat this topic really is: ${topicContext.trim()}. Only propose specialists relevant to this real meaning, never to a different meaning of a word in the topic.\n`
+      : '';
+
+    const userContent = `Debate Topic: "${topic}"${contextLine}
 
 From your distinct persona identity, worldview principles, and analytical role, propose the single most essential domain specialist expertise needed for this deliberation.`;
 
@@ -888,6 +894,7 @@ export async function compileMandatorySpecialists(
   opinions: ParallaxSpecialistOpinion[],
   existingAgents: ParallaxAgentConfig[],
   signal?: AbortSignal,
+  topicContext?: string,
 ): Promise<CompiledSpecialistsResult> {
   const baseAgent = existingAgents[0] || DEFAULT_PARALLAX_AGENTS.veritas;
   // Generous token headroom so the compiled JSON is never cut off
@@ -905,7 +912,11 @@ export async function compileMandatorySpecialists(
     )
     .join('\n\n');
 
-  const compilePrompt = `Debate Topic: "${topic}"
+  const contextLine = topicContext && topicContext.trim()
+    ? `\nWhat this topic really is: ${topicContext.trim()}. Only propose specialists relevant to this real meaning, never to a different meaning of a word in the topic.\n`
+    : '';
+
+  const compilePrompt = `Debate Topic: "${topic}"${contextLine}
 
 5 Core Persona Specialist Proposals:
 ${opinionLines}
@@ -1081,6 +1092,7 @@ export async function evaluateAdditionalSpecialists(
   coreAgents: ParallaxAgentConfig[],
   mandatorySpecialists: ParallaxAgentConfig[],
   signal?: AbortSignal,
+  topicContext?: string,
 ): Promise<ParallaxAgentConfig[]> {
   const baseAgent = coreAgents[0] || DEFAULT_PARALLAX_AGENTS.veritas;
   const { provider } = resolveParallaxProviderConfig(baseAgent, 200);
@@ -1097,8 +1109,12 @@ export async function evaluateAdditionalSpecialists(
   const coreSummary = coreAgents.map((a) => a.name).join(', ');
   const mandatorySummary = mandatorySpecialists.map((s) => `${s.name} (${s.role})`).join(', ');
 
+  const contextLine = topicContext && topicContext.trim()
+    ? `What this topic really is: ${topicContext.trim()}. Only propose specialists relevant to this real meaning, never to a different meaning of a word in the topic.\n`
+    : '';
+
   const prompt = `Topic: "${topic}"
-Core Swarm (20 personas): ${coreSummary}
+${contextLine}Core Swarm (20 personas): ${coreSummary}
 Mandatory Specialists: ${mandatorySummary}
 
 TASK: Decide if 1 or 2 additional specialists (max 2) are genuinely needed because of acute domain expertise gaps not covered by the 23 agents above.
@@ -1214,17 +1230,18 @@ export async function deliberateAndCreateSpecialists(
   existingAgents: ParallaxAgentConfig[],
   signal?: AbortSignal,
   onStatusUpdate?: (status: string) => void,
+  topicContext?: string,
 ): Promise<ParallaxSpecialistDeliberation> {
   onStatusUpdate?.('Pre-Round 1: Gathering specialist recommendations from VERITAS, AXIOM, SOCRATES, HARMONY, and NEXUS-9...');
-  const opinions = await fetchPersonaSpecialistOpinions(topic, existingAgents, signal);
+  const opinions = await fetchPersonaSpecialistOpinions(topic, existingAgents, signal, topicContext);
 
   onStatusUpdate?.('Pre-Round 1: Compiling top 3 distinct mandatory specialists from persona proposals...');
-  const compiledResult = await compileMandatorySpecialists(topic, opinions, existingAgents, signal);
+  const compiledResult = await compileMandatorySpecialists(topic, opinions, existingAgents, signal, topicContext);
   const selectedMandatory = compiledResult.specialists;
   const compilerReasoning = compiledResult.compilerReasoning;
 
   onStatusUpdate?.('Pre-Round 1: Evaluating if acute domain gaps require additional specialists...');
-  const additionalSpecialists = await evaluateAdditionalSpecialists(topic, existingAgents, selectedMandatory, signal);
+  const additionalSpecialists = await evaluateAdditionalSpecialists(topic, existingAgents, selectedMandatory, signal, topicContext);
 
   const allSpecialists = [...selectedMandatory, ...additionalSpecialists];
 
@@ -1245,8 +1262,9 @@ export async function analyzeTopicAndCreateTemporaryPersonas(
   topic: string,
   existingAgents: ParallaxAgentConfig[],
   signal?: AbortSignal,
+  topicContext?: string,
 ): Promise<ParallaxAgentConfig[]> {
-  const deliberation = await deliberateAndCreateSpecialists(topic, existingAgents, signal);
+  const deliberation = await deliberateAndCreateSpecialists(topic, existingAgents, signal, undefined, topicContext);
   return deliberation.allSpecialists;
 }
 
@@ -1439,6 +1457,19 @@ export function findIdeologicalOpponents(agentId: string, candidateIds: string[]
 }
 
 /**
+ * Validates reaction output completeness (at least 6 words and proper punctuation).
+ */
+function isBadReaction(text: string): boolean {
+  if (!text || text === 'No reaction recorded.') return true;
+  const words = text.trim().split(/\s+/).filter(Boolean);
+  if (words.length < 6) return true;
+  const trimmed = text.trim();
+  const lastChar = trimmed.slice(-1);
+  const validEndings = ['.', '!', '?', '"', "'", '”', '’'];
+  return !validEndings.includes(lastChar);
+}
+
+/**
  * Executes a single agent reaction turn with ultra-compact token footprint.
  */
 async function executeAgentTurn(
@@ -1453,13 +1484,15 @@ async function executeAgentTurn(
   consensusFacts?: string,
   debateMode?: ParallaxDebateMode,
   humanDirective?: ParallaxHumanInjection | null,
+  keyFacts?: string,
 ): Promise<ParallaxMessage> {
   const startTime = Date.now();
-  const { provider, model } = resolveParallaxProviderConfig(agent, 80);
+  const { provider, model } = resolveParallaxProviderConfig(agent, 160);
 
-  // Compact, high-signal system prompt with lightweight conviction & mood request (~40 tokens)
+  // Compact, high-signal system prompt with lightweight conviction & mood request
   let systemPrompt = `Persona: ${agent.name} (${agent.role}). ${agent.systemInstruction}
-Constraint: Exactly 1-2 punchy sentences (<40 words). Speak directly; no greeting, no intro, no self-naming. End with [conviction 1-10|mood emoji] (e.g. [9|🔥]).`;
+Constraint: Exactly 1-2 punchy sentences (<40 words). Speak directly; no greeting, no intro, no self-naming. End with [conviction 1-10|mood emoji] (e.g. [9|🔥]).
+Rule: Use ONLY the KEY FACTS or things you are 100% sure of. Never invent numbers, dates, tests, benchmarks or events. If a detail is not in the KEY FACTS, say it is unknown. If the KEY FACTS show the topic exists, never call it fake, a hallucination, or a different thing with the same name.`;
 
   // Apply debate mode protocol if configured
   if (debateMode && debateMode !== 'default') {
@@ -1493,6 +1526,7 @@ Constraint: Exactly 1-2 punchy sentences (<40 words). Speak directly; no greetin
   }
 
   let userPrompt = '';
+  const keyFactsBlock = keyFacts && keyFacts.trim() ? `\n[KEY FACTS]:\n${keyFacts}\n` : '';
   const groundingBlock = sharedGroundingBlock && sharedGroundingBlock.length <= 350 ? `\n${sharedGroundingBlock}\n` : '';
   const humanDirectiveBlock = humanDirective ? `\n[HUMAN OPERATOR DIRECTIVE (${humanDirective.authorName})]: "${humanDirective.text}"\nDirectly address this operator challenge in your response.\n` : '';
 
@@ -1505,16 +1539,16 @@ Constraint: Exactly 1-2 punchy sentences (<40 words). Speak directly; no greetin
     // =========================================================================
     if (agent.id === 'veritas') {
       if (veritasGrounding && !veritasGrounding.failed && veritasGrounding.committedFact) {
-        userPrompt = `Topic: "${topic}"${humanDirectiveBlock}\n\n[Verified Grounding Fact (${veritasGrounding.searchSource})]:\n"${veritasGrounding.committedFact}"\n\nState your opening 1-2 sentence perspective grounded strictly on this verified fact as VERITAS.`;
+        userPrompt = `Topic: "${topic}"${keyFactsBlock}${humanDirectiveBlock}\n\n[Verified Grounding Fact (${veritasGrounding.searchSource})]:\n"${veritasGrounding.committedFact}"\n\nState your opening 1-2 sentence perspective grounded strictly on this verified fact as VERITAS.`;
       } else {
-        userPrompt = `Topic: "${topic}"${humanDirectiveBlock}\n\nProvide your initial 1-2 sentence perspective on this topic based on your fact-based, skeptical analysis as VERITAS.`;
+        userPrompt = `Topic: "${topic}"${keyFactsBlock}${humanDirectiveBlock}\n\nProvide your initial 1-2 sentence perspective on this topic based on your fact-based, skeptical analysis as VERITAS.`;
       }
     } else {
       const constraintLine = groundingConstraint ? `[Grounding Baseline]: ${groundingConstraint}\n\n` : '';
       if (agent.isDynamic) {
-        userPrompt = `Topic: "${topic}"${groundingBlock}${humanDirectiveBlock}\n${constraintLine}Provide your initial 1-2 sentence perspective on this topic strictly applying your specialized domain expertise as ${agent.name} (${agent.role}).`;
+        userPrompt = `Topic: "${topic}"${keyFactsBlock}${groundingBlock}${humanDirectiveBlock}\n${constraintLine}Provide your initial 1-2 sentence perspective on this topic strictly applying your specialized domain expertise as ${agent.name} (${agent.role}).`;
       } else {
-        userPrompt = `Topic: "${topic}"${groundingBlock}${humanDirectiveBlock}\n${constraintLine}Provide your initial 1-2 sentence perspective on this topic based on your archetype.`;
+        userPrompt = `Topic: "${topic}"${keyFactsBlock}${groundingBlock}${humanDirectiveBlock}\n${constraintLine}Provide your initial 1-2 sentence perspective on this topic based on your archetype.`;
       }
     }
   } else if (round === 2) {
@@ -1526,13 +1560,13 @@ Constraint: Exactly 1-2 punchy sentences (<40 words). Speak directly; no greetin
     if (primaryOpponent) {
       const oppQuote = primaryOpponent.text.length > 80 ? primaryOpponent.text.slice(0, 77) + '…' : primaryOpponent.text;
       const veritasFact = agent.id === 'veritas' && veritasGrounding && !veritasGrounding.failed && veritasGrounding.committedFact ? `[Committed Fact]: "${veritasGrounding.committedFact}"\n` : '';
-      userPrompt = `Topic: "${topic}"${groundingBlock}${humanDirectiveBlock}\n${veritasFact}${constraintLine}[Cross-Examination Target]: @${primaryOpponent.agentName} argued: "${oppQuote}"\n\nRebuttal Requirement: Directly cross-examine @${primaryOpponent.agentName}, explicitly mention @${primaryOpponent.agentName}, and challenge their core thesis in 1-2 sharp sentences.`;
+      userPrompt = `Topic: "${topic}"${keyFactsBlock}${groundingBlock}${humanDirectiveBlock}\n${veritasFact}${constraintLine}[Cross-Examination Target]: @${primaryOpponent.agentName} argued: "${oppQuote}"\n\nRebuttal Requirement: Directly cross-examine @${primaryOpponent.agentName}, explicitly mention @${primaryOpponent.agentName}, and challenge their core thesis in 1-2 sharp sentences.`;
     } else {
       const peerBullets = peersSample
         .slice(0, 2)
         .map((p) => `• ${p.agentName}: "${p.text.length > 100 ? p.text.slice(0, 97) + '…' : p.text}"`)
         .join('\n');
-      userPrompt = `Topic: "${topic}"${groundingBlock}${humanDirectiveBlock}\n${constraintLine}Peer points from Round 1:\n${peerBullets}\n\nRebut the view you most disagree with in 1-2 sharp sentences as ${agent.name}.`;
+      userPrompt = `Topic: "${topic}"${keyFactsBlock}${groundingBlock}${humanDirectiveBlock}\n${constraintLine}Peer points from Round 1:\n${peerBullets}\n\nRebut the view you most disagree with in 1-2 sharp sentences as ${agent.name}.`;
     }
   } else {
     // =========================================================================
@@ -1550,11 +1584,11 @@ Constraint: Exactly 1-2 punchy sentences (<40 words). Speak directly; no greetin
     const factsLine = consensusFacts && consensusFacts.length <= 200 ? `\nVERIFIED FACTS: ${consensusFacts}\n` : '';
 
     if (agent.id === 'veritas' && veritasGrounding && !veritasGrounding.failed && veritasGrounding.committedFact) {
-      userPrompt = `Topic: "${topic}"${groundingBlock}${humanDirectiveBlock}\n${factsLine}[Committed Verified Fact]: "${veritasGrounding.committedFact}"\n\nPeer points from Round 2:\n${peerBullets}\n\nDeliver your final 1-2 sentence position as VERITAS, upholding your verified fact.`;
+      userPrompt = `Topic: "${topic}"${keyFactsBlock}${groundingBlock}${humanDirectiveBlock}\n${factsLine}[Committed Verified Fact]: "${veritasGrounding.committedFact}"\n\nPeer points from Round 2:\n${peerBullets}\n\nDeliver your final 1-2 sentence position as VERITAS, upholding your verified fact.`;
     } else if (agent.isDynamic) {
-      userPrompt = `Topic: "${topic}"${groundingBlock}${humanDirectiveBlock}\n${factsLine}${constraintLine}Peer points from Round 2:\n${peerBullets}\n\nDeliver your final 1-2 sentence position as ${agent.name} strictly applying your specialized domain expertise as ${agent.role}.`;
+      userPrompt = `Topic: "${topic}"${keyFactsBlock}${groundingBlock}${humanDirectiveBlock}\n${factsLine}${constraintLine}Peer points from Round 2:\n${peerBullets}\n\nDeliver your final 1-2 sentence position as ${agent.name} strictly applying your specialized domain expertise as ${agent.role}.`;
     } else {
-      userPrompt = `Topic: "${topic}"${groundingBlock}${humanDirectiveBlock}\n${factsLine}${constraintLine}Peer points from Round 2:\n${peerBullets}\n\nDeliver your final 1-2 sentence position as ${agent.name}.`;
+      userPrompt = `Topic: "${topic}"${keyFactsBlock}${groundingBlock}${humanDirectiveBlock}\n${factsLine}${constraintLine}Peer points from Round 2:\n${peerBullets}\n\nDeliver your final 1-2 sentence position as ${agent.name}.`;
     }
   }
 
@@ -1571,14 +1605,51 @@ Constraint: Exactly 1-2 punchy sentences (<40 words). Speak directly; no greetin
       ],
       providerConfig: provider,
       temperature: 0.75,
-      maxTokens: 80,
-      timeoutMs: 14000,
+      maxTokens: 160,
+      timeoutMs: 20000,
       signal,
     });
 
     const rawText = response.text || response.content || '';
-    const { cleanText: rawWithoutMeta, conviction, mood } = parseConvictionAndMood(rawText, agent.id, agent.mood);
+    const { cleanText: rawWithoutMeta, conviction: initConviction, mood: initMood } = parseConvictionAndMood(rawText, agent.id, agent.mood);
+    let conviction = initConviction;
+    let mood = initMood;
     let cleaned = cleanReactionText(rawWithoutMeta, agent.name);
+
+    // PROBLEM 3 FIX: Check response completeness. If truncated (<6 words or missing punctuation), retry once with maxTokens: 260
+    if (isBadReaction(cleaned) && !signal?.aborted) {
+      console.log(`[Parallax Quality Check] Agent "${agent.name}" R${round} response incomplete ("${cleaned}"). Retrying once with maxTokens: 260...`);
+      try {
+        const retryResponse = await api.jarvisAgentCall({
+          agentId: `parallax_${agent.id}_r${round}_retry`,
+          messages: [
+            { role: 'system', content: systemPrompt },
+            { role: 'user', content: userPrompt },
+          ],
+          providerConfig: provider,
+          temperature: 0.75,
+          maxTokens: 260,
+          timeoutMs: 25000,
+          signal,
+        });
+        const retryRaw = retryResponse.text || retryResponse.content || '';
+        const retryParsed = parseConvictionAndMood(retryRaw, agent.id, agent.mood);
+        const retryCleaned = cleanReactionText(retryParsed.cleanText, agent.name);
+
+        if (!isBadReaction(retryCleaned)) {
+          cleaned = retryCleaned;
+          conviction = retryParsed.conviction;
+          mood = retryParsed.mood || mood;
+        } else {
+          // If retry is still bad, use deterministic fallback
+          cleaned = getFallbackReaction(agent, round, topic);
+        }
+      } catch (retryErr) {
+        if (signal?.aborted) throw retryErr;
+        console.warn(`[Parallax Quality Check] Retry failed for "${agent.name}", using fallback:`, retryErr);
+        cleaned = getFallbackReaction(agent, round, topic);
+      }
+    }
 
     // If Round 2 and agent did not include @OpponentName in text, prepend it naturally
     if (round === 2 && primaryOpponent && !cleaned.toLowerCase().includes(`@${primaryOpponent.agentName.toLowerCase()}`)) {
@@ -1870,6 +1941,15 @@ export async function generateParallaxSummary(
     ? `\nEmpirical Verified Claims:\n${verifiedClaims.map((c) => `• [${c.status}] ${c.claimText}`).join('\n')}\n`
     : '';
 
+  const hasEvidence = Boolean(
+    (evidenceItems && evidenceItems.length > 0) ||
+    (verifiedClaims && verifiedClaims.length > 0)
+  );
+
+  const evidenceInstruction = hasEvidence
+    ? 'Start with a Key Facts part (what it is, release date, who can use it, key numbers, and the main doubts), using ONLY the evidence. Then summarize the debate. Do not add facts that are not in the evidence.'
+    : 'Base synthesis strictly on empirical reality and persona claims above.';
+
   console.log(
     `[Parallax Synthesizer] Generating summary report for: "${topic}". Input excerpts (${excerpts.length} quotes):\n${excerpts.join('\n')}`,
   );
@@ -1880,7 +1960,7 @@ Representative excerpts from Rounds 1-3:
 ${excerpts.join('\n')}
 
 Instructions:
-1. Base synthesis strictly on empirical reality and persona claims above.
+1. ${evidenceInstruction}
 2. In "highlights", write 4 concise bullet points (1 sentence each) citing specific personas and their arguments.
 3. In "verdict", write 1 objective sentence summarizing the swarm's actual final consensus or division, explicitly respecting verified facts vs speculation.
 4. In "consensusLean", provide a 2-4 word descriptor (e.g. "Empirically Grounded Lean", "Cautiously Split", "Factually Polarized", "Precautionary Consensus").
@@ -2073,6 +2153,21 @@ export async function runParallaxSwarm(options: ParallaxRunOptions): Promise<voi
 
     onStatusUpdate?.(`Evidence Grounding: ${evidenceItems.length} sources verified via ${searchSource}. Grounding 23-agent swarm...`);
 
+    // Build authoritative Key Facts block for all agents across Rounds 1, 2, 3 (max 600 chars)
+    const keyFacts = buildKeyFactsBlock(entityResolution, verifiedClaims, evidenceItems);
+
+    // Compute lean topic context for specialist compilation (max 400 chars)
+    let topicContext = '';
+    if (entityResolution && entityResolution.canonicalEntity) {
+      topicContext = `Identity: "${entityResolution.canonicalEntity}" (${entityResolution.entityType || 'entity'}).`;
+    }
+    if (keyFacts) {
+      topicContext = topicContext ? `${topicContext} Facts: ${keyFacts}` : keyFacts;
+    }
+    if (topicContext.length > 400) {
+      topicContext = topicContext.slice(0, 397).replace(/\s+\S*$/, '') + '…';
+    }
+
     // -------------------------------------------------------------
     // DYNAMIC SPECIALIST CREATION (2-STEP HYBRID ARCHITECTURE):
     // 1. 5-Persona Opinion Step (VERITAS, AXIOM, SOCRATES, HARMONY, NEXUS-9)
@@ -2082,7 +2177,7 @@ export async function runParallaxSwarm(options: ParallaxRunOptions): Promise<voi
     let specialistDeliberation: ParallaxSpecialistDeliberation | null = null;
     let dynamicAgents: ParallaxAgentConfig[] = [];
     try {
-      specialistDeliberation = await deliberateAndCreateSpecialists(topic, enabledAgents, signal, onStatusUpdate);
+      specialistDeliberation = await deliberateAndCreateSpecialists(topic, enabledAgents, signal, onStatusUpdate, topicContext);
       dynamicAgents = specialistDeliberation.allSpecialists;
 
       options.onSpecialistDeliberation?.(specialistDeliberation);
@@ -2248,6 +2343,7 @@ export async function runParallaxSwarm(options: ParallaxRunOptions): Promise<voi
             consensusFacts,
             options.debateMode,
             activeHumanDirective,
+            keyFacts,
           );
 
           return msg;
@@ -2305,7 +2401,7 @@ export async function runParallaxSwarm(options: ParallaxRunOptions): Promise<voi
               enabled: true,
               systemInstruction: `You are DIABOLUS, the sworn contrarian Devil's Advocate. Aggressively attack the dominant ${majorityLean} consensus on "${topic}". Focus your critique on the majority's weakest claim: "${weakestClaimText}". Deliver 1-2 piercing, uncompromising sentences. End with [10|🔥].`,
               selectionReason: `Auto-injected due to ${consensusStrength}% consensus polarization to eliminate groupthink.`,
-              maxTokens: 100,
+              maxTokens: 160,
               voice: 'en-GB-RyanNeural',
               isDynamic: true,
               isDevilsAdvocate: true,
@@ -2325,6 +2421,7 @@ export async function runParallaxSwarm(options: ParallaxRunOptions): Promise<voi
                 consensusFacts,
                 options.debateMode,
                 null,
+                keyFacts,
               );
               contrarianMsg.isDevilsAdvocate = true;
               roundMessages.push(contrarianMsg);
