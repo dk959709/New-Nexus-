@@ -51,65 +51,125 @@ export function classifyEvidenceSource(url: string, title: string, snippet: stri
   let domain = 'web';
   try {
     if (url) {
-      domain = new URL(url).hostname.replace(/^www\./, '');
+      const validUrl = url.startsWith('http://') || url.startsWith('https://') ? url : `https://${url}`;
+      domain = new URL(validUrl).hostname.replace(/^www\./, '');
     }
   } catch {
-    domain = 'web';
+    domain = url || 'web';
   }
 
   const lowerDomain = domain.toLowerCase();
+  const lowerUrl = (url || '').toLowerCase();
   const lowerTitle = title.toLowerCase();
   const lowerSnippet = snippet.toLowerCase();
   const combined = `${lowerTitle} ${lowerSnippet}`;
 
-  // High authority tier: official papers, wikipedia, premier tech/news journals, government/academic domains
+  // Helper matcher
+  const matches = (...patterns: string[]) =>
+    patterns.some((p) => lowerDomain.includes(p) || lowerUrl.includes(p));
+
+  // 1. Forums & Social media: Tier LOW
   if (
-    lowerDomain.includes('arxiv.org') ||
-    lowerDomain.includes('.edu') ||
-    lowerDomain.includes('.gov') ||
-    lowerDomain.includes('wikipedia.org') ||
-    lowerDomain.includes('openai.com') ||
-    lowerDomain.includes('anthropic.com') ||
-    lowerDomain.includes('deepmind.google') ||
-    lowerDomain.includes('googleblog.com') ||
-    lowerDomain.includes('nature.com') ||
-    lowerDomain.includes('science.org') ||
-    lowerDomain.includes('reuters.com') ||
-    lowerDomain.includes('bloomberg.com') ||
-    lowerDomain.includes('techcrunch.com') ||
-    lowerDomain.includes('theverge.com') ||
-    lowerDomain.includes('wired.com') ||
-    lowerDomain.includes('github.com')
+    matches(
+      'reddit.com',
+      'youtube.com',
+      'linkedin.com',
+      'x.com',
+      'twitter.com',
+      'facebook.com',
+      'quora.com',
+      'tiktok.com',
+      'instagram.com',
+    )
+  ) {
+    let evidenceType: ParallaxEvidenceType = 'general';
+    if (combined.includes('rumor') || combined.includes('leak')) {
+      evidenceType = 'rumor';
+    } else if (combined.includes('speculat') || combined.includes('could') || combined.includes('hypothetical')) {
+      evidenceType = 'speculation';
+    }
+    return { domain, reliabilityScore: 0.45, reliabilityTier: 'low', evidenceType };
+  }
+
+  // 2. Official company / product sites, academic, and government sites: Tier HIGH
+  if (
+    matches(
+      'blog.google',
+      'deepmind.google',
+      'google.com',
+      'googleblog.com',
+      'openai.com',
+      'anthropic.com',
+      'microsoft.com',
+      'meta.com',
+      'apple.com',
+      'x.ai',
+      'github.com',
+      'huggingface.co',
+      'mistral.ai',
+      'cohere.com',
+      'arxiv.org',
+      '.edu',
+      '.gov',
+      'wikipedia.org',
+      'nature.com',
+      'science.org',
+    )
   ) {
     let evidenceType: ParallaxEvidenceType = 'news';
-    if (lowerDomain.includes('arxiv.org') || lowerDomain.includes('.edu') || lowerDomain.includes('nature.com')) {
+    if (matches('arxiv.org', '.edu', 'nature.com', 'science.org')) {
       evidenceType = 'academic';
     } else if (
-      lowerDomain.includes('openai.com') ||
-      lowerDomain.includes('anthropic.com') ||
-      lowerDomain.includes('googleblog.com') ||
-      lowerDomain.includes('github.com')
+      matches(
+        'openai.com',
+        'anthropic.com',
+        'blog.google',
+        'deepmind.google',
+        'googleblog.com',
+        'github.com',
+        'microsoft.com',
+        'apple.com',
+        'x.ai',
+        'meta.com',
+        'mistral.ai',
+      )
     ) {
       evidenceType = 'official_release';
     } else if (combined.includes('benchmark') || combined.includes('eval') || combined.includes('score') || combined.includes('swe-bench')) {
       evidenceType = 'benchmark';
     }
 
-    return { domain, reliabilityScore: 0.92, reliabilityTier: 'high', evidenceType };
+    return { domain, reliabilityScore: 0.95, reliabilityTier: 'high', evidenceType };
   }
 
-  // Medium authority tier: reputable tech blogs, news aggregators, recognized publications
+  // 3. Major news & tech journalism sites: Tier MEDIUM (or higher)
   if (
-    lowerDomain.includes('medium.com') ||
-    lowerDomain.includes('substack.com') ||
-    lowerDomain.includes('venturebeat.com') ||
-    lowerDomain.includes('arstechnica.com') ||
-    lowerDomain.includes('tomshardware.com') ||
-    lowerDomain.includes('zdnet.com') ||
-    lowerDomain.includes('forbes.com') ||
-    lowerDomain.includes('wsj.com') ||
-    lowerDomain.includes('ft.com') ||
-    lowerDomain.includes('economist.com')
+    matches(
+      'reuters.com',
+      'bloomberg.com',
+      'techcrunch.com',
+      'theverge.com',
+      'engadget.com',
+      'nytimes.com',
+      'cnbc.com',
+      'wsj.com',
+      'bbc.com',
+      'bbc.co.uk',
+      '9to5google.com',
+      'wired.com',
+      'arstechnica.com',
+      'venturebeat.com',
+      'zdnet.com',
+      'forbes.com',
+      'ft.com',
+      'economist.com',
+      'theguardian.com',
+      'apnews.com',
+      'washingtonpost.com',
+      'tomshardware.com',
+      'medium.com',
+      'substack.com',
+    )
   ) {
     let evidenceType: ParallaxEvidenceType = 'news';
     if (combined.includes('rumor') || combined.includes('leak') || combined.includes('unconfirmed')) {
@@ -120,18 +180,18 @@ export function classifyEvidenceSource(url: string, title: string, snippet: stri
       evidenceType = 'benchmark';
     }
 
-    return { domain, reliabilityScore: 0.75, reliabilityTier: 'medium', evidenceType };
+    return { domain, reliabilityScore: 0.80, reliabilityTier: 'medium', evidenceType };
   }
 
-  // Low / Speculation tier: forums, social, unverified rumor boards
+  // Default web tier
   let evidenceType: ParallaxEvidenceType = 'general';
-  if (combined.includes('rumor') || combined.includes('leak') || lowerDomain.includes('reddit.com') || lowerDomain.includes('x.com')) {
+  if (combined.includes('rumor') || combined.includes('leak')) {
     evidenceType = 'rumor';
   } else if (combined.includes('speculat') || combined.includes('could') || combined.includes('hypothetical')) {
     evidenceType = 'speculation';
   }
 
-  return { domain, reliabilityScore: 0.5, reliabilityTier: 'low', evidenceType };
+  return { domain, reliabilityScore: 0.60, reliabilityTier: 'medium', evidenceType };
 }
 
 /**
@@ -199,10 +259,15 @@ export async function resolveParallaxEntity(
       const prompt = `Analyze this query for entities (model names, companies, products, acronyms, or typos):
 Query: "${cleanTopic}"
 
+CRITICAL INSTRUCTIONS:
+- Keep the full product name with its version or variant (example: 'Gemini 4 Argon', not 'Gemini').
+- Fix typos in the topic, for example 'letest' means 'latest'.
+- Identify the canonical entity and its true entity type.
+
 Output JSON only:
 {
   "hasEntity": true | false,
-  "canonicalEntity": "Standardized canonical name or empty",
+  "canonicalEntity": "Standardized full canonical name with version/variant, or clean topic if general",
   "entityType": "model" | "company" | "product" | "technology" | "person" | "concept" | "policy" | "general",
   "confidence": 0.0 to 1.0,
   "aliases": ["alias1", "alias2"],
@@ -372,7 +437,7 @@ export async function extractAndVerifyClaims(
     const verifierAgent = allAgents.find((a) => a.id === 'veritas') || allAgents[0] || { id: 'veritas', name: 'VERITAS', role: 'Fact Verification', systemInstruction: '', maxTokens: 250, enabled: true, providerId: 'existing', modelId: 'deepseek/deepseek-chat', initials: 'VR', accentColor: '#06b6d4' };
     const { provider } = resolveParallaxProviderConfig(verifierAgent, 250);
 
-    const prompt = `Task: Extract 2-3 specific empirical claims from the topic and verify them against the provided evidence.
+    const prompt = `Task: Extract up to 5 distinct empirical claims from the topic and verify them against the provided evidence, each one short and specific (release date, who can access it now, key numbers, who says what, main doubts).
 Topic: "${topic}"
 ${entityResolution?.canonicalEntity ? `Resolved Entity: "${entityResolution.canonicalEntity}"` : ''}
 
@@ -390,7 +455,7 @@ Output strict JSON only:
 {
   "claims": [
     {
-      "claimText": "Crisp statement of fact or premise (<25 words)",
+      "claimText": "Crisp statement of fact or premise (<25 words, keep numbers/dates)",
       "claimType": "existence" | "release" | "benchmark" | "attribution" | "capability" | "policy" | "speculation",
       "status": "VERIFIED" | "PLAUSIBLE" | "DISPUTED" | "REFUTED" | "UNVERIFIED",
       "confidence": 0.0 to 1.0,
@@ -404,8 +469,8 @@ Output strict JSON only:
       messages: [{ role: 'user', content: prompt }],
       providerConfig: provider,
       temperature: 0.15,
-      maxTokens: 250,
-      timeoutMs: 12000,
+      maxTokens: 380,
+      timeoutMs: 14000,
       signal,
     });
 
@@ -416,7 +481,7 @@ Output strict JSON only:
     if (match) {
       const parsed = JSON.parse(match[0]);
       if (Array.isArray(parsed.claims) && parsed.claims.length > 0) {
-        return parsed.claims.slice(0, 3).map((c: Record<string, unknown>, idx: number) => {
+        return parsed.claims.slice(0, 5).map((c: Record<string, unknown>, idx: number) => {
           const rawStatus = String(c.status || '').toUpperCase();
           const validStatus: ParallaxVerificationStatus =
             rawStatus === 'VERIFIED' || rawStatus === 'PLAUSIBLE' || rawStatus === 'DISPUTED' || rawStatus === 'REFUTED'
@@ -577,7 +642,7 @@ export function buildAgentGroundingConstraint(
 /**
  * Authoritative Key Facts Block:
  * - One line: what the topic really is (using entityResolution.canonicalEntity & entityType)
- * - Up to 4 claims with status VERIFIED (if fewer, uses first evidenceItems titles + snippets)
+ * - Up to 5 claims with status VERIFIED / PLAUSIBLE (shortened, preserving numbers)
  * - Max 600 characters total
  */
 export function buildKeyFactsBlock(
@@ -593,21 +658,32 @@ export function buildKeyFactsBlock(
     lines.push(`Topic Identity: "${entityResolution.canonicalEntity}"${typeLabel}`);
   }
 
-  // Up to 4 claims with status VERIFIED
-  const verifiedList = (claims || []).filter((c) => c.status === 'VERIFIED');
-  for (const c of verifiedList.slice(0, 4)) {
-    lines.push(`• ${c.claimText}`);
+  // Up to 5 claims with status VERIFIED (or first verified/plausible claims, up to 5)
+  const allClaims = claims || [];
+  const verifiedList = allClaims.filter((c) => c.status === 'VERIFIED');
+  const otherClaims = allClaims.filter((c) => c.status !== 'VERIFIED');
+  const combinedClaims = [...verifiedList, ...otherClaims].slice(0, 5);
+
+  for (const c of combinedClaims) {
+    let claimText = c.claimText.trim();
+    if (claimText.length > 95) {
+      claimText = claimText.slice(0, 92).replace(/\s+\S*$/, '') + '…';
+    }
+    lines.push(`• ${claimText}`);
   }
 
-  // If fewer than 4 verified claims, use the first evidenceItems titles + snippets
-  if (verifiedList.length < 4 && evidenceItems && evidenceItems.length > 0) {
+  // If fewer than 5 claims, use the first evidenceItems titles + snippets
+  if (combinedClaims.length < 5 && evidenceItems && evidenceItems.length > 0) {
     const sorted = [...evidenceItems].sort((a, b) => b.reliabilityScore - a.reliabilityScore);
     for (const item of sorted) {
-      if (lines.length >= 1 + 4) break;
+      if (lines.length >= 1 + 5) break;
       const cleanSnippet = (item.snippet || '').replace(/^\[\d+\]\s*/, '').replace(/\s+/g, ' ').trim();
       const firstSentence = cleanSnippet.split(/(?<=[.?!])\s+/)[0] || cleanSnippet;
       const title = item.title ? item.title.trim() : item.domain;
-      const text = `${title}: ${firstSentence}`.trim();
+      let text = `${title}: ${firstSentence}`.trim();
+      if (text.length > 95) {
+        text = text.slice(0, 92).replace(/\s+\S*$/, '') + '…';
+      }
       if (!lines.some((l) => l.includes(title) || l.includes(firstSentence.slice(0, 30)))) {
         lines.push(`• ${text}`);
       }

@@ -757,7 +757,7 @@ const PERSONA_OPINION_TARGETS: PersonaOpinionTarget[] = [
  * VERITAS 🧠, AXIOM 📐, SOCRATES 🤔, HARMONY 🕊️, and NEXUS-9 ⚖️ each independently
  * give a rich, 2-sentence reasoned opinion on what specialist expertise this specific topic needs
  * grounded in their distinctive persona worldview and system prompt identity.
- * Token budget: ~150-180 input tokens, ~80-100 output tokens each.
+ * Token budget: ~180 input tokens, ~120 output tokens each (maxTokens: 280).
  */
 export async function fetchPersonaSpecialistOpinions(
   topic: string,
@@ -766,11 +766,11 @@ export async function fetchPersonaSpecialistOpinions(
   topicContext?: string,
 ): Promise<ParallaxSpecialistOpinion[]> {
   const baseAgent = existingAgents[0] || DEFAULT_PARALLAX_AGENTS.veritas;
-  const { provider } = resolveParallaxProviderConfig(baseAgent, 150);
+  const { provider } = resolveParallaxProviderConfig(baseAgent, 280);
 
   const opinionPromises = PERSONA_OPINION_TARGETS.map(async (target) => {
     const matchedAgent = existingAgents.find((a) => a.id.toLowerCase() === target.id) || baseAgent;
-    const targetProvider = resolveParallaxProviderConfig(matchedAgent, 150).provider || provider;
+    const targetProvider = resolveParallaxProviderConfig(matchedAgent, 280).provider || provider;
 
     const sysContent = `${target.detailedPersona}
 
@@ -795,24 +795,9 @@ Reason: [Sentence 1 explaining the specific domain gap. Sentence 2 explaining ho
 
 From your distinct persona identity, worldview principles, and analytical role, propose the single most essential domain specialist expertise needed for this deliberation.`;
 
-    try {
-      const res = await api.jarvisAgentCall({
-        agentId: `opinion_${target.id}`,
-        messages: [
-          { role: 'system', content: sysContent },
-          { role: 'user', content: userContent },
-        ],
-        providerConfig: targetProvider,
-        temperature: 0.35,
-        maxTokens: 150,
-        timeoutMs: 14000,
-        signal,
-      });
-
-      const raw = (res.text || res.content || '').trim();
+    const parseOpinionLines = (raw: string): { specialist: string; reason: string } => {
       let specialist = '';
       let reason = '';
-
       const specMatch = raw.match(/Specialist:\s*([^\n\r]+)/i);
       const reasonMatch = raw.match(/Reason:\s*([\s\S]+)$/i);
 
@@ -829,8 +814,61 @@ From your distinct persona identity, worldview principles, and analytical role, 
           specialist = specialist || lines[0].replace(/^[^:]*:\s*/, '').replace(/[*_#`[\]]/g, '').trim();
           reason = reason || lines.slice(1).join(' ').replace(/^Reason:\s*/i, '').replace(/[*_#`]/g, '').trim();
         } else if (lines.length === 1) {
-          specialist = specialist || target.defaultSpecialist;
-          reason = reason || lines[0];
+          specialist = specialist || lines[0].replace(/^[^:]*:\s*/, '').replace(/[*_#`[\]]/g, '').trim();
+        }
+      }
+      return { specialist, reason };
+    };
+
+    const isCutOrMissing = (spec: string, reas: string): boolean => {
+      if (!spec || !reas) return true;
+      const specWords = spec.trim().split(/\s+/).filter(Boolean).length;
+      const reasonWords = reas.trim().split(/\s+/).filter(Boolean).length;
+      return specWords < 1 || reasonWords < 6;
+    };
+
+    try {
+      const res = await api.jarvisAgentCall({
+        agentId: `opinion_${target.id}`,
+        messages: [
+          { role: 'system', content: sysContent },
+          { role: 'user', content: userContent },
+        ],
+        providerConfig: targetProvider,
+        temperature: 0.35,
+        maxTokens: 280,
+        timeoutMs: 16000,
+        signal,
+      });
+
+      const raw = (res.text || res.content || '').trim();
+      let { specialist, reason } = parseOpinionLines(raw);
+
+      // PROBLEM 5 FIX: If "Specialist:" or "Reason:" line is missing or under 6 words, retry once
+      if (isCutOrMissing(specialist, reason) && !signal?.aborted) {
+        console.warn(`[Parallax Specialist Opinions] ${target.name} proposal cut or incomplete ("${specialist}" / "${reason}"). Retrying once with maxTokens: 280...`);
+        try {
+          const retryRes = await api.jarvisAgentCall({
+            agentId: `opinion_${target.id}_retry`,
+            messages: [
+              { role: 'system', content: sysContent },
+              { role: 'user', content: userContent },
+            ],
+            providerConfig: targetProvider,
+            temperature: 0.35,
+            maxTokens: 280,
+            timeoutMs: 20000,
+            signal,
+          });
+          const retryRaw = (retryRes.text || retryRes.content || '').trim();
+          const retryParsed = parseOpinionLines(retryRaw);
+          if (!isCutOrMissing(retryParsed.specialist, retryParsed.reason)) {
+            specialist = retryParsed.specialist;
+            reason = retryParsed.reason;
+          }
+        } catch (retryErr) {
+          if (signal?.aborted) throw retryErr;
+          console.warn(`[Parallax Specialist Opinions] Retry failed for ${target.name}:`, retryErr);
         }
       }
 
@@ -1114,10 +1152,10 @@ export async function evaluateAdditionalSpecialists(
     : '';
 
   const prompt = `Topic: "${topic}"
-${contextLine}Core Swarm (20 personas): ${coreSummary}
+${contextLine}Core Swarm (${coreAgents.length} personas): ${coreSummary}
 Mandatory Specialists: ${mandatorySummary}
 
-TASK: Decide if 1 or 2 additional specialists (max 2) are genuinely needed because of acute domain expertise gaps not covered by the 23 agents above.
+TASK: Decide if 1 or 2 additional specialists (max 2) are genuinely needed because of acute domain expertise gaps not covered by the ${coreAgents.length} Core + ${mandatorySpecialists.length} Mandatory Specialists above.
 RULE: Most everyday and general topics are already fully covered. Return 0 additional specialists: {"additional": []}. Only add 1-2 if a profound domain gap remains (e.g. surgical medicine, aerospace propulsion, constitutional jurisprudence).
 
 OUTPUT STRICT JSON ONLY:
@@ -1140,7 +1178,7 @@ OUTPUT STRICT JSON ONLY:
       messages: [
         {
           role: 'system',
-          content: 'You are the PARALLAX Invisible Gap Analyzer. You evaluate if 1-2 additional specialists are genuinely needed beyond the 23 existing agents. You output strict JSON only.',
+          content: `You are the PARALLAX Invisible Gap Analyzer. You evaluate if 1-2 additional specialists are genuinely needed beyond the ${coreAgents.length} Core + ${mandatorySpecialists.length} Mandatory Specialists. You output strict JSON only.`,
         },
         { role: 'user', content: prompt },
       ],
@@ -1457,16 +1495,37 @@ export function findIdeologicalOpponents(agentId: string, candidateIds: string[]
 }
 
 /**
- * Validates reaction output completeness (at least 6 words and proper punctuation).
+ * Helper to check if an error is a network or rate-limit error (429, 5xx, timeout).
  */
-function isBadReaction(text: string): boolean {
-  if (!text || text === 'No reaction recorded.') return true;
-  const words = text.trim().split(/\s+/).filter(Boolean);
-  if (words.length < 6) return true;
-  const trimmed = text.trim();
-  const lastChar = trimmed.slice(-1);
-  const validEndings = ['.', '!', '?', '"', "'", '”', '’'];
-  return !validEndings.includes(lastChar);
+function isNetworkOrRateLimitError(err: unknown): boolean {
+  if (!err) return false;
+  const msg = String(err instanceof Error ? err.message : err).toLowerCase();
+  const status = (err as Record<string, unknown>)?.status || (err as Record<string, unknown>)?.statusCode;
+  if (status === 429 || (typeof status === 'number' && status >= 500 && status < 600)) return true;
+  return (
+    msg.includes('429') ||
+    msg.includes('rate limit') ||
+    msg.includes('quota') ||
+    msg.includes('timeout') ||
+    msg.includes('500') ||
+    msg.includes('502') ||
+    msg.includes('503') ||
+    msg.includes('504') ||
+    msg.includes('network') ||
+    msg.includes('fetch failed') ||
+    msg.includes('econnreset')
+  );
+}
+
+function countWords(text: string): number {
+  if (!text) return 0;
+  return text.trim().split(/\s+/).filter(Boolean).length;
+}
+
+function hasEndPunctuation(text: string): boolean {
+  if (!text) return false;
+  const lastChar = text.trim().slice(-1);
+  return ['.', '!', '?', '"', "'", '”', '’'].includes(lastChar);
 }
 
 /**
@@ -1485,6 +1544,7 @@ async function executeAgentTurn(
   debateMode?: ParallaxDebateMode,
   humanDirective?: ParallaxHumanInjection | null,
   keyFacts?: string,
+  canonicalEntity?: string,
 ): Promise<ParallaxMessage> {
   const startTime = Date.now();
   const { provider, model } = resolveParallaxProviderConfig(agent, 160);
@@ -1592,117 +1652,9 @@ Rule: Use ONLY the KEY FACTS or things you are 100% sure of. Never invent number
     }
   }
 
-  try {
-    if (signal?.aborted) {
-      throw new Error('Swarm aborted');
-    }
-
-    const response = await api.jarvisAgentCall({
-      agentId: `parallax_${agent.id}_r${round}`,
-      messages: [
-        { role: 'system', content: systemPrompt },
-        { role: 'user', content: userPrompt },
-      ],
-      providerConfig: provider,
-      temperature: 0.75,
-      maxTokens: 160,
-      timeoutMs: 20000,
-      signal,
-    });
-
-    const rawText = response.text || response.content || '';
-    const { cleanText: rawWithoutMeta, conviction: initConviction, mood: initMood } = parseConvictionAndMood(rawText, agent.id, agent.mood);
-    let conviction = initConviction;
-    let mood = initMood;
-    let cleaned = cleanReactionText(rawWithoutMeta, agent.name);
-
-    // PROBLEM 3 FIX: Check response completeness. If truncated (<6 words or missing punctuation), retry once with maxTokens: 260
-    if (isBadReaction(cleaned) && !signal?.aborted) {
-      console.log(`[Parallax Quality Check] Agent "${agent.name}" R${round} response incomplete ("${cleaned}"). Retrying once with maxTokens: 260...`);
-      try {
-        const retryResponse = await api.jarvisAgentCall({
-          agentId: `parallax_${agent.id}_r${round}_retry`,
-          messages: [
-            { role: 'system', content: systemPrompt },
-            { role: 'user', content: userPrompt },
-          ],
-          providerConfig: provider,
-          temperature: 0.75,
-          maxTokens: 260,
-          timeoutMs: 25000,
-          signal,
-        });
-        const retryRaw = retryResponse.text || retryResponse.content || '';
-        const retryParsed = parseConvictionAndMood(retryRaw, agent.id, agent.mood);
-        const retryCleaned = cleanReactionText(retryParsed.cleanText, agent.name);
-
-        if (!isBadReaction(retryCleaned)) {
-          cleaned = retryCleaned;
-          conviction = retryParsed.conviction;
-          mood = retryParsed.mood || mood;
-        } else {
-          // If retry is still bad, use deterministic fallback
-          cleaned = getFallbackReaction(agent, round, topic);
-        }
-      } catch (retryErr) {
-        if (signal?.aborted) throw retryErr;
-        console.warn(`[Parallax Quality Check] Retry failed for "${agent.name}", using fallback:`, retryErr);
-        cleaned = getFallbackReaction(agent, round, topic);
-      }
-    }
-
-    // If Round 2 and agent did not include @OpponentName in text, prepend it naturally
-    if (round === 2 && primaryOpponent && !cleaned.toLowerCase().includes(`@${primaryOpponent.agentName.toLowerCase()}`)) {
-      cleaned = `@${primaryOpponent.agentName} ${cleaned}`;
-    }
-
-    return {
-      id: `plx_${agent.id}_r${round}_${Date.now()}_${Math.random().toString(36).slice(2, 6)}`,
-      agentId: agent.id,
-      agentName: agent.name,
-      initials: agent.initials,
-      accentColor: agent.accentColor,
-      round,
-      text: cleaned,
-      conviction,
-      mood: mood || agent.mood,
-      isDynamic: Boolean(agent.isDynamic),
-      isDevilsAdvocate: Boolean(agent.isDevilsAdvocate),
-      replyToAgentId: primaryOpponent?.agentId,
-      replyToAgentName: primaryOpponent?.agentName,
-      replyToMessageId: primaryOpponent?.id,
-      quotedSnippet: primaryOpponent ? primaryOpponent.text.slice(0, 100) : undefined,
-      role: agent.role,
-      voice: agent.voice,
-      timestamp: Date.now(),
-      durationMs: Date.now() - startTime,
-      model: response.model || model,
-      providerName: response.providerName || provider?.name || 'Built-in AI',
-      toolUsed:
-        agent.id === 'veritas' && veritasGrounding
-          ? {
-              tool: 'search',
-              query: veritasGrounding.query,
-              fact: veritasGrounding.committedFact || veritasGrounding.topFactSnippet,
-              searchSource: veritasGrounding.searchSource,
-              sourcesCount: veritasGrounding.sourcesCount,
-              failed: veritasGrounding.failed,
-              statusLabel: veritasGrounding.failed
-                ? '⚠️ No results found'
-                : `✅ ${veritasGrounding.searchSource}`,
-              committedFact: veritasGrounding.committedFact,
-              rawResults: veritasGrounding.results,
-              rawPayload: veritasGrounding.rawPayload,
-            }
-          : undefined,
-    };
-  } catch (err: unknown) {
-    if (signal?.aborted) {
-      throw err;
-    }
-
-    // Graceful fallback reaction reflecting the agent's core disposition
-    let fallbackText = getFallbackReaction(agent, round, topic);
+  const createFallbackMessage = (reason: string): ParallaxMessage => {
+    console.warn(`[Parallax Fallback] Agent: ${agent.name}, Round: ${round}, Reason: ${reason}`);
+    let fallbackText = getFallbackReaction(agent, round, topic, canonicalEntity);
     if (round === 2 && primaryOpponent && !fallbackText.includes(`@${primaryOpponent.agentName}`)) {
       fallbackText = `@${primaryOpponent.agentName} ${fallbackText}`;
     }
@@ -1730,6 +1682,7 @@ Rule: Use ONLY the KEY FACTS or things you are 100% sure of. Never invent number
       durationMs: Date.now() - startTime,
       model: model || 'fallback',
       providerName: 'Local Mesh',
+      fallbackReason: reason,
       toolUsed:
         agent.id === 'veritas' && veritasGrounding
           ? {
@@ -1748,18 +1701,175 @@ Rule: Use ONLY the KEY FACTS or things you are 100% sure of. Never invent number
             }
           : undefined,
     };
+  };
+
+  let response: { text?: string; content?: string; model?: string; providerName?: string } | null = null;
+  let rawText = '';
+
+  try {
+    if (signal?.aborted) {
+      throw new Error('Swarm aborted');
+    }
+
+    try {
+      response = await api.jarvisAgentCall({
+        agentId: `parallax_${agent.id}_r${round}`,
+        messages: [
+          { role: 'system', content: systemPrompt },
+          { role: 'user', content: userPrompt },
+        ],
+        providerConfig: provider,
+        temperature: 0.75,
+        maxTokens: 160,
+        timeoutMs: 20000,
+        signal,
+      });
+      rawText = response.text || response.content || '';
+    } catch (initialErr) {
+      if (signal?.aborted) throw initialErr;
+      if (isNetworkOrRateLimitError(initialErr)) {
+        console.warn(`[Parallax Rate-Limit/Network] Agent "${agent.name}" R${round} error (${initialErr instanceof Error ? initialErr.message : String(initialErr)}). Waiting 1.5s and retrying once...`);
+        await abortableSleep(1500, signal);
+        try {
+          response = await api.jarvisAgentCall({
+            agentId: `parallax_${agent.id}_r${round}_netretry`,
+            messages: [
+              { role: 'system', content: systemPrompt },
+              { role: 'user', content: userPrompt },
+            ],
+            providerConfig: provider,
+            temperature: 0.75,
+            maxTokens: 160,
+            timeoutMs: 20000,
+            signal,
+          });
+          rawText = response?.text || response?.content || '';
+        } catch (retryNetErr) {
+          if (signal?.aborted) throw retryNetErr;
+          const reason = retryNetErr instanceof Error ? retryNetErr.message : String(retryNetErr);
+          return createFallbackMessage(reason);
+        }
+      } else {
+        const reason = initialErr instanceof Error ? initialErr.message : String(initialErr);
+        return createFallbackMessage(reason);
+      }
+    }
+
+    const { cleanText: rawWithoutMeta, conviction: initConviction, mood: initMood } = parseConvictionAndMood(rawText, agent.id, agent.mood);
+    let conviction = initConviction;
+    let mood = initMood;
+    let cleaned = cleanReactionText(rawWithoutMeta, agent.name);
+
+    // PROBLEM 1 FIX: Relaxed quality check. Accept if >=8 words (even without ending punctuation).
+    // Retry ONLY if <8 words.
+    if (countWords(cleaned) < 8 && !signal?.aborted) {
+      try {
+        const retryResponse = await api.jarvisAgentCall({
+          agentId: `parallax_${agent.id}_r${round}_retry`,
+          messages: [
+            { role: 'system', content: systemPrompt },
+            { role: 'user', content: userPrompt },
+          ],
+          providerConfig: provider,
+          temperature: 0.75,
+          maxTokens: 260,
+          timeoutMs: 25000,
+          signal,
+        });
+        const retryRaw = retryResponse.text || retryResponse.content || '';
+        const retryParsed = parseConvictionAndMood(retryRaw, agent.id, agent.mood);
+        let retryCleaned = cleanReactionText(retryParsed.cleanText, agent.name);
+
+        if (countWords(retryCleaned) >= 6) {
+          if (!hasEndPunctuation(retryCleaned)) {
+            retryCleaned = `${retryCleaned.trim()}…`;
+          }
+          cleaned = retryCleaned;
+          conviction = retryParsed.conviction;
+          mood = retryParsed.mood || mood;
+        } else {
+          // If retry answer is still under 6 words, fallback
+          const reason = `answer rejected: ${retryCleaned.slice(0, 80)}`;
+          return createFallbackMessage(reason);
+        }
+      } catch (retryErr) {
+        if (signal?.aborted) throw retryErr;
+        const reason = retryErr instanceof Error ? retryErr.message : String(retryErr);
+        return createFallbackMessage(reason);
+      }
+    }
+
+    // If still under 6 words, fallback
+    if (countWords(cleaned) < 6) {
+      const reason = `answer rejected: ${cleaned.slice(0, 80)}`;
+      return createFallbackMessage(reason);
+    }
+
+    // If Round 2 and agent did not include @OpponentName in text, prepend it naturally
+    if (round === 2 && primaryOpponent && !cleaned.toLowerCase().includes(`@${primaryOpponent.agentName.toLowerCase()}`)) {
+      cleaned = `@${primaryOpponent.agentName} ${cleaned}`;
+    }
+
+    return {
+      id: `plx_${agent.id}_r${round}_${Date.now()}_${Math.random().toString(36).slice(2, 6)}`,
+      agentId: agent.id,
+      agentName: agent.name,
+      initials: agent.initials,
+      accentColor: agent.accentColor,
+      round,
+      text: cleaned,
+      conviction,
+      mood: mood || agent.mood,
+      isDynamic: Boolean(agent.isDynamic),
+      isDevilsAdvocate: Boolean(agent.isDevilsAdvocate),
+      replyToAgentId: primaryOpponent?.agentId,
+      replyToAgentName: primaryOpponent?.agentName,
+      replyToMessageId: primaryOpponent?.id,
+      quotedSnippet: primaryOpponent ? primaryOpponent.text.slice(0, 100) : undefined,
+      role: agent.role,
+      voice: agent.voice,
+      timestamp: Date.now(),
+      durationMs: Date.now() - startTime,
+      model: response?.model || model,
+      providerName: response?.providerName || provider?.name || 'Built-in AI',
+      toolUsed:
+        agent.id === 'veritas' && veritasGrounding
+          ? {
+              tool: 'search',
+              query: veritasGrounding.query,
+              fact: veritasGrounding.committedFact || veritasGrounding.topFactSnippet,
+              searchSource: veritasGrounding.searchSource,
+              sourcesCount: veritasGrounding.sourcesCount,
+              failed: veritasGrounding.failed,
+              statusLabel: veritasGrounding.failed
+                ? '⚠️ No results found'
+                : `✅ ${veritasGrounding.searchSource}`,
+              committedFact: veritasGrounding.committedFact,
+              rawResults: veritasGrounding.results,
+              rawPayload: veritasGrounding.rawPayload,
+            }
+          : undefined,
+    };
+  } catch (err: unknown) {
+    if (signal?.aborted) {
+      throw err;
+    }
+    const reason = err instanceof Error ? err.message : String(err);
+    return createFallbackMessage(reason);
   }
 }
 
 /**
  * Intelligent persona fallbacks in case of network timeouts.
+ * Uses canonicalEntity if available instead of raw topic text.
  */
-function getFallbackReaction(agent: ParallaxAgentConfig, round: number, topic: string): string {
+function getFallbackReaction(agent: ParallaxAgentConfig, round: number, topic: string, canonicalEntity?: string): string {
+  const subject = canonicalEntity && canonicalEntity.trim() ? canonicalEntity.trim() : topic;
   if (agent.isDynamic) {
-    return `From the specialized lens of ${agent.role}, addressing "${topic}" requires examining critical domain realities that broader consensus often overlooks.`;
+    return `From the specialized lens of ${agent.role}, addressing "${subject}" requires examining critical domain realities that broader consensus often overlooks.`;
   }
   const name = agent.name;
-  if (name === 'VERITAS') return `Empirical verification is vital for "${topic}", yet verifiable baseline datasets remain scarce.`;
+  if (name === 'VERITAS') return `Empirical verification is vital for "${subject}", yet verifiable baseline datasets remain scarce.`;
   if (name === 'AURORA') return `Despite early frictions, this unlocks unprecedented creative upside and collective human potential.`;
   if (name === 'CHRONOS') return `History reminds us every transformative inflection follows this exact pattern of panic followed by normalization.`;
   if (name === 'AXIOM') return `From a first-principles perspective, the fundamental logic dictates that efficiency and entropy will reach equilibrium.`;
@@ -2151,7 +2261,7 @@ export async function runParallaxSwarm(options: ParallaxRunOptions): Promise<voi
       },
     };
 
-    onStatusUpdate?.(`Evidence Grounding: ${evidenceItems.length} sources verified via ${searchSource}. Grounding 23-agent swarm...`);
+    onStatusUpdate?.(`Evidence Grounding: ${evidenceItems.length} sources verified via ${searchSource}. Grounding ${enabledAgents.length + 3}-agent swarm...`);
 
     // Build authoritative Key Facts block for all agents across Rounds 1, 2, 3 (max 600 chars)
     const keyFacts = buildKeyFactsBlock(entityResolution, verifiedClaims, evidenceItems);
@@ -2344,6 +2454,7 @@ export async function runParallaxSwarm(options: ParallaxRunOptions): Promise<voi
             options.debateMode,
             activeHumanDirective,
             keyFacts,
+            entityResolution?.canonicalEntity,
           );
 
           return msg;
@@ -2422,6 +2533,7 @@ export async function runParallaxSwarm(options: ParallaxRunOptions): Promise<voi
                 options.debateMode,
                 null,
                 keyFacts,
+                entityResolution?.canonicalEntity,
               );
               contrarianMsg.isDevilsAdvocate = true;
               roundMessages.push(contrarianMsg);

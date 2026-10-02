@@ -626,6 +626,7 @@ export interface ParallaxMessage {
   quotedSnippet?: string;
   role?: string;
   voice?: string;
+  fallbackReason?: string;
 }
 
 export interface ParallaxIntelligenceBriefing {
