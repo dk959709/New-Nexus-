@@ -991,7 +991,9 @@ export function AIProvidersSettings() {
     const isNoKeyRequired =
       isSdk ||
       editingImageProvider.url?.toLowerCase().includes('flux-schnell') ||
-      editingImageProvider.name?.toLowerCase().includes('flux.1-schnell');
+      editingImageProvider.name?.toLowerCase().includes('flux.1-schnell') ||
+      editingImageProvider.url?.toLowerCase().includes('flux-dev') ||
+      editingImageProvider.name?.toLowerCase().includes('flux.1-dev');
 
     const finalKeys: AIKeyItem[] = isNoKeyRequired
       ? cleanedKeys
@@ -2950,7 +2952,7 @@ export function AIProvidersSettings() {
                       >
                         Free Guest Sessions (No Key)
                       </span>
-                    ) : p.url?.toLowerCase().includes('flux-schnell') || p.name?.toLowerCase().includes('flux.1-schnell') ? (
+                    ) : p.url?.toLowerCase().includes('flux-schnell') || p.name?.toLowerCase().includes('flux.1-schnell') || p.url?.toLowerCase().includes('flux-dev') || p.name?.toLowerCase().includes('flux.1-dev') ? (
                       <span
                         style={{
                           fontSize: '10px',
@@ -3040,7 +3042,7 @@ export function AIProvidersSettings() {
                       <span style={{ color: '#38bdf8', display: 'flex', alignItems: 'center', gap: '4px' }}>
                         ⚡ Free Unlimited Client-Side SDK
                       </span>
-                    ) : p.url?.toLowerCase().includes('flux-schnell') || p.name?.toLowerCase().includes('flux.1-schnell') ? (
+                    ) : p.url?.toLowerCase().includes('flux-schnell') || p.name?.toLowerCase().includes('flux.1-schnell') || p.url?.toLowerCase().includes('flux-dev') || p.name?.toLowerCase().includes('flux.1-dev') ? (
                       <span style={{ color: '#34d399', display: 'flex', alignItems: 'center', gap: '4px' }}>
                         ⚡ Free Unlimited (Community Queue)
                       </span>
@@ -3797,6 +3799,25 @@ export function AIProvidersSettings() {
                 onClick={() => {
                   setEditingImageProvider({
                     ...editingImageProvider,
+                    name: 'FLUX.1-dev (Free, HQ)',
+                    url: '/api/image/flux-dev',
+                    requestType: 'post',
+                    model: 'black-forest-labs/FLUX.1-dev',
+                    customHeaderName: '',
+                    requestBodyTemplate: '{\n  "prompt": "{prompt}",\n  "width": {width},\n  "height": {height}\n}',
+                    keys: [],
+                  });
+                }}
+                className="secondary-button"
+                style={{ fontSize: '11px', padding: '4px 10px', borderRadius: '5px', borderColor: 'rgba(16,185,129,0.35)', color: '#10b981' }}
+              >
+                ⚡ FLUX.1-dev (Free, HQ)
+              </button>
+              <button
+                type="button"
+                onClick={() => {
+                  setEditingImageProvider({
+                    ...editingImageProvider,
                     name: 'Pixazo AI',
                     url: 'https://gateway.pixazo.ai/flux-1-schnell/v1/getData',
                     requestType: 'post',
@@ -4368,7 +4389,24 @@ export function AIProvidersSettings() {
                       ⚠️ <strong>Action Required:</strong> Please replace <code>YOUR_ACCOUNT_ID</code> in the API URL with your actual Cloudflare account ID before saving. Enter your Cloudflare API Token in the Bearer token API key field below.
                     </div>
                   )}
-                  {(editingImageProvider.url?.toLowerCase().includes('flux-schnell') || editingImageProvider.name?.toLowerCase().includes('flux.1-schnell')) && (
+                  {(editingImageProvider.url?.toLowerCase().includes('flux-dev') || editingImageProvider.name?.toLowerCase().includes('flux.1-dev')) ? (
+                    <div
+                      style={{
+                        marginTop: '8px',
+                        padding: '10px 12px',
+                        borderRadius: '8px',
+                        background: 'rgba(52,211,153,0.12)',
+                        border: '1px solid rgba(52,211,153,0.35)',
+                        color: '#6ee7b7',
+                        fontSize: '12px',
+                        lineHeight: 1.5,
+                      }}
+                    >
+                      <div>
+                        ⚡ <strong>Free community queue:</strong> (Hugging Face Space <code>black-forest-labs/FLUX.1-dev</code>). Higher quality but slower (about 30 to 90 seconds) and uses more free GPU time. Add your Hugging Face token (hf_...) in API Keys. Non-commercial license.
+                      </div>
+                    </div>
+                  ) : (editingImageProvider.url?.toLowerCase().includes('flux-schnell') || editingImageProvider.name?.toLowerCase().includes('flux.1-schnell')) ? (
                     <div
                       style={{
                         marginTop: '8px',
@@ -4388,7 +4426,7 @@ export function AIProvidersSettings() {
                         Optional: add your Hugging Face token (starts with hf_) in API Keys below. It uses your own free GPU quota and fixes 'null' or quota errors.
                       </div>
                     </div>
-                  )}
+                  ) : null}
                 </div>
               )}
 
@@ -4996,7 +5034,9 @@ export function AIProvidersSettings() {
                                 editingImageProvider?.url?.toLowerCase().includes('cloudflare')
                               ? 'Cloudflare API Token'
                               : editingImageProvider?.name?.toLowerCase().includes('flux.1-schnell') ||
-                                editingImageProvider?.url?.toLowerCase().includes('flux-schnell')
+                                editingImageProvider?.url?.toLowerCase().includes('flux-schnell') ||
+                                editingImageProvider?.name?.toLowerCase().includes('flux.1-dev') ||
+                                editingImageProvider?.url?.toLowerCase().includes('flux-dev')
                               ? 'Hugging Face Token'
                               : 'API Key'
                             : `Key ${index + 1}`
@@ -5065,7 +5105,9 @@ export function AIProvidersSettings() {
                                   editingImageProvider?.customHeaderName?.includes('Ocp-Apim')
                                 ? 'Pixazo API Key (Ocp-Apim-Subscription-Key)'
                                 : editingImageProvider?.name?.toLowerCase().includes('flux.1-schnell') ||
-                                  editingImageProvider?.url?.toLowerCase().includes('flux-schnell')
+                                  editingImageProvider?.url?.toLowerCase().includes('flux-schnell') ||
+                                  editingImageProvider?.name?.toLowerCase().includes('flux.1-dev') ||
+                                  editingImageProvider?.url?.toLowerCase().includes('flux-dev')
                                 ? 'hf_...'
                                 : editingImageProvider?.requestType === 'post'
                                 ? (editingImageProvider?.customHeaderName ? `${editingImageProvider.customHeaderName} value` : 'Bearer API Key / Token')

@@ -1247,7 +1247,8 @@ export function ImageStudio() {
           console.groupEnd();
 
           const controller = new AbortController();
-          const timeoutId = setTimeout(() => controller.abort(), 45000);
+          const postTimeoutMs = activeProvider.url?.includes('flux-dev') ? 110000 : 45000;
+          const timeoutId = setTimeout(() => controller.abort(), postTimeoutMs);
 
           try {
             const targetFetchUrl = isCloudflare ? '/api/proxy/cloudflare-image' : activeProvider.url.trim();
