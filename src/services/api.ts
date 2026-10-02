@@ -418,7 +418,7 @@ export const api = {
     );
   },
 
-  jarvisAgentCall(payload: {
+  async jarvisAgentCall(payload: {
     agentId: string;
     messages: Array<{ role: 'system' | 'user' | 'assistant'; content: string }>;
     providerConfig?: AIProviderConfig | null;
@@ -439,7 +439,7 @@ export const api = {
     error?: string;
   }> {
     const { signal, ...bodyPayload } = payload;
-    return call<{
+    const res = await call<{
       ok: boolean;
       text?: string;
       content?: string;
@@ -453,6 +453,45 @@ export const api = {
       body: JSON.stringify(bodyPayload),
       signal,
     });
+
+    const rawAnswer = res.text ?? res.content;
+    if (rawAnswer && typeof rawAnswer === 'string' && rawAnswer.includes('<think>')) {
+      let cleaned = rawAnswer;
+      const extractedReasonings: string[] = [];
+
+      // 1. Remove closed <think>...</think> blocks and capture their content
+      cleaned = cleaned.replace(/<think>([\s\S]*?)<\/think>/gi, (_, thinkContent) => {
+        if (thinkContent && thinkContent.trim()) {
+          extractedReasonings.push(thinkContent.trim());
+        }
+        return '';
+      });
+
+      // 2. Remove unclosed <think> at the start or within response
+      if (cleaned.includes('<think>')) {
+        const thinkIndex = cleaned.indexOf('<think>');
+        const unclosedContent = cleaned.slice(thinkIndex + 7).trim();
+        if (unclosedContent) {
+          extractedReasonings.push(unclosedContent);
+        }
+        cleaned = cleaned.slice(0, thinkIndex);
+      }
+
+      cleaned = cleaned.trim();
+      const combinedReasoning = extractedReasonings.join('\n\n').trim();
+      const updatedReasoning = res.reasoning
+        ? (combinedReasoning ? `${res.reasoning}\n\n${combinedReasoning}` : res.reasoning)
+        : (combinedReasoning || undefined);
+
+      return {
+        ...res,
+        text: res.text !== undefined ? cleaned : undefined,
+        content: res.content !== undefined ? cleaned : (res.text !== undefined ? cleaned : undefined),
+        reasoning: updatedReasoning,
+      };
+    }
+
+    return res;
   },
 
   searchWikipedia(query: string, limit = 10): Promise<WikipediaSearchResult[]> {

@@ -131,6 +131,36 @@ export const REASONING_MODEL_CONFIG: Record<string, ReasoningModelSpec> = {
         : { effort: 'none' },
     }),
   },
+
+  // Poolside Laguna XS 2.1 & Laguna S 2.1 (inference.poolside.ai): thinking on by default, disabled with chat_template_kwargs: { enable_thinking: false }
+  'poolside:poolside/laguna-xs-2.1': {
+    provider: 'poolside',
+    model: 'poolside/laguna-xs-2.1',
+    supportsReasoning: true,
+    paramFormat: 'custom',
+    validEfforts: ['none', 'high'],
+    supportsFullDisable: true,
+    supportsHiddenFormat: false,
+    buildParams: (target: ReasoningTargetLevel) => (
+      target === 'high'
+        ? { chat_template_kwargs: { enable_thinking: true } }
+        : { chat_template_kwargs: { enable_thinking: false } }
+    ),
+  },
+  'poolside:poolside/laguna-s-2.1': {
+    provider: 'poolside',
+    model: 'poolside/laguna-s-2.1',
+    supportsReasoning: true,
+    paramFormat: 'custom',
+    validEfforts: ['none', 'high'],
+    supportsFullDisable: true,
+    supportsHiddenFormat: false,
+    buildParams: (target: ReasoningTargetLevel) => (
+      target === 'high'
+        ? { chat_template_kwargs: { enable_thinking: true } }
+        : { chat_template_kwargs: { enable_thinking: false } }
+    ),
+  },
 };
 
 /**
@@ -142,6 +172,7 @@ export function normalizeProviderId(
   if (!provider) return 'unknown';
   if (typeof provider === 'string') {
     const s = provider.toLowerCase().trim();
+    if (s.includes('poolside') || s.includes('inference.poolside.ai')) return 'poolside';
     if (s.includes('groq') || s.includes('api.groq.com')) return 'groq';
     if (
       s.includes('bazaarlink') ||
@@ -179,6 +210,15 @@ export function normalizeProviderId(
   const id = (provider.id || '').toLowerCase();
   const name = (provider.name || '').toLowerCase();
 
+  if (
+    url.includes('poolside') ||
+    url.includes('poolside.ai') ||
+    url.includes('inference.poolside.ai') ||
+    id.includes('poolside') ||
+    name.includes('poolside')
+  ) {
+    return 'poolside';
+  }
   if (
     url.includes('bazaarlink.ai') ||
     url.includes('api.bazaarlink.ai') ||
@@ -293,7 +333,26 @@ export function lookupReasoningConfig(
     return REASONING_MODEL_CONFIG[rawKey];
   }
 
-  // 3. Generic BazaarLink provider fallback (applies to ANY BazaarLink chat model not explicitly listed)
+  // 3. Generic Poolside provider fallback (inference.poolside.ai)
+  if (provKey === 'poolside' || normModel.startsWith('poolside/') || normModel.includes('poolside/')) {
+    return {
+      provider: 'poolside',
+      model: (model || '').trim(),
+      supportsReasoning: true,
+      paramFormat: 'custom',
+      validEfforts: ['none', 'high'],
+      supportsFullDisable: true,
+      supportsHiddenFormat: false,
+      isGenericFallback: true,
+      buildParams: (target: ReasoningTargetLevel) => (
+        target === 'high'
+          ? { chat_template_kwargs: { enable_thinking: true } }
+          : { chat_template_kwargs: { enable_thinking: false } }
+      ),
+    };
+  }
+
+  // 4. Generic BazaarLink provider fallback (applies to ANY BazaarLink chat model not explicitly listed)
   if (provKey === 'bazaarlink') {
     return {
       provider: 'bazaarlink',
@@ -826,6 +885,19 @@ export function applyReasoningConfig<T extends { extraParams?: Record<string, un
     } else {
       console.log(
         `[Ollama Reasoning Control] Model "${effectiveModel}" -> using EXPLICIT config entry in reasoning matrix (params: ${JSON.stringify(params)})`,
+      );
+    }
+  }
+
+  // Log whether generic fallback or explicit config was applied for Poolside models
+  if (provKey === 'poolside' || spec.provider === 'poolside') {
+    if (spec.isGenericFallback) {
+      console.log(
+        `[Poolside Reasoning Control] Model "${effectiveModel}" -> using GENERIC Poolside fallback rule (params: ${JSON.stringify(params)})`,
+      );
+    } else {
+      console.log(
+        `[Poolside Reasoning Control] Model "${effectiveModel}" -> using EXPLICIT config entry in reasoning matrix (params: ${JSON.stringify(params)})`,
       );
     }
   }
