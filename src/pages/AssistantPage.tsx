@@ -1306,6 +1306,7 @@ export function AssistantPage() {
     return '';
   });
   const [historyOpen, setHistoryOpen] = useState<boolean>(false);
+  const [bottomHistoryOpen, setBottomHistoryOpen] = useState<boolean>(false);
   const [deletingSessionId, setDeletingSessionId] = useState<string | null>(null);
   const [editingSessionId, setEditingSessionId] = useState<string | null>(null);
   const [editingSessionTitleDraft, setEditingSessionTitleDraft] = useState<string>('');
@@ -1316,6 +1317,7 @@ export function AssistantPage() {
   const [sessionModelProviderDraft, setSessionModelProviderDraft] = useState<string>('existing');
   const [sessionModelIdDraft, setSessionModelIdDraft] = useState<string>('');
   const historyDropdownRef = useRef<HTMLDivElement>(null);
+  const bottomHistoryDropdownRef = useRef<HTMLDivElement>(null);
   const [smartMemory, setSmartMemory] = useState(loadSmartMemory);
   const [smartMemoryMaxLength, setSmartMemoryMaxLength] = useState<number>(() => {
     const id = loadActiveSessionId();
@@ -1365,6 +1367,32 @@ export function AssistantPage() {
     document.addEventListener('mousedown', handleClickOutside);
     return () => document.removeEventListener('mousedown', handleClickOutside);
   }, [historyOpen]);
+
+  useEffect(() => {
+    if (!bottomHistoryOpen) return;
+    const handleClickOutside = (e: MouseEvent) => {
+      if (bottomHistoryDropdownRef.current && !bottomHistoryDropdownRef.current.contains(e.target as Node)) {
+        setBottomHistoryOpen(false);
+        setDeletingSessionId(null);
+        setEditingSessionId(null);
+        setEditingSessionTitleDraft('');
+      }
+    };
+    const handleKeyDown = (e: KeyboardEvent) => {
+      if (e.key === 'Escape') {
+        setBottomHistoryOpen(false);
+        setDeletingSessionId(null);
+        setEditingSessionId(null);
+        setEditingSessionTitleDraft('');
+      }
+    };
+    document.addEventListener('mousedown', handleClickOutside);
+    document.addEventListener('keydown', handleKeyDown);
+    return () => {
+      document.removeEventListener('mousedown', handleClickOutside);
+      document.removeEventListener('keydown', handleKeyDown);
+    };
+  }, [bottomHistoryOpen]);
   const [deepResearchEnabled, setDeepResearchEnabled] = useState(loadDeepResearchToggle);
   const [deepResearchProgress, setDeepResearchProgress] = useState<number>(0);
   const [deepResearchPhase, setDeepResearchPhase] = useState<string>('');
@@ -5613,6 +5641,7 @@ DIRECTIVES:
     setWebFetcherOriginalRequest('');
     setSessions(loadChatSessions());
     setHistoryOpen(false);
+    setBottomHistoryOpen(false);
     setDeletingSessionId(null);
   };
 
@@ -5874,6 +5903,249 @@ DIRECTIVES:
     });
   };
 
+  const renderHistoryDropdownContent = (onClose: () => void) => (
+    <>
+      <div className="p-3 border-b border-zinc-800/80 flex items-center justify-between">
+        <div className="flex items-center gap-2">
+          <History size={14} className="text-cyan-400" />
+          <span className="text-xs font-semibold text-zinc-100">Saved Chats</span>
+          <span className="text-[10px] px-1.5 py-0.2 rounded-full bg-cyan-950/80 text-cyan-300 border border-cyan-500/30">
+            {sessions.length}
+          </span>
+        </div>
+        <div className="flex items-center gap-1.5">
+          {sessions.length > 0 && (
+            <button
+              type="button"
+              onClick={(e) => {
+                e.stopPropagation();
+                playTapSound();
+                if (window.confirm('Delete all saved chat history?')) {
+                  const wasSavedChatOpen = Boolean(activeSessionId && sessions.some((s) => s.id === activeSessionId));
+                  saveChatSessions([]);
+                  setSessions([]);
+                  setDeletingSessionId(null);
+                  if (wasSavedChatOpen) {
+                    resetWorkingChat();
+                  }
+                }
+              }}
+              className="text-[11px] text-zinc-400 hover:text-red-400 hover:bg-red-500/10 px-2 py-1 rounded transition-colors flex items-center gap-1"
+              title="Delete all saved chats"
+            >
+              <Trash2 size={12} />
+              <span>Clear All</span>
+            </button>
+          )}
+          <button
+            type="button"
+            onClick={() => {
+              playTapSound();
+              onClose();
+            }}
+            className="text-zinc-400 hover:text-zinc-200 p-1 rounded-md"
+            title="Close"
+          >
+            <X size={13} />
+          </button>
+        </div>
+      </div>
+
+      <div className="flex-1 overflow-y-auto divide-y divide-zinc-800/60 p-1.5 space-y-0.5">
+        {sessions.length === 0 ? (
+          <div className="p-6 text-center text-zinc-500 text-xs">
+            <History size={24} className="mx-auto mb-2 opacity-40 text-zinc-400" />
+            <p className="font-medium text-zinc-300">No saved chats yet</p>
+            <p className="text-[11px] text-zinc-500 mt-1 leading-relaxed">
+              Clicking "+ New Chat" will automatically archive your current conversation here.
+            </p>
+          </div>
+        ) : (
+          sessions.map((session) => {
+            const isCurrent = session.id === activeSessionId;
+            return (
+              <div
+                key={session.id}
+                onClick={() => {
+                  if (editingSessionId !== session.id) {
+                    handleSelectSession(session);
+                  }
+                }}
+                className={`p-2.5 rounded-lg cursor-pointer transition-all group flex items-center justify-between gap-2.5 ${
+                  isCurrent
+                    ? 'bg-cyan-950/30 hover:bg-cyan-950/45 border border-cyan-500/40 shadow-[0_0_12px_rgba(6,182,212,0.14)]'
+                    : 'hover:bg-zinc-800/60 bg-transparent border border-transparent'
+                }`}
+              >
+                {editingSessionId === session.id ? (
+                  <div
+                    className="flex-1 flex items-center gap-1.5 min-w-0"
+                    onClick={(e) => e.stopPropagation()}
+                  >
+                    <input
+                      type="text"
+                      value={editingSessionTitleDraft}
+                      onChange={(e) => setEditingSessionTitleDraft(e.target.value)}
+                      onKeyDown={(e) => {
+                        e.stopPropagation();
+                        if (e.key === 'Enter') {
+                          e.preventDefault();
+                          handleSaveEditSession(undefined, session.id);
+                        } else if (e.key === 'Escape') {
+                          e.preventDefault();
+                          handleCancelEditSession();
+                        }
+                      }}
+                      className="w-full px-2 py-1 text-xs rounded-md bg-zinc-800 border border-zinc-600 text-zinc-100 outline-none focus:border-cyan-400 font-medium"
+                      autoFocus
+                      maxLength={60}
+                      placeholder="Session title..."
+                    />
+                    <button
+                      type="button"
+                      onClick={(e) => handleSaveEditSession(e, session.id)}
+                      className="p-1 rounded bg-cyan-600/80 hover:bg-cyan-500 text-white shrink-0"
+                      title="Save title"
+                    >
+                      <Check size={12} />
+                    </button>
+                    <button
+                      type="button"
+                      onClick={handleCancelEditSession}
+                      className="p-1 rounded bg-zinc-700 hover:bg-zinc-600 text-zinc-300 shrink-0"
+                      title="Cancel"
+                    >
+                      <X size={12} />
+                    </button>
+                  </div>
+                ) : (
+                  <>
+                    <div className="min-w-0 flex-1">
+                      <div
+                        className={`text-xs truncate ${
+                          isCurrent
+                            ? 'text-cyan-300 font-semibold'
+                            : 'text-zinc-200 font-medium group-hover:text-cyan-300'
+                        }`}
+                      >
+                        {session.title}
+                      </div>
+                      <div className="text-[10.5px] text-zinc-500 mt-0.5 flex items-center gap-2 flex-wrap">
+                        {isCurrent && (
+                          <span className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded-full text-[9.5px] font-semibold bg-cyan-500/15 text-cyan-300 border border-cyan-500/30">
+                            <span className="w-1.5 h-1.5 rounded-full bg-cyan-400 shadow-[0_0_6px_rgba(34,211,238,0.8)] animate-pulse" />
+                            Current
+                          </span>
+                        )}
+                        <span>{formatRelativeTime(session.updatedAt)}</span>
+                        <span>•</span>
+                        <span>{session.messages.length} msg{session.messages.length === 1 ? '' : 's'}</span>
+                        {Boolean(session.smartMemory?.trim()) && (
+                          <>
+                            <span>•</span>
+                            <span className="text-cyan-400/90 inline-flex items-center gap-0.5 font-medium">
+                              <Brain size={10} /> Memory
+                            </span>
+                          </>
+                        )}
+                        {Boolean(session.modelId || (session.providerId && session.providerId !== 'existing')) && (
+                          <>
+                            <span>•</span>
+                            <span className="text-purple-400/90 inline-flex items-center gap-0.5 font-medium truncate max-w-[110px]" title={session.modelId || session.providerId}>
+                              <Bot size={10} /> {session.modelId || session.providerId}
+                            </span>
+                          </>
+                        )}
+                      </div>
+                    </div>
+
+                    {deletingSessionId === session.id ? (
+                      <div
+                        className="flex items-center gap-1 shrink-0"
+                        onClick={(e) => e.stopPropagation()}
+                      >
+                        <button
+                          type="button"
+                          onClick={(e) => handleConfirmDeleteSession(e, session.id)}
+                          className="text-[10px] font-medium px-2 py-1 bg-red-500/25 text-red-300 border border-red-500/50 rounded-md hover:bg-red-500/40 shadow-sm"
+                        >
+                          Delete
+                        </button>
+                        <button
+                          type="button"
+                          onClick={handleCancelDeleteSession}
+                          className="text-[10px] px-1.5 py-1 text-zinc-400 hover:text-zinc-200"
+                        >
+                          Cancel
+                        </button>
+                      </div>
+                    ) : (
+                      <div className="flex items-center gap-0.5 shrink-0" onClick={(e) => e.stopPropagation()}>
+                        <button
+                          type="button"
+                          onClick={(e) => handleOpenSessionModelEditor(e, session)}
+                          className={`p-1.5 rounded-md transition-all shrink-0 ${
+                            session.providerId && session.providerId !== 'existing'
+                              ? 'text-purple-400 hover:text-purple-300 hover:bg-purple-500/15'
+                              : 'text-zinc-400 hover:text-purple-300 hover:bg-purple-500/15'
+                          }`}
+                          title={
+                            session.modelId || (session.providerId && session.providerId !== 'existing')
+                              ? `Model: ${session.modelId || session.providerId}`
+                              : "Select AI Provider & Model for this session"
+                          }
+                          aria-label="Select session AI Model"
+                        >
+                          <Bot size={13} />
+                        </button>
+                        <button
+                          type="button"
+                          onClick={(e) => handleOpenSessionMemoryEditor(e, session)}
+                          className={`p-1.5 rounded-md transition-all shrink-0 ${
+                            session.smartMemory?.trim()
+                              ? 'text-cyan-400 hover:text-cyan-300 hover:bg-cyan-500/15'
+                              : 'text-zinc-400 hover:text-cyan-300 hover:bg-cyan-500/15'
+                          }`}
+                          title={session.smartMemory?.trim() ? "Edit session Memory Scratchpad" : "Add Memory Scratchpad to this session"}
+                          aria-label="Edit session memory"
+                        >
+                          <Brain size={13} />
+                        </button>
+                        <button
+                          type="button"
+                          onClick={(e) => handleStartEditSession(e, session)}
+                          className="p-1.5 text-zinc-400 hover:text-cyan-300 hover:bg-cyan-500/15 rounded-md transition-all shrink-0"
+                          title="Rewrite session title"
+                          aria-label="Rename session"
+                        >
+                          <Edit3 size={13} />
+                        </button>
+                        <button
+                          type="button"
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            playTapSound();
+                            setEditingSessionId(null);
+                            setDeletingSessionId(session.id);
+                          }}
+                          className="p-1.5 text-zinc-400 hover:text-red-400 hover:bg-red-500/15 rounded-md transition-all shrink-0"
+                          title="Delete this chat session"
+                          aria-label="Delete chat session"
+                        >
+                          <Trash2 size={13.5} />
+                        </button>
+                      </div>
+                    )}
+                  </>
+                )}
+              </div>
+            );
+          })
+        )}
+      </div>
+    </>
+  );
+
   const activeTurnProvider = storage.getProviderForSession(activeProviderId, activeModelId);
   const providerLabel = activeTurnProvider
     ? `${activeTurnProvider.name}${activeTurnProvider.model ? ` (${activeTurnProvider.model})` : ''}`
@@ -6091,6 +6363,7 @@ DIRECTIVES:
                 setSessions(loadChatSessions());
                 setHistoryOpen((prev) => !prev);
                 setDeletingSessionId(null);
+                setBottomHistoryOpen(false);
               }}
               className={`text-xs px-2.5 py-1.5 rounded-lg transition-all flex items-center gap-1.5 ${
                 historyOpen
@@ -6126,244 +6399,7 @@ DIRECTIVES:
                     : 'bg-zinc-900/98 border-zinc-800 backdrop-blur-md'
                 }`}
               >
-                <div className="p-3 border-b border-zinc-800/80 flex items-center justify-between">
-                  <div className="flex items-center gap-2">
-                    <History size={14} className="text-cyan-400" />
-                    <span className="text-xs font-semibold text-zinc-100">Saved Chats</span>
-                    <span className="text-[10px] px-1.5 py-0.2 rounded-full bg-cyan-950/80 text-cyan-300 border border-cyan-500/30">
-                      {sessions.length}
-                    </span>
-                  </div>
-                  <div className="flex items-center gap-1.5">
-                    {sessions.length > 0 && (
-                      <button
-                        type="button"
-                        onClick={(e) => {
-                          e.stopPropagation();
-                          playTapSound();
-                          if (window.confirm('Delete all saved chat history?')) {
-                            const wasSavedChatOpen = Boolean(activeSessionId && sessions.some((s) => s.id === activeSessionId));
-                            saveChatSessions([]);
-                            setSessions([]);
-                            setDeletingSessionId(null);
-                            if (wasSavedChatOpen) {
-                              resetWorkingChat();
-                            }
-                          }
-                        }}
-                        className="text-[11px] text-zinc-400 hover:text-red-400 hover:bg-red-500/10 px-2 py-1 rounded transition-colors flex items-center gap-1"
-                        title="Delete all saved chats"
-                      >
-                        <Trash2 size={12} />
-                        <span>Clear All</span>
-                      </button>
-                    )}
-                    <button
-                      type="button"
-                      onClick={() => {
-                        playTapSound();
-                        setHistoryOpen(false);
-                      }}
-                      className="text-zinc-400 hover:text-zinc-200 p-1 rounded-md"
-                      title="Close"
-                    >
-                      <X size={13} />
-                    </button>
-                  </div>
-                </div>
-
-                <div className="flex-1 overflow-y-auto divide-y divide-zinc-800/60 p-1.5 space-y-0.5">
-                  {sessions.length === 0 ? (
-                    <div className="p-6 text-center text-zinc-500 text-xs">
-                      <History size={24} className="mx-auto mb-2 opacity-40 text-zinc-400" />
-                      <p className="font-medium text-zinc-300">No saved chats yet</p>
-                      <p className="text-[11px] text-zinc-500 mt-1 leading-relaxed">
-                        Clicking "+ New Chat" will automatically archive your current conversation here.
-                      </p>
-                    </div>
-                  ) : (
-                    sessions.map((session) => {
-                      const isCurrent = session.id === activeSessionId;
-                      return (
-                        <div
-                          key={session.id}
-                          onClick={() => {
-                            if (editingSessionId !== session.id) {
-                              handleSelectSession(session);
-                            }
-                          }}
-                          className={`p-2.5 rounded-lg cursor-pointer transition-all group flex items-center justify-between gap-2.5 ${
-                            isCurrent
-                              ? 'bg-cyan-950/30 hover:bg-cyan-950/45 border border-cyan-500/40 shadow-[0_0_12px_rgba(6,182,212,0.14)]'
-                              : 'hover:bg-zinc-800/60 bg-transparent border border-transparent'
-                          }`}
-                        >
-                          {editingSessionId === session.id ? (
-                            <div
-                              className="flex-1 flex items-center gap-1.5 min-w-0"
-                              onClick={(e) => e.stopPropagation()}
-                            >
-                              <input
-                                type="text"
-                                value={editingSessionTitleDraft}
-                                onChange={(e) => setEditingSessionTitleDraft(e.target.value)}
-                                onKeyDown={(e) => {
-                                  e.stopPropagation();
-                                  if (e.key === 'Enter') {
-                                    e.preventDefault();
-                                    handleSaveEditSession(undefined, session.id);
-                                  } else if (e.key === 'Escape') {
-                                    e.preventDefault();
-                                    handleCancelEditSession();
-                                  }
-                                }}
-                                className="w-full px-2 py-1 text-xs rounded-md bg-zinc-800 border border-zinc-600 text-zinc-100 outline-none focus:border-cyan-400 font-medium"
-                                autoFocus
-                                maxLength={60}
-                                placeholder="Session title..."
-                              />
-                              <button
-                                type="button"
-                                onClick={(e) => handleSaveEditSession(e, session.id)}
-                                className="p-1 rounded bg-cyan-600/80 hover:bg-cyan-500 text-white shrink-0"
-                                title="Save title"
-                              >
-                                <Check size={12} />
-                              </button>
-                              <button
-                                type="button"
-                                onClick={handleCancelEditSession}
-                                className="p-1 rounded bg-zinc-700 hover:bg-zinc-600 text-zinc-300 shrink-0"
-                                title="Cancel"
-                              >
-                                <X size={12} />
-                              </button>
-                            </div>
-                          ) : (
-                            <>
-                              <div className="min-w-0 flex-1">
-                                <div
-                                  className={`text-xs truncate ${
-                                    isCurrent
-                                      ? 'text-cyan-300 font-semibold'
-                                      : 'text-zinc-200 font-medium group-hover:text-cyan-300'
-                                  }`}
-                                >
-                                  {session.title}
-                                </div>
-                                <div className="text-[10.5px] text-zinc-500 mt-0.5 flex items-center gap-2 flex-wrap">
-                                  {isCurrent && (
-                                    <span className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded-full text-[9.5px] font-semibold bg-cyan-500/15 text-cyan-300 border border-cyan-500/30">
-                                      <span className="w-1.5 h-1.5 rounded-full bg-cyan-400 shadow-[0_0_6px_rgba(34,211,238,0.8)] animate-pulse" />
-                                      Current
-                                    </span>
-                                  )}
-                                  <span>{formatRelativeTime(session.updatedAt)}</span>
-                                  <span>•</span>
-                                  <span>{session.messages.length} msg{session.messages.length === 1 ? '' : 's'}</span>
-                                {Boolean(session.smartMemory?.trim()) && (
-                                  <>
-                                    <span>•</span>
-                                    <span className="text-cyan-400/90 inline-flex items-center gap-0.5 font-medium">
-                                      <Brain size={10} /> Memory
-                                    </span>
-                                  </>
-                                )}
-                                {Boolean(session.modelId || (session.providerId && session.providerId !== 'existing')) && (
-                                  <>
-                                    <span>•</span>
-                                    <span className="text-purple-400/90 inline-flex items-center gap-0.5 font-medium truncate max-w-[110px]" title={session.modelId || session.providerId}>
-                                      <Bot size={10} /> {session.modelId || session.providerId}
-                                    </span>
-                                  </>
-                                )}
-                              </div>
-                            </div>
-
-                            {deletingSessionId === session.id ? (
-                              <div
-                                className="flex items-center gap-1 shrink-0"
-                                onClick={(e) => e.stopPropagation()}
-                              >
-                                <button
-                                  type="button"
-                                  onClick={(e) => handleConfirmDeleteSession(e, session.id)}
-                                  className="text-[10px] font-medium px-2 py-1 bg-red-500/25 text-red-300 border border-red-500/50 rounded-md hover:bg-red-500/40 shadow-sm"
-                                >
-                                  Delete
-                                </button>
-                                <button
-                                  type="button"
-                                  onClick={handleCancelDeleteSession}
-                                  className="text-[10px] px-1.5 py-1 text-zinc-400 hover:text-zinc-200"
-                                >
-                                  Cancel
-                                </button>
-                              </div>
-                            ) : (
-                              <div className="flex items-center gap-0.5 shrink-0" onClick={(e) => e.stopPropagation()}>
-                                <button
-                                  type="button"
-                                  onClick={(e) => handleOpenSessionModelEditor(e, session)}
-                                  className={`p-1.5 rounded-md transition-all shrink-0 ${
-                                    session.providerId && session.providerId !== 'existing'
-                                      ? 'text-purple-400 hover:text-purple-300 hover:bg-purple-500/15'
-                                      : 'text-zinc-400 hover:text-purple-300 hover:bg-purple-500/15'
-                                  }`}
-                                  title={
-                                    session.modelId || (session.providerId && session.providerId !== 'existing')
-                                      ? `Model: ${session.modelId || session.providerId}`
-                                      : "Select AI Provider & Model for this session"
-                                  }
-                                  aria-label="Select session AI Model"
-                                >
-                                  <Bot size={13} />
-                                </button>
-                                <button
-                                  type="button"
-                                  onClick={(e) => handleOpenSessionMemoryEditor(e, session)}
-                                  className={`p-1.5 rounded-md transition-all shrink-0 ${
-                                    session.smartMemory?.trim()
-                                      ? 'text-cyan-400 hover:text-cyan-300 hover:bg-cyan-500/15'
-                                      : 'text-zinc-400 hover:text-cyan-300 hover:bg-cyan-500/15'
-                                  }`}
-                                  title={session.smartMemory?.trim() ? "Edit session Memory Scratchpad" : "Add Memory Scratchpad to this session"}
-                                  aria-label="Edit session memory"
-                                >
-                                  <Brain size={13} />
-                                </button>
-                                <button
-                                  type="button"
-                                  onClick={(e) => handleStartEditSession(e, session)}
-                                  className="p-1.5 text-zinc-400 hover:text-cyan-300 hover:bg-cyan-500/15 rounded-md transition-all shrink-0"
-                                  title="Rewrite session title"
-                                  aria-label="Rename session"
-                                >
-                                  <Edit3 size={13} />
-                                </button>
-                                <button
-                                  type="button"
-                                  onClick={(e) => {
-                                    e.stopPropagation();
-                                    playTapSound();
-                                    setEditingSessionId(null);
-                                    setDeletingSessionId(session.id);
-                                  }}
-                                  className="p-1.5 text-zinc-400 hover:text-red-400 hover:bg-red-500/15 rounded-md transition-all shrink-0"
-                                  title="Delete this chat session"
-                                  aria-label="Delete chat session"
-                                >
-                                  <Trash2 size={13.5} />
-                                </button>
-                              </div>
-                            )}
-                          </>
-                        )}
-                      </div>
-                    );
-                  })
-                  )}
-                </div>
+                {renderHistoryDropdownContent(() => setHistoryOpen(false))}
               </div>
             )}
           </div>
@@ -9268,6 +9304,61 @@ DIRECTIVES:
                 <span>{permanentMemories.length} Permanent {permanentMemories.length === 1 ? 'Memory' : 'Memories'}</span>
               </>
             )}
+            <span>·</span>
+            <div className="relative inline-flex items-center" ref={bottomHistoryDropdownRef}>
+              <button
+                type="button"
+                onClick={() => {
+                  playTapSound();
+                  setSessions(loadChatSessions());
+                  setBottomHistoryOpen((prev) => !prev);
+                  setDeletingSessionId(null);
+                  setHistoryOpen(false);
+                }}
+                className={`inline-flex items-center gap-1.5 min-h-[28px] px-2 py-0.5 rounded-lg transition-all cursor-pointer select-none ${
+                  bottomHistoryOpen
+                    ? theme === 'classic'
+                      ? 'bg-cyan-950/80 text-cyan-200 border border-cyan-500/40'
+                      : 'bg-zinc-800 text-white border border-zinc-700'
+                    : 'text-zinc-500 hover:text-zinc-300'
+                }`}
+                title="View saved chat history"
+                aria-expanded={bottomHistoryOpen}
+              >
+                <History
+                  size={12}
+                  className={sessions.length > 0 ? 'text-cyan-400' : 'text-zinc-500'}
+                />
+                <span className={sessions.length > 0 ? 'text-zinc-400' : 'text-zinc-500'}>
+                  Saved Chats
+                </span>
+                {sessions.length > 0 ? (
+                  <span className="text-[10px] font-mono px-1.5 py-0.2 rounded-full bg-cyan-950/80 text-cyan-300 border border-cyan-500/30">
+                    {sessions.length}
+                  </span>
+                ) : (
+                  <span className="text-[10px] font-mono px-1.5 py-0.2 rounded-full bg-zinc-800/80 text-zinc-500 border border-zinc-700/40">
+                    0
+                  </span>
+                )}
+              </button>
+
+              {/* Bottom Popup */}
+              {bottomHistoryOpen && (
+                <div
+                  style={{ width: 'min(22rem, 92vw)', maxHeight: '60vh' }}
+                  className={`absolute bottom-full left-1/2 -translate-x-1/2 mb-2 w-[min(22rem,92vw)] max-h-[60vh] rounded-xl shadow-2xl border z-50 flex flex-col overflow-hidden text-left animate-in fade-in zoom-in-95 duration-150 ${
+                    theme === 'classic'
+                      ? 'bg-[#091824]/98 border-cyan-500/40 backdrop-blur-md'
+                      : theme === 'fulldark'
+                      ? 'bg-[#18181b]/98 border-[#27272a] backdrop-blur-md'
+                      : 'bg-zinc-900/98 border-zinc-800 backdrop-blur-md'
+                  }`}
+                >
+                  {renderHistoryDropdownContent(() => setBottomHistoryOpen(false))}
+                </div>
+              )}
+            </div>
           </div>
         </div>
       </main>
