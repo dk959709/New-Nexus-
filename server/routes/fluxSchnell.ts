@@ -11,11 +11,51 @@ interface FluxSchnellRequestBody {
   num_inference_steps?: number | string;
   seed?: number;
   randomize_seed?: boolean;
+  apiKey?: string;
+  apiToken?: string;
+  key?: string;
 }
 
 interface GradioStreamResult {
   path?: string;
   url?: string;
+}
+
+/**
+ * Resolves Hugging Face token in order:
+ * (a) Request header Authorization: Bearer <token> (only if it starts with "hf_")
+ * (b) Request body fields apiKey / apiToken / key
+ * (c) process.env.HF_TOKEN, HUGGINGFACE_API_KEY, HF_API_KEY
+ * Never logs the token.
+ */
+function resolveHfToken(req: Request, body: FluxSchnellRequestBody): string {
+  // (a) Request header Authorization: Bearer <token> (only if starts with "hf_")
+  const authHeader = (req.headers.authorization || '').trim();
+  if (authHeader.startsWith('Bearer ')) {
+    const bearerToken = authHeader.slice(7).trim();
+    if (bearerToken.startsWith('hf_')) {
+      return bearerToken;
+    }
+  }
+
+  // (b) Request body fields apiKey / apiToken / key
+  const bodyKey = (body.apiKey || body.apiToken || body.key || '').trim();
+  if (bodyKey) {
+    return bodyKey;
+  }
+
+  // (c) process.env.HF_TOKEN, HUGGINGFACE_API_KEY, HF_API_KEY
+  const envToken = (
+    process.env.HF_TOKEN ||
+    process.env.HUGGINGFACE_API_KEY ||
+    process.env.HF_API_KEY ||
+    ''
+  ).trim();
+  if (envToken) {
+    return envToken;
+  }
+
+  return '';
 }
 
 /**
@@ -26,7 +66,9 @@ interface GradioStreamResult {
  * - WEBP: 52 49 46 46 .... 57 45 42 50 (RIFF....WEBP)
  * - GIF:  47 49 46 38 (GIF8)
  */
-function detectImageType(buffer: Buffer): 'image/png' | 'image/jpeg' | 'image/webp' | 'image/gif' | null {
+function detectImageType(
+  buffer: Buffer,
+): 'image/png' | 'image/jpeg' | 'image/webp' | 'image/gif' | null {
   if (!buffer || buffer.length < 12) return null;
 
   // PNG: 89 50 4E 47
@@ -82,18 +124,24 @@ function detectImageType(buffer: Buffer): 'image/png' | 'image/jpeg' | 'image/we
 async function streamGradioInference(
   eventId: string,
   timeoutMs: number = 30000,
+  token?: string,
 ): Promise<GradioStreamResult> {
   const streamUrl = `https://black-forest-labs-flux-1-schnell.hf.space/gradio_api/call/infer/${eventId}`;
   const controller = new AbortController();
   const timeoutTimer = setTimeout(() => controller.abort(), timeoutMs);
 
   try {
+    const streamHeaders: Record<string, string> = {
+      Accept: 'text/event-stream',
+      'Cache-Control': 'no-cache',
+    };
+    if (token) {
+      streamHeaders['Authorization'] = `Bearer ${token}`;
+    }
+
     const streamRes = await fetch(streamUrl, {
       method: 'GET',
-      headers: {
-        Accept: 'text/event-stream',
-        'Cache-Control': 'no-cache',
-      },
+      headers: streamHeaders,
       signal: controller.signal,
     });
 
@@ -140,7 +188,24 @@ async function streamGradioInference(
           const rawData = trimmed.slice(5).trim();
 
           if (currentEvent === 'error') {
-            throw new Error(rawData || 'Space reported an error');
+            console.log(
+              `[FLUX.1-schnell] Error event: ${currentEvent} | Data: ${rawData.slice(0, 200)}`,
+            );
+
+            const isNullOrEmpty =
+              !rawData ||
+              rawData === 'null' ||
+              rawData === 'undefined' ||
+              rawData === '""' ||
+              rawData === '{}' ||
+              rawData === '[]';
+
+            if (isNullOrEmpty) {
+              throw new Error(
+                'The FLUX Space returned an error without details. This is usually the free GPU quota or the Space being overloaded. Add a Hugging Face token (hf_...) in Settings > AI Providers > FLUX.1-schnell, or try again later.',
+              );
+            }
+            throw new Error(rawData);
           }
 
           if (currentEvent === 'complete') {
@@ -152,7 +217,10 @@ async function streamGradioInference(
               let fileUrl = '';
 
               if (typeof firstItem === 'string') {
-                if (firstItem.startsWith('http://') || firstItem.startsWith('https://')) {
+                if (
+                  firstItem.startsWith('http://') ||
+                  firstItem.startsWith('https://')
+                ) {
                   fileUrl = firstItem;
                 } else {
                   filePath = firstItem;
@@ -176,7 +244,9 @@ async function streamGradioInference(
               if (err instanceof Error && err.message.includes('Space')) {
                 throw err;
               }
-              throw new Error('Failed to parse completed image payload from Space');
+              throw new Error(
+                'Failed to parse completed image payload from Space',
+              );
             }
           }
         }
@@ -203,6 +273,9 @@ async function handleFluxSchnellGeneration(req: Request, res: Response) {
       message: 'Prompt is required',
     });
   }
+
+  const token = resolveHfToken(req, body);
+  console.log(`[FLUX.1-schnell] Generation request | Token used: ${Boolean(token)}`);
 
   const rawWidth =
     typeof body.width === 'number'
@@ -232,13 +305,18 @@ async function handleFluxSchnellGeneration(req: Request, res: Response) {
 
     let eventId = '';
     try {
+      const step1Headers: Record<string, string> = {
+        'Content-Type': 'application/json',
+      };
+      if (token) {
+        step1Headers['Authorization'] = `Bearer ${token}`;
+      }
+
       const step1Res = await fetch(
         'https://black-forest-labs-flux-1-schnell.hf.space/gradio_api/call/infer',
         {
           method: 'POST',
-          headers: {
-            'Content-Type': 'application/json',
-          },
+          headers: step1Headers,
           body: JSON.stringify(step1Payload),
           signal: step1Controller.signal,
         },
@@ -280,7 +358,7 @@ async function handleFluxSchnellGeneration(req: Request, res: Response) {
     }
 
     // Step 2 (GET, streamed SSE): Wait for completion and retrieve { path, url }
-    const gradioResult = await streamGradioInference(eventId, 30000);
+    const gradioResult = await streamGradioInference(eventId, 30000, token);
 
     // Step 3: Build list of candidate URLs in specific order:
     // (a) the "url" field if it starts with http
@@ -314,7 +392,13 @@ async function handleFluxSchnellGeneration(req: Request, res: Response) {
       const fileTimeout = setTimeout(() => fileController.abort(), 15000);
 
       try {
+        const fileHeaders: Record<string, string> = {};
+        if (token) {
+          fileHeaders['Authorization'] = `Bearer ${token}`;
+        }
+
         const fileRes = await fetch(candidateUrl, {
+          headers: fileHeaders,
           signal: fileController.signal,
         });
 
@@ -371,12 +455,36 @@ async function handleFluxSchnellGeneration(req: Request, res: Response) {
     });
   } catch (err: unknown) {
     const errorObj = err as Error;
-    const isAbort =
-      errorObj.name === 'AbortError' ||
-      errorObj.message?.toLowerCase().includes('aborted') ||
-      errorObj.message?.toLowerCase().includes('timeout');
+    const rawErrorMsg = String(errorObj?.message || err || '').trim();
+    const cleanMsg =
+      rawErrorMsg === 'null' || !rawErrorMsg
+        ? 'The FLUX Space returned an error without details. Add a Hugging Face token (hf_...) in Settings > AI Providers > FLUX.1-schnell, or try again later.'
+        : rawErrorMsg;
 
-    if (isAbort || errorObj.message?.includes('Space is busy')) {
+    const lower = cleanMsg.toLowerCase();
+    const isQuotaOrRate =
+      lower.includes('429') ||
+      lower.includes('quota') ||
+      lower.includes('rate') ||
+      lower.includes('too many requests') ||
+      lower.includes('exceeded');
+    const isBusyOrTimeout =
+      errorObj.name === 'AbortError' ||
+      lower.includes('aborted') ||
+      lower.includes('timeout') ||
+      lower.includes('busy');
+
+    console.error('[FLUX.1-schnell] Error during generation:', cleanMsg);
+
+    if (isQuotaOrRate) {
+      return res.status(429).json({
+        ok: false,
+        error: cleanMsg,
+        message: cleanMsg,
+      });
+    }
+
+    if (isBusyOrTimeout || cleanMsg.includes('Space is busy')) {
       return res.status(503).json({
         ok: false,
         error: 'Space is busy, try again',
@@ -384,11 +492,10 @@ async function handleFluxSchnellGeneration(req: Request, res: Response) {
       });
     }
 
-    console.error('[FLUX.1-schnell Route] Error:', errorObj);
-    return res.status(500).json({
+    return res.status(502).json({
       ok: false,
-      error: errorObj.message || 'Space is busy, try again',
-      message: errorObj.message || 'Space is busy, try again',
+      error: cleanMsg,
+      message: cleanMsg,
     });
   }
 }

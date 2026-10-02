@@ -4381,7 +4381,12 @@ export function AIProvidersSettings() {
                         lineHeight: 1.5,
                       }}
                     >
-                      ⚡ <strong>Free Unlimited (Community Queue):</strong> Calls Hugging Face Gradio Space (<code>black-forest-labs/FLUX.1-schnell</code>) via internal queue-based backend proxy. No API key required.
+                      <div>
+                        ⚡ <strong>Free Unlimited (Community Queue):</strong> Calls Hugging Face Gradio Space (<code>black-forest-labs/FLUX.1-schnell</code>) via internal queue-based backend proxy. No API key required.
+                      </div>
+                      <div style={{ marginTop: '4px', fontSize: '11px', color: '#a7f3d0' }}>
+                        Optional: add your Hugging Face token (starts with hf_) in API Keys below. It uses your own free GPU quota and fixes 'null' or quota errors.
+                      </div>
                     </div>
                   )}
                 </div>
@@ -4990,6 +4995,9 @@ export function AIProvidersSettings() {
                               : editingImageProvider?.name?.toLowerCase().includes('cloudflare') ||
                                 editingImageProvider?.url?.toLowerCase().includes('cloudflare')
                               ? 'Cloudflare API Token'
+                              : editingImageProvider?.name?.toLowerCase().includes('flux.1-schnell') ||
+                                editingImageProvider?.url?.toLowerCase().includes('flux-schnell')
+                              ? 'Hugging Face Token'
                               : 'API Key'
                             : `Key ${index + 1}`
                         }
@@ -5056,6 +5064,9 @@ export function AIProvidersSettings() {
                                   editingImageProvider?.name?.toLowerCase().includes('pixazo') ||
                                   editingImageProvider?.customHeaderName?.includes('Ocp-Apim')
                                 ? 'Pixazo API Key (Ocp-Apim-Subscription-Key)'
+                                : editingImageProvider?.name?.toLowerCase().includes('flux.1-schnell') ||
+                                  editingImageProvider?.url?.toLowerCase().includes('flux-schnell')
+                                ? 'hf_...'
                                 : editingImageProvider?.requestType === 'post'
                                 ? (editingImageProvider?.customHeaderName ? `${editingImageProvider.customHeaderName} value` : 'Bearer API Key / Token')
                                 : 'Pollinations API Key / Token (optional for basic tier)'
