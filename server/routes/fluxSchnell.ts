@@ -13,14 +13,76 @@ interface FluxSchnellRequestBody {
   randomize_seed?: boolean;
 }
 
+interface GradioStreamResult {
+  path?: string;
+  url?: string;
+}
+
+/**
+ * Checks magic bytes to verify whether buffer is a real image and detects its MIME type.
+ * Supported:
+ * - PNG:  89 50 4E 47
+ * - JPEG: FF D8 FF
+ * - WEBP: 52 49 46 46 .... 57 45 42 50 (RIFF....WEBP)
+ * - GIF:  47 49 46 38 (GIF8)
+ */
+function detectImageType(buffer: Buffer): 'image/png' | 'image/jpeg' | 'image/webp' | 'image/gif' | null {
+  if (!buffer || buffer.length < 12) return null;
+
+  // PNG: 89 50 4E 47
+  if (
+    buffer[0] === 0x89 &&
+    buffer[1] === 0x50 &&
+    buffer[2] === 0x4e &&
+    buffer[3] === 0x47
+  ) {
+    return 'image/png';
+  }
+
+  // JPEG: FF D8 FF
+  if (
+    buffer[0] === 0xff &&
+    buffer[1] === 0xd8 &&
+    buffer[2] === 0xff
+  ) {
+    return 'image/jpeg';
+  }
+
+  // WEBP: RIFF....WEBP
+  if (
+    buffer[0] === 0x52 &&
+    buffer[1] === 0x49 &&
+    buffer[2] === 0x46 &&
+    buffer[3] === 0x46 &&
+    buffer[8] === 0x57 &&
+    buffer[9] === 0x45 &&
+    buffer[10] === 0x42 &&
+    buffer[11] === 0x50
+  ) {
+    return 'image/webp';
+  }
+
+  // GIF: GIF8 (47 49 46 38)
+  if (
+    buffer[0] === 0x47 &&
+    buffer[1] === 0x49 &&
+    buffer[2] === 0x46 &&
+    buffer[3] === 0x38
+  ) {
+    return 'image/gif';
+  }
+
+  return null;
+}
+
 /**
  * Parses Server-Sent Events (SSE) from the Gradio streaming endpoint.
- * Waits for 'event: complete' (or 'event: error') and extracts output data.
+ * Waits for 'event: complete' (or 'event: error') and extracts output data { path, url }.
  */
 async function streamGradioInference(
   eventId: string,
   timeoutMs: number = 30000,
-): Promise<string> {
+): Promise<GradioStreamResult> {
   const streamUrl = `https://black-forest-labs-flux-1-schnell.hf.space/gradio_api/call/infer/${eventId}`;
   const controller = new AbortController();
   const timeoutTimer = setTimeout(() => controller.abort(), timeoutMs);
@@ -87,20 +149,29 @@ async function streamGradioInference(
               // In Gradio, data is an array: [ { path: "...", url: "...", ... } ] or [ "..." ]
               const firstItem = Array.isArray(parsed) ? parsed[0] : parsed;
               let filePath = '';
+              let fileUrl = '';
+
               if (typeof firstItem === 'string') {
-                filePath = firstItem;
+                if (firstItem.startsWith('http://') || firstItem.startsWith('https://')) {
+                  fileUrl = firstItem;
+                } else {
+                  filePath = firstItem;
+                }
               } else if (firstItem && typeof firstItem === 'object') {
-                filePath =
-                  (firstItem as { path?: string; url?: string; image?: { path?: string } }).path ||
-                  (firstItem as { path?: string; url?: string; image?: { path?: string } }).url ||
-                  (firstItem as { path?: string; url?: string; image?: { path?: string } }).image?.path ||
-                  '';
+                const itemObj = firstItem as {
+                  path?: string;
+                  url?: string;
+                  image?: { path?: string; url?: string };
+                };
+                filePath = itemObj.path || itemObj.image?.path || '';
+                fileUrl = itemObj.url || itemObj.image?.url || '';
               }
 
-              if (!filePath) {
-                throw new Error('No image file path returned from Space');
+              if (!filePath && !fileUrl) {
+                throw new Error('No image file path or URL returned from Space');
               }
-              return filePath;
+
+              return { path: filePath, url: fileUrl };
             } catch (err: unknown) {
               if (err instanceof Error && err.message.includes('Space')) {
                 throw err;
@@ -208,39 +279,87 @@ async function handleFluxSchnellGeneration(req: Request, res: Response) {
       });
     }
 
-    // Step 2 (GET, streamed SSE): Wait for completion and retrieve file path
-    const filePath = await streamGradioInference(eventId, 30000);
+    // Step 2 (GET, streamed SSE): Wait for completion and retrieve { path, url }
+    const gradioResult = await streamGradioInference(eventId, 30000);
 
-    // Step 3 (fetch file): Construct full file URL and fetch image bytes
-    const fullFileUrl =
-      filePath.startsWith('http://') || filePath.startsWith('https://')
-        ? filePath
-        : `https://black-forest-labs-flux-1-schnell.hf.space/file=${filePath.startsWith('/') ? filePath : `/${filePath}`}`;
+    // Step 3: Build list of candidate URLs in specific order:
+    // (a) the "url" field if it starts with http
+    // (b) https://black-forest-labs-flux-1-schnell.hf.space/gradio_api/file=<path>
+    // (c) https://black-forest-labs-flux-1-schnell.hf.space/file=<path>
+    const candidates: string[] = [];
 
-    const fileController = new AbortController();
-    const fileTimeout = setTimeout(() => fileController.abort(), 15000);
-
-    let imageBuffer: Buffer;
-    let mimeType = 'image/webp';
-
-    try {
-      const fileRes = await fetch(fullFileUrl, {
-        signal: fileController.signal,
-      });
-
-      if (!fileRes.ok) {
-        throw new Error(`Failed to retrieve generated image file (HTTP ${fileRes.status})`);
-      }
-
-      mimeType = fileRes.headers.get('content-type') || 'image/webp';
-      const arrayBuffer = await fileRes.arrayBuffer();
-      imageBuffer = Buffer.from(arrayBuffer);
-    } finally {
-      clearTimeout(fileTimeout);
+    if (
+      gradioResult.url &&
+      (gradioResult.url.startsWith('http://') || gradioResult.url.startsWith('https://'))
+    ) {
+      candidates.push(gradioResult.url);
     }
 
-    const base64 = imageBuffer.toString('base64');
-    const dataUrl = `data:${mimeType};base64,${base64}`;
+    if (gradioResult.path) {
+      const normalizedPath = gradioResult.path.startsWith('/')
+        ? gradioResult.path
+        : `/${gradioResult.path}`;
+      candidates.push(
+        `https://black-forest-labs-flux-1-schnell.hf.space/gradio_api/file=${normalizedPath}`,
+      );
+      candidates.push(
+        `https://black-forest-labs-flux-1-schnell.hf.space/file=${normalizedPath}`,
+      );
+    }
+
+    let successfulImage: { buffer: Buffer; mime: string } | null = null;
+
+    for (const candidateUrl of candidates) {
+      const fileController = new AbortController();
+      const fileTimeout = setTimeout(() => fileController.abort(), 15000);
+
+      try {
+        const fileRes = await fetch(candidateUrl, {
+          signal: fileController.signal,
+        });
+
+        const contentTypeHeader = fileRes.headers.get('content-type') || '';
+
+        if (!fileRes.ok) {
+          console.log(
+            `[FLUX.1-schnell] Candidate tried: ${candidateUrl} | HTTP status: ${fileRes.status} | Content-Type: ${contentTypeHeader || 'none'} | Byte size: 0 | Detected type: none (HTTP error)`,
+          );
+          continue;
+        }
+
+        const arrayBuffer = await fileRes.arrayBuffer();
+        const buffer = Buffer.from(arrayBuffer);
+        const detectedType = detectImageType(buffer);
+
+        console.log(
+          `[FLUX.1-schnell] Candidate tried: ${candidateUrl} | HTTP status: ${fileRes.status} | Content-Type: ${contentTypeHeader || 'none'} | Byte size: ${buffer.length} | Detected type: ${detectedType || 'none'}`,
+        );
+
+        if (detectedType && buffer.length > 0) {
+          successfulImage = { buffer, mime: detectedType };
+          break;
+        }
+      } catch (candidateErr: unknown) {
+        const errMsg =
+          candidateErr instanceof Error ? candidateErr.message : String(candidateErr);
+        console.log(
+          `[FLUX.1-schnell] Candidate tried: ${candidateUrl} | Error: ${errMsg} | Detected type: none`,
+        );
+      } finally {
+        clearTimeout(fileTimeout);
+      }
+    }
+
+    if (!successfulImage) {
+      return res.status(502).json({
+        ok: false,
+        error: 'FLUX Space returned a file that is not an image, try again',
+        message: 'FLUX Space returned a file that is not an image, try again',
+      });
+    }
+
+    const base64 = successfulImage.buffer.toString('base64');
+    const dataUrl = `data:${successfulImage.mime};base64,${base64}`;
 
     return res.json({
       ok: true,
