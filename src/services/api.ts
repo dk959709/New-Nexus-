@@ -25,7 +25,7 @@ import type {
   ApiCatalogItem,
   CustomApiCallResult,
 } from '@/types';
-import { storage } from '@/lib/storage';
+import { storage, getAssistantThinkingEffort } from '@/lib/storage';
 import { applyReasoningConfig } from '@/lib/reasoningConfig';
 import { searchWikipedia, getWikipediaSummary, wikipediaToSearchResult, formatWikipediaForReport } from './wikipedia';
 
@@ -345,18 +345,19 @@ export const api = {
     let providerToSend = rawProvider;
 
     if (rawProvider) {
+      const thinkingEffort = getAssistantThinkingEffort();
       const { config: reasoningEnhancedConfig, spec: reasoningSpec, params: reasoningParams, desiredLevel } =
-        applyReasoningConfig(rawProvider, 'low', undefined, true);
+        applyReasoningConfig(rawProvider, 'low', undefined, true, thinkingEffort);
       providerToSend = reasoningEnhancedConfig;
 
       if (reasoningSpec && reasoningParams) {
         console.log(
-          `[AI Assistant Reasoning Control] Provider: "${reasoningEnhancedConfig.name}" (${reasoningEnhancedConfig.id}) | Model: "${reasoningEnhancedConfig.model || ''}" | Level: "${desiredLevel}" | Reasoning Params:`,
+          `[AI Assistant Reasoning Control] Provider: "${reasoningEnhancedConfig.name}" (${reasoningEnhancedConfig.id}) | Model: "${reasoningEnhancedConfig.model || ''}" | Level: "${desiredLevel}" | Thinking Effort: "${thinkingEffort}" | Reasoning Params:`,
           reasoningParams,
         );
       } else {
         console.log(
-          `[AI Assistant Reasoning Control] Provider: "${reasoningEnhancedConfig.name}" (${reasoningEnhancedConfig.id}) | Model: "${reasoningEnhancedConfig.model || ''}" | No reasoning config applied (unsupported or not in config map)`,
+          `[AI Assistant Reasoning Control] Provider: "${reasoningEnhancedConfig.name}" (${reasoningEnhancedConfig.id}) | Model: "${reasoningEnhancedConfig.model || ''}" | Thinking Effort: "${thinkingEffort}" | No reasoning config applied (unsupported or not in config map)`,
         );
       }
     }

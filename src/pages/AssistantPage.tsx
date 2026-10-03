@@ -52,7 +52,7 @@ import {
 import { Haptics, ImpactStyle } from '@capacitor/haptics';
 import { Link } from 'react-router-dom';
 import { api } from '@/services/api';
-import { storage, DEFAULT_COMMANDER_CONFIG } from '@/lib/storage';
+import { storage, DEFAULT_COMMANDER_CONFIG, getAssistantThinkingEffort, setAssistantThinkingEffort } from '@/lib/storage';
 import { copyToClipboard, formatMarkdownToRichHtml } from '@/lib/clipboard';
 import { playTapSound } from '@/lib/audio';
 import { ErrorMessage } from '@/components';
@@ -1433,6 +1433,7 @@ export function AssistantPage() {
   const [responseLanguage, setResponseLanguage] = useState<string>(() => storage.getAssistantLanguage());
   const [theme, setTheme] = useState<'minimal' | 'classic' | 'fulldark'>(() => storage.getAssistantTheme());
   const [permanentMemories, setPermanentMemories] = useState<string[]>(() => storage.getPermanentMemories());
+  const [thinkingEffort, setThinkingEffort] = useState<'default' | 'medium' | 'high'>(() => getAssistantThinkingEffort());
 
   // Ensure mutual exclusivity on initial load if multiple were saved in localStorage
   const initialSpecialists = (() => {
@@ -5926,6 +5927,12 @@ DIRECTIVES:
     });
   };
 
+  const handleThinkingEffortChange = (val: 'default' | 'medium' | 'high') => {
+    playTapSound();
+    setThinkingEffort(val);
+    setAssistantThinkingEffort(val);
+  };
+
   const renderHistoryDropdownContent = (onClose: () => void) => (
     <>
       <div className="p-3 border-b border-zinc-800/80 flex items-center justify-between">
@@ -10097,6 +10104,110 @@ DIRECTIVES:
                     ≈ {Math.round(smartMemoryMaxLength / 4)} tokens added to every message
                   </span>
                 </div>
+              </div>
+            </div>
+
+            <div className="h-px bg-zinc-800" />
+
+            {/* Section: Thinking Effort */}
+            <div className="space-y-3">
+              <div className="flex items-center justify-between">
+                <div className="flex items-center gap-2">
+                  <Sparkles size={15} className="text-cyan-400" />
+                  <h4 className="text-xs font-semibold uppercase tracking-wider text-zinc-300">
+                    Thinking Effort
+                  </h4>
+                </div>
+                <span className="text-[11px] px-2 py-0.5 rounded-full bg-cyan-950/80 text-cyan-300 border border-cyan-500/40 flex items-center gap-1 font-medium capitalize">
+                  <Check size={11} /> {thinkingEffort}
+                </span>
+              </div>
+
+              <p className="text-xs text-zinc-400 leading-relaxed">
+                Controls the depth of model reasoning and thinking tokens for AI Assistant responses.
+              </p>
+
+              <div className="grid grid-cols-1 sm:grid-cols-3 gap-3 pt-1">
+                {/* Option 1: Default */}
+                <button
+                  type="button"
+                  onClick={() => handleThinkingEffortChange('default')}
+                  className={`p-3.5 rounded-xl border text-left transition-all relative flex flex-col justify-between cursor-pointer group ${
+                    thinkingEffort === 'default'
+                      ? 'border-cyan-400 bg-cyan-950/40 shadow-[0_0_15px_rgba(6,182,212,0.2)] ring-1 ring-cyan-400/40'
+                      : 'border-zinc-800 bg-zinc-900/60 hover:bg-zinc-850 hover:border-zinc-700'
+                  }`}
+                >
+                  <div>
+                    <div className="flex items-center justify-between mb-2">
+                      <span className="font-medium text-xs text-zinc-100">
+                        Default
+                      </span>
+                      {thinkingEffort === 'default' && (
+                        <span className="inline-flex items-center gap-1 text-[10px] font-semibold text-cyan-300 bg-cyan-950/80 px-1.5 py-0.5 rounded border border-cyan-500/50">
+                          <Check size={10} /> Active
+                        </span>
+                      )}
+                    </div>
+                    <p className="text-[11px] text-zinc-400 leading-relaxed">
+                      Follows your provider settings (Auto / Force ON / Force OFF).
+                    </p>
+                  </div>
+                </button>
+
+                {/* Option 2: Medium */}
+                <button
+                  type="button"
+                  onClick={() => handleThinkingEffortChange('medium')}
+                  className={`p-3.5 rounded-xl border text-left transition-all relative flex flex-col justify-between cursor-pointer group ${
+                    thinkingEffort === 'medium'
+                      ? 'border-cyan-400 bg-cyan-950/40 shadow-[0_0_15px_rgba(6,182,212,0.2)] ring-1 ring-cyan-400/40'
+                      : 'border-zinc-800 bg-zinc-900/60 hover:bg-zinc-850 hover:border-zinc-700'
+                  }`}
+                >
+                  <div>
+                    <div className="flex items-center justify-between mb-2">
+                      <span className="font-medium text-xs text-zinc-100">
+                        Medium
+                      </span>
+                      {thinkingEffort === 'medium' && (
+                        <span className="inline-flex items-center gap-1 text-[10px] font-semibold text-cyan-300 bg-cyan-950/80 px-1.5 py-0.5 rounded border border-cyan-500/50">
+                          <Check size={10} /> Active
+                        </span>
+                      )}
+                    </div>
+                    <p className="text-[11px] text-zinc-400 leading-relaxed">
+                      Balanced thinking. Uses more tokens than Default.
+                    </p>
+                  </div>
+                </button>
+
+                {/* Option 3: High */}
+                <button
+                  type="button"
+                  onClick={() => handleThinkingEffortChange('high')}
+                  className={`p-3.5 rounded-xl border text-left transition-all relative flex flex-col justify-between cursor-pointer group ${
+                    thinkingEffort === 'high'
+                      ? 'border-cyan-400 bg-cyan-950/40 shadow-[0_0_15px_rgba(6,182,212,0.2)] ring-1 ring-cyan-400/40'
+                      : 'border-zinc-800 bg-zinc-900/60 hover:bg-zinc-850 hover:border-zinc-700'
+                  }`}
+                >
+                  <div>
+                    <div className="flex items-center justify-between mb-2">
+                      <span className="font-medium text-xs text-zinc-100">
+                        High
+                      </span>
+                      {thinkingEffort === 'high' && (
+                        <span className="inline-flex items-center gap-1 text-[10px] font-semibold text-cyan-300 bg-cyan-950/80 px-1.5 py-0.5 rounded border border-cyan-500/50">
+                          <Check size={10} /> Active
+                        </span>
+                      )}
+                    </div>
+                    <p className="text-[11px] text-zinc-400 leading-relaxed">
+                      Deepest thinking. Uses the most tokens.
+                    </p>
+                  </div>
+                </button>
               </div>
             </div>
 

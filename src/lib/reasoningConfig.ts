@@ -719,6 +719,7 @@ export function applyReasoningConfig<T extends { extraParams?: Record<string, un
   agentOrTargetLevel?: { id?: string; name?: string } | string | ReasoningTargetLevel | null,
   modelOverride?: string | boolean,
   showReasoningParam?: boolean,
+  thinkingEffort?: 'default' | 'medium' | 'high',
 ): {
   config: T;
   spec: ReasoningModelSpec | null;
@@ -734,10 +735,26 @@ export function applyReasoningConfig<T extends { extraParams?: Record<string, un
     showReasoning = Boolean(showReasoningParam);
   }
 
-  const desiredLevel = getEffectiveReasoningTargetLevel(provider, agentOrTargetLevel);
+  const rawDesiredLevel = getEffectiveReasoningTargetLevel(provider, agentOrTargetLevel);
+  const effectiveThinkingEffort = thinkingEffort && thinkingEffort !== 'default' ? thinkingEffort : 'default';
+
+  // If thinkingEffort is 'high' or 'medium': use target level 'high' (same as Force ON).
+  // Otherwise, behave exactly as today.
+  const targetLevelForBuild: ReasoningTargetLevel =
+    effectiveThinkingEffort === 'high' || effectiveThinkingEffort === 'medium'
+      ? 'high'
+      : rawDesiredLevel;
+
+  const desiredLevel = targetLevelForBuild;
   const effectiveModel = effectiveModelOverride || provider.model;
   const provKey = normalizeProviderId(provider);
   const normModel = normalizeModelId(effectiveModel);
+
+  if (effectiveThinkingEffort !== 'default') {
+    console.log(
+      `[Thinking Effort Control] Provider "${provider.name || provider.id || 'unnamed'}" | Model "${effectiveModel}" | Selected Thinking Effort: "${effectiveThinkingEffort}" (build target level: "${targetLevelForBuild}")`,
+    );
+  }
 
   if (provider.reasoningOverride === 'force_off') {
     console.log(
@@ -793,17 +810,38 @@ export function applyReasoningConfig<T extends { extraParams?: Record<string, un
     };
   }
 
-  const params = spec.buildParams(desiredLevel, showReasoning);
+  let params = spec.buildParams(targetLevelForBuild, showReasoning);
+
+  // If thinkingEffort is 'medium':
+  // first build the params with target level 'high'. Then, if the model spec's validEfforts includes 'medium',
+  // replace the effort value in the params ('reasoning_effort', or 'reasoning.effort' for nested objects) from 'high' to 'medium'.
+  // If the spec has no 'medium' (for example on/off models like Poolside), keep 'high'.
+  if (effectiveThinkingEffort === 'medium') {
+    if (spec.validEfforts && spec.validEfforts.includes('medium')) {
+      params = { ...params };
+      if (params.reasoning_effort !== undefined) {
+        params.reasoning_effort = 'medium';
+      }
+      if (params.reasoning && typeof params.reasoning === 'object') {
+        params.reasoning = {
+          ...(params.reasoning as Record<string, unknown>),
+          effort: 'medium',
+        };
+      }
+    }
+  }
+
+  const effortDetail = effectiveThinkingEffort !== 'default' ? ` [Thinking Effort: ${effectiveThinkingEffort}]` : '';
 
   // Log whether generic fallback or explicit config was applied for BazaarLink models
   if (provKey === 'bazaarlink') {
     if (spec.isGenericFallback) {
       console.log(
-        `[BazaarLink Reasoning Control] Model "${effectiveModel}" -> using GENERIC BazaarLink fallback rule (params: ${JSON.stringify(params)})`,
+        `[BazaarLink Reasoning Control] Model "${effectiveModel}" -> using GENERIC BazaarLink fallback rule (params: ${JSON.stringify(params)})${effortDetail}`,
       );
     } else {
       console.log(
-        `[BazaarLink Reasoning Control] Model "${effectiveModel}" -> using EXPLICIT config entry in reasoning matrix (params: ${JSON.stringify(params)})`,
+        `[BazaarLink Reasoning Control] Model "${effectiveModel}" -> using EXPLICIT config entry in reasoning matrix (params: ${JSON.stringify(params)})${effortDetail}`,
       );
     }
   }
@@ -820,11 +858,11 @@ export function applyReasoningConfig<T extends { extraParams?: Record<string, un
 
     if (spec.isGenericFallback) {
       console.log(
-        `[Groq Reasoning Control] Model "${effectiveModel}" -> using GENERIC Groq fallback rule (params: ${JSON.stringify(params)})${hidingDetail}`,
+        `[Groq Reasoning Control] Model "${effectiveModel}" -> using GENERIC Groq fallback rule (params: ${JSON.stringify(params)})${hidingDetail}${effortDetail}`,
       );
     } else {
       console.log(
-        `[Groq Reasoning Control] Model "${effectiveModel}" -> using EXPLICIT config entry in reasoning matrix (params: ${JSON.stringify(params)})${hidingDetail}`,
+        `[Groq Reasoning Control] Model "${effectiveModel}" -> using EXPLICIT config entry in reasoning matrix (params: ${JSON.stringify(params)})${hidingDetail}${effortDetail}`,
       );
     }
   }
@@ -840,11 +878,11 @@ export function applyReasoningConfig<T extends { extraParams?: Record<string, un
 
     if (spec.isGenericFallback) {
       console.log(
-        `[OpenRouter Reasoning Control] Model "${effectiveModel}" -> using GENERIC OpenRouter fallback rule (params: ${JSON.stringify(params)})${shapeDetail}`,
+        `[OpenRouter Reasoning Control] Model "${effectiveModel}" -> using GENERIC OpenRouter fallback rule (params: ${JSON.stringify(params)})${shapeDetail}${effortDetail}`,
       );
     } else {
       console.log(
-        `[OpenRouter Reasoning Control] Model "${effectiveModel}" -> using EXPLICIT config entry in reasoning matrix (params: ${JSON.stringify(params)})${shapeDetail}`,
+        `[OpenRouter Reasoning Control] Model "${effectiveModel}" -> using EXPLICIT config entry in reasoning matrix (params: ${JSON.stringify(params)})${shapeDetail}${effortDetail}`,
       );
     }
   }
@@ -853,11 +891,11 @@ export function applyReasoningConfig<T extends { extraParams?: Record<string, un
   if (provKey === 'huggingface') {
     if (spec.isGroqSuffixSpecialCase) {
       console.log(
-        `[Hugging Face Reasoning Control] Model "${effectiveModel}" -> using :groq-suffix SPECIAL-CASE rule (reusing Groq reasoning parameters: ${JSON.stringify(params)})`,
+        `[Hugging Face Reasoning Control] Model "${effectiveModel}" -> using :groq-suffix SPECIAL-CASE rule (reusing Groq reasoning parameters: ${JSON.stringify(params)})${effortDetail}`,
       );
     } else {
       console.log(
-        `[Hugging Face Reasoning Control] Model "${effectiveModel}" -> using GENERIC Hugging Face fallback rule (params: ${JSON.stringify(params)})`,
+        `[Hugging Face Reasoning Control] Model "${effectiveModel}" -> using GENERIC Hugging Face fallback rule (params: ${JSON.stringify(params)})${effortDetail}`,
       );
     }
     console.log(
@@ -869,19 +907,19 @@ export function applyReasoningConfig<T extends { extraParams?: Record<string, un
   if (provKey === 'cloudflare' || normModel.startsWith('@cf/') || normModel.includes('@cf/')) {
     if (spec.isDualMechanismWorkersAi) {
       console.log(
-        `[Cloudflare Workers AI Reasoning Control] Model "${effectiveModel}" -> using GENERIC DUAL-MECHANISM fallback rule (sending both reasoning_effort: "${params.reasoning_effort}" and chat_template_kwargs: ${JSON.stringify(params.chat_template_kwargs || 'omitted (thinking on)')}) (params: ${JSON.stringify(params)})`,
+        `[Cloudflare Workers AI Reasoning Control] Model "${effectiveModel}" -> using GENERIC DUAL-MECHANISM fallback rule (sending both reasoning_effort: "${params.reasoning_effort}" and chat_template_kwargs: ${JSON.stringify(params.chat_template_kwargs || 'omitted (thinking on)')}) (params: ${JSON.stringify(params)})${effortDetail}`,
       );
     } else if (spec.isKnownProviderPrefixSpecialCase) {
       console.log(
-        `[Cloudflare AI Gateway Reasoning Control] Model "${effectiveModel}" -> using ${spec.matchedProvider || 'known-provider'}-prefix SPECIAL-CASE rule (reusing known provider reasoning parameters: ${JSON.stringify(params)})`,
+        `[Cloudflare AI Gateway Reasoning Control] Model "${effectiveModel}" -> using ${spec.matchedProvider || 'known-provider'}-prefix SPECIAL-CASE rule (reusing known provider reasoning parameters: ${JSON.stringify(params)})${effortDetail}`,
       );
     } else if (spec.isGenericFallback) {
       console.log(
-        `[Cloudflare AI Gateway Reasoning Control] Model "${effectiveModel}" -> using GENERIC Cloudflare AI Gateway fallback rule (params: ${JSON.stringify(params)})`,
+        `[Cloudflare AI Gateway Reasoning Control] Model "${effectiveModel}" -> using GENERIC Cloudflare AI Gateway fallback rule (params: ${JSON.stringify(params)})${effortDetail}`,
       );
     } else {
       console.log(
-        `[Cloudflare AI Gateway Reasoning Control] Model "${effectiveModel}" -> using EXPLICIT config entry in reasoning matrix (params: ${JSON.stringify(params)})`,
+        `[Cloudflare AI Gateway Reasoning Control] Model "${effectiveModel}" -> using EXPLICIT config entry in reasoning matrix (params: ${JSON.stringify(params)})${effortDetail}`,
       );
     }
     console.log(
@@ -893,11 +931,11 @@ export function applyReasoningConfig<T extends { extraParams?: Record<string, un
   if (provKey === 'ollama') {
     if (spec.isGenericFallback) {
       console.log(
-        `[Ollama Reasoning Control] Model "${effectiveModel}" -> using GENERIC Ollama fallback rule (params: ${JSON.stringify(params)})`,
+        `[Ollama Reasoning Control] Model "${effectiveModel}" -> using GENERIC Ollama fallback rule (params: ${JSON.stringify(params)})${effortDetail}`,
       );
     } else {
       console.log(
-        `[Ollama Reasoning Control] Model "${effectiveModel}" -> using EXPLICIT config entry in reasoning matrix (params: ${JSON.stringify(params)})`,
+        `[Ollama Reasoning Control] Model "${effectiveModel}" -> using EXPLICIT config entry in reasoning matrix (params: ${JSON.stringify(params)})${effortDetail}`,
       );
     }
   }
@@ -906,14 +944,25 @@ export function applyReasoningConfig<T extends { extraParams?: Record<string, un
   if (provKey === 'poolside' || spec.provider === 'poolside') {
     if (spec.isGenericFallback) {
       console.log(
-        `[Poolside Reasoning Control] Model "${effectiveModel}" -> using GENERIC Poolside fallback rule (params: ${JSON.stringify(params)})`,
+        `[Poolside Reasoning Control] Model "${effectiveModel}" -> using GENERIC Poolside fallback rule (params: ${JSON.stringify(params)})${effortDetail}`,
       );
     } else {
       console.log(
-        `[Poolside Reasoning Control] Model "${effectiveModel}" -> using EXPLICIT config entry in reasoning matrix (params: ${JSON.stringify(params)})`,
+        `[Poolside Reasoning Control] Model "${effectiveModel}" -> using EXPLICIT config entry in reasoning matrix (params: ${JSON.stringify(params)})${effortDetail}`,
       );
     }
   }
+
+  if (effectiveThinkingEffort !== 'default') {
+    console.log(
+      `[Thinking Effort Control] Applied thinking effort "${effectiveThinkingEffort}" (resolved effort: "${params.reasoning_effort || (params.reasoning as { effort?: string })?.effort || 'high'}") | Model: "${effectiveModel}"`,
+    );
+  }
+
+  const resolvedLevel: ReasoningTargetLevel =
+    effectiveThinkingEffort === 'medium'
+      ? (spec.validEfforts && spec.validEfforts.includes('medium') ? 'medium' : 'high')
+      : desiredLevel;
 
   const updatedConfig: T = {
     ...provider,
@@ -931,6 +980,6 @@ export function applyReasoningConfig<T extends { extraParams?: Record<string, un
     config: updatedConfig,
     spec,
     params,
-    desiredLevel,
+    desiredLevel: resolvedLevel,
   };
 }

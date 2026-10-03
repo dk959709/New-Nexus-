@@ -1229,6 +1229,36 @@ function remove(key: string): void {
   }
 }
 
+export type AssistantThinkingEffort = 'default' | 'medium' | 'high';
+
+export function getAssistantThinkingEffort(): AssistantThinkingEffort {
+  try {
+    const raw = localStorage.getItem('nexus-ai-assistant-thinking-effort');
+    if (!raw) return 'default';
+    let val = raw;
+    try {
+      val = JSON.parse(raw);
+    } catch {
+      // ignore
+    }
+    if (val === 'medium' || val === 'high') {
+      return val;
+    }
+    return 'default';
+  } catch {
+    return 'default';
+  }
+}
+
+export function setAssistantThinkingEffort(value: 'default' | 'medium' | 'high'): void {
+  try {
+    const val = value === 'medium' || value === 'high' ? value : 'default';
+    localStorage.setItem('nexus-ai-assistant-thinking-effort', JSON.stringify(val));
+  } catch {
+    // ignore
+  }
+}
+
 export const storage = {
   getSearches(): string[] {
     return read<string[]>(KEYS.searches, []);
@@ -2208,6 +2238,14 @@ export const storage = {
     const clamped = Math.max(500, Math.min(15000, Math.round(value)));
     write('nexus-ai-smart-memory-max-length', clamped);
     return clamped;
+  },
+
+  getAssistantThinkingEffort(): AssistantThinkingEffort {
+    return getAssistantThinkingEffort();
+  },
+
+  setAssistantThinkingEffort(value: 'default' | 'medium' | 'high'): void {
+    setAssistantThinkingEffort(value);
   },
 
   getMultiChatResponseLanguage(): string {
