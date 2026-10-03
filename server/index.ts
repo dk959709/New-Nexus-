@@ -96,6 +96,100 @@ interface ProviderRequestResult {
   error?: string;
 }
 
+function extractReasoningAndContent(
+  message?: Record<string, unknown> | null,
+  rawContent?: unknown,
+  provider?: string,
+  model?: string,
+): { contentStr: string; reasoningStr: string } {
+  // 1. Build contentStr exactly as today (string, or array of parts joined, then trimmed)
+  const contentInput = rawContent !== undefined ? rawContent : message?.content;
+  let contentStr = '';
+  if (contentInput) {
+    if (typeof contentInput === 'string') {
+      contentStr = contentInput.trim();
+    } else if (Array.isArray(contentInput)) {
+      contentStr = contentInput
+        .map((part) => (typeof part === 'string' ? part : (part as { text?: string })?.text || ''))
+        .join('')
+        .trim();
+    }
+  }
+
+  // 2. Read thinking text from message in order: reasoning, reasoning_content, thinking, reasoning_details
+  let reasoningStr = '';
+  if (message && typeof message === 'object') {
+    if (typeof message.reasoning === 'string' && message.reasoning.trim()) {
+      reasoningStr = message.reasoning.trim();
+    } else if (typeof message.reasoning_content === 'string' && message.reasoning_content.trim()) {
+      reasoningStr = message.reasoning_content.trim();
+    } else if (typeof message.thinking === 'string' && message.thinking.trim()) {
+      reasoningStr = message.thinking.trim();
+    } else if (message.reasoning_details) {
+      if (Array.isArray(message.reasoning_details)) {
+        const detailsParts: string[] = [];
+        for (const item of message.reasoning_details) {
+          if (typeof item === 'string' && item.trim()) {
+            detailsParts.push(item.trim());
+          } else if (item && typeof item === 'object') {
+            const piece =
+              (item as { text?: string; summary?: string }).text ||
+              (item as { text?: string; summary?: string }).summary;
+            if (typeof piece === 'string' && piece.trim()) {
+              detailsParts.push(piece.trim());
+            }
+          }
+        }
+        if (detailsParts.length > 0) {
+          reasoningStr = detailsParts.join('\n').trim();
+        }
+      } else if (typeof message.reasoning_details === 'string' && message.reasoning_details.trim()) {
+        reasoningStr = message.reasoning_details.trim();
+      }
+    }
+  }
+
+  // 3. If contentStr contains <think>...</think> blocks, remove them from contentStr and add their text to reasoningStr
+  // (join several blocks with a blank line). If there is an unclosed <think> at the end, treat the text after it as reasoning and remove it from contentStr. Trim both.
+  if (contentStr.includes('<think>') || /<think>/i.test(contentStr)) {
+    const thinkBlocks: string[] = [];
+    contentStr = contentStr.replace(/<think>([\s\S]*?)<\/think>/gi, (_, blockContent: string) => {
+      const trimmedBlock = blockContent.trim();
+      if (trimmedBlock) {
+        thinkBlocks.push(trimmedBlock);
+      }
+      return '';
+    });
+
+    const unclosedMatch = contentStr.match(/<think>([\s\S]*)$/i);
+    if (unclosedMatch) {
+      const afterThink = unclosedMatch[1].trim();
+      if (afterThink) {
+        thinkBlocks.push(afterThink);
+      }
+      contentStr = contentStr.slice(0, unclosedMatch.index).trim();
+    }
+
+    if (thinkBlocks.length > 0) {
+      const extractedThink = thinkBlocks.join('\n\n').trim();
+      if (extractedThink) {
+        reasoningStr = reasoningStr ? `${reasoningStr}\n\n${extractedThink}`.trim() : extractedThink;
+      }
+    }
+  }
+
+  contentStr = contentStr.trim();
+  reasoningStr = reasoningStr.trim();
+
+  // Debug log only when provider is BazaarLink or Groq AND reasoningStr is empty
+  if ((provider === 'BazaarLink' || provider === 'Groq') && !reasoningStr) {
+    const msgKeys = message && typeof message === 'object' ? Object.keys(message) : [];
+    console.log(`[Reasoning Debug] provider, model, message keys: ${provider}, ${model || 'unknown'}, <${msgKeys.join(', ')}>`);
+  }
+
+  return { contentStr, reasoningStr };
+}
+
 async function executeProviderChatRequest({
   url: rawUrl,
   model: rawModel,
@@ -258,25 +352,12 @@ async function executeProviderChatRequest({
         };
 
         const choice = payload.choices?.[0];
-        let contentStr = '';
-        if (choice?.message?.content) {
-          if (typeof choice.message.content === 'string') {
-            contentStr = choice.message.content.trim();
-          } else if (Array.isArray(choice.message.content)) {
-            contentStr = choice.message.content
-              .map((part) => (typeof part === 'string' ? part : part?.text || ''))
-              .join('')
-              .trim();
-          }
-        }
-
-        const rawReasoning =
-          choice?.message?.reasoning ||
-          (choice?.message as { reasoning_content?: string })?.reasoning_content;
-        let reasoningStr = '';
-        if (rawReasoning && typeof rawReasoning === 'string') {
-          reasoningStr = rawReasoning.trim();
-        }
+        const { contentStr, reasoningStr } = extractReasoningAndContent(
+          choice?.message as Record<string, unknown>,
+          choice?.message?.content,
+          isBazaarLink ? 'BazaarLink' : isGroq ? 'Groq' : undefined,
+          model,
+        );
 
         // Primary answer is message.content, falling back to message.reasoning only if content is empty
         const text =
@@ -361,25 +442,12 @@ async function executeProviderChatRequest({
               };
 
               const fbChoice = fbPayload.choices?.[0];
-              let fbContentStr = '';
-              if (fbChoice?.message?.content) {
-                if (typeof fbChoice.message.content === 'string') {
-                  fbContentStr = fbChoice.message.content.trim();
-                } else if (Array.isArray(fbChoice.message.content)) {
-                  fbContentStr = fbChoice.message.content
-                    .map((part) => (typeof part === 'string' ? part : part?.text || ''))
-                    .join('')
-                    .trim();
-                }
-              }
-
-              const fbRawReasoning =
-                fbChoice?.message?.reasoning ||
-                (fbChoice?.message as { reasoning_content?: string })?.reasoning_content;
-              let fbReasoningStr = '';
-              if (fbRawReasoning && typeof fbRawReasoning === 'string') {
-                fbReasoningStr = fbRawReasoning.trim();
-              }
+              const { contentStr: fbContentStr, reasoningStr: fbReasoningStr } = extractReasoningAndContent(
+                fbChoice?.message as Record<string, unknown>,
+                fbChoice?.message?.content,
+                undefined,
+                'gemini-3.6-flash',
+              );
 
               const fbText =
                 fbContentStr ||
@@ -449,25 +517,12 @@ async function executeProviderChatRequest({
               };
 
               const fbChoice = fbPayload.choices?.[0];
-              let fbContentStr = '';
-              if (fbChoice?.message?.content) {
-                if (typeof fbChoice.message.content === 'string') {
-                  fbContentStr = fbChoice.message.content.trim();
-                } else if (Array.isArray(fbChoice.message.content)) {
-                  fbContentStr = fbChoice.message.content
-                    .map((part) => (typeof part === 'string' ? part : part?.text || ''))
-                    .join('')
-                    .trim();
-                }
-              }
-
-              const fbRawReasoning =
-                fbChoice?.message?.reasoning ||
-                (fbChoice?.message as { reasoning_content?: string })?.reasoning_content;
-              let fbReasoningStr = '';
-              if (fbRawReasoning && typeof fbRawReasoning === 'string') {
-                fbReasoningStr = fbRawReasoning.trim();
-              }
+              const { contentStr: fbContentStr, reasoningStr: fbReasoningStr } = extractReasoningAndContent(
+                fbChoice?.message as Record<string, unknown>,
+                fbChoice?.message?.content,
+                undefined,
+                model,
+              );
 
               const fbText =
                 fbContentStr ||
@@ -542,25 +597,12 @@ async function executeProviderChatRequest({
               };
 
               const fbChoice = fbPayload.choices?.[0];
-              let fbContentStr = '';
-              if (fbChoice?.message?.content) {
-                if (typeof fbChoice.message.content === 'string') {
-                  fbContentStr = fbChoice.message.content.trim();
-                } else if (Array.isArray(fbChoice.message.content)) {
-                  fbContentStr = fbChoice.message.content
-                    .map((part) => (typeof part === 'string' ? part : part?.text || ''))
-                    .join('')
-                    .trim();
-                }
-              }
-
-              const fbRawReasoning =
-                fbChoice?.message?.reasoning ||
-                (fbChoice?.message as { reasoning_content?: string })?.reasoning_content;
-              let fbReasoningStr = '';
-              if (fbRawReasoning && typeof fbRawReasoning === 'string') {
-                fbReasoningStr = fbRawReasoning.trim();
-              }
+              const { contentStr: fbContentStr, reasoningStr: fbReasoningStr } = extractReasoningAndContent(
+                fbChoice?.message as Record<string, unknown>,
+                fbChoice?.message?.content,
+                'BazaarLink',
+                model,
+              );
 
               const fbText =
                 fbContentStr ||
@@ -656,25 +698,12 @@ async function executeProviderChatRequest({
               };
 
               const fbChoice = fbPayload.choices?.[0];
-              let fbContentStr = '';
-              if (fbChoice?.message?.content) {
-                if (typeof fbChoice.message.content === 'string') {
-                  fbContentStr = fbChoice.message.content.trim();
-                } else if (Array.isArray(fbChoice.message.content)) {
-                  fbContentStr = fbChoice.message.content
-                    .map((part) => (typeof part === 'string' ? part : part?.text || ''))
-                    .join('')
-                    .trim();
-                }
-              }
-
-              const fbRawReasoning =
-                fbChoice?.message?.reasoning ||
-                (fbChoice?.message as { reasoning_content?: string })?.reasoning_content;
-              let fbReasoningStr = '';
-              if (fbRawReasoning && typeof fbRawReasoning === 'string') {
-                fbReasoningStr = fbRawReasoning.trim();
-              }
+              const { contentStr: fbContentStr, reasoningStr: fbReasoningStr } = extractReasoningAndContent(
+                fbChoice?.message as Record<string, unknown>,
+                fbChoice?.message?.content,
+                'BazaarLink',
+                model,
+              );
 
               const fbText =
                 fbContentStr ||
@@ -762,25 +791,12 @@ async function executeProviderChatRequest({
               };
 
               const fbChoice = fbPayload.choices?.[0];
-              let fbContentStr = '';
-              if (fbChoice?.message?.content) {
-                if (typeof fbChoice.message.content === 'string') {
-                  fbContentStr = fbChoice.message.content.trim();
-                } else if (Array.isArray(fbChoice.message.content)) {
-                  fbContentStr = fbChoice.message.content
-                    .map((part) => (typeof part === 'string' ? part : part?.text || ''))
-                    .join('')
-                    .trim();
-                }
-              }
-
-              const fbRawReasoning =
-                fbChoice?.message?.reasoning ||
-                (fbChoice?.message as { reasoning_content?: string })?.reasoning_content;
-              let fbReasoningStr = '';
-              if (fbRawReasoning && typeof fbRawReasoning === 'string') {
-                fbReasoningStr = fbRawReasoning.trim();
-              }
+              const { contentStr: fbContentStr, reasoningStr: fbReasoningStr } = extractReasoningAndContent(
+                fbChoice?.message as Record<string, unknown>,
+                fbChoice?.message?.content,
+                undefined,
+                model,
+              );
 
               const fbText =
                 fbContentStr ||
@@ -877,25 +893,12 @@ async function executeProviderChatRequest({
               };
 
               const fbChoice = fbPayload.choices?.[0];
-              let fbContentStr = '';
-              if (fbChoice?.message?.content) {
-                if (typeof fbChoice.message.content === 'string') {
-                  fbContentStr = fbChoice.message.content.trim();
-                } else if (Array.isArray(fbChoice.message.content)) {
-                  fbContentStr = fbChoice.message.content
-                    .map((part) => (typeof part === 'string' ? part : part?.text || ''))
-                    .join('')
-                    .trim();
-                }
-              }
-
-              const fbRawReasoning =
-                fbChoice?.message?.reasoning ||
-                (fbChoice?.message as { reasoning_content?: string })?.reasoning_content;
-              let fbReasoningStr = '';
-              if (fbRawReasoning && typeof fbRawReasoning === 'string') {
-                fbReasoningStr = fbRawReasoning.trim();
-              }
+              const { contentStr: fbContentStr, reasoningStr: fbReasoningStr } = extractReasoningAndContent(
+                fbChoice?.message as Record<string, unknown>,
+                fbChoice?.message?.content,
+                'Groq',
+                model,
+              );
 
               const fbText =
                 fbContentStr ||
@@ -992,25 +995,12 @@ async function executeProviderChatRequest({
               };
 
               const fbChoice = fbPayload.choices?.[0];
-              let fbContentStr = '';
-              if (fbChoice?.message?.content) {
-                if (typeof fbChoice.message.content === 'string') {
-                  fbContentStr = fbChoice.message.content.trim();
-                } else if (Array.isArray(fbChoice.message.content)) {
-                  fbContentStr = fbChoice.message.content
-                    .map((part) => (typeof part === 'string' ? part : part?.text || ''))
-                    .join('')
-                    .trim();
-                }
-              }
-
-              const fbRawReasoning =
-                fbChoice?.message?.reasoning ||
-                (fbChoice?.message as { reasoning_content?: string })?.reasoning_content;
-              let fbReasoningStr = '';
-              if (fbRawReasoning && typeof fbRawReasoning === 'string') {
-                fbReasoningStr = fbRawReasoning.trim();
-              }
+              const { contentStr: fbContentStr, reasoningStr: fbReasoningStr } = extractReasoningAndContent(
+                fbChoice?.message as Record<string, unknown>,
+                fbChoice?.message?.content,
+                undefined,
+                model,
+              );
 
               const fbText =
                 fbContentStr ||
@@ -1111,25 +1101,12 @@ async function executeProviderChatRequest({
               };
 
               const fbChoice = fbPayload.choices?.[0];
-              let fbContentStr = '';
-              if (fbChoice?.message?.content) {
-                if (typeof fbChoice.message.content === 'string') {
-                  fbContentStr = fbChoice.message.content.trim();
-                } else if (Array.isArray(fbChoice.message.content)) {
-                  fbContentStr = fbChoice.message.content
-                    .map((part) => (typeof part === 'string' ? part : part?.text || ''))
-                    .join('')
-                    .trim();
-                }
-              }
-
-              const fbRawReasoning =
-                fbChoice?.message?.reasoning ||
-                (fbChoice?.message as { reasoning_content?: string })?.reasoning_content;
-              let fbReasoningStr = '';
-              if (fbRawReasoning && typeof fbRawReasoning === 'string') {
-                fbReasoningStr = fbRawReasoning.trim();
-              }
+              const { contentStr: fbContentStr, reasoningStr: fbReasoningStr } = extractReasoningAndContent(
+                fbChoice?.message as Record<string, unknown>,
+                fbChoice?.message?.content,
+                undefined,
+                model,
+              );
 
               const fbText =
                 fbContentStr ||
@@ -1230,25 +1207,12 @@ async function executeProviderChatRequest({
               };
 
               const fbChoice = fbPayload.choices?.[0];
-              let fbContentStr = '';
-              if (fbChoice?.message?.content) {
-                if (typeof fbChoice.message.content === 'string') {
-                  fbContentStr = fbChoice.message.content.trim();
-                } else if (Array.isArray(fbChoice.message.content)) {
-                  fbContentStr = fbChoice.message.content
-                    .map((part) => (typeof part === 'string' ? part : part?.text || ''))
-                    .join('')
-                    .trim();
-                }
-              }
-
-              const fbRawReasoning =
-                fbChoice?.message?.reasoning ||
-                (fbChoice?.message as { reasoning_content?: string })?.reasoning_content;
-              let fbReasoningStr = '';
-              if (fbRawReasoning && typeof fbRawReasoning === 'string') {
-                fbReasoningStr = fbRawReasoning.trim();
-              }
+              const { contentStr: fbContentStr, reasoningStr: fbReasoningStr } = extractReasoningAndContent(
+                fbChoice?.message as Record<string, unknown>,
+                fbChoice?.message?.content,
+                undefined,
+                model,
+              );
 
               const fbText =
                 fbContentStr ||
