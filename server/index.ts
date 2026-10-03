@@ -301,7 +301,7 @@ async function executeProviderChatRequest({
           ok: true,
           text,
           content: contentStr,
-          reasoning: reasoningStr,
+          reasoning: contentStr && reasoningStr ? reasoningStr : '',
           model: payload.model || model,
           status: res.status,
         };
@@ -392,7 +392,7 @@ async function executeProviderChatRequest({
                   ok: true,
                   text: fbText,
                   content: fbContentStr,
-                  reasoning: fbReasoningStr,
+                  reasoning: fbContentStr && fbReasoningStr ? fbReasoningStr : '',
                   model: 'gemini-3.6-flash',
                   status: fallbackRes.status,
                 };
@@ -480,7 +480,7 @@ async function executeProviderChatRequest({
                   ok: true,
                   text: fbText,
                   content: fbContentStr,
-                  reasoning: fbReasoningStr,
+                  reasoning: fbContentStr && fbReasoningStr ? fbReasoningStr : '',
                   model: fbPayload.model || model,
                   status: fallbackRes.status,
                 };
@@ -573,7 +573,7 @@ async function executeProviderChatRequest({
                   ok: true,
                   text: fbText,
                   content: fbContentStr,
-                  reasoning: fbReasoningStr,
+                  reasoning: fbContentStr && fbReasoningStr ? fbReasoningStr : '',
                   model: fbPayload.model || model,
                   status: fallbackRes.status,
                 };
@@ -687,7 +687,7 @@ async function executeProviderChatRequest({
                   ok: true,
                   text: fbText,
                   content: fbContentStr,
-                  reasoning: fbReasoningStr,
+                  reasoning: fbContentStr && fbReasoningStr ? fbReasoningStr : '',
                   model: fbPayload.model || model,
                   status: fallbackRes.status,
                 };
@@ -793,7 +793,7 @@ async function executeProviderChatRequest({
                   ok: true,
                   text: fbText,
                   content: fbContentStr,
-                  reasoning: fbReasoningStr,
+                  reasoning: fbContentStr && fbReasoningStr ? fbReasoningStr : '',
                   model: fbPayload.model || model,
                   status: fallbackRes.status,
                 };
@@ -908,7 +908,7 @@ async function executeProviderChatRequest({
                   ok: true,
                   text: fbText,
                   content: fbContentStr,
-                  reasoning: fbReasoningStr,
+                  reasoning: fbContentStr && fbReasoningStr ? fbReasoningStr : '',
                   model: fbPayload.model || model,
                   status: fallbackRes.status,
                 };
@@ -1023,7 +1023,7 @@ async function executeProviderChatRequest({
                   ok: true,
                   text: fbText,
                   content: fbContentStr,
-                  reasoning: fbReasoningStr,
+                  reasoning: fbContentStr && fbReasoningStr ? fbReasoningStr : '',
                   model: fbPayload.model || model,
                   status: fallbackRes.status,
                 };
@@ -1142,7 +1142,7 @@ async function executeProviderChatRequest({
                   ok: true,
                   text: fbText,
                   content: fbContentStr,
-                  reasoning: fbReasoningStr,
+                  reasoning: fbContentStr && fbReasoningStr ? fbReasoningStr : '',
                   model: fbPayload.model || model,
                   status: fallbackRes.status,
                 };
@@ -1261,7 +1261,7 @@ async function executeProviderChatRequest({
                   ok: true,
                   text: fbText,
                   content: fbContentStr,
-                  reasoning: fbReasoningStr,
+                  reasoning: fbContentStr && fbReasoningStr ? fbReasoningStr : '',
                   model: fbPayload.model || model,
                   status: fallbackRes.status,
                 };
@@ -3407,6 +3407,7 @@ async function processAiChatInternal(
   if (aiResult && aiResult.text) {
     return {
       answer: stripTierLabels(aiResult.text),
+      reasoning: (aiResult.reasoning && aiResult.reasoning.trim()) || undefined,
       model: aiResult.model,
       tool: structuredSources.length > 0 || isForcedWebSearch ? ('search' as const) : ('none' as const),
       confidence: (structuredSources.length ? 'verified' : 'verified') as ConfidenceLevel,

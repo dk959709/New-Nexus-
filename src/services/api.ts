@@ -333,6 +333,7 @@ export const api = {
     },
   ): Promise<{
     answer: string;
+    reasoning?: string;
     model: string;
     tool?: 'none' | 'search' | 'weather';
     sources?: AISource[];
@@ -366,6 +367,7 @@ export const api = {
 
     return call<{
       answer: string;
+      reasoning?: string;
       model: string;
       tool?: 'none' | 'search' | 'weather';
       sources?: AISource[];

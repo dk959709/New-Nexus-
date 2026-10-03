@@ -124,6 +124,7 @@ type Message = {
   id?: string;
   role: 'user' | 'assistant';
   content: string;
+  reasoning?: string;
   tool?: 'none' | 'search' | 'weather' | 'image' | 'multichat' | 'architect' | 'dataAnalyst' | 'agent' | 'coder' | 'wikimedia' | 'webfetcher' | 'swarmlive' | 'commander';
   sources?: AISource[];
   weather?: unknown;
@@ -1412,6 +1413,8 @@ export function AssistantPage() {
   const [edgeTtsPlayingIndex, setEdgeTtsPlayingIndex] = useState<number | null>(null);
   const [copiedIndex, setCopiedIndex] = useState<number | null>(null);
   const [expandedSources, setExpandedSources] = useState<Record<number, boolean>>({});
+  const [expandedReasoning, setExpandedReasoning] = useState<Record<number, boolean>>({});
+  const [copiedReasoningIndex, setCopiedReasoningIndex] = useState<number | null>(null);
   const [savedItemIds, setSavedItemIds] = useState<Set<string>>(() => {
     try {
       const items = storage.getSaved();
@@ -3625,6 +3628,25 @@ ${commanderConfig.systemPrompts.synthesizer?.trim() || '(Default system prompt)'
     }));
   };
 
+  const toggleReasoningExpand = (index: number) => {
+    setExpandedReasoning((prev) => ({
+      ...prev,
+      [index]: !prev[index],
+    }));
+  };
+
+  const handleCopyReasoning = (text: string, index: number) => {
+    try {
+      navigator.clipboard.writeText(text);
+    } catch {
+      // ignore
+    }
+    setCopiedReasoningIndex(index);
+    setTimeout(() => {
+      setCopiedReasoningIndex((cur) => (cur === index ? null : cur));
+    }, 2000);
+  };
+
   const stopSpeak = useCallback(() => {
     if (typeof window !== 'undefined' && 'speechSynthesis' in window) {
       try {
@@ -5521,6 +5543,7 @@ DIRECTIVES:
       const assistantMessage: Message = {
         role: 'assistant',
         content: stripTierLabels(response.answer),
+        reasoning: response.reasoning,
         tool: response.tool,
         sources: response.sources,
         weather: response.weather,
@@ -7749,16 +7772,118 @@ DIRECTIVES:
                           </div>
                         ) : (
                           /* Markdown-Rendered Transparent Assistant Message Body */
-                          <div
-                            className={`text-[15px] leading-relaxed break-words pt-0.5 ${
-                              theme === 'classic'
-                                ? 'text-slate-100'
-                                : theme === 'fulldark'
-                                ? 'text-[#ececec] font-normal tracking-normal'
-                                : 'text-zinc-200'
-                            }`}
-                          >
-                            <FormattedText content={stripTierLabels(message.content.replace(/^Read page:\s+[^\n]+\n\n?/, ''))} />
+                          <div className="w-full">
+                            {/* Collapsible Thinking Section (Reasoning) */}
+                            {message.reasoning && (
+                              <div
+                                className={`mb-2.5 rounded-xl border text-xs overflow-hidden transition-all ${
+                                  theme === 'classic'
+                                    ? 'border-cyan-500/25 bg-slate-950/60'
+                                    : theme === 'fulldark'
+                                    ? 'border-[#262626] bg-[#141414]'
+                                    : 'border-zinc-800/80 bg-zinc-900/50'
+                                }`}
+                              >
+                                <div
+                                  role="button"
+                                  tabIndex={0}
+                                  onClick={() => toggleReasoningExpand(index)}
+                                  onKeyDown={(e) => {
+                                    if (e.key === 'Enter' || e.key === ' ') {
+                                      e.preventDefault();
+                                      toggleReasoningExpand(index);
+                                    }
+                                  }}
+                                  className={`flex items-center justify-between px-3 py-2 select-none cursor-pointer transition-colors ${
+                                    theme === 'classic'
+                                      ? 'hover:bg-cyan-950/30'
+                                      : theme === 'fulldark'
+                                      ? 'hover:bg-[#1a1a1a]'
+                                      : 'hover:bg-zinc-800/50'
+                                  }`}
+                                  aria-expanded={Boolean(expandedReasoning[index])}
+                                >
+                                  <div className="flex items-center gap-1.5 font-medium">
+                                    <span className="text-sm">🧠</span>
+                                    <span
+                                      className={
+                                        theme === 'classic'
+                                          ? 'text-cyan-300'
+                                          : theme === 'fulldark'
+                                          ? 'text-[#cfcfcf]'
+                                          : 'text-zinc-300'
+                                      }
+                                    >
+                                      Thinking
+                                    </span>
+                                  </div>
+                                  <div className="flex items-center gap-1.5">
+                                    {expandedReasoning[index] && (
+                                      <button
+                                        type="button"
+                                        onClick={(e) => {
+                                          e.stopPropagation();
+                                          handleCopyReasoning(message.reasoning!, index);
+                                        }}
+                                        className={`px-1.5 py-0.5 rounded transition-colors flex items-center gap-1 text-[11px] ${
+                                          theme === 'classic'
+                                            ? 'text-cyan-400 hover:text-cyan-200 hover:bg-cyan-950/50'
+                                            : theme === 'fulldark'
+                                            ? 'text-[#888] hover:text-[#eee] hover:bg-[#242424]'
+                                            : 'text-zinc-400 hover:text-zinc-200 hover:bg-zinc-800'
+                                        }`}
+                                        title="Copy thinking"
+                                        aria-label="Copy thinking"
+                                      >
+                                        {copiedReasoningIndex === index ? (
+                                          <>
+                                            <Check size={11} className="text-emerald-400" />
+                                            <span className="text-emerald-400 text-[10.5px]">Copied</span>
+                                          </>
+                                        ) : (
+                                          <>
+                                            <Copy size={11} />
+                                            <span className="text-[10.5px]">Copy</span>
+                                          </>
+                                        )}
+                                      </button>
+                                    )}
+                                    <span className="p-0.5 rounded text-zinc-400">
+                                      {expandedReasoning[index] ? (
+                                        <ChevronUp size={13} />
+                                      ) : (
+                                        <ChevronDown size={13} />
+                                      )}
+                                    </span>
+                                  </div>
+                                </div>
+                                {expandedReasoning[index] && (
+                                  <div
+                                    className={`px-3.5 py-2.5 border-t text-[12.5px] leading-relaxed font-mono whitespace-pre-wrap break-words max-h-96 overflow-y-auto ${
+                                      theme === 'classic'
+                                        ? 'border-cyan-500/15 text-slate-300 bg-slate-950/80'
+                                        : theme === 'fulldark'
+                                        ? 'border-[#222] text-[#aaa] bg-[#101010]'
+                                        : 'border-zinc-800/60 text-zinc-400 bg-zinc-950/40'
+                                    }`}
+                                  >
+                                    {message.reasoning}
+                                  </div>
+                                )}
+                              </div>
+                            )}
+
+                            <div
+                              className={`text-[15px] leading-relaxed break-words pt-0.5 ${
+                                theme === 'classic'
+                                  ? 'text-slate-100'
+                                  : theme === 'fulldark'
+                                  ? 'text-[#ececec] font-normal tracking-normal'
+                                  : 'text-zinc-200'
+                              }`}
+                            >
+                              <FormattedText content={stripTierLabels(message.content.replace(/^Read page:\s+[^\n]+\n\n?/, ''))} />
+                            </div>
                           </div>
                         )}
 
