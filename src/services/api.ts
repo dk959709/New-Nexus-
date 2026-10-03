@@ -346,7 +346,7 @@ export const api = {
 
     if (rawProvider) {
       const { config: reasoningEnhancedConfig, spec: reasoningSpec, params: reasoningParams, desiredLevel } =
-        applyReasoningConfig(rawProvider, 'low');
+        applyReasoningConfig(rawProvider, 'low', undefined, true);
       providerToSend = reasoningEnhancedConfig;
 
       if (reasoningSpec && reasoningParams) {
@@ -389,6 +389,13 @@ export const api = {
         searchMaxResults: options?.searchMaxResults,
         extendedSearch: options?.extendedSearch,
         image: options?.image,
+        timezone: (() => {
+          try {
+            return Intl.DateTimeFormat().resolvedOptions().timeZone;
+          } catch {
+            return undefined;
+          }
+        })(),
       }),
     });
   },

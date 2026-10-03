@@ -25,7 +25,7 @@ export interface ReasoningModelSpec {
   /**
    * Function to build the exact parameter payload to merge into the request body
    */
-  buildParams: (target: ReasoningTargetLevel) => Record<string, unknown>;
+  buildParams: (target: ReasoningTargetLevel, showReasoning?: boolean) => Record<string, unknown>;
 }
 
 /**
@@ -64,9 +64,9 @@ export const REASONING_MODEL_CONFIG: Record<string, ReasoningModelSpec> = {
     validEfforts: ['none', 'low', 'medium', 'high'],
     supportsFullDisable: true,
     supportsHiddenFormat: true,
-    buildParams: (target: ReasoningTargetLevel) => ({
+    buildParams: (target: ReasoningTargetLevel, showReasoning?: boolean) => ({
       reasoning_effort: target === 'high' ? 'high' : 'none',
-      reasoning_format: 'hidden',
+      ...(showReasoning ? {} : { reasoning_format: 'hidden' }),
     }),
   },
 
@@ -80,9 +80,9 @@ export const REASONING_MODEL_CONFIG: Record<string, ReasoningModelSpec> = {
     supportsFullDisable: false,
     supportsHiddenFormat: false,
     supportsIncludeReasoning: true,
-    buildParams: (target: ReasoningTargetLevel) => ({
+    buildParams: (target: ReasoningTargetLevel, showReasoning?: boolean) => ({
       reasoning_effort: target === 'high' ? 'high' : 'low',
-      include_reasoning: false,
+      ...(showReasoning ? {} : { include_reasoning: false }),
     }),
   },
 
@@ -96,9 +96,9 @@ export const REASONING_MODEL_CONFIG: Record<string, ReasoningModelSpec> = {
     supportsFullDisable: false,
     supportsHiddenFormat: false,
     supportsIncludeReasoning: true,
-    buildParams: (target: ReasoningTargetLevel) => ({
+    buildParams: (target: ReasoningTargetLevel, showReasoning?: boolean) => ({
       reasoning_effort: target === 'high' ? 'high' : 'low',
-      include_reasoning: false,
+      ...(showReasoning ? {} : { include_reasoning: false }),
     }),
   },
 
@@ -125,9 +125,9 @@ export const REASONING_MODEL_CONFIG: Record<string, ReasoningModelSpec> = {
     validEfforts: ['none', 'low', 'medium', 'high'],
     supportsFullDisable: true,
     supportsHiddenFormat: false,
-    buildParams: (target: ReasoningTargetLevel) => ({
+    buildParams: (target: ReasoningTargetLevel, showReasoning?: boolean) => ({
       reasoning: target === 'high'
-        ? { effort: 'high', exclude: true }
+        ? (showReasoning ? { effort: 'high' } : { effort: 'high', exclude: true })
         : { effort: 'none' },
     }),
   },
@@ -399,9 +399,9 @@ export function lookupReasoningConfig(
       supportsFullDisable: true,
       supportsHiddenFormat: false,
       isGenericFallback: true,
-      buildParams: (target: ReasoningTargetLevel) => ({
+      buildParams: (target: ReasoningTargetLevel, showReasoning?: boolean) => ({
         reasoning: target === 'high'
-          ? { effort: 'high', exclude: true }
+          ? (showReasoning ? { effort: 'high' } : { effort: 'high', exclude: true })
           : { effort: 'none' },
       }),
     };
@@ -445,9 +445,9 @@ export function lookupReasoningConfig(
           supportsHiddenFormat: false,
           supportsIncludeReasoning: true,
           isGroqSuffixSpecialCase: true,
-          buildParams: (target: ReasoningTargetLevel) => ({
+          buildParams: (target: ReasoningTargetLevel, showReasoning?: boolean) => ({
             reasoning_effort: target === 'high' ? 'high' : 'low',
-            include_reasoning: false,
+            ...(showReasoning ? {} : { include_reasoning: false }),
           }),
         };
       }
@@ -462,9 +462,9 @@ export function lookupReasoningConfig(
           supportsFullDisable: true,
           supportsHiddenFormat: true,
           isGroqSuffixSpecialCase: true,
-          buildParams: (target: ReasoningTargetLevel) => ({
+          buildParams: (target: ReasoningTargetLevel, showReasoning?: boolean) => ({
             reasoning_effort: target === 'high' ? 'high' : 'none',
-            reasoning_format: 'hidden',
+            ...(showReasoning ? {} : { reasoning_format: 'hidden' }),
           }),
         };
       }
@@ -543,9 +543,9 @@ export function lookupReasoningConfig(
           supportsIncludeReasoning: true,
           isKnownProviderPrefixSpecialCase: true,
           matchedProvider: 'groq (gpt-oss)',
-          buildParams: (target: ReasoningTargetLevel) => ({
+          buildParams: (target: ReasoningTargetLevel, showReasoning?: boolean) => ({
             reasoning_effort: target === 'high' ? 'high' : 'low',
-            include_reasoning: false,
+            ...(showReasoning ? {} : { include_reasoning: false }),
           }),
         };
       }
@@ -561,9 +561,9 @@ export function lookupReasoningConfig(
           supportsHiddenFormat: true,
           isKnownProviderPrefixSpecialCase: true,
           matchedProvider: 'groq (qwen3.8)',
-          buildParams: (target: ReasoningTargetLevel) => ({
+          buildParams: (target: ReasoningTargetLevel, showReasoning?: boolean) => ({
             reasoning_effort: target === 'high' ? 'high' : 'none',
-            reasoning_format: 'hidden',
+            ...(showReasoning ? {} : { reasoning_format: 'hidden' }),
           }),
         };
       }
@@ -612,9 +612,9 @@ export function lookupReasoningConfig(
         supportsHiddenFormat: false,
         isKnownProviderPrefixSpecialCase: true,
         matchedProvider: 'openrouter',
-        buildParams: (target: ReasoningTargetLevel) => ({
+        buildParams: (target: ReasoningTargetLevel, showReasoning?: boolean) => ({
           reasoning: target === 'high'
-            ? { effort: 'high', exclude: true }
+            ? (showReasoning ? { effort: 'high' } : { effort: 'high', exclude: true })
             : { effort: 'none' },
         }),
       };
@@ -717,15 +717,25 @@ export function getEffectiveReasoningTargetLevel(
 export function applyReasoningConfig<T extends { extraParams?: Record<string, unknown>; reasoningParams?: Record<string, unknown>; model?: string; id?: string; name?: string; url?: string; reasoningOverride?: ReasoningOverrideMode }>(
   provider: T,
   agentOrTargetLevel?: { id?: string; name?: string } | string | ReasoningTargetLevel | null,
-  modelOverride?: string,
+  modelOverride?: string | boolean,
+  showReasoningParam?: boolean,
 ): {
   config: T;
   spec: ReasoningModelSpec | null;
   params: Record<string, unknown> | null;
   desiredLevel: ReasoningTargetLevel;
 } {
+  let effectiveModelOverride: string | undefined;
+  let showReasoning = false;
+  if (typeof modelOverride === 'boolean') {
+    showReasoning = modelOverride;
+  } else {
+    effectiveModelOverride = modelOverride;
+    showReasoning = Boolean(showReasoningParam);
+  }
+
   const desiredLevel = getEffectiveReasoningTargetLevel(provider, agentOrTargetLevel);
-  const effectiveModel = modelOverride || provider.model;
+  const effectiveModel = effectiveModelOverride || provider.model;
   const provKey = normalizeProviderId(provider);
   const normModel = normalizeModelId(effectiveModel);
 
@@ -783,7 +793,7 @@ export function applyReasoningConfig<T extends { extraParams?: Record<string, un
     };
   }
 
-  const params = spec.buildParams(desiredLevel);
+  const params = spec.buildParams(desiredLevel, showReasoning);
 
   // Log whether generic fallback or explicit config was applied for BazaarLink models
   if (provKey === 'bazaarlink') {
@@ -800,12 +810,13 @@ export function applyReasoningConfig<T extends { extraParams?: Record<string, un
 
   // Log whether generic fallback or explicit config was applied for Groq models
   if (provKey === 'groq') {
-    const hidingDetail =
-      params.include_reasoning === false
-        ? ' [hiding reasoning via include_reasoning: false]'
-        : params.reasoning_format === 'hidden'
-        ? ' [hiding reasoning via reasoning_format: "hidden"]'
-        : ' [reasoning format parameter omitted for generic compatibility]';
+    const hidingDetail = showReasoning
+      ? ' [reasoning visible in AI Assistant chat]'
+      : params.include_reasoning === false
+      ? ' [hiding reasoning via include_reasoning: false]'
+      : params.reasoning_format === 'hidden'
+      ? ' [hiding reasoning via reasoning_format: "hidden"]'
+      : ' [reasoning format parameter omitted for generic compatibility]';
 
     if (spec.isGenericFallback) {
       console.log(
@@ -822,7 +833,9 @@ export function applyReasoningConfig<T extends { extraParams?: Record<string, un
   if (provKey === 'openrouter') {
     const reasoningObj = params.reasoning as { effort?: string; exclude?: boolean } | undefined;
     const shapeDetail = reasoningObj
-      ? ` [effort: "${reasoningObj.effort || 'unknown'}", exclude: ${Boolean(reasoningObj.exclude)}]`
+      ? (showReasoning
+          ? ` [effort: "${reasoningObj.effort || 'unknown'}", showReasoning: true]`
+          : ` [effort: "${reasoningObj.effort || 'unknown'}", exclude: ${Boolean(reasoningObj.exclude)}]`)
       : '';
 
     if (spec.isGenericFallback) {

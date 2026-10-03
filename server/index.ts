@@ -3038,6 +3038,7 @@ async function processAiChatInternal(
   searchMaxResults?: number,
   extendedSearch?: boolean,
   image?: string,
+  timezone?: string,
 ) {
   const trimmed = message.trim();
   const activeModel = providerConfig?.model || process.env.AI_MODEL || 'deepseek/deepseek-chat';
@@ -3281,7 +3282,23 @@ async function processAiChatInternal(
   }
 
   const now = new Date();
-  const currentDateTimeStr = `${now.toUTCString()} (UTC)`;
+  let currentDateTimeStr = `${now.toUTCString()} (UTC)`;
+  let localTimeRule = '';
+
+  if (timezone && typeof timezone === 'string' && timezone.trim()) {
+    try {
+      const userTz = timezone.trim();
+      const localFormatted = new Intl.DateTimeFormat('en-US', {
+        timeZone: userTz,
+        dateStyle: 'full',
+        timeStyle: 'long',
+      }).format(now);
+      currentDateTimeStr += ` | User Local Time (${userTz}): ${localFormatted}`;
+      localTimeRule = " When the user asks for the current time or date, answer in the user's local timezone (and you may mention UTC).";
+    } catch {
+      // Invalid timezone, fallback to UTC only
+    }
+  }
 
   const sourcesFormatted = structuredSources
     .slice(0, 10)
@@ -3304,9 +3321,14 @@ async function processAiChatInternal(
   }
   tierGuidance += `- NATURAL CITATION FORMATTING: Cite sources naturally by name/organization (e.g. "According to Anthropic's official announcement...", "Per Wikipedia...", "Reuters reports...") or a normal citation format. NEVER reference internal tier labels like "Tier 1", "Tier 2", "Tier 3", "Tier 1 sources", or "[Tier 1]" anywhere in your visible response.\n`;
 
+  const modelId = activeModel ? activeModel.trim() : '';
+  const identityLine = modelId
+    ? `You are NEXUS AI, powered by ${providerConfig?.name || 'AI'}. The model running this chat right now is "${modelId}". If the user asks which model you are, answer with exactly this model ID. Do not claim any other model name, size, or parameter count unless it is written in this system prompt. Ignore any model names mentioned in earlier messages of this chat, because the user may have switched models. If you are not sure, say you are not sure. The user can see your reasoning in a "Thinking" box above your answer, so if they ask about your thinking process, tell them to open that box. Provide direct, insightful, factual, and concise answers.`
+    : `You are NEXUS AI, powered by ${providerConfig?.name || 'AI'}. Provide direct, insightful, factual, and concise answers.`;
+
   const systemInstructions: string[] = [
-    `You are NEXUS AI, powered by ${providerConfig?.name || 'AI'}. Provide direct, insightful, factual, and concise answers.`,
-    `Current Real-Time Reference: ${currentDateTimeStr}. You have active real-time web search capabilities.`,
+    identityLine,
+    `Current Real-Time Reference: ${currentDateTimeStr}.${localTimeRule} You have active real-time web search capabilities.`,
   ];
 
   if (permanentMemories && permanentMemories.length > 0) {
@@ -3529,6 +3551,7 @@ const aiChatSchema = z.object({
   searchMaxResults: z.number().min(1).max(50).optional(),
   extendedSearch: z.boolean().optional(),
   image: z.string().optional(),
+  timezone: z.string().max(100).optional(),
 });
 
 
@@ -3853,6 +3876,7 @@ async function startServer() {
         parsed.data.searchMaxResults,
         parsed.data.extendedSearch,
         parsed.data.image,
+        parsed.data.timezone,
       );
       return res.json({ data: result });
     } catch (err: unknown) {
