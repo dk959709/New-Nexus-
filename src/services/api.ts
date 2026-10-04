@@ -26,6 +26,7 @@ import type {
   CustomApiCallResult,
   ScholarPaper,
 } from '@/types';
+export type { ScholarPaper } from '@/types';
 import { storage, getAssistantThinkingEffort } from '@/lib/storage';
 import { applyReasoningConfig } from '@/lib/reasoningConfig';
 import { searchWikipedia, getWikipediaSummary, wikipediaToSearchResult, formatWikipediaForReport } from './wikipedia';

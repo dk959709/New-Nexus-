@@ -23,7 +23,7 @@ import { weatherRouter, geocode, weatherProvider } from './routes/weather.js';
 import { createSearchRouter, searchProvider, fetchWikipediaSummary, extractSignificantQueryWords, isResultTopicallyRelevant } from './routes/search.js';
 import { devicesRouter } from './routes/devices.js';
 import { telegramRouter, setTelegramAiHandler } from './routes/telegram.js';
-import { apiCatalogRouter, getBackendApiKey, getScholarApiConfig } from './apiCatalog.js';
+import { apiCatalogRouter, getBackendApiKey, getScholarApiConfig, getAllScholarApiConfigs } from './apiCatalog.js';
 import { documentsRouter } from './routes/documents.js';
 import { fluxSchnellRouter } from './routes/fluxSchnell.js';
 import { fluxDevRouter } from './routes/fluxDev.js';
@@ -3599,6 +3599,8 @@ async function startServer() {
     cited_by_count: number;
     link: string;
     abstract?: string;
+    provider?: string;
+    doi?: string;
   }
 
   function reconstructOpenAlexAbstract(invertedIndex?: Record<string, number[]> | null): string {
@@ -3715,8 +3717,20 @@ async function startServer() {
         cited_by_count: work.cited_by_count ?? 0,
         link,
         abstract,
+        provider: 'OpenAlex',
+        doi: work.doi || undefined,
       };
     });
+  }
+
+  // Helper for short provider label
+  function getShortProviderLabel(provider: string): string {
+    const p = (provider || '').trim().toLowerCase();
+    if (p === 'openalex') return 'OpenAlex';
+    if (p === 'semanticscholar' || p === 'semantic-scholar') return 'Semantic Scholar';
+    if (p === 'nasaads' || p === 'nasa-ads' || p === 'ads') return 'ADS';
+    if (p === 'arxiv') return 'arXiv';
+    return provider;
   }
 
   // Semantic Scholar Search Provider
@@ -3729,7 +3743,7 @@ async function startServer() {
     const url = new URL(`${cleanBase}/paper/search`);
     url.searchParams.set('query', query);
     url.searchParams.set('limit', '8');
-    url.searchParams.set('fields', 'title,authors,year,venue,citationCount,url,openAccessPdf,abstract');
+    url.searchParams.set('fields', 'title,authors,year,venue,citationCount,url,openAccessPdf,abstract,externalIds');
 
     const headers: Record<string, string> = {
       Accept: 'application/json',
@@ -3758,6 +3772,7 @@ async function startServer() {
         url?: string;
         openAccessPdf?: { url?: string };
         abstract?: string;
+        externalIds?: { DOI?: string };
       }>;
     };
 
@@ -3770,6 +3785,7 @@ async function startServer() {
       if (abstract.length > 600) {
         abstract = abstract.slice(0, 600) + '...';
       }
+      const rawDoi = p.externalIds?.DOI || link.match(/10\.\d{4,9}\/[-._;()/:A-Z0-9]+/i)?.[0];
       return {
         title,
         authors,
@@ -3778,6 +3794,8 @@ async function startServer() {
         cited_by_count: p.citationCount ?? 0,
         link,
         abstract: abstract || undefined,
+        provider: 'Semantic Scholar',
+        doi: rawDoi ? (rawDoi.startsWith('10.') ? `https://doi.org/${rawDoi}` : rawDoi) : undefined,
       };
     });
   }
@@ -3844,10 +3862,12 @@ async function startServer() {
         title,
         authors,
         year: isNaN(year as number) ? undefined : year,
-        journal: d.pub || 'NASA ADS',
+        journal: d.pub || 'ADS',
         cited_by_count: d.citation_count ?? 0,
         link,
         abstract: abstract || undefined,
+        provider: 'ADS',
+        doi: d.doi?.[0] ? `https://doi.org/${d.doi[0]}` : undefined,
       };
     });
   }
@@ -3915,6 +3935,7 @@ async function startServer() {
         cited_by_count: 0,
         link,
         abstract: abstract || undefined,
+        provider: 'arXiv',
       });
     }
 
@@ -3931,10 +3952,50 @@ async function startServer() {
         return errorResponse(res, 400, 'Search query is required.');
       }
 
-      // Match any item whose name starts with "Scholar API" or whose id starts with "scholar-api"
-      const scholarConfig = getScholarApiConfig(reqProvider);
+      // Case 1: If the request body has a "provider" field, search only that provider
+      if (reqProvider && typeof reqProvider === 'string' && reqProvider.trim()) {
+        const scholarConfig = getScholarApiConfig(reqProvider.trim());
 
-      if (!scholarConfig.apiKey && scholarConfig.provider !== 'arxiv') {
+        if (!scholarConfig.apiKey && scholarConfig.provider !== 'arxiv') {
+          return res.status(400).json({
+            ok: false,
+            error: 'Add your Scholar API key in Settings > API Catalog.',
+            papers: [],
+          });
+        }
+
+        const provider = (scholarConfig.provider || 'openalex').toLowerCase();
+        let papers: ScholarPaperItem[] = [];
+
+        if (provider === 'openalex') {
+          papers = await searchOpenAlexWorks(query, scholarConfig.apiKey || '', scholarConfig.baseUrl);
+        } else if (provider === 'semanticscholar' || provider === 'semantic-scholar') {
+          papers = await searchSemanticScholarWorks(query, scholarConfig.apiKey, scholarConfig.baseUrl);
+        } else if (provider === 'nasaads' || provider === 'nasa-ads' || provider === 'ads') {
+          papers = await searchNasaAdsWorks(query, scholarConfig.apiKey, scholarConfig.baseUrl);
+        } else if (provider === 'arxiv') {
+          papers = await searchArxivWorks(query, scholarConfig.apiKey, scholarConfig.baseUrl);
+        } else {
+          return res.status(400).json({
+            ok: false,
+            error: `Unsupported Scholar API provider "${scholarConfig.provider}". Supported providers: "openalex", "semanticscholar", "nasaads", "arxiv".`,
+            papers: [],
+          });
+        }
+
+        const shortLabel = getShortProviderLabel(provider);
+        papers = papers.map((p) => ({ ...p, provider: shortLabel }));
+
+        return res.json({
+          ok: true,
+          papers,
+        });
+      }
+
+      // Case 2: Multi-provider search across ALL configured scholar providers
+      const configs = getAllScholarApiConfigs();
+
+      if (!configs || configs.length === 0) {
         return res.status(400).json({
           ok: false,
           error: 'Add your Scholar API key in Settings > API Catalog.',
@@ -3942,28 +4003,116 @@ async function startServer() {
         });
       }
 
-      const provider = (scholarConfig.provider || 'openalex').toLowerCase();
-      let papers: ScholarPaperItem[] = [];
+      // Search ALL of them in parallel with Promise.allSettled, 10 seconds timeout each
+      const searchPromises = configs.map(async (cfg) => {
+        const provKey = (cfg.provider || '').toLowerCase();
+        const shortLabel = getShortProviderLabel(cfg.provider);
+        let items: ScholarPaperItem[] = [];
 
-      if (provider === 'openalex') {
-        papers = await searchOpenAlexWorks(query, scholarConfig.apiKey || '', scholarConfig.baseUrl);
-      } else if (provider === 'semanticscholar' || provider === 'semantic-scholar') {
-        papers = await searchSemanticScholarWorks(query, scholarConfig.apiKey, scholarConfig.baseUrl);
-      } else if (provider === 'nasaads' || provider === 'nasa-ads') {
-        papers = await searchNasaAdsWorks(query, scholarConfig.apiKey, scholarConfig.baseUrl);
-      } else if (provider === 'arxiv') {
-        papers = await searchArxivWorks(query, scholarConfig.apiKey, scholarConfig.baseUrl);
-      } else {
-        return res.status(400).json({
+        if (provKey === 'openalex') {
+          items = await searchOpenAlexWorks(query, cfg.apiKey || '', cfg.baseUrl);
+        } else if (provKey === 'semanticscholar' || provKey === 'semantic-scholar') {
+          items = await searchSemanticScholarWorks(query, cfg.apiKey, cfg.baseUrl);
+        } else if (provKey === 'nasaads' || provKey === 'nasa-ads' || provKey === 'ads') {
+          items = await searchNasaAdsWorks(query, cfg.apiKey, cfg.baseUrl);
+        } else if (provKey === 'arxiv') {
+          items = await searchArxivWorks(query, cfg.apiKey, cfg.baseUrl);
+        }
+
+        return items.map((paper, rank) => ({
+          ...paper,
+          provider: shortLabel,
+          _rank: rank,
+        }));
+      });
+
+      const settled = await Promise.allSettled(searchPromises);
+      const allPapers: Array<ScholarPaperItem & { _rank: number }> = [];
+      const errors: string[] = [];
+
+      for (let i = 0; i < settled.length; i++) {
+        const result = settled[i];
+        if (result.status === 'fulfilled') {
+          allPapers.push(...result.value);
+        } else {
+          const reasonMsg = result.reason instanceof Error ? result.reason.message : String(result.reason);
+          errors.push(`${getShortProviderLabel(configs[i].provider)}: ${reasonMsg}`);
+          console.warn(`[Scholar API] Provider ${configs[i].provider} search failed:`, reasonMsg);
+        }
+      }
+
+      // If every provider failed, return a clear error message
+      if (allPapers.length === 0 && errors.length === configs.length) {
+        return res.json({
           ok: false,
-          error: `Unsupported Scholar API provider "${scholarConfig.provider}". Supported providers: "openalex", "semanticscholar", "nasaads", "arxiv".`,
+          error: `Scholar search failed across all providers: ${errors.join('; ')}`,
           papers: [],
         });
       }
 
+      // Deduplicate: same DOI or same title ignoring case, keep the one with higher citation count
+      const seenDoi = new Map<string, ScholarPaperItem & { _rank: number }>();
+      const seenTitle = new Map<string, ScholarPaperItem & { _rank: number }>();
+      const mergedList: Array<ScholarPaperItem & { _rank: number }> = [];
+
+      const extractDoiClean = (p: ScholarPaperItem): string | undefined => {
+        if (p.doi) {
+          const m = p.doi.match(/10\.\d{4,9}\/[-._;()/:A-Z0-9]+/i);
+          return m ? m[0].toLowerCase() : p.doi.toLowerCase().trim();
+        }
+        const m = p.link?.match(/10\.\d{4,9}\/[-._;()/:A-Z0-9]+/i);
+        return m ? m[0].toLowerCase() : undefined;
+      };
+
+      const normalizeTitleKey = (t?: string): string => {
+        return (t || '').toLowerCase().replace(/[^a-z0-9]/g, '').trim();
+      };
+
+      for (const paper of allPapers) {
+        const doiKey = extractDoiClean(paper);
+        const titleKey = normalizeTitleKey(paper.title);
+
+        const existing = (doiKey ? seenDoi.get(doiKey) : undefined) || (titleKey ? seenTitle.get(titleKey) : undefined);
+
+        if (existing) {
+          // Keep the one with the higher citation count
+          if ((paper.cited_by_count ?? 0) > (existing.cited_by_count ?? 0)) {
+            const idx = mergedList.indexOf(existing);
+            if (idx !== -1) {
+              mergedList[idx] = paper;
+            }
+            const oldDoi = extractDoiClean(existing);
+            const oldTitle = normalizeTitleKey(existing.title);
+            if (oldDoi && oldDoi !== doiKey) seenDoi.delete(oldDoi);
+            if (oldTitle && oldTitle !== titleKey) seenTitle.delete(oldTitle);
+            if (doiKey) seenDoi.set(doiKey, paper);
+            if (titleKey) seenTitle.set(titleKey, paper);
+          }
+          continue;
+        }
+
+        mergedList.push(paper);
+        if (doiKey) seenDoi.set(doiKey, paper);
+        if (titleKey) seenTitle.set(titleKey, paper);
+      }
+
+      // Sort by relevance first (rank order from provider), then by citation count descending
+      mergedList.sort((a, b) => {
+        if (a._rank !== b._rank) {
+          return a._rank - b._rank;
+        }
+        return (b.cited_by_count ?? 0) - (a.cited_by_count ?? 0);
+      });
+
+      // Keep at most 8 papers
+      const finalPapers: ScholarPaperItem[] = mergedList.slice(0, 8).map((p) => {
+        delete (p as { _rank?: number })._rank;
+        return p;
+      });
+
       return res.json({
         ok: true,
-        papers,
+        papers: finalPapers,
       });
     } catch (err: unknown) {
       const errMsg = err instanceof Error ? err.message : 'Scholar API search failed or timed out.';

@@ -1359,6 +1359,76 @@ export function getScholarApiConfig(requestedProvider?: string): {
   };
 }
 
+export function getAllScholarApiConfigs(): Array<{
+  provider: string;
+  apiKey?: string;
+  baseUrl: string;
+}> {
+  const store = loadCatalogStore();
+  const configs: Array<{
+    provider: string;
+    apiKey?: string;
+    baseUrl: string;
+  }> = [];
+
+  const defaultBaseUrls: Record<string, string> = {
+    openalex: 'https://api.openalex.org',
+    semanticscholar: 'https://api.semanticscholar.org/graph/v1',
+    nasaads: 'https://api.adsabs.harvard.edu/v1',
+    arxiv: 'https://export.arxiv.org/api',
+  };
+
+  for (const [id, r] of Object.entries(store)) {
+    const isScholar = (r.name && r.name.startsWith('Scholar API')) || id.startsWith('scholar-api');
+    if (!isScholar) continue;
+
+    const provider =
+      (r.provider && r.provider.trim().toLowerCase()) ||
+      (r.name?.toLowerCase().includes('semantic')
+        ? 'semanticscholar'
+        : r.name?.toLowerCase().includes('nasa')
+        ? 'nasaads'
+        : r.name?.toLowerCase().includes('arxiv')
+        ? 'arxiv'
+        : 'openalex');
+
+    let apiKey = getBackendApiKey(r.envVar || r.id);
+    if (!apiKey && r.encryptedKey) {
+      const dec = decryptValue(r.encryptedKey);
+      if (dec && dec.trim() && !isNoAuthPlaceholder(dec)) {
+        apiKey = dec.trim();
+      }
+    }
+
+    if (!apiKey) {
+      if (provider === 'semanticscholar') {
+        apiKey = getBackendApiKey('SEMANTIC_SCHOLAR_API_KEY') || getBackendApiKey('SCHOLAR_API_SEMANTICSCHOLAR_KEY');
+      } else if (provider === 'nasaads') {
+        apiKey = getBackendApiKey('NASA_ADS_API_KEY') || getBackendApiKey('SCHOLAR_API_NASAADS_KEY');
+      } else if (provider === 'arxiv') {
+        apiKey = getBackendApiKey('ARXIV_API_KEY') || getBackendApiKey('SCHOLAR_API_ARXIV_KEY');
+      }
+      if (!apiKey && provider === 'openalex') {
+        apiKey = getBackendApiKey('SCHOLAR_API_KEY') || getBackendApiKey('OPENALEX_API_KEY');
+      }
+    }
+
+    const usableKey = apiKey && !isNoAuthPlaceholder(apiKey) ? apiKey.trim() : undefined;
+
+    // Include an item only if it has a usable key, or its provider is "arxiv" (arXiv needs no key)
+    if (usableKey || provider === 'arxiv') {
+      const baseUrl = (r.baseUrl && r.baseUrl.trim()) || defaultBaseUrls[provider] || 'https://api.openalex.org';
+      configs.push({
+        provider,
+        apiKey: usableKey,
+        baseUrl,
+      });
+    }
+  }
+
+  return configs;
+}
+
 apiCatalogRouter.delete('/api/catalog/keys/:id', (req: Request, res: Response) => {
   try {
     const id = req.params.id;

@@ -128,6 +128,7 @@ export interface ScholarPaperItem {
   citationCount: number;
   link: string;
   abstract?: string;
+  provider?: string;
 }
 
 type Message = {
@@ -5453,6 +5454,7 @@ DIRECTIVES:
             citationCount: p.cited_by_count ?? 0,
             link: p.link,
             abstract: p.abstract,
+            provider: p.provider,
           }));
         }
       } catch (sErr: unknown) {
@@ -7812,9 +7814,15 @@ DIRECTIVES:
                                         {paper.title}
                                       </p>
 
-                                      <p className="text-[11px] opacity-80 line-clamp-1 leading-relaxed mb-1">
-                                        {authorNames}{paper.year ? ` (${paper.year})` : ''}
-                                      </p>
+                                      <div className="text-[11px] opacity-80 flex items-center gap-1.5 flex-wrap leading-relaxed mb-1">
+                                        <span className="line-clamp-1">{authorNames}</span>
+                                        {paper.year ? <span>({paper.year})</span> : null}
+                                        {paper.provider ? (
+                                          <span className="text-[10px] px-1.5 py-0.5 rounded-full font-medium bg-amber-500/15 text-amber-300 border border-amber-500/30 shrink-0 leading-none">
+                                            {paper.provider}
+                                          </span>
+                                        ) : null}
+                                      </div>
 
                                       {paper.abstract && (
                                         <p className="text-[10.5px] opacity-70 line-clamp-2 leading-relaxed">

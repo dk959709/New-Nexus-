@@ -1103,6 +1103,7 @@ export interface ScholarPaper {
   cited_by_count: number;
   link: string;
   abstract?: string;
+  provider?: string;
 }
 
 export interface CustomApiCallResult {
