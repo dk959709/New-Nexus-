@@ -1259,6 +1259,22 @@ export function setAssistantThinkingEffort(value: 'default' | 'medium' | 'high')
   }
 }
 
+export function getAssistantScholarEnabled(): boolean {
+  try {
+    return read<boolean>('nexus-ai-scholar-toggle', false);
+  } catch {
+    return false;
+  }
+}
+
+export function setAssistantScholarEnabled(enabled: boolean): void {
+  try {
+    write('nexus-ai-scholar-toggle', enabled);
+  } catch {
+    // ignore
+  }
+}
+
 export const storage = {
   getSearches(): string[] {
     return read<string[]>(KEYS.searches, []);
@@ -2093,6 +2109,14 @@ export const storage = {
 
   setAssistantWikimediaEnabled(enabled: boolean): void {
     write('nexus-ai-wikimedia-toggle', enabled);
+  },
+
+  getAssistantScholarEnabled(): boolean {
+    return read<boolean>('nexus-ai-scholar-toggle', false);
+  },
+
+  setAssistantScholarEnabled(enabled: boolean): void {
+    write('nexus-ai-scholar-toggle', enabled);
   },
 
   getAssistantNewAgentEnabled(): boolean {

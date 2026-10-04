@@ -1085,6 +1085,7 @@ export interface ApiCatalogItem {
   docsUrl: string;
   baseUrl?: string;
   queryParamName?: string;
+  provider?: string;
   category: string;
   status: 'connected' | 'not_configured';
   source: 'env' | 'catalog' | 'none';
@@ -1092,6 +1093,16 @@ export interface ApiCatalogItem {
   updatedAt?: string;
   isCustom: boolean;
   noAuth?: boolean;
+}
+
+export interface ScholarPaper {
+  title: string;
+  authors: string[];
+  year?: number;
+  journal?: string;
+  cited_by_count: number;
+  link: string;
+  abstract?: string;
 }
 
 export interface CustomApiCallResult {

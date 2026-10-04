@@ -24,6 +24,7 @@ import type {
   NetworkScanResult,
   ApiCatalogItem,
   CustomApiCallResult,
+  ScholarPaper,
 } from '@/types';
 import { storage, getAssistantThinkingEffort } from '@/lib/storage';
 import { applyReasoningConfig } from '@/lib/reasoningConfig';
@@ -951,6 +952,7 @@ export const api = {
     docsUrl?: string;
     baseUrl?: string;
     queryParamName?: string;
+    provider?: string;
     isCustom?: boolean;
     noAuth?: boolean;
   }): Promise<{ ok: boolean; message: string; item: ApiCatalogItem; data: ApiCatalogItem }> {
@@ -1083,6 +1085,39 @@ export const api = {
       method: 'POST',
       body: JSON.stringify(params),
     });
+  },
+
+  async searchScholar(query: string): Promise<{
+    ok: boolean;
+    papers: ScholarPaper[];
+    error?: string;
+  }> {
+    try {
+      const res = await fetch(`${BASE}/api/scholar/search`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ question: query, query }),
+      });
+      const data = (await res.json().catch(() => ({}))) as Record<string, unknown>;
+      if (!res.ok && !data.error) {
+        return {
+          ok: false,
+          papers: [],
+          error: typeof data.message === 'string' ? data.message : `Scholar API search failed (HTTP ${res.status})`,
+        };
+      }
+      return {
+        ok: data.ok === true,
+        papers: Array.isArray(data.papers) ? (data.papers as ScholarPaper[]) : [],
+        error: typeof data.error === 'string' ? data.error : undefined,
+      };
+    } catch (err: unknown) {
+      return {
+        ok: false,
+        papers: [],
+        error: err instanceof Error ? err.message : 'Scholar search request failed',
+      };
+    }
   },
 };
 

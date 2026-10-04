@@ -23,7 +23,7 @@ import { weatherRouter, geocode, weatherProvider } from './routes/weather.js';
 import { createSearchRouter, searchProvider, fetchWikipediaSummary, extractSignificantQueryWords, isResultTopicallyRelevant } from './routes/search.js';
 import { devicesRouter } from './routes/devices.js';
 import { telegramRouter, setTelegramAiHandler } from './routes/telegram.js';
-import { apiCatalogRouter, getBackendApiKey } from './apiCatalog.js';
+import { apiCatalogRouter, getBackendApiKey, getScholarApiConfig } from './apiCatalog.js';
 import { documentsRouter } from './routes/documents.js';
 import { fluxSchnellRouter } from './routes/fluxSchnell.js';
 import { fluxDevRouter } from './routes/fluxDev.js';
@@ -3586,6 +3586,185 @@ async function startServer() {
   setTelegramAiHandler(async (msg) => {
     const res = await processAiChatInternal(msg);
     return { answer: res.answer || 'I could not process that request.' };
+  });
+
+  // =========================================================================
+  // SCHOLAR API: ACADEMIC RESEARCH PAPERS SEARCH
+  // =========================================================================
+  interface ScholarPaperItem {
+    title: string;
+    authors: string[];
+    year?: number;
+    journal?: string;
+    cited_by_count: number;
+    link: string;
+    abstract?: string;
+  }
+
+  function reconstructOpenAlexAbstract(invertedIndex?: Record<string, number[]> | null): string {
+    if (!invertedIndex || typeof invertedIndex !== 'object') return '';
+    const positions: Array<{ word: string; pos: number }> = [];
+    for (const [word, posList] of Object.entries(invertedIndex)) {
+      if (Array.isArray(posList)) {
+        for (const pos of posList) {
+          if (typeof pos === 'number') {
+            positions.push({ word, pos });
+          }
+        }
+      }
+    }
+    positions.sort((a, b) => a.pos - b.pos);
+    const text = positions.map((p) => p.word).join(' ');
+    return text.length > 600 ? text.slice(0, 600).trim() + '...' : text;
+  }
+
+  // OpenAlex Scholar Search Provider
+  async function searchOpenAlexWorks(
+    query: string,
+    apiKey: string,
+    baseUrl: string,
+  ): Promise<ScholarPaperItem[]> {
+    const cleanBase = (baseUrl || 'https://api.openalex.org').trim().replace(/\/+$/, '');
+    const url = new URL(`${cleanBase}/works`);
+    url.searchParams.set('search', query);
+    url.searchParams.set('per-page', '8');
+    url.searchParams.set('sort', 'relevance_score:desc');
+
+    const headers: Record<string, string> = {
+      'Accept': 'application/json',
+      'User-Agent': 'NexusAI-Scholar/1.0 (mailto:scholar@nexus.ai)',
+    };
+
+    // OpenAlex accepts API key via query parameter (api_key) or Authorization header
+    if (apiKey && apiKey.trim()) {
+      url.searchParams.set('api_key', apiKey.trim());
+      headers['Authorization'] = `Bearer ${apiKey.trim()}`;
+    }
+
+    const response = await fetch(url.toString(), {
+      headers,
+      signal: AbortSignal.timeout(10000), // 10 second timeout
+    });
+
+    if (!response.ok) {
+      throw new Error(`OpenAlex API responded with HTTP status ${response.status}`);
+    }
+
+    const json = (await response.json()) as {
+      results?: Array<{
+        title?: string;
+        display_name?: string;
+        publication_year?: number;
+        publication_date?: string;
+        cited_by_count?: number;
+        doi?: string;
+        id?: string;
+        primary_location?: {
+          landing_page_url?: string;
+          pdf_url?: string;
+          source?: { display_name?: string };
+        };
+        locations?: Array<{
+          landing_page_url?: string;
+          source?: { display_name?: string };
+        }>;
+        host_venue?: { name?: string };
+        authorships?: Array<{
+          author?: { display_name?: string };
+          raw_author_name?: string;
+        }>;
+        abstract_inverted_index?: Record<string, number[]>;
+      }>;
+    };
+
+    const results = json.results || [];
+    return results.slice(0, 8).map((work) => {
+      const title = work.title || work.display_name || 'Untitled Paper';
+      const authors = (work.authorships || [])
+        .slice(0, 5)
+        .map((a) => a.author?.display_name || a.raw_author_name || '')
+        .filter(Boolean);
+
+      let year = work.publication_year;
+      if (!year && work.publication_date) {
+        const parsed = parseInt(work.publication_date.slice(0, 4), 10);
+        if (!isNaN(parsed)) year = parsed;
+      }
+
+      const journal =
+        work.primary_location?.source?.display_name ||
+        work.host_venue?.name ||
+        work.locations?.[0]?.source?.display_name ||
+        '';
+
+      const link =
+        work.doi ||
+        work.primary_location?.landing_page_url ||
+        work.primary_location?.pdf_url ||
+        work.locations?.[0]?.landing_page_url ||
+        work.id ||
+        '';
+
+      const abstract = reconstructOpenAlexAbstract(work.abstract_inverted_index);
+
+      return {
+        title,
+        authors,
+        year,
+        journal,
+        cited_by_count: work.cited_by_count ?? 0,
+        link,
+        abstract,
+      };
+    });
+  }
+
+  // POST /api/scholar/search
+  app.post('/api/scholar/search', async (req: Request, res: Response) => {
+    try {
+      const { query: rawQuery, question: rawQuestion } = req.body || {};
+      const query = (rawQuestion || rawQuery || '').trim();
+
+      if (!query) {
+        return errorResponse(res, 400, 'Search query is required.');
+      }
+
+      const scholarConfig = getScholarApiConfig();
+
+      if (!scholarConfig.apiKey) {
+        return res.status(400).json({
+          ok: false,
+          error: 'Add your Scholar API key in Settings > API Catalog.',
+          papers: [],
+        });
+      }
+
+      const provider = (scholarConfig.provider || 'openalex').toLowerCase();
+      let papers: ScholarPaperItem[] = [];
+
+      if (provider === 'openalex') {
+        papers = await searchOpenAlexWorks(query, scholarConfig.apiKey, scholarConfig.baseUrl);
+      } else {
+        return res.status(400).json({
+          ok: false,
+          error: `Unsupported Scholar API provider "${scholarConfig.provider}". Supported provider: "openalex".`,
+          papers: [],
+        });
+      }
+
+      return res.json({
+        ok: true,
+        papers,
+      });
+    } catch (err: unknown) {
+      const errMsg = err instanceof Error ? err.message : 'Scholar API search failed or timed out.';
+      console.warn('[Scholar API] Search failed:', errMsg);
+      return res.json({
+        ok: false,
+        error: errMsg,
+        papers: [],
+      });
+    }
   });
 
   // Cloudflare Workers AI Image Generation & Editing Proxy (Bypasses browser CORS restrictions)

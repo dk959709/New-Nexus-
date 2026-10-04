@@ -88,11 +88,13 @@ export function ApiCatalogSettings() {
   const [copiedCustomKey, setCopiedCustomKey] = useState<boolean>(false);
   const [showCustomAdvanced, setShowCustomAdvanced] = useState<boolean>(false);
   const [customFormError, setCustomFormError] = useState<string | null>(null);
+  const [editingCustomId, setEditingCustomId] = useState<string | null>(null);
   const [customForm, setCustomForm] = useState({
     name: '',
     envVar: '',
     baseUrl: '',
     queryParamName: 'q',
+    provider: 'openalex',
     key: '',
     noAuth: false,
     description: '',
@@ -534,18 +536,19 @@ export function ApiCatalogSettings() {
 
     const rawKeyName = (customForm.envVar || customForm.name).trim();
     const rawVal = customForm.key.trim();
-    const isNoAuth = customForm.noAuth || !rawVal || isNoAuthPlaceholderVal(rawVal);
+    const hasExistingItem = Boolean(editingCustomId);
+    const isNoAuth = customForm.noAuth || (!rawVal && !hasExistingItem) || isNoAuthPlaceholderVal(rawVal);
 
     if (!rawKeyName) {
-      setCustomFormError('Please enter an Environment Variable or Key Name (e.g. CHUCKNORRIS_API)');
+      setCustomFormError('Please enter an Environment Variable or Key Name (e.g. SCHOLAR_API_KEY)');
       return;
     }
-    if (!isNoAuth && !rawVal) {
+    if (!isNoAuth && !rawVal && !hasExistingItem) {
       setCustomFormError('Please enter an API Key value, or check "No Authentication Required" for free APIs');
       return;
     }
     if (!customForm.baseUrl.trim()) {
-      setCustomFormError('Base URL is required for custom APIs (e.g. https://api.chucknorris.io/jokes/search)');
+      setCustomFormError('Base URL is required for custom APIs (e.g. https://api.openalex.org)');
       return;
     }
 
@@ -570,7 +573,7 @@ export function ApiCatalogSettings() {
         .trim() || envVar;
     }
 
-    const id = finalName.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/(^-|-$)/g, '') || envVar.toLowerCase().replace(/_/g, '-');
+    const id = editingCustomId || (finalName.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/(^-|-$)/g, '') || envVar.toLowerCase().replace(/_/g, '-'));
 
     try {
       setAddingCustom(true);
@@ -580,7 +583,8 @@ export function ApiCatalogSettings() {
         envVar,
         baseUrl: cleanBaseUrl,
         queryParamName: customForm.queryParamName.trim() || 'q',
-        key: isNoAuth ? (rawVal || 'none') : rawVal,
+        provider: customForm.provider || 'openalex',
+        key: rawVal ? rawVal : (isNoAuth ? 'none' : undefined),
         noAuth: isNoAuth,
         description: customForm.description.trim() || `Custom backend integration for ${finalName}`,
         docsUrl: cleanDocsUrl,
@@ -593,18 +597,22 @@ export function ApiCatalogSettings() {
           envVar: '',
           baseUrl: '',
           queryParamName: 'q',
+          provider: 'openalex',
           key: '',
           noAuth: false,
           description: '',
           docsUrl: '',
           category: 'custom',
         });
+        setEditingCustomId(null);
         setShowCustomAdvanced(false);
         setShowAddCustom(false);
         setCustomFormError(null);
         setActionNotice({
           type: 'success',
-          message: `Custom API "${finalName}" successfully registered and ready for /customapi slash commands!`,
+          message: editingCustomId
+            ? `API "${finalName}" successfully updated in vault!`
+            : `API "${finalName}" successfully registered and ready to use!`,
         });
         await fetchCatalog();
       } else {
@@ -721,7 +729,46 @@ export function ApiCatalogSettings() {
 
           <div className="flex items-center gap-2 flex-shrink-0">
             <button
+              type="button"
               onClick={() => {
+                setEditingCustomId(null);
+                setCustomForm({
+                  name: 'Scholar API',
+                  envVar: 'SCHOLAR_API_KEY',
+                  baseUrl: 'https://api.openalex.org',
+                  queryParamName: 'search',
+                  provider: 'openalex',
+                  key: '',
+                  noAuth: false,
+                  description: 'Academic paper research and citations via OpenAlex Scholar API',
+                  docsUrl: 'https://openalex.org',
+                  category: 'research',
+                });
+                setCustomFormError(null);
+                setShowAddCustom(true);
+              }}
+              className="inline-flex items-center gap-1.5 text-xs font-semibold px-3 py-2 rounded-lg bg-amber-500/20 text-amber-300 border border-amber-500/40 hover:bg-amber-500/30 transition-colors cursor-pointer shadow-sm"
+              title="Add Scholar API (OpenAlex academic research papers)"
+            >
+              <Plus size={14} />
+              + Add Scholar API
+            </button>
+            <button
+              type="button"
+              onClick={() => {
+                setEditingCustomId(null);
+                setCustomForm({
+                  name: '',
+                  envVar: '',
+                  baseUrl: '',
+                  queryParamName: 'q',
+                  provider: 'openalex',
+                  key: '',
+                  noAuth: false,
+                  description: '',
+                  docsUrl: '',
+                  category: 'custom',
+                });
                 setShowAddCustom(!showAddCustom);
                 setCustomFormError(null);
               }}
@@ -1008,15 +1055,18 @@ export function ApiCatalogSettings() {
           <div className="flex items-center justify-between pb-3 border-b border-slate-800">
             <div>
               <h3 className="text-sm font-semibold text-slate-100 flex items-center gap-2 m-0">
-                <Plus size={16} className="text-cyan-400" /> Register Custom API
+                <Plus size={16} className="text-cyan-400" /> {editingCustomId ? 'Edit API Configuration' : 'Register Custom API'}
               </h3>
               <p className="text-[11px] text-slate-400 m-0 mt-0.5">
-                Add an environment variable key and configure an endpoint to invoke via JARVIS.
+                {editingCustomId
+                  ? 'Update API key, endpoint base URL, or provider settings.'
+                  : 'Add an environment variable key and configure an endpoint to invoke via JARVIS or Assistant modes.'}
               </p>
             </div>
             <button
               onClick={() => {
                 setShowAddCustom(false);
+                setEditingCustomId(null);
                 setCustomFormError(null);
               }}
               className="text-slate-400 hover:text-slate-200 text-xs px-2 py-1 cursor-pointer"
@@ -1051,7 +1101,7 @@ export function ApiCatalogSettings() {
                 </label>
                 <input
                   type="text"
-                  placeholder="e.g. WEATHERSTACK_API_KEY"
+                  placeholder="e.g. SCHOLAR_API_KEY"
                   value={customForm.envVar}
                   onChange={(e) => {
                     setCustomForm((prev) => ({ ...prev, envVar: e.target.value }));
@@ -1069,7 +1119,7 @@ export function ApiCatalogSettings() {
                   <div className="relative flex-1">
                     <input
                       type={showCustomKeyMask ? 'text' : 'password'}
-                      placeholder="Paste API key value..."
+                      placeholder={editingCustomId ? '•••••••••••••••• (Leave blank to keep existing key)' : 'Paste API key value...'}
                       value={customForm.key}
                       onChange={(e) => {
                         setCustomForm((prev) => ({ ...prev, key: e.target.value }));
@@ -1134,15 +1184,37 @@ export function ApiCatalogSettings() {
               </label>
             </div>
 
-            {/* Row 2: Base URL | Query Parameter Name */}
-            <div className="grid grid-cols-1 md:grid-cols-2 gap-3 items-end">
+            {/* Row 2: Provider | Base URL | Query Parameter Name */}
+            <div className="grid grid-cols-1 md:grid-cols-3 gap-3 items-end">
+              <div>
+                <label className="block text-[11px] font-semibold text-slate-300 mb-1.5 uppercase tracking-wider">
+                  Provider <span className="text-cyan-400">*</span>
+                </label>
+                <select
+                  value={customForm.provider || 'openalex'}
+                  onChange={(e) => {
+                    const prov = e.target.value;
+                    setCustomForm((prev) => ({
+                      ...prev,
+                      provider: prov,
+                      baseUrl: prov === 'openalex' && (!prev.baseUrl || prev.baseUrl === 'https://api.openalex.org')
+                        ? 'https://api.openalex.org'
+                        : prev.baseUrl,
+                    }));
+                  }}
+                  className="w-full text-xs px-3 py-2.5 rounded-lg bg-slate-900 border border-slate-700 text-slate-100 focus:outline-none focus:border-cyan-400 font-medium"
+                >
+                  <option value="openalex">OpenAlex</option>
+                </select>
+              </div>
+
               <div>
                 <label className="block text-[11px] font-semibold text-slate-300 mb-1.5 uppercase tracking-wider">
                   Base URL (API Endpoint) <span className="text-cyan-400">*</span>
                 </label>
                 <input
                   type="text"
-                  placeholder="https://api.weatherstack.com/current"
+                  placeholder="https://api.openalex.org"
                   value={customForm.baseUrl}
                   onChange={(e) => {
                     setCustomForm((prev) => ({ ...prev, baseUrl: e.target.value }));
@@ -1158,7 +1230,7 @@ export function ApiCatalogSettings() {
                 </label>
                 <input
                   type="text"
-                  placeholder="q (default if blank, e.g. 'query', 'search', 'city')"
+                  placeholder="search (or 'q', 'query')"
                   value={customForm.queryParamName}
                   onChange={(e) => {
                     setCustomForm((prev) => ({ ...prev, queryParamName: e.target.value }));
@@ -1235,6 +1307,7 @@ export function ApiCatalogSettings() {
                   type="button"
                   onClick={() => {
                     setShowAddCustom(false);
+                    setEditingCustomId(null);
                     setCustomFormError(null);
                   }}
                   className="text-xs px-4 py-2 rounded-lg bg-slate-800 text-slate-300 border border-slate-700 hover:bg-slate-700 transition-colors cursor-pointer"
@@ -1249,7 +1322,11 @@ export function ApiCatalogSettings() {
                   className="inline-flex items-center gap-1.5 text-xs font-semibold px-4 py-2 rounded-lg bg-cyan-500 text-slate-950 hover:bg-cyan-400 transition-colors disabled:opacity-50 cursor-pointer"
                 >
                   <Lock size={14} />
-                  {addingCustom ? 'Encrypting & Saving...' : 'Save & Register Custom API'}
+                  {addingCustom
+                    ? 'Encrypting & Saving...'
+                    : editingCustomId
+                    ? 'Save & Update API'
+                    : 'Save & Register Custom API'}
                 </button>
               </div>
             </div>
@@ -1363,6 +1440,11 @@ export function ApiCatalogSettings() {
                           {item.isCustom && (
                             <span className="text-[10px] px-1.5 py-0.5 rounded font-mono font-medium bg-indigo-500/15 text-indigo-300 border border-indigo-500/30">
                               Custom
+                            </span>
+                          )}
+                          {item.provider && (
+                            <span className="text-[10px] px-1.5 py-0.5 rounded font-mono font-medium bg-amber-500/15 text-amber-300 border border-amber-500/30">
+                              {item.provider === 'openalex' ? 'OpenAlex' : item.provider}
                             </span>
                           )}
                           {item.docsUrl && (
@@ -1566,19 +1648,37 @@ export function ApiCatalogSettings() {
                         </button>
                       )}
 
-                      {/* Edit / Update Key Button: Only for vault items or not-yet-configured items */}
+                      {/* Edit / Update Key Button: For custom/Scholar items opens full editor modal; for predefined items toggles key input */}
                       {(!isRenderEnv || !isConnected) && (
                         <button
                           type="button"
                           onClick={() => {
-                            setEditingKeyId(isEditing ? null : item.id);
+                            if (item.isCustom || item.name === 'Scholar API' || item.id === 'scholar-api') {
+                              setEditingCustomId(item.id);
+                              setCustomForm({
+                                name: item.name,
+                                envVar: item.envVar,
+                                baseUrl: item.baseUrl || (item.name === 'Scholar API' ? 'https://api.openalex.org' : ''),
+                                queryParamName: item.queryParamName || 'search',
+                                provider: item.provider || 'openalex',
+                                key: '',
+                                noAuth: Boolean(item.noAuth),
+                                description: item.description || '',
+                                docsUrl: item.docsUrl || '',
+                                category: item.category || 'custom',
+                              });
+                              setCustomFormError(null);
+                              setShowAddCustom(true);
+                            } else {
+                              setEditingKeyId(isEditing ? null : item.id);
+                            }
                           }}
                           className={`p-1.5 rounded-md border transition-colors cursor-pointer ${
                             isEditing
                               ? 'bg-cyan-500/20 text-cyan-300 border-cyan-500/50'
                               : 'bg-slate-800 text-slate-300 border-slate-700 hover:text-cyan-300 hover:border-cyan-500/50'
                           }`}
-                          title="Edit / Update key in vault"
+                          title="Edit / Update key, URL, or provider in vault"
                         >
                           <Edit2 size={13} />
                         </button>

@@ -120,13 +120,24 @@ export interface AssistantGeneratedImage {
   prompt: string;
 }
 
+export interface ScholarPaperItem {
+  title: string;
+  authors: string[];
+  year?: number;
+  journal?: string;
+  citationCount: number;
+  link: string;
+  abstract?: string;
+}
+
 type Message = {
   id?: string;
   role: 'user' | 'assistant';
   content: string;
   reasoning?: string;
-  tool?: 'none' | 'search' | 'weather' | 'image' | 'multichat' | 'architect' | 'dataAnalyst' | 'agent' | 'coder' | 'wikimedia' | 'webfetcher' | 'swarmlive' | 'commander';
+  tool?: 'none' | 'search' | 'weather' | 'image' | 'multichat' | 'architect' | 'dataAnalyst' | 'agent' | 'coder' | 'wikimedia' | 'scholar' | 'webfetcher' | 'swarmlive' | 'commander';
   sources?: AISource[];
+  scholarPapers?: ScholarPaperItem[];
   weather?: unknown;
   searchedWeb?: boolean;
   searchSource?: string;
@@ -1413,6 +1424,7 @@ export function AssistantPage() {
   const [edgeTtsPlayingIndex, setEdgeTtsPlayingIndex] = useState<number | null>(null);
   const [copiedIndex, setCopiedIndex] = useState<number | null>(null);
   const [expandedSources, setExpandedSources] = useState<Record<number, boolean>>({});
+  const [expandedPapers, setExpandedPapers] = useState<Record<number, boolean>>({});
   const [expandedReasoning, setExpandedReasoning] = useState<Record<number, boolean>>({});
   const [copiedReasoningIndex, setCopiedReasoningIndex] = useState<number | null>(null);
   const [savedItemIds, setSavedItemIds] = useState<Set<string>>(() => {
@@ -1444,6 +1456,7 @@ export function AssistantPage() {
       coder: storage.getAssistantCoderEnabled(),
       webFetcher: storage.getAssistantWebFetcherEnabled(),
       wikimedia: storage.getAssistantWikimediaEnabled(),
+      scholar: storage.getAssistantScholarEnabled(),
       newAgent: storage.getAssistantNewAgentEnabled(),
       swarmLive: storage.getAssistantSwarmLiveEnabled(),
       commander: storage.getAssistantCommanderEnabled(),
@@ -1458,6 +1471,7 @@ export function AssistantPage() {
       'coder',
       'webFetcher',
       'wikimedia',
+      'scholar',
       'newAgent',
       'swarmLive',
       'commander',
@@ -1473,6 +1487,7 @@ export function AssistantPage() {
           else if (key === 'coder') storage.setAssistantCoderEnabled(false);
           else if (key === 'webFetcher') storage.setAssistantWebFetcherEnabled(false);
           else if (key === 'wikimedia') storage.setAssistantWikimediaEnabled(false);
+          else if (key === 'scholar') storage.setAssistantScholarEnabled(false);
           else if (key === 'newAgent') storage.setAssistantNewAgentEnabled(false);
           else if (key === 'swarmLive') storage.setAssistantSwarmLiveEnabled(false);
           else if (key === 'commander') storage.setAssistantCommanderEnabled(false);
@@ -1491,6 +1506,7 @@ export function AssistantPage() {
   const [coderEnabled, setCoderEnabled] = useState<boolean>(initialSpecialists.coder);
   const [webFetcherEnabled, setWebFetcherEnabled] = useState<boolean>(initialSpecialists.webFetcher);
   const [wikimediaEnabled, setWikimediaEnabled] = useState<boolean>(initialSpecialists.wikimedia);
+  const [scholarEnabled, setScholarEnabled] = useState<boolean>(initialSpecialists.scholar);
   const [newAgentEnabled, setNewAgentEnabled] = useState<boolean>(initialSpecialists.newAgent);
   const [swarmLiveEnabled, setSwarmLiveEnabled] = useState<boolean>(initialSpecialists.swarmLive);
   const [commanderEnabled, setCommanderEnabled] = useState<boolean>(initialSpecialists.commander);
@@ -2400,7 +2416,7 @@ ${commanderConfig.systemPrompts.synthesizer?.trim() || '(Default system prompt)'
 
   // Helper to ensure mutual exclusivity among the Specialist Modes
   const disableOtherSpecialistModes = (
-    except: 'architect' | 'dataAnalysis' | 'multiChat' | 'coder' | 'webFetcher' | 'wikimedia' | 'newAgent' | 'swarmLive' | 'commander' | 'voiceAi',
+    except: 'architect' | 'dataAnalysis' | 'multiChat' | 'coder' | 'webFetcher' | 'wikimedia' | 'scholar' | 'newAgent' | 'swarmLive' | 'commander' | 'voiceAi',
   ) => {
     if (except !== 'multiChat') {
       setMultiChatEnabled(false);
@@ -2427,6 +2443,10 @@ ${commanderConfig.systemPrompts.synthesizer?.trim() || '(Default system prompt)'
     if (except !== 'wikimedia') {
       setWikimediaEnabled(false);
       storage.setAssistantWikimediaEnabled(false);
+    }
+    if (except !== 'scholar') {
+      setScholarEnabled(false);
+      storage.setAssistantScholarEnabled(false);
     }
     if (except !== 'newAgent') {
       setNewAgentEnabled(false);
@@ -2725,6 +2745,20 @@ ${commanderConfig.systemPrompts.synthesizer?.trim() || '(Default system prompt)'
       next
         ? 'Wikimedia Mode enabled: 5 real images from Wikimedia'
         : 'Wikimedia Mode disabled',
+    );
+  };
+
+  const toggleScholar = () => {
+    const next = !scholarEnabled;
+    if (next) {
+      disableOtherSpecialistModes('scholar');
+    }
+    setScholarEnabled(next);
+    storage.setAssistantScholarEnabled(next);
+    triggerSettingsToast(
+      next
+        ? 'Scholar Mode enabled: real papers from your Scholar API'
+        : 'Scholar Mode disabled',
     );
   };
 
@@ -3164,6 +3198,17 @@ ${commanderConfig.systemPrompts.synthesizer?.trim() || '(Default system prompt)'
             : theme === 'fulldark'
             ? 'text-violet-300 border-violet-500/40 bg-[#21152d] hover:bg-[#2e1d3e]'
             : 'text-violet-300 border-violet-500/40 bg-violet-950/50 hover:bg-violet-900/60',
+      }
+    : scholarEnabled
+    ? {
+        name: 'Scholar',
+        toggle: toggleScholar,
+        color:
+          theme === 'classic'
+            ? 'text-amber-300 border-amber-500/50 bg-amber-950/60 hover:bg-amber-900/70 shadow-[0_0_8px_rgba(245,158,11,0.25)]'
+            : theme === 'fulldark'
+            ? 'text-amber-300 border-amber-500/40 bg-[#281e13] hover:bg-[#382b1a]'
+            : 'text-amber-300 border-amber-500/40 bg-amber-950/50 hover:bg-amber-900/60',
       }
     : newAgentEnabled
     ? {
@@ -3624,6 +3669,13 @@ ${commanderConfig.systemPrompts.synthesizer?.trim() || '(Default system prompt)'
 
   const toggleSourceExpand = (index: number) => {
     setExpandedSources((prev) => ({
+      ...prev,
+      [index]: !prev[index],
+    }));
+  };
+
+  const togglePaperExpand = (index: number) => {
+    setExpandedPapers((prev) => ({
       ...prev,
       [index]: !prev[index],
     }));
@@ -5365,6 +5417,128 @@ DIRECTIVES:
       return;
     }
 
+    // 2.5 Check Scholar mode
+    if (scholarEnabled) {
+      setSpecialistProgress(20);
+      setSpecialistPhase('Searching academic research papers via Scholar API...');
+
+      let fetchedPapers: ScholarPaperItem[] = [];
+
+      try {
+        setSpecialistProgress(40);
+        const searchRes = await api.searchScholar(message);
+        setSpecialistProgress(65);
+
+        if (!searchRes.ok) {
+          const errText = searchRes.error || 'Scholar API search failed.';
+          if (errText.includes('Settings > API Catalog')) {
+            const assistantMessage: Message = {
+              role: 'assistant',
+              content: `⚠️ **Scholar API Key Required**\n\n${errText}`,
+              tool: 'scholar',
+            };
+            setMessages((current) => [...current, assistantMessage]);
+            setLoading(false);
+            setSpecialistProgress(0);
+            setSpecialistPhase('');
+            return;
+          }
+          triggerSettingsToast(`Scholar API: ${errText}`);
+        } else {
+          fetchedPapers = (searchRes.papers || []).map((p) => ({
+            title: p.title,
+            authors: p.authors || [],
+            year: p.year,
+            journal: p.journal,
+            citationCount: p.cited_by_count ?? 0,
+            link: p.link,
+            abstract: p.abstract,
+          }));
+        }
+      } catch (sErr: unknown) {
+        console.warn('[AI Assistant] Scholar search error:', sErr);
+        triggerSettingsToast('Scholar API search timed out or failed. Answering normally.');
+      }
+
+      setSpecialistProgress(80);
+      setSpecialistPhase(
+        fetchedPapers.length > 0
+          ? `Synthesizing answer from ${fetchedPapers.length} academic paper${fetchedPapers.length === 1 ? '' : 's'}...`
+          : 'Synthesizing response...',
+      );
+
+      // Prompt for the model in Scholar mode
+      let promptToSend = message;
+      if (fetchedPapers.length > 0) {
+        const numberedSources = fetchedPapers
+          .map((p, idx) => {
+            const authorsStr = p.authors.length > 0 ? p.authors.join(', ') : 'Unknown Authors';
+            const yearStr = p.year ? `(${p.year})` : '';
+            const journalStr = p.journal ? `Source: ${p.journal}` : '';
+            const citedStr = `Cited by: ${p.citationCount}`;
+            const linkStr = p.link ? `Link: ${p.link}` : '';
+            const abstractStr = p.abstract ? `Abstract: ${p.abstract}` : '';
+            return `[${idx + 1}] "${p.title}" - ${authorsStr} ${yearStr}. ${journalStr}. ${citedStr}. ${linkStr}\n${abstractStr}`.trim();
+          })
+          .join('\n\n');
+
+        promptToSend = `${message}\n\nAcademic Papers:\n${numberedSources}\n\nAnswer using ONLY these papers for factual claims. Cite them as [1], [2]. If the papers do not answer the question, say so. Do not invent papers, authors, or numbers.`;
+      }
+
+      try {
+        const currentPermanentMemories = storage.getPermanentMemories();
+        const sessionProvider = storage.getProviderForSession(activeProviderId, activeModelId);
+
+        const response = await api.aiChat(
+          promptToSend,
+          historyForRequest,
+          smartMemory,
+          sessionProvider,
+          false,
+          {
+            language: currentLanguage,
+            permanentMemories: currentPermanentMemories,
+            image: fileToSend?.type === 'image' ? fileToSend.dataUrl : undefined,
+          },
+        );
+
+        const assistantMessage: Message = {
+          role: 'assistant',
+          content: stripTierLabels(response.answer),
+          reasoning: response.reasoning,
+          tool: 'scholar',
+          scholarPapers: fetchedPapers.length > 0 ? fetchedPapers : undefined,
+        };
+
+        setMessages((current) => {
+          const newIdx = current.length;
+          triggerAutoSpeakOnAnswer(response.answer, newIdx);
+          return [...current, assistantMessage];
+        });
+
+        if (voiceAiEnabled || voiceAiEnabledRef.current) {
+          speakWithVoiceAi(response.answer);
+        }
+
+        const updatedConversation = [
+          ...messages,
+          userMessage,
+          assistantMessage,
+        ];
+        const newMemory = buildLocalMemory(updatedConversation);
+        if (newMemory) {
+          setSmartMemory(newMemory);
+        }
+      } catch (chatErr: unknown) {
+        setError(chatErr instanceof Error ? chatErr.message : 'Scholar assistant failed to generate answer.');
+      } finally {
+        setLoading(false);
+        setSpecialistProgress(0);
+        setSpecialistPhase('');
+      }
+      return;
+    }
+
     // 3. Check New Agent, Coder, Architect, Data Analysis modes
     const isNewAgentSlash = /^\/(?:newagent|new_agent)(?:\s+|$)/i.test(message.trim());
     const isOtherSpecialistActive = newAgentEnabled || isNewAgentSlash || coderEnabled || architectEnabled || dataAnalysisEnabled;
@@ -6937,6 +7111,64 @@ DIRECTIVES:
             </div>
           )}
 
+          {/* Scholar Mode Active Indicator Banner */}
+          {scholarEnabled && (
+            <div
+              className={`px-3.5 py-2.5 rounded-xl border flex items-center justify-between gap-3 text-xs transition-all ${
+                theme === 'classic'
+                  ? 'bg-amber-950/40 border-amber-500/30 text-amber-200 shadow-[0_0_15px_rgba(245,158,11,0.15)]'
+                  : theme === 'fulldark'
+                  ? 'bg-[#181818] border-[#2e2e2e] text-[#e0e0e0]'
+                  : 'bg-zinc-900/90 border-zinc-800 text-zinc-300'
+              }`}
+            >
+              <div className="flex items-center gap-2.5 min-w-0">
+                <div
+                  className={`w-6 h-6 rounded-lg grid place-items-center text-xs shrink-0 ${
+                    theme === 'classic'
+                      ? 'bg-amber-500/20 text-amber-300'
+                      : 'bg-zinc-800 text-amber-400'
+                  }`}
+                >
+                  <BookOpen size={13} />
+                </div>
+                <div className="flex items-center gap-2 flex-wrap">
+                  <span className="font-semibold text-zinc-100">Scholar Active:</span>
+                  <span className="text-[11px] opacity-90">
+                    Real academic papers from Scholar API
+                  </span>
+                </div>
+              </div>
+              <div className="flex items-center gap-1.5 shrink-0">
+                <button
+                  type="button"
+                  onClick={() => setSettingsOpen(true)}
+                  className="text-[11px] px-2.5 py-1 rounded-lg border border-zinc-700/60 bg-zinc-800/80 hover:bg-zinc-700 text-zinc-300 transition-colors flex items-center gap-1"
+                  title="Configure in Settings"
+                >
+                  <SettingsIcon size={11} />
+                  <span className="hidden sm:inline">Settings</span>
+                </button>
+                <button
+                  type="button"
+                  onClick={toggleScholar}
+                  className={`text-[11px] px-2.5 py-1 rounded-lg border transition-all flex items-center gap-1 ${
+                    theme === 'classic'
+                      ? 'border-amber-500/40 bg-amber-950/70 text-amber-200 hover:border-red-500/50 hover:bg-red-950/40 hover:text-red-300'
+                      : theme === 'fulldark'
+                      ? 'border-[#333] bg-[#222] text-[#ccc] hover:border-red-500/40 hover:bg-red-950/30 hover:text-red-300'
+                      : 'border-zinc-700/60 bg-zinc-800/80 text-zinc-300 hover:border-red-500/40 hover:bg-red-500/10 hover:text-red-300'
+                  }`}
+                  title="Disable Scholar mode"
+                  aria-label="Disable Scholar"
+                >
+                  <X size={12} />
+                  <span>Disable</span>
+                </button>
+              </div>
+            </div>
+          )}
+
           {/* New Agent Mode Active Indicator Banner */}
           {newAgentEnabled && (
             <div
@@ -7325,6 +7557,42 @@ DIRECTIVES:
                           </div>
                         )}
 
+                        {/* Scholar Indicator Tag */}
+                        {Boolean((message.scholarPapers && message.scholarPapers.length > 0) || message.tool === 'scholar') && (
+                          <div className="flex items-center gap-2 pt-1 pb-0.5">
+                            <span
+                              className={`inline-flex items-center gap-1.5 px-2 py-0.5 rounded-full text-[11px] font-medium border ${
+                                theme === 'classic'
+                                  ? 'bg-amber-950/70 text-amber-300 border-amber-500/40'
+                                  : theme === 'fulldark'
+                                  ? 'bg-[#1e1e1e] text-amber-300 border-[#2e2e2e]'
+                                  : 'bg-zinc-800 text-amber-300 border-zinc-700/60'
+                              }`}
+                            >
+                              <BookOpen size={11} className="text-amber-400" />
+                              <span>Scholar Papers</span>
+                            </span>
+                            {message.scholarPapers && message.scholarPapers.length > 0 && (
+                              <button
+                                type="button"
+                                onClick={() => togglePaperExpand(index)}
+                                className={`text-[11px] flex items-center gap-0.5 transition-colors ${
+                                  theme === 'fulldark'
+                                    ? 'text-[#8e8e8e] hover:text-[#e0e0e0]'
+                                    : 'text-zinc-400 hover:text-zinc-200'
+                                }`}
+                              >
+                                <span>{expandedPapers[index] ? 'Hide papers' : 'Show papers'}</span>
+                                {expandedPapers[index] ? (
+                                  <ChevronUp size={12} />
+                                ) : (
+                                  <ChevronDown size={12} />
+                                )}
+                              </button>
+                            )}
+                          </div>
+                        )}
+
                         {/* New Agent Indicator Tag */}
                         {message.tool === 'agent' && (
                           <div className="flex items-center gap-2 pt-1 pb-0.5">
@@ -7473,6 +7741,99 @@ DIRECTIVES:
                                     >
                                       <span className="truncate max-w-[170px]">
                                         {src.url.replace(/^https?:\/\//, '')}
+                                      </span>
+                                      <ExternalLink size={11} className="shrink-0 ml-1 opacity-60 group-hover/card:opacity-100" />
+                                    </div>
+                                  </a>
+                                );
+                              })}
+                            </div>
+                          </div>
+                        )}
+
+                        {/* Collapsible Scholar Papers Panel */}
+                        {Boolean(message.scholarPapers && message.scholarPapers.length > 0) && expandedPapers[index] && (
+                          <div
+                            className={`my-2.5 p-2.5 rounded-xl border shadow-sm ${
+                              theme === 'classic'
+                                ? 'border-amber-500/30 bg-slate-950/80'
+                                : theme === 'fulldark'
+                                ? 'border-[#282828] bg-[#141414]'
+                                : 'border-zinc-800/80 bg-zinc-950/60'
+                            }`}
+                          >
+                            <div
+                              className={`flex items-center justify-between px-1 py-1 mb-2 border-b text-[11px] ${
+                                theme === 'classic'
+                                  ? 'border-amber-500/20 text-amber-300'
+                                  : theme === 'fulldark'
+                                  ? 'border-[#262626] text-[#a0a0a0]'
+                                  : 'border-zinc-800/60 text-zinc-400'
+                              }`}
+                            >
+                              <span className="font-medium flex items-center gap-1.5">
+                                <BookOpen size={12} className={theme === 'classic' ? 'text-amber-400' : 'text-zinc-400'} />
+                                <span>Academic Papers ({message.scholarPapers?.length})</span>
+                              </span>
+                              <span className="text-[10.5px] opacity-75 hidden sm:inline">
+                                Scholar API Research
+                              </span>
+                            </div>
+
+                            <div className="grid grid-cols-1 sm:grid-cols-2 gap-2 max-h-[420px] overflow-y-auto pr-1">
+                              {message.scholarPapers?.map((paper, pIdx) => {
+                                const authorNames = paper.authors && paper.authors.length > 0 ? paper.authors.join(', ') : 'Unknown Authors';
+                                return (
+                                  <a
+                                    key={`${paper.link || paper.title}-${pIdx}`}
+                                    href={paper.link}
+                                    target="_blank"
+                                    rel="noreferrer"
+                                    className={`p-2.5 rounded-lg border transition-all text-xs flex flex-col justify-between group/card ${
+                                      theme === 'classic'
+                                        ? 'border-amber-500/20 bg-slate-900/70 hover:bg-slate-900 hover:border-amber-500/40 text-amber-100'
+                                        : theme === 'fulldark'
+                                        ? 'border-[#262626] bg-[#1c1c1c] hover:bg-[#242424] hover:border-[#383838] text-[#e0e0e0]'
+                                        : 'border-zinc-800/90 bg-zinc-900/60 hover:bg-zinc-850 hover:border-zinc-700 text-zinc-200'
+                                    }`}
+                                  >
+                                    <div>
+                                      <div className="flex items-center justify-between gap-1 mb-1.5 flex-wrap">
+                                        <span className="inline-flex items-center gap-1 text-[10.5px] font-medium opacity-80 truncate max-w-[170px]">
+                                          <BookOpen size={10} className="text-amber-400 shrink-0" />
+                                          <span className="truncate">[{pIdx + 1}] {paper.journal || 'Academic Paper'}</span>
+                                        </span>
+                                        <span className="text-[10px] px-1.5 py-0.5 rounded bg-amber-500/10 text-amber-300 border border-amber-500/25 font-mono">
+                                          cited by {paper.citationCount ?? 0}
+                                        </span>
+                                      </div>
+
+                                      <p className="font-semibold line-clamp-2 mb-1 group-hover/card:text-white transition-colors leading-snug">
+                                        {paper.title}
+                                      </p>
+
+                                      <p className="text-[11px] opacity-80 line-clamp-1 leading-relaxed mb-1">
+                                        {authorNames}{paper.year ? ` (${paper.year})` : ''}
+                                      </p>
+
+                                      {paper.abstract && (
+                                        <p className="text-[10.5px] opacity-70 line-clamp-2 leading-relaxed">
+                                          {paper.abstract}
+                                        </p>
+                                      )}
+                                    </div>
+
+                                    <div
+                                      className={`mt-2 pt-1.5 border-t flex items-center justify-between text-[10px] ${
+                                        theme === 'classic'
+                                          ? 'border-amber-500/20 text-amber-300/60'
+                                          : theme === 'fulldark'
+                                          ? 'border-[#262626] text-[#707070]'
+                                          : 'border-zinc-800/40 text-zinc-500'
+                                      }`}
+                                    >
+                                      <span className="truncate max-w-[170px]">
+                                        {paper.link ? paper.link.replace(/^https?:\/\//, '') : 'Paper Link'}
                                       </span>
                                       <ExternalLink size={11} className="shrink-0 ml-1 opacity-60 group-hover/card:opacity-100" />
                                     </div>

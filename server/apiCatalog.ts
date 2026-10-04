@@ -194,6 +194,7 @@ interface StoredCatalogRecord {
   docsUrl?: string;
   baseUrl?: string;
   queryParamName?: string;
+  provider?: string;
   noAuth?: boolean;
   encryptedKey: string;
   last4: string;
@@ -345,12 +346,14 @@ export interface CatalogItemResponse {
   docsUrl: string;
   baseUrl?: string;
   queryParamName?: string;
+  provider?: string;
   category: string;
   status: 'connected' | 'not_configured';
   source: 'env' | 'catalog' | 'none';
   maskedKey?: string;
   updatedAt?: string;
   isCustom: boolean;
+  noAuth?: boolean;
 }
 
 export function getGlobalSearchConfig(): {
@@ -562,6 +565,7 @@ export function listCatalogItems(): CatalogItemResponse[] {
       docsUrl: record.docsUrl || '',
       baseUrl: record.baseUrl,
       queryParamName: record.queryParamName || 'q',
+      provider: record.provider || (record.name?.toLowerCase().includes('scholar') ? 'openalex' : undefined),
       category: 'general',
       status: isConnected ? 'connected' : 'not_configured',
       source,
@@ -588,23 +592,26 @@ export function saveCatalogKeyItem(input: {
   docsUrl?: string;
   baseUrl?: string;
   queryParamName?: string;
+  provider?: string;
   isCustom?: boolean;
   noAuth?: boolean;
 }): { success: boolean; item: CatalogItemResponse } {
   const { id } = input;
-  const isNoAuth = Boolean(input.noAuth || isNoAuthPlaceholder(input.key));
-  const rawKey = input.key !== undefined ? input.key.trim() : '';
-  if (!isNoAuth && !rawKey) {
-    throw new Error('API key value cannot be empty (or enable "No Authentication Required")');
-  }
-
-  const effectiveKey = rawKey || (isNoAuth ? 'none' : '');
-  const encryptedKey = encryptValue(effectiveKey);
-  const now = new Date().toISOString();
-
   const store = loadCatalogStore();
   const existing = store[id] || {};
   const predefined = PREDEFINED_CATALOG.find((p) => p.id === id || p.envVar === id);
+
+  const isNoAuth = Boolean(input.noAuth || isNoAuthPlaceholder(input.key));
+  const rawKey = input.key !== undefined ? input.key.trim() : '';
+  const hasExistingKey = Boolean(existing.encryptedKey);
+
+  if (!isNoAuth && !rawKey && !hasExistingKey) {
+    throw new Error('API key value cannot be empty (or enable "No Authentication Required")');
+  }
+
+  const effectiveKey = rawKey || (isNoAuth ? 'none' : hasExistingKey ? (decryptValue(existing.encryptedKey) || '') : '');
+  const encryptedKey = rawKey ? encryptValue(effectiveKey) : (existing.encryptedKey || encryptValue(effectiveKey));
+  const now = new Date().toISOString();
 
   const record: StoredCatalogRecord = {
     id,
@@ -614,6 +621,7 @@ export function saveCatalogKeyItem(input: {
     docsUrl: input.docsUrl || predefined?.docsUrl || existing.docsUrl || '',
     baseUrl: input.baseUrl !== undefined ? input.baseUrl.trim() : existing.baseUrl,
     queryParamName: input.queryParamName !== undefined ? (input.queryParamName.trim() || 'q') : (existing.queryParamName || 'q'),
+    provider: input.provider !== undefined ? input.provider.trim().toLowerCase() : existing.provider,
     noAuth: isNoAuth,
     encryptedKey,
     last4: isNoAuth ? 'none' : effectiveKey.slice(-4),
@@ -635,6 +643,7 @@ export function saveCatalogKeyItem(input: {
     docsUrl: record.docsUrl || '',
     baseUrl: record.baseUrl,
     queryParamName: record.queryParamName || 'q',
+    provider: record.provider,
     category: 'general',
     status: 'connected',
     source: 'catalog',
@@ -1146,12 +1155,17 @@ apiCatalogRouter.post('/api/catalog/custom-call', async (req: Request, res: Resp
 
 apiCatalogRouter.post('/api/catalog/keys', (req: Request, res: Response) => {
   try {
-    const { id, key, name, envVar, description, docsUrl, baseUrl, queryParamName, isCustom, noAuth } = req.body || {};
+    const { id, key, name, envVar, description, docsUrl, baseUrl, queryParamName, provider, isCustom, noAuth } = req.body || {};
     if (!id || typeof id !== 'string' || !id.trim()) {
       return errorResponse(res, 400, 'API identifier (id) is required.');
     }
+    const cleanId = id.trim().toLowerCase();
+    const store = loadCatalogStore();
+    const existing = store[cleanId];
+    const hasExistingKey = Boolean(existing && existing.encryptedKey);
+
     const isNoAuth = Boolean(noAuth || isNoAuthPlaceholder(key));
-    if (!isNoAuth && (!key || typeof key !== 'string' || !key.trim())) {
+    if (!isNoAuth && !hasExistingKey && (!key || typeof key !== 'string' || !key.trim())) {
       return errorResponse(res, 400, 'API key value is required (or enable No Authentication Required).');
     }
     if (isCustom && (!baseUrl || typeof baseUrl !== 'string' || !baseUrl.trim())) {
@@ -1159,7 +1173,7 @@ apiCatalogRouter.post('/api/catalog/keys', (req: Request, res: Response) => {
     }
 
     const result = saveCatalogKeyItem({
-      id: id.trim().toLowerCase(),
+      id: cleanId,
       key: typeof key === 'string' ? key.trim() : '',
       name: typeof name === 'string' ? name.trim() : undefined,
       envVar: typeof envVar === 'string' ? envVar.trim().toUpperCase() : undefined,
@@ -1167,6 +1181,7 @@ apiCatalogRouter.post('/api/catalog/keys', (req: Request, res: Response) => {
       docsUrl: typeof docsUrl === 'string' ? docsUrl.trim() : undefined,
       baseUrl: typeof baseUrl === 'string' ? baseUrl.trim() : undefined,
       queryParamName: typeof queryParamName === 'string' ? queryParamName.trim() : undefined,
+      provider: typeof provider === 'string' ? provider.trim().toLowerCase() : undefined,
       isCustom: Boolean(isCustom),
       noAuth: isNoAuth,
     });
@@ -1176,6 +1191,68 @@ apiCatalogRouter.post('/api/catalog/keys', (req: Request, res: Response) => {
     return errorResponse(res, 500, (err as Error).message);
   }
 });
+
+export function getCatalogRecordByNameOrId(ident: string): StoredCatalogRecord | undefined {
+  if (!ident) return undefined;
+  const rawIdent = ident.trim();
+  const lowerIdent = rawIdent.toLowerCase();
+  const slugIdent = lowerIdent.replace(/[^a-z0-9]/g, '');
+
+  const store = loadCatalogStore();
+  for (const [id, r] of Object.entries(store)) {
+    const rId = id.toLowerCase();
+    const rName = (r.name || '').toLowerCase();
+    const rEnv = (r.envVar || '').toLowerCase();
+    const rSlug = rName.replace(/[^a-z0-9]/g, '');
+
+    if (
+      rId === lowerIdent ||
+      rName === lowerIdent ||
+      rEnv === lowerIdent ||
+      (slugIdent && rSlug === slugIdent) ||
+      rId.replace(/[^a-z0-9]/g, '') === slugIdent
+    ) {
+      return r;
+    }
+  }
+  return undefined;
+}
+
+export function getScholarApiConfig(): {
+  apiKey?: string;
+  baseUrl: string;
+  provider: string;
+  record?: StoredCatalogRecord;
+} {
+  // 1. Look up catalog item named "Scholar API"
+  const record = getCatalogRecordByNameOrId('Scholar API') || getCatalogRecordByNameOrId('scholar-api');
+
+  // 2. Read API key the same way other catalog items are read (process.env priority, then secure storage)
+  let apiKey: string | undefined;
+  if (record) {
+    apiKey = getBackendApiKey(record.envVar || record.id);
+    if (!apiKey && record.encryptedKey) {
+      const dec = decryptValue(record.encryptedKey);
+      if (dec && dec.trim() && !isNoAuthPlaceholder(dec)) {
+        apiKey = dec.trim();
+      }
+    }
+  }
+
+  if (!apiKey) {
+    apiKey = getBackendApiKey('SCHOLAR_API_KEY') || getBackendApiKey('OPENALEX_API_KEY');
+  }
+
+  const baseUrl = (record?.baseUrl && record.baseUrl.trim()) || 'https://api.openalex.org';
+  const provider = (record?.provider && record.provider.trim().toLowerCase()) || 'openalex';
+
+  return {
+    apiKey: apiKey && !isNoAuthPlaceholder(apiKey) ? apiKey : undefined,
+    baseUrl,
+    provider,
+    record,
+  };
+}
 
 apiCatalogRouter.delete('/api/catalog/keys/:id', (req: Request, res: Response) => {
   try {
