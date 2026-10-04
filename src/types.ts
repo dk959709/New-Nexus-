@@ -226,6 +226,13 @@ export interface WebSearchApiState {
   customKey: string;
 }
 
+export interface ScholarApiState {
+  mode: 'default' | 'custom';
+  customUrl: string;
+  customKey: string;
+  provider: string;
+}
+
 export interface CloudVoiceItem {
   id: string;
   name: string;

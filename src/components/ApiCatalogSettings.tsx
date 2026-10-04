@@ -25,6 +25,7 @@ import {
   ChevronUp,
   Plug,
   RotateCcw,
+  BookOpen,
 } from 'lucide-react';
 import { api } from '@/services/api';
 import { storage } from '@/lib/storage';
@@ -113,6 +114,28 @@ export function ApiCatalogSettings() {
   const [globalSearchTestResult, setGlobalSearchTestResult] = useState<{ ok: boolean; message: string } | null>(null);
   const [savingGlobalSearch, setSavingGlobalSearch] = useState<boolean>(false);
 
+  // Dedicated Scholar API Card State
+  const [scholarProvider, setScholarProvider] = useState<string>(() => {
+    const local = storage.getScholarApiState();
+    return local.provider || 'openalex';
+  });
+  const [scholarCustomUrl, setScholarCustomUrl] = useState<string>(() => {
+    const local = storage.getScholarApiState();
+    return local.customUrl || 'https://api.openalex.org';
+  });
+  const [scholarCustomKey, setScholarCustomKey] = useState<string>(() => {
+    const local = storage.getScholarApiState();
+    return local.customKey || '';
+  });
+  const [scholarHasKey, setScholarHasKey] = useState<boolean>(() => {
+    const local = storage.getScholarApiState();
+    return Boolean(local.customKey && local.customKey.trim());
+  });
+  const [showScholarKey, setShowScholarKey] = useState<boolean>(false);
+  const [testingScholarSearch, setTestingScholarSearch] = useState<boolean>(false);
+  const [scholarTestResult, setScholarTestResult] = useState<{ ok: boolean; message: string } | null>(null);
+  const [savingScholarSearch, setSavingScholarSearch] = useState<boolean>(false);
+
   // Key revealing states
   const [revealedKeys, setRevealedKeys] = useState<Record<string, string>>({});
   const [revealedVisibility, setRevealedVisibility] = useState<Record<string, boolean>>({});
@@ -200,9 +223,23 @@ export function ApiCatalogSettings() {
     }
   };
 
+  const fetchScholarSearchConfig = async () => {
+    try {
+      const res = await api.getScholarSearchConfig();
+      if (res && res.ok) {
+        if (res.customUrl) setScholarCustomUrl(res.customUrl);
+        setScholarHasKey(res.hasKey || false);
+        if (res.provider) setScholarProvider(res.provider);
+      }
+    } catch {
+      // Ignore initial config load error
+    }
+  };
+
   useEffect(() => {
     fetchCatalog();
     fetchGlobalSearchConfig();
+    fetchScholarSearchConfig();
   }, []);
 
   const handleSelectGlobalSearchMode = async (mode: 'default' | 'custom') => {
@@ -372,6 +409,132 @@ export function ApiCatalogSettings() {
       });
     } finally {
       setTestingGlobalSearch(false);
+    }
+  };
+
+  const handleSaveScholarSearch = async (e?: React.FormEvent) => {
+    if (e) e.preventDefault();
+    setScholarTestResult(null);
+
+    const cleanUrl = scholarCustomUrl.trim() || 'https://api.openalex.org';
+    const local = storage.getScholarApiState();
+    const cleanKey = scholarCustomKey.trim() || local.customKey || '';
+
+    // Primary: save to localStorage
+    storage.saveScholarApiState({
+      mode: 'custom',
+      customUrl: cleanUrl,
+      customKey: cleanKey,
+      provider: scholarProvider,
+    });
+
+    // Secondary: save to server vault
+    try {
+      setSavingScholarSearch(true);
+      const res = await api.saveScholarSearchConfig({
+        mode: 'custom',
+        customUrl: cleanUrl,
+        customKey: cleanKey || undefined,
+        provider: scholarProvider,
+      });
+
+      if (res && res.ok) {
+        setScholarCustomUrl(res.customUrl);
+        setScholarHasKey(res.hasKey || Boolean(cleanKey));
+        if (cleanKey) {
+          setScholarCustomKey(cleanKey);
+        }
+        setActionNotice({ type: 'success', message: 'Scholar API settings saved.' });
+        await fetchCatalog();
+      }
+    } catch (err: unknown) {
+      setActionNotice({
+        type: 'success',
+        message: 'Saved in browser storage (server vault sync returned: ' + (err instanceof Error ? err.message : 'error') + ')',
+      });
+    } finally {
+      setSavingScholarSearch(false);
+    }
+  };
+
+  const handleResetScholarSearch = async () => {
+    setScholarTestResult(null);
+
+    storage.saveScholarApiState({
+      mode: 'default',
+      customUrl: 'https://api.openalex.org',
+      customKey: '',
+      provider: 'openalex',
+    });
+
+    try {
+      setSavingScholarSearch(true);
+      const res = await api.resetScholarSearchConfig();
+      if (res && res.ok) {
+        setScholarCustomUrl('https://api.openalex.org');
+        setScholarCustomKey('');
+        setScholarHasKey(false);
+        setScholarProvider('openalex');
+        setActionNotice({ type: 'success', message: 'Scholar API key removed.' });
+        await fetchCatalog();
+      }
+    } catch (err: unknown) {
+      setScholarCustomUrl('https://api.openalex.org');
+      setScholarCustomKey('');
+      setScholarHasKey(false);
+      setActionNotice({
+        type: 'error',
+        message: err instanceof Error ? err.message : 'Failed to reset Scholar API',
+      });
+    } finally {
+      setSavingScholarSearch(false);
+    }
+  };
+
+  const handleTestScholarSearch = async () => {
+    if (testingScholarSearch) return;
+    setScholarTestResult(null);
+
+    const local = storage.getScholarApiState();
+    const urlToTest = scholarCustomUrl.trim() || local.customUrl.trim();
+    const keyToTest = scholarCustomKey.trim() || local.customKey.trim();
+
+    if (!urlToTest) {
+      setScholarTestResult({ ok: false, message: 'Invalid URL (must start with https://)' });
+      return;
+    }
+
+    if (!keyToTest && !scholarHasKey && scholarProvider !== 'arxiv') {
+      setScholarTestResult({ ok: false, message: 'Wrong key (401/403)' });
+      return;
+    }
+
+    try {
+      setTestingScholarSearch(true);
+      const res = await api.testScholarSearchConfig({
+        url: urlToTest,
+        key: keyToTest || undefined,
+        provider: scholarProvider,
+      });
+
+      if (res.ok) {
+        setScholarTestResult({
+          ok: true,
+          message: res.message || 'Works: connection verified successfully (OK)!',
+        });
+      } else {
+        setScholarTestResult({
+          ok: false,
+          message: res.error || 'Server returned an error',
+        });
+      }
+    } catch (err: unknown) {
+      setScholarTestResult({
+        ok: false,
+        message: err instanceof Error ? err.message : 'Server returned an error',
+      });
+    } finally {
+      setTestingScholarSearch(false);
     }
   };
 
@@ -628,15 +791,66 @@ export function ApiCatalogSettings() {
       (editingCustomId && editingCustomId.startsWith('scholar-api')) ||
       Boolean(SCHOLAR_PROVIDERS_CONFIG[customForm.provider]);
 
-    const scholarCfg = SCHOLAR_PROVIDERS_CONFIG[customForm.provider];
-    const scholarId = scholarCfg ? scholarCfg.id : 'scholar-api';
+    if (isScholar) {
+      try {
+        setAddingCustom(true);
+        const res = await api.saveScholarSearchConfig({
+          mode: 'custom',
+          customUrl: cleanBaseUrl,
+          customKey: rawVal ? rawVal : (isNoAuth ? 'none' : undefined),
+          provider: customForm.provider || 'openalex',
+        });
+
+        if (res && res.ok) {
+          storage.saveScholarApiState({
+            mode: 'custom',
+            customUrl: cleanBaseUrl,
+            customKey: rawVal || '',
+            provider: customForm.provider || 'openalex',
+          });
+          setCustomForm({
+            name: '',
+            envVar: '',
+            baseUrl: '',
+            queryParamName: 'q',
+            provider: 'openalex',
+            key: '',
+            noAuth: false,
+            description: '',
+            docsUrl: '',
+            category: 'custom',
+          });
+          setEditingCustomId(null);
+          setShowCustomAdvanced(false);
+          setShowAddCustom(false);
+          setCustomFormError(null);
+          setActionNotice({
+            type: 'success',
+            message: editingCustomId
+              ? `Scholar API successfully updated in vault!`
+              : `Scholar API successfully saved in vault!`,
+          });
+          await fetchCatalog();
+          await fetchScholarSearchConfig();
+        } else {
+          const errText = 'Failed to save Scholar API configuration';
+          setCustomFormError(errText);
+          setActionNotice({ type: 'error', message: errText });
+        }
+      } catch (err: unknown) {
+        const msg = err instanceof Error ? err.message : 'Failed to save Scholar API configuration';
+        setCustomFormError(msg);
+        setActionNotice({ type: 'error', message: msg });
+      } finally {
+        setAddingCustom(false);
+      }
+      return;
+    }
 
     const id =
       editingCustomId ||
-      (isScholar
-        ? scholarId
-        : finalName.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/(^-|-$)/g, '') ||
-          envVar.toLowerCase().replace(/_/g, '-'));
+      finalName.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/(^-|-$)/g, '') ||
+      envVar.toLowerCase().replace(/_/g, '-');
 
     try {
       setAddingCustom(true);
@@ -1080,6 +1294,166 @@ export function ApiCatalogSettings() {
             )}
           </div>
         </div>
+      </section>
+
+      {/* Dedicated Scholar API Section */}
+      <section
+        style={{
+          background: 'linear-gradient(135deg, rgba(28,24,14,0.85) 0%, rgba(20,16,10,0.85) 100%)',
+          border: '1px solid rgba(245,158,11,0.25)',
+          borderRadius: '12px',
+          padding: '20px',
+        }}
+        className="space-y-4 shadow-lg"
+      >
+        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2 border-b border-slate-800/80 pb-3">
+          <div>
+            <h3 className="text-sm font-bold text-slate-100 flex items-center gap-2 m-0">
+              <BookOpen size={16} className="text-amber-400" />
+              Scholar API
+            </h3>
+            <p className="text-xs text-slate-400 m-0 mt-0.5">
+              Used by the 📚 Scholar mode in AI Assistant to find real academic papers.
+            </p>
+          </div>
+          <span className="text-[11px] px-2.5 py-0.5 rounded-full font-mono font-medium border self-start sm:self-auto flex items-center gap-1.5 bg-slate-900 border-slate-800">
+            Status:{' '}
+            <strong className={scholarHasKey ? 'text-emerald-400' : 'text-slate-400'}>
+              {scholarHasKey ? 'Connected' : 'Not set'}
+            </strong>
+          </span>
+        </div>
+
+        <form onSubmit={handleSaveScholarSearch} noValidate className="space-y-3 pt-1">
+          {/* Provider Selection */}
+          <div>
+            <label className="block text-[11px] font-semibold text-slate-300 mb-1">
+              Provider
+            </label>
+            <select
+              value={scholarProvider}
+              onChange={(e) => {
+                const newProv = e.target.value;
+                setScholarProvider(newProv);
+                if (SCHOLAR_PROVIDERS_CONFIG[newProv]) {
+                  setScholarCustomUrl(SCHOLAR_PROVIDERS_CONFIG[newProv].baseUrl);
+                }
+                setScholarTestResult(null);
+              }}
+              className="w-full text-xs px-3 py-2 rounded-lg bg-slate-950/80 border border-slate-800 text-slate-100 focus:outline-none focus:border-amber-400 font-medium cursor-pointer"
+            >
+              <option value="openalex">OpenAlex (Default, https://api.openalex.org)</option>
+              <option value="semanticscholar">Semantic Scholar (Graph API)</option>
+              <option value="nasaads">NASA ADS (Astrophysics Data System)</option>
+              <option value="arxiv">arXiv (No key required)</option>
+            </select>
+          </div>
+
+          {/* Search API URL */}
+          <div>
+            <label className="block text-[11px] font-semibold text-slate-300 mb-1">
+              Search API URL <span className="text-amber-400">*</span>
+            </label>
+            <input
+              type="text"
+              placeholder="https://api.openalex.org"
+              value={scholarCustomUrl}
+              onChange={(e) => {
+                setScholarCustomUrl(e.target.value);
+                setScholarTestResult(null);
+              }}
+              className="w-full text-xs px-3 py-2 rounded-lg bg-slate-950/80 border border-slate-800 text-slate-100 placeholder-slate-500 focus:outline-none focus:border-amber-400 font-mono"
+            />
+          </div>
+
+          {/* Search API Key */}
+          <div>
+            <label className="block text-[11px] font-semibold text-slate-300 mb-1">
+              Search API Key {scholarProvider === 'arxiv' && <span className="text-slate-400 font-normal">(Optional for arXiv)</span>}
+            </label>
+            <div className="relative">
+              <input
+                type={showScholarKey ? 'text' : 'password'}
+                placeholder={scholarHasKey ? '•••••••••••••••• (Saved - Leave empty to keep)' : 'Paste API key...'}
+                value={scholarCustomKey}
+                onChange={(e) => {
+                  setScholarCustomKey(e.target.value);
+                  setScholarTestResult(null);
+                }}
+                className="w-full text-xs pl-3 pr-8 py-2 rounded-lg bg-slate-950/80 border border-slate-800 text-slate-100 placeholder-slate-500 focus:outline-none focus:border-amber-400 font-mono"
+              />
+              <button
+                type="button"
+                onClick={() => setShowScholarKey(!showScholarKey)}
+                className="absolute right-2.5 top-1/2 -translate-y-1/2 text-slate-400 hover:text-slate-200 cursor-pointer"
+                title={showScholarKey ? 'Hide key' : 'Show key'}
+              >
+                {showScholarKey ? <EyeOff size={14} /> : <Eye size={14} />}
+              </button>
+            </div>
+          </div>
+
+          {/* Test Connection + Actions Row */}
+          <div className="flex flex-wrap items-center justify-between gap-2 pt-1">
+            <div className="flex items-center gap-2">
+              <button
+                type="button"
+                onClick={handleTestScholarSearch}
+                disabled={testingScholarSearch || (!scholarCustomUrl.trim() && !scholarCustomKey.trim() && !scholarHasKey && scholarProvider !== 'arxiv')}
+                className="inline-flex items-center gap-1.5 text-xs font-semibold px-3 py-1.5 rounded-lg bg-slate-800 text-amber-300 border border-amber-500/30 hover:bg-amber-950/30 transition-colors disabled:opacity-40 cursor-pointer"
+              >
+                {testingScholarSearch ? (
+                  <>
+                    <RefreshCw size={13} className="animate-spin text-amber-400" />
+                    <span>Testing...</span>
+                  </>
+                ) : (
+                  <>
+                    <Plug size={13} className="text-amber-400" />
+                    <span>Test connection</span>
+                  </>
+                )}
+              </button>
+
+              <button
+                type="button"
+                onClick={handleResetScholarSearch}
+                disabled={savingScholarSearch || (!scholarHasKey && !scholarCustomKey && scholarCustomUrl === 'https://api.openalex.org')}
+                className="inline-flex items-center gap-1 text-[11px] font-medium px-2.5 py-1.5 rounded-lg bg-slate-900 text-slate-400 border border-slate-800 hover:text-rose-300 hover:bg-slate-800 transition-colors cursor-pointer"
+                title="Remove saved key and reset Scholar API"
+              >
+                <Trash2 size={12} />
+                <span>Remove key</span>
+              </button>
+            </div>
+
+            <button
+              type="submit"
+              disabled={savingScholarSearch || !scholarCustomUrl.trim()}
+              className="inline-flex items-center gap-1.5 text-xs font-semibold px-3.5 py-1.5 rounded-lg bg-amber-600 text-white hover:bg-amber-500 transition-colors disabled:opacity-40 cursor-pointer"
+            >
+              {savingScholarSearch ? 'Saving...' : 'Save'}
+            </button>
+          </div>
+
+          {/* Test Connection Result */}
+          {scholarTestResult && (
+            <div
+              className={`p-2.5 rounded-lg border text-xs flex items-center gap-2 ${
+                scholarTestResult.ok
+                  ? 'bg-emerald-950/50 border-emerald-500/40 text-emerald-300'
+                  : 'bg-rose-950/50 border-rose-500/40 text-rose-300'
+              }`}
+            >
+              {scholarTestResult.ok ? (
+                <CheckCircle2 size={14} className="text-emerald-400 flex-shrink-0" />
+              ) : (
+                <AlertCircle size={14} className="text-rose-400 flex-shrink-0" />
+              )}
+              <span>{scholarTestResult.message}</span>
+            </div>
+          )}
+        </form>
       </section>
 
       {/* Global Notification Banner */}

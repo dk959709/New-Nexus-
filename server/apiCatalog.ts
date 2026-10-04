@@ -470,6 +470,136 @@ export function resetGlobalSearchConfig(): {
   };
 }
 
+export function getScholarSearchConfig(): {
+  mode: 'default' | 'custom';
+  customUrl: string;
+  customKey: string;
+  hasKey: boolean;
+  maskedKey: string;
+  provider: string;
+} {
+  const store = loadCatalogStore();
+  const rec = store['scholar-api'];
+  if (!rec) {
+    const envKey = process.env.SCHOLAR_API_KEY || process.env.OPENALEX_API_KEY || '';
+    const hasEnv = Boolean(envKey.trim());
+    return {
+      mode: 'default',
+      customUrl: 'https://api.openalex.org',
+      customKey: envKey.trim(),
+      hasKey: hasEnv,
+      maskedKey: hasEnv ? maskApiKey(envKey.trim()) : '(not configured)',
+      provider: 'openalex',
+    };
+  }
+
+  const mode = rec.mode === 'custom' ? 'custom' : 'default';
+  const customUrl = rec.baseUrl || rec.customUrl || 'https://api.openalex.org';
+  let customKey = '';
+  if (rec.encryptedKey) {
+    const dec = decryptValue(rec.encryptedKey);
+    if (dec) customKey = dec.trim();
+  }
+  if (!customKey) {
+    const envKey = (rec.envVar && process.env[rec.envVar]) || process.env.SCHOLAR_API_KEY || process.env.OPENALEX_API_KEY || '';
+    if (envKey) customKey = envKey.trim();
+  }
+
+  const hasKey = Boolean(customKey);
+  const maskedKey = hasKey ? maskApiKey(customKey) : '(not configured)';
+
+  return {
+    mode,
+    customUrl,
+    customKey,
+    hasKey,
+    maskedKey,
+    provider: rec.provider || 'openalex',
+  };
+}
+
+export function saveScholarSearchConfig(input: {
+  mode?: 'default' | 'custom';
+  customUrl?: string;
+  customKey?: string;
+  provider?: string;
+}): {
+  mode: 'default' | 'custom';
+  customUrl: string;
+  hasKey: boolean;
+  maskedKey: string;
+  provider: string;
+} {
+  const store = loadCatalogStore();
+  const existing = store['scholar-api'] || {};
+  let currentKey = '';
+  if (existing.encryptedKey) {
+    const dec = decryptValue(existing.encryptedKey);
+    if (dec) currentKey = dec.trim();
+  }
+
+  const mode = input.mode !== undefined ? input.mode : (existing.mode === 'custom' ? 'custom' : 'default');
+  const customUrl = input.customUrl !== undefined ? input.customUrl.trim() : (existing.baseUrl || existing.customUrl || 'https://api.openalex.org');
+  const provider = input.provider !== undefined ? input.provider.trim().toLowerCase() : (existing.provider || 'openalex');
+
+  let finalKey = currentKey;
+  if (input.customKey !== undefined && input.customKey.trim().length > 0) {
+    finalKey = input.customKey.trim();
+  }
+
+  const encryptedKey = finalKey ? encryptValue(finalKey) : '';
+  const now = new Date().toISOString();
+
+  store['scholar-api'] = {
+    ...existing,
+    id: 'scholar-api',
+    name: 'Scholar API',
+    envVar: 'SCHOLAR_API_KEY',
+    description: 'Scholar API for academic research papers and citations.',
+    mode,
+    provider,
+    baseUrl: customUrl,
+    customUrl,
+    encryptedKey,
+    last4: finalKey ? finalKey.slice(-4) : '',
+    createdAt: existing.createdAt || now,
+    updatedAt: now,
+    isCustom: true,
+  };
+
+  saveCatalogStore(store);
+
+  const hasKey = Boolean(finalKey);
+  return {
+    mode,
+    customUrl,
+    hasKey,
+    maskedKey: hasKey ? maskApiKey(finalKey) : '(not configured)',
+    provider,
+  };
+}
+
+export function resetScholarSearchConfig(): {
+  mode: 'default';
+  customUrl: string;
+  hasKey: boolean;
+  maskedKey: string;
+  provider: string;
+} {
+  const store = loadCatalogStore();
+  if (store['scholar-api']) {
+    delete store['scholar-api'];
+    saveCatalogStore(store);
+  }
+  return {
+    mode: 'default',
+    customUrl: 'https://api.openalex.org',
+    hasKey: false,
+    maskedKey: '(not configured)',
+    provider: 'openalex',
+  };
+}
+
 export function listCatalogItems(): CatalogItemResponse[] {
   const store = loadCatalogStore();
   const results: CatalogItemResponse[] = [];
@@ -1252,73 +1382,8 @@ export function getScholarApiConfig(requestedProvider?: string): {
   provider: string;
   record?: StoredCatalogRecord;
 } {
-  const store = loadCatalogStore();
+  const scholarConfig = getScholarSearchConfig();
   const lowerProv = (requestedProvider || '').trim().toLowerCase();
-
-  let record: StoredCatalogRecord | undefined;
-
-  // 1. If a specific provider is requested, find the matching Scholar API item
-  if (lowerProv) {
-    for (const [id, r] of Object.entries(store)) {
-      const isScholar = (r.name && r.name.startsWith('Scholar API')) || id.startsWith('scholar-api');
-      if (isScholar) {
-        const itemProv = (r.provider || '').toLowerCase();
-        const rName = (r.name || '').toLowerCase();
-        if (
-          itemProv === lowerProv ||
-          id.toLowerCase().includes(lowerProv) ||
-          rName.includes(lowerProv) ||
-          (lowerProv === 'openalex' && (r.name === 'Scholar API' || id === 'scholar-api'))
-        ) {
-          record = r;
-          break;
-        }
-      }
-    }
-  }
-
-  // 2. If no specific provider or not found, match any item starting with "Scholar API" or "scholar-api" that has a key
-  if (!record) {
-    for (const [id, r] of Object.entries(store)) {
-      const isScholar = (r.name && r.name.startsWith('Scholar API')) || id.startsWith('scholar-api');
-      if (isScholar) {
-        const key = getBackendApiKey(r.envVar || r.id) || (r.encryptedKey && decryptValue(r.encryptedKey));
-        if (key && key.trim() && !isNoAuthPlaceholder(key)) {
-          record = r;
-          break;
-        }
-      }
-    }
-  }
-
-  // 3. Fallback: match any item whose name starts with "Scholar API" or whose id starts with "scholar-api"
-  if (!record) {
-    for (const [id, r] of Object.entries(store)) {
-      const isScholar = (r.name && r.name.startsWith('Scholar API')) || id.startsWith('scholar-api');
-      if (isScholar) {
-        record = r;
-        break;
-      }
-    }
-  }
-
-  // 4. Default fallback lookup
-  if (!record) {
-    record = getCatalogRecordByNameOrId('Scholar API') || getCatalogRecordByNameOrId('scholar-api');
-  }
-
-  // Read API key
-  let apiKey: string | undefined;
-  if (record) {
-    apiKey = getBackendApiKey(record.envVar || record.id);
-    if (!apiKey && record.encryptedKey) {
-      const dec = decryptValue(record.encryptedKey);
-      if (dec && dec.trim() && !isNoAuthPlaceholder(dec)) {
-        apiKey = dec.trim();
-      }
-    }
-  }
-
   const defaultBaseUrls: Record<string, string> = {
     openalex: 'https://api.openalex.org',
     semanticscholar: 'https://api.semanticscholar.org/graph/v1',
@@ -1326,36 +1391,64 @@ export function getScholarApiConfig(requestedProvider?: string): {
     arxiv: 'https://export.arxiv.org/api',
   };
 
-  const provider =
-    (record?.provider && record.provider.trim().toLowerCase()) ||
-    (record?.name?.toLowerCase().includes('semantic')
-      ? 'semanticscholar'
-      : record?.name?.toLowerCase().includes('nasa')
-      ? 'nasaads'
-      : record?.name?.toLowerCase().includes('arxiv')
-      ? 'arxiv'
-      : 'openalex');
+  const currentProvider = scholarConfig.provider || 'openalex';
 
-  if (!apiKey) {
-    if (provider === 'semanticscholar') {
-      apiKey = getBackendApiKey('SEMANTIC_SCHOLAR_API_KEY') || getBackendApiKey('SCHOLAR_API_SEMANTICSCHOLAR_KEY');
-    } else if (provider === 'nasaads') {
-      apiKey = getBackendApiKey('NASA_ADS_API_KEY') || getBackendApiKey('SCHOLAR_API_NASAADS_KEY');
-    } else if (provider === 'arxiv') {
-      apiKey = getBackendApiKey('ARXIV_API_KEY') || getBackendApiKey('SCHOLAR_API_ARXIV_KEY');
+  // If no provider requested, or matches scholarConfig provider, read directly from scholarConfig
+  if (!lowerProv || lowerProv === currentProvider.toLowerCase()) {
+    let key = scholarConfig.hasKey ? scholarConfig.customKey : undefined;
+    if (!key) {
+      key = getBackendApiKey('SCHOLAR_API_KEY') || getBackendApiKey('OPENALEX_API_KEY');
     }
-    if (!apiKey) {
-      apiKey = getBackendApiKey('SCHOLAR_API_KEY') || getBackendApiKey('OPENALEX_API_KEY');
+    const store = loadCatalogStore();
+    return {
+      apiKey: key && !isNoAuthPlaceholder(key) ? key : undefined,
+      baseUrl: scholarConfig.customUrl || defaultBaseUrls[currentProvider] || 'https://api.openalex.org',
+      provider: currentProvider,
+      record: store['scholar-api'],
+    };
+  }
+
+  // Fallback for requested provider if stored under another catalog item
+  const store = loadCatalogStore();
+  let record: StoredCatalogRecord | undefined;
+  for (const [id, r] of Object.entries(store)) {
+    const isScholar = (r.name && r.name.startsWith('Scholar API')) || id.startsWith('scholar-api');
+    if (isScholar) {
+      const itemProv = (r.provider || '').toLowerCase();
+      const rName = (r.name || '').toLowerCase();
+      if (itemProv === lowerProv || id.toLowerCase().includes(lowerProv) || rName.includes(lowerProv)) {
+        record = r;
+        break;
+      }
     }
   }
 
-  const baseUrl = (record?.baseUrl && record.baseUrl.trim()) || defaultBaseUrls[provider] || 'https://api.openalex.org';
+  let apiKey: string | undefined;
+  if (record) {
+    apiKey = getBackendApiKey(record.envVar || record.id);
+    if (!apiKey && record.encryptedKey) {
+      const dec = decryptValue(record.encryptedKey);
+      if (dec && dec.trim() && !isNoAuthPlaceholder(dec)) apiKey = dec.trim();
+    }
+  }
+
+  if (!apiKey) {
+    if (lowerProv === 'semanticscholar') {
+      apiKey = getBackendApiKey('SEMANTIC_SCHOLAR_API_KEY') || getBackendApiKey('SCHOLAR_API_SEMANTICSCHOLAR_KEY');
+    } else if (lowerProv === 'nasaads') {
+      apiKey = getBackendApiKey('NASA_ADS_API_KEY') || getBackendApiKey('SCHOLAR_API_NASAADS_KEY');
+    } else if (lowerProv === 'arxiv') {
+      apiKey = getBackendApiKey('ARXIV_API_KEY') || getBackendApiKey('SCHOLAR_API_ARXIV_KEY');
+    }
+  }
+
+  const baseUrl = (record?.baseUrl && record.baseUrl.trim()) || defaultBaseUrls[lowerProv] || scholarConfig.customUrl || 'https://api.openalex.org';
 
   return {
     apiKey: apiKey && !isNoAuthPlaceholder(apiKey) ? apiKey : undefined,
     baseUrl,
-    provider,
-    record,
+    provider: lowerProv,
+    record: record || store['scholar-api'],
   };
 }
 
@@ -1364,13 +1457,13 @@ export function getAllScholarApiConfigs(): Array<{
   apiKey?: string;
   baseUrl: string;
 }> {
-  const store = loadCatalogStore();
   const configs: Array<{
     provider: string;
     apiKey?: string;
     baseUrl: string;
   }> = [];
 
+  const scholarConfig = getScholarSearchConfig();
   const defaultBaseUrls: Record<string, string> = {
     openalex: 'https://api.openalex.org',
     semanticscholar: 'https://api.semanticscholar.org/graph/v1',
@@ -1378,7 +1471,24 @@ export function getAllScholarApiConfigs(): Array<{
     arxiv: 'https://export.arxiv.org/api',
   };
 
+  const primaryProvider = scholarConfig.provider || 'openalex';
+  let primaryKey = scholarConfig.hasKey ? scholarConfig.customKey : undefined;
+  if (!primaryKey) {
+    primaryKey = getBackendApiKey('SCHOLAR_API_KEY') || getBackendApiKey('OPENALEX_API_KEY');
+  }
+
+  if (primaryKey || primaryProvider === 'arxiv') {
+    configs.push({
+      provider: primaryProvider,
+      apiKey: primaryKey && !isNoAuthPlaceholder(primaryKey) ? primaryKey : undefined,
+      baseUrl: scholarConfig.customUrl || defaultBaseUrls[primaryProvider] || 'https://api.openalex.org',
+    });
+  }
+
+  // Include any other scholar items in store that aren't 'scholar-api'
+  const store = loadCatalogStore();
   for (const [id, r] of Object.entries(store)) {
+    if (id === 'scholar-api') continue;
     const isScholar = (r.name && r.name.startsWith('Scholar API')) || id.startsWith('scholar-api');
     if (!isScholar) continue;
 
@@ -1400,29 +1510,16 @@ export function getAllScholarApiConfigs(): Array<{
       }
     }
 
-    if (!apiKey) {
-      if (provider === 'semanticscholar') {
-        apiKey = getBackendApiKey('SEMANTIC_SCHOLAR_API_KEY') || getBackendApiKey('SCHOLAR_API_SEMANTICSCHOLAR_KEY');
-      } else if (provider === 'nasaads') {
-        apiKey = getBackendApiKey('NASA_ADS_API_KEY') || getBackendApiKey('SCHOLAR_API_NASAADS_KEY');
-      } else if (provider === 'arxiv') {
-        apiKey = getBackendApiKey('ARXIV_API_KEY') || getBackendApiKey('SCHOLAR_API_ARXIV_KEY');
-      }
-      if (!apiKey && provider === 'openalex') {
-        apiKey = getBackendApiKey('SCHOLAR_API_KEY') || getBackendApiKey('OPENALEX_API_KEY');
-      }
-    }
-
     const usableKey = apiKey && !isNoAuthPlaceholder(apiKey) ? apiKey.trim() : undefined;
-
-    // Include an item only if it has a usable key, or its provider is "arxiv" (arXiv needs no key)
     if (usableKey || provider === 'arxiv') {
       const baseUrl = (r.baseUrl && r.baseUrl.trim()) || defaultBaseUrls[provider] || 'https://api.openalex.org';
-      configs.push({
-        provider,
-        apiKey: usableKey,
-        baseUrl,
-      });
+      if (!configs.some((c) => c.provider === provider)) {
+        configs.push({
+          provider,
+          apiKey: usableKey,
+          baseUrl,
+        });
+      }
     }
   }
 
@@ -1519,6 +1616,128 @@ apiCatalogRouter.post('/api/catalog/search-config/test', async (req: Request, re
 
     const result = await executeCustomSearchTest(testUrl, testKey, clientIp);
     return res.json(result);
+  } catch (err) {
+    return res.json({ ok: false, error: (err as Error).message || 'Server returned an error' });
+  }
+});
+
+apiCatalogRouter.get('/api/catalog/scholar-config', (_req: Request, res: Response) => {
+  try {
+    const config = getScholarSearchConfig();
+    return res.json({
+      ok: true,
+      mode: config.mode,
+      customUrl: config.customUrl,
+      hasKey: config.hasKey,
+      maskedKey: config.maskedKey,
+      provider: config.provider,
+    });
+  } catch (err) {
+    return errorResponse(res, 500, (err as Error).message);
+  }
+});
+
+apiCatalogRouter.post('/api/catalog/scholar-config', (req: Request, res: Response) => {
+  try {
+    const { mode, customUrl, customKey, provider } = req.body || {};
+    const saved = saveScholarSearchConfig({
+      mode: mode === 'custom' ? 'custom' : 'default',
+      customUrl: typeof customUrl === 'string' ? customUrl : undefined,
+      customKey: typeof customKey === 'string' ? customKey : undefined,
+      provider: typeof provider === 'string' ? provider : undefined,
+    });
+
+    return res.json({ ok: true, ...saved });
+  } catch (err) {
+    return errorResponse(res, 500, (err as Error).message);
+  }
+});
+
+apiCatalogRouter.post('/api/catalog/scholar-config/reset', (_req: Request, res: Response) => {
+  try {
+    const resConfig = resetScholarSearchConfig();
+    return res.json({ ok: true, ...resConfig });
+  } catch (err) {
+    return errorResponse(res, 500, (err as Error).message);
+  }
+});
+
+apiCatalogRouter.post('/api/catalog/scholar-config/test', async (req: Request, res: Response) => {
+  try {
+    const { url, key, provider } = req.body || {};
+    const config = getScholarSearchConfig();
+
+    const testUrl = typeof url === 'string' && url.trim() ? url.trim() : config.customUrl;
+    const testKey = typeof key === 'string' && key.trim() ? key.trim() : config.customKey;
+    const testProv = typeof provider === 'string' && provider.trim() ? provider.trim().toLowerCase() : config.provider;
+
+    if (!testUrl) {
+      return res.json({ ok: false, error: 'Invalid URL (must start with https://)' });
+    }
+
+    if (!testKey && testProv !== 'arxiv') {
+      return res.json({ ok: false, error: 'API key is required for this Scholar provider.' });
+    }
+
+    if (testProv === 'openalex') {
+      const pingUrl = new URL(`${testUrl.replace(/\/+$/, '')}/works`);
+      pingUrl.searchParams.set('search', 'quantum');
+      pingUrl.searchParams.set('per-page', '1');
+      if (testKey) pingUrl.searchParams.set('api_key', testKey);
+      const pingRes = await fetch(pingUrl.toString(), {
+        headers: { Accept: 'application/json', 'User-Agent': 'NexusAI-Scholar/1.0' },
+        signal: AbortSignal.timeout(8000),
+      });
+      if (pingRes.ok) {
+        return res.json({ ok: true, message: 'OpenAlex Scholar API connection verified successfully!' });
+      }
+      return res.json({ ok: false, error: `OpenAlex returned HTTP ${pingRes.status}: ${pingRes.statusText}` });
+    }
+
+    if (testProv === 'semanticscholar') {
+      const pingUrl = new URL(`${testUrl.replace(/\/+$/, '')}/paper/search`);
+      pingUrl.searchParams.set('query', 'quantum');
+      pingUrl.searchParams.set('limit', '1');
+      const headers: Record<string, string> = { Accept: 'application/json' };
+      if (testKey) headers['x-api-key'] = testKey;
+      const pingRes = await fetch(pingUrl.toString(), {
+        headers,
+        signal: AbortSignal.timeout(8000),
+      });
+      if (pingRes.ok) {
+        return res.json({ ok: true, message: 'Semantic Scholar API connection verified successfully!' });
+      }
+      return res.json({ ok: false, error: `Semantic Scholar returned HTTP ${pingRes.status}: ${pingRes.statusText}` });
+    }
+
+    if (testProv === 'arxiv') {
+      const pingUrl = new URL(`${testUrl.replace(/\/+$/, '')}/query`);
+      pingUrl.searchParams.set('search_query', 'all:quantum');
+      pingUrl.searchParams.set('max_results', '1');
+      const pingRes = await fetch(pingUrl.toString(), { signal: AbortSignal.timeout(8000) });
+      if (pingRes.ok) {
+        return res.json({ ok: true, message: 'arXiv API connection verified successfully!' });
+      }
+      return res.json({ ok: false, error: `arXiv returned HTTP ${pingRes.status}` });
+    }
+
+    if (testProv === 'nasaads') {
+      const pingUrl = new URL(`${testUrl.replace(/\/+$/, '')}/search/query`);
+      pingUrl.searchParams.set('q', 'star');
+      pingUrl.searchParams.set('rows', '1');
+      const headers: Record<string, string> = { Accept: 'application/json' };
+      if (testKey) headers['Authorization'] = `Bearer ${testKey}`;
+      const pingRes = await fetch(pingUrl.toString(), {
+        headers,
+        signal: AbortSignal.timeout(8000),
+      });
+      if (pingRes.ok) {
+        return res.json({ ok: true, message: 'NASA ADS API connection verified successfully!' });
+      }
+      return res.json({ ok: false, error: `NASA ADS returned HTTP ${pingRes.status}: ${pingRes.statusText}` });
+    }
+
+    return res.json({ ok: true, message: 'Scholar API key is securely saved to vault.' });
   } catch (err) {
     return res.json({ ok: false, error: (err as Error).message || 'Server returned an error' });
   }

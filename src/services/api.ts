@@ -1088,6 +1088,64 @@ export const api = {
     });
   },
 
+  getScholarSearchConfig(): Promise<{
+    ok: boolean;
+    mode: 'default' | 'custom';
+    customUrl: string;
+    hasKey: boolean;
+    maskedKey: string;
+    provider: string;
+  }> {
+    return call('/api/catalog/scholar-config');
+  },
+
+  saveScholarSearchConfig(params: {
+    mode?: 'default' | 'custom';
+    customUrl?: string;
+    customKey?: string;
+    provider?: string;
+  }): Promise<{
+    ok: boolean;
+    mode: 'default' | 'custom';
+    customUrl: string;
+    hasKey: boolean;
+    maskedKey: string;
+    provider: string;
+  }> {
+    return call('/api/catalog/scholar-config', {
+      method: 'POST',
+      body: JSON.stringify(params),
+    });
+  },
+
+  resetScholarSearchConfig(): Promise<{
+    ok: boolean;
+    mode: 'default';
+    customUrl: string;
+    hasKey: boolean;
+    maskedKey: string;
+    provider: string;
+  }> {
+    return call('/api/catalog/scholar-config/reset', {
+      method: 'POST',
+    });
+  },
+
+  testScholarSearchConfig(params: {
+    url?: string;
+    key?: string;
+    provider?: string;
+  }): Promise<{
+    ok: boolean;
+    message?: string;
+    error?: string;
+  }> {
+    return call('/api/catalog/scholar-config/test', {
+      method: 'POST',
+      body: JSON.stringify(params),
+    });
+  },
+
   async searchScholar(query: string, provider?: string): Promise<{
     ok: boolean;
     papers: ScholarPaper[];

@@ -8,6 +8,7 @@ import type {
   VoiceProvidersState,
   VoiceProviderConfig,
   WebSearchApiState,
+  ScholarApiState,
   KeyHealthStatus,
   JarvisSystemConfig,
   JarvisMessage,
@@ -32,6 +33,7 @@ const KEYS = {
   imageProviders: 'nexus-image-providers',
   voiceProviders: 'nexus-voice-providers',
   webSearchApi: 'nexus-web-search-api',
+  scholarApi: 'nexus-scholar-api',
   jarvisConfig: 'nexus-jarvis-config-v1',
   jarvisMessages: 'nexus-jarvis-messages-v1',
   edgeVoice: 'nexus-edge-voice-v1',
@@ -1592,6 +1594,24 @@ export const storage = {
     write(KEYS.webSearchApi, state);
     if (typeof window !== 'undefined') {
       window.dispatchEvent(new CustomEvent('nexus-web-search-api-updated', { detail: state }));
+      window.dispatchEvent(new Event('storage'));
+    }
+  },
+
+  getScholarApiState(): ScholarApiState {
+    const defaultState: ScholarApiState = {
+      mode: 'default',
+      customUrl: 'https://api.openalex.org',
+      customKey: '',
+      provider: 'openalex',
+    };
+    return read<ScholarApiState>(KEYS.scholarApi, defaultState);
+  },
+
+  saveScholarApiState(state: ScholarApiState): void {
+    write(KEYS.scholarApi, state);
+    if (typeof window !== 'undefined') {
+      window.dispatchEvent(new CustomEvent('nexus-scholar-api-updated', { detail: state }));
       window.dispatchEvent(new Event('storage'));
     }
   },
