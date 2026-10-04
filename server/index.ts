@@ -3719,19 +3719,222 @@ async function startServer() {
     });
   }
 
+  // Semantic Scholar Search Provider
+  async function searchSemanticScholarWorks(
+    query: string,
+    apiKey?: string,
+    baseUrl?: string,
+  ): Promise<ScholarPaperItem[]> {
+    const cleanBase = (baseUrl || 'https://api.semanticscholar.org/graph/v1').trim().replace(/\/+$/, '');
+    const url = new URL(`${cleanBase}/paper/search`);
+    url.searchParams.set('query', query);
+    url.searchParams.set('limit', '8');
+    url.searchParams.set('fields', 'title,authors,year,venue,citationCount,url,openAccessPdf,abstract');
+
+    const headers: Record<string, string> = {
+      Accept: 'application/json',
+      'User-Agent': 'NexusAI-Scholar/1.0 (mailto:scholar@nexus.ai)',
+    };
+    if (apiKey && apiKey.trim()) {
+      headers['x-api-key'] = apiKey.trim();
+    }
+
+    const response = await fetch(url.toString(), {
+      headers,
+      signal: AbortSignal.timeout(10000),
+    });
+
+    if (!response.ok) {
+      throw new Error(`Semantic Scholar API responded with HTTP status ${response.status}`);
+    }
+
+    const json = (await response.json()) as {
+      data?: Array<{
+        title?: string;
+        authors?: Array<{ name?: string }>;
+        year?: number;
+        venue?: string;
+        citationCount?: number;
+        url?: string;
+        openAccessPdf?: { url?: string };
+        abstract?: string;
+      }>;
+    };
+
+    const papers = json.data || [];
+    return papers.slice(0, 8).map((p) => {
+      const title = p.title || 'Untitled Paper';
+      const authors = (p.authors || []).slice(0, 5).map((a) => a.name || '').filter(Boolean);
+      const link = p.url || p.openAccessPdf?.url || '';
+      let abstract = (p.abstract || '').trim();
+      if (abstract.length > 600) {
+        abstract = abstract.slice(0, 600) + '...';
+      }
+      return {
+        title,
+        authors,
+        year: p.year,
+        journal: p.venue || 'Semantic Scholar',
+        cited_by_count: p.citationCount ?? 0,
+        link,
+        abstract: abstract || undefined,
+      };
+    });
+  }
+
+  // NASA ADS Search Provider
+  async function searchNasaAdsWorks(
+    query: string,
+    apiKey?: string,
+    baseUrl?: string,
+  ): Promise<ScholarPaperItem[]> {
+    const cleanBase = (baseUrl || 'https://api.adsabs.harvard.edu/v1').trim().replace(/\/+$/, '');
+    const url = new URL(`${cleanBase}/search/query`);
+    url.searchParams.set('q', query);
+    url.searchParams.set('fl', 'title,author,year,pub,citation_count,doi,abstract,bibcode');
+    url.searchParams.set('rows', '8');
+
+    const headers: Record<string, string> = {
+      Accept: 'application/json',
+      'User-Agent': 'NexusAI-Scholar/1.0',
+    };
+    if (apiKey && apiKey.trim()) {
+      headers['Authorization'] = `Bearer ${apiKey.trim()}`;
+    }
+
+    const response = await fetch(url.toString(), {
+      headers,
+      signal: AbortSignal.timeout(10000),
+    });
+
+    if (!response.ok) {
+      throw new Error(`NASA ADS API responded with HTTP status ${response.status}`);
+    }
+
+    const json = (await response.json()) as {
+      response?: {
+        docs?: Array<{
+          title?: string[];
+          author?: string[];
+          year?: string | number;
+          pub?: string;
+          citation_count?: number;
+          doi?: string[];
+          bibcode?: string;
+          abstract?: string;
+        }>;
+      };
+    };
+
+    const docs = json.response?.docs || [];
+    return docs.slice(0, 8).map((d) => {
+      const title = d.title?.[0] || 'Untitled Paper';
+      const authors = (d.author || []).slice(0, 5);
+      const year = d.year ? (typeof d.year === 'number' ? d.year : parseInt(d.year, 10)) : undefined;
+      const link = d.doi?.[0]
+        ? `https://doi.org/${d.doi[0]}`
+        : d.bibcode
+        ? `https://ui.adsabs.harvard.edu/abs/${d.bibcode}`
+        : '';
+      let abstract = (d.abstract || '').trim();
+      if (abstract.length > 600) {
+        abstract = abstract.slice(0, 600) + '...';
+      }
+      return {
+        title,
+        authors,
+        year: isNaN(year as number) ? undefined : year,
+        journal: d.pub || 'NASA ADS',
+        cited_by_count: d.citation_count ?? 0,
+        link,
+        abstract: abstract || undefined,
+      };
+    });
+  }
+
+  // arXiv Search Provider
+  async function searchArxivWorks(
+    query: string,
+    _apiKey?: string,
+    baseUrl?: string,
+  ): Promise<ScholarPaperItem[]> {
+    const cleanBase = (baseUrl || 'https://export.arxiv.org/api').trim().replace(/\/+$/, '');
+    const url = new URL(`${cleanBase}/query`);
+    url.searchParams.set('search_query', `all:${query}`);
+    url.searchParams.set('max_results', '8');
+    url.searchParams.set('sortBy', 'relevance');
+
+    const response = await fetch(url.toString(), {
+      headers: {
+        Accept: 'application/atom+xml, application/xml, text/xml',
+        'User-Agent': 'NexusAI-Scholar/1.0',
+      },
+      signal: AbortSignal.timeout(10000),
+    });
+
+    if (!response.ok) {
+      throw new Error(`arXiv API responded with HTTP status ${response.status}`);
+    }
+
+    const xml = await response.text();
+    const entryRegex = /<entry>([\s\S]*?)<\/entry>/g;
+    const items: ScholarPaperItem[] = [];
+    let match: RegExpExecArray | null;
+
+    while ((match = entryRegex.exec(xml)) !== null && items.length < 8) {
+      const entryXml = match[1];
+      const titleMatch = entryXml.match(/<title>([\s\S]*?)<\/title>/);
+      const summaryMatch = entryXml.match(/<summary>([\s\S]*?)<\/summary>/);
+      const idMatch = entryXml.match(/<id>([\s\S]*?)<\/id>/);
+      const publishedMatch = entryXml.match(/<published>([\s\S]*?)<\/published>/);
+
+      const title = (titleMatch?.[1] || 'Untitled Paper').replace(/\s+/g, ' ').trim();
+      let abstract = (summaryMatch?.[1] || '').replace(/\s+/g, ' ').trim();
+      if (abstract.length > 600) abstract = abstract.slice(0, 600) + '...';
+
+      const authorRegex = /<author>\s*<name>([\s\S]*?)<\/name>/g;
+      const authors: string[] = [];
+      let aMatch: RegExpExecArray | null;
+      while ((aMatch = authorRegex.exec(entryXml)) !== null && authors.length < 5) {
+        authors.push(aMatch[1].trim());
+      }
+
+      let year: number | undefined;
+      if (publishedMatch?.[1]) {
+        const parsed = parseInt(publishedMatch[1].slice(0, 4), 10);
+        if (!isNaN(parsed)) year = parsed;
+      }
+
+      const link = (idMatch?.[1] || '').trim();
+
+      items.push({
+        title,
+        authors,
+        year,
+        journal: 'arXiv Preprint',
+        cited_by_count: 0,
+        link,
+        abstract: abstract || undefined,
+      });
+    }
+
+    return items;
+  }
+
   // POST /api/scholar/search
   app.post('/api/scholar/search', async (req: Request, res: Response) => {
     try {
-      const { query: rawQuery, question: rawQuestion } = req.body || {};
+      const { query: rawQuery, question: rawQuestion, provider: reqProvider } = req.body || {};
       const query = (rawQuestion || rawQuery || '').trim();
 
       if (!query) {
         return errorResponse(res, 400, 'Search query is required.');
       }
 
-      const scholarConfig = getScholarApiConfig();
+      // Match any item whose name starts with "Scholar API" or whose id starts with "scholar-api"
+      const scholarConfig = getScholarApiConfig(reqProvider);
 
-      if (!scholarConfig.apiKey) {
+      if (!scholarConfig.apiKey && scholarConfig.provider !== 'arxiv') {
         return res.status(400).json({
           ok: false,
           error: 'Add your Scholar API key in Settings > API Catalog.',
@@ -3743,11 +3946,17 @@ async function startServer() {
       let papers: ScholarPaperItem[] = [];
 
       if (provider === 'openalex') {
-        papers = await searchOpenAlexWorks(query, scholarConfig.apiKey, scholarConfig.baseUrl);
+        papers = await searchOpenAlexWorks(query, scholarConfig.apiKey || '', scholarConfig.baseUrl);
+      } else if (provider === 'semanticscholar' || provider === 'semantic-scholar') {
+        papers = await searchSemanticScholarWorks(query, scholarConfig.apiKey, scholarConfig.baseUrl);
+      } else if (provider === 'nasaads' || provider === 'nasa-ads') {
+        papers = await searchNasaAdsWorks(query, scholarConfig.apiKey, scholarConfig.baseUrl);
+      } else if (provider === 'arxiv') {
+        papers = await searchArxivWorks(query, scholarConfig.apiKey, scholarConfig.baseUrl);
       } else {
         return res.status(400).json({
           ok: false,
-          error: `Unsupported Scholar API provider "${scholarConfig.provider}". Supported provider: "openalex".`,
+          error: `Unsupported Scholar API provider "${scholarConfig.provider}". Supported providers: "openalex", "semanticscholar", "nasaads", "arxiv".`,
           papers: [],
         });
       }

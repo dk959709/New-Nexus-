@@ -565,7 +565,17 @@ export function listCatalogItems(): CatalogItemResponse[] {
       docsUrl: record.docsUrl || '',
       baseUrl: record.baseUrl,
       queryParamName: record.queryParamName || 'q',
-      provider: record.provider || (record.name?.toLowerCase().includes('scholar') ? 'openalex' : undefined),
+      provider:
+        record.provider ||
+        ((record.name && record.name.startsWith('Scholar API')) || id.startsWith('scholar-api')
+          ? record.name?.toLowerCase().includes('semantic')
+            ? 'semanticscholar'
+            : record.name?.toLowerCase().includes('nasa')
+            ? 'nasaads'
+            : record.name?.toLowerCase().includes('arxiv')
+            ? 'arxiv'
+            : 'openalex'
+          : undefined),
       category: 'general',
       status: isConnected ? 'connected' : 'not_configured',
       source,
@@ -1199,6 +1209,7 @@ export function getCatalogRecordByNameOrId(ident: string): StoredCatalogRecord |
   const slugIdent = lowerIdent.replace(/[^a-z0-9]/g, '');
 
   const store = loadCatalogStore();
+  // 1. Exact or slug match
   for (const [id, r] of Object.entries(store)) {
     const rId = id.toLowerCase();
     const rName = (r.name || '').toLowerCase();
@@ -1215,19 +1226,88 @@ export function getCatalogRecordByNameOrId(ident: string): StoredCatalogRecord |
       return r;
     }
   }
+
+  // 2. Scholar match: match any item whose name starts with "Scholar API" or whose id starts with "scholar-api"
+  if (
+    lowerIdent.startsWith('scholar') ||
+    slugIdent.startsWith('scholarapi') ||
+    lowerIdent.startsWith('openalex') ||
+    lowerIdent.startsWith('semanticscholar') ||
+    lowerIdent.startsWith('nasaads') ||
+    lowerIdent.startsWith('arxiv')
+  ) {
+    for (const [id, r] of Object.entries(store)) {
+      if ((r.name && r.name.startsWith('Scholar API')) || id.startsWith('scholar-api')) {
+        return r;
+      }
+    }
+  }
+
   return undefined;
 }
 
-export function getScholarApiConfig(): {
+export function getScholarApiConfig(requestedProvider?: string): {
   apiKey?: string;
   baseUrl: string;
   provider: string;
   record?: StoredCatalogRecord;
 } {
-  // 1. Look up catalog item named "Scholar API"
-  const record = getCatalogRecordByNameOrId('Scholar API') || getCatalogRecordByNameOrId('scholar-api');
+  const store = loadCatalogStore();
+  const lowerProv = (requestedProvider || '').trim().toLowerCase();
 
-  // 2. Read API key the same way other catalog items are read (process.env priority, then secure storage)
+  let record: StoredCatalogRecord | undefined;
+
+  // 1. If a specific provider is requested, find the matching Scholar API item
+  if (lowerProv) {
+    for (const [id, r] of Object.entries(store)) {
+      const isScholar = (r.name && r.name.startsWith('Scholar API')) || id.startsWith('scholar-api');
+      if (isScholar) {
+        const itemProv = (r.provider || '').toLowerCase();
+        const rName = (r.name || '').toLowerCase();
+        if (
+          itemProv === lowerProv ||
+          id.toLowerCase().includes(lowerProv) ||
+          rName.includes(lowerProv) ||
+          (lowerProv === 'openalex' && (r.name === 'Scholar API' || id === 'scholar-api'))
+        ) {
+          record = r;
+          break;
+        }
+      }
+    }
+  }
+
+  // 2. If no specific provider or not found, match any item starting with "Scholar API" or "scholar-api" that has a key
+  if (!record) {
+    for (const [id, r] of Object.entries(store)) {
+      const isScholar = (r.name && r.name.startsWith('Scholar API')) || id.startsWith('scholar-api');
+      if (isScholar) {
+        const key = getBackendApiKey(r.envVar || r.id) || (r.encryptedKey && decryptValue(r.encryptedKey));
+        if (key && key.trim() && !isNoAuthPlaceholder(key)) {
+          record = r;
+          break;
+        }
+      }
+    }
+  }
+
+  // 3. Fallback: match any item whose name starts with "Scholar API" or whose id starts with "scholar-api"
+  if (!record) {
+    for (const [id, r] of Object.entries(store)) {
+      const isScholar = (r.name && r.name.startsWith('Scholar API')) || id.startsWith('scholar-api');
+      if (isScholar) {
+        record = r;
+        break;
+      }
+    }
+  }
+
+  // 4. Default fallback lookup
+  if (!record) {
+    record = getCatalogRecordByNameOrId('Scholar API') || getCatalogRecordByNameOrId('scholar-api');
+  }
+
+  // Read API key
   let apiKey: string | undefined;
   if (record) {
     apiKey = getBackendApiKey(record.envVar || record.id);
@@ -1239,12 +1319,37 @@ export function getScholarApiConfig(): {
     }
   }
 
+  const defaultBaseUrls: Record<string, string> = {
+    openalex: 'https://api.openalex.org',
+    semanticscholar: 'https://api.semanticscholar.org/graph/v1',
+    nasaads: 'https://api.adsabs.harvard.edu/v1',
+    arxiv: 'https://export.arxiv.org/api',
+  };
+
+  const provider =
+    (record?.provider && record.provider.trim().toLowerCase()) ||
+    (record?.name?.toLowerCase().includes('semantic')
+      ? 'semanticscholar'
+      : record?.name?.toLowerCase().includes('nasa')
+      ? 'nasaads'
+      : record?.name?.toLowerCase().includes('arxiv')
+      ? 'arxiv'
+      : 'openalex');
+
   if (!apiKey) {
-    apiKey = getBackendApiKey('SCHOLAR_API_KEY') || getBackendApiKey('OPENALEX_API_KEY');
+    if (provider === 'semanticscholar') {
+      apiKey = getBackendApiKey('SEMANTIC_SCHOLAR_API_KEY') || getBackendApiKey('SCHOLAR_API_SEMANTICSCHOLAR_KEY');
+    } else if (provider === 'nasaads') {
+      apiKey = getBackendApiKey('NASA_ADS_API_KEY') || getBackendApiKey('SCHOLAR_API_NASAADS_KEY');
+    } else if (provider === 'arxiv') {
+      apiKey = getBackendApiKey('ARXIV_API_KEY') || getBackendApiKey('SCHOLAR_API_ARXIV_KEY');
+    }
+    if (!apiKey) {
+      apiKey = getBackendApiKey('SCHOLAR_API_KEY') || getBackendApiKey('OPENALEX_API_KEY');
+    }
   }
 
-  const baseUrl = (record?.baseUrl && record.baseUrl.trim()) || 'https://api.openalex.org';
-  const provider = (record?.provider && record.provider.trim().toLowerCase()) || 'openalex';
+  const baseUrl = (record?.baseUrl && record.baseUrl.trim()) || defaultBaseUrls[provider] || 'https://api.openalex.org';
 
   return {
     apiKey: apiKey && !isNoAuthPlaceholder(apiKey) ? apiKey : undefined,

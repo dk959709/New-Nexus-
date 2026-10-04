@@ -1087,7 +1087,7 @@ export const api = {
     });
   },
 
-  async searchScholar(query: string): Promise<{
+  async searchScholar(query: string, provider?: string): Promise<{
     ok: boolean;
     papers: ScholarPaper[];
     error?: string;
@@ -1096,7 +1096,7 @@ export const api = {
       const res = await fetch(`${BASE}/api/scholar/search`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ question: query, query }),
+        body: JSON.stringify({ question: query, query, provider }),
       });
       const data = (await res.json().catch(() => ({}))) as Record<string, unknown>;
       if (!res.ok && !data.error) {

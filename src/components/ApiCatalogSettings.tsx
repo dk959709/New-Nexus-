@@ -30,6 +30,56 @@ import { api } from '@/services/api';
 import { storage } from '@/lib/storage';
 import type { ApiCatalogItem } from '@/types';
 
+export const SCHOLAR_PROVIDERS_CONFIG: Record<
+  string,
+  {
+    name: string;
+    id: string;
+    envVar: string;
+    baseUrl: string;
+    queryParamName: string;
+    docsUrl: string;
+    description: string;
+  }
+> = {
+  openalex: {
+    name: 'Scholar API',
+    id: 'scholar-api',
+    envVar: 'SCHOLAR_API_KEY',
+    baseUrl: 'https://api.openalex.org',
+    queryParamName: 'search',
+    docsUrl: 'https://openalex.org',
+    description: 'Academic paper research and citations via OpenAlex Scholar API',
+  },
+  semanticscholar: {
+    name: 'Scholar API - Semantic Scholar',
+    id: 'scholar-api-semanticscholar',
+    envVar: 'SCHOLAR_API_SEMANTICSCHOLAR_KEY',
+    baseUrl: 'https://api.semanticscholar.org/graph/v1',
+    queryParamName: 'query',
+    docsUrl: 'https://www.semanticscholar.org/product/api',
+    description: 'Academic paper research via Semantic Scholar Graph API',
+  },
+  nasaads: {
+    name: 'Scholar API - NASA ADS',
+    id: 'scholar-api-nasaads',
+    envVar: 'SCHOLAR_API_NASAADS_KEY',
+    baseUrl: 'https://api.adsabs.harvard.edu/v1',
+    queryParamName: 'q',
+    docsUrl: 'https://ui.adsabs.harvard.edu/help/api/',
+    description: 'Astronomy and physics research via NASA Astrophysics Data System API',
+  },
+  arxiv: {
+    name: 'Scholar API - arXiv',
+    id: 'scholar-api-arxiv',
+    envVar: 'SCHOLAR_API_ARXIV_KEY',
+    baseUrl: 'https://export.arxiv.org/api',
+    queryParamName: 'search_query',
+    docsUrl: 'https://arxiv.org/help/api',
+    description: 'Preprint research paper archive via arXiv API',
+  },
+};
+
 export function ApiCatalogSettings() {
   const [catalog, setCatalog] = useState<ApiCatalogItem[]>([]);
   const [loading, setLoading] = useState<boolean>(true);
@@ -573,7 +623,20 @@ export function ApiCatalogSettings() {
         .trim() || envVar;
     }
 
-    const id = editingCustomId || (finalName.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/(^-|-$)/g, '') || envVar.toLowerCase().replace(/_/g, '-'));
+    const isScholar =
+      finalName.startsWith('Scholar API') ||
+      (editingCustomId && editingCustomId.startsWith('scholar-api')) ||
+      Boolean(SCHOLAR_PROVIDERS_CONFIG[customForm.provider]);
+
+    const scholarCfg = SCHOLAR_PROVIDERS_CONFIG[customForm.provider];
+    const scholarId = scholarCfg ? scholarCfg.id : 'scholar-api';
+
+    const id =
+      editingCustomId ||
+      (isScholar
+        ? scholarId
+        : finalName.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/(^-|-$)/g, '') ||
+          envVar.toLowerCase().replace(/_/g, '-'));
 
     try {
       setAddingCustom(true);
@@ -1194,17 +1257,42 @@ export function ApiCatalogSettings() {
                   value={customForm.provider || 'openalex'}
                   onChange={(e) => {
                     const prov = e.target.value;
-                    setCustomForm((prev) => ({
-                      ...prev,
-                      provider: prov,
-                      baseUrl: prov === 'openalex' && (!prev.baseUrl || prev.baseUrl === 'https://api.openalex.org')
-                        ? 'https://api.openalex.org'
-                        : prev.baseUrl,
-                    }));
+                    const scholarCfg = SCHOLAR_PROVIDERS_CONFIG[prov];
+                    setCustomForm((prev) => {
+                      const isScholar =
+                        prev.name.startsWith('Scholar API') ||
+                        Boolean(SCHOLAR_PROVIDERS_CONFIG[prev.provider]) ||
+                        Boolean(scholarCfg);
+
+                      if (isScholar && scholarCfg) {
+                        return {
+                          ...prev,
+                          provider: prov,
+                          name: scholarCfg.name,
+                          envVar: scholarCfg.envVar,
+                          baseUrl: scholarCfg.baseUrl,
+                          queryParamName: scholarCfg.queryParamName,
+                          description: scholarCfg.description,
+                          docsUrl: scholarCfg.docsUrl,
+                        };
+                      }
+
+                      return {
+                        ...prev,
+                        provider: prov,
+                        baseUrl:
+                          prov === 'openalex' && (!prev.baseUrl || prev.baseUrl === 'https://api.openalex.org')
+                            ? 'https://api.openalex.org'
+                            : prev.baseUrl,
+                      };
+                    });
                   }}
                   className="w-full text-xs px-3 py-2.5 rounded-lg bg-slate-900 border border-slate-700 text-slate-100 focus:outline-none focus:border-cyan-400 font-medium"
                 >
                   <option value="openalex">OpenAlex</option>
+                  <option value="semanticscholar">Semantic Scholar</option>
+                  <option value="nasaads">NASA ADS</option>
+                  <option value="arxiv">arXiv</option>
                 </select>
               </div>
 
@@ -1653,19 +1741,35 @@ export function ApiCatalogSettings() {
                         <button
                           type="button"
                           onClick={() => {
-                            if (item.isCustom || item.name === 'Scholar API' || item.id === 'scholar-api') {
+                            const isScholarItem =
+                              (item.name && item.name.startsWith('Scholar API')) ||
+                              (item.id && item.id.startsWith('scholar-api'));
+
+                            if (item.isCustom || isScholarItem) {
                               setEditingCustomId(item.id);
+                              const scholarCfg = item.provider ? SCHOLAR_PROVIDERS_CONFIG[item.provider] : undefined;
                               setCustomForm({
                                 name: item.name,
                                 envVar: item.envVar,
-                                baseUrl: item.baseUrl || (item.name === 'Scholar API' ? 'https://api.openalex.org' : ''),
-                                queryParamName: item.queryParamName || 'search',
-                                provider: item.provider || 'openalex',
+                                baseUrl:
+                                  item.baseUrl ||
+                                  scholarCfg?.baseUrl ||
+                                  (isScholarItem ? 'https://api.openalex.org' : ''),
+                                queryParamName: item.queryParamName || scholarCfg?.queryParamName || 'search',
+                                provider:
+                                  item.provider ||
+                                  (isScholarItem && item.name?.toLowerCase().includes('semantic')
+                                    ? 'semanticscholar'
+                                    : isScholarItem && item.name?.toLowerCase().includes('nasa')
+                                    ? 'nasaads'
+                                    : isScholarItem && item.name?.toLowerCase().includes('arxiv')
+                                    ? 'arxiv'
+                                    : 'openalex'),
                                 key: '',
                                 noAuth: Boolean(item.noAuth),
-                                description: item.description || '',
-                                docsUrl: item.docsUrl || '',
-                                category: item.category || 'custom',
+                                description: item.description || scholarCfg?.description || '',
+                                docsUrl: item.docsUrl || scholarCfg?.docsUrl || '',
+                                category: item.category || 'research',
                               });
                               setCustomFormError(null);
                               setShowAddCustom(true);
@@ -1688,14 +1792,25 @@ export function ApiCatalogSettings() {
                       <button
                         type="button"
                         onClick={() => handleDeleteKey(item)}
-                        disabled={isSaving || (!item.isCustom && item.source !== 'catalog')}
+                        disabled={
+                          isSaving ||
+                          (!item.isCustom &&
+                            item.source !== 'catalog' &&
+                            !((item.name && item.name.startsWith('Scholar API')) || (item.id && item.id.startsWith('scholar-api'))))
+                        }
                         className={`p-1.5 rounded-md border transition-colors ${
-                          item.isCustom || item.source === 'catalog'
+                          item.isCustom ||
+                          item.source === 'catalog' ||
+                          (item.name && item.name.startsWith('Scholar API')) ||
+                          (item.id && item.id.startsWith('scholar-api'))
                             ? 'bg-slate-800 text-slate-400 border-slate-700 hover:text-rose-400 hover:border-rose-500/50 cursor-pointer'
                             : 'bg-slate-900 text-slate-600 border-slate-800 cursor-not-allowed opacity-40'
                         }`}
                         title={
-                          item.isCustom || item.source === 'catalog'
+                          item.isCustom ||
+                          item.source === 'catalog' ||
+                          (item.name && item.name.startsWith('Scholar API')) ||
+                          (item.id && item.id.startsWith('scholar-api'))
                             ? 'Delete key/record from local vault'
                             : 'System predefined key in Render env (cannot be deleted from vault)'
                         }
