@@ -8537,6 +8537,8 @@ DIRECTIVES:
                     ? 'text-emerald-300'
                     : newAgentEnabled
                     ? 'text-rose-300'
+                    : scholarEnabled
+                    ? 'text-amber-300'
                     : wikimediaEnabled
                     ? 'text-violet-300'
                     : architectEnabled && dataAnalysisEnabled
@@ -8566,6 +8568,8 @@ DIRECTIVES:
                         ? 'text-emerald-400'
                         : newAgentEnabled
                         ? 'text-rose-400'
+                        : scholarEnabled
+                        ? 'text-amber-400'
                         : wikimediaEnabled
                         ? 'text-violet-400'
                         : architectEnabled && dataAnalysisEnabled
@@ -8590,6 +8594,8 @@ DIRECTIVES:
                       ? deepResearchPhase || 'JARVIS Deep Research in progress...'
                       : newAgentEnabled
                       ? specialistPhase || 'Dynamic Agent pipeline in progress...'
+                      : scholarEnabled
+                      ? specialistPhase || 'Searching academic research papers via Scholar API...'
                       : wikimediaEnabled
                       ? specialistPhase || 'Fetching real images from Wikimedia Commons...'
                       : (architectEnabled || dataAnalysisEnabled || coderEnabled || webFetcherEnabled)
@@ -8614,11 +8620,13 @@ DIRECTIVES:
                       {deepResearchProgress}%
                     </span>
                   )}
-                  {(architectEnabled || dataAnalysisEnabled || coderEnabled || webFetcherEnabled || wikimediaEnabled || newAgentEnabled) && specialistProgress > 0 && (
+                  {(architectEnabled || dataAnalysisEnabled || coderEnabled || webFetcherEnabled || wikimediaEnabled || newAgentEnabled || scholarEnabled) && specialistProgress > 0 && (
                     <span
                       className={`text-[11px] font-mono font-semibold shrink-0 ${
                         newAgentEnabled
                           ? 'text-rose-400'
+                          : scholarEnabled
+                          ? 'text-amber-400'
                           : wikimediaEnabled
                           ? 'text-violet-400'
                           : coderEnabled
@@ -8660,12 +8668,14 @@ DIRECTIVES:
               )}
 
               {/* Specialist Modes Progress Bar */}
-              {(architectEnabled || dataAnalysisEnabled || coderEnabled || webFetcherEnabled || wikimediaEnabled || newAgentEnabled) && specialistProgress > 0 && (
+              {(architectEnabled || dataAnalysisEnabled || coderEnabled || webFetcherEnabled || wikimediaEnabled || newAgentEnabled || scholarEnabled) && specialistProgress > 0 && (
                 <div className="w-full max-w-md h-1.5 rounded-full bg-zinc-800/80 overflow-hidden border border-zinc-700/50">
                   <div
                     className={`h-full transition-all duration-300 ease-out rounded-full ${
                       newAgentEnabled
                         ? 'bg-gradient-to-r from-rose-500 via-pink-400 to-rose-300 shadow-[0_0_8px_rgba(244,63,94,0.5)]'
+                        : scholarEnabled
+                        ? 'bg-gradient-to-r from-amber-500 via-amber-400 to-yellow-300 shadow-[0_0_8px_rgba(245,158,11,0.5)]'
                         : wikimediaEnabled
                         ? 'bg-gradient-to-r from-violet-500 via-purple-400 to-fuchsia-300 shadow-[0_0_8px_rgba(139,92,246,0.5)]'
                         : coderEnabled
@@ -8953,7 +8963,7 @@ DIRECTIVES:
                   type="button"
                   onClick={() => setMoreOptionsOpen((prev) => !prev)}
                   className={`text-xs p-1.5 rounded-lg border transition-all flex items-center justify-center gap-1 ${
-                    moreOptionsOpen || architectEnabled || dataAnalysisEnabled || multiChatEnabled || voiceAiEnabled || coderEnabled || webFetcherEnabled || wikimediaEnabled || newAgentEnabled || swarmLiveEnabled || commanderEnabled
+                    moreOptionsOpen || architectEnabled || dataAnalysisEnabled || multiChatEnabled || voiceAiEnabled || coderEnabled || webFetcherEnabled || wikimediaEnabled || scholarEnabled || newAgentEnabled || swarmLiveEnabled || commanderEnabled
                       ? theme === 'classic'
                         ? 'bg-cyan-500/15 text-cyan-200 border-cyan-500/40 shadow-[0_0_8px_rgba(6,182,212,0.2)]'
                         : theme === 'fulldark'
@@ -8968,7 +8978,7 @@ DIRECTIVES:
                   title={
                     moreOptionsOpen
                       ? 'Close quick modes menu'
-                      : 'Specialist Modes (mutually exclusive): Architect, Data Analysis, Multi Chat, Voice AI, Coder, Web Fetcher, Wikimedia, New Agent, Swarm Live, Commander'
+                      : 'Specialist Modes (mutually exclusive): Architect, Data Analysis, Multi Chat, Voice AI, Coder, Web Fetcher, Wikimedia, Scholar, New Agent, Swarm Live, Commander'
                   }
                   aria-label="More options"
                   aria-expanded={moreOptionsOpen}
@@ -8979,7 +8989,7 @@ DIRECTIVES:
                       moreOptionsOpen ? 'rotate-180 text-cyan-400' : ''
                     }`}
                   />
-                  {(architectEnabled || dataAnalysisEnabled || multiChatEnabled || voiceAiEnabled || coderEnabled || webFetcherEnabled || wikimediaEnabled || newAgentEnabled || swarmLiveEnabled || commanderEnabled) && (
+                  {(architectEnabled || dataAnalysisEnabled || multiChatEnabled || voiceAiEnabled || coderEnabled || webFetcherEnabled || wikimediaEnabled || scholarEnabled || newAgentEnabled || swarmLiveEnabled || commanderEnabled) && (
                     <span className="w-1.5 h-1.5 rounded-full bg-cyan-400 shadow-[0_0_6px_rgba(6,182,212,0.8)]" />
                   )}
                 </button>
@@ -9388,6 +9398,53 @@ DIRECTIVES:
                         <div
                           className={`w-3 h-3 rounded-full bg-white shadow-sm transition-transform duration-150 ${
                             wikimediaEnabled ? 'translate-x-4' : 'translate-x-0'
+                          }`}
+                        />
+                      </div>
+                    </button>
+
+                    {/* 6.5 Scholar Toggle */}
+                    <button
+                      type="button"
+                      onClick={toggleScholar}
+                      className={`w-full p-2 rounded-xl border text-left flex items-center justify-between transition-all ${
+                        scholarEnabled
+                          ? 'border-amber-500/40 bg-amber-950/30 text-amber-200 shadow-[0_0_10px_rgba(245,158,11,0.15)]'
+                          : 'border-transparent hover:bg-zinc-800/60 text-zinc-300'
+                      }`}
+                    >
+                      <div className="flex items-center gap-2.5 min-w-0">
+                        <div
+                          className={`w-7 h-7 rounded-lg grid place-items-center shrink-0 ${
+                            scholarEnabled
+                              ? 'bg-amber-500/20 text-amber-300 border border-amber-500/30'
+                              : 'bg-zinc-800 text-zinc-400'
+                          }`}
+                        >
+                          <BookOpen size={13} />
+                        </div>
+                        <div className="min-w-0">
+                          <div className="text-xs font-semibold text-zinc-100 flex items-center gap-1.5">
+                            <span>📚 Scholar</span>
+                            {scholarEnabled && (
+                              <span className="text-[9px] font-mono font-semibold px-1.5 py-0.2 rounded bg-amber-950 text-amber-400 border border-amber-500/40">
+                                ON
+                              </span>
+                            )}
+                          </div>
+                          <div className="text-[10.5px] text-zinc-400 truncate">
+                            Academic papers & citations
+                          </div>
+                        </div>
+                      </div>
+                      <div
+                        className={`w-8 h-4 rounded-full transition-colors relative flex items-center p-0.5 shrink-0 ${
+                          scholarEnabled ? 'bg-amber-500' : 'bg-zinc-700'
+                        }`}
+                      >
+                        <div
+                          className={`w-3 h-3 rounded-full bg-white shadow-sm transition-transform duration-150 ${
+                            scholarEnabled ? 'translate-x-4' : 'translate-x-0'
                           }`}
                         />
                       </div>
@@ -11508,6 +11565,83 @@ DIRECTIVES:
                           <div
                             className={`w-5 h-5 rounded-full bg-white shadow-md transition-transform duration-200 ${
                               wikimediaEnabled ? 'translate-x-5' : 'translate-x-0'
+                            }`}
+                          />
+                        </div>
+                      </div>
+                    </div>
+
+                    <div className="h-px bg-zinc-800/80" />
+
+                    {/* 6.5 Scholar Toggle */}
+                    <div className="space-y-3">
+                      <div className="flex items-center justify-between">
+                        <div className="flex items-center gap-2">
+                          <BookOpen size={15} className="text-amber-400" />
+                          <h4 className="text-xs font-semibold uppercase tracking-wider text-zinc-300">
+                            📚 Scholar
+                          </h4>
+                        </div>
+                        <span
+                          className={`text-[10px] font-mono font-semibold px-2 py-0.5 rounded-full border ${
+                            scholarEnabled
+                              ? 'bg-amber-950/80 text-amber-300 border-amber-500/50 shadow-[0_0_8px_rgba(245,158,11,0.2)]'
+                              : 'bg-zinc-800 text-zinc-500 border-zinc-700/60'
+                          }`}
+                        >
+                          {scholarEnabled ? 'ACTIVE' : 'DISABLED'}
+                        </span>
+                      </div>
+
+                      <p className="text-xs text-zinc-400 leading-relaxed">
+                        When enabled, AI Assistant searches real academic papers through your Scholar API (set it in Settings &gt; API Catalog) and answers with numbered citations.
+                      </p>
+
+                      {/* Interactive Toggle Card */}
+                      <div
+                        onClick={toggleScholar}
+                        className={`p-3.5 rounded-xl border flex items-center justify-between cursor-pointer transition-all ${
+                          scholarEnabled
+                            ? 'border-amber-500/40 bg-amber-950/20 shadow-[0_0_15px_rgba(245,158,11,0.12)]'
+                            : 'border-zinc-800 bg-zinc-900/60 hover:bg-zinc-850 hover:border-zinc-700'
+                        }`}
+                      >
+                        <div className="flex items-center gap-3">
+                          <div
+                            className={`w-9 h-9 rounded-xl grid place-items-center transition-colors ${
+                              scholarEnabled
+                                ? 'bg-amber-500/20 border border-amber-500/40 text-amber-300'
+                                : 'bg-zinc-800 border border-zinc-700 text-zinc-400'
+                            }`}
+                          >
+                            <BookOpen size={18} />
+                          </div>
+                          <div>
+                            <div className="text-xs font-semibold text-zinc-100 flex items-center gap-2">
+                              <span>Enable Scholar</span>
+                              {scholarEnabled && (
+                                <span className="text-[10px] font-mono text-amber-400 bg-amber-950/80 px-1.5 py-0.2 rounded border border-amber-500/40">
+                                  Academic Research
+                                </span>
+                              )}
+                            </div>
+                            <p className="text-[11px] text-zinc-400 mt-0.5">
+                              {scholarEnabled
+                                ? 'Real academic papers from Scholar API'
+                                : 'Standard conversational responses'}
+                            </p>
+                          </div>
+                        </div>
+
+                        {/* Toggle Switch */}
+                        <div
+                          className={`w-11 h-6 rounded-full transition-colors relative flex items-center p-0.5 shrink-0 ${
+                            scholarEnabled ? 'bg-amber-500 shadow-[0_0_8px_rgba(245,158,11,0.4)]' : 'bg-zinc-700'
+                          }`}
+                        >
+                          <div
+                            className={`w-5 h-5 rounded-full bg-white shadow-md transition-transform duration-200 ${
+                              scholarEnabled ? 'translate-x-5' : 'translate-x-0'
                             }`}
                           />
                         </div>
