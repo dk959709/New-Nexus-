@@ -5489,6 +5489,7 @@ DIRECTIVES:
 
       try {
         const currentPermanentMemories = storage.getPermanentMemories();
+        const currentLanguage = storage.getAssistantLanguage();
         const sessionProvider = storage.getProviderForSession(activeProviderId, activeModelId);
 
         const response = await api.aiChat(
