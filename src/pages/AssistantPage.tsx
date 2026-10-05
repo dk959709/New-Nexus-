@@ -5456,6 +5456,10 @@ DIRECTIVES:
             abstract: p.abstract,
             provider: p.provider,
           }));
+
+          if (searchRes.warnings && searchRes.warnings.length > 0) {
+            triggerSettingsToast(searchRes.warnings.join('; '));
+          }
         }
       } catch (sErr: unknown) {
         console.warn('[AI Assistant] Scholar search error:', sErr);
@@ -5474,12 +5478,17 @@ DIRECTIVES:
       if (fetchedPapers.length > 0) {
         const numberedSources = fetchedPapers
           .map((p, idx) => {
-            const authorsStr = p.authors.length > 0 ? p.authors.join(', ') : 'Unknown Authors';
+            const first3Authors = p.authors.slice(0, 3);
+            const authorsStr = first3Authors.length > 0 ? first3Authors.join(', ') : 'Unknown Authors';
             const yearStr = p.year ? `(${p.year})` : '';
             const journalStr = p.journal ? `Source: ${p.journal}` : '';
             const citedStr = `Cited by: ${p.citationCount}`;
             const linkStr = p.link ? `Link: ${p.link}` : '';
-            const abstractStr = p.abstract ? `Abstract: ${p.abstract}` : '';
+            let rawAbstract = (p.abstract || '').trim();
+            if (rawAbstract.length > 350) {
+              rawAbstract = rawAbstract.slice(0, 350) + '...';
+            }
+            const abstractStr = rawAbstract ? `Abstract: ${rawAbstract}` : '';
             return `[${idx + 1}] "${p.title}" - ${authorsStr} ${yearStr}. ${journalStr}. ${citedStr}. ${linkStr}\n${abstractStr}`.trim();
           })
           .join('\n\n');

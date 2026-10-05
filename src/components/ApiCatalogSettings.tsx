@@ -181,13 +181,58 @@ export function ApiCatalogSettings() {
       setLoading(true);
       setError(null);
       const res = await api.getCatalog();
-      const list = Array.isArray(res)
+      let list = Array.isArray(res)
         ? res
         : Array.isArray(res?.data)
         ? res.data
         : Array.isArray((res as { apis?: ApiCatalogItem[] })?.apis)
         ? (res as { apis: ApiCatalogItem[] }).apis
         : [];
+
+      const isScholarItem = (item: ApiCatalogItem) =>
+        (item.name && item.name.startsWith('Scholar API')) ||
+        (item.id && item.id.startsWith('scholar-api')) ||
+        Boolean(item.provider && ['openalex', 'semanticscholar', 'nasaads', 'arxiv'].includes(item.provider));
+
+      const serverScholarItems = list.filter(isScholarItem);
+      if (serverScholarItems.length === 0) {
+        const localConfigs = storage.getScholarApiConfigs();
+        if (localConfigs.length > 0) {
+          const synthesizedItems: ApiCatalogItem[] = localConfigs.map((cfg) => {
+            const providerKey = cfg.provider;
+            const defCfg = SCHOLAR_PROVIDERS_CONFIG[providerKey] || SCHOLAR_PROVIDERS_CONFIG.openalex;
+            return {
+              id: defCfg.id || `scholar-api-${providerKey}`,
+              name: defCfg.name || `Scholar API - ${providerKey}`,
+              envVar: defCfg.envVar || `SCHOLAR_API_${providerKey.toUpperCase()}_KEY`,
+              description: defCfg.description,
+              docsUrl: defCfg.docsUrl,
+              baseUrl: cfg.baseUrl || defCfg.baseUrl,
+              queryParamName: defCfg.queryParamName,
+              provider: providerKey,
+              hasKey: Boolean(cfg.apiKey && !isNoAuthPlaceholderVal(cfg.apiKey)) || providerKey === 'arxiv',
+              keyMasked: cfg.apiKey
+                ? (cfg.apiKey.length > 4 ? `••••••••••••••••${cfg.apiKey.slice(-4)}` : '••••••••••••••••')
+                : (providerKey === 'arxiv' ? 'Not Required' : 'Not set'),
+              isCustom: true,
+              noAuth: providerKey === 'arxiv' || isNoAuthPlaceholderVal(cfg.apiKey),
+              category: 'research',
+              source: 'catalog',
+            };
+          });
+          list = [...list, ...synthesizedItems];
+          // Asynchronously save them back to the server vault
+          for (const cfg of localConfigs) {
+            api.saveScholarSearchConfig({
+              mode: 'custom',
+              customUrl: cfg.baseUrl,
+              customKey: cfg.apiKey || undefined,
+              provider: cfg.provider,
+            }).catch(() => {});
+          }
+        }
+      }
+
       setCatalog(list);
     } catch (err: unknown) {
       const msg = err instanceof Error ? err.message : 'Failed to load API catalog';
@@ -427,6 +472,15 @@ export function ApiCatalogSettings() {
       customKey: cleanKey,
       provider: scholarProvider,
     });
+    const scholarProvKey = (scholarProvider || 'openalex').toLowerCase() as 'openalex' | 'semanticscholar' | 'nasaads' | 'arxiv';
+    const curScholarList = storage.getScholarApiConfigs();
+    const newScholarList = curScholarList.filter((c) => c.provider !== scholarProvKey);
+    newScholarList.push({
+      provider: scholarProvKey,
+      apiKey: cleanKey,
+      baseUrl: cleanUrl,
+    });
+    storage.saveScholarApiConfigs(newScholarList);
 
     // Secondary: save to server vault
     try {
@@ -466,6 +520,9 @@ export function ApiCatalogSettings() {
       customKey: '',
       provider: 'openalex',
     });
+    const curScholarList = storage.getScholarApiConfigs();
+    const scholarProvKey = (scholarProvider || 'openalex').toLowerCase();
+    storage.saveScholarApiConfigs(curScholarList.filter((c) => c.provider !== scholarProvKey));
 
     try {
       setSavingScholarSearch(true);
@@ -655,6 +712,24 @@ export function ApiCatalogSettings() {
         // Cache revealed key locally
         setRevealedKeys((prev) => ({ ...prev, [item.id]: rawKey }));
         setRevealedVisibility((prev) => ({ ...prev, [item.id]: false }));
+
+        const isScholarItem =
+          (item.name && item.name.startsWith('Scholar API')) ||
+          (item.id && item.id.startsWith('scholar-api')) ||
+          Boolean(item.provider && ['openalex', 'semanticscholar', 'nasaads', 'arxiv'].includes(item.provider));
+
+        if (isScholarItem) {
+          const prov = (item.provider || item.id.replace('scholar-api-', '') || 'openalex').toLowerCase() as 'openalex' | 'semanticscholar' | 'nasaads' | 'arxiv';
+          const curScholarList = storage.getScholarApiConfigs();
+          const newScholarList = curScholarList.filter((c) => c.provider !== prov);
+          newScholarList.push({
+            provider: prov,
+            apiKey: isNoAuth ? 'none' : (rawKey || ''),
+            baseUrl: item.baseUrl || SCHOLAR_PROVIDERS_CONFIG[prov]?.baseUrl || 'https://api.openalex.org',
+          });
+          storage.saveScholarApiConfigs(newScholarList);
+        }
+
         setActionNotice({
           id: item.id,
           type: 'success',
@@ -696,6 +771,18 @@ export function ApiCatalogSettings() {
           delete c[item.id];
           return c;
         });
+
+        const isScholarItem =
+          (item.name && item.name.startsWith('Scholar API')) ||
+          (item.id && item.id.startsWith('scholar-api')) ||
+          Boolean(item.provider && ['openalex', 'semanticscholar', 'nasaads', 'arxiv'].includes(item.provider));
+
+        if (isScholarItem) {
+          const prov = (item.provider || item.id.replace('scholar-api-', '') || '').toLowerCase();
+          const curScholarList = storage.getScholarApiConfigs();
+          storage.saveScholarApiConfigs(curScholarList.filter((c) => c.provider !== prov));
+        }
+
         setActionNotice({
           id: item.id,
           type: 'success',
@@ -808,6 +895,15 @@ export function ApiCatalogSettings() {
             customKey: rawVal || '',
             provider: customForm.provider || 'openalex',
           });
+          const prov = (customForm.provider || 'openalex').toLowerCase() as 'openalex' | 'semanticscholar' | 'nasaads' | 'arxiv';
+          const curScholarList = storage.getScholarApiConfigs();
+          const newScholarList = curScholarList.filter((c) => c.provider !== prov);
+          newScholarList.push({
+            provider: prov,
+            apiKey: isNoAuth ? 'none' : (rawVal || ''),
+            baseUrl: cleanBaseUrl,
+          });
+          storage.saveScholarApiConfigs(newScholarList);
           setCustomForm({
             name: '',
             envVar: '',

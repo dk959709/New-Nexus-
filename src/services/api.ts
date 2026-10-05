@@ -1146,16 +1146,33 @@ export const api = {
     });
   },
 
-  async searchScholar(query: string, provider?: string): Promise<{
+  async searchScholar(
+    query: string,
+    provider?: string,
+    scholarConfigs?: Array<{
+      provider: 'openalex' | 'semanticscholar' | 'nasaads' | 'arxiv';
+      apiKey: string;
+      baseUrl: string;
+    }>,
+  ): Promise<{
     ok: boolean;
     papers: ScholarPaper[];
     error?: string;
+    warnings?: string[];
   }> {
     try {
+      const configsToSend =
+        scholarConfigs ??
+        (typeof window !== 'undefined' ? storage.getScholarApiConfigs() : undefined);
       const res = await fetch(`${BASE}/api/scholar/search`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ question: query, query, provider }),
+        body: JSON.stringify({
+          question: query,
+          query,
+          provider,
+          scholarConfigs: configsToSend && configsToSend.length > 0 ? configsToSend : undefined,
+        }),
       });
       const data = (await res.json().catch(() => ({}))) as Record<string, unknown>;
       if (!res.ok && !data.error) {
@@ -1169,6 +1186,7 @@ export const api = {
         ok: data.ok === true,
         papers: Array.isArray(data.papers) ? (data.papers as ScholarPaper[]) : [],
         error: typeof data.error === 'string' ? data.error : undefined,
+        warnings: Array.isArray(data.warnings) ? (data.warnings as string[]) : undefined,
       };
     } catch (err: unknown) {
       return {

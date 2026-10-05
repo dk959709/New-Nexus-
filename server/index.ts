@@ -23,7 +23,7 @@ import { weatherRouter, geocode, weatherProvider } from './routes/weather.js';
 import { createSearchRouter, searchProvider, fetchWikipediaSummary, extractSignificantQueryWords, isResultTopicallyRelevant } from './routes/search.js';
 import { devicesRouter } from './routes/devices.js';
 import { telegramRouter, setTelegramAiHandler } from './routes/telegram.js';
-import { apiCatalogRouter, getBackendApiKey, getScholarApiConfig, getAllScholarApiConfigs } from './apiCatalog.js';
+import { apiCatalogRouter, getBackendApiKey, getScholarApiConfig, getAllScholarApiConfigs, isNoAuthPlaceholder } from './apiCatalog.js';
 import { documentsRouter } from './routes/documents.js';
 import { fluxSchnellRouter } from './routes/fluxSchnell.js';
 import { fluxDevRouter } from './routes/fluxDev.js';
@@ -3494,7 +3494,7 @@ const customProviderSchema = z
   .passthrough();
 
 const aiChatSchema = z.object({
-  message: z.string().trim().min(1).max(4000),
+  message: z.string().trim().min(1).max(16000),
   history: z
     .array(
       z.object({
@@ -3878,22 +3878,57 @@ async function startServer() {
     _apiKey?: string,
     baseUrl?: string,
   ): Promise<ScholarPaperItem[]> {
-    const cleanBase = (baseUrl || 'https://export.arxiv.org/api').trim().replace(/\/+$/, '');
-    const url = new URL(`${cleanBase}/query`);
-    url.searchParams.set('search_query', `all:${query}`);
+    const fillerWords = new Set([
+      'what', 'is', 'are', 'the', 'a', 'an', 'of', 'in', 'on', 'how', 'why',
+      'does', 'do', 'explain', 'tell', 'me', 'about', 'and', 'to', 'for', 'with',
+    ]);
+    const lower = query.toLowerCase();
+    const clean = lower.replace(/[^\w\s]/g, ' ');
+    const words = clean.split(/\s+/).filter((w) => w.length > 0 && !fillerWords.has(w));
+    const selectedWords = words.slice(0, 6);
+    let builtQuery = '';
+    if (selectedWords.length > 0) {
+      builtQuery = selectedWords.map((w) => `all:${w}`).join(' AND ');
+    } else {
+      const sanitized = query.trim().replace(/"/g, '');
+      builtQuery = `"${sanitized}"`;
+    }
+
+    let endpoint = (baseUrl || 'https://export.arxiv.org/api/query').trim();
+    if (!endpoint.endsWith('/query')) {
+      endpoint = `${endpoint.replace(/\/+$/, '')}/query`;
+    }
+    const httpsEndpoint = endpoint.replace(/^http:\/\//, 'https://');
+    const url = new URL(httpsEndpoint);
+    url.searchParams.set('search_query', builtQuery);
     url.searchParams.set('max_results', '8');
     url.searchParams.set('sortBy', 'relevance');
 
-    const response = await fetch(url.toString(), {
-      headers: {
-        Accept: 'application/atom+xml, application/xml, text/xml',
-        'User-Agent': 'NexusAI-Scholar/1.0',
-      },
-      signal: AbortSignal.timeout(10000),
-    });
+    const fetchArxiv = async () => {
+      return await fetch(url.toString(), {
+        headers: {
+          Accept: 'application/atom+xml, application/xml, text/xml',
+          'User-Agent': 'NexusAI-Scholar/1.0',
+        },
+        signal: AbortSignal.timeout(15000),
+      });
+    };
+
+    let response = await fetchArxiv();
+    if (response.status === 429 || response.status === 503) {
+      await new Promise((r) => setTimeout(r, 1500));
+      response = await fetchArxiv();
+    }
 
     if (!response.ok) {
-      throw new Error(`arXiv API responded with HTTP status ${response.status}`);
+      let bodySnippet = '';
+      try {
+        const text = await response.text();
+        bodySnippet = text.slice(0, 120).trim();
+      } catch {
+        bodySnippet = response.statusText || '';
+      }
+      throw new Error(`arXiv API responded with HTTP status ${response.status}: ${bodySnippet}`);
     }
 
     const xml = await response.text();
@@ -3939,13 +3974,24 @@ async function startServer() {
       });
     }
 
+    console.log('[Scholar API] arXiv query:', builtQuery, 'results:', items.length);
+
     return items;
   }
+
+  // Zod schema for client-supplied scholarConfigs
+  const scholarConfigItemSchema = z.object({
+    provider: z.enum(['openalex', 'semanticscholar', 'nasaads', 'arxiv']),
+    baseUrl: z.string().trim().refine((val) => /^https:\/\//i.test(val), {
+      message: 'baseUrl must start with https://',
+    }),
+    apiKey: z.string().trim().optional(),
+  });
 
   // POST /api/scholar/search
   app.post('/api/scholar/search', async (req: Request, res: Response) => {
     try {
-      const { query: rawQuery, question: rawQuestion, provider: reqProvider } = req.body || {};
+      const { query: rawQuery, question: rawQuestion, provider: reqProvider, scholarConfigs: rawScholarConfigs } = req.body || {};
       const query = (rawQuestion || rawQuery || '').trim();
 
       if (!query) {
@@ -3992,8 +4038,25 @@ async function startServer() {
         });
       }
 
-      // Case 2: Multi-provider search across ALL configured scholar providers
-      const configs = getAllScholarApiConfigs();
+      // Case 2: Multi-provider search across configured scholar providers
+      let configs: Array<{ provider: string; apiKey?: string; baseUrl: string }> = [];
+
+      if (Array.isArray(rawScholarConfigs) && rawScholarConfigs.length > 0) {
+        const parsed = z.array(scholarConfigItemSchema).safeParse(rawScholarConfigs);
+        if (parsed.success && parsed.data.length > 0) {
+          configs = parsed.data
+            .map((c) => ({
+              provider: c.provider,
+              baseUrl: c.baseUrl,
+              apiKey: c.apiKey && !isNoAuthPlaceholder(c.apiKey) ? c.apiKey : undefined,
+            }))
+            .filter((c) => c.apiKey || c.provider === 'arxiv');
+        }
+      }
+
+      if (!configs || configs.length === 0) {
+        configs = getAllScholarApiConfigs();
+      }
 
       if (!configs || configs.length === 0) {
         return res.status(400).json({
@@ -4003,7 +4066,7 @@ async function startServer() {
         });
       }
 
-      // Search ALL of them in parallel with Promise.allSettled, 10 seconds timeout each
+      // Search ALL of them in parallel with Promise.allSettled, 10 seconds timeout each (arXiv has 15s)
       const searchPromises = configs.map(async (cfg) => {
         const provKey = (cfg.provider || '').toLowerCase();
         const shortLabel = getShortProviderLabel(cfg.provider);
@@ -4036,7 +4099,10 @@ async function startServer() {
           allPapers.push(...result.value);
         } else {
           const reasonMsg = result.reason instanceof Error ? result.reason.message : String(result.reason);
-          errors.push(`${getShortProviderLabel(configs[i].provider)}: ${reasonMsg}`);
+          const shortName = getShortProviderLabel(configs[i].provider);
+          const statusMatch = reasonMsg.match(/HTTP (?:status )?(\d{3})/i);
+          const errLabel = statusMatch ? `${shortName}: HTTP ${statusMatch[1]}` : `${shortName}: ${reasonMsg.slice(0, 80)}`;
+          errors.push(errLabel);
           console.warn(`[Scholar API] Provider ${configs[i].provider} search failed:`, reasonMsg);
         }
       }
@@ -4047,6 +4113,7 @@ async function startServer() {
           ok: false,
           error: `Scholar search failed across all providers: ${errors.join('; ')}`,
           papers: [],
+          warnings: errors,
         });
       }
 
@@ -4113,6 +4180,7 @@ async function startServer() {
       return res.json({
         ok: true,
         papers: finalPapers,
+        warnings: errors.length > 0 ? errors : undefined,
       });
     } catch (err: unknown) {
       const errMsg = err instanceof Error ? err.message : 'Scholar API search failed or timed out.';

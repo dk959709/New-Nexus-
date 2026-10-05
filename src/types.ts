@@ -233,6 +233,12 @@ export interface ScholarApiState {
   provider: string;
 }
 
+export interface ScholarApiConfigItem {
+  provider: 'openalex' | 'semanticscholar' | 'nasaads' | 'arxiv';
+  apiKey: string;
+  baseUrl: string;
+}
+
 export interface CloudVoiceItem {
   id: string;
   name: string;

@@ -34,6 +34,7 @@ const KEYS = {
   voiceProviders: 'nexus-voice-providers',
   webSearchApi: 'nexus-web-search-api',
   scholarApi: 'nexus-scholar-api',
+  scholarApiConfigs: 'nexus-scholar-api-configs',
   jarvisConfig: 'nexus-jarvis-config-v1',
   jarvisMessages: 'nexus-jarvis-messages-v1',
   edgeVoice: 'nexus-edge-voice-v1',
@@ -1612,6 +1613,34 @@ export const storage = {
     write(KEYS.scholarApi, state);
     if (typeof window !== 'undefined') {
       window.dispatchEvent(new CustomEvent('nexus-scholar-api-updated', { detail: state }));
+      window.dispatchEvent(new Event('storage'));
+    }
+  },
+
+  getScholarApiConfigs(): Array<{
+    provider: 'openalex' | 'semanticscholar' | 'nasaads' | 'arxiv';
+    apiKey: string;
+    baseUrl: string;
+  }> {
+    return read<
+      Array<{
+        provider: 'openalex' | 'semanticscholar' | 'nasaads' | 'arxiv';
+        apiKey: string;
+        baseUrl: string;
+      }>
+    >(KEYS.scholarApiConfigs, []);
+  },
+
+  saveScholarApiConfigs(
+    list: Array<{
+      provider: 'openalex' | 'semanticscholar' | 'nasaads' | 'arxiv';
+      apiKey: string;
+      baseUrl: string;
+    }>,
+  ): void {
+    write(KEYS.scholarApiConfigs, list);
+    if (typeof window !== 'undefined') {
+      window.dispatchEvent(new CustomEvent('nexus-scholar-api-configs-updated', { detail: list }));
       window.dispatchEvent(new Event('storage'));
     }
   },
