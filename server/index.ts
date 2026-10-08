@@ -4019,7 +4019,23 @@ async function startServer() {
 
       // Case 1: If the request body has a "provider" field, search only that provider
       if (reqProvider && typeof reqProvider === 'string' && reqProvider.trim()) {
-        const scholarConfig = getScholarApiConfig(reqProvider.trim());
+        let scholarConfig = getScholarApiConfig(reqProvider.trim());
+
+        if (Array.isArray(rawScholarConfigs) && rawScholarConfigs.length > 0) {
+          const parsed = z.array(scholarConfigItemSchema).safeParse(rawScholarConfigs);
+          if (parsed.success && parsed.data.length > 0) {
+            const matched = parsed.data.find(
+              (c) => c.provider.toLowerCase() === reqProvider.trim().toLowerCase(),
+            );
+            if (matched) {
+              scholarConfig = {
+                provider: matched.provider,
+                baseUrl: matched.baseUrl,
+                apiKey: matched.apiKey && !isNoAuthPlaceholder(matched.apiKey) ? matched.apiKey : '',
+              };
+            }
+          }
+        }
 
         if (!scholarConfig.apiKey && scholarConfig.provider !== 'arxiv') {
           return res.status(400).json({

@@ -5485,8 +5485,8 @@ DIRECTIVES:
             const citedStr = `Cited by: ${p.citationCount}`;
             const linkStr = p.link ? `Link: ${p.link}` : '';
             let rawAbstract = (p.abstract || '').trim();
-            if (rawAbstract.length > 700) {
-              rawAbstract = rawAbstract.slice(0, 700) + '...';
+            if (rawAbstract.length > 350) {
+              rawAbstract = rawAbstract.slice(0, 350) + '...';
             }
             const abstractStr = rawAbstract ? `Abstract: ${rawAbstract}` : '';
             return `[${idx + 1}] "${p.title}" - ${authorsStr} ${yearStr}. ${journalStr}. ${citedStr}. ${linkStr}\n${abstractStr}`.trim();
