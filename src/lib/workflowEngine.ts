@@ -67,7 +67,9 @@ export function hasWorkflowCycle(nodes: WorkflowNode[], edges: WorkflowEdge[]): 
 
 /**
  * Replace {{Label.output}} or {{id.output}} in string with previous outputs.
- * Unknown placeholders are kept as is, with a warning emitted.
+ * Labels can contain any characters except "}".
+ * Matching is supported by id and by label (case-insensitive, trimmed).
+ * Unknown placeholders stay as they are and emit a warning.
  */
 export function resolvePlaceholders(
   text: string,
@@ -76,13 +78,18 @@ export function resolvePlaceholders(
   onWarning?: (warning: string) => void,
 ): string {
   if (!text || typeof text !== 'string') return text || '';
-  return text.replace(/\{\{\s*([a-zA-Z0-9_\-\s.]+?)\.output\s*\}\}/gi, (match, rawKey) => {
+  return text.replace(/\{\{\s*([^}]+?)\.output\s*\}\}/gi, (match, rawKey) => {
     const key = rawKey.trim();
-    // 1. Direct match by node ID
+    // 1. Direct match by node ID (exact or case-insensitive)
     if (outputsById.has(key)) {
       return outputsById.get(key)!;
     }
-    // 2. Direct match by node Label (case-insensitive)
+    for (const [id, val] of outputsById.entries()) {
+      if (id.trim().toLowerCase() === key.toLowerCase()) {
+        return val;
+      }
+    }
+    // 2. Direct match by node Label (case-insensitive, trimmed)
     for (const [lbl, val] of outputsByLabel.entries()) {
       if (lbl.trim().toLowerCase() === key.toLowerCase()) {
         return val;
@@ -193,9 +200,19 @@ async function executeStep(
         roleLine = 'You are a careful data analyst. Show steps and numbers clearly.\n\n';
       }
       const fullPrompt = `${roleLine}${resolvedSettings.prompt ?? ''}`.trim();
+
+      // Setting maxTokens: default 1500, allowed 200 to 4000
+      let parsedTokens = parseInt(resolvedSettings.maxTokens || '1500', 10);
+      if (isNaN(parsedTokens)) parsedTokens = 1500;
+      parsedTokens = Math.max(200, Math.min(4000, parsedTokens));
+
       const activeProvider = storage.getActiveAIProvider();
+      const providerCopy = activeProvider
+        ? { ...activeProvider, maxTokens: parsedTokens }
+        : undefined;
+
       const res = await withRetry(async () => {
-        return await api.aiChat(fullPrompt, [], '', activeProvider, false);
+        return await api.aiChat(fullPrompt, [], '', providerCopy, false);
       });
       return { output: { type: 'text', value: res.answer || '' } };
     }
@@ -265,6 +282,44 @@ async function executeStep(
 }
 
 /**
+ * Find all nodes reachable from the start node following edges that are still allowed.
+ * For an 'if' parent, only the edge whose branch matches the result is allowed.
+ * If an 'if' parent has not run yet, both branches remain potentially allowed.
+ */
+function getReachableNodeIds(
+  startId: string,
+  edges: WorkflowEdge[],
+  ifResults: Map<string, 'yes' | 'no'>,
+  nodeMap: Map<string, WorkflowNode>,
+): Set<string> {
+  const reachable = new Set<string>();
+  const queue = [startId];
+  reachable.add(startId);
+
+  while (queue.length > 0) {
+    const u = queue.shift()!;
+    for (const edge of edges) {
+      if (edge.from === u) {
+        let allowed = true;
+        const fromNode = nodeMap.get(edge.from);
+        if (fromNode?.type === 'if' && ifResults.has(edge.from)) {
+          const chosenBranch = ifResults.get(edge.from);
+          if (edge.branch && edge.branch !== chosenBranch) {
+            allowed = false;
+          }
+        }
+        if (allowed && !reachable.has(edge.to)) {
+          reachable.add(edge.to);
+          queue.push(edge.to);
+        }
+      }
+    }
+  }
+
+  return reachable;
+}
+
+/**
  * Main workflow execution engine. Pure logic, NO React and NO UI code.
  */
 export async function runWorkflow(
@@ -275,15 +330,47 @@ export async function runWorkflow(
     return;
   }
 
+  const executedNodeIds = new Set<string>();
+  const failedNodeIds = new Set<string>();
+  const skippedNodeIds = new Set<string>();
+
+  /**
+   * Safe status dispatcher that never changes the status of a node
+   * that already ended as 'done' or 'error', and never marks a failed node as 'skipped'.
+   */
+  const setNodeStatus = (
+    nodeId: string,
+    status: WorkflowStepStatus,
+    output?: WorkflowOutput,
+    errorText?: string,
+  ) => {
+    if (executedNodeIds.has(nodeId) || failedNodeIds.has(nodeId)) {
+      return;
+    }
+    if (status === 'done') {
+      executedNodeIds.add(nodeId);
+    } else if (status === 'error') {
+      failedNodeIds.add(nodeId);
+    } else if (status === 'skipped') {
+      skippedNodeIds.add(nodeId);
+    }
+    callbacks.onStatus(nodeId, status, output, errorText);
+  };
+
   // 1. Detect loops/cycles BEFORE running
   if (hasWorkflowCycle(workflow.nodes, workflow.edges || [])) {
     const startNode = workflow.nodes.find((n) => n.type === 'input') || workflow.nodes[0];
-    callbacks.onStatus(
+    setNodeStatus(
       startNode.id,
       'error',
       undefined,
       'Cycle detected in workflow. Workflows must be a directed acyclic graph (DAG).',
     );
+    for (const n of workflow.nodes) {
+      if (!failedNodeIds.has(n.id) && !executedNodeIds.has(n.id)) {
+        setNodeStatus(n.id, 'skipped');
+      }
+    }
     return;
   }
 
@@ -298,7 +385,7 @@ export async function runWorkflow(
 
   const outputsByLabel = new Map<string, string>();
   const outputsById = new Map<string, string>();
-  const executedNodeIds = new Set<string>();
+  const ifResults = new Map<string, 'yes' | 'no'>();
 
   // Queue of node IDs to visit
   const queue: string[] = [startNode.id];
@@ -306,6 +393,7 @@ export async function runWorkflow(
 
   let stepCount = 0;
   const MAX_STEPS = 30;
+  let consecutiveWaitCount = 0;
 
   while (queue.length > 0) {
     if (callbacks.shouldStop()) {
@@ -317,12 +405,60 @@ export async function runWorkflow(
     const currentNode = nodeMap.get(currentId);
     if (!currentNode) continue;
 
-    if (executedNodeIds.has(currentId)) {
-      continue; // Each node runs only once
+    if (executedNodeIds.has(currentId) || failedNodeIds.has(currentId)) {
+      continue; // Each node runs only once; already finalized
     }
 
+    // Merge node wait condition:
+    // A node with 2+ incoming edges must wait until all of its "active" parents have finished.
+    const incomingEdges = (workflow.edges || []).filter((e) => e.to === currentId);
+    if (incomingEdges.length >= 2) {
+      const reachableNodes = getReachableNodeIds(
+        startNode.id,
+        workflow.edges || [],
+        ifResults,
+        nodeMap,
+      );
+      const parentIds = Array.from(new Set(incomingEdges.map((e) => e.from)));
+      const activeParents = parentIds.filter((pId) => reachableNodes.has(pId));
+      const hasUnfinishedActiveParent = activeParents.some(
+        (pId) => !executedNodeIds.has(pId),
+      );
+
+      if (hasUnfinishedActiveParent) {
+        // Put the node at the end of the queue and continue with other nodes
+        queue.push(currentId);
+        consecutiveWaitCount++;
+
+        // If the queue only contains waiting nodes that can never be released, stop the loop
+        // and mark those nodes 'skipped' with the note "waiting for a step that did not run".
+        if (consecutiveWaitCount >= queue.length) {
+          if (callbacks.onLog) {
+            callbacks.onLog(
+              'Unresolvable waiting dependency detected. Skipping remaining waiting nodes.',
+            );
+          }
+          const waitingIds = Array.from(new Set(queue));
+          for (const wId of waitingIds) {
+            setNodeStatus(
+              wId,
+              'skipped',
+              undefined,
+              'waiting for a step that did not run',
+            );
+          }
+          break;
+        }
+
+        continue;
+      }
+    }
+
+    // Node is ready to run, reset consecutive wait counter
+    consecutiveWaitCount = 0;
+
     if (stepCount >= MAX_STEPS) {
-      callbacks.onStatus(
+      setNodeStatus(
         currentId,
         'error',
         undefined,
@@ -332,7 +468,7 @@ export async function runWorkflow(
     }
 
     stepCount++;
-    callbacks.onStatus(currentId, 'running');
+    setNodeStatus(currentId, 'running');
     if (callbacks.onLog) {
       callbacks.onLog(`Running step "${currentNode.label}" (${currentNode.type})...`);
     }
@@ -353,7 +489,7 @@ export async function runWorkflow(
       stepResult = await executeStep(currentNode, resolvedSettings);
     } catch (err: unknown) {
       const errMsg = err instanceof Error ? err.message : String(err);
-      callbacks.onStatus(currentId, 'error', undefined, errMsg);
+      setNodeStatus(currentId, 'error', undefined, errMsg);
       if (callbacks.onLog) {
         callbacks.onLog(`Error in step "${currentNode.label}": ${errMsg}`);
       }
@@ -361,9 +497,8 @@ export async function runWorkflow(
       break;
     }
 
-    // Mark done
-    executedNodeIds.add(currentId);
-    callbacks.onStatus(currentId, 'done', stepResult.output);
+    // Mark done and save outputs
+    setNodeStatus(currentId, 'done', stepResult.output);
     outputsById.set(currentId, stepResult.output.value);
     outputsByLabel.set(currentNode.label, stepResult.output.value);
 
@@ -372,6 +507,7 @@ export async function runWorkflow(
 
     if (currentNode.type === 'if') {
       const branch: 'yes' | 'no' = stepResult.conditionPassed ? 'yes' : 'no';
+      ifResults.set(currentId, branch);
       if (callbacks.onLog) {
         callbacks.onLog(
           `Condition evaluated to "${branch}". Following "${branch}" branch.`,
@@ -395,10 +531,11 @@ export async function runWorkflow(
     }
   }
 
-  // Nodes not reachable from the start or on unchosen branches are marked 'skipped'
+  // Final pass: nodes that did not finish are marked 'skipped'.
+  // Failed nodes and already finished nodes are NEVER overwritten.
   for (const n of workflow.nodes) {
-    if (!executedNodeIds.has(n.id)) {
-      callbacks.onStatus(n.id, 'skipped');
+    if (!executedNodeIds.has(n.id) && !failedNodeIds.has(n.id) && !skippedNodeIds.has(n.id)) {
+      setNodeStatus(n.id, 'skipped');
     }
   }
 }

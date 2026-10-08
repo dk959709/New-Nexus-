@@ -1823,6 +1823,24 @@ export function StepSettingsForm({
           </div>
           <div>
             <label className="text-xs font-medium text-slate-300 block mb-1">
+              Max answer length (tokens)
+            </label>
+            <input
+              type="number"
+              min={200}
+              max={4000}
+              step={100}
+              value={settings.maxTokens ?? '1500'}
+              onChange={(e) => handleChange('maxTokens', e.target.value)}
+              placeholder="1500"
+              className="w-full bg-slate-950 border border-white/10 rounded-xl px-3 py-2 text-white text-xs focus:outline-none focus:border-cyan-500 font-mono"
+            />
+            <p className="text-[11px] text-slate-400 mt-1">
+              Longer answers need a higher number.
+            </p>
+          </div>
+          <div>
+            <label className="text-xs font-medium text-slate-300 block mb-1">
               Prompt Instructions
             </label>
             <textarea
