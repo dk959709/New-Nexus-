@@ -1266,6 +1266,39 @@ export interface CommanderFeedSavedState {
   deletedStageIds?: string[];
 }
 
+export type WorkflowNodeType = 'input' | 'webSearch' | 'webFetch' | 'scholar' | 'ai' | 'image' | 'weather' | 'nasa' | 'if';
+
+export interface WorkflowNode {
+  id: string;
+  type: WorkflowNodeType;
+  label: string;
+  x: number;
+  y: number;
+  settings: Record<string, string>;
+}
+
+export interface WorkflowEdge {
+  id: string;
+  from: string;
+  to: string;
+  branch?: 'yes' | 'no';
+}
+
+export interface Workflow {
+  id: string;
+  name: string;
+  nodes: WorkflowNode[];
+  edges: WorkflowEdge[];
+  updatedAt: number;
+}
+
+export interface WorkflowOutput {
+  type: 'text' | 'json' | 'image';
+  value: string;
+}
+
+export type WorkflowStepStatus = 'idle' | 'running' | 'done' | 'error' | 'skipped';
+
 
 
 

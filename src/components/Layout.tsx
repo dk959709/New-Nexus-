@@ -17,6 +17,7 @@ import {
   Settings,
   Smartphone,
   Sparkles,
+  Workflow,
 } from 'lucide-react';
 import { NavLink, Outlet } from 'react-router-dom';
 import { useState } from 'react';
@@ -73,6 +74,15 @@ export function Layout() {
               {label}
             </NavLink>
           ))}
+        </nav>
+
+        <small className="brand-subtitle" style={{ marginTop: '1.25rem', marginBottom: '0.5rem', display: 'block' }}>WORKFLOW</small>
+
+        <nav className="side-nav" style={{ marginBottom: '1rem' }}>
+          <NavLink to="/workflows" onClick={handleNavClick}>
+            <Workflow size={18} />
+            Workflows
+          </NavLink>
         </nav>
 
         <NavLink className="settings-link" to="/settings" onClick={handleNavClick}>

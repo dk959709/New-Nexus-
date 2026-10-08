@@ -21,6 +21,7 @@ import type {
   ParallaxAgentConfig,
   ParallaxSession,
   CommanderConfig,
+  Workflow,
 } from '@/types';
 import { DEFAULT_PARALLAX_VOICES } from '@/data/parallaxVoices';
 
@@ -35,6 +36,7 @@ const KEYS = {
   webSearchApi: 'nexus-web-search-api',
   scholarApi: 'nexus-scholar-api',
   scholarApiConfigs: 'nexus-scholar-api-configs',
+  workflows: 'nexus-workflows',
   jarvisConfig: 'nexus-jarvis-config-v1',
   jarvisMessages: 'nexus-jarvis-messages-v1',
   edgeVoice: 'nexus-edge-voice-v1',
@@ -1645,6 +1647,27 @@ export const storage = {
     }
   },
 
+  getWorkflows(): Workflow[] {
+    try {
+      return read<Workflow[]>(KEYS.workflows, []);
+    } catch (e) {
+      console.error('Failed to read workflows from storage', e);
+      return [];
+    }
+  },
+
+  saveWorkflows(list: Workflow[]): void {
+    try {
+      write(KEYS.workflows, list);
+      if (typeof window !== 'undefined') {
+        window.dispatchEvent(new CustomEvent('nexus-workflows-updated', { detail: list }));
+        window.dispatchEvent(new Event('storage'));
+      }
+    } catch (e) {
+      console.error('Failed to save workflows to storage', e);
+    }
+  },
+
   getActiveWebSearchConfig(): { customUrl: string; customKey: string } | null {
     // 1. API Catalog Web Search API state in localStorage (highest priority)
     const state = this.getWebSearchApiState();
@@ -2546,3 +2569,6 @@ export const storage = {
     return cfg;
   },
 };
+
+export const getWorkflows = (): Workflow[] => storage.getWorkflows();
+export const saveWorkflows = (list: Workflow[]): void => storage.saveWorkflows(list);

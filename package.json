@@ -28,6 +28,7 @@
     "@google/genai": "^2.18.0",
     "@supabase/supabase-js": "^2.57.4",
     "@types/leaflet": "^1.9.22",
+    "@xyflow/react": "^12.12.0",
     "capacitor-tcp-socket": "^7.1.1",
     "cors": "^2.8.5",
     "dotenv": "^17.4.2",

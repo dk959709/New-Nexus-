@@ -15,6 +15,7 @@ const DevicesPage = lazy(() => import('@/pages/DevicesPage').then((m) => ({ defa
 const TelegramPage = lazy(() => import('@/pages/TelegramPage').then((m) => ({ default: m.TelegramPage })));
 const NewsPage = lazy(() => import('@/pages/NewsPage').then((m) => ({ default: m.NewsPage })));
 const SavedPage = lazy(() => import('@/pages/SavedPage').then((m) => ({ default: m.SavedPage })));
+const WorkflowsPage = lazy(() => import('@/pages/WorkflowsPage').then((m) => ({ default: m.WorkflowsPage })));
 
 function PageLoadingFallback() {
   return (
@@ -85,6 +86,14 @@ export default function App() {
               element={
                 <Suspense fallback={<PageLoadingFallback />}>
                   <SavedPage />
+                </Suspense>
+              }
+            />
+            <Route
+              path="/workflows"
+              element={
+                <Suspense fallback={<PageLoadingFallback />}>
+                  <WorkflowsPage />
                 </Suspense>
               }
             />
