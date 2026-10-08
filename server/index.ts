@@ -3003,8 +3003,13 @@ async function processAiChatInternal(
   extendedSearch?: boolean,
   image?: string,
   timezone?: string,
+  scholarMode?: boolean,
 ) {
   const trimmed = message.trim();
+  const isScholarRequest =
+    Boolean(scholarMode) ||
+    trimmed.includes('Academic Papers:\n') ||
+    trimmed.includes('Write a detailed, well-organized answer using ONLY these papers');
   const activeModel = providerConfig?.model || process.env.AI_MODEL || 'deepseek/deepseek-chat';
   const targetSourcesCount = searchMaxResults || (extendedSearch ? 20 : 10);
 
@@ -3286,9 +3291,12 @@ async function processAiChatInternal(
   tierGuidance += `- NATURAL CITATION FORMATTING: Cite sources naturally by name/organization (e.g. "According to Anthropic's official announcement...", "Per Wikipedia...", "Reuters reports...") or a normal citation format. NEVER reference internal tier labels like "Tier 1", "Tier 2", "Tier 3", "Tier 1 sources", or "[Tier 1]" anywhere in your visible response.\n`;
 
   const modelId = activeModel ? activeModel.trim() : '';
+  const styleInstruction = isScholarRequest
+    ? 'Provide direct, insightful, factual, comprehensive, and detailed academic answers.'
+    : 'Provide direct, insightful, factual, and concise answers.';
   const identityLine = modelId
-    ? `You are NEXUS AI, powered by ${providerConfig?.name || 'AI'}. The model running this chat right now is "${modelId}". If the user asks which model you are, answer with exactly this model ID. Do not claim any other model name, size, or parameter count unless it is written in this system prompt. Ignore any model names mentioned in earlier messages of this chat, because the user may have switched models. If you are not sure, say you are not sure. The user can see your reasoning in a "Thinking" box above your answer, so if they ask about your thinking process, tell them to open that box. Provide direct, insightful, factual, and concise answers.`
-    : `You are NEXUS AI, powered by ${providerConfig?.name || 'AI'}. Provide direct, insightful, factual, and concise answers.`;
+    ? `You are NEXUS AI, powered by ${providerConfig?.name || 'AI'}. The model running this chat right now is "${modelId}". If the user asks which model you are, answer with exactly this model ID. Do not claim any other model name, size, or parameter count unless it is written in this system prompt. Ignore any model names mentioned in earlier messages of this chat, because the user may have switched models. If you are not sure, say you are not sure. The user can see your reasoning in a "Thinking" box above your answer, so if they ask about your thinking process, tell them to open that box. ${styleInstruction}`
+    : `You are NEXUS AI, powered by ${providerConfig?.name || 'AI'}. ${styleInstruction}`;
 
   const systemInstructions: string[] = [
     identityLine,
@@ -3382,11 +3390,21 @@ async function processAiChatInternal(
   console.log(`[AI Assistant Web Search] Clean history turns sent to model: ${compactHistory.length}`);
   console.log(`[AI Assistant Web Search] ========================================`);
 
+  const requestedMaxTokens = providerConfig?.maxTokens || 512;
+  const effectiveMaxTokens = isScholarRequest
+    ? Math.max(requestedMaxTokens, 2000)
+    : requestedMaxTokens;
+
   const aiResult = await executeAiWithProviderOrFallback({
     messages,
     temperature: 0.4,
-    maxTokens: providerConfig?.maxTokens || 512,
-    providerConfig,
+    maxTokens: effectiveMaxTokens,
+    providerConfig: isScholarRequest && providerConfig
+      ? {
+          ...providerConfig,
+          maxTokens: Math.max(providerConfig.maxTokens || 0, 2000),
+        }
+      : providerConfig,
     image,
   });
 
@@ -3516,6 +3534,7 @@ const aiChatSchema = z.object({
   extendedSearch: z.boolean().optional(),
   image: z.string().optional(),
   timezone: z.string().max(100).optional(),
+  scholarMode: z.boolean().optional(),
 });
 
 
@@ -3617,7 +3636,7 @@ async function startServer() {
     }
     positions.sort((a, b) => a.pos - b.pos);
     const text = positions.map((p) => p.word).join(' ');
-    return text.length > 600 ? text.slice(0, 600).trim() + '...' : text;
+    return text.length > 700 ? text.slice(0, 700).trim() + '...' : text;
   }
 
   // OpenAlex Scholar Search Provider
@@ -3782,8 +3801,8 @@ async function startServer() {
       const authors = (p.authors || []).slice(0, 5).map((a) => a.name || '').filter(Boolean);
       const link = p.url || p.openAccessPdf?.url || '';
       let abstract = (p.abstract || '').trim();
-      if (abstract.length > 600) {
-        abstract = abstract.slice(0, 600) + '...';
+      if (abstract.length > 700) {
+        abstract = abstract.slice(0, 700) + '...';
       }
       const rawDoi = p.externalIds?.DOI || link.match(/10\.\d{4,9}\/[-._;()/:A-Z0-9]+/i)?.[0];
       return {
@@ -3855,8 +3874,8 @@ async function startServer() {
         ? `https://ui.adsabs.harvard.edu/abs/${d.bibcode}`
         : '';
       let abstract = (d.abstract || '').trim();
-      if (abstract.length > 600) {
-        abstract = abstract.slice(0, 600) + '...';
+      if (abstract.length > 700) {
+        abstract = abstract.slice(0, 700) + '...';
       }
       return {
         title,
@@ -3945,7 +3964,7 @@ async function startServer() {
 
       const title = (titleMatch?.[1] || 'Untitled Paper').replace(/\s+/g, ' ').trim();
       let abstract = (summaryMatch?.[1] || '').replace(/\s+/g, ' ').trim();
-      if (abstract.length > 600) abstract = abstract.slice(0, 600) + '...';
+      if (abstract.length > 700) abstract = abstract.slice(0, 700) + '...';
 
       const authorRegex = /<author>\s*<name>([\s\S]*?)<\/name>/g;
       const authors: string[] = [];
@@ -4446,6 +4465,7 @@ async function startServer() {
         parsed.data.extendedSearch,
         parsed.data.image,
         parsed.data.timezone,
+        parsed.data.scholarMode,
       );
       return res.json({ data: result });
     } catch (err: unknown) {

@@ -5485,15 +5485,15 @@ DIRECTIVES:
             const citedStr = `Cited by: ${p.citationCount}`;
             const linkStr = p.link ? `Link: ${p.link}` : '';
             let rawAbstract = (p.abstract || '').trim();
-            if (rawAbstract.length > 350) {
-              rawAbstract = rawAbstract.slice(0, 350) + '...';
+            if (rawAbstract.length > 700) {
+              rawAbstract = rawAbstract.slice(0, 700) + '...';
             }
             const abstractStr = rawAbstract ? `Abstract: ${rawAbstract}` : '';
             return `[${idx + 1}] "${p.title}" - ${authorsStr} ${yearStr}. ${journalStr}. ${citedStr}. ${linkStr}\n${abstractStr}`.trim();
           })
           .join('\n\n');
 
-        promptToSend = `${message}\n\nAcademic Papers:\n${numberedSources}\n\nAnswer using ONLY these papers for factual claims. Cite them as [1], [2]. If the papers do not answer the question, say so. Do not invent papers, authors, or numbers.`;
+        promptToSend = `${message}\n\nAcademic Papers:\n${numberedSources}\n\nWrite a detailed, well-organized answer using ONLY these papers for factual claims. Use this structure:\n1. Short overview (2-3 sentences).\n2. Key findings: explain each important idea in 2-4 sentences, with citations like [1], [3].\n3. How the papers agree or disagree, and what they measured or used (data, methods, numbers) when the abstracts say it.\n4. Open questions or limits of these papers.\n5. A final line: 'Sources used: [1], [2] ...'.\nCite every factual sentence. If the papers do not answer part of the question, say clearly what is missing. Do not invent papers, authors, numbers, or facts that are not in the papers. Write in simple, clear language.`;
       }
 
       try {
@@ -5511,6 +5511,7 @@ DIRECTIVES:
             language: currentLanguage,
             permanentMemories: currentPermanentMemories,
             image: fileToSend?.type === 'image' ? fileToSend.dataUrl : undefined,
+            scholarMode: true,
           },
         );
 
