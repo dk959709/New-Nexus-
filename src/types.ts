@@ -1297,6 +1297,14 @@ export interface WorkflowOutput {
   value: string;
 }
 
+export interface WorkflowAISettings {
+  role?: string;
+  prompt?: string;
+  maxTokens?: string;
+  providerId?: string;
+  modelId?: string;
+}
+
 export type WorkflowStepStatus = 'idle' | 'running' | 'done' | 'error' | 'skipped';
 
 

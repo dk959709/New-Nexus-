@@ -6,6 +6,7 @@ import type {
   WorkflowNodeType,
   WorkflowStepStatus,
   WorkflowOutput,
+  AIProviderConfig,
 } from '@/types';
 import { storage } from '@/lib/storage';
 import { runWorkflow, hasWorkflowCycle } from '@/lib/workflowEngine';
@@ -1718,6 +1719,16 @@ export function WorkflowsPage() {
   );
 }
 
+function getProviderModels(provider: AIProviderConfig): Array<{ id: string; name: string }> {
+  if (Array.isArray(provider.models) && provider.models.length > 0) {
+    return provider.models.map((m) => ({ id: m.id, name: m.name || m.id }));
+  }
+  if (provider.model && provider.model.trim()) {
+    return [{ id: provider.model.trim(), name: provider.model.trim() }];
+  }
+  return [];
+}
+
 /**
  * Shared StepSettingsForm component for configuring node properties
  */
@@ -1733,6 +1744,40 @@ export function StepSettingsForm({
   onUpdateSettings,
 }: StepSettingsFormProps) {
   const settings = node.settings || {};
+
+  const [configuredProviders, setConfiguredProviders] = useState<AIProviderConfig[]>(() => {
+    try {
+      return storage.getAIProvidersState().providers || [];
+    } catch {
+      return [];
+    }
+  });
+
+  useEffect(() => {
+    const syncProviders = () => {
+      try {
+        setConfiguredProviders(storage.getAIProvidersState().providers || []);
+      } catch {
+        setConfiguredProviders([]);
+      }
+    };
+    window.addEventListener('storage', syncProviders);
+    window.addEventListener('nexus-ai-providers-updated', syncProviders);
+    return () => {
+      window.removeEventListener('storage', syncProviders);
+      window.removeEventListener('nexus-ai-providers-updated', syncProviders);
+    };
+  }, []);
+
+  const selectedProvider = useMemo(() => {
+    if (!settings.providerId || settings.providerId === 'existing') return null;
+    return configuredProviders.find((p) => p.id === settings.providerId) || null;
+  }, [settings.providerId, configuredProviders]);
+
+  const selectedProviderModels = useMemo(() => {
+    if (!selectedProvider) return [];
+    return getProviderModels(selectedProvider);
+  }, [selectedProvider]);
 
   const handleChange = (field: string, val: string) => {
     onUpdateSettings({ ...settings, [field]: val });
@@ -1806,6 +1851,62 @@ export function StepSettingsForm({
 
       {node.type === 'ai' && (
         <div className="space-y-3">
+          <div>
+            <label className="text-xs font-medium text-slate-300 block mb-1">
+              AI provider
+            </label>
+            <select
+              value={settings.providerId || ''}
+              onChange={(e) => {
+                const nextProviderId = e.target.value;
+                handleChange('providerId', nextProviderId);
+                if (!nextProviderId || nextProviderId === 'existing') {
+                  handleChange('modelId', '');
+                } else {
+                  const targetProvider = configuredProviders.find((p) => p.id === nextProviderId);
+                  const firstModel = targetProvider
+                    ? getProviderModels(targetProvider)[0]?.id || targetProvider.model || ''
+                    : '';
+                  handleChange('modelId', firstModel);
+                }
+              }}
+              className="w-full bg-slate-950 border border-white/10 rounded-xl px-3 py-2 text-white text-xs focus:outline-none focus:border-cyan-500 font-medium"
+            >
+              <option value="">Use my active AI</option>
+              <option value="existing">Default Built-in AI</option>
+              {configuredProviders.map((provider) => (
+                <option key={provider.id} value={provider.id}>
+                  {provider.name}
+                </option>
+              ))}
+            </select>
+          </div>
+
+          {Boolean(settings.providerId) && settings.providerId !== 'existing' && (
+            <div>
+              <label className="text-xs font-medium text-slate-300 block mb-1">
+                Model
+              </label>
+              <select
+                value={settings.modelId || (selectedProviderModels[0]?.id || '')}
+                onChange={(e) => handleChange('modelId', e.target.value)}
+                className="w-full bg-slate-950 border border-white/10 rounded-xl px-3 py-2 text-white text-xs focus:outline-none focus:border-cyan-500 font-medium font-mono"
+              >
+                {selectedProviderModels.length > 0 ? (
+                  selectedProviderModels.map((m) => (
+                    <option key={m.id} value={m.id}>
+                      {m.name || m.id}
+                    </option>
+                  ))
+                ) : (
+                  <option value={settings.modelId || ''}>
+                    {settings.modelId || 'Default Model'}
+                  </option>
+                )}
+              </select>
+            </div>
+          )}
+
           <div>
             <label className="text-xs font-medium text-slate-300 block mb-1">
               AI Persona Role

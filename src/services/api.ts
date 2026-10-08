@@ -333,6 +333,7 @@ export const api = {
       extendedSearch?: boolean;
       image?: string;
       scholarMode?: boolean;
+      maxTokens?: number;
     },
   ): Promise<{
     answer: string;
@@ -394,6 +395,7 @@ export const api = {
         extendedSearch: options?.extendedSearch,
         image: options?.image,
         scholarMode: options?.scholarMode,
+        maxTokens: options?.maxTokens,
         timezone: (() => {
           try {
             return Intl.DateTimeFormat().resolvedOptions().timeZone;

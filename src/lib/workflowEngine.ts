@@ -206,13 +206,27 @@ async function executeStep(
       if (isNaN(parsedTokens)) parsedTokens = 1500;
       parsedTokens = Math.max(200, Math.min(4000, parsedTokens));
 
-      const activeProvider = storage.getActiveAIProvider();
-      const providerCopy = activeProvider
-        ? { ...activeProvider, maxTokens: parsedTokens }
-        : undefined;
+      const providerId =
+        resolvedSettings.providerId && resolvedSettings.providerId.trim()
+          ? resolvedSettings.providerId.trim()
+          : undefined;
+      const modelId =
+        resolvedSettings.modelId && resolvedSettings.modelId.trim()
+          ? resolvedSettings.modelId.trim()
+          : undefined;
+
+      const provider = providerId
+        ? storage.getProviderForSession(providerId, modelId)
+        : storage.getActiveAIProvider();
+
+      const providerCopy = provider
+        ? { ...provider, maxTokens: parsedTokens }
+        : null;
 
       const res = await withRetry(async () => {
-        return await api.aiChat(fullPrompt, [], '', providerCopy, false);
+        return await api.aiChat(fullPrompt, [], '', providerCopy, false, {
+          maxTokens: parsedTokens,
+        });
       });
       return { output: { type: 'text', value: res.answer || '' } };
     }
