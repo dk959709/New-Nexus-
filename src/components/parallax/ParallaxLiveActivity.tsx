@@ -40,47 +40,42 @@ export const ParallaxLiveActivity: React.FC<ParallaxLiveActivityProps> = ({
   return (
     <div
       id="parallax-live-swarm-activity"
-      className="nexus-corner-bracket relative rounded-2xl overflow-hidden mb-5"
-      style={{
-        background: 'linear-gradient(135deg, rgba(6, 16, 26, 0.94) 0%, rgba(3, 10, 18, 0.98) 100%)',
-        border: '1px solid rgba(0, 240, 255, 0.25)',
-        boxShadow: '0 8px 32px rgba(0, 0, 0, 0.5), inset 0 0 24px rgba(0, 240, 255, 0.04)',
-      }}
+      className="relative py-4"
     >
       {/* Header bar */}
-      <div className="px-5 py-3.5 bg-black/60 backdrop-blur-md border-b border-cyan-500/15 flex items-center justify-between flex-wrap gap-2">
+      <div className="pb-3.5 mb-2 border-b border-white/[0.06] flex items-center justify-between flex-wrap gap-2">
         <div className="flex items-center gap-2.5">
           <div className="w-2 h-2 rounded-full bg-cyan-400 animate-pulse shadow-[0_0_8px_#00f0ff]" />
-          <h2 className="m-0 text-xs font-mono font-black uppercase text-white tracking-wider">
+          <h2 className="m-0 text-xs font-mono font-black uppercase text-slate-100 tracking-wider">
             LIVE SWARM ACTIVITY
           </h2>
-          <span className="text-[10px] font-mono px-2 py-0.5 rounded-full bg-cyan-500/10 text-cyan-300 border border-cyan-500/20 font-bold">
+          <span className="text-[10px] font-mono px-2.5 py-0.5 rounded-full bg-slate-900/40 backdrop-blur-xl text-cyan-300 font-bold">
             {messages.length} EVENTS
           </span>
         </div>
 
-        <div className="flex items-center gap-3 text-[11px] font-mono text-slate-400">
+        <div className="flex items-center gap-3 text-[11px] font-mono text-slate-300">
           <div className="flex items-center gap-1.5">
-            <Clock size={12} className="text-slate-400" />
+            <Clock size={12} className="text-slate-300" />
             <span>REAL-TIME TELEMETRY</span>
           </div>
         </div>
       </div>
 
       {/* Activity Table Container */}
-      <div className="p-4 overflow-x-auto">
+      <div className="pt-2 overflow-x-auto">
         {messages.length === 0 && !isRunning ? (
-          <div className="py-8 text-center text-slate-400 font-mono text-xs">
-            <Radio size={24} className="mx-auto mb-2 text-cyan-400/40" />
-            <p className="m-0 text-slate-300 font-bold">SWARM IDLE • READY FOR DEPLOYMENT</p>
-            <p className="m-0 text-slate-500 text-[11px] mt-1">
+          <div className="py-10 text-center text-slate-300 font-mono text-xs">
+            <Radio size={24} className="mx-auto mb-2 text-cyan-400/50" />
+            <p className="m-0 text-slate-100 font-bold">SWARM IDLE • READY FOR DEPLOYMENT</p>
+            <p className="m-0 text-slate-300 text-[11px] mt-1">
               Select or type a topic above to initiate real-time multi-agent activity tracking.
             </p>
           </div>
         ) : (
-          <div className="space-y-2 min-w-[580px]">
+          <div className="divide-y divide-white/[0.06] min-w-[540px]">
             {/* Header Columns */}
-            <div className="grid grid-cols-12 gap-2.5 px-3 py-1.5 text-[10px] font-mono font-bold uppercase tracking-wider text-slate-400 border-b border-white/10">
+            <div className="grid grid-cols-12 gap-2.5 px-3 py-2 text-[10px] font-mono font-bold uppercase tracking-wider text-slate-300">
               <div className="col-span-3">AGENT / ROLE</div>
               <div className="col-span-2">STATUS</div>
               <div className="col-span-2">ROUND / MODEL</div>
@@ -91,24 +86,20 @@ export const ParallaxLiveActivity: React.FC<ParallaxLiveActivityProps> = ({
             {/* Currently Active Row (if running) */}
             {isRunning && activeAgentConfig && (
               <div
-                className="grid grid-cols-12 gap-2.5 items-center px-3 py-2.5 rounded-xl border border-cyan-400/60 bg-cyan-500/10 animate-pulse"
-                style={{
-                  boxShadow: '0 0 16px rgba(0, 240, 255, 0.15)',
-                }}
+                className="grid grid-cols-12 gap-2.5 items-center px-3 py-3 rounded-xl bg-cyan-500/10 border-l-2 border-cyan-400 animate-pulse"
               >
                 <div className="col-span-3 flex items-center gap-2 min-w-0">
                   <div
                     className="w-7 h-7 rounded-lg flex items-center justify-center font-mono font-bold text-xs shrink-0"
                     style={{
                       background: `${activeAgentConfig.accentColor || '#00f0ff'}25`,
-                      border: `1px solid ${activeAgentConfig.accentColor || '#00f0ff'}`,
                       color: activeAgentConfig.accentColor || '#00f0ff',
                     }}
                   >
                     {activeAgentConfig.initials || activeAgentConfig.name.slice(0, 2)}
                   </div>
                   <div className="min-w-0">
-                    <div className="text-xs font-mono font-bold text-white truncate">
+                    <div className="text-xs font-mono font-bold text-slate-100 truncate">
                       {activeAgentConfig.name}
                     </div>
                     <div className="text-[10px] text-cyan-300 truncate">
@@ -118,15 +109,15 @@ export const ParallaxLiveActivity: React.FC<ParallaxLiveActivityProps> = ({
                 </div>
 
                 <div className="col-span-2">
-                  <span className="inline-flex items-center gap-1.5 px-2 py-0.5 rounded-full text-[10px] font-mono font-bold bg-cyan-400/20 text-cyan-200 border border-cyan-400/50">
+                  <span className="inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-full text-[10px] font-mono font-bold bg-cyan-400/20 text-cyan-200">
                     <span className="w-1.5 h-1.5 rounded-full bg-cyan-400 animate-ping" />
                     ACTIVE
                   </span>
                 </div>
 
-                <div className="col-span-2 text-[10px] font-mono font-bold text-slate-200">
+                <div className="col-span-2 text-[10px] font-mono font-bold text-slate-100">
                   <div>ROUND {currentRound ? `0${currentRound}` : '01'}</div>
-                  <div className="text-[9px] text-slate-400 font-normal truncate">
+                  <div className="text-[9px] text-slate-300 font-normal truncate">
                     {activeAgentConfig.modelId || 'LLAMA 3.3 70B'}
                   </div>
                 </div>
@@ -142,7 +133,7 @@ export const ParallaxLiveActivity: React.FC<ParallaxLiveActivityProps> = ({
                   )}
                 </div>
 
-                <div className="col-span-1 text-right text-[10px] font-mono text-cyan-400 font-bold">
+                <div className="col-span-1 text-right text-[10px] font-mono text-cyan-300 font-bold">
                   NOW
                 </div>
               </div>
@@ -155,7 +146,7 @@ export const ParallaxLiveActivity: React.FC<ParallaxLiveActivityProps> = ({
               return (
                 <div
                   key={msg.id}
-                  className="grid grid-cols-12 gap-2.5 items-center px-3 py-2 rounded-xl bg-white/[0.03] border border-white/5 hover:border-cyan-500/30 transition-all font-mono"
+                  className="grid grid-cols-12 gap-2.5 items-center px-3 py-2.5 rounded-xl hover:bg-slate-900/40 transition-colors font-mono"
                 >
                   {/* Agent & Role */}
                   <div className="col-span-3 flex items-center gap-2 min-w-0">
@@ -163,17 +154,16 @@ export const ParallaxLiveActivity: React.FC<ParallaxLiveActivityProps> = ({
                       className="w-6 h-6 rounded-md flex items-center justify-center text-[10px] font-bold shrink-0"
                       style={{
                         background: `${msg.accentColor}25`,
-                        border: `1px solid ${msg.accentColor}`,
                         color: msg.accentColor,
                       }}
                     >
                       {msg.agentName.slice(0, 2)}
                     </div>
                     <div className="min-w-0">
-                      <div className="text-xs font-bold text-slate-200 truncate">
+                      <div className="text-xs font-bold text-slate-100 truncate">
                         {msg.agentName}
                       </div>
-                      <div className="text-[10px] text-slate-400 truncate">
+                      <div className="text-[10px] text-slate-300 truncate">
                         {msg.role}
                       </div>
                     </div>
@@ -181,24 +171,24 @@ export const ParallaxLiveActivity: React.FC<ParallaxLiveActivityProps> = ({
 
                   {/* Status badge */}
                   <div className="col-span-2">
-                    <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-bold bg-emerald-500/15 text-emerald-300 border border-emerald-500/30">
+                    <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-bold bg-emerald-500/15 text-emerald-300">
                       <CheckCircle2 size={10} />
                       COMPLETED
                     </span>
                   </div>
 
                   {/* Round & Model */}
-                  <div className="col-span-2 text-[10px] text-slate-300 font-bold">
+                  <div className="col-span-2 text-[10px] text-slate-100 font-bold">
                     <div>ROUND 0{msg.round}</div>
-                    <div className="text-[9px] text-slate-400 font-normal truncate">
+                    <div className="text-[9px] text-slate-300 font-normal truncate">
                       {msg.model || 'Llama 3.3 70B'}
                     </div>
                   </div>
 
                   {/* Activity Summary */}
-                  <div className="col-span-4 text-[11px] text-slate-300 font-sans truncate flex items-center gap-2">
+                  <div className="col-span-4 text-[11px] text-slate-200 font-sans truncate flex items-center gap-2">
                     {msg.toolUsed ? (
-                      <span className="inline-flex items-center gap-1 text-[10px] font-mono px-1.5 py-0.5 rounded bg-cyan-500/15 text-cyan-300 border border-cyan-500/30 shrink-0">
+                      <span className="inline-flex items-center gap-1 text-[10px] font-mono px-2 py-0.5 rounded-full bg-cyan-500/15 text-cyan-300 shrink-0">
                         <Search size={9} />
                         VERITAS
                       </span>
@@ -208,7 +198,7 @@ export const ParallaxLiveActivity: React.FC<ParallaxLiveActivityProps> = ({
 
                   {/* Timestamp & Play Voice */}
                   <div className="col-span-1 text-right flex items-center justify-end gap-1.5">
-                    <span className="text-[10px] text-slate-500 font-mono">
+                    <span className="text-[10px] text-slate-300 font-mono">
                       {new Date(msg.timestamp).toLocaleTimeString([], {
                         minute: '2-digit',
                         second: '2-digit',
@@ -218,10 +208,10 @@ export const ParallaxLiveActivity: React.FC<ParallaxLiveActivityProps> = ({
                       <button
                         type="button"
                         onClick={() => onPlayVoice(msg)}
-                        className={`p-1 rounded cursor-pointer transition-colors ${
+                        className={`p-1 rounded-full cursor-pointer transition-colors ${
                           isVoicePlaying
                             ? 'text-cyan-300 bg-cyan-500/20'
-                            : 'text-slate-500 hover:text-cyan-300 hover:bg-white/5'
+                            : 'text-slate-300 hover:text-cyan-300 hover:bg-slate-800/60'
                         }`}
                         title="Listen to agent audio"
                       >

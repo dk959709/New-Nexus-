@@ -104,21 +104,16 @@ export const ParallaxAgentMatrix: React.FC<ParallaxAgentMatrixProps> = ({
   return (
     <div
       id="parallax-agent-matrix"
-      className="nexus-corner-bracket relative rounded-2xl overflow-hidden mb-6"
-      style={{
-        background: 'linear-gradient(135deg, rgba(6, 16, 26, 0.94) 0%, rgba(3, 10, 18, 0.98) 100%)',
-        border: '1px solid rgba(0, 240, 255, 0.25)',
-        boxShadow: '0 8px 32px rgba(0, 0, 0, 0.5), inset 0 0 24px rgba(0, 240, 255, 0.04)',
-      }}
+      className="relative py-5 border-b border-white/[0.06]"
     >
       {/* Matrix Header & Filters */}
-      <div className="px-5 py-3.5 bg-black/60 backdrop-blur-md border-b border-cyan-500/15 flex items-center justify-between flex-wrap gap-3">
+      <div className="pb-4 border-b border-white/[0.06] flex items-center justify-between flex-wrap gap-3">
         <div className="flex items-center gap-2.5">
           <Users size={16} className="text-cyan-400" />
-          <h2 className="m-0 text-xs font-mono font-black uppercase text-white tracking-wider">
+          <h2 className="m-0 text-xs font-mono font-black uppercase text-slate-100 tracking-wider">
             AGENT MATRIX & CONFIGURATION
           </h2>
-          <span className="text-[10px] font-mono px-2 py-0.5 rounded-full bg-cyan-500/10 text-cyan-300 border border-cyan-500/20 font-bold">
+          <span className="text-[10px] font-mono px-2.5 py-0.5 rounded-full bg-slate-900/40 backdrop-blur-xl text-cyan-300 font-bold">
             {filteredAgents.length} / {combinedAgents.length} ACTIVE
           </span>
         </div>
@@ -126,21 +121,21 @@ export const ParallaxAgentMatrix: React.FC<ParallaxAgentMatrixProps> = ({
         {/* Search input */}
         <div className="flex items-center gap-2">
           <div className="relative">
-            <Search size={12} className="absolute left-2.5 top-1/2 -translate-y-1/2 text-slate-400" />
+            <Search size={12} className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-300" />
             <input
               type="text"
               value={searchQuery}
               onChange={(e) => setSearchQuery(e.target.value)}
               placeholder="Search agent or role..."
-              className="pl-7 pr-3 py-1 text-xs font-mono bg-black/60 border border-white/10 rounded-lg text-white placeholder-slate-500 focus:outline-none focus:border-cyan-400/50 w-36 sm:w-48 transition-all"
+              className="pl-8 pr-3.5 py-1.5 text-xs font-mono bg-slate-900/40 backdrop-blur-xl rounded-full text-slate-100 placeholder-slate-400 focus:outline-none focus:ring-1 focus:ring-cyan-400/50 w-40 sm:w-52 transition-all"
             />
           </div>
         </div>
       </div>
 
       {/* Cluster Pill Filters */}
-      <div className="px-5 py-2.5 bg-black/30 border-b border-white/5 flex items-center gap-1.5 flex-wrap text-xs font-mono">
-        <span className="text-slate-400 text-[11px] mr-1 flex items-center gap-1">
+      <div className="py-3 border-b border-white/[0.06] flex items-center gap-2 flex-wrap text-xs font-mono">
+        <span className="text-slate-300 text-[11px] mr-1 flex items-center gap-1">
           <Filter size={11} /> CLUSTER:
         </span>
         {[
@@ -156,10 +151,10 @@ export const ParallaxAgentMatrix: React.FC<ParallaxAgentMatrixProps> = ({
             key={f.id}
             type="button"
             onClick={() => setClusterFilter(f.id as typeof clusterFilter)}
-            className={`px-2.5 py-0.5 rounded-lg text-[11px] font-bold transition-all cursor-pointer ${
+            className={`px-3 py-1 rounded-full text-[11px] font-bold transition-all cursor-pointer ${
               clusterFilter === f.id
-                ? 'bg-cyan-500/20 text-cyan-300 border border-cyan-400/50 shadow-[0_0_8px_rgba(0,240,255,0.2)]'
-                : 'bg-white/[0.03] text-slate-400 border border-white/5 hover:text-white hover:bg-white/10'
+                ? 'bg-cyan-500/20 text-cyan-300'
+                : 'bg-slate-900/40 backdrop-blur-xl text-slate-300 hover:text-slate-100 hover:bg-slate-800/60'
             }`}
           >
             {f.label}
@@ -167,9 +162,9 @@ export const ParallaxAgentMatrix: React.FC<ParallaxAgentMatrixProps> = ({
         ))}
       </div>
 
-      {/* Agent Cards Grid */}
-      <div className="p-4 sm:p-5">
-        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-3">
+      {/* Agent Matrix Grid */}
+      <div className="pt-5">
+        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-4">
           {filteredAgents.map((agent) => {
             const isSpeaking = activeSpeakingAgentId === agent.id;
             const isSelected = selectedAgentId === agent.id;
@@ -182,38 +177,35 @@ export const ParallaxAgentMatrix: React.FC<ParallaxAgentMatrixProps> = ({
               <div
                 key={agent.id}
                 onClick={() => onSelectAgent?.(isSelected ? null : agent.id)}
-                className={`p-3.5 rounded-xl cursor-pointer transition-all duration-200 font-mono relative flex flex-col justify-between ${
+                className={`p-4 rounded-xl cursor-pointer transition-colors duration-200 font-mono relative flex flex-col justify-between hover:bg-slate-900/40 ${
                   isSelected
-                    ? 'border-2 border-cyan-400 bg-cyan-950/40 shadow-[0_0_20px_rgba(0,240,255,0.3)]'
+                    ? 'bg-cyan-950/30 ring-1 ring-cyan-400/50'
                     : isSpeaking
-                    ? 'border border-cyan-400 bg-cyan-950/25 animate-pulse shadow-[0_0_15px_rgba(0,240,255,0.2)]'
-                    : hasCompleted
-                    ? 'border border-emerald-500/30 bg-white/[0.02] hover:border-cyan-400/40 hover:bg-white/[0.04]'
-                    : 'border border-white/10 bg-white/[0.01] hover:border-white/20'
+                    ? 'bg-cyan-950/25 animate-pulse'
+                    : 'bg-slate-900/25 backdrop-blur-xl'
                 }`}
                 style={{
-                  borderLeft: `3px solid ${accentColor}`,
+                  borderLeft: `2px solid ${accentColor}`,
                 }}
               >
                 {/* Top Row: Icon + Name + Role + Status */}
                 <div>
                   <div className="flex items-center justify-between gap-2 mb-2">
-                    <div className="flex items-center gap-2 min-w-0">
+                    <div className="flex items-center gap-2.5 min-w-0">
                       <div
                         className="w-7 h-7 rounded-lg flex items-center justify-center font-bold text-xs shrink-0"
                         style={{
                           background: `${accentColor}25`,
-                          border: `1.5px solid ${accentColor}`,
                           color: accentColor,
                         }}
                       >
                         {agent.initials || agent.name.slice(0, 2)}
                       </div>
                       <div className="min-w-0">
-                        <div className="text-xs font-black truncate text-white">
+                        <div className="text-xs font-black truncate text-slate-100">
                           {agent.name}
                         </div>
-                        <div className="text-[10px] text-slate-400 truncate">
+                        <div className="text-[10px] text-slate-300 truncate">
                           {agent.role}
                         </div>
                       </div>
@@ -226,12 +218,12 @@ export const ParallaxAgentMatrix: React.FC<ParallaxAgentMatrixProps> = ({
                           ACTIVE
                         </span>
                       ) : hasCompleted ? (
-                        <span className="inline-flex items-center gap-1 text-[10px] font-bold text-emerald-400">
+                        <span className="inline-flex items-center gap-1 text-[10px] font-bold text-emerald-300">
                           <CheckCircle2 size={10} />
                           {replies.length} R
                         </span>
                       ) : (
-                        <span className="inline-flex items-center gap-1 text-[10px] text-slate-500">
+                        <span className="inline-flex items-center gap-1 text-[10px] text-slate-300">
                           <Clock size={10} />
                           STANDBY
                         </span>
@@ -241,18 +233,18 @@ export const ParallaxAgentMatrix: React.FC<ParallaxAgentMatrixProps> = ({
 
                   {/* Model & Capability Badges */}
                   <div className="flex items-center gap-1.5 mt-2 flex-wrap">
-                    <span className="text-[9px] px-1.5 py-0.5 rounded bg-white/5 text-slate-300 border border-white/10 truncate max-w-[140px] flex items-center gap-1">
-                      <Cpu size={9} className="text-slate-400" />
+                    <span className="text-[9px] px-2 py-0.5 rounded-full bg-slate-900/40 text-slate-300 truncate max-w-[140px] flex items-center gap-1">
+                      <Cpu size={9} className="text-slate-300" />
                       <span>{agent.modelId || 'Llama 3.3 70B'}</span>
                     </span>
                     {agent.hasToolAccess && (
-                      <span className="text-[9px] px-1.5 py-0.5 rounded bg-cyan-500/20 text-cyan-300 border border-cyan-500/40 font-bold flex items-center gap-0.5">
+                      <span className="text-[9px] px-2 py-0.5 rounded-full bg-cyan-500/20 text-cyan-300 font-bold flex items-center gap-0.5">
                         <Search size={9} />
                         VERITAS
                       </span>
                     )}
                     {agent.isDynamic && (
-                      <span className="text-[9px] px-1.5 py-0.5 rounded bg-purple-500/20 text-purple-300 border border-purple-500/40 font-bold flex items-center gap-0.5">
+                      <span className="text-[9px] px-2 py-0.5 rounded-full bg-purple-500/20 text-purple-300 font-bold flex items-center gap-0.5">
                         <Sparkles size={9} />
                         SPEC
                       </span>
@@ -261,24 +253,24 @@ export const ParallaxAgentMatrix: React.FC<ParallaxAgentMatrixProps> = ({
                 </div>
 
                 {/* Bottom Row: Current Activity / Latest Argument snippet */}
-                <div className="mt-2.5 pt-2 border-t border-white/5 text-[11px]">
-                  <div className="text-[9px] text-slate-500 font-bold uppercase tracking-wider mb-0.5">
+                <div className="mt-3 pt-2.5 border-t border-white/[0.06] text-[11px]">
+                  <div className="text-[9px] text-slate-300 font-bold uppercase tracking-wider mb-0.5">
                     CURRENT ACTIVITY:
                   </div>
                   {lastReply ? (
-                    <div className="text-slate-300 font-sans line-clamp-2 leading-relaxed text-[11px]">
+                    <div className="text-slate-100 font-sans line-clamp-2 leading-relaxed text-[11px]">
                       &ldquo;{lastReply.text}&rdquo;
                     </div>
                   ) : (
-                    <div className="text-slate-500 italic font-mono text-[10px]">
+                    <div className="text-slate-300 italic font-mono text-[10px]">
                       Awaiting deliberation round mobilization
                     </div>
                   )}
 
                   {/* Audio voice preview if replied */}
                   {lastReply && onPlayVoice && (
-                    <div className="mt-2 flex items-center justify-between text-[10px] font-mono pt-1.5 border-t border-white/5">
-                      <span className="text-slate-400">
+                    <div className="mt-2 flex items-center justify-between text-[10px] font-mono pt-1.5 border-t border-white/[0.06]">
+                      <span className="text-slate-300">
                         {lastReply.mood ? `Mood: ${lastReply.mood}` : 'Voice ready'}
                       </span>
                       <button
@@ -287,7 +279,7 @@ export const ParallaxAgentMatrix: React.FC<ParallaxAgentMatrixProps> = ({
                           e.stopPropagation();
                           onPlayVoice(lastReply);
                         }}
-                        className="text-cyan-400 hover:text-cyan-200 flex items-center gap-1 cursor-pointer font-bold"
+                        className="text-cyan-300 hover:text-cyan-200 flex items-center gap-1 cursor-pointer font-bold"
                       >
                         <Volume2 size={11} />
                         <span>Listen</span>

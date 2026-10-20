@@ -147,28 +147,10 @@ export const ParallaxSettings: React.FC<ParallaxSettingsProps> = ({ config, onCo
   });
 
   return (
-    <div id="parallax-settings-container" style={{ display: 'flex', flexDirection: 'column', gap: '20px' }}>
+    <div id="parallax-settings-container" className="divide-y divide-white/[0.06] space-y-6">
       {/* Toast notification */}
       {saveToast && (
-        <div
-          style={{
-            position: 'fixed',
-            bottom: '24px',
-            right: '24px',
-            background: 'rgba(6, 182, 212, 0.95)',
-            color: '#fff',
-            padding: '10px 18px',
-            borderRadius: '10px',
-            boxShadow: '0 4px 20px rgba(0,0,0,0.4)',
-            fontSize: '13px',
-            fontWeight: 700,
-            zIndex: 9999,
-            display: 'flex',
-            alignItems: 'center',
-            gap: '8px',
-            border: '1px solid rgba(255,255,255,0.3)',
-          }}
-        >
+        <div className="fixed bottom-6 right-6 z-50 px-4 py-2.5 rounded-full bg-cyan-500/95 text-slate-950 font-bold text-xs shadow-xl flex items-center gap-2">
           <Check size={16} />
           {saveToast}
         </div>
@@ -177,69 +159,41 @@ export const ParallaxSettings: React.FC<ParallaxSettingsProps> = ({ config, onCo
       {/* Summary Header Banner */}
       <div
         id="parallax-settings-summary-banner"
-        style={{
-          padding: '18px 22px',
-          borderRadius: '16px',
-          background: 'linear-gradient(145deg, rgba(8, 26, 38, 0.85) 0%, rgba(4, 14, 22, 0.92) 100%)',
-          border: '1px solid rgba(97, 215, 201, 0.3)',
-          boxShadow: '0 4px 20px rgba(0, 0, 0, 0.35)',
-          display: 'flex',
-          alignItems: 'center',
-          justifyContent: 'space-between',
-          flexWrap: 'wrap',
-          gap: '16px',
-        }}
+        className="py-4 flex items-center justify-between flex-wrap gap-4"
       >
         <div>
-          <div style={{ display: 'flex', alignItems: 'center', gap: '10px', marginBottom: '4px' }}>
-            <Layers size={20} color="#61d7c9" />
-            <span style={{ fontSize: '15px', fontWeight: 800, color: '#fff', letterSpacing: '-0.01em' }}>
+          <div className="flex items-center gap-2.5 mb-1">
+            <Layers size={20} className="text-cyan-400" />
+            <span className="text-sm sm:text-base font-extrabold text-slate-100 tracking-tight">
               PARALLAX AGENT ORCHESTRATION PIPELINE
             </span>
           </div>
           <p
             id="parallax-agents-summary-line"
-            style={{ margin: 0, fontSize: '13px', color: '#cbd5e1', lineHeight: 1.45 }}
+            className="m-0 text-xs sm:text-sm text-slate-300 leading-relaxed"
           >
-            <strong style={{ color: '#61d7c9' }}>{enabledCount} of 20 Built-in Agents</strong> (
+            <strong className="text-cyan-300">{enabledCount} of 20 Built-in Agents</strong> (
             {veritasEnabled ? '1 with tool access: VERITAS' : '0 with tool access'}
             ) active in Parallax Pipeline.
           </p>
         </div>
 
         {/* Action Controls */}
-        <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
+        <div className="flex items-center gap-2.5">
           {confirmResetAll ? (
-            <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
-              <span style={{ fontSize: '12px', color: '#f87171', fontWeight: 600 }}>Reset all 20?</span>
+            <div className="flex items-center gap-2">
+              <span className="text-xs text-rose-400 font-semibold">Reset all 20?</span>
               <button
                 type="button"
                 onClick={handleResetAll}
-                style={{
-                  padding: '6px 12px',
-                  borderRadius: '8px',
-                  background: '#ef4444',
-                  color: '#fff',
-                  fontSize: '12px',
-                  fontWeight: 700,
-                  border: 'none',
-                  cursor: 'pointer',
-                }}
+                className="px-3 py-1.5 rounded-full bg-rose-500 text-white text-xs font-bold cursor-pointer"
               >
                 Yes, Reset All
               </button>
               <button
                 type="button"
                 onClick={() => setConfirmResetAll(false)}
-                style={{
-                  padding: '6px 12px',
-                  borderRadius: '8px',
-                  background: 'rgba(255,255,255,0.1)',
-                  color: '#cbd5e1',
-                  fontSize: '12px',
-                  border: 'none',
-                  cursor: 'pointer',
-                }}
+                className="px-3 py-1.5 rounded-full bg-slate-900/40 backdrop-blur-xl text-slate-200 text-xs cursor-pointer"
               >
                 Cancel
               </button>
@@ -249,21 +203,7 @@ export const ParallaxSettings: React.FC<ParallaxSettingsProps> = ({ config, onCo
               id="parallax-reset-all-btn"
               type="button"
               onClick={() => setConfirmResetAll(true)}
-              style={{
-                padding: '8px 14px',
-                borderRadius: '10px',
-                background: 'rgba(15, 23, 42, 0.7)',
-                border: '1px solid rgba(165, 207, 214, 0.25)',
-                color: '#cbd5e1',
-                fontSize: '12px',
-                fontWeight: 600,
-                cursor: 'pointer',
-                display: 'flex',
-                alignItems: 'center',
-                gap: '6px',
-                transition: 'all 0.15s ease',
-              }}
-              className="hover:border-[#61d7c9] hover:text-white"
+              className="px-4 py-2 rounded-full bg-slate-900/40 backdrop-blur-xl hover:bg-slate-800/60 text-slate-200 hover:text-white text-xs font-semibold cursor-pointer flex items-center gap-1.5 transition-all"
             >
               <RotateCcw size={14} />
               Reset All to Defaults
@@ -272,59 +212,34 @@ export const ParallaxSettings: React.FC<ParallaxSettingsProps> = ({ config, onCo
         </div>
       </div>
 
-      {/* Safety & Tool Access Notice */}
-      <div
-        style={{
-          padding: '12px 16px',
-          borderRadius: '12px',
-          background: 'rgba(6, 16, 24, 0.7)',
-          border: '1px solid rgba(165, 207, 214, 0.2)',
-          display: 'flex',
-          alignItems: 'center',
-          gap: '12px',
-        }}
-      >
-        <Shield size={18} color="#06b6d4" style={{ flexShrink: 0 }} />
-        <div style={{ fontSize: '12px', color: '#94a3b8', lineHeight: 1.45 }}>
-          <strong style={{ color: '#e2e8f0' }}>Strict Architecture Safeguards:</strong> Agents cannot autonomously pass messages or initiate rounds. VERITAS is granted exactly ONE live search query in Round 1 only to anchor the discussion with empirical facts. The swarm auto-stops strictly after Round 3.
+      {/* Safety & Tool Access Notice + Filter Bar */}
+      <div className="py-4 space-y-4">
+        <div className="p-3.5 rounded-xl bg-slate-900/40 backdrop-blur-xl flex items-center gap-3">
+          <Shield size={18} className="text-cyan-400 shrink-0" />
+          <div className="text-xs text-slate-300 leading-relaxed">
+            <strong className="text-slate-100">Strict Architecture Safeguards:</strong> Agents cannot autonomously pass messages or initiate rounds. VERITAS is granted exactly ONE live search query in Round 1 only to anchor the discussion with empirical facts. The swarm auto-stops strictly after Round 3.
+          </div>
+        </div>
+
+        {/* Filter / Search Agents Bar */}
+        <div className="relative">
+          <input
+            id="parallax-search-agents-input"
+            type="text"
+            value={filterQuery}
+            onChange={(e) => setFilterQuery(e.target.value)}
+            placeholder="Filter agents by name, role, or instruction (e.g. 'veritas', 'business', 'logic')..."
+            className="w-full py-2.5 pl-10 pr-4 rounded-full bg-slate-900/40 backdrop-blur-xl text-slate-100 placeholder-slate-400 text-xs sm:text-sm focus:outline-none focus:ring-1 focus:ring-cyan-400/50 transition-all"
+          />
+          <Search
+            size={16}
+            className="text-slate-400 absolute left-3.5 top-1/2 -translate-y-1/2"
+          />
         </div>
       </div>
 
-      {/* Filter / Search Agents Bar */}
-      <div style={{ position: 'relative' }}>
-        <input
-          id="parallax-search-agents-input"
-          type="text"
-          value={filterQuery}
-          onChange={(e) => setFilterQuery(e.target.value)}
-          placeholder="Filter agents by name, role, or instruction (e.g. 'veritas', 'business', 'logic')..."
-          style={{
-            width: '100%',
-            padding: '10px 14px 10px 38px',
-            borderRadius: '10px',
-            background: 'rgba(15, 23, 42, 0.75)',
-            border: '1px solid rgba(165, 207, 214, 0.25)',
-            color: '#fff',
-            fontSize: '13px',
-            outline: 'none',
-          }}
-          className="focus:border-[#61d7c9] transition-colors"
-        />
-        <Search
-          size={16}
-          color="#94a3b8"
-          style={{ position: 'absolute', left: '12px', top: '50%', transform: 'translateY(-50%)' }}
-        />
-      </div>
-
       {/* 20 Agents Grid */}
-      <div
-        style={{
-          display: 'grid',
-          gridTemplateColumns: 'repeat(auto-fill, minmax(340px, 1fr))',
-          gap: '16px',
-        }}
-      >
+      <div className="pt-5 grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-4">
         {filteredAgents.map((agent) => {
           const defaultAgent = DEFAULT_PARALLAX_AGENTS[agent.id];
           const isCustomized =
@@ -334,22 +249,14 @@ export const ParallaxSettings: React.FC<ParallaxSettingsProps> = ({ config, onCo
             <div
               key={agent.id}
               id={`parallax-agent-card-${agent.id}`}
+              className="rounded-2xl bg-slate-900/40 backdrop-blur-xl hover:bg-slate-900/60 p-4 flex flex-col gap-3 transition-colors"
               style={{
-                borderRadius: '14px',
-                background: 'linear-gradient(145deg, rgba(8, 22, 34, 0.8) 0%, rgba(4, 12, 18, 0.9) 100%)',
-                border: `1px solid ${agent.enabled ? agent.accentColor + '55' : 'rgba(165, 207, 214, 0.15)'}`,
-                boxShadow: agent.enabled ? `0 4px 20px ${agent.accentColor}15` : 'none',
-                padding: '16px',
-                display: 'flex',
-                flexDirection: 'column',
-                gap: '12px',
-                transition: 'all 0.2s ease',
+                borderLeft: `2px solid ${agent.enabled ? agent.accentColor : 'rgba(148, 163, 184, 0.3)'}`,
               }}
             >
               {/* Agent Card Header */}
-              <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: '10px' }}>
-                <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
-                  {/* Avatar Icon */}
+              <div className="flex items-center justify-between gap-2.5">
+                <div className="flex items-center gap-2.5">
                   <ParallaxAgentAvatar
                     agentId={agent.id}
                     agentName={agent.name}
@@ -357,61 +264,31 @@ export const ParallaxSettings: React.FC<ParallaxSettingsProps> = ({ config, onCo
                     size="md"
                   />
                   <div>
-                    <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
-                      <span style={{ fontSize: '15px', fontWeight: 800, color: '#fff' }}>{agent.name}</span>
+                    <div className="flex items-center gap-2">
+                      <span className="text-sm font-extrabold text-slate-100">{agent.name}</span>
                       {agent.id === 'veritas' ? (
-                        <span
-                          style={{
-                            fontSize: '10px',
-                            fontFamily: 'DM Mono, monospace',
-                            padding: '1px 6px',
-                            borderRadius: '4px',
-                            background: 'rgba(6, 182, 212, 0.2)',
-                            color: '#38bdf8',
-                            border: '1px solid rgba(6, 182, 212, 0.4)',
-                            fontWeight: 700,
-                          }}
-                        >
+                        <span className="text-[10px] font-mono px-2 py-0.5 rounded-full bg-cyan-500/20 text-cyan-300 font-bold">
                           🔍 Fact Tool (R1)
                         </span>
                       ) : (
-                        <span
-                          style={{
-                            fontSize: '10px',
-                            fontFamily: 'DM Mono, monospace',
-                            padding: '1px 6px',
-                            borderRadius: '4px',
-                            background: 'rgba(148, 163, 184, 0.1)',
-                            color: '#94a3b8',
-                            border: '1px solid rgba(148, 163, 184, 0.2)',
-                          }}
-                        >
+                        <span className="text-[10px] font-mono px-2 py-0.5 rounded-full bg-slate-800/60 text-slate-300">
                           No Tools
                         </span>
                       )}
                     </div>
-                    <span style={{ fontSize: '11px', color: '#94a3b8', display: 'block', marginTop: '1px' }}>
+                    <span className="text-[11px] text-slate-300 block mt-0.5">
                       {agent.role}
                     </span>
                   </div>
                 </div>
 
                 {/* Active Toggle Switch */}
-                <label
-                  style={{
-                    position: 'relative',
-                    display: 'inline-block',
-                    width: '42px',
-                    height: '22px',
-                    cursor: 'pointer',
-                    flexShrink: 0,
-                  }}
-                >
+                <label className="relative inline-block w-10 h-5 cursor-pointer shrink-0">
                   <input
                     type="checkbox"
                     checked={agent.enabled}
                     onChange={(e) => handleUpdateAgent(agent.id, { enabled: e.target.checked })}
-                    style={{ opacity: 0, width: 0, height: 0 }}
+                    className="opacity-0 w-0 h-0"
                   />
                   <span
                     style={{
@@ -423,15 +300,14 @@ export const ParallaxSettings: React.FC<ParallaxSettingsProps> = ({ config, onCo
                       backgroundColor: agent.enabled ? agent.accentColor : 'rgba(255,255,255,0.15)',
                       transition: '.25s',
                       borderRadius: '22px',
-                      boxShadow: agent.enabled ? `0 0 8px ${agent.accentColor}66` : 'none',
                     }}
                   >
                     <span
                       style={{
                         position: 'absolute',
-                        height: '16px',
-                        width: '16px',
-                        left: agent.enabled ? '23px' : '3px',
+                        height: '14px',
+                        width: '14px',
+                        left: agent.enabled ? '22px' : '3px',
                         bottom: '3px',
                         backgroundColor: '#fff',
                         transition: '.25s',
@@ -444,33 +320,15 @@ export const ParallaxSettings: React.FC<ParallaxSettingsProps> = ({ config, onCo
 
               {/* Editable System Instruction */}
               <div>
-                <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '4px' }}>
-                  <label
-                    style={{
-                      fontSize: '10px',
-                      fontFamily: 'DM Mono, monospace',
-                      color: 'var(--accent, #61d7c9)',
-                      fontWeight: 700,
-                      letterSpacing: '0.05em',
-                    }}
-                  >
+                <div className="flex items-center justify-between mb-1">
+                  <label className="text-[10px] font-mono text-cyan-300 font-bold tracking-wider">
                     PERSONA INSTRUCTION:
                   </label>
                   {isCustomized && (
                     <button
                       type="button"
                       onClick={() => handleResetSingleAgent(agent.id)}
-                      style={{
-                        fontSize: '10px',
-                        color: '#38bdf8',
-                        background: 'transparent',
-                        border: 'none',
-                        cursor: 'pointer',
-                        display: 'flex',
-                        alignItems: 'center',
-                        gap: '3px',
-                        padding: 0,
-                      }}
+                      className="text-[10px] text-sky-400 hover:text-sky-300 cursor-pointer flex items-center gap-1"
                     >
                       <RotateCcw size={10} /> Reset
                     </button>
@@ -480,35 +338,14 @@ export const ParallaxSettings: React.FC<ParallaxSettingsProps> = ({ config, onCo
                   value={agent.systemInstruction}
                   onChange={(e) => handleUpdateAgent(agent.id, { systemInstruction: e.target.value })}
                   rows={2}
-                  style={{
-                    width: '100%',
-                    padding: '8px 10px',
-                    borderRadius: '8px',
-                    background: 'rgba(15, 23, 42, 0.7)',
-                    border: '1px solid rgba(165, 207, 214, 0.2)',
-                    color: '#e2e8f0',
-                    fontSize: '12px',
-                    lineHeight: 1.4,
-                    resize: 'vertical',
-                    outline: 'none',
-                  }}
-                  className="focus:border-[#61d7c9] transition-colors"
+                  className="w-full p-2.5 rounded-xl bg-slate-950/60 text-slate-100 text-xs leading-relaxed resize-y focus:outline-none focus:ring-1 focus:ring-cyan-400/50 transition-all"
                 />
               </div>
 
               {/* AI Provider & Model Select */}
-              <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '8px' }}>
+              <div className="grid grid-cols-2 gap-2">
                 <div>
-                  <label
-                    style={{
-                      display: 'block',
-                      fontSize: '10px',
-                      fontFamily: 'DM Mono, monospace',
-                      color: '#94a3b8',
-                      marginBottom: '3px',
-                      fontWeight: 600,
-                    }}
-                  >
+                  <label className="block text-[10px] font-mono text-slate-300 mb-1 font-semibold">
                     AI PROVIDER:
                   </label>
                   <select
@@ -521,16 +358,7 @@ export const ParallaxSettings: React.FC<ParallaxSettingsProps> = ({ config, onCo
                         modelId: prov ? prov.model : agent.modelId || 'deepseek/deepseek-chat',
                       });
                     }}
-                    style={{
-                      width: '100%',
-                      padding: '6px 8px',
-                      borderRadius: '6px',
-                      background: 'rgba(6, 16, 24, 0.85)',
-                      border: '1px solid rgba(165, 207, 214, 0.2)',
-                      color: '#e2e8f0',
-                      fontSize: '11px',
-                      outline: 'none',
-                    }}
+                    className="w-full px-2.5 py-1.5 rounded-lg bg-slate-950/60 text-slate-100 text-[11px] focus:outline-none focus:ring-1 focus:ring-cyan-400/50"
                   >
                     {availableProviders.map((p) => (
                       <option key={p.id} value={p.id}>
@@ -541,68 +369,29 @@ export const ParallaxSettings: React.FC<ParallaxSettingsProps> = ({ config, onCo
                 </div>
 
                 <div>
-                  <label
-                    style={{
-                      display: 'block',
-                      fontSize: '10px',
-                      fontFamily: 'DM Mono, monospace',
-                      color: '#94a3b8',
-                      marginBottom: '3px',
-                      fontWeight: 600,
-                    }}
-                  >
+                  <label className="block text-[10px] font-mono text-slate-300 mb-1 font-semibold">
                     MODEL ID:
                   </label>
                   <input
                     type="text"
                     value={agent.modelId || 'deepseek/deepseek-chat'}
                     onChange={(e) => handleUpdateAgent(agent.id, { modelId: e.target.value })}
-                    style={{
-                      width: '100%',
-                      padding: '6px 8px',
-                      borderRadius: '6px',
-                      background: 'rgba(6, 16, 24, 0.85)',
-                      border: '1px solid rgba(165, 207, 214, 0.2)',
-                      color: '#e2e8f0',
-                      fontSize: '11px',
-                      outline: 'none',
-                    }}
+                    className="w-full px-2.5 py-1.5 rounded-lg bg-slate-950/60 text-slate-100 text-[11px] focus:outline-none focus:ring-1 focus:ring-cyan-400/50"
                   />
                 </div>
               </div>
 
               {/* Edge TTS Neural Voice Selector */}
-              <div style={{ marginTop: '2px' }}>
-                <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '3px' }}>
-                  <label
-                    style={{
-                      display: 'flex',
-                      alignItems: 'center',
-                      gap: '4px',
-                      fontSize: '10px',
-                      fontFamily: 'DM Mono, monospace',
-                      color: '#94a3b8',
-                      fontWeight: 600,
-                    }}
-                  >
-                    <Volume2 size={11} color="var(--accent, #61d7c9)" />
+              <div>
+                <div className="flex items-center justify-between mb-1">
+                  <label className="flex items-center gap-1 text-[10px] font-mono text-slate-300 font-semibold">
+                    <Volume2 size={11} className="text-cyan-400" />
                     EDGE TTS NEURAL VOICE:
                   </label>
                   <button
                     type="button"
                     onClick={() => handleTestVoice(agent)}
-                    style={{
-                      fontSize: '10px',
-                      color: testingVoiceAgentId === agent.id ? '#10b981' : '#38bdf8',
-                      background: 'transparent',
-                      border: 'none',
-                      cursor: 'pointer',
-                      display: 'flex',
-                      alignItems: 'center',
-                      gap: '3px',
-                      padding: '2px 6px',
-                      borderRadius: '4px',
-                    }}
+                    className="text-[10px] text-sky-400 hover:text-sky-300 cursor-pointer flex items-center gap-1 px-1.5 py-0.5 rounded"
                     title="Preview speech audio with this voice"
                   >
                     {testingVoiceAgentId === agent.id ? (
@@ -619,16 +408,7 @@ export const ParallaxSettings: React.FC<ParallaxSettingsProps> = ({ config, onCo
                 <select
                   value={agent.voice || getParallaxAgentVoice(agent.id)}
                   onChange={(e) => handleUpdateAgent(agent.id, { voice: e.target.value })}
-                  style={{
-                    width: '100%',
-                    padding: '6px 8px',
-                    borderRadius: '6px',
-                    background: 'rgba(6, 16, 24, 0.85)',
-                    border: '1px solid rgba(165, 207, 214, 0.2)',
-                    color: '#e2e8f0',
-                    fontSize: '11px',
-                    outline: 'none',
-                  }}
+                  className="w-full px-2.5 py-1.5 rounded-lg bg-slate-950/60 text-slate-100 text-[11px] focus:outline-none focus:ring-1 focus:ring-cyan-400/50"
                 >
                   {EDGE_VOICES.map((v) => (
                     <option key={v.id} value={v.id}>

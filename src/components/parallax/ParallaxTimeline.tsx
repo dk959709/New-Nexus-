@@ -88,175 +88,168 @@ export const ParallaxTimeline: React.FC<ParallaxTimelineProps> = ({
   return (
     <div
       id="parallax-mission-timeline"
-      className="nexus-corner-bracket relative rounded-2xl overflow-hidden mb-5 select-none"
-      style={{
-        background: 'linear-gradient(135deg, rgba(6, 16, 26, 0.94) 0%, rgba(3, 10, 18, 0.98) 100%)',
-        border: '1px solid rgba(0, 240, 255, 0.25)',
-        boxShadow: '0 8px 32px rgba(0, 0, 0, 0.5), inset 0 0 24px rgba(0, 240, 255, 0.04)',
-      }}
+      className="relative py-5 border-b border-white/[0.06] select-none"
     >
       {/* Top Header */}
-      <div className="px-5 py-3.5 bg-black/60 backdrop-blur-md border-b border-cyan-500/15 flex items-center justify-between flex-wrap gap-2">
-        <div className="flex items-center gap-2">
+      <div className="pb-4 mb-4 border-b border-white/[0.06] flex items-center justify-between flex-wrap gap-2">
+        <div className="flex items-center gap-2.5 flex-wrap">
           <div className="w-2 h-2 rounded-full bg-cyan-400 animate-pulse shadow-[0_0_8px_#00f0ff]" />
-          <span className="text-xs font-mono font-black uppercase text-white tracking-wider">
+          <span className="text-xs font-mono font-black uppercase text-slate-100 tracking-wider">
             MISSION CHRONOLOGY PROTOCOL
           </span>
-          <span className="text-[10px] font-mono px-2 py-0.5 rounded bg-cyan-500/10 text-cyan-300 border border-cyan-500/25 font-bold">
+          <span className="text-[10px] font-mono px-2.5 py-0.5 rounded-full bg-slate-900/40 backdrop-blur-xl text-cyan-300 font-bold">
             3 SWARM ROUNDS + SYNTHESIS
           </span>
           {wasStoppedEarly && (
-            <span className="text-[10px] font-mono px-2 py-0.5 rounded bg-rose-500/15 text-rose-300 border border-rose-500/30 font-bold flex items-center gap-1">
+            <span className="text-[10px] font-mono px-2.5 py-0.5 rounded-full bg-rose-500/15 text-rose-300 font-bold flex items-center gap-1">
               <AlertTriangle size={10} />
               STOPPED EARLY
             </span>
           )}
         </div>
 
-        <div className="text-[11px] font-mono text-slate-400 flex items-center gap-3">
+        <div className="text-[11px] font-mono text-slate-300 flex items-center gap-3">
           <div>
             <span>LOGGED: </span>
             <strong className="text-cyan-300 font-bold">{messages.length}</strong>
-            <span className="text-slate-500"> / 60 MAX REPLIES</span>
+            <span className="text-slate-300"> / 60 MAX REPLIES</span>
           </div>
-          <span className="text-slate-600 hidden sm:inline">•</span>
-          <div className="text-slate-400 hidden sm:inline">
+          <span className="text-white/20 hidden sm:inline">•</span>
+          <div className="text-slate-300 hidden sm:inline">
             <span>STATE: </span>
-            <strong className={isRunning ? 'text-cyan-300' : isComplete ? 'text-emerald-300' : 'text-slate-400'}>
+            <strong className={isRunning ? 'text-cyan-300' : isComplete ? 'text-emerald-300' : 'text-slate-200'}>
               {isRunning ? 'DELIBERATING' : isComplete ? 'SYNTHESIZED' : 'STANDBY'}
             </strong>
           </div>
         </div>
       </div>
 
-      {/* Timeline Steps */}
-      <div className="p-4 sm:p-5">
-        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-3">
-          {stages.map((stg) => {
-            const Icon = stg.icon;
-            const progressPct = Math.min(100, Math.round((stg.count / stg.target) * 100));
+      {/* Open Timeline Thread with subtle left-line connectors */}
+      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6">
+        {stages.map((stg) => {
+          const Icon = stg.icon;
+          const progressPct = Math.min(100, Math.round((stg.count / stg.target) * 100));
 
-            return (
-              <div
-                key={stg.step}
-                className={`rounded-xl p-3.5 relative transition-all duration-300 font-mono flex flex-col justify-between ${
-                  stg.isActive
-                    ? 'border-2 border-cyan-400 bg-cyan-500/10 shadow-[0_0_24px_rgba(0,240,255,0.25)]'
-                    : stg.isCompleted
-                    ? 'border border-emerald-500/40 bg-emerald-950/20'
-                    : stg.isOutput
-                    ? 'border border-purple-500/30 bg-purple-950/10 opacity-85'
-                    : 'border border-white/10 bg-white/[0.02] opacity-80'
-                }`}
-              >
-                {/* Step number badge & icon */}
-                <div>
-                  <div className="flex items-center justify-between gap-2 mb-2">
-                    <div className="flex items-center gap-1.5 min-w-0">
-                      <span
-                        className={`text-[10px] font-black px-1.5 py-0.5 rounded shrink-0 ${
-                          stg.isActive
-                            ? 'bg-cyan-400 text-black shadow-[0_0_8px_#00f0ff]'
-                            : stg.isCompleted
-                            ? 'bg-emerald-500 text-black'
-                            : stg.isOutput
-                            ? 'bg-purple-500/30 text-purple-200 border border-purple-400/40'
-                            : 'bg-white/10 text-slate-400'
-                        }`}
-                      >
-                        {stg.step}
-                      </span>
-                      <span className="text-[9px] text-slate-500 font-bold uppercase tracking-wider">
-                        [{stg.tag}]
-                      </span>
-                    </div>
+          const leftConnectorClass = stg.isActive
+            ? 'border-l-2 border-cyan-400 bg-slate-900/40 backdrop-blur-xl'
+            : stg.isCompleted
+            ? 'border-l-2 border-emerald-400/70 hover:bg-slate-900/40'
+            : stg.isOutput
+            ? 'border-l-2 border-purple-400/50 hover:bg-slate-900/40'
+            : 'border-l border-white/15 hover:bg-slate-900/40';
 
-                    <div className="shrink-0">
-                      {stg.isCompleted ? (
-                        <span className="text-emerald-400 inline-flex items-center gap-1 text-[10px] font-bold">
-                          <Lock size={11} />
-                          LOCKED
-                        </span>
-                      ) : stg.isActive ? (
-                        <span className="text-cyan-400 inline-flex items-center gap-1 text-[10px] font-bold animate-pulse">
-                          <span className="w-1.5 h-1.5 rounded-full bg-cyan-400 animate-ping" />
-                          RUNNING
-                        </span>
-                      ) : (
-                        <span className="text-slate-500 text-[10px]">STANDBY</span>
-                      )}
-                    </div>
-                  </div>
-
-                  {/* Title */}
-                  <div className="flex items-center gap-1.5 mb-1">
-                    <Icon
-                      size={13}
-                      className={
-                        stg.isActive
-                          ? 'text-cyan-300 shrink-0'
-                          : stg.isCompleted
-                          ? 'text-emerald-400 shrink-0'
-                          : stg.isOutput
-                          ? 'text-purple-400 shrink-0'
-                          : 'text-slate-500 shrink-0'
-                      }
-                    />
+          return (
+            <div
+              key={stg.step}
+              className={`pl-4 pr-3 py-2.5 rounded-r-xl relative transition-colors duration-200 font-mono flex flex-col justify-between ${leftConnectorClass}`}
+            >
+              {/* Step number badge & icon */}
+              <div>
+                <div className="flex items-center justify-between gap-2 mb-2">
+                  <div className="flex items-center gap-1.5 min-w-0">
                     <span
-                      className={`text-xs font-bold truncate ${
+                      className={`text-[10px] font-black px-2 py-0.5 rounded-full shrink-0 ${
                         stg.isActive
-                          ? 'text-white'
+                          ? 'bg-cyan-400 text-slate-950 shadow-[0_0_8px_#00f0ff]'
                           : stg.isCompleted
-                          ? 'text-emerald-300'
+                          ? 'bg-emerald-400/20 text-emerald-300'
                           : stg.isOutput
-                          ? 'text-purple-200'
-                          : 'text-slate-300'
+                          ? 'bg-purple-500/20 text-purple-200'
+                          : 'bg-slate-900/40 text-slate-300'
                       }`}
                     >
-                      {stg.title}
+                      {stg.step}
+                    </span>
+                    <span className="text-[9px] text-slate-300 font-bold uppercase tracking-wider">
+                      [{stg.tag}]
                     </span>
                   </div>
 
-                  {/* Subtitle description */}
-                  <p className="m-0 text-[11px] text-slate-400 font-sans line-clamp-1 mb-2.5">
-                    {stg.subtitle}
-                  </p>
+                  <div className="shrink-0">
+                    {stg.isCompleted ? (
+                      <span className="text-emerald-300 inline-flex items-center gap-1 text-[10px] font-bold">
+                        <Lock size={11} />
+                        LOCKED
+                      </span>
+                    ) : stg.isActive ? (
+                      <span className="text-cyan-300 inline-flex items-center gap-1 text-[10px] font-bold animate-pulse">
+                        <span className="w-1.5 h-1.5 rounded-full bg-cyan-400 animate-ping" />
+                        RUNNING
+                      </span>
+                    ) : (
+                      <span className="text-slate-300 text-[10px]">STANDBY</span>
+                    )}
+                  </div>
                 </div>
 
-                {/* Progress bar */}
-                <div className="space-y-1 pt-1 border-t border-white/5">
-                  <div className="flex items-center justify-between text-[10px]">
-                    <span className="text-slate-400">
-                      {stg.roundNumber
-                        ? `${stg.count} / ${stg.target} Replies`
+                {/* Title */}
+                <div className="flex items-center gap-1.5 mb-1">
+                  <Icon
+                    size={13}
+                    className={
+                      stg.isActive
+                        ? 'text-cyan-300 shrink-0'
                         : stg.isCompleted
-                        ? 'Report Generated'
-                        : 'Awaiting Deliberation'}
-                    </span>
-                    <span className={stg.isActive ? 'text-cyan-300 font-bold' : 'text-slate-400'}>
-                      {stg.roundNumber ? `${progressPct}%` : stg.isCompleted ? '100%' : '0%'}
-                    </span>
-                  </div>
+                        ? 'text-emerald-300 shrink-0'
+                        : stg.isOutput
+                        ? 'text-purple-300 shrink-0'
+                        : 'text-slate-300 shrink-0'
+                    }
+                  />
+                  <span
+                    className={`text-xs font-bold truncate ${
+                      stg.isActive
+                        ? 'text-slate-100'
+                        : stg.isCompleted
+                        ? 'text-emerald-200'
+                        : stg.isOutput
+                        ? 'text-purple-200'
+                        : 'text-slate-100'
+                    }`}
+                  >
+                    {stg.title}
+                  </span>
+                </div>
 
-                  <div className="h-1.5 w-full rounded-full bg-black/60 overflow-hidden border border-white/5">
-                    <div
-                      className={`h-full rounded-full transition-all duration-300 ${
-                        stg.isActive
-                          ? 'bg-gradient-to-r from-cyan-500 to-sky-400 animate-pulse'
-                          : stg.isCompleted
-                          ? 'bg-emerald-400'
-                          : stg.isOutput
-                          ? 'bg-purple-500'
-                          : 'bg-slate-700'
-                      }`}
-                      style={{ width: `${progressPct}%` }}
-                    />
-                  </div>
+                {/* Subtitle description */}
+                <p className="m-0 text-[11px] text-slate-300 font-sans line-clamp-1 mb-3">
+                  {stg.subtitle}
+                </p>
+              </div>
+
+              {/* Progress bar */}
+              <div className="space-y-1.5 pt-2 border-t border-white/[0.06]">
+                <div className="flex items-center justify-between text-[10px]">
+                  <span className="text-slate-300">
+                    {stg.roundNumber
+                      ? `${stg.count} / ${stg.target} Replies`
+                      : stg.isCompleted
+                      ? 'Report Generated'
+                      : 'Awaiting Deliberation'}
+                  </span>
+                  <span className={stg.isActive ? 'text-cyan-300 font-bold' : 'text-slate-300'}>
+                    {stg.roundNumber ? `${progressPct}%` : stg.isCompleted ? '100%' : '0%'}
+                  </span>
+                </div>
+
+                <div className="h-1 w-full rounded-full bg-white/[0.08] overflow-hidden">
+                  <div
+                    className={`h-full rounded-full transition-all duration-300 ${
+                      stg.isActive
+                        ? 'bg-gradient-to-r from-cyan-400 to-sky-400 animate-pulse'
+                        : stg.isCompleted
+                        ? 'bg-emerald-400'
+                        : stg.isOutput
+                        ? 'bg-purple-400'
+                        : 'bg-slate-600'
+                    }`}
+                    style={{ width: `${progressPct}%` }}
+                  />
                 </div>
               </div>
-            );
-          })}
-        </div>
+            </div>
+          );
+        })}
       </div>
     </div>
   );

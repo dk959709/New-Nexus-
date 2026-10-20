@@ -87,35 +87,27 @@ export const ParallaxTelemetry: React.FC<ParallaxTelemetryProps> = ({
   return (
     <div
       id="parallax-telemetry-hud"
-      className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-7 gap-2.5 sm:gap-3 mb-6"
+      className="py-5 border-b border-white/[0.06] grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-7 gap-4"
     >
       {cards.map((c, i) => {
         const Icon = c.icon;
         return (
           <div
             key={i}
-            className="p-3 rounded-xl relative overflow-hidden font-mono flex flex-col justify-between"
-            style={{
-              background: 'linear-gradient(135deg, rgba(6, 16, 26, 0.88) 0%, rgba(3, 10, 18, 0.94) 100%)',
-              border: '1px solid rgba(0, 240, 255, 0.18)',
-              boxShadow: '0 4px 20px rgba(0, 0, 0, 0.4), inset 0 0 12px rgba(0, 240, 255, 0.02)',
-            }}
+            className="pl-3.5 py-1.5 border-l border-white/[0.08] font-mono flex flex-col justify-between hover:bg-slate-900/40 rounded-r-xl transition-colors"
           >
-            <div className="flex items-center justify-between gap-1 text-[10px] text-slate-400 font-bold tracking-wider uppercase mb-1">
+            <div className="flex items-center justify-between gap-1 text-[10px] text-slate-300 font-bold tracking-wider uppercase mb-1 pr-2">
               <span className="truncate">{c.label}</span>
               <Icon size={12} style={{ color: c.accent }} className="shrink-0" />
             </div>
 
-            <div className="my-1">
-              <div
-                className="text-base sm:text-lg font-black tracking-tight truncate"
-                style={{ color: '#ffffff' }}
-              >
+            <div className="my-0.5">
+              <div className="text-base sm:text-lg font-black tracking-tight truncate text-slate-100">
                 {c.value}
               </div>
             </div>
 
-            <div className="text-[10px] text-slate-400 font-sans truncate">
+            <div className="text-[10px] text-slate-300 font-sans truncate">
               {c.subtext}
             </div>
           </div>

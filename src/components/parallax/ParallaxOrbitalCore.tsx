@@ -157,53 +157,30 @@ export const ParallaxOrbitalCore: React.FC<ParallaxOrbitalCoreProps> = ({
   return (
     <div
       id="parallax-orbital-core"
-      className="nexus-corner-bracket relative rounded-2xl overflow-hidden mb-5 select-none transition-all duration-300"
-      style={{
-        background: 'linear-gradient(145deg, rgba(3, 10, 18, 0.96) 0%, rgba(2, 6, 12, 0.99) 100%)',
-        border: '1.5px solid rgba(0, 240, 255, 0.28)',
-        boxShadow: '0 16px 48px rgba(0, 0, 0, 0.7), inset 0 0 40px rgba(0, 240, 255, 0.05)',
-      }}
+      className="relative overflow-hidden py-4 select-none transition-all duration-300"
     >
-      {/* Background Holographic Starfield & Polar Grid */}
-      <div
-        className="absolute inset-0 pointer-events-none opacity-25"
-        style={{
-          backgroundImage:
-            'radial-gradient(rgba(0, 240, 255, 0.15) 1px, transparent 1px), radial-gradient(rgba(37, 99, 235, 0.1) 1px, transparent 1px)',
-          backgroundSize: '24px 24px',
-          backgroundPosition: '0 0, 12px 12px',
-        }}
-      />
-
       {/* Top HUD Control Bar */}
-      <div className="relative z-20 px-5 py-3.5 bg-black/60 backdrop-blur-md border-b border-cyan-500/20 flex items-center justify-between flex-wrap gap-3">
+      <div className="relative z-20 pb-3.5 mb-2 border-b border-white/[0.06] flex items-center justify-between flex-wrap gap-3">
         <div className="flex items-center gap-3">
-          <div
-            className="w-7 h-7 rounded-lg flex items-center justify-center"
-            style={{
-              background: 'rgba(0, 240, 255, 0.15)',
-              border: '1px solid rgba(0, 240, 255, 0.4)',
-              color: 'var(--nexus-cyan)',
-            }}
-          >
+          <div className="w-8 h-8 rounded-xl bg-slate-900/40 backdrop-blur-xl flex items-center justify-center text-cyan-400">
             <Layers size={15} />
           </div>
           <div>
             <div className="flex items-center gap-2">
-              <span className="text-xs font-mono font-black uppercase text-white tracking-wider">
+              <span className="text-xs font-mono font-black uppercase text-slate-100 tracking-wider">
                 SWARM ORBITAL CORE
               </span>
-              <span className="text-[10px] font-mono px-2 py-0.2 rounded bg-cyan-500/10 text-cyan-300 border border-cyan-500/25 font-bold">
+              <span className="text-[10px] font-mono px-2.5 py-0.5 rounded-full bg-slate-900/40 backdrop-blur-xl text-cyan-300 font-bold">
                 {allAgentsList.length} NODES
               </span>
               {isRunning && (
-                <span className="text-[10px] font-mono px-2 py-0.2 rounded bg-emerald-500/15 text-emerald-300 border border-emerald-500/30 font-bold flex items-center gap-1">
+                <span className="text-[10px] font-mono px-2.5 py-0.5 rounded-full bg-emerald-500/20 text-emerald-300 font-bold flex items-center gap-1">
                   <Radio size={9} className="animate-pulse" />
                   DELIBERATING
                 </span>
               )}
             </div>
-            <p className="m-0 text-[11px] text-slate-400 font-mono truncate max-w-[340px]">
+            <p className="m-0 text-[11px] text-slate-300 font-mono truncate max-w-[340px]">
               {topic ? `Target: ${topic}` : 'Live multi-agent topology • Interactive orbital matrix • Tap any node to focus'}
             </p>
           </div>
@@ -215,10 +192,10 @@ export const ParallaxOrbitalCore: React.FC<ParallaxOrbitalCoreProps> = ({
           <button
             type="button"
             onClick={() => setIsOrbiting(!isOrbiting)}
-            className="px-2.5 py-1 rounded-lg bg-white/5 border border-white/10 hover:border-cyan-400/40 text-slate-300 hover:text-white transition-all cursor-pointer flex items-center gap-1.5"
+            className="px-3 py-1 rounded-full bg-slate-900/40 backdrop-blur-xl hover:bg-slate-800/60 text-slate-200 hover:text-white transition-all cursor-pointer flex items-center gap-1.5"
             title={isOrbiting ? 'Freeze orbital motion' : 'Resume orbital motion'}
           >
-            <Activity size={12} className={isOrbiting ? 'text-cyan-400 animate-pulse' : 'text-slate-500'} />
+            <Activity size={12} className={isOrbiting ? 'text-cyan-400 animate-pulse' : 'text-slate-400'} />
             <span>{isOrbiting ? 'Orbiting' : 'Paused'}</span>
           </button>
 
@@ -227,7 +204,7 @@ export const ParallaxOrbitalCore: React.FC<ParallaxOrbitalCoreProps> = ({
             <button
               type="button"
               onClick={() => onSelectAgent?.(null)}
-              className="px-2.5 py-1 rounded-lg bg-cyan-500/20 border border-cyan-400 text-cyan-200 font-bold transition-all cursor-pointer flex items-center gap-1"
+              className="px-3 py-1 rounded-full bg-cyan-500/20 text-cyan-200 font-bold transition-all cursor-pointer flex items-center gap-1"
             >
               <span>Reset Focus</span>
             </button>
@@ -237,7 +214,7 @@ export const ParallaxOrbitalCore: React.FC<ParallaxOrbitalCoreProps> = ({
           <button
             type="button"
             onClick={() => setIsExpanded(!isExpanded)}
-            className="px-2.5 py-1 rounded-lg bg-white/5 border border-white/10 hover:border-cyan-400/40 text-slate-300 hover:text-white transition-all cursor-pointer flex items-center gap-1"
+            className="px-3 py-1 rounded-full bg-slate-900/40 backdrop-blur-xl hover:bg-slate-800/60 text-slate-200 hover:text-white transition-all cursor-pointer flex items-center gap-1"
             title={isExpanded ? 'Collapse Stage' : 'Expand Stage'}
           >
             {isExpanded ? <Minimize2 size={12} /> : <Maximize2 size={12} />}

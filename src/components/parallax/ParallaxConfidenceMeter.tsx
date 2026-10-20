@@ -29,37 +29,37 @@ export const ParallaxConfidenceMeter: React.FC<ParallaxConfidenceMeterProps> = (
   return (
     <div
       id="parallax-confidence-meter"
-      className="p-4 sm:p-5 rounded-xl bg-black/60 border border-cyan-500/25 space-y-4 font-mono select-none"
+      className="p-4 sm:p-5 rounded-xl bg-slate-900/40 backdrop-blur-xl space-y-4 font-mono select-none"
     >
       <div className="flex items-center justify-between gap-2 flex-wrap">
-        <div className="flex items-center gap-2">
-          <div className="w-7 h-7 sm:w-8 sm:h-8 rounded-lg bg-cyan-500/15 border border-cyan-500/30 grid place-items-center text-cyan-400 shrink-0">
+        <div className="flex items-center gap-2.5">
+          <div className="w-8 h-8 rounded-xl bg-cyan-500/15 grid place-items-center text-cyan-400 shrink-0">
             <Gauge size={16} />
           </div>
           <div>
             <div className="flex items-center gap-2">
-              <span className="text-xs sm:text-sm font-black text-white uppercase tracking-wider">
+              <span className="text-xs sm:text-sm font-black text-slate-100 uppercase tracking-wider">
                 CONFIDENCE-WEIGHTED VERDICT METER
               </span>
               <span
-                className={`text-[9px] sm:text-[10px] px-2 py-0.2 rounded font-bold uppercase ${
+                className={`text-[9px] sm:text-[10px] px-2.5 py-0.5 rounded-full font-bold uppercase ${
                   isProDominant
-                    ? 'bg-emerald-500/20 text-emerald-300 border border-emerald-500/40'
+                    ? 'bg-emerald-500/20 text-emerald-300'
                     : isConDominant
-                    ? 'bg-rose-500/20 text-rose-300 border border-rose-500/40'
-                    : 'bg-slate-500/20 text-slate-300 border border-slate-500/40'
+                    ? 'bg-rose-500/20 text-rose-300'
+                    : 'bg-slate-800 text-slate-200'
                 }`}
               >
                 LEAN: {verdict.dominantLean} ({verdict.weightedScore > 0 ? `+${verdict.weightedScore}` : verdict.weightedScore})
               </span>
             </div>
-            <p className="m-0 text-[10px] sm:text-[11px] text-slate-400 font-sans">
+            <p className="m-0 text-[10px] sm:text-[11px] text-slate-300 font-sans">
               Weighted by {verdict.totalClaimsChecked} verified empirical claims & source reliability tiers
             </p>
           </div>
         </div>
 
-        <div className="flex items-center gap-1.5 text-[10px] text-slate-400">
+        <div className="flex items-center gap-1.5 text-[10px] text-slate-300">
           <Scale size={12} className="text-cyan-400" />
           <span>EVIDENCE MULTIPLIER ACTIVE</span>
         </div>
@@ -131,9 +131,9 @@ export const ParallaxConfidenceMeter: React.FC<ParallaxConfidenceMeterProps> = (
             </g>
           </svg>
 
-          <div className="flex items-center justify-between w-36 sm:w-44 text-[9px] text-slate-500 font-bold px-1 -mt-1">
+          <div className="flex items-center justify-between w-36 sm:w-44 text-[9px] text-slate-300 font-bold px-1 -mt-1">
             <span className="text-rose-400">CON (-100)</span>
-            <span className="text-slate-400">0</span>
+            <span className="text-slate-300">0</span>
             <span className="text-emerald-400">PRO (+100)</span>
           </div>
         </div>
@@ -143,14 +143,14 @@ export const ParallaxConfidenceMeter: React.FC<ParallaxConfidenceMeterProps> = (
           {/* Tri-Color Split Progress Bar */}
           <div className="space-y-1.5">
             <div className="flex items-center justify-between text-[11px] font-bold">
-              <span className="text-emerald-400">PRO: {pro}%</span>
-              <span className="text-slate-400">UNDECIDED: {undecided}%</span>
-              <span className="text-rose-400">CON: {con}%</span>
+              <span className="text-emerald-300">PRO: {pro}%</span>
+              <span className="text-slate-300">UNDECIDED: {undecided}%</span>
+              <span className="text-rose-300">CON: {con}%</span>
             </div>
 
-            <div className="h-3 rounded-full bg-white/5 border border-white/10 overflow-hidden flex p-0.5 gap-0.5">
+            <div className="h-2.5 rounded-full bg-white/[0.08] overflow-hidden flex p-0.5 gap-0.5">
               <div
-                className="h-full rounded-l-full bg-gradient-to-r from-emerald-500 to-teal-400 transition-all duration-1000 shadow-[0_0_8px_rgba(16,185,129,0.5)]"
+                className="h-full rounded-l-full bg-gradient-to-r from-emerald-500 to-teal-400 transition-all duration-1000"
                 style={{ width: `${pro}%` }}
               />
               <div
@@ -158,7 +158,7 @@ export const ParallaxConfidenceMeter: React.FC<ParallaxConfidenceMeterProps> = (
                 style={{ width: `${undecided}%` }}
               />
               <div
-                className="h-full rounded-r-full bg-gradient-to-r from-rose-500 to-red-600 transition-all duration-1000 shadow-[0_0_8px_rgba(244,63,94,0.5)]"
+                className="h-full rounded-r-full bg-gradient-to-r from-rose-500 to-red-600 transition-all duration-1000"
                 style={{ width: `${con}%` }}
               />
             </div>
@@ -166,17 +166,17 @@ export const ParallaxConfidenceMeter: React.FC<ParallaxConfidenceMeterProps> = (
 
           {/* Evidence Metric Chips */}
           <div className="grid grid-cols-2 sm:grid-cols-3 gap-2 text-[10px] sm:text-[11px]">
-            <div className="p-2 rounded-lg bg-emerald-950/30 border border-emerald-500/30 text-emerald-300 flex items-center gap-1.5">
+            <div className="p-2.5 rounded-xl bg-emerald-500/15 text-emerald-300 flex items-center gap-1.5">
               <ShieldCheck size={13} className="shrink-0" />
               <span>{verdict.verifiedSupportCount} Verified Supported</span>
             </div>
 
-            <div className="p-2 rounded-lg bg-rose-950/30 border border-rose-500/30 text-rose-300 flex items-center gap-1.5">
+            <div className="p-2.5 rounded-xl bg-rose-500/15 text-rose-300 flex items-center gap-1.5">
               <AlertTriangle size={13} className="shrink-0" />
               <span>{verdict.refutedCount} Refuted / Disputed</span>
             </div>
 
-            <div className="p-2 rounded-lg bg-cyan-950/30 border border-cyan-500/30 text-cyan-300 flex items-center gap-1.5 col-span-2 sm:col-span-1">
+            <div className="p-2.5 rounded-xl bg-cyan-500/15 text-cyan-300 flex items-center gap-1.5 col-span-2 sm:col-span-1">
               <Sparkles size={13} className="shrink-0" />
               <span>Score: {verdict.weightedScore > 0 ? `+${verdict.weightedScore}` : verdict.weightedScore}</span>
             </div>

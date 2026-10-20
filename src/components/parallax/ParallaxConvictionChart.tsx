@@ -89,43 +89,38 @@ export const ParallaxConvictionChart: React.FC<ParallaxConvictionChartProps> = (
   return (
     <div
       id="parallax-conviction-chart"
-      className="rounded-xl sm:rounded-2xl p-3 sm:p-5 font-mono select-none"
-      style={{
-        background: 'linear-gradient(135deg, rgba(4, 16, 28, 0.94) 0%, rgba(2, 8, 16, 0.98) 100%)',
-        border: '1px solid rgba(0, 240, 255, 0.25)',
-        boxShadow: '0 8px 32px rgba(0, 0, 0, 0.6), inset 0 0 20px rgba(0, 240, 255, 0.04)',
-      }}
+      className="py-5 border-b border-white/[0.06] font-mono select-none"
     >
       {/* Header */}
-      <div className="flex items-center justify-between gap-2 mb-3 sm:mb-4 flex-wrap">
-        <div className="flex items-center gap-2">
-          <div className="w-7 h-7 sm:w-8 sm:h-8 rounded-lg bg-cyan-500/15 border border-cyan-500/30 grid place-items-center text-cyan-400 shrink-0">
+      <div className="flex items-center justify-between gap-2 mb-4 flex-wrap">
+        <div className="flex items-center gap-2.5">
+          <div className="w-8 h-8 rounded-xl bg-slate-900/40 backdrop-blur-xl grid place-items-center text-cyan-400 shrink-0">
             <TrendingUp size={15} />
           </div>
           <div>
             <div className="flex items-center gap-2">
-              <span className="text-xs sm:text-sm font-black text-white uppercase tracking-wider">
+              <span className="text-xs sm:text-sm font-black text-slate-100 uppercase tracking-wider">
                 CONVICTION SHIFT TRAJECTORY
               </span>
-              <span className="text-[9px] sm:text-[10px] px-1.5 py-0.2 rounded bg-cyan-950/80 text-cyan-300 border border-cyan-500/30">
+              <span className="text-[9px] sm:text-[10px] px-2.5 py-0.5 rounded-full bg-slate-900/40 backdrop-blur-xl text-cyan-300">
                 QUADRANT DYNAMICS
               </span>
             </div>
-            <p className="m-0 text-[10px] sm:text-[11px] text-slate-400 font-sans">
+            <p className="m-0 text-[10px] sm:text-[11px] text-slate-300 font-sans">
               Tracks ideological position shifts (-100 to +100) across Round 1 → 2 → 3
             </p>
           </div>
         </div>
 
-        <div className="flex items-center gap-1 text-[10px] text-slate-500">
+        <div className="flex items-center gap-1.5 text-[10px] text-slate-300">
           <Activity size={12} className="text-cyan-400 animate-pulse" />
           <span>REAL-TIME TELEMETRY</span>
         </div>
       </div>
 
       {/* Interactive Legend Toggle Pills */}
-      <div className="flex items-center gap-1.5 sm:gap-2 mb-3.5 flex-wrap">
-        <span className="text-[10px] text-slate-500 font-bold uppercase mr-1 hidden sm:inline">
+      <div className="flex items-center gap-2 mb-4 flex-wrap">
+        <span className="text-[10px] text-slate-300 font-bold uppercase mr-1 hidden sm:inline">
           Filter:
         </span>
         {QUADRANTS.map((q) => {
@@ -135,15 +130,14 @@ export const ParallaxConvictionChart: React.FC<ParallaxConvictionChartProps> = (
               key={q.key}
               type="button"
               onClick={() => toggleQuadrant(q.key)}
-              className={`px-2 py-1 rounded-lg text-[10px] sm:text-[11px] font-mono font-bold transition-all cursor-pointer flex items-center gap-1.5 ${
+              className={`px-3 py-1 rounded-full text-[10px] sm:text-[11px] font-mono font-bold transition-all cursor-pointer flex items-center gap-1.5 bg-slate-900/40 backdrop-blur-xl ${
                 isVisible
-                  ? 'border shadow-sm'
-                  : 'bg-white/[0.02] text-slate-600 border border-white/5 opacity-50'
+                  ? 'shadow-sm'
+                  : 'text-slate-500 opacity-50'
               }`}
               style={{
-                background: isVisible ? `${q.color}15` : undefined,
+                background: isVisible ? `${q.color}20` : undefined,
                 color: isVisible ? q.color : undefined,
-                borderColor: isVisible ? `${q.color}50` : undefined,
               }}
             >
               <span className="w-2 h-2 rounded-full shrink-0" style={{ background: q.color }} />

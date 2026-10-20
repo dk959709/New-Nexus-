@@ -92,37 +92,26 @@ export const ParallaxDeliberationStream: React.FC<ParallaxDeliberationStreamProp
   return (
     <div
       id="parallax-live-feed-container"
-      className="nexus-corner-bracket relative rounded-2xl overflow-hidden mb-6"
-      style={{
-        background: 'linear-gradient(145deg, rgba(3, 10, 18, 0.97) 0%, rgba(2, 6, 12, 0.99) 100%)',
-        border: '1.5px solid rgba(0, 240, 255, 0.28)',
-        boxShadow: '0 16px 48px rgba(0, 0, 0, 0.7), inset 0 0 32px rgba(0, 240, 255, 0.04)',
-        minHeight: '380px',
-        maxHeight: '740px',
-        overflowY: 'auto',
-      }}
+      className="relative py-4 border-b border-white/[0.06]"
     >
-      {/* Deliberation Terminal scanline overlay */}
-      <div className="nexus-terminal-scanlines absolute inset-0 z-10 pointer-events-none opacity-15" />
-
       {/* Terminal Title & Sticky Actions Toolbar */}
       <div
         id="parallax-feed-toolbar"
-        className="sticky top-0 z-30 bg-black/85 backdrop-blur-xl border-b border-cyan-500/20 px-5 py-3 shadow-xl"
+        className="sticky top-0 z-30 bg-slate-950/70 backdrop-blur-xl border-b border-white/[0.06] py-3.5 mb-6"
       >
         <div className="flex items-center justify-between flex-wrap gap-2.5">
           {/* Terminal Title */}
           <div className="flex items-center gap-2.5 min-w-0">
             <div className="w-2.5 h-2.5 rounded-full bg-cyan-400 animate-pulse shadow-[0_0_8px_#00f0ff]" />
-            <h2 className="m-0 text-xs font-mono font-black uppercase text-white tracking-widest flex items-center gap-2 truncate">
-              <span>&gt; PARALLAX DELIBERATION STREAM</span>
-              <span className="text-[10px] font-bold px-2 py-0.5 rounded bg-cyan-500/15 text-cyan-300 border border-cyan-500/30">
+            <h2 className="m-0 text-xs font-mono font-black uppercase text-slate-100 tracking-widest flex items-center gap-2 truncate">
+              <span>PARALLAX DELIBERATION STREAM</span>
+              <span className="text-[10px] font-bold px-2.5 py-0.5 rounded-full bg-slate-900/40 backdrop-blur-xl text-cyan-300">
                 {messages.length} TURNS{currentRound ? ` • ROUND 0${currentRound}` : ''}
               </span>
             </h2>
 
             {wasStoppedEarly && (
-              <span className="text-[10px] font-mono px-2 py-0.5 rounded bg-rose-500/20 text-rose-300 border border-rose-500/40 font-bold">
+              <span className="text-[10px] font-mono px-2.5 py-0.5 rounded-full bg-rose-500/20 text-rose-300 font-bold">
                 STOPPED EARLY
               </span>
             )}
@@ -145,7 +134,7 @@ export const ParallaxDeliberationStream: React.FC<ParallaxDeliberationStreamProp
               <button
                 type="button"
                 onClick={onStopSwarm}
-                className="px-3 py-1.5 rounded-lg bg-rose-950/60 border border-rose-500/70 text-rose-200 font-bold hover:bg-rose-900/80 active:scale-95 transition-all cursor-pointer flex items-center gap-1.5 shadow-[0_0_12px_rgba(244,63,94,0.3)]"
+                className="px-3.5 py-1.5 rounded-full bg-rose-500/20 backdrop-blur-xl text-rose-200 font-bold hover:bg-rose-500/30 active:scale-95 transition-all cursor-pointer flex items-center gap-1.5"
               >
                 <Square size={11} fill="currentColor" />
                 <span>Stop Swarm</span>
@@ -159,7 +148,7 @@ export const ParallaxDeliberationStream: React.FC<ParallaxDeliberationStreamProp
                 type="button"
                 onClick={onListenToFullSwarm}
                 disabled={loadingAudioKey === 'full_swarm'}
-                className="px-3 py-1.5 rounded-lg bg-cyan-500/20 border border-cyan-400 text-cyan-200 hover:bg-cyan-500/30 active:scale-95 transition-all cursor-pointer flex items-center gap-1.5 font-bold shadow-[0_0_12px_rgba(0,240,255,0.2)]"
+                className="px-3.5 py-1.5 rounded-full bg-cyan-500/20 backdrop-blur-xl text-cyan-200 hover:bg-cyan-500/30 active:scale-95 transition-all cursor-pointer flex items-center gap-1.5 font-bold"
               >
                 {loadingAudioKey === 'full_swarm' ? (
                   <Loader2 size={12} className="animate-spin text-cyan-300" />
@@ -185,7 +174,7 @@ export const ParallaxDeliberationStream: React.FC<ParallaxDeliberationStreamProp
                 type="button"
                 onClick={onDownloadSwarmMp3}
                 disabled={isDownloadingSwarmMp3}
-                className="px-2.5 py-1.5 rounded-lg bg-white/5 border border-white/10 hover:border-cyan-400/40 text-slate-300 hover:text-white transition-all cursor-pointer flex items-center gap-1"
+                className="px-3 py-1.5 rounded-full bg-slate-900/40 backdrop-blur-xl hover:bg-slate-800/60 text-slate-200 hover:text-white transition-all cursor-pointer flex items-center gap-1.5"
                 title="Download full multi-voice MP3 stitched discussion"
               >
                 {isDownloadingSwarmMp3 ? (
@@ -205,7 +194,7 @@ export const ParallaxDeliberationStream: React.FC<ParallaxDeliberationStreamProp
                 id="parallax-copy-transcript-btn"
                 type="button"
                 onClick={onCopyFullSwarm}
-                className="px-2.5 py-1.5 rounded-lg bg-white/5 border border-white/10 hover:border-cyan-400/40 text-slate-300 hover:text-white transition-all cursor-pointer flex items-center gap-1"
+                className="px-3 py-1.5 rounded-full bg-slate-900/40 backdrop-blur-xl hover:bg-slate-800/60 text-slate-200 hover:text-white transition-all cursor-pointer flex items-center gap-1.5"
                 title="Copy entire discussion transcript formatted with headers"
               >
                 {copiedSwarmTranscript ? (
@@ -222,10 +211,10 @@ export const ParallaxDeliberationStream: React.FC<ParallaxDeliberationStreamProp
         </div>
 
         {/* Curation & Filter Strip */}
-        <div className="mt-3 pt-2.5 border-t border-white/10 flex items-center justify-between flex-wrap gap-2 text-xs font-mono">
+        <div className="mt-3 pt-3 border-t border-white/[0.06] flex items-center justify-between flex-wrap gap-2 text-xs font-mono">
           {/* Round Filter */}
           <div className="flex items-center gap-1.5">
-            <span className="text-slate-400 text-[11px]">ROUND:</span>
+            <span className="text-slate-300 text-[11px]">ROUND:</span>
             {[
               { key: 'all', label: 'All Rounds' },
               { key: 1, label: 'Round 01' },
@@ -236,10 +225,10 @@ export const ParallaxDeliberationStream: React.FC<ParallaxDeliberationStreamProp
                 key={r.key}
                 type="button"
                 onClick={() => onSetRoundFilter(r.key as typeof roundFilter)}
-                className={`px-2 py-0.5 rounded text-[10px] font-bold cursor-pointer transition-all ${
+                className={`px-2.5 py-1 rounded-full text-[10px] font-bold cursor-pointer transition-all ${
                   roundFilter === r.key
-                    ? 'bg-cyan-500/20 text-cyan-300 border border-cyan-400/50'
-                    : 'bg-white/5 text-slate-400 border border-white/5 hover:text-white'
+                    ? 'bg-cyan-500/20 text-cyan-300'
+                    : 'bg-slate-900/40 backdrop-blur-xl text-slate-300 hover:text-slate-100'
                 }`}
               >
                 {r.label}
@@ -249,7 +238,7 @@ export const ParallaxDeliberationStream: React.FC<ParallaxDeliberationStreamProp
 
           {/* Cluster Filter */}
           <div className="flex items-center gap-1.5 flex-wrap">
-            <span className="text-slate-400 text-[11px]">FILTER:</span>
+            <span className="text-slate-300 text-[11px]">FILTER:</span>
             {[
               { key: 'all', label: 'All Agents' },
               { key: 'facts', label: 'Tool Grounded' },
@@ -263,10 +252,10 @@ export const ParallaxDeliberationStream: React.FC<ParallaxDeliberationStreamProp
                 key={c.key}
                 type="button"
                 onClick={() => onSetGroupFilter(c.key as typeof groupFilter)}
-                className={`px-2 py-0.5 rounded text-[10px] font-bold cursor-pointer transition-all ${
+                className={`px-2.5 py-1 rounded-full text-[10px] font-bold cursor-pointer transition-all ${
                   groupFilter === c.key
-                    ? 'bg-cyan-500/20 text-cyan-300 border border-cyan-400/50'
-                    : 'bg-white/5 text-slate-400 border border-white/5 hover:text-white'
+                    ? 'bg-cyan-500/20 text-cyan-300'
+                    : 'bg-slate-900/40 backdrop-blur-xl text-slate-300 hover:text-slate-100'
                 }`}
               >
                 {c.label}
@@ -275,7 +264,7 @@ export const ParallaxDeliberationStream: React.FC<ParallaxDeliberationStreamProp
 
             {/* Selected Agent Filter pill */}
             {selectedAgentFilter && (
-              <div className="flex items-center gap-1 px-2 py-0.5 rounded bg-cyan-500/20 border border-cyan-400 text-cyan-200 font-bold text-[10px]">
+              <div className="flex items-center gap-1 px-2.5 py-1 rounded-full bg-cyan-500/20 text-cyan-200 font-bold text-[10px]">
                 <span>{agents[selectedAgentFilter]?.name || selectedAgentFilter}</span>
                 <button
                   type="button"
@@ -291,14 +280,14 @@ export const ParallaxDeliberationStream: React.FC<ParallaxDeliberationStreamProp
       </div>
 
       {/* Main Stream Content */}
-      <div className="relative z-20 p-4 sm:p-6 space-y-6">
+      <div className="relative z-20 space-y-8">
         {messages.length === 0 && !isRunning ? (
-          <div className="py-16 text-center text-slate-400 font-mono text-xs">
-            <Terminal size={32} className="mx-auto mb-3 text-cyan-400/40" />
-            <h3 className="m-0 text-sm font-bold text-white uppercase tracking-wider">
+          <div className="py-16 text-center text-slate-300 font-mono text-xs">
+            <Terminal size={32} className="mx-auto mb-3 text-cyan-400/50" />
+            <h3 className="m-0 text-sm font-bold text-slate-100 uppercase tracking-wider">
               SWARM DELIBERATION STREAM STANDBY
             </h3>
-            <p className="m-0 text-slate-500 text-xs mt-1 max-w-md mx-auto">
+            <p className="m-0 text-slate-300 text-xs mt-1.5 max-w-md mx-auto">
               Enter a research inquiry above and mobilize the 20-persona swarm to observe real-time peer dialectics, grounded tools, and cross-examinations.
             </p>
           </div>
@@ -308,20 +297,15 @@ export const ParallaxDeliberationStream: React.FC<ParallaxDeliberationStreamProp
             {(roundFilter === 'all' || roundFilter === 1) && specialistDeliberation && (
               <div
                 id="parallax-pre-round-deliberation"
-                className="p-4 rounded-xl font-mono text-xs space-y-3"
-                style={{
-                  background: 'linear-gradient(135deg, rgba(88, 28, 135, 0.15) 0%, rgba(15, 23, 42, 0.6) 100%)',
-                  border: '1px solid rgba(192, 132, 252, 0.35)',
-                  boxShadow: '0 4px 20px rgba(0, 0, 0, 0.3)',
-                }}
+                className="pl-4 border-l-2 border-purple-400/60 py-2 font-mono text-xs space-y-3"
               >
                 <div className="flex items-center justify-between flex-wrap gap-2">
                   <div className="flex items-center gap-2">
                     <Sparkles size={14} className="text-purple-400" />
-                    <span className="font-bold text-white tracking-wider">
+                    <span className="font-bold text-slate-100 tracking-wider">
                       PRE-ROUND • SPECIALIST TOPIC COMPILATION
                     </span>
-                    <span className="text-[10px] px-2 py-0.5 rounded bg-purple-500/20 text-purple-300 border border-purple-500/40 font-bold">
+                    <span className="text-[10px] px-2.5 py-0.5 rounded-full bg-purple-500/20 text-purple-300 font-bold">
                       3 COMPILED SPECIALISTS
                     </span>
                   </div>
@@ -329,23 +313,23 @@ export const ParallaxDeliberationStream: React.FC<ParallaxDeliberationStreamProp
 
                 {/* 5 Core Opinions */}
                 {specialistDeliberation.opinions && (
-                  <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-2">
+                  <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3">
                     {specialistDeliberation.opinions.map((op, idx) => (
                       <div
                         key={idx}
-                        className="p-2.5 rounded-lg bg-black/40 border border-purple-500/20"
+                        className="p-3 rounded-xl bg-slate-900/40 backdrop-blur-xl hover:bg-slate-900/60 transition-colors"
                       >
                         <div className="flex items-center justify-between text-[11px] mb-1">
                           <span className="font-bold" style={{ color: op.accentColor || '#c084fc' }}>
                             {op.emoji} {op.agentName}
                           </span>
-                          <span className="text-[10px] text-slate-400">{op.role}</span>
+                          <span className="text-[10px] text-slate-300">{op.role}</span>
                         </div>
-                        <div className="text-[11px] text-slate-200">
+                        <div className="text-[11px] text-slate-100">
                           <span className="text-cyan-300 font-semibold">Proposes: </span>
                           <span>{op.suggestedSpecialist}</span>
                         </div>
-                        <div className="text-[10px] text-slate-400 italic mt-0.5 font-sans">
+                        <div className="text-[10px] text-slate-300 italic mt-0.5 font-sans">
                           &ldquo;{op.reason}&rdquo;
                         </div>
                       </div>
@@ -355,7 +339,7 @@ export const ParallaxDeliberationStream: React.FC<ParallaxDeliberationStreamProp
               </div>
             )}
 
-            {/* Rounds Stream with Inline Curation */}
+            {/* Rounds Stream as Open Timeline Thread with Left-Line Connectors */}
             {([1, 2, 3] as const).map((roundNum) => {
               if (roundFilter !== 'all' && roundFilter !== roundNum) return null;
 
@@ -381,14 +365,21 @@ export const ParallaxDeliberationStream: React.FC<ParallaxDeliberationStreamProp
               const hiddenCount = Math.max(0, roundMsgs.length - CURATED_COUNT);
 
               return (
-                <div key={roundNum} id={`parallax-round-section-${roundNum}`} className="space-y-3">
+                <div
+                  key={roundNum}
+                  id={`parallax-round-section-${roundNum}`}
+                  className="relative pl-4 sm:pl-6 border-l border-white/10 space-y-4"
+                >
+                  {/* Timeline Node Dot on Left Connector */}
+                  <div className="absolute -left-[5px] top-1.5 w-2.5 h-2.5 rounded-full bg-cyan-400 shadow-[0_0_10px_#00f0ff]" />
+
                   {/* Round Header Divider */}
-                  <div className="flex items-center justify-between border-b border-cyan-500/20 pb-2 font-mono">
-                    <div className="flex items-center gap-2">
-                      <span className="px-2.5 py-0.5 rounded bg-cyan-500/20 text-cyan-300 border border-cyan-400/40 text-xs font-bold">
+                  <div className="flex items-center justify-between border-b border-white/[0.06] pb-2.5 font-mono">
+                    <div className="flex items-center gap-2.5">
+                      <span className="px-3 py-0.5 rounded-full bg-slate-900/40 backdrop-blur-xl text-cyan-300 text-xs font-bold">
                         ROUND 0{roundNum} OF 03
                       </span>
-                      <span className="text-xs text-slate-400 hidden sm:inline font-sans">
+                      <span className="text-xs text-slate-300 hidden sm:inline font-sans">
                         {roundNum === 1
                           ? 'Thesis & Initial Takes (VERITAS Grounding)'
                           : roundNum === 2
@@ -397,13 +388,13 @@ export const ParallaxDeliberationStream: React.FC<ParallaxDeliberationStreamProp
                       </span>
                     </div>
 
-                    <span className="text-xs text-cyan-400 font-bold">
+                    <span className="text-xs text-cyan-300 font-bold">
                       {roundMsgs.length} REPLIES
                     </span>
                   </div>
 
-                  {/* Messages list */}
-                  <div className="space-y-2.5">
+                  {/* Open Thread Messages list with hairline dividers */}
+                  <div className="divide-y divide-white/[0.06]">
                     {visibleMsgs.map((msg) => {
                       const isVoicePlaying = playingAudioKey === msg.id;
                       const isVoiceLoading = loadingAudioKey === msg.id;
@@ -435,22 +426,22 @@ export const ParallaxDeliberationStream: React.FC<ParallaxDeliberationStreamProp
                         <div
                           key={msg.id}
                           id={`parallax-msg-${msg.id}`}
-                          className={`p-3.5 rounded-xl border transition-all font-mono scroll-mt-24 ${
+                          className={`py-4 px-4 rounded-xl transition-colors font-mono scroll-mt-24 hover:bg-slate-900/40 ${
                             isHuman
-                              ? 'bg-amber-950/20 border-amber-500/40 shadow-[0_0_20px_rgba(245,158,11,0.15)]'
+                              ? 'bg-amber-950/20'
                               : isDevilsAdvocate
-                              ? 'bg-rose-950/25 border-rose-500/40 shadow-[0_0_20px_rgba(244,63,94,0.15)]'
-                              : 'bg-white/[0.02] border-white/5 hover:border-cyan-500/30'
+                              ? 'bg-rose-950/20'
+                              : 'bg-transparent'
                           }`}
                           style={{
-                            borderLeft: `3px solid ${borderLeftColor}`,
+                            borderLeft: `2px solid ${borderLeftColor}`,
                           }}
                         >
                           {/* Top Feed Header: TIMESTAMP • AGENT • EVENT • ROUND */}
-                          <div className="flex items-center justify-between flex-wrap gap-2 mb-2 pb-1.5 border-b border-white/5">
+                          <div className="flex items-center justify-between flex-wrap gap-2 mb-2">
                             <div className="flex items-center gap-2 flex-wrap">
                               {/* Monospace Timestamp */}
-                              <span className="text-[10px] text-cyan-400/80 font-bold bg-black/40 px-1.5 py-0.5 rounded border border-white/5">
+                              <span className="text-[10px] text-slate-300 font-bold bg-slate-900/40 backdrop-blur-xl px-2 py-0.5 rounded-full">
                                 {new Date(msg.timestamp).toLocaleTimeString([], {
                                   hour: '2-digit',
                                   minute: '2-digit',
@@ -460,11 +451,11 @@ export const ParallaxDeliberationStream: React.FC<ParallaxDeliberationStreamProp
 
                               {/* Agent Avatar & Name */}
                               {isHuman ? (
-                                <div className="w-6 h-6 rounded-lg bg-amber-500/20 border border-amber-500/50 grid place-items-center text-amber-400 font-black text-xs shrink-0">
+                                <div className="w-6 h-6 rounded-lg bg-amber-500/20 grid place-items-center text-amber-300 font-black text-xs shrink-0">
                                   <User size={13} />
                                 </div>
                               ) : isDevilsAdvocate ? (
-                                <div className="w-6 h-6 rounded-lg bg-rose-500/20 border border-rose-500/50 grid place-items-center text-rose-400 font-black text-xs shrink-0">
+                                <div className="w-6 h-6 rounded-lg bg-rose-500/20 grid place-items-center text-rose-300 font-black text-xs shrink-0">
                                   <Flame size={13} />
                                 </div>
                               ) : (
@@ -484,40 +475,40 @@ export const ParallaxDeliberationStream: React.FC<ParallaxDeliberationStreamProp
                               </span>
 
                               {/* Role */}
-                              <span className="text-[10px] text-slate-400 font-sans">
+                              <span className="text-[11px] text-slate-300 font-sans">
                                 ({msg.role || (isHuman ? 'Human Directive' : 'AI Specialist')})
                               </span>
 
                               {/* Event tag */}
                               <span
-                                className={`text-[9px] px-2 py-0.5 rounded font-bold ${
+                                className={`text-[9px] px-2 py-0.5 rounded-full font-bold ${
                                   isHuman
-                                    ? 'bg-amber-500/20 text-amber-300 border border-amber-500/30'
+                                    ? 'bg-amber-500/20 text-amber-300'
                                     : isDevilsAdvocate
-                                    ? 'bg-rose-500/20 text-rose-300 border border-rose-500/30'
-                                    : 'bg-cyan-500/10 text-cyan-300 border border-cyan-500/20'
+                                    ? 'bg-rose-500/20 text-rose-300'
+                                    : 'bg-slate-900/40 backdrop-blur-xl text-cyan-300'
                                 }`}
                               >
                                 {eventType}
                               </span>
 
                               {/* Round tag */}
-                              <span className="text-[9px] px-1.5 py-0.5 rounded bg-white/5 text-slate-400 border border-white/10">
+                              <span className="text-[9px] px-2 py-0.5 rounded-full bg-slate-900/40 text-slate-300">
                                 ROUND 0{msg.round}
                               </span>
 
                               {/* Dynamic / Devil's Advocate / Human badge */}
                               {isHuman ? (
-                                <span className="text-[9px] px-1.5 py-0.5 rounded bg-amber-500/25 text-amber-200 border border-amber-500/40 font-bold">
+                                <span className="text-[9px] px-2 py-0.5 rounded-full bg-amber-500/25 text-amber-200 font-bold">
                                   DIRECTIVE
                                 </span>
                               ) : isDevilsAdvocate ? (
-                                <span className="text-[9px] px-1.5 py-0.5 rounded bg-rose-500/25 text-rose-200 border border-rose-500/40 font-bold flex items-center gap-1">
+                                <span className="text-[9px] px-2 py-0.5 rounded-full bg-rose-500/25 text-rose-200 font-bold flex items-center gap-1">
                                   <ShieldAlert size={10} />
                                   <span>CONTRARIAN</span>
                                 </span>
                               ) : msg.isDynamic ? (
-                                <span className="text-[9px] px-1.5 py-0.5 rounded bg-purple-500/20 text-purple-300 border border-purple-500/30 font-bold">
+                                <span className="text-[9px] px-2 py-0.5 rounded-full bg-purple-500/20 text-purple-300 font-bold">
                                   SPECIALIST
                                 </span>
                               ) : null}
@@ -526,7 +517,7 @@ export const ParallaxDeliberationStream: React.FC<ParallaxDeliberationStreamProp
                             {/* Audio Action & JSON toggles */}
                             <div className="flex items-center gap-1.5">
                               {msg.conviction !== undefined && !isHuman && (
-                                <span className="text-[9px] px-1.5 py-0.5 rounded bg-white/5 text-slate-300 border border-white/10 font-bold mr-1">
+                                <span className="text-[10px] px-2.5 py-0.5 rounded-full bg-slate-900/40 backdrop-blur-xl text-slate-100 font-bold mr-1">
                                   Conviction: {msg.conviction}/10
                                 </span>
                               )}
@@ -536,10 +527,10 @@ export const ParallaxDeliberationStream: React.FC<ParallaxDeliberationStreamProp
                                   type="button"
                                   onClick={() => onPlayMessageAudio(msg)}
                                   disabled={isVoiceLoading}
-                                  className={`px-2 py-1 rounded text-[10px] font-bold cursor-pointer transition-all flex items-center gap-1 ${
+                                  className={`px-2.5 py-1 rounded-full text-[10px] font-bold cursor-pointer transition-all flex items-center gap-1 ${
                                     isVoicePlaying
-                                      ? 'bg-cyan-500/30 text-cyan-200 border border-cyan-400'
-                                      : 'bg-white/5 hover:bg-white/10 text-slate-300 border border-white/10'
+                                      ? 'bg-cyan-500/30 text-cyan-200'
+                                      : 'bg-slate-900/40 hover:bg-slate-800/60 text-slate-200'
                                   }`}
                                   title="Listen to this agent's synthesized speech"
                                 >
@@ -557,7 +548,7 @@ export const ParallaxDeliberationStream: React.FC<ParallaxDeliberationStreamProp
                               <button
                                 type="button"
                                 onClick={() => onToggleRawJsonView(msg.id)}
-                                className="p-1 rounded bg-white/5 hover:bg-white/10 text-slate-400 hover:text-white border border-white/10 cursor-pointer"
+                                className="p-1.5 rounded-full bg-slate-900/40 hover:bg-slate-800/60 text-slate-300 hover:text-white cursor-pointer"
                                 title="Toggle Raw JSON Data"
                               >
                                 <Code2 size={11} />
@@ -567,7 +558,7 @@ export const ParallaxDeliberationStream: React.FC<ParallaxDeliberationStreamProp
 
                           {/* Rebuttal Target Indicator (if Round 2 peer pushback) */}
                           {msg.replyToAgentName && (
-                            <div className="mb-2 px-2.5 py-1 rounded bg-cyan-950/30 border border-cyan-500/20 text-[11px] text-cyan-200 font-sans flex items-center justify-between gap-1.5">
+                            <div className="mb-2 px-3 py-1.5 rounded-lg bg-slate-900/40 backdrop-blur-xl text-[11px] text-cyan-200 font-sans flex items-center justify-between gap-1.5">
                               <div className="flex items-center gap-1.5">
                                 <Zap size={11} className="text-cyan-400" />
                                 <span>
@@ -586,7 +577,7 @@ export const ParallaxDeliberationStream: React.FC<ParallaxDeliberationStreamProp
                                       setTimeout(() => el.classList.remove('ring-2', 'ring-cyan-400'), 2500);
                                     }
                                   }}
-                                  className="text-[10px] text-cyan-400 hover:underline font-mono cursor-pointer"
+                                  className="text-[10px] text-cyan-300 hover:underline font-mono cursor-pointer"
                                 >
                                   View quoted statement ➔
                                 </button>
@@ -596,25 +587,25 @@ export const ParallaxDeliberationStream: React.FC<ParallaxDeliberationStreamProp
 
                           {/* VERITAS Grounding Preview (if web/wiki tool used) */}
                           {msg.toolUsed && (
-                            <div className="mb-2 p-2.5 rounded-lg bg-black/40 border border-cyan-500/25 text-[11px] space-y-1 font-sans">
+                            <div className="mb-2.5 p-3 rounded-xl bg-slate-900/40 backdrop-blur-xl text-[11px] space-y-1 font-sans">
                               <div className="flex items-center gap-1.5 text-cyan-300 font-mono text-[10px] font-bold">
                                 <Search size={11} />
                                 <span>VERITAS GROUNDING ENGINE</span>
                                 <span className="text-slate-500">•</span>
-                                <span className="text-slate-400">
+                                <span className="text-slate-300">
                                   Query: &ldquo;{msg.toolUsed.query}&rdquo;
                                 </span>
                               </div>
                               {msg.toolUsed.committedFact && (
-                                <p className="m-0 text-slate-300 text-[11px] italic">
+                                <p className="m-0 text-slate-200 text-[11px] italic">
                                   &ldquo;{msg.toolUsed.committedFact}&rdquo;
                                 </p>
                               )}
                             </div>
                           )}
 
-                          {/* Message Text Body with interactive @mention chips */}
-                          <div className="text-xs sm:text-[13px] text-slate-200 font-sans leading-relaxed whitespace-pre-wrap">
+                          {/* Message Text Body with high-contrast typography and interactive @mention chips */}
+                          <div className="text-xs sm:text-[13px] text-slate-100 font-sans leading-relaxed whitespace-pre-wrap">
                             {msg.text.split(/(@[a-zA-Z0-9_-]+)/g).map((part, pIdx) => {
                               if (part.startsWith('@')) {
                                 const targetName = part.slice(1);
@@ -641,7 +632,7 @@ export const ParallaxDeliberationStream: React.FC<ParallaxDeliberationStreamProp
                                         }
                                       }
                                     }}
-                                    className="inline-flex items-center gap-0.5 px-1.5 py-0.2 rounded bg-cyan-500/20 text-cyan-300 border border-cyan-400/40 font-mono text-[11px] font-bold cursor-pointer hover:bg-cyan-500/35 hover:scale-105 transition-all mx-0.5 shadow-sm"
+                                    className="inline-flex items-center gap-0.5 px-2 py-0.5 rounded-full bg-cyan-500/20 text-cyan-300 font-mono text-[11px] font-bold cursor-pointer hover:bg-cyan-500/35 transition-all mx-0.5"
                                     title={
                                       targetMsg
                                         ? `Jump to @${targetName}'s prior argument in Round ${targetMsg.round}`
@@ -658,13 +649,13 @@ export const ParallaxDeliberationStream: React.FC<ParallaxDeliberationStreamProp
 
                           {/* Raw JSON inspection view */}
                           {rawJsonOpenMap[msg.id] && (
-                            <div className="mt-3 p-3 rounded-lg bg-black/80 border border-cyan-500/30 font-mono text-[10px] space-y-2">
-                              <div className="flex items-center justify-between text-slate-400">
+                            <div className="mt-3 p-3 rounded-xl bg-slate-950/80 backdrop-blur-xl font-mono text-[10px] space-y-2">
+                              <div className="flex items-center justify-between text-slate-300">
                                 <span>RAW JSON PAYLOAD ({msg.id})</span>
                                 <button
                                   type="button"
                                   onClick={(e) => onCopyRawJson(JSON.stringify(msg, null, 2), msg.id, e)}
-                                  className="text-cyan-400 hover:text-cyan-200 flex items-center gap-1 cursor-pointer"
+                                  className="text-cyan-300 hover:text-cyan-200 flex items-center gap-1 cursor-pointer"
                                 >
                                   {copiedRawJsonId === msg.id ? (
                                     <Check size={10} className="text-emerald-400" />
@@ -686,11 +677,11 @@ export const ParallaxDeliberationStream: React.FC<ParallaxDeliberationStreamProp
 
                   {/* Expand / Collapse Curated Turns Toggle */}
                   {roundMsgs.length > CURATED_COUNT && (
-                    <div className="pt-1 text-center">
+                    <div className="pt-2">
                       <button
                         type="button"
                         onClick={() => onToggleRoundExpand(roundNum)}
-                        className="px-3 py-1.5 rounded-lg bg-white/5 border border-white/10 hover:border-cyan-400/40 text-slate-300 hover:text-white font-mono text-xs font-bold transition-all cursor-pointer inline-flex items-center gap-1.5"
+                        className="px-4 py-1.5 rounded-full bg-slate-900/40 backdrop-blur-xl hover:bg-slate-800/60 text-slate-200 hover:text-white font-mono text-xs font-bold transition-all cursor-pointer inline-flex items-center gap-1.5"
                       >
                         {isExpanded ? (
                           <>

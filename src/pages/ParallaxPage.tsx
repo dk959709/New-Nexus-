@@ -647,33 +647,18 @@ export const ParallaxPage: React.FC = () => {
     <div
       id="parallax-page-wrapper"
       className="min-h-screen relative w-full overflow-x-hidden p-2 sm:p-0"
-      style={{
-        background: 'radial-gradient(ellipse at 50% 0%, rgba(3, 14, 26, 0.8) 0%, rgba(2, 6, 12, 1) 100%)',
-      }}
     >
-      {/* Ambient background tactical grid & atmospheric glow */}
-      <div
-        className="fixed inset-0 pointer-events-none opacity-20"
-        style={{
-          backgroundImage:
-            'radial-gradient(rgba(0, 240, 255, 0.12) 1px, transparent 1px), radial-gradient(rgba(37, 99, 235, 0.08) 1px, transparent 1px)',
-          backgroundSize: '32px 32px',
-          backgroundPosition: '0 0, 16px 16px',
-        }}
-      />
+      {/* Ambient, non-intrusive background glows behind the main swarm feed */}
+      <div className="pointer-events-none fixed inset-0 overflow-hidden z-0">
+        <div className="absolute top-12 left-1/4 w-[520px] h-[520px] rounded-full bg-cyan-500/10 blur-3xl" />
+        <div className="absolute bottom-16 right-1/4 w-[520px] h-[520px] rounded-full bg-purple-500/10 blur-3xl" />
+      </div>
 
       <div
         id="parallax-page"
-        className="relative z-10 w-full"
-        style={{
-          maxWidth: '1280px',
-          margin: '0 auto',
-          padding: '16px 8px 80px',
-          color: '#f8fafc',
-          fontFamily: 'Inter, system-ui, sans-serif',
-        }}
+        className="relative z-10 w-full max-w-[1320px] mx-auto px-3 sm:px-6 pt-4 pb-24 text-slate-100 font-sans bg-slate-950/60 backdrop-blur-2xl rounded-3xl"
       >
-        {/* Top Futuristic Header with Debate Mode Theme */}
+        {/* Top Translucent Glass Header with Debate Mode Theme */}
         <ParallaxHeader
           isRunning={isRunning}
           currentRound={currentRound}
@@ -690,45 +675,22 @@ export const ParallaxPage: React.FC = () => {
         {/* Tabs Navigation */}
         <div
           id="parallax-tabs-nav"
-          style={{
-            display: 'flex',
-            gap: '8px',
-            borderBottom: '1px solid rgba(165, 207, 214, 0.15)',
-            paddingBottom: '12px',
-            marginBottom: '20px',
-          }}
+          className="flex items-center gap-2 border-b border-white/[0.06] pb-3.5 mb-5 flex-wrap"
         >
           <button
             id="parallax-tab-feed"
             type="button"
             onClick={() => setActiveTab('feed')}
-            style={{
-              padding: '8px 16px',
-              borderRadius: '10px',
-              background: activeTab === 'feed' ? 'rgba(6, 182, 212, 0.2)' : 'transparent',
-              border: `1px solid ${activeTab === 'feed' ? 'rgba(6, 182, 212, 0.4)' : 'transparent'}`,
-              color: activeTab === 'feed' ? '#61d7c9' : '#94a3b8',
-              fontSize: '13px',
-              fontWeight: 700,
-              cursor: 'pointer',
-              display: 'flex',
-              alignItems: 'center',
-              gap: '8px',
-              transition: 'all 0.15s ease',
-            }}
+            className={`px-4 py-2 rounded-full text-xs sm:text-[13px] font-bold cursor-pointer flex items-center gap-2 transition-all ${
+              activeTab === 'feed'
+                ? 'bg-cyan-500/20 text-cyan-300 backdrop-blur-xl'
+                : 'bg-slate-900/40 backdrop-blur-xl text-slate-300 hover:text-slate-100 hover:bg-slate-800/50'
+            }`}
           >
-            <MessageSquare size={16} />
-            Swarm Live Feed
+            <MessageSquare size={15} />
+            <span>Swarm Live Feed</span>
             {messages.length > 0 && (
-              <span
-                style={{
-                  fontSize: '10px',
-                  padding: '1px 6px',
-                  borderRadius: '999px',
-                  background: '#0891b2',
-                  color: '#fff',
-                }}
-              >
+              <span className="text-[10px] px-2 py-0.5 rounded-full bg-cyan-500 text-slate-950 font-black">
                 {messages.length}
               </span>
             )}
@@ -738,52 +700,34 @@ export const ParallaxPage: React.FC = () => {
             id="parallax-tab-settings"
             type="button"
             onClick={() => setActiveTab('settings')}
-            style={{
-              padding: '8px 16px',
-              borderRadius: '10px',
-              background: activeTab === 'settings' ? 'rgba(6, 182, 212, 0.2)' : 'transparent',
-              border: `1px solid ${activeTab === 'settings' ? 'rgba(6, 182, 212, 0.4)' : 'transparent'}`,
-              color: activeTab === 'settings' ? '#61d7c9' : '#94a3b8',
-              fontSize: '13px',
-              fontWeight: 700,
-              cursor: 'pointer',
-              display: 'flex',
-              alignItems: 'center',
-              gap: '8px',
-              transition: 'all 0.15s ease',
-            }}
+            className={`px-4 py-2 rounded-full text-xs sm:text-[13px] font-bold cursor-pointer flex items-center gap-2 transition-all ${
+              activeTab === 'settings'
+                ? 'bg-cyan-500/20 text-cyan-300 backdrop-blur-xl'
+                : 'bg-slate-900/40 backdrop-blur-xl text-slate-300 hover:text-slate-100 hover:bg-slate-800/50'
+            }`}
           >
-            <Settings2 size={16} />
-            Agent Configurations (20)
+            <Settings2 size={15} />
+            <span>Agent Configurations (20)</span>
           </button>
 
           <button
             id="parallax-tab-archive"
             type="button"
             onClick={() => setActiveTab('archive')}
-            style={{
-              padding: '8px 16px',
-              borderRadius: '10px',
-              background: activeTab === 'archive' ? 'rgba(6, 182, 212, 0.2)' : 'transparent',
-              border: `1px solid ${activeTab === 'archive' ? 'rgba(6, 182, 212, 0.4)' : 'transparent'}`,
-              color: activeTab === 'archive' ? '#61d7c9' : '#94a3b8',
-              fontSize: '13px',
-              fontWeight: 700,
-              cursor: 'pointer',
-              display: 'flex',
-              alignItems: 'center',
-              gap: '8px',
-              transition: 'all 0.15s ease',
-            }}
+            className={`px-4 py-2 rounded-full text-xs sm:text-[13px] font-bold cursor-pointer flex items-center gap-2 transition-all ${
+              activeTab === 'archive'
+                ? 'bg-cyan-500/20 text-cyan-300 backdrop-blur-xl'
+                : 'bg-slate-900/40 backdrop-blur-xl text-slate-300 hover:text-slate-100 hover:bg-slate-800/50'
+            }`}
           >
-            <Archive size={16} />
-            Past Swarms ({sessions.length})
+            <Archive size={15} />
+            <span>Past Swarms ({sessions.length})</span>
           </button>
         </div>
 
         {/* TAB CONTENT: SETTINGS & AGENT MATRIX */}
         {activeTab === 'settings' && (
-          <div className="space-y-6 flex flex-col gap-6">
+          <div className="divide-y divide-white/[0.06] space-y-6">
             <ParallaxAgentMatrix
               agents={config.agents}
               messages={messages}
@@ -799,9 +743,9 @@ export const ParallaxPage: React.FC = () => {
 
         {/* TAB CONTENT: ARCHIVE */}
         {activeTab === 'archive' && (
-          <div id="parallax-archive-tab" style={{ display: 'flex', flexDirection: 'column', gap: '16px' }}>
-            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-              <h3 style={{ margin: 0, fontSize: '16px', fontWeight: 700, color: '#fff' }}>
+          <div id="parallax-archive-tab" className="space-y-4">
+            <div className="flex items-center justify-between border-b border-white/[0.06] pb-3">
+              <h3 className="m-0 text-base font-bold text-slate-100">
                 Saved Swarm Discussions ({sessions.length})
               </h3>
               {sessions.length > 0 && (
@@ -813,95 +757,50 @@ export const ParallaxPage: React.FC = () => {
                     setSessions([]);
                     setConfirmDeleteId(null);
                   }}
-                  style={{
-                    padding: '6px 12px',
-                    borderRadius: '8px',
-                    background: 'rgba(239, 68, 68, 0.15)',
-                    border: '1px solid rgba(239, 68, 68, 0.3)',
-                    color: '#f87171',
-                    fontSize: '12px',
-                    cursor: 'pointer',
-                    display: 'flex',
-                    alignItems: 'center',
-                    gap: '6px',
-                  }}
+                  className="px-3.5 py-1.5 rounded-full bg-rose-500/15 hover:bg-rose-500/25 text-rose-300 text-xs font-semibold cursor-pointer flex items-center gap-1.5 transition-colors"
                 >
                   <Trash2 size={14} />
-                  Clear Archive
+                  <span>Clear Archive</span>
                 </button>
               )}
             </div>
 
             {sessions.length === 0 ? (
-              <div
-                style={{
-                  padding: '40px 20px',
-                  textAlign: 'center',
-                  color: '#94a3b8',
-                  borderRadius: '12px',
-                  background: 'rgba(8, 22, 34, 0.5)',
-                  border: '1px dashed rgba(165, 207, 214, 0.2)',
-                }}
-              >
+              <div className="py-12 text-center text-slate-300 text-sm">
                 No archived sessions yet. Run a swarm from the Live Feed tab to see past synthesis reports here.
               </div>
             ) : (
-              <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(360px, 1fr))', gap: '16px' }}>
+              <div className="divide-y divide-white/[0.06]">
                 {sessions.map((sess) => (
                   <div
                     key={sess.id}
                     id={`parallax-saved-swarm-${sess.id}`}
-                    style={{
-                      padding: '16px',
-                      borderRadius: '12px',
-                      background: 'rgba(8, 22, 34, 0.8)',
-                      border: '1px solid rgba(97, 215, 201, 0.25)',
-                      display: 'flex',
-                      flexDirection: 'column',
-                      gap: '10px',
-                    }}
+                    className="py-4 px-3 rounded-xl hover:bg-slate-900/40 transition-colors flex flex-col gap-2.5"
                   >
-                    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start' }}>
-                      <span style={{ fontSize: '14px', fontWeight: 800, color: '#fff', lineHeight: 1.4 }}>
+                    <div className="flex items-start justify-between gap-3">
+                      <span className="text-sm font-extrabold text-slate-100 leading-snug">
                         &ldquo;{sess.topic}&rdquo;
                       </span>
-                      <span style={{ fontSize: '11px', color: '#94a3b8', fontFamily: 'DM Mono, monospace' }}>
+                      <span className="text-[11px] text-slate-300 font-mono shrink-0">
                         {new Date(sess.timestamp).toLocaleDateString()}
                       </span>
                     </div>
                     {sess.summary && (
-                      <div style={{ fontSize: '12px', color: '#cbd5e1', lineHeight: 1.4 }}>
-                        <strong style={{ color: '#61d7c9' }}>Lean:</strong> {sess.summary.consensusLean}
+                      <div className="text-xs text-slate-300 leading-relaxed">
+                        <strong className="text-cyan-300">Lean:</strong> {sess.summary.consensusLean}
                       </div>
                     )}
-                    <div
-                      style={{
-                        display: 'flex',
-                        alignItems: 'center',
-                        justifyContent: 'space-between',
-                        marginTop: '4px',
-                        flexWrap: 'wrap',
-                        gap: '8px',
-                      }}
-                    >
-                      <span style={{ fontSize: '11px', color: '#94a3b8', fontFamily: 'DM Mono, monospace' }}>
+                    <div className="flex items-center justify-between flex-wrap gap-2 pt-1">
+                      <span className="text-[11px] text-slate-300 font-mono">
                         {sess.messages.length} messages (3 rounds)
                       </span>
 
                       {confirmDeleteId === sess.id ? (
                         <div
                           id={`confirm-delete-swarm-prompt-${sess.id}`}
-                          style={{
-                            display: 'flex',
-                            alignItems: 'center',
-                            gap: '6px',
-                            background: 'rgba(239, 68, 68, 0.15)',
-                            border: '1px solid rgba(239, 68, 68, 0.4)',
-                            borderRadius: '6px',
-                            padding: '3px 8px',
-                          }}
+                          className="flex items-center gap-2 bg-rose-500/15 rounded-full px-3 py-1"
                         >
-                          <span style={{ fontSize: '11px', color: '#fca5a5', fontWeight: 600 }}>
+                          <span className="text-[11px] text-rose-200 font-semibold">
                             Delete this swarm discussion?
                           </span>
                           <button
@@ -912,16 +811,7 @@ export const ParallaxPage: React.FC = () => {
                               setSessions(storage.getParallaxSessions());
                               setConfirmDeleteId(null);
                             }}
-                            style={{
-                              padding: '2px 7px',
-                              borderRadius: '4px',
-                              background: '#ef4444',
-                              border: 'none',
-                              color: '#fff',
-                              fontSize: '11px',
-                              fontWeight: 700,
-                              cursor: 'pointer',
-                            }}
+                            className="px-2.5 py-0.5 rounded-full bg-rose-500 text-white text-[11px] font-bold cursor-pointer"
                           >
                             Delete
                           </button>
@@ -929,21 +819,13 @@ export const ParallaxPage: React.FC = () => {
                             id={`confirm-delete-cancel-${sess.id}`}
                             type="button"
                             onClick={() => setConfirmDeleteId(null)}
-                            style={{
-                              padding: '2px 6px',
-                              borderRadius: '4px',
-                              background: 'rgba(255, 255, 255, 0.1)',
-                              border: '1px solid rgba(255, 255, 255, 0.2)',
-                              color: '#cbd5e1',
-                              fontSize: '11px',
-                              cursor: 'pointer',
-                            }}
+                            className="px-2.5 py-0.5 rounded-full bg-white/10 text-slate-200 text-[11px] cursor-pointer"
                           >
                             Cancel
                           </button>
                         </div>
                       ) : (
-                        <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                        <div className="flex items-center gap-2">
                           <button
                             type="button"
                             onClick={() => {
@@ -960,16 +842,7 @@ export const ParallaxPage: React.FC = () => {
                               setCurrentTopic(sess.topic);
                               setActiveTab('feed');
                             }}
-                            style={{
-                              padding: '5px 12px',
-                              borderRadius: '6px',
-                              background: 'rgba(6, 182, 212, 0.2)',
-                              border: '1px solid rgba(6, 182, 212, 0.4)',
-                              color: '#61d7c9',
-                              fontSize: '11px',
-                              fontWeight: 700,
-                              cursor: 'pointer',
-                            }}
+                            className="px-3.5 py-1.5 rounded-full bg-cyan-500/20 hover:bg-cyan-500/30 text-cyan-300 text-[11px] font-bold cursor-pointer transition-colors"
                           >
                             Load in Feed
                           </button>
@@ -979,19 +852,7 @@ export const ParallaxPage: React.FC = () => {
                             title="Delete this swarm discussion"
                             aria-label="Delete this swarm discussion"
                             onClick={() => setConfirmDeleteId(sess.id)}
-                            style={{
-                              padding: '5px 8px',
-                              borderRadius: '6px',
-                              background: 'rgba(239, 68, 68, 0.12)',
-                              border: '1px solid rgba(239, 68, 68, 0.3)',
-                              color: '#f87171',
-                              fontSize: '11px',
-                              cursor: 'pointer',
-                              display: 'flex',
-                              alignItems: 'center',
-                              justifyContent: 'center',
-                              transition: 'all 0.15s ease',
-                            }}
+                            className="p-1.5 rounded-full bg-rose-500/15 hover:bg-rose-500/25 text-rose-300 cursor-pointer flex items-center justify-center transition-colors"
                           >
                             <Trash2 size={13} />
                           </button>
@@ -1007,7 +868,7 @@ export const ParallaxPage: React.FC = () => {
 
         {/* TAB CONTENT: FEED */}
         {activeTab === 'feed' && (
-          <div id="parallax-feed-view" style={{ display: 'flex', flexDirection: 'column', gap: '20px' }}>
+          <div id="parallax-feed-view" className="divide-y divide-white/[0.06]">
             {/* FEATURE 7: Debate Mode Preset Selector */}
             <ParallaxDebateModeSelector
               selectedMode={debateMode}
@@ -1015,19 +876,13 @@ export const ParallaxPage: React.FC = () => {
               disabled={isRunning}
             />
 
-            {/* Topic Input Bar & Presets */}
+            {/* Unboxed Topic Input Bar & Presets */}
             <div
               id="parallax-input-container"
-              style={{
-                padding: '16px 20px',
-                borderRadius: '16px',
-                background: 'linear-gradient(145deg, rgba(8, 22, 34, 0.9) 0%, rgba(4, 12, 18, 0.95) 100%)',
-                border: '1px solid rgba(97, 215, 201, 0.3)',
-                boxShadow: '0 4px 20px rgba(0, 0, 0, 0.3)',
-              }}
+              className="py-5 border-b border-white/[0.06]"
             >
               {/* Input Row */}
-              <div className="parallax-input-row" style={{ display: 'flex', gap: '10px', alignItems: 'center' }}>
+              <div className="parallax-input-row flex flex-col sm:flex-row gap-3 items-stretch sm:items-center">
                 <input
                   id="parallax-topic-input"
                   type="text"
@@ -1041,17 +896,7 @@ export const ParallaxPage: React.FC = () => {
                   }}
                   disabled={isRunning}
                   placeholder="Enter topic for 20-agent swarm discussion (e.g. Will humanoid robots replace household chores?)..."
-                  style={{
-                    flex: 1,
-                    padding: '12px 16px',
-                    borderRadius: '12px',
-                    background: 'rgba(15, 23, 42, 0.85)',
-                    border: '1.5px solid rgba(165, 207, 214, 0.25)',
-                    color: '#fff',
-                    fontSize: '14px',
-                    outline: 'none',
-                  }}
-                  className="focus:border-[#61d7c9] transition-colors"
+                  className="flex-1 px-4 py-3.5 rounded-2xl bg-slate-900/40 backdrop-blur-xl text-slate-100 placeholder-slate-400 text-sm focus:outline-none focus:ring-1 focus:ring-cyan-400/50 transition-all"
                 />
 
                 {isRunning ? (
@@ -1060,26 +905,10 @@ export const ParallaxPage: React.FC = () => {
                     type="button"
                     onClick={handleStopSwarm}
                     title="Immediately halt the running swarm and keep completed messages"
-                    style={{
-                      padding: '12px 24px',
-                      borderRadius: '12px',
-                      background: 'linear-gradient(135deg, rgba(239, 68, 68, 0.3) 0%, rgba(185, 28, 28, 0.4) 100%)',
-                      border: '1.5px solid rgba(239, 68, 68, 0.7)',
-                      color: '#fecdd3',
-                      fontSize: '14px',
-                      fontWeight: 700,
-                      cursor: 'pointer',
-                      display: 'flex',
-                      alignItems: 'center',
-                      gap: '8px',
-                      whiteSpace: 'nowrap',
-                      boxShadow: '0 0 16px rgba(239, 68, 68, 0.25)',
-                      transition: 'all 0.15s ease',
-                    }}
-                    className="hover:bg-red-900/60 hover:text-white active:scale-95"
+                    className="px-6 py-3.5 rounded-2xl bg-rose-500/25 backdrop-blur-xl text-rose-200 hover:bg-rose-500/35 hover:text-white text-sm font-bold cursor-pointer flex items-center justify-center gap-2 whitespace-nowrap active:scale-95 transition-all"
                   >
                     <Square size={15} fill="currentColor" />
-                    Stop Swarm
+                    <span>Stop Swarm</span>
                   </button>
                 ) : (
                   <button
@@ -1087,35 +916,21 @@ export const ParallaxPage: React.FC = () => {
                     type="button"
                     onClick={() => handleStartSwarm()}
                     disabled={!topicInput.trim()}
-                    style={{
-                      padding: '12px 26px',
-                      borderRadius: '12px',
-                      background: topicInput.trim()
-                        ? 'linear-gradient(135deg, #06b6d4 0%, #0891b2 100%)'
-                        : 'rgba(15, 23, 42, 0.6)',
-                      border: 'none',
-                      color: topicInput.trim() ? '#fff' : '#64748b',
-                      fontSize: '14px',
-                      fontWeight: 800,
-                      cursor: topicInput.trim() ? 'pointer' : 'not-allowed',
-                      display: 'flex',
-                      alignItems: 'center',
-                      gap: '8px',
-                      whiteSpace: 'nowrap',
-                      boxShadow: topicInput.trim() ? '0 0 20px rgba(6, 182, 212, 0.4)' : 'none',
-                      transition: 'all 0.2s ease',
-                    }}
-                    className={topicInput.trim() ? 'hover:opacity-90 active:scale-95' : ''}
+                    className={`px-6 py-3.5 rounded-2xl text-sm font-extrabold flex items-center justify-center gap-2 whitespace-nowrap transition-all ${
+                      topicInput.trim()
+                        ? 'bg-gradient-to-r from-cyan-500 to-sky-600 text-white cursor-pointer hover:opacity-90 active:scale-95 shadow-[0_0_24px_rgba(6,182,212,0.3)]'
+                        : 'bg-slate-900/40 backdrop-blur-xl text-slate-500 cursor-not-allowed'
+                    }`}
                   >
                     <Sparkles size={16} />
-                    Start Parallax
+                    <span>Start Parallax</span>
                   </button>
                 )}
               </div>
 
               {/* Starter Presets */}
-              <div className="parallax-popular-topics" style={{ marginTop: '12px', display: 'flex', alignItems: 'center', gap: '8px', flexWrap: 'wrap' }}>
-                <span style={{ fontSize: '11px', fontFamily: 'DM Mono, monospace', color: '#94a3b8', fontWeight: 600 }}>
+              <div className="parallax-popular-topics mt-3.5 flex items-center gap-2 flex-wrap">
+                <span className="text-[11px] font-mono text-slate-300 font-semibold">
                   POPULAR TOPICS:
                 </span>
                 {SAMPLE_TOPICS.map((topic, i) => (
@@ -1127,17 +942,9 @@ export const ParallaxPage: React.FC = () => {
                       setTopicInput(topic);
                       handleStartSwarm(topic);
                     }}
-                    style={{
-                      padding: '4px 10px',
-                      borderRadius: '999px',
-                      background: 'rgba(15, 23, 42, 0.7)',
-                      border: '1px solid rgba(165, 207, 214, 0.2)',
-                      color: '#cbd5e1',
-                      fontSize: '11px',
-                      cursor: isRunning ? 'not-allowed' : 'pointer',
-                      transition: 'all 0.15s ease',
-                    }}
-                    className="hover:border-[#61d7c9] hover:text-[#61d7c9]"
+                    className={`px-3 py-1 rounded-full bg-slate-900/40 backdrop-blur-xl text-slate-300 hover:text-cyan-300 hover:bg-slate-800/60 text-[11px] transition-all ${
+                      isRunning ? 'opacity-50 cursor-not-allowed' : 'cursor-pointer'
+                    }`}
                   >
                     {topic}
                   </button>
@@ -1148,30 +955,19 @@ export const ParallaxPage: React.FC = () => {
             {/* Current Swarm Status Bar */}
             <div
               id="parallax-status-bar"
-              style={{
-                padding: '10px 18px',
-                borderRadius: '10px',
-                background: 'rgba(6, 16, 24, 0.75)',
-                border: '1px solid rgba(97, 215, 201, 0.2)',
-                display: 'flex',
-                alignItems: 'center',
-                justifyContent: 'space-between',
-                flexWrap: 'wrap',
-                gap: '10px',
-                fontSize: '12px',
-              }}
+              className="py-3.5 border-b border-white/[0.06] flex items-center justify-between flex-wrap gap-3 text-xs"
             >
-              <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
-                <Info size={14} color="#61d7c9" />
-                <span style={{ color: '#e2e8f0', fontWeight: 600 }}>{statusText}</span>
+              <div className="flex items-center gap-2">
+                <Info size={14} className="text-cyan-400" />
+                <span className="text-slate-100 font-semibold">{statusText}</span>
               </div>
 
-              <div style={{ display: 'flex', alignItems: 'center', gap: '12px', color: '#94a3b8' }}>
-                <span style={{ fontFamily: 'DM Mono, monospace' }}>
-                  <strong style={{ color: '#61d7c9' }}>{enabledAgentsCount}</strong> agents active
+              <div className="flex items-center gap-3 text-slate-300">
+                <span className="font-mono">
+                  <strong className="text-cyan-300">{enabledAgentsCount}</strong> agents active
                 </span>
-                <span>•</span>
-                <span style={{ fontFamily: 'DM Mono, monospace', color: '#38bdf8' }}>
+                <span className="text-white/20">•</span>
+                <span className="font-mono text-sky-300">
                   Auto-stops after round 3
                 </span>
               </div>
@@ -1179,16 +975,7 @@ export const ParallaxPage: React.FC = () => {
 
             {/* Error Banner */}
             {errorText && (
-              <div
-                style={{
-                  padding: '12px 16px',
-                  borderRadius: '10px',
-                  background: 'rgba(239, 68, 68, 0.15)',
-                  border: '1px solid rgba(239, 68, 68, 0.4)',
-                  color: '#f87171',
-                  fontSize: '13px',
-                }}
-              >
+              <div className="py-3 px-4 my-2 rounded-xl bg-rose-500/15 text-rose-300 text-xs sm:text-sm">
                 {errorText}
               </div>
             )}
@@ -1208,7 +995,7 @@ export const ParallaxPage: React.FC = () => {
             />
 
             {/* MAIN HERO — SWARM ORBITAL CORE & LIVE SWARM ACTIVITY */}
-            <div className="grid grid-cols-1 lg:grid-cols-12 gap-5 mb-2 items-start">
+            <div className="py-4 border-b border-white/[0.06] grid grid-cols-1 lg:grid-cols-12 gap-6 items-start">
               <div className="lg:col-span-7">
                 <ParallaxOrbitalCore
                   agents={config.agents}
@@ -1237,33 +1024,35 @@ export const ParallaxPage: React.FC = () => {
 
             {/* Real-time Audio Waveform Visualizer HUD */}
             {(playingAudioKey || loadingAudioKey) && (
-              <ParallaxAudioVisualizer
-                isPlaying={Boolean(playingAudioKey)}
-                activeKey={playingAudioKey || loadingAudioKey}
-                activeAgentName={
-                  playingAudioKey === 'full_swarm' || loadingAudioKey === 'full_swarm'
-                    ? 'Full Swarm Deliberation'
-                    : activeSpeakingAgent?.agentName || 'Swarm Speaker'
-                }
-                activeAgentId={activeSpeakingAgent?.agentId}
-                accentColor={activeSpeakingAgent?.accentColor || '#00f0ff'}
-                voiceName={
-                  activeSpeakingAgent
-                    ? config.agents[activeSpeakingAgent.agentId]?.voice || getParallaxAgentVoice(activeSpeakingAgent.agentId)
-                    : undefined
-                }
-                progressText={
-                  fullSwarmProgress
-                    ? `Turn ${fullSwarmProgress.current} / ${fullSwarmProgress.total}`
-                    : loadingAudioKey
-                    ? 'Synthesizing voice...'
-                    : undefined
-                }
-                onStop={stopAllAudio}
-              />
+              <div className="py-3">
+                <ParallaxAudioVisualizer
+                  isPlaying={Boolean(playingAudioKey)}
+                  activeKey={playingAudioKey || loadingAudioKey}
+                  activeAgentName={
+                    playingAudioKey === 'full_swarm' || loadingAudioKey === 'full_swarm'
+                      ? 'Full Swarm Deliberation'
+                      : activeSpeakingAgent?.agentName || 'Swarm Speaker'
+                  }
+                  activeAgentId={activeSpeakingAgent?.agentId}
+                  accentColor={activeSpeakingAgent?.accentColor || '#00f0ff'}
+                  voiceName={
+                    activeSpeakingAgent
+                      ? config.agents[activeSpeakingAgent.agentId]?.voice || getParallaxAgentVoice(activeSpeakingAgent.agentId)
+                      : undefined
+                  }
+                  progressText={
+                    fullSwarmProgress
+                      ? `Turn ${fullSwarmProgress.current} / ${fullSwarmProgress.total}`
+                      : loadingAudioKey
+                      ? 'Synthesizing voice...'
+                      : undefined
+                  }
+                  onStop={stopAllAudio}
+                />
+              </div>
             )}
 
-            {/* DELIBERATION STREAM: Terminal-style live stream */}
+            {/* DELIBERATION STREAM: Open timeline thread */}
             <ParallaxDeliberationStream
               messages={messages}
               agents={config.agents}
@@ -1282,7 +1071,6 @@ export const ParallaxPage: React.FC = () => {
               isDownloadingSwarmMp3={isDownloadingSwarmMp3}
               rawJsonOpenMap={rawJsonOpenMap}
               copiedRawJsonId={copiedRawJsonId}
-              currentTopic={currentTopic}
               onSetRoundFilter={(r) => setRoundFilter(r)}
               onSetGroupFilter={(g) => setGroupFilter(g)}
               onSetSelectedAgentFilter={(id) => setSelectedAgentFilter(id)}
@@ -1339,40 +1127,29 @@ export const ParallaxPage: React.FC = () => {
             {wasStoppedEarly && !summary && (
               <div
                 id="parallax-stopped-early-card"
-                className="nexus-corner-bracket relative rounded-2xl overflow-hidden my-6 p-6"
-                style={{
-                  background: 'linear-gradient(135deg, rgba(30, 20, 26, 0.95) 0%, rgba(18, 12, 16, 0.98) 100%)',
-                  border: '1.5px solid rgba(244, 63, 94, 0.45)',
-                  boxShadow: '0 12px 40px rgba(0, 0, 0, 0.6), 0 0 24px rgba(244, 63, 94, 0.15)',
-                }}
+                className="relative pl-5 py-5 my-4 border-l-2 border-rose-500 bg-slate-900/40 backdrop-blur-xl rounded-r-2xl"
               >
-                <div className="flex items-center justify-between flex-wrap gap-3 mb-3">
+                <div className="flex items-center justify-between flex-wrap gap-3 mb-3 pr-4">
                   <div className="flex items-center gap-3">
-                    <div
-                      className="w-9 h-9 rounded-xl flex items-center justify-center text-rose-400"
-                      style={{
-                        background: 'rgba(244, 63, 94, 0.2)',
-                        border: '1px solid rgba(244, 63, 94, 0.5)',
-                      }}
-                    >
+                    <div className="w-9 h-9 rounded-xl bg-rose-500/20 flex items-center justify-center text-rose-300">
                       <Square size={16} fill="currentColor" />
                     </div>
                     <div>
                       <div className="text-base font-black text-rose-200 tracking-tight font-sans">
                         SWARM DELIBERATION HALTED EARLY
                       </div>
-                      <div className="text-xs text-slate-400 font-mono">
+                      <div className="text-xs text-slate-300 font-mono">
                         User intervention executed • {messages.length} agent {messages.length === 1 ? 'turn' : 'turns'} recorded
                       </div>
                     </div>
                   </div>
 
-                  <div className="text-xs font-mono px-3 py-1 rounded-full bg-rose-500/15 text-rose-300 border border-rose-500/40 font-bold">
+                  <div className="text-xs font-mono px-3 py-1 rounded-full bg-rose-500/20 text-rose-300 font-bold">
                     ● HALTED
                   </div>
                 </div>
 
-                <p className="m-0 text-xs sm:text-sm text-slate-300 leading-relaxed font-sans mb-4">
+                <p className="m-0 text-xs sm:text-sm text-slate-200 leading-relaxed font-sans mb-4 pr-4">
                   The swarm execution was stopped prior to completing all 3 deliberation rounds. Completed turns up to the stop point have been preserved in the deliberation stream.
                 </p>
 
@@ -1381,7 +1158,7 @@ export const ParallaxPage: React.FC = () => {
                     id="parallax-rerun-stopped-swarm-btn"
                     type="button"
                     onClick={() => handleStartSwarm(currentTopic)}
-                    className="px-4 py-2 rounded-xl bg-gradient-to-r from-cyan-500 to-blue-600 text-white font-bold cursor-pointer hover:opacity-90 active:scale-95 transition-all shadow-[0_0_15px_rgba(6,182,212,0.3)] flex items-center gap-2"
+                    className="px-4 py-2 rounded-full bg-gradient-to-r from-cyan-500 to-blue-600 text-white font-bold cursor-pointer hover:opacity-90 active:scale-95 transition-all flex items-center gap-2"
                   >
                     <Sparkles size={14} />
                     <span>Rerun Swarm (3 Rounds)</span>
@@ -1397,7 +1174,7 @@ export const ParallaxPage: React.FC = () => {
                       setCurrentTopic('');
                       setStatusText('Ready to mobilize 20-agent swarm.');
                     }}
-                    className="px-4 py-2 rounded-xl bg-white/5 border border-white/10 hover:border-cyan-400/40 text-slate-300 hover:text-white font-bold cursor-pointer transition-all flex items-center gap-2"
+                    className="px-4 py-2 rounded-full bg-slate-900/40 backdrop-blur-xl hover:bg-slate-800/60 text-slate-200 hover:text-white font-bold cursor-pointer transition-all flex items-center gap-2"
                   >
                     <Trash2 size={13} />
                     <span>Discard & New Topic</span>
@@ -1414,7 +1191,7 @@ export const ParallaxPage: React.FC = () => {
             id="parallax-floating-inject-btn"
             type="button"
             onClick={() => setIsHumanModalOpen(true)}
-            className="fixed bottom-6 right-6 z-40 px-3.5 py-2 sm:px-4 sm:py-2.5 rounded-xl bg-gradient-to-r from-amber-500 to-amber-600 hover:from-amber-400 hover:to-amber-500 text-black font-mono font-black text-xs shadow-[0_0_24px_rgba(245,158,11,0.6)] border border-amber-300 flex items-center gap-2 hover:scale-105 active:scale-95 transition-all cursor-pointer animate-pulse"
+            className="fixed bottom-6 right-6 z-40 px-4 py-2.5 rounded-full bg-gradient-to-r from-amber-500 to-amber-600 hover:from-amber-400 hover:to-amber-500 text-slate-950 font-mono font-black text-xs shadow-[0_0_24px_rgba(245,158,11,0.5)] flex items-center gap-2 hover:scale-105 active:scale-95 transition-all cursor-pointer animate-pulse"
             title="Inject a direct operator assertion or counter-argument into live deliberation"
           >
             <UserPlus size={15} />
