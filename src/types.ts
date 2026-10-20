@@ -1307,6 +1307,7 @@ export interface WorkflowAISettings {
 
 export type WorkflowStepStatus = 'idle' | 'running' | 'done' | 'error' | 'skipped';
 
-
-
-
+export interface WorkflowRunOptions {
+  startFromNodeId?: string;
+  previousOutputs?: Record<string, WorkflowOutput>;
+}

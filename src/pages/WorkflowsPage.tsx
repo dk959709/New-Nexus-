@@ -9,7 +9,12 @@ import type {
   AIProviderConfig,
 } from '@/types';
 import { storage } from '@/lib/storage';
-import { runWorkflow, hasWorkflowCycle } from '@/lib/workflowEngine';
+import {
+  runWorkflow,
+  hasWorkflowCycle,
+  getOutputSummary,
+  getAncestorNodeIds,
+} from '@/lib/workflowEngine';
 import {
   WorkflowCanvas,
   NODE_CONFIG,
@@ -280,6 +285,9 @@ export function WorkflowsPage() {
   const [isRunning, setIsRunning] = useState<boolean>(false);
   const [stepStatuses, setStepStatuses] = useState<Record<string, WorkflowStepStatus>>({});
   const [stepOutputs, setStepOutputs] = useState<Record<string, WorkflowOutput>>({});
+  const [stepStartTimes, setStepStartTimes] = useState<Record<string, number>>({});
+  const [stepDurations, setStepDurations] = useState<Record<string, number>>({});
+  const [stepOutputSummaries, setStepOutputSummaries] = useState<Record<string, string>>({});
   const [stepErrors, setStepErrors] = useState<Record<string, string>>({});
   const [lastExecutedNodeId, setLastExecutedNodeId] = useState<string | null>(null);
   const [runLogs, setRunLogs] = useState<LogEntry[]>([]);
@@ -296,6 +304,7 @@ export function WorkflowsPage() {
   const [showAddMenu, setShowAddMenu] = useState<boolean>(false);
   const [showTemplatesModal, setShowTemplatesModal] = useState<boolean>(false);
   const [copiedKey, setCopiedKey] = useState<string | null>(null);
+  const inspectorOutputRef = useRef<HTMLDivElement | null>(null);
 
   // Phone Connect Mode in Canvas
   const [connectSourceNodeId, setConnectSourceNodeId] = useState<string | null>(null);
@@ -461,75 +470,164 @@ export function WorkflowsPage() {
   const handleClearResults = () => {
     setStepStatuses({});
     setStepOutputs({});
+    setStepStartTimes({});
+    setStepDurations({});
+    setStepOutputSummaries({});
     setStepErrors({});
     setLastExecutedNodeId(null);
     setRunLogs([]);
   };
 
-  // Run workflow
-  const handleRun = async () => {
+  // Core execution runner (supports full run or starting from a specific node)
+  const executeWorkflowRun = async (startFromNodeId?: string) => {
     if (!activeWorkflow || isRunning) return;
-    setIsRunning(true);
-    stopRequestedRef.current = false;
-    handleClearResults();
 
     const nodeMap = new Map<string, WorkflowNode>();
     for (const n of activeWorkflow.nodes) nodeMap.set(n.id, n);
 
-    stepStartTimesRef.current = {};
+    let preservedAncestors = new Set<string>();
+    if (startFromNodeId) {
+      preservedAncestors = getAncestorNodeIds(startFromNodeId, activeWorkflow.edges || []);
+      // Verify all needed ancestors have saved outputs
+      for (const ancId of preservedAncestors) {
+        const ancNode = nodeMap.get(ancId);
+        if (!ancNode) continue;
+        if (ancNode.settings?.disabled === 'true') continue;
+        if (stepStatuses[ancId] === 'skipped') continue;
+        if (!stepOutputs[ancId]) {
+          showToast('Run the whole workflow once first');
+          return;
+        }
+      }
+    }
+
+    setIsRunning(true);
+    stopRequestedRef.current = false;
+
+    if (!startFromNodeId) {
+      handleClearResults();
+      stepStartTimesRef.current = {};
+    } else {
+      // Keep ancestors' statuses and outputs intact; clear target and downstream nodes
+      setStepStatuses((prev) => {
+        const next: Record<string, WorkflowStepStatus> = {};
+        for (const id of preservedAncestors) {
+          if (prev[id]) next[id] = prev[id];
+        }
+        return next;
+      });
+      setStepOutputs((prev) => {
+        const next: Record<string, WorkflowOutput> = {};
+        for (const id of preservedAncestors) {
+          if (prev[id]) next[id] = prev[id];
+        }
+        return next;
+      });
+      setStepStartTimes((prev) => {
+        const next: Record<string, number> = {};
+        for (const id of preservedAncestors) {
+          if (prev[id]) next[id] = prev[id];
+        }
+        return next;
+      });
+      setStepDurations((prev) => {
+        const next: Record<string, number> = {};
+        for (const id of preservedAncestors) {
+          if (prev[id] !== undefined) next[id] = prev[id];
+        }
+        return next;
+      });
+      setStepOutputSummaries((prev) => {
+        const next: Record<string, string> = {};
+        for (const id of preservedAncestors) {
+          if (prev[id]) next[id] = prev[id];
+        }
+        return next;
+      });
+      setStepErrors((prev) => {
+        const next: Record<string, string> = {};
+        for (const id of preservedAncestors) {
+          if (prev[id]) next[id] = prev[id];
+        }
+        return next;
+      });
+    }
 
     try {
-      await runWorkflow(activeWorkflow, {
-        shouldStop: () => stopRequestedRef.current,
-        onStatus: (nodeId, status, output, errorText) => {
-          setStepStatuses((prev) => ({ ...prev, [nodeId]: status }));
+      await runWorkflow(
+        activeWorkflow,
+        {
+          shouldStop: () => stopRequestedRef.current,
+          onStatus: (nodeId, status, output, errorText) => {
+            setStepStatuses((prev) => ({ ...prev, [nodeId]: status }));
 
-          if (status === 'running') {
-            stepStartTimesRef.current[nodeId] = Date.now();
-          }
-
-          if (output) {
-            setStepOutputs((prev) => ({ ...prev, [nodeId]: output }));
-            setLastExecutedNodeId(nodeId);
-          }
-
-          if (errorText) {
-            setStepErrors((prev) => ({ ...prev, [nodeId]: errorText }));
-          }
-
-          if (status === 'done' || status === 'error') {
-            const startT = stepStartTimesRef.current[nodeId] || Date.now();
-            const duration = Date.now() - startT;
-            const targetNode = nodeMap.get(nodeId);
-            if (targetNode) {
-              setRunLogs((prev) => [
-                ...prev,
-                {
-                  id: `log-${Date.now()}-${nodeId}`,
-                  nodeId,
-                  label: targetNode.label,
-                  type: targetNode.type,
-                  durationMs: duration,
-                  status,
-                  timestamp: new Date().toLocaleTimeString(),
-                },
-              ]);
+            if (status === 'running') {
+              const now = Date.now();
+              stepStartTimesRef.current[nodeId] = now;
+              setStepStartTimes((prev) => ({ ...prev, [nodeId]: now }));
             }
-          }
+
+            if (output) {
+              setStepOutputs((prev) => ({ ...prev, [nodeId]: output }));
+              setStepOutputSummaries((prev) => ({
+                ...prev,
+                [nodeId]: getOutputSummary(output),
+              }));
+              setLastExecutedNodeId(nodeId);
+            }
+
+            if (errorText) {
+              setStepErrors((prev) => ({ ...prev, [nodeId]: errorText }));
+            }
+
+            if (status === 'done' || status === 'error') {
+              const startT = stepStartTimesRef.current[nodeId] || Date.now();
+              const duration = Math.max(0, Date.now() - startT);
+              setStepDurations((prev) => ({ ...prev, [nodeId]: duration }));
+              const targetNode = nodeMap.get(nodeId);
+              if (targetNode) {
+                setRunLogs((prev) => [
+                  ...prev,
+                  {
+                    id: `log-${Date.now()}-${nodeId}`,
+                    nodeId,
+                    label: targetNode.label,
+                    type: targetNode.type,
+                    durationMs: duration,
+                    status,
+                    timestamp: new Date().toLocaleTimeString(),
+                  },
+                ]);
+              }
+            }
+          },
+          onWarning: (warn) => {
+            showToast(`Warning: ${warn}`);
+          },
+          onLog: (msg) => {
+            console.log('[Workflow Engine]', msg);
+          },
         },
-        onWarning: (warn) => {
-          showToast(`Warning: ${warn}`);
-        },
-        onLog: (msg) => {
-          console.log('[Workflow Engine]', msg);
-        },
-      });
+        startFromNodeId
+          ? { startFromNodeId, previousOutputs: stepOutputs }
+          : undefined,
+      );
     } catch (err: unknown) {
       console.error('Workflow execution error:', err);
       showToast(`Workflow error: ${err instanceof Error ? err.message : String(err)}`);
     } finally {
       setIsRunning(false);
     }
+  };
+
+  // Run workflow
+  const handleRun = async () => {
+    await executeWorkflowRun();
+  };
+
+  // Run from specific step
+  const handleRunFromNode = async (nodeId: string) => {
+    await executeWorkflowRun(nodeId);
   };
 
   // Stop workflow
@@ -607,6 +705,50 @@ export function WorkflowsPage() {
     });
     if (selectedNodeId === nodeId) setSelectedNodeId(null);
   };
+
+  // Duplicate single node (offset by 40px, label "<label> copy", no edges)
+  const handleDuplicateNode = useCallback(
+    (nodeId: string) => {
+      if (!activeWorkflow) return;
+      const target = activeWorkflow.nodes.find((n) => n.id === nodeId);
+      if (!target) return;
+      const copyNode: WorkflowNode = {
+        id: `node-${Date.now()}`,
+        type: target.type,
+        label: `${target.label} copy`,
+        x: target.x + 40,
+        y: target.y + 40,
+        settings: { ...target.settings },
+      };
+      updateCurrentWorkflow((wf) => ({
+        ...wf,
+        nodes: [...wf.nodes, copyNode],
+      }));
+      setSelectedNodeId(copyNode.id);
+      showToast(`Duplicated "${target.label}"`);
+    },
+    [activeWorkflow, updateCurrentWorkflow, showToast],
+  );
+
+  // Toggle disable/enable on a single node
+  const handleToggleDisableNode = useCallback(
+    (nodeId: string) => {
+      if (!activeWorkflow) return;
+      const target = activeWorkflow.nodes.find((n) => n.id === nodeId);
+      if (!target) return;
+      const nextDisabled = target.settings?.disabled === 'true' ? 'false' : 'true';
+      handleUpdateNode(nodeId, 'settings', {
+        ...target.settings,
+        disabled: nextDisabled,
+      });
+      showToast(
+        nextDisabled === 'true'
+          ? `Disabled "${target.label}"`
+          : `Enabled "${target.label}"`,
+      );
+    },
+    [activeWorkflow],
+  );
 
   // Move node up (in list view)
   const handleMoveNodeUp = (index: number) => {
@@ -1179,6 +1321,9 @@ export function WorkflowsPage() {
                       <StepSettingsForm
                         node={node}
                         allNodes={activeWorkflow.nodes}
+                        edges={activeWorkflow.edges}
+                        stepOutputs={stepOutputs}
+                        viewMode={viewMode}
                         onUpdateSettings={(newSettings) =>
                           handleUpdateNode(node.id, 'settings', newSettings)
                         }
@@ -1321,6 +1466,10 @@ export function WorkflowsPage() {
             edges={activeWorkflow.edges}
             stepStatuses={stepStatuses}
             stepOutputs={stepOutputs}
+            stepStartTimes={stepStartTimes}
+            stepDurations={stepDurations}
+            stepOutputSummaries={stepOutputSummaries}
+            stepErrors={stepErrors}
             isRunning={isRunning}
             selectedNodeId={selectedNodeId}
             onSelectNode={(nodeId) => {
@@ -1344,6 +1493,19 @@ export function WorkflowsPage() {
             onConnect={handleRfConnect}
             onDeleteEdge={handleDeleteEdge}
             onTidy={handleTidyLayout}
+            onRunFromNode={handleRunFromNode}
+            onDuplicateNode={handleDuplicateNode}
+            onToggleDisableNode={handleToggleDisableNode}
+            onDeleteNode={handleDeleteNode}
+            onOpenInspectorOutput={(nodeId) => {
+              setSelectedNodeId(nodeId);
+              setTimeout(() => {
+                inspectorOutputRef.current?.scrollIntoView({
+                  behavior: 'smooth',
+                  block: 'nearest',
+                });
+              }, 80);
+            }}
           />
 
           {/* Floating Canvas Controls: Add Node Button */}
@@ -1499,6 +1661,9 @@ export function WorkflowsPage() {
                 <StepSettingsForm
                   node={selectedNode}
                   allNodes={activeWorkflow.nodes}
+                  edges={activeWorkflow.edges}
+                  stepOutputs={stepOutputs}
+                  viewMode={viewMode}
                   onUpdateSettings={(newSettings) =>
                     handleUpdateNode(selectedNode.id, 'settings', newSettings)
                   }
@@ -1521,16 +1686,45 @@ export function WorkflowsPage() {
 
                 {/* Last Output (if any) */}
                 {stepOutputs[selectedNode.id] && (
-                  <div className="pt-2 border-t border-white/10 space-y-1">
-                    <span className="text-xs font-mono text-slate-400">Recent Output</span>
+                  <div
+                    ref={inspectorOutputRef}
+                    className="pt-2 border-t border-white/10 space-y-1.5"
+                  >
+                    <div className="flex items-center justify-between">
+                      <span className="text-xs font-mono text-slate-400">Recent Output</span>
+                      {stepOutputs[selectedNode.id].type === 'text' && (
+                        <button
+                          type="button"
+                          onClick={() =>
+                            handleCopyText(
+                              stepOutputs[selectedNode.id].value,
+                              `insp-out-${selectedNode.id}`,
+                            )
+                          }
+                          className="text-[10px] text-slate-300 hover:text-white bg-white/5 hover:bg-white/10 px-2 py-0.5 rounded flex items-center gap-1"
+                        >
+                          {copiedKey === `insp-out-${selectedNode.id}` ? (
+                            <>
+                              <Check size={10} className="text-emerald-400" />
+                              <span>Copied</span>
+                            </>
+                          ) : (
+                            <>
+                              <Copy size={10} />
+                              <span>Copy</span>
+                            </>
+                          )}
+                        </button>
+                      )}
+                    </div>
                     {stepOutputs[selectedNode.id].type === 'image' ? (
                       <img
                         src={stepOutputs[selectedNode.id].value}
                         alt="Output"
-                        className="rounded-xl border border-white/10 max-h-40 object-cover w-full"
+                        className="rounded-xl border border-white/10 max-h-60 object-contain w-full bg-slate-950"
                       />
                     ) : (
-                      <pre className="text-[11px] font-mono text-slate-300 bg-slate-950 p-2.5 rounded-xl border border-white/5 max-h-36 overflow-y-auto whitespace-pre-wrap">
+                      <pre className="text-[11px] font-mono text-slate-300 bg-slate-950 p-2.5 rounded-xl border border-white/5 max-h-64 overflow-y-auto whitespace-pre-wrap break-words">
                         {stepOutputs[selectedNode.id].value}
                       </pre>
                     )}
@@ -1729,18 +1923,419 @@ function getProviderModels(provider: AIProviderConfig): Array<{ id: string; name
   return [];
 }
 
+interface VariableFieldProps {
+  label: string;
+  value: string;
+  onChange: (nextVal: string) => void;
+  placeholder?: string;
+  multiline?: boolean;
+  rows?: number;
+  currentNodeId: string;
+  earlierSteps: WorkflowNode[];
+  allNodes: WorkflowNode[];
+  stepOutputs: Record<string, WorkflowOutput>;
+}
+
+/**
+ * Reusable text/textarea field with:
+ * 1) "{ } Insert variable" button & popover showing earlier steps + 40-char output snippet
+ * 2) "{{" autocomplete dropdown filtered by label (Escape to close)
+ * 3) Live preview line under the field replacing placeholders with 60-char output,
+ *    "Label (not run yet)" colored chip, or red "unknown step" chip.
+ */
+function VariableField({
+  label,
+  value,
+  onChange,
+  placeholder,
+  multiline = false,
+  rows = 3,
+  currentNodeId,
+  earlierSteps,
+  allNodes,
+  stepOutputs,
+}: VariableFieldProps) {
+  const fieldRef = useRef<HTMLInputElement & HTMLTextAreaElement>(null);
+  const [showInsertMenu, setShowInsertMenu] = useState(false);
+  const [autocompleteState, setAutocompleteState] = useState<{
+    startIndex: number;
+    endIndex: number;
+    query: string;
+  } | null>(null);
+
+  const checkAutocomplete = (textVal: string, cursorPos: number | null) => {
+    if (cursorPos === null || cursorPos < 2) {
+      setAutocompleteState(null);
+      return;
+    }
+    const beforeCursor = textVal.slice(0, cursorPos);
+    const match = beforeCursor.match(/\{\{([^}\n]*)$/);
+    if (match && match.index !== undefined) {
+      setAutocompleteState({
+        startIndex: match.index,
+        endIndex: cursorPos,
+        query: match[1],
+      });
+    } else {
+      setAutocompleteState(null);
+    }
+  };
+
+  const handleFieldChange = (
+    e: React.ChangeEvent<HTMLInputElement | HTMLTextAreaElement>,
+  ) => {
+    const nextVal = e.target.value;
+    const cursorPos = e.target.selectionStart;
+    onChange(nextVal);
+    checkAutocomplete(nextVal, cursorPos);
+  };
+
+  const handleKeyDown = (
+    e: React.KeyboardEvent<HTMLInputElement | HTMLTextAreaElement>,
+  ) => {
+    if (e.key === 'Escape') {
+      if (autocompleteState || showInsertMenu) {
+        e.stopPropagation();
+        setAutocompleteState(null);
+        setShowInsertMenu(false);
+      }
+    }
+  };
+
+  // Insert {{Label.output}} at cursor position (or at the end if no cursor) and keep focus
+  const handleInsertVariableAtCursor = (step: WorkflowNode) => {
+    const tag = `{{${step.label}.output}}`;
+    const el = fieldRef.current;
+    const start =
+      el && typeof el.selectionStart === 'number' ? el.selectionStart : value.length;
+    const end =
+      el && typeof el.selectionEnd === 'number' ? el.selectionEnd : value.length;
+
+    const nextValue = value.slice(0, start) + tag + value.slice(end);
+    onChange(nextValue);
+    setShowInsertMenu(false);
+    setAutocompleteState(null);
+
+    const nextCursor = start + tag.length;
+    requestAnimationFrame(() => {
+      if (fieldRef.current) {
+        fieldRef.current.focus();
+        fieldRef.current.setSelectionRange(nextCursor, nextCursor);
+      }
+    });
+  };
+
+  // Replace typed "{{..." with full {{Label.output}}
+  const handleSelectAutocomplete = (step: WorkflowNode) => {
+    if (!autocompleteState) {
+      handleInsertVariableAtCursor(step);
+      return;
+    }
+    const tag = `{{${step.label}.output}}`;
+    const nextValue =
+      value.slice(0, autocompleteState.startIndex) +
+      tag +
+      value.slice(autocompleteState.endIndex);
+    onChange(nextValue);
+    const nextCursor = autocompleteState.startIndex + tag.length;
+    setAutocompleteState(null);
+    setShowInsertMenu(false);
+
+    requestAnimationFrame(() => {
+      if (fieldRef.current) {
+        fieldRef.current.focus();
+        fieldRef.current.setSelectionRange(nextCursor, nextCursor);
+      }
+    });
+  };
+
+  const filteredAutocompleteSteps = useMemo(() => {
+    if (!autocompleteState) return [];
+    const q = autocompleteState.query.trim().toLowerCase();
+    if (!q) return earlierSteps;
+    return earlierSteps.filter((s) => s.label.toLowerCase().includes(q));
+  }, [autocompleteState, earlierSteps]);
+
+  // Build preview segments
+  const previewSegments = useMemo(() => {
+    if (!value) return [];
+    const segments: Array<
+      | { kind: 'text'; text: string }
+      | { kind: 'resolved'; label: string; text: string }
+      | { kind: 'unrun'; label: string }
+      | { kind: 'unknown'; rawName: string }
+    > = [];
+
+    const regex = /\{\{\s*([^}]+?)\.output\s*\}\}/gi;
+    let lastIndex = 0;
+    let match: RegExpExecArray | null;
+
+    while ((match = regex.exec(value)) !== null) {
+      if (match.index > lastIndex) {
+        segments.push({
+          kind: 'text',
+          text: value.slice(lastIndex, match.index),
+        });
+      }
+      const rawKey = match[1].trim();
+      const matchedNode = allNodes.find(
+        (n) =>
+          n.id !== currentNodeId &&
+          (n.id.trim().toLowerCase() === rawKey.toLowerCase() ||
+            n.label.trim().toLowerCase() === rawKey.toLowerCase()),
+      );
+
+      if (!matchedNode) {
+        segments.push({ kind: 'unknown', rawName: rawKey });
+      } else {
+        const out = stepOutputs[matchedNode.id];
+        if (out && out.value !== undefined && out.value !== '') {
+          const displayVal =
+            out.type === 'image'
+              ? '[1 image]'
+              : out.value.length > 60
+              ? out.value.slice(0, 60) + '…'
+              : out.value;
+          segments.push({
+            kind: 'resolved',
+            label: matchedNode.label,
+            text: displayVal,
+          });
+        } else {
+          segments.push({ kind: 'unrun', label: matchedNode.label });
+        }
+      }
+
+      lastIndex = regex.lastIndex;
+    }
+
+    if (lastIndex < value.length) {
+      segments.push({ kind: 'text', text: value.slice(lastIndex) });
+    }
+
+    return segments;
+  }, [value, allNodes, currentNodeId, stepOutputs]);
+
+  const hasAnyPlaceholder = useMemo(
+    () => /\{\{\s*([^}]+?)\.output\s*\}\}/i.test(value || ''),
+    [value],
+  );
+
+  const renderStepPickerRow = (
+    step: WorkflowNode,
+    onPick: (step: WorkflowNode) => void,
+  ) => {
+    const cfg = NODE_CONFIG[step.type] || NODE_CONFIG.input;
+    const StepIcon = cfg.icon;
+    const out = stepOutputs[step.id];
+    const snippet = out
+      ? out.type === 'image'
+        ? '[Generated image]'
+        : (out.value || '').slice(0, 40) + ((out.value || '').length > 40 ? '…' : '')
+      : '';
+
+    return (
+      <button
+        key={step.id}
+        type="button"
+        onMouseDown={(e) => e.preventDefault()}
+        onClick={() => onPick(step)}
+        className="w-full flex items-center justify-between gap-2.5 p-2 rounded-xl bg-white/[0.03] hover:bg-cyan-500/15 active:bg-cyan-500/25 border border-white/5 hover:border-cyan-500/30 text-left transition-colors"
+      >
+        <div className="flex items-center gap-2 min-w-0">
+          <div className={`p-1.5 rounded-lg border flex-shrink-0 ${cfg.color}`}>
+            <StepIcon size={13} />
+          </div>
+          <div className="min-w-0">
+            <div className="text-xs font-semibold text-white truncate">{step.label}</div>
+            <div className="text-[10px] font-mono text-slate-400 truncate">
+              {snippet ? snippet : 'No output yet'}
+            </div>
+          </div>
+        </div>
+        <span className="text-[10px] font-mono text-cyan-300 bg-cyan-500/10 px-1.5 py-0.5 rounded border border-cyan-500/20 flex-shrink-0">
+          {`{{${step.label}.output}}`}
+        </span>
+      </button>
+    );
+  };
+
+  return (
+    <div className="relative space-y-1.5">
+      {/* Header row with label and "{ } Insert variable" button */}
+      <div className="flex items-center justify-between gap-2">
+        <label className="text-xs font-medium text-slate-300">{label}</label>
+        <button
+          type="button"
+          onMouseDown={(e) => e.preventDefault()}
+          onClick={() => {
+            setShowInsertMenu((prev) => !prev);
+            setAutocompleteState(null);
+          }}
+          className="px-2.5 py-1 rounded-lg bg-cyan-500/10 hover:bg-cyan-500/20 active:bg-cyan-500/30 text-cyan-300 border border-cyan-500/30 text-[11px] font-mono font-semibold flex items-center gap-1 transition-colors"
+          title="Insert output variable from an earlier step"
+        >
+          <span>{'{ } Insert variable'}</span>
+        </button>
+      </div>
+
+      {/* "{ } Insert variable" Dropdown List */}
+      {showInsertMenu && (
+        <div className="z-30 rounded-2xl bg-slate-900/98 border border-cyan-500/40 p-2.5 shadow-2xl space-y-1.5">
+          <div className="flex items-center justify-between px-1 pb-1 border-b border-white/10">
+            <span className="text-[10px] font-mono uppercase tracking-wider text-slate-400">
+              Earlier steps ({earlierSteps.length})
+            </span>
+            <button
+              type="button"
+              onClick={() => setShowInsertMenu(false)}
+              className="text-slate-400 hover:text-white p-0.5"
+            >
+              <X size={12} />
+            </button>
+          </div>
+          {earlierSteps.length > 0 ? (
+            <div className="space-y-1 max-h-48 overflow-y-auto pr-0.5">
+              {earlierSteps.map((step) =>
+                renderStepPickerRow(step, handleInsertVariableAtCursor),
+              )}
+            </div>
+          ) : (
+            <div className="text-[11px] text-slate-400 py-2 px-1">
+              No earlier connected steps can reach this step yet.
+            </div>
+          )}
+        </div>
+      )}
+
+      {/* Normal input or textarea */}
+      {multiline ? (
+        <textarea
+          ref={fieldRef}
+          rows={rows}
+          value={value}
+          onChange={handleFieldChange}
+          onKeyDown={handleKeyDown}
+          onClick={(e) =>
+            checkAutocomplete(
+              (e.target as HTMLTextAreaElement).value,
+              (e.target as HTMLTextAreaElement).selectionStart,
+            )
+          }
+          placeholder={placeholder}
+          className="w-full bg-slate-950 border border-white/10 rounded-xl p-3 text-white text-xs focus:outline-none focus:border-cyan-500 font-mono resize-y"
+        />
+      ) : (
+        <input
+          ref={fieldRef}
+          type="text"
+          value={value}
+          onChange={handleFieldChange}
+          onKeyDown={handleKeyDown}
+          onClick={(e) =>
+            checkAutocomplete(
+              (e.target as HTMLInputElement).value,
+              (e.target as HTMLInputElement).selectionStart,
+            )
+          }
+          placeholder={placeholder}
+          className="w-full bg-slate-950 border border-white/10 rounded-xl px-3 py-2 text-white text-xs focus:outline-none focus:border-cyan-500 font-mono"
+        />
+      )}
+
+      {/* "{{" Autocomplete Dropdown under the field */}
+      {autocompleteState && (
+        <div className="z-30 rounded-2xl bg-slate-900/98 border border-cyan-500/40 p-2.5 shadow-2xl space-y-1.5">
+          <div className="flex items-center justify-between px-1 pb-1 border-b border-white/10">
+            <span className="text-[10px] font-mono text-cyan-400">
+              Autocomplete variable {autocompleteState.query ? `“${autocompleteState.query}”` : ''}
+            </span>
+            <button
+              type="button"
+              onClick={() => setAutocompleteState(null)}
+              className="text-[10px] text-slate-400 hover:text-white font-mono"
+            >
+              Esc
+            </button>
+          </div>
+          {filteredAutocompleteSteps.length > 0 ? (
+            <div className="space-y-1 max-h-44 overflow-y-auto pr-0.5">
+              {filteredAutocompleteSteps.map((step) =>
+                renderStepPickerRow(step, handleSelectAutocomplete),
+              )}
+            </div>
+          ) : (
+            <div className="text-[11px] text-slate-400 py-1.5 px-1">
+              No matching earlier steps found.
+            </div>
+          )}
+        </div>
+      )}
+
+      {/* 3) Live Preview line under the field */}
+      {(hasAnyPlaceholder || value.includes('{{')) && (
+        <div className="p-2 rounded-xl bg-slate-950/80 border border-white/5 text-[11px] font-mono text-slate-300 leading-relaxed break-words">
+          <span className="text-[10px] uppercase tracking-wider text-slate-500 mr-1.5 select-none">
+            Preview:
+          </span>
+          {previewSegments.map((seg, idx) => {
+            if (seg.kind === 'text') {
+              return <span key={idx}>{seg.text}</span>;
+            }
+            if (seg.kind === 'resolved') {
+              return (
+                <span
+                  key={idx}
+                  className="inline-block px-1.5 py-0.5 mx-0.5 rounded bg-emerald-500/15 border border-emerald-500/30 text-emerald-300 text-[10px]"
+                  title={`Resolved from ${seg.label}`}
+                >
+                  {seg.text}
+                </span>
+              );
+            }
+            if (seg.kind === 'unrun') {
+              return (
+                <span
+                  key={idx}
+                  className="inline-block px-1.5 py-0.5 mx-0.5 rounded bg-amber-500/15 border border-amber-500/30 text-amber-300 text-[10px]"
+                >
+                  {seg.label} (not run yet)
+                </span>
+              );
+            }
+            return (
+              <span
+                key={idx}
+                className="inline-block px-1.5 py-0.5 mx-0.5 rounded bg-rose-500/20 border border-rose-500/40 text-rose-300 text-[10px]"
+              >
+                {seg.rawName} (unknown step)
+              </span>
+            );
+          })}
+        </div>
+      )}
+    </div>
+  );
+}
+
 /**
  * Shared StepSettingsForm component for configuring node properties
  */
 interface StepSettingsFormProps {
   node: WorkflowNode;
   allNodes: WorkflowNode[];
+  edges?: WorkflowEdge[];
+  stepOutputs?: Record<string, WorkflowOutput>;
+  viewMode?: 'list' | 'canvas';
   onUpdateSettings: (newSettings: Record<string, string>) => void;
 }
 
 export function StepSettingsForm({
   node,
   allNodes,
+  edges = [],
+  stepOutputs = {},
+  viewMode = 'list',
   onUpdateSettings,
 }: StepSettingsFormProps) {
   const settings = node.settings || {};
@@ -1783,11 +2378,50 @@ export function StepSettingsForm({
     onUpdateSettings({ ...settings, [field]: val });
   };
 
-  // Find previous steps available for {{Placeholder}} injection
-  const priorNodes = allNodes.filter((n) => n.id !== node.id);
+  // Compute EARLIER steps:
+  // In list view -> steps above this step; in canvas view (or when edges exist) -> ancestor steps that can reach this step through edges.
+  const earlierSteps = useMemo(() => {
+    if (viewMode === 'list' && edges.length === 0) {
+      const idx = allNodes.findIndex((n) => n.id === node.id);
+      return idx > 0 ? allNodes.slice(0, idx) : [];
+    }
+    const ancestorIds = getAncestorNodeIds(node.id, edges);
+    if (ancestorIds.size > 0 || viewMode === 'canvas') {
+      return allNodes.filter((n) => ancestorIds.has(n.id));
+    }
+    const idx = allNodes.findIndex((n) => n.id === node.id);
+    return idx > 0 ? allNodes.slice(0, idx) : [];
+  }, [allNodes, edges, node.id, viewMode]);
 
   return (
     <div className="space-y-3.5">
+      {/* Disable this step toggle (available for every node type) */}
+      <div className="flex items-center justify-between p-2.5 rounded-xl bg-slate-950/60 border border-white/10">
+        <div>
+          <span className="text-xs font-medium text-slate-200 block">Disable this step</span>
+          <span className="text-[10px] text-slate-400 block">
+            Skip execution and pass through parent output
+          </span>
+        </div>
+        <button
+          type="button"
+          role="switch"
+          aria-checked={settings.disabled === 'true'}
+          onClick={() =>
+            handleChange('disabled', settings.disabled === 'true' ? 'false' : 'true')
+          }
+          className={`relative inline-flex h-6 w-11 flex-shrink-0 cursor-pointer rounded-full border-2 border-transparent transition-colors duration-200 ease-in-out focus:outline-none ${
+            settings.disabled === 'true' ? 'bg-amber-500' : 'bg-slate-700'
+          }`}
+        >
+          <span
+            className={`pointer-events-none inline-block h-5 w-5 transform rounded-full bg-white shadow ring-0 transition duration-200 ease-in-out ${
+              settings.disabled === 'true' ? 'translate-x-5' : 'translate-x-0'
+            }`}
+          />
+        </button>
+      </div>
+
       {/* Node Type Specific Inputs */}
       {node.type === 'input' && (
         <div>
@@ -1805,48 +2439,42 @@ export function StepSettingsForm({
       )}
 
       {node.type === 'webSearch' && (
-        <div>
-          <label className="text-xs font-medium text-slate-300 block mb-1">
-            Search Query
-          </label>
-          <input
-            type="text"
-            value={settings.query || ''}
-            onChange={(e) => handleChange('query', e.target.value)}
-            placeholder="e.g. {{Input.output}} latest discoveries"
-            className="w-full bg-slate-950 border border-white/10 rounded-xl px-3 py-2 text-white text-xs focus:outline-none focus:border-cyan-500 font-mono"
-          />
-        </div>
+        <VariableField
+          label="Search Query"
+          value={settings.query || ''}
+          onChange={(val) => handleChange('query', val)}
+          placeholder="e.g. {{Input.output}} latest discoveries"
+          currentNodeId={node.id}
+          earlierSteps={earlierSteps}
+          allNodes={allNodes}
+          stepOutputs={stepOutputs}
+        />
       )}
 
       {node.type === 'webFetch' && (
-        <div>
-          <label className="text-xs font-medium text-slate-300 block mb-1">
-            Webpage Target URL
-          </label>
-          <input
-            type="text"
-            value={settings.url || ''}
-            onChange={(e) => handleChange('url', e.target.value)}
-            placeholder="https://en.wikipedia.org/wiki/James_Webb_Space_Telescope"
-            className="w-full bg-slate-950 border border-white/10 rounded-xl px-3 py-2 text-white text-xs focus:outline-none focus:border-cyan-500 font-mono"
-          />
-        </div>
+        <VariableField
+          label="Webpage Target URL"
+          value={settings.url || ''}
+          onChange={(val) => handleChange('url', val)}
+          placeholder="https://en.wikipedia.org/wiki/James_Webb_Space_Telescope"
+          currentNodeId={node.id}
+          earlierSteps={earlierSteps}
+          allNodes={allNodes}
+          stepOutputs={stepOutputs}
+        />
       )}
 
       {node.type === 'scholar' && (
-        <div>
-          <label className="text-xs font-medium text-slate-300 block mb-1">
-            Academic Topic Query
-          </label>
-          <input
-            type="text"
-            value={settings.query || ''}
-            onChange={(e) => handleChange('query', e.target.value)}
-            placeholder="e.g. {{Input.output}}"
-            className="w-full bg-slate-950 border border-white/10 rounded-xl px-3 py-2 text-white text-xs focus:outline-none focus:border-cyan-500 font-mono"
-          />
-        </div>
+        <VariableField
+          label="Academic Topic Query"
+          value={settings.query || ''}
+          onChange={(val) => handleChange('query', val)}
+          placeholder="e.g. {{Input.output}}"
+          currentNodeId={node.id}
+          earlierSteps={earlierSteps}
+          allNodes={allNodes}
+          stepOutputs={stepOutputs}
+        />
       )}
 
       {node.type === 'ai' && (
@@ -1940,49 +2568,48 @@ export function StepSettingsForm({
               Longer answers need a higher number.
             </p>
           </div>
-          <div>
-            <label className="text-xs font-medium text-slate-300 block mb-1">
-              Prompt Instructions
-            </label>
-            <textarea
-              rows={4}
-              value={settings.prompt || ''}
-              onChange={(e) => handleChange('prompt', e.target.value)}
-              placeholder="e.g. Summarize in simple English with bullet points: {{Web Search.output}}"
-              className="w-full bg-slate-950 border border-white/10 rounded-xl p-3 text-white text-xs focus:outline-none focus:border-cyan-500 font-mono resize-y"
-            />
-          </div>
+
+          <VariableField
+            label="Prompt Instructions"
+            value={settings.prompt || ''}
+            onChange={(val) => handleChange('prompt', val)}
+            placeholder="e.g. Summarize in simple English with bullet points: {{Web Search.output}}"
+            multiline
+            rows={4}
+            currentNodeId={node.id}
+            earlierSteps={earlierSteps}
+            allNodes={allNodes}
+            stepOutputs={stepOutputs}
+          />
         </div>
       )}
 
       {node.type === 'image' && (
-        <div>
-          <label className="text-xs font-medium text-slate-300 block mb-1">
-            Image Prompt
-          </label>
-          <textarea
-            rows={3}
-            value={settings.prompt || ''}
-            onChange={(e) => handleChange('prompt', e.target.value)}
-            placeholder="e.g. {{AI.output}}"
-            className="w-full bg-slate-950 border border-white/10 rounded-xl p-3 text-white text-xs focus:outline-none focus:border-cyan-500 font-mono resize-y"
-          />
-        </div>
+        <VariableField
+          label="Image Prompt"
+          value={settings.prompt || ''}
+          onChange={(val) => handleChange('prompt', val)}
+          placeholder="e.g. {{AI.output}}"
+          multiline
+          rows={3}
+          currentNodeId={node.id}
+          earlierSteps={earlierSteps}
+          allNodes={allNodes}
+          stepOutputs={stepOutputs}
+        />
       )}
 
       {node.type === 'weather' && (
-        <div>
-          <label className="text-xs font-medium text-slate-300 block mb-1">
-            City Name
-          </label>
-          <input
-            type="text"
-            value={settings.city || ''}
-            onChange={(e) => handleChange('city', e.target.value)}
-            placeholder="e.g. London, Tokyo, San Francisco"
-            className="w-full bg-slate-950 border border-white/10 rounded-xl px-3 py-2 text-white text-xs focus:outline-none focus:border-cyan-500 font-mono"
-          />
-        </div>
+        <VariableField
+          label="City Name"
+          value={settings.city || ''}
+          onChange={(val) => handleChange('city', val)}
+          placeholder="e.g. London, Tokyo, San Francisco"
+          currentNodeId={node.id}
+          earlierSteps={earlierSteps}
+          allNodes={allNodes}
+          stepOutputs={stepOutputs}
+        />
       )}
 
       {node.type === 'nasa' && (
@@ -1996,18 +2623,16 @@ export function StepSettingsForm({
 
       {node.type === 'if' && (
         <div className="space-y-3">
-          <div>
-            <label className="text-xs font-medium text-slate-300 block mb-1">
-              Test Value (Value 1)
-            </label>
-            <input
-              type="text"
-              value={settings.value1 || ''}
-              onChange={(e) => handleChange('value1', e.target.value)}
-              placeholder="e.g. {{AI.output}}"
-              className="w-full bg-slate-950 border border-white/10 rounded-xl px-3 py-2 text-white text-xs focus:outline-none focus:border-cyan-500 font-mono"
-            />
-          </div>
+          <VariableField
+            label="Test Value (Value 1)"
+            value={settings.value1 || ''}
+            onChange={(val) => handleChange('value1', val)}
+            placeholder="e.g. {{AI.output}}"
+            currentNodeId={node.id}
+            earlierSteps={earlierSteps}
+            allNodes={allNodes}
+            stepOutputs={stepOutputs}
+          />
 
           <div>
             <label className="text-xs font-medium text-slate-300 block mb-1">
@@ -2029,54 +2654,20 @@ export function StepSettingsForm({
           </div>
 
           {settings.operator !== 'isEmpty' && settings.operator !== 'isNotEmpty' && (
-            <div>
-              <label className="text-xs font-medium text-slate-300 block mb-1">
-                Comparison Target (Value 2)
-              </label>
-              <input
-                type="text"
-                value={settings.value2 || ''}
-                onChange={(e) => handleChange('value2', e.target.value)}
-                placeholder="Target value or number..."
-                className="w-full bg-slate-950 border border-white/10 rounded-xl px-3 py-2 text-white text-xs focus:outline-none focus:border-cyan-500 font-mono"
-              />
-            </div>
-          )}
-        </div>
-      )}
-
-      {/* Placeholders Help & Quick Insert Pills */}
-      {node.type !== 'nasa' && (
-        <div className="pt-2 border-t border-white/5 space-y-2">
-          <p className="text-[11px] text-slate-400 font-mono">
-            💡 Use <code className="text-cyan-400 bg-cyan-500/10 px-1 py-0.5 rounded">{'{{Step label.output}}'}</code> to inject an earlier result.
-          </p>
-
-          {priorNodes.length > 0 && (
-            <div className="flex flex-wrap items-center gap-1.5 pt-1">
-              <span className="text-[10px] text-slate-500 uppercase tracking-wider font-mono">
-                Click to copy placeholder:
-              </span>
-              {priorNodes.map((p) => {
-                const tag = `{{${p.label}.output}}`;
-                return (
-                  <button
-                    key={p.id}
-                    type="button"
-                    onClick={() => {
-                      navigator.clipboard.writeText(tag);
-                    }}
-                    className="text-[10px] font-mono text-cyan-300 bg-white/5 hover:bg-cyan-500/20 px-2 py-0.5 rounded-lg border border-white/10 hover:border-cyan-500/30 transition-colors"
-                    title={`Click to copy ${tag}`}
-                  >
-                    {tag}
-                  </button>
-                );
-              })}
-            </div>
+            <VariableField
+              label="Comparison Target (Value 2)"
+              value={settings.value2 || ''}
+              onChange={(val) => handleChange('value2', val)}
+              placeholder="Target value or number..."
+              currentNodeId={node.id}
+              earlierSteps={earlierSteps}
+              allNodes={allNodes}
+              stepOutputs={stepOutputs}
+            />
           )}
         </div>
       )}
     </div>
   );
 }
+
