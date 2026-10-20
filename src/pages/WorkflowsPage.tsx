@@ -14,6 +14,7 @@ import {
   hasWorkflowCycle,
   getOutputSummary,
   getAncestorNodeIds,
+  getDownstreamNodeIds,
 } from '@/lib/workflowEngine';
 import {
   WorkflowCanvas,
@@ -42,6 +43,7 @@ import {
   AlertCircle,
   Loader2,
   MinusCircle,
+  Ban,
 } from 'lucide-react';
 import { Connection } from '@xyflow/react';
 
@@ -301,6 +303,7 @@ export function WorkflowsPage() {
   const [selectedNodeId, setSelectedNodeId] = useState<string | null>(null);
   const [isRenaming, setIsRenaming] = useState<boolean>(false);
   const [renameDraft, setRenameDraft] = useState<string>('');
+  const [confirmDeleteWorkflow, setConfirmDeleteWorkflow] = useState<boolean>(false);
   const [showAddMenu, setShowAddMenu] = useState<boolean>(false);
   const [showTemplatesModal, setShowTemplatesModal] = useState<boolean>(false);
   const [copiedKey, setCopiedKey] = useState<string | null>(null);
@@ -415,20 +418,20 @@ export function WorkflowsPage() {
     showToast(`Duplicated as "${clone.name}"`);
   };
 
-  // Delete current workflow
+  // Delete current workflow (without native alert/confirm)
   const handleDeleteCurrent = () => {
     if (!activeWorkflow) return;
     if (workflows.length <= 1) {
-      alert('You cannot delete the only workflow. Create another one first.');
+      showToast('You cannot delete the only workflow. Create another one first.');
+      setConfirmDeleteWorkflow(false);
       return;
     }
-    const confirmed = window.confirm(`Delete workflow "${activeWorkflow.name}"?`);
-    if (!confirmed) return;
 
     const remaining = workflows.filter((w) => w.id !== activeWorkflow.id);
     setWorkflows(remaining);
     setActiveWorkflowId(remaining[0].id);
     setSelectedNodeId(null);
+    setConfirmDeleteWorkflow(false);
     showToast('Workflow deleted');
   };
 
@@ -485,9 +488,8 @@ export function WorkflowsPage() {
     const nodeMap = new Map<string, WorkflowNode>();
     for (const n of activeWorkflow.nodes) nodeMap.set(n.id, n);
 
-    let preservedAncestors = new Set<string>();
     if (startFromNodeId) {
-      preservedAncestors = getAncestorNodeIds(startFromNodeId, activeWorkflow.edges || []);
+      const preservedAncestors = getAncestorNodeIds(startFromNodeId, activeWorkflow.edges || []);
       // Verify all needed ancestors have saved outputs
       for (const ancId of preservedAncestors) {
         const ancNode = nodeMap.get(ancId);
@@ -508,47 +510,36 @@ export function WorkflowsPage() {
       handleClearResults();
       stepStartTimesRef.current = {};
     } else {
-      // Keep ancestors' statuses and outputs intact; clear target and downstream nodes
+      // Only clear target and downstream nodes; preserve ancestors AND unrelated parallel branches
+      const downstreamIds = getDownstreamNodeIds(startFromNodeId, activeWorkflow.edges || []);
       setStepStatuses((prev) => {
-        const next: Record<string, WorkflowStepStatus> = {};
-        for (const id of preservedAncestors) {
-          if (prev[id]) next[id] = prev[id];
-        }
+        const next = { ...prev };
+        for (const id of downstreamIds) delete next[id];
         return next;
       });
       setStepOutputs((prev) => {
-        const next: Record<string, WorkflowOutput> = {};
-        for (const id of preservedAncestors) {
-          if (prev[id]) next[id] = prev[id];
-        }
+        const next = { ...prev };
+        for (const id of downstreamIds) delete next[id];
         return next;
       });
       setStepStartTimes((prev) => {
-        const next: Record<string, number> = {};
-        for (const id of preservedAncestors) {
-          if (prev[id]) next[id] = prev[id];
-        }
+        const next = { ...prev };
+        for (const id of downstreamIds) delete next[id];
         return next;
       });
       setStepDurations((prev) => {
-        const next: Record<string, number> = {};
-        for (const id of preservedAncestors) {
-          if (prev[id] !== undefined) next[id] = prev[id];
-        }
+        const next = { ...prev };
+        for (const id of downstreamIds) delete next[id];
         return next;
       });
       setStepOutputSummaries((prev) => {
-        const next: Record<string, string> = {};
-        for (const id of preservedAncestors) {
-          if (prev[id]) next[id] = prev[id];
-        }
+        const next = { ...prev };
+        for (const id of downstreamIds) delete next[id];
         return next;
       });
       setStepErrors((prev) => {
-        const next: Record<string, string> = {};
-        for (const id of preservedAncestors) {
-          if (prev[id]) next[id] = prev[id];
-        }
+        const next = { ...prev };
+        for (const id of downstreamIds) delete next[id];
         return next;
       });
     }
@@ -573,7 +564,9 @@ export function WorkflowsPage() {
                 ...prev,
                 [nodeId]: getOutputSummary(output),
               }));
-              setLastExecutedNodeId(nodeId);
+              if (status === 'done') {
+                setLastExecutedNodeId(nodeId);
+              }
             }
 
             if (errorText) {
@@ -640,6 +633,16 @@ export function WorkflowsPage() {
   const handleAddStep = (type: WorkflowNodeType) => {
     if (!activeWorkflow) return;
     setShowAddMenu(false);
+
+    if (type === 'input') {
+      const existingInput = activeWorkflow.nodes.find((n) => n.type === 'input');
+      if (existingInput) {
+        setSelectedNodeId(existingInput.id);
+        showToast('A workflow can only have one Input start step');
+        return;
+      }
+    }
+
     const cfg = NODE_CONFIG[type];
     const existingCount = activeWorkflow.nodes.filter((n) => n.type === type).length;
     const newLabel = `${cfg.label}${existingCount > 0 ? ` ${existingCount + 1}` : ''}`;
@@ -712,9 +715,10 @@ export function WorkflowsPage() {
       if (!activeWorkflow) return;
       const target = activeWorkflow.nodes.find((n) => n.id === nodeId);
       if (!target) return;
+      const copyType: WorkflowNodeType = target.type === 'input' ? 'ai' : target.type;
       const copyNode: WorkflowNode = {
         id: `node-${Date.now()}`,
-        type: target.type,
+        type: copyType,
         label: `${target.label} copy`,
         x: target.x + 40,
         y: target.y + 40,
@@ -794,22 +798,57 @@ export function WorkflowsPage() {
     });
   };
 
-  // Update node settings / label
+  // Update node settings / label (and automatically sync {{OldLabel.output}} placeholders in other steps)
   const handleUpdateNode = (
     nodeId: string,
     field: 'label' | 'settings',
     value: string | Record<string, string>,
   ) => {
-    updateCurrentWorkflow((wf) => ({
-      ...wf,
-      nodes: wf.nodes.map((n) => {
-        if (n.id === nodeId) {
-          if (field === 'label') return { ...n, label: value as string };
-          if (field === 'settings') return { ...n, settings: value as Record<string, string> };
-        }
-        return n;
-      }),
-    }));
+    updateCurrentWorkflow((wf) => {
+      const targetNode = wf.nodes.find((n) => n.id === nodeId);
+      const oldLabel = targetNode?.label?.trim() || '';
+      const newLabel = field === 'label' ? (value as string).trim() : oldLabel;
+      const shouldSyncPlaceholders =
+        field === 'label' &&
+        Boolean(oldLabel) &&
+        Boolean(newLabel) &&
+        oldLabel.toLowerCase() !== newLabel.toLowerCase();
+
+      return {
+        ...wf,
+        nodes: wf.nodes.map((n) => {
+          if (n.id === nodeId) {
+            if (field === 'label') return { ...n, label: value as string };
+            if (field === 'settings') return { ...n, settings: value as Record<string, string> };
+          }
+          if (shouldSyncPlaceholders && n.settings) {
+            const updatedSettings: Record<string, string> = {};
+            let changed = false;
+            for (const [k, v] of Object.entries(n.settings)) {
+              if (typeof v === 'string' && v.includes('{{')) {
+                const replaced = v.replace(
+                  /\{\{\s*([^}]+?)\.output\s*\}\}/gi,
+                  (match, rawKey) => {
+                    if (rawKey.trim().toLowerCase() === oldLabel.toLowerCase()) {
+                      return `{{${newLabel}.output}}`;
+                    }
+                    return match;
+                  },
+                );
+                if (replaced !== v) changed = true;
+                updatedSettings[k] = replaced;
+              } else {
+                updatedSettings[k] = v;
+              }
+            }
+            if (changed) {
+              return { ...n, settings: updatedSettings };
+            }
+          }
+          return n;
+        }),
+      };
+    });
   };
 
   // Connect edge in Canvas view
@@ -966,40 +1005,49 @@ export function WorkflowsPage() {
   }
 
   return (
-    <div className="w-full max-w-7xl mx-auto space-y-6 pb-20 animate-in fade-in duration-300">
-      {/* Toast Alert */}
+    <div className="w-full max-w-[1360px] mx-auto pb-24 animate-in fade-in duration-200">
+      {/* Toast Notification */}
       {toastMessage && (
-        <div className="fixed top-20 right-4 sm:right-8 z-50 bg-slate-900/95 border border-cyan-500/40 text-cyan-200 text-xs font-mono px-4 py-2.5 rounded-xl shadow-2xl backdrop-blur-xl flex items-center gap-2 animate-in slide-in-from-top-2">
-          <Sparkles size={14} className="text-cyan-400" />
+        <div className="fixed top-20 right-4 sm:right-8 z-50 bg-slate-950/85 ring-1 ring-white/10 text-slate-100 text-xs px-4 py-2.5 rounded-xl shadow-2xl backdrop-blur-2xl flex items-center gap-2.5 animate-in slide-in-from-top-2">
+          <Sparkles size={14} className="text-cyan-400 shrink-0" />
           <span>{toastMessage}</span>
         </div>
       )}
 
-      {/* Top Header & Intro */}
-      <div className="flex flex-col md:flex-row md:items-center justify-between gap-4 border-b border-white/10 pb-5">
-        <div>
-          <div className="flex items-center gap-2">
-            <span className="px-2.5 py-0.5 rounded-full bg-cyan-500/10 border border-cyan-500/30 text-cyan-400 text-[11px] font-mono uppercase tracking-wider">
-              WORKFLOW ORCHESTRATOR
+      {/* Top Enterprise Header */}
+      <header className="flex flex-col lg:flex-row lg:items-end justify-between gap-6 pb-6 border-b border-white/[0.06]">
+        <div className="space-y-1.5">
+          <div className="flex items-center gap-2 text-xs text-slate-400 font-medium">
+            <span>Automation</span>
+            <span aria-hidden="true" className="text-slate-600">/</span>
+            <span className="text-cyan-400">Pipelines</span>
+            <span aria-hidden="true" className="text-slate-600">·</span>
+            <span className="font-mono tabular-nums text-slate-400">
+              {activeWorkflow.nodes.length} {activeWorkflow.nodes.length === 1 ? 'step' : 'steps'}
             </span>
+            {hasBranches && (
+              <>
+                <span aria-hidden="true" className="text-slate-600">·</span>
+                <span className="text-emerald-400/90">Branching graph</span>
+              </>
+            )}
           </div>
-          <h1 className="text-2xl sm:text-3xl font-bold text-white tracking-tight mt-1 flex items-center gap-2">
-            <GitBranch className="text-cyan-400" size={26} />
+          <h1 className="text-2xl sm:text-3xl font-semibold text-white tracking-tight">
             Workflows
           </h1>
-          <p className="text-xs sm:text-sm text-slate-400 mt-1 max-w-2xl">
-            Build autonomous multi-step pipelines with web search, academic scholar data, AI synthesis, and image generation.
+          <p className="text-sm text-slate-400 max-w-2xl leading-relaxed">
+            Orchestrate multi-step research, live web telemetry, academic synthesis, and studio generation pipelines.
           </p>
         </div>
 
-        {/* Top Controls: Run / Stop / Clear */}
-        <div className="flex items-center gap-2 flex-wrap">
+        {/* Primary Execution Controls */}
+        <div className="flex items-center gap-2.5 flex-wrap">
           <button
             type="button"
             onClick={() => setShowTemplatesModal(true)}
-            className="px-3.5 py-2 rounded-xl bg-white/5 hover:bg-white/10 text-slate-300 hover:text-white border border-white/10 text-xs font-medium transition-all flex items-center gap-1.5 shadow-sm"
+            className="px-4 py-2 rounded-lg bg-white/[0.03] hover:bg-white/[0.07] text-slate-200 hover:text-white text-xs font-medium transition-colors flex items-center gap-2 whitespace-nowrap shrink-0"
           >
-            <Sparkles size={14} className="text-purple-400" />
+            <Sparkles size={14} className="text-cyan-400" />
             <span>Templates</span>
           </button>
 
@@ -1007,40 +1055,39 @@ export function WorkflowsPage() {
             type="button"
             onClick={handleClearResults}
             disabled={isRunning}
-            className="px-3 py-2 rounded-xl bg-white/5 hover:bg-white/10 text-slate-400 hover:text-white border border-white/10 text-xs font-medium transition-all flex items-center gap-1.5 disabled:opacity-50"
+            className="px-3.5 py-2 rounded-lg bg-white/[0.03] hover:bg-white/[0.07] text-slate-400 hover:text-slate-200 text-xs font-medium transition-colors flex items-center gap-1.5 disabled:opacity-40 whitespace-nowrap shrink-0"
             title="Clear previous outputs & step statuses"
           >
             <RotateCcw size={13} />
-            <span className="hidden sm:inline">Clear</span>
+            <span>Reset State</span>
           </button>
 
           {isRunning ? (
             <button
               type="button"
               onClick={handleStop}
-              className="px-4 py-2 rounded-xl bg-rose-500/20 hover:bg-rose-500/30 text-rose-300 border border-rose-500/40 text-xs font-semibold transition-all flex items-center gap-2 shadow-lg shadow-rose-500/10 animate-pulse"
+              className="px-5 py-2 rounded-lg bg-rose-500/20 hover:bg-rose-500/30 text-rose-200 text-xs font-semibold transition-colors flex items-center gap-2 whitespace-nowrap shrink-0"
             >
-              <Square size={13} className="fill-rose-400" />
-              <span>Stop</span>
+              <Square size={13} className="fill-rose-400 text-rose-400" />
+              <span>Stop Run</span>
             </button>
           ) : (
             <button
               type="button"
               onClick={handleRun}
-              className="px-5 py-2 rounded-xl bg-cyan-500 hover:bg-cyan-400 text-slate-950 font-bold text-xs transition-all flex items-center gap-2 shadow-lg shadow-cyan-500/20 active:scale-95"
+              className="px-5 py-2 rounded-lg bg-cyan-400 hover:bg-cyan-300 text-slate-950 font-semibold text-xs transition-all flex items-center gap-2 shadow-[0_0_25px_-5px_rgba(34,211,238,0.45)] active:scale-[0.99] whitespace-nowrap shrink-0"
             >
-              <Play size={14} className="fill-slate-950" />
-              <span>Run</span>
+              <Play size={13} className="fill-slate-950" />
+              <span>Run Pipeline</span>
             </button>
           )}
         </div>
-      </div>
+      </header>
 
-      {/* Workflow Switcher & Toolbar */}
-      <div className="flex flex-col sm:flex-row items-stretch sm:items-center justify-between gap-3 bg-slate-900/60 border border-white/10 p-3 rounded-2xl backdrop-blur-md">
-        {/* Left: Workflow Selector & Management */}
-        <div className="flex items-center gap-2 flex-wrap min-w-0">
-          {/* Picker */}
+      {/* Sleek Borderless Workspace Bar */}
+      <div className="flex flex-col sm:flex-row items-stretch sm:items-center justify-between gap-4 py-4 border-b border-white/[0.06] bg-white/[0.01] backdrop-blur-xl">
+        {/* Left: Workflow Selector & Inline Actions */}
+        <div className="flex items-center gap-1.5 flex-wrap min-w-0">
           <div className="relative">
             <select
               value={activeWorkflow.id}
@@ -1049,38 +1096,41 @@ export function WorkflowsPage() {
                 setSelectedNodeId(null);
                 handleClearResults();
               }}
-              className="appearance-none bg-slate-950/80 border border-white/10 text-white font-medium text-xs rounded-xl pl-3 pr-8 py-2 focus:outline-none focus:border-cyan-500 transition-colors cursor-pointer"
+              className="appearance-none bg-white/[0.04] hover:bg-white/[0.07] text-white font-medium text-xs rounded-lg pl-3.5 pr-9 py-2 focus:outline-none focus:ring-1 focus:ring-cyan-400/50 transition-colors cursor-pointer"
             >
               {workflows.map((w) => (
-                <option key={w.id} value={w.id}>
+                <option key={w.id} value={w.id} className="bg-slate-950 text-white">
                   {w.name} ({w.nodes.length} steps)
                 </option>
               ))}
             </select>
             <ChevronDown
               size={14}
-              className="absolute right-2.5 top-1/2 -translate-y-1/2 text-slate-400 pointer-events-none"
+              className="absolute right-3 top-1/2 -translate-y-1/2 text-slate-400 pointer-events-none"
             />
           </div>
+
+          <div className="h-4 w-[1px] bg-white/[0.08] mx-1 hidden sm:block" />
 
           {/* New Workflow */}
           <button
             type="button"
             onClick={handleCreateNew}
-            className="p-2 rounded-xl bg-white/5 hover:bg-white/10 text-slate-300 hover:text-white border border-white/10 transition-colors"
+            className="px-2.5 py-2 rounded-lg text-slate-400 hover:text-white hover:bg-white/[0.05] text-xs font-medium transition-colors flex items-center gap-1.5 whitespace-nowrap shrink-0"
             title="Create new blank workflow"
           >
-            <Plus size={15} />
+            <Plus size={14} />
+            <span className="hidden md:inline">New</span>
           </button>
 
           {/* Rename Workflow */}
           {isRenaming ? (
-            <div className="flex items-center gap-1">
+            <div className="flex items-center gap-1 bg-white/[0.04] rounded-lg px-2 py-1">
               <input
                 type="text"
                 value={renameDraft}
                 onChange={(e) => setRenameDraft(e.target.value)}
-                className="bg-slate-950 border border-cyan-500/50 text-white text-xs px-2.5 py-1.5 rounded-lg focus:outline-none w-36"
+                className="bg-transparent text-white text-xs px-1.5 py-0.5 focus:outline-none w-36"
                 autoFocus
               />
               <button
@@ -1091,16 +1141,16 @@ export function WorkflowsPage() {
                   }
                   setIsRenaming(false);
                 }}
-                className="p-1.5 rounded-lg bg-cyan-500 text-slate-950 hover:bg-cyan-400"
+                className="p-1 rounded bg-cyan-400 text-slate-950 hover:bg-cyan-300"
               >
-                <Check size={13} />
+                <Check size={12} />
               </button>
               <button
                 type="button"
                 onClick={() => setIsRenaming(false)}
-                className="p-1.5 rounded-lg bg-white/10 text-slate-300 hover:bg-white/20"
+                className="p-1 rounded text-slate-400 hover:text-white"
               >
-                <X size={13} />
+                <X size={12} />
               </button>
             </div>
           ) : (
@@ -1110,10 +1160,11 @@ export function WorkflowsPage() {
                 setRenameDraft(activeWorkflow.name);
                 setIsRenaming(true);
               }}
-              className="p-2 rounded-xl bg-white/5 hover:bg-white/10 text-slate-300 hover:text-white border border-white/10 transition-colors"
+              className="px-2.5 py-2 rounded-lg text-slate-400 hover:text-white hover:bg-white/[0.05] text-xs font-medium transition-colors flex items-center gap-1.5 whitespace-nowrap shrink-0"
               title="Rename workflow"
             >
-              <Edit2 size={14} />
+              <Edit2 size={13} />
+              <span className="hidden md:inline">Rename</span>
             </button>
           )}
 
@@ -1121,159 +1172,216 @@ export function WorkflowsPage() {
           <button
             type="button"
             onClick={handleDuplicate}
-            className="p-2 rounded-xl bg-white/5 hover:bg-white/10 text-slate-300 hover:text-white border border-white/10 transition-colors"
+            className="px-2.5 py-2 rounded-lg text-slate-400 hover:text-white hover:bg-white/[0.05] text-xs font-medium transition-colors flex items-center gap-1.5 whitespace-nowrap shrink-0"
             title="Duplicate workflow"
           >
-            <Copy size={14} />
+            <Copy size={13} />
+            <span className="hidden md:inline">Duplicate</span>
           </button>
 
-          {/* Delete */}
-          <button
-            type="button"
-            onClick={handleDeleteCurrent}
-            className="p-2 rounded-xl bg-white/5 hover:bg-rose-500/20 text-slate-400 hover:text-rose-400 border border-white/10 transition-colors"
-            title="Delete current workflow"
-          >
-            <Trash2 size={14} />
-          </button>
+          {/* Delete (with inline confirmation instead of window.confirm) */}
+          {confirmDeleteWorkflow ? (
+            <div className="flex items-center gap-1 bg-rose-500/15 rounded-lg px-2 py-1">
+              <span className="text-[11px] text-rose-300 font-medium px-1">Delete?</span>
+              <button
+                type="button"
+                onClick={handleDeleteCurrent}
+                className="px-2 py-0.5 rounded bg-rose-500 hover:bg-rose-400 text-slate-950 font-semibold text-[11px]"
+              >
+                Confirm
+              </button>
+              <button
+                type="button"
+                onClick={() => setConfirmDeleteWorkflow(false)}
+                className="p-1 rounded text-slate-400 hover:text-white"
+              >
+                <X size={12} />
+              </button>
+            </div>
+          ) : (
+            <button
+              type="button"
+              onClick={() => {
+                if (workflows.length <= 1) {
+                  showToast('You cannot delete the only workflow. Create another one first.');
+                  return;
+                }
+                setConfirmDeleteWorkflow(true);
+              }}
+              className="px-2.5 py-2 rounded-lg text-slate-400 hover:text-rose-400 hover:bg-rose-500/10 text-xs font-medium transition-colors flex items-center gap-1.5 whitespace-nowrap shrink-0"
+              title="Delete current workflow"
+            >
+              <Trash2 size={13} />
+              <span className="hidden md:inline">Delete</span>
+            </button>
+          )}
         </div>
 
-        {/* Right: Segmented Switch: List | Canvas */}
-        <div className="flex items-center self-end sm:self-auto bg-slate-950/80 p-1 rounded-xl border border-white/10">
+        {/* Right: Segmented Mode Switch (List | Canvas) */}
+        <div className="flex items-center self-end sm:self-auto bg-white/[0.04] p-1 rounded-lg">
           <button
             type="button"
             onClick={() => setViewMode('list')}
-            className={`px-3.5 py-1.5 rounded-lg text-xs font-semibold transition-all flex items-center gap-1.5 ${
+            className={`px-3.5 py-1.5 rounded-md text-xs font-medium transition-all flex items-center gap-1.5 whitespace-nowrap shrink-0 ${
               viewMode === 'list'
-                ? 'bg-cyan-500 text-slate-950 shadow-md shadow-cyan-500/20'
-                : 'text-slate-400 hover:text-white'
+                ? 'bg-white/10 text-white shadow-sm'
+                : 'text-slate-400 hover:text-slate-200'
             }`}
           >
             <Layers size={13} />
-            <span>List</span>
+            <span>Pipeline List</span>
           </button>
           <button
             type="button"
             onClick={() => setViewMode('canvas')}
-            className={`px-3.5 py-1.5 rounded-lg text-xs font-semibold transition-all flex items-center gap-1.5 ${
+            className={`px-3.5 py-1.5 rounded-md text-xs font-medium transition-all flex items-center gap-1.5 whitespace-nowrap shrink-0 ${
               viewMode === 'canvas'
-                ? 'bg-cyan-500 text-slate-950 shadow-md shadow-cyan-500/20'
-                : 'text-slate-400 hover:text-white'
+                ? 'bg-white/10 text-white shadow-sm'
+                : 'text-slate-400 hover:text-slate-200'
             }`}
           >
             <GitBranch size={13} />
-            <span>Canvas</span>
+            <span>Graph Canvas</span>
           </button>
         </div>
       </div>
 
-      {/* Main View Area */}
+      {/* Main Workspace Area */}
       {viewMode === 'list' ? (
-        /* ================= LIST VIEW ================= */
-        <div className="space-y-4">
-          {/* Branching Notice Banner */}
+        /* ================= BORDERLESS ENTERPRISE PIPELINE LIST VIEW ================= */
+        <div className="pt-4">
+          {/* Subtle Branching Notice */}
           {hasBranches && (
-            <div className="p-3.5 rounded-2xl bg-amber-500/10 border border-amber-500/30 text-amber-300 text-xs flex items-center gap-2.5">
-              <AlertTriangle size={16} className="text-amber-400 flex-shrink-0" />
+            <div className="py-3 px-4 mb-4 rounded-lg bg-amber-500/[0.07] text-amber-200/90 text-xs flex items-center gap-2.5">
+              <AlertTriangle size={15} className="text-amber-400 flex-shrink-0" />
               <span>
-                <b>This workflow has branches.</b> Reordering steps is managed in <b>Canvas</b> view to maintain graph integrity. You can still edit step settings below.
+                This pipeline contains conditional branches. Step sequence connections are managed in <b>Graph Canvas</b> mode, while step parameters remain editable below.
               </span>
             </div>
           )}
 
-          {/* List of Step Cards */}
-          <div className="space-y-3">
+          {/* Borderless Step Rows Separated by Hairlines */}
+          <div className="divide-y divide-white/[0.06]">
             {activeWorkflow.nodes.map((node, index) => {
               const cfg = NODE_CONFIG[node.type] || NODE_CONFIG.input;
               const IconComp = cfg.icon;
               const status = stepStatuses[node.id] || 'idle';
               const output = stepOutputs[node.id];
               const errorText = stepErrors[node.id];
+              const durationMs = stepDurations[node.id];
+              const summaryText = stepOutputSummaries[node.id] || (output ? getOutputSummary(output) : '');
+              const isDisabled = node.settings?.disabled === 'true';
               const isSettingsOpen = !collapsedSettings[node.id];
               const isOutputOpen = !collapsedOutputs[node.id];
 
               return (
-                <div
+                <section
                   key={node.id}
-                  className={`rounded-2xl bg-slate-900/80 border transition-all duration-200 overflow-hidden shadow-lg ${
+                  className={`py-6 transition-colors duration-150 ${
+                    isDisabled ? 'opacity-60' : ''
+                  } ${
                     status === 'running'
-                      ? 'border-cyan-500/60 ring-1 ring-cyan-500/30'
-                      : status === 'error'
-                      ? 'border-rose-500/60'
-                      : status === 'done'
-                      ? 'border-emerald-500/40'
-                      : 'border-white/10 hover:border-white/15'
+                      ? 'bg-cyan-500/[0.03]'
+                      : 'hover:bg-white/[0.01]'
                   }`}
                 >
-                  {/* Card Header Bar */}
-                  <div className="p-3 sm:p-4 flex flex-col sm:flex-row sm:items-center justify-between gap-3 bg-white/[0.02]">
-                    <div className="flex items-center gap-3 min-w-0">
-                      {/* Step Number */}
-                      <span className="w-6 h-6 rounded-lg bg-white/5 border border-white/10 text-slate-400 text-xs font-mono flex items-center justify-center flex-shrink-0">
-                        {index + 1}
+                  {/* Step Header Line */}
+                  <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+                    <div className="flex items-center gap-3.5 min-w-0">
+                      {/* Tabular Editorial Step Index */}
+                      <span className="text-xs font-mono tabular-nums text-slate-500 w-6 flex-shrink-0 select-none">
+                        {String(index + 1).padStart(2, '0')}.
                       </span>
 
-                      {/* Type Icon */}
-                      <div className={`p-2 rounded-xl border flex-shrink-0 ${cfg.color}`}>
+                      {/* Soft Glassmorphic Icon */}
+                      <div className={`p-2 rounded-lg flex-shrink-0 ${cfg.color}`}>
                         <IconComp size={16} />
                       </div>
 
-                      {/* Editable Label */}
-                      <div className="min-w-0">
+                      {/* Editable Step Title & Unboxed Metadata */}
+                      <div className="min-w-0 flex flex-col sm:flex-row sm:items-baseline sm:gap-2.5">
                         <input
                           type="text"
                           value={node.label}
                           onChange={(e) => handleUpdateNode(node.id, 'label', e.target.value)}
-                          className="bg-transparent hover:bg-white/5 focus:bg-slate-950 font-semibold text-white text-sm sm:text-base rounded px-1.5 py-0.5 border border-transparent focus:border-cyan-500/50 outline-none w-full max-w-[200px] sm:max-w-[320px] truncate"
+                          className="bg-transparent hover:bg-white/[0.04] focus:bg-slate-900/90 font-semibold text-white text-base rounded px-1.5 py-0.5 focus:outline-none focus:ring-1 focus:ring-cyan-400/40 w-full max-w-[220px] sm:max-w-[300px] truncate transition-colors"
                           title="Click to rename step"
                         />
-                        <span className="text-[11px] text-slate-400 font-mono block pl-1.5">
-                          {cfg.label}
-                        </span>
+                        <div className="flex items-center gap-1.5 text-xs text-slate-400 pl-1.5 sm:pl-0">
+                          <span>{cfg.label}</span>
+                          {durationMs !== undefined && status === 'done' && (
+                            <>
+                              <span aria-hidden="true" className="text-slate-600">·</span>
+                              <span className="font-mono tabular-nums text-slate-300">
+                                {(durationMs / 1000).toFixed(1)}s
+                              </span>
+                            </>
+                          )}
+                          {summaryText && status === 'done' && (
+                            <>
+                              <span aria-hidden="true" className="text-slate-600">·</span>
+                              <span className="font-mono tabular-nums text-slate-400">
+                                {summaryText}
+                              </span>
+                            </>
+                          )}
+                        </div>
                       </div>
                     </div>
 
-                    {/* Right side badges & actions */}
+                    {/* Right Side Unboxed Status + Clean Action Controls */}
                     <div className="flex items-center gap-2 self-end sm:self-auto flex-wrap">
-                      {/* Status badge */}
-                      <div className="flex-shrink-0">
-                        {status === 'running' && (
-                          <span className="px-2.5 py-1 rounded-full bg-cyan-500/10 border border-cyan-500/30 text-cyan-400 text-[11px] font-medium flex items-center gap-1.5">
-                            <Loader2 size={12} className="animate-spin" />
+                      {/* Unboxed Status Indicator */}
+                      <div className="mr-2 flex items-center">
+                        {isDisabled ? (
+                          <span className="inline-flex items-center gap-1.5 text-xs text-amber-400 font-medium">
+                            <Ban size={13} />
+                            <span>Disabled</span>
+                          </span>
+                        ) : status === 'running' ? (
+                          <span className="inline-flex items-center gap-1.5 text-xs text-cyan-400 font-medium">
+                            <Loader2 size={13} className="animate-spin" />
                             <span>Running</span>
                           </span>
-                        )}
-                        {status === 'done' && (
-                          <span className="px-2.5 py-1 rounded-full bg-emerald-500/10 border border-emerald-500/30 text-emerald-400 text-[11px] font-medium flex items-center gap-1.5">
-                            <CheckCircle2 size={12} />
-                            <span>Done</span>
+                        ) : status === 'done' ? (
+                          <span className="inline-flex items-center gap-1.5 text-xs text-emerald-400 font-medium">
+                            <CheckCircle2 size={13} />
+                            <span>Completed</span>
                           </span>
-                        )}
-                        {status === 'error' && (
-                          <span className="px-2.5 py-1 rounded-full bg-rose-500/10 border border-rose-500/30 text-rose-400 text-[11px] font-medium flex items-center gap-1.5">
-                            <AlertCircle size={12} />
-                            <span>Error</span>
+                        ) : status === 'error' ? (
+                          <span className="inline-flex items-center gap-1.5 text-xs text-rose-400 font-medium">
+                            <AlertCircle size={13} />
+                            <span>Failed</span>
                           </span>
-                        )}
-                        {status === 'skipped' && (
-                          <span className="px-2.5 py-1 rounded-full bg-slate-800 border border-white/10 text-slate-400 text-[11px] font-medium flex items-center gap-1.5">
-                            <MinusCircle size={12} />
+                        ) : status === 'skipped' ? (
+                          <span className="inline-flex items-center gap-1.5 text-xs text-slate-400 font-medium">
+                            <MinusCircle size={13} />
                             <span>Skipped</span>
                           </span>
-                        )}
-                        {status === 'idle' && (
-                          <span className="px-2 py-0.5 rounded-full bg-white/5 text-slate-500 text-[11px] font-mono">
-                            Idle
+                        ) : (
+                          <span className="text-xs text-slate-500 font-mono">
+                            Ready
                           </span>
                         )}
                       </div>
+
+                      {/* Run from this step */}
+                      <button
+                        type="button"
+                        disabled={isRunning}
+                        onClick={() => handleRunFromNode(node.id)}
+                        className="p-2 rounded-lg text-slate-400 hover:text-cyan-300 hover:bg-cyan-500/10 disabled:opacity-30 transition-colors"
+                        title="Run workflow starting from this step"
+                      >
+                        <Play size={14} />
+                      </button>
 
                       {/* Move Up / Move Down */}
                       <button
                         type="button"
                         onClick={() => handleMoveNodeUp(index)}
                         disabled={hasBranches || index === 0}
-                        className="p-1.5 rounded-lg bg-white/5 hover:bg-white/10 text-slate-400 hover:text-white border border-white/10 disabled:opacity-30 disabled:cursor-not-allowed transition-colors"
+                        className="p-2 rounded-lg text-slate-400 hover:text-white hover:bg-white/[0.05] disabled:opacity-25 disabled:cursor-not-allowed transition-colors"
                         title={hasBranches ? 'Reordering disabled for branching workflows' : 'Move step up'}
                       >
                         <ArrowUp size={14} />
@@ -1282,17 +1390,27 @@ export function WorkflowsPage() {
                         type="button"
                         onClick={() => handleMoveNodeDown(index)}
                         disabled={hasBranches || index === activeWorkflow.nodes.length - 1}
-                        className="p-1.5 rounded-lg bg-white/5 hover:bg-white/10 text-slate-400 hover:text-white border border-white/10 disabled:opacity-30 disabled:cursor-not-allowed transition-colors"
+                        className="p-2 rounded-lg text-slate-400 hover:text-white hover:bg-white/[0.05] disabled:opacity-25 disabled:cursor-not-allowed transition-colors"
                         title={hasBranches ? 'Reordering disabled for branching workflows' : 'Move step down'}
                       >
                         <ArrowDown size={14} />
+                      </button>
+
+                      {/* Duplicate Step */}
+                      <button
+                        type="button"
+                        onClick={() => handleDuplicateNode(node.id)}
+                        className="p-2 rounded-lg text-slate-400 hover:text-white hover:bg-white/[0.05] transition-colors"
+                        title="Duplicate step"
+                      >
+                        <Copy size={14} />
                       </button>
 
                       {/* Delete Step */}
                       <button
                         type="button"
                         onClick={() => handleDeleteNode(node.id)}
-                        className="p-1.5 rounded-lg bg-white/5 hover:bg-rose-500/20 text-slate-400 hover:text-rose-400 border border-white/10 transition-colors"
+                        className="p-2 rounded-lg text-slate-400 hover:text-rose-400 hover:bg-rose-500/10 transition-colors"
                         title="Delete step"
                       >
                         <Trash2 size={14} />
@@ -1307,17 +1425,17 @@ export function WorkflowsPage() {
                             [node.id]: !prev[node.id],
                           }))
                         }
-                        className="p-1.5 rounded-lg bg-white/5 hover:bg-white/10 text-slate-300 transition-colors ml-1"
-                        title="Toggle settings panel"
+                        className="p-2 rounded-lg text-slate-300 hover:text-white hover:bg-white/[0.05] transition-colors"
+                        title="Toggle step parameters"
                       >
                         {isSettingsOpen ? <ChevronUp size={15} /> : <ChevronDown size={15} />}
                       </button>
                     </div>
                   </div>
 
-                  {/* Card Body: Settings Form */}
+                  {/* Step Parameters Area (No Box Enclosure — Clean Indented Workspace) */}
                   {isSettingsOpen && (
-                    <div className="p-4 border-t border-white/5 bg-slate-950/40 space-y-3">
+                    <div className="mt-4 sm:pl-10 max-w-3xl">
                       <StepSettingsForm
                         node={node}
                         allNodes={activeWorkflow.nodes}
@@ -1331,109 +1449,121 @@ export function WorkflowsPage() {
                     </div>
                   )}
 
-                  {/* Output Callout / Box */}
+                  {/* Step Output Stream (Sleek Subtle Surface Contrast) */}
                   {(output || errorText) && (
-                    <div className="border-t border-white/5 p-3.5 bg-black/40">
-                      <div className="flex items-center justify-between mb-2">
-                        <span className="text-xs font-mono text-slate-400 flex items-center gap-1.5">
-                          <span>Output result</span>
-                          {output?.type && (
-                            <span className="text-[10px] text-cyan-400 bg-cyan-500/10 px-1.5 py-0.2 rounded border border-cyan-500/20">
-                              {output.type}
-                            </span>
-                          )}
-                        </span>
-                        <div className="flex items-center gap-2">
-                          {output?.type === 'text' && (
+                    <div className="mt-4 sm:pl-10 max-w-4xl">
+                      <div className="rounded-xl bg-white/[0.02] backdrop-blur-md px-4 py-3 space-y-2.5">
+                        <div className="flex items-center justify-between">
+                          <div className="flex items-center gap-2 text-xs text-slate-400">
+                            <span className="font-medium text-slate-300">Step Output</span>
+                            {output?.type && (
+                              <>
+                                <span aria-hidden="true" className="text-slate-600">·</span>
+                                <span className="font-mono text-cyan-400">{output.type}</span>
+                              </>
+                            )}
+                            {summaryText && (
+                              <>
+                                <span aria-hidden="true" className="text-slate-600">·</span>
+                                <span className="font-mono tabular-nums text-slate-400">
+                                  {summaryText}
+                                </span>
+                              </>
+                            )}
+                          </div>
+                          <div className="flex items-center gap-2">
+                            {output?.type === 'text' && (
+                              <button
+                                type="button"
+                                onClick={() => handleCopyText(output.value, `out-${node.id}`)}
+                                className="text-xs text-slate-400 hover:text-white flex items-center gap-1 px-2 py-1 rounded hover:bg-white/[0.06] transition-colors"
+                              >
+                                {copiedKey === `out-${node.id}` ? (
+                                  <>
+                                    <Check size={12} className="text-emerald-400" />
+                                    <span>Copied</span>
+                                  </>
+                                ) : (
+                                  <>
+                                    <Copy size={12} />
+                                    <span>Copy</span>
+                                  </>
+                                )}
+                              </button>
+                            )}
                             <button
                               type="button"
-                              onClick={() => handleCopyText(output.value, `out-${node.id}`)}
-                              className="text-[11px] text-slate-400 hover:text-white flex items-center gap-1 px-2 py-0.5 rounded bg-white/5 hover:bg-white/10"
+                              onClick={() =>
+                                setCollapsedOutputs((prev) => ({
+                                  ...prev,
+                                  [node.id]: !prev[node.id],
+                                }))
+                              }
+                              className="p-1 text-slate-400 hover:text-white rounded hover:bg-white/[0.06]"
                             >
-                              {copiedKey === `out-${node.id}` ? (
-                                <>
-                                  <Check size={11} className="text-emerald-400" />
-                                  <span>Copied</span>
-                                </>
-                              ) : (
-                                <>
-                                  <Copy size={11} />
-                                  <span>Copy</span>
-                                </>
-                              )}
+                              {isOutputOpen ? <ChevronUp size={14} /> : <ChevronDown size={14} />}
                             </button>
-                          )}
-                          <button
-                            type="button"
-                            onClick={() =>
-                              setCollapsedOutputs((prev) => ({
-                                ...prev,
-                                [node.id]: !prev[node.id],
-                              }))
-                            }
-                            className="text-slate-400 hover:text-white"
-                          >
-                            {isOutputOpen ? <ChevronUp size={14} /> : <ChevronDown size={14} />}
-                          </button>
+                          </div>
                         </div>
-                      </div>
 
-                      {isOutputOpen && (
-                        <div>
-                          {errorText && (
-                            <div className="p-3 rounded-xl bg-rose-500/10 border border-rose-500/30 text-rose-300 text-xs">
-                              {errorText}
-                            </div>
-                          )}
-                          {output?.type === 'text' && (
-                            <pre className="text-xs text-slate-300 font-mono whitespace-pre-wrap break-words max-h-56 overflow-y-auto p-3 rounded-xl bg-slate-950/70 border border-white/5">
-                              {output.value}
-                            </pre>
-                          )}
-                          {output?.type === 'image' && (
-                            <div className="mt-2 rounded-xl overflow-hidden border border-white/10 max-w-sm">
-                              <img
-                                src={output.value}
-                                alt="Workflow output"
-                                className="w-full object-cover max-h-64"
-                              />
-                              <div className="p-2 bg-slate-900/90 flex justify-end">
-                                <a
-                                  href={output.value}
-                                  download="workflow-image.png"
-                                  target="_blank"
-                                  rel="noreferrer"
-                                  className="px-3 py-1 bg-cyan-500 hover:bg-cyan-400 text-slate-950 text-xs font-semibold rounded-lg flex items-center gap-1.5"
-                                >
-                                  <Download size={12} />
-                                  <span>Download Image</span>
-                                </a>
+                        {isOutputOpen && (
+                          <div>
+                            {errorText && (
+                              <div className="py-2 px-3 rounded-lg bg-rose-500/10 text-rose-300 text-xs font-mono">
+                                {errorText}
                               </div>
-                            </div>
-                          )}
-                        </div>
-                      )}
+                            )}
+                            {output?.type === 'text' && (
+                              <pre className="text-xs text-slate-200 font-mono whitespace-pre-wrap break-words max-h-60 overflow-y-auto pt-1 leading-relaxed">
+                                {output.value}
+                              </pre>
+                            )}
+                            {output?.type === 'image' && (
+                              <div className="pt-2 space-y-2 max-w-sm">
+                                <img
+                                  src={output.value}
+                                  alt="Workflow output"
+                                  referrerPolicy="no-referrer"
+                                  className="w-full rounded-lg object-cover max-h-64"
+                                />
+                                <div className="flex justify-end">
+                                  <a
+                                    href={output.value}
+                                    download="workflow-image.png"
+                                    target="_blank"
+                                    rel="noreferrer"
+                                    className="px-3 py-1.5 bg-cyan-400 hover:bg-cyan-300 text-slate-950 text-xs font-semibold rounded-lg inline-flex items-center gap-1.5"
+                                  >
+                                    <Download size={12} />
+                                    <span>Download Image</span>
+                                  </a>
+                                </div>
+                              </div>
+                            )}
+                          </div>
+                        )}
+                      </div>
                     </div>
                   )}
-                </div>
+                </section>
               );
             })}
           </div>
 
-          {/* Add Step Button Bar */}
-          <div className="relative pt-2">
+          {/* Sleek Borderless Add Step Trigger */}
+          <div className="relative pt-4 pb-2 border-t border-white/[0.06]">
             <button
               type="button"
               onClick={() => setShowAddMenu((v) => !v)}
-              className="w-full py-3.5 rounded-2xl border-2 border-dashed border-white/15 hover:border-cyan-500/50 bg-slate-900/40 hover:bg-slate-900/70 text-slate-300 hover:text-cyan-300 text-xs font-semibold flex items-center justify-center gap-2 transition-all shadow-sm group"
+              className="px-4 py-2.5 rounded-lg bg-white/[0.03] hover:bg-white/[0.07] text-cyan-300 hover:text-cyan-200 text-xs font-medium inline-flex items-center gap-2 transition-colors group"
             >
-              <Plus size={16} className="group-hover:rotate-90 transition-transform" />
-              <span>Add Step to Workflow</span>
+              <Plus size={15} className="group-hover:rotate-90 transition-transform" />
+              <span>Add Pipeline Step</span>
             </button>
 
-            {/* Node type selection dropdown */}
+            {/* Step Type Selection Popover */}
             {showAddMenu && (
-              <div className="absolute left-0 right-0 top-full mt-2 z-30 bg-slate-900/95 border border-white/15 rounded-2xl p-3 shadow-2xl backdrop-blur-xl grid grid-cols-1 sm:grid-cols-3 gap-2">
+              <div className="absolute left-0 right-0 top-full mt-2 z-30 bg-slate-950/95 ring-1 ring-white/10 rounded-xl p-3 shadow-2xl backdrop-blur-2xl grid grid-cols-1 sm:grid-cols-3 gap-1.5">
                 {(Object.keys(NODE_CONFIG) as WorkflowNodeType[]).map((type) => {
                   const item = NODE_CONFIG[type];
                   const Icon = item.icon;
@@ -1442,14 +1572,14 @@ export function WorkflowsPage() {
                       key={type}
                       type="button"
                       onClick={() => handleAddStep(type)}
-                      className="flex items-center gap-3 p-2.5 rounded-xl bg-white/[0.03] hover:bg-white/[0.08] border border-white/5 hover:border-cyan-500/30 text-left transition-all"
+                      className="flex items-center gap-3 p-2.5 rounded-lg hover:bg-white/[0.06] text-left transition-colors"
                     >
-                      <div className={`p-2 rounded-lg border ${item.color}`}>
+                      <div className={`p-2 rounded-lg ${item.color}`}>
                         <Icon size={16} />
                       </div>
                       <div className="min-w-0">
-                        <div className="text-xs font-bold text-white truncate">{item.label}</div>
-                        <div className="text-[10px] text-slate-400 truncate">{item.desc}</div>
+                        <div className="text-xs font-semibold text-white truncate">{item.label}</div>
+                        <div className="text-[11px] text-slate-400 truncate">{item.desc}</div>
                       </div>
                     </button>
                   );
@@ -1459,8 +1589,8 @@ export function WorkflowsPage() {
           </div>
         </div>
       ) : (
-        /* ================= CANVAS VIEW ================= */
-        <div className="relative w-full h-[640px] rounded-2xl overflow-hidden border border-white/10 shadow-2xl bg-slate-950">
+        /* ================= SLEEK GRAPH CANVAS VIEW ================= */
+        <div className="relative w-full h-[660px] overflow-hidden border-b border-white/[0.06] bg-slate-950/40 backdrop-blur-xl">
           <WorkflowCanvas
             nodes={activeWorkflow.nodes}
             edges={activeWorkflow.edges}
@@ -1474,7 +1604,6 @@ export function WorkflowsPage() {
             selectedNodeId={selectedNodeId}
             onSelectNode={(nodeId) => {
               if (connectSourceNodeId && nodeId && connectSourceNodeId !== nodeId) {
-                // Phone connect mode destination selection!
                 const srcNode = activeWorkflow.nodes.find((n) => n.id === connectSourceNodeId);
                 if (srcNode?.type === 'if') {
                   setConnectBranchPrompt({
@@ -1508,21 +1637,20 @@ export function WorkflowsPage() {
             }}
           />
 
-          {/* Floating Canvas Controls: Add Node Button */}
+          {/* Floating Add Node Control */}
           <div className="absolute bottom-5 left-5 z-20">
             <button
               type="button"
               onClick={() => setShowAddMenu((v) => !v)}
-              className="px-4 py-2.5 rounded-xl bg-cyan-500 hover:bg-cyan-400 text-slate-950 font-bold text-xs flex items-center gap-2 shadow-xl shadow-cyan-500/25 transition-all active:scale-95"
+              className="px-4 py-2.5 rounded-lg bg-cyan-400 hover:bg-cyan-300 text-slate-950 font-semibold text-xs flex items-center gap-2 shadow-xl transition-all active:scale-95 whitespace-nowrap shrink-0"
             >
-              <Plus size={16} />
+              <Plus size={15} />
               <span>Add Node</span>
             </button>
 
-            {/* Canvas Node Palette Dropdown */}
             {showAddMenu && (
-              <div className="absolute left-0 bottom-full mb-3 w-80 bg-slate-900/95 border border-white/15 rounded-2xl p-3 shadow-2xl backdrop-blur-xl grid grid-cols-1 gap-1.5 max-h-96 overflow-y-auto">
-                <div className="text-[11px] font-mono text-slate-400 px-2 py-1 uppercase tracking-wider">
+              <div className="absolute left-0 bottom-full mb-3 w-80 bg-slate-950/95 ring-1 ring-white/10 rounded-xl p-2.5 shadow-2xl backdrop-blur-2xl grid grid-cols-1 gap-1 max-h-96 overflow-y-auto">
+                <div className="text-[11px] font-medium text-slate-400 px-2.5 py-1">
                   Select Step Type
                 </div>
                 {(Object.keys(NODE_CONFIG) as WorkflowNodeType[]).map((type) => {
@@ -1533,14 +1661,14 @@ export function WorkflowsPage() {
                       key={type}
                       type="button"
                       onClick={() => handleAddStep(type)}
-                      className="flex items-center gap-3 p-2 rounded-xl bg-white/[0.03] hover:bg-white/[0.08] border border-white/5 hover:border-cyan-500/30 text-left transition-all"
+                      className="flex items-center gap-3 p-2 rounded-lg hover:bg-white/[0.06] text-left transition-colors"
                     >
-                      <div className={`p-1.5 rounded-lg border ${item.color}`}>
+                      <div className={`p-1.5 rounded-lg ${item.color}`}>
                         <Icon size={14} />
                       </div>
                       <div className="min-w-0">
-                        <div className="text-xs font-bold text-white truncate">{item.label}</div>
-                        <div className="text-[10px] text-slate-400 truncate">{item.desc}</div>
+                        <div className="text-xs font-semibold text-white truncate">{item.label}</div>
+                        <div className="text-[11px] text-slate-400 truncate">{item.desc}</div>
                       </div>
                     </button>
                   );
@@ -1551,23 +1679,23 @@ export function WorkflowsPage() {
 
           {/* Phone Connect Mode Prompt Banner */}
           {connectSourceNodeId && (
-            <div className="absolute top-4 left-1/2 -translate-x-1/2 z-20 bg-cyan-500 text-slate-950 font-semibold text-xs px-4 py-2 rounded-xl shadow-2xl flex items-center gap-3 animate-in fade-in">
+            <div className="absolute top-4 left-1/2 -translate-x-1/2 z-20 bg-cyan-400 text-slate-950 font-semibold text-xs px-4 py-2 rounded-lg shadow-2xl flex items-center gap-3 animate-in fade-in">
               <span>Tap a target node to connect</span>
               <button
                 type="button"
                 onClick={() => setConnectSourceNodeId(null)}
-                className="bg-slate-950/20 hover:bg-slate-950/40 p-1 rounded-md"
+                className="bg-slate-950/15 hover:bg-slate-950/30 p-1 rounded"
               >
                 <X size={12} />
               </button>
             </div>
           )}
 
-          {/* Branch choice popup if source is IF in connect mode */}
+          {/* Branch choice modal if source is IF in connect mode */}
           {connectBranchPrompt && (
-            <div className="absolute inset-0 z-50 bg-black/70 backdrop-blur-sm flex items-center justify-center p-4">
-              <div className="bg-slate-900 border border-white/15 rounded-2xl p-5 max-w-xs w-full shadow-2xl text-center space-y-4">
-                <h4 className="text-sm font-bold text-white">Choose Branch for Condition</h4>
+            <div className="absolute inset-0 z-50 bg-slate-950/75 backdrop-blur-md flex items-center justify-center p-4">
+              <div className="bg-slate-900/95 ring-1 ring-white/10 rounded-xl p-5 max-w-xs w-full shadow-2xl text-center space-y-4 backdrop-blur-2xl">
+                <h4 className="text-sm font-semibold text-white">Choose Condition Branch</h4>
                 <p className="text-xs text-slate-400">
                   Connect on condition match (Yes) or condition fail (No)?
                 </p>
@@ -1583,7 +1711,7 @@ export function WorkflowsPage() {
                       setConnectBranchPrompt(null);
                       setConnectSourceNodeId(null);
                     }}
-                    className="flex-1 py-2 rounded-xl bg-emerald-500 hover:bg-emerald-400 text-slate-950 font-bold text-xs"
+                    className="flex-1 py-2 rounded-lg bg-emerald-400 hover:bg-emerald-300 text-slate-950 font-semibold text-xs"
                   >
                     YES Branch
                   </button>
@@ -1598,7 +1726,7 @@ export function WorkflowsPage() {
                       setConnectBranchPrompt(null);
                       setConnectSourceNodeId(null);
                     }}
-                    className="flex-1 py-2 rounded-xl bg-rose-500 hover:bg-rose-400 text-slate-950 font-bold text-xs"
+                    className="flex-1 py-2 rounded-lg bg-rose-400 hover:bg-rose-300 text-slate-950 font-semibold text-xs"
                   >
                     NO Branch
                   </button>
@@ -1614,14 +1742,14 @@ export function WorkflowsPage() {
             </div>
           )}
 
-          {/* Canvas Node Inspector Drawer / Bottom Sheet */}
+          {/* Sleek Glassmorphic Inspector Drawer */}
           {selectedNode && (
-            <div className="absolute right-0 top-0 bottom-0 w-full sm:w-96 z-30 bg-slate-900/95 border-l border-white/10 shadow-2xl backdrop-blur-2xl p-5 flex flex-col justify-between overflow-y-auto animate-in slide-in-from-right-4">
-              <div className="space-y-4">
-                <div className="flex items-center justify-between pb-3 border-b border-white/10">
-                  <div className="flex items-center gap-2">
+            <aside className="absolute right-0 top-0 bottom-0 w-full sm:w-96 z-30 bg-slate-950/90 border-l border-white/[0.07] shadow-2xl backdrop-blur-2xl p-6 flex flex-col justify-between overflow-y-auto animate-in slide-in-from-right-4">
+              <div className="space-y-5">
+                <div className="flex items-center justify-between pb-4 border-b border-white/[0.06]">
+                  <div className="flex items-center gap-2.5">
                     <div
-                      className={`p-1.5 rounded-lg border ${
+                      className={`p-2 rounded-lg ${
                         NODE_CONFIG[selectedNode.type]?.color
                       }`}
                     >
@@ -1629,14 +1757,19 @@ export function WorkflowsPage() {
                         size: 15,
                       })}
                     </div>
-                    <span className="text-xs font-mono text-cyan-400 uppercase tracking-wider">
-                      {NODE_CONFIG[selectedNode.type]?.label}
-                    </span>
+                    <div>
+                      <span className="text-xs font-semibold text-white block">
+                        {selectedNode.label}
+                      </span>
+                      <span className="text-[11px] text-slate-400 block">
+                        {NODE_CONFIG[selectedNode.type]?.label}
+                      </span>
+                    </div>
                   </div>
                   <button
                     type="button"
                     onClick={() => setSelectedNodeId(null)}
-                    className="p-1 rounded-lg text-slate-400 hover:text-white bg-white/5"
+                    className="p-1.5 rounded-lg text-slate-400 hover:text-white hover:bg-white/[0.06]"
                   >
                     <X size={15} />
                   </button>
@@ -1644,8 +1777,8 @@ export function WorkflowsPage() {
 
                 {/* Step Label */}
                 <div>
-                  <label className="text-xs font-medium text-slate-400 block mb-1">
-                    Step Name / Label
+                  <label className="text-xs font-medium text-slate-300 block mb-1.5">
+                    Step Name
                   </label>
                   <input
                     type="text"
@@ -1653,7 +1786,7 @@ export function WorkflowsPage() {
                     onChange={(e) =>
                       handleUpdateNode(selectedNode.id, 'label', e.target.value)
                     }
-                    className="w-full bg-slate-950 border border-white/10 rounded-xl px-3 py-2 text-white text-xs focus:outline-none focus:border-cyan-500"
+                    className="w-full bg-white/[0.04] hover:bg-white/[0.06] focus:bg-slate-900 rounded-lg px-3 py-2 text-white text-xs focus:outline-none focus:ring-1 focus:ring-cyan-400/50 transition-colors"
                   />
                 </div>
 
@@ -1669,29 +1802,29 @@ export function WorkflowsPage() {
                   }
                 />
 
-                {/* Connect mode for phones */}
-                <div className="pt-2">
+                {/* Connect mode for touch / mobile */}
+                <div className="pt-1">
                   <button
                     type="button"
                     onClick={() => {
                       setConnectSourceNodeId(selectedNode.id);
                       showToast('Connect mode active: Tap target node');
                     }}
-                    className="w-full py-2.5 rounded-xl bg-cyan-500/10 hover:bg-cyan-500/20 text-cyan-300 border border-cyan-500/30 text-xs font-semibold flex items-center justify-center gap-2 transition-colors"
+                    className="w-full py-2 rounded-lg bg-cyan-500/10 hover:bg-cyan-500/20 text-cyan-300 text-xs font-medium flex items-center justify-center gap-2 transition-colors"
                   >
-                    <GitBranch size={14} />
+                    <GitBranch size={13} />
                     <span>Connect to another node</span>
                   </button>
                 </div>
 
-                {/* Last Output (if any) */}
+                {/* Recent Output in Inspector */}
                 {stepOutputs[selectedNode.id] && (
                   <div
                     ref={inspectorOutputRef}
-                    className="pt-2 border-t border-white/10 space-y-1.5"
+                    className="pt-4 border-t border-white/[0.06] space-y-2"
                   >
                     <div className="flex items-center justify-between">
-                      <span className="text-xs font-mono text-slate-400">Recent Output</span>
+                      <span className="text-xs font-medium text-slate-300">Recent Output</span>
                       {stepOutputs[selectedNode.id].type === 'text' && (
                         <button
                           type="button"
@@ -1701,16 +1834,16 @@ export function WorkflowsPage() {
                               `insp-out-${selectedNode.id}`,
                             )
                           }
-                          className="text-[10px] text-slate-300 hover:text-white bg-white/5 hover:bg-white/10 px-2 py-0.5 rounded flex items-center gap-1"
+                          className="text-[11px] text-slate-400 hover:text-white px-2 py-0.5 rounded hover:bg-white/[0.06] flex items-center gap-1"
                         >
                           {copiedKey === `insp-out-${selectedNode.id}` ? (
                             <>
-                              <Check size={10} className="text-emerald-400" />
+                              <Check size={11} className="text-emerald-400" />
                               <span>Copied</span>
                             </>
                           ) : (
                             <>
-                              <Copy size={10} />
+                              <Copy size={11} />
                               <span>Copy</span>
                             </>
                           )}
@@ -1721,10 +1854,11 @@ export function WorkflowsPage() {
                       <img
                         src={stepOutputs[selectedNode.id].value}
                         alt="Output"
-                        className="rounded-xl border border-white/10 max-h-60 object-contain w-full bg-slate-950"
+                        referrerPolicy="no-referrer"
+                        className="rounded-lg max-h-60 object-contain w-full bg-slate-900/50"
                       />
                     ) : (
-                      <pre className="text-[11px] font-mono text-slate-300 bg-slate-950 p-2.5 rounded-xl border border-white/5 max-h-64 overflow-y-auto whitespace-pre-wrap break-words">
+                      <pre className="text-[11px] font-mono text-slate-200 bg-white/[0.03] p-3 rounded-lg max-h-64 overflow-y-auto whitespace-pre-wrap break-words leading-relaxed">
                         {stepOutputs[selectedNode.id].value}
                       </pre>
                     )}
@@ -1733,30 +1867,31 @@ export function WorkflowsPage() {
               </div>
 
               {/* Delete Node in Drawer */}
-              <div className="pt-6 border-t border-white/10">
+              <div className="pt-6 border-t border-white/[0.06]">
                 <button
                   type="button"
                   onClick={() => handleDeleteNode(selectedNode.id)}
-                  className="w-full py-2.5 rounded-xl bg-rose-500/10 hover:bg-rose-500/20 text-rose-300 border border-rose-500/30 text-xs font-semibold flex items-center justify-center gap-2 transition-colors"
+                  className="w-full py-2 rounded-lg bg-rose-500/10 hover:bg-rose-500/20 text-rose-300 text-xs font-medium flex items-center justify-center gap-2 transition-colors"
                 >
-                  <Trash2 size={14} />
-                  <span>Delete This Step</span>
+                  <Trash2 size={13} />
+                  <span>Delete Step</span>
                 </button>
               </div>
-            </div>
+            </aside>
           )}
         </div>
       )}
 
-      {/* ================= RESULT CARD ================= */}
-      <div className="rounded-2xl bg-slate-900/80 border border-white/10 p-5 backdrop-blur-xl shadow-2xl space-y-3">
-        <div className="flex items-center justify-between">
-          <div className="flex items-center gap-2">
-            <span className="w-2.5 h-2.5 rounded-full bg-cyan-400 animate-pulse" />
-            <h3 className="text-sm font-bold text-white tracking-tight">Final Result</h3>
+      {/* ================= FINAL PIPELINE OUTPUT SECTION (BORDERLESS) ================= */}
+      <section className="pt-10 pb-8 border-t border-white/[0.06] mt-8 space-y-4">
+        <div className="flex items-center justify-between gap-4">
+          <div className="flex items-baseline gap-2.5">
+            <h2 className="text-base font-semibold text-white tracking-tight">
+              Final Output
+            </h2>
             {lastExecutedNode && (
-              <span className="text-xs font-mono text-slate-400">
-                from step "{lastExecutedNode.label}"
+              <span className="text-xs text-slate-400">
+                from <span className="text-slate-200 font-medium">{lastExecutedNode.label}</span>
               </span>
             )}
           </div>
@@ -1764,7 +1899,7 @@ export function WorkflowsPage() {
             <button
               type="button"
               onClick={() => handleCopyText(lastExecutedOutput.value, 'final-result')}
-              className="px-3 py-1.5 rounded-xl bg-white/5 hover:bg-white/10 text-slate-300 hover:text-white border border-white/10 text-xs font-medium flex items-center gap-1.5 transition-colors"
+              className="px-3 py-1.5 rounded-lg bg-white/[0.04] hover:bg-white/[0.08] text-slate-200 hover:text-white text-xs font-medium flex items-center gap-1.5 transition-colors"
             >
               {copiedKey === 'final-result' ? (
                 <>
@@ -1774,7 +1909,7 @@ export function WorkflowsPage() {
               ) : (
                 <>
                   <Copy size={13} />
-                  <span>Copy</span>
+                  <span>Copy Output</span>
                 </>
               )}
             </button>
@@ -1782,18 +1917,19 @@ export function WorkflowsPage() {
         </div>
 
         {lastExecutedOutput ? (
-          <div>
+          <div className="rounded-xl bg-white/[0.02] backdrop-blur-xl p-5">
             {lastExecutedOutput.type === 'text' && (
-              <pre className="text-xs sm:text-sm text-slate-200 font-mono whitespace-pre-wrap break-words p-4 rounded-xl bg-slate-950/80 border border-white/5 max-h-80 overflow-y-auto">
+              <pre className="text-xs sm:text-sm text-slate-200 font-mono whitespace-pre-wrap break-words max-h-96 overflow-y-auto leading-relaxed">
                 {lastExecutedOutput.value}
               </pre>
             )}
             {lastExecutedOutput.type === 'image' && (
-              <div className="space-y-3">
-                <div className="rounded-xl overflow-hidden border border-white/10 max-w-md">
+              <div className="space-y-4">
+                <div className="rounded-lg overflow-hidden max-w-md bg-slate-950/60">
                   <img
                     src={lastExecutedOutput.value}
                     alt="Final synthesis"
+                    referrerPolicy="no-referrer"
                     className="w-full object-cover max-h-96"
                   />
                 </div>
@@ -1802,7 +1938,7 @@ export function WorkflowsPage() {
                   download="nexus-workflow-result.png"
                   target="_blank"
                   rel="noreferrer"
-                  className="inline-flex items-center gap-2 px-4 py-2 rounded-xl bg-cyan-500 hover:bg-cyan-400 text-slate-950 text-xs font-bold transition-all shadow-md shadow-cyan-500/20"
+                  className="inline-flex items-center gap-2 px-4 py-2 rounded-lg bg-cyan-400 hover:bg-cyan-300 text-slate-950 text-xs font-semibold transition-colors"
                 >
                   <Download size={14} />
                   <span>Download Image</span>
@@ -1811,95 +1947,101 @@ export function WorkflowsPage() {
             )}
           </div>
         ) : (
-          <div className="py-8 text-center text-xs text-slate-500">
-            Results from the workflow execution will appear here once you click <b>Run</b>.
+          <div className="py-8 text-xs text-slate-400">
+            No pipeline output recorded in this session yet. Click <span className="text-slate-200 font-medium">Run Pipeline</span> to execute steps.
           </div>
         )}
-      </div>
+      </section>
 
-      {/* ================= RUN LOG ================= */}
+      {/* ================= EXECUTION LOG STREAM (HIGH-DENSITY BORDERLESS TABLE) ================= */}
       {runLogs.length > 0 && (
-        <div className="rounded-2xl bg-slate-900/60 border border-white/10 p-5 space-y-3 backdrop-blur-md">
+        <section className="pt-8 border-t border-white/[0.06] space-y-3">
           <div className="flex items-center justify-between">
-            <h3 className="text-xs font-mono font-bold text-slate-400 uppercase tracking-wider">
-              Execution Log ({runLogs.length} steps)
-            </h3>
+            <div className="flex items-center gap-2 text-xs text-slate-400">
+              <span className="font-semibold text-slate-200">Execution Trace</span>
+              <span aria-hidden="true" className="text-slate-600">·</span>
+              <span className="font-mono tabular-nums">{runLogs.length} events</span>
+            </div>
             <button
               type="button"
               onClick={() => setRunLogs([])}
-              className="text-[11px] text-slate-500 hover:text-slate-300"
+              className="text-xs text-slate-400 hover:text-white transition-colors"
             >
-              Clear Log
+              Clear Trace
             </button>
           </div>
 
-          <div className="space-y-1.5 max-h-56 overflow-y-auto pr-1">
+          <div className="divide-y divide-white/[0.04] max-h-60 overflow-y-auto">
             {runLogs.map((log) => (
               <div
                 key={log.id}
-                className="flex items-center justify-between p-2.5 rounded-xl bg-slate-950/60 border border-white/5 text-xs font-mono"
+                className="flex items-center justify-between py-2.5 px-2 hover:bg-white/[0.02] text-xs font-mono tabular-nums transition-colors"
               >
-                <div className="flex items-center gap-2 min-w-0">
+                <div className="flex items-center gap-2.5 min-w-0">
                   {log.status === 'done' ? (
                     <CheckCircle2 size={13} className="text-emerald-400 flex-shrink-0" />
                   ) : (
                     <AlertCircle size={13} className="text-rose-400 flex-shrink-0" />
                   )}
-                  <span className="font-semibold text-white truncate">{log.label}</span>
-                  <span className="text-[10px] text-slate-500 hidden sm:inline">({log.type})</span>
+                  <span className="font-sans font-medium text-slate-200 truncate">
+                    {log.label}
+                  </span>
+                  <span aria-hidden="true" className="text-slate-600">·</span>
+                  <span className="text-[11px] text-slate-500 hidden sm:inline">
+                    {log.type}
+                  </span>
                 </div>
-                <div className="flex items-center gap-3 text-slate-400 flex-shrink-0">
+                <div className="flex items-center gap-4 text-slate-400 flex-shrink-0">
                   <span>{log.durationMs}ms</span>
-                  <span className="text-[10px] text-slate-500">{log.timestamp}</span>
+                  <span className="text-[11px] text-slate-500">{log.timestamp}</span>
                 </div>
               </div>
             ))}
           </div>
-        </div>
+        </section>
       )}
 
-      {/* ================= TEMPLATES MODAL ================= */}
+      {/* ================= TEMPLATES MODAL (SOFT GLASSMORPHISM) ================= */}
       {showTemplatesModal && (
-        <div className="fixed inset-0 z-50 bg-black/80 backdrop-blur-md flex items-center justify-center p-4">
-          <div className="bg-slate-900 border border-white/15 rounded-3xl max-w-xl w-full p-6 shadow-2xl space-y-5 animate-in zoom-in-95">
-            <div className="flex items-center justify-between border-b border-white/10 pb-4">
+        <div className="fixed inset-0 z-50 bg-slate-950/80 backdrop-blur-md flex items-center justify-center p-4">
+          <div className="bg-slate-900/95 ring-1 ring-white/10 rounded-2xl max-w-xl w-full p-6 shadow-2xl space-y-5 backdrop-blur-2xl animate-in zoom-in-95">
+            <div className="flex items-center justify-between border-b border-white/[0.06] pb-4">
               <div>
-                <h3 className="text-lg font-bold text-white flex items-center gap-2">
-                  <Sparkles size={18} className="text-purple-400" />
-                  Workflow Templates
+                <h3 className="text-base font-semibold text-white">
+                  Pipeline Templates
                 </h3>
                 <p className="text-xs text-slate-400 mt-0.5">
-                  Load ready-to-run workflows with built-in configurations.
+                  Load pre-configured multi-step workflows.
                 </p>
               </div>
               <button
                 type="button"
                 onClick={() => setShowTemplatesModal(false)}
-                className="p-1.5 rounded-xl text-slate-400 hover:text-white bg-white/5"
+                className="p-1.5 rounded-lg text-slate-400 hover:text-white hover:bg-white/[0.06]"
               >
                 <X size={16} />
               </button>
             </div>
 
-            <div className="space-y-3 max-h-[60vh] overflow-y-auto pr-1">
+            <div className="divide-y divide-white/[0.06] max-h-[60vh] overflow-y-auto">
               {DEFAULT_WORKFLOW_TEMPLATES.map((tmpl) => (
                 <div
                   key={tmpl.name}
-                  className="p-4 rounded-2xl bg-white/[0.03] hover:bg-white/[0.06] border border-white/5 hover:border-cyan-500/30 transition-all flex flex-col sm:flex-row sm:items-center justify-between gap-4"
+                  className="py-4 px-2 hover:bg-white/[0.02] transition-colors flex flex-col sm:flex-row sm:items-center justify-between gap-4"
                 >
                   <div className="space-y-1">
-                    <h4 className="text-sm font-bold text-white">{tmpl.name}</h4>
+                    <h4 className="text-sm font-semibold text-white">{tmpl.name}</h4>
                     <p className="text-xs text-slate-400">{tmpl.description}</p>
-                    <div className="flex items-center gap-1.5 pt-1 text-[11px] font-mono text-cyan-400">
-                      <span>{tmpl.nodes.length} nodes</span>
-                      <span>·</span>
-                      <span>{tmpl.edges.length} connections</span>
+                    <div className="flex items-center gap-1.5 pt-0.5 text-[11px] font-mono tabular-nums text-cyan-400">
+                      <span>{tmpl.nodes.length} steps</span>
+                      <span aria-hidden="true" className="text-slate-600">·</span>
+                      <span>{tmpl.edges.length} links</span>
                     </div>
                   </div>
                   <button
                     type="button"
                     onClick={() => handleApplyTemplate(tmpl)}
-                    className="px-4 py-2 rounded-xl bg-cyan-500 hover:bg-cyan-400 text-slate-950 font-bold text-xs flex-shrink-0 transition-all shadow-md shadow-cyan-500/20"
+                    className="px-4 py-2 rounded-lg bg-cyan-400 hover:bg-cyan-300 text-slate-950 font-semibold text-xs flex-shrink-0 transition-colors whitespace-nowrap"
                   >
                     Use Template
                   </button>
@@ -1941,7 +2083,7 @@ interface VariableFieldProps {
  * 1) "{ } Insert variable" button & popover showing earlier steps + 40-char output snippet
  * 2) "{{" autocomplete dropdown filtered by label (Escape to close)
  * 3) Live preview line under the field replacing placeholders with 60-char output,
- *    "Label (not run yet)" colored chip, or red "unknown step" chip.
+ *    "Label (not run yet)" indicator, or "unknown step" indicator.
  */
 function VariableField({
   label,
@@ -2002,7 +2144,6 @@ function VariableField({
     }
   };
 
-  // Insert {{Label.output}} at cursor position (or at the end if no cursor) and keep focus
   const handleInsertVariableAtCursor = (step: WorkflowNode) => {
     const tag = `{{${step.label}.output}}`;
     const el = fieldRef.current;
@@ -2025,7 +2166,6 @@ function VariableField({
     });
   };
 
-  // Replace typed "{{..." with full {{Label.output}}
   const handleSelectAutocomplete = (step: WorkflowNode) => {
     if (!autocompleteState) {
       handleInsertVariableAtCursor(step);
@@ -2056,7 +2196,6 @@ function VariableField({
     return earlierSteps.filter((s) => s.label.toLowerCase().includes(q));
   }, [autocompleteState, earlierSteps]);
 
-  // Build preview segments
   const previewSegments = useMemo(() => {
     if (!value) return [];
     const segments: Array<
@@ -2140,20 +2279,20 @@ function VariableField({
         type="button"
         onMouseDown={(e) => e.preventDefault()}
         onClick={() => onPick(step)}
-        className="w-full flex items-center justify-between gap-2.5 p-2 rounded-xl bg-white/[0.03] hover:bg-cyan-500/15 active:bg-cyan-500/25 border border-white/5 hover:border-cyan-500/30 text-left transition-colors"
+        className="w-full flex items-center justify-between gap-2.5 p-2 rounded-lg hover:bg-cyan-500/15 active:bg-cyan-500/25 text-left transition-colors"
       >
         <div className="flex items-center gap-2 min-w-0">
-          <div className={`p-1.5 rounded-lg border flex-shrink-0 ${cfg.color}`}>
+          <div className={`p-1.5 rounded-md flex-shrink-0 ${cfg.color}`}>
             <StepIcon size={13} />
           </div>
           <div className="min-w-0">
-            <div className="text-xs font-semibold text-white truncate">{step.label}</div>
+            <div className="text-xs font-medium text-white truncate">{step.label}</div>
             <div className="text-[10px] font-mono text-slate-400 truncate">
               {snippet ? snippet : 'No output yet'}
             </div>
           </div>
         </div>
-        <span className="text-[10px] font-mono text-cyan-300 bg-cyan-500/10 px-1.5 py-0.5 rounded border border-cyan-500/20 flex-shrink-0">
+        <span className="text-[10px] font-mono text-cyan-300 flex-shrink-0">
           {`{{${step.label}.output}}`}
         </span>
       </button>
@@ -2172,7 +2311,7 @@ function VariableField({
             setShowInsertMenu((prev) => !prev);
             setAutocompleteState(null);
           }}
-          className="px-2.5 py-1 rounded-lg bg-cyan-500/10 hover:bg-cyan-500/20 active:bg-cyan-500/30 text-cyan-300 border border-cyan-500/30 text-[11px] font-mono font-semibold flex items-center gap-1 transition-colors"
+          className="px-2.5 py-1 rounded-md bg-cyan-500/10 hover:bg-cyan-500/20 text-cyan-300 text-[11px] font-mono font-medium flex items-center gap-1 transition-colors"
           title="Insert output variable from an earlier step"
         >
           <span>{'{ } Insert variable'}</span>
@@ -2181,9 +2320,9 @@ function VariableField({
 
       {/* "{ } Insert variable" Dropdown List */}
       {showInsertMenu && (
-        <div className="z-30 rounded-2xl bg-slate-900/98 border border-cyan-500/40 p-2.5 shadow-2xl space-y-1.5">
-          <div className="flex items-center justify-between px-1 pb-1 border-b border-white/10">
-            <span className="text-[10px] font-mono uppercase tracking-wider text-slate-400">
+        <div className="z-30 rounded-xl bg-slate-950/95 ring-1 ring-white/10 p-2.5 shadow-2xl backdrop-blur-2xl space-y-1.5">
+          <div className="flex items-center justify-between px-1 pb-1 border-b border-white/[0.06]">
+            <span className="text-[11px] font-medium text-slate-400">
               Earlier steps ({earlierSteps.length})
             </span>
             <button
@@ -2195,7 +2334,7 @@ function VariableField({
             </button>
           </div>
           {earlierSteps.length > 0 ? (
-            <div className="space-y-1 max-h-48 overflow-y-auto pr-0.5">
+            <div className="space-y-0.5 max-h-48 overflow-y-auto pr-0.5">
               {earlierSteps.map((step) =>
                 renderStepPickerRow(step, handleInsertVariableAtCursor),
               )}
@@ -2208,7 +2347,7 @@ function VariableField({
         </div>
       )}
 
-      {/* Normal input or textarea */}
+      {/* Input or Textarea with subtle borderless surface */}
       {multiline ? (
         <textarea
           ref={fieldRef}
@@ -2223,7 +2362,7 @@ function VariableField({
             )
           }
           placeholder={placeholder}
-          className="w-full bg-slate-950 border border-white/10 rounded-xl p-3 text-white text-xs focus:outline-none focus:border-cyan-500 font-mono resize-y"
+          className="w-full bg-white/[0.04] hover:bg-white/[0.06] focus:bg-slate-900 rounded-lg p-3 text-white text-xs focus:outline-none focus:ring-1 focus:ring-cyan-400/50 font-mono resize-y transition-colors"
         />
       ) : (
         <input
@@ -2239,15 +2378,15 @@ function VariableField({
             )
           }
           placeholder={placeholder}
-          className="w-full bg-slate-950 border border-white/10 rounded-xl px-3 py-2 text-white text-xs focus:outline-none focus:border-cyan-500 font-mono"
+          className="w-full bg-white/[0.04] hover:bg-white/[0.06] focus:bg-slate-900 rounded-lg px-3 py-2 text-white text-xs focus:outline-none focus:ring-1 focus:ring-cyan-400/50 font-mono transition-colors"
         />
       )}
 
       {/* "{{" Autocomplete Dropdown under the field */}
       {autocompleteState && (
-        <div className="z-30 rounded-2xl bg-slate-900/98 border border-cyan-500/40 p-2.5 shadow-2xl space-y-1.5">
-          <div className="flex items-center justify-between px-1 pb-1 border-b border-white/10">
-            <span className="text-[10px] font-mono text-cyan-400">
+        <div className="z-30 rounded-xl bg-slate-950/95 ring-1 ring-white/10 p-2.5 shadow-2xl backdrop-blur-2xl space-y-1.5">
+          <div className="flex items-center justify-between px-1 pb-1 border-b border-white/[0.06]">
+            <span className="text-[11px] font-mono text-cyan-400">
               Autocomplete variable {autocompleteState.query ? `“${autocompleteState.query}”` : ''}
             </span>
             <button
@@ -2259,7 +2398,7 @@ function VariableField({
             </button>
           </div>
           {filteredAutocompleteSteps.length > 0 ? (
-            <div className="space-y-1 max-h-44 overflow-y-auto pr-0.5">
+            <div className="space-y-0.5 max-h-44 overflow-y-auto pr-0.5">
               {filteredAutocompleteSteps.map((step) =>
                 renderStepPickerRow(step, handleSelectAutocomplete),
               )}
@@ -2272,10 +2411,10 @@ function VariableField({
         </div>
       )}
 
-      {/* 3) Live Preview line under the field */}
+      {/* Live Preview line under the field */}
       {(hasAnyPlaceholder || value.includes('{{')) && (
-        <div className="p-2 rounded-xl bg-slate-950/80 border border-white/5 text-[11px] font-mono text-slate-300 leading-relaxed break-words">
-          <span className="text-[10px] uppercase tracking-wider text-slate-500 mr-1.5 select-none">
+        <div className="py-1.5 px-2.5 rounded-lg bg-white/[0.02] text-[11px] font-mono text-slate-300 leading-relaxed break-words">
+          <span className="text-[10px] text-slate-500 mr-1.5 select-none">
             Preview:
           </span>
           {previewSegments.map((seg, idx) => {
@@ -2286,7 +2425,7 @@ function VariableField({
               return (
                 <span
                   key={idx}
-                  className="inline-block px-1.5 py-0.5 mx-0.5 rounded bg-emerald-500/15 border border-emerald-500/30 text-emerald-300 text-[10px]"
+                  className="text-emerald-300 underline decoration-emerald-500/40 underline-offset-2 mx-0.5"
                   title={`Resolved from ${seg.label}`}
                 >
                   {seg.text}
@@ -2297,18 +2436,18 @@ function VariableField({
               return (
                 <span
                   key={idx}
-                  className="inline-block px-1.5 py-0.5 mx-0.5 rounded bg-amber-500/15 border border-amber-500/30 text-amber-300 text-[10px]"
+                  className="text-amber-300/90 mx-0.5"
                 >
-                  {seg.label} (not run yet)
+                  [{seg.label}: not run yet]
                 </span>
               );
             }
             return (
               <span
                 key={idx}
-                className="inline-block px-1.5 py-0.5 mx-0.5 rounded bg-rose-500/20 border border-rose-500/40 text-rose-300 text-[10px]"
+                className="text-rose-400 mx-0.5"
               >
-                {seg.rawName} (unknown step)
+                [{seg.rawName}: unknown step]
               </span>
             );
           })}
@@ -2378,8 +2517,6 @@ export function StepSettingsForm({
     onUpdateSettings({ ...settings, [field]: val });
   };
 
-  // Compute EARLIER steps:
-  // In list view -> steps above this step; in canvas view (or when edges exist) -> ancestor steps that can reach this step through edges.
   const earlierSteps = useMemo(() => {
     if (viewMode === 'list' && edges.length === 0) {
       const idx = allNodes.findIndex((n) => n.id === node.id);
@@ -2394,12 +2531,12 @@ export function StepSettingsForm({
   }, [allNodes, edges, node.id, viewMode]);
 
   return (
-    <div className="space-y-3.5">
-      {/* Disable this step toggle (available for every node type) */}
-      <div className="flex items-center justify-between p-2.5 rounded-xl bg-slate-950/60 border border-white/10">
+    <div className="space-y-4">
+      {/* Disable this step toggle (clean borderless row) */}
+      <div className="flex items-center justify-between py-2 border-b border-white/[0.05]">
         <div>
           <span className="text-xs font-medium text-slate-200 block">Disable this step</span>
-          <span className="text-[10px] text-slate-400 block">
+          <span className="text-[11px] text-slate-400 block">
             Skip execution and pass through parent output
           </span>
         </div>
@@ -2410,13 +2547,13 @@ export function StepSettingsForm({
           onClick={() =>
             handleChange('disabled', settings.disabled === 'true' ? 'false' : 'true')
           }
-          className={`relative inline-flex h-6 w-11 flex-shrink-0 cursor-pointer rounded-full border-2 border-transparent transition-colors duration-200 ease-in-out focus:outline-none ${
-            settings.disabled === 'true' ? 'bg-amber-500' : 'bg-slate-700'
+          className={`relative inline-flex h-5 w-9 flex-shrink-0 cursor-pointer rounded-full border-2 border-transparent transition-colors duration-200 ease-in-out focus:outline-none ${
+            settings.disabled === 'true' ? 'bg-amber-500' : 'bg-white/15'
           }`}
         >
           <span
-            className={`pointer-events-none inline-block h-5 w-5 transform rounded-full bg-white shadow ring-0 transition duration-200 ease-in-out ${
-              settings.disabled === 'true' ? 'translate-x-5' : 'translate-x-0'
+            className={`pointer-events-none inline-block h-4 w-4 transform rounded-full bg-white shadow ring-0 transition duration-200 ease-in-out ${
+              settings.disabled === 'true' ? 'translate-x-4' : 'translate-x-0'
             }`}
           />
         </button>
@@ -2425,7 +2562,7 @@ export function StepSettingsForm({
       {/* Node Type Specific Inputs */}
       {node.type === 'input' && (
         <div>
-          <label className="text-xs font-medium text-slate-300 block mb-1">
+          <label className="text-xs font-medium text-slate-300 block mb-1.5">
             Input Text
           </label>
           <textarea
@@ -2433,7 +2570,7 @@ export function StepSettingsForm({
             value={settings.text || ''}
             onChange={(e) => handleChange('text', e.target.value)}
             placeholder="Type your initial input text or prompt..."
-            className="w-full bg-slate-950 border border-white/10 rounded-xl p-3 text-white text-xs focus:outline-none focus:border-cyan-500 font-mono resize-y"
+            className="w-full bg-white/[0.04] hover:bg-white/[0.06] focus:bg-slate-900 rounded-lg p-3 text-white text-xs focus:outline-none focus:ring-1 focus:ring-cyan-400/50 font-mono resize-y transition-colors"
           />
         </div>
       )}
@@ -2478,95 +2615,98 @@ export function StepSettingsForm({
       )}
 
       {node.type === 'ai' && (
-        <div className="space-y-3">
-          <div>
-            <label className="text-xs font-medium text-slate-300 block mb-1">
-              AI provider
-            </label>
-            <select
-              value={settings.providerId || ''}
-              onChange={(e) => {
-                const nextProviderId = e.target.value;
-                handleChange('providerId', nextProviderId);
-                if (!nextProviderId || nextProviderId === 'existing') {
-                  handleChange('modelId', '');
-                } else {
-                  const targetProvider = configuredProviders.find((p) => p.id === nextProviderId);
-                  const firstModel = targetProvider
-                    ? getProviderModels(targetProvider)[0]?.id || targetProvider.model || ''
-                    : '';
-                  handleChange('modelId', firstModel);
-                }
-              }}
-              className="w-full bg-slate-950 border border-white/10 rounded-xl px-3 py-2 text-white text-xs focus:outline-none focus:border-cyan-500 font-medium"
-            >
-              <option value="">Use my active AI</option>
-              <option value="existing">Default Built-in AI</option>
-              {configuredProviders.map((provider) => (
-                <option key={provider.id} value={provider.id}>
-                  {provider.name}
-                </option>
-              ))}
-            </select>
-          </div>
-
-          {Boolean(settings.providerId) && settings.providerId !== 'existing' && (
+        <div className="space-y-3.5">
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
             <div>
-              <label className="text-xs font-medium text-slate-300 block mb-1">
-                Model
+              <label className="text-xs font-medium text-slate-300 block mb-1.5">
+                AI provider
               </label>
               <select
-                value={settings.modelId || (selectedProviderModels[0]?.id || '')}
-                onChange={(e) => handleChange('modelId', e.target.value)}
-                className="w-full bg-slate-950 border border-white/10 rounded-xl px-3 py-2 text-white text-xs focus:outline-none focus:border-cyan-500 font-medium font-mono"
+                value={settings.providerId || ''}
+                onChange={(e) => {
+                  const nextProviderId = e.target.value;
+                  handleChange('providerId', nextProviderId);
+                  if (!nextProviderId || nextProviderId === 'existing') {
+                    handleChange('modelId', '');
+                  } else {
+                    const targetProvider = configuredProviders.find((p) => p.id === nextProviderId);
+                    const firstModel = targetProvider
+                      ? getProviderModels(targetProvider)[0]?.id || targetProvider.model || ''
+                      : '';
+                    handleChange('modelId', firstModel);
+                  }
+                }}
+                className="w-full bg-white/[0.04] hover:bg-white/[0.06] focus:bg-slate-900 rounded-lg px-3 py-2 text-white text-xs focus:outline-none focus:ring-1 focus:ring-cyan-400/50 font-medium transition-colors"
               >
-                {selectedProviderModels.length > 0 ? (
-                  selectedProviderModels.map((m) => (
-                    <option key={m.id} value={m.id}>
-                      {m.name || m.id}
-                    </option>
-                  ))
-                ) : (
-                  <option value={settings.modelId || ''}>
-                    {settings.modelId || 'Default Model'}
+                <option value="" className="bg-slate-950">Use my active AI</option>
+                <option value="existing" className="bg-slate-950">Default Built-in AI</option>
+                {configuredProviders.map((provider) => (
+                  <option key={provider.id} value={provider.id} className="bg-slate-950">
+                    {provider.name}
                   </option>
-                )}
+                ))}
               </select>
             </div>
-          )}
 
-          <div>
-            <label className="text-xs font-medium text-slate-300 block mb-1">
-              AI Persona Role
-            </label>
-            <select
-              value={settings.role || 'general'}
-              onChange={(e) => handleChange('role', e.target.value)}
-              className="w-full bg-slate-950 border border-white/10 rounded-xl px-3 py-2 text-white text-xs focus:outline-none focus:border-cyan-500 font-medium"
-            >
-              <option value="general">General Assistant (Comprehensive)</option>
-              <option value="coder">Coder (Clean code & explanations)</option>
-              <option value="architect">Architect (System structure & trade-offs)</option>
-              <option value="dataAnalyst">Data Analyst (Steps & quantitative analysis)</option>
-            </select>
-          </div>
-          <div>
-            <label className="text-xs font-medium text-slate-300 block mb-1">
-              Max answer length (tokens)
-            </label>
-            <input
-              type="number"
-              min={200}
-              max={4000}
-              step={100}
-              value={settings.maxTokens ?? '1500'}
-              onChange={(e) => handleChange('maxTokens', e.target.value)}
-              placeholder="1500"
-              className="w-full bg-slate-950 border border-white/10 rounded-xl px-3 py-2 text-white text-xs focus:outline-none focus:border-cyan-500 font-mono"
-            />
-            <p className="text-[11px] text-slate-400 mt-1">
-              Longer answers need a higher number.
-            </p>
+            {Boolean(settings.providerId) && settings.providerId !== 'existing' && (
+              <div>
+                <label className="text-xs font-medium text-slate-300 block mb-1.5">
+                  Model
+                </label>
+                <select
+                  value={settings.modelId || (selectedProviderModels[0]?.id || '')}
+                  onChange={(e) => handleChange('modelId', e.target.value)}
+                  className="w-full bg-white/[0.04] hover:bg-white/[0.06] focus:bg-slate-900 rounded-lg px-3 py-2 text-white text-xs focus:outline-none focus:ring-1 focus:ring-cyan-400/50 font-medium font-mono transition-colors"
+                >
+                  {selectedProviderModels.length > 0 ? (
+                    selectedProviderModels.map((m) => (
+                      <option key={m.id} value={m.id} className="bg-slate-950">
+                        {m.name || m.id}
+                      </option>
+                    ))
+                  ) : (
+                    <option value={settings.modelId || ''} className="bg-slate-950">
+                      {settings.modelId || 'Default Model'}
+                    </option>
+                  )}
+                </select>
+              </div>
+            )}
+
+            <div>
+              <label className="text-xs font-medium text-slate-300 block mb-1.5">
+                AI Persona Role
+              </label>
+              <select
+                value={settings.role || 'general'}
+                onChange={(e) => handleChange('role', e.target.value)}
+                className="w-full bg-white/[0.04] hover:bg-white/[0.06] focus:bg-slate-900 rounded-lg px-3 py-2 text-white text-xs focus:outline-none focus:ring-1 focus:ring-cyan-400/50 font-medium transition-colors"
+              >
+                <option value="general" className="bg-slate-950">General Assistant (Comprehensive)</option>
+                <option value="coder" className="bg-slate-950">Coder (Clean code & explanations)</option>
+                <option value="architect" className="bg-slate-950">Architect (System structure & trade-offs)</option>
+                <option value="dataAnalyst" className="bg-slate-950">Data Analyst (Steps & quantitative analysis)</option>
+              </select>
+            </div>
+
+            <div>
+              <label className="text-xs font-medium text-slate-300 block mb-1.5">
+                Max answer length (tokens)
+              </label>
+              <input
+                type="number"
+                min={200}
+                max={4000}
+                step={100}
+                value={settings.maxTokens ?? '1500'}
+                onChange={(e) => handleChange('maxTokens', e.target.value)}
+                placeholder="1500"
+                className="w-full bg-white/[0.04] hover:bg-white/[0.06] focus:bg-slate-900 rounded-lg px-3 py-2 text-white text-xs focus:outline-none focus:ring-1 focus:ring-cyan-400/50 font-mono tabular-nums transition-colors"
+              />
+              <p className="text-[11px] text-slate-400 mt-1">
+                Longer answers need a higher number.
+              </p>
+            </div>
           </div>
 
           <VariableField
@@ -2613,7 +2753,7 @@ export function StepSettingsForm({
       )}
 
       {node.type === 'nasa' && (
-        <div className="p-3 rounded-xl bg-cyan-500/10 border border-cyan-500/20 text-cyan-300 text-xs flex items-center gap-2">
+        <div className="py-2.5 px-3 rounded-lg bg-cyan-500/[0.06] text-cyan-300 text-xs flex items-center gap-2">
           <Rocket size={15} className="text-cyan-400 flex-shrink-0" />
           <span>
             Fetches the latest Astronomy Picture of the Day (APOD) directly from NASA telemetry. No fields required.
@@ -2635,21 +2775,21 @@ export function StepSettingsForm({
           />
 
           <div>
-            <label className="text-xs font-medium text-slate-300 block mb-1">
+            <label className="text-xs font-medium text-slate-300 block mb-1.5">
               Operator Rule
             </label>
             <select
               value={settings.operator || 'contains'}
               onChange={(e) => handleChange('operator', e.target.value)}
-              className="w-full bg-slate-950 border border-white/10 rounded-xl px-3 py-2 text-white text-xs focus:outline-none focus:border-cyan-500 font-medium"
+              className="w-full bg-white/[0.04] hover:bg-white/[0.06] focus:bg-slate-900 rounded-lg px-3 py-2 text-white text-xs focus:outline-none focus:ring-1 focus:ring-cyan-400/50 font-medium transition-colors"
             >
-              <option value="contains">Contains</option>
-              <option value="notContains">Does not contain</option>
-              <option value="equals">Equals</option>
-              <option value="isEmpty">Is empty</option>
-              <option value="isNotEmpty">Is not empty</option>
-              <option value="lengthGreaterThan">Length greater than</option>
-              <option value="lengthLessThan">Length less than</option>
+              <option value="contains" className="bg-slate-950">Contains</option>
+              <option value="notContains" className="bg-slate-950">Does not contain</option>
+              <option value="equals" className="bg-slate-950">Equals</option>
+              <option value="isEmpty" className="bg-slate-950">Is empty</option>
+              <option value="isNotEmpty" className="bg-slate-950">Is not empty</option>
+              <option value="lengthGreaterThan" className="bg-slate-950">Length greater than</option>
+              <option value="lengthLessThan" className="bg-slate-950">Length less than</option>
             </select>
           </div>
 

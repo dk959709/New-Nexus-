@@ -68,6 +68,26 @@ export function getAncestorNodeIds(
   return ancestors;
 }
 
+/**
+ * Find all downstream node IDs reachable from startNodeId (including startNodeId itself).
+ */
+export function getDownstreamNodeIds(
+  startNodeId: string,
+  edges: WorkflowEdge[],
+): Set<string> {
+  const downstream = new Set<string>([startNodeId]);
+  const queue = [startNodeId];
+  while (queue.length > 0) {
+    const curr = queue.shift()!;
+    for (const edge of edges) {
+      if (edge.from === curr && !downstream.has(edge.to)) {
+        downstream.add(edge.to);
+        queue.push(edge.to);
+      }
+    }
+  }
+  return downstream;
+}
 
 /**
  * Detect cycles in the directed graph formed by nodes and edges.
@@ -448,24 +468,31 @@ export async function runWorkflow(
 
   const outputsByLabel = new Map<string, string>();
   const outputsById = new Map<string, string>();
+  const fullOutputsById = new Map<string, WorkflowOutput>();
   const ifResults = new Map<string, 'yes' | 'no'>();
 
+  const isPartialRun = Boolean(
+    options?.startFromNodeId && nodeMap.has(options.startFromNodeId),
+  );
   const initialNodeId =
-    options?.startFromNodeId && nodeMap.has(options.startFromNodeId)
+    isPartialRun && options?.startFromNodeId
       ? options.startFromNodeId
       : startNode.id;
 
-  // If starting from a specific node, treat all its ancestors as already done with their saved outputs
-  if (options?.startFromNodeId && nodeMap.has(options.startFromNodeId)) {
+  // If starting from a specific node, treat its completed ancestors as done with their saved outputs
+  if (isPartialRun && options?.startFromNodeId) {
     const ancestors = getAncestorNodeIds(options.startFromNodeId, workflow.edges || []);
     const prevOutputs = options.previousOutputs || {};
     for (const ancId of ancestors) {
-      executedNodeIds.add(ancId);
       const ancNode = nodeMap.get(ancId);
       const savedOut = prevOutputs[ancId];
       if (savedOut && ancNode) {
+        executedNodeIds.add(ancId);
+        fullOutputsById.set(ancId, savedOut);
         outputsById.set(ancId, savedOut.value);
         outputsByLabel.set(ancNode.label, savedOut.value);
+      } else if (ancNode?.settings?.disabled === 'true') {
+        disabledCompletedIds.add(ancId);
       }
     }
     // Second pass for any disabled ancestor that relies on its parent's output
@@ -475,8 +502,15 @@ export async function runWorkflow(
         const inc = (workflow.edges || []).filter((e) => e.to === ancId);
         const pEdge = inc.find((e) => outputsById.has(e.from)) || inc[0];
         const val = pEdge ? (outputsById.get(pEdge.from) ?? '') : '';
-        outputsById.set(ancId, val);
-        if (ancNode) outputsByLabel.set(ancNode.label, val);
+        const fullOut =
+          pEdge && fullOutputsById.has(pEdge.from)
+            ? fullOutputsById.get(pEdge.from)!
+            : { type: 'text' as const, value: val };
+        if (ancNode?.settings?.disabled === 'true') {
+          fullOutputsById.set(ancId, fullOut);
+          outputsById.set(ancId, val);
+          if (ancNode) outputsByLabel.set(ancNode.label, val);
+        }
       }
     }
   }
@@ -510,15 +544,17 @@ export async function runWorkflow(
     // Merge node wait condition:
     // A node with 2+ incoming edges must wait until all of its "active" parents have finished.
     const incomingEdges = (workflow.edges || []).filter((e) => e.to === currentId);
-    if (incomingEdges.length >= 2) {
+    if (incomingEdges.length >= 2 && currentId !== initialNodeId) {
       const reachableNodes = getReachableNodeIds(
-        startNode.id,
+        initialNodeId,
         workflow.edges || [],
         ifResults,
         nodeMap,
       );
       const parentIds = Array.from(new Set(incomingEdges.map((e) => e.from)));
-      const activeParents = parentIds.filter((pId) => reachableNodes.has(pId));
+      const activeParents = parentIds.filter(
+        (pId) => reachableNodes.has(pId) || executedNodeIds.has(pId) || disabledCompletedIds.has(pId),
+      );
       const hasUnfinishedActiveParent = activeParents.some(
         (pId) => !executedNodeIds.has(pId) && !disabledCompletedIds.has(pId),
       );
@@ -560,23 +596,45 @@ export async function runWorkflow(
       const parentEdge =
         incomingEdges.find((e) => outputsById.has(e.from)) || incomingEdges[0];
       const passThroughValue = parentEdge ? (outputsById.get(parentEdge.from) ?? '') : '';
+      const passThroughOutput: WorkflowOutput =
+        parentEdge && fullOutputsById.has(parentEdge.from)
+          ? fullOutputsById.get(parentEdge.from)!
+          : { type: 'text', value: passThroughValue };
+
+      fullOutputsById.set(currentId, passThroughOutput);
       outputsById.set(currentId, passThroughValue);
       outputsByLabel.set(currentNode.label, passThroughValue);
       disabledCompletedIds.add(currentId);
-      setNodeStatus(currentId, 'skipped', undefined, 'disabled');
+      setNodeStatus(currentId, 'skipped', passThroughOutput, 'disabled');
       if (callbacks.onLog) {
         callbacks.onLog(`Step "${currentNode.label}" is disabled (skipped, passing parent output).`);
       }
 
       const outgoingEdges = (workflow.edges || []).filter((e) => e.from === currentId);
-      for (const edge of outgoingEdges) {
-        if (
-          !executedNodeIds.has(edge.to) &&
-          !disabledCompletedIds.has(edge.to) &&
-          !enqueued.has(edge.to)
-        ) {
-          queue.push(edge.to);
-          enqueued.add(edge.to);
+      if (currentNode.type === 'if') {
+        ifResults.set(currentId, 'yes');
+        for (const edge of outgoingEdges) {
+          if (!edge.branch || edge.branch === 'yes') {
+            if (
+              !executedNodeIds.has(edge.to) &&
+              !disabledCompletedIds.has(edge.to) &&
+              !enqueued.has(edge.to)
+            ) {
+              queue.push(edge.to);
+              enqueued.add(edge.to);
+            }
+          }
+        }
+      } else {
+        for (const edge of outgoingEdges) {
+          if (
+            !executedNodeIds.has(edge.to) &&
+            !disabledCompletedIds.has(edge.to) &&
+            !enqueued.has(edge.to)
+          ) {
+            queue.push(edge.to);
+            enqueued.add(edge.to);
+          }
         }
       }
       continue;
@@ -624,6 +682,7 @@ export async function runWorkflow(
 
     // Mark done and save outputs
     setNodeStatus(currentId, 'done', stepResult.output);
+    fullOutputsById.set(currentId, stepResult.output);
     outputsById.set(currentId, stepResult.output.value);
     outputsByLabel.set(currentNode.label, stepResult.output.value);
 
@@ -664,9 +723,15 @@ export async function runWorkflow(
     }
   }
 
-  // Final pass: nodes that did not finish are marked 'skipped'.
-  // Failed nodes, disabled nodes, and already finished nodes are NEVER overwritten.
+  // Final pass: nodes in scope that did not finish are marked 'skipped'.
+  // When running from a specific node, only nodes downstream of that node are in scope,
+  // preserving unrelated parallel branches.
+  const targetScopeIds = isPartialRun
+    ? getDownstreamNodeIds(initialNodeId, workflow.edges || [])
+    : new Set(workflow.nodes.map((n) => n.id));
+
   for (const n of workflow.nodes) {
+    if (!targetScopeIds.has(n.id)) continue;
     if (
       !executedNodeIds.has(n.id) &&
       !failedNodeIds.has(n.id) &&
@@ -677,4 +742,3 @@ export async function runWorkflow(
     }
   }
 }
-

@@ -89,55 +89,55 @@ export const NODE_CONFIG: Record<
   input: {
     label: 'Input',
     icon: Terminal,
-    color: 'text-cyan-400 bg-cyan-500/10 border-cyan-500/30',
+    color: 'text-cyan-400 bg-cyan-500/10',
     desc: 'Starting payload text',
   },
   webSearch: {
     label: 'Web Search',
     icon: Search,
-    color: 'text-blue-400 bg-blue-500/10 border-blue-500/30',
+    color: 'text-sky-400 bg-sky-500/10',
     desc: 'Live web search results',
   },
   webFetch: {
     label: 'Web Fetch',
     icon: Globe,
-    color: 'text-teal-400 bg-teal-500/10 border-teal-500/30',
+    color: 'text-teal-400 bg-teal-500/10',
     desc: 'Read webpage article content',
   },
   scholar: {
     label: 'Scholar',
     icon: GraduationCap,
-    color: 'text-indigo-400 bg-indigo-500/10 border-indigo-500/30',
+    color: 'text-indigo-400 bg-indigo-500/10',
     desc: 'Academic papers & abstracts',
   },
   ai: {
     label: 'AI Agent',
     icon: Sparkles,
-    color: 'text-purple-400 bg-purple-500/10 border-purple-500/30',
+    color: 'text-violet-400 bg-violet-500/10',
     desc: 'LLM reasoning & synthesis',
   },
   image: {
     label: 'Generate Image',
     icon: ImageIcon,
-    color: 'text-pink-400 bg-pink-500/10 border-pink-500/30',
+    color: 'text-pink-400 bg-pink-500/10',
     desc: 'AI studio image creation',
   },
   weather: {
     label: 'Weather',
     icon: CloudSun,
-    color: 'text-amber-400 bg-amber-500/10 border-amber-500/30',
+    color: 'text-amber-400 bg-amber-500/10',
     desc: 'Realtime city weather telemetry',
   },
   nasa: {
     label: 'NASA APOD',
     icon: Rocket,
-    color: 'text-red-400 bg-red-500/10 border-red-500/30',
+    color: 'text-rose-400 bg-rose-500/10',
     desc: 'Astronomy picture of the day',
   },
   if: {
     label: 'Condition (If)',
     icon: GitFork,
-    color: 'text-emerald-400 bg-emerald-500/10 border-emerald-500/30',
+    color: 'text-emerald-400 bg-emerald-500/10',
     desc: 'Branch execution based on rule',
   },
 };
@@ -183,7 +183,7 @@ const RunningLiveTimer = React.memo(function RunningLiveTimer({
 
   const base = startedAt || now;
   const elapsedSec = Math.max(0, (now - base) / 1000);
-  return <span>{elapsedSec.toFixed(1)}s</span>;
+  return <span className="tabular-nums">{elapsedSec.toFixed(1)}s</span>;
 });
 
 const ROLE_META: Record<
@@ -247,7 +247,7 @@ interface NodeDataPayload extends Record<string, unknown> {
 }
 
 /**
- * Memoized Rich Canvas Node Component
+ * Memoized Sleek Glassmorphic Enterprise Canvas Node
  */
 const CustomWorkflowNodeComponent = React.memo(function CustomWorkflowNodeComponent({
   data,
@@ -283,12 +283,12 @@ const CustomWorkflowNodeComponent = React.memo(function CustomWorkflowNodeCompon
   const isIf = type === 'if';
   const isDisabled = settings?.disabled === 'true';
 
-  // Build chips row metadata
-  const aiModelChip = type === 'ai' ? resolveAiModelLabel(settings || {}) : null;
+  // Metadata items rendered cleanly with unboxed typographic discipline
+  const aiModelLabel = type === 'ai' ? resolveAiModelLabel(settings || {}) : null;
   const aiRoleKey = type === 'ai' ? settings?.role || 'general' : null;
   const aiRoleMeta = aiRoleKey ? ROLE_META[aiRoleKey] || ROLE_META.general : null;
 
-  const ifOpChip =
+  const ifOpLabel =
     type === 'if'
       ? `${OPERATOR_LABELS[settings?.operator || 'contains'] || settings?.operator || 'contains'}${
           settings?.operator !== 'isEmpty' &&
@@ -299,23 +299,21 @@ const CustomWorkflowNodeComponent = React.memo(function CustomWorkflowNodeCompon
         }`
       : null;
 
-  const queryChip =
+  const queryLabel =
     type === 'webSearch' || type === 'scholar'
       ? (settings?.query || '').trim()
       : null;
 
-  const weatherChip = type === 'weather' ? (settings?.city || '').trim() : null;
+  const weatherLabel = type === 'weather' ? (settings?.city || '').trim() : null;
 
-  const hasChips = Boolean(aiModelChip || ifOpChip || queryChip || weatherChip);
+  const hasMeta = Boolean(aiModelLabel || ifOpLabel || queryLabel || weatherLabel);
 
-  // Summary badge text
   const summaryText = useMemo(() => {
     if (outputSummary) return outputSummary;
     if (output) return getOutputSummary(output);
     return '';
   }, [outputSummary, output]);
 
-  // First 12 lines for Output Peek
   const peekLinesText = useMemo(() => {
     if (!output || output.type === 'image') return '';
     return (output.value || '').split(/\r?\n/).slice(0, 12).join('\n');
@@ -331,24 +329,24 @@ const CustomWorkflowNodeComponent = React.memo(function CustomWorkflowNodeCompon
 
   return (
     <div
-      className={`relative rounded-2xl bg-slate-900/95 border backdrop-blur-xl shadow-xl transition-all duration-200 select-none min-w-[235px] max-w-[275px] p-3.5 ${
-        isDisabled ? 'opacity-65 border-amber-500/30 ' : ''
+      className={`relative rounded-xl backdrop-blur-2xl transition-all duration-200 select-none min-w-[240px] max-w-[280px] px-4 py-3.5 ${
+        isDisabled ? 'opacity-55 ' : ''
       }${
         isSelected
-          ? 'border-cyan-400 ring-2 ring-cyan-400/40 shadow-cyan-500/20'
+          ? 'bg-slate-900/95 ring-1 ring-cyan-400/70 shadow-[0_16px_40px_-12px_rgba(6,182,212,0.28)]'
           : status === 'running'
-          ? 'border-cyan-500/80 ring-2 ring-cyan-500/30 shadow-cyan-500/20'
+          ? 'bg-slate-900/95 ring-1 ring-cyan-400/60 shadow-[0_16px_40px_-12px_rgba(6,182,212,0.22)]'
           : status === 'error'
-          ? 'border-rose-500/80 shadow-rose-500/20'
+          ? 'bg-slate-900/95 ring-1 ring-rose-500/60 shadow-[0_16px_36px_-12px_rgba(244,63,94,0.2)]'
           : status === 'done'
-          ? 'border-emerald-500/60 shadow-emerald-500/10'
-          : 'border-white/10 hover:border-white/20'
+          ? 'bg-slate-900/90 ring-1 ring-emerald-500/40 shadow-[0_12px_32px_-12px_rgba(16,185,129,0.14)]'
+          : 'bg-slate-900/80 ring-1 ring-white/[0.07] hover:bg-slate-900/95 hover:ring-white/[0.15] shadow-[0_12px_32px_-12px_rgba(0,0,0,0.6)]'
       }`}
     >
-      {/* Quick-action Floating Toolbar when node is selected (Touch-friendly >= 40px buttons) */}
+      {/* Quick-action Floating Bar when node is selected (Touch-friendly >= 40px targets) */}
       {isSelected && (
         <div
-          className="nodrag nopan absolute bottom-full left-1/2 -translate-x-1/2 mb-3 z-50 flex items-center gap-1 p-1.5 rounded-2xl bg-slate-900/95 border border-cyan-500/40 shadow-2xl backdrop-blur-xl whitespace-nowrap"
+          className="nodrag nopan absolute bottom-full left-1/2 -translate-x-1/2 mb-3 z-50 flex items-center gap-0.5 p-1 rounded-xl bg-slate-950/90 ring-1 ring-white/10 shadow-2xl backdrop-blur-2xl whitespace-nowrap"
           onClick={(e) => e.stopPropagation()}
         >
           <button
@@ -358,10 +356,10 @@ const CustomWorkflowNodeComponent = React.memo(function CustomWorkflowNodeCompon
               e.stopPropagation();
               onRunFromNode?.(id);
             }}
-            className="min-h-[40px] px-2.5 py-1.5 rounded-xl bg-cyan-500/15 hover:bg-cyan-500/25 active:bg-cyan-500/35 text-cyan-300 border border-cyan-500/30 text-[11px] font-semibold flex items-center gap-1.5 transition-colors disabled:opacity-40"
+            className="min-h-[40px] px-3 py-1.5 rounded-lg text-cyan-300 hover:bg-cyan-500/15 active:bg-cyan-500/25 text-[11px] font-medium flex items-center gap-1.5 transition-colors disabled:opacity-40 whitespace-nowrap shrink-0"
             title="Run workflow starting from this step"
           >
-            <Play size={13} className="fill-cyan-300" />
+            <Play size={12} className="fill-cyan-300" />
             <span>Run from here</span>
           </button>
 
@@ -371,10 +369,10 @@ const CustomWorkflowNodeComponent = React.memo(function CustomWorkflowNodeCompon
               e.stopPropagation();
               onDuplicateNode?.(id);
             }}
-            className="min-h-[40px] px-2.5 py-1.5 rounded-xl bg-white/5 hover:bg-white/15 active:bg-white/20 text-slate-200 border border-white/10 text-[11px] font-medium flex items-center gap-1.5 transition-colors"
+            className="min-h-[40px] px-2.5 py-1.5 rounded-lg text-slate-300 hover:text-white hover:bg-white/[0.06] active:bg-white/10 text-[11px] font-medium flex items-center gap-1.5 transition-colors whitespace-nowrap shrink-0"
             title="Duplicate this step"
           >
-            <Copy size={13} />
+            <Copy size={12} />
             <span>Duplicate</span>
           </button>
 
@@ -384,14 +382,14 @@ const CustomWorkflowNodeComponent = React.memo(function CustomWorkflowNodeCompon
               e.stopPropagation();
               onToggleDisableNode?.(id);
             }}
-            className={`min-h-[40px] px-2.5 py-1.5 rounded-xl border text-[11px] font-medium flex items-center gap-1.5 transition-colors ${
+            className={`min-h-[40px] px-2.5 py-1.5 rounded-lg text-[11px] font-medium flex items-center gap-1.5 transition-colors whitespace-nowrap shrink-0 ${
               isDisabled
-                ? 'bg-amber-500/20 text-amber-300 border-amber-500/40 hover:bg-amber-500/30'
-                : 'bg-white/5 text-slate-200 border-white/10 hover:bg-white/15'
+                ? 'text-amber-300 bg-amber-500/15 hover:bg-amber-500/25'
+                : 'text-slate-300 hover:text-white hover:bg-white/[0.06]'
             }`}
             title={isDisabled ? 'Enable this step' : 'Disable this step'}
           >
-            <Ban size={13} />
+            <Ban size={12} />
             <span>{isDisabled ? 'Enable' : 'Disable'}</span>
           </button>
 
@@ -401,10 +399,10 @@ const CustomWorkflowNodeComponent = React.memo(function CustomWorkflowNodeCompon
               e.stopPropagation();
               onOpenInspectorOutput?.(id);
             }}
-            className="min-h-[40px] px-2.5 py-1.5 rounded-xl bg-white/5 hover:bg-white/15 active:bg-white/20 text-slate-200 border border-white/10 text-[11px] font-medium flex items-center gap-1.5 transition-colors"
+            className="min-h-[40px] px-2.5 py-1.5 rounded-lg text-slate-300 hover:text-white hover:bg-white/[0.06] active:bg-white/10 text-[11px] font-medium flex items-center gap-1.5 transition-colors whitespace-nowrap shrink-0"
             title="View full output in inspector"
           >
-            <Eye size={13} />
+            <Eye size={12} />
             <span>View output</span>
           </button>
 
@@ -414,10 +412,10 @@ const CustomWorkflowNodeComponent = React.memo(function CustomWorkflowNodeCompon
               e.stopPropagation();
               onDeleteNode?.(id);
             }}
-            className="min-h-[40px] px-2.5 py-1.5 rounded-xl bg-rose-500/15 hover:bg-rose-500/25 active:bg-rose-500/35 text-rose-300 border border-rose-500/30 text-[11px] font-medium flex items-center gap-1.5 transition-colors"
+            className="min-h-[40px] px-2.5 py-1.5 rounded-lg text-rose-400 hover:bg-rose-500/15 active:bg-rose-500/25 text-[11px] font-medium flex items-center gap-1.5 transition-colors whitespace-nowrap shrink-0"
             title="Delete this step"
           >
-            <Trash2 size={13} />
+            <Trash2 size={12} />
             <span>Delete</span>
           </button>
         </div>
@@ -428,137 +426,140 @@ const CustomWorkflowNodeComponent = React.memo(function CustomWorkflowNodeCompon
         <Handle
           type="target"
           position={Position.Left}
-          className="!w-4 !h-4 !-left-2 !bg-cyan-400 hover:!scale-125 !border-2 !border-slate-950 !transition-transform cursor-crosshair"
+          className="!w-3.5 !h-3.5 !-left-[7px] !bg-cyan-400 hover:!scale-125 !border-2 !border-slate-950 !transition-transform cursor-crosshair"
           title="Connect input to this step"
         />
       )}
 
-      {/* A1) Node Header: icon, label, status badge */}
-      <div className="flex items-center justify-between gap-2">
-        <div className="flex items-center gap-2 min-w-0">
-          <div className={`p-1.5 rounded-lg border flex-shrink-0 ${cfg.color}`}>
+      {/* Header: icon, label, unboxed status indicator */}
+      <div className="flex items-start justify-between gap-3">
+        <div className="flex items-center gap-2.5 min-w-0">
+          <div className={`p-2 rounded-lg flex-shrink-0 ${cfg.color}`}>
             <IconComponent size={15} />
           </div>
           <div className="min-w-0">
-            <h4 className="text-xs font-semibold text-white truncate leading-tight">
+            <h4 className="text-[13px] font-semibold text-slate-100 truncate leading-snug">
               {label}
             </h4>
-            <span className="text-[10px] text-slate-400 font-mono block truncate">
+            <span className="text-[11px] text-slate-400 block truncate">
               {cfg.label}
             </span>
           </div>
         </div>
 
-        {/* Status badge (idle / running spinner / done / error / skipped / disabled) */}
-        <div className="flex-shrink-0">
+        {/* Unboxed semantic status indicator */}
+        <div className="flex-shrink-0 pt-0.5">
           {isDisabled ? (
-            <div className="flex items-center gap-1 text-[10px] text-amber-300 bg-amber-500/15 px-2 py-0.5 rounded-full border border-amber-500/30 font-medium">
-              <Ban size={10} />
+            <span className="inline-flex items-center gap-1 text-[11px] text-amber-400/90 font-medium">
+              <Ban size={11} />
               <span>Disabled</span>
-            </div>
+            </span>
           ) : status === 'running' ? (
-            <div className="flex items-center gap-1 text-[10px] text-cyan-300 bg-cyan-500/15 px-2 py-0.5 rounded-full border border-cyan-500/30 font-medium">
+            <span className="inline-flex items-center gap-1 text-[11px] text-cyan-400 font-medium">
               <Loader2 size={11} className="animate-spin" />
               <span>Running</span>
-            </div>
+            </span>
           ) : status === 'done' ? (
-            <div className="flex items-center gap-1 text-[10px] text-emerald-300 bg-emerald-500/15 px-2 py-0.5 rounded-full border border-emerald-500/30 font-medium">
+            <span className="inline-flex items-center gap-1 text-[11px] text-emerald-400 font-medium">
               <CheckCircle2 size={11} />
               <span>Done</span>
-            </div>
+            </span>
           ) : status === 'error' ? (
-            <div className="flex items-center gap-1 text-[10px] text-rose-300 bg-rose-500/15 px-2 py-0.5 rounded-full border border-rose-500/30 font-medium">
+            <span className="inline-flex items-center gap-1 text-[11px] text-rose-400 font-medium">
               <AlertCircle size={11} />
               <span>Error</span>
-            </div>
+            </span>
           ) : status === 'skipped' ? (
-            <div
-              className="flex items-center gap-1 text-[10px] text-slate-400 bg-white/5 px-2 py-0.5 rounded-full border border-white/10 font-medium"
+            <span
+              className="inline-flex items-center gap-1 text-[11px] text-slate-400 font-medium"
               title="Skipped"
             >
               <MinusCircle size={11} />
               <span>Skipped</span>
-            </div>
+            </span>
           ) : (
-            <div className="flex items-center gap-1 text-[10px] text-slate-500 bg-white/[0.03] px-2 py-0.5 rounded-full border border-white/5 font-mono">
-              <span className="w-1.5 h-1.5 rounded-full bg-slate-600" />
-              <span>Idle</span>
-            </div>
+            <span className="text-[11px] text-slate-500 font-mono">
+              Idle
+            </span>
           )}
         </div>
       </div>
 
-      {/* A2) Chips row */}
-      {hasChips && (
-        <div className="flex flex-wrap items-center gap-1.5 mt-2.5 pt-2 border-t border-white/5">
-          {type === 'ai' && aiModelChip && (
-            <span className="text-[10px] font-mono text-purple-300 bg-purple-500/10 border border-purple-500/25 px-1.5 py-0.5 rounded-md truncate max-w-[130px]">
-              {aiModelChip}
+      {/* Metadata Row (Unboxed typography with subtle · separators) */}
+      {hasMeta && (
+        <div className="flex flex-wrap items-center gap-1.5 mt-2.5 pt-2 border-t border-white/[0.05] text-[11px] text-slate-400">
+          {type === 'ai' && aiModelLabel && (
+            <span className="font-mono text-violet-300 truncate max-w-[130px]">
+              {aiModelLabel}
             </span>
           )}
+          {type === 'ai' && aiModelLabel && aiRoleMeta && (
+            <span aria-hidden="true" className="text-slate-600">·</span>
+          )}
           {type === 'ai' && aiRoleMeta && (
-            <span className="text-[10px] font-medium text-cyan-300 bg-cyan-500/10 border border-cyan-500/25 px-1.5 py-0.5 rounded-md inline-flex items-center gap-1">
-              {React.createElement(aiRoleMeta.icon, { size: 10 })}
+            <span className="text-cyan-300/90 inline-flex items-center gap-1">
+              {React.createElement(aiRoleMeta.icon, { size: 11 })}
               <span>{aiRoleMeta.label}</span>
             </span>
           )}
-          {type === 'if' && ifOpChip && (
-            <span className="text-[10px] font-mono text-emerald-300 bg-emerald-500/10 border border-emerald-500/25 px-1.5 py-0.5 rounded-md truncate max-w-[200px]">
-              {ifOpChip}
+          {type === 'if' && ifOpLabel && (
+            <span className="font-mono text-emerald-300/90 truncate max-w-[210px]">
+              {ifOpLabel}
             </span>
           )}
-          {(type === 'webSearch' || type === 'scholar') && queryChip && (
-            <span className="text-[10px] font-mono text-blue-300 bg-blue-500/10 border border-blue-500/25 px-1.5 py-0.5 rounded-md truncate max-w-[210px]">
-              “{queryChip.length > 28 ? queryChip.slice(0, 28) + '…' : queryChip}”
+          {(type === 'webSearch' || type === 'scholar') && queryLabel && (
+            <span className="font-mono text-sky-300/90 truncate max-w-[220px]">
+              “{queryLabel.length > 28 ? queryLabel.slice(0, 28) + '…' : queryLabel}”
             </span>
           )}
-          {type === 'weather' && weatherChip && (
-            <span className="text-[10px] font-mono text-amber-300 bg-amber-500/10 border border-amber-500/25 px-1.5 py-0.5 rounded-md truncate max-w-[180px]">
-              📍 {weatherChip}
+          {type === 'weather' && weatherLabel && (
+            <span className="font-mono text-amber-300/90 truncate max-w-[190px]">
+              {weatherLabel}
             </span>
           )}
         </div>
       )}
 
-      {/* A3) Body: 2-line output preview or image thumbnail */}
+      {/* Body: 2-line output preview or image thumbnail */}
       {output && (
-        <div className="mt-2.5 pt-2 border-t border-white/5">
+        <div className="mt-2.5 pt-2 border-t border-white/[0.05]">
           {output.type === 'image' && output.value ? (
-            <div className="rounded-xl overflow-hidden border border-white/10 bg-slate-950">
+            <div className="rounded-lg overflow-hidden bg-slate-950/60">
               <img
                 src={output.value}
                 alt={label}
+                referrerPolicy="no-referrer"
                 className="w-full h-24 object-cover block"
               />
             </div>
           ) : output.value ? (
-            <p className="text-[11px] text-slate-300 font-mono line-clamp-2 break-words leading-relaxed bg-slate-950/70 px-2 py-1.5 rounded-lg border border-white/5">
+            <p className="text-[11px] text-slate-300/90 font-mono line-clamp-2 break-words leading-relaxed">
               {output.value}
             </p>
           ) : null}
         </div>
       )}
 
-      {/* A4) Footer: live timer while running, duration + summary when done, error text on error */}
+      {/* Footer: live timer while running, duration + summary when done, error text on error */}
       {(status === 'running' ||
         status === 'done' ||
         status === 'error' ||
         (status === 'skipped' && errorText)) && (
-        <div className="mt-2.5 pt-2 border-t border-white/5 flex items-center justify-between gap-2 text-[10px] font-mono">
+        <div className="mt-2.5 pt-2 border-t border-white/[0.05] flex items-center justify-between gap-2 text-[11px] font-mono tabular-nums">
           {status === 'running' && (
-            <div className="flex items-center gap-1.5 text-cyan-400 font-semibold">
-              <span className="w-1.5 h-1.5 rounded-full bg-cyan-400 animate-ping" />
+            <div className="flex items-center gap-1.5 text-cyan-400 font-medium">
+              <Loader2 size={10} className="animate-spin" />
               <RunningLiveTimer startedAt={startedAt} />
             </div>
           )}
 
           {status === 'done' && (
             <div className="flex items-center justify-between w-full gap-2 text-slate-400">
-              <span className="text-emerald-400 font-semibold">
+              <span className="text-emerald-400/90">
                 {durationMs !== undefined ? `${(durationMs / 1000).toFixed(1)}s` : '0.0s'}
                 {summaryText ? ` · ${summaryText}` : ''}
               </span>
-              <span className="text-[9px] text-slate-500">Tap to peek</span>
+              <span className="text-[10px] text-slate-500 font-sans">Inspect</span>
             </div>
           )}
 
@@ -569,29 +570,32 @@ const CustomWorkflowNodeComponent = React.memo(function CustomWorkflowNodeCompon
           )}
 
           {status === 'skipped' && errorText && (
-            <div className="text-amber-400/90 truncate w-full" title={errorText}>
-              {errorText === 'disabled' ? 'Disabled (pass-through)' : errorText}
+            <div className="text-amber-400/80 truncate w-full" title={errorText}>
+              {errorText === 'disabled' ? 'Disabled · pass-through' : errorText}
             </div>
           )}
         </div>
       )}
 
-      {/* C) Output Peek Floating Card (Touch friendly, appears when a DONE node is tapped) */}
+      {/* Output Peek Floating Glass Surface */}
       {isPeekOpen && status === 'done' && output && (
         <div
-          className="nodrag nopan absolute top-full left-1/2 -translate-x-1/2 mt-3 z-50 w-[300px] sm:w-[340px] rounded-2xl bg-slate-900/98 border border-emerald-500/40 shadow-2xl backdrop-blur-2xl p-3.5 space-y-2.5"
+          className="nodrag nopan absolute top-full left-1/2 -translate-x-1/2 mt-3 z-50 w-[300px] sm:w-[340px] rounded-xl bg-slate-950/95 ring-1 ring-white/10 shadow-2xl backdrop-blur-2xl p-4 space-y-3"
           onClick={(e) => e.stopPropagation()}
         >
-          <div className="flex items-center justify-between border-b border-white/10 pb-2">
+          <div className="flex items-center justify-between border-b border-white/[0.06] pb-2.5">
             <div className="flex items-center gap-2 min-w-0">
               <CheckCircle2 size={13} className="text-emerald-400 flex-shrink-0" />
-              <span className="text-xs font-bold text-white truncate">
-                {label} — Output
+              <span className="text-xs font-semibold text-white truncate">
+                {label}
               </span>
               {summaryText && (
-                <span className="text-[10px] font-mono text-emerald-300 bg-emerald-500/10 px-1.5 py-0.5 rounded border border-emerald-500/20 flex-shrink-0">
-                  {summaryText}
-                </span>
+                <>
+                  <span aria-hidden="true" className="text-slate-600">·</span>
+                  <span className="text-[11px] font-mono text-slate-400 flex-shrink-0 tabular-nums">
+                    {summaryText}
+                  </span>
+                </>
               )}
             </div>
             <button
@@ -600,22 +604,23 @@ const CustomWorkflowNodeComponent = React.memo(function CustomWorkflowNodeCompon
                 e.stopPropagation();
                 onClosePeek?.();
               }}
-              className="p-1 rounded-lg bg-white/5 hover:bg-white/10 text-slate-400 hover:text-white"
+              className="p-1 rounded-lg hover:bg-white/[0.06] text-slate-400 hover:text-white transition-colors"
             >
               <X size={13} />
             </button>
           </div>
 
           {output.type === 'image' ? (
-            <div className="rounded-xl overflow-hidden border border-white/10 bg-slate-950">
+            <div className="rounded-lg overflow-hidden bg-slate-900/50">
               <img
                 src={output.value}
                 alt={label}
+                referrerPolicy="no-referrer"
                 className="w-full max-h-56 object-contain block"
               />
             </div>
           ) : (
-            <pre className="text-[11px] text-slate-200 font-mono whitespace-pre-wrap break-words max-h-48 overflow-y-auto p-2.5 rounded-xl bg-slate-950/90 border border-white/10 leading-relaxed">
+            <pre className="text-[11px] text-slate-200 font-mono whitespace-pre-wrap break-words max-h-48 overflow-y-auto p-3 rounded-lg bg-white/[0.02] leading-relaxed">
               {peekLinesText || '(Empty output)'}
             </pre>
           )}
@@ -625,16 +630,16 @@ const CustomWorkflowNodeComponent = React.memo(function CustomWorkflowNodeCompon
               <button
                 type="button"
                 onClick={handleCopyPeek}
-                className="min-h-[38px] px-3 py-1.5 rounded-xl bg-white/5 hover:bg-white/10 text-slate-200 border border-white/10 text-xs font-medium flex items-center gap-1.5 transition-colors"
+                className="min-h-[38px] px-3 py-1.5 rounded-lg bg-white/[0.04] hover:bg-white/[0.08] text-slate-200 text-xs font-medium flex items-center gap-1.5 transition-colors whitespace-nowrap shrink-0"
               >
                 {copiedPeek ? (
                   <>
-                    <Check size={13} className="text-emerald-400" />
+                    <Check size={12} className="text-emerald-400" />
                     <span>Copied</span>
                   </>
                 ) : (
                   <>
-                    <Copy size={13} />
+                    <Copy size={12} />
                     <span>Copy</span>
                   </>
                 )}
@@ -646,7 +651,7 @@ const CustomWorkflowNodeComponent = React.memo(function CustomWorkflowNodeCompon
                 e.stopPropagation();
                 onOpenInspectorOutput?.(id);
               }}
-              className="min-h-[38px] px-3 py-1.5 rounded-xl bg-cyan-500 hover:bg-cyan-400 text-slate-950 text-xs font-bold flex items-center gap-1.5 transition-colors shadow-md shadow-cyan-500/20"
+              className="min-h-[38px] px-3 py-1.5 rounded-lg bg-cyan-500 hover:bg-cyan-400 text-slate-950 text-xs font-semibold flex items-center gap-1.5 transition-colors whitespace-nowrap shrink-0"
             >
               <Maximize2 size={12} />
               <span>Full output</span>
@@ -661,35 +666,35 @@ const CustomWorkflowNodeComponent = React.memo(function CustomWorkflowNodeCompon
           type="source"
           position={Position.Right}
           id="default"
-          className="!w-4 !h-4 !-right-2 !bg-cyan-400 hover:!scale-125 !border-2 !border-slate-950 !transition-transform cursor-crosshair"
+          className="!w-3.5 !h-3.5 !-right-[7px] !bg-cyan-400 hover:!scale-125 !border-2 !border-slate-950 !transition-transform cursor-crosshair"
           title="Connect output to next step"
         />
       ) : (
         <>
           {/* YES branch handle */}
           <div className="absolute -right-2 top-[32%] flex items-center">
-            <span className="text-[9px] font-bold text-emerald-400 bg-slate-950/90 px-1 py-0.5 rounded border border-emerald-500/30 mr-1.5 pointer-events-none">
+            <span className="text-[9px] font-mono font-semibold text-emerald-400 bg-slate-950/90 px-1 py-0.5 rounded mr-1.5 pointer-events-none">
               YES
             </span>
             <Handle
               type="source"
               position={Position.Right}
               id="yes"
-              className="!w-4 !h-4 !bg-emerald-400 hover:!scale-125 !border-2 !border-slate-950 !transition-transform cursor-crosshair"
+              className="!w-3.5 !h-3.5 !bg-emerald-400 hover:!scale-125 !border-2 !border-slate-950 !transition-transform cursor-crosshair"
               title="Connect 'yes' branch"
             />
           </div>
 
           {/* NO branch handle */}
           <div className="absolute -right-2 top-[68%] flex items-center">
-            <span className="text-[9px] font-bold text-rose-400 bg-slate-950/90 px-1 py-0.5 rounded border border-rose-500/30 mr-1.5 pointer-events-none">
+            <span className="text-[9px] font-mono font-semibold text-rose-400 bg-slate-950/90 px-1 py-0.5 rounded mr-1.5 pointer-events-none">
               NO
             </span>
             <Handle
               type="source"
               position={Position.Right}
               id="no"
-              className="!w-4 !h-4 !bg-rose-400 hover:!scale-125 !border-2 !border-slate-950 !transition-transform cursor-crosshair"
+              className="!w-3.5 !h-3.5 !bg-rose-400 hover:!scale-125 !border-2 !border-slate-950 !transition-transform cursor-crosshair"
               title="Connect 'no' branch"
             />
           </div>
@@ -707,7 +712,7 @@ interface CustomEdgeData extends Record<string, unknown> {
 }
 
 /**
- * B) Custom Edge with live glowing dots (SVG animateMotion) when source is 'done' and target is 'running'
+ * Custom Edge with live glowing dots (SVG animateMotion) when source is 'done' and target is 'running'
  */
 const CustomWorkflowEdge = React.memo(function CustomWorkflowEdge({
   id,
@@ -738,17 +743,17 @@ const CustomWorkflowEdge = React.memo(function CustomWorkflowEdge({
   const isError = sourceStatus === 'error' || targetStatus === 'error';
   const isFinished = sourceStatus === 'done' && targetStatus === 'done';
 
-  let strokeColor = '#475569'; // calm slate default
+  let strokeColor = '#334155';
   if (isError) {
-    strokeColor = '#f43f5e'; // red on error
+    strokeColor = '#f43f5e';
   } else if (isFlowing) {
-    strokeColor = '#22d3ee'; // glowing cyan when flowing
+    strokeColor = '#22d3ee';
   } else if (branch === 'yes') {
     strokeColor = isFinished ? '#10b981' : '#059669';
   } else if (branch === 'no') {
     strokeColor = isFinished ? '#f43f5e' : '#e11d48';
   } else if (isFinished) {
-    strokeColor = '#0ea5e9'; // calm solid color when finished
+    strokeColor = '#0ea5e9';
   }
 
   return (
@@ -759,18 +764,17 @@ const CustomWorkflowEdge = React.memo(function CustomWorkflowEdge({
         markerEnd={markerEnd}
         style={{
           stroke: strokeColor,
-          strokeWidth: isFlowing ? 2.5 : 2,
+          strokeWidth: isFlowing ? 2.2 : 1.75,
           transition: 'stroke 200ms ease',
         }}
       />
 
-      {/* 3 glowing dots moving along the line while source is 'done' and target is 'running' */}
       {isFlowing && (
         <g>
           {[0, 0.45, 0.9].map((delay, index) => (
             <circle
               key={index}
-              r={4}
+              r={3.5}
               fill="#22d3ee"
               style={{ filter: 'drop-shadow(0 0 6px #22d3ee)' }}
             >
@@ -785,7 +789,6 @@ const CustomWorkflowEdge = React.memo(function CustomWorkflowEdge({
         </g>
       )}
 
-      {/* Keep existing YES / NO branch labels */}
       {branch && (
         <EdgeLabelRenderer>
           <div
@@ -794,10 +797,8 @@ const CustomWorkflowEdge = React.memo(function CustomWorkflowEdge({
               transform: `translate(-50%, -50%) translate(${labelX}px,${labelY}px)`,
               pointerEvents: 'none',
             }}
-            className={`px-1.5 py-0.5 rounded text-[10px] font-bold tracking-wider border bg-slate-950/90 ${
-              branch === 'yes'
-                ? 'text-emerald-400 border-emerald-500/40'
-                : 'text-rose-400 border-rose-500/40'
+            className={`px-1.5 py-0.5 rounded text-[10px] font-mono font-semibold tracking-wider bg-slate-950/90 backdrop-blur-md ${
+              branch === 'yes' ? 'text-emerald-400' : 'text-rose-400'
             }`}
           >
             {branch.toUpperCase()}
@@ -844,7 +845,6 @@ export function WorkflowCanvas({
     setPeekNodeId(null);
   }, []);
 
-  // Convert workflow nodes to ReactFlow nodes
   const rfNodes = useMemo<Node<NodeDataPayload>[]>(() => {
     return nodes.map((n) => {
       const status = stepStatuses[n.id] || 'idle';
@@ -898,7 +898,6 @@ export function WorkflowCanvas({
     handleClosePeek,
   ]);
 
-  // Convert workflow edges to ReactFlow edges
   const rfEdges = useMemo<Edge<CustomEdgeData>[]>(() => {
     return edges.map((e) => {
       const sourceStatus = stepStatuses[e.from] || 'idle';
@@ -907,7 +906,7 @@ export function WorkflowCanvas({
       const isFlowing = isRunning && sourceStatus === 'done' && targetStatus === 'running';
       const isFinished = sourceStatus === 'done' && targetStatus === 'done';
 
-      let edgeColor = '#475569';
+      let edgeColor = '#334155';
       if (isError) edgeColor = '#f43f5e';
       else if (isFlowing) edgeColor = '#22d3ee';
       else if (e.branch === 'yes') edgeColor = isFinished ? '#10b981' : '#059669';
@@ -929,8 +928,8 @@ export function WorkflowCanvas({
         markerEnd: {
           type: MarkerType.ArrowClosed,
           color: edgeColor,
-          width: 16,
-          height: 16,
+          width: 15,
+          height: 15,
         },
       };
     });
@@ -967,16 +966,13 @@ export function WorkflowCanvas({
 
   const handleEdgeClick = useCallback(
     (_: React.MouseEvent, edge: Edge) => {
-      const shouldDelete = window.confirm(`Delete connection from this edge?`);
-      if (shouldDelete) {
-        onDeleteEdge(edge.id);
-      }
+      onDeleteEdge(edge.id);
     },
     [onDeleteEdge],
   );
 
   return (
-    <div className="w-full h-full min-h-[520px] relative rounded-2xl overflow-hidden border border-white/10 bg-slate-950/90 shadow-2xl">
+    <div className="w-full h-full min-h-[540px] relative overflow-hidden bg-slate-950/50 backdrop-blur-xl">
       <ReactFlow
         nodes={rfNodes}
         edges={rfEdges}
@@ -993,8 +989,8 @@ export function WorkflowCanvas({
         maxZoom={2}
         proOptions={{ hideAttribution: true }}
       >
-        <Background variant={BackgroundVariant.Dots} gap={20} size={1} color="#334155" />
-        <Controls className="!bg-slate-900 !border-white/10 !fill-white !text-white [&>button]:!bg-slate-800 [&>button]:!border-white/10 [&>button]:!text-white hover:[&>button]:!bg-slate-700" />
+        <Background variant={BackgroundVariant.Dots} gap={24} size={1} color="#1e293b" />
+        <Controls className="!bg-slate-900/80 !border-0 !shadow-xl !backdrop-blur-xl [&>button]:!bg-transparent [&>button]:!border-b [&>button]:!border-white/[0.06] [&>button]:!text-slate-300 hover:[&>button]:!bg-white/[0.06] hover:[&>button]:!text-white" />
         <div className="hidden md:block">
           <MiniMap
             nodeColor={(n) => {
@@ -1002,20 +998,20 @@ export function WorkflowCanvas({
               if (nodeData?.status === 'running') return '#06b6d4';
               if (nodeData?.status === 'done') return '#10b981';
               if (nodeData?.status === 'error') return '#f43f5e';
-              return '#475569';
+              return '#334155';
             }}
-            maskColor="rgba(2, 6, 23, 0.75)"
-            className="!bg-slate-900/90 !border !border-white/10 !rounded-xl overflow-hidden shadow-lg"
+            maskColor="rgba(2, 6, 23, 0.78)"
+            className="!bg-slate-900/70 !border-0 !ring-1 !ring-white/[0.06] !rounded-xl overflow-hidden backdrop-blur-xl"
           />
         </div>
       </ReactFlow>
 
-      {/* Floating Tidy Button */}
+      {/* Floating Tidy Action */}
       <div className="absolute top-4 right-4 z-10 flex items-center gap-2">
         <button
           type="button"
           onClick={onTidy}
-          className="px-3 py-1.5 rounded-xl bg-slate-900/90 hover:bg-slate-800 text-slate-300 hover:text-white border border-white/10 text-xs font-medium backdrop-blur-md shadow-lg transition-all flex items-center gap-1.5"
+          className="px-3.5 py-2 rounded-lg bg-slate-900/75 hover:bg-slate-800/90 text-slate-300 hover:text-white ring-1 ring-white/[0.07] text-xs font-medium backdrop-blur-xl transition-colors flex items-center gap-1.5 whitespace-nowrap shrink-0"
           title="Auto-arrange nodes left to right by flow depth"
         >
           <Sparkles size={13} className="text-cyan-400" />
