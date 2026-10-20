@@ -1008,1033 +1008,1038 @@ export function WorkflowsPage() {
     <div className="w-full max-w-[1360px] mx-auto pb-24 animate-in fade-in duration-200">
       {/* Toast Notification */}
       {toastMessage && (
-        <div className="fixed top-20 right-4 sm:right-8 z-50 bg-slate-950/85 ring-1 ring-white/10 text-slate-100 text-xs px-4 py-2.5 rounded-xl shadow-2xl backdrop-blur-2xl flex items-center gap-2.5 animate-in slide-in-from-top-2">
+        <div className="fixed top-20 right-4 sm:right-8 z-50 bg-slate-950/95 ring-1 ring-white/15 text-slate-100 text-xs px-4 py-2.5 rounded-xl shadow-2xl backdrop-blur-2xl flex items-center gap-2.5 animate-in slide-in-from-top-2">
           <Sparkles size={14} className="text-cyan-400 shrink-0" />
           <span>{toastMessage}</span>
         </div>
       )}
 
-      {/* Top Enterprise Header */}
-      <header className="flex flex-col lg:flex-row lg:items-end justify-between gap-6 pb-6 border-b border-white/[0.06]">
-        <div className="space-y-1.5">
-          <div className="flex items-center gap-2 text-xs text-slate-400 font-medium">
-            <span>Automation</span>
-            <span aria-hidden="true" className="text-slate-600">/</span>
-            <span className="text-cyan-400">Pipelines</span>
-            <span aria-hidden="true" className="text-slate-600">·</span>
-            <span className="font-mono tabular-nums text-slate-400">
-              {activeWorkflow.nodes.length} {activeWorkflow.nodes.length === 1 ? 'step' : 'steps'}
-            </span>
-            {hasBranches && (
-              <>
-                <span aria-hidden="true" className="text-slate-600">·</span>
-                <span className="text-emerald-400/90">Branching graph</span>
-              </>
+      {/* Sleek Borderless Frosted Workspace Surface — ensures 100% legibility on any custom wallpaper */}
+      <div className="rounded-3xl bg-slate-950/80 backdrop-blur-2xl px-4 sm:px-8 py-6 sm:py-8 shadow-[0_24px_64px_rgba(0,0,0,0.5)]">
+        {/* Top Enterprise Header */}
+        <header className="flex flex-col lg:flex-row lg:items-end justify-between gap-6 pb-6 border-b border-white/[0.1]">
+          <div className="space-y-1.5">
+            <div className="flex items-center gap-2 text-xs text-slate-200 font-medium">
+              <span>Automation</span>
+              <span aria-hidden="true" className="text-slate-400">/</span>
+              <span className="text-cyan-300 font-semibold">Pipelines</span>
+              <span aria-hidden="true" className="text-slate-400">·</span>
+              <span className="font-mono tabular-nums text-slate-200">
+                {activeWorkflow.nodes.length} {activeWorkflow.nodes.length === 1 ? 'step' : 'steps'}
+              </span>
+              {hasBranches && (
+                <>
+                  <span aria-hidden="true" className="text-slate-400">·</span>
+                  <span className="text-emerald-300 font-medium">Branching graph</span>
+                </>
+              )}
+            </div>
+            <h1 className="text-2xl sm:text-3xl font-semibold text-white tracking-tight drop-shadow-sm">
+              Workflows
+            </h1>
+            <p className="text-sm text-slate-200 max-w-2xl leading-relaxed">
+              Orchestrate multi-step research, live web telemetry, academic synthesis, and studio generation pipelines.
+            </p>
+          </div>
+
+          {/* Primary Execution Controls */}
+          <div className="flex items-center gap-2.5 flex-wrap">
+            <button
+              type="button"
+              onClick={() => setShowTemplatesModal(true)}
+              className="px-4 py-2 rounded-lg bg-slate-900/85 hover:bg-slate-800/90 ring-1 ring-white/15 text-slate-100 hover:text-white text-xs font-medium transition-colors flex items-center gap-2 whitespace-nowrap shrink-0"
+            >
+              <Sparkles size={14} className="text-cyan-400" />
+              <span>Templates</span>
+            </button>
+
+            <button
+              type="button"
+              onClick={handleClearResults}
+              disabled={isRunning}
+              className="px-3.5 py-2 rounded-lg bg-slate-900/85 hover:bg-slate-800/90 ring-1 ring-white/15 text-slate-200 hover:text-white text-xs font-medium transition-colors flex items-center gap-1.5 disabled:opacity-40 whitespace-nowrap shrink-0"
+              title="Clear previous outputs & step statuses"
+            >
+              <RotateCcw size={13} />
+              <span>Reset State</span>
+            </button>
+
+            {isRunning ? (
+              <button
+                type="button"
+                onClick={handleStop}
+                className="px-5 py-2 rounded-lg bg-rose-500/25 hover:bg-rose-500/35 ring-1 ring-rose-400/40 text-rose-100 text-xs font-semibold transition-colors flex items-center gap-2 whitespace-nowrap shrink-0"
+              >
+                <Square size={13} className="fill-rose-400 text-rose-400" />
+                <span>Stop Run</span>
+              </button>
+            ) : (
+              <button
+                type="button"
+                onClick={handleRun}
+                className="px-5 py-2 rounded-lg bg-cyan-400 hover:bg-cyan-300 text-slate-950 font-semibold text-xs transition-all flex items-center gap-2 shadow-[0_0_25px_-5px_rgba(34,211,238,0.45)] active:scale-[0.99] whitespace-nowrap shrink-0"
+              >
+                <Play size={13} className="fill-slate-950" />
+                <span>Run Pipeline</span>
+              </button>
             )}
           </div>
-          <h1 className="text-2xl sm:text-3xl font-semibold text-white tracking-tight">
-            Workflows
-          </h1>
-          <p className="text-sm text-slate-400 max-w-2xl leading-relaxed">
-            Orchestrate multi-step research, live web telemetry, academic synthesis, and studio generation pipelines.
-          </p>
-        </div>
+        </header>
 
-        {/* Primary Execution Controls */}
-        <div className="flex items-center gap-2.5 flex-wrap">
-          <button
-            type="button"
-            onClick={() => setShowTemplatesModal(true)}
-            className="px-4 py-2 rounded-lg bg-white/[0.03] hover:bg-white/[0.07] text-slate-200 hover:text-white text-xs font-medium transition-colors flex items-center gap-2 whitespace-nowrap shrink-0"
-          >
-            <Sparkles size={14} className="text-cyan-400" />
-            <span>Templates</span>
-          </button>
-
-          <button
-            type="button"
-            onClick={handleClearResults}
-            disabled={isRunning}
-            className="px-3.5 py-2 rounded-lg bg-white/[0.03] hover:bg-white/[0.07] text-slate-400 hover:text-slate-200 text-xs font-medium transition-colors flex items-center gap-1.5 disabled:opacity-40 whitespace-nowrap shrink-0"
-            title="Clear previous outputs & step statuses"
-          >
-            <RotateCcw size={13} />
-            <span>Reset State</span>
-          </button>
-
-          {isRunning ? (
-            <button
-              type="button"
-              onClick={handleStop}
-              className="px-5 py-2 rounded-lg bg-rose-500/20 hover:bg-rose-500/30 text-rose-200 text-xs font-semibold transition-colors flex items-center gap-2 whitespace-nowrap shrink-0"
-            >
-              <Square size={13} className="fill-rose-400 text-rose-400" />
-              <span>Stop Run</span>
-            </button>
-          ) : (
-            <button
-              type="button"
-              onClick={handleRun}
-              className="px-5 py-2 rounded-lg bg-cyan-400 hover:bg-cyan-300 text-slate-950 font-semibold text-xs transition-all flex items-center gap-2 shadow-[0_0_25px_-5px_rgba(34,211,238,0.45)] active:scale-[0.99] whitespace-nowrap shrink-0"
-            >
-              <Play size={13} className="fill-slate-950" />
-              <span>Run Pipeline</span>
-            </button>
-          )}
-        </div>
-      </header>
-
-      {/* Sleek Borderless Workspace Bar */}
-      <div className="flex flex-col sm:flex-row items-stretch sm:items-center justify-between gap-4 py-4 border-b border-white/[0.06] bg-white/[0.01] backdrop-blur-xl">
-        {/* Left: Workflow Selector & Inline Actions */}
-        <div className="flex items-center gap-1.5 flex-wrap min-w-0">
-          <div className="relative">
-            <select
-              value={activeWorkflow.id}
-              onChange={(e) => {
-                setActiveWorkflowId(e.target.value);
-                setSelectedNodeId(null);
-                handleClearResults();
-              }}
-              className="appearance-none bg-white/[0.04] hover:bg-white/[0.07] text-white font-medium text-xs rounded-lg pl-3.5 pr-9 py-2 focus:outline-none focus:ring-1 focus:ring-cyan-400/50 transition-colors cursor-pointer"
-            >
-              {workflows.map((w) => (
-                <option key={w.id} value={w.id} className="bg-slate-950 text-white">
-                  {w.name} ({w.nodes.length} steps)
-                </option>
-              ))}
-            </select>
-            <ChevronDown
-              size={14}
-              className="absolute right-3 top-1/2 -translate-y-1/2 text-slate-400 pointer-events-none"
-            />
-          </div>
-
-          <div className="h-4 w-[1px] bg-white/[0.08] mx-1 hidden sm:block" />
-
-          {/* New Workflow */}
-          <button
-            type="button"
-            onClick={handleCreateNew}
-            className="px-2.5 py-2 rounded-lg text-slate-400 hover:text-white hover:bg-white/[0.05] text-xs font-medium transition-colors flex items-center gap-1.5 whitespace-nowrap shrink-0"
-            title="Create new blank workflow"
-          >
-            <Plus size={14} />
-            <span className="hidden md:inline">New</span>
-          </button>
-
-          {/* Rename Workflow */}
-          {isRenaming ? (
-            <div className="flex items-center gap-1 bg-white/[0.04] rounded-lg px-2 py-1">
-              <input
-                type="text"
-                value={renameDraft}
-                onChange={(e) => setRenameDraft(e.target.value)}
-                className="bg-transparent text-white text-xs px-1.5 py-0.5 focus:outline-none w-36"
-                autoFocus
+        {/* Sleek Borderless Workspace Bar */}
+        <div className="flex flex-col sm:flex-row items-stretch sm:items-center justify-between gap-4 py-4 border-b border-white/[0.1]">
+          {/* Left: Workflow Selector & Inline Actions */}
+          <div className="flex items-center gap-1.5 flex-wrap min-w-0">
+            <div className="relative">
+              <select
+                value={activeWorkflow.id}
+                onChange={(e) => {
+                  setActiveWorkflowId(e.target.value);
+                  setSelectedNodeId(null);
+                  handleClearResults();
+                }}
+                className="appearance-none bg-slate-900/90 hover:bg-slate-800/95 ring-1 ring-white/15 text-white font-medium text-xs rounded-lg pl-3.5 pr-9 py-2 focus:outline-none focus:ring-2 focus:ring-cyan-400/60 transition-colors cursor-pointer"
+              >
+                {workflows.map((w) => (
+                  <option key={w.id} value={w.id} className="bg-slate-950 text-white">
+                    {w.name} ({w.nodes.length} steps)
+                  </option>
+                ))}
+              </select>
+              <ChevronDown
+                size={14}
+                className="absolute right-3 top-1/2 -translate-y-1/2 text-slate-300 pointer-events-none"
               />
+            </div>
+
+            <div className="h-4 w-[1px] bg-white/[0.12] mx-1 hidden sm:block" />
+
+            {/* New Workflow */}
+            <button
+              type="button"
+              onClick={handleCreateNew}
+              className="px-2.5 py-2 rounded-lg text-slate-200 hover:text-white hover:bg-white/[0.08] text-xs font-medium transition-colors flex items-center gap-1.5 whitespace-nowrap shrink-0"
+              title="Create new blank workflow"
+            >
+              <Plus size={14} className="text-cyan-400" />
+              <span className="hidden md:inline">New</span>
+            </button>
+
+            {/* Rename Workflow */}
+            {isRenaming ? (
+              <div className="flex items-center gap-1 bg-slate-900/90 ring-1 ring-white/15 rounded-lg px-2 py-1">
+                <input
+                  type="text"
+                  value={renameDraft}
+                  onChange={(e) => setRenameDraft(e.target.value)}
+                  className="bg-transparent text-white text-xs px-1.5 py-0.5 focus:outline-none w-36"
+                  autoFocus
+                />
+                <button
+                  type="button"
+                  onClick={() => {
+                    if (renameDraft.trim()) {
+                      updateCurrentWorkflow((wf) => ({ ...wf, name: renameDraft.trim() }));
+                    }
+                    setIsRenaming(false);
+                  }}
+                  className="p-1 rounded bg-cyan-400 text-slate-950 hover:bg-cyan-300"
+                >
+                  <Check size={12} />
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setIsRenaming(false)}
+                  className="p-1 rounded text-slate-300 hover:text-white"
+                >
+                  <X size={12} />
+                </button>
+              </div>
+            ) : (
               <button
                 type="button"
                 onClick={() => {
-                  if (renameDraft.trim()) {
-                    updateCurrentWorkflow((wf) => ({ ...wf, name: renameDraft.trim() }));
-                  }
-                  setIsRenaming(false);
+                  setRenameDraft(activeWorkflow.name);
+                  setIsRenaming(true);
                 }}
-                className="p-1 rounded bg-cyan-400 text-slate-950 hover:bg-cyan-300"
+                className="px-2.5 py-2 rounded-lg text-slate-200 hover:text-white hover:bg-white/[0.08] text-xs font-medium transition-colors flex items-center gap-1.5 whitespace-nowrap shrink-0"
+                title="Rename workflow"
               >
-                <Check size={12} />
+                <Edit2 size={13} />
+                <span className="hidden md:inline">Rename</span>
               </button>
-              <button
-                type="button"
-                onClick={() => setIsRenaming(false)}
-                className="p-1 rounded text-slate-400 hover:text-white"
-              >
-                <X size={12} />
-              </button>
-            </div>
-          ) : (
+            )}
+
+            {/* Duplicate */}
             <button
               type="button"
-              onClick={() => {
-                setRenameDraft(activeWorkflow.name);
-                setIsRenaming(true);
-              }}
-              className="px-2.5 py-2 rounded-lg text-slate-400 hover:text-white hover:bg-white/[0.05] text-xs font-medium transition-colors flex items-center gap-1.5 whitespace-nowrap shrink-0"
-              title="Rename workflow"
+              onClick={handleDuplicate}
+              className="px-2.5 py-2 rounded-lg text-slate-200 hover:text-white hover:bg-white/[0.08] text-xs font-medium transition-colors flex items-center gap-1.5 whitespace-nowrap shrink-0"
+              title="Duplicate workflow"
             >
-              <Edit2 size={13} />
-              <span className="hidden md:inline">Rename</span>
+              <Copy size={13} />
+              <span className="hidden md:inline">Duplicate</span>
             </button>
-          )}
 
-          {/* Duplicate */}
-          <button
-            type="button"
-            onClick={handleDuplicate}
-            className="px-2.5 py-2 rounded-lg text-slate-400 hover:text-white hover:bg-white/[0.05] text-xs font-medium transition-colors flex items-center gap-1.5 whitespace-nowrap shrink-0"
-            title="Duplicate workflow"
-          >
-            <Copy size={13} />
-            <span className="hidden md:inline">Duplicate</span>
-          </button>
-
-          {/* Delete (with inline confirmation instead of window.confirm) */}
-          {confirmDeleteWorkflow ? (
-            <div className="flex items-center gap-1 bg-rose-500/15 rounded-lg px-2 py-1">
-              <span className="text-[11px] text-rose-300 font-medium px-1">Delete?</span>
-              <button
-                type="button"
-                onClick={handleDeleteCurrent}
-                className="px-2 py-0.5 rounded bg-rose-500 hover:bg-rose-400 text-slate-950 font-semibold text-[11px]"
-              >
-                Confirm
-              </button>
-              <button
-                type="button"
-                onClick={() => setConfirmDeleteWorkflow(false)}
-                className="p-1 rounded text-slate-400 hover:text-white"
-              >
-                <X size={12} />
-              </button>
-            </div>
-          ) : (
-            <button
-              type="button"
-              onClick={() => {
-                if (workflows.length <= 1) {
-                  showToast('You cannot delete the only workflow. Create another one first.');
-                  return;
-                }
-                setConfirmDeleteWorkflow(true);
-              }}
-              className="px-2.5 py-2 rounded-lg text-slate-400 hover:text-rose-400 hover:bg-rose-500/10 text-xs font-medium transition-colors flex items-center gap-1.5 whitespace-nowrap shrink-0"
-              title="Delete current workflow"
-            >
-              <Trash2 size={13} />
-              <span className="hidden md:inline">Delete</span>
-            </button>
-          )}
-        </div>
-
-        {/* Right: Segmented Mode Switch (List | Canvas) */}
-        <div className="flex items-center self-end sm:self-auto bg-white/[0.04] p-1 rounded-lg">
-          <button
-            type="button"
-            onClick={() => setViewMode('list')}
-            className={`px-3.5 py-1.5 rounded-md text-xs font-medium transition-all flex items-center gap-1.5 whitespace-nowrap shrink-0 ${
-              viewMode === 'list'
-                ? 'bg-white/10 text-white shadow-sm'
-                : 'text-slate-400 hover:text-slate-200'
-            }`}
-          >
-            <Layers size={13} />
-            <span>Pipeline List</span>
-          </button>
-          <button
-            type="button"
-            onClick={() => setViewMode('canvas')}
-            className={`px-3.5 py-1.5 rounded-md text-xs font-medium transition-all flex items-center gap-1.5 whitespace-nowrap shrink-0 ${
-              viewMode === 'canvas'
-                ? 'bg-white/10 text-white shadow-sm'
-                : 'text-slate-400 hover:text-slate-200'
-            }`}
-          >
-            <GitBranch size={13} />
-            <span>Graph Canvas</span>
-          </button>
-        </div>
-      </div>
-
-      {/* Main Workspace Area */}
-      {viewMode === 'list' ? (
-        /* ================= BORDERLESS ENTERPRISE PIPELINE LIST VIEW ================= */
-        <div className="pt-4">
-          {/* Subtle Branching Notice */}
-          {hasBranches && (
-            <div className="py-3 px-4 mb-4 rounded-lg bg-amber-500/[0.07] text-amber-200/90 text-xs flex items-center gap-2.5">
-              <AlertTriangle size={15} className="text-amber-400 flex-shrink-0" />
-              <span>
-                This pipeline contains conditional branches. Step sequence connections are managed in <b>Graph Canvas</b> mode, while step parameters remain editable below.
-              </span>
-            </div>
-          )}
-
-          {/* Borderless Step Rows Separated by Hairlines */}
-          <div className="divide-y divide-white/[0.06]">
-            {activeWorkflow.nodes.map((node, index) => {
-              const cfg = NODE_CONFIG[node.type] || NODE_CONFIG.input;
-              const IconComp = cfg.icon;
-              const status = stepStatuses[node.id] || 'idle';
-              const output = stepOutputs[node.id];
-              const errorText = stepErrors[node.id];
-              const durationMs = stepDurations[node.id];
-              const summaryText = stepOutputSummaries[node.id] || (output ? getOutputSummary(output) : '');
-              const isDisabled = node.settings?.disabled === 'true';
-              const isSettingsOpen = !collapsedSettings[node.id];
-              const isOutputOpen = !collapsedOutputs[node.id];
-
-              return (
-                <section
-                  key={node.id}
-                  className={`py-6 transition-colors duration-150 ${
-                    isDisabled ? 'opacity-60' : ''
-                  } ${
-                    status === 'running'
-                      ? 'bg-cyan-500/[0.03]'
-                      : 'hover:bg-white/[0.01]'
-                  }`}
+            {/* Delete (with inline confirmation instead of window.confirm) */}
+            {confirmDeleteWorkflow ? (
+              <div className="flex items-center gap-1 bg-rose-500/20 ring-1 ring-rose-400/40 rounded-lg px-2 py-1">
+                <span className="text-[11px] text-rose-200 font-medium px-1">Delete?</span>
+                <button
+                  type="button"
+                  onClick={handleDeleteCurrent}
+                  className="px-2 py-0.5 rounded bg-rose-500 hover:bg-rose-400 text-slate-950 font-semibold text-[11px]"
                 >
-                  {/* Step Header Line */}
-                  <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
-                    <div className="flex items-center gap-3.5 min-w-0">
-                      {/* Tabular Editorial Step Index */}
-                      <span className="text-xs font-mono tabular-nums text-slate-500 w-6 flex-shrink-0 select-none">
-                        {String(index + 1).padStart(2, '0')}.
-                      </span>
+                  Confirm
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setConfirmDeleteWorkflow(false)}
+                  className="p-1 rounded text-slate-300 hover:text-white"
+                >
+                  <X size={12} />
+                </button>
+              </div>
+            ) : (
+              <button
+                type="button"
+                onClick={() => {
+                  if (workflows.length <= 1) {
+                    showToast('You cannot delete the only workflow. Create another one first.');
+                    return;
+                  }
+                  setConfirmDeleteWorkflow(true);
+                }}
+                className="px-2.5 py-2 rounded-lg text-slate-200 hover:text-rose-300 hover:bg-rose-500/15 text-xs font-medium transition-colors flex items-center gap-1.5 whitespace-nowrap shrink-0"
+                title="Delete current workflow"
+              >
+                <Trash2 size={13} />
+                <span className="hidden md:inline">Delete</span>
+              </button>
+            )}
+          </div>
 
-                      {/* Soft Glassmorphic Icon */}
-                      <div className={`p-2 rounded-lg flex-shrink-0 ${cfg.color}`}>
-                        <IconComp size={16} />
-                      </div>
+          {/* Right: Segmented Mode Switch (List | Canvas) */}
+          <div className="flex items-center self-end sm:self-auto bg-slate-900/90 ring-1 ring-white/15 p-1 rounded-lg">
+            <button
+              type="button"
+              onClick={() => setViewMode('list')}
+              className={`px-3.5 py-1.5 rounded-md text-xs font-medium transition-all flex items-center gap-1.5 whitespace-nowrap shrink-0 ${
+                viewMode === 'list'
+                  ? 'bg-cyan-500/20 text-cyan-200 ring-1 ring-cyan-400/30 shadow-sm'
+                  : 'text-slate-300 hover:text-white'
+              }`}
+            >
+              <Layers size={13} />
+              <span>Pipeline List</span>
+            </button>
+            <button
+              type="button"
+              onClick={() => setViewMode('canvas')}
+              className={`px-3.5 py-1.5 rounded-md text-xs font-medium transition-all flex items-center gap-1.5 whitespace-nowrap shrink-0 ${
+                viewMode === 'canvas'
+                  ? 'bg-cyan-500/20 text-cyan-200 ring-1 ring-cyan-400/30 shadow-sm'
+                  : 'text-slate-300 hover:text-white'
+              }`}
+            >
+              <GitBranch size={13} />
+              <span>Graph Canvas</span>
+            </button>
+          </div>
+        </div>
 
-                      {/* Editable Step Title & Unboxed Metadata */}
-                      <div className="min-w-0 flex flex-col sm:flex-row sm:items-baseline sm:gap-2.5">
-                        <input
-                          type="text"
-                          value={node.label}
-                          onChange={(e) => handleUpdateNode(node.id, 'label', e.target.value)}
-                          className="bg-transparent hover:bg-white/[0.04] focus:bg-slate-900/90 font-semibold text-white text-base rounded px-1.5 py-0.5 focus:outline-none focus:ring-1 focus:ring-cyan-400/40 w-full max-w-[220px] sm:max-w-[300px] truncate transition-colors"
-                          title="Click to rename step"
-                        />
-                        <div className="flex items-center gap-1.5 text-xs text-slate-400 pl-1.5 sm:pl-0">
-                          <span>{cfg.label}</span>
-                          {durationMs !== undefined && status === 'done' && (
-                            <>
-                              <span aria-hidden="true" className="text-slate-600">·</span>
-                              <span className="font-mono tabular-nums text-slate-300">
-                                {(durationMs / 1000).toFixed(1)}s
-                              </span>
-                            </>
-                          )}
-                          {summaryText && status === 'done' && (
-                            <>
-                              <span aria-hidden="true" className="text-slate-600">·</span>
-                              <span className="font-mono tabular-nums text-slate-400">
-                                {summaryText}
-                              </span>
-                            </>
-                          )}
+        {/* Main Workspace Area */}
+        {viewMode === 'list' ? (
+          /* ================= BORDERLESS ENTERPRISE PIPELINE LIST VIEW ================= */
+          <div className="pt-4">
+            {/* Subtle Branching Notice */}
+            {hasBranches && (
+              <div className="py-3 px-4 mb-4 rounded-lg bg-amber-500/15 ring-1 ring-amber-400/30 text-amber-100 text-xs flex items-center gap-2.5">
+                <AlertTriangle size={15} className="text-amber-300 flex-shrink-0" />
+                <span>
+                  This pipeline contains conditional branches. Step sequence connections are managed in <b>Graph Canvas</b> mode, while step parameters remain editable below.
+                </span>
+              </div>
+            )}
+
+            {/* Borderless Step Rows Separated by Hairlines */}
+            <div className="divide-y divide-white/[0.1]">
+              {activeWorkflow.nodes.map((node, index) => {
+                const cfg = NODE_CONFIG[node.type] || NODE_CONFIG.input;
+                const IconComp = cfg.icon;
+                const status = stepStatuses[node.id] || 'idle';
+                const output = stepOutputs[node.id];
+                const errorText = stepErrors[node.id];
+                const durationMs = stepDurations[node.id];
+                const summaryText = stepOutputSummaries[node.id] || (output ? getOutputSummary(output) : '');
+                const isDisabled = node.settings?.disabled === 'true';
+                const isSettingsOpen = !collapsedSettings[node.id];
+                const isOutputOpen = !collapsedOutputs[node.id];
+
+                return (
+                  <section
+                    key={node.id}
+                    className={`py-6 transition-colors duration-150 ${
+                      isDisabled ? 'opacity-65' : ''
+                    } ${
+                      status === 'running'
+                        ? 'bg-cyan-500/[0.06]'
+                        : 'hover:bg-white/[0.02]'
+                    }`}
+                  >
+                    {/* Step Header Line */}
+                    <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+                      <div className="flex items-center gap-3.5 min-w-0">
+                        {/* High-contrast Tabular Editorial Step Index */}
+                        <span className="text-xs font-mono font-semibold tabular-nums text-cyan-300 w-6 flex-shrink-0 select-none">
+                          {String(index + 1).padStart(2, '0')}.
+                        </span>
+
+                        {/* Soft Glassmorphic Icon */}
+                        <div className={`p-2 rounded-lg flex-shrink-0 ${cfg.color}`}>
+                          <IconComp size={16} />
                         </div>
-                      </div>
-                    </div>
 
-                    {/* Right Side Unboxed Status + Clean Action Controls */}
-                    <div className="flex items-center gap-2 self-end sm:self-auto flex-wrap">
-                      {/* Unboxed Status Indicator */}
-                      <div className="mr-2 flex items-center">
-                        {isDisabled ? (
-                          <span className="inline-flex items-center gap-1.5 text-xs text-amber-400 font-medium">
-                            <Ban size={13} />
-                            <span>Disabled</span>
-                          </span>
-                        ) : status === 'running' ? (
-                          <span className="inline-flex items-center gap-1.5 text-xs text-cyan-400 font-medium">
-                            <Loader2 size={13} className="animate-spin" />
-                            <span>Running</span>
-                          </span>
-                        ) : status === 'done' ? (
-                          <span className="inline-flex items-center gap-1.5 text-xs text-emerald-400 font-medium">
-                            <CheckCircle2 size={13} />
-                            <span>Completed</span>
-                          </span>
-                        ) : status === 'error' ? (
-                          <span className="inline-flex items-center gap-1.5 text-xs text-rose-400 font-medium">
-                            <AlertCircle size={13} />
-                            <span>Failed</span>
-                          </span>
-                        ) : status === 'skipped' ? (
-                          <span className="inline-flex items-center gap-1.5 text-xs text-slate-400 font-medium">
-                            <MinusCircle size={13} />
-                            <span>Skipped</span>
-                          </span>
-                        ) : (
-                          <span className="text-xs text-slate-500 font-mono">
-                            Ready
-                          </span>
-                        )}
-                      </div>
-
-                      {/* Run from this step */}
-                      <button
-                        type="button"
-                        disabled={isRunning}
-                        onClick={() => handleRunFromNode(node.id)}
-                        className="p-2 rounded-lg text-slate-400 hover:text-cyan-300 hover:bg-cyan-500/10 disabled:opacity-30 transition-colors"
-                        title="Run workflow starting from this step"
-                      >
-                        <Play size={14} />
-                      </button>
-
-                      {/* Move Up / Move Down */}
-                      <button
-                        type="button"
-                        onClick={() => handleMoveNodeUp(index)}
-                        disabled={hasBranches || index === 0}
-                        className="p-2 rounded-lg text-slate-400 hover:text-white hover:bg-white/[0.05] disabled:opacity-25 disabled:cursor-not-allowed transition-colors"
-                        title={hasBranches ? 'Reordering disabled for branching workflows' : 'Move step up'}
-                      >
-                        <ArrowUp size={14} />
-                      </button>
-                      <button
-                        type="button"
-                        onClick={() => handleMoveNodeDown(index)}
-                        disabled={hasBranches || index === activeWorkflow.nodes.length - 1}
-                        className="p-2 rounded-lg text-slate-400 hover:text-white hover:bg-white/[0.05] disabled:opacity-25 disabled:cursor-not-allowed transition-colors"
-                        title={hasBranches ? 'Reordering disabled for branching workflows' : 'Move step down'}
-                      >
-                        <ArrowDown size={14} />
-                      </button>
-
-                      {/* Duplicate Step */}
-                      <button
-                        type="button"
-                        onClick={() => handleDuplicateNode(node.id)}
-                        className="p-2 rounded-lg text-slate-400 hover:text-white hover:bg-white/[0.05] transition-colors"
-                        title="Duplicate step"
-                      >
-                        <Copy size={14} />
-                      </button>
-
-                      {/* Delete Step */}
-                      <button
-                        type="button"
-                        onClick={() => handleDeleteNode(node.id)}
-                        className="p-2 rounded-lg text-slate-400 hover:text-rose-400 hover:bg-rose-500/10 transition-colors"
-                        title="Delete step"
-                      >
-                        <Trash2 size={14} />
-                      </button>
-
-                      {/* Toggle Settings Collapse */}
-                      <button
-                        type="button"
-                        onClick={() =>
-                          setCollapsedSettings((prev) => ({
-                            ...prev,
-                            [node.id]: !prev[node.id],
-                          }))
-                        }
-                        className="p-2 rounded-lg text-slate-300 hover:text-white hover:bg-white/[0.05] transition-colors"
-                        title="Toggle step parameters"
-                      >
-                        {isSettingsOpen ? <ChevronUp size={15} /> : <ChevronDown size={15} />}
-                      </button>
-                    </div>
-                  </div>
-
-                  {/* Step Parameters Area (No Box Enclosure — Clean Indented Workspace) */}
-                  {isSettingsOpen && (
-                    <div className="mt-4 sm:pl-10 max-w-3xl">
-                      <StepSettingsForm
-                        node={node}
-                        allNodes={activeWorkflow.nodes}
-                        edges={activeWorkflow.edges}
-                        stepOutputs={stepOutputs}
-                        viewMode={viewMode}
-                        onUpdateSettings={(newSettings) =>
-                          handleUpdateNode(node.id, 'settings', newSettings)
-                        }
-                      />
-                    </div>
-                  )}
-
-                  {/* Step Output Stream (Sleek Subtle Surface Contrast) */}
-                  {(output || errorText) && (
-                    <div className="mt-4 sm:pl-10 max-w-4xl">
-                      <div className="rounded-xl bg-white/[0.02] backdrop-blur-md px-4 py-3 space-y-2.5">
-                        <div className="flex items-center justify-between">
-                          <div className="flex items-center gap-2 text-xs text-slate-400">
-                            <span className="font-medium text-slate-300">Step Output</span>
-                            {output?.type && (
+                        {/* Editable Step Title & Unboxed Metadata */}
+                        <div className="min-w-0 flex flex-col sm:flex-row sm:items-baseline sm:gap-2.5">
+                          <input
+                            type="text"
+                            value={node.label}
+                            onChange={(e) => handleUpdateNode(node.id, 'label', e.target.value)}
+                            className="bg-transparent hover:bg-white/[0.06] focus:bg-slate-900 font-semibold text-white text-base rounded px-1.5 py-0.5 focus:outline-none focus:ring-1 focus:ring-cyan-400/50 w-full max-w-[220px] sm:max-w-[300px] truncate transition-colors drop-shadow-sm"
+                            title="Click to rename step"
+                          />
+                          <div className="flex items-center gap-1.5 text-xs text-slate-200 pl-1.5 sm:pl-0 font-medium">
+                            <span>{cfg.label}</span>
+                            {durationMs !== undefined && status === 'done' && (
                               <>
-                                <span aria-hidden="true" className="text-slate-600">·</span>
-                                <span className="font-mono text-cyan-400">{output.type}</span>
+                                <span aria-hidden="true" className="text-slate-400">·</span>
+                                <span className="font-mono tabular-nums text-emerald-300">
+                                  {(durationMs / 1000).toFixed(1)}s
+                                </span>
                               </>
                             )}
-                            {summaryText && (
+                            {summaryText && status === 'done' && (
                               <>
-                                <span aria-hidden="true" className="text-slate-600">·</span>
-                                <span className="font-mono tabular-nums text-slate-400">
+                                <span aria-hidden="true" className="text-slate-400">·</span>
+                                <span className="font-mono tabular-nums text-slate-200">
                                   {summaryText}
                                 </span>
                               </>
                             )}
                           </div>
-                          <div className="flex items-center gap-2">
-                            {output?.type === 'text' && (
-                              <button
-                                type="button"
-                                onClick={() => handleCopyText(output.value, `out-${node.id}`)}
-                                className="text-xs text-slate-400 hover:text-white flex items-center gap-1 px-2 py-1 rounded hover:bg-white/[0.06] transition-colors"
-                              >
-                                {copiedKey === `out-${node.id}` ? (
-                                  <>
-                                    <Check size={12} className="text-emerald-400" />
-                                    <span>Copied</span>
-                                  </>
-                                ) : (
-                                  <>
-                                    <Copy size={12} />
-                                    <span>Copy</span>
-                                  </>
-                                )}
-                              </button>
-                            )}
-                            <button
-                              type="button"
-                              onClick={() =>
-                                setCollapsedOutputs((prev) => ({
-                                  ...prev,
-                                  [node.id]: !prev[node.id],
-                                }))
-                              }
-                              className="p-1 text-slate-400 hover:text-white rounded hover:bg-white/[0.06]"
-                            >
-                              {isOutputOpen ? <ChevronUp size={14} /> : <ChevronDown size={14} />}
-                            </button>
-                          </div>
+                        </div>
+                      </div>
+
+                      {/* Right Side Unboxed Status + Clean Action Controls */}
+                      <div className="flex items-center justify-between sm:justify-end gap-2 pl-9 sm:pl-0 flex-wrap">
+                        {/* Unboxed Status Indicator */}
+                        <div className="mr-2 flex items-center">
+                          {isDisabled ? (
+                            <span className="inline-flex items-center gap-1.5 text-xs text-amber-300 font-semibold">
+                              <Ban size={13} />
+                              <span>Disabled</span>
+                            </span>
+                          ) : status === 'running' ? (
+                            <span className="inline-flex items-center gap-1.5 text-xs text-cyan-300 font-semibold">
+                              <Loader2 size={13} className="animate-spin" />
+                              <span>Running</span>
+                            </span>
+                          ) : status === 'done' ? (
+                            <span className="inline-flex items-center gap-1.5 text-xs text-emerald-300 font-semibold">
+                              <CheckCircle2 size={13} />
+                              <span>Completed</span>
+                            </span>
+                          ) : status === 'error' ? (
+                            <span className="inline-flex items-center gap-1.5 text-xs text-rose-300 font-semibold">
+                              <AlertCircle size={13} />
+                              <span>Failed</span>
+                            </span>
+                          ) : status === 'skipped' ? (
+                            <span className="inline-flex items-center gap-1.5 text-xs text-slate-200 font-medium">
+                              <MinusCircle size={13} />
+                              <span>Skipped</span>
+                            </span>
+                          ) : (
+                            <span className="text-xs text-slate-200 font-mono font-medium">
+                              Ready
+                            </span>
+                          )}
                         </div>
 
-                        {isOutputOpen && (
-                          <div>
-                            {errorText && (
-                              <div className="py-2 px-3 rounded-lg bg-rose-500/10 text-rose-300 text-xs font-mono">
-                                {errorText}
-                              </div>
-                            )}
-                            {output?.type === 'text' && (
-                              <pre className="text-xs text-slate-200 font-mono whitespace-pre-wrap break-words max-h-60 overflow-y-auto pt-1 leading-relaxed">
-                                {output.value}
-                              </pre>
-                            )}
-                            {output?.type === 'image' && (
-                              <div className="pt-2 space-y-2 max-w-sm">
-                                <img
-                                  src={output.value}
-                                  alt="Workflow output"
-                                  referrerPolicy="no-referrer"
-                                  className="w-full rounded-lg object-cover max-h-64"
-                                />
-                                <div className="flex justify-end">
-                                  <a
-                                    href={output.value}
-                                    download="workflow-image.png"
-                                    target="_blank"
-                                    rel="noreferrer"
-                                    className="px-3 py-1.5 bg-cyan-400 hover:bg-cyan-300 text-slate-950 text-xs font-semibold rounded-lg inline-flex items-center gap-1.5"
-                                  >
-                                    <Download size={12} />
-                                    <span>Download Image</span>
-                                  </a>
-                                </div>
-                              </div>
-                            )}
-                          </div>
-                        )}
+                        <div className="flex items-center gap-1">
+                          {/* Run from this step */}
+                          <button
+                            type="button"
+                            disabled={isRunning}
+                            onClick={() => handleRunFromNode(node.id)}
+                            className="p-2 rounded-lg text-slate-200 hover:text-cyan-300 hover:bg-cyan-500/15 disabled:opacity-30 transition-colors"
+                            title="Run workflow starting from this step"
+                          >
+                            <Play size={14} />
+                          </button>
+
+                          {/* Move Up / Move Down */}
+                          <button
+                            type="button"
+                            onClick={() => handleMoveNodeUp(index)}
+                            disabled={hasBranches || index === 0}
+                            className="p-2 rounded-lg text-slate-200 hover:text-white hover:bg-white/[0.08] disabled:opacity-30 disabled:cursor-not-allowed transition-colors"
+                            title={hasBranches ? 'Reordering disabled for branching workflows' : 'Move step up'}
+                          >
+                            <ArrowUp size={14} />
+                          </button>
+                          <button
+                            type="button"
+                            onClick={() => handleMoveNodeDown(index)}
+                            disabled={hasBranches || index === activeWorkflow.nodes.length - 1}
+                            className="p-2 rounded-lg text-slate-200 hover:text-white hover:bg-white/[0.08] disabled:opacity-30 disabled:cursor-not-allowed transition-colors"
+                            title={hasBranches ? 'Reordering disabled for branching workflows' : 'Move step down'}
+                          >
+                            <ArrowDown size={14} />
+                          </button>
+
+                          {/* Duplicate Step */}
+                          <button
+                            type="button"
+                            onClick={() => handleDuplicateNode(node.id)}
+                            className="p-2 rounded-lg text-slate-200 hover:text-white hover:bg-white/[0.08] transition-colors"
+                            title="Duplicate step"
+                          >
+                            <Copy size={14} />
+                          </button>
+
+                          {/* Delete Step */}
+                          <button
+                            type="button"
+                            onClick={() => handleDeleteNode(node.id)}
+                            className="p-2 rounded-lg text-slate-200 hover:text-rose-300 hover:bg-rose-500/15 transition-colors"
+                            title="Delete step"
+                          >
+                            <Trash2 size={14} />
+                          </button>
+
+                          {/* Toggle Settings Collapse */}
+                          <button
+                            type="button"
+                            onClick={() =>
+                              setCollapsedSettings((prev) => ({
+                                ...prev,
+                                [node.id]: !prev[node.id],
+                              }))
+                            }
+                            className="p-2 rounded-lg text-slate-200 hover:text-white hover:bg-white/[0.08] transition-colors"
+                            title="Toggle step parameters"
+                          >
+                            {isSettingsOpen ? <ChevronUp size={15} /> : <ChevronDown size={15} />}
+                          </button>
+                        </div>
                       </div>
                     </div>
-                  )}
-                </section>
-              );
-            })}
-          </div>
 
-          {/* Sleek Borderless Add Step Trigger */}
-          <div className="relative pt-4 pb-2 border-t border-white/[0.06]">
-            <button
-              type="button"
-              onClick={() => setShowAddMenu((v) => !v)}
-              className="px-4 py-2.5 rounded-lg bg-white/[0.03] hover:bg-white/[0.07] text-cyan-300 hover:text-cyan-200 text-xs font-medium inline-flex items-center gap-2 transition-colors group"
-            >
-              <Plus size={15} className="group-hover:rotate-90 transition-transform" />
-              <span>Add Pipeline Step</span>
-            </button>
-
-            {/* Step Type Selection Popover */}
-            {showAddMenu && (
-              <div className="absolute left-0 right-0 top-full mt-2 z-30 bg-slate-950/95 ring-1 ring-white/10 rounded-xl p-3 shadow-2xl backdrop-blur-2xl grid grid-cols-1 sm:grid-cols-3 gap-1.5">
-                {(Object.keys(NODE_CONFIG) as WorkflowNodeType[]).map((type) => {
-                  const item = NODE_CONFIG[type];
-                  const Icon = item.icon;
-                  return (
-                    <button
-                      key={type}
-                      type="button"
-                      onClick={() => handleAddStep(type)}
-                      className="flex items-center gap-3 p-2.5 rounded-lg hover:bg-white/[0.06] text-left transition-colors"
-                    >
-                      <div className={`p-2 rounded-lg ${item.color}`}>
-                        <Icon size={16} />
+                    {/* Step Parameters Area (No Box Enclosure — Clean Indented Workspace) */}
+                    {isSettingsOpen && (
+                      <div className="mt-4 sm:pl-10 max-w-3xl">
+                        <StepSettingsForm
+                          node={node}
+                          allNodes={activeWorkflow.nodes}
+                          edges={activeWorkflow.edges}
+                          stepOutputs={stepOutputs}
+                          viewMode={viewMode}
+                          onUpdateSettings={(newSettings) =>
+                            handleUpdateNode(node.id, 'settings', newSettings)
+                          }
+                        />
                       </div>
-                      <div className="min-w-0">
-                        <div className="text-xs font-semibold text-white truncate">{item.label}</div>
-                        <div className="text-[11px] text-slate-400 truncate">{item.desc}</div>
-                      </div>
-                    </button>
-                  );
-                })}
-              </div>
-            )}
-          </div>
-        </div>
-      ) : (
-        /* ================= SLEEK GRAPH CANVAS VIEW ================= */
-        <div className="relative w-full h-[660px] overflow-hidden border-b border-white/[0.06] bg-slate-950/40 backdrop-blur-xl">
-          <WorkflowCanvas
-            nodes={activeWorkflow.nodes}
-            edges={activeWorkflow.edges}
-            stepStatuses={stepStatuses}
-            stepOutputs={stepOutputs}
-            stepStartTimes={stepStartTimes}
-            stepDurations={stepDurations}
-            stepOutputSummaries={stepOutputSummaries}
-            stepErrors={stepErrors}
-            isRunning={isRunning}
-            selectedNodeId={selectedNodeId}
-            onSelectNode={(nodeId) => {
-              if (connectSourceNodeId && nodeId && connectSourceNodeId !== nodeId) {
-                const srcNode = activeWorkflow.nodes.find((n) => n.id === connectSourceNodeId);
-                if (srcNode?.type === 'if') {
-                  setConnectBranchPrompt({
-                    sourceId: connectSourceNodeId,
-                    targetId: nodeId,
-                  });
-                } else {
-                  handleConnectEdge(connectSourceNodeId, nodeId);
-                  setConnectSourceNodeId(null);
-                }
-              } else {
-                setSelectedNodeId(nodeId);
-              }
-            }}
-            onUpdateNodesPosition={handleUpdateNodesPosition}
-            onConnect={handleRfConnect}
-            onDeleteEdge={handleDeleteEdge}
-            onTidy={handleTidyLayout}
-            onRunFromNode={handleRunFromNode}
-            onDuplicateNode={handleDuplicateNode}
-            onToggleDisableNode={handleToggleDisableNode}
-            onDeleteNode={handleDeleteNode}
-            onOpenInspectorOutput={(nodeId) => {
-              setSelectedNodeId(nodeId);
-              setTimeout(() => {
-                inspectorOutputRef.current?.scrollIntoView({
-                  behavior: 'smooth',
-                  block: 'nearest',
-                });
-              }, 80);
-            }}
-          />
+                    )}
 
-          {/* Floating Add Node Control */}
-          <div className="absolute bottom-5 left-5 z-20">
-            <button
-              type="button"
-              onClick={() => setShowAddMenu((v) => !v)}
-              className="px-4 py-2.5 rounded-lg bg-cyan-400 hover:bg-cyan-300 text-slate-950 font-semibold text-xs flex items-center gap-2 shadow-xl transition-all active:scale-95 whitespace-nowrap shrink-0"
-            >
-              <Plus size={15} />
-              <span>Add Node</span>
-            </button>
+                    {/* Step Output Stream (Sleek Subtle Surface Contrast) */}
+                    {(output || errorText) && (
+                      <div className="mt-4 sm:pl-10 max-w-4xl">
+                        <div className="rounded-xl bg-slate-900/85 ring-1 ring-white/10 backdrop-blur-md px-4 py-3 space-y-2.5">
+                          <div className="flex items-center justify-between">
+                            <div className="flex items-center gap-2 text-xs text-slate-200">
+                              <span className="font-medium text-white">Step Output</span>
+                              {output?.type && (
+                                <>
+                                  <span aria-hidden="true" className="text-slate-400">·</span>
+                                  <span className="font-mono text-cyan-300">{output.type}</span>
+                                </>
+                              )}
+                              {summaryText && (
+                                <>
+                                  <span aria-hidden="true" className="text-slate-400">·</span>
+                                  <span className="font-mono tabular-nums text-slate-200">
+                                    {summaryText}
+                                  </span>
+                                </>
+                              )}
+                            </div>
+                            <div className="flex items-center gap-2">
+                              {output?.type === 'text' && (
+                                <button
+                                  type="button"
+                                  onClick={() => handleCopyText(output.value, `out-${node.id}`)}
+                                  className="text-xs text-slate-200 hover:text-white flex items-center gap-1 px-2 py-1 rounded hover:bg-white/[0.08] transition-colors"
+                                >
+                                  {copiedKey === `out-${node.id}` ? (
+                                    <>
+                                      <Check size={12} className="text-emerald-400" />
+                                      <span>Copied</span>
+                                    </>
+                                  ) : (
+                                    <>
+                                      <Copy size={12} />
+                                      <span>Copy</span>
+                                    </>
+                                  )}
+                                </button>
+                              )}
+                              <button
+                                type="button"
+                                onClick={() =>
+                                  setCollapsedOutputs((prev) => ({
+                                    ...prev,
+                                    [node.id]: !prev[node.id],
+                                  }))
+                                }
+                                className="p-1 text-slate-200 hover:text-white rounded hover:bg-white/[0.08]"
+                              >
+                                {isOutputOpen ? <ChevronUp size={14} /> : <ChevronDown size={14} />}
+                              </button>
+                            </div>
+                          </div>
 
-            {showAddMenu && (
-              <div className="absolute left-0 bottom-full mb-3 w-80 bg-slate-950/95 ring-1 ring-white/10 rounded-xl p-2.5 shadow-2xl backdrop-blur-2xl grid grid-cols-1 gap-1 max-h-96 overflow-y-auto">
-                <div className="text-[11px] font-medium text-slate-400 px-2.5 py-1">
-                  Select Step Type
-                </div>
-                {(Object.keys(NODE_CONFIG) as WorkflowNodeType[]).map((type) => {
-                  const item = NODE_CONFIG[type];
-                  const Icon = item.icon;
-                  return (
-                    <button
-                      key={type}
-                      type="button"
-                      onClick={() => handleAddStep(type)}
-                      className="flex items-center gap-3 p-2 rounded-lg hover:bg-white/[0.06] text-left transition-colors"
-                    >
-                      <div className={`p-1.5 rounded-lg ${item.color}`}>
-                        <Icon size={14} />
+                          {isOutputOpen && (
+                            <div>
+                              {errorText && (
+                                <div className="py-2 px-3 rounded-lg bg-rose-500/15 text-rose-200 text-xs font-mono">
+                                  {errorText}
+                                </div>
+                              )}
+                              {output?.type === 'text' && (
+                                <pre className="text-xs text-slate-100 font-mono whitespace-pre-wrap break-words max-h-60 overflow-y-auto pt-1 leading-relaxed">
+                                  {output.value}
+                                </pre>
+                              )}
+                              {output?.type === 'image' && (
+                                <div className="pt-2 space-y-2 max-w-sm">
+                                  <img
+                                    src={output.value}
+                                    alt="Workflow output"
+                                    referrerPolicy="no-referrer"
+                                    className="w-full rounded-lg object-cover max-h-64"
+                                  />
+                                  <div className="flex justify-end">
+                                    <a
+                                      href={output.value}
+                                      download="workflow-image.png"
+                                      target="_blank"
+                                      rel="noreferrer"
+                                      className="px-3 py-1.5 bg-cyan-400 hover:bg-cyan-300 text-slate-950 text-xs font-semibold rounded-lg inline-flex items-center gap-1.5"
+                                    >
+                                      <Download size={12} />
+                                      <span>Download Image</span>
+                                    </a>
+                                  </div>
+                                </div>
+                              )}
+                            </div>
+                          )}
+                        </div>
                       </div>
-                      <div className="min-w-0">
-                        <div className="text-xs font-semibold text-white truncate">{item.label}</div>
-                        <div className="text-[11px] text-slate-400 truncate">{item.desc}</div>
-                      </div>
-                    </button>
-                  );
-                })}
-              </div>
-            )}
-          </div>
+                    )}
+                  </section>
+                );
+              })}
+            </div>
 
-          {/* Phone Connect Mode Prompt Banner */}
-          {connectSourceNodeId && (
-            <div className="absolute top-4 left-1/2 -translate-x-1/2 z-20 bg-cyan-400 text-slate-950 font-semibold text-xs px-4 py-2 rounded-lg shadow-2xl flex items-center gap-3 animate-in fade-in">
-              <span>Tap a target node to connect</span>
+            {/* Sleek Borderless Add Step Trigger */}
+            <div className="relative pt-4 pb-2 border-t border-white/[0.1]">
               <button
                 type="button"
-                onClick={() => setConnectSourceNodeId(null)}
-                className="bg-slate-950/15 hover:bg-slate-950/30 p-1 rounded"
+                onClick={() => setShowAddMenu((v) => !v)}
+                className="px-4 py-2.5 rounded-lg bg-slate-900/90 hover:bg-slate-800/95 ring-1 ring-cyan-400/30 text-cyan-200 hover:text-white text-xs font-medium inline-flex items-center gap-2 transition-colors group"
               >
-                <X size={12} />
+                <Plus size={15} className="text-cyan-400 group-hover:rotate-90 transition-transform" />
+                <span>Add Pipeline Step</span>
               </button>
-            </div>
-          )}
 
-          {/* Branch choice modal if source is IF in connect mode */}
-          {connectBranchPrompt && (
-            <div className="absolute inset-0 z-50 bg-slate-950/75 backdrop-blur-md flex items-center justify-center p-4">
-              <div className="bg-slate-900/95 ring-1 ring-white/10 rounded-xl p-5 max-w-xs w-full shadow-2xl text-center space-y-4 backdrop-blur-2xl">
-                <h4 className="text-sm font-semibold text-white">Choose Condition Branch</h4>
-                <p className="text-xs text-slate-400">
-                  Connect on condition match (Yes) or condition fail (No)?
-                </p>
-                <div className="flex items-center justify-center gap-3">
-                  <button
-                    type="button"
-                    onClick={() => {
-                      handleConnectEdge(
-                        connectBranchPrompt.sourceId,
-                        connectBranchPrompt.targetId,
-                        'yes',
-                      );
-                      setConnectBranchPrompt(null);
-                      setConnectSourceNodeId(null);
-                    }}
-                    className="flex-1 py-2 rounded-lg bg-emerald-400 hover:bg-emerald-300 text-slate-950 font-semibold text-xs"
-                  >
-                    YES Branch
-                  </button>
-                  <button
-                    type="button"
-                    onClick={() => {
-                      handleConnectEdge(
-                        connectBranchPrompt.sourceId,
-                        connectBranchPrompt.targetId,
-                        'no',
-                      );
-                      setConnectBranchPrompt(null);
-                      setConnectSourceNodeId(null);
-                    }}
-                    className="flex-1 py-2 rounded-lg bg-rose-400 hover:bg-rose-300 text-slate-950 font-semibold text-xs"
-                  >
-                    NO Branch
-                  </button>
+              {/* Step Type Selection Popover */}
+              {showAddMenu && (
+                <div className="absolute left-0 right-0 top-full mt-2 z-30 bg-slate-950/95 ring-1 ring-white/15 rounded-xl p-3 shadow-2xl backdrop-blur-2xl grid grid-cols-1 sm:grid-cols-3 gap-1.5">
+                  {(Object.keys(NODE_CONFIG) as WorkflowNodeType[]).map((type) => {
+                    const item = NODE_CONFIG[type];
+                    const Icon = item.icon;
+                    return (
+                      <button
+                        key={type}
+                        type="button"
+                        onClick={() => handleAddStep(type)}
+                        className="flex items-center gap-3 p-2.5 rounded-lg hover:bg-white/[0.08] text-left transition-colors"
+                      >
+                        <div className={`p-2 rounded-lg ${item.color}`}>
+                          <Icon size={16} />
+                        </div>
+                        <div className="min-w-0">
+                          <div className="text-xs font-semibold text-white truncate">{item.label}</div>
+                          <div className="text-[11px] text-slate-300 truncate">{item.desc}</div>
+                        </div>
+                      </button>
+                    );
+                  })}
                 </div>
-                <button
-                  type="button"
-                  onClick={() => setConnectBranchPrompt(null)}
-                  className="text-xs text-slate-400 hover:text-white"
-                >
-                  Cancel
-                </button>
-              </div>
-            </div>
-          )}
-
-          {/* Sleek Glassmorphic Inspector Drawer */}
-          {selectedNode && (
-            <aside className="absolute right-0 top-0 bottom-0 w-full sm:w-96 z-30 bg-slate-950/90 border-l border-white/[0.07] shadow-2xl backdrop-blur-2xl p-6 flex flex-col justify-between overflow-y-auto animate-in slide-in-from-right-4">
-              <div className="space-y-5">
-                <div className="flex items-center justify-between pb-4 border-b border-white/[0.06]">
-                  <div className="flex items-center gap-2.5">
-                    <div
-                      className={`p-2 rounded-lg ${
-                        NODE_CONFIG[selectedNode.type]?.color
-                      }`}
-                    >
-                      {React.createElement(NODE_CONFIG[selectedNode.type]?.icon || Sparkles, {
-                        size: 15,
-                      })}
-                    </div>
-                    <div>
-                      <span className="text-xs font-semibold text-white block">
-                        {selectedNode.label}
-                      </span>
-                      <span className="text-[11px] text-slate-400 block">
-                        {NODE_CONFIG[selectedNode.type]?.label}
-                      </span>
-                    </div>
-                  </div>
-                  <button
-                    type="button"
-                    onClick={() => setSelectedNodeId(null)}
-                    className="p-1.5 rounded-lg text-slate-400 hover:text-white hover:bg-white/[0.06]"
-                  >
-                    <X size={15} />
-                  </button>
-                </div>
-
-                {/* Step Label */}
-                <div>
-                  <label className="text-xs font-medium text-slate-300 block mb-1.5">
-                    Step Name
-                  </label>
-                  <input
-                    type="text"
-                    value={selectedNode.label}
-                    onChange={(e) =>
-                      handleUpdateNode(selectedNode.id, 'label', e.target.value)
-                    }
-                    className="w-full bg-white/[0.04] hover:bg-white/[0.06] focus:bg-slate-900 rounded-lg px-3 py-2 text-white text-xs focus:outline-none focus:ring-1 focus:ring-cyan-400/50 transition-colors"
-                  />
-                </div>
-
-                {/* Step Form */}
-                <StepSettingsForm
-                  node={selectedNode}
-                  allNodes={activeWorkflow.nodes}
-                  edges={activeWorkflow.edges}
-                  stepOutputs={stepOutputs}
-                  viewMode={viewMode}
-                  onUpdateSettings={(newSettings) =>
-                    handleUpdateNode(selectedNode.id, 'settings', newSettings)
-                  }
-                />
-
-                {/* Connect mode for touch / mobile */}
-                <div className="pt-1">
-                  <button
-                    type="button"
-                    onClick={() => {
-                      setConnectSourceNodeId(selectedNode.id);
-                      showToast('Connect mode active: Tap target node');
-                    }}
-                    className="w-full py-2 rounded-lg bg-cyan-500/10 hover:bg-cyan-500/20 text-cyan-300 text-xs font-medium flex items-center justify-center gap-2 transition-colors"
-                  >
-                    <GitBranch size={13} />
-                    <span>Connect to another node</span>
-                  </button>
-                </div>
-
-                {/* Recent Output in Inspector */}
-                {stepOutputs[selectedNode.id] && (
-                  <div
-                    ref={inspectorOutputRef}
-                    className="pt-4 border-t border-white/[0.06] space-y-2"
-                  >
-                    <div className="flex items-center justify-between">
-                      <span className="text-xs font-medium text-slate-300">Recent Output</span>
-                      {stepOutputs[selectedNode.id].type === 'text' && (
-                        <button
-                          type="button"
-                          onClick={() =>
-                            handleCopyText(
-                              stepOutputs[selectedNode.id].value,
-                              `insp-out-${selectedNode.id}`,
-                            )
-                          }
-                          className="text-[11px] text-slate-400 hover:text-white px-2 py-0.5 rounded hover:bg-white/[0.06] flex items-center gap-1"
-                        >
-                          {copiedKey === `insp-out-${selectedNode.id}` ? (
-                            <>
-                              <Check size={11} className="text-emerald-400" />
-                              <span>Copied</span>
-                            </>
-                          ) : (
-                            <>
-                              <Copy size={11} />
-                              <span>Copy</span>
-                            </>
-                          )}
-                        </button>
-                      )}
-                    </div>
-                    {stepOutputs[selectedNode.id].type === 'image' ? (
-                      <img
-                        src={stepOutputs[selectedNode.id].value}
-                        alt="Output"
-                        referrerPolicy="no-referrer"
-                        className="rounded-lg max-h-60 object-contain w-full bg-slate-900/50"
-                      />
-                    ) : (
-                      <pre className="text-[11px] font-mono text-slate-200 bg-white/[0.03] p-3 rounded-lg max-h-64 overflow-y-auto whitespace-pre-wrap break-words leading-relaxed">
-                        {stepOutputs[selectedNode.id].value}
-                      </pre>
-                    )}
-                  </div>
-                )}
-              </div>
-
-              {/* Delete Node in Drawer */}
-              <div className="pt-6 border-t border-white/[0.06]">
-                <button
-                  type="button"
-                  onClick={() => handleDeleteNode(selectedNode.id)}
-                  className="w-full py-2 rounded-lg bg-rose-500/10 hover:bg-rose-500/20 text-rose-300 text-xs font-medium flex items-center justify-center gap-2 transition-colors"
-                >
-                  <Trash2 size={13} />
-                  <span>Delete Step</span>
-                </button>
-              </div>
-            </aside>
-          )}
-        </div>
-      )}
-
-      {/* ================= FINAL PIPELINE OUTPUT SECTION (BORDERLESS) ================= */}
-      <section className="pt-10 pb-8 border-t border-white/[0.06] mt-8 space-y-4">
-        <div className="flex items-center justify-between gap-4">
-          <div className="flex items-baseline gap-2.5">
-            <h2 className="text-base font-semibold text-white tracking-tight">
-              Final Output
-            </h2>
-            {lastExecutedNode && (
-              <span className="text-xs text-slate-400">
-                from <span className="text-slate-200 font-medium">{lastExecutedNode.label}</span>
-              </span>
-            )}
-          </div>
-          {lastExecutedOutput?.type === 'text' && (
-            <button
-              type="button"
-              onClick={() => handleCopyText(lastExecutedOutput.value, 'final-result')}
-              className="px-3 py-1.5 rounded-lg bg-white/[0.04] hover:bg-white/[0.08] text-slate-200 hover:text-white text-xs font-medium flex items-center gap-1.5 transition-colors"
-            >
-              {copiedKey === 'final-result' ? (
-                <>
-                  <Check size={13} className="text-emerald-400" />
-                  <span>Copied</span>
-                </>
-              ) : (
-                <>
-                  <Copy size={13} />
-                  <span>Copy Output</span>
-                </>
               )}
-            </button>
-          )}
-        </div>
-
-        {lastExecutedOutput ? (
-          <div className="rounded-xl bg-white/[0.02] backdrop-blur-xl p-5">
-            {lastExecutedOutput.type === 'text' && (
-              <pre className="text-xs sm:text-sm text-slate-200 font-mono whitespace-pre-wrap break-words max-h-96 overflow-y-auto leading-relaxed">
-                {lastExecutedOutput.value}
-              </pre>
-            )}
-            {lastExecutedOutput.type === 'image' && (
-              <div className="space-y-4">
-                <div className="rounded-lg overflow-hidden max-w-md bg-slate-950/60">
-                  <img
-                    src={lastExecutedOutput.value}
-                    alt="Final synthesis"
-                    referrerPolicy="no-referrer"
-                    className="w-full object-cover max-h-96"
-                  />
-                </div>
-                <a
-                  href={lastExecutedOutput.value}
-                  download="nexus-workflow-result.png"
-                  target="_blank"
-                  rel="noreferrer"
-                  className="inline-flex items-center gap-2 px-4 py-2 rounded-lg bg-cyan-400 hover:bg-cyan-300 text-slate-950 text-xs font-semibold transition-colors"
-                >
-                  <Download size={14} />
-                  <span>Download Image</span>
-                </a>
-              </div>
-            )}
+            </div>
           </div>
         ) : (
-          <div className="py-8 text-xs text-slate-400">
-            No pipeline output recorded in this session yet. Click <span className="text-slate-200 font-medium">Run Pipeline</span> to execute steps.
-          </div>
-        )}
-      </section>
+          /* ================= SLEEK GRAPH CANVAS VIEW ================= */
+          <div className="relative w-full h-[660px] overflow-hidden border-b border-white/[0.1] bg-slate-950/75 rounded-2xl mt-4 ring-1 ring-white/10 backdrop-blur-xl">
+            <WorkflowCanvas
+              nodes={activeWorkflow.nodes}
+              edges={activeWorkflow.edges}
+              stepStatuses={stepStatuses}
+              stepOutputs={stepOutputs}
+              stepStartTimes={stepStartTimes}
+              stepDurations={stepDurations}
+              stepOutputSummaries={stepOutputSummaries}
+              stepErrors={stepErrors}
+              isRunning={isRunning}
+              selectedNodeId={selectedNodeId}
+              onSelectNode={(nodeId) => {
+                if (connectSourceNodeId && nodeId && connectSourceNodeId !== nodeId) {
+                  const srcNode = activeWorkflow.nodes.find((n) => n.id === connectSourceNodeId);
+                  if (srcNode?.type === 'if') {
+                    setConnectBranchPrompt({
+                      sourceId: connectSourceNodeId,
+                      targetId: nodeId,
+                    });
+                  } else {
+                    handleConnectEdge(connectSourceNodeId, nodeId);
+                    setConnectSourceNodeId(null);
+                  }
+                } else {
+                  setSelectedNodeId(nodeId);
+                }
+              }}
+              onUpdateNodesPosition={handleUpdateNodesPosition}
+              onConnect={handleRfConnect}
+              onDeleteEdge={handleDeleteEdge}
+              onTidy={handleTidyLayout}
+              onRunFromNode={handleRunFromNode}
+              onDuplicateNode={handleDuplicateNode}
+              onToggleDisableNode={handleToggleDisableNode}
+              onDeleteNode={handleDeleteNode}
+              onOpenInspectorOutput={(nodeId) => {
+                setSelectedNodeId(nodeId);
+                setTimeout(() => {
+                  inspectorOutputRef.current?.scrollIntoView({
+                    behavior: 'smooth',
+                    block: 'nearest',
+                  });
+                }, 80);
+              }}
+            />
 
-      {/* ================= EXECUTION LOG STREAM (HIGH-DENSITY BORDERLESS TABLE) ================= */}
-      {runLogs.length > 0 && (
-        <section className="pt-8 border-t border-white/[0.06] space-y-3">
-          <div className="flex items-center justify-between">
-            <div className="flex items-center gap-2 text-xs text-slate-400">
-              <span className="font-semibold text-slate-200">Execution Trace</span>
-              <span aria-hidden="true" className="text-slate-600">·</span>
-              <span className="font-mono tabular-nums">{runLogs.length} events</span>
-            </div>
-            <button
-              type="button"
-              onClick={() => setRunLogs([])}
-              className="text-xs text-slate-400 hover:text-white transition-colors"
-            >
-              Clear Trace
-            </button>
-          </div>
-
-          <div className="divide-y divide-white/[0.04] max-h-60 overflow-y-auto">
-            {runLogs.map((log) => (
-              <div
-                key={log.id}
-                className="flex items-center justify-between py-2.5 px-2 hover:bg-white/[0.02] text-xs font-mono tabular-nums transition-colors"
+            {/* Floating Add Node Control */}
+            <div className="absolute bottom-5 left-5 z-20">
+              <button
+                type="button"
+                onClick={() => setShowAddMenu((v) => !v)}
+                className="px-4 py-2.5 rounded-lg bg-cyan-400 hover:bg-cyan-300 text-slate-950 font-semibold text-xs flex items-center gap-2 shadow-xl transition-all active:scale-95 whitespace-nowrap shrink-0"
               >
-                <div className="flex items-center gap-2.5 min-w-0">
-                  {log.status === 'done' ? (
-                    <CheckCircle2 size={13} className="text-emerald-400 flex-shrink-0" />
-                  ) : (
-                    <AlertCircle size={13} className="text-rose-400 flex-shrink-0" />
-                  )}
-                  <span className="font-sans font-medium text-slate-200 truncate">
-                    {log.label}
-                  </span>
-                  <span aria-hidden="true" className="text-slate-600">·</span>
-                  <span className="text-[11px] text-slate-500 hidden sm:inline">
-                    {log.type}
-                  </span>
+                <Plus size={15} />
+                <span>Add Node</span>
+              </button>
+
+              {showAddMenu && (
+                <div className="absolute left-0 bottom-full mb-3 w-80 bg-slate-950/95 ring-1 ring-white/15 rounded-xl p-2.5 shadow-2xl backdrop-blur-2xl grid grid-cols-1 gap-1 max-h-96 overflow-y-auto">
+                  <div className="text-[11px] font-medium text-slate-300 px-2.5 py-1">
+                    Select Step Type
+                  </div>
+                  {(Object.keys(NODE_CONFIG) as WorkflowNodeType[]).map((type) => {
+                    const item = NODE_CONFIG[type];
+                    const Icon = item.icon;
+                    return (
+                      <button
+                        key={type}
+                        type="button"
+                        onClick={() => handleAddStep(type)}
+                        className="flex items-center gap-3 p-2 rounded-lg hover:bg-white/[0.08] text-left transition-colors"
+                      >
+                        <div className={`p-1.5 rounded-lg ${item.color}`}>
+                          <Icon size={14} />
+                        </div>
+                        <div className="min-w-0">
+                          <div className="text-xs font-semibold text-white truncate">{item.label}</div>
+                          <div className="text-[11px] text-slate-300 truncate">{item.desc}</div>
+                        </div>
+                      </button>
+                    );
+                  })}
                 </div>
-                <div className="flex items-center gap-4 text-slate-400 flex-shrink-0">
-                  <span>{log.durationMs}ms</span>
-                  <span className="text-[11px] text-slate-500">{log.timestamp}</span>
+              )}
+            </div>
+
+            {/* Phone Connect Mode Prompt Banner */}
+            {connectSourceNodeId && (
+              <div className="absolute top-4 left-1/2 -translate-x-1/2 z-20 bg-cyan-400 text-slate-950 font-semibold text-xs px-4 py-2 rounded-lg shadow-2xl flex items-center gap-3 animate-in fade-in">
+                <span>Tap a target node to connect</span>
+                <button
+                  type="button"
+                  onClick={() => setConnectSourceNodeId(null)}
+                  className="bg-slate-950/15 hover:bg-slate-950/30 p-1 rounded"
+                >
+                  <X size={12} />
+                </button>
+              </div>
+            )}
+
+            {/* Branch choice modal if source is IF in connect mode */}
+            {connectBranchPrompt && (
+              <div className="absolute inset-0 z-50 bg-slate-950/80 backdrop-blur-md flex items-center justify-center p-4">
+                <div className="bg-slate-900/95 ring-1 ring-white/15 rounded-xl p-5 max-w-xs w-full shadow-2xl text-center space-y-4 backdrop-blur-2xl">
+                  <h4 className="text-sm font-semibold text-white">Choose Condition Branch</h4>
+                  <p className="text-xs text-slate-300">
+                    Connect on condition match (Yes) or condition fail (No)?
+                  </p>
+                  <div className="flex items-center justify-center gap-3">
+                    <button
+                      type="button"
+                      onClick={() => {
+                        handleConnectEdge(
+                          connectBranchPrompt.sourceId,
+                          connectBranchPrompt.targetId,
+                          'yes',
+                        );
+                        setConnectBranchPrompt(null);
+                        setConnectSourceNodeId(null);
+                      }}
+                      className="flex-1 py-2 rounded-lg bg-emerald-400 hover:bg-emerald-300 text-slate-950 font-semibold text-xs"
+                    >
+                      YES Branch
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => {
+                        handleConnectEdge(
+                          connectBranchPrompt.sourceId,
+                          connectBranchPrompt.targetId,
+                          'no',
+                        );
+                        setConnectBranchPrompt(null);
+                        setConnectSourceNodeId(null);
+                      }}
+                      className="flex-1 py-2 rounded-lg bg-rose-400 hover:bg-rose-300 text-slate-950 font-semibold text-xs"
+                    >
+                      NO Branch
+                    </button>
+                  </div>
+                  <button
+                    type="button"
+                    onClick={() => setConnectBranchPrompt(null)}
+                    className="text-xs text-slate-300 hover:text-white"
+                  >
+                    Cancel
+                  </button>
                 </div>
               </div>
-            ))}
+            )}
+
+            {/* Sleek Glassmorphic Inspector Drawer */}
+            {selectedNode && (
+              <aside className="absolute right-0 top-0 bottom-0 w-full sm:w-96 z-30 bg-slate-950/95 border-l border-white/[0.1] shadow-2xl backdrop-blur-2xl p-6 flex flex-col justify-between overflow-y-auto animate-in slide-in-from-right-4">
+                <div className="space-y-5">
+                  <div className="flex items-center justify-between pb-4 border-b border-white/[0.08]">
+                    <div className="flex items-center gap-2.5">
+                      <div
+                        className={`p-2 rounded-lg ${
+                          NODE_CONFIG[selectedNode.type]?.color
+                        }`}
+                      >
+                        {React.createElement(NODE_CONFIG[selectedNode.type]?.icon || Sparkles, {
+                          size: 15,
+                        })}
+                      </div>
+                      <div>
+                        <span className="text-xs font-semibold text-white block">
+                          {selectedNode.label}
+                        </span>
+                        <span className="text-[11px] text-slate-300 block">
+                          {NODE_CONFIG[selectedNode.type]?.label}
+                        </span>
+                      </div>
+                    </div>
+                    <button
+                      type="button"
+                      onClick={() => setSelectedNodeId(null)}
+                      className="p-1.5 rounded-lg text-slate-300 hover:text-white hover:bg-white/[0.08]"
+                    >
+                      <X size={15} />
+                    </button>
+                  </div>
+
+                  {/* Step Label */}
+                  <div>
+                    <label className="text-xs font-medium text-slate-200 block mb-1.5">
+                      Step Name
+                    </label>
+                    <input
+                      type="text"
+                      value={selectedNode.label}
+                      onChange={(e) =>
+                        handleUpdateNode(selectedNode.id, 'label', e.target.value)
+                      }
+                      className="w-full bg-slate-900/90 hover:bg-slate-900 focus:bg-slate-950 ring-1 ring-white/15 rounded-lg px-3 py-2 text-white text-xs focus:outline-none focus:ring-2 focus:ring-cyan-400/60 transition-colors"
+                    />
+                  </div>
+
+                  {/* Step Form */}
+                  <StepSettingsForm
+                    node={selectedNode}
+                    allNodes={activeWorkflow.nodes}
+                    edges={activeWorkflow.edges}
+                    stepOutputs={stepOutputs}
+                    viewMode={viewMode}
+                    onUpdateSettings={(newSettings) =>
+                      handleUpdateNode(selectedNode.id, 'settings', newSettings)
+                    }
+                  />
+
+                  {/* Connect mode for touch / mobile */}
+                  <div className="pt-1">
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setConnectSourceNodeId(selectedNode.id);
+                        showToast('Connect mode active: Tap target node');
+                      }}
+                      className="w-full py-2 rounded-lg bg-cyan-500/15 hover:bg-cyan-500/25 ring-1 ring-cyan-400/30 text-cyan-200 text-xs font-medium flex items-center justify-center gap-2 transition-colors"
+                    >
+                      <GitBranch size={13} />
+                      <span>Connect to another node</span>
+                    </button>
+                  </div>
+
+                  {/* Recent Output in Inspector */}
+                  {stepOutputs[selectedNode.id] && (
+                    <div
+                      ref={inspectorOutputRef}
+                      className="pt-4 border-t border-white/[0.08] space-y-2"
+                    >
+                      <div className="flex items-center justify-between">
+                        <span className="text-xs font-medium text-slate-200">Recent Output</span>
+                        {stepOutputs[selectedNode.id].type === 'text' && (
+                          <button
+                            type="button"
+                            onClick={() =>
+                              handleCopyText(
+                                stepOutputs[selectedNode.id].value,
+                                `insp-out-${selectedNode.id}`,
+                              )
+                            }
+                            className="text-[11px] text-slate-300 hover:text-white px-2 py-0.5 rounded hover:bg-white/[0.08] flex items-center gap-1"
+                          >
+                            {copiedKey === `insp-out-${selectedNode.id}` ? (
+                              <>
+                                <Check size={11} className="text-emerald-400" />
+                                <span>Copied</span>
+                              </>
+                            ) : (
+                              <>
+                                <Copy size={11} />
+                                <span>Copy</span>
+                              </>
+                            )}
+                          </button>
+                        )}
+                      </div>
+                      {stepOutputs[selectedNode.id].type === 'image' ? (
+                        <img
+                          src={stepOutputs[selectedNode.id].value}
+                          alt="Output"
+                          referrerPolicy="no-referrer"
+                          className="rounded-lg max-h-60 object-contain w-full bg-slate-900/60"
+                        />
+                      ) : (
+                        <pre className="text-[11px] font-mono text-slate-100 bg-slate-900/85 ring-1 ring-white/10 p-3 rounded-lg max-h-64 overflow-y-auto whitespace-pre-wrap break-words leading-relaxed">
+                          {stepOutputs[selectedNode.id].value}
+                        </pre>
+                      )}
+                    </div>
+                  )}
+                </div>
+
+                {/* Delete Node in Drawer */}
+                <div className="pt-6 border-t border-white/[0.08]">
+                  <button
+                    type="button"
+                    onClick={() => handleDeleteNode(selectedNode.id)}
+                    className="w-full py-2 rounded-lg bg-rose-500/15 hover:bg-rose-500/25 text-rose-200 text-xs font-medium flex items-center justify-center gap-2 transition-colors"
+                  >
+                    <Trash2 size={13} />
+                    <span>Delete Step</span>
+                  </button>
+                </div>
+              </aside>
+            )}
           </div>
+        )}
+
+        {/* ================= FINAL PIPELINE OUTPUT SECTION (BORDERLESS) ================= */}
+        <section className="pt-10 pb-8 border-t border-white/[0.1] mt-8 space-y-4">
+          <div className="flex items-center justify-between gap-4">
+            <div className="flex items-baseline gap-2.5">
+              <h2 className="text-base font-semibold text-white tracking-tight">
+                Final Output
+              </h2>
+              {lastExecutedNode && (
+                <span className="text-xs text-slate-300">
+                  from <span className="text-white font-medium">{lastExecutedNode.label}</span>
+                </span>
+              )}
+            </div>
+            {lastExecutedOutput?.type === 'text' && (
+              <button
+                type="button"
+                onClick={() => handleCopyText(lastExecutedOutput.value, 'final-result')}
+                className="px-3 py-1.5 rounded-lg bg-slate-900/85 hover:bg-slate-800/90 ring-1 ring-white/15 text-slate-100 hover:text-white text-xs font-medium flex items-center gap-1.5 transition-colors"
+              >
+                {copiedKey === 'final-result' ? (
+                  <>
+                    <Check size={13} className="text-emerald-400" />
+                    <span>Copied</span>
+                  </>
+                ) : (
+                  <>
+                    <Copy size={13} />
+                    <span>Copy Output</span>
+                  </>
+                )}
+              </button>
+            )}
+          </div>
+
+          {lastExecutedOutput ? (
+            <div className="rounded-xl bg-slate-900/85 ring-1 ring-white/10 backdrop-blur-xl p-5">
+              {lastExecutedOutput.type === 'text' && (
+                <pre className="text-xs sm:text-sm text-slate-100 font-mono whitespace-pre-wrap break-words max-h-96 overflow-y-auto leading-relaxed">
+                  {lastExecutedOutput.value}
+                </pre>
+              )}
+              {lastExecutedOutput.type === 'image' && (
+                <div className="space-y-4">
+                  <div className="rounded-lg overflow-hidden max-w-md bg-slate-950/70">
+                    <img
+                      src={lastExecutedOutput.value}
+                      alt="Final synthesis"
+                      referrerPolicy="no-referrer"
+                      className="w-full object-cover max-h-96"
+                    />
+                  </div>
+                  <a
+                    href={lastExecutedOutput.value}
+                    download="nexus-workflow-result.png"
+                    target="_blank"
+                    rel="noreferrer"
+                    className="inline-flex items-center gap-2 px-4 py-2 rounded-lg bg-cyan-400 hover:bg-cyan-300 text-slate-950 text-xs font-semibold transition-colors"
+                  >
+                    <Download size={14} />
+                    <span>Download Image</span>
+                  </a>
+                </div>
+              )}
+            </div>
+          ) : (
+            <div className="py-6 text-xs text-slate-200">
+              No pipeline output recorded in this session yet. Click <span className="text-cyan-300 font-semibold">Run Pipeline</span> to execute steps.
+            </div>
+          )}
         </section>
-      )}
+
+        {/* ================= EXECUTION LOG STREAM (HIGH-DENSITY BORDERLESS TABLE) ================= */}
+        {runLogs.length > 0 && (
+          <section className="pt-8 border-t border-white/[0.1] space-y-3">
+            <div className="flex items-center justify-between">
+              <div className="flex items-center gap-2 text-xs text-slate-200">
+                <span className="font-semibold text-white">Execution Trace</span>
+                <span aria-hidden="true" className="text-slate-400">·</span>
+                <span className="font-mono tabular-nums">{runLogs.length} events</span>
+              </div>
+              <button
+                type="button"
+                onClick={() => setRunLogs([])}
+                className="text-xs text-slate-300 hover:text-white transition-colors"
+              >
+                Clear Trace
+              </button>
+            </div>
+
+            <div className="divide-y divide-white/[0.08] max-h-60 overflow-y-auto">
+              {runLogs.map((log) => (
+                <div
+                  key={log.id}
+                  className="flex items-center justify-between py-2.5 px-2 hover:bg-white/[0.04] text-xs font-mono tabular-nums transition-colors"
+                >
+                  <div className="flex items-center gap-2.5 min-w-0">
+                    {log.status === 'done' ? (
+                      <CheckCircle2 size={13} className="text-emerald-400 flex-shrink-0" />
+                    ) : (
+                      <AlertCircle size={13} className="text-rose-400 flex-shrink-0" />
+                    )}
+                    <span className="font-sans font-medium text-white truncate">
+                      {log.label}
+                    </span>
+                    <span aria-hidden="true" className="text-slate-400">·</span>
+                    <span className="text-[11px] text-slate-300 hidden sm:inline">
+                      {log.type}
+                    </span>
+                  </div>
+                  <div className="flex items-center gap-4 text-slate-200 flex-shrink-0">
+                    <span>{log.durationMs}ms</span>
+                    <span className="text-[11px] text-slate-300">{log.timestamp}</span>
+                  </div>
+                </div>
+              ))}
+            </div>
+          </section>
+        )}
+      </div>
 
       {/* ================= TEMPLATES MODAL (SOFT GLASSMORPHISM) ================= */}
       {showTemplatesModal && (
         <div className="fixed inset-0 z-50 bg-slate-950/80 backdrop-blur-md flex items-center justify-center p-4">
-          <div className="bg-slate-900/95 ring-1 ring-white/10 rounded-2xl max-w-xl w-full p-6 shadow-2xl space-y-5 backdrop-blur-2xl animate-in zoom-in-95">
-            <div className="flex items-center justify-between border-b border-white/[0.06] pb-4">
+          <div className="bg-slate-900/95 ring-1 ring-white/15 rounded-2xl max-w-xl w-full p-6 shadow-2xl space-y-5 backdrop-blur-2xl animate-in zoom-in-95">
+            <div className="flex items-center justify-between border-b border-white/[0.08] pb-4">
               <div>
                 <h3 className="text-base font-semibold text-white">
                   Pipeline Templates
                 </h3>
-                <p className="text-xs text-slate-400 mt-0.5">
+                <p className="text-xs text-slate-300 mt-0.5">
                   Load pre-configured multi-step workflows.
                 </p>
               </div>
               <button
                 type="button"
                 onClick={() => setShowTemplatesModal(false)}
-                className="p-1.5 rounded-lg text-slate-400 hover:text-white hover:bg-white/[0.06]"
+                className="p-1.5 rounded-lg text-slate-300 hover:text-white hover:bg-white/[0.08]"
               >
                 <X size={16} />
               </button>
             </div>
 
-            <div className="divide-y divide-white/[0.06] max-h-[60vh] overflow-y-auto">
+            <div className="divide-y divide-white/[0.08] max-h-[60vh] overflow-y-auto">
               {DEFAULT_WORKFLOW_TEMPLATES.map((tmpl) => (
                 <div
                   key={tmpl.name}
-                  className="py-4 px-2 hover:bg-white/[0.02] transition-colors flex flex-col sm:flex-row sm:items-center justify-between gap-4"
+                  className="py-4 px-2 hover:bg-white/[0.04] transition-colors flex flex-col sm:flex-row sm:items-center justify-between gap-4"
                 >
                   <div className="space-y-1">
                     <h4 className="text-sm font-semibold text-white">{tmpl.name}</h4>
-                    <p className="text-xs text-slate-400">{tmpl.description}</p>
-                    <div className="flex items-center gap-1.5 pt-0.5 text-[11px] font-mono tabular-nums text-cyan-400">
+                    <p className="text-xs text-slate-300">{tmpl.description}</p>
+                    <div className="flex items-center gap-1.5 pt-0.5 text-[11px] font-mono tabular-nums text-cyan-300">
                       <span>{tmpl.nodes.length} steps</span>
-                      <span aria-hidden="true" className="text-slate-600">·</span>
+                      <span aria-hidden="true" className="text-slate-400">·</span>
                       <span>{tmpl.edges.length} links</span>
                     </div>
                   </div>
@@ -2287,7 +2292,7 @@ function VariableField({
           </div>
           <div className="min-w-0">
             <div className="text-xs font-medium text-white truncate">{step.label}</div>
-            <div className="text-[10px] font-mono text-slate-400 truncate">
+            <div className="text-[10px] font-mono text-slate-300 truncate">
               {snippet ? snippet : 'No output yet'}
             </div>
           </div>
@@ -2303,7 +2308,7 @@ function VariableField({
     <div className="relative space-y-1.5">
       {/* Header row with label and "{ } Insert variable" button */}
       <div className="flex items-center justify-between gap-2">
-        <label className="text-xs font-medium text-slate-300">{label}</label>
+        <label className="text-xs font-medium text-slate-100">{label}</label>
         <button
           type="button"
           onMouseDown={(e) => e.preventDefault()}
@@ -2311,7 +2316,7 @@ function VariableField({
             setShowInsertMenu((prev) => !prev);
             setAutocompleteState(null);
           }}
-          className="px-2.5 py-1 rounded-md bg-cyan-500/10 hover:bg-cyan-500/20 text-cyan-300 text-[11px] font-mono font-medium flex items-center gap-1 transition-colors"
+          className="px-2.5 py-1 rounded-md bg-cyan-500/20 hover:bg-cyan-500/30 ring-1 ring-cyan-400/30 text-cyan-200 text-[11px] font-mono font-medium flex items-center gap-1 transition-colors"
           title="Insert output variable from an earlier step"
         >
           <span>{'{ } Insert variable'}</span>
@@ -2320,15 +2325,15 @@ function VariableField({
 
       {/* "{ } Insert variable" Dropdown List */}
       {showInsertMenu && (
-        <div className="z-30 rounded-xl bg-slate-950/95 ring-1 ring-white/10 p-2.5 shadow-2xl backdrop-blur-2xl space-y-1.5">
-          <div className="flex items-center justify-between px-1 pb-1 border-b border-white/[0.06]">
-            <span className="text-[11px] font-medium text-slate-400">
+        <div className="z-30 rounded-xl bg-slate-950/95 ring-1 ring-white/15 p-2.5 shadow-2xl backdrop-blur-2xl space-y-1.5">
+          <div className="flex items-center justify-between px-1 pb-1 border-b border-white/[0.08]">
+            <span className="text-[11px] font-medium text-slate-300">
               Earlier steps ({earlierSteps.length})
             </span>
             <button
               type="button"
               onClick={() => setShowInsertMenu(false)}
-              className="text-slate-400 hover:text-white p-0.5"
+              className="text-slate-300 hover:text-white p-0.5"
             >
               <X size={12} />
             </button>
@@ -2340,14 +2345,14 @@ function VariableField({
               )}
             </div>
           ) : (
-            <div className="text-[11px] text-slate-400 py-2 px-1">
+            <div className="text-[11px] text-slate-300 py-2 px-1">
               No earlier connected steps can reach this step yet.
             </div>
           )}
         </div>
       )}
 
-      {/* Input or Textarea with subtle borderless surface */}
+      {/* Input or Textarea with high-contrast dark frosted surface */}
       {multiline ? (
         <textarea
           ref={fieldRef}
@@ -2362,7 +2367,7 @@ function VariableField({
             )
           }
           placeholder={placeholder}
-          className="w-full bg-white/[0.04] hover:bg-white/[0.06] focus:bg-slate-900 rounded-lg p-3 text-white text-xs focus:outline-none focus:ring-1 focus:ring-cyan-400/50 font-mono resize-y transition-colors"
+          className="w-full bg-slate-900/85 hover:bg-slate-900/95 focus:bg-slate-950 ring-1 ring-white/15 rounded-lg p-3 text-white placeholder-slate-400 text-xs focus:outline-none focus:ring-2 focus:ring-cyan-400/60 font-mono resize-y transition-colors"
         />
       ) : (
         <input
@@ -2378,21 +2383,21 @@ function VariableField({
             )
           }
           placeholder={placeholder}
-          className="w-full bg-white/[0.04] hover:bg-white/[0.06] focus:bg-slate-900 rounded-lg px-3 py-2 text-white text-xs focus:outline-none focus:ring-1 focus:ring-cyan-400/50 font-mono transition-colors"
+          className="w-full bg-slate-900/85 hover:bg-slate-900/95 focus:bg-slate-950 ring-1 ring-white/15 rounded-lg px-3 py-2 text-white placeholder-slate-400 text-xs focus:outline-none focus:ring-2 focus:ring-cyan-400/60 font-mono transition-colors"
         />
       )}
 
       {/* "{{" Autocomplete Dropdown under the field */}
       {autocompleteState && (
-        <div className="z-30 rounded-xl bg-slate-950/95 ring-1 ring-white/10 p-2.5 shadow-2xl backdrop-blur-2xl space-y-1.5">
-          <div className="flex items-center justify-between px-1 pb-1 border-b border-white/[0.06]">
-            <span className="text-[11px] font-mono text-cyan-400">
+        <div className="z-30 rounded-xl bg-slate-950/95 ring-1 ring-white/15 p-2.5 shadow-2xl backdrop-blur-2xl space-y-1.5">
+          <div className="flex items-center justify-between px-1 pb-1 border-b border-white/[0.08]">
+            <span className="text-[11px] font-mono text-cyan-300">
               Autocomplete variable {autocompleteState.query ? `“${autocompleteState.query}”` : ''}
             </span>
             <button
               type="button"
               onClick={() => setAutocompleteState(null)}
-              className="text-[10px] text-slate-400 hover:text-white font-mono"
+              className="text-[10px] text-slate-300 hover:text-white font-mono"
             >
               Esc
             </button>
@@ -2404,7 +2409,7 @@ function VariableField({
               )}
             </div>
           ) : (
-            <div className="text-[11px] text-slate-400 py-1.5 px-1">
+            <div className="text-[11px] text-slate-300 py-1.5 px-1">
               No matching earlier steps found.
             </div>
           )}
@@ -2413,8 +2418,8 @@ function VariableField({
 
       {/* Live Preview line under the field */}
       {(hasAnyPlaceholder || value.includes('{{')) && (
-        <div className="py-1.5 px-2.5 rounded-lg bg-white/[0.02] text-[11px] font-mono text-slate-300 leading-relaxed break-words">
-          <span className="text-[10px] text-slate-500 mr-1.5 select-none">
+        <div className="py-1.5 px-2.5 rounded-lg bg-slate-900/80 ring-1 ring-white/10 text-[11px] font-mono text-slate-200 leading-relaxed break-words">
+          <span className="text-[10px] text-slate-300 mr-1.5 select-none">
             Preview:
           </span>
           {previewSegments.map((seg, idx) => {
@@ -2436,7 +2441,7 @@ function VariableField({
               return (
                 <span
                   key={idx}
-                  className="text-amber-300/90 mx-0.5"
+                  className="text-amber-300 mx-0.5"
                 >
                   [{seg.label}: not run yet]
                 </span>
@@ -2445,7 +2450,7 @@ function VariableField({
             return (
               <span
                 key={idx}
-                className="text-rose-400 mx-0.5"
+                className="text-rose-300 mx-0.5"
               >
                 [{seg.rawName}: unknown step]
               </span>
@@ -2533,10 +2538,10 @@ export function StepSettingsForm({
   return (
     <div className="space-y-4">
       {/* Disable this step toggle (clean borderless row) */}
-      <div className="flex items-center justify-between py-2 border-b border-white/[0.05]">
+      <div className="flex items-center justify-between py-2 border-b border-white/[0.08]">
         <div>
-          <span className="text-xs font-medium text-slate-200 block">Disable this step</span>
-          <span className="text-[11px] text-slate-400 block">
+          <span className="text-xs font-medium text-slate-100 block">Disable this step</span>
+          <span className="text-[11px] text-slate-200 block">
             Skip execution and pass through parent output
           </span>
         </div>
@@ -2548,7 +2553,7 @@ export function StepSettingsForm({
             handleChange('disabled', settings.disabled === 'true' ? 'false' : 'true')
           }
           className={`relative inline-flex h-5 w-9 flex-shrink-0 cursor-pointer rounded-full border-2 border-transparent transition-colors duration-200 ease-in-out focus:outline-none ${
-            settings.disabled === 'true' ? 'bg-amber-500' : 'bg-white/15'
+            settings.disabled === 'true' ? 'bg-amber-500' : 'bg-slate-700'
           }`}
         >
           <span
@@ -2562,7 +2567,7 @@ export function StepSettingsForm({
       {/* Node Type Specific Inputs */}
       {node.type === 'input' && (
         <div>
-          <label className="text-xs font-medium text-slate-300 block mb-1.5">
+          <label className="text-xs font-medium text-slate-100 block mb-1.5">
             Input Text
           </label>
           <textarea
@@ -2570,7 +2575,7 @@ export function StepSettingsForm({
             value={settings.text || ''}
             onChange={(e) => handleChange('text', e.target.value)}
             placeholder="Type your initial input text or prompt..."
-            className="w-full bg-white/[0.04] hover:bg-white/[0.06] focus:bg-slate-900 rounded-lg p-3 text-white text-xs focus:outline-none focus:ring-1 focus:ring-cyan-400/50 font-mono resize-y transition-colors"
+            className="w-full bg-slate-900/85 hover:bg-slate-900/95 focus:bg-slate-950 ring-1 ring-white/15 rounded-lg p-3 text-white placeholder-slate-400 text-xs focus:outline-none focus:ring-2 focus:ring-cyan-400/60 font-mono resize-y transition-colors"
           />
         </div>
       )}
@@ -2618,7 +2623,7 @@ export function StepSettingsForm({
         <div className="space-y-3.5">
           <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
             <div>
-              <label className="text-xs font-medium text-slate-300 block mb-1.5">
+              <label className="text-xs font-medium text-slate-100 block mb-1.5">
                 AI provider
               </label>
               <select
@@ -2636,7 +2641,7 @@ export function StepSettingsForm({
                     handleChange('modelId', firstModel);
                   }
                 }}
-                className="w-full bg-white/[0.04] hover:bg-white/[0.06] focus:bg-slate-900 rounded-lg px-3 py-2 text-white text-xs focus:outline-none focus:ring-1 focus:ring-cyan-400/50 font-medium transition-colors"
+                className="w-full bg-slate-900/85 hover:bg-slate-900/95 focus:bg-slate-950 ring-1 ring-white/15 rounded-lg px-3 py-2 text-white text-xs focus:outline-none focus:ring-2 focus:ring-cyan-400/60 font-medium transition-colors"
               >
                 <option value="" className="bg-slate-950">Use my active AI</option>
                 <option value="existing" className="bg-slate-950">Default Built-in AI</option>
@@ -2650,13 +2655,13 @@ export function StepSettingsForm({
 
             {Boolean(settings.providerId) && settings.providerId !== 'existing' && (
               <div>
-                <label className="text-xs font-medium text-slate-300 block mb-1.5">
+                <label className="text-xs font-medium text-slate-100 block mb-1.5">
                   Model
                 </label>
                 <select
                   value={settings.modelId || (selectedProviderModels[0]?.id || '')}
                   onChange={(e) => handleChange('modelId', e.target.value)}
-                  className="w-full bg-white/[0.04] hover:bg-white/[0.06] focus:bg-slate-900 rounded-lg px-3 py-2 text-white text-xs focus:outline-none focus:ring-1 focus:ring-cyan-400/50 font-medium font-mono transition-colors"
+                  className="w-full bg-slate-900/85 hover:bg-slate-900/95 focus:bg-slate-950 ring-1 ring-white/15 rounded-lg px-3 py-2 text-white text-xs focus:outline-none focus:ring-2 focus:ring-cyan-400/60 font-medium font-mono transition-colors"
                 >
                   {selectedProviderModels.length > 0 ? (
                     selectedProviderModels.map((m) => (
@@ -2674,13 +2679,13 @@ export function StepSettingsForm({
             )}
 
             <div>
-              <label className="text-xs font-medium text-slate-300 block mb-1.5">
+              <label className="text-xs font-medium text-slate-100 block mb-1.5">
                 AI Persona Role
               </label>
               <select
                 value={settings.role || 'general'}
                 onChange={(e) => handleChange('role', e.target.value)}
-                className="w-full bg-white/[0.04] hover:bg-white/[0.06] focus:bg-slate-900 rounded-lg px-3 py-2 text-white text-xs focus:outline-none focus:ring-1 focus:ring-cyan-400/50 font-medium transition-colors"
+                className="w-full bg-slate-900/85 hover:bg-slate-900/95 focus:bg-slate-950 ring-1 ring-white/15 rounded-lg px-3 py-2 text-white text-xs focus:outline-none focus:ring-2 focus:ring-cyan-400/60 font-medium transition-colors"
               >
                 <option value="general" className="bg-slate-950">General Assistant (Comprehensive)</option>
                 <option value="coder" className="bg-slate-950">Coder (Clean code & explanations)</option>
@@ -2690,7 +2695,7 @@ export function StepSettingsForm({
             </div>
 
             <div>
-              <label className="text-xs font-medium text-slate-300 block mb-1.5">
+              <label className="text-xs font-medium text-slate-100 block mb-1.5">
                 Max answer length (tokens)
               </label>
               <input
@@ -2701,9 +2706,9 @@ export function StepSettingsForm({
                 value={settings.maxTokens ?? '1500'}
                 onChange={(e) => handleChange('maxTokens', e.target.value)}
                 placeholder="1500"
-                className="w-full bg-white/[0.04] hover:bg-white/[0.06] focus:bg-slate-900 rounded-lg px-3 py-2 text-white text-xs focus:outline-none focus:ring-1 focus:ring-cyan-400/50 font-mono tabular-nums transition-colors"
+                className="w-full bg-slate-900/85 hover:bg-slate-900/95 focus:bg-slate-950 ring-1 ring-white/15 rounded-lg px-3 py-2 text-white text-xs focus:outline-none focus:ring-2 focus:ring-cyan-400/60 font-mono tabular-nums transition-colors"
               />
-              <p className="text-[11px] text-slate-400 mt-1">
+              <p className="text-[11px] text-slate-200 mt-1">
                 Longer answers need a higher number.
               </p>
             </div>
@@ -2753,7 +2758,7 @@ export function StepSettingsForm({
       )}
 
       {node.type === 'nasa' && (
-        <div className="py-2.5 px-3 rounded-lg bg-cyan-500/[0.06] text-cyan-300 text-xs flex items-center gap-2">
+        <div className="py-2.5 px-3 rounded-lg bg-cyan-500/15 ring-1 ring-cyan-400/30 text-cyan-200 text-xs flex items-center gap-2">
           <Rocket size={15} className="text-cyan-400 flex-shrink-0" />
           <span>
             Fetches the latest Astronomy Picture of the Day (APOD) directly from NASA telemetry. No fields required.
@@ -2775,13 +2780,13 @@ export function StepSettingsForm({
           />
 
           <div>
-            <label className="text-xs font-medium text-slate-300 block mb-1.5">
+            <label className="text-xs font-medium text-slate-100 block mb-1.5">
               Operator Rule
             </label>
             <select
               value={settings.operator || 'contains'}
               onChange={(e) => handleChange('operator', e.target.value)}
-              className="w-full bg-white/[0.04] hover:bg-white/[0.06] focus:bg-slate-900 rounded-lg px-3 py-2 text-white text-xs focus:outline-none focus:ring-1 focus:ring-cyan-400/50 font-medium transition-colors"
+              className="w-full bg-slate-900/85 hover:bg-slate-900/95 focus:bg-slate-950 ring-1 ring-white/15 rounded-lg px-3 py-2 text-white text-xs focus:outline-none focus:ring-2 focus:ring-cyan-400/60 font-medium transition-colors"
             >
               <option value="contains" className="bg-slate-950">Contains</option>
               <option value="notContains" className="bg-slate-950">Does not contain</option>
@@ -2810,4 +2815,5 @@ export function StepSettingsForm({
     </div>
   );
 }
+
 

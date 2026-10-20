@@ -438,10 +438,10 @@ const CustomWorkflowNodeComponent = React.memo(function CustomWorkflowNodeCompon
             <IconComponent size={15} />
           </div>
           <div className="min-w-0">
-            <h4 className="text-[13px] font-semibold text-slate-100 truncate leading-snug">
+            <h4 className="text-[13px] font-semibold text-white truncate leading-snug">
               {label}
             </h4>
-            <span className="text-[11px] text-slate-400 block truncate">
+            <span className="text-[11px] text-slate-300 block truncate">
               {cfg.label}
             </span>
           </div>
@@ -450,35 +450,35 @@ const CustomWorkflowNodeComponent = React.memo(function CustomWorkflowNodeCompon
         {/* Unboxed semantic status indicator */}
         <div className="flex-shrink-0 pt-0.5">
           {isDisabled ? (
-            <span className="inline-flex items-center gap-1 text-[11px] text-amber-400/90 font-medium">
+            <span className="inline-flex items-center gap-1 text-[11px] text-amber-300 font-medium">
               <Ban size={11} />
               <span>Disabled</span>
             </span>
           ) : status === 'running' ? (
-            <span className="inline-flex items-center gap-1 text-[11px] text-cyan-400 font-medium">
+            <span className="inline-flex items-center gap-1 text-[11px] text-cyan-300 font-medium">
               <Loader2 size={11} className="animate-spin" />
               <span>Running</span>
             </span>
           ) : status === 'done' ? (
-            <span className="inline-flex items-center gap-1 text-[11px] text-emerald-400 font-medium">
+            <span className="inline-flex items-center gap-1 text-[11px] text-emerald-300 font-medium">
               <CheckCircle2 size={11} />
               <span>Done</span>
             </span>
           ) : status === 'error' ? (
-            <span className="inline-flex items-center gap-1 text-[11px] text-rose-400 font-medium">
+            <span className="inline-flex items-center gap-1 text-[11px] text-rose-300 font-medium">
               <AlertCircle size={11} />
               <span>Error</span>
             </span>
           ) : status === 'skipped' ? (
             <span
-              className="inline-flex items-center gap-1 text-[11px] text-slate-400 font-medium"
+              className="inline-flex items-center gap-1 text-[11px] text-slate-300 font-medium"
               title="Skipped"
             >
               <MinusCircle size={11} />
               <span>Skipped</span>
             </span>
           ) : (
-            <span className="text-[11px] text-slate-500 font-mono">
+            <span className="text-[11px] text-slate-300 font-mono">
               Idle
             </span>
           )}
@@ -487,7 +487,7 @@ const CustomWorkflowNodeComponent = React.memo(function CustomWorkflowNodeCompon
 
       {/* Metadata Row (Unboxed typography with subtle · separators) */}
       {hasMeta && (
-        <div className="flex flex-wrap items-center gap-1.5 mt-2.5 pt-2 border-t border-white/[0.05] text-[11px] text-slate-400">
+        <div className="flex flex-wrap items-center gap-1.5 mt-2.5 pt-2 border-t border-white/[0.08] text-[11px] text-slate-200">
           {type === 'ai' && aiModelLabel && (
             <span className="font-mono text-violet-300 truncate max-w-[130px]">
               {aiModelLabel}
