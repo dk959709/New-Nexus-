@@ -8,6 +8,7 @@ import {
   Volume2,
   Play,
   Square,
+  Palette,
 } from 'lucide-react';
 import { storage, DEFAULT_PARALLAX_AGENTS } from '@/lib/storage';
 import type { ParallaxSystemConfig, ParallaxAgentConfig, AIProvidersState } from '@/types';
@@ -15,18 +16,58 @@ import { ParallaxAgentAvatar } from './ParallaxAgentIcon';
 import { EDGE_VOICES } from '@/data/edgeVoices';
 import { getParallaxAgentVoice } from '@/data/parallaxVoices';
 
+export type ParallaxTheme = 'minimal' | 'classic' | 'fulldark';
+
+const PARALLAX_THEME_STORAGE_KEY = 'nexus-parallax-theme-v1';
+
+export function getSavedParallaxTheme(): ParallaxTheme {
+  try {
+    const val = localStorage.getItem(PARALLAX_THEME_STORAGE_KEY);
+    if (val === 'minimal' || val === 'classic' || val === 'fulldark') {
+      return val;
+    }
+  } catch {
+    // ignore storage errors
+  }
+  return 'minimal';
+}
+
+export function saveParallaxTheme(theme: ParallaxTheme): void {
+  try {
+    localStorage.setItem(PARALLAX_THEME_STORAGE_KEY, theme);
+  } catch {
+    // ignore storage errors
+  }
+}
+
 interface ParallaxSettingsProps {
   config: ParallaxSystemConfig;
   onConfigChange: (updated: ParallaxSystemConfig) => void;
+  theme?: ParallaxTheme;
+  onThemeChange?: (theme: ParallaxTheme) => void;
 }
 
-export const ParallaxSettings: React.FC<ParallaxSettingsProps> = ({ config, onConfigChange }) => {
+export const ParallaxSettings: React.FC<ParallaxSettingsProps> = ({
+  config,
+  onConfigChange,
+  theme: propTheme,
+  onThemeChange,
+}) => {
+  const [localTheme, setLocalTheme] = useState<ParallaxTheme>(() => propTheme || getSavedParallaxTheme());
+  const activeTheme = propTheme || localTheme;
+
   const [providersState] = useState<AIProvidersState>(() => storage.getAIProvidersState());
   const [filterQuery, setFilterQuery] = useState('');
   const [saveToast, setSaveToast] = useState<string | null>(null);
   const [confirmResetAll, setConfirmResetAll] = useState(false);
   const [testingVoiceAgentId, setTestingVoiceAgentId] = useState<string | null>(null);
   const audioRef = useRef<HTMLAudioElement | null>(null);
+
+  useEffect(() => {
+    if (propTheme) {
+      setLocalTheme(propTheme);
+    }
+  }, [propTheme]);
 
   useEffect(() => {
     return () => {
@@ -44,6 +85,19 @@ export const ParallaxSettings: React.FC<ParallaxSettingsProps> = ({ config, onCo
   const showFeedback = (msg: string) => {
     setSaveToast(msg);
     setTimeout(() => setSaveToast(null), 3000);
+  };
+
+  const handleSelectTheme = (newTheme: ParallaxTheme) => {
+    setLocalTheme(newTheme);
+    saveParallaxTheme(newTheme);
+    onThemeChange?.(newTheme);
+    const label =
+      newTheme === 'minimal'
+        ? 'NEXUS Minimal'
+        : newTheme === 'classic'
+        ? 'NEXUS Classic'
+        : 'Full Dark';
+    showFeedback(`Theme switched to ${label}`);
   };
 
   const handleTestVoice = async (agent: ParallaxAgentConfig) => {
@@ -146,6 +200,20 @@ export const ParallaxSettings: React.FC<ParallaxSettingsProps> = ({ config, onCo
     );
   });
 
+  const cardSurfaceClass =
+    activeTheme === 'classic'
+      ? 'bg-slate-900/50 backdrop-blur-xl hover:bg-slate-900/75 border border-cyan-500/20'
+      : activeTheme === 'fulldark'
+      ? 'bg-[#171717] hover:bg-[#1f1f1f] border border-[#2a2a2a]'
+      : 'bg-zinc-900/70 hover:bg-zinc-900/95 border border-zinc-800/80';
+
+  const inputSurfaceClass =
+    activeTheme === 'classic'
+      ? 'bg-slate-950/70 text-slate-100 border border-cyan-500/20 focus:ring-cyan-400/50'
+      : activeTheme === 'fulldark'
+      ? 'bg-[#0d0d0d] text-[#ececec] border border-[#2f2f2f] focus:ring-zinc-500/50'
+      : 'bg-[#111113] text-zinc-100 border border-zinc-800 focus:ring-zinc-500/50';
+
   return (
     <div id="parallax-settings-container" className="divide-y divide-white/[0.06] space-y-6">
       {/* Toast notification */}
@@ -155,6 +223,122 @@ export const ParallaxSettings: React.FC<ParallaxSettingsProps> = ({ config, onCo
           {saveToast}
         </div>
       )}
+
+      {/* ============================================================
+          SECTION 1: VISUAL THEME SELECTOR (Copied from AI Assistant)
+         ============================================================ */}
+      <div id="parallax-theme-settings-section" className="py-4 space-y-3">
+        <div className="flex items-center gap-2">
+          <Palette size={15} className="text-purple-400" />
+          <h4 className="text-xs font-semibold uppercase tracking-wider text-zinc-300 m-0">
+            Visual Theme
+          </h4>
+        </div>
+        <p className="text-xs text-zinc-400 m-0">
+          Select your preferred visual aesthetic for the NEXUS Parallax Agent Swarm.
+        </p>
+
+        <div className="grid grid-cols-1 sm:grid-cols-3 gap-3 pt-1">
+          {/* Theme 1: NEXUS Minimal (Claude style) */}
+          <button
+            id="parallax-theme-btn-minimal"
+            type="button"
+            onClick={() => handleSelectTheme('minimal')}
+            className={`p-3.5 rounded-xl border text-left transition-all relative flex flex-col justify-between group cursor-pointer ${
+              activeTheme === 'minimal'
+                ? 'border-zinc-400 bg-zinc-800/90 shadow-md ring-1 ring-zinc-400/40'
+                : 'border-zinc-800 bg-zinc-900/60 hover:bg-zinc-850 hover:border-zinc-700'
+            }`}
+          >
+            <div>
+              <div className="flex items-center justify-between mb-2">
+                <span className="font-medium text-xs text-zinc-100">
+                  NEXUS Minimal
+                </span>
+                {activeTheme === 'minimal' && (
+                  <span className="inline-flex items-center gap-1 text-[10px] font-semibold text-emerald-400 bg-emerald-950/60 px-1.5 py-0.5 rounded border border-emerald-700/50">
+                    <Check size={10} /> Active
+                  </span>
+                )}
+              </div>
+              <p className="text-[11px] text-zinc-400 leading-relaxed mb-3">
+                Claude-inspired neutral dark aesthetic with refined spacing and clean sans-serif typography.
+              </p>
+            </div>
+            {/* Visual preview swatch */}
+            <div className="h-6 w-full rounded-md bg-[#111113] border border-zinc-700/60 p-1 flex items-center gap-1">
+              <div className="h-full w-1/3 rounded bg-[#26262a]" />
+              <div className="h-full w-2/3 rounded bg-[#1e1e21]" />
+            </div>
+          </button>
+
+          {/* Theme 2: NEXUS Classic (Glassmorphic Space) */}
+          <button
+            id="parallax-theme-btn-classic"
+            type="button"
+            onClick={() => handleSelectTheme('classic')}
+            className={`p-3.5 rounded-xl border text-left transition-all relative flex flex-col justify-between group cursor-pointer ${
+              activeTheme === 'classic'
+                ? 'border-cyan-400 bg-cyan-950/40 shadow-[0_0_15px_rgba(6,182,212,0.2)] ring-1 ring-cyan-400/40'
+                : 'border-zinc-800 bg-zinc-900/60 hover:bg-zinc-850 hover:border-zinc-700'
+            }`}
+          >
+            <div>
+              <div className="flex items-center justify-between mb-2">
+                <span className="font-medium text-xs text-cyan-200">
+                  NEXUS Classic
+                </span>
+                {activeTheme === 'classic' && (
+                  <span className="inline-flex items-center gap-1 text-[10px] font-semibold text-cyan-300 bg-cyan-950/80 px-1.5 py-0.5 rounded border border-cyan-500/50">
+                    <Check size={10} /> Active
+                  </span>
+                )}
+              </div>
+              <p className="text-[11px] text-zinc-400 leading-relaxed mb-3">
+                Glassmorphic cosmic dark space theme with glowing cyan accents and deep stellar background.
+              </p>
+            </div>
+            {/* Visual preview swatch */}
+            <div className="h-6 w-full rounded-md bg-[#060b13] border border-cyan-500/30 p-1 flex items-center gap-1">
+              <div className="h-full w-1/3 rounded bg-cyan-900/60 border border-cyan-500/30" />
+              <div className="h-full w-2/3 rounded bg-slate-900/80 border border-cyan-500/20" />
+            </div>
+          </button>
+
+          {/* Theme 3: Full Dark (ChatGPT style) */}
+          <button
+            id="parallax-theme-btn-fulldark"
+            type="button"
+            onClick={() => handleSelectTheme('fulldark')}
+            className={`p-3.5 rounded-xl border text-left transition-all relative flex flex-col justify-between group cursor-pointer ${
+              activeTheme === 'fulldark'
+                ? 'border-zinc-400 bg-[#212121] shadow-md ring-1 ring-zinc-400/40'
+                : 'border-zinc-800 bg-zinc-900/60 hover:bg-zinc-850 hover:border-zinc-700'
+            }`}
+          >
+            <div>
+              <div className="flex items-center justify-between mb-2">
+                <span className="font-medium text-xs text-[#ececec]">
+                  Full Dark
+                </span>
+                {activeTheme === 'fulldark' && (
+                  <span className="inline-flex items-center gap-1 text-[10px] font-semibold text-emerald-400 bg-emerald-950/60 px-1.5 py-0.5 rounded border border-emerald-700/50">
+                    <Check size={10} /> Active
+                  </span>
+                )}
+              </div>
+              <p className="text-[11px] text-zinc-400 leading-relaxed mb-3">
+                ChatGPT-style high-contrast pure dark mode with deep black backdrop and flat clean stream.
+              </p>
+            </div>
+            {/* Visual preview swatch */}
+            <div className="h-6 w-full rounded-md bg-[#0d0d0d] border border-[#2f2f2f] p-1 flex items-center gap-1">
+              <div className="h-full w-1/3 rounded bg-[#212121]" />
+              <div className="h-full w-2/3 rounded bg-[#2f2f2f]" />
+            </div>
+          </button>
+        </div>
+      </div>
 
       {/* Summary Header Banner */}
       <div
@@ -214,7 +398,7 @@ export const ParallaxSettings: React.FC<ParallaxSettingsProps> = ({ config, onCo
 
       {/* Safety & Tool Access Notice + Filter Bar */}
       <div className="py-4 space-y-4">
-        <div className="p-3.5 rounded-xl bg-slate-900/40 backdrop-blur-xl flex items-center gap-3">
+        <div className={`p-3.5 rounded-xl flex items-center gap-3 ${cardSurfaceClass}`}>
           <Shield size={18} className="text-cyan-400 shrink-0" />
           <div className="text-xs text-slate-300 leading-relaxed">
             <strong className="text-slate-100">Strict Architecture Safeguards:</strong> Agents cannot autonomously pass messages or initiate rounds. VERITAS is granted exactly ONE live search query in Round 1 only to anchor the discussion with empirical facts. The swarm auto-stops strictly after Round 3.
@@ -229,7 +413,7 @@ export const ParallaxSettings: React.FC<ParallaxSettingsProps> = ({ config, onCo
             value={filterQuery}
             onChange={(e) => setFilterQuery(e.target.value)}
             placeholder="Filter agents by name, role, or instruction (e.g. 'veritas', 'business', 'logic')..."
-            className="w-full py-2.5 pl-10 pr-4 rounded-full bg-slate-900/40 backdrop-blur-xl text-slate-100 placeholder-slate-400 text-xs sm:text-sm focus:outline-none focus:ring-1 focus:ring-cyan-400/50 transition-all"
+            className={`w-full py-2.5 pl-10 pr-4 rounded-full placeholder-slate-400 text-xs sm:text-sm focus:outline-none focus:ring-1 transition-all ${inputSurfaceClass}`}
           />
           <Search
             size={16}
@@ -249,7 +433,7 @@ export const ParallaxSettings: React.FC<ParallaxSettingsProps> = ({ config, onCo
             <div
               key={agent.id}
               id={`parallax-agent-card-${agent.id}`}
-              className="rounded-2xl bg-slate-900/40 backdrop-blur-xl hover:bg-slate-900/60 p-4 flex flex-col gap-3 transition-colors"
+              className={`rounded-2xl p-4 flex flex-col gap-3 transition-colors ${cardSurfaceClass}`}
               style={{
                 borderLeft: `2px solid ${agent.enabled ? agent.accentColor : 'rgba(148, 163, 184, 0.3)'}`,
               }}
@@ -338,7 +522,7 @@ export const ParallaxSettings: React.FC<ParallaxSettingsProps> = ({ config, onCo
                   value={agent.systemInstruction}
                   onChange={(e) => handleUpdateAgent(agent.id, { systemInstruction: e.target.value })}
                   rows={2}
-                  className="w-full p-2.5 rounded-xl bg-slate-950/60 text-slate-100 text-xs leading-relaxed resize-y focus:outline-none focus:ring-1 focus:ring-cyan-400/50 transition-all"
+                  className={`w-full p-2.5 rounded-xl text-xs leading-relaxed resize-y focus:outline-none focus:ring-1 transition-all ${inputSurfaceClass}`}
                 />
               </div>
 
@@ -358,7 +542,7 @@ export const ParallaxSettings: React.FC<ParallaxSettingsProps> = ({ config, onCo
                         modelId: prov ? prov.model : agent.modelId || 'deepseek/deepseek-chat',
                       });
                     }}
-                    className="w-full px-2.5 py-1.5 rounded-lg bg-slate-950/60 text-slate-100 text-[11px] focus:outline-none focus:ring-1 focus:ring-cyan-400/50"
+                    className={`w-full px-2.5 py-1.5 rounded-lg text-[11px] focus:outline-none focus:ring-1 ${inputSurfaceClass}`}
                   >
                     {availableProviders.map((p) => (
                       <option key={p.id} value={p.id}>
@@ -376,7 +560,7 @@ export const ParallaxSettings: React.FC<ParallaxSettingsProps> = ({ config, onCo
                     type="text"
                     value={agent.modelId || 'deepseek/deepseek-chat'}
                     onChange={(e) => handleUpdateAgent(agent.id, { modelId: e.target.value })}
-                    className="w-full px-2.5 py-1.5 rounded-lg bg-slate-950/60 text-slate-100 text-[11px] focus:outline-none focus:ring-1 focus:ring-cyan-400/50"
+                    className={`w-full px-2.5 py-1.5 rounded-lg text-[11px] focus:outline-none focus:ring-1 ${inputSurfaceClass}`}
                   />
                 </div>
               </div>
@@ -408,7 +592,7 @@ export const ParallaxSettings: React.FC<ParallaxSettingsProps> = ({ config, onCo
                 <select
                   value={agent.voice || getParallaxAgentVoice(agent.id)}
                   onChange={(e) => handleUpdateAgent(agent.id, { voice: e.target.value })}
-                  className="w-full px-2.5 py-1.5 rounded-lg bg-slate-950/60 text-slate-100 text-[11px] focus:outline-none focus:ring-1 focus:ring-cyan-400/50"
+                  className={`w-full px-2.5 py-1.5 rounded-lg text-[11px] focus:outline-none focus:ring-1 ${inputSurfaceClass}`}
                 >
                   {EDGE_VOICES.map((v) => (
                     <option key={v.id} value={v.id}>
