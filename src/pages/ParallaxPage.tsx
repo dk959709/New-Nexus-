@@ -75,10 +75,12 @@ const SAMPLE_TOPICS = [
 
 interface ShowcasePreset {
   id: string;
+  category: 'geopolitics' | 'markets' | 'science';
   badge: string;
   title: string;
   subtitle: string;
   metric: string;
+  convictionNum: number;
   prompt: string;
   accent: string;
 }
@@ -86,46 +88,67 @@ interface ShowcasePreset {
 const SHOWCASE_PRESETS: ShowcasePreset[] = [
   {
     id: 'geopolitics',
-    badge: 'GLOBAL SURVEY',
+    category: 'geopolitics',
+    badge: 'Global Survey',
     title: 'Global Sentiment & Favorability',
-    subtitle: '25-nation comparative attitude index',
+    subtitle: '25-nation comparative attitude & alliance index',
     metric: '88% conv',
+    convictionNum: 88,
     prompt: 'Global favorable vs unfavorable ratings and geopolitical sentiment analysis 2026.',
     accent: '#10b981',
   },
   {
     id: 'solar',
-    badge: 'MARKET INTEL',
+    category: 'markets',
+    badge: 'Market Intel',
     title: 'Global Solar Competitor Report',
-    subtitle: 'Supply, demand & margin roll-forward',
+    subtitle: 'Supply, demand & margin roll-forward through 2030',
     metric: '92% conv',
+    convictionNum: 92,
     prompt: 'Create a comprehensive global solar competitor report.',
     accent: '#06b6d4',
   },
   {
     id: 'blackhole',
-    badge: 'ASTROPHYSICS',
+    category: 'science',
+    badge: 'Astrophysics',
     title: 'Blackhole: Gargantua Lensing',
-    subtitle: 'Relativistic accretion & photon rings',
+    subtitle: 'Relativistic accretion & photon ring interferometry',
     metric: '95% conv',
+    convictionNum: 95,
     prompt: 'Analyze relativistic physics, accretion photon rings, and gravitational lensing around supermassive black hole Gargantua.',
     accent: '#f59e0b',
   },
   {
     id: 'humanoid',
-    badge: 'ROBOTICS 2035',
+    category: 'markets',
+    badge: 'Robotics 2035',
     title: 'Humanoid Domestic Automation',
-    subtitle: 'Unit economics & household adoption',
+    subtitle: 'Unit economics, actuator bottlenecks & adoption curve',
     metric: '81% conv',
+    convictionNum: 81,
     prompt: 'Will humanoid robots replace household chores by 2035?',
     accent: '#8b5cf6',
   },
   {
+    id: 'opensource_ai',
+    category: 'markets',
+    badge: 'AI Governance',
+    title: 'Open-Weight vs Frontier AI Safety',
+    subtitle: 'Decentralized verification vs compute concentration',
+    metric: '84% conv',
+    convictionNum: 84,
+    prompt: 'Is open-source AI safer than centralized proprietary models?',
+    accent: '#38bdf8',
+  },
+  {
     id: 'mars',
-    badge: 'DEEP SPACE',
+    category: 'science',
+    badge: 'Deep Space',
     title: 'Mars Colony vs Earth Biospheres',
-    subtitle: 'Civilizational risk & resource allocation',
+    subtitle: 'Civilizational risk & resource allocation trade-offs',
     metric: '76% conv',
+    convictionNum: 76,
     prompt: 'Should humanity build permanent cities on Mars before fixing Earth?',
     accent: '#f43f5e',
   },
@@ -158,11 +181,15 @@ export const ParallaxPage: React.FC = () => {
   const [errorText, setErrorText] = useState<string | null>(null);
   const [wasStoppedEarly, setWasStoppedEarly] = useState<boolean>(false);
 
-  // UI Drawer & Composer Popovers
+  // UI Drawer, Filters & Composer Popovers
   const [isMenuDrawerOpen, setIsMenuDrawerOpen] = useState(false);
   const [isPlusMenuOpen, setIsPlusMenuOpen] = useState(false);
   const [isModeSelectorOpen, setIsModeSelectorOpen] = useState(false);
   const [expandedAgentId, setExpandedAgentId] = useState<string | null>(null);
+  const [inspectedRosterAgentId, setInspectedRosterAgentId] = useState<string | null>(null);
+  const [benchmarkCategory, setBenchmarkCategory] = useState<'all' | 'geopolitics' | 'markets' | 'science'>('all');
+  const [convictionBandFilter, setConvictionBandFilter] = useState<'all' | 'high' | 'moderate' | 'skeptic'>('all');
+  const [tableSearchQuery, setTableSearchQuery] = useState('');
   const [showAllRecruitedAgents, setShowAllRecruitedAgents] = useState(false);
   const [showAllTableRows, setShowAllTableRows] = useState(false);
   const [tableSortBy, setTableSortBy] = useState<'conviction' | 'order'>('conviction');
@@ -216,6 +243,12 @@ export const ParallaxPage: React.FC = () => {
   const handleThemeChange = (newTheme: ParallaxTheme) => {
     setTheme(newTheme);
     saveParallaxTheme(newTheme);
+  };
+
+  const handleCycleTheme = () => {
+    const order: ParallaxTheme[] = ['fulldark', 'minimal', 'classic'];
+    const next = order[(order.indexOf(theme) + 1) % order.length];
+    handleThemeChange(next);
   };
 
   const toggleRawJsonView = (msgId: string) => {
@@ -662,6 +695,9 @@ export const ParallaxPage: React.FC = () => {
     setActiveTab('feed');
     setIsPlusMenuOpen(false);
     setIsModeSelectorOpen(false);
+    setInspectedRosterAgentId(null);
+    setConvictionBandFilter('all');
+    setTableSearchQuery('');
     setStatusText('INITIALIZING PARALLAX CORE • CONNECTING AGENTS...');
     setExpandedRounds({ 1: false, 2: false, 3: false });
     setAutoScroll(true);
@@ -749,7 +785,16 @@ export const ParallaxPage: React.FC = () => {
     setIntelligenceBriefing(null);
     setWasStoppedEarly(false);
     setErrorText(null);
+    setInspectedRosterAgentId(null);
     setActiveTab('feed');
+  };
+
+  const handleRandomDeepDive = () => {
+    const pool = [...SAMPLE_TOPICS, ...SHOWCASE_PRESETS.map((p) => p.prompt)];
+    const available = pool.filter((p) => p !== currentTopic && p !== topicInput);
+    const pick = available[Math.floor(Math.random() * available.length)] || SAMPLE_TOPICS[0];
+    setTopicInput(pick);
+    handleStartSwarm(pick);
   };
 
   const enabledAgentsList = Object.values(config.agents || {}).filter((a) => a.enabled !== false);
@@ -776,6 +821,8 @@ export const ParallaxPage: React.FC = () => {
         latestRound: number;
         latestText: string;
         conviction: number;
+        r1Conviction: number;
+        delta: number;
         turns: ParallaxMessage[];
       }
     >();
@@ -783,6 +830,8 @@ export const ParallaxPage: React.FC = () => {
     for (const msg of messages) {
       const existing = byId.get(msg.agentId);
       const turns = existing ? [...existing.turns, msg] : [msg];
+      const r1Score = turns[0]?.convictionScore ?? msg.convictionScore ?? 74;
+      const latestScore = msg.convictionScore ?? 78;
       byId.set(msg.agentId, {
         id: msg.agentId,
         name: msg.agentName.split(' (')[0],
@@ -790,15 +839,19 @@ export const ParallaxPage: React.FC = () => {
         accentColor: msg.accentColor || '#10b981',
         latestRound: msg.round,
         latestText: msg.text,
-        conviction: msg.convictionScore ?? 78,
+        conviction: latestScore,
+        r1Conviction: r1Score,
+        delta: turns.length > 1 ? latestScore - r1Score : 0,
         turns,
       });
     }
 
-    if (byId.size < 10) {
+    if (byId.size < 14) {
       enabledAgentsList.forEach((agent, idx) => {
-        if (byId.size >= 12) return;
+        if (byId.size >= 16) return;
         if (!byId.has(agent.id)) {
+          const baseConv = isRunning ? Math.max(32, 89 - idx * 3) : Math.max(30, 91 - idx * 3);
+          const r1Conv = Math.max(36, baseConv - ((idx % 3 === 0 ? 4 : -3)));
           byId.set(agent.id, {
             id: agent.id,
             name: agent.name.split(' (')[0],
@@ -806,7 +859,9 @@ export const ParallaxPage: React.FC = () => {
             accentColor: agent.accentColor || '#10b981',
             latestRound: currentRound || 1,
             latestText: `${agent.role} baseline & cross-examination telemetry`,
-            conviction: isRunning ? Math.max(34, 88 - idx * 4) : Math.max(30, 91 - idx * 4),
+            conviction: baseConv,
+            r1Conviction: r1Conv,
+            delta: baseConv - r1Conv,
             turns: [],
           });
         }
@@ -817,15 +872,62 @@ export const ParallaxPage: React.FC = () => {
   }, [messages, enabledAgentsList, config.agents, currentRound, isRunning]);
 
   const sortedTableAgents = React.useMemo(() => {
-    const copy = [...recruitedAgents];
+    let copy = [...recruitedAgents];
+    if (convictionBandFilter === 'high') {
+      copy = copy.filter((a) => a.conviction >= 75);
+    } else if (convictionBandFilter === 'moderate') {
+      copy = copy.filter((a) => a.conviction >= 55 && a.conviction < 75);
+    } else if (convictionBandFilter === 'skeptic') {
+      copy = copy.filter((a) => a.conviction < 55);
+    }
+
+    if (tableSearchQuery.trim()) {
+      const q = tableSearchQuery.toLowerCase();
+      copy = copy.filter(
+        (a) =>
+          a.name.toLowerCase().includes(q) ||
+          a.role.toLowerCase().includes(q) ||
+          a.latestText.toLowerCase().includes(q),
+      );
+    }
+
     if (tableSortBy === 'conviction') {
       copy.sort((a, b) => b.conviction - a.conviction);
     }
     return copy;
-  }, [recruitedAgents, tableSortBy]);
+  }, [recruitedAgents, tableSortBy, convictionBandFilter, tableSearchQuery]);
+
+  const polarityStats = React.useMemo(() => {
+    const total = Math.max(1, recruitedAgents.length);
+    const high = recruitedAgents.filter((a) => a.conviction >= 75).length;
+    const mod = recruitedAgents.filter((a) => a.conviction >= 55 && a.conviction < 75).length;
+    const low = recruitedAgents.filter((a) => a.conviction < 55).length;
+    const avg = Math.round(
+      recruitedAgents.reduce((acc, a) => acc + a.conviction, 0) / total,
+    );
+    return {
+      high,
+      mod,
+      low,
+      highPct: Math.round((high / total) * 100),
+      modPct: Math.round((mod / total) * 100),
+      lowPct: Math.max(0, 100 - Math.round((high / total) * 100) - Math.round((mod / total) * 100)),
+      avg,
+    };
+  }, [recruitedAgents]);
 
   const visibleTableAgents = showAllTableRows ? sortedTableAgents : sortedTableAgents.slice(0, 8);
-  const visibleRecruitedAgents = showAllRecruitedAgents ? recruitedAgents : recruitedAgents.slice(0, 4);
+  const visibleRecruitedAgents = showAllRecruitedAgents ? recruitedAgents : recruitedAgents.slice(0, 5);
+
+  const filteredShowcasePresets = React.useMemo(() => {
+    if (benchmarkCategory === 'all') return SHOWCASE_PRESETS;
+    return SHOWCASE_PRESETS.filter((p) => p.category === benchmarkCategory);
+  }, [benchmarkCategory]);
+
+  const inspectedRosterAgent = React.useMemo(() => {
+    if (!inspectedRosterAgentId) return null;
+    return config.agents[inspectedRosterAgentId] || enabledAgentsList.find((a) => a.id === inspectedRosterAgentId) || null;
+  }, [inspectedRosterAgentId, config.agents, enabledAgentsList]);
 
   const chartPoints = React.useMemo(() => {
     if (recruitedAgents.length === 0) {
@@ -842,7 +944,8 @@ export const ParallaxPage: React.FC = () => {
         { label: 'VANGUARD', val: 44 },
       ];
     }
-    return sortedTableAgents.slice(0, 10).map((ag, idx) => {
+    const base = [...recruitedAgents].sort((a, b) => b.conviction - a.conviction);
+    return base.slice(0, 10).map((ag, idx) => {
       const r1 = ag.turns.find((t) => t.round === 1)?.convictionScore ?? 58 + ((idx * 7) % 25);
       const r3 = ag.turns[ag.turns.length - 1]?.convictionScore ?? ag.conviction ?? r1 + 12;
       return {
@@ -851,7 +954,7 @@ export const ParallaxPage: React.FC = () => {
         accent: ag.accentColor,
       };
     });
-  }, [recruitedAgents, sortedTableAgents]);
+  }, [recruitedAgents]);
 
   // Synthesize editorial "Notes:" bullet points (matching Screenshot's exact "Notes:" + bullet list + "Source:" structure)
   const editorialNotes = React.useMemo(() => {
@@ -963,11 +1066,59 @@ export const ParallaxPage: React.FC = () => {
     <div
       id="parallax-page-wrapper"
       data-theme={theme}
-      className={`min-h-screen relative -mx-4 sm:-mx-8 md:-mx-12 -my-8 px-3 sm:px-6 py-2.5 overflow-x-hidden font-sans select-none transition-colors duration-200 ${wrapperThemeClass}`}
+      className={`min-h-screen relative -mx-4 sm:-mx-8 md:-mx-12 -my-8 px-3 sm:px-6 lg:px-10 py-2 overflow-x-hidden font-sans select-none transition-colors duration-200 ${wrapperThemeClass}`}
     >
+      {/* Scoped overrides to neutralize legacy global @media (max-width: 640px) !important rules on #parallax-input-container & #parallax-topic-input */}
+      <style>{`
+        #parallax-page-wrapper #parallax-page #parallax-input-container {
+          padding: 4px 0 0 0 !important;
+          border-radius: 0 !important;
+          background: transparent !important;
+          border: none !important;
+          box-shadow: none !important;
+        }
+        #parallax-page-wrapper #parallax-page #parallax-topic-input {
+          padding: 2px 0 !important;
+          margin: 0 !important;
+          height: 22px !important;
+          min-height: 0 !important;
+          font-size: 12.5px !important;
+          line-height: 1.3 !important;
+          border-radius: 0 !important;
+          border: none !important;
+          background: transparent !important;
+          box-shadow: none !important;
+        }
+        #parallax-page-wrapper #parallax-page #parallax-start-swarm-btn,
+        #parallax-page-wrapper #parallax-page #parallax-stop-swarm-btn {
+          width: 28px !important;
+          height: 28px !important;
+          min-width: 28px !important;
+          min-height: 28px !important;
+          max-width: 28px !important;
+          padding: 0 !important;
+          border-radius: 9999px !important;
+          flex: 0 0 28px !important;
+        }
+        @media (min-width: 640px) {
+          #parallax-page-wrapper #parallax-page #parallax-topic-input {
+            font-size: 13.5px !important;
+            height: 24px !important;
+          }
+          #parallax-page-wrapper #parallax-page #parallax-start-swarm-btn,
+          #parallax-page-wrapper #parallax-page #parallax-stop-swarm-btn {
+            width: 32px !important;
+            height: 32px !important;
+            min-width: 32px !important;
+            min-height: 32px !important;
+            max-width: 32px !important;
+            flex: 0 0 32px !important;
+          }
+        }
+      `}</style>
       <div
         id="parallax-page"
-        className="relative z-10 w-full max-w-[680px] mx-auto min-h-[calc(100vh-1.5rem)] flex flex-col justify-between pt-1 pb-3"
+        className="relative z-10 w-full max-w-[880px] mx-auto min-h-[calc(100vh-1.5rem)] flex flex-col justify-between pt-1 pb-2"
       >
         {/* ============================================================
             TOP FLOATING COMMAND BAR (COMPACT MOBILE-FRIENDLY)
@@ -977,12 +1128,12 @@ export const ParallaxPage: React.FC = () => {
           className="sticky top-1.5 z-30 flex items-center justify-between gap-2 py-1.5 backdrop-blur-md"
         >
           {/* Left: Hamburger Drawer Button + Brand & Live Status Pill */}
-          <div className="flex items-center gap-1.5">
+          <div className="flex items-center gap-1.5 min-w-0">
             <button
               type="button"
               onClick={() => setIsMenuDrawerOpen(true)}
               aria-label="Open Parallax menu"
-              className={`w-8 h-8 sm:w-9 sm:h-9 rounded-full flex items-center justify-center active:scale-95 transition-all cursor-pointer ${floatingPillClass} ${floatingPillHoverClass}`}
+              className={`w-8 h-8 sm:w-9 sm:h-9 rounded-full flex items-center justify-center shrink-0 active:scale-95 transition-all cursor-pointer ${floatingPillClass} ${floatingPillHoverClass}`}
             >
               <Menu size={15} strokeWidth={2.2} />
             </button>
@@ -990,20 +1141,23 @@ export const ParallaxPage: React.FC = () => {
             <button
               type="button"
               onClick={() => setActiveTab(activeTab === 'feed' ? 'settings' : 'feed')}
-              className={`h-8 sm:h-9 px-3 sm:px-3.5 rounded-full flex items-center gap-1.5 text-xs sm:text-[13px] transition-all cursor-pointer ${floatingPillClass} ${floatingPillHoverClass}`}
+              className={`h-8 sm:h-9 px-3 sm:px-3.5 rounded-full flex items-center gap-1.5 text-xs sm:text-[13px] transition-all cursor-pointer truncate ${floatingPillClass} ${floatingPillHoverClass}`}
             >
-              <span className="w-1.5 h-1.5 rounded-full bg-emerald-400 shadow-[0_0_8px_#34d399]" />
+              {isRunning && (
+                <span className="w-1.5 h-1.5 rounded-full bg-emerald-400 animate-ping shrink-0" />
+              )}
               <span className="font-semibold tracking-tight text-white">Parallax</span>
-              <span className="text-[10px] sm:text-[11px] text-[#71767b] font-mono">
+              <span className="text-[#71767b]" aria-hidden="true">·</span>
+              <span className="text-[10.5px] sm:text-[11px] text-[#8b9097] font-mono tabular-nums truncate">
                 {isRunning
-                  ? `R${currentRound || 1} LIVE`
-                  : `${enabledAgentsCount} AGENTS`}
+                  ? `R0${currentRound || 1} Live`
+                  : `${enabledAgentsCount} Personas`}
               </span>
             </button>
           </div>
 
-          {/* Right: New Swarm + Settings/Themes + Audio Briefing */}
-          <div className={`flex items-center gap-0.5 rounded-full p-0.5 ${floatingPillClass}`}>
+          {/* Right: New Swarm + Quick Theme Cycle + Settings + Archive + Audio Briefing */}
+          <div className={`flex items-center gap-0.5 rounded-full p-0.5 shrink-0 ${floatingPillClass}`}>
             {hasActiveMission && (
               <button
                 type="button"
@@ -1014,6 +1168,26 @@ export const ParallaxPage: React.FC = () => {
                 <MessageSquarePlus size={14} strokeWidth={2} />
               </button>
             )}
+            <button
+              type="button"
+              onClick={handleCycleTheme}
+              title={`Current Theme: ${theme} (Tap to switch)`}
+              className={`w-7 h-7 sm:w-8 sm:h-8 rounded-full flex items-center justify-center transition-colors cursor-pointer ${floatingPillHoverClass}`}
+            >
+              <Palette size={14} strokeWidth={2} />
+            </button>
+            <button
+              type="button"
+              onClick={() => setActiveTab(activeTab === 'archive' ? 'feed' : 'archive')}
+              title={`Saved Swarms (${sessions.length})`}
+              className={`w-7 h-7 sm:w-8 sm:h-8 rounded-full flex items-center justify-center transition-colors cursor-pointer ${
+                activeTab === 'archive'
+                  ? 'bg-white text-black'
+                  : floatingPillHoverClass
+              }`}
+            >
+              <Archive size={14} strokeWidth={2} />
+            </button>
             <button
               type="button"
               onClick={() => setActiveTab(activeTab === 'settings' ? 'feed' : 'settings')}
@@ -1252,7 +1426,7 @@ export const ParallaxPage: React.FC = () => {
                             <Icon size={13} className={active ? 'text-white' : 'text-[#71767b]'} />
                             {m.label}
                           </span>
-                          {active && <span className="w-1.5 h-1.5 rounded-full bg-emerald-400" />}
+                          {active && <Check size={12} className="text-emerald-400" />}
                         </button>
                       );
                     })}
@@ -1383,7 +1557,7 @@ export const ParallaxPage: React.FC = () => {
                       </div>
                     )}
                     <div className="flex items-center justify-between flex-wrap gap-2 pl-6 pt-0.5">
-                      <span className="text-[10px] text-[#71767b] font-mono">
+                      <span className="text-[10px] text-[#71767b] font-mono tabular-nums">
                         {sess.messages.length} turns · {sess.summary?.confidenceScore || 86}% conviction
                       </span>
 
@@ -1459,37 +1633,212 @@ export const ParallaxPage: React.FC = () => {
            ============================================================ */}
         {activeTab === 'feed' && (
           <div id="parallax-feed-view" className="flex-1 flex flex-col justify-between">
+            {/* ==========================================================
+                ALWAYS-ACCESSIBLE PROTOCOL BAR + 20-PERSONA LIVE ROSTER STRIP
+               ========================================================== */}
+            <div className="pt-1 pb-2 space-y-2 border-b border-white/[0.06]">
+              {/* Row A: Horizontal Scrollable Swarm Protocol Selector + Surprise Deep-Dive */}
+              <div className="flex items-center justify-between gap-2 overflow-x-auto no-scrollbar py-0.5">
+                <div className="flex items-center gap-1 shrink-0">
+                  {DEBATE_MODES.map((m) => {
+                    const Icon = m.icon;
+                    const active = debateMode === m.id;
+                    return (
+                      <button
+                        key={m.id}
+                        type="button"
+                        disabled={isRunning}
+                        onClick={() => setDebateMode(m.id)}
+                        className={`px-2.5 py-1 rounded-lg text-[11px] font-medium flex items-center gap-1.5 transition-all cursor-pointer shrink-0 ${
+                          active
+                            ? 'bg-white text-black font-semibold shadow-xs'
+                            : 'text-[#8b9097] hover:text-white hover:bg-white/[0.05]'
+                        }`}
+                      >
+                        <Icon size={12} />
+                        <span>{m.shortLabel === 'Fast' ? 'Default Swarm' : m.shortLabel}</span>
+                      </button>
+                    );
+                  })}
+                </div>
+
+                <button
+                  type="button"
+                  disabled={isRunning}
+                  onClick={handleRandomDeepDive}
+                  className="px-2.5 py-1 rounded-lg text-[11px] font-medium text-emerald-300 hover:bg-emerald-500/10 flex items-center gap-1 transition-colors cursor-pointer shrink-0"
+                  title="Launch a random high-stakes multi-agent investigation"
+                >
+                  <RefreshCw size={11} />
+                  <span>Surprise Inquiry</span>
+                </button>
+              </div>
+
+              {/* Row B: Interactive 20-Persona Live Roster Strip */}
+              <div
+                id="parallax-persona-roster-strip"
+                className="flex items-center gap-1.5 overflow-x-auto no-scrollbar py-0.5"
+              >
+                <span className="text-[10px] font-mono text-[#71767b] shrink-0 pr-1">
+                  20 Personas:
+                </span>
+                {enabledAgentsList.map((ag) => {
+                  const recruited = recruitedAgents.find((r) => r.id === ag.id);
+                  const score = recruited?.conviction ?? 82;
+                  const isInspected = inspectedRosterAgentId === ag.id;
+                  const cleanName = ag.name.split(' (')[0];
+
+                  return (
+                    <button
+                      key={ag.id}
+                      type="button"
+                      onClick={() =>
+                        setInspectedRosterAgentId((prev) => (prev === ag.id ? null : ag.id))
+                      }
+                      className={`px-2 py-1 rounded-lg text-[10.5px] font-mono flex items-center gap-1.5 shrink-0 transition-all cursor-pointer border ${
+                        isInspected
+                          ? 'bg-white/15 border-white/40 text-white font-semibold'
+                          : 'bg-white/[0.02] border-white/[0.06] text-[#a1a1aa] hover:text-white hover:border-white/20'
+                      }`}
+                    >
+                      <span className="truncate max-w-[80px]">{cleanName}</span>
+                      <span className="text-[#71767b] tabular-nums">{score}%</span>
+                    </button>
+                  );
+                })}
+              </div>
+
+              {/* Inline Specialist Dossier Inspector when a Persona in the Roster is tapped */}
+              {inspectedRosterAgent && (
+                <div className={`p-3 text-xs space-y-2 ${hairlineTableCardClass} divide-y-0`}>
+                  <div className="flex items-start justify-between gap-2">
+                    <div>
+                      <div className="flex items-center gap-2">
+                        <span className="font-bold text-white text-xs sm:text-sm">
+                          {inspectedRosterAgent.name}
+                        </span>
+                        <span className="text-[10.5px] text-[#8b9097]">
+                          · {inspectedRosterAgent.role}
+                        </span>
+                      </div>
+                      <p className="text-[11px] sm:text-xs text-[#a1a1aa] leading-relaxed mt-1 m-0">
+                        {inspectedRosterAgent.systemInstruction}
+                      </p>
+                    </div>
+                    <button
+                      type="button"
+                      onClick={() => setInspectedRosterAgentId(null)}
+                      className="text-[#71767b] hover:text-white p-1 cursor-pointer"
+                    >
+                      <X size={13} />
+                    </button>
+                  </div>
+
+                  <div className="flex items-center justify-between flex-wrap gap-2 pt-1.5 border-t border-white/[0.06]">
+                    <span className="text-[10px] font-mono text-[#71767b]">
+                      Model: {inspectedRosterAgent.modelId || 'Built-in Default'} ·{' '}
+                      {inspectedRosterAgent.id === 'veritas' ? 'Live Web Search (R1)' : 'Reasoning Node'}
+                    </span>
+                    <div className="flex items-center gap-1.5">
+                      <button
+                        type="button"
+                        onClick={() =>
+                          handlePlayMessageAudio({
+                            id: `preview-${inspectedRosterAgent.id}`,
+                            agentId: inspectedRosterAgent.id,
+                            agentName: inspectedRosterAgent.name,
+                            initials: inspectedRosterAgent.name.slice(0, 2),
+                            accentColor: inspectedRosterAgent.accentColor,
+                            round: 1,
+                            text: `I am ${inspectedRosterAgent.name}, focusing on ${inspectedRosterAgent.role}. ${inspectedRosterAgent.systemInstruction}`,
+                            timestamp: Date.now(),
+                            voice: inspectedRosterAgent.voice,
+                          })
+                        }
+                        className="px-2.5 py-1 rounded-lg bg-white/10 hover:bg-white/15 text-white text-[10.5px] font-medium flex items-center gap-1 cursor-pointer"
+                      >
+                        <Play size={10} />
+                        <span>
+                          {playingAudioKey === `preview-${inspectedRosterAgent.id}`
+                            ? 'Stop Voice'
+                            : 'Preview Voice'}
+                        </span>
+                      </button>
+                      {!isRunning && (
+                        <button
+                          type="button"
+                          onClick={() => {
+                            const customPrompt = `From a ${inspectedRosterAgent.role.toLowerCase()} perspective, evaluate the highest-impact global risks and breakthroughs for 2026–2030.`;
+                            setInspectedRosterAgentId(null);
+                            handleStartSwarm(customPrompt);
+                          }}
+                          className="px-2.5 py-1 rounded-lg bg-white text-black text-[10.5px] font-semibold cursor-pointer hover:bg-zinc-200"
+                        >
+                          Launch Domain Inquiry
+                        </button>
+                      )}
+                    </div>
+                  </div>
+                </div>
+              )}
+            </div>
+
             {!hasActiveMission ? (
               /* ==========================================================
                  CREATIVE IDLE STATE: COMPACT MOBILE-FRIENDLY BENCHMARK TABLE + NOTES
                  ========================================================== */
-              <div className="flex-1 flex flex-col justify-center py-3 sm:py-5 space-y-4 sm:space-y-5 select-text">
-                {/* Creative Constellation Badge & Editorial Headline */}
-                <div className="space-y-1.5 sm:space-y-2">
-                  <div className="inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-full border border-[#26292e] bg-white/[0.03] text-[10px] sm:text-[11px] font-mono text-[#a1a1aa]">
-                    <Sparkles size={11} className="text-emerald-400" />
-                    <span>PARALLAX SWARM · {currentModeObj.label.toUpperCase()}</span>
+              <div className="flex-1 flex flex-col justify-center py-3 sm:py-4 space-y-4 sm:space-y-5 select-text">
+                {/* Editorial Headline & Concise Lead */}
+                <div className="space-y-1.5">
+                  <div className="flex items-center gap-2 text-[11px] font-mono text-[#8b9097]">
+                    <span>Parallax Multi-Agent Synthesis</span>
+                    <span aria-hidden="true">·</span>
+                    <span>{currentModeObj.label}</span>
+                    <span aria-hidden="true">·</span>
+                    <span>3 Rounds</span>
                   </div>
 
-                  <h1 className="text-base sm:text-xl font-semibold text-white tracking-tight leading-snug">
+                  <h1 className="text-[18px] sm:text-[24px] font-semibold text-white tracking-tight leading-snug text-balance m-0">
                     20 specialized minds. One empirical synthesis.
                   </h1>
-                  <p className="text-xs sm:text-[13.5px] text-[#8b9097] leading-relaxed max-w-[600px]">
-                    Assign any research question or global dataset. Parallax mobilizes 20 independent personas across 3 rounds of thesis, cross-examination, and ranked conviction scoring.
+                  <p className="text-xs sm:text-[13.5px] text-[#8b9097] leading-relaxed max-w-[640px] m-0">
+                    Assign any research question or global dataset. Parallax mobilizes 20 independent personas across Thesis (Round 1), Cross-Examination (Round 2), and Ranked Conviction Convergence (Round 3).
                   </p>
                 </div>
 
-                {/* Interactive Hairline Preview Table (Mobile-sized rows & crisp text) */}
-                <div className="space-y-1.5">
-                  <div className="flex items-center justify-between px-1">
-                    <span className="text-[10px] sm:text-[11px] font-mono uppercase tracking-wider text-[#71767b]">
-                      Featured Benchmarks — Tap to launch
+                {/* Interactive Hairline Preview Table with Category Filter Tabs */}
+                <div className="space-y-2">
+                  <div className="flex items-center justify-between flex-wrap gap-2 px-0.5">
+                    <div className="flex items-center gap-1">
+                      {(
+                        [
+                          { id: 'all', label: 'All Benchmarks' },
+                          { id: 'geopolitics', label: 'Geopolitics' },
+                          { id: 'markets', label: 'Markets & AI' },
+                          { id: 'science', label: 'Science & Space' },
+                        ] as const
+                      ).map((cat) => (
+                        <button
+                          key={cat.id}
+                          type="button"
+                          onClick={() => setBenchmarkCategory(cat.id)}
+                          className={`px-2 py-1 rounded-lg text-[10.5px] sm:text-[11px] font-medium transition-colors cursor-pointer ${
+                            benchmarkCategory === cat.id
+                              ? 'bg-white/12 text-white font-semibold'
+                              : 'text-[#71767b] hover:text-white'
+                          }`}
+                        >
+                          {cat.label}
+                        </button>
+                      ))}
+                    </div>
+                    <span className="text-[10.5px] sm:text-[11px] font-mono text-[#71767b]">
+                      Conviction
                     </span>
-                    <span className="text-[10px] sm:text-[11px] font-mono text-[#71767b]">Conviction</span>
                   </div>
 
                   <div className={hairlineTableCardClass}>
-                    {SHOWCASE_PRESETS.map((preset, idx) => (
+                    {filteredShowcasePresets.map((preset, idx) => (
                       <button
                         key={preset.id}
                         type="button"
@@ -1501,12 +1850,17 @@ export const ParallaxPage: React.FC = () => {
                         className="w-full py-2.5 px-3 sm:py-3 sm:px-4 flex items-center justify-between gap-2.5 text-left hover:bg-white/[0.04] active:bg-white/[0.07] transition-colors cursor-pointer group"
                       >
                         <div className="flex items-center gap-3 sm:gap-5 min-w-0 flex-1">
-                          <span className="text-xs sm:text-[13.5px] font-normal text-[#e7e9ea] tabular-nums w-5 shrink-0">
+                          <span className="text-xs sm:text-[13.5px] font-mono text-[#8b9097] tabular-nums w-5 shrink-0">
                             {String(idx + 1).padStart(2, '0')}
                           </span>
                           <div className="min-w-0 flex-1">
-                            <div className="text-xs sm:text-[13.5px] font-normal text-white group-hover:text-emerald-300 transition-colors truncate">
-                              {preset.title}
+                            <div className="flex items-center gap-2">
+                              <span className="text-xs sm:text-[13.5px] font-medium text-white group-hover:text-emerald-300 transition-colors truncate">
+                                {preset.title}
+                              </span>
+                              <span className="hidden sm:inline text-[10.5px] text-[#71767b] shrink-0">
+                                · {preset.badge}
+                              </span>
                             </div>
                             <div className="text-[10.5px] sm:text-xs text-[#71767b] truncate mt-0.5">
                               {preset.subtitle}
@@ -1514,9 +1868,18 @@ export const ParallaxPage: React.FC = () => {
                           </div>
                         </div>
 
-                        <div className="flex items-center gap-2 shrink-0">
-                          <span className="text-xs sm:text-[13.5px] font-normal text-[#e7e9ea] tabular-nums">
-                            {preset.metric.replace(' conv', '')}
+                        <div className="flex items-center gap-2.5 shrink-0">
+                          <div className="hidden sm:flex w-14 h-1 rounded-full bg-white/[0.07] overflow-hidden">
+                            <div
+                              className="h-full rounded-full"
+                              style={{
+                                width: `${preset.convictionNum}%`,
+                                backgroundColor: preset.accent,
+                              }}
+                            />
+                          </div>
+                          <span className="text-xs sm:text-[13.5px] font-mono text-[#e7e9ea] tabular-nums w-9 text-right">
+                            {preset.convictionNum}%
                           </span>
                           <ChevronRight size={14} className="text-[#71767b] group-hover:translate-x-0.5 transition-transform" />
                         </div>
@@ -1530,12 +1893,12 @@ export const ParallaxPage: React.FC = () => {
                   <h2 className="text-xs sm:text-sm font-bold text-white tracking-tight m-0">
                     Notes:
                   </h2>
-                  <ul className="list-disc pl-4 sm:pl-5 space-y-1.5 sm:space-y-2 text-xs sm:text-[13.5px] text-[#e7e9ea] leading-relaxed m-0">
+                  <ul className="list-disc pl-4 sm:pl-5 space-y-1.5 text-xs sm:text-[13px] text-[#e7e9ea] leading-relaxed m-0">
                     <li>
                       Data and conviction scores are synthesized directly from 20 autonomous domain personas (including VERITAS live web verification, AXIOM logic, and LEDGER economics).
                     </li>
                     <li>
-                      Cross-examination in Round 2 automatically challenges unverified assumptions and drops inflated confidence ratings before Round 3 convergence.
+                      Cross-examination in Round 2 automatically challenges unverified assumptions and adjusts initial confidence ratings before Round 3 convergence.
                     </li>
                   </ul>
                   <p className="text-[11px] sm:text-xs text-[#a1a1aa] pt-0.5 m-0">
@@ -1545,71 +1908,98 @@ export const ParallaxPage: React.FC = () => {
               </div>
             ) : (
               /* ==========================================================
-                 ACTIVE / COMPLETED SWARM VIEW (MOBILE-FRIENDLY SIZING)
+                 ACTIVE / COMPLETED SWARM VIEW (MOBILE-FRIENDLY SIZING + FULL TELEMETRY)
                  ========================================================== */
-              <div className="flex-1 py-2.5 sm:py-3.5 space-y-4 sm:space-y-5 select-text">
+              <div className="flex-1 py-2.5 sm:py-3.5 space-y-4 select-text">
                 {/* 1. User Prompt Pill (Right-aligned subtle dark bubble) */}
                 <div className="flex justify-end">
-                  <div className="rounded-2xl bg-[#16181c] border border-[#26292e] text-white px-3 py-2 sm:px-3.5 sm:py-2.5 text-xs sm:text-[13.5px] leading-relaxed max-w-[90%] sm:max-w-[78%]">
+                  <div className="rounded-2xl bg-[#16181c] border border-[#26292e] text-white px-3 py-2 sm:px-4 sm:py-2.5 text-xs sm:text-[13.5px] leading-relaxed max-w-[92%] sm:max-w-[80%]">
                     {currentTopic}
                   </div>
                 </div>
 
-                {/* 2. Live Swarm Telemetry Pulse Bar */}
-                <div className="flex items-center justify-between flex-wrap gap-1.5 pb-1 border-b border-white/[0.08]">
-                  <div className="flex items-center gap-2 min-w-0">
-                    <span
-                      className={`w-1.5 h-1.5 rounded-full shrink-0 ${
-                        isRunning
-                          ? 'bg-emerald-400 animate-ping'
-                          : 'bg-emerald-400'
-                      }`}
-                    />
-                    <span className="text-[10px] sm:text-[11px] font-mono uppercase tracking-wider text-[#a1a1aa] truncate">
-                      {isRunning
-                        ? `${statusText}`
-                        : `SWARM COMPLETE · ${messages.length} TURNS · 3 ROUNDS`}
-                    </span>
+                {/* 2. Live 3-Round Stepper & Action Controls Bar */}
+                <div className={`p-2.5 sm:p-3 ${hairlineTableCardClass} divide-y-0 space-y-2.5`}>
+                  <div className="flex items-center justify-between flex-wrap gap-2">
+                    <div className="flex items-center gap-2 min-w-0">
+                      {isRunning && (
+                        <span className="w-1.5 h-1.5 rounded-full bg-emerald-400 animate-ping shrink-0" />
+                      )}
+                      <span className="text-[10.5px] sm:text-xs font-mono text-[#e7e9ea] truncate">
+                        {isRunning
+                          ? statusText
+                          : `Deliberation Complete · ${messages.length} Turns · ${polarityStats.avg}% Avg Conviction`}
+                      </span>
+                    </div>
+
+                    <div className="flex items-center gap-1 flex-wrap">
+                      <button
+                        type="button"
+                        onClick={() => setShowTrajectoryChart((prev) => !prev)}
+                        className="px-2 py-1 rounded-lg bg-white/[0.05] hover:bg-white/[0.1] text-[10.5px] sm:text-[11px] text-[#e7e9ea] flex items-center gap-1 cursor-pointer transition-colors"
+                      >
+                        <Activity size={11} className="text-emerald-400" />
+                        <span>{showTrajectoryChart ? 'Hide Curve' : 'Curve'}</span>
+                      </button>
+                      {messages.length > 0 && (
+                        <>
+                          <button
+                            type="button"
+                            onClick={handleCopyFullSwarm}
+                            className="px-2 py-1 rounded-lg bg-white/[0.05] hover:bg-white/[0.1] text-[10.5px] sm:text-[11px] text-[#e7e9ea] flex items-center gap-1 cursor-pointer transition-colors"
+                          >
+                            {copiedSwarmTranscript ? <Check size={11} className="text-emerald-400" /> : <Copy size={11} />}
+                            <span>{copiedSwarmTranscript ? 'Copied' : 'Copy'}</span>
+                          </button>
+                          <button
+                            type="button"
+                            onClick={handleDownloadSwarmMp3}
+                            disabled={isDownloadingSwarmMp3}
+                            className="px-2 py-1 rounded-lg bg-white/[0.05] hover:bg-white/[0.1] text-[10.5px] sm:text-[11px] text-[#e7e9ea] flex items-center gap-1 cursor-pointer transition-colors disabled:opacity-50"
+                          >
+                            <Download size={11} />
+                            <span>{isDownloadingSwarmMp3 ? 'MP3...' : 'MP3'}</span>
+                          </button>
+                        </>
+                      )}
+                      <button
+                        type="button"
+                        onClick={() => setShowDetailedTranscript((prev) => !prev)}
+                        className="px-2.5 py-1 rounded-lg bg-white text-black text-[10.5px] sm:text-[11px] font-semibold flex items-center gap-1 cursor-pointer hover:bg-zinc-200 transition-colors"
+                      >
+                        <FileText size={11} />
+                        <span>{showDetailedTranscript ? 'Hide Full Stream' : 'Full Stream'}</span>
+                      </button>
+                    </div>
                   </div>
 
-                  <div className="flex items-center gap-1 flex-wrap">
-                    <button
-                      type="button"
-                      onClick={() => setShowTrajectoryChart((prev) => !prev)}
-                      className="px-2 py-0.5 sm:px-2.5 sm:py-1 rounded-full bg-white/[0.05] hover:bg-white/[0.1] border border-white/[0.08] text-[10px] sm:text-[11px] text-[#e7e9ea] flex items-center gap-1 cursor-pointer transition-colors"
-                    >
-                      <Activity size={11} className="text-emerald-400" />
-                      <span>{showTrajectoryChart ? 'Hide Curve' : 'Curve'}</span>
-                    </button>
-                    {messages.length > 0 && (
-                      <>
-                        <button
-                          type="button"
-                          onClick={handleCopyFullSwarm}
-                          className="px-2 py-0.5 sm:px-2.5 sm:py-1 rounded-full bg-white/[0.05] hover:bg-white/[0.1] border border-white/[0.08] text-[10px] sm:text-[11px] text-[#e7e9ea] flex items-center gap-1 cursor-pointer transition-colors"
+                  {/* 3-Round Pipeline Progress Stepper */}
+                  <div className="grid grid-cols-3 gap-1.5 pt-1 border-t border-white/[0.06]">
+                    {[
+                      { r: 1, title: '01. Thesis & Grounding', count: messages.filter((m) => m.round === 1).length },
+                      { r: 2, title: '02. Cross-Examination', count: messages.filter((m) => m.round === 2).length },
+                      { r: 3, title: '03. Final Convergence', count: messages.filter((m) => m.round === 3).length },
+                    ].map((step) => {
+                      const isCurrent = isRunning && currentRound === step.r;
+                      const isDone = Boolean(summary) || (currentRound !== null && currentRound > step.r) || step.count > 0;
+                      return (
+                        <div
+                          key={step.r}
+                          className={`px-2 py-1.5 rounded-lg border text-[10px] sm:text-[11px] flex items-center justify-between gap-1 ${
+                            isCurrent
+                              ? 'border-emerald-500/40 bg-emerald-500/10 text-white font-semibold'
+                              : isDone
+                              ? 'border-white/[0.08] bg-white/[0.03] text-[#e7e9ea]'
+                              : 'border-white/[0.04] bg-transparent text-[#71767b]'
+                          }`}
                         >
-                          {copiedSwarmTranscript ? <Check size={11} className="text-emerald-400" /> : <Copy size={11} />}
-                          <span>{copiedSwarmTranscript ? 'Copied' : 'Copy'}</span>
-                        </button>
-                        <button
-                          type="button"
-                          onClick={handleDownloadSwarmMp3}
-                          disabled={isDownloadingSwarmMp3}
-                          className="px-2 py-0.5 sm:px-2.5 sm:py-1 rounded-full bg-white/[0.05] hover:bg-white/[0.1] border border-white/[0.08] text-[10px] sm:text-[11px] text-[#e7e9ea] flex items-center gap-1 cursor-pointer transition-colors disabled:opacity-50"
-                        >
-                          <Download size={11} />
-                          <span>{isDownloadingSwarmMp3 ? 'MP3...' : 'MP3'}</span>
-                        </button>
-                      </>
-                    )}
-                    <button
-                      type="button"
-                      onClick={() => setShowDetailedTranscript((prev) => !prev)}
-                      className="px-2 py-0.5 sm:px-2.5 sm:py-1 rounded-full bg-white text-black text-[10px] sm:text-[11px] font-semibold flex items-center gap-1 cursor-pointer hover:bg-zinc-200 transition-colors"
-                    >
-                      <FileText size={11} />
-                      <span>{showDetailedTranscript ? 'Hide Stream' : 'Stream'}</span>
-                    </button>
+                          <span className="truncate">{step.title}</span>
+                          <span className="font-mono tabular-nums text-[10px] text-[#8b9097] shrink-0">
+                            {step.count}t
+                          </span>
+                        </div>
+                      );
+                    })}
                   </div>
                 </div>
 
@@ -1651,134 +2041,198 @@ export const ParallaxPage: React.FC = () => {
                   </div>
                 )}
 
-                {/* 3. SCREENSHOT-ACCURATE DARK HAIRLINE RANKING TABLE (MOBILE-SIZED) */}
-                <div className="space-y-1.5">
-                  <div className="flex items-center justify-between px-1">
-                    <div className="flex items-center gap-1.5">
-                      <span className="text-[10px] sm:text-[11px] font-mono uppercase tracking-wider text-[#71767b]">
-                        Swarm Conviction Index ({sortedTableAgents.length} Personas)
-                      </span>
+                {/* 3. CONSENSUS POLARITY METER + SCREENSHOT-ACCURATE DARK HAIRLINE RANKING TABLE */}
+                <div className="space-y-2">
+                  {/* Consensus Polarity Bar & Faction Filter Controls */}
+                  <div className="space-y-1.5 px-0.5">
+                    <div className="flex items-center justify-between flex-wrap gap-2">
+                      <div className="flex items-center gap-1 flex-wrap">
+                        {(
+                          [
+                            { id: 'all', label: `All (${recruitedAgents.length})` },
+                            { id: 'high', label: `High ≥75% (${polarityStats.high})` },
+                            { id: 'moderate', label: `Balanced (${polarityStats.mod})` },
+                            { id: 'skeptic', label: `Skeptics (${polarityStats.low})` },
+                          ] as const
+                        ).map((band) => (
+                          <button
+                            key={band.id}
+                            type="button"
+                            onClick={() => setConvictionBandFilter(band.id)}
+                            className={`px-2 py-1 rounded-lg text-[10.5px] sm:text-[11px] font-medium transition-colors cursor-pointer ${
+                              convictionBandFilter === band.id
+                                ? 'bg-white/12 text-white font-semibold'
+                                : 'text-[#71767b] hover:text-white'
+                            }`}
+                          >
+                            {band.label}
+                          </button>
+                        ))}
+                      </div>
+
+                      <div className="flex items-center gap-2">
+                        <input
+                          type="text"
+                          value={tableSearchQuery}
+                          onChange={(e) => setTableSearchQuery(e.target.value)}
+                          placeholder="Search persona..."
+                          className="w-28 sm:w-36 px-2 py-0.5 rounded-lg bg-white/[0.04] border border-white/[0.08] text-[10.5px] sm:text-[11px] text-white placeholder-[#71767b] focus:outline-none focus:border-white/25"
+                        />
+                        <button
+                          type="button"
+                          onClick={() =>
+                            setTableSortBy((prev) => (prev === 'conviction' ? 'order' : 'conviction'))
+                          }
+                          className="text-[10.5px] sm:text-[11px] font-mono text-[#a1a1aa] hover:text-white flex items-center gap-1 cursor-pointer shrink-0"
+                        >
+                          <ArrowUpDown size={11} />
+                          <span>{tableSortBy === 'conviction' ? 'By %' : 'By Order'}</span>
+                        </button>
+                      </div>
                     </div>
-                    <button
-                      type="button"
-                      onClick={() =>
-                        setTableSortBy((prev) => (prev === 'conviction' ? 'order' : 'conviction'))
-                      }
-                      className="text-[10px] sm:text-[11px] font-mono text-[#a1a1aa] hover:text-white flex items-center gap-1 cursor-pointer"
-                    >
-                      <ArrowUpDown size={11} />
-                      <span>
-                        {tableSortBy === 'conviction' ? 'Sorted by %' : 'Sorted by Order'}
-                      </span>
-                    </button>
+
+                    {/* 3-Segment Consensus Polarity Bar */}
+                    <div className="h-1.5 w-full rounded-full bg-white/[0.06] overflow-hidden flex">
+                      <div
+                        className="h-full bg-emerald-400 transition-all duration-500"
+                        style={{ width: `${polarityStats.highPct}%` }}
+                        title={`High Conviction: ${polarityStats.highPct}%`}
+                      />
+                      <div
+                        className="h-full bg-sky-400 transition-all duration-500"
+                        style={{ width: `${polarityStats.modPct}%` }}
+                        title={`Moderate / Balanced: ${polarityStats.modPct}%`}
+                      />
+                      <div
+                        className="h-full bg-amber-400 transition-all duration-500"
+                        style={{ width: `${polarityStats.lowPct}%` }}
+                        title={`Contrarian / Skeptical: ${polarityStats.lowPct}%`}
+                      />
+                    </div>
                   </div>
 
                   {/* Rounded-2xl Dark Container with Hairline Dividers */}
                   <div id="parallax-conviction-table" className={hairlineTableCardClass}>
-                    {visibleTableAgents.map((agent, index) => {
-                      const isExpanded = expandedAgentId === agent.id;
-                      const rankNumber = String(index + 1).padStart(2, '0');
-                      const cleanRole = agent.role.replace(/\s+perspective|\s+analysis/i, '');
+                    {visibleTableAgents.length === 0 ? (
+                      <div className="py-6 text-center text-xs text-[#71767b]">
+                        No personas match the current filter.
+                      </div>
+                    ) : (
+                      visibleTableAgents.map((agent, index) => {
+                        const isExpanded = expandedAgentId === agent.id;
+                        const rankNumber = String(index + 1).padStart(2, '0');
+                        const cleanRole = agent.role.replace(/\s+perspective|\s+analysis/i, '');
 
-                      return (
-                        <div key={agent.id} className="transition-colors">
-                          <div
-                            onClick={() => setExpandedAgentId(isExpanded ? null : agent.id)}
-                            className="py-2.5 px-3 sm:py-3 sm:px-4 flex items-center justify-between gap-2.5 cursor-pointer hover:bg-white/[0.03]"
-                          >
-                            {/* Left Index + Middle Persona/Entity Name */}
-                            <div className="flex items-center gap-3 sm:gap-6 min-w-0 flex-1">
-                              <span className="text-xs sm:text-[13.5px] font-normal text-[#e7e9ea] tabular-nums w-5 shrink-0">
-                                {rankNumber}
-                              </span>
+                        return (
+                          <div key={agent.id} className="transition-colors">
+                            <div
+                              onClick={() => setExpandedAgentId(isExpanded ? null : agent.id)}
+                              className="py-2.5 px-3 sm:py-3 sm:px-4 flex items-center justify-between gap-2.5 cursor-pointer hover:bg-white/[0.03]"
+                            >
+                              {/* Left Index + Middle Persona/Entity Name */}
+                              <div className="flex items-center gap-3 sm:gap-5 min-w-0 flex-1">
+                                <span className="text-xs sm:text-[13.5px] font-mono text-[#8b9097] tabular-nums w-5 shrink-0">
+                                  {rankNumber}
+                                </span>
 
-                              <div className="min-w-0 flex-1">
-                                <div className="flex items-center gap-2">
-                                  <span className="text-xs sm:text-[14px] font-normal text-white truncate">
-                                    {agent.name}
-                                  </span>
-                                  <span className="hidden sm:inline-block text-[11px] text-[#71767b] truncate">
-                                    · {cleanRole}
-                                  </span>
+                                <div className="min-w-0 flex-1">
+                                  <div className="flex items-center gap-2">
+                                    <span className="text-xs sm:text-[14px] font-medium text-white truncate">
+                                      {agent.name}
+                                    </span>
+                                    <span className="hidden sm:inline-block text-[11px] text-[#71767b] truncate">
+                                      · {cleanRole}
+                                    </span>
+                                  </div>
+                                  {agent.turns.length > 0 && (
+                                    <p className="text-[10.5px] sm:text-xs text-[#71767b] truncate mt-0.5 m-0">
+                                      {agent.latestText.replace(/[#*_`]/g, '').slice(0, 74)}...
+                                    </p>
+                                  )}
                                 </div>
-                                {agent.turns.length > 0 && (
-                                  <p className="text-[10.5px] sm:text-xs text-[#71767b] truncate mt-0.5 m-0">
-                                    {agent.latestText.replace(/[#*_`]/g, '').slice(0, 68)}...
-                                  </p>
+                              </div>
+
+                              {/* Right Conviction Delta + Bar + Percentage */}
+                              <div className="flex items-center gap-2 sm:gap-3 shrink-0">
+                                {agent.delta !== 0 && (
+                                  <span
+                                    className={`text-[10px] font-mono tabular-nums ${
+                                      agent.delta > 0 ? 'text-emerald-400' : 'text-amber-400'
+                                    }`}
+                                    title="Conviction shift from Round 1 to Round 3"
+                                  >
+                                    {agent.delta > 0 ? `+${agent.delta}%` : `${agent.delta}%`}
+                                  </span>
                                 )}
-                              </div>
-                            </div>
-
-                            {/* Right Percentage Column + Subtle Conviction Bar */}
-                            <div className="flex items-center gap-2.5 shrink-0">
-                              <div className="hidden sm:flex w-14 h-1 rounded-full bg-white/[0.07] overflow-hidden">
-                                <div
-                                  className="h-full rounded-full transition-all duration-500"
-                                  style={{
-                                    width: `${Math.min(100, Math.max(10, agent.conviction))}%`,
-                                    backgroundColor: agent.accentColor || '#10b981',
-                                  }}
-                                />
-                              </div>
-                              <span className="text-xs sm:text-[14px] font-normal text-white tabular-nums w-9 sm:w-11 text-right">
-                                {agent.conviction}%
-                              </span>
-                            </div>
-                          </div>
-
-                          {/* Expandable Agent Deliberation Detail on Row Tap */}
-                          {isExpanded && (
-                            <div className="px-3 sm:px-4 pb-3 pt-2 bg-white/[0.02] border-t border-white/[0.06] space-y-2 text-[11px] sm:text-xs">
-                              <div className="flex items-center justify-between text-[#a1a1aa]">
-                                <span className="truncate pr-2">Role: {agent.role}</span>
-                                <span className="font-mono shrink-0">
-                                  {agent.turns.length} round{agent.turns.length === 1 ? '' : 's'}
+                                <div className="hidden sm:flex w-14 h-1 rounded-full bg-white/[0.07] overflow-hidden">
+                                  <div
+                                    className="h-full rounded-full transition-all duration-500"
+                                    style={{
+                                      width: `${Math.min(100, Math.max(10, agent.conviction))}%`,
+                                      backgroundColor: agent.accentColor || '#10b981',
+                                    }}
+                                  />
+                                </div>
+                                <span className="text-xs sm:text-[14px] font-mono text-white tabular-nums w-9 sm:w-10 text-right">
+                                  {agent.conviction}%
                                 </span>
                               </div>
-                              {agent.turns.length === 0 ? (
-                                <div className="text-[#71767b] py-1">
-                                  Specialist queued in active deliberation pipeline...
-                                </div>
-                              ) : (
-                                agent.turns.map((turn) => (
-                                  <div
-                                    key={turn.id}
-                                    className="p-2.5 rounded-xl bg-black/50 border border-white/[0.06] space-y-1"
-                                  >
-                                    <div className="flex items-center justify-between">
-                                      <span className="font-semibold text-white text-[11px]">
-                                        Round 0{turn.round}
-                                      </span>
-                                      <div className="flex items-center gap-2">
-                                        {typeof turn.convictionScore === 'number' && (
-                                          <span className="text-[10px] font-mono text-emerald-400">
-                                            {turn.convictionScore}%
-                                          </span>
-                                        )}
-                                        <button
-                                          type="button"
-                                          onClick={(e) => {
-                                            e.stopPropagation();
-                                            handlePlayMessageAudio(turn);
-                                          }}
-                                          className="px-2 py-0.5 rounded-full bg-white/10 hover:bg-white/20 text-white text-[10px] font-semibold flex items-center gap-1 cursor-pointer"
-                                        >
-                                          <Play size={8} />
-                                          {playingAudioKey === turn.id ? 'Stop' : 'Speak'}
-                                        </button>
-                                      </div>
-                                    </div>
-                                    <p className="text-[#e7e9ea] leading-relaxed whitespace-pre-wrap text-xs sm:text-[13px] m-0">
-                                      {turn.text}
-                                    </p>
-                                  </div>
-                                ))
-                              )}
                             </div>
-                          )}
-                        </div>
-                      );
-                    })}
+
+                            {/* Expandable Agent Deliberation Detail on Row Tap */}
+                            {isExpanded && (
+                              <div className="px-3 sm:px-4 pb-3 pt-2 bg-white/[0.02] border-t border-white/[0.06] space-y-2 text-[11px] sm:text-xs">
+                                <div className="flex items-center justify-between text-[#a1a1aa]">
+                                  <span className="truncate pr-2">Role: {agent.role}</span>
+                                  <span className="font-mono tabular-nums shrink-0">
+                                    R1: {agent.r1Conviction}% → Final: {agent.conviction}% ({agent.turns.length} round{agent.turns.length === 1 ? '' : 's'})
+                                  </span>
+                                </div>
+                                {agent.turns.length === 0 ? (
+                                  <div className="text-[#71767b] py-1">
+                                    Specialist queued in active deliberation pipeline...
+                                  </div>
+                                ) : (
+                                  agent.turns.map((turn) => (
+                                    <div
+                                      key={turn.id}
+                                      className="p-2.5 rounded-xl bg-black/50 border border-white/[0.06] space-y-1"
+                                    >
+                                      <div className="flex items-center justify-between">
+                                        <span className="font-semibold text-white text-[11px]">
+                                          Round 0{turn.round}
+                                        </span>
+                                        <div className="flex items-center gap-2">
+                                          {typeof turn.convictionScore === 'number' && (
+                                            <span className="text-[10px] font-mono tabular-nums text-emerald-400">
+                                              {turn.convictionScore}%
+                                            </span>
+                                          )}
+                                          <button
+                                            type="button"
+                                            onClick={(e) => {
+                                              e.stopPropagation();
+                                              handlePlayMessageAudio(turn);
+                                            }}
+                                            className="px-2 py-0.5 rounded-lg bg-white/10 hover:bg-white/20 text-white text-[10px] font-semibold flex items-center gap-1 cursor-pointer"
+                                          >
+                                            <Play size={8} />
+                                            {playingAudioKey === turn.id ? 'Stop' : 'Speak'}
+                                          </button>
+                                        </div>
+                                      </div>
+                                      <p className="text-[#e7e9ea] leading-relaxed whitespace-pre-wrap text-xs sm:text-[13px] m-0">
+                                        {turn.text}
+                                      </p>
+                                    </div>
+                                  ))
+                                )}
+                              </div>
+                            )}
+                          </div>
+                        );
+                      })
+                    )}
 
                     {sortedTableAgents.length > 8 && (
                       <button
@@ -1807,14 +2261,14 @@ export const ParallaxPage: React.FC = () => {
                     <div className={`sm:col-span-7 p-3 sm:p-3.5 ${hairlineTableCardClass} divide-y-0`}>
                       <div className="flex items-center justify-between mb-1.5">
                         <div>
-                          <div className="text-[9.5px] font-mono uppercase tracking-wider text-[#71767b]">
-                            CONVICTION SPECTRUM · R1 → R3
+                          <div className="text-[10px] font-mono text-[#71767b]">
+                            Conviction Spectrum · R1 → R3
                           </div>
                           <div className="text-[11px] sm:text-xs font-semibold text-white mt-0.5">
                             Multi-Agent Consensus Curve
                           </div>
                         </div>
-                        <span className="text-[11px] font-mono font-bold text-emerald-400">
+                        <span className="text-[11px] font-mono tabular-nums font-bold text-emerald-400">
                           {summary?.confidenceScore || Math.max(...chartPoints.map((p) => p.val))}% Peak
                         </span>
                       </div>
@@ -1947,7 +2401,7 @@ export const ParallaxPage: React.FC = () => {
 
                       <div className="pt-1.5 mt-1.5 border-t border-white/[0.06] flex items-center justify-between text-[10px] text-[#71767b] font-mono">
                         <span>Protocol: {currentModeObj.shortLabel}</span>
-                        <span className="text-emerald-400 truncate max-w-[120px]">
+                        <span className="text-emerald-400 truncate max-w-[130px]">
                           {summary?.consensusLean || 'Active Synthesis'}
                         </span>
                       </div>
@@ -2078,12 +2532,12 @@ export const ParallaxPage: React.FC = () => {
                BOTTOM FLOATING COMPOSER (COMPACT MOBILE-FRIENDLY REPLICA:
                "Ask anything", Paperclip left, "⚡ Fast ∨" + White Waveform Circle right)
                ========================================================== */}
-            <div id="parallax-input-container" className="sticky bottom-2 z-30 pt-2">
+            <div id="parallax-input-container" className="sticky bottom-1.5 z-30">
               {/* Popover 1: Paperclip / Quick Tasks & Human Directive Menu */}
               {isPlusMenuOpen && (
-                <div className={`mb-2 p-3 rounded-2xl space-y-2 animate-fadeIn ${composerBoxClass}`}>
+                <div className={`mb-1.5 p-2.5 rounded-2xl space-y-1.5 animate-fadeIn ${composerBoxClass}`}>
                   <div className="flex items-center justify-between">
-                    <span className="text-[11px] sm:text-xs font-bold text-white">
+                    <span className="text-[11px] font-bold text-white">
                       Quick Swarm Tasks &amp; Directives
                     </span>
                     <button
@@ -2091,11 +2545,11 @@ export const ParallaxPage: React.FC = () => {
                       onClick={() => setIsPlusMenuOpen(false)}
                       className="text-[#71767b] hover:text-white cursor-pointer"
                     >
-                      <X size={14} />
+                      <X size={13} />
                     </button>
                   </div>
 
-                  <div className="space-y-0.5">
+                  <div className="space-y-0.5 max-h-44 overflow-y-auto no-scrollbar">
                     {SAMPLE_TOPICS.map((t, idx) => (
                       <button
                         key={idx}
@@ -2104,7 +2558,7 @@ export const ParallaxPage: React.FC = () => {
                           setTopicInput(t);
                           handleStartSwarm(t);
                         }}
-                        className="w-full text-left px-2 py-1.5 rounded-xl hover:bg-white/[0.06] text-[11px] sm:text-xs text-[#e7e9ea] truncate flex items-center gap-2 cursor-pointer"
+                        className="w-full text-left px-2 py-1 rounded-xl hover:bg-white/[0.06] text-[11px] text-[#e7e9ea] truncate flex items-center gap-1.5 cursor-pointer"
                       >
                         <Globe size={11} className="text-emerald-400 shrink-0" />
                         <span className="truncate">{t}</span>
@@ -2113,17 +2567,17 @@ export const ParallaxPage: React.FC = () => {
                   </div>
 
                   {isRunning && (
-                    <div className="pt-1.5 border-t border-white/[0.08]">
+                    <div className="pt-1 border-t border-white/[0.08]">
                       <button
                         type="button"
                         onClick={() => {
                           setIsPlusMenuOpen(false);
                           setIsHumanModalOpen(true);
                         }}
-                        className="w-full py-1.5 px-2.5 rounded-xl bg-amber-500/20 hover:bg-amber-500/30 border border-amber-500/30 text-amber-200 text-[11px] font-semibold flex items-center justify-center gap-1.5 cursor-pointer"
+                        className="w-full py-1 px-2 rounded-xl bg-amber-500/20 hover:bg-amber-500/30 border border-amber-500/30 text-amber-200 text-[10.5px] font-semibold flex items-center justify-center gap-1.5 cursor-pointer"
                       >
-                        <UserPlus size={12} />
-                        <span>Inject Human Operator Directive (Round 0{currentRound || 1})</span>
+                        <UserPlus size={11} />
+                        <span>Inject Operator Directive (Round 0{currentRound || 1})</span>
                       </button>
                     </div>
                   )}
@@ -2132,9 +2586,9 @@ export const ParallaxPage: React.FC = () => {
 
               {/* Popover 2: "⚡ Fast ∨" Swarm Mode / Protocol Selector */}
               {isModeSelectorOpen && (
-                <div className={`mb-2 p-2.5 rounded-2xl space-y-1 animate-fadeIn ${composerBoxClass}`}>
+                <div className={`mb-1.5 p-2 rounded-2xl space-y-1 animate-fadeIn ${composerBoxClass}`}>
                   <div className="flex items-center justify-between px-2 pb-0.5">
-                    <span className="text-[10px] font-mono uppercase tracking-wider text-[#71767b]">
+                    <span className="text-[9.5px] font-mono uppercase tracking-wider text-[#71767b]">
                       Select Swarm Execution Mode
                     </span>
                     <button
@@ -2142,7 +2596,7 @@ export const ParallaxPage: React.FC = () => {
                       onClick={() => setIsModeSelectorOpen(false)}
                       className="text-[#71767b] hover:text-white cursor-pointer"
                     >
-                      <X size={13} />
+                      <X size={12} />
                     </button>
                   </div>
                   {DEBATE_MODES.map((m) => {
@@ -2156,30 +2610,30 @@ export const ParallaxPage: React.FC = () => {
                           setDebateMode(m.id);
                           setIsModeSelectorOpen(false);
                         }}
-                        className={`w-full px-2.5 py-2 rounded-xl text-left flex items-center justify-between transition-colors cursor-pointer ${
+                        className={`w-full px-2 py-1.5 rounded-xl text-left flex items-center justify-between transition-colors cursor-pointer ${
                           active
                             ? 'bg-white/[0.1] text-white'
                             : 'hover:bg-white/[0.05] text-[#a1a1aa]'
                         }`}
                       >
                         <div className="flex items-center gap-2">
-                          <Icon size={13} className={active ? 'text-white' : 'text-[#71767b]'} />
+                          <Icon size={12} className={active ? 'text-white' : 'text-[#71767b]'} />
                           <div>
-                            <div className="text-[11px] sm:text-xs font-semibold text-white">{m.label}</div>
-                            <div className="text-[10px] text-[#71767b]">{m.speedTag}</div>
+                            <div className="text-[11px] font-semibold text-white">{m.label}</div>
+                            <div className="text-[9.5px] text-[#71767b]">{m.speedTag}</div>
                           </div>
                         </div>
-                        {active && <Check size={13} className="text-emerald-400" />}
+                        {active && <Check size={12} className="text-emerald-400" />}
                       </button>
                     );
                   })}
                 </div>
               )}
 
-              {/* SCREENSHOT COMPOSER BOX: Compact mobile-friendly dark container */}
-              <div className={`rounded-2xl sm:rounded-[24px] px-3 sm:px-4 pt-2.5 pb-2 transition-all ${composerBoxClass}`}>
+              {/* SCREENSHOT COMPOSER BOX: Ultra-compact mobile-friendly dark container */}
+              <div className={`rounded-[18px] sm:rounded-[22px] px-3 py-1.5 sm:px-3.5 sm:py-2 transition-all ${composerBoxClass}`}>
                 {/* Row 1: "Ask anything" Input */}
-                <div className="pb-1.5">
+                <div className="pb-1">
                   <input
                     id="parallax-topic-input"
                     type="text"
@@ -2193,12 +2647,12 @@ export const ParallaxPage: React.FC = () => {
                     }}
                     disabled={isRunning}
                     placeholder={isRunning ? statusText : 'Ask anything'}
-                    className="w-full bg-transparent text-[13px] sm:text-[14.5px] text-white placeholder-[#71767b] focus:outline-none"
+                    className="w-full bg-transparent text-[12.5px] sm:text-[13.5px] text-white placeholder-[#71767b] focus:outline-none"
                   />
                 </div>
 
                 {/* Row 2: Left Paperclip Icon | Right "⚡ Fast ∨" + Solid White Waveform Circle Button */}
-                <div className="flex items-center justify-between">
+                <div className="flex items-center justify-between gap-2">
                   {/* Left: Paperclip / Quick Presets & Directives */}
                   <button
                     type="button"
@@ -2206,26 +2660,26 @@ export const ParallaxPage: React.FC = () => {
                       setIsModeSelectorOpen(false);
                       setIsPlusMenuOpen((prev) => !prev);
                     }}
-                    className="p-1 -ml-0.5 rounded-full text-[#8b9097] hover:text-white transition-colors cursor-pointer"
+                    className="w-6 h-6 sm:w-7 sm:h-7 -ml-1 rounded-full flex items-center justify-center text-[#8b9097] hover:text-white transition-colors cursor-pointer shrink-0"
                     title="Attach Preset Topic or Inject Directive"
                   >
-                    <Paperclip size={17} strokeWidth={1.9} />
+                    <Paperclip size={14} strokeWidth={1.9} />
                   </button>
 
                   {/* Right: "⚡ Fast ∨" Mode Dropdown + Solid White Circle Waveform Button */}
-                  <div className="flex items-center gap-2">
+                  <div className="flex items-center gap-1.5 shrink-0">
                     <button
                       type="button"
                       onClick={() => {
                         setIsPlusMenuOpen(false);
                         setIsModeSelectorOpen((prev) => !prev);
                       }}
-                      className="flex items-center gap-1 px-2 py-1 rounded-full text-[#e7e9ea] hover:bg-white/[0.06] text-xs sm:text-[13px] font-medium transition-colors cursor-pointer"
+                      className="h-6 sm:h-7 px-2 rounded-full flex items-center gap-1 text-[#e7e9ea] hover:bg-white/[0.06] text-[11px] sm:text-xs font-medium transition-colors cursor-pointer shrink-0"
                       title="Switch Swarm Speed & Protocol"
                     >
-                      <Zap size={13} className="text-[#e7e9ea]" />
+                      <Zap size={11} className="text-[#e7e9ea] shrink-0" />
                       <span>{currentModeObj.shortLabel}</span>
-                      <ChevronDown size={13} className="text-[#71767b]" />
+                      <ChevronDown size={11} className="text-[#71767b] shrink-0" />
                     </button>
 
                     {isRunning ? (
@@ -2233,10 +2687,10 @@ export const ParallaxPage: React.FC = () => {
                         id="parallax-stop-swarm-btn"
                         type="button"
                         onClick={handleStopSwarm}
-                        className="w-8 h-8 sm:w-9 sm:h-9 rounded-full bg-rose-500 hover:bg-rose-600 text-white flex items-center justify-center shrink-0 shadow-md cursor-pointer transition-transform active:scale-95"
+                        className="w-7 h-7 sm:w-8 sm:h-8 rounded-full bg-rose-500 hover:bg-rose-600 text-white flex items-center justify-center shrink-0 shadow-sm cursor-pointer transition-transform active:scale-95"
                         title="Stop Swarm"
                       >
-                        <Square size={12} fill="currentColor" />
+                        <Square size={10} fill="currentColor" />
                       </button>
                     ) : (
                       <button
@@ -2251,7 +2705,7 @@ export const ParallaxPage: React.FC = () => {
                             handleStartSwarm(SAMPLE_TOPICS[0]);
                           }
                         }}
-                        className="w-8 h-8 sm:w-9 sm:h-9 rounded-full bg-white hover:bg-zinc-200 text-black flex items-center justify-center shrink-0 shadow-md cursor-pointer transition-transform active:scale-95"
+                        className="w-7 h-7 sm:w-8 sm:h-8 rounded-full bg-white hover:bg-zinc-200 text-black flex items-center justify-center shrink-0 shadow-sm cursor-pointer transition-transform active:scale-95"
                         title={
                           topicInput.trim()
                             ? 'Launch 20-Agent Swarm'
@@ -2260,7 +2714,7 @@ export const ParallaxPage: React.FC = () => {
                             : 'Launch Featured Swarm Task'
                         }
                       >
-                        <AudioLines size={16} strokeWidth={2.3} />
+                        <AudioLines size={14} strokeWidth={2.3} />
                       </button>
                     )}
                   </div>

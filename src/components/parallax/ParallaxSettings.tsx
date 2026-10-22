@@ -433,34 +433,29 @@ export const ParallaxSettings: React.FC<ParallaxSettingsProps> = ({
             <div
               key={agent.id}
               id={`parallax-agent-card-${agent.id}`}
-              className={`rounded-2xl p-3 sm:p-3.5 flex flex-col gap-2.5 transition-colors ${cardSurfaceClass}`}
-              style={{
-                borderLeft: `2px solid ${agent.enabled ? agent.accentColor : 'rgba(148, 163, 184, 0.3)'}`,
-              }}
+              className={`rounded-2xl p-3 sm:p-3.5 flex flex-col gap-2.5 transition-colors ${cardSurfaceClass} ${
+                agent.enabled ? 'opacity-100' : 'opacity-60'
+              }`}
             >
               {/* Agent Card Header */}
-              <div className="flex items-center justify-between gap-2.5">
-                <div className="flex items-center gap-2.5">
+              <div className="flex items-center justify-between gap-2">
+                <div className="flex items-center gap-2 min-w-0">
                   <ParallaxAgentAvatar
                     agentId={agent.id}
                     agentName={agent.name}
                     accentColor={agent.accentColor}
-                    size="md"
+                    size="sm"
                   />
-                  <div>
-                    <div className="flex items-center gap-2">
-                      <span className="text-sm font-extrabold text-slate-100">{agent.name}</span>
-                      {agent.id === 'veritas' ? (
-                        <span className="text-[10px] font-mono px-2 py-0.5 rounded-full bg-cyan-500/20 text-cyan-300 font-bold">
-                          🔍 Fact Tool (R1)
-                        </span>
-                      ) : (
-                        <span className="text-[10px] font-mono px-2 py-0.5 rounded-full bg-slate-800/60 text-slate-300">
-                          No Tools
-                        </span>
-                      )}
+                  <div className="min-w-0">
+                    <div className="flex items-center gap-1.5 flex-wrap">
+                      <span className="text-xs sm:text-sm font-bold text-slate-100 truncate">
+                        {agent.name}
+                      </span>
+                      <span className="text-[10px] font-mono text-slate-400">
+                        · {agent.id === 'veritas' ? 'Live Web Search (R1)' : 'Reasoning Specialist'}
+                      </span>
                     </div>
-                    <span className="text-[11px] text-slate-300 block mt-0.5">
+                    <span className="text-[11px] text-slate-400 block truncate mt-0.5">
                       {agent.role}
                     </span>
                   </div>
