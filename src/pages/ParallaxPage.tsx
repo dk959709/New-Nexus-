@@ -802,19 +802,85 @@ export const ParallaxPage: React.FC = () => {
     handleStartSwarm(pick);
   };
 
+  const configuredAgentsCount = Object.keys(config.agents || {}).length;
   const enabledAgentsList = Object.values(config.agents || {}).filter((a) => a.enabled !== false);
   const enabledAgentsCount = enabledAgentsList.length;
+  const dynamicSpecialistsCount = dynamicPersonas.length;
+  const totalActivePoolCount = enabledAgentsCount + dynamicSpecialistsCount;
+  const expectedMaxReplies = totalActivePoolCount * 3;
 
-  const activeSpeakingAgent =
+  const agentTurns = React.useMemo(
+    () => messages.filter((m) => !m.isHuman),
+    [messages],
+  );
+  const agentTurnsCount = agentTurns.length;
+
+  const respondedAgentsCount = React.useMemo(
+    () => new Set(agentTurns.map((m) => m.agentId)).size,
+    [agentTurns],
+  );
+
+  const currentRoundRespondedCount = React.useMemo(() => {
+    if (!currentRound) return 0;
+    return new Set(agentTurns.filter((m) => m.round === currentRound).map((m) => m.agentId)).size;
+  }, [agentTurns, currentRound]);
+
+  // Normalize a turn's conviction score (stored on 1-10 scale in orchestrator, or 0-100 in legacy sessions) to 0-100%
+  const getTurnConvictionPct = React.useCallback((msg?: ParallaxMessage | null): number | null => {
+    if (!msg || msg.isHuman) return null;
+    const raw =
+      typeof msg.conviction === 'number'
+        ? msg.conviction
+        : typeof (msg as { convictionScore?: number }).convictionScore === 'number'
+        ? (msg as { convictionScore?: number }).convictionScore!
+        : null;
+    if (raw === null || Number.isNaN(raw)) return null;
+    return raw <= 10 ? Math.round(raw * 10) : Math.round(raw);
+  }, []);
+
+  // Voice playback active state vs latest deliberation speaker
+  const voiceSpeakingMessage =
     playingAudioKey && playingAudioKey !== 'full_swarm'
       ? messages.find((m) => m.id === playingAudioKey) || null
-      : isRunning && messages.length > 0
-      ? messages[messages.length - 1]
       : null;
+
+  const speakingAgentsCount = playingAudioKey ? 1 : 0;
+
+  const activeSpeakingAgent =
+    voiceSpeakingMessage ||
+    (isRunning && agentTurns.length > 0 ? agentTurns[agentTurns.length - 1] : null);
 
   const hasActiveMission = Boolean(currentTopic || messages.length > 0 || isRunning || summary);
 
-  // Build agent recruitment list combining agents who have spoken + configured active agents
+  // Grounded sources calculation matching actual source data
+  const groundingTelemetry = React.useMemo(() => {
+    const toolGroundedTurns = agentTurns.filter((m) => Boolean(m.toolUsed && !m.toolUsed.failed)).length;
+    if (intelligenceBriefing) {
+      const count = intelligenceBriefing.sources?.length ?? intelligenceBriefing.liveSearchCount ?? 0;
+      return {
+        count,
+        subtext: `Round 00 web sources (${toolGroundedTurns} turn${toolGroundedTurns === 1 ? '' : 's'} cited)`,
+      };
+    }
+    if (summary?.evidenceSources) {
+      return {
+        count: summary.evidenceSources.length,
+        subtext: 'Summary evidence sources',
+      };
+    }
+    if (agentTurns.length > 0) {
+      return {
+        count: toolGroundedTurns,
+        subtext: 'Search-grounded agent turns',
+      };
+    }
+    return {
+      count: null as number | null,
+      subtext: isRunning ? 'Scanning live web sources...' : 'Awaiting Round 00 search',
+    };
+  }, [intelligenceBriefing, summary, agentTurns, isRunning]);
+
+  // Build agent telemetry list from genuine turns + enabled standby agents without fabricating scores
   const recruitedAgents = React.useMemo(() => {
     const byId = new Map<
       string,
@@ -823,20 +889,23 @@ export const ParallaxPage: React.FC = () => {
         name: string;
         role: string;
         accentColor: string;
-        latestRound: number;
+        latestRound: number | null;
         latestText: string;
-        conviction: number;
-        r1Conviction: number;
-        delta: number;
+        conviction: number | null;
+        r1Conviction: number | null;
+        delta: number | null;
         turns: ParallaxMessage[];
       }
     >();
 
-    for (const msg of messages) {
+    for (const msg of agentTurns) {
       const existing = byId.get(msg.agentId);
       const turns = existing ? [...existing.turns, msg] : [msg];
-      const r1Score = turns[0]?.convictionScore ?? msg.convictionScore ?? 74;
-      const latestScore = msg.convictionScore ?? 78;
+      const scoredTurns = turns
+        .map((t) => getTurnConvictionPct(t))
+        .filter((v): v is number => v !== null);
+      const r1Score = scoredTurns.length > 0 ? scoredTurns[0] : null;
+      const latestScore = scoredTurns.length > 0 ? scoredTurns[scoredTurns.length - 1] : null;
       byId.set(msg.agentId, {
         id: msg.agentId,
         name: msg.agentName.split(' (')[0],
@@ -846,44 +915,44 @@ export const ParallaxPage: React.FC = () => {
         latestText: msg.text,
         conviction: latestScore,
         r1Conviction: r1Score,
-        delta: turns.length > 1 ? latestScore - r1Score : 0,
+        delta:
+          turns.length > 1 && latestScore !== null && r1Score !== null
+            ? latestScore - r1Score
+            : null,
         turns,
       });
     }
 
-    if (byId.size < 14) {
-      enabledAgentsList.forEach((agent, idx) => {
-        if (byId.size >= 16) return;
-        if (!byId.has(agent.id)) {
-          const baseConv = isRunning ? Math.max(32, 89 - idx * 3) : Math.max(30, 91 - idx * 3);
-          const r1Conv = Math.max(36, baseConv - ((idx % 3 === 0 ? 4 : -3)));
-          byId.set(agent.id, {
-            id: agent.id,
-            name: agent.name.split(' (')[0],
-            role: agent.role || 'Domain Specialist',
-            accentColor: agent.accentColor || '#10b981',
-            latestRound: currentRound || 1,
-            latestText: `${agent.role} baseline & cross-examination telemetry`,
-            conviction: baseConv,
-            r1Conviction: r1Conv,
-            delta: baseConv - r1Conv,
-            turns: [],
-          });
-        }
-      });
-    }
+    // Append enabled agents and dynamic specialists that are in standby (0 turns, conviction: null)
+    const activePool = [...enabledAgentsList, ...dynamicPersonas];
+    activePool.forEach((agent) => {
+      if (!byId.has(agent.id)) {
+        byId.set(agent.id, {
+          id: agent.id,
+          name: agent.name.split(' (')[0],
+          role: agent.role || 'Domain Specialist',
+          accentColor: agent.accentColor || '#10b981',
+          latestRound: null,
+          latestText: agent.systemInstruction || `${agent.role} awaiting turn`,
+          conviction: null,
+          r1Conviction: null,
+          delta: null,
+          turns: [],
+        });
+      }
+    });
 
     return Array.from(byId.values());
-  }, [messages, enabledAgentsList, config.agents, currentRound, isRunning]);
+  }, [agentTurns, enabledAgentsList, dynamicPersonas, config.agents, getTurnConvictionPct]);
 
   const sortedTableAgents = React.useMemo(() => {
     let copy = [...recruitedAgents];
     if (convictionBandFilter === 'high') {
-      copy = copy.filter((a) => a.conviction >= 75);
+      copy = copy.filter((a) => a.conviction !== null && a.conviction >= 75);
     } else if (convictionBandFilter === 'moderate') {
-      copy = copy.filter((a) => a.conviction >= 55 && a.conviction < 75);
+      copy = copy.filter((a) => a.conviction !== null && a.conviction >= 55 && a.conviction < 75);
     } else if (convictionBandFilter === 'skeptic') {
-      copy = copy.filter((a) => a.conviction < 55);
+      copy = copy.filter((a) => a.conviction !== null && a.conviction < 55);
     }
 
     if (tableSearchQuery.trim()) {
@@ -897,26 +966,49 @@ export const ParallaxPage: React.FC = () => {
     }
 
     if (tableSortBy === 'conviction') {
-      copy.sort((a, b) => b.conviction - a.conviction);
+      copy.sort((a, b) => {
+        if (a.conviction === null && b.conviction === null) return 0;
+        if (a.conviction === null) return 1;
+        if (b.conviction === null) return -1;
+        return b.conviction - a.conviction;
+      });
     }
     return copy;
   }, [recruitedAgents, tableSortBy, convictionBandFilter, tableSearchQuery]);
 
   const polarityStats = React.useMemo(() => {
-    const total = Math.max(1, recruitedAgents.length);
-    const high = recruitedAgents.filter((a) => a.conviction >= 75).length;
-    const mod = recruitedAgents.filter((a) => a.conviction >= 55 && a.conviction < 75).length;
-    const low = recruitedAgents.filter((a) => a.conviction < 55).length;
-    const avg = Math.round(
-      recruitedAgents.reduce((acc, a) => acc + a.conviction, 0) / total,
+    const scoredAgents = recruitedAgents.filter(
+      (a): a is typeof a & { conviction: number } => a.conviction !== null,
     );
+    const scoredCount = scoredAgents.length;
+    if (scoredCount === 0) {
+      return {
+        scoredCount: 0,
+        high: 0,
+        mod: 0,
+        low: 0,
+        highPct: 0,
+        modPct: 0,
+        lowPct: 0,
+        avg: null as number | null,
+      };
+    }
+    const high = scoredAgents.filter((a) => a.conviction >= 75).length;
+    const mod = scoredAgents.filter((a) => a.conviction >= 55 && a.conviction < 75).length;
+    const low = scoredAgents.filter((a) => a.conviction < 55).length;
+    const avg = Math.round(
+      scoredAgents.reduce((acc, a) => acc + a.conviction, 0) / scoredCount,
+    );
+    const highPct = Math.round((high / scoredCount) * 100);
+    const modPct = Math.round((mod / scoredCount) * 100);
     return {
+      scoredCount,
       high,
       mod,
       low,
-      highPct: Math.round((high / total) * 100),
-      modPct: Math.round((mod / total) * 100),
-      lowPct: Math.max(0, 100 - Math.round((high / total) * 100) - Math.round((mod / total) * 100)),
+      highPct,
+      modPct,
+      lowPct: Math.max(0, 100 - highPct - modPct),
       avg,
     };
   }, [recruitedAgents]);
@@ -935,33 +1027,23 @@ export const ParallaxPage: React.FC = () => {
   }, [inspectedRosterAgentId, config.agents, enabledAgentsList]);
 
   const chartPoints = React.useMemo(() => {
-    if (recruitedAgents.length === 0) {
-      return [
-        { label: 'VERITAS', val: 88 },
-        { label: 'AXIOM', val: 84 },
-        { label: 'LEDGER', val: 79 },
-        { label: 'CIPHER', val: 76 },
-        { label: 'ORACLE', val: 72 },
-        { label: 'CHRONOS', val: 68 },
-        { label: 'SENTINEL', val: 64 },
-        { label: 'AURORA', val: 59 },
-        { label: 'GRAVITY', val: 52 },
-        { label: 'VANGUARD', val: 44 },
-      ];
+    const scored = recruitedAgents.filter(
+      (a): a is typeof a & { conviction: number } => a.conviction !== null,
+    );
+    if (scored.length === 0) {
+      return [];
     }
-    const base = [...recruitedAgents].sort((a, b) => b.conviction - a.conviction);
-    return base.slice(0, 10).map((ag, idx) => {
-      const r1 = ag.turns.find((t) => t.round === 1)?.convictionScore ?? 58 + ((idx * 7) % 25);
-      const r3 = ag.turns[ag.turns.length - 1]?.convictionScore ?? ag.conviction ?? r1 + 12;
+    const base = [...scored].sort((a, b) => b.conviction - a.conviction);
+    return base.slice(0, 10).map((ag) => {
       return {
         label: ag.name.slice(0, 7),
-        val: Math.max(18, Math.min(98, r3)),
+        val: Math.max(10, Math.min(100, ag.conviction)),
         accent: ag.accentColor,
       };
     });
   }, [recruitedAgents]);
 
-  // Synthesize editorial "Notes:" bullet points (matching Screenshot's exact "Notes:" + bullet list + "Source:" structure)
+  // Synthesize editorial "Notes:" bullet points strictly from actual session state
   const editorialNotes = React.useMemo(() => {
     const bullets: string[] = [];
 
@@ -969,27 +1051,24 @@ export const ParallaxPage: React.FC = () => {
       if (summary.verdict) {
         bullets.push(summary.verdict);
       }
-      if (summary.agreements && summary.agreements.length > 0) {
-        bullets.push(
-          `Core consensus across participating personas: ${summary.agreements.slice(0, 2).join(' ')}`,
-        );
+      if (summary.highlights && summary.highlights.length > 0) {
+        bullets.push(...summary.highlights.slice(0, 2));
       }
-      if (summary.disagreements && summary.disagreements.length > 0) {
-        bullets.push(
-          `Key divergence & cross-examination pushback (especially from contrarian & risk nodes): ${summary.disagreements
-            .slice(0, 2)
-            .join(' ')}`,
-        );
-      }
-      if (summary.recommendedPathForward) {
-        bullets.push(`Strategic recommendation: ${summary.recommendedPathForward}`);
+      if (summary.factualConflicts && summary.factualConflicts.length > 0) {
+        bullets.push(`Factual divergence detected: ${summary.factualConflicts[0]}`);
+      } else if (summary.valueConflicts && summary.valueConflicts.length > 0) {
+        bullets.push(`Ideological tension: ${summary.valueConflicts[0]}`);
       }
     }
 
-    if (bullets.length < 4 && messages.length > 0) {
-      const veritasTurn = messages.find((m) => m.agentId === 'veritas');
-      const highTurn = [...messages].sort((a, b) => (b.convictionScore || 75) - (a.convictionScore || 75))[0];
-      const lowTurn = [...messages].sort((a, b) => (a.convictionScore || 75) - (b.convictionScore || 75))[0];
+    if (bullets.length < 4 && agentTurns.length > 0) {
+      const veritasTurn = agentTurns.find((m) => m.agentId === 'veritas');
+      const scoredTurns = agentTurns
+        .map((m) => ({ msg: m, pct: getTurnConvictionPct(m) }))
+        .filter((item): item is { msg: ParallaxMessage; pct: number } => item.pct !== null);
+
+      const highTurn = [...scoredTurns].sort((a, b) => b.pct - a.pct)[0];
+      const lowTurn = [...scoredTurns].sort((a, b) => a.pct - b.pct)[0];
 
       if (veritasTurn && bullets.length < 4) {
         bullets.push(
@@ -1001,31 +1080,27 @@ export const ParallaxPage: React.FC = () => {
       }
       if (highTurn && bullets.length < 4) {
         bullets.push(
-          `Highest conviction ratings remain concentrated in ${highTurn.agentName} (${
-            highTurn.convictionScore || 88
-          }%), emphasizing ${highTurn.role?.toLowerCase() || 'primary domain thesis'}.`,
+          `Highest conviction recorded in ${highTurn.msg.agentName} (${highTurn.pct}%), emphasizing ${
+            highTurn.msg.role?.toLowerCase() || 'primary domain thesis'
+          }.`,
         );
       }
-      if (lowTurn && lowTurn.id !== highTurn?.id && bullets.length < 4) {
+      if (lowTurn && lowTurn.msg.id !== highTurn?.msg.id && bullets.length < 4) {
         bullets.push(
-          `Lowest / most skeptical ratings in the full swarm include ${lowTurn.agentName} (${
-            lowTurn.convictionScore || 34
-          }%), highlighting tail risks and structural friction.`,
+          `Lowest / most skeptical conviction recorded in ${lowTurn.msg.agentName} (${lowTurn.pct}%), highlighting tail risks and structural friction.`,
         );
       }
     }
 
     if (bullets.length === 0) {
       bullets.push(
-        `Data comes directly from Parallax's 20-persona multi-round deliberation pipeline for the assigned intelligence task.`,
-        `Conviction ratings adjust dynamically across Round 1 (Thesis), Round 2 (Cross-Examination), and Round 3 (Final Convergence).`,
-        `Highest conviction ratings remain concentrated in empirical & first-principles specialists (VERITAS, AXIOM, LEDGER, and CIPHER).`,
-        `Lowest conviction ratings in the full swarm reflect contrarian stress-testing from VANGUARD (31%) and SENTINEL (30%) risk audits.`,
+        `Awaiting agent turns: Parallax's ${enabledAgentsCount}-persona deliberation pipeline is initializing for the assigned intelligence task.`,
+        `Conviction scores (1–10 scale normalized to %) will populate dynamically as agents respond across Round 1 (Thesis), Round 2 (Cross-Examination), and Round 3 (Convergence).`,
       );
     }
 
     return bullets.slice(0, 5);
-  }, [summary, messages]);
+  }, [summary, agentTurns, getTurnConvictionPct, enabledAgentsCount]);
 
   const currentModeObj = DEBATE_MODES.find((m) => m.id === debateMode) || DEBATE_MODES[0];
 
@@ -1497,7 +1572,7 @@ export const ParallaxPage: React.FC = () => {
               agents={config.agents}
               messages={messages}
               selectedAgentId={selectedAgentFilter}
-              activeSpeakingAgentId={activeSpeakingAgent?.agentId}
+              activeSpeakingAgentId={voiceSpeakingMessage?.agentId}
               onSelectAgent={(agentId) => setSelectedAgentFilter(agentId)}
               dynamicPersonas={dynamicPersonas}
               onPlayVoice={handlePlayMessageAudio}
@@ -1563,7 +1638,20 @@ export const ParallaxPage: React.FC = () => {
                     )}
                     <div className="flex items-center justify-between flex-wrap gap-2 pl-6 pt-0.5">
                       <span className="text-[10px] text-[#71767b] font-mono tabular-nums">
-                        {sess.messages.length} turns · {sess.summary?.confidenceScore || 86}% conviction
+                        {(() => {
+                          const sessScored = sess.messages
+                            .map((m) => getTurnConvictionPct(m))
+                            .filter((v): v is number => v !== null);
+                          const sessAvg =
+                            sessScored.length > 0
+                              ? Math.round(
+                                  sessScored.reduce((a, b) => a + b, 0) / sessScored.length,
+                                )
+                              : null;
+                          return `${sess.messages.length} turns · ${sess.roundsCompleted || 3}/3 rounds${
+                            sessAvg !== null ? ` · ${sessAvg}% avg conviction` : ''
+                          }`;
+                        })()}
                       </span>
 
                       {confirmDeleteId === sess.id ? (
@@ -1679,17 +1767,19 @@ export const ParallaxPage: React.FC = () => {
                 </button>
               </div>
 
-              {/* Row B: Interactive 20-Persona Live Roster Strip */}
+              {/* Row B: Interactive Persona Live Roster Strip */}
               <div
                 id="parallax-persona-roster-strip"
                 className="flex items-center gap-1.5 overflow-x-auto no-scrollbar py-0.5"
               >
-                <span className="text-[10px] font-mono text-[#71767b] shrink-0 pr-1">
-                  20 Personas:
+                <span className="text-[10px] font-mono text-[#71767b] shrink-0 pr-1 tabular-nums">
+                  {enabledAgentsCount}/{configuredAgentsCount} Enabled:
                 </span>
                 {enabledAgentsList.map((ag) => {
                   const recruited = recruitedAgents.find((r) => r.id === ag.id);
-                  const score = recruited?.conviction ?? 82;
+                  const score = recruited?.conviction ?? null;
+                  const hasSpoken = (recruited?.turns.length || 0) > 0;
+                  const isVoiceSpeaking = voiceSpeakingMessage?.agentId === ag.id;
                   const isInspected = inspectedRosterAgentId === ag.id;
                   const cleanName = ag.name.split(' (')[0];
 
@@ -1703,11 +1793,31 @@ export const ParallaxPage: React.FC = () => {
                       className={`px-2 py-1 rounded-lg text-[10.5px] font-mono flex items-center gap-1.5 shrink-0 transition-all cursor-pointer border ${
                         isInspected
                           ? 'bg-white/15 border-white/40 text-white font-semibold'
+                          : isVoiceSpeaking
+                          ? 'bg-cyan-500/20 border-cyan-400/50 text-cyan-200 font-semibold'
+                          : hasSpoken
+                          ? 'bg-emerald-500/10 border-emerald-500/25 text-white'
                           : 'bg-white/[0.02] border-white/[0.06] text-[#a1a1aa] hover:text-white hover:border-white/20'
                       }`}
                     >
                       <span className="truncate max-w-[80px]">{cleanName}</span>
-                      <span className="text-[#71767b] tabular-nums">{score}%</span>
+                      <span
+                        className={`tabular-nums ${
+                          isVoiceSpeaking
+                            ? 'text-cyan-300'
+                            : score !== null
+                            ? 'text-emerald-300'
+                            : 'text-[#71767b]'
+                        }`}
+                      >
+                        {isVoiceSpeaking
+                          ? 'Speaking'
+                          : score !== null
+                          ? `${score}%`
+                          : hasSpoken
+                          ? `${recruited?.turns.length}R`
+                          : 'Standby'}
+                      </span>
                     </button>
                   );
                 })}
@@ -1791,21 +1901,21 @@ export const ParallaxPage: React.FC = () => {
                 id="parallax-unified-drawers-bar"
                 className="flex items-center justify-between gap-2 flex-wrap pt-1"
               >
-                <div className="flex items-center gap-1.5 overflow-x-auto no-scrollbar py-0.5">
+                <div className="flex items-center gap-1.5 overflow-x-auto no-scrollbar py-0.5 max-w-full">
                   <button
                     id="parallax-toggle-telemetry-drawer-btn"
                     type="button"
                     onClick={() => setIsTelemetryDrawerOpen((prev) => !prev)}
-                    className={`min-h-[34px] px-3 py-1 rounded-xl text-xs font-medium flex items-center gap-1.5 shrink-0 transition-all cursor-pointer border ${
+                    className={`min-h-[34px] px-2.5 sm:px-3 py-1 rounded-xl text-[11px] sm:text-xs font-medium flex items-center gap-1.5 shrink-0 transition-all cursor-pointer border ${
                       isTelemetryDrawerOpen
                         ? 'bg-cyan-500/20 border-cyan-400/50 text-cyan-200 font-semibold'
                         : 'bg-white/[0.03] border-white/[0.07] text-slate-300 hover:text-white hover:border-white/20'
                     }`}
                   >
                     <Activity size={13} className="text-cyan-400 shrink-0" />
-                    <span>Telemetry &amp; Analytics</span>
+                    <span>Telemetry</span>
                     <span className="font-mono text-[10.5px] text-slate-400 tabular-nums">
-                      ({messages.length}/60)
+                      ({agentTurnsCount}/{expectedMaxReplies})
                     </span>
                     <ChevronDown
                       size={12}
@@ -1817,16 +1927,16 @@ export const ParallaxPage: React.FC = () => {
                     id="parallax-toggle-matrix-drawer-btn"
                     type="button"
                     onClick={() => setIsMatrixDrawerOpen((prev) => !prev)}
-                    className={`min-h-[34px] px-3 py-1 rounded-xl text-xs font-medium flex items-center gap-1.5 shrink-0 transition-all cursor-pointer border ${
+                    className={`min-h-[34px] px-2.5 sm:px-3 py-1 rounded-xl text-[11px] sm:text-xs font-medium flex items-center gap-1.5 shrink-0 transition-all cursor-pointer border ${
                       isMatrixDrawerOpen
                         ? 'bg-violet-500/20 border-violet-400/50 text-violet-200 font-semibold'
                         : 'bg-white/[0.03] border-white/[0.07] text-slate-300 hover:text-white hover:border-white/20'
                     }`}
                   >
                     <Bot size={13} className="text-violet-400 shrink-0" />
-                    <span>20-Agent Matrix</span>
+                    <span>Agent Matrix</span>
                     <span className="font-mono text-[10.5px] text-slate-400 tabular-nums">
-                      ({enabledAgentsCount})
+                      ({respondedAgentsCount}/{totalActivePoolCount} responded)
                     </span>
                     <ChevronDown
                       size={12}
@@ -1838,7 +1948,7 @@ export const ParallaxPage: React.FC = () => {
                     id="parallax-toggle-briefing-drawer-btn"
                     type="button"
                     onClick={() => setIsBriefingDrawerOpen((prev) => !prev)}
-                    className={`min-h-[34px] px-3 py-1 rounded-xl text-xs font-medium flex items-center gap-1.5 shrink-0 transition-all cursor-pointer border ${
+                    className={`min-h-[34px] px-2.5 sm:px-3 py-1 rounded-xl text-[11px] sm:text-xs font-medium flex items-center gap-1.5 shrink-0 transition-all cursor-pointer border ${
                       isBriefingDrawerOpen
                         ? 'bg-emerald-500/20 border-emerald-400/50 text-emerald-200 font-semibold'
                         : 'bg-white/[0.03] border-white/[0.07] text-slate-300 hover:text-white hover:border-white/20'
@@ -1847,7 +1957,7 @@ export const ParallaxPage: React.FC = () => {
                     <Globe size={13} className="text-emerald-400 shrink-0" />
                     <span>VERITAS Grounding</span>
                     <span className="font-mono text-[10.5px] text-slate-400 tabular-nums">
-                      ({intelligenceBriefing?.liveSearchCount || messages.filter((m) => m.toolUsed).length || 0})
+                      ({groundingTelemetry.count !== null ? groundingTelemetry.count : '—'})
                     </span>
                     <ChevronDown
                       size={12}
@@ -1858,41 +1968,67 @@ export const ParallaxPage: React.FC = () => {
 
                 {/* Live KPI Summary Readout */}
                 <div className="hidden sm:flex items-center gap-2 text-[11px] font-mono text-slate-400 tabular-nums">
-                  <span>Avg Conviction: <strong className="text-cyan-300">{polarityStats.avg}%</strong></span>
+                  <span>
+                    Avg Conviction:{' '}
+                    <strong className="text-cyan-300">
+                      {polarityStats.avg !== null ? `${polarityStats.avg}%` : '—'}
+                    </strong>
+                  </span>
                   <span aria-hidden="true">·</span>
-                  <span>Mode: <strong className="text-white">{currentModeObj.shortLabel}</strong></span>
+                  <span>
+                    Speaking: <strong className="text-white">{speakingAgentsCount}</strong>
+                  </span>
+                  <span aria-hidden="true">·</span>
+                  <span>
+                    Mode: <strong className="text-white">{currentModeObj.shortLabel}</strong>
+                  </span>
                 </div>
               </div>
 
               {/* Collapsible Drawer 1: Live Telemetry, Conviction Shift Chart & Swarm Constellation */}
               {isTelemetryDrawerOpen && (
-                <div className={`p-3 sm:p-4 space-y-4 animate-fadeIn ${hairlineTableCardClass} divide-y-0`}>
-                  <div className="flex items-center justify-between pb-2 border-b border-white/[0.06]">
-                    <div className="flex items-center gap-2 text-xs sm:text-sm font-semibold text-white">
-                      <Activity size={14} className="text-cyan-400" />
-                      <span>Swarm Telemetry, Conviction Trajectory &amp; Constellation</span>
+                <div className={`p-2.5 sm:p-4 space-y-4 animate-fadeIn min-w-0 overflow-hidden ${hairlineTableCardClass} divide-y-0`}>
+                  <div className="flex items-center justify-between gap-2 pb-2 border-b border-white/[0.06]">
+                    <div className="flex items-center gap-2 text-xs sm:text-sm font-semibold text-white min-w-0">
+                      <Activity size={14} className="text-cyan-400 shrink-0" />
+                      <span className="truncate">Swarm Telemetry, Conviction Trajectory &amp; Constellation</span>
                     </div>
                     <button
                       type="button"
                       onClick={() => setIsTelemetryDrawerOpen(false)}
-                      className="text-slate-400 hover:text-white p-1 cursor-pointer"
+                      className="text-slate-400 hover:text-white p-1 cursor-pointer shrink-0"
                     >
                       <X size={14} />
                     </button>
                   </div>
 
                   <ParallaxTelemetry
-                    totalAgentsCount={enabledAgentsCount}
-                    activeCount={isRunning ? 1 : 0}
-                    completedRepliesCount={messages.length}
+                    configuredAgentsCount={configuredAgentsCount}
+                    enabledAgentsCount={enabledAgentsCount}
+                    dynamicSpecialistsCount={dynamicSpecialistsCount}
+                    respondedAgentsCount={respondedAgentsCount}
+                    currentRoundRespondedCount={currentRoundRespondedCount}
+                    speakingAgentsCount={speakingAgentsCount}
+                    completedRepliesCount={agentTurnsCount}
+                    expectedMaxReplies={expectedMaxReplies}
                     currentRound={currentRound}
-                    sourcesCount={
-                      intelligenceBriefing?.liveSearchCount ||
-                      messages.filter((m) => m.toolUsed).length
+                    sourcesCount={groundingTelemetry.count}
+                    sourcesSubtext={groundingTelemetry.subtext}
+                    avgConviction={
+                      polarityStats.avg !== null
+                        ? `${polarityStats.avg}% (${(polarityStats.avg / 10).toFixed(1)}/10)`
+                        : null
                     }
-                    avgConviction={`${polarityStats.avg}%`}
+                    avgConvictionSubtext={
+                      polarityStats.scoredCount > 0
+                        ? `Across ${polarityStats.scoredCount} scored agent${polarityStats.scoredCount === 1 ? '' : 's'}`
+                        : isRunning
+                        ? 'Awaiting scored turns...'
+                        : 'No scored turns yet'
+                    }
                     isRunning={isRunning}
                     isComplete={Boolean(summary)}
+                    wasStoppedEarly={wasStoppedEarly}
                     activeModel={config.agents.veritas?.modelId || 'Built-in Default'}
                   />
 
@@ -1903,7 +2039,7 @@ export const ParallaxPage: React.FC = () => {
                     messages={messages}
                     currentRound={currentRound}
                     isRunning={isRunning}
-                    activeSpeakingAgentId={activeSpeakingAgent?.agentId}
+                    activeSpeakingAgentId={voiceSpeakingMessage?.agentId}
                     selectedAgentId={selectedAgentFilter}
                     onSelectAgent={(id) => setSelectedAgentFilter(id)}
                     topic={currentTopic || 'Swarm Standby'}
@@ -1913,12 +2049,12 @@ export const ParallaxPage: React.FC = () => {
 
               {/* Collapsible Drawer 2: 20-Persona Agent Matrix */}
               {isMatrixDrawerOpen && (
-                <div className={`p-3 sm:p-4 animate-fadeIn ${hairlineTableCardClass} divide-y-0`}>
+                <div className={`p-2.5 sm:p-4 animate-fadeIn min-w-0 overflow-hidden ${hairlineTableCardClass} divide-y-0`}>
                   <ParallaxAgentMatrix
                     agents={config.agents}
                     messages={messages}
                     selectedAgentId={selectedAgentFilter}
-                    activeSpeakingAgentId={activeSpeakingAgent?.agentId}
+                    activeSpeakingAgentId={voiceSpeakingMessage?.agentId}
                     onSelectAgent={(agentId) => setSelectedAgentFilter(agentId)}
                     dynamicPersonas={dynamicPersonas}
                     onPlayVoice={handlePlayMessageAudio}
@@ -1928,18 +2064,18 @@ export const ParallaxPage: React.FC = () => {
 
               {/* Collapsible Drawer 3: Round 00 VERITAS Intelligence Briefing */}
               {isBriefingDrawerOpen && (
-                <div className={`p-3 sm:p-4 animate-fadeIn ${hairlineTableCardClass} divide-y-0`}>
+                <div className={`p-2.5 sm:p-4 animate-fadeIn min-w-0 overflow-hidden ${hairlineTableCardClass} divide-y-0`}>
                   {intelligenceBriefing ? (
                     <ParallaxIntelligenceBriefing
                       briefing={intelligenceBriefing}
                       defaultExpanded={true}
                     />
                   ) : (
-                    <div className="flex items-center justify-between gap-3 py-2 text-xs text-slate-300">
-                      <div className="flex items-center gap-2.5">
-                        <Globe size={15} className="text-emerald-400 shrink-0" />
-                        <span>
-                          <strong>VERITAS Live Web Grounding (Round 00):</strong> Automatically executes empirical search verification when you launch a swarm mission below.
+                    <div className="flex items-start sm:items-center justify-between gap-2.5 py-2 text-xs text-slate-300">
+                      <div className="flex items-start sm:items-center gap-2.5 min-w-0">
+                        <Globe size={15} className="text-emerald-400 shrink-0 mt-0.5 sm:mt-0" />
+                        <span className="leading-relaxed">
+                          <strong>VERITAS Live Web Grounding (Round 00):</strong> No grounding briefing generated yet. Launch a swarm mission below to verify live web sources.
                         </span>
                       </div>
                       <button
@@ -2100,7 +2236,13 @@ export const ParallaxPage: React.FC = () => {
                       <span className="text-[10.5px] sm:text-xs font-mono text-[#e7e9ea] truncate">
                         {isRunning
                           ? statusText
-                          : `Deliberation Complete · ${messages.length} Turns · ${polarityStats.avg}% Avg Conviction`}
+                          : wasStoppedEarly
+                          ? `Swarm Stopped Early · ${agentTurnsCount}/${expectedMaxReplies} Turns · ${
+                              polarityStats.avg !== null ? `${polarityStats.avg}% Avg Conviction` : 'No Scores'
+                            }`
+                          : `Deliberation Complete · ${agentTurnsCount}/${expectedMaxReplies} Turns · ${
+                              polarityStats.avg !== null ? `${polarityStats.avg}% Avg Conviction` : 'No Scores'
+                            }`}
                       </span>
                     </div>
 
@@ -2324,80 +2466,95 @@ export const ParallaxPage: React.FC = () => {
                                 </div>
                               </div>
 
-                              {/* Right Conviction Delta + Bar + Percentage */}
+                              {/* Right Conviction Delta + Bar + Percentage or Standby State */}
                               <div className="flex items-center gap-2 sm:gap-3 shrink-0">
-                                {agent.delta !== 0 && (
+                                {agent.delta !== null && agent.delta !== 0 && (
                                   <span
                                     className={`text-[10px] font-mono tabular-nums ${
                                       agent.delta > 0 ? 'text-emerald-400' : 'text-amber-400'
                                     }`}
-                                    title="Conviction shift from Round 1 to Round 3"
+                                    title="Conviction shift from Round 1 to latest turn"
                                   >
                                     {agent.delta > 0 ? `+${agent.delta}%` : `${agent.delta}%`}
                                   </span>
                                 )}
-                                <div className="hidden sm:flex w-14 h-1 rounded-full bg-white/[0.07] overflow-hidden">
-                                  <div
-                                    className="h-full rounded-full transition-all duration-500"
-                                    style={{
-                                      width: `${Math.min(100, Math.max(10, agent.conviction))}%`,
-                                      backgroundColor: agent.accentColor || '#10b981',
-                                    }}
-                                  />
-                                </div>
-                                <span className="text-xs sm:text-[14px] font-mono text-white tabular-nums w-9 sm:w-10 text-right">
-                                  {agent.conviction}%
-                                </span>
+                                {agent.conviction !== null ? (
+                                  <>
+                                    <div className="hidden sm:flex w-14 h-1 rounded-full bg-white/[0.07] overflow-hidden">
+                                      <div
+                                        className="h-full rounded-full transition-all duration-500"
+                                        style={{
+                                          width: `${Math.min(100, Math.max(10, agent.conviction))}%`,
+                                          backgroundColor: agent.accentColor || '#10b981',
+                                        }}
+                                      />
+                                    </div>
+                                    <span className="text-xs sm:text-[14px] font-mono text-white tabular-nums w-9 sm:w-10 text-right">
+                                      {agent.conviction}%
+                                    </span>
+                                  </>
+                                ) : (
+                                  <span className="text-[11px] font-mono text-[#71767b] tabular-nums">
+                                    {agent.turns.length > 0 ? `${agent.turns.length}R` : 'Standby'}
+                                  </span>
+                                )}
                               </div>
                             </div>
 
                             {/* Expandable Agent Deliberation Detail on Row Tap */}
                             {isExpanded && (
                               <div className="px-3 sm:px-4 pb-3 pt-2 bg-white/[0.02] border-t border-white/[0.06] space-y-2 text-[11px] sm:text-xs">
-                                <div className="flex items-center justify-between text-[#a1a1aa]">
+                                <div className="flex items-center justify-between text-[#a1a1aa] flex-wrap gap-1">
                                   <span className="truncate pr-2">Role: {agent.role}</span>
                                   <span className="font-mono tabular-nums shrink-0">
-                                    R1: {agent.r1Conviction}% → Final: {agent.conviction}% ({agent.turns.length} round{agent.turns.length === 1 ? '' : 's'})
+                                    {agent.conviction !== null
+                                      ? `R1: ${agent.r1Conviction ?? '—'}% → Latest: ${agent.conviction}% (${agent.turns.length} round${agent.turns.length === 1 ? '' : 's'})`
+                                      : `${agent.turns.length} round${agent.turns.length === 1 ? '' : 's'} logged`}
                                   </span>
                                 </div>
                                 {agent.turns.length === 0 ? (
                                   <div className="text-[#71767b] py-1">
-                                    Specialist queued in active deliberation pipeline...
+                                    {isRunning
+                                      ? 'Specialist awaiting turn in active deliberation pipeline...'
+                                      : 'No turns recorded for this specialist in the current session.'}
                                   </div>
                                 ) : (
-                                  agent.turns.map((turn) => (
-                                    <div
-                                      key={turn.id}
-                                      className="p-2.5 rounded-xl bg-black/50 border border-white/[0.06] space-y-1"
-                                    >
-                                      <div className="flex items-center justify-between">
-                                        <span className="font-semibold text-white text-[11px]">
-                                          Round 0{turn.round}
-                                        </span>
-                                        <div className="flex items-center gap-2">
-                                          {typeof turn.convictionScore === 'number' && (
-                                            <span className="text-[10px] font-mono tabular-nums text-emerald-400">
-                                              {turn.convictionScore}%
-                                            </span>
-                                          )}
-                                          <button
-                                            type="button"
-                                            onClick={(e) => {
-                                              e.stopPropagation();
-                                              handlePlayMessageAudio(turn);
-                                            }}
-                                            className="px-2 py-0.5 rounded-lg bg-white/10 hover:bg-white/20 text-white text-[10px] font-semibold flex items-center gap-1 cursor-pointer"
-                                          >
-                                            <Play size={8} />
-                                            {playingAudioKey === turn.id ? 'Stop' : 'Speak'}
-                                          </button>
+                                  agent.turns.map((turn) => {
+                                    const turnPct = getTurnConvictionPct(turn);
+                                    return (
+                                      <div
+                                        key={turn.id}
+                                        className="p-2.5 rounded-xl bg-black/50 border border-white/[0.06] space-y-1"
+                                      >
+                                        <div className="flex items-center justify-between">
+                                          <span className="font-semibold text-white text-[11px]">
+                                            Round 0{turn.round}
+                                          </span>
+                                          <div className="flex items-center gap-2">
+                                            {turnPct !== null && (
+                                              <span className="text-[10px] font-mono tabular-nums text-emerald-400">
+                                                {turnPct}% ({turn.conviction}/10)
+                                              </span>
+                                            )}
+                                            <button
+                                              type="button"
+                                              onClick={(e) => {
+                                                e.stopPropagation();
+                                                handlePlayMessageAudio(turn);
+                                              }}
+                                              className="px-2 py-0.5 rounded-lg bg-white/10 hover:bg-white/20 text-white text-[10px] font-semibold flex items-center gap-1 cursor-pointer"
+                                            >
+                                              <Play size={8} />
+                                              {playingAudioKey === turn.id ? 'Stop' : 'Speak'}
+                                            </button>
+                                          </div>
                                         </div>
+                                        <p className="text-[#e7e9ea] leading-relaxed whitespace-pre-wrap text-xs sm:text-[13px] m-0">
+                                          {turn.text}
+                                        </p>
                                       </div>
-                                      <p className="text-[#e7e9ea] leading-relaxed whitespace-pre-wrap text-xs sm:text-[13px] m-0">
-                                        {turn.text}
-                                      </p>
-                                    </div>
-                                  ))
+                                    );
+                                  })
                                 )}
                               </div>
                             )}
@@ -2415,7 +2572,7 @@ export const ParallaxPage: React.FC = () => {
                         <span>
                           {showAllTableRows
                             ? 'Show top 8 personas'
-                            : `Show all ${sortedTableAgents.length} ranked personas`}
+                            : `Show all ${sortedTableAgents.length} personas (${respondedAgentsCount} responded)`}
                         </span>
                         <ChevronDown
                           size={13}
@@ -2434,80 +2591,92 @@ export const ParallaxPage: React.FC = () => {
                       <div className="flex items-center justify-between mb-1.5">
                         <div>
                           <div className="text-[10px] font-mono text-[#71767b]">
-                            Conviction Spectrum · R1 → R3
+                            Conviction Spectrum · Scored Agents
                           </div>
                           <div className="text-[11px] sm:text-xs font-semibold text-white mt-0.5">
                             Multi-Agent Consensus Curve
                           </div>
                         </div>
                         <span className="text-[11px] font-mono tabular-nums font-bold text-emerald-400">
-                          {summary?.confidenceScore || Math.max(...chartPoints.map((p) => p.val))}% Peak
+                          {chartPoints.length > 0
+                            ? `${Math.max(...chartPoints.map((p) => p.val))}% Peak`
+                            : 'Awaiting Scores'}
                         </span>
                       </div>
 
-                      <svg viewBox="0 0 280 100" className="w-full h-auto overflow-visible">
-                        <defs>
-                          <linearGradient id="parallaxCurveGrad" x1="0" y1="0" x2="0" y2="1">
-                            <stop offset="0%" stopColor="#10b981" stopOpacity="0.28" />
-                            <stop offset="100%" stopColor="#10b981" stopOpacity="0.0" />
-                          </linearGradient>
-                        </defs>
-                        <line x1="12" y1="18" x2="268" y2="18" stroke="rgba(255,255,255,0.06)" strokeWidth="1" />
-                        <line x1="12" y1="50" x2="268" y2="50" stroke="rgba(255,255,255,0.06)" strokeWidth="1" />
-                        <line x1="12" y1="82" x2="268" y2="82" stroke="rgba(255,255,255,0.12)" strokeWidth="1" />
+                      {chartPoints.length === 0 ? (
+                        <div className="h-[100px] flex items-center justify-center text-center text-xs text-[#71767b] font-mono px-3">
+                          Awaiting scored agent turns to plot live conviction distribution...
+                        </div>
+                      ) : (
+                        <svg viewBox="0 0 280 100" className="w-full h-auto overflow-visible">
+                          <defs>
+                            <linearGradient id="parallaxCurveGrad" x1="0" y1="0" x2="0" y2="1">
+                              <stop offset="0%" stopColor="#10b981" stopOpacity="0.28" />
+                              <stop offset="100%" stopColor="#10b981" stopOpacity="0.0" />
+                            </linearGradient>
+                          </defs>
+                          <line x1="12" y1="18" x2="268" y2="18" stroke="rgba(255,255,255,0.06)" strokeWidth="1" />
+                          <line x1="12" y1="50" x2="268" y2="50" stroke="rgba(255,255,255,0.06)" strokeWidth="1" />
+                          <line x1="12" y1="82" x2="268" y2="82" stroke="rgba(255,255,255,0.12)" strokeWidth="1" />
 
-                        {/* Area fill under curve */}
-                        <polygon
-                          fill="url(#parallaxCurveGrad)"
-                          points={`18,82 ${chartPoints
-                            .map((pt, i) => {
-                              const x = 18 + i * 27;
-                              const y = 80 - (pt.val / 100) * 60;
-                              return `${x},${y}`;
-                            })
-                            .join(' ')} ${18 + (chartPoints.length - 1) * 27},82`}
-                        />
+                          {/* Area fill under curve */}
+                          {chartPoints.length > 1 && (
+                            <polygon
+                              fill="url(#parallaxCurveGrad)"
+                              points={`18,82 ${chartPoints
+                                .map((pt, i) => {
+                                  const x = 18 + i * 27;
+                                  const y = 80 - (pt.val / 100) * 60;
+                                  return `${x},${y}`;
+                                })
+                                .join(' ')} ${18 + (chartPoints.length - 1) * 27},82`}
+                            />
+                          )}
 
-                        {/* Emerald Trajectory Line */}
-                        <polyline
-                          fill="none"
-                          stroke="#10b981"
-                          strokeWidth="1.8"
-                          points={chartPoints
-                            .map((pt, i) => {
-                              const x = 18 + i * 27;
-                              const y = 80 - (pt.val / 100) * 60;
-                              return `${x},${y}`;
-                            })
-                            .join(' ')}
-                        />
+                          {/* Emerald Trajectory Line */}
+                          {chartPoints.length > 1 && (
+                            <polyline
+                              fill="none"
+                              stroke="#10b981"
+                              strokeWidth="1.8"
+                              points={chartPoints
+                                .map((pt, i) => {
+                                  const x = 18 + i * 27;
+                                  const y = 80 - (pt.val / 100) * 60;
+                                  return `${x},${y}`;
+                                })
+                                .join(' ')}
+                            />
+                          )}
 
-                        {chartPoints.map((pt, i) => {
-                          const x = 18 + i * 27;
-                          const y = 80 - (pt.val / 100) * 60;
-                          return (
-                            <g key={i}>
-                              <circle
-                                cx={x}
-                                cy={y}
-                                r="2.5"
-                                fill="#050506"
-                                stroke="#34d399"
-                                strokeWidth="1.6"
-                              />
-                              <text
-                                x={x}
-                                y="94"
-                                fontSize="5.5"
-                                fill="#71767b"
-                                textAnchor="middle"
-                              >
-                                {pt.label}
-                              </text>
-                            </g>
-                          );
-                        })}
-                      </svg>
+                          {chartPoints.map((pt, i) => {
+                            const x = 18 + i * 27;
+                            const y = 80 - (pt.val / 100) * 60;
+                            return (
+                              <g key={i}>
+                                <circle
+                                  cx={x}
+                                  cy={y}
+                                  r="2.5"
+                                  fill="#050506"
+                                  stroke="#34d399"
+                                  strokeWidth="1.6"
+                                />
+                                <text
+                                  x={x}
+                                  y="94"
+                                  fontSize="5.5"
+                                  fill="#71767b"
+                                  textAnchor="middle"
+                                >
+                                  {pt.label}
+                                </text>
+                              </g>
+                            );
+                          })}
+                        </svg>
+                      )}
                     </div>
 
                     {/* Right 5 cols: Compact Agent Recruitment Dot-Matrix Telemetry */}
@@ -2535,13 +2704,13 @@ export const ParallaxPage: React.FC = () => {
                         <div className="space-y-1.5">
                           {visibleRecruitedAgents.map((ag, idx) => {
                             const filledDots =
-                              ag.turns.length >= 3 || summary
+                              ag.turns.length >= 3
                                 ? 20
                                 : ag.turns.length === 2
-                                ? 15
+                                ? 14
                                 : ag.turns.length === 1
-                                ? 10
-                                : 7;
+                                ? 7
+                                : 0;
                             return (
                               <div
                                 key={ag.id}
@@ -2553,6 +2722,9 @@ export const ParallaxPage: React.FC = () => {
                                   </span>
                                   <span className="text-white font-medium truncate">
                                     {ag.name}
+                                  </span>
+                                  <span className="text-[9.5px] font-mono text-[#71767b] shrink-0">
+                                    ({ag.turns.length}/3R)
                                   </span>
                                 </div>
                                 <div className="grid grid-cols-10 gap-[2px] shrink-0">
@@ -2572,9 +2744,9 @@ export const ParallaxPage: React.FC = () => {
                       </div>
 
                       <div className="pt-1.5 mt-1.5 border-t border-white/[0.06] flex items-center justify-between text-[10px] text-[#71767b] font-mono">
-                        <span>Protocol: {currentModeObj.shortLabel}</span>
+                        <span>Responded: {respondedAgentsCount}/{totalActivePoolCount}</span>
                         <span className="text-emerald-400 truncate max-w-[130px]">
-                          {summary?.consensusLean || 'Active Synthesis'}
+                          {summary?.consensusLean || (isRunning ? 'Deliberating' : 'Standby')}
                         </span>
                       </div>
                     </div>

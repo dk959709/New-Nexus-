@@ -101,30 +101,58 @@ export const ParallaxAgentMatrix: React.FC<ParallaxAgentMatrixProps> = ({
     });
   }, [combinedAgents, clusterFilter, searchQuery]);
 
+  const configuredCoreCount = Object.keys(agents).length;
+  const enabledCoreCount = Object.values(agents).filter((a) => a.enabled !== false).length;
+  const disabledCoreCount = Math.max(0, configuredCoreCount - enabledCoreCount);
+
   const completedAgentsCount = useMemo(() => {
     return combinedAgents.filter((a) => (agentRepliesMap.get(a.id)?.length || 0) > 0).length;
   }, [combinedAgents, agentRepliesMap]);
 
+  const standbyEnabledCount = useMemo(() => {
+    return combinedAgents.filter(
+      (a) => a.enabled !== false && (agentRepliesMap.get(a.id)?.length || 0) === 0,
+    ).length;
+  }, [combinedAgents, agentRepliesMap]);
+
+  const speakingCount = useMemo(() => {
+    if (!activeSpeakingAgentId) return 0;
+    return combinedAgents.some((a) => a.id === activeSpeakingAgentId) ? 1 : 0;
+  }, [combinedAgents, activeSpeakingAgentId]);
+
   return (
-    <div id="parallax-agent-matrix" className="relative space-y-3.5">
+    <div id="parallax-agent-matrix" className="relative space-y-3 min-w-0">
       {/* Matrix Header & Search Bar */}
       <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2.5 pb-3 border-b border-white/[0.07]">
-        <div className="flex items-center gap-2.5 min-w-0 flex-wrap">
-          <div className="w-7 h-7 rounded-lg bg-cyan-500/15 border border-cyan-500/30 flex items-center justify-center text-cyan-400 shrink-0">
+        <div className="flex items-start sm:items-center gap-2.5 min-w-0 flex-1">
+          <div className="w-7 h-7 rounded-lg bg-cyan-500/15 border border-cyan-500/30 flex items-center justify-center text-cyan-400 shrink-0 mt-0.5 sm:mt-0">
             <Users size={14} />
           </div>
-          <div className="min-w-0">
-            <div className="flex items-center gap-2 text-xs sm:text-sm font-semibold text-white">
-              <span>20-Persona Swarm Matrix</span>
+          <div className="min-w-0 flex-1">
+            <div className="flex items-center gap-1.5 sm:gap-2 text-xs sm:text-sm font-semibold text-white flex-wrap">
+              <span>Swarm Agent Matrix</span>
               <span className="text-slate-500" aria-hidden="true">·</span>
               <span className="font-mono text-[11px] text-cyan-300 tabular-nums">
-                {filteredAgents.length} / {combinedAgents.length} Nodes
+                {enabledCoreCount}/{configuredCoreCount} Enabled
+                {dynamicPersonas.length > 0 ? ` + ${dynamicPersonas.length} Dynamic` : ''}
               </span>
             </div>
-            <div className="text-[11px] text-slate-400 flex items-center gap-2">
-              <span>{completedAgentsCount} responded</span>
+            <div className="text-[10.5px] sm:text-[11px] text-slate-400 flex items-center gap-x-2 gap-y-0.5 flex-wrap mt-0.5">
+              <span className="text-emerald-300 font-medium tabular-nums">
+                {completedAgentsCount} responded
+              </span>
               <span aria-hidden="true">·</span>
-              <span>{combinedAgents.length - completedAgentsCount} standby</span>
+              <span className={speakingCount > 0 ? 'text-cyan-300 font-semibold tabular-nums' : 'tabular-nums'}>
+                {speakingCount} speaking
+              </span>
+              <span aria-hidden="true">·</span>
+              <span className="tabular-nums">{standbyEnabledCount} standby</span>
+              {disabledCoreCount > 0 && (
+                <>
+                  <span aria-hidden="true">·</span>
+                  <span className="text-amber-300/90 tabular-nums">{disabledCoreCount} disabled</span>
+                </>
+              )}
               {selectedAgentId && (
                 <>
                   <span aria-hidden="true">·</span>
@@ -183,7 +211,7 @@ export const ParallaxAgentMatrix: React.FC<ParallaxAgentMatrixProps> = ({
               key={f.id}
               type="button"
               onClick={() => setClusterFilter(f.id as typeof clusterFilter)}
-              className={`min-h-[34px] px-3 py-1 rounded-lg text-xs font-medium whitespace-nowrap shrink-0 transition-all cursor-pointer border ${
+              className={`min-h-[34px] px-2.5 sm:px-3 py-1 rounded-lg text-[11px] sm:text-xs font-medium whitespace-nowrap shrink-0 transition-all cursor-pointer border ${
                 active
                   ? 'bg-cyan-500/20 border-cyan-400/50 text-cyan-200 font-semibold'
                   : 'bg-[#0b101b]/80 border-white/[0.06] text-slate-300 hover:text-white hover:border-white/15'
@@ -205,24 +233,33 @@ export const ParallaxAgentMatrix: React.FC<ParallaxAgentMatrixProps> = ({
           {filteredAgents.map((agent) => {
             const isSpeaking = activeSpeakingAgentId === agent.id;
             const isSelected = selectedAgentId === agent.id;
+            const isDisabled = agent.enabled === false;
             const replies = agentRepliesMap.get(agent.id) || [];
             const hasCompleted = replies.length > 0;
             const lastReply = replies[replies.length - 1];
             const accentColor = agent.accentColor || '#22d3ee';
+            const rawConv =
+              typeof lastReply?.conviction === 'number'
+                ? lastReply.conviction
+                : typeof (lastReply as { convictionScore?: number } | undefined)?.convictionScore === 'number'
+                ? (lastReply as { convictionScore?: number }).convictionScore!
+                : null;
             const latestConviction =
-              typeof lastReply?.convictionScore === 'number'
-                ? `${lastReply.convictionScore}%`
+              rawConv !== null
+                ? `${rawConv <= 10 ? Math.round(rawConv * 10) : Math.round(rawConv)}%`
                 : null;
 
             return (
               <div
                 key={agent.id}
                 onClick={() => onSelectAgent?.(isSelected ? null : agent.id)}
-                className={`p-3.5 rounded-xl cursor-pointer transition-all duration-150 flex flex-col justify-between border ${
+                className={`p-3 sm:p-3.5 rounded-xl cursor-pointer transition-all duration-150 flex flex-col justify-between border min-w-0 ${
                   isSelected
                     ? 'bg-cyan-950/35 border-cyan-400/60 shadow-[0_0_20px_rgba(34,211,238,0.12)]'
                     : isSpeaking
                     ? 'bg-cyan-950/25 border-cyan-400/50'
+                    : isDisabled && !hasCompleted
+                    ? 'bg-[#070a12]/60 border-white/[0.04] opacity-70 hover:opacity-100'
                     : hasCompleted
                     ? 'bg-[#0b101b]/90 border-white/[0.09] hover:border-white/20'
                     : 'bg-[#090d16]/75 border-white/[0.05] hover:border-white/15'
@@ -231,7 +268,7 @@ export const ParallaxAgentMatrix: React.FC<ParallaxAgentMatrixProps> = ({
                 {/* Top Row: Avatar + Name & Role + Explicit State Indicator */}
                 <div>
                   <div className="flex items-start justify-between gap-2">
-                    <div className="flex items-center gap-2.5 min-w-0">
+                    <div className="flex items-center gap-2 sm:gap-2.5 min-w-0">
                       <div
                         className="w-8 h-8 rounded-lg flex items-center justify-center font-mono font-bold text-xs shrink-0 border"
                         style={{
@@ -261,7 +298,15 @@ export const ParallaxAgentMatrix: React.FC<ParallaxAgentMatrixProps> = ({
                       ) : hasCompleted ? (
                         <span className="inline-flex items-center gap-1 text-[10.5px] font-semibold text-emerald-300 tabular-nums">
                           <CheckCircle2 size={11} />
-                          <span>{latestConviction || `${replies.length}R`}</span>
+                          <span>
+                            {latestConviction
+                              ? `${latestConviction} · ${replies.length}R`
+                              : `${replies.length}R`}
+                          </span>
+                        </span>
+                      ) : isDisabled ? (
+                        <span className="inline-flex items-center gap-1 text-[10.5px] text-amber-300/80">
+                          <span>Disabled</span>
                         </span>
                       ) : (
                         <span className="inline-flex items-center gap-1 text-[10.5px] text-slate-400">

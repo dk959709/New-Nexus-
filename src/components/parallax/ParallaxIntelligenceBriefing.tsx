@@ -44,56 +44,58 @@ export const ParallaxIntelligenceBriefing: React.FC<ParallaxIntelligenceBriefing
     setTimeout(() => setCopied(false), 2000);
   };
 
+  const actualSourcesCount = briefing.sources?.length ?? briefing.liveSearchCount ?? 0;
+
   return (
     <div
       id="parallax-intelligence-briefing"
-      className="relative py-5 pl-4 sm:pl-6 border-l border-cyan-400/50 border-b border-b-white/[0.06] transition-all font-mono"
+      className="relative py-3.5 sm:py-5 pl-3 sm:pl-6 border-l border-cyan-400/50 border-b border-b-white/[0.06] transition-all font-mono min-w-0 overflow-hidden"
     >
       {/* Timeline Node Dot */}
-      <div className="absolute -left-[5px] top-6 w-2.5 h-2.5 rounded-full bg-cyan-400 shadow-[0_0_10px_#00f0ff]" />
+      <div className="absolute -left-[5px] top-5 sm:top-6 w-2.5 h-2.5 rounded-full bg-cyan-400 shadow-[0_0_10px_#00f0ff]" />
 
       {/* Header Bar */}
-      <div className="pb-3.5 border-b border-white/[0.06] flex items-center justify-between gap-2 flex-wrap">
-        <div className="flex items-center gap-2.5 sm:gap-3 min-w-0">
-          <div className="w-8 h-8 sm:w-9 sm:h-9 rounded-xl bg-slate-900/40 backdrop-blur-xl grid place-items-center shrink-0">
-            <Brain size={16} className="text-cyan-400 sm:w-5 sm:h-5 animate-pulse" />
+      <div className="pb-3 border-b border-white/[0.06] flex flex-col min-[400px]:flex-row min-[400px]:items-center justify-between gap-2.5">
+        <div className="flex items-start sm:items-center gap-2 sm:gap-3 min-w-0 flex-1">
+          <div className="w-7 h-7 sm:w-9 sm:h-9 rounded-xl bg-slate-900/40 backdrop-blur-xl grid place-items-center shrink-0 mt-0.5 sm:mt-0">
+            <Brain size={15} className="text-cyan-400 sm:w-5 sm:h-5 animate-pulse" />
           </div>
 
-          <div className="min-w-0">
-            <div className="flex items-center gap-2 flex-wrap">
-              <span className="text-[10px] sm:text-xs font-black tracking-wider px-2.5 py-0.5 rounded-full bg-slate-900/40 backdrop-blur-xl text-cyan-300">
+          <div className="min-w-0 flex-1">
+            <div className="flex items-center gap-1.5 sm:gap-2 flex-wrap">
+              <span className="text-[10px] sm:text-xs font-black tracking-wider px-2 py-0.5 rounded-full bg-slate-900/40 backdrop-blur-xl text-cyan-300">
                 ROUND 00
               </span>
               <h3 className="m-0 text-xs sm:text-sm font-black text-slate-100 uppercase tracking-wider truncate">
                 INTELLIGENCE BRIEFING
               </h3>
-              <span className="text-[9px] sm:text-[10px] px-2.5 py-0.5 rounded-full bg-emerald-500/15 text-emerald-300 flex items-center gap-1">
-                <ShieldCheck size={10} />
-                <span>{briefing.liveSearchCount} SOURCES GROUNDED</span>
+              <span className="text-[9.5px] sm:text-[10px] px-2 py-0.5 rounded-full bg-emerald-500/15 text-emerald-300 flex items-center gap-1">
+                <ShieldCheck size={10} className="shrink-0" />
+                <span>{actualSourcesCount} SOURCES GROUNDED</span>
               </span>
             </div>
-            <p className="m-0 mt-0.5 text-[10px] sm:text-[11px] text-slate-300 font-sans line-clamp-1">
+            <p className="m-0 mt-0.5 text-[10px] sm:text-[11px] text-slate-300 font-sans line-clamp-2 sm:line-clamp-1">
               Shared empirical foundation injected into Round 1 swarm agents
             </p>
           </div>
         </div>
 
         {/* Action Controls */}
-        <div className="flex items-center gap-1.5 sm:gap-2 ml-auto">
+        <div className="flex items-center gap-1.5 sm:gap-2 self-end min-[400px]:self-auto shrink-0">
           <button
             type="button"
             onClick={handleCopy}
-            className="px-3 py-1 rounded-full bg-slate-900/40 backdrop-blur-xl hover:bg-slate-800/60 text-slate-200 hover:text-white text-[10px] sm:text-xs font-mono flex items-center gap-1 transition-colors cursor-pointer"
+            className="min-h-[30px] px-2.5 sm:px-3 py-1 rounded-full bg-slate-900/40 backdrop-blur-xl hover:bg-slate-800/60 text-slate-200 hover:text-white text-[10px] sm:text-xs font-mono flex items-center gap-1 transition-colors cursor-pointer"
             title="Copy briefing to clipboard"
           >
             {copied ? <Check size={12} className="text-emerald-400" /> : <Copy size={12} />}
-            <span className="hidden sm:inline">{copied ? 'Copied' : 'Copy'}</span>
+            <span>{copied ? 'Copied' : 'Copy'}</span>
           </button>
 
           <button
             type="button"
             onClick={() => setIsExpanded(!isExpanded)}
-            className="px-3 py-1 rounded-full bg-cyan-500/15 text-cyan-300 hover:bg-cyan-500/25 text-[10px] sm:text-xs font-mono flex items-center gap-1 transition-colors cursor-pointer"
+            className="min-h-[30px] px-2.5 sm:px-3 py-1 rounded-full bg-cyan-500/15 text-cyan-300 hover:bg-cyan-500/25 text-[10px] sm:text-xs font-mono flex items-center gap-1 transition-colors cursor-pointer"
           >
             <span>{isExpanded ? 'Collapse' : 'Expand'}</span>
             {isExpanded ? <ChevronUp size={13} /> : <ChevronDown size={13} />}

@@ -38,28 +38,45 @@ export const ParallaxSwarmConstellation: React.FC<ParallaxSwarmConstellationProp
   const [viewMode, setViewMode] = useState<'orbit' | 'quadrant' | 'telemetry'>('orbit');
   const [hoveredAgentId, setHoveredAgentId] = useState<string | null>(null);
 
-  // Compute swarm statistics
+  // Compute swarm statistics from actual state
   const stats = useMemo(() => {
-    const totalMsgs = messages.length;
-    const convictionScores = messages
-      .filter((m) => m.conviction !== undefined)
-      .map((m) => m.conviction as number);
-    const avgConviction = convictionScores.length > 0
-      ? (convictionScores.reduce((a, b) => a + b, 0) / convictionScores.length).toFixed(1)
-      : '7.5';
+    const agentMsgs = messages.filter((m) => !m.isHuman);
+    const totalMsgs = agentMsgs.length;
+    const convictionScores = agentMsgs
+      .filter((m) => typeof m.conviction === 'number')
+      .map((m) => {
+        const raw = m.conviction as number;
+        return raw <= 10 ? raw : raw / 10;
+      });
+    const avgConviction: string | null =
+      convictionScores.length > 0
+        ? (convictionScores.reduce((a, b) => a + b, 0) / convictionScores.length).toFixed(1)
+        : null;
 
-    const factsUsed = messages.filter((m) => m.toolUsed).length;
+    const factsUsed = agentMsgs.filter((m) => m.toolUsed && !m.toolUsed.failed).length;
+    const configuredCount = Object.keys(agents).length;
+    const enabledCount = Object.values(agents).filter((a) => a.enabled !== false).length;
+    const respondedCount = new Set(agentMsgs.map((m) => m.agentId)).size;
 
     // Mood distribution
     const moodCounts: Record<string, number> = {};
-    messages.forEach((m) => {
+    agentMsgs.forEach((m) => {
       if (m.mood) {
         moodCounts[m.mood] = (moodCounts[m.mood] || 0) + 1;
       }
     });
 
-    return { totalMsgs, avgConviction, factsUsed, moodCounts };
-  }, [messages]);
+    return {
+      totalMsgs,
+      avgConviction,
+      scoredCount: convictionScores.length,
+      factsUsed,
+      configuredCount,
+      enabledCount,
+      respondedCount,
+      moodCounts,
+    };
+  }, [messages, agents]);
 
   const activeAgent = selectedAgentId
     ? agents[selectedAgentId]
@@ -155,12 +172,14 @@ export const ParallaxSwarmConstellation: React.FC<ParallaxSwarmConstellationProp
                 }}
               >
                 {isRunning && <Radio size={10} className="animate-pulse" />}
-                {isRunning ? 'DELIBERATING' : '20 NODES ONLINE'}
+                {isRunning
+                  ? `DELIBERATING (${stats.respondedCount}/${stats.enabledCount} RESPONDED)`
+                  : `${stats.enabledCount}/${stats.configuredCount} NODES ENABLED`}
               </span>
             </div>
             <span className="parallax-constellation-desc" style={{ fontSize: '11px', color: '#94a3b8' }}>
               {topic ? `Topic: "${topic.slice(0, 45)}${topic.length > 45 ? '...' : ''}" • ` : ''}
-              Interactive 20-Persona Matrix {currentRound ? `• Round ${currentRound}/3` : ''} • Click any node to focus & filter
+              {stats.respondedCount} Responded • {stats.enabledCount} Enabled {currentRound ? `• Round ${currentRound}/3` : ''}
             </span>
           </div>
         </div>
@@ -738,12 +757,18 @@ export const ParallaxSwarmConstellation: React.FC<ParallaxSwarmConstellationProp
                   </span>
                 </div>
                 <div style={{ fontSize: '24px', fontWeight: 900, color: '#fff', fontFamily: 'DM Mono, monospace' }}>
-                  {stats.avgConviction} <span style={{ fontSize: '14px', color: '#94a3b8' }}>/ 10</span>
+                  {stats.avgConviction !== null ? (
+                    <>
+                      {stats.avgConviction} <span style={{ fontSize: '14px', color: '#94a3b8' }}>/ 10</span>
+                    </>
+                  ) : (
+                    <span style={{ fontSize: '18px', color: '#94a3b8' }}>— (Awaiting turns)</span>
+                  )}
                 </div>
                 <div style={{ marginTop: '6px', height: '4px', borderRadius: '2px', background: 'rgba(15, 23, 42, 0.8)' }}>
                   <div
                     style={{
-                      width: `${(parseFloat(stats.avgConviction) / 10) * 100}%`,
+                      width: `${stats.avgConviction !== null ? (parseFloat(stats.avgConviction) / 10) * 100 : 0}%`,
                       height: '100%',
                       background: 'linear-gradient(90deg, #f59e0b, #ef4444)',
                     }}
@@ -764,11 +789,11 @@ export const ParallaxSwarmConstellation: React.FC<ParallaxSwarmConstellationProp
                 <div style={{ display: 'flex', alignItems: 'center', gap: '6px', marginBottom: '6px' }}>
                   <Sparkles size={14} color="#38bdf8" />
                   <span style={{ fontSize: '11px', fontFamily: 'DM Mono, monospace', color: '#61d7c9', fontWeight: 700 }}>
-                    FACTS GROUNDED
+                    GROUNDED TURNS
                   </span>
                 </div>
                 <div style={{ fontSize: '24px', fontWeight: 900, color: '#fff', fontFamily: 'DM Mono, monospace' }}>
-                  {stats.factsUsed} <span style={{ fontSize: '12px', color: '#94a3b8' }}>Verified Search Injections</span>
+                  {stats.factsUsed} <span style={{ fontSize: '12px', color: '#94a3b8' }}>Verified Search Turns</span>
                 </div>
                 <div style={{ fontSize: '11px', color: '#94a3b8', marginTop: '4px' }}>
                   VERITAS live grounding in Round 1
@@ -792,10 +817,10 @@ export const ParallaxSwarmConstellation: React.FC<ParallaxSwarmConstellationProp
                   </span>
                 </div>
                 <div style={{ fontSize: '24px', fontWeight: 900, color: '#fff', fontFamily: 'DM Mono, monospace' }}>
-                  {messages.length} <span style={{ fontSize: '12px', color: '#94a3b8' }}>replies across 3 rounds</span>
+                  {stats.totalMsgs} <span style={{ fontSize: '12px', color: '#94a3b8' }}>agent turns logged</span>
                 </div>
                 <div style={{ fontSize: '11px', color: '#94a3b8', marginTop: '4px' }}>
-                  {20 - Object.values(agents).filter((a) => a.enabled === false).length} of 20 Personas Engaged
+                  {stats.respondedCount} Responded · {stats.enabledCount}/{stats.configuredCount} Enabled
                 </div>
               </div>
             </div>
