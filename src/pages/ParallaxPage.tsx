@@ -31,7 +31,6 @@ import {
   Palette,
   Paperclip,
   Zap,
-  Sparkles,
   Activity,
   ArrowUpDown,
 } from 'lucide-react';
@@ -40,6 +39,9 @@ import { runParallaxSwarm } from '@/services/parallaxOrchestrator';
 import { ParallaxAgentMatrix } from '@/components/parallax/ParallaxAgentMatrix';
 import { ParallaxDeliberationStream } from '@/components/parallax/ParallaxDeliberationStream';
 import { ParallaxSynthesisReport } from '@/components/parallax/ParallaxSynthesisReport';
+import { ParallaxTelemetry } from '@/components/parallax/ParallaxTelemetry';
+import { ParallaxConvictionChart } from '@/components/parallax/ParallaxConvictionChart';
+import { ParallaxSwarmConstellation } from '@/components/parallax/ParallaxSwarmConstellation';
 import {
   ParallaxSettings,
   getSavedParallaxTheme,
@@ -185,6 +187,9 @@ export const ParallaxPage: React.FC = () => {
   const [isMenuDrawerOpen, setIsMenuDrawerOpen] = useState(false);
   const [isPlusMenuOpen, setIsPlusMenuOpen] = useState(false);
   const [isModeSelectorOpen, setIsModeSelectorOpen] = useState(false);
+  const [isTelemetryDrawerOpen, setIsTelemetryDrawerOpen] = useState(false);
+  const [isMatrixDrawerOpen, setIsMatrixDrawerOpen] = useState(false);
+  const [isBriefingDrawerOpen, setIsBriefingDrawerOpen] = useState(false);
   const [expandedAgentId, setExpandedAgentId] = useState<string | null>(null);
   const [inspectedRosterAgentId, setInspectedRosterAgentId] = useState<string | null>(null);
   const [benchmarkCategory, setBenchmarkCategory] = useState<'all' | 'geopolitics' | 'markets' | 'science'>('all');
@@ -1025,48 +1030,48 @@ export const ParallaxPage: React.FC = () => {
   const currentModeObj = DEBATE_MODES.find((m) => m.id === debateMode) || DEBATE_MODES[0];
 
   // ============================================================
-  // 3-THEME DESIGN TOKENS (Full Dark OLED / Minimal / Classic)
+  // 3-THEME DESIGN TOKENS (Deep Obsidian Classic / Minimal / Full Dark)
   // ============================================================
   const wrapperThemeClass =
     theme === 'classic'
-      ? 'theme-classic bg-[#050a12] text-[#f1f5f9] bg-[radial-gradient(ellipse_at_top,_var(--tw-gradient-stops))] from-[#0b1f38] via-[#06101e] to-[#03060c]'
+      ? 'theme-classic bg-[#060911] text-[#f1f5f9] bg-[radial-gradient(ellipse_at_top,_var(--tw-gradient-stops))] from-[#0b192e] via-[#060911] to-[#04060b]'
       : theme === 'minimal'
-      ? 'theme-minimal bg-[#0f0f12] text-[#e7e9ea]'
+      ? 'theme-minimal bg-[#0c0d10] text-[#e7e9ea]'
       : 'theme-fulldark bg-black text-[#e7e9ea]';
 
   const hairlineTableCardClass =
     theme === 'classic'
-      ? 'rounded-2xl border border-cyan-500/25 bg-[#07111f]/90 backdrop-blur-xl divide-y divide-cyan-500/15'
+      ? 'rounded-2xl border border-cyan-500/20 bg-[#0a101d]/90 backdrop-blur-xl divide-y divide-white/[0.06]'
       : theme === 'minimal'
-      ? 'rounded-2xl border border-zinc-800/90 bg-[#141417] divide-y divide-zinc-800/80'
-      : 'rounded-2xl border border-[#26292e] bg-[#050506] divide-y divide-[#1f2226]';
+      ? 'rounded-2xl border border-zinc-800/90 bg-[#121318] divide-y divide-zinc-800/80'
+      : 'rounded-2xl border border-[#22252a] bg-[#07080a] divide-y divide-[#1a1d21]';
 
   const floatingPillClass =
     theme === 'classic'
-      ? 'bg-slate-900/80 backdrop-blur-xl border border-cyan-500/30 text-cyan-50 shadow-[0_4px_20px_rgba(6,182,212,0.15)]'
+      ? 'bg-[#0b1220]/90 backdrop-blur-xl border border-cyan-500/25 text-slate-100 shadow-[0_4px_20px_rgba(6,182,212,0.12)]'
       : theme === 'minimal'
-      ? 'bg-[#18181b] border border-zinc-800 text-zinc-100 shadow-[0_2px_12px_rgba(0,0,0,0.45)]'
-      : 'bg-[#121316] border border-[#26292e] text-[#e7e9ea] shadow-[0_2px_14px_rgba(0,0,0,0.75)]';
+      ? 'bg-[#16171d] border border-zinc-800 text-zinc-100 shadow-[0_2px_12px_rgba(0,0,0,0.45)]'
+      : 'bg-[#101216] border border-[#24272c] text-[#e7e9ea] shadow-[0_2px_14px_rgba(0,0,0,0.75)]';
 
   const floatingPillHoverClass =
     theme === 'classic'
-      ? 'hover:bg-slate-800/90'
+      ? 'hover:bg-slate-800/90 hover:border-cyan-400/40'
       : theme === 'minimal'
       ? 'hover:bg-zinc-800'
-      : 'hover:bg-[#1c1e22]';
+      : 'hover:bg-[#1a1c20]';
 
   const composerBoxClass =
     theme === 'classic'
-      ? 'bg-[#0b1626]/95 backdrop-blur-2xl border border-cyan-500/30 shadow-[0_10px_40px_rgba(0,0,0,0.65)]'
+      ? 'bg-[#0a111f]/95 backdrop-blur-2xl border border-cyan-500/30 shadow-[0_12px_42px_rgba(0,0,0,0.72)]'
       : theme === 'minimal'
-      ? 'bg-[#1c1c20] border border-zinc-800/90 shadow-[0_10px_36px_rgba(0,0,0,0.65)]'
-      : 'bg-[#16181c] border border-[#26292e] shadow-[0_10px_40px_rgba(0,0,0,0.85)]';
+      ? 'bg-[#16171c] border border-zinc-800/90 shadow-[0_10px_36px_rgba(0,0,0,0.65)]'
+      : 'bg-[#121418] border border-[#26292e] shadow-[0_10px_40px_rgba(0,0,0,0.85)]';
 
   return (
     <div
       id="parallax-page-wrapper"
       data-theme={theme}
-      className={`min-h-screen relative -mx-4 sm:-mx-8 md:-mx-12 -my-8 px-3 sm:px-6 lg:px-10 py-2 overflow-x-hidden font-sans select-none transition-colors duration-200 ${wrapperThemeClass}`}
+      className={`min-h-screen relative -mx-4 sm:-mx-8 md:-mx-12 -my-8 px-3 sm:px-6 lg:px-8 py-2 overflow-x-hidden font-sans select-none transition-colors duration-200 ${wrapperThemeClass}`}
     >
       {/* Scoped overrides to neutralize legacy global @media (max-width: 640px) !important rules on #parallax-input-container & #parallax-topic-input */}
       <style>{`
@@ -1082,8 +1087,8 @@ export const ParallaxPage: React.FC = () => {
           margin: 0 !important;
           height: 22px !important;
           min-height: 0 !important;
-          font-size: 12.5px !important;
-          line-height: 1.3 !important;
+          font-size: 13px !important;
+          line-height: 1.35 !important;
           border-radius: 0 !important;
           border: none !important;
           background: transparent !important;
@@ -1091,34 +1096,34 @@ export const ParallaxPage: React.FC = () => {
         }
         #parallax-page-wrapper #parallax-page #parallax-start-swarm-btn,
         #parallax-page-wrapper #parallax-page #parallax-stop-swarm-btn {
-          width: 28px !important;
-          height: 28px !important;
-          min-width: 28px !important;
-          min-height: 28px !important;
-          max-width: 28px !important;
+          width: 32px !important;
+          height: 32px !important;
+          min-width: 32px !important;
+          min-height: 32px !important;
+          max-width: 32px !important;
           padding: 0 !important;
           border-radius: 9999px !important;
-          flex: 0 0 28px !important;
+          flex: 0 0 32px !important;
         }
         @media (min-width: 640px) {
           #parallax-page-wrapper #parallax-page #parallax-topic-input {
-            font-size: 13.5px !important;
+            font-size: 14px !important;
             height: 24px !important;
           }
           #parallax-page-wrapper #parallax-page #parallax-start-swarm-btn,
           #parallax-page-wrapper #parallax-page #parallax-stop-swarm-btn {
-            width: 32px !important;
-            height: 32px !important;
-            min-width: 32px !important;
-            min-height: 32px !important;
-            max-width: 32px !important;
-            flex: 0 0 32px !important;
+            width: 34px !important;
+            height: 34px !important;
+            min-width: 34px !important;
+            min-height: 34px !important;
+            max-width: 34px !important;
+            flex: 0 0 34px !important;
           }
         }
       `}</style>
       <div
         id="parallax-page"
-        className="relative z-10 w-full max-w-[880px] mx-auto min-h-[calc(100vh-1.5rem)] flex flex-col justify-between pt-1 pb-2"
+        className="relative z-10 w-full max-w-[1060px] mx-auto min-h-[calc(100vh-1.5rem)] flex flex-col justify-between pt-1 pb-2"
       >
         {/* ============================================================
             TOP FLOATING COMMAND BAR (COMPACT MOBILE-FRIENDLY)
@@ -1779,6 +1784,173 @@ export const ParallaxPage: React.FC = () => {
                       )}
                     </div>
                   </div>
+                </div>
+              )}
+              {/* Row C: Unified Intelligence & Collapsible Telemetry / Matrix / Briefing Drawer Bar */}
+              <div
+                id="parallax-unified-drawers-bar"
+                className="flex items-center justify-between gap-2 flex-wrap pt-1"
+              >
+                <div className="flex items-center gap-1.5 overflow-x-auto no-scrollbar py-0.5">
+                  <button
+                    id="parallax-toggle-telemetry-drawer-btn"
+                    type="button"
+                    onClick={() => setIsTelemetryDrawerOpen((prev) => !prev)}
+                    className={`min-h-[34px] px-3 py-1 rounded-xl text-xs font-medium flex items-center gap-1.5 shrink-0 transition-all cursor-pointer border ${
+                      isTelemetryDrawerOpen
+                        ? 'bg-cyan-500/20 border-cyan-400/50 text-cyan-200 font-semibold'
+                        : 'bg-white/[0.03] border-white/[0.07] text-slate-300 hover:text-white hover:border-white/20'
+                    }`}
+                  >
+                    <Activity size={13} className="text-cyan-400 shrink-0" />
+                    <span>Telemetry &amp; Analytics</span>
+                    <span className="font-mono text-[10.5px] text-slate-400 tabular-nums">
+                      ({messages.length}/60)
+                    </span>
+                    <ChevronDown
+                      size={12}
+                      className={`transition-transform ${isTelemetryDrawerOpen ? 'rotate-180' : ''}`}
+                    />
+                  </button>
+
+                  <button
+                    id="parallax-toggle-matrix-drawer-btn"
+                    type="button"
+                    onClick={() => setIsMatrixDrawerOpen((prev) => !prev)}
+                    className={`min-h-[34px] px-3 py-1 rounded-xl text-xs font-medium flex items-center gap-1.5 shrink-0 transition-all cursor-pointer border ${
+                      isMatrixDrawerOpen
+                        ? 'bg-violet-500/20 border-violet-400/50 text-violet-200 font-semibold'
+                        : 'bg-white/[0.03] border-white/[0.07] text-slate-300 hover:text-white hover:border-white/20'
+                    }`}
+                  >
+                    <Bot size={13} className="text-violet-400 shrink-0" />
+                    <span>20-Agent Matrix</span>
+                    <span className="font-mono text-[10.5px] text-slate-400 tabular-nums">
+                      ({enabledAgentsCount})
+                    </span>
+                    <ChevronDown
+                      size={12}
+                      className={`transition-transform ${isMatrixDrawerOpen ? 'rotate-180' : ''}`}
+                    />
+                  </button>
+
+                  <button
+                    id="parallax-toggle-briefing-drawer-btn"
+                    type="button"
+                    onClick={() => setIsBriefingDrawerOpen((prev) => !prev)}
+                    className={`min-h-[34px] px-3 py-1 rounded-xl text-xs font-medium flex items-center gap-1.5 shrink-0 transition-all cursor-pointer border ${
+                      isBriefingDrawerOpen
+                        ? 'bg-emerald-500/20 border-emerald-400/50 text-emerald-200 font-semibold'
+                        : 'bg-white/[0.03] border-white/[0.07] text-slate-300 hover:text-white hover:border-white/20'
+                    }`}
+                  >
+                    <Globe size={13} className="text-emerald-400 shrink-0" />
+                    <span>VERITAS Grounding</span>
+                    <span className="font-mono text-[10.5px] text-slate-400 tabular-nums">
+                      ({intelligenceBriefing?.liveSearchCount || messages.filter((m) => m.toolUsed).length || 0})
+                    </span>
+                    <ChevronDown
+                      size={12}
+                      className={`transition-transform ${isBriefingDrawerOpen ? 'rotate-180' : ''}`}
+                    />
+                  </button>
+                </div>
+
+                {/* Live KPI Summary Readout */}
+                <div className="hidden sm:flex items-center gap-2 text-[11px] font-mono text-slate-400 tabular-nums">
+                  <span>Avg Conviction: <strong className="text-cyan-300">{polarityStats.avg}%</strong></span>
+                  <span aria-hidden="true">·</span>
+                  <span>Mode: <strong className="text-white">{currentModeObj.shortLabel}</strong></span>
+                </div>
+              </div>
+
+              {/* Collapsible Drawer 1: Live Telemetry, Conviction Shift Chart & Swarm Constellation */}
+              {isTelemetryDrawerOpen && (
+                <div className={`p-3 sm:p-4 space-y-4 animate-fadeIn ${hairlineTableCardClass} divide-y-0`}>
+                  <div className="flex items-center justify-between pb-2 border-b border-white/[0.06]">
+                    <div className="flex items-center gap-2 text-xs sm:text-sm font-semibold text-white">
+                      <Activity size={14} className="text-cyan-400" />
+                      <span>Swarm Telemetry, Conviction Trajectory &amp; Constellation</span>
+                    </div>
+                    <button
+                      type="button"
+                      onClick={() => setIsTelemetryDrawerOpen(false)}
+                      className="text-slate-400 hover:text-white p-1 cursor-pointer"
+                    >
+                      <X size={14} />
+                    </button>
+                  </div>
+
+                  <ParallaxTelemetry
+                    totalAgentsCount={enabledAgentsCount}
+                    activeCount={isRunning ? 1 : 0}
+                    completedRepliesCount={messages.length}
+                    currentRound={currentRound}
+                    sourcesCount={
+                      intelligenceBriefing?.liveSearchCount ||
+                      messages.filter((m) => m.toolUsed).length
+                    }
+                    avgConviction={`${polarityStats.avg}%`}
+                    isRunning={isRunning}
+                    isComplete={Boolean(summary)}
+                    activeModel={config.agents.veritas?.modelId || 'Built-in Default'}
+                  />
+
+                  <ParallaxConvictionChart messages={messages} />
+
+                  <ParallaxSwarmConstellation
+                    agents={config.agents}
+                    messages={messages}
+                    currentRound={currentRound}
+                    isRunning={isRunning}
+                    activeSpeakingAgentId={activeSpeakingAgent?.agentId}
+                    selectedAgentId={selectedAgentFilter}
+                    onSelectAgent={(id) => setSelectedAgentFilter(id)}
+                    topic={currentTopic || 'Swarm Standby'}
+                  />
+                </div>
+              )}
+
+              {/* Collapsible Drawer 2: 20-Persona Agent Matrix */}
+              {isMatrixDrawerOpen && (
+                <div className={`p-3 sm:p-4 animate-fadeIn ${hairlineTableCardClass} divide-y-0`}>
+                  <ParallaxAgentMatrix
+                    agents={config.agents}
+                    messages={messages}
+                    selectedAgentId={selectedAgentFilter}
+                    activeSpeakingAgentId={activeSpeakingAgent?.agentId}
+                    onSelectAgent={(agentId) => setSelectedAgentFilter(agentId)}
+                    dynamicPersonas={dynamicPersonas}
+                    onPlayVoice={handlePlayMessageAudio}
+                  />
+                </div>
+              )}
+
+              {/* Collapsible Drawer 3: Round 00 VERITAS Intelligence Briefing */}
+              {isBriefingDrawerOpen && (
+                <div className={`p-3 sm:p-4 animate-fadeIn ${hairlineTableCardClass} divide-y-0`}>
+                  {intelligenceBriefing ? (
+                    <ParallaxIntelligenceBriefing
+                      briefing={intelligenceBriefing}
+                      defaultExpanded={true}
+                    />
+                  ) : (
+                    <div className="flex items-center justify-between gap-3 py-2 text-xs text-slate-300">
+                      <div className="flex items-center gap-2.5">
+                        <Globe size={15} className="text-emerald-400 shrink-0" />
+                        <span>
+                          <strong>VERITAS Live Web Grounding (Round 00):</strong> Automatically executes empirical search verification when you launch a swarm mission below.
+                        </span>
+                      </div>
+                      <button
+                        type="button"
+                        onClick={() => setIsBriefingDrawerOpen(false)}
+                        className="text-slate-400 hover:text-white p-1 cursor-pointer shrink-0"
+                      >
+                        <X size={14} />
+                      </button>
+                    </div>
+                  )}
                 </div>
               )}
             </div>
@@ -2630,9 +2802,66 @@ export const ParallaxPage: React.FC = () => {
                 </div>
               )}
 
-              {/* SCREENSHOT COMPOSER BOX: Ultra-compact mobile-friendly dark container */}
-              <div className={`rounded-[18px] sm:rounded-[22px] px-3 py-1.5 sm:px-3.5 sm:py-2 transition-all ${composerBoxClass}`}>
-                {/* Row 1: "Ask anything" Input */}
+              {/* MULTI-STATE STICKY BOTTOM MISSION COMPOSER:
+                  Visually distinct states for Running, Completed, Halted, and Idle */}
+              <div
+                className={`rounded-[20px] sm:rounded-[24px] px-3.5 py-2 sm:px-4 sm:py-2.5 transition-all ${composerBoxClass} ${
+                  isRunning
+                    ? 'ring-1 ring-cyan-400/50'
+                    : summary
+                    ? 'ring-1 ring-emerald-500/30'
+                    : wasStoppedEarly
+                    ? 'ring-1 ring-amber-500/30'
+                    : ''
+                }`}
+              >
+                {/* Live Running / Completed Status Micro-Strip inside Composer */}
+                {(isRunning || summary || wasStoppedEarly) && (
+                  <div className="flex items-center justify-between gap-2 pb-1.5 mb-1.5 border-b border-white/[0.06] text-[10.5px] font-mono">
+                    <div className="flex items-center gap-1.5 min-w-0 truncate">
+                      {isRunning ? (
+                        <>
+                          <span className="w-1.5 h-1.5 rounded-full bg-cyan-400 animate-ping shrink-0" />
+                          <span className="text-cyan-300 font-semibold truncate">
+                            Round 0{currentRound || 1} Active · {statusText}
+                          </span>
+                        </>
+                      ) : summary ? (
+                        <>
+                          <Check size={11} className="text-emerald-400 shrink-0" />
+                          <span className="text-emerald-300 font-semibold truncate">
+                            Synthesis Complete · {messages.length} turns · Ask a follow-up below
+                          </span>
+                        </>
+                      ) : (
+                        <span className="text-amber-300 font-semibold truncate">
+                          Swarm Halted ({messages.length} turns logged) · Ready to resume or start new
+                        </span>
+                      )}
+                    </div>
+
+                    {isRunning ? (
+                      <button
+                        type="button"
+                        onClick={() => setIsHumanModalOpen(true)}
+                        className="px-2 py-0.5 rounded-md bg-amber-500/20 hover:bg-amber-500/30 text-amber-200 text-[10px] font-semibold flex items-center gap-1 shrink-0 cursor-pointer transition-colors"
+                      >
+                        <UserPlus size={10} />
+                        <span>Inject Directive</span>
+                      </button>
+                    ) : summary ? (
+                      <button
+                        type="button"
+                        onClick={() => setShowDetailedTranscript((prev) => !prev)}
+                        className="text-cyan-300 hover:underline text-[10px] font-semibold shrink-0 cursor-pointer"
+                      >
+                        {showDetailedTranscript ? 'Hide Report' : 'View Report'}
+                      </button>
+                    ) : null}
+                  </div>
+                )}
+
+                {/* Row 1: Mission Prompt Input */}
                 <div className="pb-1">
                   <input
                     id="parallax-topic-input"
@@ -2646,27 +2875,45 @@ export const ParallaxPage: React.FC = () => {
                       }
                     }}
                     disabled={isRunning}
-                    placeholder={isRunning ? statusText : 'Ask anything'}
-                    className="w-full bg-transparent text-[12.5px] sm:text-[13.5px] text-white placeholder-[#71767b] focus:outline-none"
+                    placeholder={
+                      isRunning
+                        ? statusText
+                        : summary
+                        ? 'Ask a follow-up question or launch a new 20-agent mission...'
+                        : 'Ask anything or assign a research mission...'
+                    }
+                    className="w-full bg-transparent text-[13px] sm:text-[14px] text-white placeholder-[#71767b] focus:outline-none"
                   />
                 </div>
 
-                {/* Row 2: Left Paperclip Icon | Right "⚡ Fast ∨" + Solid White Waveform Circle Button */}
+                {/* Row 2: Left Paperclip / Presets | Right Protocol Selector + Launch/Stop Button */}
                 <div className="flex items-center justify-between gap-2">
                   {/* Left: Paperclip / Quick Presets & Directives */}
-                  <button
-                    type="button"
-                    onClick={() => {
-                      setIsModeSelectorOpen(false);
-                      setIsPlusMenuOpen((prev) => !prev);
-                    }}
-                    className="w-6 h-6 sm:w-7 sm:h-7 -ml-1 rounded-full flex items-center justify-center text-[#8b9097] hover:text-white transition-colors cursor-pointer shrink-0"
-                    title="Attach Preset Topic or Inject Directive"
-                  >
-                    <Paperclip size={14} strokeWidth={1.9} />
-                  </button>
+                  <div className="flex items-center gap-1">
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setIsModeSelectorOpen(false);
+                        setIsPlusMenuOpen((prev) => !prev);
+                      }}
+                      className="w-7 h-7 sm:w-8 sm:h-8 -ml-1 rounded-full flex items-center justify-center text-[#8b9097] hover:text-white hover:bg-white/[0.06] transition-colors cursor-pointer shrink-0"
+                      title="Attach Preset Topic or Inject Directive"
+                    >
+                      <Paperclip size={15} strokeWidth={1.9} />
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setIsModeSelectorOpen(false);
+                        setIsPlusMenuOpen((prev) => !prev);
+                      }}
+                      className="hidden sm:inline-flex items-center gap-1 px-2 py-1 rounded-lg text-[11px] text-[#8b9097] hover:text-white hover:bg-white/[0.05] transition-colors cursor-pointer"
+                    >
+                      <span>Presets</span>
+                    </button>
+                  </div>
 
-                  {/* Right: "⚡ Fast ∨" Mode Dropdown + Solid White Circle Waveform Button */}
+                  {/* Right: "⚡ Fast ∨" Mode Dropdown + Solid Action Circle Button */}
                   <div className="flex items-center gap-1.5 shrink-0">
                     <button
                       type="button"
@@ -2674,12 +2921,12 @@ export const ParallaxPage: React.FC = () => {
                         setIsPlusMenuOpen(false);
                         setIsModeSelectorOpen((prev) => !prev);
                       }}
-                      className="h-6 sm:h-7 px-2 rounded-full flex items-center gap-1 text-[#e7e9ea] hover:bg-white/[0.06] text-[11px] sm:text-xs font-medium transition-colors cursor-pointer shrink-0"
+                      className="h-7 sm:h-8 px-2.5 rounded-full flex items-center gap-1 text-[#e7e9ea] hover:bg-white/[0.08] text-xs font-medium transition-colors cursor-pointer shrink-0"
                       title="Switch Swarm Speed & Protocol"
                     >
-                      <Zap size={11} className="text-[#e7e9ea] shrink-0" />
+                      <Zap size={12} className="text-cyan-400 shrink-0" />
                       <span>{currentModeObj.shortLabel}</span>
-                      <ChevronDown size={11} className="text-[#71767b] shrink-0" />
+                      <ChevronDown size={12} className="text-[#71767b] shrink-0" />
                     </button>
 
                     {isRunning ? (
@@ -2687,10 +2934,10 @@ export const ParallaxPage: React.FC = () => {
                         id="parallax-stop-swarm-btn"
                         type="button"
                         onClick={handleStopSwarm}
-                        className="w-7 h-7 sm:w-8 sm:h-8 rounded-full bg-rose-500 hover:bg-rose-600 text-white flex items-center justify-center shrink-0 shadow-sm cursor-pointer transition-transform active:scale-95"
+                        className="w-8 h-8 sm:w-9 sm:h-9 rounded-full bg-rose-500 hover:bg-rose-600 text-white flex items-center justify-center shrink-0 shadow-sm cursor-pointer transition-transform active:scale-95"
                         title="Stop Swarm"
                       >
-                        <Square size={10} fill="currentColor" />
+                        <Square size={11} fill="currentColor" />
                       </button>
                     ) : (
                       <button
@@ -2705,7 +2952,7 @@ export const ParallaxPage: React.FC = () => {
                             handleStartSwarm(SAMPLE_TOPICS[0]);
                           }
                         }}
-                        className="w-7 h-7 sm:w-8 sm:h-8 rounded-full bg-white hover:bg-zinc-200 text-black flex items-center justify-center shrink-0 shadow-sm cursor-pointer transition-transform active:scale-95"
+                        className="w-8 h-8 sm:w-9 sm:h-9 rounded-full bg-white hover:bg-zinc-200 text-black flex items-center justify-center shrink-0 shadow-sm cursor-pointer transition-transform active:scale-95"
                         title={
                           topicInput.trim()
                             ? 'Launch 20-Agent Swarm'
@@ -2714,7 +2961,7 @@ export const ParallaxPage: React.FC = () => {
                             : 'Launch Featured Swarm Task'
                         }
                       >
-                        <AudioLines size={14} strokeWidth={2.3} />
+                        <AudioLines size={15} strokeWidth={2.3} />
                       </button>
                     )}
                   </div>
