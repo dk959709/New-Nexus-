@@ -29,6 +29,11 @@ import {
   Play,
   FileText,
   Palette,
+  Paperclip,
+  Zap,
+  Sparkles,
+  Activity,
+  ArrowUpDown,
 } from 'lucide-react';
 import { storage } from '@/lib/storage';
 import { runParallaxSwarm } from '@/services/parallaxOrchestrator';
@@ -60,6 +65,7 @@ import type {
 } from '@/types';
 
 const SAMPLE_TOPICS = [
+  'Global favorable vs unfavorable ratings and geopolitical sentiment analysis 2026.',
   'Create a comprehensive global solar competitor report.',
   'Will humanoid robots replace household chores by 2035?',
   'Can universal basic income coexist with inflation?',
@@ -69,47 +75,59 @@ const SAMPLE_TOPICS = [
 
 interface ShowcasePreset {
   id: string;
-  titleLine1: string;
-  titleLine2: string;
+  badge: string;
+  title: string;
+  subtitle: string;
+  metric: string;
   prompt: string;
-  thumbType: 'blackhole' | 'typewriter' | 'heatmap' | 'solar' | 'mars';
+  accent: string;
 }
 
 const SHOWCASE_PRESETS: ShowcasePreset[] = [
   {
-    id: 'blackhole',
-    titleLine1: 'Blackhole',
-    titleLine2: ': GARG...',
-    prompt: 'Analyze relativistic physics, accretion photon rings, and gravitational lensing around supermassive black hole Gargantua.',
-    thumbType: 'blackhole',
-  },
-  {
-    id: 'vintage',
-    titleLine1: '3D',
-    titleLine2: 'Vintage ...',
-    prompt: 'Evaluate the industrial design engineering, tactile mechanics, and cultural resurgence of vintage mechanical typewriters vs modern interfaces.',
-    thumbType: 'typewriter',
+    id: 'geopolitics',
+    badge: 'GLOBAL SURVEY',
+    title: 'Global Sentiment & Favorability',
+    subtitle: '25-nation comparative attitude index',
+    metric: '88% conv',
+    prompt: 'Global favorable vs unfavorable ratings and geopolitical sentiment analysis 2026.',
+    accent: '#10b981',
   },
   {
     id: 'solar',
-    titleLine1: 'Global Solar',
-    titleLine2: 'Report ...',
+    badge: 'MARKET INTEL',
+    title: 'Global Solar Competitor Report',
+    subtitle: 'Supply, demand & margin roll-forward',
+    metric: '92% conv',
     prompt: 'Create a comprehensive global solar competitor report.',
-    thumbType: 'heatmap',
+    accent: '#06b6d4',
+  },
+  {
+    id: 'blackhole',
+    badge: 'ASTROPHYSICS',
+    title: 'Blackhole: Gargantua Lensing',
+    subtitle: 'Relativistic accretion & photon rings',
+    metric: '95% conv',
+    prompt: 'Analyze relativistic physics, accretion photon rings, and gravitational lensing around supermassive black hole Gargantua.',
+    accent: '#f59e0b',
   },
   {
     id: 'humanoid',
-    titleLine1: 'Humanoid',
-    titleLine2: 'Robotics ...',
+    badge: 'ROBOTICS 2035',
+    title: 'Humanoid Domestic Automation',
+    subtitle: 'Unit economics & household adoption',
+    metric: '81% conv',
     prompt: 'Will humanoid robots replace household chores by 2035?',
-    thumbType: 'solar',
+    accent: '#8b5cf6',
   },
   {
     id: 'mars',
-    titleLine1: 'Mars',
-    titleLine2: 'Colony ...',
+    badge: 'DEEP SPACE',
+    title: 'Mars Colony vs Earth Biospheres',
+    subtitle: 'Civilizational risk & resource allocation',
+    metric: '76% conv',
     prompt: 'Should humanity build permanent cities on Mars before fixing Earth?',
-    thumbType: 'mars',
+    accent: '#f43f5e',
   },
 ];
 
@@ -117,13 +135,14 @@ const DEBATE_MODES: Array<{
   id: ParallaxDebateMode;
   label: string;
   shortLabel: string;
+  speedTag: string;
   icon: React.FC<{ className?: string; size?: number }>;
 }> = [
-  { id: 'default', label: 'Default Swarm', shortLabel: 'Swarm', icon: Bot },
-  { id: 'courtroom', label: 'Courtroom Trial', shortLabel: 'Courtroom', icon: Scale },
-  { id: 'red_vs_blue', label: 'Red vs Blue Team', shortLabel: 'Red vs Blue', icon: Shield },
-  { id: 'senate', label: 'Senate Summit', shortLabel: 'Senate', icon: Landmark },
-  { id: 'vc_pitch', label: 'Venture Pitch Committee', shortLabel: 'VC Pitch', icon: Briefcase },
+  { id: 'default', label: 'Default Swarm', shortLabel: 'Fast', speedTag: '20 Agents · 3 Rounds', icon: Zap },
+  { id: 'courtroom', label: 'Courtroom Trial', shortLabel: 'Courtroom', speedTag: 'Prosecution vs Defense', icon: Scale },
+  { id: 'red_vs_blue', label: 'Red vs Blue Team', shortLabel: 'Red vs Blue', speedTag: 'Adversarial Stress-Test', icon: Shield },
+  { id: 'senate', label: 'Senate Summit', shortLabel: 'Senate', speedTag: 'Policy & Governance', icon: Landmark },
+  { id: 'vc_pitch', label: 'Venture Pitch Committee', shortLabel: 'VC Pitch', speedTag: 'Capital & ROI Diligence', icon: Briefcase },
 ];
 
 export const ParallaxPage: React.FC = () => {
@@ -141,12 +160,14 @@ export const ParallaxPage: React.FC = () => {
 
   // UI Drawer & Composer Popovers
   const [isMenuDrawerOpen, setIsMenuDrawerOpen] = useState(false);
-  const [showSwarmPill, setShowSwarmPill] = useState(true);
   const [isPlusMenuOpen, setIsPlusMenuOpen] = useState(false);
+  const [isModeSelectorOpen, setIsModeSelectorOpen] = useState(false);
   const [expandedAgentId, setExpandedAgentId] = useState<string | null>(null);
   const [showAllRecruitedAgents, setShowAllRecruitedAgents] = useState(false);
+  const [showAllTableRows, setShowAllTableRows] = useState(false);
+  const [tableSortBy, setTableSortBy] = useState<'conviction' | 'order'>('conviction');
   const [showDetailedTranscript, setShowDetailedTranscript] = useState(false);
-  const [activeDeliverableModal, setActiveDeliverableModal] = useState<'chart' | 'table' | 'report' | null>(null);
+  const [showTrajectoryChart, setShowTrajectoryChart] = useState(true);
 
   // FEATURE 7: Debate Mode Preset state
   const [debateMode, setDebateMode] = useState<ParallaxDebateMode>('default');
@@ -640,6 +661,7 @@ export const ParallaxPage: React.FC = () => {
     setCurrentRound(1);
     setActiveTab('feed');
     setIsPlusMenuOpen(false);
+    setIsModeSelectorOpen(false);
     setStatusText('INITIALIZING PARALLAX CORE • CONNECTING AGENTS...');
     setExpandedRounds({ 1: false, 2: false, 3: false });
     setAutoScroll(true);
@@ -773,9 +795,9 @@ export const ParallaxPage: React.FC = () => {
       });
     }
 
-    if (byId.size < 8) {
-      for (const agent of enabledAgentsList) {
-        if (byId.size >= 8) break;
+    if (byId.size < 10) {
+      enabledAgentsList.forEach((agent, idx) => {
+        if (byId.size >= 12) return;
         if (!byId.has(agent.id)) {
           byId.set(agent.id, {
             id: agent.id,
@@ -783,236 +805,226 @@ export const ParallaxPage: React.FC = () => {
             role: agent.role || 'Domain Specialist',
             accentColor: agent.accentColor || '#10b981',
             latestRound: currentRound || 1,
-            latestText: `${agent.role} analysis & competitive synthesis`,
-            conviction: isRunning ? 45 : 75,
+            latestText: `${agent.role} baseline & cross-examination telemetry`,
+            conviction: isRunning ? Math.max(34, 88 - idx * 4) : Math.max(30, 91 - idx * 4),
             turns: [],
           });
         }
-      }
+      });
     }
 
     return Array.from(byId.values());
   }, [messages, enabledAgentsList, config.agents, currentRound, isRunning]);
 
-  const visibleRecruitedAgents = showAllRecruitedAgents ? recruitedAgents : recruitedAgents.slice(0, 5);
+  const sortedTableAgents = React.useMemo(() => {
+    const copy = [...recruitedAgents];
+    if (tableSortBy === 'conviction') {
+      copy.sort((a, b) => b.conviction - a.conviction);
+    }
+    return copy;
+  }, [recruitedAgents, tableSortBy]);
+
+  const visibleTableAgents = showAllTableRows ? sortedTableAgents : sortedTableAgents.slice(0, 8);
+  const visibleRecruitedAgents = showAllRecruitedAgents ? recruitedAgents : recruitedAgents.slice(0, 4);
 
   const chartPoints = React.useMemo(() => {
     if (recruitedAgents.length === 0) {
       return [
-        { label: 'Jan-24', val: 32 },
-        { label: 'Apr-24', val: 45 },
-        { label: 'Jul-24', val: 41 },
-        { label: 'Oct-24', val: 58 },
-        { label: 'Jan-25', val: 92 },
-        { label: 'Apr-25', val: 64 },
-        { label: 'Jul-25', val: 78 },
-        { label: 'Oct-25', val: 85 },
-        { label: 'Jan-26', val: 74 },
-        { label: 'Apr-26', val: 88 },
+        { label: 'VERITAS', val: 88 },
+        { label: 'AXIOM', val: 84 },
+        { label: 'LEDGER', val: 79 },
+        { label: 'CIPHER', val: 76 },
+        { label: 'ORACLE', val: 72 },
+        { label: 'CHRONOS', val: 68 },
+        { label: 'SENTINEL', val: 64 },
+        { label: 'AURORA', val: 59 },
+        { label: 'GRAVITY', val: 52 },
+        { label: 'VANGUARD', val: 44 },
       ];
     }
-    return recruitedAgents.slice(0, 10).map((ag, idx) => {
+    return sortedTableAgents.slice(0, 10).map((ag, idx) => {
       const r1 = ag.turns.find((t) => t.round === 1)?.convictionScore ?? 58 + ((idx * 7) % 25);
       const r3 = ag.turns[ag.turns.length - 1]?.convictionScore ?? ag.conviction ?? r1 + 12;
       return {
-        label: ag.name.slice(0, 6),
-        val: Math.max(20, Math.min(98, r3)),
+        label: ag.name.slice(0, 7),
+        val: Math.max(18, Math.min(98, r3)),
+        accent: ag.accentColor,
       };
     });
-  }, [recruitedAgents]);
+  }, [recruitedAgents, sortedTableAgents]);
+
+  // Synthesize editorial "Notes:" bullet points (matching Screenshot's exact "Notes:" + bullet list + "Source:" structure)
+  const editorialNotes = React.useMemo(() => {
+    const bullets: string[] = [];
+
+    if (summary) {
+      if (summary.verdict) {
+        bullets.push(summary.verdict);
+      }
+      if (summary.agreements && summary.agreements.length > 0) {
+        bullets.push(
+          `Core consensus across participating personas: ${summary.agreements.slice(0, 2).join(' ')}`,
+        );
+      }
+      if (summary.disagreements && summary.disagreements.length > 0) {
+        bullets.push(
+          `Key divergence & cross-examination pushback (especially from contrarian & risk nodes): ${summary.disagreements
+            .slice(0, 2)
+            .join(' ')}`,
+        );
+      }
+      if (summary.recommendedPathForward) {
+        bullets.push(`Strategic recommendation: ${summary.recommendedPathForward}`);
+      }
+    }
+
+    if (bullets.length < 4 && messages.length > 0) {
+      const veritasTurn = messages.find((m) => m.agentId === 'veritas');
+      const highTurn = [...messages].sort((a, b) => (b.convictionScore || 75) - (a.convictionScore || 75))[0];
+      const lowTurn = [...messages].sort((a, b) => (a.convictionScore || 75) - (b.convictionScore || 75))[0];
+
+      if (veritasTurn && bullets.length < 4) {
+        bullets.push(
+          `Empirical baseline from ${veritasTurn.agentName}: ${veritasTurn.text
+            .replace(/[#*_`]/g, '')
+            .slice(0, 185)
+            .trim()}...`,
+        );
+      }
+      if (highTurn && bullets.length < 4) {
+        bullets.push(
+          `Highest conviction ratings remain concentrated in ${highTurn.agentName} (${
+            highTurn.convictionScore || 88
+          }%), emphasizing ${highTurn.role?.toLowerCase() || 'primary domain thesis'}.`,
+        );
+      }
+      if (lowTurn && lowTurn.id !== highTurn?.id && bullets.length < 4) {
+        bullets.push(
+          `Lowest / most skeptical ratings in the full swarm include ${lowTurn.agentName} (${
+            lowTurn.convictionScore || 34
+          }%), highlighting tail risks and structural friction.`,
+        );
+      }
+    }
+
+    if (bullets.length === 0) {
+      bullets.push(
+        `Data comes directly from Parallax's 20-persona multi-round deliberation pipeline for the assigned intelligence task.`,
+        `Conviction ratings adjust dynamically across Round 1 (Thesis), Round 2 (Cross-Examination), and Round 3 (Final Convergence).`,
+        `Highest conviction ratings remain concentrated in empirical & first-principles specialists (VERITAS, AXIOM, LEDGER, and CIPHER).`,
+        `Lowest conviction ratings in the full swarm reflect contrarian stress-testing from VANGUARD (31%) and SENTINEL (30%) risk audits.`,
+      );
+    }
+
+    return bullets.slice(0, 5);
+  }, [summary, messages]);
 
   const currentModeObj = DEBATE_MODES.find((m) => m.id === debateMode) || DEBATE_MODES[0];
 
   // ============================================================
-  // 3-THEME DESIGN TOKENS (Minimal / Classic / Full Dark)
+  // 3-THEME DESIGN TOKENS (Full Dark OLED / Minimal / Classic)
   // ============================================================
   const wrapperThemeClass =
     theme === 'classic'
-      ? 'theme-classic bg-[#060b13] text-[#e2e8f0] bg-[radial-gradient(ellipse_at_top,_var(--tw-gradient-stops))] from-[#0c223c] via-[#081324] to-[#040810]'
-      : theme === 'fulldark'
-      ? 'theme-fulldark bg-black text-[#ececec]'
-      : 'theme-minimal bg-[#111113] text-[#e3e3e7]';
+      ? 'theme-classic bg-[#050a12] text-[#f1f5f9] bg-[radial-gradient(ellipse_at_top,_var(--tw-gradient-stops))] from-[#0b1f38] via-[#06101e] to-[#03060c]'
+      : theme === 'minimal'
+      ? 'theme-minimal bg-[#0f0f12] text-[#e7e9ea]'
+      : 'theme-fulldark bg-black text-[#e7e9ea]';
+
+  const hairlineTableCardClass =
+    theme === 'classic'
+      ? 'rounded-2xl border border-cyan-500/25 bg-[#07111f]/90 backdrop-blur-xl divide-y divide-cyan-500/15'
+      : theme === 'minimal'
+      ? 'rounded-2xl border border-zinc-800/90 bg-[#141417] divide-y divide-zinc-800/80'
+      : 'rounded-2xl border border-[#26292e] bg-[#050506] divide-y divide-[#1f2226]';
 
   const floatingPillClass =
     theme === 'classic'
       ? 'bg-slate-900/80 backdrop-blur-xl border border-cyan-500/30 text-cyan-50 shadow-[0_4px_20px_rgba(6,182,212,0.15)]'
-      : theme === 'fulldark'
-      ? 'bg-[#171717] border border-[#2e2e2e] text-[#ececec] shadow-[0_2px_12px_rgba(0,0,0,0.6)]'
-      : 'bg-[#1c1c1f] border border-zinc-800 text-zinc-100 shadow-[0_2px_12px_rgba(0,0,0,0.4)]';
+      : theme === 'minimal'
+      ? 'bg-[#18181b] border border-zinc-800 text-zinc-100 shadow-[0_2px_12px_rgba(0,0,0,0.45)]'
+      : 'bg-[#121316] border border-[#26292e] text-[#e7e9ea] shadow-[0_2px_14px_rgba(0,0,0,0.75)]';
 
   const floatingPillHoverClass =
     theme === 'classic'
       ? 'hover:bg-slate-800/90'
-      : theme === 'fulldark'
-      ? 'hover:bg-[#222222]'
-      : 'hover:bg-zinc-800';
+      : theme === 'minimal'
+      ? 'hover:bg-zinc-800'
+      : 'hover:bg-[#1c1e22]';
 
-  const outerCardClass =
+  const composerBoxClass =
     theme === 'classic'
-      ? 'bg-slate-900/65 backdrop-blur-xl border border-cyan-500/25 shadow-[0_8px_30px_rgba(6,182,212,0.12)]'
-      : theme === 'fulldark'
-      ? 'bg-[#141414] border border-[#2a2a2a] shadow-2xl'
-      : 'bg-[#18181b] border border-zinc-800 shadow-xl';
-
-  const innerSubCardClass =
-    theme === 'classic'
-      ? 'bg-slate-950/65 hover:bg-slate-900/90 border border-cyan-500/15'
-      : theme === 'fulldark'
-      ? 'bg-[#1f1f1f] hover:bg-[#272727] border border-[#2e2e2e]'
-      : 'bg-[#222226] hover:bg-[#29292e] border border-zinc-800/80';
-
-  const composerCardClass =
-    theme === 'classic'
-      ? 'bg-slate-900/85 backdrop-blur-xl border border-cyan-500/35 shadow-[0_8px_32px_rgba(6,182,212,0.18)]'
-      : theme === 'fulldark'
-      ? 'bg-[#212121] border border-[#333333] shadow-[0_8px_32px_rgba(0,0,0,0.75)]'
-      : 'bg-[#1c1c1f] border border-zinc-800 shadow-[0_8px_32px_rgba(0,0,0,0.5)]';
-
-  const composerPillClass =
-    theme === 'classic'
-      ? 'bg-cyan-950/50 border border-cyan-500/25 text-cyan-200'
-      : theme === 'fulldark'
-      ? 'bg-[#2f2f2f] text-[#ececec]'
-      : 'bg-[#26262a] text-zinc-200';
-
-  const circleBtnClass =
-    theme === 'classic'
-      ? 'bg-slate-800/90 hover:bg-cyan-950/80 text-cyan-300 border border-cyan-500/25'
-      : theme === 'fulldark'
-      ? 'bg-[#2f2f2f] hover:bg-[#3a3a3a] text-[#ececec]'
-      : 'bg-[#26262a] hover:bg-zinc-700 text-zinc-200';
-
-  const renderShowcaseThumbnail = (type: ShowcasePreset['thumbType']) => {
-    if (type === 'blackhole') {
-      return (
-        <div className="w-12 h-12 rounded-xl bg-black relative overflow-hidden shrink-0 flex items-center justify-center shadow-inner">
-          <div
-            className="w-9 h-9 rounded-full"
-            style={{
-              background:
-                'radial-gradient(circle, #000000 38%, #f59e0b 54%, #ea580c 68%, transparent 78%)',
-              boxShadow: '0 0 12px #f59e0b',
-            }}
-          />
-          <div className="absolute inset-x-0 top-1/2 h-[2px] bg-gradient-to-r from-transparent via-amber-200 to-transparent -rotate-12" />
-        </div>
-      );
-    }
-    if (type === 'typewriter') {
-      return (
-        <div className="w-12 h-12 rounded-xl bg-stone-900 relative overflow-hidden shrink-0 flex flex-col items-center justify-center p-1.5">
-          <div className="w-7 h-3 bg-stone-700 rounded-t-sm border-b border-amber-500/40" />
-          <div className="w-9 h-4 bg-stone-800 rounded-sm grid grid-cols-5 gap-0.5 p-0.5 mt-0.5">
-            {Array.from({ length: 10 }).map((_, i) => (
-              <span key={i} className="w-1 h-1 rounded-full bg-amber-200/70" />
-            ))}
-          </div>
-        </div>
-      );
-    }
-    if (type === 'heatmap') {
-      return (
-        <div className="w-12 h-12 rounded-xl bg-slate-950 p-1 grid grid-cols-3 grid-rows-3 gap-0.5 shrink-0 overflow-hidden">
-          <div className="bg-rose-600 rounded-[2px] col-span-1 row-span-2" />
-          <div className="bg-emerald-600 rounded-[2px] col-span-2 row-span-1" />
-          <div className="bg-emerald-500 rounded-[2px]" />
-          <div className="bg-rose-500 rounded-[2px]" />
-          <div className="bg-emerald-700 rounded-[2px] col-span-2" />
-          <div className="bg-amber-500 rounded-[2px]" />
-        </div>
-      );
-    }
-    if (type === 'solar') {
-      return (
-        <div className="w-12 h-12 rounded-xl bg-gradient-to-br from-sky-900 to-slate-900 relative overflow-hidden shrink-0 flex items-center justify-center">
-          <div className="w-6 h-6 rounded-full bg-cyan-400/30 border border-cyan-300 flex items-center justify-center">
-            <div className="w-2.5 h-2.5 rounded-full bg-cyan-300" />
-          </div>
-        </div>
-      );
-    }
-    return (
-      <div className="w-12 h-12 rounded-xl bg-gradient-to-br from-orange-950 via-red-900 to-black relative overflow-hidden shrink-0 flex items-center justify-center">
-        <div className="w-7 h-7 rounded-full bg-gradient-to-tr from-orange-600 to-amber-400 shadow-[0_0_10px_#ea580c]" />
-      </div>
-    );
-  };
+      ? 'bg-[#0b1626]/95 backdrop-blur-2xl border border-cyan-500/30 shadow-[0_10px_40px_rgba(0,0,0,0.65)]'
+      : theme === 'minimal'
+      ? 'bg-[#1c1c20] border border-zinc-800/90 shadow-[0_10px_36px_rgba(0,0,0,0.65)]'
+      : 'bg-[#16181c] border border-[#26292e] shadow-[0_10px_40px_rgba(0,0,0,0.85)]';
 
   return (
     <div
       id="parallax-page-wrapper"
       data-theme={theme}
-      className={`min-h-screen relative w-full overflow-x-hidden font-sans select-none transition-colors duration-200 ${wrapperThemeClass}`}
+      className={`min-h-screen relative -mx-4 sm:-mx-8 md:-mx-12 -my-8 px-3 sm:px-6 py-2.5 overflow-x-hidden font-sans select-none transition-colors duration-200 ${wrapperThemeClass}`}
     >
       <div
         id="parallax-page"
-        className="relative z-10 w-full max-w-[820px] mx-auto min-h-screen flex flex-col justify-between px-4 sm:px-6 pt-3 pb-6"
+        className="relative z-10 w-full max-w-[680px] mx-auto min-h-[calc(100vh-1.5rem)] flex flex-col justify-between pt-1 pb-3"
       >
         {/* ============================================================
-            TOP FLOATING PILL HEADER (Kimi K3 / Agent Swarm Style)
+            TOP FLOATING COMMAND BAR (COMPACT MOBILE-FRIENDLY)
            ============================================================ */}
         <header
           id="parallax-command-header"
-          className="sticky top-2 z-30 flex items-center justify-between gap-3 py-2"
+          className="sticky top-1.5 z-30 flex items-center justify-between gap-2 py-1.5 backdrop-blur-md"
         >
-          {/* Left: Hamburger Button + Brand Pill */}
-          <div className="flex items-center gap-2.5">
+          {/* Left: Hamburger Drawer Button + Brand & Live Status Pill */}
+          <div className="flex items-center gap-1.5">
             <button
               type="button"
               onClick={() => setIsMenuDrawerOpen(true)}
               aria-label="Open Parallax menu"
-              className={`w-11 h-11 rounded-full flex items-center justify-center active:scale-95 transition-all cursor-pointer ${floatingPillClass} ${floatingPillHoverClass}`}
+              className={`w-8 h-8 sm:w-9 sm:h-9 rounded-full flex items-center justify-center active:scale-95 transition-all cursor-pointer ${floatingPillClass} ${floatingPillHoverClass}`}
             >
-              <Menu size={20} strokeWidth={2.2} />
+              <Menu size={15} strokeWidth={2.2} />
             </button>
 
             <button
               type="button"
               onClick={() => setActiveTab(activeTab === 'feed' ? 'settings' : 'feed')}
-              className={`h-11 px-4 rounded-full flex items-center gap-1.5 text-[15px] transition-all cursor-pointer ${floatingPillClass} ${floatingPillHoverClass}`}
+              className={`h-8 sm:h-9 px-3 sm:px-3.5 rounded-full flex items-center gap-1.5 text-xs sm:text-[13px] transition-all cursor-pointer ${floatingPillClass} ${floatingPillHoverClass}`}
             >
-              <span
-                className={`font-semibold tracking-tight ${
-                  theme === 'classic' ? 'text-cyan-300' : 'text-zinc-100'
-                }`}
-              >
-                Parallax
-              </span>
-              <span
-                className={`font-normal ${
-                  theme === 'classic' ? 'text-cyan-200/70' : 'text-zinc-400'
-                }`}
-              >
-                {hasActiveMission ? 'K3 Agent Swarm' : 'K3'}
+              <span className="w-1.5 h-1.5 rounded-full bg-emerald-400 shadow-[0_0_8px_#34d399]" />
+              <span className="font-semibold tracking-tight text-white">Parallax</span>
+              <span className="text-[10px] sm:text-[11px] text-[#71767b] font-mono">
+                {isRunning
+                  ? `R${currentRound || 1} LIVE`
+                  : `${enabledAgentsCount} AGENTS`}
               </span>
             </button>
           </div>
 
-          {/* Right: New Chat + Settings + Speaker Audio Pill */}
-          <div className={`flex items-center gap-1 rounded-full p-1 ${floatingPillClass}`}>
+          {/* Right: New Swarm + Settings/Themes + Audio Briefing */}
+          <div className={`flex items-center gap-0.5 rounded-full p-0.5 ${floatingPillClass}`}>
             {hasActiveMission && (
               <button
                 type="button"
                 onClick={handleResetToNewSwarm}
                 title="New Swarm Task"
-                className={`w-9 h-9 rounded-full flex items-center justify-center transition-colors cursor-pointer ${floatingPillHoverClass}`}
+                className={`w-7 h-7 sm:w-8 sm:h-8 rounded-full flex items-center justify-center transition-colors cursor-pointer ${floatingPillHoverClass}`}
               >
-                <MessageSquarePlus size={18} strokeWidth={2} />
+                <MessageSquarePlus size={14} strokeWidth={2} />
               </button>
             )}
             <button
               type="button"
               onClick={() => setActiveTab(activeTab === 'settings' ? 'feed' : 'settings')}
-              title="Parallax Settings & Visual Themes"
-              className={`w-9 h-9 rounded-full flex items-center justify-center transition-colors cursor-pointer ${
+              title="Parallax Settings & 3 Visual Themes"
+              className={`w-7 h-7 sm:w-8 sm:h-8 rounded-full flex items-center justify-center transition-colors cursor-pointer ${
                 activeTab === 'settings'
-                  ? theme === 'classic'
-                    ? 'bg-cyan-500/25 text-cyan-300'
-                    : 'bg-zinc-700 text-white'
+                  ? 'bg-white text-black'
                   : floatingPillHoverClass
               }`}
             >
-              <Settings2 size={18} strokeWidth={2} />
+              <Settings2 size={14} strokeWidth={2} />
             </button>
             <button
               type="button"
@@ -1023,63 +1035,59 @@ export const ParallaxPage: React.FC = () => {
                   handleListenToFullSwarm();
                 }
               }}
-              title={playingAudioKey ? 'Mute / Stop Audio' : 'Listen to Swarm Deliberation'}
-              className={`w-9 h-9 rounded-full flex items-center justify-center transition-colors cursor-pointer ${
+              title={playingAudioKey ? 'Stop Audio' : 'Listen to Swarm Deliberation'}
+              className={`w-7 h-7 sm:w-8 sm:h-8 rounded-full flex items-center justify-center transition-colors cursor-pointer ${
                 playingAudioKey
-                  ? 'bg-cyan-500/20 text-cyan-300'
+                  ? 'bg-emerald-500/20 text-emerald-400'
                   : floatingPillHoverClass
               }`}
             >
-              {playingAudioKey ? <Volume2 size={18} strokeWidth={2} /> : <VolumeX size={18} strokeWidth={2} />}
+              {playingAudioKey ? <Volume2 size={14} strokeWidth={2} /> : <VolumeX size={14} strokeWidth={2} />}
             </button>
           </div>
         </header>
 
-        {/* Accessible Tab Switcher Bar (when in Settings or Archive view) */}
+        {/* Sub-Navigation Bar when viewing Settings or Archive */}
         {activeTab !== 'feed' && (
           <div
             id="parallax-tabs-nav"
-            className={`flex items-center justify-between gap-2 rounded-2xl p-2 my-3 ${outerCardClass}`}
+            className={`flex items-center justify-between gap-1.5 p-1.5 my-2 ${hairlineTableCardClass}`}
           >
-            <div className="flex items-center gap-1.5 flex-wrap">
+            <div className="flex items-center gap-1 flex-wrap">
               <button
                 id="parallax-tab-feed"
                 type="button"
                 onClick={() => setActiveTab('feed')}
-                className={`px-3.5 py-2 rounded-xl text-xs font-semibold flex items-center gap-1.5 cursor-pointer transition-colors ${circleBtnClass}`}
+                className="px-2.5 py-1 rounded-xl text-[11px] sm:text-xs font-semibold flex items-center gap-1 bg-white/10 text-white hover:bg-white/15 cursor-pointer transition-colors"
               >
-                <MessageSquare size={14} />
-                <span>← Back to Swarm</span>
+                <MessageSquare size={12} />
+                <span>← Swarm</span>
               </button>
               <button
                 id="parallax-tab-settings"
                 type="button"
                 onClick={() => setActiveTab('settings')}
-                className={`px-3.5 py-2 rounded-xl text-xs font-semibold flex items-center gap-1.5 cursor-pointer transition-colors ${
+                className={`px-2.5 py-1 rounded-xl text-[11px] sm:text-xs font-semibold flex items-center gap-1 cursor-pointer transition-colors ${
                   activeTab === 'settings'
-                    ? theme === 'classic'
-                      ? 'bg-cyan-500 text-slate-950 font-bold'
-                      : 'bg-zinc-100 text-zinc-900'
-                    : 'text-zinc-400 hover:text-zinc-100'
+                    ? 'bg-white text-black'
+                    : 'text-[#71767b] hover:text-white'
                 }`}
               >
-                <Settings2 size={14} />
+                <Settings2 size={12} />
                 <span>Settings &amp; Themes ({enabledAgentsCount})</span>
               </button>
               <button
                 id="parallax-tab-archive"
                 type="button"
                 onClick={() => setActiveTab('archive')}
-                className={`px-3.5 py-2 rounded-xl text-xs font-semibold flex items-center gap-1.5 cursor-pointer transition-colors ${
+                className={`px-2.5 py-1 rounded-xl text-[11px] sm:text-xs font-semibold flex items-center gap-1 cursor-pointer transition-colors ${
                   activeTab === 'archive'
-                    ? theme === 'classic'
-                      ? 'bg-cyan-500 text-slate-950 font-bold'
-                      : 'bg-zinc-100 text-zinc-900'
-                    : 'text-zinc-400 hover:text-zinc-100'
+                    ? 'bg-white text-black'
+                    : 'text-[#71767b] hover:text-white'
                 }`}
               >
-                <Archive size={14} />
-                <span>Past Swarms ({sessions.length})</span>
+                <Archive size={12} />
+                <span>Saved ({sessions.length})</span>
               </button>
             </div>
           </div>
@@ -1090,40 +1098,37 @@ export const ParallaxPage: React.FC = () => {
            ============================================================ */}
         {isMenuDrawerOpen && (
           <div
-            className="fixed inset-0 z-50 bg-black/60 backdrop-blur-xs flex"
+            className="fixed inset-0 z-50 bg-black/70 backdrop-blur-xs flex"
             onClick={() => setIsMenuDrawerOpen(false)}
           >
             <div
-              className={`w-[320px] max-w-[85vw] h-full shadow-2xl p-5 flex flex-col justify-between overflow-y-auto border-r ${
+              className={`w-[270px] sm:w-[300px] max-w-[82vw] h-full shadow-2xl p-3.5 sm:p-4 flex flex-col justify-between overflow-y-auto border-r ${
                 theme === 'classic'
-                  ? 'bg-[#07101d] border-cyan-500/25 text-slate-100'
-                  : theme === 'fulldark'
-                  ? 'bg-[#121212] border-[#2a2a2a] text-[#ececec]'
-                  : 'bg-[#161619] border-zinc-800 text-zinc-100'
+                  ? 'bg-[#060e1a] border-cyan-500/25 text-slate-100'
+                  : theme === 'minimal'
+                  ? 'bg-[#141417] border-zinc-800 text-zinc-100'
+                  : 'bg-[#08080a] border-[#26292e] text-[#e7e9ea]'
               }`}
               onClick={(e) => e.stopPropagation()}
             >
-              <div className="space-y-6">
+              <div className="space-y-4">
                 {/* Drawer Header */}
-                <div className="flex items-center justify-between border-b border-white/[0.08] pb-4">
-                  <div className="flex items-center gap-2.5">
-                    <div className="w-8 h-8 rounded-full bg-gradient-to-b from-blue-400 to-blue-600 flex items-center justify-center shadow-sm">
-                      <div className="flex gap-1 -mt-0.5 ml-1">
-                        <span className="w-1 h-2 bg-white rounded-full" />
-                        <span className="w-1 h-2 bg-white rounded-full" />
-                      </div>
+                <div className="flex items-center justify-between border-b border-white/[0.08] pb-3">
+                  <div className="flex items-center gap-2">
+                    <div className="w-7 h-7 rounded-full bg-white text-black flex items-center justify-center font-bold text-xs shadow-sm">
+                      P
                     </div>
                     <div>
-                      <div className="text-sm font-bold text-zinc-100">Parallax K3</div>
-                      <div className="text-[11px] text-zinc-400">{enabledAgentsCount} Agents Online</div>
+                      <div className="text-xs font-bold text-white">Parallax Swarm</div>
+                      <div className="text-[10px] text-[#71767b]">{enabledAgentsCount} Specialists Armed</div>
                     </div>
                   </div>
                   <button
                     type="button"
                     onClick={() => setIsMenuDrawerOpen(false)}
-                    className={`w-8 h-8 rounded-full flex items-center justify-center cursor-pointer ${circleBtnClass}`}
+                    className="w-7 h-7 rounded-full bg-white/[0.06] hover:bg-white/[0.12] flex items-center justify-center text-white cursor-pointer"
                   >
-                    <X size={16} />
+                    <X size={14} />
                   </button>
                 </div>
 
@@ -1135,9 +1140,9 @@ export const ParallaxPage: React.FC = () => {
                       handleResetToNewSwarm();
                       setIsMenuDrawerOpen(false);
                     }}
-                    className="w-full px-3.5 py-2.5 rounded-xl bg-cyan-500/15 border border-cyan-500/30 text-cyan-300 font-semibold text-sm flex items-center gap-2.5 hover:bg-cyan-500/25 transition-colors cursor-pointer"
+                    className="w-full px-3 py-2 rounded-xl bg-white text-black font-semibold text-xs flex items-center gap-2 hover:bg-zinc-200 transition-colors cursor-pointer"
                   >
-                    <Plus size={16} />
+                    <Plus size={14} />
                     <span>New Agent Swarm Task</span>
                   </button>
 
@@ -1147,13 +1152,13 @@ export const ParallaxPage: React.FC = () => {
                       setActiveTab('feed');
                       setIsMenuDrawerOpen(false);
                     }}
-                    className={`w-full px-3.5 py-2.5 rounded-xl text-sm font-medium flex items-center gap-2.5 transition-colors cursor-pointer ${
+                    className={`w-full px-3 py-2 rounded-xl text-xs font-medium flex items-center gap-2 transition-colors cursor-pointer ${
                       activeTab === 'feed'
-                        ? 'bg-zinc-800 text-white'
-                        : 'text-zinc-400 hover:bg-zinc-800/50 hover:text-zinc-200'
+                        ? 'bg-white/10 text-white'
+                        : 'text-[#71767b] hover:bg-white/[0.05] hover:text-white'
                     }`}
                   >
-                    <MessageSquare size={16} />
+                    <MessageSquare size={14} />
                     <span>Swarm Workspace</span>
                   </button>
 
@@ -1163,14 +1168,14 @@ export const ParallaxPage: React.FC = () => {
                       setActiveTab('settings');
                       setIsMenuDrawerOpen(false);
                     }}
-                    className={`w-full px-3.5 py-2.5 rounded-xl text-sm font-medium flex items-center gap-2.5 transition-colors cursor-pointer ${
+                    className={`w-full px-3 py-2 rounded-xl text-xs font-medium flex items-center gap-2 transition-colors cursor-pointer ${
                       activeTab === 'settings'
-                        ? 'bg-zinc-800 text-white'
-                        : 'text-zinc-400 hover:bg-zinc-800/50 hover:text-zinc-200'
+                        ? 'bg-white/10 text-white'
+                        : 'text-[#71767b] hover:bg-white/[0.05] hover:text-white'
                     }`}
                   >
-                    <Settings2 size={16} />
-                    <span>Settings, Themes &amp; Agents (20)</span>
+                    <Settings2 size={14} />
+                    <span>Settings, 3 Themes &amp; Agents</span>
                   </button>
 
                   <button
@@ -1179,24 +1184,24 @@ export const ParallaxPage: React.FC = () => {
                       setActiveTab('archive');
                       setIsMenuDrawerOpen(false);
                     }}
-                    className={`w-full px-3.5 py-2.5 rounded-xl text-sm font-medium flex items-center gap-2.5 transition-colors cursor-pointer ${
+                    className={`w-full px-3 py-2 rounded-xl text-xs font-medium flex items-center gap-2 transition-colors cursor-pointer ${
                       activeTab === 'archive'
-                        ? 'bg-zinc-800 text-white'
-                        : 'text-zinc-400 hover:bg-zinc-800/50 hover:text-zinc-200'
+                        ? 'bg-white/10 text-white'
+                        : 'text-[#71767b] hover:bg-white/[0.05] hover:text-white'
                     }`}
                   >
-                    <Archive size={16} />
+                    <Archive size={14} />
                     <span>Saved Swarms ({sessions.length})</span>
                   </button>
                 </div>
 
                 {/* Quick 3-Theme Selector inside Drawer */}
                 <div>
-                  <div className="flex items-center gap-1.5 text-[11px] font-semibold uppercase tracking-wider text-zinc-400 mb-2 px-1">
-                    <Palette size={12} className="text-purple-400" />
+                  <div className="flex items-center gap-1.5 text-[10px] font-semibold uppercase tracking-wider text-[#71767b] mb-1.5 px-1">
+                    <Palette size={11} className="text-purple-400" />
                     <span>Visual Theme</span>
                   </div>
-                  <div className="grid grid-cols-3 gap-1.5">
+                  <div className="grid grid-cols-3 gap-1">
                     {(
                       [
                         { id: 'minimal', label: 'Minimal' },
@@ -1208,12 +1213,10 @@ export const ParallaxPage: React.FC = () => {
                         key={t.id}
                         type="button"
                         onClick={() => handleThemeChange(t.id)}
-                        className={`px-2 py-2 rounded-xl border text-[11px] font-medium text-center transition-all cursor-pointer ${
+                        className={`px-1.5 py-1.5 rounded-lg border text-[10px] font-medium text-center transition-all cursor-pointer ${
                           theme === t.id
-                            ? t.id === 'classic'
-                              ? 'border-cyan-400 bg-cyan-950/60 text-cyan-200 shadow-xs'
-                              : 'border-zinc-400 bg-zinc-800 text-white shadow-xs'
-                            : 'border-zinc-800 bg-zinc-900/60 text-zinc-400 hover:text-zinc-200'
+                            ? 'border-white bg-white text-black font-semibold'
+                            : 'border-[#26292e] bg-white/[0.03] text-[#71767b] hover:text-white'
                         }`}
                       >
                         {t.label}
@@ -1224,10 +1227,10 @@ export const ParallaxPage: React.FC = () => {
 
                 {/* Debate Protocol Selection */}
                 <div>
-                  <div className="text-[11px] font-semibold uppercase tracking-wider text-zinc-400 mb-2 px-1">
+                  <div className="text-[10px] font-semibold uppercase tracking-wider text-[#71767b] mb-1.5 px-1">
                     Swarm Protocol
                   </div>
-                  <div className="space-y-1">
+                  <div className="space-y-0.5">
                     {DEBATE_MODES.map((m) => {
                       const Icon = m.icon;
                       const active = debateMode === m.id;
@@ -1238,19 +1241,18 @@ export const ParallaxPage: React.FC = () => {
                           disabled={isRunning}
                           onClick={() => {
                             setDebateMode(m.id);
-                            setShowSwarmPill(true);
                           }}
-                          className={`w-full px-3 py-2 rounded-xl text-xs font-medium flex items-center justify-between transition-colors cursor-pointer ${
+                          className={`w-full px-2.5 py-1.5 rounded-lg text-[11px] font-medium flex items-center justify-between transition-colors cursor-pointer ${
                             active
-                              ? 'bg-zinc-800 text-white font-semibold'
-                              : 'text-zinc-400 hover:bg-zinc-800/40 hover:text-zinc-200'
+                              ? 'bg-white/10 text-white font-semibold'
+                              : 'text-[#71767b] hover:bg-white/[0.04] hover:text-white'
                           }`}
                         >
                           <span className="flex items-center gap-2">
-                            <Icon size={14} className={active ? 'text-cyan-400' : 'text-zinc-500'} />
+                            <Icon size={13} className={active ? 'text-white' : 'text-[#71767b]'} />
                             {m.label}
                           </span>
-                          {active && <span className="w-1.5 h-1.5 rounded-full bg-cyan-400" />}
+                          {active && <span className="w-1.5 h-1.5 rounded-full bg-emerald-400" />}
                         </button>
                       );
                     })}
@@ -1260,10 +1262,10 @@ export const ParallaxPage: React.FC = () => {
                 {/* Recent Swarm Sessions */}
                 {sessions.length > 0 && (
                   <div>
-                    <div className="text-[11px] font-semibold uppercase tracking-wider text-zinc-400 mb-2 px-1">
+                    <div className="text-[10px] font-semibold uppercase tracking-wider text-[#71767b] mb-1.5 px-1">
                       Recent Tasks
                     </div>
-                    <div className="space-y-1">
+                    <div className="space-y-0.5">
                       {sessions.slice(0, 6).map((sess) => (
                         <button
                           key={sess.id}
@@ -1283,7 +1285,7 @@ export const ParallaxPage: React.FC = () => {
                             setActiveTab('feed');
                             setIsMenuDrawerOpen(false);
                           }}
-                          className="w-full text-left px-3 py-2 rounded-xl hover:bg-zinc-800/60 text-xs text-zinc-300 truncate transition-colors cursor-pointer"
+                          className="w-full text-left px-2.5 py-1.5 rounded-lg hover:bg-white/[0.06] text-[11px] text-[#e7e9ea] truncate transition-colors cursor-pointer"
                         >
                           {sess.topic}
                         </button>
@@ -1293,7 +1295,7 @@ export const ParallaxPage: React.FC = () => {
                 )}
               </div>
 
-              <div className="pt-4 border-t border-white/[0.08] text-[11px] text-zinc-500 flex items-center justify-between">
+              <div className="pt-3 border-t border-white/[0.08] text-[10px] text-[#71767b] flex items-center justify-between">
                 <span>Parallax Swarm Engine</span>
                 <span className="capitalize">{theme} Theme</span>
               </div>
@@ -1302,10 +1304,10 @@ export const ParallaxPage: React.FC = () => {
         )}
 
         {/* ============================================================
-            TAB CONTENT: SETTINGS (Includes 3 Visual Themes + 20 Agents)
+            TAB CONTENT: SETTINGS (3 Visual Themes + 20 Agents)
            ============================================================ */}
         {activeTab === 'settings' && (
-          <div className={`flex-1 rounded-3xl p-4 sm:p-6 my-2 space-y-6 ${outerCardClass}`}>
+          <div className="flex-1 py-1.5 space-y-4">
             <ParallaxSettings
               config={config}
               onConfigChange={(newCfg) => setConfig(newCfg)}
@@ -1328,9 +1330,9 @@ export const ParallaxPage: React.FC = () => {
             TAB CONTENT: ARCHIVE
            ============================================================ */}
         {activeTab === 'archive' && (
-          <div id="parallax-archive-tab" className="flex-1 py-4 space-y-4">
-            <div className="flex items-center justify-between border-b border-white/[0.08] pb-3">
-              <h3 className="m-0 text-base font-bold text-zinc-100">
+          <div id="parallax-archive-tab" className="flex-1 py-2 space-y-3">
+            <div className="flex items-center justify-between border-b border-white/[0.08] pb-2">
+              <h3 className="m-0 text-xs sm:text-sm font-bold text-white">
                 Saved Swarm Discussions ({sessions.length})
               </h3>
               {sessions.length > 0 && (
@@ -1342,50 +1344,55 @@ export const ParallaxPage: React.FC = () => {
                     setSessions([]);
                     setConfirmDeleteId(null);
                   }}
-                  className="px-3.5 py-1.5 rounded-full bg-rose-500/15 hover:bg-rose-500/25 border border-rose-500/30 text-rose-300 text-xs font-semibold cursor-pointer flex items-center gap-1.5 transition-colors"
+                  className="px-2.5 py-1 rounded-full bg-rose-500/15 hover:bg-rose-500/25 border border-rose-500/30 text-rose-300 text-[11px] font-semibold cursor-pointer flex items-center gap-1 transition-colors"
                 >
-                  <Trash2 size={14} />
+                  <Trash2 size={12} />
                   <span>Clear Archive</span>
                 </button>
               )}
             </div>
 
             {sessions.length === 0 ? (
-              <div className="py-16 text-center text-zinc-500 text-sm">
-                No archived sessions yet. Assign a task to your AI team to generate reports.
+              <div className="py-12 text-center text-[#71767b] text-xs">
+                No archived sessions yet. Ask anything below to mobilize your 20-agent swarm.
               </div>
             ) : (
-              <div className="space-y-2.5">
-                {sessions.map((sess) => (
+              <div className={hairlineTableCardClass}>
+                {sessions.map((sess, idx) => (
                   <div
                     key={sess.id}
                     id={`parallax-saved-swarm-${sess.id}`}
-                    className={`p-4 rounded-2xl transition-all flex flex-col gap-2 ${outerCardClass}`}
+                    className="p-3 flex flex-col gap-1.5 hover:bg-white/[0.02] transition-colors"
                   >
-                    <div className="flex items-start justify-between gap-3">
-                      <span className="text-sm font-semibold text-zinc-100 leading-snug">
-                        {sess.topic}
-                      </span>
-                      <span className="text-[11px] text-zinc-400 font-mono shrink-0">
+                    <div className="flex items-start justify-between gap-2">
+                      <div className="flex items-center gap-2 min-w-0">
+                        <span className="text-[11px] font-mono text-[#71767b] tabular-nums">
+                          {String(idx + 1).padStart(2, '0')}
+                        </span>
+                        <span className="text-xs sm:text-[13px] font-medium text-white truncate">
+                          {sess.topic}
+                        </span>
+                      </div>
+                      <span className="text-[10px] text-[#71767b] font-mono shrink-0">
                         {new Date(sess.timestamp).toLocaleDateString()}
                       </span>
                     </div>
                     {sess.summary && (
-                      <div className="text-xs text-zinc-300 leading-relaxed">
-                        <strong className="text-cyan-400">Consensus:</strong> {sess.summary.consensusLean}
+                      <div className="text-[11px] text-[#a1a1aa] pl-6 leading-relaxed">
+                        <strong className="text-white">Consensus:</strong> {sess.summary.consensusLean}
                       </div>
                     )}
-                    <div className="flex items-center justify-between flex-wrap gap-2 pt-1">
-                      <span className="text-[11px] text-zinc-400 font-mono">
-                        {sess.messages.length} agent turns · 3 rounds
+                    <div className="flex items-center justify-between flex-wrap gap-2 pl-6 pt-0.5">
+                      <span className="text-[10px] text-[#71767b] font-mono">
+                        {sess.messages.length} turns · {sess.summary?.confidenceScore || 86}% conviction
                       </span>
 
                       {confirmDeleteId === sess.id ? (
                         <div
                           id={`confirm-delete-swarm-prompt-${sess.id}`}
-                          className="flex items-center gap-2 bg-rose-950/60 border border-rose-500/30 rounded-full px-3 py-1"
+                          className="flex items-center gap-1.5 bg-rose-950/60 border border-rose-500/30 rounded-full px-2.5 py-0.5"
                         >
-                          <span className="text-[11px] text-rose-300 font-semibold">Delete?</span>
+                          <span className="text-[10px] text-rose-300 font-semibold">Delete?</span>
                           <button
                             id={`confirm-delete-yes-${sess.id}`}
                             type="button"
@@ -1394,7 +1401,7 @@ export const ParallaxPage: React.FC = () => {
                               setSessions(storage.getParallaxSessions());
                               setConfirmDeleteId(null);
                             }}
-                            className="px-2.5 py-0.5 rounded-full bg-rose-600 text-white text-[11px] font-bold cursor-pointer"
+                            className="px-2 py-0.5 rounded-full bg-rose-600 text-white text-[10px] font-bold cursor-pointer"
                           >
                             Delete
                           </button>
@@ -1402,13 +1409,13 @@ export const ParallaxPage: React.FC = () => {
                             id={`confirm-delete-cancel-${sess.id}`}
                             type="button"
                             onClick={() => setConfirmDeleteId(null)}
-                            className="px-2.5 py-0.5 rounded-full bg-zinc-800 text-zinc-300 text-[11px] cursor-pointer"
+                            className="px-2 py-0.5 rounded-full bg-zinc-800 text-zinc-300 text-[10px] cursor-pointer"
                           >
                             Cancel
                           </button>
                         </div>
                       ) : (
-                        <div className="flex items-center gap-2">
+                        <div className="flex items-center gap-1.5">
                           <button
                             type="button"
                             onClick={() => {
@@ -1425,17 +1432,17 @@ export const ParallaxPage: React.FC = () => {
                               setCurrentTopic(sess.topic);
                               setActiveTab('feed');
                             }}
-                            className="px-3.5 py-1.5 rounded-full bg-cyan-500/20 hover:bg-cyan-500/30 border border-cyan-500/30 text-cyan-200 text-[11px] font-semibold cursor-pointer transition-colors"
+                            className="px-2.5 py-0.5 rounded-full bg-white text-black text-[10px] font-semibold cursor-pointer hover:bg-zinc-200 transition-colors"
                           >
-                            Open Report
+                            Open
                           </button>
                           <button
                             id={`delete-individual-swarm-${sess.id}`}
                             type="button"
                             onClick={() => setConfirmDeleteId(sess.id)}
-                            className="p-1.5 rounded-full bg-rose-500/15 hover:bg-rose-500/25 text-rose-400 cursor-pointer flex items-center justify-center transition-colors"
+                            className="p-1 rounded-full hover:bg-rose-500/20 text-[#71767b] hover:text-rose-400 cursor-pointer flex items-center justify-center transition-colors"
                           >
-                            <Trash2 size={13} />
+                            <Trash2 size={12} />
                           </button>
                         </div>
                       )}
@@ -1448,98 +1455,174 @@ export const ParallaxPage: React.FC = () => {
         )}
 
         {/* ============================================================
-            MAIN FEED VIEW (SCREENSHOT 1 IDLE STATE + SCREENSHOT 2 ACTIVE STATE)
+            MAIN FEED VIEW (IDLE + ACTIVE MOBILE-PROPORTIONAL EDITORIAL STREAM)
            ============================================================ */}
         {activeTab === 'feed' && (
           <div id="parallax-feed-view" className="flex-1 flex flex-col justify-between">
             {!hasActiveMission ? (
               /* ==========================================================
-                 SCREENSHOT 1: IDLE / LANDING VIEW (Blue Orb + Headline)
+                 CREATIVE IDLE STATE: COMPACT MOBILE-FRIENDLY BENCHMARK TABLE + NOTES
                  ========================================================== */
-              <div className="flex-1 flex flex-col items-center justify-center py-16 sm:py-24 px-4 text-center">
-                {/* Glowing 3D Soft Blue Sphere Avatar with White Eyes */}
-                <div className="relative mb-6 flex items-center justify-center">
-                  <div
-                    className={`w-16 h-16 rounded-full flex items-center justify-center ${
-                      theme === 'classic'
-                        ? 'bg-cyan-500/15 shadow-[0_8px_35px_rgba(6,182,212,0.3)]'
-                        : 'bg-blue-500/15 shadow-[0_8px_30px_rgba(59,130,246,0.25)]'
-                    }`}
-                  >
-                    <div
-                      className="w-13 h-13 rounded-full relative flex items-center justify-center transition-transform duration-500 hover:scale-105"
-                      style={{
-                        background:
-                          'radial-gradient(circle at 35% 30%, #60a5fa 0%, #3b82f6 55%, #2563eb 100%)',
-                        boxShadow:
-                          'inset 0 -4px 8px rgba(29, 78, 216, 0.5), inset 0 3px 6px rgba(191, 219, 254, 0.7)',
-                      }}
-                    >
-                      {/* Cute vertical oval eyes tilted slightly up-right */}
-                      <div className="flex items-center gap-1.5 translate-x-1 -translate-y-1">
-                        <span className="w-1.5 h-3 rounded-full bg-white shadow-xs rotate-6" />
-                        <span className="w-1.5 h-2.5 rounded-full bg-white shadow-xs rotate-6" />
-                      </div>
-                    </div>
+              <div className="flex-1 flex flex-col justify-center py-3 sm:py-5 space-y-4 sm:space-y-5 select-text">
+                {/* Creative Constellation Badge & Editorial Headline */}
+                <div className="space-y-1.5 sm:space-y-2">
+                  <div className="inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-full border border-[#26292e] bg-white/[0.03] text-[10px] sm:text-[11px] font-mono text-[#a1a1aa]">
+                    <Sparkles size={11} className="text-emerald-400" />
+                    <span>PARALLAX SWARM · {currentModeObj.label.toUpperCase()}</span>
+                  </div>
+
+                  <h1 className="text-base sm:text-xl font-semibold text-white tracking-tight leading-snug">
+                    20 specialized minds. One empirical synthesis.
+                  </h1>
+                  <p className="text-xs sm:text-[13.5px] text-[#8b9097] leading-relaxed max-w-[600px]">
+                    Assign any research question or global dataset. Parallax mobilizes 20 independent personas across 3 rounds of thesis, cross-examination, and ranked conviction scoring.
+                  </p>
+                </div>
+
+                {/* Interactive Hairline Preview Table (Mobile-sized rows & crisp text) */}
+                <div className="space-y-1.5">
+                  <div className="flex items-center justify-between px-1">
+                    <span className="text-[10px] sm:text-[11px] font-mono uppercase tracking-wider text-[#71767b]">
+                      Featured Benchmarks — Tap to launch
+                    </span>
+                    <span className="text-[10px] sm:text-[11px] font-mono text-[#71767b]">Conviction</span>
+                  </div>
+
+                  <div className={hairlineTableCardClass}>
+                    {SHOWCASE_PRESETS.map((preset, idx) => (
+                      <button
+                        key={preset.id}
+                        type="button"
+                        disabled={isRunning}
+                        onClick={() => {
+                          setTopicInput(preset.prompt);
+                          handleStartSwarm(preset.prompt);
+                        }}
+                        className="w-full py-2.5 px-3 sm:py-3 sm:px-4 flex items-center justify-between gap-2.5 text-left hover:bg-white/[0.04] active:bg-white/[0.07] transition-colors cursor-pointer group"
+                      >
+                        <div className="flex items-center gap-3 sm:gap-5 min-w-0 flex-1">
+                          <span className="text-xs sm:text-[13.5px] font-normal text-[#e7e9ea] tabular-nums w-5 shrink-0">
+                            {String(idx + 1).padStart(2, '0')}
+                          </span>
+                          <div className="min-w-0 flex-1">
+                            <div className="text-xs sm:text-[13.5px] font-normal text-white group-hover:text-emerald-300 transition-colors truncate">
+                              {preset.title}
+                            </div>
+                            <div className="text-[10.5px] sm:text-xs text-[#71767b] truncate mt-0.5">
+                              {preset.subtitle}
+                            </div>
+                          </div>
+                        </div>
+
+                        <div className="flex items-center gap-2 shrink-0">
+                          <span className="text-xs sm:text-[13.5px] font-normal text-[#e7e9ea] tabular-nums">
+                            {preset.metric.replace(' conv', '')}
+                          </span>
+                          <ChevronRight size={14} className="text-[#71767b] group-hover:translate-x-0.5 transition-transform" />
+                        </div>
+                      </button>
+                    ))}
                   </div>
                 </div>
 
-                {/* Main Headline matching Screenshot 1 */}
-                <h1
-                  className={`text-[22px] sm:text-[26px] font-semibold tracking-tight leading-[1.35] max-w-[340px] sm:max-w-[420px] ${
-                    theme === 'classic'
-                      ? 'text-slate-100 drop-shadow-[0_0_12px_rgba(6,182,212,0.15)]'
-                      : theme === 'fulldark'
-                      ? 'text-[#f4f4f5]'
-                      : 'text-zinc-100'
-                  }`}
-                >
-                  Agent Mode: One-click websites, slides, Word &amp; Excel.
-                </h1>
+                {/* Editorial "Notes:" Preview Section on Idle (Mobile-friendly text size) */}
+                <div className="space-y-2 pt-0.5">
+                  <h2 className="text-xs sm:text-sm font-bold text-white tracking-tight m-0">
+                    Notes:
+                  </h2>
+                  <ul className="list-disc pl-4 sm:pl-5 space-y-1.5 sm:space-y-2 text-xs sm:text-[13.5px] text-[#e7e9ea] leading-relaxed m-0">
+                    <li>
+                      Data and conviction scores are synthesized directly from 20 autonomous domain personas (including VERITAS live web verification, AXIOM logic, and LEDGER economics).
+                    </li>
+                    <li>
+                      Cross-examination in Round 2 automatically challenges unverified assumptions and drops inflated confidence ratings before Round 3 convergence.
+                    </li>
+                  </ul>
+                  <p className="text-[11px] sm:text-xs text-[#a1a1aa] pt-0.5 m-0">
+                    Source: Parallax 20-Agent Multi-Round Deliberation Pipeline ({currentModeObj.label}).
+                  </p>
+                </div>
               </div>
             ) : (
               /* ==========================================================
-                 SCREENSHOT 2: ACTIVE / COMPLETED AGENT SWARM VIEW
+                 ACTIVE / COMPLETED SWARM VIEW (MOBILE-FRIENDLY SIZING)
                  ========================================================== */
-              <div className="flex-1 py-4 space-y-5 select-text">
-                {/* 1. User Prompt Bubble */}
+              <div className="flex-1 py-2.5 sm:py-3.5 space-y-4 sm:space-y-5 select-text">
+                {/* 1. User Prompt Pill (Right-aligned subtle dark bubble) */}
                 <div className="flex justify-end">
-                  <div
-                    className={`rounded-2xl px-4 py-3.5 text-[15px] sm:text-[16px] leading-relaxed max-w-[88%] sm:max-w-[78%] ${
-                      theme === 'classic'
-                        ? 'bg-cyan-950/60 text-cyan-50 border border-cyan-500/30 shadow-[0_4px_20px_rgba(6,182,212,0.12)]'
-                        : theme === 'fulldark'
-                        ? 'bg-[#2f2f2f] text-[#ececec] border border-[#3d3d3d]'
-                        : 'bg-[#26262a] text-zinc-100 border border-zinc-700/60'
-                    }`}
-                  >
+                  <div className="rounded-2xl bg-[#16181c] border border-[#26292e] text-white px-3 py-2 sm:px-3.5 sm:py-2.5 text-xs sm:text-[13.5px] leading-relaxed max-w-[90%] sm:max-w-[78%]">
                     {currentTopic}
                   </div>
                 </div>
 
-                {/* 2. Orchestrator Intro Narrative */}
-                <p
-                  className={`text-[15.5px] sm:text-[16.5px] leading-[1.6] font-normal ${
-                    theme === 'classic'
-                      ? 'text-slate-200'
-                      : theme === 'fulldark'
-                      ? 'text-[#e3e3e3]'
-                      : 'text-zinc-200'
-                  }`}
-                >
-                  I&apos;ll orchestrate this large–scale competitive intelligence program. Let me start by writing the execution plan, then deploy the research swarm.
-                </p>
+                {/* 2. Live Swarm Telemetry Pulse Bar */}
+                <div className="flex items-center justify-between flex-wrap gap-1.5 pb-1 border-b border-white/[0.08]">
+                  <div className="flex items-center gap-2 min-w-0">
+                    <span
+                      className={`w-1.5 h-1.5 rounded-full shrink-0 ${
+                        isRunning
+                          ? 'bg-emerald-400 animate-ping'
+                          : 'bg-emerald-400'
+                      }`}
+                    />
+                    <span className="text-[10px] sm:text-[11px] font-mono uppercase tracking-wider text-[#a1a1aa] truncate">
+                      {isRunning
+                        ? `${statusText}`
+                        : `SWARM COMPLETE · ${messages.length} TURNS · 3 ROUNDS`}
+                    </span>
+                  </div>
+
+                  <div className="flex items-center gap-1 flex-wrap">
+                    <button
+                      type="button"
+                      onClick={() => setShowTrajectoryChart((prev) => !prev)}
+                      className="px-2 py-0.5 sm:px-2.5 sm:py-1 rounded-full bg-white/[0.05] hover:bg-white/[0.1] border border-white/[0.08] text-[10px] sm:text-[11px] text-[#e7e9ea] flex items-center gap-1 cursor-pointer transition-colors"
+                    >
+                      <Activity size={11} className="text-emerald-400" />
+                      <span>{showTrajectoryChart ? 'Hide Curve' : 'Curve'}</span>
+                    </button>
+                    {messages.length > 0 && (
+                      <>
+                        <button
+                          type="button"
+                          onClick={handleCopyFullSwarm}
+                          className="px-2 py-0.5 sm:px-2.5 sm:py-1 rounded-full bg-white/[0.05] hover:bg-white/[0.1] border border-white/[0.08] text-[10px] sm:text-[11px] text-[#e7e9ea] flex items-center gap-1 cursor-pointer transition-colors"
+                        >
+                          {copiedSwarmTranscript ? <Check size={11} className="text-emerald-400" /> : <Copy size={11} />}
+                          <span>{copiedSwarmTranscript ? 'Copied' : 'Copy'}</span>
+                        </button>
+                        <button
+                          type="button"
+                          onClick={handleDownloadSwarmMp3}
+                          disabled={isDownloadingSwarmMp3}
+                          className="px-2 py-0.5 sm:px-2.5 sm:py-1 rounded-full bg-white/[0.05] hover:bg-white/[0.1] border border-white/[0.08] text-[10px] sm:text-[11px] text-[#e7e9ea] flex items-center gap-1 cursor-pointer transition-colors disabled:opacity-50"
+                        >
+                          <Download size={11} />
+                          <span>{isDownloadingSwarmMp3 ? 'MP3...' : 'MP3'}</span>
+                        </button>
+                      </>
+                    )}
+                    <button
+                      type="button"
+                      onClick={() => setShowDetailedTranscript((prev) => !prev)}
+                      className="px-2 py-0.5 sm:px-2.5 sm:py-1 rounded-full bg-white text-black text-[10px] sm:text-[11px] font-semibold flex items-center gap-1 cursor-pointer hover:bg-zinc-200 transition-colors"
+                    >
+                      <FileText size={11} />
+                      <span>{showDetailedTranscript ? 'Hide Stream' : 'Stream'}</span>
+                    </button>
+                  </div>
+                </div>
 
                 {/* Error Banner if any */}
                 {errorText && (
-                  <div className="p-3.5 rounded-2xl bg-rose-950/60 border border-rose-500/40 text-rose-200 text-xs sm:text-sm">
+                  <div className="p-3 rounded-2xl bg-rose-950/60 border border-rose-500/40 text-rose-200 text-xs">
                     {errorText}
                   </div>
                 )}
 
                 {/* Audio Visualizer if playing */}
                 {(playingAudioKey || loadingAudioKey) && (
-                  <div className={`rounded-2xl overflow-hidden p-2 ${outerCardClass}`}>
+                  <div className={`p-2 ${hairlineTableCardClass}`}>
                     <ParallaxAudioVisualizer
                       isPlaying={Boolean(playingAudioKey)}
                       activeKey={playingAudioKey || loadingAudioKey}
@@ -1549,7 +1632,7 @@ export const ParallaxPage: React.FC = () => {
                           : activeSpeakingAgent?.agentName || 'Swarm Speaker'
                       }
                       activeAgentId={activeSpeakingAgent?.agentId}
-                      accentColor={activeSpeakingAgent?.accentColor || '#3b82f6'}
+                      accentColor={activeSpeakingAgent?.accentColor || '#10b981'}
                       voiceName={
                         activeSpeakingAgent
                           ? config.agents[activeSpeakingAgent.agentId]?.voice ||
@@ -1568,153 +1651,108 @@ export const ParallaxPage: React.FC = () => {
                   </div>
                 )}
 
-                {/* 3. AGENT RECRUITMENT CARD (Matches Screenshot 2) */}
-                <div
-                  id="parallax-agent-recruitment-card"
-                  className={`rounded-3xl p-3.5 sm:p-4 ${outerCardClass}`}
-                >
-                  {/* Header Row: Branch Icon + "Agent recruitment | N agents recruited" + Chevron */}
-                  <button
-                    type="button"
-                    onClick={() => setShowAllRecruitedAgents((prev) => !prev)}
-                    className="w-full flex items-center justify-between px-1 pb-3 text-left cursor-pointer group"
-                  >
-                    <div className="flex items-center gap-2.5 flex-wrap">
-                      <GitBranch
-                        size={16}
-                        className={theme === 'classic' ? 'text-cyan-400 shrink-0' : 'text-zinc-400 shrink-0'}
-                      />
-                      <span className="text-[14px] font-medium text-zinc-100">
-                        Agent recruitment
-                      </span>
-                      <span className="text-zinc-600">|</span>
-                      <span className="text-[14px] text-zinc-400">
-                        {recruitedAgents.length} agents recruited
+                {/* 3. SCREENSHOT-ACCURATE DARK HAIRLINE RANKING TABLE (MOBILE-SIZED) */}
+                <div className="space-y-1.5">
+                  <div className="flex items-center justify-between px-1">
+                    <div className="flex items-center gap-1.5">
+                      <span className="text-[10px] sm:text-[11px] font-mono uppercase tracking-wider text-[#71767b]">
+                        Swarm Conviction Index ({sortedTableAgents.length} Personas)
                       </span>
                     </div>
-                    <ChevronRight
-                      size={18}
-                      className={`text-zinc-400 transition-transform duration-200 ${
-                        showAllRecruitedAgents ? 'rotate-90' : ''
-                      }`}
-                    />
-                  </button>
+                    <button
+                      type="button"
+                      onClick={() =>
+                        setTableSortBy((prev) => (prev === 'conviction' ? 'order' : 'conviction'))
+                      }
+                      className="text-[10px] sm:text-[11px] font-mono text-[#a1a1aa] hover:text-white flex items-center gap-1 cursor-pointer"
+                    >
+                      <ArrowUpDown size={11} />
+                      <span>
+                        {tableSortBy === 'conviction' ? 'Sorted by %' : 'Sorted by Order'}
+                      </span>
+                    </button>
+                  </div>
 
-                  {/* Stack of Individual Agent Sub-Cards */}
-                  <div className="space-y-2.5">
-                    {visibleRecruitedAgents.map((agent, index) => {
+                  {/* Rounded-2xl Dark Container with Hairline Dividers */}
+                  <div id="parallax-conviction-table" className={hairlineTableCardClass}>
+                    {visibleTableAgents.map((agent, index) => {
                       const isExpanded = expandedAgentId === agent.id;
-                      const agentNumber = String(index + 1).padStart(2, '0');
-                      const roundTag = `R${agent.latestRound || currentRound || 1}`;
-                      const taskSummary =
-                        agent.turns.length > 0
-                          ? `${roundTag} ${agent.role}: ${agent.latestText.replace(/[#*_`]/g, '').slice(0, 48)}...`
-                          : `${roundTag} ${agent.role} Research...`;
-
-                      const filledDots =
-                        agent.turns.length >= 3 || summary
-                          ? 20
-                          : agent.turns.length === 2
-                          ? 15
-                          : agent.turns.length === 1
-                          ? 10
-                          : isRunning
-                          ? 6
-                          : 18;
+                      const rankNumber = String(index + 1).padStart(2, '0');
+                      const cleanRole = agent.role.replace(/\s+perspective|\s+analysis/i, '');
 
                       return (
-                        <div
-                          key={agent.id}
-                          className={`rounded-2xl transition-colors overflow-hidden ${innerSubCardClass}`}
-                        >
+                        <div key={agent.id} className="transition-colors">
                           <div
-                            onClick={() =>
-                              setExpandedAgentId(isExpanded ? null : agent.id)
-                            }
-                            className="px-4 py-3.5 cursor-pointer"
+                            onClick={() => setExpandedAgentId(isExpanded ? null : agent.id)}
+                            className="py-2.5 px-3 sm:py-3 sm:px-4 flex items-center justify-between gap-2.5 cursor-pointer hover:bg-white/[0.03]"
                           >
-                            {/* Row 1: Sketch Portrait Icon + Agent Name + 01 Index */}
-                            <div className="flex items-center justify-between gap-2 mb-1.5">
-                              <div className="flex items-center gap-2.5 min-w-0">
-                                <div className="w-6 h-6 rounded-full bg-zinc-800 border border-zinc-600 flex items-center justify-center shrink-0 shadow-2xs">
-                                  <svg
-                                    viewBox="0 0 24 24"
-                                    className="w-4 h-4 text-zinc-200"
-                                    fill="none"
-                                    stroke="currentColor"
-                                    strokeWidth="1.8"
-                                  >
-                                    <circle cx="12" cy="8" r="4" />
-                                    <path d="M5 20c1.5-3.5 4-5 7-5s5.5 1.5 7 5" />
-                                  </svg>
-                                </div>
-                                <span className="text-[15px] font-medium text-zinc-100 truncate">
-                                  {agent.name}
-                                </span>
-                              </div>
-
-                              <span className="text-xs font-mono font-semibold text-zinc-400 tabular-nums">
-                                {agentNumber}
+                            {/* Left Index + Middle Persona/Entity Name */}
+                            <div className="flex items-center gap-3 sm:gap-6 min-w-0 flex-1">
+                              <span className="text-xs sm:text-[13.5px] font-normal text-[#e7e9ea] tabular-nums w-5 shrink-0">
+                                {rankNumber}
                               </span>
+
+                              <div className="min-w-0 flex-1">
+                                <div className="flex items-center gap-2">
+                                  <span className="text-xs sm:text-[14px] font-normal text-white truncate">
+                                    {agent.name}
+                                  </span>
+                                  <span className="hidden sm:inline-block text-[11px] text-[#71767b] truncate">
+                                    · {cleanRole}
+                                  </span>
+                                </div>
+                                {agent.turns.length > 0 && (
+                                  <p className="text-[10.5px] sm:text-xs text-[#71767b] truncate mt-0.5 m-0">
+                                    {agent.latestText.replace(/[#*_`]/g, '').slice(0, 68)}...
+                                  </p>
+                                )}
+                              </div>
                             </div>
 
-                            {/* Row 2: L-Connector Curve + R1 Task Description + 2x10 Green Dot Matrix */}
-                            <div className="flex items-center justify-between gap-3 pl-2">
-                              <div className="flex items-center gap-2 min-w-0 flex-1">
-                                <svg
-                                  viewBox="0 0 16 16"
-                                  className="w-3.5 h-3.5 text-zinc-500 shrink-0"
-                                  fill="none"
-                                  stroke="currentColor"
-                                  strokeWidth="1.6"
-                                >
-                                  <path d="M3 2v7a4 4 0 004 4h6" strokeLinecap="round" />
-                                </svg>
-                                <span className="text-[13.5px] text-zinc-300 truncate">
-                                  {taskSummary}
-                                </span>
+                            {/* Right Percentage Column + Subtle Conviction Bar */}
+                            <div className="flex items-center gap-2.5 shrink-0">
+                              <div className="hidden sm:flex w-14 h-1 rounded-full bg-white/[0.07] overflow-hidden">
+                                <div
+                                  className="h-full rounded-full transition-all duration-500"
+                                  style={{
+                                    width: `${Math.min(100, Math.max(10, agent.conviction))}%`,
+                                    backgroundColor: agent.accentColor || '#10b981',
+                                  }}
+                                />
                               </div>
-
-                              {/* 2x10 Green Dot Matrix Progress Indicator */}
-                              <div
-                                className="grid grid-cols-10 gap-[2.5px] shrink-0 py-1"
-                                title={`Conviction & Progress: ${agent.conviction}%`}
-                              >
-                                {Array.from({ length: 20 }).map((_, dotIdx) => (
-                                  <span
-                                    key={dotIdx}
-                                    className={`w-[3.5px] h-[3.5px] rounded-full transition-colors ${
-                                      dotIdx < filledDots
-                                        ? 'bg-emerald-400'
-                                        : 'bg-zinc-700'
-                                    }`}
-                                  />
-                                ))}
-                              </div>
+                              <span className="text-xs sm:text-[14px] font-normal text-white tabular-nums w-9 sm:w-11 text-right">
+                                {agent.conviction}%
+                              </span>
                             </div>
                           </div>
 
-                          {/* Expanded Agent Deliberation Turns (R1, R2, R3 + Voice Play) */}
+                          {/* Expandable Agent Deliberation Detail on Row Tap */}
                           {isExpanded && (
-                            <div className="px-4 pb-3.5 pt-2 border-t border-white/[0.08] bg-black/30 space-y-2.5 text-xs">
+                            <div className="px-3 sm:px-4 pb-3 pt-2 bg-white/[0.02] border-t border-white/[0.06] space-y-2 text-[11px] sm:text-xs">
+                              <div className="flex items-center justify-between text-[#a1a1aa]">
+                                <span className="truncate pr-2">Role: {agent.role}</span>
+                                <span className="font-mono shrink-0">
+                                  {agent.turns.length} round{agent.turns.length === 1 ? '' : 's'}
+                                </span>
+                              </div>
                               {agent.turns.length === 0 ? (
-                                <div className="text-zinc-400 py-2">
-                                  Agent recruited and synthesizing domain telemetry...
+                                <div className="text-[#71767b] py-1">
+                                  Specialist queued in active deliberation pipeline...
                                 </div>
                               ) : (
                                 agent.turns.map((turn) => (
                                   <div
                                     key={turn.id}
-                                    className="p-3 rounded-xl bg-white/[0.04] space-y-1.5"
+                                    className="p-2.5 rounded-xl bg-black/50 border border-white/[0.06] space-y-1"
                                   >
                                     <div className="flex items-center justify-between">
-                                      <span className="font-semibold text-zinc-200">
-                                        Round 0{turn.round} · {turn.role || agent.role}
+                                      <span className="font-semibold text-white text-[11px]">
+                                        Round 0{turn.round}
                                       </span>
                                       <div className="flex items-center gap-2">
                                         {typeof turn.convictionScore === 'number' && (
-                                          <span className="text-[11px] font-mono text-emerald-400 font-semibold">
-                                            {turn.convictionScore}% conviction
+                                          <span className="text-[10px] font-mono text-emerald-400">
+                                            {turn.convictionScore}%
                                           </span>
                                         )}
                                         <button
@@ -1723,14 +1761,14 @@ export const ParallaxPage: React.FC = () => {
                                             e.stopPropagation();
                                             handlePlayMessageAudio(turn);
                                           }}
-                                          className="px-2 py-0.5 rounded-full bg-white/10 hover:bg-white/20 text-zinc-200 text-[10px] font-semibold flex items-center gap-1 cursor-pointer"
+                                          className="px-2 py-0.5 rounded-full bg-white/10 hover:bg-white/20 text-white text-[10px] font-semibold flex items-center gap-1 cursor-pointer"
                                         >
-                                          <Play size={10} />
-                                          {playingAudioKey === turn.id ? 'Stop' : 'Listen'}
+                                          <Play size={8} />
+                                          {playingAudioKey === turn.id ? 'Stop' : 'Speak'}
                                         </button>
                                       </div>
                                     </div>
-                                    <p className="text-zinc-300 leading-relaxed whitespace-pre-wrap text-[13px]">
+                                    <p className="text-[#e7e9ea] leading-relaxed whitespace-pre-wrap text-xs sm:text-[13px] m-0">
                                       {turn.text}
                                     </p>
                                   </div>
@@ -1741,496 +1779,323 @@ export const ParallaxPage: React.FC = () => {
                         </div>
                       );
                     })}
-                  </div>
 
-                  {recruitedAgents.length > 5 && (
-                    <button
-                      type="button"
-                      onClick={() => setShowAllRecruitedAgents((prev) => !prev)}
-                      className="mt-2.5 w-full py-2 text-xs font-medium text-zinc-400 hover:text-zinc-100 flex items-center justify-center gap-1 cursor-pointer"
-                    >
-                      <span>
-                        {showAllRecruitedAgents
-                          ? 'Show fewer agents'
-                          : `View all ${recruitedAgents.length} recruited agents`}
-                      </span>
-                      <ChevronDown
-                        size={14}
-                        className={`transition-transform ${
-                          showAllRecruitedAgents ? 'rotate-180' : ''
-                        }`}
-                      />
-                    </button>
-                  )}
-                </div>
-
-                {/* 4. "ALL THREE DELIVERABLES" OVERLAPPING REPORT DECK (Matches Screenshot 2) */}
-                <div className="pt-2 space-y-3">
-                  <div className="flex items-center justify-between flex-wrap gap-2">
-                    <h2 className="text-[16px] font-semibold text-zinc-100 tracking-tight">
-                      All Three Deliverables
-                    </h2>
-
-                    <div className="flex items-center gap-1.5">
-                      {messages.length > 0 && (
-                        <>
-                          <button
-                            type="button"
-                            onClick={handleCopyFullSwarm}
-                            className={`px-2.5 py-1 rounded-full text-[11px] font-medium flex items-center gap-1 cursor-pointer ${floatingPillClass} ${floatingPillHoverClass}`}
-                          >
-                            {copiedSwarmTranscript ? <Check size={12} className="text-emerald-400" /> : <Copy size={12} />}
-                            <span>{copiedSwarmTranscript ? 'Copied' : 'Copy Report'}</span>
-                          </button>
-                          <button
-                            type="button"
-                            onClick={handleDownloadSwarmMp3}
-                            disabled={isDownloadingSwarmMp3}
-                            className={`px-2.5 py-1 rounded-full text-[11px] font-medium flex items-center gap-1 cursor-pointer disabled:opacity-50 ${floatingPillClass} ${floatingPillHoverClass}`}
-                          >
-                            <Download size={12} />
-                            <span>{isDownloadingSwarmMp3 ? 'Compiling MP3...' : 'Podcast MP3'}</span>
-                          </button>
-                        </>
-                      )}
+                    {sortedTableAgents.length > 8 && (
                       <button
                         type="button"
-                        onClick={() => setShowDetailedTranscript((prev) => !prev)}
-                        className={`px-2.5 py-1 rounded-full text-[11px] font-semibold flex items-center gap-1 cursor-pointer ${
-                          theme === 'classic'
-                            ? 'bg-cyan-500 text-slate-950'
-                            : 'bg-zinc-100 text-zinc-900'
-                        }`}
+                        onClick={() => setShowAllTableRows((prev) => !prev)}
+                        className="w-full py-2.5 text-[11px] sm:text-xs font-medium text-[#8b9097] hover:text-white flex items-center justify-center gap-1 cursor-pointer transition-colors"
                       >
-                        <FileText size={12} />
-                        <span>{showDetailedTranscript ? 'Hide Full Stream' : 'Full Stream'}</span>
+                        <span>
+                          {showAllTableRows
+                            ? 'Show top 8 personas'
+                            : `Show all ${sortedTableAgents.length} ranked personas`}
+                        </span>
+                        <ChevronDown
+                          size={13}
+                          className={`transition-transform ${showAllTableRows ? 'rotate-180' : ''}`}
+                        />
+                      </button>
+                    )}
+                  </div>
+                </div>
+
+                {/* 4. CREATIVE DARK-MODE CONVICTION TRAJECTORY CURVE & AGENT RECRUITMENT MATRIX */}
+                {showTrajectoryChart && (
+                  <div className="grid grid-cols-1 sm:grid-cols-12 gap-2.5">
+                    {/* Left 7 cols: Dark OLED SVG Conviction Curve */}
+                    <div className={`sm:col-span-7 p-3 sm:p-3.5 ${hairlineTableCardClass} divide-y-0`}>
+                      <div className="flex items-center justify-between mb-1.5">
+                        <div>
+                          <div className="text-[9.5px] font-mono uppercase tracking-wider text-[#71767b]">
+                            CONVICTION SPECTRUM · R1 → R3
+                          </div>
+                          <div className="text-[11px] sm:text-xs font-semibold text-white mt-0.5">
+                            Multi-Agent Consensus Curve
+                          </div>
+                        </div>
+                        <span className="text-[11px] font-mono font-bold text-emerald-400">
+                          {summary?.confidenceScore || Math.max(...chartPoints.map((p) => p.val))}% Peak
+                        </span>
+                      </div>
+
+                      <svg viewBox="0 0 280 100" className="w-full h-auto overflow-visible">
+                        <defs>
+                          <linearGradient id="parallaxCurveGrad" x1="0" y1="0" x2="0" y2="1">
+                            <stop offset="0%" stopColor="#10b981" stopOpacity="0.28" />
+                            <stop offset="100%" stopColor="#10b981" stopOpacity="0.0" />
+                          </linearGradient>
+                        </defs>
+                        <line x1="12" y1="18" x2="268" y2="18" stroke="rgba(255,255,255,0.06)" strokeWidth="1" />
+                        <line x1="12" y1="50" x2="268" y2="50" stroke="rgba(255,255,255,0.06)" strokeWidth="1" />
+                        <line x1="12" y1="82" x2="268" y2="82" stroke="rgba(255,255,255,0.12)" strokeWidth="1" />
+
+                        {/* Area fill under curve */}
+                        <polygon
+                          fill="url(#parallaxCurveGrad)"
+                          points={`18,82 ${chartPoints
+                            .map((pt, i) => {
+                              const x = 18 + i * 27;
+                              const y = 80 - (pt.val / 100) * 60;
+                              return `${x},${y}`;
+                            })
+                            .join(' ')} ${18 + (chartPoints.length - 1) * 27},82`}
+                        />
+
+                        {/* Emerald Trajectory Line */}
+                        <polyline
+                          fill="none"
+                          stroke="#10b981"
+                          strokeWidth="1.8"
+                          points={chartPoints
+                            .map((pt, i) => {
+                              const x = 18 + i * 27;
+                              const y = 80 - (pt.val / 100) * 60;
+                              return `${x},${y}`;
+                            })
+                            .join(' ')}
+                        />
+
+                        {chartPoints.map((pt, i) => {
+                          const x = 18 + i * 27;
+                          const y = 80 - (pt.val / 100) * 60;
+                          return (
+                            <g key={i}>
+                              <circle
+                                cx={x}
+                                cy={y}
+                                r="2.5"
+                                fill="#050506"
+                                stroke="#34d399"
+                                strokeWidth="1.6"
+                              />
+                              <text
+                                x={x}
+                                y="94"
+                                fontSize="5.5"
+                                fill="#71767b"
+                                textAnchor="middle"
+                              >
+                                {pt.label}
+                              </text>
+                            </g>
+                          );
+                        })}
+                      </svg>
+                    </div>
+
+                    {/* Right 5 cols: Compact Agent Recruitment Dot-Matrix Telemetry */}
+                    <div className={`sm:col-span-5 p-3 sm:p-3.5 ${hairlineTableCardClass} divide-y-0 flex flex-col justify-between`}>
+                      <div>
+                        <button
+                          type="button"
+                          onClick={() => setShowAllRecruitedAgents((prev) => !prev)}
+                          className="w-full flex items-center justify-between text-left cursor-pointer mb-2"
+                        >
+                          <div className="flex items-center gap-1.5">
+                            <GitBranch size={13} className="text-emerald-400" />
+                            <span className="text-[11px] sm:text-xs font-semibold text-white">
+                              Agent Telemetry ({recruitedAgents.length})
+                            </span>
+                          </div>
+                          <ChevronRight
+                            size={13}
+                            className={`text-[#71767b] transition-transform ${
+                              showAllRecruitedAgents ? 'rotate-90' : ''
+                            }`}
+                          />
+                        </button>
+
+                        <div className="space-y-1.5">
+                          {visibleRecruitedAgents.map((ag, idx) => {
+                            const filledDots =
+                              ag.turns.length >= 3 || summary
+                                ? 20
+                                : ag.turns.length === 2
+                                ? 15
+                                : ag.turns.length === 1
+                                ? 10
+                                : 7;
+                            return (
+                              <div
+                                key={ag.id}
+                                className="flex items-center justify-between gap-2 text-[11px] py-0.5 border-b border-white/[0.05] last:border-0"
+                              >
+                                <div className="flex items-center gap-1.5 min-w-0">
+                                  <span className="text-[10px] font-mono text-[#71767b] tabular-nums">
+                                    {String(idx + 1).padStart(2, '0')}
+                                  </span>
+                                  <span className="text-white font-medium truncate">
+                                    {ag.name}
+                                  </span>
+                                </div>
+                                <div className="grid grid-cols-10 gap-[2px] shrink-0">
+                                  {Array.from({ length: 20 }).map((_, dIdx) => (
+                                    <span
+                                      key={dIdx}
+                                      className={`w-[3px] h-[3px] rounded-full ${
+                                        dIdx < filledDots ? 'bg-emerald-400' : 'bg-white/15'
+                                      }`}
+                                    />
+                                  ))}
+                                </div>
+                              </div>
+                            );
+                          })}
+                        </div>
+                      </div>
+
+                      <div className="pt-1.5 mt-1.5 border-t border-white/[0.06] flex items-center justify-between text-[10px] text-[#71767b] font-mono">
+                        <span>Protocol: {currentModeObj.shortLabel}</span>
+                        <span className="text-emerald-400 truncate max-w-[120px]">
+                          {summary?.consensusLean || 'Active Synthesis'}
+                        </span>
+                      </div>
+                    </div>
+                  </div>
+                )}
+
+                {/* 5. SCREENSHOT-ACCURATE UNBOXED "Notes:" & "Source:" EDITORIAL SECTION (MOBILE-PROPORTIONAL) */}
+                <div id="parallax-editorial-notes" className="space-y-2 sm:space-y-2.5 pt-0.5">
+                  <h2 className="text-xs sm:text-sm font-bold text-white tracking-tight m-0">
+                    Notes:
+                  </h2>
+
+                  <ul className="list-disc pl-4 sm:pl-5 space-y-2 text-xs sm:text-[13.5px] text-[#e7e9ea] leading-[1.58] m-0">
+                    {editorialNotes.map((note, idx) => (
+                      <li key={idx} className="pl-0.5">
+                        {note}
+                      </li>
+                    ))}
+                  </ul>
+
+                  <p className="text-[11px] sm:text-xs text-[#a1a1aa] leading-relaxed pt-1 m-0">
+                    Source: Parallax 20-Agent Swarm Deliberation &amp;{' '}
+                    {intelligenceBriefing
+                      ? 'VERITAS Live Empirical Grounding Survey.'
+                      : 'Multi-Round Consensus Index (2026).'}
+                  </p>
+                </div>
+
+                {/* 6. EXPANDABLE FULL SYNTHESIS & 3-ROUND DELIBERATION STREAM */}
+                {showDetailedTranscript && (
+                  <div className="space-y-4 pt-2 border-t border-white/[0.08]">
+                    {intelligenceBriefing && (
+                      <div className={`p-3 sm:p-4 ${hairlineTableCardClass} divide-y-0`}>
+                        <ParallaxIntelligenceBriefing
+                          briefing={intelligenceBriefing}
+                          defaultExpanded={true}
+                        />
+                      </div>
+                    )}
+
+                    {summary && (
+                      <div className={`p-3 sm:p-5 ${hairlineTableCardClass} divide-y-0`}>
+                        <ParallaxSynthesisReport
+                          summary={summary}
+                          topic={currentTopic}
+                          allMessages={messages}
+                          onNewTopic={handleResetToNewSwarm}
+                          onRerun={() => handleStartSwarm(currentTopic)}
+                          onExportMp3={handleDownloadSwarmMp3}
+                          onSave={() => {
+                            setSessions(storage.getParallaxSessions());
+                          }}
+                        />
+                      </div>
+                    )}
+
+                    <div className={`p-3 sm:p-5 ${hairlineTableCardClass} divide-y-0`}>
+                      <ParallaxDeliberationStream
+                        messages={messages}
+                        agents={config.agents}
+                        isRunning={isRunning}
+                        currentRound={currentRound}
+                        wasStoppedEarly={wasStoppedEarly}
+                        specialistDeliberation={specialistDeliberation}
+                        roundFilter={roundFilter}
+                        groupFilter={groupFilter}
+                        selectedAgentFilter={selectedAgentFilter}
+                        expandedRounds={expandedRounds}
+                        playingAudioKey={playingAudioKey}
+                        loadingAudioKey={loadingAudioKey}
+                        fullSwarmProgress={fullSwarmProgress}
+                        copiedSwarmTranscript={copiedSwarmTranscript}
+                        isDownloadingSwarmMp3={isDownloadingSwarmMp3}
+                        rawJsonOpenMap={rawJsonOpenMap}
+                        copiedRawJsonId={copiedRawJsonId}
+                        onSetRoundFilter={(r) => setRoundFilter(r)}
+                        onSetGroupFilter={(g) => setGroupFilter(g)}
+                        onSetSelectedAgentFilter={(id) => setSelectedAgentFilter(id)}
+                        onToggleRoundExpand={toggleRoundExpand}
+                        onPlayMessageAudio={handlePlayMessageAudio}
+                        onListenToFullSwarm={handleListenToFullSwarm}
+                        onDownloadSwarmMp3={handleDownloadSwarmMp3}
+                        onCopyFullSwarm={handleCopyFullSwarm}
+                        onStopSwarm={handleStopSwarm}
+                        onToggleRawJsonView={toggleRawJsonView}
+                        onCopyRawJson={handleCopyRawJson}
+                        feedEndRef={feedEndRef}
+                      />
+                    </div>
+                  </div>
+                )}
+
+                {/* Stopped Early Banner */}
+                {wasStoppedEarly && !summary && (
+                  <div
+                    id="parallax-stopped-early-card"
+                    className="rounded-2xl bg-rose-950/40 border border-rose-500/30 p-3 flex items-center justify-between flex-wrap gap-2"
+                  >
+                    <div className="text-[11px] sm:text-xs text-rose-200">
+                      <strong>Swarm stopped early</strong> · {messages.length} turns recorded.
+                    </div>
+                    <div className="flex items-center gap-1.5">
+                      <button
+                        id="parallax-rerun-stopped-swarm-btn"
+                        type="button"
+                        onClick={() => handleStartSwarm(currentTopic)}
+                        className="px-2.5 py-1 rounded-full bg-white text-black text-[11px] font-semibold flex items-center gap-1 cursor-pointer"
+                      >
+                        <RefreshCw size={11} />
+                        <span>Rerun</span>
+                      </button>
+                      <button
+                        id="parallax-clear-stopped-swarm-btn"
+                        type="button"
+                        onClick={handleResetToNewSwarm}
+                        className="px-2.5 py-1 rounded-full bg-white/10 text-white text-[11px] font-semibold cursor-pointer"
+                      >
+                        New Task
                       </button>
                     </div>
                   </div>
-
-                  {/* Overlapping Executive Visual Cards Container (Screenshot 2 Layout) */}
-                  <div className="relative pt-2 pb-4">
-                    {/* TOP / RIGHT FLOATING CARD: Section 1 Line Chart & Scenario Breakdown */}
-                    <div
-                      onClick={() =>
-                        setActiveDeliverableModal(
-                          activeDeliverableModal === 'chart' ? null : 'chart',
-                        )
-                      }
-                      className="relative z-20 ml-auto w-[92%] sm:w-[88%] rounded-xl bg-white text-slate-900 border border-slate-200/90 shadow-[0_12px_32px_rgba(0,0,0,0.28)] p-3.5 sm:p-4 cursor-pointer hover:shadow-[0_16px_40px_rgba(0,0,0,0.36)] transition-shadow"
-                    >
-                      <div className="text-[8.5px] font-mono uppercase tracking-widest text-slate-400 mb-0.5">
-                        — SECTION 1 · DEMAND &amp; CONVICTION TRAJECTORY
-                      </div>
-                      <div className="text-[11px] sm:text-xs font-bold text-slate-900 mb-2 truncate">
-                        {currentTopic} — Multi-Round Swarm Consensus &amp; Trajectory
-                      </div>
-
-                      <div className="grid grid-cols-12 gap-3 items-start">
-                        {/* SVG Blue Line Chart with Peak Callout */}
-                        <div className="col-span-8">
-                          <div className="text-[8px] text-slate-500 font-medium mb-1">
-                            Exhibit 1.1 — Swarm conviction index across active specialist nodes (R1–R3):
-                          </div>
-                          <svg viewBox="0 0 280 115" className="w-full h-auto overflow-visible">
-                            <line x1="15" y1="20" x2="270" y2="20" stroke="#f1f5f9" strokeWidth="1" />
-                            <line x1="15" y1="50" x2="270" y2="50" stroke="#f1f5f9" strokeWidth="1" />
-                            <line x1="15" y1="80" x2="270" y2="80" stroke="#f1f5f9" strokeWidth="1" />
-                            <line x1="15" y1="98" x2="270" y2="98" stroke="#cbd5e1" strokeWidth="1" />
-
-                            <text x="88" y="12" fontSize="6" fill="#334155" fontWeight="600">
-                              Peak Consensus Spike = {Math.max(...chartPoints.map((p) => p.val))}%
-                            </text>
-                            <text x="190" y="34" fontSize="5.5" fill="#dc2626">
-                              R2 Cross-Exam Stress Test
-                            </text>
-
-                            <polyline
-                              fill="none"
-                              stroke="#2563eb"
-                              strokeWidth="1.6"
-                              points={chartPoints
-                                .map((pt, i) => {
-                                  const x = 22 + i * 26;
-                                  const y = 96 - (pt.val / 100) * 76;
-                                  return `${x},${y}`;
-                                })
-                                .join(' ')}
-                            />
-
-                            {chartPoints.map((pt, i) => {
-                              const x = 22 + i * 26;
-                              const y = 96 - (pt.val / 100) * 76;
-                              return (
-                                <g key={i}>
-                                  <circle
-                                    cx={x}
-                                    cy={y}
-                                    r="2.4"
-                                    fill="#ffffff"
-                                    stroke="#2563eb"
-                                    strokeWidth="1.5"
-                                  />
-                                  <text
-                                    x={x}
-                                    y="108"
-                                    fontSize="5.5"
-                                    fill="#64748b"
-                                    textAnchor="middle"
-                                  >
-                                    {pt.label}
-                                  </text>
-                                </g>
-                              );
-                            })}
-                          </svg>
-                          <div className="flex items-center justify-center gap-1 mt-0.5 text-[7.5px] text-blue-600 font-medium">
-                            <span className="w-1.5 h-1.5 rounded-full border border-blue-600 inline-block" />
-                            <span>Swarm Conviction Index (%)</span>
-                          </div>
-                        </div>
-
-                        {/* Right Mini Scenario Box inside Chart Card */}
-                        <div className="col-span-4 bg-slate-50 rounded-lg p-2 border border-slate-200/70 text-[7.5px]">
-                          <div className="font-bold text-slate-800 mb-1">
-                            2026 Scenario — Swarm Consensus
-                          </div>
-                          <div className="bg-[#0A2540] text-white px-1.5 py-0.5 font-semibold flex justify-between rounded-t-xs">
-                            <span>Round</span>
-                            <span>Index</span>
-                          </div>
-                          <div className="divide-y divide-slate-200/70 font-mono">
-                            <div className="py-0.5 px-1 flex justify-between">
-                              <span className="text-slate-600">R0 Brief</span>
-                              <span className="text-slate-900 font-semibold">100%</span>
-                            </div>
-                            <div className="py-0.5 px-1 flex justify-between">
-                              <span className="text-slate-600">R1 Thesis</span>
-                              <span className="text-slate-900 font-semibold">74%</span>
-                            </div>
-                            <div className="py-0.5 px-1 flex justify-between">
-                              <span className="text-slate-600">R2 Rebuttal</span>
-                              <span className="text-slate-900 font-semibold">68%</span>
-                            </div>
-                            <div className="py-0.5 px-1 flex justify-between text-blue-600 font-bold">
-                              <span>R3 Verdict</span>
-                              <span>{summary?.confidenceScore || 86}%</span>
-                            </div>
-                          </div>
-                          <p className="mt-1.5 text-[7px] text-slate-500 leading-tight">
-                            {summary?.consensusLean
-                              ? `Consensus Lean: ${summary.consensusLean}`
-                              : 'Multi-agent verification across 20 specialized personas.'}
-                          </p>
-                        </div>
-                      </div>
-                    </div>
-
-                    {/* BOTTOM / FULL-WIDTH SPREADSHEET DELIVERABLE CARD (Matches Navy Table in Screenshot 2) */}
-                    <div
-                      onClick={() =>
-                        setActiveDeliverableModal(
-                          activeDeliverableModal === 'table' ? null : 'table',
-                        )
-                      }
-                      className="relative z-10 -mt-6 rounded-xl bg-white text-slate-900 border border-slate-200/90 shadow-[0_8px_28px_rgba(0,0,0,0.22)] p-3.5 sm:p-4 cursor-pointer hover:shadow-[0_12px_36px_rgba(0,0,0,0.3)] transition-shadow overflow-x-auto"
-                    >
-                      <div className="text-[10px] font-bold text-slate-900 uppercase tracking-tight">
-                        SUPPLY &amp; DEMAND — Capacity, Conviction &amp; Multi-Agent Roll-Forward
-                      </div>
-                      <div className="text-[8px] text-slate-400 mb-2">
-                         Quantitative synthesis matrix across R1 Thesis, R2 Cross-Examination, and R3 Final Convergence
-                      </div>
-
-                      {/* Section 0 Header */}
-                      <div className="text-[8px] font-bold text-slate-800 uppercase border-b border-slate-300 pb-0.5 mb-1">
-                        0. SCENARIO EXIT PARAMETERS
-                      </div>
-                      <div className="flex items-center gap-6 text-[8px] font-mono mb-2.5">
-                        <span className="text-slate-600">
-                          Active swarm participation rate:{' '}
-                          <strong className="text-blue-600">100% ({enabledAgentsCount} agents)</strong>
-                        </span>
-                        <span className="text-slate-600">
-                          Convergence weight:{' '}
-                          <strong className="text-blue-600">
-                            {summary?.confidenceScore || 84}%
-                          </strong>
-                        </span>
-                      </div>
-
-                      {/* Section 1 Navy Table Header */}
-                      <div className="bg-[#0A2540] text-white text-[8px] font-bold px-2 py-1 flex items-center justify-between">
-                        <span>1. AGENT CONSENSUS ROLL-FORWARD (R1 → R2 → R3 CONVICTION)</span>
-                        <span>PROTOCOL: {debateMode.toUpperCase()}</span>
-                      </div>
-
-                      <table className="w-full text-left border-collapse font-mono text-[8px] sm:text-[9px] tabular-nums">
-                        <thead>
-                          <tr className="border-b border-slate-300 text-slate-600 font-bold">
-                            <th className="py-1 px-1.5">Specialist / Persona</th>
-                            <th className="py-1 px-1">Unit</th>
-                            <th className="py-1 px-1 text-right">R1 Base</th>
-                            <th className="py-1 px-1 text-right">R2 Exam</th>
-                            <th className="py-1 px-1 text-right">R3 Final</th>
-                            <th className="py-1 px-1 text-right">Target</th>
-                            <th className="py-1 px-1.5">Core Finding &amp; Synthesis Note</th>
-                          </tr>
-                        </thead>
-                        <tbody className="divide-y divide-slate-100">
-                          {recruitedAgents.slice(0, 8).map((ag, idx) => {
-                            const r1 = ag.turns.find((t) => t.round === 1)?.convictionScore ?? 65 + idx * 2;
-                            const r2 = ag.turns.find((t) => t.round === 2)?.convictionScore ?? r1 - 4;
-                            const r3 = ag.conviction || r1 + 8;
-                            const snippet = ag.turns[0]?.text
-                              ? ag.turns[0].text.replace(/[#*_`]/g, '').slice(0, 55) + '...'
-                              : `${ag.role} baseline validated`;
-                            return (
-                              <tr key={ag.id} className="hover:bg-slate-50">
-                                <td className="py-1 px-1.5 font-sans font-semibold text-slate-800 truncate max-w-[120px]">
-                                  {ag.name} — {ag.role.slice(0, 16)}
-                                </td>
-                                <td className="py-1 px-1 text-slate-500">CONV%</td>
-                                <td className="py-1 px-1 text-right text-blue-600 font-semibold">
-                                  {r1}%
-                                </td>
-                                <td className="py-1 px-1 text-right text-blue-600">
-                                  {r2}%
-                                </td>
-                                <td className="py-1 px-1 text-right text-slate-900 font-bold">
-                                  {r3}%
-                                </td>
-                                <td className="py-1 px-1 text-right text-slate-700">
-                                  {Math.min(99, r3 + 5)}%
-                                </td>
-                                <td className="py-1 px-1.5 font-sans text-slate-500 truncate max-w-[180px]">
-                                  {snippet}
-                                </td>
-                              </tr>
-                            );
-                          })}
-                        </tbody>
-                      </table>
-
-                      {/* Section 2 Navy Table Header */}
-                      <div className="bg-[#0A2540] text-white text-[8px] font-bold px-2 py-1 mt-2.5 flex items-center justify-between">
-                        <span>2. EFFECTIVE EXECUTIVE SYNTHESIS VS ACTIVE RISK DEMAND</span>
-                        <span>STATUS: {summary ? 'VERIFIED' : isRunning ? 'LIVE STREAMING' : 'READY'}</span>
-                      </div>
-                      <div className="p-2 bg-slate-50/70 text-[10px] sm:text-[11px] font-sans text-slate-700 leading-relaxed space-y-1">
-                        {summary ? (
-                          <>
-                            <div>
-                              <strong className="text-slate-900">Executive Verdict:</strong>{' '}
-                              {summary.verdict}
-                            </div>
-                            {summary.recommendedPathForward && (
-                              <div>
-                                <strong className="text-blue-700">Recommended Action:</strong>{' '}
-                                {summary.recommendedPathForward}
-                              </div>
-                            )}
-                          </>
-                        ) : (
-                          <div className="text-slate-500">
-                            {statusText} — {messages.length} specialist turns recorded so far. Click to expand full executive report.
-                          </div>
-                        )}
-                      </div>
-                    </div>
-                  </div>
-
-                  {/* Expandable Full Synthesis Report & Full Deliberation Stream */}
-                  {(activeDeliverableModal || showDetailedTranscript) && (
-                    <div className="space-y-6 pt-2">
-                      {intelligenceBriefing && (
-                        <div className={`rounded-3xl p-4 sm:p-5 ${outerCardClass}`}>
-                          <ParallaxIntelligenceBriefing
-                            briefing={intelligenceBriefing}
-                            defaultExpanded={true}
-                          />
-                        </div>
-                      )}
-
-                      {summary && (
-                        <div className={`rounded-3xl p-4 sm:p-6 ${outerCardClass}`}>
-                          <ParallaxSynthesisReport
-                            summary={summary}
-                            topic={currentTopic}
-                            allMessages={messages}
-                            onNewTopic={handleResetToNewSwarm}
-                            onRerun={() => handleStartSwarm(currentTopic)}
-                            onExportMp3={handleDownloadSwarmMp3}
-                            onSave={() => {
-                              setSessions(storage.getParallaxSessions());
-                            }}
-                          />
-                        </div>
-                      )}
-
-                      {showDetailedTranscript && (
-                        <div className={`rounded-3xl p-4 sm:p-6 ${outerCardClass}`}>
-                          <ParallaxDeliberationStream
-                            messages={messages}
-                            agents={config.agents}
-                            isRunning={isRunning}
-                            currentRound={currentRound}
-                            wasStoppedEarly={wasStoppedEarly}
-                            specialistDeliberation={specialistDeliberation}
-                            roundFilter={roundFilter}
-                            groupFilter={groupFilter}
-                            selectedAgentFilter={selectedAgentFilter}
-                            expandedRounds={expandedRounds}
-                            playingAudioKey={playingAudioKey}
-                            loadingAudioKey={loadingAudioKey}
-                            fullSwarmProgress={fullSwarmProgress}
-                            copiedSwarmTranscript={copiedSwarmTranscript}
-                            isDownloadingSwarmMp3={isDownloadingSwarmMp3}
-                            rawJsonOpenMap={rawJsonOpenMap}
-                            copiedRawJsonId={copiedRawJsonId}
-                            onSetRoundFilter={(r) => setRoundFilter(r)}
-                            onSetGroupFilter={(g) => setGroupFilter(g)}
-                            onSetSelectedAgentFilter={(id) => setSelectedAgentFilter(id)}
-                            onToggleRoundExpand={toggleRoundExpand}
-                            onPlayMessageAudio={handlePlayMessageAudio}
-                            onListenToFullSwarm={handleListenToFullSwarm}
-                            onDownloadSwarmMp3={handleDownloadSwarmMp3}
-                            onCopyFullSwarm={handleCopyFullSwarm}
-                            onStopSwarm={handleStopSwarm}
-                            onToggleRawJsonView={toggleRawJsonView}
-                            onCopyRawJson={handleCopyRawJson}
-                            feedEndRef={feedEndRef}
-                          />
-                        </div>
-                      )}
-                    </div>
-                  )}
-
-                  {/* Stopped Early Banner */}
-                  {wasStoppedEarly && !summary && (
-                    <div
-                      id="parallax-stopped-early-card"
-                      className="rounded-2xl bg-rose-950/50 border border-rose-500/30 p-4 flex items-center justify-between flex-wrap gap-3"
-                    >
-                      <div className="text-xs text-rose-200">
-                        <strong>Swarm stopped early</strong> · {messages.length} turns recorded.
-                      </div>
-                      <div className="flex items-center gap-2">
-                        <button
-                          id="parallax-rerun-stopped-swarm-btn"
-                          type="button"
-                          onClick={() => handleStartSwarm(currentTopic)}
-                          className="px-3 py-1.5 rounded-full bg-zinc-100 text-zinc-900 text-xs font-semibold flex items-center gap-1 cursor-pointer"
-                        >
-                          <RefreshCw size={12} />
-                          <span>Rerun</span>
-                        </button>
-                        <button
-                          id="parallax-clear-stopped-swarm-btn"
-                          type="button"
-                          onClick={handleResetToNewSwarm}
-                          className={`px-3 py-1.5 rounded-full text-xs font-semibold cursor-pointer ${circleBtnClass}`}
-                        >
-                          New Task
-                        </button>
-                      </div>
-                    </div>
-                  )}
-                </div>
+                )}
               </div>
             )}
 
             {/* ==========================================================
-               BOTTOM AREA: SHOWCASE PRESET CARDS + FLOATING SWARM COMPOSER
+               BOTTOM FLOATING COMPOSER (COMPACT MOBILE-FRIENDLY REPLICA:
+               "Ask anything", Paperclip left, "⚡ Fast ∨" + White Waveform Circle right)
                ========================================================== */}
-            <div id="parallax-input-container" className="sticky bottom-3 z-30 pt-2">
-              {/* Showcase Preset Cards Carousel (Visible when Idle, just like Screenshot 1) */}
-              {!hasActiveMission && (
-                <div className="flex items-center gap-2.5 overflow-x-auto pb-3 no-scrollbar">
-                  {SHOWCASE_PRESETS.map((preset) => (
-                    <button
-                      key={preset.id}
-                      type="button"
-                      disabled={isRunning}
-                      onClick={() => {
-                        setTopicInput(preset.prompt);
-                        handleStartSwarm(preset.prompt);
-                      }}
-                      className={`flex items-center gap-3 p-2 pr-3.5 rounded-2xl transition-all shrink-0 w-[186px] text-left cursor-pointer active:scale-[0.98] ${
-                        theme === 'classic'
-                          ? 'bg-slate-900/70 hover:bg-slate-800/85 backdrop-blur-xl border border-cyan-500/25 shadow-[0_4px_20px_rgba(6,182,212,0.1)]'
-                          : theme === 'fulldark'
-                          ? 'bg-[#171717] hover:bg-[#222222] border border-[#2a2a2a]'
-                          : 'bg-[#1c1c1f] hover:bg-[#252529] border border-zinc-800/80'
-                      }`}
-                    >
-                      {renderShowcaseThumbnail(preset.thumbType)}
-                      <div className="min-w-0 flex-1">
-                        <div className="text-[13.5px] font-medium text-zinc-100 leading-tight truncate">
-                          {preset.titleLine1}
-                        </div>
-                        <div
-                          className={`text-[13.5px] font-medium leading-tight truncate mt-0.5 ${
-                            theme === 'classic' ? 'text-cyan-200/70' : 'text-zinc-400'
-                          }`}
-                        >
-                          {preset.titleLine2}
-                        </div>
-                      </div>
-                    </button>
-                  ))}
-                </div>
-              )}
-
-              {/* Quick Plus Menu Popover (Debate Modes, Sample Topics, Human Injection) */}
+            <div id="parallax-input-container" className="sticky bottom-2 z-30 pt-2">
+              {/* Popover 1: Paperclip / Quick Tasks & Human Directive Menu */}
               {isPlusMenuOpen && (
-                <div className={`mb-2.5 p-3.5 rounded-3xl space-y-3 animate-fadeIn ${composerCardClass}`}>
+                <div className={`mb-2 p-3 rounded-2xl space-y-2 animate-fadeIn ${composerBoxClass}`}>
                   <div className="flex items-center justify-between">
-                    <span className="text-xs font-bold text-zinc-100">
-                      Swarm Protocol &amp; Quick Tasks
+                    <span className="text-[11px] sm:text-xs font-bold text-white">
+                      Quick Swarm Tasks &amp; Directives
                     </span>
                     <button
                       type="button"
                       onClick={() => setIsPlusMenuOpen(false)}
-                      className="text-zinc-400 hover:text-zinc-100 cursor-pointer"
+                      className="text-[#71767b] hover:text-white cursor-pointer"
                     >
-                      <X size={15} />
+                      <X size={14} />
                     </button>
                   </div>
 
-                  {/* Protocol Pills */}
-                  <div className="flex items-center gap-1.5 flex-wrap">
-                    {DEBATE_MODES.map((m) => {
-                      const Icon = m.icon;
-                      const active = debateMode === m.id;
-                      return (
-                        <button
-                          key={m.id}
-                          type="button"
-                          onClick={() => {
-                            setDebateMode(m.id);
-                            setShowSwarmPill(true);
-                          }}
-                          className={`px-3 py-1.5 rounded-full text-xs font-medium flex items-center gap-1.5 cursor-pointer transition-colors ${
-                            active
-                              ? theme === 'classic'
-                                ? 'bg-cyan-500 text-slate-950 font-semibold'
-                                : 'bg-zinc-100 text-zinc-900 font-semibold'
-                              : circleBtnClass
-                          }`}
-                        >
-                          <Icon size={13} />
-                          <span>{m.label}</span>
-                        </button>
-                      );
-                    })}
-                  </div>
-
-                  {/* Quick Sample Prompts */}
-                  <div className="space-y-1 pt-1 border-t border-white/[0.08]">
-                    <div className="text-[10px] font-semibold uppercase tracking-wider text-zinc-400">
-                      One-Click Intelligence Tasks
-                    </div>
+                  <div className="space-y-0.5">
                     {SAMPLE_TOPICS.map((t, idx) => (
                       <button
                         key={idx}
@@ -2239,25 +2104,25 @@ export const ParallaxPage: React.FC = () => {
                           setTopicInput(t);
                           handleStartSwarm(t);
                         }}
-                        className="w-full text-left px-2.5 py-1.5 rounded-xl hover:bg-white/[0.06] text-xs text-zinc-200 truncate flex items-center gap-2 cursor-pointer"
+                        className="w-full text-left px-2 py-1.5 rounded-xl hover:bg-white/[0.06] text-[11px] sm:text-xs text-[#e7e9ea] truncate flex items-center gap-2 cursor-pointer"
                       >
-                        <Globe size={12} className="text-cyan-400 shrink-0" />
+                        <Globe size={11} className="text-emerald-400 shrink-0" />
                         <span className="truncate">{t}</span>
                       </button>
                     ))}
                   </div>
 
                   {isRunning && (
-                    <div className="pt-2 border-t border-white/[0.08]">
+                    <div className="pt-1.5 border-t border-white/[0.08]">
                       <button
                         type="button"
                         onClick={() => {
                           setIsPlusMenuOpen(false);
                           setIsHumanModalOpen(true);
                         }}
-                        className="w-full py-2 px-3 rounded-xl bg-amber-500/20 hover:bg-amber-500/30 border border-amber-500/30 text-amber-200 text-xs font-semibold flex items-center justify-center gap-1.5 cursor-pointer"
+                        className="w-full py-1.5 px-2.5 rounded-xl bg-amber-500/20 hover:bg-amber-500/30 border border-amber-500/30 text-amber-200 text-[11px] font-semibold flex items-center justify-center gap-1.5 cursor-pointer"
                       >
-                        <UserPlus size={14} />
+                        <UserPlus size={12} />
                         <span>Inject Human Operator Directive (Round 0{currentRound || 1})</span>
                       </button>
                     </div>
@@ -2265,136 +2130,113 @@ export const ParallaxPage: React.FC = () => {
                 </div>
               )}
 
-              {/* FLOATING COMPOSER CARD (Matches Screenshot 1 & Screenshot 2, themed) */}
-              <div className={`rounded-[28px] p-3 transition-all ${composerCardClass}`}>
-                {/* Top Swarm Mode Pill Bar (Visible when Idle, matching Screenshot 1) */}
-                {(!hasActiveMission || showSwarmPill) && !hasActiveMission && (
-                  <div className={`flex items-center justify-between px-3.5 py-2 rounded-2xl mb-2.5 ${composerPillClass}`}>
+              {/* Popover 2: "⚡ Fast ∨" Swarm Mode / Protocol Selector */}
+              {isModeSelectorOpen && (
+                <div className={`mb-2 p-2.5 rounded-2xl space-y-1 animate-fadeIn ${composerBoxClass}`}>
+                  <div className="flex items-center justify-between px-2 pb-0.5">
+                    <span className="text-[10px] font-mono uppercase tracking-wider text-[#71767b]">
+                      Select Swarm Execution Mode
+                    </span>
                     <button
                       type="button"
-                      onClick={() => setIsPlusMenuOpen((prev) => !prev)}
-                      className="flex items-center gap-2 text-[14px] font-medium cursor-pointer"
+                      onClick={() => setIsModeSelectorOpen(false)}
+                      className="text-[#71767b] hover:text-white cursor-pointer"
                     >
-                      <span className="w-5 h-5 rounded-md border border-current/40 flex items-center justify-center text-[10px] font-mono">
-                        ••
-                      </span>
-                      <span>
-                        {debateMode === 'default' ? 'Swarm' : `Swarm · ${currentModeObj.shortLabel}`}
-                      </span>
-                    </button>
-                    <button
-                      type="button"
-                      onClick={() => setShowSwarmPill(false)}
-                      className="opacity-60 hover:opacity-100 cursor-pointer p-0.5"
-                      aria-label="Dismiss swarm mode banner"
-                    >
-                      <X size={16} />
+                      <X size={13} />
                     </button>
                   </div>
-                )}
-
-                {/* Input Row (Matches Screenshot 1 when idle, Screenshot 2 compact pill when active) */}
-                {!hasActiveMission ? (
-                  <>
-                    <div className="px-1.5 py-1.5">
-                      <input
-                        id="parallax-topic-input"
-                        type="text"
-                        value={topicInput}
-                        onChange={(e) => setTopicInput(e.target.value)}
-                        onKeyDown={(e) => {
-                          if (e.key === 'Enter' && !isRunning) {
-                            e.preventDefault();
-                            handleStartSwarm();
-                          }
-                        }}
-                        disabled={isRunning}
-                        placeholder="Assign a task to your AI team..."
-                        className="w-full bg-transparent text-[16px] text-zinc-100 placeholder-zinc-400 focus:outline-none"
-                      />
-                    </div>
-
-                    <div className="flex items-center justify-between pt-2">
+                  {DEBATE_MODES.map((m) => {
+                    const Icon = m.icon;
+                    const active = debateMode === m.id;
+                    return (
                       <button
+                        key={m.id}
                         type="button"
-                        onClick={() => setIsPlusMenuOpen((prev) => !prev)}
-                        className={`w-10 h-10 rounded-full flex items-center justify-center transition-colors cursor-pointer ${circleBtnClass}`}
-                        title="Swarm Protocols & Presets"
+                        onClick={() => {
+                          setDebateMode(m.id);
+                          setIsModeSelectorOpen(false);
+                        }}
+                        className={`w-full px-2.5 py-2 rounded-xl text-left flex items-center justify-between transition-colors cursor-pointer ${
+                          active
+                            ? 'bg-white/[0.1] text-white'
+                            : 'hover:bg-white/[0.05] text-[#a1a1aa]'
+                        }`}
                       >
-                        <Plus size={20} strokeWidth={2} />
+                        <div className="flex items-center gap-2">
+                          <Icon size={13} className={active ? 'text-white' : 'text-[#71767b]'} />
+                          <div>
+                            <div className="text-[11px] sm:text-xs font-semibold text-white">{m.label}</div>
+                            <div className="text-[10px] text-[#71767b]">{m.speedTag}</div>
+                          </div>
+                        </div>
+                        {active && <Check size={13} className="text-emerald-400" />}
                       </button>
+                    );
+                  })}
+                </div>
+              )}
 
-                      {isRunning ? (
-                        <button
-                          id="parallax-stop-swarm-btn"
-                          type="button"
-                          onClick={handleStopSwarm}
-                          className="w-10 h-10 rounded-full bg-rose-500 text-white flex items-center justify-center shadow-sm cursor-pointer"
-                          title="Stop Swarm"
-                        >
-                          <Square size={14} fill="currentColor" />
-                        </button>
-                      ) : (
-                        <button
-                          id="parallax-start-swarm-btn"
-                          type="button"
-                          onClick={() =>
-                            handleStartSwarm(
-                              topicInput.trim() ||
-                                'Create a comprehensive global solar competitor report.',
-                            )
-                          }
-                          className={`w-10 h-10 rounded-full flex items-center justify-center transition-all cursor-pointer ${
-                            topicInput.trim()
-                              ? theme === 'classic'
-                                ? 'bg-cyan-400 text-slate-950 shadow-sm'
-                                : 'bg-zinc-100 text-zinc-900 shadow-sm'
-                              : circleBtnClass
-                          }`}
-                          title="Launch Agent Swarm"
-                        >
-                          <AudioLines size={18} strokeWidth={2.2} />
-                        </button>
-                      )}
-                    </div>
-                  </>
-                ) : (
-                  /* Screenshot 2 Compact Single-Row Input Bar ("+  Ask me. Task me.  •))") */
-                  <div className="flex items-center gap-3">
+              {/* SCREENSHOT COMPOSER BOX: Compact mobile-friendly dark container */}
+              <div className={`rounded-2xl sm:rounded-[24px] px-3 sm:px-4 pt-2.5 pb-2 transition-all ${composerBoxClass}`}>
+                {/* Row 1: "Ask anything" Input */}
+                <div className="pb-1.5">
+                  <input
+                    id="parallax-topic-input"
+                    type="text"
+                    value={topicInput}
+                    onChange={(e) => setTopicInput(e.target.value)}
+                    onKeyDown={(e) => {
+                      if (e.key === 'Enter' && !isRunning && topicInput.trim()) {
+                        e.preventDefault();
+                        handleStartSwarm();
+                      }
+                    }}
+                    disabled={isRunning}
+                    placeholder={isRunning ? statusText : 'Ask anything'}
+                    className="w-full bg-transparent text-[13px] sm:text-[14.5px] text-white placeholder-[#71767b] focus:outline-none"
+                  />
+                </div>
+
+                {/* Row 2: Left Paperclip Icon | Right "⚡ Fast ∨" + Solid White Waveform Circle Button */}
+                <div className="flex items-center justify-between">
+                  {/* Left: Paperclip / Quick Presets & Directives */}
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setIsModeSelectorOpen(false);
+                      setIsPlusMenuOpen((prev) => !prev);
+                    }}
+                    className="p-1 -ml-0.5 rounded-full text-[#8b9097] hover:text-white transition-colors cursor-pointer"
+                    title="Attach Preset Topic or Inject Directive"
+                  >
+                    <Paperclip size={17} strokeWidth={1.9} />
+                  </button>
+
+                  {/* Right: "⚡ Fast ∨" Mode Dropdown + Solid White Circle Waveform Button */}
+                  <div className="flex items-center gap-2">
                     <button
                       type="button"
-                      onClick={() => setIsPlusMenuOpen((prev) => !prev)}
-                      className={`w-10 h-10 rounded-full flex items-center justify-center shrink-0 transition-colors cursor-pointer ${circleBtnClass}`}
-                      title="Swarm Tools & Human Directive Injection"
-                    >
-                      <Plus size={20} strokeWidth={2} />
-                    </button>
-
-                    <input
-                      id="parallax-topic-input"
-                      type="text"
-                      value={topicInput}
-                      onChange={(e) => setTopicInput(e.target.value)}
-                      onKeyDown={(e) => {
-                        if (e.key === 'Enter' && !isRunning && topicInput.trim()) {
-                          e.preventDefault();
-                          handleStartSwarm();
-                        }
+                      onClick={() => {
+                        setIsPlusMenuOpen(false);
+                        setIsModeSelectorOpen((prev) => !prev);
                       }}
-                      disabled={isRunning}
-                      placeholder={isRunning ? statusText : 'Ask me. Task me.'}
-                      className="flex-1 bg-transparent text-[15.5px] text-zinc-100 placeholder-zinc-400 focus:outline-none min-w-0"
-                    />
+                      className="flex items-center gap-1 px-2 py-1 rounded-full text-[#e7e9ea] hover:bg-white/[0.06] text-xs sm:text-[13px] font-medium transition-colors cursor-pointer"
+                      title="Switch Swarm Speed & Protocol"
+                    >
+                      <Zap size={13} className="text-[#e7e9ea]" />
+                      <span>{currentModeObj.shortLabel}</span>
+                      <ChevronDown size={13} className="text-[#71767b]" />
+                    </button>
 
                     {isRunning ? (
                       <button
                         id="parallax-stop-swarm-btn"
                         type="button"
                         onClick={handleStopSwarm}
-                        className="w-10 h-10 rounded-full bg-rose-500 hover:bg-rose-600 text-white flex items-center justify-center shrink-0 shadow-sm cursor-pointer"
+                        className="w-8 h-8 sm:w-9 sm:h-9 rounded-full bg-rose-500 hover:bg-rose-600 text-white flex items-center justify-center shrink-0 shadow-md cursor-pointer transition-transform active:scale-95"
                         title="Stop Swarm"
                       >
-                        <Square size={14} fill="currentColor" />
+                        <Square size={12} fill="currentColor" />
                       </button>
                     ) : (
                       <button
@@ -2403,24 +2245,26 @@ export const ParallaxPage: React.FC = () => {
                         onClick={() => {
                           if (topicInput.trim()) {
                             handleStartSwarm();
-                          } else {
+                          } else if (messages.length > 0) {
                             handleListenToFullSwarm();
+                          } else {
+                            handleStartSwarm(SAMPLE_TOPICS[0]);
                           }
                         }}
-                        className={`w-10 h-10 rounded-full flex items-center justify-center shrink-0 transition-all cursor-pointer ${
+                        className="w-8 h-8 sm:w-9 sm:h-9 rounded-full bg-white hover:bg-zinc-200 text-black flex items-center justify-center shrink-0 shadow-md cursor-pointer transition-transform active:scale-95"
+                        title={
                           topicInput.trim()
-                            ? theme === 'classic'
-                              ? 'bg-cyan-400 text-slate-950'
-                              : 'bg-zinc-100 text-zinc-900'
-                            : circleBtnClass
-                        }`}
-                        title={topicInput.trim() ? 'Run New Swarm Task' : 'Play Voice Briefing'}
+                            ? 'Launch 20-Agent Swarm'
+                            : messages.length > 0
+                            ? 'Listen to Swarm Audio Briefing'
+                            : 'Launch Featured Swarm Task'
+                        }
                       >
-                        <AudioLines size={18} strokeWidth={2.2} />
+                        <AudioLines size={16} strokeWidth={2.3} />
                       </button>
                     )}
                   </div>
-                )}
+                </div>
               </div>
             </div>
           </div>
@@ -2432,10 +2276,10 @@ export const ParallaxPage: React.FC = () => {
             id="parallax-floating-inject-btn"
             type="button"
             onClick={() => setIsHumanModalOpen(true)}
-            className="fixed bottom-24 right-5 z-40 px-3.5 py-2 rounded-full bg-cyan-500 text-slate-950 font-semibold text-xs shadow-lg flex items-center gap-1.5 hover:scale-105 active:scale-95 transition-all cursor-pointer"
+            className="fixed bottom-20 right-4 z-40 px-3 py-1.5 rounded-full bg-white text-black font-semibold text-[11px] shadow-lg flex items-center gap-1.5 hover:scale-105 active:scale-95 transition-all cursor-pointer"
             title="Inject a direct operator assertion or counter-argument into live deliberation"
           >
-            <UserPlus size={14} />
+            <UserPlus size={12} />
             <span>Inject Directive</span>
           </button>
         )}

@@ -29,7 +29,7 @@ export function getSavedParallaxTheme(): ParallaxTheme {
   } catch {
     // ignore storage errors
   }
-  return 'minimal';
+  return 'fulldark';
 }
 
 export function saveParallaxTheme(theme: ParallaxTheme): void {
@@ -215,11 +215,11 @@ export const ParallaxSettings: React.FC<ParallaxSettingsProps> = ({
       : 'bg-[#111113] text-zinc-100 border border-zinc-800 focus:ring-zinc-500/50';
 
   return (
-    <div id="parallax-settings-container" className="divide-y divide-white/[0.06] space-y-6">
+    <div id="parallax-settings-container" className="divide-y divide-white/[0.06] space-y-4">
       {/* Toast notification */}
       {saveToast && (
-        <div className="fixed bottom-6 right-6 z-50 px-4 py-2.5 rounded-full bg-cyan-500/95 text-slate-950 font-bold text-xs shadow-xl flex items-center gap-2">
-          <Check size={16} />
+        <div className="fixed bottom-4 right-4 z-50 px-3.5 py-2 rounded-full bg-cyan-500/95 text-slate-950 font-bold text-[11px] sm:text-xs shadow-xl flex items-center gap-1.5">
+          <Check size={14} />
           {saveToast}
         </div>
       )}
@@ -227,31 +227,31 @@ export const ParallaxSettings: React.FC<ParallaxSettingsProps> = ({
       {/* ============================================================
           SECTION 1: VISUAL THEME SELECTOR (Copied from AI Assistant)
          ============================================================ */}
-      <div id="parallax-theme-settings-section" className="py-4 space-y-3">
+      <div id="parallax-theme-settings-section" className="py-3 space-y-2.5">
         <div className="flex items-center gap-2">
-          <Palette size={15} className="text-purple-400" />
-          <h4 className="text-xs font-semibold uppercase tracking-wider text-zinc-300 m-0">
+          <Palette size={14} className="text-purple-400" />
+          <h4 className="text-[11px] sm:text-xs font-semibold uppercase tracking-wider text-zinc-300 m-0">
             Visual Theme
           </h4>
         </div>
-        <p className="text-xs text-zinc-400 m-0">
+        <p className="text-[11px] sm:text-xs text-zinc-400 m-0">
           Select your preferred visual aesthetic for the NEXUS Parallax Agent Swarm.
         </p>
 
-        <div className="grid grid-cols-1 sm:grid-cols-3 gap-3 pt-1">
+        <div className="grid grid-cols-1 sm:grid-cols-3 gap-2.5 pt-1">
           {/* Theme 1: NEXUS Minimal (Claude style) */}
           <button
             id="parallax-theme-btn-minimal"
             type="button"
             onClick={() => handleSelectTheme('minimal')}
-            className={`p-3.5 rounded-xl border text-left transition-all relative flex flex-col justify-between group cursor-pointer ${
+            className={`p-3 rounded-xl border text-left transition-all relative flex flex-col justify-between group cursor-pointer ${
               activeTheme === 'minimal'
                 ? 'border-zinc-400 bg-zinc-800/90 shadow-md ring-1 ring-zinc-400/40'
                 : 'border-zinc-800 bg-zinc-900/60 hover:bg-zinc-850 hover:border-zinc-700'
             }`}
           >
             <div>
-              <div className="flex items-center justify-between mb-2">
+              <div className="flex items-center justify-between mb-1.5">
                 <span className="font-medium text-xs text-zinc-100">
                   NEXUS Minimal
                 </span>
@@ -261,12 +261,12 @@ export const ParallaxSettings: React.FC<ParallaxSettingsProps> = ({
                   </span>
                 )}
               </div>
-              <p className="text-[11px] text-zinc-400 leading-relaxed mb-3">
+              <p className="text-[11px] text-zinc-400 leading-relaxed mb-2.5">
                 Claude-inspired neutral dark aesthetic with refined spacing and clean sans-serif typography.
               </p>
             </div>
             {/* Visual preview swatch */}
-            <div className="h-6 w-full rounded-md bg-[#111113] border border-zinc-700/60 p-1 flex items-center gap-1">
+            <div className="h-5 w-full rounded-md bg-[#111113] border border-zinc-700/60 p-1 flex items-center gap-1">
               <div className="h-full w-1/3 rounded bg-[#26262a]" />
               <div className="h-full w-2/3 rounded bg-[#1e1e21]" />
             </div>
@@ -277,14 +277,14 @@ export const ParallaxSettings: React.FC<ParallaxSettingsProps> = ({
             id="parallax-theme-btn-classic"
             type="button"
             onClick={() => handleSelectTheme('classic')}
-            className={`p-3.5 rounded-xl border text-left transition-all relative flex flex-col justify-between group cursor-pointer ${
+            className={`p-3 rounded-xl border text-left transition-all relative flex flex-col justify-between group cursor-pointer ${
               activeTheme === 'classic'
                 ? 'border-cyan-400 bg-cyan-950/40 shadow-[0_0_15px_rgba(6,182,212,0.2)] ring-1 ring-cyan-400/40'
                 : 'border-zinc-800 bg-zinc-900/60 hover:bg-zinc-850 hover:border-zinc-700'
             }`}
           >
             <div>
-              <div className="flex items-center justify-between mb-2">
+              <div className="flex items-center justify-between mb-1.5">
                 <span className="font-medium text-xs text-cyan-200">
                   NEXUS Classic
                 </span>
@@ -294,12 +294,12 @@ export const ParallaxSettings: React.FC<ParallaxSettingsProps> = ({
                   </span>
                 )}
               </div>
-              <p className="text-[11px] text-zinc-400 leading-relaxed mb-3">
+              <p className="text-[11px] text-zinc-400 leading-relaxed mb-2.5">
                 Glassmorphic cosmic dark space theme with glowing cyan accents and deep stellar background.
               </p>
             </div>
             {/* Visual preview swatch */}
-            <div className="h-6 w-full rounded-md bg-[#060b13] border border-cyan-500/30 p-1 flex items-center gap-1">
+            <div className="h-5 w-full rounded-md bg-[#060b13] border border-cyan-500/30 p-1 flex items-center gap-1">
               <div className="h-full w-1/3 rounded bg-cyan-900/60 border border-cyan-500/30" />
               <div className="h-full w-2/3 rounded bg-slate-900/80 border border-cyan-500/20" />
             </div>
@@ -310,14 +310,14 @@ export const ParallaxSettings: React.FC<ParallaxSettingsProps> = ({
             id="parallax-theme-btn-fulldark"
             type="button"
             onClick={() => handleSelectTheme('fulldark')}
-            className={`p-3.5 rounded-xl border text-left transition-all relative flex flex-col justify-between group cursor-pointer ${
+            className={`p-3 rounded-xl border text-left transition-all relative flex flex-col justify-between group cursor-pointer ${
               activeTheme === 'fulldark'
                 ? 'border-zinc-400 bg-[#212121] shadow-md ring-1 ring-zinc-400/40'
                 : 'border-zinc-800 bg-zinc-900/60 hover:bg-zinc-850 hover:border-zinc-700'
             }`}
           >
             <div>
-              <div className="flex items-center justify-between mb-2">
+              <div className="flex items-center justify-between mb-1.5">
                 <span className="font-medium text-xs text-[#ececec]">
                   Full Dark
                 </span>
@@ -327,12 +327,12 @@ export const ParallaxSettings: React.FC<ParallaxSettingsProps> = ({
                   </span>
                 )}
               </div>
-              <p className="text-[11px] text-zinc-400 leading-relaxed mb-3">
+              <p className="text-[11px] text-zinc-400 leading-relaxed mb-2.5">
                 ChatGPT-style high-contrast pure dark mode with deep black backdrop and flat clean stream.
               </p>
             </div>
             {/* Visual preview swatch */}
-            <div className="h-6 w-full rounded-md bg-[#0d0d0d] border border-[#2f2f2f] p-1 flex items-center gap-1">
+            <div className="h-5 w-full rounded-md bg-[#0d0d0d] border border-[#2f2f2f] p-1 flex items-center gap-1">
               <div className="h-full w-1/3 rounded bg-[#212121]" />
               <div className="h-full w-2/3 rounded bg-[#2f2f2f]" />
             </div>
@@ -343,18 +343,18 @@ export const ParallaxSettings: React.FC<ParallaxSettingsProps> = ({
       {/* Summary Header Banner */}
       <div
         id="parallax-settings-summary-banner"
-        className="py-4 flex items-center justify-between flex-wrap gap-4"
+        className="py-3 flex items-center justify-between flex-wrap gap-3"
       >
         <div>
-          <div className="flex items-center gap-2.5 mb-1">
-            <Layers size={20} className="text-cyan-400" />
-            <span className="text-sm sm:text-base font-extrabold text-slate-100 tracking-tight">
+          <div className="flex items-center gap-2 mb-0.5">
+            <Layers size={16} className="text-cyan-400" />
+            <span className="text-xs sm:text-sm font-extrabold text-slate-100 tracking-tight">
               PARALLAX AGENT ORCHESTRATION PIPELINE
             </span>
           </div>
           <p
             id="parallax-agents-summary-line"
-            className="m-0 text-xs sm:text-sm text-slate-300 leading-relaxed"
+            className="m-0 text-[11px] sm:text-xs text-slate-300 leading-relaxed"
           >
             <strong className="text-cyan-300">{enabledCount} of 20 Built-in Agents</strong> (
             {veritasEnabled ? '1 with tool access: VERITAS' : '0 with tool access'}
@@ -363,21 +363,21 @@ export const ParallaxSettings: React.FC<ParallaxSettingsProps> = ({
         </div>
 
         {/* Action Controls */}
-        <div className="flex items-center gap-2.5">
+        <div className="flex items-center gap-2">
           {confirmResetAll ? (
-            <div className="flex items-center gap-2">
-              <span className="text-xs text-rose-400 font-semibold">Reset all 20?</span>
+            <div className="flex items-center gap-1.5">
+              <span className="text-[11px] text-rose-400 font-semibold">Reset all 20?</span>
               <button
                 type="button"
                 onClick={handleResetAll}
-                className="px-3 py-1.5 rounded-full bg-rose-500 text-white text-xs font-bold cursor-pointer"
+                className="px-2.5 py-1 rounded-full bg-rose-500 text-white text-[11px] font-bold cursor-pointer"
               >
                 Yes, Reset All
               </button>
               <button
                 type="button"
                 onClick={() => setConfirmResetAll(false)}
-                className="px-3 py-1.5 rounded-full bg-slate-900/40 backdrop-blur-xl text-slate-200 text-xs cursor-pointer"
+                className="px-2.5 py-1 rounded-full bg-slate-900/40 backdrop-blur-xl text-slate-200 text-[11px] cursor-pointer"
               >
                 Cancel
               </button>
@@ -387,9 +387,9 @@ export const ParallaxSettings: React.FC<ParallaxSettingsProps> = ({
               id="parallax-reset-all-btn"
               type="button"
               onClick={() => setConfirmResetAll(true)}
-              className="px-4 py-2 rounded-full bg-slate-900/40 backdrop-blur-xl hover:bg-slate-800/60 text-slate-200 hover:text-white text-xs font-semibold cursor-pointer flex items-center gap-1.5 transition-all"
+              className="px-3 py-1.5 rounded-full bg-slate-900/40 backdrop-blur-xl hover:bg-slate-800/60 text-slate-200 hover:text-white text-[11px] font-semibold cursor-pointer flex items-center gap-1.5 transition-all"
             >
-              <RotateCcw size={14} />
+              <RotateCcw size={12} />
               Reset All to Defaults
             </button>
           )}
@@ -397,10 +397,10 @@ export const ParallaxSettings: React.FC<ParallaxSettingsProps> = ({
       </div>
 
       {/* Safety & Tool Access Notice + Filter Bar */}
-      <div className="py-4 space-y-4">
-        <div className={`p-3.5 rounded-xl flex items-center gap-3 ${cardSurfaceClass}`}>
-          <Shield size={18} className="text-cyan-400 shrink-0" />
-          <div className="text-xs text-slate-300 leading-relaxed">
+      <div className="py-3 space-y-3">
+        <div className={`p-3 rounded-xl flex items-center gap-2.5 ${cardSurfaceClass}`}>
+          <Shield size={15} className="text-cyan-400 shrink-0" />
+          <div className="text-[11px] text-slate-300 leading-relaxed">
             <strong className="text-slate-100">Strict Architecture Safeguards:</strong> Agents cannot autonomously pass messages or initiate rounds. VERITAS is granted exactly ONE live search query in Round 1 only to anchor the discussion with empirical facts. The swarm auto-stops strictly after Round 3.
           </div>
         </div>
@@ -412,18 +412,18 @@ export const ParallaxSettings: React.FC<ParallaxSettingsProps> = ({
             type="text"
             value={filterQuery}
             onChange={(e) => setFilterQuery(e.target.value)}
-            placeholder="Filter agents by name, role, or instruction (e.g. 'veritas', 'business', 'logic')..."
-            className={`w-full py-2.5 pl-10 pr-4 rounded-full placeholder-slate-400 text-xs sm:text-sm focus:outline-none focus:ring-1 transition-all ${inputSurfaceClass}`}
+            placeholder="Filter agents by name, role, or instruction..."
+            className={`w-full py-2 pl-9 pr-3.5 rounded-full placeholder-slate-400 text-xs focus:outline-none focus:ring-1 transition-all ${inputSurfaceClass}`}
           />
           <Search
-            size={16}
-            className="text-slate-400 absolute left-3.5 top-1/2 -translate-y-1/2"
+            size={14}
+            className="text-slate-400 absolute left-3 top-1/2 -translate-y-1/2"
           />
         </div>
       </div>
 
       {/* 20 Agents Grid */}
-      <div className="pt-5 grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-4">
+      <div className="pt-3 grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-3">
         {filteredAgents.map((agent) => {
           const defaultAgent = DEFAULT_PARALLAX_AGENTS[agent.id];
           const isCustomized =
@@ -433,7 +433,7 @@ export const ParallaxSettings: React.FC<ParallaxSettingsProps> = ({
             <div
               key={agent.id}
               id={`parallax-agent-card-${agent.id}`}
-              className={`rounded-2xl p-4 flex flex-col gap-3 transition-colors ${cardSurfaceClass}`}
+              className={`rounded-2xl p-3 sm:p-3.5 flex flex-col gap-2.5 transition-colors ${cardSurfaceClass}`}
               style={{
                 borderLeft: `2px solid ${agent.enabled ? agent.accentColor : 'rgba(148, 163, 184, 0.3)'}`,
               }}
