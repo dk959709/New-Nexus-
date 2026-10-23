@@ -13,7 +13,6 @@ import {
   X,
   ChevronRight,
   ChevronDown,
-  GitBranch,
   MessageSquarePlus,
   AudioLines,
   Copy,
@@ -27,12 +26,10 @@ import {
   Briefcase,
   Bot,
   Play,
-  FileText,
   Palette,
   Paperclip,
   Zap,
   Activity,
-  ArrowUpDown,
 } from 'lucide-react';
 import { storage } from '@/lib/storage';
 import { runParallaxSwarm } from '@/services/parallaxOrchestrator';
@@ -190,16 +187,8 @@ export const ParallaxPage: React.FC = () => {
   const [isTelemetryDrawerOpen, setIsTelemetryDrawerOpen] = useState(false);
   const [isMatrixDrawerOpen, setIsMatrixDrawerOpen] = useState(false);
   const [isBriefingDrawerOpen, setIsBriefingDrawerOpen] = useState(false);
-  const [expandedAgentId, setExpandedAgentId] = useState<string | null>(null);
   const [inspectedRosterAgentId, setInspectedRosterAgentId] = useState<string | null>(null);
   const [benchmarkCategory, setBenchmarkCategory] = useState<'all' | 'geopolitics' | 'markets' | 'science'>('all');
-  const [convictionBandFilter, setConvictionBandFilter] = useState<'all' | 'high' | 'moderate' | 'skeptic'>('all');
-  const [tableSearchQuery, setTableSearchQuery] = useState('');
-  const [showAllRecruitedAgents, setShowAllRecruitedAgents] = useState(false);
-  const [showAllTableRows, setShowAllTableRows] = useState(false);
-  const [tableSortBy, setTableSortBy] = useState<'conviction' | 'order'>('conviction');
-  const [showDetailedTranscript, setShowDetailedTranscript] = useState(true);
-  const [showTrajectoryChart, setShowTrajectoryChart] = useState(true);
 
   // FEATURE 7: Debate Mode Preset state
   const [debateMode, setDebateMode] = useState<ParallaxDebateMode>('default');
@@ -218,13 +207,6 @@ export const ParallaxPage: React.FC = () => {
   const [groupFilter, setGroupFilter] = useState<
     'all' | 'optimists' | 'realists' | 'ethicists' | 'visionaries' | 'anchors' | 'facts'
   >('all');
-
-  // Per-round expand states for curated viewing (default expanded for live-chat streaming)
-  const [expandedRounds, setExpandedRounds] = useState<Record<number, boolean>>({
-    1: true,
-    2: true,
-    3: true,
-  });
 
   // Config & Session state
   const [config, setConfig] = useState<ParallaxSystemConfig>(() => storage.getParallaxConfig());
@@ -678,10 +660,6 @@ export const ParallaxPage: React.FC = () => {
     }
   }, [messages, autoScroll, isRunning]);
 
-  const toggleRoundExpand = (roundNum: number) => {
-    setExpandedRounds((prev) => ({ ...prev, [roundNum]: !prev[roundNum] }));
-  };
-
   const handleStartSwarm = async (topicToRun?: string) => {
     const targetTopic = (topicToRun || topicInput).trim();
     if (!targetTopic) return;
@@ -705,10 +683,7 @@ export const ParallaxPage: React.FC = () => {
     setIsPlusMenuOpen(false);
     setIsModeSelectorOpen(false);
     setInspectedRosterAgentId(null);
-    setConvictionBandFilter('all');
-    setTableSearchQuery('');
     setStatusText('INITIALIZING PARALLAX CORE • CONNECTING AGENTS...');
-    setExpandedRounds({ 1: true, 2: true, 3: true });
     setAutoScroll(true);
 
     const controller = new AbortController();
@@ -949,37 +924,6 @@ export const ParallaxPage: React.FC = () => {
     return Array.from(byId.values());
   }, [agentTurns, enabledAgentsList, dynamicPersonas, config.agents, getTurnConvictionPct]);
 
-  const sortedTableAgents = React.useMemo(() => {
-    let copy = [...recruitedAgents];
-    if (convictionBandFilter === 'high') {
-      copy = copy.filter((a) => a.conviction !== null && a.conviction >= 75);
-    } else if (convictionBandFilter === 'moderate') {
-      copy = copy.filter((a) => a.conviction !== null && a.conviction >= 55 && a.conviction < 75);
-    } else if (convictionBandFilter === 'skeptic') {
-      copy = copy.filter((a) => a.conviction !== null && a.conviction < 55);
-    }
-
-    if (tableSearchQuery.trim()) {
-      const q = tableSearchQuery.toLowerCase();
-      copy = copy.filter(
-        (a) =>
-          a.name.toLowerCase().includes(q) ||
-          a.role.toLowerCase().includes(q) ||
-          a.latestText.toLowerCase().includes(q),
-      );
-    }
-
-    if (tableSortBy === 'conviction') {
-      copy.sort((a, b) => {
-        if (a.conviction === null && b.conviction === null) return 0;
-        if (a.conviction === null) return 1;
-        if (b.conviction === null) return -1;
-        return b.conviction - a.conviction;
-      });
-    }
-    return copy;
-  }, [recruitedAgents, tableSortBy, convictionBandFilter, tableSearchQuery]);
-
   const polarityStats = React.useMemo(() => {
     const scoredAgents = recruitedAgents.filter(
       (a): a is typeof a & { conviction: number } => a.conviction !== null,
@@ -1017,9 +961,6 @@ export const ParallaxPage: React.FC = () => {
     };
   }, [recruitedAgents]);
 
-  const visibleTableAgents = showAllTableRows ? sortedTableAgents : sortedTableAgents.slice(0, 8);
-  const visibleRecruitedAgents = showAllRecruitedAgents ? recruitedAgents : recruitedAgents.slice(0, 5);
-
   const filteredShowcasePresets = React.useMemo(() => {
     if (benchmarkCategory === 'all') return SHOWCASE_PRESETS;
     return SHOWCASE_PRESETS.filter((p) => p.category === benchmarkCategory);
@@ -1029,82 +970,6 @@ export const ParallaxPage: React.FC = () => {
     if (!inspectedRosterAgentId) return null;
     return config.agents[inspectedRosterAgentId] || enabledAgentsList.find((a) => a.id === inspectedRosterAgentId) || null;
   }, [inspectedRosterAgentId, config.agents, enabledAgentsList]);
-
-  const chartPoints = React.useMemo(() => {
-    const scored = recruitedAgents.filter(
-      (a): a is typeof a & { conviction: number } => a.conviction !== null,
-    );
-    if (scored.length === 0) {
-      return [];
-    }
-    const base = [...scored].sort((a, b) => b.conviction - a.conviction);
-    return base.slice(0, 10).map((ag) => {
-      return {
-        label: ag.name.slice(0, 7),
-        val: Math.max(10, Math.min(100, ag.conviction)),
-        accent: ag.accentColor,
-      };
-    });
-  }, [recruitedAgents]);
-
-  // Synthesize editorial "Notes:" bullet points strictly from actual session state
-  const editorialNotes = React.useMemo(() => {
-    const bullets: string[] = [];
-
-    if (summary) {
-      if (summary.verdict) {
-        bullets.push(summary.verdict);
-      }
-      if (summary.highlights && summary.highlights.length > 0) {
-        bullets.push(...summary.highlights.slice(0, 2));
-      }
-      if (summary.factualConflicts && summary.factualConflicts.length > 0) {
-        bullets.push(`Factual divergence detected: ${summary.factualConflicts[0]}`);
-      } else if (summary.valueConflicts && summary.valueConflicts.length > 0) {
-        bullets.push(`Ideological tension: ${summary.valueConflicts[0]}`);
-      }
-    }
-
-    if (bullets.length < 4 && agentTurns.length > 0) {
-      const veritasTurn = agentTurns.find((m) => m.agentId === 'veritas');
-      const scoredTurns = agentTurns
-        .map((m) => ({ msg: m, pct: getTurnConvictionPct(m) }))
-        .filter((item): item is { msg: ParallaxMessage; pct: number } => item.pct !== null);
-
-      const highTurn = [...scoredTurns].sort((a, b) => b.pct - a.pct)[0];
-      const lowTurn = [...scoredTurns].sort((a, b) => a.pct - b.pct)[0];
-
-      if (veritasTurn && bullets.length < 4) {
-        bullets.push(
-          `Empirical baseline from ${veritasTurn.agentName}: ${veritasTurn.text
-            .replace(/[#*_`]/g, '')
-            .slice(0, 185)
-            .trim()}...`,
-        );
-      }
-      if (highTurn && bullets.length < 4) {
-        bullets.push(
-          `Highest conviction recorded in ${highTurn.msg.agentName} (${highTurn.pct}%), emphasizing ${
-            highTurn.msg.role?.toLowerCase() || 'primary domain thesis'
-          }.`,
-        );
-      }
-      if (lowTurn && lowTurn.msg.id !== highTurn?.msg.id && bullets.length < 4) {
-        bullets.push(
-          `Lowest / most skeptical conviction recorded in ${lowTurn.msg.agentName} (${lowTurn.pct}%), highlighting tail risks and structural friction.`,
-        );
-      }
-    }
-
-    if (bullets.length === 0) {
-      bullets.push(
-        `Awaiting agent turns: Parallax's ${enabledAgentsCount}-persona deliberation pipeline is initializing for the assigned intelligence task.`,
-        `Conviction scores (1–10 scale normalized to %) will populate dynamically as agents respond across Round 1 (Thesis), Round 2 (Cross-Examination), and Round 3 (Convergence).`,
-      );
-    }
-
-    return bullets.slice(0, 5);
-  }, [summary, agentTurns, getTurnConvictionPct, enabledAgentsCount]);
 
   const currentModeObj = DEBATE_MODES.find((m) => m.id === debateMode) || DEBATE_MODES[0];
 
@@ -2251,14 +2116,6 @@ export const ParallaxPage: React.FC = () => {
                     </div>
 
                     <div className="flex items-center gap-1 flex-wrap">
-                      <button
-                        type="button"
-                        onClick={() => setShowTrajectoryChart((prev) => !prev)}
-                        className="px-2 py-1 rounded-lg bg-white/[0.05] hover:bg-white/[0.1] text-[10.5px] sm:text-[11px] text-[#e7e9ea] flex items-center gap-1 cursor-pointer transition-colors"
-                      >
-                        <Activity size={11} className="text-emerald-400" />
-                        <span>{showTrajectoryChart ? 'Hide Curve' : 'Curve'}</span>
-                      </button>
                       {messages.length > 0 && (
                         <>
                           <button
@@ -2280,14 +2137,6 @@ export const ParallaxPage: React.FC = () => {
                           </button>
                         </>
                       )}
-                      <button
-                        type="button"
-                        onClick={() => setShowDetailedTranscript((prev) => !prev)}
-                        className="px-2.5 py-1 rounded-lg bg-white text-black text-[10.5px] sm:text-[11px] font-semibold flex items-center gap-1 cursor-pointer hover:bg-zinc-200 transition-colors"
-                      >
-                        <FileText size={11} />
-                        <span>{showDetailedTranscript ? 'Hide Live Chat' : 'Live Chat'}</span>
-                      </button>
                     </div>
                   </div>
 
@@ -2359,488 +2208,64 @@ export const ParallaxPage: React.FC = () => {
                   </div>
                 )}
 
-                {/* LIVE CHAT DELIBERATION STREAM + BRIEFING & SYNTHESIS */}
-                {showDetailedTranscript && (
-                  <div className="space-y-3.5">
-                    {intelligenceBriefing && (
-                      <div className={`p-3 sm:p-4 ${hairlineTableCardClass} divide-y-0`}>
-                        <ParallaxIntelligenceBriefing
-                          briefing={intelligenceBriefing}
-                          defaultExpanded={false}
-                        />
-                      </div>
-                    )}
-
-                    <div className={`p-2.5 sm:p-4 ${hairlineTableCardClass} divide-y-0`}>
-                      <ParallaxDeliberationStream
-                        messages={messages}
-                        agents={config.agents}
-                        isRunning={isRunning}
-                        currentRound={currentRound}
-                        wasStoppedEarly={wasStoppedEarly}
-                        specialistDeliberation={specialistDeliberation}
-                        roundFilter={roundFilter}
-                        groupFilter={groupFilter}
-                        selectedAgentFilter={selectedAgentFilter}
-                        expandedRounds={expandedRounds}
-                        playingAudioKey={playingAudioKey}
-                        loadingAudioKey={loadingAudioKey}
-                        fullSwarmProgress={fullSwarmProgress}
-                        copiedSwarmTranscript={copiedSwarmTranscript}
-                        isDownloadingSwarmMp3={isDownloadingSwarmMp3}
-                        rawJsonOpenMap={rawJsonOpenMap}
-                        copiedRawJsonId={copiedRawJsonId}
-                        onSetRoundFilter={(r) => setRoundFilter(r)}
-                        onSetGroupFilter={(g) => setGroupFilter(g)}
-                        onSetSelectedAgentFilter={(id) => setSelectedAgentFilter(id)}
-                        onToggleRoundExpand={toggleRoundExpand}
-                        onPlayMessageAudio={handlePlayMessageAudio}
-                        onListenToFullSwarm={handleListenToFullSwarm}
-                        onDownloadSwarmMp3={handleDownloadSwarmMp3}
-                        onCopyFullSwarm={handleCopyFullSwarm}
-                        onStopSwarm={handleStopSwarm}
-                        onToggleRawJsonView={toggleRawJsonView}
-                        onCopyRawJson={handleCopyRawJson}
-                        feedEndRef={feedEndRef}
+                {/* CONTINUOUS LIVE CHAT DELIBERATION STREAM + BRIEFING & SYNTHESIS */}
+                <div className="space-y-3.5">
+                  {intelligenceBriefing && (
+                    <div className={`p-3 sm:p-4 ${hairlineTableCardClass} divide-y-0`}>
+                      <ParallaxIntelligenceBriefing
+                        briefing={intelligenceBriefing}
+                        defaultExpanded={false}
                       />
                     </div>
+                  )}
 
-                    {summary && (
-                      <div className={`p-3 sm:p-5 ${hairlineTableCardClass} divide-y-0`}>
-                        <ParallaxSynthesisReport
-                          summary={summary}
-                          topic={currentTopic}
-                          allMessages={messages}
-                          onNewTopic={handleResetToNewSwarm}
-                          onRerun={() => handleStartSwarm(currentTopic)}
-                          onExportMp3={handleDownloadSwarmMp3}
-                          onSave={() => {
-                            setSessions(storage.getParallaxSessions());
-                          }}
-                        />
-                      </div>
-                    )}
+                  <div className={`p-2.5 sm:p-4 ${hairlineTableCardClass} divide-y-0`}>
+                    <ParallaxDeliberationStream
+                      messages={messages}
+                      agents={config.agents}
+                      isRunning={isRunning}
+                      currentRound={currentRound}
+                      wasStoppedEarly={wasStoppedEarly}
+                      specialistDeliberation={specialistDeliberation}
+                      roundFilter={roundFilter}
+                      groupFilter={groupFilter}
+                      selectedAgentFilter={selectedAgentFilter}
+                      playingAudioKey={playingAudioKey}
+                      loadingAudioKey={loadingAudioKey}
+                      fullSwarmProgress={fullSwarmProgress}
+                      copiedSwarmTranscript={copiedSwarmTranscript}
+                      isDownloadingSwarmMp3={isDownloadingSwarmMp3}
+                      rawJsonOpenMap={rawJsonOpenMap}
+                      copiedRawJsonId={copiedRawJsonId}
+                      onSetRoundFilter={(r) => setRoundFilter(r)}
+                      onSetGroupFilter={(g) => setGroupFilter(g)}
+                      onSetSelectedAgentFilter={(id) => setSelectedAgentFilter(id)}
+                      onPlayMessageAudio={handlePlayMessageAudio}
+                      onListenToFullSwarm={handleListenToFullSwarm}
+                      onDownloadSwarmMp3={handleDownloadSwarmMp3}
+                      onCopyFullSwarm={handleCopyFullSwarm}
+                      onStopSwarm={handleStopSwarm}
+                      onToggleRawJsonView={toggleRawJsonView}
+                      onCopyRawJson={handleCopyRawJson}
+                      feedEndRef={feedEndRef}
+                    />
                   </div>
-                )}
 
-                {/* 3. CONSENSUS POLARITY METER + SCREENSHOT-ACCURATE DARK HAIRLINE RANKING TABLE */}
-                <div className="space-y-2">
-                  {/* Consensus Polarity Bar & Faction Filter Controls */}
-                  <div className="space-y-1.5 px-0.5">
-                    <div className="flex items-center justify-between flex-wrap gap-2">
-                      <div className="flex items-center gap-1 flex-wrap">
-                        {(
-                          [
-                            { id: 'all', label: `All (${recruitedAgents.length})` },
-                            { id: 'high', label: `High ≥75% (${polarityStats.high})` },
-                            { id: 'moderate', label: `Balanced (${polarityStats.mod})` },
-                            { id: 'skeptic', label: `Skeptics (${polarityStats.low})` },
-                          ] as const
-                        ).map((band) => (
-                          <button
-                            key={band.id}
-                            type="button"
-                            onClick={() => setConvictionBandFilter(band.id)}
-                            className={`px-2 py-1 rounded-lg text-[10.5px] sm:text-[11px] font-medium transition-colors cursor-pointer ${
-                              convictionBandFilter === band.id
-                                ? 'bg-white/12 text-white font-semibold'
-                                : 'text-[#71767b] hover:text-white'
-                            }`}
-                          >
-                            {band.label}
-                          </button>
-                        ))}
-                      </div>
-
-                      <div className="flex items-center gap-2">
-                        <input
-                          type="text"
-                          value={tableSearchQuery}
-                          onChange={(e) => setTableSearchQuery(e.target.value)}
-                          placeholder="Search persona..."
-                          className="w-28 sm:w-36 px-2 py-0.5 rounded-lg bg-white/[0.04] border border-white/[0.08] text-[10.5px] sm:text-[11px] text-white placeholder-[#71767b] focus:outline-none focus:border-white/25"
-                        />
-                        <button
-                          type="button"
-                          onClick={() =>
-                            setTableSortBy((prev) => (prev === 'conviction' ? 'order' : 'conviction'))
-                          }
-                          className="text-[10.5px] sm:text-[11px] font-mono text-[#a1a1aa] hover:text-white flex items-center gap-1 cursor-pointer shrink-0"
-                        >
-                          <ArrowUpDown size={11} />
-                          <span>{tableSortBy === 'conviction' ? 'By %' : 'By Order'}</span>
-                        </button>
-                      </div>
-                    </div>
-
-                    {/* 3-Segment Consensus Polarity Bar */}
-                    <div className="h-1.5 w-full rounded-full bg-white/[0.06] overflow-hidden flex">
-                      <div
-                        className="h-full bg-emerald-400 transition-all duration-500"
-                        style={{ width: `${polarityStats.highPct}%` }}
-                        title={`High Conviction: ${polarityStats.highPct}%`}
-                      />
-                      <div
-                        className="h-full bg-sky-400 transition-all duration-500"
-                        style={{ width: `${polarityStats.modPct}%` }}
-                        title={`Moderate / Balanced: ${polarityStats.modPct}%`}
-                      />
-                      <div
-                        className="h-full bg-amber-400 transition-all duration-500"
-                        style={{ width: `${polarityStats.lowPct}%` }}
-                        title={`Contrarian / Skeptical: ${polarityStats.lowPct}%`}
+                  {summary && (
+                    <div className={`p-3 sm:p-5 ${hairlineTableCardClass} divide-y-0`}>
+                      <ParallaxSynthesisReport
+                        summary={summary}
+                        topic={currentTopic}
+                        allMessages={messages}
+                        onNewTopic={handleResetToNewSwarm}
+                        onRerun={() => handleStartSwarm(currentTopic)}
+                        onExportMp3={handleDownloadSwarmMp3}
+                        onSave={() => {
+                          setSessions(storage.getParallaxSessions());
+                        }}
                       />
                     </div>
-                  </div>
-
-                  {/* Rounded-2xl Dark Container with Hairline Dividers */}
-                  <div id="parallax-conviction-table" className={hairlineTableCardClass}>
-                    {visibleTableAgents.length === 0 ? (
-                      <div className="py-6 text-center text-xs text-[#71767b]">
-                        No personas match the current filter.
-                      </div>
-                    ) : (
-                      visibleTableAgents.map((agent, index) => {
-                        const isExpanded = expandedAgentId === agent.id;
-                        const rankNumber = String(index + 1).padStart(2, '0');
-                        const cleanRole = agent.role.replace(/\s+perspective|\s+analysis/i, '');
-
-                        return (
-                          <div key={agent.id} className="transition-colors">
-                            <div
-                              onClick={() => setExpandedAgentId(isExpanded ? null : agent.id)}
-                              className="py-2.5 px-3 sm:py-3 sm:px-4 flex items-center justify-between gap-2.5 cursor-pointer hover:bg-white/[0.03]"
-                            >
-                              {/* Left Index + Middle Persona/Entity Name */}
-                              <div className="flex items-center gap-3 sm:gap-5 min-w-0 flex-1">
-                                <span className="text-xs sm:text-[13.5px] font-mono text-[#8b9097] tabular-nums w-5 shrink-0">
-                                  {rankNumber}
-                                </span>
-
-                                <div className="min-w-0 flex-1">
-                                  <div className="flex items-center gap-2">
-                                    <span className="text-xs sm:text-[14px] font-medium text-white truncate">
-                                      {agent.name}
-                                    </span>
-                                    <span className="hidden sm:inline-block text-[11px] text-[#71767b] truncate">
-                                      · {cleanRole}
-                                    </span>
-                                  </div>
-                                  {agent.turns.length > 0 && (
-                                    <p className="text-[10.5px] sm:text-xs text-[#71767b] truncate mt-0.5 m-0">
-                                      {agent.latestText.replace(/[#*_`]/g, '').slice(0, 74)}...
-                                    </p>
-                                  )}
-                                </div>
-                              </div>
-
-                              {/* Right Conviction Delta + Bar + Percentage or Standby State */}
-                              <div className="flex items-center gap-2 sm:gap-3 shrink-0">
-                                {agent.delta !== null && agent.delta !== 0 && (
-                                  <span
-                                    className={`text-[10px] font-mono tabular-nums ${
-                                      agent.delta > 0 ? 'text-emerald-400' : 'text-amber-400'
-                                    }`}
-                                    title="Conviction shift from Round 1 to latest turn"
-                                  >
-                                    {agent.delta > 0 ? `+${agent.delta}%` : `${agent.delta}%`}
-                                  </span>
-                                )}
-                                {agent.conviction !== null ? (
-                                  <>
-                                    <div className="hidden sm:flex w-14 h-1 rounded-full bg-white/[0.07] overflow-hidden">
-                                      <div
-                                        className="h-full rounded-full transition-all duration-500"
-                                        style={{
-                                          width: `${Math.min(100, Math.max(10, agent.conviction))}%`,
-                                          backgroundColor: agent.accentColor || '#10b981',
-                                        }}
-                                      />
-                                    </div>
-                                    <span className="text-xs sm:text-[14px] font-mono text-white tabular-nums w-9 sm:w-10 text-right">
-                                      {agent.conviction}%
-                                    </span>
-                                  </>
-                                ) : (
-                                  <span className="text-[11px] font-mono text-[#71767b] tabular-nums">
-                                    {agent.turns.length > 0 ? `${agent.turns.length}R` : 'Standby'}
-                                  </span>
-                                )}
-                              </div>
-                            </div>
-
-                            {/* Expandable Agent Deliberation Detail on Row Tap */}
-                            {isExpanded && (
-                              <div className="px-3 sm:px-4 pb-3 pt-2 bg-white/[0.02] border-t border-white/[0.06] space-y-2 text-[11px] sm:text-xs">
-                                <div className="flex items-center justify-between text-[#a1a1aa] flex-wrap gap-1">
-                                  <span className="truncate pr-2">Role: {agent.role}</span>
-                                  <span className="font-mono tabular-nums shrink-0">
-                                    {agent.conviction !== null
-                                      ? `R1: ${agent.r1Conviction ?? '—'}% → Latest: ${agent.conviction}% (${agent.turns.length} round${agent.turns.length === 1 ? '' : 's'})`
-                                      : `${agent.turns.length} round${agent.turns.length === 1 ? '' : 's'} logged`}
-                                  </span>
-                                </div>
-                                {agent.turns.length === 0 ? (
-                                  <div className="text-[#71767b] py-1">
-                                    {isRunning
-                                      ? 'Specialist awaiting turn in active deliberation pipeline...'
-                                      : 'No turns recorded for this specialist in the current session.'}
-                                  </div>
-                                ) : (
-                                  agent.turns.map((turn) => {
-                                    const turnPct = getTurnConvictionPct(turn);
-                                    return (
-                                      <div
-                                        key={turn.id}
-                                        className="p-2.5 rounded-xl bg-black/50 border border-white/[0.06] space-y-1"
-                                      >
-                                        <div className="flex items-center justify-between">
-                                          <span className="font-semibold text-white text-[11px]">
-                                            Round 0{turn.round}
-                                          </span>
-                                          <div className="flex items-center gap-2">
-                                            {turnPct !== null && (
-                                              <span className="text-[10px] font-mono tabular-nums text-emerald-400">
-                                                {turnPct}% ({turn.conviction}/10)
-                                              </span>
-                                            )}
-                                            <button
-                                              type="button"
-                                              onClick={(e) => {
-                                                e.stopPropagation();
-                                                handlePlayMessageAudio(turn);
-                                              }}
-                                              className="px-2 py-0.5 rounded-lg bg-white/10 hover:bg-white/20 text-white text-[10px] font-semibold flex items-center gap-1 cursor-pointer"
-                                            >
-                                              <Play size={8} />
-                                              {playingAudioKey === turn.id ? 'Stop' : 'Speak'}
-                                            </button>
-                                          </div>
-                                        </div>
-                                        <p className="text-[#e7e9ea] leading-relaxed whitespace-pre-wrap text-xs sm:text-[13px] m-0">
-                                          {turn.text}
-                                        </p>
-                                      </div>
-                                    );
-                                  })
-                                )}
-                              </div>
-                            )}
-                          </div>
-                        );
-                      })
-                    )}
-
-                    {sortedTableAgents.length > 8 && (
-                      <button
-                        type="button"
-                        onClick={() => setShowAllTableRows((prev) => !prev)}
-                        className="w-full py-2.5 text-[11px] sm:text-xs font-medium text-[#8b9097] hover:text-white flex items-center justify-center gap-1 cursor-pointer transition-colors"
-                      >
-                        <span>
-                          {showAllTableRows
-                            ? 'Show top 8 personas'
-                            : `Show all ${sortedTableAgents.length} personas (${respondedAgentsCount} responded)`}
-                        </span>
-                        <ChevronDown
-                          size={13}
-                          className={`transition-transform ${showAllTableRows ? 'rotate-180' : ''}`}
-                        />
-                      </button>
-                    )}
-                  </div>
-                </div>
-
-                {/* 4. CREATIVE DARK-MODE CONVICTION TRAJECTORY CURVE & AGENT RECRUITMENT MATRIX */}
-                {showTrajectoryChart && (
-                  <div className="grid grid-cols-1 sm:grid-cols-12 gap-2.5">
-                    {/* Left 7 cols: Dark OLED SVG Conviction Curve */}
-                    <div className={`sm:col-span-7 p-3 sm:p-3.5 ${hairlineTableCardClass} divide-y-0`}>
-                      <div className="flex items-center justify-between mb-1.5">
-                        <div>
-                          <div className="text-[10px] font-mono text-[#71767b]">
-                            Conviction Spectrum · Scored Agents
-                          </div>
-                          <div className="text-[11px] sm:text-xs font-semibold text-white mt-0.5">
-                            Multi-Agent Consensus Curve
-                          </div>
-                        </div>
-                        <span className="text-[11px] font-mono tabular-nums font-bold text-emerald-400">
-                          {chartPoints.length > 0
-                            ? `${Math.max(...chartPoints.map((p) => p.val))}% Peak`
-                            : 'Awaiting Scores'}
-                        </span>
-                      </div>
-
-                      {chartPoints.length === 0 ? (
-                        <div className="h-[100px] flex items-center justify-center text-center text-xs text-[#71767b] font-mono px-3">
-                          Awaiting scored agent turns to plot live conviction distribution...
-                        </div>
-                      ) : (
-                        <svg viewBox="0 0 280 100" className="w-full h-auto overflow-visible">
-                          <defs>
-                            <linearGradient id="parallaxCurveGrad" x1="0" y1="0" x2="0" y2="1">
-                              <stop offset="0%" stopColor="#10b981" stopOpacity="0.28" />
-                              <stop offset="100%" stopColor="#10b981" stopOpacity="0.0" />
-                            </linearGradient>
-                          </defs>
-                          <line x1="12" y1="18" x2="268" y2="18" stroke="rgba(255,255,255,0.06)" strokeWidth="1" />
-                          <line x1="12" y1="50" x2="268" y2="50" stroke="rgba(255,255,255,0.06)" strokeWidth="1" />
-                          <line x1="12" y1="82" x2="268" y2="82" stroke="rgba(255,255,255,0.12)" strokeWidth="1" />
-
-                          {/* Area fill under curve */}
-                          {chartPoints.length > 1 && (
-                            <polygon
-                              fill="url(#parallaxCurveGrad)"
-                              points={`18,82 ${chartPoints
-                                .map((pt, i) => {
-                                  const x = 18 + i * 27;
-                                  const y = 80 - (pt.val / 100) * 60;
-                                  return `${x},${y}`;
-                                })
-                                .join(' ')} ${18 + (chartPoints.length - 1) * 27},82`}
-                            />
-                          )}
-
-                          {/* Emerald Trajectory Line */}
-                          {chartPoints.length > 1 && (
-                            <polyline
-                              fill="none"
-                              stroke="#10b981"
-                              strokeWidth="1.8"
-                              points={chartPoints
-                                .map((pt, i) => {
-                                  const x = 18 + i * 27;
-                                  const y = 80 - (pt.val / 100) * 60;
-                                  return `${x},${y}`;
-                                })
-                                .join(' ')}
-                            />
-                          )}
-
-                          {chartPoints.map((pt, i) => {
-                            const x = 18 + i * 27;
-                            const y = 80 - (pt.val / 100) * 60;
-                            return (
-                              <g key={i}>
-                                <circle
-                                  cx={x}
-                                  cy={y}
-                                  r="2.5"
-                                  fill="#050506"
-                                  stroke="#34d399"
-                                  strokeWidth="1.6"
-                                />
-                                <text
-                                  x={x}
-                                  y="94"
-                                  fontSize="5.5"
-                                  fill="#71767b"
-                                  textAnchor="middle"
-                                >
-                                  {pt.label}
-                                </text>
-                              </g>
-                            );
-                          })}
-                        </svg>
-                      )}
-                    </div>
-
-                    {/* Right 5 cols: Compact Agent Recruitment Dot-Matrix Telemetry */}
-                    <div className={`sm:col-span-5 p-3 sm:p-3.5 ${hairlineTableCardClass} divide-y-0 flex flex-col justify-between`}>
-                      <div>
-                        <button
-                          type="button"
-                          onClick={() => setShowAllRecruitedAgents((prev) => !prev)}
-                          className="w-full flex items-center justify-between text-left cursor-pointer mb-2"
-                        >
-                          <div className="flex items-center gap-1.5">
-                            <GitBranch size={13} className="text-emerald-400" />
-                            <span className="text-[11px] sm:text-xs font-semibold text-white">
-                              Agent Telemetry ({recruitedAgents.length})
-                            </span>
-                          </div>
-                          <ChevronRight
-                            size={13}
-                            className={`text-[#71767b] transition-transform ${
-                              showAllRecruitedAgents ? 'rotate-90' : ''
-                            }`}
-                          />
-                        </button>
-
-                        <div className="space-y-1.5">
-                          {visibleRecruitedAgents.map((ag, idx) => {
-                            const filledDots =
-                              ag.turns.length >= 3
-                                ? 20
-                                : ag.turns.length === 2
-                                ? 14
-                                : ag.turns.length === 1
-                                ? 7
-                                : 0;
-                            return (
-                              <div
-                                key={ag.id}
-                                className="flex items-center justify-between gap-2 text-[11px] py-0.5 border-b border-white/[0.05] last:border-0"
-                              >
-                                <div className="flex items-center gap-1.5 min-w-0">
-                                  <span className="text-[10px] font-mono text-[#71767b] tabular-nums">
-                                    {String(idx + 1).padStart(2, '0')}
-                                  </span>
-                                  <span className="text-white font-medium truncate">
-                                    {ag.name}
-                                  </span>
-                                  <span className="text-[9.5px] font-mono text-[#71767b] shrink-0">
-                                    ({ag.turns.length}/3R)
-                                  </span>
-                                </div>
-                                <div className="grid grid-cols-10 gap-[2px] shrink-0">
-                                  {Array.from({ length: 20 }).map((_, dIdx) => (
-                                    <span
-                                      key={dIdx}
-                                      className={`w-[3px] h-[3px] rounded-full ${
-                                        dIdx < filledDots ? 'bg-emerald-400' : 'bg-white/15'
-                                      }`}
-                                    />
-                                  ))}
-                                </div>
-                              </div>
-                            );
-                          })}
-                        </div>
-                      </div>
-
-                      <div className="pt-1.5 mt-1.5 border-t border-white/[0.06] flex items-center justify-between text-[10px] text-[#71767b] font-mono">
-                        <span>Responded: {respondedAgentsCount}/{totalActivePoolCount}</span>
-                        <span className="text-emerald-400 truncate max-w-[130px]">
-                          {summary?.consensusLean || (isRunning ? 'Deliberating' : 'Standby')}
-                        </span>
-                      </div>
-                    </div>
-                  </div>
-                )}
-
-                {/* 5. SCREENSHOT-ACCURATE UNBOXED "Notes:" & "Source:" EDITORIAL SECTION (MOBILE-PROPORTIONAL) */}
-                <div id="parallax-editorial-notes" className="space-y-2 sm:space-y-2.5 pt-0.5">
-                  <h2 className="text-xs sm:text-sm font-bold text-white tracking-tight m-0">
-                    Notes:
-                  </h2>
-
-                  <ul className="list-disc pl-4 sm:pl-5 space-y-2 text-xs sm:text-[13.5px] text-[#e7e9ea] leading-[1.58] m-0">
-                    {editorialNotes.map((note, idx) => (
-                      <li key={idx} className="pl-0.5">
-                        {note}
-                      </li>
-                    ))}
-                  </ul>
-
-                  <p className="text-[11px] sm:text-xs text-[#a1a1aa] leading-relaxed pt-1 m-0">
-                    Source: Parallax 20-Agent Swarm Deliberation &amp;{' '}
-                    {intelligenceBriefing
-                      ? 'VERITAS Live Empirical Grounding Survey.'
-                      : 'Multi-Round Consensus Index (2026).'}
-                  </p>
+                  )}
                 </div>
 
                 {/* Stopped Early Banner */}
@@ -3016,7 +2441,7 @@ export const ParallaxPage: React.FC = () => {
                       )}
                     </div>
 
-                    {isRunning ? (
+                    {isRunning && (
                       <button
                         type="button"
                         onClick={() => setIsHumanModalOpen(true)}
@@ -3025,15 +2450,7 @@ export const ParallaxPage: React.FC = () => {
                         <UserPlus size={10} />
                         <span>Inject Directive</span>
                       </button>
-                    ) : summary ? (
-                      <button
-                        type="button"
-                        onClick={() => setShowDetailedTranscript((prev) => !prev)}
-                        className="text-cyan-300 hover:underline text-[10px] font-semibold shrink-0 cursor-pointer"
-                      >
-                        {showDetailedTranscript ? 'Hide Report' : 'View Report'}
-                      </button>
-                    ) : null}
+                    )}
                   </div>
                 )}
 

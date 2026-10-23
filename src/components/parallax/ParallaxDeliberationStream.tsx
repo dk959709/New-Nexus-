@@ -38,7 +38,7 @@ export interface ParallaxDeliberationStreamProps {
   roundFilter: 'all' | 1 | 2 | 3;
   groupFilter: 'all' | 'optimists' | 'realists' | 'ethicists' | 'visionaries' | 'anchors' | 'facts';
   selectedAgentFilter: string | null;
-  expandedRounds: Record<number, boolean>;
+  expandedRounds?: Record<number, boolean>;
   playingAudioKey: string | null;
   loadingAudioKey: string | null;
   fullSwarmProgress: { current: number; total: number } | null;
@@ -49,7 +49,7 @@ export interface ParallaxDeliberationStreamProps {
   onSetRoundFilter: (r: 'all' | 1 | 2 | 3) => void;
   onSetGroupFilter: (g: 'all' | 'optimists' | 'realists' | 'ethicists' | 'visionaries' | 'anchors' | 'facts') => void;
   onSetSelectedAgentFilter: (id: string | null) => void;
-  onToggleRoundExpand: (r: number) => void;
+  onToggleRoundExpand?: (r: number) => void;
   onPlayMessageAudio: (msg: ParallaxMessage) => void;
   onListenToFullSwarm: () => void;
   onDownloadSwarmMp3: () => void;
@@ -187,7 +187,6 @@ export const ParallaxDeliberationStream: React.FC<ParallaxDeliberationStreamProp
   roundFilter,
   groupFilter,
   selectedAgentFilter,
-  expandedRounds,
   playingAudioKey,
   loadingAudioKey,
   fullSwarmProgress,
@@ -198,7 +197,6 @@ export const ParallaxDeliberationStream: React.FC<ParallaxDeliberationStreamProp
   onSetRoundFilter,
   onSetGroupFilter,
   onSetSelectedAgentFilter,
-  onToggleRoundExpand,
   onPlayMessageAudio,
   onListenToFullSwarm,
   onDownloadSwarmMp3,
@@ -584,11 +582,6 @@ export const ParallaxDeliberationStream: React.FC<ParallaxDeliberationStreamProp
 
               if (roundMsgs.length === 0) return null;
 
-              const isExpanded = expandedRounds[roundNum] !== false;
-              const CURATED_COUNT = 6;
-              const visibleMsgs = isExpanded ? roundMsgs : roundMsgs.slice(0, CURATED_COUNT);
-              const hiddenCount = Math.max(0, roundMsgs.length - CURATED_COUNT);
-
               const roundTitle =
                 roundNum === 1
                   ? 'Round 01 · Thesis & Initial Grounding'
@@ -617,22 +610,12 @@ export const ParallaxDeliberationStream: React.FC<ParallaxDeliberationStreamProp
 
                     <div className="flex items-center gap-2 shrink-0">
                       <span className="tabular-nums text-slate-400">{roundMsgs.length} turns</span>
-                      {roundMsgs.length > CURATED_COUNT && (
-                        <button
-                          type="button"
-                          onClick={() => onToggleRoundExpand(roundNum)}
-                          className="text-cyan-300 hover:text-cyan-200 font-semibold flex items-center gap-0.5 cursor-pointer"
-                        >
-                          <span>{isExpanded ? 'Compact (6)' : `Show All (${roundMsgs.length})`}</span>
-                          {isExpanded ? <ChevronUp size={11} /> : <ChevronDown size={11} />}
-                        </button>
-                      )}
                     </div>
                   </div>
 
-                  {/* Flowing Live Chat Rows */}
+                  {/* Flowing Live Chat Rows (All turns rendered automatically) */}
                   <div className="space-y-0.5">
-                    {visibleMsgs.map((msg) => {
+                    {roundMsgs.map((msg) => {
                       const isVoicePlaying = playingAudioKey === msg.id;
                       const isVoiceLoading = loadingAudioKey === msg.id;
                       const isHuman = Boolean(msg.isHuman || msg.agentId === 'human');
@@ -987,22 +970,6 @@ export const ParallaxDeliberationStream: React.FC<ParallaxDeliberationStreamProp
                       );
                     })}
                   </div>
-
-                  {/* Optional Expand Button when Round is Compacted */}
-                  {!isExpanded && hiddenCount > 0 && (
-                    <div className="pt-1 pl-9">
-                      <button
-                        type="button"
-                        onClick={() => onToggleRoundExpand(roundNum)}
-                        className="px-3 py-1 rounded-lg bg-white/[0.04] hover:bg-white/[0.08] border border-white/[0.08] text-cyan-300 font-mono text-[11px] font-semibold transition-colors cursor-pointer inline-flex items-center gap-1.5"
-                      >
-                        <ChevronDown size={12} />
-                        <span>
-                          Show all {roundMsgs.length} turns in Round 0{roundNum} (+{hiddenCount} more)
-                        </span>
-                      </button>
-                    </div>
-                  )}
                 </div>
               );
             })}
