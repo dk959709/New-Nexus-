@@ -198,7 +198,7 @@ export const ParallaxPage: React.FC = () => {
   const [showAllRecruitedAgents, setShowAllRecruitedAgents] = useState(false);
   const [showAllTableRows, setShowAllTableRows] = useState(false);
   const [tableSortBy, setTableSortBy] = useState<'conviction' | 'order'>('conviction');
-  const [showDetailedTranscript, setShowDetailedTranscript] = useState(false);
+  const [showDetailedTranscript, setShowDetailedTranscript] = useState(true);
   const [showTrajectoryChart, setShowTrajectoryChart] = useState(true);
 
   // FEATURE 7: Debate Mode Preset state
@@ -219,11 +219,11 @@ export const ParallaxPage: React.FC = () => {
     'all' | 'optimists' | 'realists' | 'ethicists' | 'visionaries' | 'anchors' | 'facts'
   >('all');
 
-  // Per-round expand states for curated viewing
+  // Per-round expand states for curated viewing (default expanded for live-chat streaming)
   const [expandedRounds, setExpandedRounds] = useState<Record<number, boolean>>({
-    1: false,
-    2: false,
-    3: false,
+    1: true,
+    2: true,
+    3: true,
   });
 
   // Config & Session state
@@ -670,7 +670,11 @@ export const ParallaxPage: React.FC = () => {
 
   useEffect(() => {
     if (autoScroll && feedEndRef.current && isRunning) {
-      feedEndRef.current.scrollIntoView({ behavior: 'smooth', block: 'end' });
+      const rect = feedEndRef.current.getBoundingClientRect();
+      const isNearBottom = rect.top - window.innerHeight < 220;
+      if (isNearBottom) {
+        feedEndRef.current.scrollIntoView({ behavior: 'smooth', block: 'end' });
+      }
     }
   }, [messages, autoScroll, isRunning]);
 
@@ -704,7 +708,7 @@ export const ParallaxPage: React.FC = () => {
     setConvictionBandFilter('all');
     setTableSearchQuery('');
     setStatusText('INITIALIZING PARALLAX CORE • CONNECTING AGENTS...');
-    setExpandedRounds({ 1: false, 2: false, 3: false });
+    setExpandedRounds({ 1: true, 2: true, 3: true });
     setAutoScroll(true);
 
     const controller = new AbortController();
@@ -2282,7 +2286,7 @@ export const ParallaxPage: React.FC = () => {
                         className="px-2.5 py-1 rounded-lg bg-white text-black text-[10.5px] sm:text-[11px] font-semibold flex items-center gap-1 cursor-pointer hover:bg-zinc-200 transition-colors"
                       >
                         <FileText size={11} />
-                        <span>{showDetailedTranscript ? 'Hide Full Stream' : 'Full Stream'}</span>
+                        <span>{showDetailedTranscript ? 'Hide Live Chat' : 'Live Chat'}</span>
                       </button>
                     </div>
                   </div>
@@ -2352,6 +2356,70 @@ export const ParallaxPage: React.FC = () => {
                       }
                       onStop={stopAllAudio}
                     />
+                  </div>
+                )}
+
+                {/* LIVE CHAT DELIBERATION STREAM + BRIEFING & SYNTHESIS */}
+                {showDetailedTranscript && (
+                  <div className="space-y-3.5">
+                    {intelligenceBriefing && (
+                      <div className={`p-3 sm:p-4 ${hairlineTableCardClass} divide-y-0`}>
+                        <ParallaxIntelligenceBriefing
+                          briefing={intelligenceBriefing}
+                          defaultExpanded={false}
+                        />
+                      </div>
+                    )}
+
+                    <div className={`p-2.5 sm:p-4 ${hairlineTableCardClass} divide-y-0`}>
+                      <ParallaxDeliberationStream
+                        messages={messages}
+                        agents={config.agents}
+                        isRunning={isRunning}
+                        currentRound={currentRound}
+                        wasStoppedEarly={wasStoppedEarly}
+                        specialistDeliberation={specialistDeliberation}
+                        roundFilter={roundFilter}
+                        groupFilter={groupFilter}
+                        selectedAgentFilter={selectedAgentFilter}
+                        expandedRounds={expandedRounds}
+                        playingAudioKey={playingAudioKey}
+                        loadingAudioKey={loadingAudioKey}
+                        fullSwarmProgress={fullSwarmProgress}
+                        copiedSwarmTranscript={copiedSwarmTranscript}
+                        isDownloadingSwarmMp3={isDownloadingSwarmMp3}
+                        rawJsonOpenMap={rawJsonOpenMap}
+                        copiedRawJsonId={copiedRawJsonId}
+                        onSetRoundFilter={(r) => setRoundFilter(r)}
+                        onSetGroupFilter={(g) => setGroupFilter(g)}
+                        onSetSelectedAgentFilter={(id) => setSelectedAgentFilter(id)}
+                        onToggleRoundExpand={toggleRoundExpand}
+                        onPlayMessageAudio={handlePlayMessageAudio}
+                        onListenToFullSwarm={handleListenToFullSwarm}
+                        onDownloadSwarmMp3={handleDownloadSwarmMp3}
+                        onCopyFullSwarm={handleCopyFullSwarm}
+                        onStopSwarm={handleStopSwarm}
+                        onToggleRawJsonView={toggleRawJsonView}
+                        onCopyRawJson={handleCopyRawJson}
+                        feedEndRef={feedEndRef}
+                      />
+                    </div>
+
+                    {summary && (
+                      <div className={`p-3 sm:p-5 ${hairlineTableCardClass} divide-y-0`}>
+                        <ParallaxSynthesisReport
+                          summary={summary}
+                          topic={currentTopic}
+                          allMessages={messages}
+                          onNewTopic={handleResetToNewSwarm}
+                          onRerun={() => handleStartSwarm(currentTopic)}
+                          onExportMp3={handleDownloadSwarmMp3}
+                          onSave={() => {
+                            setSessions(storage.getParallaxSessions());
+                          }}
+                        />
+                      </div>
+                    )}
                   </div>
                 )}
 
@@ -2774,70 +2842,6 @@ export const ParallaxPage: React.FC = () => {
                       : 'Multi-Round Consensus Index (2026).'}
                   </p>
                 </div>
-
-                {/* 6. EXPANDABLE FULL SYNTHESIS & 3-ROUND DELIBERATION STREAM */}
-                {showDetailedTranscript && (
-                  <div className="space-y-4 pt-2 border-t border-white/[0.08]">
-                    {intelligenceBriefing && (
-                      <div className={`p-3 sm:p-4 ${hairlineTableCardClass} divide-y-0`}>
-                        <ParallaxIntelligenceBriefing
-                          briefing={intelligenceBriefing}
-                          defaultExpanded={true}
-                        />
-                      </div>
-                    )}
-
-                    {summary && (
-                      <div className={`p-3 sm:p-5 ${hairlineTableCardClass} divide-y-0`}>
-                        <ParallaxSynthesisReport
-                          summary={summary}
-                          topic={currentTopic}
-                          allMessages={messages}
-                          onNewTopic={handleResetToNewSwarm}
-                          onRerun={() => handleStartSwarm(currentTopic)}
-                          onExportMp3={handleDownloadSwarmMp3}
-                          onSave={() => {
-                            setSessions(storage.getParallaxSessions());
-                          }}
-                        />
-                      </div>
-                    )}
-
-                    <div className={`p-3 sm:p-5 ${hairlineTableCardClass} divide-y-0`}>
-                      <ParallaxDeliberationStream
-                        messages={messages}
-                        agents={config.agents}
-                        isRunning={isRunning}
-                        currentRound={currentRound}
-                        wasStoppedEarly={wasStoppedEarly}
-                        specialistDeliberation={specialistDeliberation}
-                        roundFilter={roundFilter}
-                        groupFilter={groupFilter}
-                        selectedAgentFilter={selectedAgentFilter}
-                        expandedRounds={expandedRounds}
-                        playingAudioKey={playingAudioKey}
-                        loadingAudioKey={loadingAudioKey}
-                        fullSwarmProgress={fullSwarmProgress}
-                        copiedSwarmTranscript={copiedSwarmTranscript}
-                        isDownloadingSwarmMp3={isDownloadingSwarmMp3}
-                        rawJsonOpenMap={rawJsonOpenMap}
-                        copiedRawJsonId={copiedRawJsonId}
-                        onSetRoundFilter={(r) => setRoundFilter(r)}
-                        onSetGroupFilter={(g) => setGroupFilter(g)}
-                        onSetSelectedAgentFilter={(id) => setSelectedAgentFilter(id)}
-                        onToggleRoundExpand={toggleRoundExpand}
-                        onPlayMessageAudio={handlePlayMessageAudio}
-                        onListenToFullSwarm={handleListenToFullSwarm}
-                        onDownloadSwarmMp3={handleDownloadSwarmMp3}
-                        onCopyFullSwarm={handleCopyFullSwarm}
-                        onStopSwarm={handleStopSwarm}
-                        onToggleRawJsonView={toggleRawJsonView}
-                        onCopyRawJson={handleCopyRawJson}
-                        feedEndRef={feedEndRef}
-                      />
-                    </div>
-                  </div>
-                )}
 
                 {/* Stopped Early Banner */}
                 {wasStoppedEarly && !summary && (
