@@ -4387,8 +4387,378 @@
   }
 }
 
+/* ============================================================================
+   NEXUS 6 WORKABLE THEMES SYSTEM (Dark, Light, Midnight, Emerald, Crimson, Violet)
+   ============================================================================ */
 
+/* Theme Selector Grid in Settings -> Appearance */
+.nexus-theme-active-pill {
+  font: 10px 'DM Mono', monospace;
+  letter-spacing: 0.1em;
+  padding: 5px 10px;
+  border-radius: 999px;
+  border: 1px solid var(--accent);
+  background: rgba(97, 215, 201, 0.12);
+  color: var(--accent);
+  font-weight: 600;
+  white-space: nowrap;
+}
 
+.nexus-theme-grid {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 12px;
+  width: 100%;
+}
 
+@media (max-width: 680px) {
+  .nexus-theme-grid {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 10px;
+  }
+}
 
+@media (max-width: 350px) {
+  .nexus-theme-grid {
+    grid-template-columns: 1fr;
+  }
+}
 
+.nexus-theme-card {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  padding: 10px;
+  border-radius: 12px;
+  border: 1px solid var(--line);
+  background: var(--panel);
+  color: var(--text);
+  text-align: left;
+  transition: all 0.22s cubic-bezier(0.4, 0, 0.2, 1);
+  position: relative;
+  overflow: hidden;
+}
+
+.nexus-theme-card:hover {
+  border-color: var(--line-strong);
+  transform: translateY(-2px);
+}
+
+.nexus-theme-card.selected {
+  border-color: var(--accent);
+  box-shadow: 0 0 0 1px var(--accent), 0 8px 24px -6px rgba(0, 0, 0, 0.35);
+}
+
+.nexus-theme-swatch {
+  height: 54px;
+  border-radius: 8px;
+  border: 1px solid rgba(255, 255, 255, 0.14);
+  padding: 10px 12px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  position: relative;
+  overflow: hidden;
+}
+
+.nexus-theme-swatch-bars {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.nexus-theme-swatch-dot {
+  width: 12px;
+  height: 12px;
+  border-radius: 50%;
+  flex-shrink: 0;
+}
+
+.nexus-theme-swatch-line {
+  width: 28px;
+  height: 5px;
+  border-radius: 999px;
+}
+
+.nexus-theme-swatch-check {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 24px;
+  height: 24px;
+  border-radius: 50%;
+  background: rgba(0, 0, 0, 0.45);
+  backdrop-filter: blur(4px);
+}
+
+.nexus-theme-meta {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  min-width: 0;
+}
+
+.nexus-theme-title-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 6px;
+}
+
+.nexus-theme-meta strong {
+  font-size: 13px;
+  font-weight: 700;
+  color: var(--text);
+  letter-spacing: -0.01em;
+}
+
+.nexus-theme-meta span {
+  font-size: 11px;
+  color: var(--muted);
+  line-height: 1.35;
+}
+
+/* 1. CYBER TEAL (dark - Default) */
+:root,
+html[data-theme="dark"] {
+  --bg-base: #071016;
+  --bg-elevated: #08151b;
+  --panel: rgba(14, 31, 39, 0.78);
+  --line: rgba(165, 207, 214, 0.14);
+  --line-strong: rgba(165, 207, 214, 0.28);
+  --muted: #81949e;
+  --accent: #61d7c9;
+  --accent-rgb: 97, 215, 201;
+  --orange: #f1b66f;
+  --danger: #ed8b8b;
+  --text: #e7eef2;
+  --card-grad: linear-gradient(135deg, rgba(10, 24, 38, 0.84) 0%, rgba(18, 22, 48, 0.86) 55%, rgba(12, 30, 42, 0.82) 100%);
+  --shell-grad: radial-gradient(circle at 78% 4%, rgba(46, 119, 120, 0.22), transparent 36%), linear-gradient(180deg, #071016, #08151b);
+  --nav-bg: rgba(7, 16, 22, 0.9);
+}
+
+/* 2. DAYLIGHT FROST (light) */
+html[data-theme="light"] {
+  --bg-base: #f1f5f9;
+  --bg-elevated: #e2e8f0;
+  --panel: rgba(255, 255, 255, 0.88);
+  --line: rgba(15, 23, 42, 0.12);
+  --line-strong: rgba(15, 23, 42, 0.24);
+  --muted: #475569;
+  --accent: #0d9488;
+  --accent-rgb: 13, 148, 136;
+  --orange: #d97706;
+  --danger: #dc2626;
+  --text: #0f172a;
+  --assistant-answer-title-color: #0f766e;
+  --assistant-answer-box-bg: #f8fafc;
+  --assistant-answer-link-color: #0284c7;
+  --card-grad: linear-gradient(135deg, rgba(255, 255, 255, 0.95) 0%, rgba(248, 250, 252, 0.92) 55%, rgba(241, 245, 249, 0.95) 100%);
+  --shell-grad: radial-gradient(circle at 78% 4%, rgba(13, 148, 136, 0.12), transparent 38%), linear-gradient(180deg, #f8fafc, #e2e8f0);
+  --nav-bg: rgba(255, 255, 255, 0.92);
+}
+
+/* 3. MIDNIGHT OLED (midnight) */
+html[data-theme="midnight"] {
+  --bg-base: #000000;
+  --bg-elevated: #05070c;
+  --panel: rgba(10, 14, 23, 0.86);
+  --line: rgba(148, 163, 184, 0.16);
+  --line-strong: rgba(56, 189, 248, 0.34);
+  --muted: #94a3b8;
+  --accent: #38bdf8;
+  --accent-rgb: 56, 189, 248;
+  --orange: #fbbf24;
+  --danger: #f87171;
+  --text: #f8fafc;
+  --card-grad: linear-gradient(135deg, rgba(5, 7, 12, 0.94) 0%, rgba(10, 15, 28, 0.94) 55%, rgba(4, 6, 10, 0.96) 100%);
+  --shell-grad: radial-gradient(circle at 78% 4%, rgba(56, 189, 248, 0.14), transparent 34%), linear-gradient(180deg, #000000, #04060a);
+  --nav-bg: rgba(2, 4, 8, 0.95);
+}
+
+/* 4. EMERALD MATRIX (emerald) */
+html[data-theme="emerald"] {
+  --bg-base: #03110c;
+  --bg-elevated: #061c14;
+  --panel: rgba(8, 34, 24, 0.82);
+  --line: rgba(52, 211, 153, 0.18);
+  --line-strong: rgba(52, 211, 153, 0.36);
+  --muted: #86efac;
+  --accent: #10b981;
+  --accent-rgb: 16, 185, 129;
+  --orange: #fbbf24;
+  --danger: #f87171;
+  --text: #ecfdf5;
+  --card-grad: linear-gradient(135deg, rgba(6, 28, 20, 0.88) 0%, rgba(9, 38, 28, 0.9) 55%, rgba(4, 22, 16, 0.88) 100%);
+  --shell-grad: radial-gradient(circle at 78% 4%, rgba(16, 185, 129, 0.22), transparent 36%), linear-gradient(180deg, #03110c, #061c14);
+  --nav-bg: rgba(3, 17, 12, 0.94);
+}
+
+/* 5. CRIMSON TACTICAL (crimson) */
+html[data-theme="crimson"] {
+  --bg-base: #120508;
+  --bg-elevated: #1c080d;
+  --panel: rgba(36, 10, 18, 0.82);
+  --line: rgba(251, 113, 133, 0.18);
+  --line-strong: rgba(251, 113, 133, 0.36);
+  --muted: #fda4af;
+  --accent: #f43f5e;
+  --accent-rgb: 244, 63, 94;
+  --orange: #fb923c;
+  --danger: #fb7185;
+  --text: #fff1f2;
+  --card-grad: linear-gradient(135deg, rgba(30, 9, 15, 0.88) 0%, rgba(42, 12, 22, 0.9) 55%, rgba(24, 7, 12, 0.88) 100%);
+  --shell-grad: radial-gradient(circle at 78% 4%, rgba(244, 63, 94, 0.22), transparent 36%), linear-gradient(180deg, #120508, #1c080d);
+  --nav-bg: rgba(18, 5, 8, 0.94);
+}
+
+/* 6. NEBULA VIOLET (violet) */
+html[data-theme="violet"] {
+  --bg-base: #090514;
+  --bg-elevated: #120924;
+  --panel: rgba(24, 14, 46, 0.82);
+  --line: rgba(192, 132, 252, 0.18);
+  --line-strong: rgba(192, 132, 252, 0.36);
+  --muted: #c4b5fd;
+  --accent: #a855f7;
+  --accent-rgb: 168, 85, 247;
+  --orange: #f59e0b;
+  --danger: #fb7185;
+  --text: #f5f3ff;
+  --card-grad: linear-gradient(135deg, rgba(18, 10, 36, 0.88) 0%, rgba(30, 16, 56, 0.9) 55%, rgba(14, 8, 28, 0.88) 100%);
+  --shell-grad: radial-gradient(circle at 78% 4%, rgba(168, 85, 247, 0.24), transparent 36%), linear-gradient(180deg, #090514, #120924);
+  --nav-bg: rgba(9, 5, 20, 0.94);
+}
+
+/* Universal Theme Application Rules across Shell, Cards, Navigation & Controls */
+html[data-theme] {
+  background: var(--bg-base);
+  color: var(--text);
+}
+
+html[data-theme] body {
+  background: var(--bg-base);
+  color: var(--text);
+  transition: background-color 0.25s ease, color 0.25s ease;
+}
+
+html[data-theme] .app-shell:before {
+  background: var(--shell-grad);
+}
+
+html[data-theme] .app-shell:after {
+  background-image:
+    linear-gradient(rgba(var(--accent-rgb), 0.12) 1px, transparent 1px),
+    linear-gradient(90deg, rgba(var(--accent-rgb), 0.12) 1px, transparent 1px);
+}
+
+html[data-theme] aside,
+html[data-theme] .mobile-header,
+html[data-theme] .bottom-nav {
+  background: var(--nav-bg);
+  border-color: var(--line);
+}
+
+html[data-theme] .side-nav a.active,
+html[data-theme] .side-nav a:hover,
+html[data-theme] .settings-link:hover {
+  color: var(--text);
+  background: rgba(var(--accent-rgb), 0.14);
+}
+
+html[data-theme] .bottom-nav a.active {
+  color: var(--accent);
+}
+
+html[data-theme] .bottom-nav a.active svg {
+  color: var(--accent);
+  filter: drop-shadow(0 0 7px rgba(var(--accent-rgb), 0.8));
+}
+
+html[data-theme] .bottom-nav a.active small {
+  color: var(--text);
+  text-shadow: 0 0 10px rgba(var(--accent-rgb), 0.5);
+}
+
+html[data-theme] .bottom-nav a.active:before {
+  background: var(--accent);
+  box-shadow: 0 0 10px var(--accent);
+}
+
+html[data-theme] .card,
+html[data-theme] .brief-card,
+html[data-theme] .location-prompt,
+html[data-theme] .alerts-card,
+html[data-theme] .map-panel,
+html[data-theme] .news-card,
+html[data-theme] .saved-item,
+html[data-theme] .setting-row,
+html[data-theme] .weather-current,
+html[data-theme] .panel-glass,
+html[data-theme] .weather-card,
+html[data-theme] .nexus-ai-card,
+html[data-theme] .search-box {
+  background: var(--card-grad);
+  border-color: var(--line);
+  color: var(--text);
+}
+
+html[data-theme] .card:hover,
+html[data-theme] .brief-card:hover,
+html[data-theme] .location-prompt:hover,
+html[data-theme] .alerts-card:hover,
+html[data-theme] .news-card:hover,
+html[data-theme] .setting-row:hover {
+  border-color: rgba(var(--accent-rgb), 0.4);
+}
+
+html[data-theme] .segmented-control button.selected {
+  background: rgba(var(--accent-rgb), 0.16);
+  color: var(--accent);
+}
+
+html[data-theme] .search-submit,
+html[data-theme] .location-search button,
+html[data-theme] .nexus-ai-submit {
+  background: linear-gradient(135deg, var(--accent) 0%, #38bdf8 100%);
+  color: #041014;
+}
+
+/* Light Mode Specific Contrast Refinements */
+html[data-theme="light"] .card,
+html[data-theme="light"] .brief-card,
+html[data-theme="light"] .location-prompt,
+html[data-theme="light"] .alerts-card,
+html[data-theme="light"] .map-panel,
+html[data-theme="light"] .news-card,
+html[data-theme="light"] .saved-item,
+html[data-theme="light"] .setting-row,
+html[data-theme="light"] .weather-current,
+html[data-theme="light"] .panel-glass,
+html[data-theme="light"] .weather-card,
+html[data-theme="light"] .nexus-ai-card,
+html[data-theme="light"] .search-box {
+  box-shadow: 0 6px 24px -4px rgba(15, 23, 42, 0.08), inset 0 1px 0 rgba(255, 255, 255, 0.8);
+}
+
+html[data-theme="light"] .search-box input,
+html[data-theme="light"] .location-search input,
+html[data-theme="light"] .wallpaper-search input,
+html[data-theme="light"] .nexus-ai-input {
+  color: #0f172a;
+}
+
+html[data-theme="light"] .wallpaper-search,
+html[data-theme="light"] .wallpaper-presets button,
+html[data-theme="light"] .recent-row button,
+html[data-theme="light"] .settings-category-bar button:not(.selected) {
+  background: rgba(255, 255, 255, 0.85) !important;
+  color: #334155 !important;
+  border-color: rgba(15, 23, 42, 0.15) !important;
+}
+
+html[data-theme="light"] .settings-category-bar button.selected {
+  background: rgba(13, 148, 136, 0.14) !important;
+  color: #0d9488 !important;
+  border-color: #0d9488 !important;
+}

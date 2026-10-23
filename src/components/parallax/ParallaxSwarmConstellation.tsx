@@ -309,7 +309,7 @@ export const ParallaxSwarmConstellation: React.FC<ParallaxSwarmConstellationProp
                 overflow: 'hidden',
               }}
             >
-              {/* Concentric Radar Circles SVG */}
+              {/* Concentric Aerospace & Quantum Hologram Radar SVG */}
               <svg
                 viewBox="0 0 700 360"
                 className="parallax-radar-svg"
@@ -321,63 +321,129 @@ export const ParallaxSwarmConstellation: React.FC<ParallaxSwarmConstellationProp
               >
                 <defs>
                   <radialGradient id="coreGlow" cx="50%" cy="50%" r="50%">
-                    <stop offset="0%" stopColor="#06b6d4" stopOpacity="0.3" />
+                    <stop offset="0%" stopColor="#00f0ff" stopOpacity="0.42" />
+                    <stop offset="45%" stopColor="#06b6d4" stopOpacity="0.18" />
+                    <stop offset="75%" stopColor="#a855f7" stopOpacity="0.08" />
                     <stop offset="100%" stopColor="#06b6d4" stopOpacity="0" />
                   </radialGradient>
+                  <radialGradient id="nodeInnerGrad" cx="35%" cy="30%" r="70%">
+                    <stop offset="0%" stopColor="#0f293a" />
+                    <stop offset="100%" stopColor="#040d14" />
+                  </radialGradient>
                   <linearGradient id="sweepGrad" x1="0%" y1="0%" x2="100%" y2="100%">
-                    <stop offset="0%" stopColor="#61d7c9" stopOpacity="0.4" />
+                    <stop offset="0%" stopColor="#61d7c9" stopOpacity="0.32" />
+                    <stop offset="50%" stopColor="#38bdf8" stopOpacity="0.12" />
                     <stop offset="100%" stopColor="transparent" stopOpacity="0" />
                   </linearGradient>
+                  <filter id="radarNodeGlow" x="-40%" y="-40%" width="180%" height="180%">
+                    <feGaussianBlur stdDeviation="3" result="blur" />
+                    <feMerge>
+                      <feMergeNode in="blur" />
+                      <feMergeNode in="SourceGraphic" />
+                    </feMerge>
+                  </filter>
                 </defs>
 
-                {/* Radar Grid Crosshairs */}
-                <line x1="50" y1="180" x2="650" y2="180" stroke="rgba(97, 215, 201, 0.15)" strokeWidth="1" strokeDasharray="3 3" />
-                <line x1="350" y1="20" x2="350" y2="340" stroke="rgba(97, 215, 201, 0.15)" strokeWidth="1" strokeDasharray="3 3" />
+                {/* Radar Grid Crosshairs & Diagonal Astrometric Vectors */}
+                <line x1="36" y1="180" x2="664" y2="180" stroke="rgba(97, 215, 201, 0.14)" strokeWidth="1" strokeDasharray="3 5" />
+                <line x1="350" y1="14" x2="350" y2="346" stroke="rgba(97, 215, 201, 0.14)" strokeWidth="1" strokeDasharray="3 5" />
+                <line x1="140" y1="40" x2="560" y2="320" stroke="rgba(56, 189, 248, 0.08)" strokeWidth="0.8" strokeDasharray="2 6" />
+                <line x1="140" y1="320" x2="560" y2="40" stroke="rgba(168, 85, 247, 0.08)" strokeWidth="0.8" strokeDasharray="2 6" />
 
-                {/* Orbital Rings */}
-                <circle cx="350" cy="180" r="155" fill="none" stroke="rgba(97, 215, 201, 0.16)" strokeWidth="1.2" strokeDasharray="4 4" />
-                <circle cx="350" cy="180" r="105" fill="none" stroke="rgba(97, 215, 201, 0.22)" strokeWidth="1" />
-                <circle cx="350" cy="180" r="55" fill="none" stroke="rgba(6, 182, 212, 0.35)" strokeWidth="1.2" />
+                {/* Outer Astrometric Degree Tick Ring */}
+                <ellipse
+                  cx="350"
+                  cy="180"
+                  rx="192"
+                  ry="163"
+                  fill="none"
+                  stroke="rgba(97, 215, 201, 0.14)"
+                  strokeWidth="3"
+                  strokeDasharray="1.5 7.5"
+                />
 
-                {/* Deliberation Core Glow */}
-                <circle cx="350" cy="180" r="48" fill="url(#coreGlow)" />
-                <circle cx="350" cy="180" r="22" fill="#082232" stroke="#61d7c9" strokeWidth="1.8" />
+                {/* Orbital Rings (Elliptical Perspective Projection) */}
+                <ellipse cx="350" cy="180" rx="178" ry="151" fill="none" stroke="rgba(97, 215, 201, 0.12)" strokeWidth="0.9" />
+                <ellipse cx="350" cy="180" rx="155" ry="132" fill="none" stroke="rgba(97, 215, 201, 0.22)" strokeWidth="1.2" strokeDasharray="6 4" />
+                <ellipse cx="350" cy="180" rx="105" ry="89" fill="none" stroke="rgba(56, 189, 248, 0.26)" strokeWidth="1.1" />
+                <ellipse cx="350" cy="180" rx="58" ry="49" fill="none" stroke="rgba(168, 85, 247, 0.28)" strokeWidth="1" strokeDasharray="3 3" />
 
-                {/* Connecting lines between adjacent or actively debating agents */}
+                {/* Animated Radar Sweep Sector */}
+                <g style={{ transformOrigin: '350px 180px' }} className="nexus-orbit-spin-slow">
+                  <path
+                    d="M 350 180 L 528 180 A 178 151 0 0 1 475 287 Z"
+                    fill="url(#sweepGrad)"
+                    opacity={isRunning ? 0.85 : 0.4}
+                  />
+                </g>
+
+                {/* Deliberation Core Singularity Glow */}
+                <circle cx="350" cy="180" r="64" fill="url(#coreGlow)" />
+                <circle
+                  cx="350"
+                  cy="180"
+                  r="31"
+                  fill="none"
+                  stroke="rgba(97, 215, 201, 0.45)"
+                  strokeWidth="1.2"
+                  strokeDasharray="8 4 2 4"
+                  style={{ transformOrigin: '350px 180px' }}
+                  className="nexus-orbit-spin-reverse"
+                />
+                <circle cx="350" cy="180" r="24" fill="#051520" stroke="#61d7c9" strokeWidth="1.8" filter="url(#radarNodeGlow)" />
+
+                {/* Synaptic Bezier Filaments between responded/speaking agents and Core */}
                 {Object.keys(agents).map((agentKey) => {
                   const q = AGENT_QUADRANTS[agentKey];
                   if (!q) return null;
                   const rad = (q.angle * Math.PI) / 180;
                   const orbitRadius = q.quadrant === 'anchors' ? 105 : 155;
                   const x = 350 + Math.cos(rad) * orbitRadius;
-                  const y = 180 + Math.sin(rad) * orbitRadius * 0.85; // slight perspective ellipse
+                  const y = 180 + Math.sin(rad) * orbitRadius * 0.85;
 
                   const isSpeaking = activeSpeakingAgentId === agentKey;
                   const isSelected = selectedAgentId === agentKey;
+                  const hasReplied = messages.some((m) => m.agentId === agentKey);
+                  const accent = agents[agentKey]?.accentColor || '#61d7c9';
+
+                  // Control point for a graceful curved synaptic arc
+                  const ctrlX = 350 + (x - 350) * 0.45 - (y - 180) * 0.18;
+                  const ctrlY = 180 + (y - 180) * 0.45 + (x - 350) * 0.12;
 
                   return (
-                    <g key={agentKey}>
-                      {/* Radiating beam to core if speaking or selected */}
-                      {(isSpeaking || isSelected) && (
-                        <line
-                          x1="350"
-                          y1="180"
-                          x2={x}
-                          y2={y}
-                          stroke={agents[agentKey]?.accentColor || '#61d7c9'}
-                          strokeWidth={isSpeaking ? '2' : '1.5'}
-                          strokeOpacity={isSpeaking ? '0.85' : '0.6'}
+                    <g key={`beam-${agentKey}`}>
+                      {hasReplied && !isSpeaking && !isSelected && (
+                        <path
+                          d={`M 350 180 Q ${ctrlX} ${ctrlY} ${x} ${y}`}
+                          fill="none"
+                          stroke={accent}
+                          strokeWidth="0.9"
+                          strokeOpacity="0.24"
+                          strokeDasharray="3 3"
                         />
+                      )}
+                      {(isSpeaking || isSelected) && (
+                        <>
+                          <path
+                            d={`M 350 180 Q ${ctrlX} ${ctrlY} ${x} ${y}`}
+                            fill="none"
+                            stroke={accent}
+                            strokeWidth={isSpeaking ? '2.4' : '1.8'}
+                            strokeOpacity={isSpeaking ? '0.92' : '0.75'}
+                            filter="url(#radarNodeGlow)"
+                          />
+                          <circle cx={(350 + x) / 2} cy={(180 + y) / 2} r="2.5" fill="#ffffff" />
+                        </>
                       )}
                     </g>
                   );
                 })}
 
                 {/* Central Core Label */}
-                <text x="350" y="177" textAnchor="middle" fill="#61d7c9" fontSize="10" fontFamily="DM Mono, monospace" fontWeight="bold">
+                <text x="350" y="177" textAnchor="middle" fill="#61d7c9" fontSize="9.5" fontFamily="DM Mono, monospace" fontWeight="bold" letterSpacing="0.08em">
                   SWARM
                 </text>
-                <text x="350" y="190" textAnchor="middle" fill="#cbd5e1" fontSize="9" fontFamily="DM Mono, monospace">
+                <text x="350" y="189" textAnchor="middle" fill="#e2e8f0" fontSize="8.5" fontFamily="DM Mono, monospace" letterSpacing="0.06em">
                   CORE
                 </text>
 
@@ -397,7 +463,6 @@ export const ParallaxSwarmConstellation: React.FC<ParallaxSwarmConstellationProp
                   const isHovered = hoveredAgentId === agentKey;
                   const accentColor = agent.accentColor || '#61d7c9';
 
-                  // Has replied in current deliberation?
                   const agentMsgs = messages.filter((m) => m.agentId === agentKey);
                   const replyCount = agentMsgs.length;
                   const lastMsg = agentMsgs[agentMsgs.length - 1];
@@ -410,16 +475,17 @@ export const ParallaxSwarmConstellation: React.FC<ParallaxSwarmConstellationProp
                       onMouseLeave={() => setHoveredAgentId(null)}
                       style={{ cursor: 'pointer' }}
                     >
-                      {/* Pulsing ring for speaking agent */}
-                      {isSpeaking && (
+                      {/* Outer orbital halo for active / hovered / speaking nodes */}
+                      {(isSpeaking || isSelected || isHovered || replyCount > 0) && (
                         <circle
                           cx={x}
                           cy={y}
-                          r="20"
+                          r={isSpeaking ? '21' : isSelected || isHovered ? '19' : '16.5'}
                           fill="none"
                           stroke={accentColor}
-                          strokeWidth="1.5"
-                          opacity="0.6"
+                          strokeWidth={isSpeaking ? '1.6' : '1'}
+                          strokeDasharray={isSpeaking ? 'none' : '4 3'}
+                          opacity={isSpeaking ? '0.85' : isSelected || isHovered ? '0.65' : '0.35'}
                         />
                       )}
 
@@ -427,12 +493,12 @@ export const ParallaxSwarmConstellation: React.FC<ParallaxSwarmConstellationProp
                       <circle
                         cx={x}
                         cy={y}
-                        r={isSelected ? '16' : isHovered ? '15' : '13'}
-                        fill="#061622"
+                        r={isSelected ? '15.5' : isHovered ? '14.5' : '13'}
+                        fill="url(#nodeInnerGrad)"
                         stroke={accentColor}
-                        strokeWidth={isSelected ? '2.5' : isSpeaking ? '2' : '1.5'}
+                        strokeWidth={isSelected ? '2.5' : isSpeaking ? '2.2' : '1.5'}
                         style={{
-                          filter: isSpeaking || isSelected ? `drop-shadow(0 0 6px ${accentColor})` : 'none',
+                          filter: isSpeaking || isSelected || isHovered ? `drop-shadow(0 0 8px ${accentColor})` : 'none',
                           transition: 'all 0.2s ease',
                         }}
                       />
@@ -450,20 +516,20 @@ export const ParallaxSwarmConstellation: React.FC<ParallaxSwarmConstellationProp
                         {agent.initials || agent.name.slice(0, 2)}
                       </text>
 
-                      {/* Agent Name pill label */}
+                      {/* Agent Name label */}
                       <text
                         x={x}
-                        y={y > 180 ? y + 20 : y - 16}
+                        y={y > 180 ? y + 22 : y - 17}
                         textAnchor="middle"
-                        fill={isSelected ? '#fff' : '#cbd5e1'}
+                        fill={isSelected || isHovered ? '#ffffff' : '#cbd5e1'}
                         fontSize="9"
                         fontFamily="DM Mono, monospace"
-                        fontWeight={isSelected ? 'bold' : 'normal'}
+                        fontWeight={isSelected || isHovered ? 'bold' : 'normal'}
                       >
-                        {agent.name}
+                        {agent.name.split(' (')[0]}
                       </text>
 
-                      {/* Conviction / Mood pip */}
+                      {/* Conviction / Reply indicator pip */}
                       {lastMsg?.mood ? (
                         <text
                           x={x + 12}
@@ -476,9 +542,11 @@ export const ParallaxSwarmConstellation: React.FC<ParallaxSwarmConstellationProp
                       ) : replyCount > 0 ? (
                         <circle
                           cx={x + 11}
-                          cy={y - 8}
-                          r="3"
+                          cy={y - 9}
+                          r="3.2"
                           fill="#10b981"
+                          stroke="#041016"
+                          strokeWidth="1"
                         />
                       ) : null}
                     </g>

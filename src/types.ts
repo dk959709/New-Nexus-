@@ -126,7 +126,7 @@ export interface SavedItem {
 
 export type TemperatureUnit = 'celsius' | 'fahrenheit';
 export type WindUnit = 'kmh' | 'mph';
-export type ThemeMode = 'dark' | 'light' | 'system';
+export type ThemeMode = 'dark' | 'light' | 'midnight' | 'emerald' | 'crimson' | 'violet' | 'system';
 export type AnimationLevel = 'full' | 'reduced';
 
 export type KeyHealthStatus = 'healthy' | 'cooldown' | 'invalid' | 'untested';

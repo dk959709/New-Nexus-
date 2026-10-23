@@ -1,19 +1,56 @@
 import { useEffect, useState } from 'react';
-import type { Settings } from '@/types';
+import type { Settings, ThemeMode } from '@/types';
 import { storage } from '@/lib/storage';
 
+const SETTINGS_CHANGED_EVENT = 'nexus-settings-changed';
+
+export function resolveEffectiveTheme(theme: ThemeMode | undefined): string {
+  if (!theme || theme === 'system') {
+    if (typeof window !== 'undefined' && window.matchMedia?.('(prefers-color-scheme: light)').matches) {
+      return 'light';
+    }
+    return 'dark';
+  }
+  return theme;
+}
+
+export function applyDocumentTheme(theme: ThemeMode | undefined) {
+  if (typeof document === 'undefined') return;
+  const effective = resolveEffectiveTheme(theme);
+  const root = document.documentElement;
+  root.dataset.theme = effective;
+  root.style.colorScheme = effective === 'light' ? 'light' : 'dark';
+}
+
 export function useSettings(): [Settings, (patch: Partial<Settings>) => void] {
-  const [settings, setSettings] = useState<Settings>(storage.getSettings());
+  const [settings, setSettings] = useState<Settings>(() => storage.getSettings());
 
   const update = (patch: Partial<Settings>) => {
-    const next = { ...settings, ...patch };
+    const current = storage.getSettings();
+    const next = { ...current, ...patch };
     setSettings(next);
     storage.saveSettings(next);
+    applyDocumentTheme(next.theme);
+    if (typeof window !== 'undefined') {
+      window.dispatchEvent(new CustomEvent<Settings>(SETTINGS_CHANGED_EVENT, { detail: next }));
+    }
   };
 
   useEffect(() => {
-    const root = document.documentElement;
-    root.dataset.theme = settings.theme;
+    const handleSync = (event: Event) => {
+      const custom = event as CustomEvent<Settings>;
+      if (custom.detail) {
+        setSettings(custom.detail);
+      } else {
+        setSettings(storage.getSettings());
+      }
+    };
+    window.addEventListener(SETTINGS_CHANGED_EVENT, handleSync);
+    return () => window.removeEventListener(SETTINGS_CHANGED_EVENT, handleSync);
+  }, []);
+
+  useEffect(() => {
+    applyDocumentTheme(settings.theme);
   }, [settings.theme]);
 
   useEffect(() => {
@@ -30,3 +67,4 @@ export function useSettings(): [Settings, (patch: Partial<Settings>) => void] {
 
   return [settings, update];
 }
+

@@ -574,13 +574,127 @@ export function SettingsPage() {
         {/* 🎨 Appearance Category */}
         {activeCategory === 'appearance' && (
           <div className="settings-list">
-            <SettingRow
-              label="Theme Mode"
-              description="Switch between Dark, Light, or match your system settings."
-              value={settings.theme}
-              options={['dark', 'light', 'system']}
-              onChange={(value) => choose('theme', value as Settings['theme'])}
-            />
+            <section className="setting-row nexus-theme-selector-card" style={{ display: 'grid', gap: '16px', alignItems: 'stretch' }}>
+              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', gap: '12px', flexWrap: 'wrap' }}>
+                <div>
+                  <h2 style={{ display: 'flex', alignItems: 'center', gap: '8px', fontSize: '15px', margin: '0 0 6px' }}>
+                    <Palette size={16} style={{ color: 'var(--accent)' }} />
+                    Theme Mode (6 Workable Themes)
+                  </h2>
+                  <p style={{ color: 'var(--muted)', fontSize: '12px', margin: 0 }}>
+                    Choose from 6 calibrated workspace themes. Changes apply immediately across all NEXUS interfaces.
+                  </p>
+                </div>
+                <span className="nexus-theme-active-pill">
+                  ACTIVE: {(settings.theme === 'system' ? 'dark' : settings.theme).toUpperCase()}
+                </span>
+              </div>
+
+              <div className="nexus-theme-grid">
+                {([
+                  {
+                    id: 'dark',
+                    name: 'Cyber Teal',
+                    subtitle: 'Abyssal slate & cyan glow',
+                    bgPreview: 'linear-gradient(135deg, #071016 0%, #0e222d 100%)',
+                    accentPreview: '#61d7c9',
+                    secondaryPreview: '#38bdf8',
+                    textPreview: '#e7eef2',
+                  },
+                  {
+                    id: 'light',
+                    name: 'Daylight Frost',
+                    subtitle: 'Crisp alabaster & deep teal',
+                    bgPreview: 'linear-gradient(135deg, #f8fafc 0%, #e2e8f0 100%)',
+                    accentPreview: '#0d9488',
+                    secondaryPreview: '#0284c7',
+                    textPreview: '#0f172a',
+                  },
+                  {
+                    id: 'midnight',
+                    name: 'Midnight OLED',
+                    subtitle: 'Pure pitch black & electric blue',
+                    bgPreview: 'linear-gradient(135deg, #000000 0%, #090d16 100%)',
+                    accentPreview: '#38bdf8',
+                    secondaryPreview: '#818cf8',
+                    textPreview: '#f8fafc',
+                  },
+                  {
+                    id: 'emerald',
+                    name: 'Emerald Matrix',
+                    subtitle: 'Bio-tech forest & neon mint',
+                    bgPreview: 'linear-gradient(135deg, #04130e 0%, #09261c 100%)',
+                    accentPreview: '#10b981',
+                    secondaryPreview: '#34d399',
+                    textPreview: '#ecfdf5',
+                  },
+                  {
+                    id: 'crimson',
+                    name: 'Crimson Tactical',
+                    subtitle: 'Volcanic carbon & ruby pulse',
+                    bgPreview: 'linear-gradient(135deg, #14070a 0%, #260d14 100%)',
+                    accentPreview: '#f43f5e',
+                    secondaryPreview: '#fb923c',
+                    textPreview: '#fff1f2',
+                  },
+                  {
+                    id: 'violet',
+                    name: 'Nebula Violet',
+                    subtitle: 'Deep cosmos & quantum purple',
+                    bgPreview: 'linear-gradient(135deg, #0b0719 0%, #1a1033 100%)',
+                    accentPreview: '#a855f7',
+                    secondaryPreview: '#22d3ee',
+                    textPreview: '#f5f3ff',
+                  },
+                ] as const).map((themeOption) => {
+                  const currentEffective = settings.theme === 'system' ? 'dark' : settings.theme;
+                  const isSelected = currentEffective === themeOption.id;
+                  return (
+                    <button
+                      key={themeOption.id}
+                      type="button"
+                      onClick={() => choose('theme', themeOption.id as Settings['theme'])}
+                      className={`nexus-theme-card ${isSelected ? 'selected' : ''}`}
+                      aria-pressed={isSelected}
+                    >
+                      <div
+                        className="nexus-theme-swatch"
+                        style={{ background: themeOption.bgPreview }}
+                      >
+                        <div className="nexus-theme-swatch-bars">
+                          <span
+                            className="nexus-theme-swatch-dot"
+                            style={{ background: themeOption.accentPreview, boxShadow: `0 0 8px ${themeOption.accentPreview}` }}
+                          />
+                          <span
+                            className="nexus-theme-swatch-dot"
+                            style={{ background: themeOption.secondaryPreview }}
+                          />
+                          <span
+                            className="nexus-theme-swatch-line"
+                            style={{ background: themeOption.textPreview, opacity: 0.7 }}
+                          />
+                        </div>
+                        {isSelected && (
+                          <span
+                            className="nexus-theme-swatch-check"
+                            style={{ color: themeOption.accentPreview }}
+                          >
+                            <CheckCircle2 size={15} />
+                          </span>
+                        )}
+                      </div>
+                      <div className="nexus-theme-meta">
+                        <div className="nexus-theme-title-row">
+                          <strong>{themeOption.name}</strong>
+                        </div>
+                        <span>{themeOption.subtitle}</span>
+                      </div>
+                    </button>
+                  );
+                })}
+              </div>
+            </section>
             <SettingRow
               label="Navigation Audio Feedback"
               description="Play a subtle tactical sound when switching tabs and interacting with controls."

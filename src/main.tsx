@@ -11,18 +11,32 @@ if ('serviceWorker' in navigator) {
   });
 }
 
-function getInitialWallpaper(): string | null {
+function getInitialAppearance(): { wallpaper: string | null; theme?: string } {
   try {
     const raw = localStorage.getItem('nexus-settings');
-    if (!raw) return null;
+    if (!raw) return { wallpaper: null, theme: 'dark' };
     const parsed = JSON.parse(raw);
-    return parsed?.wallpaper?.url ?? null;
+    return {
+      wallpaper: parsed?.wallpaper?.url ?? null,
+      theme: parsed?.theme ?? 'dark',
+    };
   } catch {
-    return null;
+    return { wallpaper: null, theme: 'dark' };
   }
 }
 
-const initialWallpaper = getInitialWallpaper();
+const initialAppearance = getInitialAppearance();
+const initialWallpaper = initialAppearance.wallpaper;
+if (typeof document !== 'undefined') {
+  const effectiveTheme =
+    initialAppearance.theme === 'system'
+      ? window.matchMedia?.('(prefers-color-scheme: light)').matches
+        ? 'light'
+        : 'dark'
+      : initialAppearance.theme || 'dark';
+  document.documentElement.dataset.theme = effectiveTheme;
+  document.documentElement.style.colorScheme = effectiveTheme === 'light' ? 'light' : 'dark';
+}
 startDeviceAgent();
 
 createRoot(document.getElementById('root')!).render(

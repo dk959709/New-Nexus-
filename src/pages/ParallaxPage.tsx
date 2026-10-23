@@ -1065,6 +1065,146 @@ export const ParallaxPage: React.FC = () => {
           }
         }
       `}</style>
+      <style>{`
+        @keyframes parallaxOrbitSlow {
+          from { transform: rotate(0deg); }
+          to { transform: rotate(360deg); }
+        }
+        @keyframes parallaxOrbitReverse {
+          from { transform: rotate(360deg); }
+          to { transform: rotate(0deg); }
+        }
+        @keyframes parallaxPulseCore {
+          0%, 100% { transform: scale(0.96); opacity: 0.78; }
+          50% { transform: scale(1.06); opacity: 1; }
+        }
+        @keyframes parallaxSynapseFlow {
+          0% { stroke-dashoffset: 180; }
+          100% { stroke-dashoffset: 0; }
+        }
+        .parallax-gfx-spin {
+          animation: parallaxOrbitSlow 48s linear infinite;
+          transform-origin: center center;
+        }
+        .parallax-gfx-spin-reverse {
+          animation: parallaxOrbitReverse 64s linear infinite;
+          transform-origin: center center;
+        }
+        .parallax-gfx-core-pulse {
+          animation: parallaxPulseCore 4.2s ease-in-out infinite;
+          transform-origin: center center;
+        }
+        .parallax-gfx-synapse {
+          stroke-dasharray: 6 12;
+          animation: parallaxSynapseFlow 8s linear infinite;
+        }
+        @media (prefers-reduced-motion: reduce) {
+          .parallax-gfx-spin,
+          .parallax-gfx-spin-reverse,
+          .parallax-gfx-core-pulse,
+          .parallax-gfx-synapse {
+            animation: none !important;
+          }
+        }
+      `}</style>
+
+      {/* ============================================================
+          AMBIENT HOLOGRAPHIC ASTROMETRY & QUANTUM LENSING BACKDROP
+          (Purely graphical layer — pointer-events-none, zero UI shift)
+         ============================================================ */}
+      <div
+        aria-hidden="true"
+        className="pointer-events-none fixed inset-0 z-0 overflow-hidden select-none"
+      >
+        <svg
+          viewBox="0 0 1440 900"
+          preserveAspectRatio="xMidYMid slice"
+          className="w-full h-full opacity-55"
+        >
+          <defs>
+            <radialGradient id="pxAmbientNebulaCyan" cx="50%" cy="22%" r="52%">
+              <stop offset="0%" stopColor={isRunning ? '#00f0ff' : '#06b6d4'} stopOpacity={theme === 'classic' ? '0.18' : '0.1'} />
+              <stop offset="50%" stopColor="#6366f1" stopOpacity={theme === 'classic' ? '0.08' : '0.04'} />
+              <stop offset="100%" stopColor="transparent" stopOpacity="0" />
+            </radialGradient>
+            <radialGradient id="pxAmbientNebulaBottom" cx="50%" cy="88%" r="45%">
+              <stop offset="0%" stopColor={summary ? '#10b981' : '#a855f7'} stopOpacity={theme === 'classic' ? '0.14' : '0.07'} />
+              <stop offset="100%" stopColor="transparent" stopOpacity="0" />
+            </radialGradient>
+            <linearGradient id="pxHorizonGridGrad" x1="0%" y1="0%" x2="0%" y2="100%">
+              <stop offset="0%" stopColor="#38bdf8" stopOpacity="0" />
+              <stop offset="45%" stopColor="#61d7c9" stopOpacity="0.12" />
+              <stop offset="100%" stopColor="#a855f7" stopOpacity="0.03" />
+            </linearGradient>
+          </defs>
+
+          {/* Soft Atmospheric Quantum Light Fields */}
+          <rect width="1440" height="900" fill="url(#pxAmbientNebulaCyan)" />
+          <rect width="1440" height="900" fill="url(#pxAmbientNebulaBottom)" />
+
+          {/* Perspective Horizon Interferometer Grid */}
+          <g stroke="url(#pxHorizonGridGrad)" strokeWidth="0.7" opacity="0.65">
+            <line x1="0" y1="220" x2="1440" y2="220" strokeDasharray="3 9" />
+            <line x1="0" y1="450" x2="1440" y2="450" strokeDasharray="2 8" />
+            <line x1="0" y1="680" x2="1440" y2="680" strokeDasharray="3 9" />
+            <line x1="720" y1="0" x2="120" y2="900" />
+            <line x1="720" y1="0" x2="420" y2="900" />
+            <line x1="720" y1="0" x2="720" y2="900" strokeDasharray="4 6" />
+            <line x1="720" y1="0" x2="1020" y2="900" />
+            <line x1="720" y1="0" x2="1320" y2="900" />
+          </g>
+
+          {/* Counter-Rotating Astrometric Celestial Rings */}
+          <g style={{ transformOrigin: '720px 340px' }} className="parallax-gfx-spin">
+            <circle
+              cx="720"
+              cy="340"
+              r="390"
+              fill="none"
+              stroke="rgba(97, 215, 201, 0.09)"
+              strokeWidth="1"
+              strokeDasharray="12 8 2 8"
+            />
+            <circle
+              cx="720"
+              cy="340"
+              r="412"
+              fill="none"
+              stroke="rgba(56, 189, 248, 0.07)"
+              strokeWidth="3"
+              strokeDasharray="1 11"
+            />
+          </g>
+          <g style={{ transformOrigin: '720px 340px' }} className="parallax-gfx-spin-reverse">
+            <circle
+              cx="720"
+              cy="340"
+              r="285"
+              fill="none"
+              stroke="rgba(168, 85, 247, 0.09)"
+              strokeWidth="1"
+              strokeDasharray="4 10"
+            />
+          </g>
+
+          {/* Flowing Synaptic Photon Arcs */}
+          <path
+            d="M 90 640 Q 420 260 720 340 T 1350 220"
+            fill="none"
+            stroke="rgba(97, 215, 201, 0.16)"
+            strokeWidth="1.2"
+            className="parallax-gfx-synapse"
+          />
+          <path
+            d="M 120 200 Q 480 460 720 340 T 1320 620"
+            fill="none"
+            stroke="rgba(168, 85, 247, 0.14)"
+            strokeWidth="1.1"
+            className="parallax-gfx-synapse"
+          />
+        </svg>
+      </div>
+
       <div
         id="parallax-page"
         className="relative z-10 w-full max-w-[1060px] mx-auto min-h-[calc(100vh-1.5rem)] flex flex-col justify-between pt-1 pb-2"
@@ -1669,6 +1809,31 @@ export const ParallaxPage: React.FC = () => {
                           : 'bg-white/[0.02] border-white/[0.06] text-[#a1a1aa] hover:text-white hover:border-white/20'
                       }`}
                     >
+                      <svg
+                        width="11"
+                        height="11"
+                        viewBox="0 0 12 12"
+                        className="shrink-0"
+                        aria-hidden="true"
+                      >
+                        <circle
+                          cx="6"
+                          cy="6"
+                          r="4.8"
+                          fill="none"
+                          stroke={ag.accentColor || '#61d7c9'}
+                          strokeWidth="1.1"
+                          strokeDasharray={isVoiceSpeaking || hasSpoken ? 'none' : '2.5 2'}
+                          strokeOpacity={isVoiceSpeaking ? 1 : hasSpoken ? 0.85 : 0.45}
+                        />
+                        <circle
+                          cx="6"
+                          cy="6"
+                          r={isVoiceSpeaking ? '2.6' : '2'}
+                          fill={ag.accentColor || '#61d7c9'}
+                          opacity={isVoiceSpeaking || hasSpoken ? 1 : 0.65}
+                        />
+                      </svg>
                       <span className="truncate max-w-[80px]">{cleanName}</span>
                       <span
                         className={`tabular-nums ${
@@ -1965,22 +2130,131 @@ export const ParallaxPage: React.FC = () => {
                  CREATIVE IDLE STATE: COMPACT MOBILE-FRIENDLY BENCHMARK TABLE + NOTES
                  ========================================================== */
               <div className="flex-1 flex flex-col justify-center py-3 sm:py-4 space-y-4 sm:space-y-5 select-text">
-                {/* Editorial Headline & Concise Lead */}
-                <div className="space-y-1.5">
-                  <div className="flex items-center gap-2 text-[11px] font-mono text-[#8b9097]">
-                    <span>Parallax Multi-Agent Synthesis</span>
-                    <span aria-hidden="true">·</span>
-                    <span>{currentModeObj.label}</span>
-                    <span aria-hidden="true">·</span>
-                    <span>3 Rounds</span>
+                {/* Editorial Headline & Concise Lead + Live 20-Node Holographic Singularity Emblem */}
+                <div className="flex items-center justify-between gap-4">
+                  <div className="space-y-1.5 min-w-0 flex-1">
+                    <div className="flex items-center gap-2 text-[11px] font-mono text-[#8b9097]">
+                      <span>Parallax Multi-Agent Synthesis</span>
+                      <span aria-hidden="true">·</span>
+                      <span>{currentModeObj.label}</span>
+                      <span aria-hidden="true">·</span>
+                      <span>3 Rounds</span>
+                    </div>
+
+                    <h1 className="text-[18px] sm:text-[24px] font-semibold text-white tracking-tight leading-snug text-balance m-0">
+                      20 specialized minds. One empirical synthesis.
+                    </h1>
+                    <p className="text-xs sm:text-[13.5px] text-[#8b9097] leading-relaxed max-w-[640px] m-0">
+                      Assign any research question or global dataset. Parallax mobilizes 20 independent personas across Thesis (Round 1), Cross-Examination (Round 2), and Ranked Conviction Convergence (Round 3).
+                    </p>
                   </div>
 
-                  <h1 className="text-[18px] sm:text-[24px] font-semibold text-white tracking-tight leading-snug text-balance m-0">
-                    20 specialized minds. One empirical synthesis.
-                  </h1>
-                  <p className="text-xs sm:text-[13.5px] text-[#8b9097] leading-relaxed max-w-[640px] m-0">
-                    Assign any research question or global dataset. Parallax mobilizes 20 independent personas across Thesis (Round 1), Cross-Examination (Round 2), and Ranked Conviction Convergence (Round 3).
-                  </p>
+                  {/* Bespoke 20-Node Holographic Neural Interferometer Graphic */}
+                  <div
+                    aria-hidden="true"
+                    className="relative shrink-0 w-[92px] h-[92px] sm:w-[126px] sm:h-[126px] pointer-events-none select-none flex items-center justify-center"
+                  >
+                    <svg viewBox="0 0 140 140" className="w-full h-full overflow-visible">
+                      <defs>
+                        <radialGradient id="pxHeroSingularityGlow" cx="50%" cy="50%" r="50%">
+                          <stop offset="0%" stopColor="#00f0ff" stopOpacity="0.45" />
+                          <stop offset="45%" stopColor="#38bdf8" stopOpacity="0.18" />
+                          <stop offset="78%" stopColor="#a855f7" stopOpacity="0.08" />
+                          <stop offset="100%" stopColor="transparent" stopOpacity="0" />
+                        </radialGradient>
+                      </defs>
+
+                      {/* Core Aura */}
+                      <circle cx="70" cy="70" r="64" fill="url(#pxHeroSingularityGlow)" />
+
+                      {/* Outer Astrometric Degree Ring */}
+                      <g style={{ transformOrigin: '70px 70px' }} className="parallax-gfx-spin">
+                        <circle
+                          cx="70"
+                          cy="70"
+                          r="60"
+                          fill="none"
+                          stroke="rgba(97, 215, 201, 0.28)"
+                          strokeWidth="1.5"
+                          strokeDasharray="1.5 4.5"
+                        />
+                        <circle
+                          cx="70"
+                          cy="70"
+                          r="52"
+                          fill="none"
+                          stroke="rgba(56, 189, 248, 0.22)"
+                          strokeWidth="0.9"
+                          strokeDasharray="10 5 2 5"
+                        />
+                        {enabledAgentsList.slice(0, 12).map((ag, idx) => {
+                          const angle = (idx / 12) * Math.PI * 2;
+                          const nx = 70 + Math.cos(angle) * 52;
+                          const ny = 70 + Math.sin(angle) * 52;
+                          return (
+                            <g key={ag.id}>
+                              <line
+                                x1="70"
+                                y1="70"
+                                x2={nx}
+                                y2={ny}
+                                stroke={ag.accentColor || '#61d7c9'}
+                                strokeWidth="0.55"
+                                strokeOpacity="0.24"
+                              />
+                              <circle
+                                cx={nx}
+                                cy={ny}
+                                r="2.6"
+                                fill={ag.accentColor || '#61d7c9'}
+                              />
+                            </g>
+                          );
+                        })}
+                      </g>
+
+                      {/* Inner Counter-Spinning Specialist Ring */}
+                      <g style={{ transformOrigin: '70px 70px' }} className="parallax-gfx-spin-reverse">
+                        <circle
+                          cx="70"
+                          cy="70"
+                          r="34"
+                          fill="none"
+                          stroke="rgba(192, 132, 252, 0.32)"
+                          strokeWidth="1"
+                          strokeDasharray="5 4"
+                        />
+                        {enabledAgentsList.slice(12, 20).map((ag, idx) => {
+                          const angle = (idx / 8) * Math.PI * 2;
+                          const nx = 70 + Math.cos(angle) * 34;
+                          const ny = 70 + Math.sin(angle) * 34;
+                          return (
+                            <circle
+                              key={ag.id}
+                              cx={nx}
+                              cy={ny}
+                              r="2.4"
+                              fill={ag.accentColor || '#c084fc'}
+                            />
+                          );
+                        })}
+                      </g>
+
+                      {/* Central Relativistic Singularity Core */}
+                      <g style={{ transformOrigin: '70px 70px' }} className="parallax-gfx-core-pulse">
+                        <circle
+                          cx="70"
+                          cy="70"
+                          r="15"
+                          fill="#05131d"
+                          stroke="#61d7c9"
+                          strokeWidth="1.5"
+                        />
+                        <circle cx="70" cy="70" r="6" fill="#61d7c9" opacity="0.9" />
+                        <circle cx="70" cy="70" r="2.5" fill="#ffffff" />
+                      </g>
+                    </svg>
+                  </div>
                 </div>
 
                 {/* Interactive Hairline Preview Table with Category Filter Tabs */}
@@ -2015,53 +2289,113 @@ export const ParallaxPage: React.FC = () => {
                   </div>
 
                   <div className={hairlineTableCardClass}>
-                    {filteredShowcasePresets.map((preset, idx) => (
-                      <button
-                        key={preset.id}
-                        type="button"
-                        disabled={isRunning}
-                        onClick={() => {
-                          setTopicInput(preset.prompt);
-                          handleStartSwarm(preset.prompt);
-                        }}
-                        className="w-full py-2.5 px-3 sm:py-3 sm:px-4 flex items-center justify-between gap-2.5 text-left hover:bg-white/[0.04] active:bg-white/[0.07] transition-colors cursor-pointer group"
-                      >
-                        <div className="flex items-center gap-3 sm:gap-5 min-w-0 flex-1">
-                          <span className="text-xs sm:text-[13.5px] font-mono text-[#8b9097] tabular-nums w-5 shrink-0">
-                            {String(idx + 1).padStart(2, '0')}
-                          </span>
-                          <div className="min-w-0 flex-1">
-                            <div className="flex items-center gap-2">
-                              <span className="text-xs sm:text-[13.5px] font-medium text-white group-hover:text-emerald-300 transition-colors truncate">
-                                {preset.title}
-                              </span>
-                              <span className="hidden sm:inline text-[10.5px] text-[#71767b] shrink-0">
-                                · {preset.badge}
-                              </span>
-                            </div>
-                            <div className="text-[10.5px] sm:text-xs text-[#71767b] truncate mt-0.5">
-                              {preset.subtitle}
+                    {filteredShowcasePresets.map((preset, idx) => {
+                      const ringCircumference = 2 * Math.PI * 7.5;
+                      const ringDashOffset =
+                        ringCircumference - (preset.convictionNum / 100) * ringCircumference;
+                      return (
+                        <button
+                          key={preset.id}
+                          type="button"
+                          disabled={isRunning}
+                          onClick={() => {
+                            setTopicInput(preset.prompt);
+                            handleStartSwarm(preset.prompt);
+                          }}
+                          className="w-full py-2.5 px-3 sm:py-3 sm:px-4 flex items-center justify-between gap-2.5 text-left hover:bg-white/[0.04] active:bg-white/[0.07] transition-colors cursor-pointer group"
+                        >
+                          <div className="flex items-center gap-3 sm:gap-5 min-w-0 flex-1">
+                            <span className="text-xs sm:text-[13.5px] font-mono text-[#8b9097] tabular-nums w-5 shrink-0">
+                              {String(idx + 1).padStart(2, '0')}
+                            </span>
+                            <div className="min-w-0 flex-1">
+                              <div className="flex items-center gap-2">
+                                <span className="text-xs sm:text-[13.5px] font-medium text-white group-hover:text-emerald-300 transition-colors truncate">
+                                  {preset.title}
+                                </span>
+                                <span className="hidden sm:inline text-[10.5px] text-[#71767b] shrink-0">
+                                  · {preset.badge}
+                                </span>
+                              </div>
+                              <div className="text-[10.5px] sm:text-xs text-[#71767b] truncate mt-0.5">
+                                {preset.subtitle}
+                              </div>
                             </div>
                           </div>
-                        </div>
 
-                        <div className="flex items-center gap-2.5 shrink-0">
-                          <div className="hidden sm:flex w-14 h-1 rounded-full bg-white/[0.07] overflow-hidden">
-                            <div
-                              className="h-full rounded-full"
-                              style={{
-                                width: `${preset.convictionNum}%`,
-                                backgroundColor: preset.accent,
-                              }}
-                            />
+                          <div className="flex items-center gap-2.5 shrink-0">
+                            {/* Harmonic Telemetry Waveform Sparkline (Desktop/Tablet) */}
+                            <svg
+                              width="38"
+                              height="16"
+                              viewBox="0 0 38 16"
+                              className="hidden md:block shrink-0 opacity-80 group-hover:opacity-100 transition-opacity"
+                              aria-hidden="true"
+                            >
+                              <path
+                                d={
+                                  idx % 3 === 0
+                                    ? 'M 1 12 Q 7 4, 13 9 T 25 5 T 37 3'
+                                    : idx % 3 === 1
+                                    ? 'M 1 13 Q 8 10, 14 6 T 26 7 T 37 2'
+                                    : 'M 1 11 Q 9 3, 16 8 T 28 4 T 37 2'
+                                }
+                                fill="none"
+                                stroke={preset.accent}
+                                strokeWidth="1.5"
+                                strokeLinecap="round"
+                              />
+                              <circle cx="37" cy={idx % 3 === 0 ? 3 : 2} r="2" fill={preset.accent} />
+                            </svg>
+
+                            <div className="hidden sm:flex w-14 h-1 rounded-full bg-white/[0.07] overflow-hidden">
+                              <div
+                                className="h-full rounded-full"
+                                style={{
+                                  width: `${preset.convictionNum}%`,
+                                  backgroundColor: preset.accent,
+                                  boxShadow: `0 0 8px ${preset.accent}`,
+                                }}
+                              />
+                            </div>
+
+                            {/* Radial Conviction Ring Gauge */}
+                            <svg
+                              width="20"
+                              height="20"
+                              viewBox="0 0 20 20"
+                              className="shrink-0 -rotate-90"
+                              aria-hidden="true"
+                            >
+                              <circle
+                                cx="10"
+                                cy="10"
+                                r="7.5"
+                                fill="none"
+                                stroke="rgba(255,255,255,0.08)"
+                                strokeWidth="2"
+                              />
+                              <circle
+                                cx="10"
+                                cy="10"
+                                r="7.5"
+                                fill="none"
+                                stroke={preset.accent}
+                                strokeWidth="2"
+                                strokeDasharray={ringCircumference}
+                                strokeDashoffset={ringDashOffset}
+                                strokeLinecap="round"
+                              />
+                            </svg>
+
+                            <span className="text-xs sm:text-[13.5px] font-mono text-[#e7e9ea] tabular-nums w-9 text-right">
+                              {preset.convictionNum}%
+                            </span>
+                            <ChevronRight size={14} className="text-[#71767b] group-hover:translate-x-0.5 transition-transform" />
                           </div>
-                          <span className="text-xs sm:text-[13.5px] font-mono text-[#e7e9ea] tabular-nums w-9 text-right">
-                            {preset.convictionNum}%
-                          </span>
-                          <ChevronRight size={14} className="text-[#71767b] group-hover:translate-x-0.5 transition-transform" />
-                        </div>
-                      </button>
-                    ))}
+                        </button>
+                      );
+                    })}
                   </div>
                 </div>
 
@@ -2140,19 +2474,19 @@ export const ParallaxPage: React.FC = () => {
                     </div>
                   </div>
 
-                  {/* 3-Round Pipeline Progress Stepper */}
+                  {/* 3-Round Pipeline Progress Stepper with Synaptic Node Graphics */}
                   <div className="grid grid-cols-3 gap-1.5 pt-1 border-t border-white/[0.06]">
                     {[
-                      { r: 1, title: '01. Thesis & Grounding', count: messages.filter((m) => m.round === 1).length },
-                      { r: 2, title: '02. Cross-Examination', count: messages.filter((m) => m.round === 2).length },
-                      { r: 3, title: '03. Final Convergence', count: messages.filter((m) => m.round === 3).length },
+                      { r: 1, title: '01. Thesis & Grounding', count: messages.filter((m) => m.round === 1).length, color: '#06b6d4' },
+                      { r: 2, title: '02. Cross-Examination', count: messages.filter((m) => m.round === 2).length, color: '#a855f7' },
+                      { r: 3, title: '03. Final Convergence', count: messages.filter((m) => m.round === 3).length, color: '#10b981' },
                     ].map((step) => {
                       const isCurrent = isRunning && currentRound === step.r;
                       const isDone = Boolean(summary) || (currentRound !== null && currentRound > step.r) || step.count > 0;
                       return (
                         <div
                           key={step.r}
-                          className={`px-2 py-1.5 rounded-lg border text-[10px] sm:text-[11px] flex items-center justify-between gap-1 ${
+                          className={`px-2 py-1.5 rounded-lg border text-[10px] sm:text-[11px] flex items-center justify-between gap-1.5 ${
                             isCurrent
                               ? 'border-emerald-500/40 bg-emerald-500/10 text-white font-semibold'
                               : isDone
@@ -2160,7 +2494,33 @@ export const ParallaxPage: React.FC = () => {
                               : 'border-white/[0.04] bg-transparent text-[#71767b]'
                           }`}
                         >
-                          <span className="truncate">{step.title}</span>
+                          <div className="flex items-center gap-1.5 min-w-0">
+                            <svg
+                              width="14"
+                              height="14"
+                              viewBox="0 0 16 16"
+                              className="shrink-0"
+                              aria-hidden="true"
+                            >
+                              <circle
+                                cx="8"
+                                cy="8"
+                                r="6.2"
+                                fill="none"
+                                stroke={isCurrent ? '#34d399' : isDone ? step.color : '#52525b'}
+                                strokeWidth="1.3"
+                                strokeDasharray={isCurrent ? '4 2' : 'none'}
+                                className={isCurrent ? 'parallax-gfx-spin' : ''}
+                              />
+                              <circle
+                                cx="8"
+                                cy="8"
+                                r="2.6"
+                                fill={isCurrent ? '#34d399' : isDone ? step.color : '#3f3f46'}
+                              />
+                            </svg>
+                            <span className="truncate">{step.title}</span>
+                          </div>
                           <span className="font-mono tabular-nums text-[10px] text-[#8b9097] shrink-0">
                             {step.count}t
                           </span>

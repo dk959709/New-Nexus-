@@ -170,21 +170,31 @@ export const ParallaxConvictionChart: React.FC<ParallaxConvictionChartProps> = (
         ) : (
           <ResponsiveContainer width="100%" height="100%">
             <LineChart data={chartData} margin={{ top: 10, right: 15, left: -20, bottom: 0 }}>
-              <CartesianGrid strokeDasharray="3 3" stroke="rgba(255,255,255,0.05)" />
+              <defs>
+                <filter id="convictionLineGlow" x="-20%" y="-20%" width="140%" height="140%">
+                  <feGaussianBlur stdDeviation="2.5" result="blur" />
+                  <feMerge>
+                    <feMergeNode in="blur" />
+                    <feMergeNode in="SourceGraphic" />
+                  </feMerge>
+                </filter>
+              </defs>
+              <CartesianGrid strokeDasharray="2 4" stroke="rgba(97, 215, 201, 0.08)" />
               <XAxis
                 dataKey="name"
                 stroke="#64748b"
                 tick={{ fill: '#94a3b8', fontSize: 11, fontFamily: 'monospace' }}
-                axisLine={{ stroke: 'rgba(255,255,255,0.1)' }}
+                axisLine={{ stroke: 'rgba(255,255,255,0.12)' }}
               />
               <YAxis
                 domain={[0, 100]}
                 ticks={[0, 25, 50, 75, 100]}
                 stroke="#64748b"
                 tick={{ fill: '#64748b', fontSize: 10, fontFamily: 'monospace' }}
-                axisLine={{ stroke: 'rgba(255,255,255,0.1)' }}
+                axisLine={{ stroke: 'rgba(255,255,255,0.12)' }}
               />
-              <ReferenceLine y={50} stroke="rgba(0, 240, 255, 0.25)" strokeDasharray="4 4" />
+              <ReferenceLine y={75} stroke="rgba(16, 185, 129, 0.18)" strokeDasharray="2 4" />
+              <ReferenceLine y={50} stroke="rgba(0, 240, 255, 0.28)" strokeDasharray="4 4" />
               <Tooltip
                 content={({ active, payload, label }) => {
                   if (active && payload && payload.length) {
@@ -218,10 +228,11 @@ export const ParallaxConvictionChart: React.FC<ParallaxConvictionChartProps> = (
                     dataKey={q.key}
                     name={q.name}
                     stroke={q.color}
-                    strokeWidth={2.5}
+                    strokeWidth={2.75}
+                    filter="url(#convictionLineGlow)"
                     connectNulls={false}
-                    dot={{ r: 4, fill: q.color, strokeWidth: 1.5, stroke: '#030810' }}
-                    activeDot={{ r: 6, fill: q.color, stroke: '#ffffff', strokeWidth: 2 }}
+                    dot={{ r: 4.5, fill: '#030810', strokeWidth: 2, stroke: q.color }}
+                    activeDot={{ r: 6.5, fill: q.color, stroke: '#ffffff', strokeWidth: 2 }}
                     isAnimationActive={true}
                     animationDuration={600}
                   />
