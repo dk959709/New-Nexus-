@@ -1592,7 +1592,7 @@ Rule: Use ONLY the KEY FACTS or things you are 100% sure of. Never invent number
   }
 
   if (modeRole) {
-    systemPrompt += `\n[YOUR SIDE: ${modeRole.sideLabel}] ${modeRole.sideInstruction} [THIS ROUND] ${modeRole.roundInstruction}`;
+    systemPrompt += `\n[YOUR SIDE: ${modeRole.sideLabel}] ${modeRole.sideInstruction}`;
   }
 
   // System prompt override for knowledge-cutoff personas when live grounding is provided
@@ -2791,6 +2791,10 @@ function computeAvgConviction10(msgs: ParallaxMessage[]): number {
   return Number((sum / msgs.length).toFixed(1));
 }
 
+function stripMarkdownMarks(text: string): string {
+  return (text || '').replace(/[*_]/g, '');
+}
+
 function computeModeResult(
   debateMode: ParallaxDebateMode,
   allMessages: ParallaxMessage[],
@@ -2810,20 +2814,24 @@ function computeModeResult(
     const prosAvg = computeAvgConviction10(prosMsgs);
     const defAvg = computeAvgConviction10(defMsgs);
 
-    const match = judgeMsg?.text.match(/VERDICT:\s*(NOT UPHELD|PARTIALLY UPHELD|UPHELD)/i);
+    const judgeIsFallback = Boolean(judgeMsg?.fallbackReason);
+    const cleanedJudgeText = judgeMsg ? stripMarkdownMarks(judgeMsg.text) : '';
+    const match = !judgeIsFallback
+      ? cleanedJudgeText.match(/VERDICT:\s*(NOT UPHELD|PARTIALLY UPHELD|UPHELD)/i)
+      : null;
     const details: string[] = [];
     let headline: string;
 
     if (match && judgeMsg) {
       const parsedVerdict = match[1].toUpperCase();
       headline = `VERDICT: ${parsedVerdict}`;
-      const judgeReason = judgeMsg.text
+      const judgeReason = cleanedJudgeText
         .replace(/VERDICT:\s*(?:NOT UPHELD|PARTIALLY UPHELD|UPHELD)\s*[:.-]?\s*/i, '')
         .trim();
       details.push(
         judgeReason
           ? `Presiding Judge (${judgeMsg.agentName.split(' (')[0]}): ${judgeReason}`
-          : `Presiding Judge (${judgeMsg.agentName.split(' (')[0]}): ${judgeMsg.text}`,
+          : `Presiding Judge (${judgeMsg.agentName.split(' (')[0]}): ${cleanedJudgeText}`,
       );
     } else {
       if (defAvg > prosAvg) {
@@ -2833,9 +2841,13 @@ function computeModeResult(
       } else {
         headline = 'VERDICT: PARTIALLY UPHELD';
       }
-      details.push('Estimated from conviction scores');
-      if (judgeMsg?.text) {
-        details.push(`Presiding Judge (${judgeMsg.agentName.split(' (')[0]}): ${judgeMsg.text}`);
+      if (judgeIsFallback) {
+        details.push('Judge/Referee did not answer. Result estimated from conviction scores.');
+      } else {
+        details.push('Estimated from conviction scores');
+        if (cleanedJudgeText && judgeMsg) {
+          details.push(`Presiding Judge (${judgeMsg.agentName.split(' (')[0]}): ${cleanedJudgeText}`);
+        }
       }
     }
 
@@ -2857,13 +2869,17 @@ function computeModeResult(
     const redAvg = computeAvgConviction10(redMsgs);
     const blueAvg = computeAvgConviction10(blueMsgs);
 
-    const match = refMsg?.text.match(/RESULT:\s*(RED WINS|BLUE WINS|DRAW)/i);
+    const refIsFallback = Boolean(refMsg?.fallbackReason);
+    const cleanedRefText = refMsg ? stripMarkdownMarks(refMsg.text) : '';
+    const match = !refIsFallback
+      ? cleanedRefText.match(/RESULT:\s*(RED WINS|BLUE WINS|DRAW)/i)
+      : null;
     const details: string[] = [];
     let headline: string;
 
     if (match && refMsg) {
       headline = `RESULT: ${match[1].toUpperCase()}`;
-      const refReason = refMsg.text
+      const refReason = cleanedRefText
         .replace(/RESULT:\s*(?:RED WINS|BLUE WINS|DRAW)\s*[:.-]?\s*/i, '')
         .trim();
       if (refReason) {
@@ -2877,7 +2893,11 @@ function computeModeResult(
       } else {
         headline = 'RESULT: DRAW';
       }
-      details.push('Estimated from conviction scores');
+      if (refIsFallback) {
+        details.push('Judge/Referee did not answer. Result estimated from conviction scores.');
+      } else {
+        details.push('Estimated from conviction scores');
+      }
     }
 
     // Most dangerous weakness from Red Team (highest SEVERITY: n/5, fallback to highest conviction)
@@ -2885,7 +2905,8 @@ function computeModeResult(
       let topRed = redMsgs[0];
       let topSev = -1;
       for (const m of redMsgs) {
-        const sevMatch = m.text.match(/SEVERITY:\s*(\d(?:\.\d+)?)\s*\/\s*5/i);
+        const cleanedM = stripMarkdownMarks(m.text);
+        const sevMatch = cleanedM.match(/SEVERITY:\s*(\d(?:\.\d+)?)\s*\/\s*5/i);
         const sev = sevMatch ? parseFloat(sevMatch[1]) : -1;
         if (
           sev > topSev ||
@@ -2896,12 +2917,13 @@ function computeModeResult(
         }
       }
       const sevTag = topSev >= 0 ? ` (SEVERITY ${topSev}/5)` : '';
-      const cleanRedText = topRed.text
+      const cleanedTopRed = stripMarkdownMarks(topRed.text);
+      const cleanRedText = cleanedTopRed
         .replace(/SEVERITY:\s*\d(?:\.\d+)?\s*\/\s*5\s*[:.-]?\s*/i, '')
         .trim();
       details.push(
         `Most dangerous weakness${sevTag} — ${topRed.agentName.split(' (')[0]}: ${
-          cleanRedText || topRed.text
+          cleanRedText || cleanedTopRed
         }`,
       );
     }
@@ -2911,7 +2933,7 @@ function computeModeResult(
       const topBlue = [...blueMsgs].sort(
         (a, b) => getMsgConviction10(b) - getMsgConviction10(a),
       )[0];
-      details.push(`Best fix — ${topBlue.agentName.split(' (')[0]}: ${topBlue.text}`);
+      details.push(`Best fix — ${topBlue.agentName.split(' (')[0]}: ${stripMarkdownMarks(topBlue.text)}`);
     }
 
     details.push(
@@ -2930,6 +2952,7 @@ function computeModeResult(
     let nay = 0;
     let abstain = 0;
     let uncounted = 0;
+    let estimated = 0;
 
     const factionDefs = modeCfg.sides || [
       { id: 'security', label: 'Security Hawks', color: '#f43f5e', instruction: '' },
@@ -2943,7 +2966,8 @@ function computeModeResult(
     }
 
     for (const m of r3Msgs) {
-      const voteMatch = m.text.match(/VOTE:\s*(AYE|NAY|ABSTAIN)/i);
+      const cleanedText = stripMarkdownMarks(m.text);
+      const voteMatch = cleanedText.match(/VOTE:\s*(AYE|NAY|ABSTAIN)/i);
       const sideId = getSide(m) || 'ethics';
       const fEntry = factionTally.get(sideId);
 
@@ -2959,20 +2983,32 @@ function computeModeResult(
           abstain++;
           if (fEntry) fEntry.abstain++;
         }
+        if (m.fallbackReason) {
+          estimated++;
+        }
       } else {
         uncounted++;
       }
     }
 
-    const passed = aye > nay;
-    const headline = `${passed ? 'PASSED' : 'REJECTED'} ${aye}-${nay}-${abstain}`;
-    const details: string[] = [];
+    const totalValid = aye + nay + abstain;
+    let headline: string;
+    if (totalValid === 0) {
+      headline = 'NO VALID VOTES';
+    } else {
+      const passed = aye > nay;
+      headline = `${passed ? 'PASSED' : 'REJECTED'} ${aye}-${nay}-${abstain}`;
+    }
 
+    const details: string[] = [];
     for (const f of factionTally.values()) {
       details.push(`${f.label}: ${f.aye} AYE, ${f.nay} NAY, ${f.abstain} ABSTAIN`);
     }
     if (uncounted > 0) {
       details.push(`${uncounted} not counted`);
+    }
+    if (estimated > 0) {
+      details.push(`${estimated} of the votes were estimated (agent did not answer)`);
     }
 
     return {
@@ -2987,6 +3023,7 @@ function computeModeResult(
     let pass = 0;
     let conditional = 0;
     let uncounted = 0;
+    let estimated = 0;
 
     const byDecision: Record<'INVEST' | 'PASS' | 'CONDITIONAL', ParallaxMessage[]> = {
       INVEST: [],
@@ -2995,28 +3032,38 @@ function computeModeResult(
     };
 
     for (const m of r3Msgs) {
-      const decMatch = m.text.match(/DECISION:\s*(INVEST|PASS|CONDITIONAL)/i);
+      const cleanedText = stripMarkdownMarks(m.text);
+      const decMatch = cleanedText.match(/DECISION:\s*(INVEST|PASS|CONDITIONAL)/i);
       if (decMatch) {
         const d = decMatch[1].toUpperCase() as 'INVEST' | 'PASS' | 'CONDITIONAL';
         if (d === 'INVEST') invest++;
         else if (d === 'PASS') pass++;
         else conditional++;
         byDecision[d].push(m);
+        if (m.fallbackReason) {
+          estimated++;
+        }
       } else {
         uncounted++;
       }
     }
 
-    let winner: 'INVEST' | 'PASS' | 'CONDITIONAL' = 'CONDITIONAL';
-    if (invest > pass && invest > conditional) {
-      winner = 'INVEST';
-    } else if (pass > invest && pass > conditional) {
-      winner = 'PASS';
+    const totalValid = invest + pass + conditional;
+    let headline: string;
+    if (totalValid === 0) {
+      headline = 'DECISION: NO VALID CALLS';
     } else {
-      winner = 'CONDITIONAL';
+      let winner: 'INVEST' | 'PASS' | 'CONDITIONAL' = 'CONDITIONAL';
+      if (invest > pass && invest > conditional) {
+        winner = 'INVEST';
+      } else if (pass > invest && pass > conditional) {
+        winner = 'PASS';
+      } else {
+        winner = 'CONDITIONAL';
+      }
+      headline = `DECISION: ${winner} (${invest} INVEST · ${pass} PASS · ${conditional} CONDITIONAL)`;
     }
 
-    const headline = `DECISION: ${winner} (${invest} INVEST · ${pass} PASS · ${conditional} CONDITIONAL)`;
     const details: string[] = [];
 
     for (const dec of ['INVEST', 'PASS', 'CONDITIONAL'] as const) {
@@ -3025,17 +3072,21 @@ function computeModeResult(
         const strongest = [...group].sort(
           (a, b) => getMsgConviction10(b) - getMsgConviction10(a),
         )[0];
-        const cleanReason = strongest.text
+        const cleanedStrongest = stripMarkdownMarks(strongest.text);
+        const cleanReason = cleanedStrongest
           .replace(/DECISION:\s*(?:INVEST|PASS|CONDITIONAL)\s*[:.-]?\s*/i, '')
           .trim();
         details.push(
-          `${dec} (${strongest.agentName.split(' (')[0]}): ${cleanReason || strongest.text}`,
+          `${dec} (${strongest.agentName.split(' (')[0]}): ${cleanReason || cleanedStrongest}`,
         );
       }
     }
 
     if (uncounted > 0) {
       details.push(`${uncounted} not counted`);
+    }
+    if (estimated > 0) {
+      details.push(`${estimated} of the votes were estimated (agent did not answer)`);
     }
 
     return {
