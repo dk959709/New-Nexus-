@@ -213,6 +213,35 @@ export const ParallaxSynthesisReport: React.FC<ParallaxSynthesisReportProps> = (
         </div>
       </div>
 
+      {/* MODE RESULT CARD (When debateMode !== 'default' and modeResult is present) */}
+      {summary.modeResult && (
+        <div
+          id="parallax-mode-result-card"
+          className="mb-4 p-4 sm:p-5 rounded-2xl border border-cyan-500/30 bg-slate-900/75 backdrop-blur-xl shadow-[0_8px_30px_rgba(6,182,212,0.12)] space-y-2.5"
+        >
+          <div className="flex items-center justify-between gap-2">
+            <span className="text-[10.5px] font-mono font-bold uppercase tracking-widest text-cyan-300">
+              Mode Result · {summary.modeResult.title}
+            </span>
+            {summary.debateMode && summary.debateMode !== 'default' && (
+              <span className="px-2 py-0.5 rounded-md bg-cyan-500/15 border border-cyan-500/30 text-[10px] font-mono uppercase tracking-wider text-cyan-200">
+                {summary.debateMode.replace(/_/g, ' ')}
+              </span>
+            )}
+          </div>
+          <div className="text-base sm:text-xl font-bold text-white tracking-tight leading-snug">
+            {summary.modeResult.headline}
+          </div>
+          {summary.modeResult.details && summary.modeResult.details.length > 0 && (
+            <ul className="list-disc pl-4 sm:pl-5 space-y-1 text-xs sm:text-[13px] text-slate-200 leading-relaxed m-0">
+              {summary.modeResult.details.map((detail, idx) => (
+                <li key={idx}>{detail}</li>
+              ))}
+            </ul>
+          )}
+        </div>
+      )}
+
       {/* Hairline Divided Sections Content */}
       <div className="divide-y divide-white/[0.06]">
         {/* SECTION 1: QUERY & SCOPE */}

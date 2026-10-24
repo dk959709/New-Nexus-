@@ -640,6 +640,8 @@ export interface ParallaxMessage {
   role?: string;
   voice?: string;
   fallbackReason?: string;
+  side?: string;
+  sideLabel?: string;
 }
 
 export interface ParallaxIntelligenceBriefing {
@@ -655,9 +657,18 @@ export interface ParallaxIntelligenceBriefing {
 export type ParallaxDebateMode =
   | 'default'
   | 'courtroom'
+  | 'red_vs_blue'
   | 'senate'
+  | 'vc_pitch'
   | 'scifi'
   | 'news';
+
+export interface ParallaxDebateModeSide {
+  id: string;
+  label: string;
+  color: string;
+  instruction: string;
+}
 
 export interface ParallaxDebateModeConfig {
   id: ParallaxDebateMode;
@@ -666,6 +677,20 @@ export interface ParallaxDebateModeConfig {
   iconName: string;
   accentColor: string;
   promptInstruction: string;
+  sides?: ParallaxDebateModeSide[];
+  roundInstructions?: {
+    1: string;
+    2: string;
+    3: string;
+  };
+  refereeId?: string;
+  resultTitle?: string;
+}
+
+export interface ParallaxModeResult {
+  title: string;
+  headline: string;
+  details: string[];
 }
 
 export interface ParallaxHumanInjection {
@@ -780,6 +805,7 @@ export interface ParallaxSummary {
   devilsAdvocateTrigger?: ParallaxDevilsAdvocateTrigger;
   debateMode?: ParallaxDebateMode;
   swarmSize?: number;
+  modeResult?: ParallaxModeResult;
 }
 
 export interface ParallaxSpecialistOpinion {

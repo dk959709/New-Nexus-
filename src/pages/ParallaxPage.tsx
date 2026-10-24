@@ -55,6 +55,7 @@ import { ParallaxAudioVisualizer } from '@/components/parallax/ParallaxAudioVisu
 import { ParallaxIntelligenceBriefing } from '@/components/parallax/ParallaxIntelligenceBriefing';
 import { ParallaxHumanInjectionModal } from '@/components/parallax/ParallaxHumanInjectionModal';
 import { getParallaxAgentVoice, formatFullParallaxTranscript } from '@/data/parallaxVoices';
+import { getDebateModeConfig } from '@/data/parallaxDebateModes';
 import { cleanMarkdownForSpeech } from '@/lib/format';
 import type {
   ParallaxAgentConfig,
@@ -166,11 +167,11 @@ const DEBATE_MODES: Array<{
   speedTag: string;
   icon: React.FC<{ className?: string; size?: number }>;
 }> = [
-  { id: 'default', label: 'Default Swarm', shortLabel: 'Fast', speedTag: '20 Agents · 3 Rounds', icon: Zap },
-  { id: 'courtroom', label: 'Courtroom Trial', shortLabel: 'Courtroom', speedTag: 'Prosecution vs Defense', icon: Scale },
-  { id: 'red_vs_blue', label: 'Red vs Blue Team', shortLabel: 'Red vs Blue', speedTag: 'Adversarial Stress-Test', icon: Shield },
-  { id: 'senate', label: 'Senate Summit', shortLabel: 'Senate', speedTag: 'Policy & Governance', icon: Landmark },
-  { id: 'vc_pitch', label: 'Venture Pitch Committee', shortLabel: 'VC Pitch', speedTag: 'Capital & ROI Diligence', icon: Briefcase },
+  { id: 'default', label: getDebateModeConfig('default').label, shortLabel: 'Fast', speedTag: getDebateModeConfig('default').subtitle, icon: Zap },
+  { id: 'courtroom', label: getDebateModeConfig('courtroom').label, shortLabel: 'Courtroom', speedTag: getDebateModeConfig('courtroom').subtitle, icon: Scale },
+  { id: 'red_vs_blue', label: getDebateModeConfig('red_vs_blue').label, shortLabel: 'Red vs Blue', speedTag: getDebateModeConfig('red_vs_blue').subtitle, icon: Shield },
+  { id: 'senate', label: getDebateModeConfig('senate').label, shortLabel: 'Senate', speedTag: getDebateModeConfig('senate').subtitle, icon: Landmark },
+  { id: 'vc_pitch', label: getDebateModeConfig('vc_pitch').label, shortLabel: 'VC Pitch', speedTag: getDebateModeConfig('vc_pitch').subtitle, icon: Briefcase },
 ];
 
 function getSwarmSizeDescription(size: ParallaxSwarmSize): string {
@@ -822,6 +823,10 @@ export const ParallaxPage: React.FC = () => {
     [enabledAgentsList, swarmSize],
   );
   const selectedSwarmCount = selectedSwarmAgents.length;
+  const isFewerEnabledThanSelected = enabledAgentsCount < swarmSize;
+  const swarmSizeHintText = isFewerEnabledThanSelected
+    ? `Only ${selectedSwarmCount} agents are enabled in Settings, so ${selectedSwarmCount} will run`
+    : getSwarmSizeDescription(swarmSize);
   const selectedSwarmAgentIds = React.useMemo(
     () => new Set(selectedSwarmAgents.map((a) => a.id)),
     [selectedSwarmAgents],
@@ -1124,6 +1129,16 @@ export const ParallaxPage: React.FC = () => {
           0% { stroke-dashoffset: 180; }
           100% { stroke-dashoffset: 0; }
         }
+        @keyframes parallaxSwarmSizeShift {
+          0% {
+            opacity: 0.55;
+            transform: translateY(2px) scale(0.985);
+          }
+          100% {
+            opacity: 1;
+            transform: translateY(0) scale(1);
+          }
+        }
         .parallax-gfx-spin {
           animation: parallaxOrbitSlow 48s linear infinite;
           transform-origin: center center;
@@ -1140,11 +1155,15 @@ export const ParallaxPage: React.FC = () => {
           stroke-dasharray: 6 12;
           animation: parallaxSynapseFlow 8s linear infinite;
         }
+        .parallax-swarm-size-shift {
+          animation: parallaxSwarmSizeShift 260ms cubic-bezier(0.22, 1, 0.36, 1) both;
+        }
         @media (prefers-reduced-motion: reduce) {
           .parallax-gfx-spin,
           .parallax-gfx-spin-reverse,
           .parallax-gfx-core-pulse,
-          .parallax-gfx-synapse {
+          .parallax-gfx-synapse,
+          .parallax-swarm-size-shift {
             animation: none !important;
           }
         }
@@ -1568,12 +1587,15 @@ export const ParallaxPage: React.FC = () => {
                   </div>
 
                   {/* Agents in swarm selector inside Drawer */}
-                  <div className="mt-2.5 pt-2.5 border-t border-white/[0.06] px-1 space-y-1.5">
+                  <div className="mt-2.5 pt-2.5 border-t border-white/[0.06] px-1 space-y-1.5 transition-all duration-300 ease-out">
                     <div className="flex items-center justify-between gap-1.5">
                       <span className="text-[10px] font-semibold uppercase tracking-wider text-[#71767b]">
                         Agents in swarm
                       </span>
-                      <span className="text-[10px] font-mono text-cyan-300 tabular-nums">
+                      <span
+                        key={swarmSize}
+                        className="text-[10px] font-mono text-cyan-300 tabular-nums parallax-swarm-size-shift"
+                      >
                         {selectedSwarmCount}/{enabledAgentsCount}
                       </span>
                     </div>
@@ -1586,9 +1608,9 @@ export const ParallaxPage: React.FC = () => {
                             type="button"
                             disabled={isRunning}
                             onClick={() => handleSwarmSizeChange(sz)}
-                            className={`py-1 rounded-lg border text-[11px] font-mono font-semibold text-center transition-all cursor-pointer disabled:opacity-50 ${
+                            className={`py-1 rounded-lg border text-[11px] font-mono font-semibold text-center transition-all duration-200 ease-out active:scale-95 cursor-pointer disabled:opacity-50 ${
                               active
-                                ? 'border-white bg-white text-black'
+                                ? 'border-white bg-white text-black scale-[1.02] shadow-xs'
                                 : 'border-[#26292e] bg-white/[0.03] text-[#8b9097] hover:text-white'
                             }`}
                           >
@@ -1597,8 +1619,13 @@ export const ParallaxPage: React.FC = () => {
                         );
                       })}
                     </div>
-                    <div className="text-[10px] text-[#8b9097] leading-snug">
-                      {getSwarmSizeDescription(swarmSize)}
+                    <div
+                      key={`drawer-hint-${swarmSize}-${isFewerEnabledThanSelected}`}
+                      className={`text-[10px] leading-snug transition-colors duration-300 parallax-swarm-size-shift ${
+                        isFewerEnabledThanSelected ? 'text-amber-300/90' : 'text-[#8b9097]'
+                      }`}
+                    >
+                      {swarmSizeHintText}
                     </div>
                   </div>
                 </div>
@@ -1854,8 +1881,8 @@ export const ParallaxPage: React.FC = () => {
                 <div className="flex items-center gap-2 shrink-0">
                   <div
                     id="parallax-swarm-size-bar"
-                    className="flex items-center gap-1 px-1.5 py-0.5 rounded-lg bg-white/[0.03] border border-white/[0.07]"
-                    title={getSwarmSizeDescription(swarmSize)}
+                    className="flex items-center gap-1 px-1.5 py-0.5 rounded-lg bg-white/[0.03] border border-white/[0.07] transition-all duration-300 ease-out"
+                    title={swarmSizeHintText}
                   >
                     <span className="text-[10px] font-mono text-[#8b9097] pl-0.5 pr-1">
                       Agents in swarm:
@@ -1868,9 +1895,9 @@ export const ParallaxPage: React.FC = () => {
                           type="button"
                           disabled={isRunning}
                           onClick={() => handleSwarmSizeChange(sz)}
-                          className={`min-w-[24px] px-1.5 py-0.5 rounded-md text-[10.5px] font-mono font-semibold transition-all cursor-pointer disabled:opacity-50 ${
+                          className={`min-w-[24px] px-1.5 py-0.5 rounded-md text-[10.5px] font-mono font-semibold transition-all duration-200 ease-out active:scale-95 cursor-pointer disabled:opacity-50 ${
                             active
-                              ? 'bg-white text-black shadow-2xs'
+                              ? 'bg-white text-black scale-[1.03] shadow-2xs'
                               : 'text-[#8b9097] hover:text-white hover:bg-white/[0.06]'
                           }`}
                         >
@@ -1878,8 +1905,15 @@ export const ParallaxPage: React.FC = () => {
                         </button>
                       );
                     })}
-                    <span className="hidden lg:inline text-[10px] text-[#71767b] pl-1 pr-0.5">
-                      · {getSwarmSizeDescription(swarmSize)}
+                    <span
+                      key={`bar-hint-${swarmSize}-${isFewerEnabledThanSelected}`}
+                      className={`${
+                        isFewerEnabledThanSelected
+                          ? 'inline text-amber-300/90'
+                          : 'hidden lg:inline text-[#71767b]'
+                      } text-[10px] pl-1 pr-0.5 transition-colors duration-300 parallax-swarm-size-shift`}
+                    >
+                      · {swarmSizeHintText}
                     </span>
                   </div>
 
@@ -1899,9 +1933,12 @@ export const ParallaxPage: React.FC = () => {
               {/* Row B: Interactive Persona Live Roster Strip */}
               <div
                 id="parallax-persona-roster-strip"
-                className="flex items-center gap-1.5 overflow-x-auto no-scrollbar py-0.5"
+                className="flex items-center gap-1.5 overflow-x-auto no-scrollbar py-0.5 transition-all duration-300 ease-out"
               >
-                <span className="text-[10px] font-mono text-[#71767b] shrink-0 pr-1 tabular-nums">
+                <span
+                  key={`roster-count-${swarmSize}`}
+                  className="text-[10px] font-mono text-[#71767b] shrink-0 pr-1 tabular-nums parallax-swarm-size-shift"
+                >
                   {selectedSwarmCount} of {enabledAgentsCount} Active:
                 </span>
                 {enabledAgentsList.map((ag) => {
@@ -1920,8 +1957,10 @@ export const ParallaxPage: React.FC = () => {
                       onClick={() =>
                         setInspectedRosterAgentId((prev) => (prev === ag.id ? null : ag.id))
                       }
-                      className={`px-2 py-1 rounded-lg text-[10.5px] font-mono flex items-center gap-1.5 shrink-0 transition-all cursor-pointer border ${
-                        !isSelectedForSwarm && !hasSpoken && !isInspected ? 'opacity-45' : ''
+                      className={`px-2 py-1 rounded-lg text-[10.5px] font-mono flex items-center gap-1.5 shrink-0 transition-all duration-300 ease-out cursor-pointer border ${
+                        !isSelectedForSwarm && !hasSpoken && !isInspected
+                          ? 'opacity-45 scale-[0.97]'
+                          : 'opacity-100 scale-100'
                       } ${
                         isInspected
                           ? 'bg-white/15 border-white/40 text-white font-semibold'
@@ -2890,12 +2929,15 @@ export const ParallaxPage: React.FC = () => {
                   })}
 
                   {/* Agents in swarm selector inside Composer Mode Popover */}
-                  <div className="pt-1.5 mt-1 border-t border-white/[0.08] px-2 space-y-1.5">
+                  <div className="pt-1.5 mt-1 border-t border-white/[0.08] px-2 space-y-1.5 transition-all duration-300 ease-out">
                     <div className="flex items-center justify-between gap-2">
                       <span className="text-[9.5px] font-mono uppercase tracking-wider text-[#71767b]">
                         Agents in swarm
                       </span>
-                      <span className="text-[10px] font-mono text-cyan-300 tabular-nums">
+                      <span
+                        key={swarmSize}
+                        className="text-[10px] font-mono text-cyan-300 tabular-nums parallax-swarm-size-shift"
+                      >
                         {selectedSwarmCount} of {enabledAgentsCount} active
                       </span>
                     </div>
@@ -2908,9 +2950,9 @@ export const ParallaxPage: React.FC = () => {
                             type="button"
                             disabled={isRunning}
                             onClick={() => handleSwarmSizeChange(sz)}
-                            className={`py-1 rounded-lg border text-[11px] font-mono font-semibold text-center transition-all cursor-pointer disabled:opacity-50 ${
+                            className={`py-1 rounded-lg border text-[11px] font-mono font-semibold text-center transition-all duration-200 ease-out active:scale-95 cursor-pointer disabled:opacity-50 ${
                               active
-                                ? 'border-white bg-white text-black'
+                                ? 'border-white bg-white text-black scale-[1.02] shadow-xs'
                                 : 'border-[#26292e] bg-white/[0.03] text-[#8b9097] hover:text-white'
                             }`}
                           >
@@ -2919,8 +2961,13 @@ export const ParallaxPage: React.FC = () => {
                         );
                       })}
                     </div>
-                    <div className="text-[10px] text-[#8b9097] pb-0.5">
-                      {getSwarmSizeDescription(swarmSize)}
+                    <div
+                      key={`composer-hint-${swarmSize}-${isFewerEnabledThanSelected}`}
+                      className={`text-[10px] pb-0.5 transition-colors duration-300 parallax-swarm-size-shift ${
+                        isFewerEnabledThanSelected ? 'text-amber-300/90' : 'text-[#8b9097]'
+                      }`}
+                    >
+                      {swarmSizeHintText}
                     </div>
                   </div>
                 </div>

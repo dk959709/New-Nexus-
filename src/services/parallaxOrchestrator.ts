@@ -10,6 +10,11 @@ import { applyReasoningConfig } from '@/lib/reasoningConfig';
 import { AGENT_QUADRANTS } from '@/data/parallaxQuadrants';
 import { getDebateModeConfig } from '@/data/parallaxDebateModes';
 import {
+  assignModeSides,
+  getOpposingAgentIds,
+  type ModeSideAssignment,
+} from '@/lib/parallaxModeTeams';
+import {
   resolveParallaxEntity,
   collectParallaxEvidencePool,
   extractAndVerifyClaims,
@@ -31,6 +36,7 @@ import type {
   ParallaxHumanInjection,
   ParallaxIntelligenceBriefing,
   ParallaxMessage,
+  ParallaxModeResult,
   ParallaxSpecialistDeliberation,
   ParallaxSpecialistOpinion,
   ParallaxSummary,
@@ -1543,6 +1549,13 @@ function hasEndPunctuation(text: string): boolean {
   return ['.', '!', '?', '"', "'", '”', '’'].includes(lastChar);
 }
 
+export interface ExecuteAgentModeRole {
+  side: string;
+  sideLabel: string;
+  sideInstruction: string;
+  roundInstruction: string;
+}
+
 /**
  * Executes a single agent reaction turn with ultra-compact token footprint.
  */
@@ -1560,6 +1573,7 @@ async function executeAgentTurn(
   humanDirective?: ParallaxHumanInjection | null,
   keyFacts?: string,
   canonicalEntity?: string,
+  modeRole?: ExecuteAgentModeRole,
 ): Promise<ParallaxMessage> {
   const startTime = Date.now();
   const { provider, model } = resolveParallaxProviderConfig(agent, 160);
@@ -1575,6 +1589,10 @@ Rule: Use ONLY the KEY FACTS or things you are 100% sure of. Never invent number
     if (modeConfig && modeConfig.promptInstruction) {
       systemPrompt += `\n[DEBATE PROTOCOL - ${modeConfig.label}]: ${modeConfig.promptInstruction}`;
     }
+  }
+
+  if (modeRole) {
+    systemPrompt += `\n[YOUR SIDE: ${modeRole.sideLabel}] ${modeRole.sideInstruction} [THIS ROUND] ${modeRole.roundInstruction}`;
   }
 
   // System prompt override for knowledge-cutoff personas when live grounding is provided
@@ -1667,6 +1685,10 @@ Rule: Use ONLY the KEY FACTS or things you are 100% sure of. Never invent number
     }
   }
 
+  if (modeRole && modeRole.roundInstruction) {
+    userPrompt += `\n[${modeRole.sideLabel} Task]: ${modeRole.roundInstruction}`;
+  }
+
   const createFallbackMessage = (reason: string): ParallaxMessage => {
     console.warn(`[Parallax Fallback] Agent: ${agent.name}, Round: ${round}, Reason: ${reason}`);
     let fallbackText = getFallbackReaction(agent, round, topic, canonicalEntity);
@@ -1675,6 +1697,22 @@ Rule: Use ONLY the KEY FACTS or things you are 100% sure of. Never invent number
     }
 
     const fallbackMeta = DEFAULT_AGENT_METRICS[agent.id.toLowerCase()] || { conviction: 7, mood: '⚡' };
+    if (round === 3 && modeRole) {
+      if (debateMode === 'courtroom' && modeRole.side === 'judge' && !/^VERDICT:/i.test(fallbackText)) {
+        fallbackText = `VERDICT: PARTIALLY UPHELD. ${fallbackText}`;
+      } else if (debateMode === 'red_vs_blue' && modeRole.side === 'referee' && !/^RESULT:/i.test(fallbackText)) {
+        fallbackText = `RESULT: DRAW. ${fallbackText}`;
+      } else if (debateMode === 'red_vs_blue' && modeRole.side === 'red' && !/SEVERITY:\s*\d\s*\/\s*5/i.test(fallbackText)) {
+        fallbackText = `${fallbackText} SEVERITY: 4/5.`;
+      } else if (debateMode === 'senate' && !/^VOTE:/i.test(fallbackText)) {
+        const voteWord = fallbackMeta.conviction >= 7 ? 'AYE' : fallbackMeta.conviction <= 4 ? 'NAY' : 'ABSTAIN';
+        fallbackText = `VOTE: ${voteWord}. ${fallbackText}`;
+      } else if (debateMode === 'vc_pitch' && !/^DECISION:/i.test(fallbackText)) {
+        const decWord = fallbackMeta.conviction >= 8 ? 'INVEST' : fallbackMeta.conviction <= 4 ? 'PASS' : 'CONDITIONAL';
+        fallbackText = `DECISION: ${decWord}. ${fallbackText}`;
+      }
+    }
+
     return {
       id: `plx_${agent.id}_r${round}_fallback_${Date.now()}`,
       agentId: agent.id,
@@ -1693,6 +1731,8 @@ Rule: Use ONLY the KEY FACTS or things you are 100% sure of. Never invent number
       quotedSnippet: primaryOpponent ? primaryOpponent.text.slice(0, 100) : undefined,
       role: agent.role,
       voice: agent.voice,
+      side: modeRole?.side,
+      sideLabel: modeRole?.sideLabel,
       timestamp: Date.now(),
       durationMs: Date.now() - startTime,
       model: model || 'fallback',
@@ -1843,6 +1883,8 @@ Rule: Use ONLY the KEY FACTS or things you are 100% sure of. Never invent number
       quotedSnippet: primaryOpponent ? primaryOpponent.text.slice(0, 100) : undefined,
       role: agent.role,
       voice: agent.voice,
+      side: modeRole?.side,
+      sideLabel: modeRole?.sideLabel,
       timestamp: Date.now(),
       durationMs: Date.now() - startTime,
       model: response?.model || model,
@@ -2346,6 +2388,14 @@ export async function runParallaxSwarm(options: ParallaxRunOptions): Promise<voi
     }
 
     const debateAgents: ParallaxAgentConfig[] = [...enabledAgents, ...dynamicAgents];
+    const assignments: Map<string, ModeSideAssignment> =
+      options.debateMode && options.debateMode !== 'default'
+        ? assignModeSides(options.debateMode, debateAgents)
+        : new Map();
+    const activeModeConfig =
+      options.debateMode && options.debateMode !== 'default'
+        ? getDebateModeConfig(options.debateMode)
+        : null;
 
     // Compute lean grounding constraint to bound all agents (~25-35 tokens) so they don't hallucinate fake claims
     const groundingConstraint = buildAgentGroundingConstraint(entityResolution, verifiedClaims);
@@ -2425,11 +2475,25 @@ export async function runParallaxSwarm(options: ParallaxRunOptions): Promise<voi
             const prevRoundNum = (currentRound - 1) as 1 | 2;
             const prevRoundMsgs = allMessages.filter((m) => m.round === prevRoundNum);
 
-            // In Round 2: Select the top 2 most ideologically distant opponents from Round 1
+            // In Round 2: Select opponents (from opposing side in team modes, or ideologically distant in default)
             if (currentRound === 2 && prevRoundMsgs.length > 0) {
-              const validSpeakerMsgs = prevRoundMsgs.filter(
+              const allValidSpeakerMsgs = prevRoundMsgs.filter(
                 (p) => p && p.agentId !== agent.id && p.text && p.text.trim().length > 0,
               );
+
+              const opposingIds =
+                assignments.size > 0
+                  ? getOpposingAgentIds(options.debateMode, agent.id, assignments)
+                  : [];
+              const opposingIdSet = new Set(opposingIds.map((id) => id.toLowerCase()));
+              const opposingSpeakerMsgs =
+                opposingIdSet.size > 0
+                  ? allValidSpeakerMsgs.filter((m) => opposingIdSet.has(m.agentId.toLowerCase()))
+                  : [];
+
+              const validSpeakerMsgs =
+                opposingSpeakerMsgs.length > 0 ? opposingSpeakerMsgs : allValidSpeakerMsgs;
+
               const speakerIds = validSpeakerMsgs.map((p) => p.agentId);
               const opponentIds = findIdeologicalOpponents(agent.id, speakerIds);
 
@@ -2442,6 +2506,19 @@ export async function runParallaxSwarm(options: ParallaxRunOptions): Promise<voi
                 if (matchedMsgs.length >= 2) {
                   peersSample = matchedMsgs.slice(0, 2);
                 }
+              }
+
+              // If in a team mode and we still haven't filled peersSample from opposingSpeakerMsgs, pick deterministically from validSpeakerMsgs
+              if (peersSample.length === 0 && opposingSpeakerMsgs.length > 0) {
+                const M = opposingSpeakerMsgs.length;
+                const opp1 = opposingSpeakerMsgs[(globalIdx + 1) % M];
+                const opp2 = opposingSpeakerMsgs[(globalIdx + 3) % M];
+                peersSample = [opp1, opp2].filter(
+                  (p, pIdx, self) =>
+                    p &&
+                    self.findIndex((x) => x?.agentId === p?.agentId) === pIdx &&
+                    p.agentId !== agent.id,
+                );
               }
             }
 
@@ -2457,9 +2534,18 @@ export async function runParallaxSwarm(options: ParallaxRunOptions): Promise<voi
               const s1 = prevRoundMsgs[idx1];
               const s2 = prevRoundMsgs[idx2];
 
-              peersSample = [s1, s2].filter(
+              const fallbackSample = [s1, s2].filter(
                 (p, pIdx, self) => p && self.findIndex((x) => x?.agentId === p?.agentId) === pIdx && p.agentId !== agent.id,
               );
+              if (peersSample.length === 0) {
+                peersSample = fallbackSample;
+              } else {
+                for (const fb of fallbackSample) {
+                  if (peersSample.length < 2 && !peersSample.some((x) => x.agentId === fb.agentId)) {
+                    peersSample.push(fb);
+                  }
+                }
+              }
             }
           }
 
@@ -2469,6 +2555,39 @@ export async function runParallaxSwarm(options: ParallaxRunOptions): Promise<voi
             options.humanInjections && options.humanInjections.length > 0
               ? options.humanInjections[options.humanInjections.length - 1]
               : null;
+
+          // Build modeRole when running in a non-default team mode
+          let modeRole: ExecuteAgentModeRole | undefined;
+          const assigned = assignments.get(agent.id);
+          if (assigned && activeModeConfig) {
+            const sideDef = activeModeConfig.sides?.find((s) => s.id === assigned.side);
+            let roundInstruction = activeModeConfig.roundInstructions?.[currentRound] || '';
+            if (currentRound === 3) {
+              if (options.debateMode === 'courtroom') {
+                roundInstruction =
+                  assigned.side === 'judge'
+                    ? 'Start with "VERDICT: UPHELD" or "VERDICT: NOT UPHELD" or "VERDICT: PARTIALLY UPHELD" followed by one sentence of reasoning.'
+                    : 'Deliver your final closing argument for your side in 1-2 sentences.';
+              } else if (options.debateMode === 'red_vs_blue') {
+                if (assigned.side === 'referee') {
+                  roundInstruction =
+                    'Start with "RESULT: RED WINS" or "RESULT: BLUE WINS" or "RESULT: DRAW" plus one sentence.';
+                } else if (assigned.side === 'red') {
+                  roundInstruction =
+                    'State the most dangerous unresolved weakness and include "SEVERITY: n/5" (e.g. SEVERITY: 4/5).';
+                } else {
+                  roundInstruction =
+                    'State the best concrete engineering or policy fix for the most dangerous weakness.';
+                }
+              }
+            }
+            modeRole = {
+              side: assigned.side,
+              sideLabel: assigned.sideLabel,
+              sideInstruction: sideDef?.instruction || '',
+              roundInstruction,
+            };
+          }
 
           const msg = await executeAgentTurn(
             agent,
@@ -2484,6 +2603,7 @@ export async function runParallaxSwarm(options: ParallaxRunOptions): Promise<voi
             activeHumanDirective,
             keyFacts,
             entityResolution?.canonicalEntity,
+            modeRole,
           );
 
           return msg;
@@ -2627,6 +2747,10 @@ export async function runParallaxSwarm(options: ParallaxRunOptions): Promise<voi
     summary.swarmSize = swarmSize;
     summary.humanInjections = options.humanInjections;
 
+    if (options.debateMode && options.debateMode !== 'default' && assignments.size > 0) {
+      summary.modeResult = computeModeResult(options.debateMode, allMessages, assignments);
+    }
+
     // Save session to local storage
     storage.saveParallaxSession({
       id: `session_${Date.now()}`,
@@ -2652,4 +2776,274 @@ export async function runParallaxSwarm(options: ParallaxRunOptions): Promise<voi
     console.error('[Parallax] Swarm execution error:', err);
     onError?.(err instanceof Error ? err.message : 'Unknown error during swarm execution.');
   }
+}
+
+function getMsgConviction10(msg: ParallaxMessage): number {
+  if (typeof msg.conviction === 'number' && !Number.isNaN(msg.conviction)) {
+    return msg.conviction > 10 ? Number((msg.conviction / 10).toFixed(1)) : msg.conviction;
+  }
+  return 7;
+}
+
+function computeAvgConviction10(msgs: ParallaxMessage[]): number {
+  if (msgs.length === 0) return 0;
+  const sum = msgs.reduce((acc, m) => acc + getMsgConviction10(m), 0);
+  return Number((sum / msgs.length).toFixed(1));
+}
+
+function computeModeResult(
+  debateMode: ParallaxDebateMode,
+  allMessages: ParallaxMessage[],
+  assignments: Map<string, ModeSideAssignment>,
+): ParallaxModeResult | undefined {
+  const modeCfg = getDebateModeConfig(debateMode);
+  const r3Msgs = allMessages.filter((m) => m.round === 3 && !m.isHuman);
+  if (r3Msgs.length === 0) return undefined;
+
+  const getSide = (m: ParallaxMessage): string | undefined =>
+    m.side || assignments.get(m.agentId)?.side;
+
+  if (debateMode === 'courtroom') {
+    const judgeMsg = r3Msgs.find((m) => getSide(m) === 'judge');
+    const prosMsgs = r3Msgs.filter((m) => getSide(m) === 'prosecution');
+    const defMsgs = r3Msgs.filter((m) => getSide(m) === 'defense');
+    const prosAvg = computeAvgConviction10(prosMsgs);
+    const defAvg = computeAvgConviction10(defMsgs);
+
+    const match = judgeMsg?.text.match(/VERDICT:\s*(NOT UPHELD|PARTIALLY UPHELD|UPHELD)/i);
+    const details: string[] = [];
+    let headline: string;
+
+    if (match && judgeMsg) {
+      const parsedVerdict = match[1].toUpperCase();
+      headline = `VERDICT: ${parsedVerdict}`;
+      const judgeReason = judgeMsg.text
+        .replace(/VERDICT:\s*(?:NOT UPHELD|PARTIALLY UPHELD|UPHELD)\s*[:.-]?\s*/i, '')
+        .trim();
+      details.push(
+        judgeReason
+          ? `Presiding Judge (${judgeMsg.agentName.split(' (')[0]}): ${judgeReason}`
+          : `Presiding Judge (${judgeMsg.agentName.split(' (')[0]}): ${judgeMsg.text}`,
+      );
+    } else {
+      if (defAvg > prosAvg) {
+        headline = 'VERDICT: UPHELD';
+      } else if (prosAvg > defAvg) {
+        headline = 'VERDICT: NOT UPHELD';
+      } else {
+        headline = 'VERDICT: PARTIALLY UPHELD';
+      }
+      details.push('Estimated from conviction scores');
+      if (judgeMsg?.text) {
+        details.push(`Presiding Judge (${judgeMsg.agentName.split(' (')[0]}): ${judgeMsg.text}`);
+      }
+    }
+
+    details.push(
+      `Prosecution average conviction ${prosAvg}/10, Defense average conviction ${defAvg}/10`,
+    );
+
+    return {
+      title: modeCfg.resultTitle || 'Verdict',
+      headline,
+      details,
+    };
+  }
+
+  if (debateMode === 'red_vs_blue') {
+    const refMsg = r3Msgs.find((m) => getSide(m) === 'referee');
+    const redMsgs = r3Msgs.filter((m) => getSide(m) === 'red');
+    const blueMsgs = r3Msgs.filter((m) => getSide(m) === 'blue');
+    const redAvg = computeAvgConviction10(redMsgs);
+    const blueAvg = computeAvgConviction10(blueMsgs);
+
+    const match = refMsg?.text.match(/RESULT:\s*(RED WINS|BLUE WINS|DRAW)/i);
+    const details: string[] = [];
+    let headline: string;
+
+    if (match && refMsg) {
+      headline = `RESULT: ${match[1].toUpperCase()}`;
+      const refReason = refMsg.text
+        .replace(/RESULT:\s*(?:RED WINS|BLUE WINS|DRAW)\s*[:.-]?\s*/i, '')
+        .trim();
+      if (refReason) {
+        details.push(`Referee (${refMsg.agentName.split(' (')[0]}): ${refReason}`);
+      }
+    } else {
+      if (redAvg > blueAvg) {
+        headline = 'RESULT: RED WINS';
+      } else if (blueAvg > redAvg) {
+        headline = 'RESULT: BLUE WINS';
+      } else {
+        headline = 'RESULT: DRAW';
+      }
+      details.push('Estimated from conviction scores');
+    }
+
+    // Most dangerous weakness from Red Team (highest SEVERITY: n/5, fallback to highest conviction)
+    if (redMsgs.length > 0) {
+      let topRed = redMsgs[0];
+      let topSev = -1;
+      for (const m of redMsgs) {
+        const sevMatch = m.text.match(/SEVERITY:\s*(\d(?:\.\d+)?)\s*\/\s*5/i);
+        const sev = sevMatch ? parseFloat(sevMatch[1]) : -1;
+        if (
+          sev > topSev ||
+          (sev === topSev && getMsgConviction10(m) > getMsgConviction10(topRed))
+        ) {
+          topSev = sev;
+          topRed = m;
+        }
+      }
+      const sevTag = topSev >= 0 ? ` (SEVERITY ${topSev}/5)` : '';
+      const cleanRedText = topRed.text
+        .replace(/SEVERITY:\s*\d(?:\.\d+)?\s*\/\s*5\s*[:.-]?\s*/i, '')
+        .trim();
+      details.push(
+        `Most dangerous weakness${sevTag} — ${topRed.agentName.split(' (')[0]}: ${
+          cleanRedText || topRed.text
+        }`,
+      );
+    }
+
+    // Best fix from Blue Team (highest conviction)
+    if (blueMsgs.length > 0) {
+      const topBlue = [...blueMsgs].sort(
+        (a, b) => getMsgConviction10(b) - getMsgConviction10(a),
+      )[0];
+      details.push(`Best fix — ${topBlue.agentName.split(' (')[0]}: ${topBlue.text}`);
+    }
+
+    details.push(
+      `Red Team average conviction ${redAvg}/10, Blue Team average conviction ${blueAvg}/10`,
+    );
+
+    return {
+      title: modeCfg.resultTitle || 'Result',
+      headline,
+      details,
+    };
+  }
+
+  if (debateMode === 'senate') {
+    let aye = 0;
+    let nay = 0;
+    let abstain = 0;
+    let uncounted = 0;
+
+    const factionDefs = modeCfg.sides || [
+      { id: 'security', label: 'Security Hawks', color: '#f43f5e', instruction: '' },
+      { id: 'innovation', label: 'Innovation Bloc', color: '#38bdf8', instruction: '' },
+      { id: 'economy', label: 'Economic Council', color: '#f59e0b', instruction: '' },
+      { id: 'ethics', label: 'Ethics & Public Interest', color: '#10b981', instruction: '' },
+    ];
+    const factionTally = new Map<string, { label: string; aye: number; nay: number; abstain: number }>();
+    for (const f of factionDefs) {
+      factionTally.set(f.id, { label: f.label, aye: 0, nay: 0, abstain: 0 });
+    }
+
+    for (const m of r3Msgs) {
+      const voteMatch = m.text.match(/VOTE:\s*(AYE|NAY|ABSTAIN)/i);
+      const sideId = getSide(m) || 'ethics';
+      const fEntry = factionTally.get(sideId);
+
+      if (voteMatch) {
+        const v = voteMatch[1].toUpperCase();
+        if (v === 'AYE') {
+          aye++;
+          if (fEntry) fEntry.aye++;
+        } else if (v === 'NAY') {
+          nay++;
+          if (fEntry) fEntry.nay++;
+        } else {
+          abstain++;
+          if (fEntry) fEntry.abstain++;
+        }
+      } else {
+        uncounted++;
+      }
+    }
+
+    const passed = aye > nay;
+    const headline = `${passed ? 'PASSED' : 'REJECTED'} ${aye}-${nay}-${abstain}`;
+    const details: string[] = [];
+
+    for (const f of factionTally.values()) {
+      details.push(`${f.label}: ${f.aye} AYE, ${f.nay} NAY, ${f.abstain} ABSTAIN`);
+    }
+    if (uncounted > 0) {
+      details.push(`${uncounted} not counted`);
+    }
+
+    return {
+      title: modeCfg.resultTitle || 'Vote',
+      headline,
+      details,
+    };
+  }
+
+  if (debateMode === 'vc_pitch') {
+    let invest = 0;
+    let pass = 0;
+    let conditional = 0;
+    let uncounted = 0;
+
+    const byDecision: Record<'INVEST' | 'PASS' | 'CONDITIONAL', ParallaxMessage[]> = {
+      INVEST: [],
+      PASS: [],
+      CONDITIONAL: [],
+    };
+
+    for (const m of r3Msgs) {
+      const decMatch = m.text.match(/DECISION:\s*(INVEST|PASS|CONDITIONAL)/i);
+      if (decMatch) {
+        const d = decMatch[1].toUpperCase() as 'INVEST' | 'PASS' | 'CONDITIONAL';
+        if (d === 'INVEST') invest++;
+        else if (d === 'PASS') pass++;
+        else conditional++;
+        byDecision[d].push(m);
+      } else {
+        uncounted++;
+      }
+    }
+
+    let winner: 'INVEST' | 'PASS' | 'CONDITIONAL' = 'CONDITIONAL';
+    if (invest > pass && invest > conditional) {
+      winner = 'INVEST';
+    } else if (pass > invest && pass > conditional) {
+      winner = 'PASS';
+    } else {
+      winner = 'CONDITIONAL';
+    }
+
+    const headline = `DECISION: ${winner} (${invest} INVEST · ${pass} PASS · ${conditional} CONDITIONAL)`;
+    const details: string[] = [];
+
+    for (const dec of ['INVEST', 'PASS', 'CONDITIONAL'] as const) {
+      const group = byDecision[dec];
+      if (group.length > 0) {
+        const strongest = [...group].sort(
+          (a, b) => getMsgConviction10(b) - getMsgConviction10(a),
+        )[0];
+        const cleanReason = strongest.text
+          .replace(/DECISION:\s*(?:INVEST|PASS|CONDITIONAL)\s*[:.-]?\s*/i, '')
+          .trim();
+        details.push(
+          `${dec} (${strongest.agentName.split(' (')[0]}): ${cleanReason || strongest.text}`,
+        );
+      }
+    }
+
+    if (uncounted > 0) {
+      details.push(`${uncounted} not counted`);
+    }
+
+    return {
+      title: modeCfg.resultTitle || 'Decision',
+      headline,
+      details,
+    };
+  }
+
+  return undefined;
 }

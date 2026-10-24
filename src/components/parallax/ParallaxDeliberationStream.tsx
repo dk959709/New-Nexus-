@@ -737,6 +737,32 @@ export const ParallaxDeliberationStream: React.FC<ParallaxDeliberationStreamProp
                                     </span>
                                   )}
 
+                                  {msg.sideLabel && (
+                                    <span
+                                      className={`px-1.5 py-0.5 rounded-md text-[9.5px] font-mono font-bold uppercase tracking-wider border leading-none ${
+                                        msg.side === 'prosecution' ||
+                                        msg.side === 'red' ||
+                                        msg.side === 'security' ||
+                                        msg.side === 'risk'
+                                          ? 'bg-rose-500/15 border-rose-500/35 text-rose-300'
+                                          : msg.side === 'defense' ||
+                                            msg.side === 'blue' ||
+                                            msg.side === 'innovation' ||
+                                            msg.side === 'tech'
+                                          ? 'bg-sky-500/15 border-sky-500/35 text-sky-300'
+                                          : msg.side === 'judge' ||
+                                            msg.side === 'economy' ||
+                                            msg.side === 'finance'
+                                          ? 'bg-amber-500/15 border-amber-500/35 text-amber-300'
+                                          : msg.side === 'referee'
+                                          ? 'bg-purple-500/15 border-purple-500/35 text-purple-300'
+                                          : 'bg-emerald-500/15 border-emerald-500/35 text-emerald-300'
+                                      }`}
+                                    >
+                                      {msg.sideLabel}
+                                    </span>
+                                  )}
+
                                   {/* Special Identity Classification */}
                                   {isHuman ? (
                                     <span className="text-[9.5px] font-mono font-bold uppercase tracking-wider text-amber-300">
