@@ -656,10 +656,39 @@ export const ParallaxDeliberationStream: React.FC<ParallaxDeliberationStreamProp
                             : `${Math.round(rawConv)}%`
                           : null;
 
+                      const SIDE_HEX_MAP: Record<string, string> = {
+                        prosecution: '#f43f5e',
+                        defense: '#38bdf8',
+                        judge: '#f59e0b',
+                        red: '#f43f5e',
+                        blue: '#38bdf8',
+                        referee: '#a855f7',
+                        security: '#f43f5e',
+                        innovation: '#38bdf8',
+                        economy: '#f59e0b',
+                        ethics: '#10b981',
+                        market: '#38bdf8',
+                        tech: '#a855f7',
+                        finance: '#f59e0b',
+                        risk: '#f43f5e',
+                      };
+                      const hasTeamSide = Boolean(msg.side && !isHuman);
+                      const sideHex = hasTeamSide
+                        ? SIDE_HEX_MAP[msg.side!] || configuredColor || colors.avatarHex
+                        : null;
+
                       return (
                         <div
                           key={msg.id}
                           id={`parallax-msg-${msg.id}`}
+                          style={
+                            sideHex
+                              ? {
+                                  borderLeft: `3px solid ${sideHex}`,
+                                  backgroundColor: isVoicePlaying ? undefined : `${sideHex}12`,
+                                }
+                              : undefined
+                          }
                           className={`group relative py-2 px-2 sm:px-3 rounded-xl transition-colors scroll-mt-24 ${
                             isVoicePlaying
                               ? 'bg-cyan-500/[0.09] ring-1 ring-cyan-400/30'

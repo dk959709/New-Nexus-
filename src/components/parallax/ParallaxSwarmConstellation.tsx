@@ -22,6 +22,8 @@ export interface ParallaxSwarmConstellationProps {
   selectedAgentId?: string | null;
   onSelectAgent?: (agentId: string | null) => void;
   topic?: string;
+  selectedSwarmAgentIds?: Set<string>;
+  sideAssignments?: Map<string, { side: string; sideLabel: string; color: string }>;
 }
 
 export const ParallaxSwarmConstellation: React.FC<ParallaxSwarmConstellationProps> = ({
@@ -33,6 +35,8 @@ export const ParallaxSwarmConstellation: React.FC<ParallaxSwarmConstellationProp
   selectedAgentId,
   onSelectAgent,
   topic,
+  selectedSwarmAgentIds,
+  sideAssignments,
 }) => {
   const [isExpanded, setIsExpanded] = useState(true);
   const [viewMode, setViewMode] = useState<'orbit' | 'quadrant' | 'telemetry'>('orbit');
@@ -466,6 +470,32 @@ export const ParallaxSwarmConstellation: React.FC<ParallaxSwarmConstellationProp
                   const agentMsgs = messages.filter((m) => m.agentId === agentKey);
                   const replyCount = agentMsgs.length;
                   const lastMsg = agentMsgs[agentMsgs.length - 1];
+                  const isInSelectedSwarm = selectedSwarmAgentIds
+                    ? selectedSwarmAgentIds.has(agentKey)
+                    : agent.enabled !== false;
+                  const isBenched = !isInSelectedSwarm && replyCount === 0 && !isSelected && !isHovered;
+
+                  const SIDE_HEX_MAP: Record<string, string> = {
+                    prosecution: '#f43f5e',
+                    defense: '#38bdf8',
+                    judge: '#f59e0b',
+                    red: '#f43f5e',
+                    blue: '#38bdf8',
+                    referee: '#a855f7',
+                    security: '#f43f5e',
+                    innovation: '#38bdf8',
+                    economy: '#f59e0b',
+                    ethics: '#10b981',
+                    market: '#38bdf8',
+                    tech: '#a855f7',
+                    finance: '#f59e0b',
+                    risk: '#f43f5e',
+                  };
+                  const assignedSide =
+                    lastMsg?.side || (isInSelectedSwarm ? sideAssignments?.get(agentKey)?.side : undefined);
+                  const sideRingColor = assignedSide
+                    ? SIDE_HEX_MAP[assignedSide] || sideAssignments?.get(agentKey)?.color || accentColor
+                    : null;
 
                   return (
                     <g
@@ -473,8 +503,29 @@ export const ParallaxSwarmConstellation: React.FC<ParallaxSwarmConstellationProp
                       onClick={() => onSelectAgent?.(selectedAgentId === agentKey ? null : agentKey)}
                       onMouseEnter={() => setHoveredAgentId(agentKey)}
                       onMouseLeave={() => setHoveredAgentId(null)}
-                      style={{ cursor: 'pointer' }}
+                      className={isSpeaking && !isBenched ? 'parallax-agent-star-pulse' : undefined}
+                      style={
+                        {
+                          cursor: 'pointer',
+                          opacity: isBenched ? 0.35 : 1,
+                          transformOrigin: `${x}px ${y}px`,
+                          '--star-glow': `${accentColor}cc`,
+                        } as React.CSSProperties
+                      }
                     >
+                      {/* Thin ring in side color when a side is assigned */}
+                      {sideRingColor && (
+                        <circle
+                          cx={x}
+                          cy={y}
+                          r={isSelected ? '18' : isHovered ? '17' : '15.5'}
+                          fill="none"
+                          stroke={sideRingColor}
+                          strokeWidth="1.2"
+                          opacity={isBenched ? 0.35 : 0.9}
+                        />
+                      )}
+
                       {/* Outer orbital halo for active / hovered / speaking nodes */}
                       {(isSpeaking || isSelected || isHovered || replyCount > 0) && (
                         <circle
@@ -498,8 +549,12 @@ export const ParallaxSwarmConstellation: React.FC<ParallaxSwarmConstellationProp
                         stroke={accentColor}
                         strokeWidth={isSelected ? '2.5' : isSpeaking ? '2.2' : '1.5'}
                         style={{
-                          filter: isSpeaking || isSelected || isHovered ? `drop-shadow(0 0 8px ${accentColor})` : 'none',
-                          transition: 'all 0.2s ease',
+                          filter: isBenched
+                            ? 'none'
+                            : isSpeaking || isSelected || isHovered
+                            ? `drop-shadow(0 0 12px ${accentColor})`
+                            : `drop-shadow(0 0 9px ${accentColor}66)`,
+                          transition: 'opacity 0.2s ease, filter 0.2s ease',
                         }}
                       />
 

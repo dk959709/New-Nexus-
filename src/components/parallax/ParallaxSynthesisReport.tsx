@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import {
   Copy,
   Check,
@@ -13,6 +13,7 @@ import {
 } from 'lucide-react';
 import type { ParallaxSummary, ParallaxMessage } from '@/types';
 import { formatFullParallaxTranscript } from '@/data/parallaxVoices';
+import { getDebateModeConfig } from '@/data/parallaxDebateModes';
 import { ParallaxConfidenceMeter } from './ParallaxConfidenceMeter';
 import { computeConfidenceWeightedVerdict } from '@/services/parallaxEvidenceEngine';
 
@@ -92,11 +93,128 @@ export const ParallaxSynthesisReport: React.FC<ParallaxSynthesisReportProps> = (
       ? '#38bdf8'
       : '#f59e0b';
 
+  const modeConfig = getDebateModeConfig(summary.debateMode);
+  const modeAccentColor = modeConfig.accentColor || '#06b6d4';
+  const rawHeadline = summary.modeResult?.headline || '';
+
+  const [countProgress, setCountProgress] = useState<number>(1);
+
+  useEffect(() => {
+    if (!rawHeadline || !/\d/.test(rawHeadline)) {
+      setCountProgress(1);
+      return;
+    }
+    if (
+      typeof window !== 'undefined' &&
+      window.matchMedia &&
+      window.matchMedia('(prefers-reduced-motion: reduce)').matches
+    ) {
+      setCountProgress(1);
+      return;
+    }
+
+    let rafId = 0;
+    const duration = 600;
+    const start = performance.now();
+    setCountProgress(0);
+
+    const tick = (now: number) => {
+      const elapsed = now - start;
+      const p = Math.min(1, elapsed / duration);
+      // Smooth ease-out
+      const eased = 1 - Math.pow(1 - p, 3);
+      setCountProgress(eased);
+      if (p < 1) {
+        rafId = requestAnimationFrame(tick);
+      }
+    };
+
+    rafId = requestAnimationFrame(tick);
+    return () => cancelAnimationFrame(rafId);
+  }, [rawHeadline]);
+
+  const animatedHeadline = React.useMemo(() => {
+    if (!rawHeadline || countProgress >= 1) return rawHeadline;
+    return rawHeadline.replace(/\d+/g, (match) => {
+      const num = parseInt(match, 10);
+      if (Number.isNaN(num)) return match;
+      return String(Math.round(num * countProgress));
+    });
+  }, [rawHeadline, countProgress]);
+
+  const headlineColor = React.useMemo(() => {
+    const upper = rawHeadline.toUpperCase();
+    if (!upper) return modeAccentColor;
+    // Check amber outcomes first (so PARTIALLY UPHELD is caught before UPHELD)
+    if (
+      upper.includes('PARTIALLY UPHELD') ||
+      upper.includes('CONDITIONAL') ||
+      upper.includes('DRAW') ||
+      upper.includes('NO VALID VOTES') ||
+      upper.includes('NO VALID CALLS')
+    ) {
+      return '#fbbf24';
+    }
+    // Check red outcomes next (so NOT UPHELD is caught before UPHELD, and DECISION: PASS before PASSED)
+    if (
+      upper.includes('NOT UPHELD') ||
+      upper.includes('REJECTED') ||
+      upper.includes('RED WINS') ||
+      /^DECISION:\s*PASS\b/.test(upper)
+    ) {
+      return '#fb7185';
+    }
+    // Check green outcomes
+    if (
+      upper.includes('UPHELD') ||
+      upper.includes('PASSED') ||
+      upper.includes('INVEST') ||
+      upper.includes('BLUE WINS')
+    ) {
+      return '#34d399';
+    }
+    return modeAccentColor;
+  }, [rawHeadline, modeAccentColor]);
+
   return (
     <div
       id="parallax-synthesis-report"
       className="relative py-6 pl-4 sm:pl-6 border-l-2 border-cyan-400/60 my-6 select-text"
     >
+      <style>{`
+        @keyframes parallaxModeCardIn {
+          from {
+            opacity: 0;
+            transform: translateY(8px);
+          }
+          to {
+            opacity: 1;
+            transform: translateY(0);
+          }
+        }
+        @keyframes parallaxModeDetailIn {
+          from {
+            opacity: 0;
+            transform: translateY(5px);
+          }
+          to {
+            opacity: 1;
+            transform: translateY(0);
+          }
+        }
+        .parallax-mode-card-anim {
+          animation: parallaxModeCardIn 200ms cubic-bezier(0.22, 1, 0.36, 1) both;
+        }
+        .parallax-mode-detail-anim {
+          animation: parallaxModeDetailIn 200ms ease-out both;
+        }
+        @media (prefers-reduced-motion: reduce) {
+          .parallax-mode-card-anim,
+          .parallax-mode-detail-anim {
+            animation: none !important;
+          }
+        }
+      `}</style>
       {/* Timeline Node Dot on Left Connector */}
       <div className="absolute -left-[6px] top-7 w-3 h-3 rounded-full bg-cyan-400 shadow-[0_0_12px_#00f0ff]" />
 
@@ -217,25 +335,52 @@ export const ParallaxSynthesisReport: React.FC<ParallaxSynthesisReportProps> = (
       {summary.modeResult && (
         <div
           id="parallax-mode-result-card"
-          className="mb-4 p-4 sm:p-5 rounded-2xl border border-cyan-500/30 bg-slate-900/75 backdrop-blur-xl shadow-[0_8px_30px_rgba(6,182,212,0.12)] space-y-2.5"
+          style={{
+            borderColor: `${modeAccentColor}66`,
+            boxShadow: `0 0 22px -4px ${modeAccentColor}40, inset 0 0 18px ${modeAccentColor}12`,
+          }}
+          className="parallax-mode-card-anim mb-4 p-4 sm:p-5 rounded-2xl border bg-slate-900/80 backdrop-blur-xl space-y-2.5"
         >
           <div className="flex items-center justify-between gap-2">
-            <span className="text-[10.5px] font-mono font-bold uppercase tracking-widest text-cyan-300">
+            <span
+              className="text-[10.5px] font-mono font-bold uppercase tracking-widest"
+              style={{ color: modeAccentColor }}
+            >
               Mode Result · {summary.modeResult.title}
             </span>
             {summary.debateMode && summary.debateMode !== 'default' && (
-              <span className="px-2 py-0.5 rounded-md bg-cyan-500/15 border border-cyan-500/30 text-[10px] font-mono uppercase tracking-wider text-cyan-200">
-                {summary.debateMode.replace(/_/g, ' ')}
+              <span
+                style={{
+                  borderColor: `${modeAccentColor}50`,
+                  backgroundColor: `${modeAccentColor}1f`,
+                  color: '#f8fafc',
+                }}
+                className="px-2 py-0.5 rounded-md border text-[10px] font-mono uppercase tracking-wider"
+              >
+                {modeConfig.label || summary.debateMode.replace(/_/g, ' ')}
               </span>
             )}
           </div>
-          <div className="text-base sm:text-xl font-bold text-white tracking-tight leading-snug">
-            {summary.modeResult.headline}
+          <div
+            style={{ color: headlineColor }}
+            className="text-xl sm:text-[26px] font-extrabold font-mono tabular-nums tracking-wide leading-snug"
+          >
+            {animatedHeadline}
           </div>
           {summary.modeResult.details && summary.modeResult.details.length > 0 && (
             <ul className="list-disc pl-4 sm:pl-5 space-y-1 text-xs sm:text-[13px] text-slate-200 leading-relaxed m-0">
               {summary.modeResult.details.map((detail, idx) => (
-                <li key={idx}>{detail}</li>
+                <li
+                  key={idx}
+                  className={idx < 8 ? 'parallax-mode-detail-anim' : undefined}
+                  style={
+                    idx < 8
+                      ? { animationDelay: `${idx * 40}ms` }
+                      : undefined
+                  }
+                >
+                  {detail}
+                </li>
               ))}
             </ul>
           )}

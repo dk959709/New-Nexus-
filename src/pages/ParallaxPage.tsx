@@ -56,6 +56,7 @@ import { ParallaxIntelligenceBriefing } from '@/components/parallax/ParallaxInte
 import { ParallaxHumanInjectionModal } from '@/components/parallax/ParallaxHumanInjectionModal';
 import { getParallaxAgentVoice, formatFullParallaxTranscript } from '@/data/parallaxVoices';
 import { getDebateModeConfig } from '@/data/parallaxDebateModes';
+import { assignModeSides } from '@/lib/parallaxModeTeams';
 import { cleanMarkdownForSpeech } from '@/lib/format';
 import type {
   ParallaxAgentConfig,
@@ -831,6 +832,13 @@ export const ParallaxPage: React.FC = () => {
     () => new Set(selectedSwarmAgents.map((a) => a.id)),
     [selectedSwarmAgents],
   );
+  const modeSideAssignments = React.useMemo(
+    () =>
+      debateMode !== 'default'
+        ? assignModeSides(debateMode, [...selectedSwarmAgents, ...dynamicPersonas])
+        : new Map(),
+    [debateMode, selectedSwarmAgents, dynamicPersonas],
+  );
   const dynamicSpecialistsCount = dynamicPersonas.length;
   const totalActivePoolCount = selectedSwarmCount + dynamicSpecialistsCount;
   const expectedMaxReplies = totalActivePoolCount * 3;
@@ -1139,6 +1147,16 @@ export const ParallaxPage: React.FC = () => {
             transform: translateY(0) scale(1);
           }
         }
+        @keyframes parallaxStarSpeakingPulse {
+          0%, 100% {
+            transform: scale(1);
+            filter: drop-shadow(0 0 9px var(--star-glow, rgba(97, 215, 201, 0.55)));
+          }
+          50% {
+            transform: scale(1.08);
+            filter: drop-shadow(0 0 14px var(--star-glow, rgba(97, 215, 201, 0.9)));
+          }
+        }
         .parallax-gfx-spin {
           animation: parallaxOrbitSlow 48s linear infinite;
           transform-origin: center center;
@@ -1158,12 +1176,17 @@ export const ParallaxPage: React.FC = () => {
         .parallax-swarm-size-shift {
           animation: parallaxSwarmSizeShift 260ms cubic-bezier(0.22, 1, 0.36, 1) both;
         }
+        .parallax-agent-star-pulse {
+          animation: parallaxStarSpeakingPulse 1.6s ease-in-out infinite;
+          transform-origin: center center;
+        }
         @media (prefers-reduced-motion: reduce) {
           .parallax-gfx-spin,
           .parallax-gfx-spin-reverse,
           .parallax-gfx-core-pulse,
           .parallax-gfx-synapse,
-          .parallax-swarm-size-shift {
+          .parallax-swarm-size-shift,
+          .parallax-agent-star-pulse {
             animation: none !important;
           }
         }
@@ -1946,9 +1969,41 @@ export const ParallaxPage: React.FC = () => {
                   const score = recruited?.conviction ?? null;
                   const hasSpoken = (recruited?.turns.length || 0) > 0;
                   const isVoiceSpeaking = voiceSpeakingMessage?.agentId === ag.id;
+                  const isActiveSpeaker = activeSpeakingAgent?.agentId === ag.id;
                   const isInspected = inspectedRosterAgentId === ag.id;
                   const isSelectedForSwarm = selectedSwarmAgentIds.has(ag.id);
+                  const isBenched = !isSelectedForSwarm && !hasSpoken && !isInspected;
+                  const isIdle = isSelectedForSwarm && !hasSpoken && !isActiveSpeaker && !isInspected;
                   const cleanName = ag.name.split(' (')[0];
+                  const accentHex = ag.accentColor || '#61d7c9';
+
+                  const SIDE_HEX_MAP: Record<string, string> = {
+                    prosecution: '#f43f5e',
+                    defense: '#38bdf8',
+                    judge: '#f59e0b',
+                    red: '#f43f5e',
+                    blue: '#38bdf8',
+                    referee: '#a855f7',
+                    security: '#f43f5e',
+                    innovation: '#38bdf8',
+                    economy: '#f59e0b',
+                    ethics: '#10b981',
+                    market: '#38bdf8',
+                    tech: '#a855f7',
+                    finance: '#f59e0b',
+                    risk: '#f43f5e',
+                  };
+                  const lastTurnSide =
+                    recruited && recruited.turns.length > 0
+                      ? recruited.turns[recruited.turns.length - 1]?.side
+                      : undefined;
+                  const assignedSide =
+                    debateMode !== 'default'
+                      ? lastTurnSide || (isSelectedForSwarm ? modeSideAssignments.get(ag.id)?.side : undefined)
+                      : undefined;
+                  const sideRingColor = assignedSide
+                    ? SIDE_HEX_MAP[assignedSide] || modeSideAssignments.get(ag.id)?.color || accentHex
+                    : null;
 
                   return (
                     <button
@@ -1957,14 +2012,27 @@ export const ParallaxPage: React.FC = () => {
                       onClick={() =>
                         setInspectedRosterAgentId((prev) => (prev === ag.id ? null : ag.id))
                       }
+                      style={
+                        isBenched
+                          ? { boxShadow: 'none', filter: 'none' }
+                          : {
+                              boxShadow: isActiveSpeaker
+                                ? `0 0 14px ${accentHex}45`
+                                : isIdle
+                                ? `0 0 8px ${accentHex}18`
+                                : `0 0 11px ${accentHex}30`,
+                            }
+                      }
                       className={`px-2 py-1 rounded-lg text-[10.5px] font-mono flex items-center gap-1.5 shrink-0 transition-all duration-300 ease-out cursor-pointer border ${
-                        !isSelectedForSwarm && !hasSpoken && !isInspected
-                          ? 'opacity-45 scale-[0.97]'
+                        isBenched
+                          ? 'opacity-35 scale-[0.97]'
+                          : isIdle
+                          ? 'opacity-80 scale-100'
                           : 'opacity-100 scale-100'
                       } ${
                         isInspected
                           ? 'bg-white/15 border-white/40 text-white font-semibold'
-                          : isVoiceSpeaking
+                          : isVoiceSpeaking || isActiveSpeaker
                           ? 'bg-cyan-500/20 border-cyan-400/50 text-cyan-200 font-semibold'
                           : hasSpoken
                           ? 'bg-emerald-500/10 border-emerald-500/25 text-white'
@@ -1975,25 +2043,50 @@ export const ParallaxPage: React.FC = () => {
                         width="11"
                         height="11"
                         viewBox="0 0 12 12"
-                        className="shrink-0"
+                        style={
+                          isBenched
+                            ? undefined
+                            : ({
+                                '--star-glow': `${accentHex}cc`,
+                                filter: `drop-shadow(0 0 ${isActiveSpeaker ? '12px' : '9px'} ${accentHex}${
+                                  isActiveSpeaker ? 'aa' : '66'
+                                })`,
+                              } as React.CSSProperties)
+                        }
+                        className={`shrink-0 overflow-visible ${
+                          isActiveSpeaker && !isBenched ? 'parallax-agent-star-pulse' : ''
+                        }`}
                         aria-hidden="true"
                       >
+                        {sideRingColor && (
+                          <circle
+                            cx="6"
+                            cy="6"
+                            r="5.6"
+                            fill="none"
+                            stroke={sideRingColor}
+                            strokeWidth="0.95"
+                            strokeOpacity={isBenched ? 0.3 : 0.9}
+                          />
+                        )}
                         <circle
                           cx="6"
                           cy="6"
-                          r="4.8"
+                          r={sideRingColor ? '4.2' : '4.8'}
                           fill="none"
-                          stroke={ag.accentColor || '#61d7c9'}
+                          stroke={accentHex}
                           strokeWidth="1.1"
-                          strokeDasharray={isVoiceSpeaking || hasSpoken ? 'none' : '2.5 2'}
-                          strokeOpacity={isVoiceSpeaking ? 1 : hasSpoken ? 0.85 : 0.45}
+                          strokeDasharray={isVoiceSpeaking || isActiveSpeaker || hasSpoken ? 'none' : '2.5 2'}
+                          strokeOpacity={
+                            isBenched ? 0.25 : isVoiceSpeaking || isActiveSpeaker ? 1 : hasSpoken ? 0.85 : 0.5
+                          }
                         />
                         <circle
                           cx="6"
                           cy="6"
-                          r={isVoiceSpeaking ? '2.6' : '2'}
-                          fill={ag.accentColor || '#61d7c9'}
-                          opacity={isVoiceSpeaking || hasSpoken ? 1 : 0.65}
+                          r={isVoiceSpeaking || isActiveSpeaker ? '2.5' : '2'}
+                          fill={accentHex}
+                          opacity={isBenched ? 0.35 : isVoiceSpeaking || isActiveSpeaker || hasSpoken ? 1 : 0.65}
                         />
                       </svg>
                       <span className="truncate max-w-[80px]">{cleanName}</span>
@@ -2237,10 +2330,12 @@ export const ParallaxPage: React.FC = () => {
                     messages={messages}
                     currentRound={currentRound}
                     isRunning={isRunning}
-                    activeSpeakingAgentId={voiceSpeakingMessage?.agentId}
+                    activeSpeakingAgentId={activeSpeakingAgent?.agentId}
                     selectedAgentId={selectedAgentFilter}
                     onSelectAgent={(id) => setSelectedAgentFilter(id)}
                     topic={currentTopic || 'Swarm Standby'}
+                    selectedSwarmAgentIds={selectedSwarmAgentIds}
+                    sideAssignments={debateMode !== 'default' ? modeSideAssignments : undefined}
                   />
                 </div>
               )}
@@ -2355,6 +2450,11 @@ export const ParallaxPage: React.FC = () => {
                           const angle = (idx / Math.max(1, arr.length)) * Math.PI * 2;
                           const nx = 70 + Math.cos(angle) * 52;
                           const ny = 70 + Math.sin(angle) * 52;
+                          const accentHex = ag.accentColor || '#61d7c9';
+                          const sideColor =
+                            debateMode !== 'default'
+                              ? modeSideAssignments.get(ag.id)?.color || accentHex
+                              : null;
                           return (
                             <g key={ag.id}>
                               <line
@@ -2362,15 +2462,27 @@ export const ParallaxPage: React.FC = () => {
                                 y1="70"
                                 x2={nx}
                                 y2={ny}
-                                stroke={ag.accentColor || '#61d7c9'}
+                                stroke={accentHex}
                                 strokeWidth="0.55"
                                 strokeOpacity="0.24"
                               />
+                              {sideColor && (
+                                <circle
+                                  cx={nx}
+                                  cy={ny}
+                                  r="4.2"
+                                  fill="none"
+                                  stroke={sideColor}
+                                  strokeWidth="0.9"
+                                  strokeOpacity="0.85"
+                                />
+                              )}
                               <circle
                                 cx={nx}
                                 cy={ny}
                                 r="2.6"
-                                fill={ag.accentColor || '#61d7c9'}
+                                fill={accentHex}
+                                style={{ filter: `drop-shadow(0 0 8px ${accentHex})` }}
                               />
                             </g>
                           );
@@ -2392,14 +2504,32 @@ export const ParallaxPage: React.FC = () => {
                           const angle = (idx / Math.max(1, arr.length)) * Math.PI * 2;
                           const nx = 70 + Math.cos(angle) * 34;
                           const ny = 70 + Math.sin(angle) * 34;
+                          const accentHex = ag.accentColor || '#c084fc';
+                          const sideColor =
+                            debateMode !== 'default'
+                              ? modeSideAssignments.get(ag.id)?.color || accentHex
+                              : null;
                           return (
-                            <circle
-                              key={ag.id}
-                              cx={nx}
-                              cy={ny}
-                              r="2.4"
-                              fill={ag.accentColor || '#c084fc'}
-                            />
+                            <g key={ag.id}>
+                              {sideColor && (
+                                <circle
+                                  cx={nx}
+                                  cy={ny}
+                                  r="3.9"
+                                  fill="none"
+                                  stroke={sideColor}
+                                  strokeWidth="0.9"
+                                  strokeOpacity="0.85"
+                                />
+                              )}
+                              <circle
+                                cx={nx}
+                                cy={ny}
+                                r="2.4"
+                                fill={accentHex}
+                                style={{ filter: `drop-shadow(0 0 8px ${accentHex})` }}
+                              />
+                            </g>
                           );
                         })}
                       </g>
