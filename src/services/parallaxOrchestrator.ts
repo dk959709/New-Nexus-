@@ -1349,7 +1349,8 @@ function abortableSleep(ms: number, signal?: AbortSignal): Promise<void> {
  * Cleans up raw LLM output to keep it strictly punchy (1-2 sentences).
  */
 function cleanReactionText(raw: string, agentName: string): string {
-  let text = raw.trim();
+  const originalTrimmed = raw.trim();
+  let text = originalTrimmed;
   // Strip code blocks or quotes if any
   text = text.replace(/^```[a-z]*\s*/i, '').replace(/\s*```$/, '');
   // Strip "[AGENT]:" or "AGENT:" prefixes
@@ -1358,13 +1359,25 @@ function cleanReactionText(raw: string, agentName: string): string {
   text = text.replace(/^["']|["']$/g, '');
   text = text.trim();
 
-  // If longer than 3 sentences, truncate to first 2
+  // If longer than 3 sentences, truncate to first 2 full sentences without cutting short prefixes like "OK." or "VOTE: AYE."
   const sentenceMatches = text.match(/[^.!?]+[.!?]+(\s|$)/g);
   if (sentenceMatches && sentenceMatches.length > 2) {
-    text = sentenceMatches.slice(0, 2).join(' ').trim();
+    let sliceCount = 2;
+    let candidate = sentenceMatches.slice(0, sliceCount).join(' ').trim();
+    while (countWords(candidate) < 12 && sliceCount < sentenceMatches.length) {
+      sliceCount++;
+      candidate = sentenceMatches.slice(0, sliceCount).join(' ').trim();
+    }
+    if (countWords(candidate) >= 6) {
+      text = candidate;
+    }
   }
 
-  return text || 'No reaction recorded.';
+  if (countWords(text) < 6 && countWords(originalTrimmed) >= 6) {
+    return originalTrimmed;
+  }
+
+  return text || originalTrimmed || 'No reaction recorded.';
 }
 
 const DEFAULT_AGENT_METRICS: Record<string, { conviction: number; mood: string }> = {
@@ -1401,10 +1414,11 @@ function parseConvictionAndMood(raw: string, agentId: string, defaultMood?: stri
   const fallback = DEFAULT_AGENT_METRICS[agentId.toLowerCase()] || { conviction: 7, mood: defaultMood || '⚡' };
   let conviction = fallback.conviction;
   let mood = defaultMood || fallback.mood;
-  let text = raw.trim();
+  const originalTrimmed = raw.trim();
+  let text = originalTrimmed;
 
   // Pattern: [9|🔥] or [8 | 🤔] or [10|⚡] or [4, 🧊]
-  const tagMatch = text.match(/\[\s*(\d{1,2})\s*[/|,;]\s*([^\]]+?)\s*\]/u);
+  const tagMatch = text.match(/\[\s*(\d{1,2})\s*[/|,;]\s*([^\]]{1,12})\s*\]/u);
   if (tagMatch) {
     const parsedScore = parseInt(tagMatch[1], 10);
     if (!isNaN(parsedScore)) {
@@ -1430,6 +1444,10 @@ function parseConvictionAndMood(raw: string, agentId: string, defaultMood?: stri
     if (emojiMatch) {
       mood = emojiMatch[1];
     }
+  }
+
+  if (countWords(text) < 6 && countWords(originalTrimmed) >= 6) {
+    text = originalTrimmed;
   }
 
   return { cleanText: text, conviction, mood };
@@ -1814,26 +1832,32 @@ Rule: Use ONLY the KEY FACTS or things you are 100% sure of. Never invent number
     let conviction = initConviction;
     let mood = initMood;
     let cleaned = cleanReactionText(rawWithoutMeta, agent.name);
+    if (countWords(cleaned) < 6 && countWords(rawText) >= 6) {
+      cleaned = rawText.trim();
+    }
 
-    // PROBLEM 1 FIX: Relaxed quality check. Accept if >=8 words (even without ending punctuation).
-    // Retry ONLY if <8 words.
-    if (countWords(cleaned) < 8 && !signal?.aborted) {
+    // Retry when first reply is under 6 words
+    if (countWords(cleaned) < 6 && !signal?.aborted) {
       try {
+        const retryUserPrompt = `${userPrompt}\n\nYour last reply was too short. Write 1-2 full sentences (at least 15 words) in your own voice. Do not reply with just OK.`;
         const retryResponse = await api.jarvisAgentCall({
           agentId: `parallax_${agent.id}_r${round}_retry`,
           messages: [
             { role: 'system', content: systemPrompt },
-            { role: 'user', content: userPrompt },
+            { role: 'user', content: retryUserPrompt },
           ],
           providerConfig: provider,
           temperature: 0.75,
-          maxTokens: 260,
+          maxTokens: 500,
           timeoutMs: 25000,
           signal,
         });
         const retryRaw = retryResponse.text || retryResponse.content || '';
         const retryParsed = parseConvictionAndMood(retryRaw, agent.id, agent.mood);
         let retryCleaned = cleanReactionText(retryParsed.cleanText, agent.name);
+        if (countWords(retryCleaned) < 6 && countWords(retryRaw) >= 6) {
+          retryCleaned = retryRaw.trim();
+        }
 
         if (countWords(retryCleaned) >= 6) {
           if (!hasEndPunctuation(retryCleaned)) {
@@ -1844,6 +1868,9 @@ Rule: Use ONLY the KEY FACTS or things you are 100% sure of. Never invent number
           mood = retryParsed.mood || mood;
         } else {
           // If retry answer is still under 6 words, fallback
+          console.warn(
+            `[Parallax Answer Rejected] agent=${agent.id} round=${round} model=${retryResponse?.model || model} raw="${retryRaw.slice(0, 300)}" cleaned="${retryCleaned}"`,
+          );
           const reason = `answer rejected: ${retryCleaned.slice(0, 80)}`;
           return createFallbackMessage(reason);
         }
@@ -1856,6 +1883,9 @@ Rule: Use ONLY the KEY FACTS or things you are 100% sure of. Never invent number
 
     // If still under 6 words, fallback
     if (countWords(cleaned) < 6) {
+      console.warn(
+        `[Parallax Answer Rejected] agent=${agent.id} round=${round} model=${response?.model || model} raw="${rawText.slice(0, 300)}" cleaned="${cleaned}"`,
+      );
       const reason = `answer rejected: ${cleaned.slice(0, 80)}`;
       return createFallbackMessage(reason);
     }
