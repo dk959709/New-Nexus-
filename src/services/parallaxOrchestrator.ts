@@ -1,4 +1,10 @@
 import { storage, DEFAULT_PARALLAX_AGENTS } from '@/lib/storage';
+import {
+  selectSwarmAgents,
+  getSpecialistCap,
+  isValidSwarmSize,
+  type ParallaxSwarmSize,
+} from '@/lib/parallaxSwarmSize';
 import { api } from '@/services/api';
 import { applyReasoningConfig } from '@/lib/reasoningConfig';
 import { AGENT_QUADRANTS } from '@/data/parallaxQuadrants';
@@ -358,6 +364,7 @@ export interface ParallaxRunOptions {
   topic: string;
   config?: ParallaxSystemConfig;
   debateMode?: ParallaxDebateMode;
+  swarmSize?: number;
   humanInjections?: ParallaxHumanInjection[];
   onMessage: (message: ParallaxMessage) => void;
   onRoundStart?: (round: 1 | 2 | 3) => void;
@@ -1269,19 +1276,27 @@ export async function deliberateAndCreateSpecialists(
   signal?: AbortSignal,
   onStatusUpdate?: (status: string) => void,
   topicContext?: string,
+  specialistCap: number = 5,
 ): Promise<ParallaxSpecialistDeliberation> {
+  const effectiveCap = Math.max(1, Math.min(5, specialistCap));
+  const mandatoryTarget = Math.min(3, effectiveCap);
+
   onStatusUpdate?.('Pre-Round 1: Gathering specialist recommendations from VERITAS, AXIOM, SOCRATES, HARMONY, and NEXUS-9...');
   const opinions = await fetchPersonaSpecialistOpinions(topic, existingAgents, signal, topicContext);
 
-  onStatusUpdate?.('Pre-Round 1: Compiling top 3 distinct mandatory specialists from persona proposals...');
+  onStatusUpdate?.(`Pre-Round 1: Compiling top ${mandatoryTarget} distinct mandatory specialist${mandatoryTarget === 1 ? '' : 's'} from persona proposals...`);
   const compiledResult = await compileMandatorySpecialists(topic, opinions, existingAgents, signal, topicContext);
-  const selectedMandatory = compiledResult.specialists;
+  const selectedMandatory = compiledResult.specialists.slice(0, mandatoryTarget);
   const compilerReasoning = compiledResult.compilerReasoning;
 
-  onStatusUpdate?.('Pre-Round 1: Evaluating if acute domain gaps require additional specialists...');
-  const additionalSpecialists = await evaluateAdditionalSpecialists(topic, existingAgents, selectedMandatory, signal, topicContext);
+  let additionalSpecialists: ParallaxAgentConfig[] = [];
+  if (effectiveCap > 3) {
+    onStatusUpdate?.('Pre-Round 1: Evaluating if acute domain gaps require additional specialists...');
+    const evaluated = await evaluateAdditionalSpecialists(topic, existingAgents, selectedMandatory, signal, topicContext);
+    additionalSpecialists = evaluated.slice(0, Math.max(0, effectiveCap - selectedMandatory.length));
+  }
 
-  const allSpecialists = [...selectedMandatory, ...additionalSpecialists];
+  const allSpecialists = [...selectedMandatory, ...additionalSpecialists].slice(0, effectiveCap);
 
   return {
     opinions,
@@ -2176,12 +2191,18 @@ export async function runParallaxSwarm(options: ParallaxRunOptions): Promise<voi
 
   const sysConfig = options.config || storage.getParallaxConfig();
   const allAgents = Object.values(sysConfig.agents || DEFAULT_PARALLAX_AGENTS);
-  const enabledAgents = allAgents.filter((a) => a.enabled !== false);
+  const allEnabledAgents = allAgents.filter((a) => a.enabled !== false);
 
-  if (enabledAgents.length === 0) {
+  if (allEnabledAgents.length === 0) {
     onError?.('No Parallax agents are enabled. Please enable at least one agent in settings.');
     return;
   }
+
+  const swarmSize: ParallaxSwarmSize = isValidSwarmSize(options.swarmSize)
+    ? options.swarmSize
+    : storage.getParallaxSwarmSize();
+  const enabledAgents = selectSwarmAgents(allEnabledAgents, swarmSize);
+  const specialistCap = getSpecialistCap(swarmSize);
 
   const allMessages: ParallaxMessage[] = [];
 
@@ -2261,7 +2282,7 @@ export async function runParallaxSwarm(options: ParallaxRunOptions): Promise<voi
       },
     };
 
-    onStatusUpdate?.(`Evidence Grounding: ${evidenceItems.length} sources verified via ${searchSource}. Grounding ${enabledAgents.length + 3}-agent swarm...`);
+    onStatusUpdate?.(`Evidence Grounding: ${evidenceItems.length} sources verified via ${searchSource}. Grounding ${enabledAgents.length + Math.min(3, specialistCap)}-agent swarm...`);
 
     // Build authoritative Key Facts block for all agents across Rounds 1, 2, 3 (max 600 chars)
     const keyFacts = buildKeyFactsBlock(entityResolution, verifiedClaims, evidenceItems);
@@ -2287,8 +2308,15 @@ export async function runParallaxSwarm(options: ParallaxRunOptions): Promise<voi
     let specialistDeliberation: ParallaxSpecialistDeliberation | null = null;
     let dynamicAgents: ParallaxAgentConfig[] = [];
     try {
-      specialistDeliberation = await deliberateAndCreateSpecialists(topic, enabledAgents, signal, onStatusUpdate, topicContext);
-      dynamicAgents = specialistDeliberation.allSpecialists;
+      specialistDeliberation = await deliberateAndCreateSpecialists(
+        topic,
+        enabledAgents,
+        signal,
+        onStatusUpdate,
+        topicContext,
+        specialistCap,
+      );
+      dynamicAgents = specialistDeliberation.allSpecialists.slice(0, specialistCap);
 
       options.onSpecialistDeliberation?.(specialistDeliberation);
       options.onDynamicPersonasCreated?.(dynamicAgents);
@@ -2296,7 +2324,7 @@ export async function runParallaxSwarm(options: ParallaxRunOptions): Promise<voi
       const mandatoryNames = specialistDeliberation.selectedMandatory.map((s) => `${s.name} ${s.mood || ''}`).join(', ');
       const addCount = specialistDeliberation.additionalSpecialists.length;
       onStatusUpdate?.(
-        `Dynamic Specialists finalized: 3 mandatory (${mandatoryNames})${addCount > 0 ? ` + ${addCount} additional` : ''}. Mobilizing swarm...`
+        `Dynamic Specialists finalized: ${specialistDeliberation.selectedMandatory.length} mandatory (${mandatoryNames})${addCount > 0 ? ` + ${addCount} additional` : ''}. Mobilizing swarm...`
       );
     } catch (dynamicErr) {
       if (signal?.aborted) throw dynamicErr;
@@ -2304,7 +2332,8 @@ export async function runParallaxSwarm(options: ParallaxRunOptions): Promise<voi
       const baseAgent = enabledAgents[0] || DEFAULT_PARALLAX_AGENTS.veritas;
       const existingIds = new Set(enabledAgents.map((a) => a.id.toLowerCase()));
       const existingNames = new Set(enabledAgents.map((a) => a.name.toUpperCase()));
-      const fallbackMandatory = createFallbackSpecialists(topic, 3, existingIds, existingNames, baseAgent, specialistDeliberation?.opinions);
+      const fallbackCount = Math.min(3, specialistCap);
+      const fallbackMandatory = createFallbackSpecialists(topic, fallbackCount, existingIds, existingNames, baseAgent, specialistDeliberation?.opinions).slice(0, specialistCap);
       dynamicAgents = fallbackMandatory;
       specialistDeliberation = {
         opinions: [],
@@ -2595,6 +2624,7 @@ export async function runParallaxSwarm(options: ParallaxRunOptions): Promise<voi
     summary.confidenceVerdict = confidenceVerdict;
     summary.intelligenceBriefing = intelligenceBriefing;
     summary.debateMode = options.debateMode;
+    summary.swarmSize = swarmSize;
     summary.humanInjections = options.humanInjections;
 
     // Save session to local storage
@@ -2609,6 +2639,7 @@ export async function runParallaxSwarm(options: ParallaxRunOptions): Promise<voi
       intelligenceBriefing,
       humanInjections: options.humanInjections,
       debateMode: options.debateMode,
+      swarmSize,
     });
 
     onStatusUpdate?.('Parallax Swarm complete. Auto-stopped after Round 3.');

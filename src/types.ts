@@ -779,6 +779,7 @@ export interface ParallaxSummary {
   humanInjections?: ParallaxHumanInjection[];
   devilsAdvocateTrigger?: ParallaxDevilsAdvocateTrigger;
   debateMode?: ParallaxDebateMode;
+  swarmSize?: number;
 }
 
 export interface ParallaxSpecialistOpinion {
@@ -793,9 +794,9 @@ export interface ParallaxSpecialistOpinion {
 
 export interface ParallaxSpecialistDeliberation {
   opinions: ParallaxSpecialistOpinion[];
-  selectedMandatory: ParallaxAgentConfig[]; // exactly 3
+  selectedMandatory: ParallaxAgentConfig[]; // up to 3
   additionalSpecialists: ParallaxAgentConfig[]; // 0 to 2
-  allSpecialists: ParallaxAgentConfig[]; // 3 to 5
+  allSpecialists: ParallaxAgentConfig[]; // 1 to 5
   compilerReasoning?: string;
   selectionReasons?: Record<string, string>;
 }
@@ -812,6 +813,7 @@ export interface ParallaxSession {
   humanInjections?: ParallaxHumanInjection[];
   devilsAdvocateTrigger?: ParallaxDevilsAdvocateTrigger;
   debateMode?: ParallaxDebateMode;
+  swarmSize?: number;
 }
 
 export interface Settings {

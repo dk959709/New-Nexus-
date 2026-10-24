@@ -24,6 +24,7 @@ import type {
   Workflow,
 } from '@/types';
 import { DEFAULT_PARALLAX_VOICES } from '@/data/parallaxVoices';
+import { isValidSwarmSize, type ParallaxSwarmSize } from '@/lib/parallaxSwarmSize';
 
 const KEYS = {
   searches: 'nexus-searches',
@@ -49,6 +50,7 @@ const KEYS = {
   documentRagSettings: 'nexus-document-rag-settings-v1',
   parallaxConfig: 'nexus-parallax-config-v1',
   parallaxSessions: 'nexus-parallax-sessions-v1',
+  parallaxSwarmSize: 'nexus-parallax-swarm-size',
   commanderConfig: 'nexus-ai-commander-config-v1',
 } as const;
 
@@ -2453,6 +2455,25 @@ export const storage = {
     const list = this.getParallaxSessions();
     const updated = list.filter((s) => s.id !== id);
     write(KEYS.parallaxSessions, updated);
+  },
+
+  getParallaxSwarmSize(): ParallaxSwarmSize {
+    try {
+      const raw = read<unknown>(KEYS.parallaxSwarmSize, 20);
+      const num = typeof raw === 'number' ? raw : Number(raw);
+      return isValidSwarmSize(num) ? num : 20;
+    } catch {
+      return 20;
+    }
+  },
+
+  saveParallaxSwarmSize(size: ParallaxSwarmSize): void {
+    try {
+      const validSize: ParallaxSwarmSize = isValidSwarmSize(size) ? size : 20;
+      write(KEYS.parallaxSwarmSize, validSize);
+    } catch {
+      // ignore storage errors
+    }
   },
 
   getAssistantCommanderEnabled(): boolean {
