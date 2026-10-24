@@ -643,6 +643,7 @@ export const ParallaxPage: React.FC = () => {
       messages,
       summary,
       specialistDeliberation || undefined,
+      debateMode,
     );
     navigator.clipboard.writeText(transcript);
     setCopiedSwarmTranscript(true);

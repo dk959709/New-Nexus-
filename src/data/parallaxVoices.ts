@@ -1,4 +1,10 @@
-import type { ParallaxMessage, ParallaxSummary, ParallaxSpecialistDeliberation } from '@/types';
+import type {
+  ParallaxMessage,
+  ParallaxSummary,
+  ParallaxSpecialistDeliberation,
+  ParallaxDebateMode,
+} from '@/types';
+import { getDebateModeConfig } from '@/data/parallaxDebateModes';
 
 /**
  * 20 Distinct Microsoft Edge Neural Voices assigned to Parallax agents.
@@ -74,8 +80,12 @@ export function formatFullParallaxTranscript(
   messages: ParallaxMessage[],
   summary?: ParallaxSummary | null,
   specialistDeliberation?: ParallaxSpecialistDeliberation | null,
+  debateMode?: ParallaxDebateMode,
 ): string {
   const cleanTopic = topic.trim() || 'Untitled Deliberation';
+  const activeModeId = summary?.debateMode || debateMode || 'default';
+  const modeConfig = getDebateModeConfig(activeModeId);
+  const modeLine = `MODE        : ${modeConfig.label}${modeConfig.subtitle ? ` (${modeConfig.subtitle})` : ''}\n`;
 
   // Session date & time stamps
   const sessionTs = messages[0]?.timestamp || Date.now();
@@ -107,6 +117,7 @@ export function formatFullParallaxTranscript(
   output += `PARALLAX SWARM DELIBERATION TRANSCRIPT\n`;
   output += `${divider}\n`;
   output += `TOPIC       : "${cleanTopic}"\n`;
+  output += modeLine;
   output += `DATE        : ${formattedDate}\n`;
   output += `TIME        : ${formattedTime}\n`;
   output += scaleLine;
@@ -177,6 +188,7 @@ export function formatFullParallaxTranscript(
       const role = m.role || AGENT_ROLES[cleanId] || (cleanId === 'veritas' ? 'Fact-based, skeptical analysis' : '');
       const moodStr = cleanId === 'veritas' ? ' 🧠' : (m.mood ? ` ${m.mood.trim()}` : '');
       const roleStr = role ? ` (${role})` : '';
+      const sideBadge = m.sideLabel ? ` [${m.sideLabel}]` : '';
       const dynamicBadge = m.isDynamic ? ' [Dynamically Generated]' : '';
 
       let liveSearchBadge = '';
@@ -189,7 +201,7 @@ export function formatFullParallaxTranscript(
       }
 
       // Agent Header: e.g. [#21] CLINICUS 🩺 (Clinical Ethics Specialist) [Dynamically Generated]
-      output += `[#${indexStr}] ${m.agentName}${moodStr}${roleStr}${dynamicBadge}${liveSearchBadge}\n`;
+      output += `[#${indexStr}] ${m.agentName}${moodStr}${roleStr}${sideBadge}${dynamicBadge}${liveSearchBadge}\n`;
 
       // Date & Time + Conviction + Tool Meta
       const metaTokens: string[] = [];
@@ -211,6 +223,10 @@ export function formatFullParallaxTranscript(
           metaTokens.push(`Time: ${tStr}`);
           metaTokens.push(`Date: ${dStr}`);
         }
+      }
+
+      if (m.sideLabel) {
+        metaTokens.push(`Side: ${m.sideLabel}`);
       }
 
       if (m.conviction !== undefined) {
@@ -245,6 +261,19 @@ export function formatFullParallaxTranscript(
     output += `${divider}\n`;
     output += `PARALLAX SWARM SYNTHESIS REPORT\n`;
     output += `${divider}\n\n`;
+
+    output += `DEBATE MODE:\n${modeConfig.label}${modeConfig.subtitle ? ` (${modeConfig.subtitle})` : ''}\n\n`;
+
+    if (summary.modeResult) {
+      output += `${(summary.modeResult.title || 'MODE RESULT').toUpperCase()}:\n`;
+      output += `${summary.modeResult.headline}\n`;
+      if (summary.modeResult.details && summary.modeResult.details.length > 0) {
+        for (const detail of summary.modeResult.details) {
+          output += `• ${detail}\n`;
+        }
+      }
+      output += `\n`;
+    }
 
     if (summary.entityResolution && summary.entityResolution.canonicalEntity && summary.entityResolution.canonicalEntity.toLowerCase() !== topic.toLowerCase().trim()) {
       output += `RESOLVED ENTITY:\n"${summary.entityResolution.input}" -> "${summary.entityResolution.canonicalEntity}" (${summary.entityResolution.entityType}, ${Math.round(summary.entityResolution.confidence * 100)}% confidence)\n\n`;
