@@ -1,6 +1,6 @@
 import { storage } from '@/lib/storage';
 import { isValidSwarmSize } from '@/lib/parallaxSwarmSize';
-import { resolveGenesisSlot } from '@/lib/parallaxModelPool';
+import { resolveGenesisSlot, getModelPool } from '@/lib/parallaxModelPool';
 import { DEFAULT_PARALLAX_VOICES } from '@/data/parallaxVoices';
 import { api } from '@/services/api';
 import { parallaxSearch } from '@/lib/parallaxSearch';
@@ -758,24 +758,118 @@ function stripCitationBrackets(text: string): string {
     .trim();
 }
 
-function extractFirstSentence(text: string): string {
-  let clean = (text || '').replace(/\s+/g, ' ').trim();
-  if (!clean) return '';
-  clean = stripCitationBrackets(clean);
-  if (!clean) return '';
+function stripMarkdownMarks(text: string): string {
+  if (!text) return '';
+  return text
+    .replace(/^\s*#{1,6}\s+/gm, '')
+    .replace(/^\s*[-*•]\s+/gm, '')
+    .replace(/\[([^\]]+)\]\([^)]+\)/g, '$1')
+    .replace(/\*\*([^*]+)\*\*/g, '$1')
+    .replace(/\*\*/g, '')
+    .replace(/__([^_]+)__/g, '$1')
+    .replace(/__/g, '')
+    .replace(/\*([^*\n]+)\*/g, '$1')
+    .replace(/(?:^|\s)\*(?=\S)|(?<=\S)\*(?=\s|$|[.,!?;:])/g, '')
+    .replace(/`+/g, '')
+    .replace(/\|+/g, ' ')
+    .replace(/^[\s#-]+/, '')
+    .replace(/\s+([.,!?;:])/g, '$1')
+    .replace(/\s{2,}/g, ' ')
+    .trim();
+}
 
-  // Match up to the first sentence-ending . ! or ? followed by space + uppercase/digit/quote or end of text,
-  // without splitting inside numbers (3.1, $1.47, 83.1), brackets ([deepmind.google]), or abbreviations
-  const sentenceRegex =
-    /^(?:[^[\]]|\[[^\]]*\])*?(?<!\b(?:vs|Vs|VS|Dr|Mr|Mrs|Ms|Prof|Sr|Jr|St|Fig|No|Vol|Inc|Ltd|Co|Corp|etc|al|e\.g|i\.e|U\.S|U\.K))[.!?](?=\s+[A-Z0-9"']|\s*$)/;
-  const match = clean.match(sentenceRegex) || clean.match(/^[\s\S]*?[.!?](?=\s+[A-Z0-9"']|\s*$)/);
-  if (match && match[0].trim().length >= 15) {
-    return stripCitationBrackets(match[0]);
+function splitCleanSentences(text: string): string[] {
+  if (!text) return [];
+  const filteredLines = text
+    .split('\n')
+    .map((l) => l.trim())
+    .filter((l) => {
+      if (!l) return false;
+      if (/^#{1,6}\s+/.test(l)) return false;
+      if (/^\|?[\s:-]+\|[\s|:-]*$/.test(l)) return false;
+      return true;
+    })
+    .map((l) => l.replace(/^[-*•#]+\s*/, '').trim());
+
+  let clean = filteredLines.join(' ');
+  clean = stripCitationBrackets(clean);
+  clean = stripMarkdownMarks(clean);
+  if (!clean) return [];
+
+  const sentenceBoundaryRegex =
+    /(?:[^[\]]|\[[^\]]*\])+?(?<!\b(?:vs|Vs|VS|Dr|Mr|Mrs|Ms|Prof|Sr|Jr|St|Fig|No|Vol|Inc|Ltd|Co|Corp|etc|al|e\.g|i\.e|U\.S|U\.K))[.!?](?=\s+[A-Z0-9"']|\s*$)/g;
+  const matches = clean.match(sentenceBoundaryRegex);
+  if (matches && matches.length > 0) {
+    return matches
+      .map((s) => stripMarkdownMarks(stripCitationBrackets(s)))
+      .filter((s) => s.length > 0);
   }
-  if (clean.length > 180) {
-    return stripCitationBrackets(clean.slice(0, 177)) + '…';
+  const fallback = stripMarkdownMarks(stripCitationBrackets(clean));
+  return fallback ? [fallback] : [];
+}
+
+function capSentenceLength(sentence: string): string {
+  const cleaned = stripMarkdownMarks(stripCitationBrackets(sentence));
+  if (cleaned.length > 180) {
+    return stripMarkdownMarks(stripCitationBrackets(cleaned.slice(0, 177))) + '…';
   }
-  return clean;
+  return cleaned;
+}
+
+function extractFirstSentence(text: string): string {
+  const sentences = splitCleanSentences(text);
+  if (sentences.length > 0) {
+    for (const s of sentences) {
+      if (s.length >= 15) {
+        return capSentenceLength(s);
+      }
+    }
+    return capSentenceLength(sentences[0]);
+  }
+  const fallback = stripMarkdownMarks(stripCitationBrackets(text || ''));
+  return capSentenceLength(fallback);
+}
+
+function extractHighlightSentence(text: string, topic?: string): string {
+  const sentences = splitCleanSentences(text);
+  if (sentences.length === 0) return extractFirstSentence(text);
+
+  const first = sentences[0];
+  const isGenericOpening = /^(?:based on|according to|from a|from an|as a|in summary)\b/i.test(
+    first.trim(),
+  );
+  const isTooShort = first.trim().length < 40;
+
+  if ((isGenericOpening || isTooShort) && sentences.length > 1) {
+    const topicWords = topic
+      ? topic
+          .toLowerCase()
+          .replace(/[^a-z0-9\s]/g, ' ')
+          .split(/\s+/)
+          .filter((w) => w.length >= 4 && !TOPIC_STOP_WORDS.has(w))
+      : [];
+
+    const dateRegex =
+      /\b(?:Jan(?:uary)?|Feb(?:ruary)?|Mar(?:ch)?|Apr(?:il)?|May|Jun(?:e)?|Jul(?:y)?|Aug(?:ust)?|Sep(?:tember)?|Oct(?:ober)?|Nov(?:ember)?|Dec(?:ember)?|20\d{2}|19\d{2})\b/i;
+
+    for (let i = 1; i < sentences.length; i++) {
+      const candidate = sentences[i].trim();
+      if (!candidate) continue;
+      const hasNumber = /\d/.test(candidate);
+      const hasDate = dateRegex.test(candidate);
+      const withoutFirstWord = candidate.replace(/^\S+\s+/, '');
+      const hasProductName =
+        /\b[A-Z][a-zA-Z0-9.+_-]{2,}\b/.test(withoutFirstWord) ||
+        topicWords.some((tw) => candidate.toLowerCase().includes(tw));
+      const isLongEnough = candidate.length >= 60;
+
+      if (hasNumber || hasDate || hasProductName || isLongEnough) {
+        return capSentenceLength(candidate);
+      }
+    }
+  }
+
+  return capSentenceLength(first);
 }
 
 const HIGH_TIER_EXACT_OR_SUBDOMAINS = [
@@ -900,6 +994,85 @@ function remapAgentCitationsToGlobal(
     .replace(/\s+([.,!?;:])/g, '$1')
     .replace(/\s{2,}/g, ' ')
     .trim();
+}
+
+interface RankedGenesisSource {
+  title: string;
+  url: string;
+  domain: string;
+  snippet: string;
+  tier: 'high' | 'medium' | 'low';
+}
+
+function stripZenithAiSourcesSection(text: string): string {
+  if (!text) return '';
+  return text
+    .replace(/(?:^|\n)\s*(?:#{1,6}\s*Sources\b|SOURCES\s*:?)[\s\S]*$/i, '')
+    .trim();
+}
+
+function renumberAndBuildZenithSources(
+  bodyWithoutSources: string,
+  globalSources: RankedGenesisSource[],
+): { finalText: string; orderedSources: RankedGenesisSource[] } {
+  const oldToNew = new Map<number, number>();
+  const usedSources: RankedGenesisSource[] = [];
+
+  const citationGroupRegex =
+    /(?:\[\s*\d+(?:\s*[,;/]\s*[^\]]*)?\](?!\())(?:\s*\[\s*\d+(?:\s*[,;/]\s*[^\]]*)?\](?!\())*/g;
+
+  const renumberedBody = (bodyWithoutSources || '')
+    .replace(citationGroupRegex, (groupMatch) => {
+      const brackets = groupMatch.match(/\[[^\]]+\]/g) || [];
+      const groupNewNums: number[] = [];
+
+      for (const br of brackets) {
+        const inner = br.slice(1, -1);
+        const parts = inner.split(/[,;/]/);
+        for (const rawPart of parts) {
+          const token = rawPart.trim();
+          if (!/^\d+$/.test(token)) continue;
+          const oldNum = parseInt(token, 10);
+          if (Number.isNaN(oldNum) || oldNum < 1 || oldNum > globalSources.length) {
+            continue;
+          }
+          let newNum = oldToNew.get(oldNum);
+          if (newNum === undefined) {
+            newNum = usedSources.length + 1;
+            oldToNew.set(oldNum, newNum);
+            usedSources.push(globalSources[oldNum - 1]);
+          }
+          groupNewNums.push(newNum);
+        }
+      }
+
+      const uniqueSorted = Array.from(new Set(groupNewNums)).sort((a, b) => a - b);
+      if (uniqueSorted.length === 0) {
+        return '';
+      }
+      return uniqueSorted.map((n) => `[${n}]`).join('');
+    })
+    .replace(/[ \t]+([.,!?;:])/g, '$1')
+    .replace(/[ \t]{2,}/g, ' ')
+    .trim();
+
+  const orderedSources =
+    usedSources.length > 0 ? usedSources : globalSources.slice(0, 5);
+
+  const sourceLines =
+    orderedSources.length > 0
+      ? orderedSources.map((s, idx) => {
+          const k = idx + 1;
+          const safeTitle = (s.title || 'Source').replace(/[[\]]/g, '').trim() || 'Source';
+          const cleanUrl = (s.url || '').trim();
+          const hasValidUrl = /^https?:\/\/[^\s)]+$/.test(cleanUrl);
+          const titlePart = hasValidUrl ? `[${safeTitle}](${cleanUrl})` : safeTitle;
+          return `- [${k}] ${titlePart} - ${s.domain || 'web'} (${s.tier || 'medium'})`;
+        })
+      : ['- [1] Synthesized from Genesis Swarm agent findings - local (medium)'];
+
+  const finalText = `${renumberedBody}\n\n## Sources\n${sourceLines.join('\n')}`;
+  return { finalText, orderedSources };
 }
 
 const TOPIC_STOP_WORDS = new Set([
@@ -1407,8 +1580,20 @@ Return the JSON object with "plan" and exactly ${agentCount} "agents".`;
       const searchBlock = formatSearchResultsBlock(searchEntry.results);
       const userPrompt = `${searchBlock}\n\nTopic: "${cleanTopic}"\nYour assigned task (${bp.role}): ${bp.task}`;
 
+      let response: { text?: string; content?: string; model?: string; providerName?: string } | null = null;
+      let rawText = '';
+      let latestRawText = '';
+      let activeModel = model;
+      let activeProviderName = provider?.name || 'Built-in AI';
+      let retriedOnce = false;
+
       const createAgentFallback = (reason: string): ParallaxMessage => {
         const shortReason = (reason || 'request failed').replace(/\s+/g, ' ').trim().slice(0, 90);
+        console.warn('[Genesis] Agent failed:', {
+          agentId: agent.id,
+          model: activeModel || model || 'fallback',
+          rawReplyPreview: (latestRawText || '').slice(0, 200),
+        });
         return {
           id: `plx_${agent.id}_r1_fallback_${Date.now()}_${Math.random().toString(36).slice(2, 6)}`,
           agentId: agent.id,
@@ -1426,8 +1611,8 @@ Return the JSON object with "plan" and exactly ${agentCount} "agents".`;
           sideLabel: agent.role,
           timestamp: Date.now(),
           durationMs: Date.now() - turnStart,
-          model: model || 'fallback',
-          providerName: provider?.name || 'Local Mesh',
+          model: activeModel || model || 'fallback',
+          providerName: activeProviderName || provider?.name || 'Local Mesh',
           fallbackReason: shortReason,
           toolUsed: searchEntry.hadOwnSearch
             ? {
@@ -1441,12 +1626,9 @@ Return the JSON object with "plan" and exactly ${agentCount} "agents".`;
         };
       };
 
-      let response: { text?: string; content?: string; model?: string; providerName?: string } | null = null;
-      let rawText = '';
-      let retriedOnce = false;
-
       try {
         if (agentPhaseSignal.aborted) throw new Error('Swarm aborted');
+        let initialErrorReason = '';
         try {
           response = await withHardTimeout(
             (callSignal) =>
@@ -1467,6 +1649,9 @@ Return the JSON object with "plan" and exactly ${agentCount} "agents".`;
             { step: 'agent_turn', agentId: agent.id, model },
           );
           rawText = (response.text || response.content || '').trim();
+          latestRawText = rawText;
+          activeModel = response.model || activeModel;
+          activeProviderName = response.providerName || activeProviderName;
         } catch (err1) {
           if (agentPhaseSignal.aborted) throw err1;
           if (isTimeoutError(err1)) {
@@ -1495,25 +1680,29 @@ Return the JSON object with "plan" and exactly ${agentCount} "agents".`;
                 { step: 'agent_turn_retry', agentId: agent.id, model },
               );
               rawText = (response?.text || response?.content || '').trim();
+              latestRawText = rawText;
+              activeModel = response?.model || activeModel;
+              activeProviderName = response?.providerName || activeProviderName;
             } catch (retryErr) {
               if (agentPhaseSignal.aborted) throw retryErr;
               if (isTimeoutError(retryErr)) {
                 return createAgentFallback('timeout after 40s');
               }
-              return createAgentFallback(retryErr instanceof Error ? retryErr.message : String(retryErr));
+              initialErrorReason =
+                retryErr instanceof Error ? retryErr.message : String(retryErr);
             }
           } else {
-            return createAgentFallback(err1 instanceof Error ? err1.message : String(err1));
+            initialErrorReason = err1 instanceof Error ? err1.message : String(err1);
           }
         }
 
         let parsed = parseGenesisTag(rawText, agent.mood || '💡');
         let fullText = parsed.cleanText.trim();
 
-        // Check if answer ends like a finished sentence; if not:
+        // Check if non-empty answer ends like a finished sentence; if not:
         // a) if >= 60 words, cut back to last complete sentence
         // b) otherwise retry ONCE with maxTokens 1400 and cut-off prompt, then apply (a) if still unfinished
-        if (!endsWithFinishedSentence(fullText)) {
+        if (fullText.length > 0 && !endsWithFinishedSentence(fullText)) {
           if (countWords(fullText) >= 60) {
             fullText = trimToLastCompleteSentence(fullText);
           } else if (!retriedOnce && !agentPhaseSignal.aborted) {
@@ -1540,6 +1729,7 @@ Return the JSON object with "plan" and exactly ${agentCount} "agents".`;
                 { step: 'agent_turn_cutoff_retry', agentId: agent.id, model },
               );
               const retryRaw = (retryRes.text || retryRes.content || '').trim();
+              latestRawText = retryRaw;
               const retryParsed = parseGenesisTag(retryRaw, agent.mood || '💡');
               let retryClean = retryParsed.cleanText.trim();
               if (!endsWithFinishedSentence(retryClean)) {
@@ -1549,23 +1739,17 @@ Return the JSON object with "plan" and exactly ${agentCount} "agents".`;
                 parsed = retryParsed;
                 fullText = retryClean;
                 response = retryRes;
+                activeModel = retryRes.model || activeModel;
+                activeProviderName = retryRes.providerName || activeProviderName;
               } else {
                 fullText = trimToLastCompleteSentence(fullText);
               }
             } catch (retryErr) {
               if (agentPhaseSignal.aborted) throw retryErr;
-              if (isTimeoutError(retryErr)) {
-                if (countWords(fullText) >= 20) {
-                  fullText = trimToLastCompleteSentence(fullText);
-                } else {
-                  return createAgentFallback('timeout after 40s');
-                }
-              } else if (countWords(fullText) >= 20) {
+              if (countWords(fullText) >= 20) {
                 fullText = trimToLastCompleteSentence(fullText);
-              } else {
-                return createAgentFallback(
-                  retryErr instanceof Error ? retryErr.message : String(retryErr),
-                );
+              } else if (isTimeoutError(retryErr)) {
+                return createAgentFallback('timeout after 40s');
               }
             }
           } else {
@@ -1597,6 +1781,7 @@ Return the JSON object with "plan" and exactly ${agentCount} "agents".`;
               { step: 'agent_turn_short_retry', agentId: agent.id, model },
             );
             const retryRaw = (retryRes.text || retryRes.content || '').trim();
+            latestRawText = retryRaw;
             const retryParsed = parseGenesisTag(retryRaw, agent.mood || '💡');
             let retryClean = retryParsed.cleanText.trim();
             if (!endsWithFinishedSentence(retryClean)) {
@@ -1606,20 +1791,90 @@ Return the JSON object with "plan" and exactly ${agentCount} "agents".`;
               parsed = retryParsed;
               fullText = retryClean;
               response = retryRes;
-            } else {
-              return createAgentFallback('reply under 20 words after retry');
+              activeModel = retryRes.model || activeModel;
+              activeProviderName = retryRes.providerName || activeProviderName;
             }
           } catch (retryErr) {
             if (agentPhaseSignal.aborted) throw retryErr;
             if (isTimeoutError(retryErr)) {
               return createAgentFallback('timeout after 40s');
             }
-            return createAgentFallback(retryErr instanceof Error ? retryErr.message : String(retryErr));
+          }
+        }
+
+        // If still empty or under 20 words after existing retry, make ONE more attempt with a DIFFERENT model from the pool
+        if (countWords(fullText) < 20 && !agentPhaseSignal.aborted) {
+          const pool = getModelPool();
+          const currentProvId = agent.providerId || 'existing';
+          const currentModId = agent.model || '';
+          const altEntry =
+            pool.find(
+              (entry) =>
+                entry.providerId !== currentProvId || entry.modelId !== currentModId,
+            ) || pool[0];
+          const altAgentConfig: ParallaxAgentConfig = {
+            ...agent,
+            providerId: altEntry.providerId,
+            model: altEntry.modelId,
+          };
+          const { provider: altProvider, model: altModel } = resolveParallaxProviderConfig(
+            altAgentConfig,
+            1400,
+          );
+          activeModel = altModel || activeModel;
+          activeProviderName = altProvider?.name || activeProviderName;
+
+          const altUserPrompt = `${userPrompt}\n\nAnswer the task using only the search results. Write 80-150 words. If something is unverified, say so. Do not refuse; give a safe, factual summary.`;
+          try {
+            const altRes = await withHardTimeout(
+              (callSignal) =>
+                api.jarvisAgentCall({
+                  agentId: `genesis_turn_${agent.id}_altmodel`,
+                  messages: [
+                    { role: 'system', content: agent.systemInstruction },
+                    { role: 'user', content: altUserPrompt },
+                  ],
+                  providerConfig: altProvider,
+                  temperature: 0.7,
+                  maxTokens: 1400,
+                  timeoutMs: 40000,
+                  signal: callSignal,
+                }),
+              40000,
+              agentPhaseSignal,
+              { step: 'agent_turn_alt_model', agentId: agent.id, model: altModel },
+            );
+            const altRaw = (altRes.text || altRes.content || '').trim();
+            latestRawText = altRaw;
+            const altParsed = parseGenesisTag(altRaw, agent.mood || '💡');
+            let altClean = altParsed.cleanText.trim();
+            if (!endsWithFinishedSentence(altClean)) {
+              altClean = trimToLastCompleteSentence(altClean);
+            }
+            if (countWords(altClean) >= 20) {
+              parsed = altParsed;
+              fullText = altClean;
+              response = altRes;
+              activeModel = altRes.model || altModel;
+              activeProviderName = altRes.providerName || altProvider?.name || 'Built-in AI';
+            } else {
+              return createAgentFallback(
+                initialErrorReason || 'reply under 20 words after retry',
+              );
+            }
+          } catch (altErr) {
+            if (agentPhaseSignal.aborted) throw altErr;
+            if (isTimeoutError(altErr)) {
+              return createAgentFallback('timeout after 40s');
+            }
+            return createAgentFallback(
+              altErr instanceof Error ? altErr.message : String(altErr),
+            );
           }
         }
 
         if (countWords(fullText) < 20) {
-          return createAgentFallback('reply under 20 words');
+          return createAgentFallback(initialErrorReason || 'reply under 20 words');
         }
 
         return {
@@ -1639,8 +1894,8 @@ Return the JSON object with "plan" and exactly ${agentCount} "agents".`;
           sideLabel: agent.role,
           timestamp: Date.now(),
           durationMs: Date.now() - turnStart,
-          model: response?.model || model,
-          providerName: response?.providerName || provider?.name || 'Built-in AI',
+          model: response?.model || activeModel || model,
+          providerName: response?.providerName || activeProviderName || provider?.name || 'Built-in AI',
           toolUsed: searchEntry.hadOwnSearch
             ? {
                 tool: 'search',
@@ -1763,7 +2018,7 @@ Return the JSON object with "plan" and exactly ${agentCount} "agents".`;
       positiveScoredSources.length >= 3 ? positiveScoredSources : scoredSources;
 
     // When there are at least 6 sources, put low-tier sources last
-    const uniqueSources =
+    const uniqueSources: RankedGenesisSource[] =
       baseUniqueSources.length >= 6
         ? [
             ...baseUniqueSources.filter((s) => s.tier !== 'low'),
@@ -1798,12 +2053,21 @@ Return the JSON object with "plan" and exactly ${agentCount} "agents".`;
       })
       .join('\n\n');
 
+    const failedAgentsForZenith = agentMessages
+      .filter((m) => Boolean(m.fallbackReason))
+      .map((m) => `${m.agentName} (${m.role || 'Specialist'})`);
+    const agentsWithoutAnswerLine =
+      failedAgentsForZenith.length > 0
+        ? `AGENTS WITHOUT AN ANSWER: ${failedAgentsForZenith.join(', ')}`
+        : 'AGENTS WITHOUT AN ANSWER: none';
+
     const zenithSystemPrompt = `Today is ${todayDate}. You are ZENITH, the final answer synthesizer of the Genesis Swarm.
 Rules:
 1. Use ONLY the facts and findings provided by the ${agentCount} agents and the verified sources below. Do NOT invent facts.
 2. Cite ONLY the numbers [n] from the UNIQUE SOURCES list. Every fact in Key Facts must have a citation that supports it.
-3. Prefer high-tier sources; mention if an important claim only comes from low-tier sources (e.g. YouTube).
-4. Write MARKDOWN with this exact structure and these exact headings:
+3. Do not write a Sources section; it is added automatically. For prices, dates and numbers prefer high or medium tier sources; do not rely on low-tier sources for key claims.
+4. If an agent did not answer, say in the Confidence section which perspective is missing and lower the confidence by one level (High -> Medium).
+5. Write MARKDOWN with this exact structure and these exact headings:
 ## Final Answer
 (short intro: 3-6 clear sentences directly answering the topic)
 ## Key Facts
@@ -1813,9 +2077,7 @@ Rules:
 ## Where Agents Disagree
 - 1-3 bullets
 ## Confidence
-High / Medium / Low + one short reason
-## Sources
-- [1] Title - domain`;
+High / Medium / Low + one short reason`;
 
     const zenithUserPrompt = `Today is ${todayDate}.
 Topic: "${cleanTopic}"
@@ -1823,12 +2085,17 @@ Topic: "${cleanTopic}"
 AGENT FINDINGS:
 ${agentExcerptsForZenith || '(No agent findings available)'}
 
+${agentsWithoutAnswerLine}
+
 UNIQUE SOURCES:
 ${sourcesForZenith || '(No live web sources available)'}
 
-Write the final synthesis in Markdown using the required headings: ## Final Answer, ## Key Facts, ## Comparison Table (only when applicable), ## Where Agents Disagree, ## Confidence, ## Sources.`;
+Write the final synthesis in Markdown using the required headings: ## Final Answer, ## Key Facts, ## Comparison Table (only when applicable), ## Where Agents Disagree, ## Confidence. Do not write a Sources section; it is added automatically.`;
 
-    const buildZenithFallbackText = (): string => {
+    const buildZenithFallbackResult = (): {
+      finalText: string;
+      orderedSources: RankedGenesisSource[];
+    } => {
       const nonFallback = agentMessages
         .filter((m) => !m.fallbackReason)
         .sort((a, b) => (b.conviction ?? 7) - (a.conviction ?? 7));
@@ -1840,18 +2107,17 @@ Write the final synthesis in Markdown using the required headings: ## Final Answ
         sentences.length > 0
           ? sentences.join(' ')
           : `Genesis Swarm completed its single-round investigation on "${cleanTopic}".`;
-      const fallbackSourcesList =
-        uniqueSources.length > 0
-          ? uniqueSources
-              .slice(0, 5)
-              .map((s, idx) => `- [${idx + 1}] ${s.title} - ${s.domain}`)
-              .join('\n')
-          : '- [1] Synthesized from Genesis Swarm agent findings - local';
-      return `## Final Answer\n${combined}\n\n## Key Facts\n- Synthesized from top-conviction Genesis agents.\n\n## Where Agents Disagree\n- Agents emphasized different domain trade-offs across implementation and risk.\n\n## Confidence\nMedium — Estimated from top agents.\n\n## Sources\n${fallbackSourcesList}`;
+      const missingNote =
+        failedAgentsForZenith.length > 0
+          ? `Missing perspective from ${failedAgentsForZenith.join(', ')}.`
+          : 'Estimated from top agents.';
+      const fallbackBody = `## Final Answer\n${combined}\n\n## Key Facts\n- Synthesized from top-conviction Genesis agents.\n\n## Where Agents Disagree\n- Agents emphasized different domain trade-offs across implementation and risk.\n\n## Confidence\nMedium — ${missingNote}`;
+      return renumberAndBuildZenithSources(fallbackBody, uniqueSources);
     };
 
     const zenithStart = Date.now();
     let zenithText = '';
+    let finalOrderedSources: RankedGenesisSource[] = uniqueSources.slice(0, 5);
     let zenithFallbackReason: string | undefined;
     let zenithRespModel = zenithModel;
     let zenithRespProvider = zenithProvider?.name || 'Built-in AI';
@@ -1877,19 +2143,26 @@ Write the final synthesis in Markdown using the required headings: ## Final Answ
       );
       const rawZ = (zRes.text || zRes.content || '').trim();
       if (countWords(rawZ) >= 15) {
-        let cleanedZ = parseGenesisTag(rawZ, '🌟').cleanText.trim();
-        cleanedZ = trimZenithMarkdown(cleanedZ);
-        zenithText = cleanedZ;
+        let bodyZ = parseGenesisTag(rawZ, '🌟').cleanText.trim();
+        bodyZ = stripZenithAiSourcesSection(bodyZ);
+        bodyZ = trimZenithMarkdown(bodyZ);
+        const built = renumberAndBuildZenithSources(bodyZ, uniqueSources);
+        zenithText = built.finalText;
+        finalOrderedSources = built.orderedSources;
         zenithRespModel = zRes.model || zenithModel;
         zenithRespProvider = zRes.providerName || zenithRespProvider;
       } else {
-        zenithText = buildZenithFallbackText();
+        const fb = buildZenithFallbackResult();
+        zenithText = fb.finalText;
+        finalOrderedSources = fb.orderedSources;
         zenithFallbackReason = 'Estimated from top agents';
       }
     } catch (zErr) {
       if (signal?.aborted) return;
       console.warn('[Genesis] ZENITH synthesis failed, using fallback:', zErr);
-      zenithText = buildZenithFallbackText();
+      const fb = buildZenithFallbackResult();
+      zenithText = fb.finalText;
+      finalOrderedSources = fb.orderedSources;
       zenithFallbackReason = zErr instanceof Error ? zErr.message : String(zErr);
     }
 
@@ -1935,7 +2208,7 @@ Write the final synthesis in Markdown using the required headings: ## Final Answ
       .slice(0, 4);
 
     const highlights = top4Agents.map(
-      (m) => `${m.agentName}: ${extractFirstSentence(m.text)}`,
+      (m) => `${m.agentName}: ${extractHighlightSentence(m.text, cleanTopic)}`,
     );
     if (highlights.length === 0) {
       highlights.push(`ARCHITECT: ${extractFirstSentence(architectPlan)}`);
@@ -1948,7 +2221,7 @@ Write the final synthesis in Markdown using the required headings: ## Final Answ
         ? 'MODERATE'
         : 'SPECULATIVE';
 
-    const evidenceSources = uniqueSources.slice(0, 8).map((s) => ({
+    const evidenceSources = finalOrderedSources.slice(0, 10).map((s) => ({
       title: s.title,
       url: s.url,
       domain: s.domain,

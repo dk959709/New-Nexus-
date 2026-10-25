@@ -672,10 +672,15 @@ export const ParallaxSynthesisReport: React.FC<ParallaxSynthesisReportProps> = (
                     >
                       <div className="min-w-0">
                         <div className="text-slate-100 font-bold truncate group-hover:text-cyan-300">
-                          {src.title || src.domain}
+                          {summary.debateMode === 'genesis'
+                            ? `[${i + 1}] ${src.title || src.domain}`
+                            : src.title || src.domain}
                         </div>
                         <div className="text-[10px] text-slate-300 truncate">
-                          {src.domain} • Tier {src.tier || '1'}
+                          {src.domain} •{' '}
+                          {summary.debateMode === 'genesis'
+                            ? `${src.tier || 'medium'} tier`
+                            : `Tier ${src.tier || '1'}`}
                         </div>
                       </div>
                       <ExternalLink size={12} className="text-slate-400 group-hover:text-cyan-300 shrink-0" />
