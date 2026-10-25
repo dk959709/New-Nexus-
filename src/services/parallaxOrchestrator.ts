@@ -1459,7 +1459,7 @@ export function parseConvictionAndMood(raw: string, agentId: string, defaultMood
  * Capped at 350 characters to keep agent input token footprints lean (~90 tokens).
  */
 export const buildGroundingBlock = (
-  sources: Array<{ title: string; snippet: string; domain?: string }>,
+  sources: Array<{ title: string; snippet?: string; domain?: string }>,
 ): string => {
   if (!sources || sources.length === 0) return '';
   const top3 = sources.slice(0, 3);
@@ -2248,7 +2248,13 @@ export async function runParallaxSwarm(options: ParallaxRunOptions): Promise<voi
   }
 
   if (options.debateMode === 'genesis') {
-    await runGenesisSwarm(options);
+    try {
+      await runGenesisSwarm(options);
+    } catch (err) {
+      if (!signal?.aborted) {
+        onError?.(err instanceof Error ? err.message : 'Unexpected error during Genesis Swarm.');
+      }
+    }
     return;
   }
 

@@ -1,4 +1,5 @@
 import { storage } from '@/lib/storage';
+import { isValidSwarmSize } from '@/lib/parallaxSwarmSize';
 import { resolveGenesisSlot } from '@/lib/parallaxModelPool';
 import { DEFAULT_PARALLAX_VOICES } from '@/data/parallaxVoices';
 import { api } from '@/services/api';
@@ -590,7 +591,7 @@ function parseGenesisTag(
   defaultMood: string,
 ): { cleanText: string; conviction: number; mood: string } {
   const trimmed = (raw || '').trim();
-  const endTagRegex = /\[\s*(\d{1,2})\s*[|\/,;]\s*([^\]]{1,12}?)\s*\]\s*$/u;
+  const endTagRegex = /\[\s*(\d{1,2})\s*[|/,;]\s*([^\]]{1,12}?)\s*\]\s*$/u;
   const match = trimmed.match(endTagRegex);
   if (match && typeof match.index === 'number') {
     const parsedScore = parseInt(match[1], 10);
@@ -621,6 +622,8 @@ function extractFirstSentence(text: string): string {
 const MAX_GENESIS_RUN_MS = 8 * 60 * 1000; // 8 minutes total safety cap
 
 export async function runGenesisSwarm(options: ParallaxRunOptions): Promise<void> {
+  options.onStatusUpdate?.('Genesis: starting...');
+
   const {
     topic,
     onMessage,
@@ -646,16 +649,6 @@ export async function runGenesisSwarm(options: ParallaxRunOptions): Promise<void
     day: 'numeric',
   });
 
-  const size = isValidSwarmSize(options.swarmSize)
-    ? options.swarmSize
-    : storage.getParallaxSwarmSize();
-  const agentCount = size - 2;
-  const architectMaxTokens = Math.max(1000, Math.min(2500, 700 + 100 * agentCount));
-
-  const genesisSettings = storage.getParallaxGenesisSettings();
-  const maxSearches = Math.max(0, Math.min(18, genesisSettings.maxSearches ?? 10));
-  const allMessages: ParallaxMessage[] = [];
-
   // Controller that aborts either when the user stops the swarm OR when the 8-minute total run cap expires
   const agentPhaseController = new AbortController();
   let eightMinLimitReached = false;
@@ -678,6 +671,17 @@ export async function runGenesisSwarm(options: ParallaxRunOptions): Promise<void
 
   try {
     if (signal?.aborted) return;
+
+    const size = isValidSwarmSize(options.swarmSize)
+      ? options.swarmSize
+      : storage.getParallaxSwarmSize();
+    const agentCount = size - 2;
+    const architectMaxTokens = Math.max(1000, Math.min(2500, 700 + 100 * agentCount));
+
+    const genesisSettings = storage.getParallaxGenesisSettings();
+    const maxSearches = Math.max(0, Math.min(18, genesisSettings.maxSearches ?? 10));
+    const allMessages: ParallaxMessage[] = [];
+
     onRoundStart?.(1);
 
     // =========================================================================

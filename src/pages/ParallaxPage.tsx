@@ -723,64 +723,69 @@ export const ParallaxPage: React.FC = () => {
     const controller = new AbortController();
     abortControllerRef.current = controller;
 
-    await runParallaxSwarm({
-      topic: targetTopic,
-      config,
-      debateMode,
-      swarmSize,
-      humanInjections,
-      signal: controller.signal,
-      onRoundStart: (r) => {
-        setCurrentRound(r);
-        if (debateMode !== 'genesis') {
-          if (r === 1) {
-            setStatusText('PLANNER ONLINE • RESEARCH SWARM ONLINE • ROUND 01');
-          } else if (r === 2) {
-            setStatusText('DELIBERATION ACTIVE • CROSS-EXAMINATION • ROUND 02');
-          } else if (r === 3) {
-            setStatusText('DELIBERATION ACTIVE • CONVERGENCE RESOLUTION • ROUND 03');
+    try {
+      await runParallaxSwarm({
+        topic: targetTopic,
+        config,
+        debateMode,
+        swarmSize,
+        humanInjections,
+        signal: controller.signal,
+        onRoundStart: (r) => {
+          setCurrentRound(r);
+          if (debateMode !== 'genesis') {
+            if (r === 1) {
+              setStatusText('PLANNER ONLINE • RESEARCH SWARM ONLINE • ROUND 01');
+            } else if (r === 2) {
+              setStatusText('DELIBERATION ACTIVE • CROSS-EXAMINATION • ROUND 02');
+            } else if (r === 3) {
+              setStatusText('DELIBERATION ACTIVE • CONVERGENCE RESOLUTION • ROUND 03');
+            }
           }
-        }
-      },
-      onIntelligenceBriefingReady: (briefing) => {
-        setIntelligenceBriefing(briefing);
-        setStatusText('ROUND 00 COMPLETE • INTELLIGENCE BRIEFING READY');
-      },
-      onSpecialistDeliberation: (deliberation) => {
-        setSpecialistDeliberation(deliberation);
-        setStatusText('CONNECTING AGENTS • SPECIALISTS COMPILED');
-      },
-      onDynamicPersonasCreated: (personas) => {
-        setDynamicPersonas(personas);
-      },
-      onDevilsAdvocateTriggered: (trigger) => {
-        setDevilsAdvocateTrigger(trigger);
-        setStatusText(`DEVIL'S ADVOCATE INJECTED • CONTRARIAN STRESS-TEST ACTIVE`);
-      },
-      onMessage: (msg) => {
-        setMessages((prev) => [...prev, msg]);
-      },
-      onStatusUpdate: (status) => {
-        setStatusText(status);
-      },
-      onComplete: (sum, _allMsgs, deliberation) => {
-        setSummary(sum);
-        if (deliberation) {
+        },
+        onIntelligenceBriefingReady: (briefing) => {
+          setIntelligenceBriefing(briefing);
+          setStatusText('ROUND 00 COMPLETE • INTELLIGENCE BRIEFING READY');
+        },
+        onSpecialistDeliberation: (deliberation) => {
           setSpecialistDeliberation(deliberation);
-        }
-        setWasStoppedEarly(false);
-        setIsRunning(false);
-        setStatusText('SYNTHESIS READY • COMPLETE');
-        setSessions(storage.getParallaxSessions());
-      },
-      onError: (err) => {
-        setErrorText(err);
-        setIsRunning(false);
-        setStatusText('Swarm error encountered.');
-      },
-    });
-
-    setIsRunning(false);
+          setStatusText('CONNECTING AGENTS • SPECIALISTS COMPILED');
+        },
+        onDynamicPersonasCreated: (personas) => {
+          setDynamicPersonas(personas);
+        },
+        onDevilsAdvocateTriggered: (trigger) => {
+          setDevilsAdvocateTrigger(trigger);
+          setStatusText(`DEVIL'S ADVOCATE INJECTED • CONTRARIAN STRESS-TEST ACTIVE`);
+        },
+        onMessage: (msg) => {
+          setMessages((prev) => [...prev, msg]);
+        },
+        onStatusUpdate: (status) => {
+          setStatusText(status);
+        },
+        onComplete: (sum, _allMsgs, deliberation) => {
+          setSummary(sum);
+          if (deliberation) {
+            setSpecialistDeliberation(deliberation);
+          }
+          setWasStoppedEarly(false);
+          setIsRunning(false);
+          setStatusText('SYNTHESIS READY • COMPLETE');
+          setSessions(storage.getParallaxSessions());
+        },
+        onError: (err) => {
+          setErrorText(err);
+          setIsRunning(false);
+          setStatusText('Swarm error encountered.');
+        },
+      });
+    } catch (err) {
+      setErrorText(err instanceof Error ? err.message : 'Unexpected error');
+      setStatusText('Swarm error encountered.');
+    } finally {
+      setIsRunning(false);
+    }
   };
 
   const handleStopSwarm = () => {
