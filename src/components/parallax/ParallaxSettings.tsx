@@ -9,9 +9,19 @@ import {
   Play,
   Square,
   Palette,
+  ChevronDown,
+  ChevronUp,
+  Orbit,
 } from 'lucide-react';
 import { storage, DEFAULT_PARALLAX_AGENTS } from '@/lib/storage';
-import type { ParallaxSystemConfig, ParallaxAgentConfig, AIProvidersState } from '@/types';
+import { getModelPool } from '@/lib/parallaxModelPool';
+import type {
+  ParallaxSystemConfig,
+  ParallaxAgentConfig,
+  AIProvidersState,
+  ParallaxGenesisSettings,
+  ParallaxGenesisSlot,
+} from '@/types';
 import { ParallaxAgentAvatar } from './ParallaxAgentIcon';
 import { EDGE_VOICES } from '@/data/edgeVoices';
 import { getParallaxAgentVoice } from '@/data/parallaxVoices';
@@ -61,6 +71,12 @@ export const ParallaxSettings: React.FC<ParallaxSettingsProps> = ({
   const [saveToast, setSaveToast] = useState<string | null>(null);
   const [confirmResetAll, setConfirmResetAll] = useState(false);
   const [testingVoiceAgentId, setTestingVoiceAgentId] = useState<string | null>(null);
+  const [bulkProviderId, setBulkProviderId] = useState<string>('existing');
+  const [genesisSettings, setGenesisSettings] = useState<ParallaxGenesisSettings>(() =>
+    storage.getParallaxGenesisSettings(),
+  );
+  const [isGenesisOpen, setIsGenesisOpen] = useState<boolean>(false);
+  const [genesisBulkProviderId, setGenesisBulkProviderId] = useState<string>('existing');
   const audioRef = useRef<HTMLAudioElement | null>(null);
 
   useEffect(() => {
@@ -85,6 +101,130 @@ export const ParallaxSettings: React.FC<ParallaxSettingsProps> = ({
   const showFeedback = (msg: string) => {
     setSaveToast(msg);
     setTimeout(() => setSaveToast(null), 3000);
+  };
+
+  const getDefaultModelForProvider = (providerId: string): string => {
+    if (!providerId || providerId === 'existing') {
+      const activeCustom = storage.getActiveAIProvider?.();
+      if (activeCustom && activeCustom.model && activeCustom.model.trim()) {
+        return activeCustom.model.trim();
+      }
+      return 'deepseek/deepseek-chat';
+    }
+    const prov = providersState.providers.find((p) => p.id === providerId);
+    return (prov && prov.model && prov.model.trim()) || 'deepseek/deepseek-chat';
+  };
+
+  const handleUseOneProviderForAllAgents = () => {
+    const targetModel = getDefaultModelForProvider(bulkProviderId);
+    let latestCfg = config;
+    for (const ag of agentsList) {
+      latestCfg = storage.updateParallaxAgent(ag.id, {
+        providerId: bulkProviderId,
+        modelId: targetModel,
+      });
+    }
+    onConfigChange(latestCfg);
+    const provName =
+      availableProviders.find((p) => p.id === bulkProviderId)?.name || bulkProviderId;
+    showFeedback(`All 20 agents set to ${provName} (${targetModel}).`);
+  };
+
+  const handleSpreadProvidersAcrossAgents = () => {
+    const pool = getModelPool();
+    let latestCfg = config;
+    agentsList.forEach((ag, idx) => {
+      const choice = pool[idx % pool.length] || {
+        providerId: 'existing',
+        modelId: 'deepseek/deepseek-chat',
+      };
+      latestCfg = storage.updateParallaxAgent(ag.id, {
+        providerId: choice.providerId,
+        modelId: choice.modelId,
+      });
+    });
+    onConfigChange(latestCfg);
+    showFeedback(`Spread ${pool.length} model choice${pool.length === 1 ? '' : 's'} across all 20 agents.`);
+  };
+
+  const updateGenesisSettings = (next: ParallaxGenesisSettings, toastMsg?: string) => {
+    storage.saveParallaxGenesisSettings(next);
+    setGenesisSettings(storage.getParallaxGenesisSettings());
+    if (toastMsg) {
+      showFeedback(toastMsg);
+    }
+  };
+
+  const handleGenesisSlotProviderChange = (slotIdx: number, newProviderId: string) => {
+    const nextSlots: ParallaxGenesisSlot[] = genesisSettings.slots.map((s, idx) => {
+      if (idx !== slotIdx) return s;
+      if (newProviderId === 'auto') {
+        return { providerId: 'auto', modelId: '' };
+      }
+      return {
+        providerId: newProviderId,
+        modelId: getDefaultModelForProvider(newProviderId),
+      };
+    });
+    updateGenesisSettings({ ...genesisSettings, slots: nextSlots });
+  };
+
+  const handleGenesisSlotModelChange = (slotIdx: number, newModelId: string) => {
+    const nextSlots: ParallaxGenesisSlot[] = genesisSettings.slots.map((s, idx) =>
+      idx === slotIdx ? { ...s, modelId: newModelId } : s,
+    );
+    updateGenesisSettings({ ...genesisSettings, slots: nextSlots });
+  };
+
+  const handleGenesisUseOneForAll = () => {
+    const model = getDefaultModelForProvider(genesisBulkProviderId);
+    const nextSlots: ParallaxGenesisSlot[] = Array.from({ length: 20 }, () => ({
+      providerId: genesisBulkProviderId,
+      modelId: genesisBulkProviderId === 'auto' ? '' : model,
+    }));
+    const provName =
+      genesisBulkProviderId === 'auto'
+        ? 'Auto'
+        : availableProviders.find((p) => p.id === genesisBulkProviderId)?.name || genesisBulkProviderId;
+    updateGenesisSettings(
+      { ...genesisSettings, slots: nextSlots },
+      `All 20 Genesis slots set to ${provName}.`,
+    );
+  };
+
+  const handleGenesisSpreadAcrossAll = () => {
+    const pool = getModelPool();
+    const nextSlots: ParallaxGenesisSlot[] = Array.from({ length: 20 }, (_, idx) => {
+      const choice = pool[idx % pool.length] || {
+        providerId: 'existing',
+        modelId: 'deepseek/deepseek-chat',
+      };
+      return {
+        providerId: choice.providerId,
+        modelId: choice.modelId,
+      };
+    });
+    updateGenesisSettings(
+      { ...genesisSettings, slots: nextSlots },
+      `Spread ${pool.length} model choice${pool.length === 1 ? '' : 's'} across all 20 Genesis slots.`,
+    );
+  };
+
+  const handleGenesisResetToAuto = () => {
+    const nextSlots: ParallaxGenesisSlot[] = Array.from({ length: 20 }, () => ({
+      providerId: 'auto',
+      modelId: '',
+    }));
+    updateGenesisSettings(
+      { ...genesisSettings, slots: nextSlots },
+      'Reset all 20 Genesis slots to Auto.',
+    );
+  };
+
+  const handleGenesisMaxSearchesChange = (val: string) => {
+    const num = parseInt(val, 10);
+    const clamped = Number.isNaN(num) ? 0 : Math.max(0, Math.min(18, num));
+    updateGenesisSettings({ ...genesisSettings, maxSearches: clamped });
   };
 
   const handleSelectTheme = (newTheme: ParallaxTheme) => {
@@ -396,13 +536,199 @@ export const ParallaxSettings: React.FC<ParallaxSettingsProps> = ({
         </div>
       </div>
 
-      {/* Safety & Tool Access Notice + Filter Bar */}
+      {/* Safety & Tool Access Notice + Bulk Model Setup + Genesis Swarm Slots + Filter Bar */}
       <div className="py-3 space-y-3">
         <div className={`p-3 rounded-xl flex items-center gap-2.5 ${cardSurfaceClass}`}>
           <Shield size={15} className="text-cyan-400 shrink-0" />
           <div className="text-[11px] text-slate-300 leading-relaxed">
             <strong className="text-slate-100">Strict Architecture Safeguards:</strong> Agents cannot autonomously pass messages or initiate rounds. VERITAS is granted exactly ONE live search query in Round 1 only to anchor the discussion with empirical facts. The swarm auto-stops strictly after Round 3.
           </div>
+        </div>
+
+        {/* Model setup for all 20 agents */}
+        <div
+          id="parallax-bulk-model-setup-card"
+          className={`p-3 rounded-xl space-y-2.5 ${cardSurfaceClass}`}
+        >
+          <div className="flex items-center justify-between flex-wrap gap-2">
+            <div>
+              <div className="text-xs font-bold text-slate-100">
+                Model setup for all 20 agents
+              </div>
+              <div className="text-[11px] text-slate-400">
+                Quickly assign one provider or distribute your active providers across all 20 built-in agents.
+              </div>
+            </div>
+          </div>
+
+          <div className="flex flex-wrap items-center gap-2">
+            <select
+              value={bulkProviderId}
+              onChange={(e) => setBulkProviderId(e.target.value)}
+              className={`px-2.5 py-1.5 rounded-lg text-[11px] focus:outline-none focus:ring-1 ${inputSurfaceClass}`}
+            >
+              {availableProviders.map((p) => (
+                <option key={p.id} value={p.id}>
+                  {p.name}
+                </option>
+              ))}
+            </select>
+            <button
+              type="button"
+              onClick={handleUseOneProviderForAllAgents}
+              className="px-3 py-1.5 rounded-lg bg-cyan-500/20 hover:bg-cyan-500/30 border border-cyan-500/40 text-cyan-200 text-[11px] font-semibold cursor-pointer transition-colors"
+            >
+              Use one provider for all
+            </button>
+            <button
+              type="button"
+              onClick={handleSpreadProvidersAcrossAgents}
+              className="px-3 py-1.5 rounded-lg bg-white/10 hover:bg-white/15 border border-white/15 text-slate-100 text-[11px] font-semibold cursor-pointer transition-colors"
+            >
+              Spread my providers across agents
+            </button>
+          </div>
+        </div>
+
+        {/* Collapsible Card: Genesis Swarm · Model slots (20) */}
+        <div
+          id="parallax-genesis-slots-card"
+          className={`rounded-xl overflow-hidden ${cardSurfaceClass}`}
+        >
+          <button
+            type="button"
+            onClick={() => setIsGenesisOpen((prev) => !prev)}
+            className="w-full p-3 flex items-center justify-between gap-2 text-left cursor-pointer"
+          >
+            <div className="flex items-center gap-2">
+              <Orbit size={15} className="text-purple-400 shrink-0" />
+              <div>
+                <div className="text-xs font-bold text-slate-100">
+                  Genesis Swarm · Model slots (20)
+                </div>
+                <div className="text-[11px] text-slate-400">
+                  Configure ARCHITECT, ZENITH, and the 18 auto-assembled agent slots plus search budget.
+                </div>
+              </div>
+            </div>
+            {isGenesisOpen ? (
+              <ChevronUp size={15} className="text-slate-400 shrink-0" />
+            ) : (
+              <ChevronDown size={15} className="text-slate-400 shrink-0" />
+            )}
+          </button>
+
+          {isGenesisOpen && (
+            <div className="px-3 pb-3.5 pt-2 border-t border-white/[0.06] space-y-3">
+              {/* Top Controls: Max searches + Bulk buttons */}
+              <div className="flex flex-wrap items-end justify-between gap-3">
+                <div className="space-y-1">
+                  <label className="block text-[10px] font-mono font-semibold uppercase tracking-wider text-slate-300">
+                    Max searches per run (0-18)
+                  </label>
+                  <div className="flex items-center gap-2 flex-wrap">
+                    <input
+                      type="number"
+                      min={0}
+                      max={18}
+                      value={genesisSettings.maxSearches}
+                      onChange={(e) => handleGenesisMaxSearchesChange(e.target.value)}
+                      className={`w-20 px-2.5 py-1.5 rounded-lg text-xs font-mono focus:outline-none focus:ring-1 ${inputSurfaceClass}`}
+                    />
+                    <span className="text-[11px] text-slate-400">
+                      Agents above this limit share the nearest search result
+                    </span>
+                  </div>
+                </div>
+
+                <div className="flex flex-wrap items-center gap-1.5">
+                  <select
+                    value={genesisBulkProviderId}
+                    onChange={(e) => setGenesisBulkProviderId(e.target.value)}
+                    className={`px-2.5 py-1.5 rounded-lg text-[11px] focus:outline-none focus:ring-1 ${inputSurfaceClass}`}
+                  >
+                    {availableProviders.map((p) => (
+                      <option key={p.id} value={p.id}>
+                        {p.name}
+                      </option>
+                    ))}
+                  </select>
+                  <button
+                    type="button"
+                    onClick={handleGenesisUseOneForAll}
+                    className="px-2.5 py-1.5 rounded-lg bg-purple-500/20 hover:bg-purple-500/30 border border-purple-500/40 text-purple-200 text-[11px] font-semibold cursor-pointer transition-colors"
+                  >
+                    Use one model for all
+                  </button>
+                  <button
+                    type="button"
+                    onClick={handleGenesisSpreadAcrossAll}
+                    className="px-2.5 py-1.5 rounded-lg bg-white/10 hover:bg-white/15 border border-white/15 text-slate-100 text-[11px] font-semibold cursor-pointer transition-colors"
+                  >
+                    Spread my models across all slots
+                  </button>
+                  <button
+                    type="button"
+                    onClick={handleGenesisResetToAuto}
+                    className="px-2.5 py-1.5 rounded-lg bg-white/[0.05] hover:bg-white/10 border border-white/10 text-slate-300 text-[11px] font-semibold cursor-pointer transition-colors"
+                  >
+                    Reset to Auto
+                  </button>
+                </div>
+              </div>
+
+              {/* 20 Slot Rows */}
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-2 pt-1">
+                {genesisSettings.slots.map((slot, idx) => {
+                  const slotLabel =
+                    idx === 0
+                      ? 'ARCHITECT'
+                      : idx === 1
+                      ? 'ZENITH'
+                      : `Agent ${idx - 1}`;
+                  const isAuto = !slot.providerId || slot.providerId === 'auto';
+                  return (
+                    <div
+                      key={idx}
+                      className="p-2 rounded-lg bg-black/25 border border-white/[0.06] flex items-center gap-2"
+                    >
+                      <span
+                        className={`w-24 shrink-0 text-[11px] font-mono font-bold truncate ${
+                          idx === 0
+                            ? 'text-purple-300'
+                            : idx === 1
+                            ? 'text-amber-300'
+                            : 'text-slate-200'
+                        }`}
+                      >
+                        {idx + 1}. {slotLabel}
+                      </span>
+                      <select
+                        value={isAuto ? 'auto' : slot.providerId}
+                        onChange={(e) => handleGenesisSlotProviderChange(idx, e.target.value)}
+                        className={`w-36 shrink-0 px-2 py-1 rounded-md text-[11px] focus:outline-none focus:ring-1 ${inputSurfaceClass}`}
+                      >
+                        <option value="auto">Auto</option>
+                        {availableProviders.map((p) => (
+                          <option key={p.id} value={p.id}>
+                            {p.name}
+                          </option>
+                        ))}
+                      </select>
+                      <input
+                        type="text"
+                        disabled={isAuto}
+                        value={isAuto ? 'Auto (from pool)' : slot.modelId}
+                        onChange={(e) => handleGenesisSlotModelChange(idx, e.target.value)}
+                        placeholder="Model ID"
+                        className={`flex-1 min-w-0 px-2 py-1 rounded-md text-[11px] focus:outline-none focus:ring-1 disabled:opacity-50 ${inputSurfaceClass}`}
+                      />
+                    </div>
+                  );
+                })}
+              </div>
+            </div>
+          )}
         </div>
 
         {/* Filter / Search Agents Bar */}

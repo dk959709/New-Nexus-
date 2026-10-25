@@ -26,6 +26,7 @@ import type {
   ParallaxMessage,
   ParallaxAgentConfig,
   ParallaxSpecialistDeliberation,
+  ParallaxDebateMode,
 } from '@/types';
 
 export interface ParallaxDeliberationStreamProps {
@@ -35,6 +36,7 @@ export interface ParallaxDeliberationStreamProps {
   currentRound: 1 | 2 | 3 | null;
   wasStoppedEarly: boolean;
   specialistDeliberation: ParallaxSpecialistDeliberation | null;
+  debateMode?: ParallaxDebateMode;
   roundFilter: 'all' | 1 | 2 | 3;
   groupFilter: 'all' | 'optimists' | 'realists' | 'ethicists' | 'visionaries' | 'anchors' | 'facts';
   selectedAgentFilter: string | null;
@@ -184,6 +186,7 @@ export const ParallaxDeliberationStream: React.FC<ParallaxDeliberationStreamProp
   currentRound,
   wasStoppedEarly,
   specialistDeliberation,
+  debateMode,
   roundFilter,
   groupFilter,
   selectedAgentFilter,
@@ -211,6 +214,10 @@ export const ParallaxDeliberationStream: React.FC<ParallaxDeliberationStreamProp
   const [isNearBottom, setIsNearBottom] = useState(true);
   const prevMsgCountRef = useRef(messages.length);
   const streamContainerRef = useRef<HTMLDivElement | null>(null);
+  const isGenesisMode = useMemo(
+    () => debateMode === 'genesis' || messages.some((m) => m.side === 'genesis'),
+    [debateMode, messages],
+  );
 
   // Track whether the user is near the bottom of the window or stream so we never hijack scroll
   useEffect(() => {
@@ -340,7 +347,13 @@ export const ParallaxDeliberationStream: React.FC<ParallaxDeliberationStreamProp
               {totalFilteredCount === messages.length
                 ? `${messages.length} turns`
                 : `${totalFilteredCount}/${messages.length} turns`}
-              {currentRound ? ` · R${currentRound}/3` : ''}
+              {currentRound
+                ? isGenesisMode
+                  ? ' · Round 1 of 1'
+                  : ` · R${currentRound}/3`
+                : isGenesisMode
+                ? ' · Round 1 of 1'
+                : ''}
             </span>
 
             {wasStoppedEarly && (
@@ -442,12 +455,18 @@ export const ParallaxDeliberationStream: React.FC<ParallaxDeliberationStreamProp
         {/* Single-Row Scrollable Filter Bar (Rounds + Agent Groups) */}
         <div className="mt-2 pt-2 border-t border-white/[0.05] flex items-center justify-between gap-2 overflow-x-auto no-scrollbar text-[11px] font-mono">
           <div className="flex items-center gap-1 shrink-0">
-            {[
-              { key: 'all', label: 'All Rounds' },
-              { key: 1, label: 'R1' },
-              { key: 2, label: 'R2' },
-              { key: 3, label: 'R3' },
-            ].map((r) => (
+            {(isGenesisMode
+              ? [
+                  { key: 'all', label: 'All Turns' },
+                  { key: 1, label: 'Round 1 of 1' },
+                ]
+              : [
+                  { key: 'all', label: 'All Rounds' },
+                  { key: 1, label: 'R1' },
+                  { key: 2, label: 'R2' },
+                  { key: 3, label: 'R3' },
+                ]
+            ).map((r) => (
               <button
                 key={r.key}
                 type="button"
@@ -582,12 +601,13 @@ export const ParallaxDeliberationStream: React.FC<ParallaxDeliberationStreamProp
 
               if (roundMsgs.length === 0) return null;
 
-              const roundTitle =
-                roundNum === 1
-                  ? 'Round 01 · Thesis & Initial Grounding'
-                  : roundNum === 2
-                  ? 'Round 02 · Cross-Examination & Rebuttals'
-                  : 'Round 03 · Final Convergence';
+              const roundTitle = isGenesisMode
+                ? 'Round 1 of 1 · Genesis Swarm Deliberation (ARCHITECT · 18 Auto Agents · ZENITH)'
+                : roundNum === 1
+                ? 'Round 01 · Thesis & Initial Grounding'
+                : roundNum === 2
+                ? 'Round 02 · Cross-Examination & Rebuttals'
+                : 'Round 03 · Final Convergence';
 
               return (
                 <div
@@ -622,9 +642,13 @@ export const ParallaxDeliberationStream: React.FC<ParallaxDeliberationStreamProp
                       const isDevilsAdvocate = Boolean(
                         msg.isDevilsAdvocate || msg.agentId === 'devils_advocate',
                       );
+                      const isGenesisMsg = msg.side === 'genesis';
+                      const isZenith = msg.agentId === 'zenith';
+                      const isArchitect = msg.agentId === 'architect';
 
-                      const configuredColor =
-                        agentColorLookup.get(msg.agentId.toLowerCase()) || msg.accentColor;
+                      const configuredColor = isGenesisMsg
+                        ? msg.accentColor || agentColorLookup.get(msg.agentId.toLowerCase())
+                        : agentColorLookup.get(msg.agentId.toLowerCase()) || msg.accentColor;
 
                       const colors = getAgentLiveChatColors(
                         configuredColor,
@@ -673,22 +697,43 @@ export const ParallaxDeliberationStream: React.FC<ParallaxDeliberationStreamProp
                         risk: '#f43f5e',
                       };
                       const hasTeamSide = Boolean(msg.side && !isHuman);
-                      const sideHex = hasTeamSide
+                      const sideHex = isGenesisMsg
+                        ? msg.accentColor || colors.avatarHex
+                        : hasTeamSide
                         ? SIDE_HEX_MAP[msg.side!] || configuredColor || colors.avatarHex
+                        : null;
+
+                      const rowStyle: React.CSSProperties | undefined = isZenith
+                        ? {
+                            border: '1.5px solid rgba(251, 191, 36, 0.65)',
+                            borderLeft: '4px solid #fbbf24',
+                            backgroundColor: isVoicePlaying ? undefined : 'rgba(251, 191, 36, 0.09)',
+                            boxShadow:
+                              '0 0 22px -4px rgba(251, 191, 36, 0.38), inset 0 0 14px rgba(251, 191, 36, 0.08)',
+                          }
+                        : isArchitect
+                        ? {
+                            border: '1px solid rgba(167, 139, 250, 0.5)',
+                            borderLeft: '3.5px solid #a78bfa',
+                            backgroundColor: isVoicePlaying ? undefined : 'rgba(167, 139, 250, 0.09)',
+                            boxShadow: '0 0 18px -4px rgba(167, 139, 250, 0.3)',
+                          }
+                        : sideHex
+                        ? {
+                            borderLeft: `3px solid ${sideHex}`,
+                            backgroundColor: isVoicePlaying ? undefined : `${sideHex}12`,
+                          }
+                        : undefined;
+
+                      const genesisRoleChipText = isGenesisMsg
+                        ? msg.sideLabel || cleanRole
                         : null;
 
                       return (
                         <div
                           key={msg.id}
                           id={`parallax-msg-${msg.id}`}
-                          style={
-                            sideHex
-                              ? {
-                                  borderLeft: `3px solid ${sideHex}`,
-                                  backgroundColor: isVoicePlaying ? undefined : `${sideHex}12`,
-                                }
-                              : undefined
-                          }
+                          style={rowStyle}
                           className={`group relative py-2 px-2 sm:px-3 rounded-xl transition-colors scroll-mt-24 ${
                             isVoicePlaying
                               ? 'bg-cyan-500/[0.09] ring-1 ring-cyan-400/30'
@@ -755,7 +800,11 @@ export const ParallaxDeliberationStream: React.FC<ParallaxDeliberationStreamProp
                                       )
                                     }
                                     className="font-bold text-[12.5px] sm:text-[13.5px] tracking-tight hover:underline cursor-pointer text-left break-words"
-                                    style={{ color: colors.nameColor }}
+                                    style={{
+                                      color: isGenesisMsg
+                                        ? msg.accentColor || colors.nameColor
+                                        : colors.nameColor,
+                                    }}
                                   >
                                     {msg.agentName}
                                   </button>
@@ -766,30 +815,55 @@ export const ParallaxDeliberationStream: React.FC<ParallaxDeliberationStreamProp
                                     </span>
                                   )}
 
-                                  {msg.sideLabel && (
+                                  {isGenesisMsg && genesisRoleChipText ? (
                                     <span
-                                      className={`px-1.5 py-0.5 rounded-md text-[9.5px] font-mono font-bold uppercase tracking-wider border leading-none ${
-                                        msg.side === 'prosecution' ||
-                                        msg.side === 'red' ||
-                                        msg.side === 'security' ||
-                                        msg.side === 'risk'
-                                          ? 'bg-rose-500/15 border-rose-500/35 text-rose-300'
-                                          : msg.side === 'defense' ||
-                                            msg.side === 'blue' ||
-                                            msg.side === 'innovation' ||
-                                            msg.side === 'tech'
-                                          ? 'bg-sky-500/15 border-sky-500/35 text-sky-300'
-                                          : msg.side === 'judge' ||
-                                            msg.side === 'economy' ||
-                                            msg.side === 'finance'
-                                          ? 'bg-amber-500/15 border-amber-500/35 text-amber-300'
-                                          : msg.side === 'referee'
-                                          ? 'bg-purple-500/15 border-purple-500/35 text-purple-300'
-                                          : 'bg-emerald-500/15 border-emerald-500/35 text-emerald-300'
-                                      }`}
+                                      style={{
+                                        backgroundColor: isZenith
+                                          ? 'rgba(251, 191, 36, 0.18)'
+                                          : isArchitect
+                                          ? 'rgba(167, 139, 250, 0.2)'
+                                          : colors.chipBg,
+                                        borderColor: isZenith
+                                          ? 'rgba(251, 191, 36, 0.55)'
+                                          : isArchitect
+                                          ? 'rgba(167, 139, 250, 0.55)'
+                                          : colors.chipBorder,
+                                        color: isZenith
+                                          ? '#fde68a'
+                                          : isArchitect
+                                          ? '#ddd6fe'
+                                          : msg.accentColor || colors.nameColor,
+                                      }}
+                                      className="px-1.5 py-0.5 rounded-md text-[9.5px] font-mono font-bold uppercase tracking-wider border leading-none"
                                     >
-                                      {msg.sideLabel}
+                                      {genesisRoleChipText}
                                     </span>
+                                  ) : (
+                                    msg.sideLabel && (
+                                      <span
+                                        className={`px-1.5 py-0.5 rounded-md text-[9.5px] font-mono font-bold uppercase tracking-wider border leading-none ${
+                                          msg.side === 'prosecution' ||
+                                          msg.side === 'red' ||
+                                          msg.side === 'security' ||
+                                          msg.side === 'risk'
+                                            ? 'bg-rose-500/15 border-rose-500/35 text-rose-300'
+                                            : msg.side === 'defense' ||
+                                              msg.side === 'blue' ||
+                                              msg.side === 'innovation' ||
+                                              msg.side === 'tech'
+                                            ? 'bg-sky-500/15 border-sky-500/35 text-sky-300'
+                                            : msg.side === 'judge' ||
+                                              msg.side === 'economy' ||
+                                              msg.side === 'finance'
+                                            ? 'bg-amber-500/15 border-amber-500/35 text-amber-300'
+                                            : msg.side === 'referee'
+                                            ? 'bg-purple-500/15 border-purple-500/35 text-purple-300'
+                                            : 'bg-emerald-500/15 border-emerald-500/35 text-emerald-300'
+                                        }`}
+                                      >
+                                        {msg.sideLabel}
+                                      </span>
+                                    )
                                   )}
 
                                   {/* Special Identity Classification */}
@@ -802,16 +876,18 @@ export const ParallaxDeliberationStream: React.FC<ParallaxDeliberationStreamProp
                                       <ShieldAlert size={10} />
                                       <span>Contrarian</span>
                                     </span>
-                                  ) : msg.isDynamic ? (
+                                  ) : msg.isDynamic && !isGenesisMsg ? (
                                     <span className="text-[9.5px] font-mono font-semibold text-violet-300">
                                       · Specialist
                                     </span>
                                   ) : null}
 
                                   {/* Subtle Role, Round, Conviction & Timestamp */}
-                                  <span className="text-[10.5px] text-slate-400 font-sans truncate max-w-[160px] sm:max-w-[240px]">
-                                    · {cleanRole}
-                                  </span>
+                                  {!isGenesisMsg && (
+                                    <span className="text-[10.5px] text-slate-400 font-sans truncate max-w-[160px] sm:max-w-[240px]">
+                                      · {cleanRole}
+                                    </span>
+                                  )}
 
                                   {convictionDisplay && !isHuman && (
                                     <span
@@ -824,7 +900,7 @@ export const ParallaxDeliberationStream: React.FC<ParallaxDeliberationStreamProp
                                   )}
 
                                   <span className="text-[10px] font-mono text-slate-500 tabular-nums">
-                                    · R{msg.round} ·{' '}
+                                    · {isGenesisMsg ? 'Round 1 of 1' : `R${msg.round}`} ·{' '}
                                     {new Date(msg.timestamp).toLocaleTimeString([], {
                                       hour: '2-digit',
                                       minute: '2-digit',
@@ -1034,7 +1110,9 @@ export const ParallaxDeliberationStream: React.FC<ParallaxDeliberationStreamProp
               <div className="py-2 px-3 flex items-center gap-2 text-[11px] font-mono text-cyan-300/90">
                 <Radio size={12} className="animate-pulse text-cyan-400 shrink-0" />
                 <span>
-                  Streaming live agent responses in Round 0{currentRound || 1}...
+                  {isGenesisMode
+                    ? 'Streaming Genesis Swarm responses in Round 1 of 1...'
+                    : `Streaming live agent responses in Round 0${currentRound || 1}...`}
                 </span>
               </div>
             )}

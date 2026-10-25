@@ -656,12 +656,23 @@ export interface ParallaxIntelligenceBriefing {
 
 export type ParallaxDebateMode =
   | 'default'
+  | 'genesis'
   | 'courtroom'
   | 'red_vs_blue'
   | 'senate'
   | 'vc_pitch'
   | 'scifi'
   | 'news';
+
+export interface ParallaxGenesisSlot {
+  providerId: string; // 'auto' means automatic
+  modelId: string;
+}
+
+export interface ParallaxGenesisSettings {
+  slots: ParallaxGenesisSlot[]; // exactly 20 slots: index 0 = ARCHITECT, 1 = ZENITH, 2..19 = the 18 agents
+  maxSearches: number;
+}
 
 export interface ParallaxDebateModeSide {
   id: string;
@@ -840,6 +851,7 @@ export interface ParallaxSession {
   devilsAdvocateTrigger?: ParallaxDevilsAdvocateTrigger;
   debateMode?: ParallaxDebateMode;
   swarmSize?: number;
+  genesisAgents?: ParallaxAgentConfig[];
 }
 
 export interface Settings {

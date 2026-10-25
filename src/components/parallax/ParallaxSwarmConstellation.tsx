@@ -11,7 +11,7 @@ import {
 import { ParallaxAgentAvatar } from './ParallaxAgentIcon';
 import { getParallaxAgentIcon } from './agentIcons';
 import { AGENT_QUADRANTS } from '@/data/parallaxQuadrants';
-import type { ParallaxAgentConfig, ParallaxMessage } from '@/types';
+import type { ParallaxAgentConfig, ParallaxMessage, ParallaxDebateMode } from '@/types';
 
 export interface ParallaxSwarmConstellationProps {
   agents: Record<string, ParallaxAgentConfig>;
@@ -24,6 +24,8 @@ export interface ParallaxSwarmConstellationProps {
   topic?: string;
   selectedSwarmAgentIds?: Set<string>;
   sideAssignments?: Map<string, { side: string; sideLabel: string; color: string }>;
+  dynamicPersonas?: ParallaxAgentConfig[];
+  debateMode?: ParallaxDebateMode;
 }
 
 export const ParallaxSwarmConstellation: React.FC<ParallaxSwarmConstellationProps> = ({
@@ -37,10 +39,13 @@ export const ParallaxSwarmConstellation: React.FC<ParallaxSwarmConstellationProp
   topic,
   selectedSwarmAgentIds,
   sideAssignments,
+  dynamicPersonas = [],
+  debateMode,
 }) => {
   const [isExpanded, setIsExpanded] = useState(true);
   const [viewMode, setViewMode] = useState<'orbit' | 'quadrant' | 'telemetry'>('orbit');
   const [hoveredAgentId, setHoveredAgentId] = useState<string | null>(null);
+  const isGenesisMode = debateMode === 'genesis';
 
   // Compute swarm statistics from actual state
   const stats = useMemo(() => {
@@ -83,14 +88,69 @@ export const ParallaxSwarmConstellation: React.FC<ParallaxSwarmConstellationProp
   }, [messages, agents]);
 
   const activeAgent = selectedAgentId
-    ? agents[selectedAgentId]
+    ? agents[selectedAgentId] || dynamicPersonas.find((d) => d.id === selectedAgentId) || null
     : hoveredAgentId
-    ? agents[hoveredAgentId]
+    ? agents[hoveredAgentId] || dynamicPersonas.find((d) => d.id === hoveredAgentId) || null
     : null;
 
   const activeAgentLastMsg = activeAgent
     ? [...messages].reverse().find((m) => m.agentId === activeAgent.id)
     : null;
+
+  const orbitNodes = useMemo(() => {
+    if (isGenesisMode && dynamicPersonas.length > 0) {
+      const outerCount = Math.min(12, dynamicPersonas.length);
+      const innerCount = Math.max(0, dynamicPersonas.length - outerCount);
+      return dynamicPersonas.map((agent, idx) => {
+        const isOuter = idx < outerCount;
+        const ringIdx = isOuter ? idx : idx - outerCount;
+        const ringTotal = Math.max(1, isOuter ? outerCount : innerCount);
+        const angle = (ringIdx / ringTotal) * 360 - 90;
+        const orbitRadius = isOuter ? 155 : 105;
+        return {
+          agentKey: agent.id,
+          agent,
+          angle,
+          orbitRadius,
+        };
+      });
+    }
+
+    const coreList: Array<{
+      agentKey: string;
+      agent: ParallaxAgentConfig;
+      angle: number;
+      orbitRadius: number;
+    }> = [];
+
+    Object.keys(agents).forEach((agentKey) => {
+      const agent = agents[agentKey];
+      const q = AGENT_QUADRANTS[agentKey];
+      if (!q || !agent) return;
+      coreList.push({
+        agentKey,
+        agent,
+        angle: q.angle,
+        orbitRadius: q.quadrant === 'anchors' ? 105 : 155,
+      });
+    });
+
+    if (dynamicPersonas.length > 0) {
+      dynamicPersonas.forEach((spec, idx) => {
+        if (!coreList.some((c) => c.agentKey === spec.id)) {
+          const angle = (idx / Math.max(1, dynamicPersonas.length)) * 360;
+          coreList.push({
+            agentKey: spec.id,
+            agent: spec,
+            angle,
+            orbitRadius: 58,
+          });
+        }
+      });
+    }
+
+    return coreList;
+  }, [isGenesisMode, dynamicPersonas, agents]);
 
   return (
     <div
@@ -397,18 +457,15 @@ export const ParallaxSwarmConstellation: React.FC<ParallaxSwarmConstellationProp
                 <circle cx="350" cy="180" r="24" fill="#051520" stroke="#61d7c9" strokeWidth="1.8" filter="url(#radarNodeGlow)" />
 
                 {/* Synaptic Bezier Filaments between responded/speaking agents and Core */}
-                {Object.keys(agents).map((agentKey) => {
-                  const q = AGENT_QUADRANTS[agentKey];
-                  if (!q) return null;
-                  const rad = (q.angle * Math.PI) / 180;
-                  const orbitRadius = q.quadrant === 'anchors' ? 105 : 155;
+                {orbitNodes.map(({ agentKey, agent, angle, orbitRadius }) => {
+                  const rad = (angle * Math.PI) / 180;
                   const x = 350 + Math.cos(rad) * orbitRadius;
                   const y = 180 + Math.sin(rad) * orbitRadius * 0.85;
 
                   const isSpeaking = activeSpeakingAgentId === agentKey;
                   const isSelected = selectedAgentId === agentKey;
                   const hasReplied = messages.some((m) => m.agentId === agentKey);
-                  const accent = agents[agentKey]?.accentColor || '#61d7c9';
+                  const accent = agent?.accentColor || '#61d7c9';
 
                   // Control point for a graceful curved synaptic arc
                   const ctrlX = 350 + (x - 350) * 0.45 - (y - 180) * 0.18;
@@ -451,14 +508,9 @@ export const ParallaxSwarmConstellation: React.FC<ParallaxSwarmConstellationProp
                   CORE
                 </text>
 
-                {/* Render the 20 Agent Nodes */}
-                {Object.keys(agents).map((agentKey) => {
-                  const agent = agents[agentKey];
-                  const q = AGENT_QUADRANTS[agentKey];
-                  if (!q || !agent) return null;
-
-                  const rad = (q.angle * Math.PI) / 180;
-                  const orbitRadius = q.quadrant === 'anchors' ? 105 : 155;
+                {/* Render the Agent Nodes */}
+                {orbitNodes.map(({ agentKey, agent, angle, orbitRadius }) => {
+                  const rad = (angle * Math.PI) / 180;
                   const x = 350 + Math.cos(rad) * orbitRadius;
                   const y = 180 + Math.sin(rad) * orbitRadius * 0.85;
 
@@ -470,9 +522,12 @@ export const ParallaxSwarmConstellation: React.FC<ParallaxSwarmConstellationProp
                   const agentMsgs = messages.filter((m) => m.agentId === agentKey);
                   const replyCount = agentMsgs.length;
                   const lastMsg = agentMsgs[agentMsgs.length - 1];
-                  const isInSelectedSwarm = selectedSwarmAgentIds
-                    ? selectedSwarmAgentIds.has(agentKey)
-                    : agent.enabled !== false;
+                  const isInSelectedSwarm =
+                    agent.isDynamic || isGenesisMode
+                      ? true
+                      : selectedSwarmAgentIds
+                      ? selectedSwarmAgentIds.has(agentKey)
+                      : agent.enabled !== false;
                   const isBenched = !isInSelectedSwarm && replyCount === 0 && !isSelected && !isHovered;
 
                   const SIDE_HEX_MAP: Record<string, string> = {

@@ -20,6 +20,8 @@ import type {
   ParallaxSystemConfig,
   ParallaxAgentConfig,
   ParallaxSession,
+  ParallaxGenesisSettings,
+  ParallaxGenesisSlot,
   CommanderConfig,
   Workflow,
 } from '@/types';
@@ -51,6 +53,7 @@ const KEYS = {
   parallaxConfig: 'nexus-parallax-config-v1',
   parallaxSessions: 'nexus-parallax-sessions-v1',
   parallaxSwarmSize: 'nexus-parallax-swarm-size',
+  parallaxGenesis: 'nexus-parallax-genesis-v1',
   commanderConfig: 'nexus-ai-commander-config-v1',
 } as const;
 
@@ -2471,6 +2474,58 @@ export const storage = {
     try {
       const validSize: ParallaxSwarmSize = isValidSwarmSize(size) ? size : 20;
       write(KEYS.parallaxSwarmSize, validSize);
+    } catch {
+      // ignore storage errors
+    }
+  },
+
+  getParallaxGenesisSettings(): ParallaxGenesisSettings {
+    const createDefaultSlots = (): ParallaxGenesisSlot[] =>
+      Array.from({ length: 20 }, () => ({ providerId: 'auto', modelId: '' }));
+    try {
+      const raw = read<Partial<ParallaxGenesisSettings> | null>(KEYS.parallaxGenesis, null);
+      if (!raw || typeof raw !== 'object') {
+        return { slots: createDefaultSlots(), maxSearches: 10 };
+      }
+      const rawSlots = Array.isArray(raw.slots) ? raw.slots : [];
+      const slots: ParallaxGenesisSlot[] = Array.from({ length: 20 }, (_, idx) => {
+        const item = rawSlots[idx];
+        if (item && typeof item === 'object' && typeof item.providerId === 'string' && item.providerId.trim()) {
+          return {
+            providerId: item.providerId.trim(),
+            modelId: typeof item.modelId === 'string' ? item.modelId.trim() : '',
+          };
+        }
+        return { providerId: 'auto', modelId: '' };
+      });
+      const rawMax = typeof raw.maxSearches === 'number' ? raw.maxSearches : Number(raw.maxSearches);
+      const maxSearches = Number.isNaN(rawMax)
+        ? 10
+        : Math.max(0, Math.min(18, Math.round(rawMax)));
+      return { slots, maxSearches };
+    } catch {
+      return { slots: createDefaultSlots(), maxSearches: 10 };
+    }
+  },
+
+  saveParallaxGenesisSettings(settings: ParallaxGenesisSettings): void {
+    try {
+      const rawSlots = Array.isArray(settings?.slots) ? settings.slots : [];
+      const slots: ParallaxGenesisSlot[] = Array.from({ length: 20 }, (_, idx) => {
+        const item = rawSlots[idx];
+        if (item && typeof item === 'object' && typeof item.providerId === 'string' && item.providerId.trim()) {
+          return {
+            providerId: item.providerId.trim(),
+            modelId: typeof item.modelId === 'string' ? item.modelId.trim() : '',
+          };
+        }
+        return { providerId: 'auto', modelId: '' };
+      });
+      const rawMax = typeof settings?.maxSearches === 'number' ? settings.maxSearches : Number(settings?.maxSearches);
+      const maxSearches = Number.isNaN(rawMax)
+        ? 10
+        : Math.max(0, Math.min(18, Math.round(rawMax)));
+      write(KEYS.parallaxGenesis, { slots, maxSearches });
     } catch {
       // ignore storage errors
     }

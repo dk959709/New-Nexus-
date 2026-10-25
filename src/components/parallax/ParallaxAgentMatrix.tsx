@@ -347,7 +347,11 @@ export const ParallaxAgentMatrix: React.FC<ParallaxAgentMatrixProps> = ({
                 {/* Bottom Row: Latest Deliberation Snippet or System Role + Voice Action */}
                 <div className="mt-2.5 pt-2 border-t border-white/[0.06] text-[11.5px]">
                   {lastReply ? (
-                    <p className="m-0 text-slate-200 line-clamp-2 leading-relaxed">
+                    <p
+                      className={`m-0 text-slate-200 leading-relaxed ${
+                        lastReply.side === 'genesis' ? 'whitespace-pre-wrap' : 'line-clamp-2'
+                      }`}
+                    >
                       &ldquo;{lastReply.text.replace(/[#*_`]/g, '')}&rdquo;
                     </p>
                   ) : (

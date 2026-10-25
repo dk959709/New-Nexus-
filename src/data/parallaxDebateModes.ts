@@ -11,6 +11,15 @@ export const PARALLAX_DEBATE_MODES: ParallaxDebateModeConfig[] = [
       'Maintain an evidence-grounded, multi-perspective dialectic across technical, ethical, and practical dimensions.',
   },
   {
+    id: 'genesis',
+    label: 'GENESIS SWARM',
+    subtitle: 'Self-Building Swarm · 18 Auto Agents · 1 Round',
+    iconName: 'Orbit',
+    accentColor: '#a78bfa',
+    promptInstruction:
+      'Autonomously assemble 18 specialized agents tailored to the topic, ground each with web search in a single round, and synthesize a comprehensive final answer.',
+  },
+  {
     id: 'courtroom',
     label: 'COURTROOM TRIAL',
     subtitle: 'Prosecution vs Defense · Judicial Verdict',

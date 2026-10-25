@@ -232,6 +232,13 @@ export const ParallaxSynthesisReport: React.FC<ParallaxSynthesisReportProps> = (
             </h2>
 
             <div className="flex items-center gap-3 pt-1 flex-wrap font-mono text-xs">
+              {summary.debateMode === 'genesis' && (
+                <span className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full bg-violet-500/20 border border-violet-400/40 text-violet-200 font-bold">
+                  <Sparkles size={13} className="text-violet-300" />
+                  <span>Genesis Swarm · 18 auto agents · 1 round</span>
+                </span>
+              )}
+
               <span className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full bg-slate-900/40 backdrop-blur-xl text-cyan-300 font-bold">
                 <ShieldCheck size={13} />
                 <span>CONSENSUS LEAN: {summary.consensusLean || 'BALANCED'}</span>
@@ -331,8 +338,8 @@ export const ParallaxSynthesisReport: React.FC<ParallaxSynthesisReportProps> = (
         </div>
       </div>
 
-      {/* MODE RESULT CARD (When debateMode !== 'default' and modeResult is present) */}
-      {summary.modeResult && (
+      {/* MODE RESULT CARD (When debateMode !== 'default' and !== 'genesis' and modeResult is present) */}
+      {summary.modeResult && summary.debateMode !== 'genesis' && (
         <div
           id="parallax-mode-result-card"
           style={{
@@ -412,10 +419,12 @@ export const ParallaxSynthesisReport: React.FC<ParallaxSynthesisReportProps> = (
               </div>
               <div className="grid grid-cols-2 sm:grid-cols-4 gap-2.5 text-[11px] text-slate-300">
                 <div className="p-2.5 rounded-xl bg-slate-900/40 backdrop-blur-xl">
-                  <span className="text-slate-400">PROTOCOL:</span> 3-Round Matrix
+                  <span className="text-slate-400">PROTOCOL:</span>{' '}
+                  {summary.debateMode === 'genesis' ? 'Genesis Swarm (1 Round)' : '3-Round Matrix'}
                 </div>
                 <div className="p-2.5 rounded-xl bg-slate-900/40 backdrop-blur-xl">
-                  <span className="text-slate-400">SWARM SIZE:</span> 20 Personas + Specialists
+                  <span className="text-slate-400">SWARM SIZE:</span>{' '}
+                  {summary.debateMode === 'genesis' ? '2 Fixed + 18 Auto Agents' : '20 Personas + Specialists'}
                 </div>
                 <div className="p-2.5 rounded-xl bg-slate-900/40 backdrop-blur-xl">
                   <span className="text-slate-400">GROUNDING:</span> VERITAS Live Search
@@ -446,7 +455,7 @@ export const ParallaxSynthesisReport: React.FC<ParallaxSynthesisReportProps> = (
 
           {expandedSections.summary && (
             <div className="pt-3 space-y-4 font-sans text-xs">
-              <div className="p-4 rounded-xl bg-slate-900/40 backdrop-blur-xl text-slate-100 text-sm leading-relaxed border-l-2 border-cyan-400">
+              <div className="p-4 rounded-xl bg-slate-900/40 backdrop-blur-xl text-slate-100 text-sm leading-relaxed border-l-2 border-cyan-400 whitespace-pre-wrap">
                 {summary.verdict}
               </div>
 
@@ -465,7 +474,9 @@ export const ParallaxSynthesisReport: React.FC<ParallaxSynthesisReportProps> = (
                 </div>
                 <div className="p-3 rounded-xl bg-slate-900/40 backdrop-blur-xl text-center">
                   <div className="text-slate-300 text-[10px]">ROUNDS COMPLETED</div>
-                  <div className="text-emerald-300 font-bold text-base mt-0.5">3 / 3</div>
+                  <div className="text-emerald-300 font-bold text-base mt-0.5">
+                    {summary.debateMode === 'genesis' ? '1 / 1' : '3 / 3'}
+                  </div>
                 </div>
                 <div className="p-3 rounded-xl bg-slate-900/40 backdrop-blur-xl text-center">
                   <div className="text-slate-300 text-[10px]">VERIFIED CLAIMS</div>

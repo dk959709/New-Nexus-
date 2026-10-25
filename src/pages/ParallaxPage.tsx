@@ -30,6 +30,7 @@ import {
   Paperclip,
   Zap,
   Activity,
+  Orbit,
 } from 'lucide-react';
 import { storage } from '@/lib/storage';
 import {
@@ -173,6 +174,7 @@ const DEBATE_MODES: Array<{
   { id: 'red_vs_blue', label: getDebateModeConfig('red_vs_blue').label, shortLabel: 'Red vs Blue', speedTag: getDebateModeConfig('red_vs_blue').subtitle, icon: Shield },
   { id: 'senate', label: getDebateModeConfig('senate').label, shortLabel: 'Senate', speedTag: getDebateModeConfig('senate').subtitle, icon: Landmark },
   { id: 'vc_pitch', label: getDebateModeConfig('vc_pitch').label, shortLabel: 'VC Pitch', speedTag: getDebateModeConfig('vc_pitch').subtitle, icon: Briefcase },
+  { id: 'genesis', label: getDebateModeConfig('genesis').label, shortLabel: 'Genesis', speedTag: getDebateModeConfig('genesis').subtitle, icon: Orbit },
 ];
 
 function getSwarmSizeDescription(size: ParallaxSwarmSize): string {
@@ -825,8 +827,11 @@ export const ParallaxPage: React.FC = () => {
     [enabledAgentsList, swarmSize],
   );
   const selectedSwarmCount = selectedSwarmAgents.length;
-  const isFewerEnabledThanSelected = enabledAgentsCount < swarmSize;
-  const swarmSizeHintText = isFewerEnabledThanSelected
+  const isGenesisMode = debateMode === 'genesis';
+  const isFewerEnabledThanSelected = !isGenesisMode && enabledAgentsCount < swarmSize;
+  const swarmSizeHintText = isGenesisMode
+    ? 'Genesis builds its own 18 agents (2 + 18)'
+    : isFewerEnabledThanSelected
     ? `Only ${selectedSwarmCount} agents are enabled in Settings, so ${selectedSwarmCount} will run`
     : getSwarmSizeDescription(swarmSize);
   const selectedSwarmAgentIds = React.useMemo(
@@ -835,14 +840,28 @@ export const ParallaxPage: React.FC = () => {
   );
   const modeSideAssignments = React.useMemo(
     () =>
-      debateMode !== 'default'
+      debateMode !== 'default' && debateMode !== 'genesis'
         ? assignModeSides(debateMode, [...selectedSwarmAgents, ...dynamicPersonas])
         : new Map(),
     [debateMode, selectedSwarmAgents, dynamicPersonas],
   );
   const dynamicSpecialistsCount = dynamicPersonas.length;
-  const totalActivePoolCount = selectedSwarmCount + dynamicSpecialistsCount;
-  const expectedMaxReplies = totalActivePoolCount * 3;
+  const totalActivePoolCount = isGenesisMode
+    ? dynamicPersonas.length > 0
+      ? 2 + dynamicPersonas.length
+      : 20
+    : selectedSwarmCount + dynamicSpecialistsCount;
+  const expectedMaxReplies = isGenesisMode ? 20 : totalActivePoolCount * 3;
+  const rosterAgentsToRender = React.useMemo(() => {
+    if (isGenesisMode && dynamicPersonas.length > 0) {
+      return dynamicPersonas;
+    }
+    if (dynamicPersonas.length > 0) {
+      const existingIds = new Set(enabledAgentsList.map((a) => a.id));
+      return [...enabledAgentsList, ...dynamicPersonas.filter((d) => !existingIds.has(d.id))];
+    }
+    return enabledAgentsList;
+  }, [isGenesisMode, dynamicPersonas, enabledAgentsList]);
 
   const agentTurns = React.useMemo(
     () => messages.filter((m) => !m.isHuman),
@@ -1024,8 +1043,13 @@ export const ParallaxPage: React.FC = () => {
 
   const inspectedRosterAgent = React.useMemo(() => {
     if (!inspectedRosterAgentId) return null;
-    return config.agents[inspectedRosterAgentId] || enabledAgentsList.find((a) => a.id === inspectedRosterAgentId) || null;
-  }, [inspectedRosterAgentId, config.agents, enabledAgentsList]);
+    return (
+      dynamicPersonas.find((a) => a.id === inspectedRosterAgentId) ||
+      config.agents[inspectedRosterAgentId] ||
+      enabledAgentsList.find((a) => a.id === inspectedRosterAgentId) ||
+      null
+    );
+  }, [inspectedRosterAgentId, dynamicPersonas, config.agents, enabledAgentsList]);
 
   const currentModeObj = DEBATE_MODES.find((m) => m.id === debateMode) || DEBATE_MODES[0];
 
@@ -1324,7 +1348,11 @@ export const ParallaxPage: React.FC = () => {
               <span className="text-[#71767b]" aria-hidden="true">·</span>
               <span className="text-[10.5px] sm:text-[11px] text-[#8b9097] font-mono tabular-nums truncate">
                 {isRunning
-                  ? `R0${currentRound || 1} Live`
+                  ? isGenesisMode
+                    ? 'Round 1 of 1 Live'
+                    : `R0${currentRound || 1} Live`
+                  : isGenesisMode
+                  ? '2 + 18 Auto Agents'
                   : selectedSwarmCount === enabledAgentsCount
                   ? `${selectedSwarmCount} Personas`
                   : `${selectedSwarmCount}/${enabledAgentsCount} Personas`}
@@ -1587,25 +1615,31 @@ export const ParallaxPage: React.FC = () => {
                       const Icon = m.icon;
                       const active = debateMode === m.id;
                       return (
-                        <button
-                          key={m.id}
-                          type="button"
-                          disabled={isRunning}
-                          onClick={() => {
-                            setDebateMode(m.id);
-                          }}
-                          className={`w-full px-2.5 py-1.5 rounded-lg text-[11px] font-medium flex items-center justify-between transition-colors cursor-pointer ${
-                            active
-                              ? 'bg-white/10 text-white font-semibold'
-                              : 'text-[#71767b] hover:bg-white/[0.04] hover:text-white'
-                          }`}
-                        >
-                          <span className="flex items-center gap-2">
-                            <Icon size={13} className={active ? 'text-white' : 'text-[#71767b]'} />
-                            {m.label}
-                          </span>
-                          {active && <Check size={12} className="text-emerald-400" />}
-                        </button>
+                        <div key={m.id}>
+                          <button
+                            type="button"
+                            disabled={isRunning}
+                            onClick={() => {
+                              setDebateMode(m.id);
+                            }}
+                            className={`w-full px-2.5 py-1.5 rounded-lg text-[11px] font-medium flex items-center justify-between transition-colors cursor-pointer ${
+                              active
+                                ? 'bg-white/10 text-white font-semibold'
+                                : 'text-[#71767b] hover:bg-white/[0.04] hover:text-white'
+                            }`}
+                          >
+                            <span className="flex items-center gap-2">
+                              <Icon size={13} className={active ? 'text-white' : 'text-[#71767b]'} />
+                              {m.label}
+                            </span>
+                            {active && <Check size={12} className="text-emerald-400" />}
+                          </button>
+                          {m.id === 'genesis' && (
+                            <div className="px-2.5 pb-1 text-[9.5px] text-violet-300/80 leading-snug">
+                              Uses about 20 AI calls and up to 10 searches per run
+                            </div>
+                          )}
+                        </div>
                       );
                     })}
                   </div>
@@ -1617,22 +1651,22 @@ export const ParallaxPage: React.FC = () => {
                         Agents in swarm
                       </span>
                       <span
-                        key={swarmSize}
+                        key={`${swarmSize}-${isGenesisMode}`}
                         className="text-[10px] font-mono text-cyan-300 tabular-nums parallax-swarm-size-shift"
                       >
-                        {selectedSwarmCount}/{enabledAgentsCount}
+                        {isGenesisMode ? '2 + 18' : `${selectedSwarmCount}/${enabledAgentsCount}`}
                       </span>
                     </div>
-                    <div className="grid grid-cols-4 gap-1">
+                    <div className={`grid grid-cols-4 gap-1 ${isGenesisMode ? 'opacity-45' : ''}`}>
                       {PARALLAX_SWARM_SIZES.map((sz) => {
-                        const active = swarmSize === sz;
+                        const active = !isGenesisMode && swarmSize === sz;
                         return (
                           <button
                             key={sz}
                             type="button"
-                            disabled={isRunning}
+                            disabled={isRunning || isGenesisMode}
                             onClick={() => handleSwarmSizeChange(sz)}
-                            className={`py-1 rounded-lg border text-[11px] font-mono font-semibold text-center transition-all duration-200 ease-out active:scale-95 cursor-pointer disabled:opacity-50 ${
+                            className={`py-1 rounded-lg border text-[11px] font-mono font-semibold text-center transition-all duration-200 ease-out active:scale-95 cursor-pointer disabled:opacity-50 disabled:cursor-not-allowed ${
                               active
                                 ? 'border-white bg-white text-black scale-[1.02] shadow-xs'
                                 : 'border-[#26292e] bg-white/[0.03] text-[#8b9097] hover:text-white'
@@ -1644,9 +1678,13 @@ export const ParallaxPage: React.FC = () => {
                       })}
                     </div>
                     <div
-                      key={`drawer-hint-${swarmSize}-${isFewerEnabledThanSelected}`}
+                      key={`drawer-hint-${swarmSize}-${isFewerEnabledThanSelected}-${isGenesisMode}`}
                       className={`text-[10px] leading-snug transition-colors duration-300 parallax-swarm-size-shift ${
-                        isFewerEnabledThanSelected ? 'text-amber-300/90' : 'text-[#8b9097]'
+                        isFewerEnabledThanSelected
+                          ? 'text-amber-300/90'
+                          : isGenesisMode
+                          ? 'text-violet-300/90'
+                          : 'text-[#8b9097]'
                       }`}
                     >
                       {swarmSizeHintText}
@@ -1674,7 +1712,8 @@ export const ParallaxPage: React.FC = () => {
                             setIntelligenceBriefing(sess.intelligenceBriefing || null);
                             setHumanInjections(sess.humanInjections || []);
                             setDevilsAdvocateTrigger(sess.devilsAdvocateTrigger || null);
-                            if (sess.debateMode) setDebateMode(sess.debateMode);
+                            setDebateMode(sess.debateMode || 'default');
+                            setDynamicPersonas(sess.genesisAgents || []);
                             if (sess.swarmSize && isValidSwarmSize(sess.swarmSize)) {
                               handleSwarmSizeChange(sess.swarmSize);
                             }
@@ -1792,7 +1831,11 @@ export const ParallaxPage: React.FC = () => {
                                   sessScored.reduce((a, b) => a + b, 0) / sessScored.length,
                                 )
                               : null;
-                          return `${sess.messages.length} turns · ${sess.roundsCompleted || 3}/3 rounds${
+                          const sessMaxRounds =
+                            sess.debateMode === 'genesis' || sess.roundsCompleted === 1 ? 1 : 3;
+                          return `${sess.messages.length} turns · ${
+                            sess.roundsCompleted || sessMaxRounds
+                          }/${sessMaxRounds} round${sessMaxRounds === 1 ? '' : 's'}${
                             sessAvg !== null ? ` · ${sessAvg}% avg conviction` : ''
                           }`;
                         })()}
@@ -1838,7 +1881,8 @@ export const ParallaxPage: React.FC = () => {
                               setIntelligenceBriefing(sess.intelligenceBriefing || null);
                               setHumanInjections(sess.humanInjections || []);
                               setDevilsAdvocateTrigger(sess.devilsAdvocateTrigger || null);
-                              if (sess.debateMode) setDebateMode(sess.debateMode);
+                              setDebateMode(sess.debateMode || 'default');
+                              setDynamicPersonas(sess.genesisAgents || []);
                               if (sess.swarmSize && isValidSwarmSize(sess.swarmSize)) {
                                 handleSwarmSizeChange(sess.swarmSize);
                               }
@@ -1905,35 +1949,41 @@ export const ParallaxPage: React.FC = () => {
                 <div className="flex items-center gap-2 shrink-0">
                   <div
                     id="parallax-swarm-size-bar"
-                    className="flex items-center gap-1 px-1.5 py-0.5 rounded-lg bg-white/[0.03] border border-white/[0.07] transition-all duration-300 ease-out"
+                    className={`flex items-center gap-1 px-1.5 py-0.5 rounded-lg bg-white/[0.03] border border-white/[0.07] transition-all duration-300 ease-out ${
+                      isGenesisMode ? 'opacity-85' : ''
+                    }`}
                     title={swarmSizeHintText}
                   >
                     <span className="text-[10px] font-mono text-[#8b9097] pl-0.5 pr-1">
                       Agents in swarm:
                     </span>
-                    {PARALLAX_SWARM_SIZES.map((sz) => {
-                      const active = swarmSize === sz;
-                      return (
-                        <button
-                          key={sz}
-                          type="button"
-                          disabled={isRunning}
-                          onClick={() => handleSwarmSizeChange(sz)}
-                          className={`min-w-[24px] px-1.5 py-0.5 rounded-md text-[10.5px] font-mono font-semibold transition-all duration-200 ease-out active:scale-95 cursor-pointer disabled:opacity-50 ${
-                            active
-                              ? 'bg-white text-black scale-[1.03] shadow-2xs'
-                              : 'text-[#8b9097] hover:text-white hover:bg-white/[0.06]'
-                          }`}
-                        >
-                          {sz}
-                        </button>
-                      );
-                    })}
+                    <div className={`flex items-center gap-1 ${isGenesisMode ? 'opacity-45' : ''}`}>
+                      {PARALLAX_SWARM_SIZES.map((sz) => {
+                        const active = !isGenesisMode && swarmSize === sz;
+                        return (
+                          <button
+                            key={sz}
+                            type="button"
+                            disabled={isRunning || isGenesisMode}
+                            onClick={() => handleSwarmSizeChange(sz)}
+                            className={`min-w-[24px] px-1.5 py-0.5 rounded-md text-[10.5px] font-mono font-semibold transition-all duration-200 ease-out active:scale-95 cursor-pointer disabled:opacity-50 disabled:cursor-not-allowed ${
+                              active
+                                ? 'bg-white text-black scale-[1.03] shadow-2xs'
+                                : 'text-[#8b9097] hover:text-white hover:bg-white/[0.06]'
+                            }`}
+                          >
+                            {sz}
+                          </button>
+                        );
+                      })}
+                    </div>
                     <span
-                      key={`bar-hint-${swarmSize}-${isFewerEnabledThanSelected}`}
+                      key={`bar-hint-${swarmSize}-${isFewerEnabledThanSelected}-${isGenesisMode}`}
                       className={`${
                         isFewerEnabledThanSelected
                           ? 'inline text-amber-300/90'
+                          : isGenesisMode
+                          ? 'inline text-violet-300/90'
                           : 'hidden lg:inline text-[#71767b]'
                       } text-[10px] pl-1 pr-0.5 transition-colors duration-300 parallax-swarm-size-shift`}
                     >
@@ -1954,25 +2004,36 @@ export const ParallaxPage: React.FC = () => {
                 </div>
               </div>
 
+              {isGenesisMode && (
+                <div className="text-[10px] font-mono text-violet-300/85 px-1">
+                  Uses about 20 AI calls and up to 10 searches per run
+                </div>
+              )}
+
               {/* Row B: Interactive Persona Live Roster Strip */}
               <div
                 id="parallax-persona-roster-strip"
                 className="flex items-center gap-1.5 overflow-x-auto no-scrollbar py-0.5 transition-all duration-300 ease-out"
               >
                 <span
-                  key={`roster-count-${swarmSize}`}
+                  key={`roster-count-${swarmSize}-${isGenesisMode}-${dynamicPersonas.length}`}
                   className="text-[10px] font-mono text-[#71767b] shrink-0 pr-1 tabular-nums parallax-swarm-size-shift"
                 >
-                  {selectedSwarmCount} of {enabledAgentsCount} Active:
+                  {isGenesisMode
+                    ? dynamicPersonas.length > 0
+                      ? `${dynamicPersonas.length} Auto Agents:`
+                      : '18 Auto Agents (Genesis):'
+                    : `${selectedSwarmCount} of ${enabledAgentsCount} Active:`}
                 </span>
-                {enabledAgentsList.map((ag) => {
+                {rosterAgentsToRender.map((ag) => {
                   const recruited = recruitedAgents.find((r) => r.id === ag.id);
                   const score = recruited?.conviction ?? null;
                   const hasSpoken = (recruited?.turns.length || 0) > 0;
                   const isVoiceSpeaking = voiceSpeakingMessage?.agentId === ag.id;
                   const isActiveSpeaker = activeSpeakingAgent?.agentId === ag.id;
                   const isInspected = inspectedRosterAgentId === ag.id;
-                  const isSelectedForSwarm = selectedSwarmAgentIds.has(ag.id);
+                  const isSelectedForSwarm =
+                    Boolean(ag.isDynamic) || isGenesisMode || selectedSwarmAgentIds.has(ag.id);
                   const isBenched = !isSelectedForSwarm && !hasSpoken && !isInspected;
                   const isIdle = isSelectedForSwarm && !hasSpoken && !isActiveSpeaker && !isInspected;
                   const cleanName = ag.name.split(' (')[0];
@@ -1999,7 +2060,7 @@ export const ParallaxPage: React.FC = () => {
                       ? recruited.turns[recruited.turns.length - 1]?.side
                       : undefined;
                   const assignedSide =
-                    debateMode !== 'default'
+                    debateMode !== 'default' && debateMode !== 'genesis'
                       ? lastTurnSide || (isSelectedForSwarm ? modeSideAssignments.get(ag.id)?.side : undefined)
                       : undefined;
                   const sideRingColor = assignedSide
@@ -2336,7 +2397,13 @@ export const ParallaxPage: React.FC = () => {
                     onSelectAgent={(id) => setSelectedAgentFilter(id)}
                     topic={currentTopic || 'Swarm Standby'}
                     selectedSwarmAgentIds={selectedSwarmAgentIds}
-                    sideAssignments={debateMode !== 'default' ? modeSideAssignments : undefined}
+                    sideAssignments={
+                      debateMode !== 'default' && debateMode !== 'genesis'
+                        ? modeSideAssignments
+                        : undefined
+                    }
+                    dynamicPersonas={dynamicPersonas}
+                    debateMode={debateMode}
                   />
                 </div>
               )}
@@ -2398,14 +2465,18 @@ export const ParallaxPage: React.FC = () => {
                       <span aria-hidden="true">·</span>
                       <span>{currentModeObj.label}</span>
                       <span aria-hidden="true">·</span>
-                      <span>3 Rounds</span>
+                      <span>{isGenesisMode ? 'Round 1 of 1' : '3 Rounds'}</span>
                     </div>
 
                     <h1 className="text-[18px] sm:text-[24px] font-semibold text-white tracking-tight leading-snug text-balance m-0">
-                      {selectedSwarmCount} specialized minds. One empirical synthesis.
+                      {isGenesisMode
+                        ? '18 auto-created minds. One ZENITH synthesis.'
+                        : `${selectedSwarmCount} specialized minds. One empirical synthesis.`}
                     </h1>
                     <p className="text-xs sm:text-[13.5px] text-[#8b9097] leading-relaxed max-w-[640px] m-0">
-                      Assign any research question or global dataset. Parallax mobilizes {selectedSwarmCount} independent personas across Thesis (Round 1), Cross-Examination (Round 2), and Ranked Conviction Convergence (Round 3).
+                      {isGenesisMode
+                        ? 'Assign any research question. ARCHITECT designs 18 custom specialists for your topic, runs targeted web searches in 1 round, and ZENITH synthesizes the complete answer.'
+                        : `Assign any research question or global dataset. Parallax mobilizes ${selectedSwarmCount} independent personas across Thesis (Round 1), Cross-Examination (Round 2), and Ranked Conviction Convergence (Round 3).`}
                     </p>
                   </div>
 
@@ -2447,47 +2518,49 @@ export const ParallaxPage: React.FC = () => {
                           strokeWidth="0.9"
                           strokeDasharray="10 5 2 5"
                         />
-                        {selectedSwarmAgents.slice(0, 12).map((ag, idx, arr) => {
-                          const angle = (idx / Math.max(1, arr.length)) * Math.PI * 2;
-                          const nx = 70 + Math.cos(angle) * 52;
-                          const ny = 70 + Math.sin(angle) * 52;
-                          const accentHex = ag.accentColor || '#61d7c9';
-                          const sideColor =
-                            debateMode !== 'default'
-                              ? modeSideAssignments.get(ag.id)?.color || accentHex
-                              : null;
-                          return (
-                            <g key={ag.id}>
-                              <line
-                                x1="70"
-                                y1="70"
-                                x2={nx}
-                                y2={ny}
-                                stroke={accentHex}
-                                strokeWidth="0.55"
-                                strokeOpacity="0.24"
-                              />
-                              {sideColor && (
+                        {(dynamicPersonas.length > 0 ? dynamicPersonas : selectedSwarmAgents)
+                          .slice(0, 12)
+                          .map((ag, idx, arr) => {
+                            const angle = (idx / Math.max(1, arr.length)) * Math.PI * 2;
+                            const nx = 70 + Math.cos(angle) * 52;
+                            const ny = 70 + Math.sin(angle) * 52;
+                            const accentHex = ag.accentColor || '#61d7c9';
+                            const sideColor =
+                              debateMode !== 'default' && debateMode !== 'genesis'
+                                ? modeSideAssignments.get(ag.id)?.color || accentHex
+                                : null;
+                            return (
+                              <g key={ag.id}>
+                                <line
+                                  x1="70"
+                                  y1="70"
+                                  x2={nx}
+                                  y2={ny}
+                                  stroke={accentHex}
+                                  strokeWidth="0.55"
+                                  strokeOpacity="0.24"
+                                />
+                                {sideColor && (
+                                  <circle
+                                    cx={nx}
+                                    cy={ny}
+                                    r="4.2"
+                                    fill="none"
+                                    stroke={sideColor}
+                                    strokeWidth="0.9"
+                                    strokeOpacity="0.85"
+                                  />
+                                )}
                                 <circle
                                   cx={nx}
                                   cy={ny}
-                                  r="4.2"
-                                  fill="none"
-                                  stroke={sideColor}
-                                  strokeWidth="0.9"
-                                  strokeOpacity="0.85"
+                                  r="2.6"
+                                  fill={accentHex}
+                                  style={{ filter: `drop-shadow(0 0 8px ${accentHex})` }}
                                 />
-                              )}
-                              <circle
-                                cx={nx}
-                                cy={ny}
-                                r="2.6"
-                                fill={accentHex}
-                                style={{ filter: `drop-shadow(0 0 8px ${accentHex})` }}
-                              />
-                            </g>
-                          );
-                        })}
+                              </g>
+                            );
+                          })}
                       </g>
 
                       {/* Inner Counter-Spinning Specialist Ring */}
@@ -2501,38 +2574,40 @@ export const ParallaxPage: React.FC = () => {
                           strokeWidth="1"
                           strokeDasharray="5 4"
                         />
-                        {selectedSwarmAgents.slice(12, 20).map((ag, idx, arr) => {
-                          const angle = (idx / Math.max(1, arr.length)) * Math.PI * 2;
-                          const nx = 70 + Math.cos(angle) * 34;
-                          const ny = 70 + Math.sin(angle) * 34;
-                          const accentHex = ag.accentColor || '#c084fc';
-                          const sideColor =
-                            debateMode !== 'default'
-                              ? modeSideAssignments.get(ag.id)?.color || accentHex
-                              : null;
-                          return (
-                            <g key={ag.id}>
-                              {sideColor && (
+                        {(dynamicPersonas.length > 0 ? dynamicPersonas : selectedSwarmAgents)
+                          .slice(12, 20)
+                          .map((ag, idx, arr) => {
+                            const angle = (idx / Math.max(1, arr.length)) * Math.PI * 2;
+                            const nx = 70 + Math.cos(angle) * 34;
+                            const ny = 70 + Math.sin(angle) * 34;
+                            const accentHex = ag.accentColor || '#c084fc';
+                            const sideColor =
+                              debateMode !== 'default' && debateMode !== 'genesis'
+                                ? modeSideAssignments.get(ag.id)?.color || accentHex
+                                : null;
+                            return (
+                              <g key={ag.id}>
+                                {sideColor && (
+                                  <circle
+                                    cx={nx}
+                                    cy={ny}
+                                    r="3.9"
+                                    fill="none"
+                                    stroke={sideColor}
+                                    strokeWidth="0.9"
+                                    strokeOpacity="0.85"
+                                  />
+                                )}
                                 <circle
                                   cx={nx}
                                   cy={ny}
-                                  r="3.9"
-                                  fill="none"
-                                  stroke={sideColor}
-                                  strokeWidth="0.9"
-                                  strokeOpacity="0.85"
+                                  r="2.4"
+                                  fill={accentHex}
+                                  style={{ filter: `drop-shadow(0 0 8px ${accentHex})` }}
                                 />
-                              )}
-                              <circle
-                                cx={nx}
-                                cy={ny}
-                                r="2.4"
-                                fill={accentHex}
-                                style={{ filter: `drop-shadow(0 0 8px ${accentHex})` }}
-                              />
-                            </g>
-                          );
-                        })}
+                              </g>
+                            );
+                          })}
                       </g>
 
                       {/* Central Relativistic Singularity Core */}
@@ -2769,15 +2844,48 @@ export const ParallaxPage: React.FC = () => {
                     </div>
                   </div>
 
-                  {/* 3-Round Pipeline Progress Stepper with Synaptic Node Graphics */}
-                  <div className="grid grid-cols-3 gap-1.5 pt-1 border-t border-white/[0.06]">
-                    {[
-                      { r: 1, title: '01. Thesis & Grounding', count: messages.filter((m) => m.round === 1).length, color: '#06b6d4' },
-                      { r: 2, title: '02. Cross-Examination', count: messages.filter((m) => m.round === 2).length, color: '#a855f7' },
-                      { r: 3, title: '03. Final Convergence', count: messages.filter((m) => m.round === 3).length, color: '#10b981' },
-                    ].map((step) => {
+                  {/* Round Pipeline Progress Stepper with Synaptic Node Graphics */}
+                  <div
+                    className={`grid ${
+                      isGenesisMode ? 'grid-cols-1' : 'grid-cols-3'
+                    } gap-1.5 pt-1 border-t border-white/[0.06]`}
+                  >
+                    {(isGenesisMode
+                      ? [
+                          {
+                            r: 1,
+                            title:
+                              'Round 1 of 1 · Genesis Swarm (ARCHITECT + 18 Auto Agents + ZENITH)',
+                            count: messages.filter((m) => m.round === 1).length,
+                            color: '#a78bfa',
+                          },
+                        ]
+                      : [
+                          {
+                            r: 1,
+                            title: '01. Thesis & Grounding',
+                            count: messages.filter((m) => m.round === 1).length,
+                            color: '#06b6d4',
+                          },
+                          {
+                            r: 2,
+                            title: '02. Cross-Examination',
+                            count: messages.filter((m) => m.round === 2).length,
+                            color: '#a855f7',
+                          },
+                          {
+                            r: 3,
+                            title: '03. Final Convergence',
+                            count: messages.filter((m) => m.round === 3).length,
+                            color: '#10b981',
+                          },
+                        ]
+                    ).map((step) => {
                       const isCurrent = isRunning && currentRound === step.r;
-                      const isDone = Boolean(summary) || (currentRound !== null && currentRound > step.r) || step.count > 0;
+                      const isDone =
+                        Boolean(summary) ||
+                        (currentRound !== null && currentRound > step.r) ||
+                        step.count > 0;
                       return (
                         <div
                           key={step.r}
@@ -2882,6 +2990,7 @@ export const ParallaxPage: React.FC = () => {
                       currentRound={currentRound}
                       wasStoppedEarly={wasStoppedEarly}
                       specialistDeliberation={specialistDeliberation}
+                      debateMode={debateMode}
                       roundFilter={roundFilter}
                       groupFilter={groupFilter}
                       selectedAgentFilter={selectedAgentFilter}
@@ -3052,6 +3161,11 @@ export const ParallaxPage: React.FC = () => {
                           <div>
                             <div className="text-[11px] font-semibold text-white">{m.label}</div>
                             <div className="text-[9.5px] text-[#71767b]">{displaySpeedTag}</div>
+                            {m.id === 'genesis' && (
+                              <div className="text-[9px] text-violet-300/85 mt-0.5">
+                                Uses about 20 AI calls and up to 10 searches per run
+                              </div>
+                            )}
                           </div>
                         </div>
                         {active && <Check size={12} className="text-emerald-400" />}
@@ -3066,22 +3180,24 @@ export const ParallaxPage: React.FC = () => {
                         Agents in swarm
                       </span>
                       <span
-                        key={swarmSize}
+                        key={`${swarmSize}-${isGenesisMode}`}
                         className="text-[10px] font-mono text-cyan-300 tabular-nums parallax-swarm-size-shift"
                       >
-                        {selectedSwarmCount} of {enabledAgentsCount} active
+                        {isGenesisMode
+                          ? '2 + 18 auto agents'
+                          : `${selectedSwarmCount} of ${enabledAgentsCount} active`}
                       </span>
                     </div>
-                    <div className="grid grid-cols-4 gap-1">
+                    <div className={`grid grid-cols-4 gap-1 ${isGenesisMode ? 'opacity-45' : ''}`}>
                       {PARALLAX_SWARM_SIZES.map((sz) => {
-                        const active = swarmSize === sz;
+                        const active = !isGenesisMode && swarmSize === sz;
                         return (
                           <button
                             key={sz}
                             type="button"
-                            disabled={isRunning}
+                            disabled={isRunning || isGenesisMode}
                             onClick={() => handleSwarmSizeChange(sz)}
-                            className={`py-1 rounded-lg border text-[11px] font-mono font-semibold text-center transition-all duration-200 ease-out active:scale-95 cursor-pointer disabled:opacity-50 ${
+                            className={`py-1 rounded-lg border text-[11px] font-mono font-semibold text-center transition-all duration-200 ease-out active:scale-95 cursor-pointer disabled:opacity-50 disabled:cursor-not-allowed ${
                               active
                                 ? 'border-white bg-white text-black scale-[1.02] shadow-xs'
                                 : 'border-[#26292e] bg-white/[0.03] text-[#8b9097] hover:text-white'
@@ -3093,9 +3209,13 @@ export const ParallaxPage: React.FC = () => {
                       })}
                     </div>
                     <div
-                      key={`composer-hint-${swarmSize}-${isFewerEnabledThanSelected}`}
+                      key={`composer-hint-${swarmSize}-${isFewerEnabledThanSelected}-${isGenesisMode}`}
                       className={`text-[10px] pb-0.5 transition-colors duration-300 parallax-swarm-size-shift ${
-                        isFewerEnabledThanSelected ? 'text-amber-300/90' : 'text-[#8b9097]'
+                        isFewerEnabledThanSelected
+                          ? 'text-amber-300/90'
+                          : isGenesisMode
+                          ? 'text-violet-300/90'
+                          : 'text-[#8b9097]'
                       }`}
                     >
                       {swarmSizeHintText}
@@ -3125,7 +3245,10 @@ export const ParallaxPage: React.FC = () => {
                         <>
                           <span className="w-1.5 h-1.5 rounded-full bg-cyan-400 animate-ping shrink-0" />
                           <span className="text-cyan-300 font-semibold truncate">
-                            Round 0{currentRound || 1} Active · {statusText}
+                            {isGenesisMode
+                              ? 'Round 1 of 1 Active'
+                              : `Round 0${currentRound || 1} Active`}{' '}
+                            · {statusText}
                           </span>
                         </>
                       ) : summary ? (
@@ -3220,7 +3343,7 @@ export const ParallaxPage: React.FC = () => {
                     >
                       <Zap size={12} className="text-cyan-400 shrink-0" />
                       <span>
-                        {currentModeObj.shortLabel} · {selectedSwarmCount}A
+                        {currentModeObj.shortLabel} · {isGenesisMode ? '2+18A' : `${selectedSwarmCount}A`}
                       </span>
                       <ChevronDown size={12} className="text-[#71767b] shrink-0" />
                     </button>

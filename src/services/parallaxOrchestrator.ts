@@ -24,6 +24,7 @@ import {
   generateIntelligenceBriefing,
   computeConfidenceWeightedVerdict,
 } from './parallaxEvidenceEngine';
+import { runGenesisSwarm } from './parallaxGenesis';
 import type {
   AIProviderConfig,
   ParallaxAgentConfig,
@@ -386,7 +387,7 @@ export interface ParallaxRunOptions {
   signal?: AbortSignal;
 }
 
-const DYNAMIC_SPECIALIST_PALETTES = [
+export const DYNAMIC_SPECIALIST_PALETTES = [
   { color: '#10b981', voice: 'en-US-BrianNeural' }, // Emerald
   { color: '#8b5cf6', voice: 'en-GB-RyanNeural' },  // Violet
   { color: '#f59e0b', voice: 'en-US-AriaNeural' },  // Amber
@@ -1327,7 +1328,7 @@ export async function analyzeTopicAndCreateTemporaryPersonas(
   return deliberation.allSpecialists;
 }
 
-function abortableSleep(ms: number, signal?: AbortSignal): Promise<void> {
+export function abortableSleep(ms: number, signal?: AbortSignal): Promise<void> {
   return new Promise((resolve, reject) => {
     if (signal?.aborted) {
       reject(new Error('Swarm aborted'));
@@ -1406,7 +1407,7 @@ const DEFAULT_AGENT_METRICS: Record<string, { conviction: number; mood: string }
 /**
  * Extracts compact conviction score (1-10) and mood emoji [score|emoji] appended to response.
  */
-function parseConvictionAndMood(raw: string, agentId: string, defaultMood?: string): {
+export function parseConvictionAndMood(raw: string, agentId: string, defaultMood?: string): {
   cleanText: string;
   conviction: number;
   mood: string;
@@ -1536,7 +1537,7 @@ export function findIdeologicalOpponents(agentId: string, candidateIds: string[]
 /**
  * Helper to check if an error is a network or rate-limit error (429, 5xx, timeout).
  */
-function isNetworkOrRateLimitError(err: unknown): boolean {
+export function isNetworkOrRateLimitError(err: unknown): boolean {
   if (!err) return false;
   const msg = String(err instanceof Error ? err.message : err).toLowerCase();
   const status = (err as Record<string, unknown>)?.status || (err as Record<string, unknown>)?.statusCode;
@@ -1556,7 +1557,7 @@ function isNetworkOrRateLimitError(err: unknown): boolean {
   );
 }
 
-function countWords(text: string): number {
+export function countWords(text: string): number {
   if (!text) return 0;
   return text.trim().split(/\s+/).filter(Boolean).length;
 }
@@ -1715,21 +1716,6 @@ Rule: Use ONLY the KEY FACTS or things you are 100% sure of. Never invent number
     }
 
     const fallbackMeta = DEFAULT_AGENT_METRICS[agent.id.toLowerCase()] || { conviction: 7, mood: '⚡' };
-    if (round === 3 && modeRole) {
-      if (debateMode === 'courtroom' && modeRole.side === 'judge' && !/^VERDICT:/i.test(fallbackText)) {
-        fallbackText = `VERDICT: PARTIALLY UPHELD. ${fallbackText}`;
-      } else if (debateMode === 'red_vs_blue' && modeRole.side === 'referee' && !/^RESULT:/i.test(fallbackText)) {
-        fallbackText = `RESULT: DRAW. ${fallbackText}`;
-      } else if (debateMode === 'red_vs_blue' && modeRole.side === 'red' && !/SEVERITY:\s*\d\s*\/\s*5/i.test(fallbackText)) {
-        fallbackText = `${fallbackText} SEVERITY: 4/5.`;
-      } else if (debateMode === 'senate' && !/^VOTE:/i.test(fallbackText)) {
-        const voteWord = fallbackMeta.conviction >= 7 ? 'AYE' : fallbackMeta.conviction <= 4 ? 'NAY' : 'ABSTAIN';
-        fallbackText = `VOTE: ${voteWord}. ${fallbackText}`;
-      } else if (debateMode === 'vc_pitch' && !/^DECISION:/i.test(fallbackText)) {
-        const decWord = fallbackMeta.conviction >= 8 ? 'INVEST' : fallbackMeta.conviction <= 4 ? 'PASS' : 'CONDITIONAL';
-        fallbackText = `DECISION: ${decWord}. ${fallbackText}`;
-      }
-    }
 
     return {
       id: `plx_${agent.id}_r${round}_fallback_${Date.now()}`,
@@ -2258,6 +2244,11 @@ export async function runParallaxSwarm(options: ParallaxRunOptions): Promise<voi
 
   if (!topic || !topic.trim()) {
     onError?.('A topic is required to initiate Parallax.');
+    return;
+  }
+
+  if (options.debateMode === 'genesis') {
+    await runGenesisSwarm(options);
     return;
   }
 
@@ -2931,10 +2922,11 @@ function computeModeResult(
     }
 
     // Most dangerous weakness from Red Team (highest SEVERITY: n/5, fallback to highest conviction)
-    if (redMsgs.length > 0) {
-      let topRed = redMsgs[0];
+    const validRedMsgs = redMsgs.filter((m) => !m.fallbackReason);
+    if (validRedMsgs.length > 0) {
+      let topRed = validRedMsgs[0];
       let topSev = -1;
-      for (const m of redMsgs) {
+      for (const m of validRedMsgs) {
         const cleanedM = stripMarkdownMarks(m.text);
         const sevMatch = cleanedM.match(/SEVERITY:\s*(\d(?:\.\d+)?)\s*\/\s*5/i);
         const sev = sevMatch ? parseFloat(sevMatch[1]) : -1;
@@ -2959,8 +2951,9 @@ function computeModeResult(
     }
 
     // Best fix from Blue Team (highest conviction)
-    if (blueMsgs.length > 0) {
-      const topBlue = [...blueMsgs].sort(
+    const validBlueMsgs = blueMsgs.filter((m) => !m.fallbackReason);
+    if (validBlueMsgs.length > 0) {
+      const topBlue = [...validBlueMsgs].sort(
         (a, b) => getMsgConviction10(b) - getMsgConviction10(a),
       )[0];
       details.push(`Best fix — ${topBlue.agentName.split(' (')[0]}: ${stripMarkdownMarks(topBlue.text)}`);
@@ -2982,7 +2975,6 @@ function computeModeResult(
     let nay = 0;
     let abstain = 0;
     let uncounted = 0;
-    let estimated = 0;
 
     const factionDefs = modeCfg.sides || [
       { id: 'security', label: 'Security Hawks', color: '#f43f5e', instruction: '' },
@@ -2996,6 +2988,10 @@ function computeModeResult(
     }
 
     for (const m of r3Msgs) {
+      if (m.fallbackReason) {
+        uncounted++;
+        continue;
+      }
       const cleanedText = stripMarkdownMarks(m.text);
       const voteMatch = cleanedText.match(/VOTE:\s*(AYE|NAY|ABSTAIN)/i);
       const sideId = getSide(m) || 'ethics';
@@ -3012,9 +3008,6 @@ function computeModeResult(
         } else {
           abstain++;
           if (fEntry) fEntry.abstain++;
-        }
-        if (m.fallbackReason) {
-          estimated++;
         }
       } else {
         uncounted++;
@@ -3037,9 +3030,6 @@ function computeModeResult(
     if (uncounted > 0) {
       details.push(`${uncounted} not counted`);
     }
-    if (estimated > 0) {
-      details.push(`${estimated} of the votes were estimated (agent did not answer)`);
-    }
 
     return {
       title: modeCfg.resultTitle || 'Vote',
@@ -3053,7 +3043,6 @@ function computeModeResult(
     let pass = 0;
     let conditional = 0;
     let uncounted = 0;
-    let estimated = 0;
 
     const byDecision: Record<'INVEST' | 'PASS' | 'CONDITIONAL', ParallaxMessage[]> = {
       INVEST: [],
@@ -3062,6 +3051,10 @@ function computeModeResult(
     };
 
     for (const m of r3Msgs) {
+      if (m.fallbackReason) {
+        uncounted++;
+        continue;
+      }
       const cleanedText = stripMarkdownMarks(m.text);
       const decMatch = cleanedText.match(/DECISION:\s*(INVEST|PASS|CONDITIONAL)/i);
       if (decMatch) {
@@ -3070,9 +3063,6 @@ function computeModeResult(
         else if (d === 'PASS') pass++;
         else conditional++;
         byDecision[d].push(m);
-        if (m.fallbackReason) {
-          estimated++;
-        }
       } else {
         uncounted++;
       }
@@ -3114,9 +3104,6 @@ function computeModeResult(
 
     if (uncounted > 0) {
       details.push(`${uncounted} not counted`);
-    }
-    if (estimated > 0) {
-      details.push(`${estimated} of the votes were estimated (agent did not answer)`);
     }
 
     return {
