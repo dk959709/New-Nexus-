@@ -816,28 +816,35 @@ export const ParallaxDeliberationStream: React.FC<ParallaxDeliberationStreamProp
                                   )}
 
                                   {isGenesisMsg && genesisRoleChipText ? (
-                                    <span
-                                      style={{
-                                        backgroundColor: isZenith
-                                          ? 'rgba(251, 191, 36, 0.18)'
-                                          : isArchitect
-                                          ? 'rgba(167, 139, 250, 0.2)'
-                                          : colors.chipBg,
-                                        borderColor: isZenith
-                                          ? 'rgba(251, 191, 36, 0.55)'
-                                          : isArchitect
-                                          ? 'rgba(167, 139, 250, 0.55)'
-                                          : colors.chipBorder,
-                                        color: isZenith
-                                          ? '#fde68a'
-                                          : isArchitect
-                                          ? '#ddd6fe'
-                                          : msg.accentColor || colors.nameColor,
-                                      }}
-                                      className="px-1.5 py-0.5 rounded-md text-[9.5px] font-mono font-bold uppercase tracking-wider border leading-none"
-                                    >
-                                      {genesisRoleChipText}
-                                    </span>
+                                    <>
+                                      <span
+                                        style={{
+                                          backgroundColor: isZenith
+                                            ? 'rgba(251, 191, 36, 0.18)'
+                                            : isArchitect
+                                            ? 'rgba(167, 139, 250, 0.2)'
+                                            : colors.chipBg,
+                                          borderColor: isZenith
+                                            ? 'rgba(251, 191, 36, 0.55)'
+                                            : isArchitect
+                                            ? 'rgba(167, 139, 250, 0.55)'
+                                            : colors.chipBorder,
+                                          color: isZenith
+                                            ? '#fde68a'
+                                            : isArchitect
+                                            ? '#ddd6fe'
+                                            : msg.accentColor || colors.nameColor,
+                                        }}
+                                        className="px-1.5 py-0.5 rounded-md text-[9.5px] font-mono font-bold uppercase tracking-wider border leading-none"
+                                      >
+                                        {genesisRoleChipText}
+                                      </span>
+                                      {isZenith && msg.fallbackReason && (
+                                        <span className="px-1.5 py-0.5 rounded-md text-[9.5px] font-mono font-medium bg-amber-500/15 border border-amber-400/35 text-amber-200 leading-none">
+                                          Estimated from top agents
+                                        </span>
+                                      )}
+                                    </>
                                   ) : (
                                     msg.sideLabel && (
                                       <span

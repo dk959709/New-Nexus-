@@ -4,7 +4,6 @@ import { DEFAULT_PARALLAX_VOICES } from '@/data/parallaxVoices';
 import { api } from '@/services/api';
 import {
   resolveParallaxProviderConfig,
-  parseConvictionAndMood,
   countWords,
   formatSearchSourceLabel,
   abortableSleep,
@@ -521,6 +520,29 @@ function formatSearchResultsBlock(results: ParallaxToolRawResult[]): string {
   return `SEARCH RESULTS:\n${lines.join('\n')}`;
 }
 
+function parseGenesisTag(
+  raw: string,
+  defaultMood: string,
+): { cleanText: string; conviction: number; mood: string } {
+  const trimmed = (raw || '').trim();
+  const endTagRegex = /\[\s*(\d{1,2})\s*[|\/,;]\s*([^\]]{1,12}?)\s*\]\s*$/u;
+  const match = trimmed.match(endTagRegex);
+  if (match && typeof match.index === 'number') {
+    const parsedScore = parseInt(match[1], 10);
+    const conviction = Number.isNaN(parsedScore)
+      ? 7
+      : Math.max(1, Math.min(10, parsedScore));
+    const mood = match[2].trim() || defaultMood;
+    const cleanText = trimmed.slice(0, match.index).trim();
+    return { cleanText, conviction, mood };
+  }
+  return {
+    cleanText: trimmed,
+    conviction: 7,
+    mood: defaultMood,
+  };
+}
+
 function extractFirstSentence(text: string): string {
   const clean = (text || '').replace(/\s+/g, ' ').trim();
   if (!clean) return '';
@@ -557,6 +579,7 @@ export async function runGenesisSwarm(options: ParallaxRunOptions): Promise<void
   });
 
   const genesisSettings = storage.getParallaxGenesisSettings();
+  const maxSearches = Math.max(0, Math.min(18, genesisSettings.maxSearches ?? 10));
   const allMessages: ParallaxMessage[] = [];
 
   try {
@@ -565,26 +588,31 @@ export async function runGenesisSwarm(options: ParallaxRunOptions): Promise<void
 
     // =========================================================================
     // STEP 1: Initial Quick Scan Search (top 5 titles + snippets, max 700 chars)
+    // Skipped completely if maxSearches === 0
     // =========================================================================
-    onStatusUpdate?.('Genesis: scanning the topic...');
     let sharedBriefText = '';
     let sharedBriefResults: ParallaxToolRawResult[] = [];
     let sharedBriefSourceLabel = 'Live Web';
 
-    try {
-      const scanRes = await runSingleSearchWithTimeoutAndRetry(cleanTopic, signal);
-      if (scanRes.results.length > 0) {
-        sharedBriefResults = scanRes.results.slice(0, 4);
-        sharedBriefSourceLabel = scanRes.sourceLabel;
-        const rawBrief = scanRes.results
-          .slice(0, 5)
-          .map((r, idx) => `[${idx + 1}] ${r.title} (${r.domain || 'web'}): ${r.snippet || ''}`)
-          .join('\n');
-        sharedBriefText = rawBrief.length > 700 ? rawBrief.slice(0, 697) + '…' : rawBrief;
+    if (maxSearches > 0) {
+      onStatusUpdate?.('Genesis: scanning the topic...');
+      try {
+        const scanRes = await runSingleSearchWithTimeoutAndRetry(cleanTopic, signal);
+        if (scanRes.results.length > 0) {
+          sharedBriefResults = scanRes.results.slice(0, 4);
+          sharedBriefSourceLabel = scanRes.sourceLabel;
+          const rawBrief = scanRes.results
+            .slice(0, 5)
+            .map((r, idx) => `[${idx + 1}] ${r.title} (${r.domain || 'web'}): ${r.snippet || ''}`)
+            .join('\n');
+          sharedBriefText = rawBrief.length > 700 ? rawBrief.slice(0, 697) + '…' : rawBrief;
+        }
+      } catch (scanErr) {
+        if (signal?.aborted) return;
+        console.warn('[Genesis] Initial topic scan failed, continuing:', scanErr);
       }
-    } catch (scanErr) {
-      if (signal?.aborted) return;
-      console.warn('[Genesis] Initial topic scan failed, continuing:', scanErr);
+    } else {
+      onStatusUpdate?.('Genesis: ARCHITECT designing 18 agents...');
     }
 
     if (signal?.aborted) return;
@@ -748,14 +776,20 @@ Return the JSON object with "plan" and exactly 18 "agents".`;
 
     allMessages.push(architectMsg);
     onMessage(architectMsg);
-    onStatusUpdate?.('Genesis: ARCHITECT created 18 agents. Searching...');
+    onStatusUpdate?.(
+      maxSearches > 0
+        ? 'Genesis: ARCHITECT created 18 agents. Searching...'
+        : 'Genesis: ARCHITECT created 18 agents. Starting deliberation...',
+    );
 
     if (signal?.aborted) return;
 
     // =========================================================================
-    // STEP 5: SEARCH Step (up to settings.maxSearches unique queries, batch 3)
+    // STEP 5: SEARCH Step (shared scan counts inside maxSearches limit)
+    // If maxSearches > 0, number of agent searches is maxSearches - 1 (min 1 if maxSearches >= 1).
+    // If maxSearches is 0, skip agent searches too.
     // =========================================================================
-    const maxSearches = Math.max(0, Math.min(18, genesisSettings.maxSearches ?? 10));
+    const agentSearchCount = maxSearches > 0 ? Math.max(1, maxSearches - 1) : 0;
     const uniqueQueryList: string[] = [];
     const querySeen = new Set<string>();
 
@@ -767,7 +801,7 @@ Return the JSON object with "plan" and exactly 18 "agents".`;
       }
     }
 
-    const queriesToRun = uniqueQueryList.slice(0, maxSearches);
+    const queriesToRun = uniqueQueryList.slice(0, agentSearchCount);
     const queryResultsMap = new Map<
       string,
       { results: ParallaxToolRawResult[]; sourceLabel: string; ok: boolean }
@@ -776,6 +810,9 @@ Return the JSON object with "plan" and exactly 18 "agents".`;
     const SEARCH_CONCURRENCY = 3;
     for (let i = 0; i < queriesToRun.length; i += SEARCH_CONCURRENCY) {
       if (signal?.aborted) return;
+      if (i > 0) {
+        await abortableSleep(450, signal);
+      }
       const batchQueries = queriesToRun.slice(i, i + SEARCH_CONCURRENCY);
       const batchResults = await Promise.all(
         batchQueries.map(async (q) => {
@@ -926,7 +963,7 @@ Return the JSON object with "plan" and exactly 18 "agents".`;
           }
         }
 
-        let parsed = parseConvictionAndMood(rawText, agent.id, agent.mood);
+        let parsed = parseGenesisTag(rawText, agent.mood || '💡');
         let fullText = parsed.cleanText.trim();
 
         if (countWords(fullText) < 20 && !signal?.aborted) {
@@ -946,7 +983,7 @@ Return the JSON object with "plan" and exactly 18 "agents".`;
               signal,
             });
             const retryRaw = (retryRes.text || retryRes.content || '').trim();
-            const retryParsed = parseConvictionAndMood(retryRaw, agent.id, agent.mood);
+            const retryParsed = parseGenesisTag(retryRaw, agent.mood || '💡');
             if (countWords(retryParsed.cleanText) >= 20) {
               parsed = retryParsed;
               fullText = retryParsed.cleanText.trim();
@@ -1088,7 +1125,7 @@ Write the final synthesis using the 4 required sections: FINAL ANSWER:, KEY FACT
     const buildZenithFallbackText = (): string => {
       const nonFallback = agentMessages
         .filter((m) => !m.fallbackReason)
-        .sort((a, b) => (b.conviction ?? 5) - (a.conviction ?? 5));
+        .sort((a, b) => (b.conviction ?? 7) - (a.conviction ?? 7));
       const top3 = nonFallback.slice(0, 3);
       const sentences = top3
         .map((m) => `${m.agentName}: ${extractFirstSentence(m.text)}`)
@@ -1097,7 +1134,7 @@ Write the final synthesis using the 4 required sections: FINAL ANSWER:, KEY FACT
         sentences.length > 0
           ? sentences.join(' ')
           : `Genesis Swarm completed its single-round investigation on "${cleanTopic}".`;
-      return `FINAL ANSWER:\n${combined}\n\nKEY FACTS:\n• Synthesized from top-conviction Genesis agents.\n\nWHERE AGENTS DISAGREE:\n• Agents emphasized different domain trade-offs across implementation and risk.\n\nCONFIDENCE:\nMedium — synthesized via fallback from top agent responses.`;
+      return `FINAL ANSWER:\n${combined}\n\nKEY FACTS:\n• Synthesized from top-conviction Genesis agents.\n\nWHERE AGENTS DISAGREE:\n• Agents emphasized different domain trade-offs across implementation and risk.\n\nCONFIDENCE:\nMedium — Estimated from top agents.`;
     };
 
     const zenithStart = Date.now();
@@ -1120,14 +1157,13 @@ Write the final synthesis using the 4 required sections: FINAL ANSWER:, KEY FACT
         signal,
       });
       const rawZ = (zRes.text || zRes.content || '').trim();
-      const parsedZ = parseConvictionAndMood(rawZ, 'zenith', '🌟');
-      if (countWords(parsedZ.cleanText) >= 15) {
-        zenithText = parsedZ.cleanText.trim();
+      if (countWords(rawZ) >= 15) {
+        zenithText = rawZ;
         zenithRespModel = zRes.model || zenithModel;
         zenithRespProvider = zRes.providerName || zenithRespProvider;
       } else {
         zenithText = buildZenithFallbackText();
-        zenithFallbackReason = 'ZENITH response too short';
+        zenithFallbackReason = 'Estimated from top agents';
       }
     } catch (zErr) {
       if (signal?.aborted) return;
@@ -1174,7 +1210,7 @@ Write the final synthesis using the 4 required sections: FINAL ANSWER:, KEY FACT
 
     const top4Agents = agentMessages
       .filter((m) => !m.fallbackReason)
-      .sort((a, b) => (b.conviction ?? 5) - (a.conviction ?? 5))
+      .sort((a, b) => (b.conviction ?? 7) - (a.conviction ?? 7))
       .slice(0, 4);
 
     const highlights = top4Agents.map(
