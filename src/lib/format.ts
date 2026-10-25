@@ -171,8 +171,10 @@ export function cleanMarkdownForSpeech(text: string): string {
     .replace(/^\s*\d+\.\s+/gm, '')
     // 9. Remove blockquotes (>) at start of lines
     .replace(/^\s*>\s+/gm, '')
-    // 10. Remove horizontal dividers
+    // 10. Remove horizontal dividers and markdown table separator rows
     .replace(/^\s*[-*_]{3,}\s*$/gm, '')
+    .replace(/^\s*\|?(?:\s*:?-+:?\s*\|)+\s*:?-+:?\s*\|?\s*$/gm, ' ')
+    .replace(/\|/g, ' ')
     // 11. Remove bold, italic, and strikethrough markers (*, _, ~) while preserving words
     .replace(/[*_~]{1,3}([^*_~\n]+)[*_~]{1,3}/g, '$1')
     .replace(/[*_~]/g, '')

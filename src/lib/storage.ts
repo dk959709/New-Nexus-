@@ -54,6 +54,9 @@ const KEYS = {
   parallaxSessions: 'nexus-parallax-sessions-v1',
   parallaxSwarmSize: 'nexus-parallax-swarm-size',
   parallaxGenesis: 'nexus-parallax-genesis-v1',
+  parallaxWebSearchMode: 'nexus-parallax-web-search-mode',
+  parallaxWebSearchUrl: 'nexus-parallax-web-search-url',
+  parallaxWebSearchKey: 'nexus-parallax-web-search-key',
   commanderConfig: 'nexus-ai-commander-config-v1',
 } as const;
 
@@ -2529,6 +2532,31 @@ export const storage = {
     } catch {
       // ignore storage errors
     }
+  },
+
+  getParallaxWebSearchMode(): 'default' | 'custom' {
+    const val = read<string>(KEYS.parallaxWebSearchMode, 'default');
+    return val === 'custom' ? 'custom' : 'default';
+  },
+
+  setParallaxWebSearchMode(mode: 'default' | 'custom'): void {
+    write(KEYS.parallaxWebSearchMode, mode === 'custom' ? 'custom' : 'default');
+  },
+
+  getParallaxWebSearchUrl(): string {
+    return read<string>(KEYS.parallaxWebSearchUrl, '');
+  },
+
+  setParallaxWebSearchUrl(url: string): void {
+    write(KEYS.parallaxWebSearchUrl, url);
+  },
+
+  getParallaxWebSearchKey(): string {
+    return read<string>(KEYS.parallaxWebSearchKey, '');
+  },
+
+  setParallaxWebSearchKey(key: string): void {
+    write(KEYS.parallaxWebSearchKey, key);
   },
 
   getAssistantCommanderEnabled(): boolean {

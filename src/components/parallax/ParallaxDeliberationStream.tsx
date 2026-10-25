@@ -22,6 +22,7 @@ import {
 } from 'lucide-react';
 import { AGENT_QUADRANTS } from '@/data/parallaxQuadrants';
 import { ParallaxAgentAvatar } from './ParallaxAgentIcon';
+import { FormattedText } from '@/components/jarvis/FormattedText';
 import type {
   ParallaxMessage,
   ParallaxAgentConfig,
@@ -712,11 +713,8 @@ export const ParallaxDeliberationStream: React.FC<ParallaxDeliberationStreamProp
 
                       const rowStyle: React.CSSProperties | undefined = isZenith
                         ? {
-                            border: '1.5px solid rgba(251, 191, 36, 0.65)',
-                            borderLeft: '4px solid #fbbf24',
-                            backgroundColor: isVoicePlaying ? undefined : 'rgba(251, 191, 36, 0.09)',
-                            boxShadow:
-                              '0 0 22px -4px rgba(251, 191, 36, 0.38), inset 0 0 14px rgba(251, 191, 36, 0.08)',
+                            borderTop: '1px solid rgba(255, 255, 255, 0.08)',
+                            backgroundColor: 'transparent',
                           }
                         : isArchitect
                         ? {
@@ -741,14 +739,18 @@ export const ParallaxDeliberationStream: React.FC<ParallaxDeliberationStreamProp
                           key={msg.id}
                           id={`parallax-msg-${msg.id}`}
                           style={rowStyle}
-                          className={`group relative py-2 px-2 sm:px-3 rounded-xl transition-colors scroll-mt-24 ${
-                            isVoicePlaying
-                              ? 'bg-cyan-500/[0.09] ring-1 ring-cyan-400/30'
-                              : isHuman
-                              ? 'bg-amber-500/[0.07] hover:bg-amber-500/[0.11]'
-                              : isDevilsAdvocate
-                              ? 'bg-rose-500/[0.07] hover:bg-rose-500/[0.11]'
-                              : 'hover:bg-white/[0.03]'
+                          className={`group relative transition-colors scroll-mt-24 ${
+                            isZenith
+                              ? 'mt-4 pt-4 pb-3 px-2 sm:px-3 rounded-none bg-transparent'
+                              : `py-2 px-2 sm:px-3 rounded-xl ${
+                                  isVoicePlaying
+                                    ? 'bg-cyan-500/[0.09] ring-1 ring-cyan-400/30'
+                                    : isHuman
+                                    ? 'bg-amber-500/[0.07] hover:bg-amber-500/[0.11]'
+                                    : isDevilsAdvocate
+                                    ? 'bg-rose-500/[0.07] hover:bg-rose-500/[0.11]'
+                                    : 'hover:bg-white/[0.03]'
+                                }`
                           }`}
                         >
                           <div className="flex items-start gap-2.5 min-w-0">
@@ -827,12 +829,12 @@ export const ParallaxDeliberationStream: React.FC<ParallaxDeliberationStreamProp
                                       <span
                                         style={{
                                           backgroundColor: isZenith
-                                            ? 'rgba(251, 191, 36, 0.18)'
+                                            ? 'rgba(251, 191, 36, 0.14)'
                                             : isArchitect
                                             ? 'rgba(167, 139, 250, 0.2)'
                                             : colors.chipBg,
                                           borderColor: isZenith
-                                            ? 'rgba(251, 191, 36, 0.55)'
+                                            ? 'rgba(251, 191, 36, 0.4)'
                                             : isArchitect
                                             ? 'rgba(167, 139, 250, 0.55)'
                                             : colors.chipBorder,
@@ -1017,65 +1019,75 @@ export const ParallaxDeliberationStream: React.FC<ParallaxDeliberationStreamProp
                                 </div>
                               )}
 
-                              {/* Complete Message Body Rendered in the Agent's Recognizable Color */}
-                              <div
-                                className="mt-0.5 text-[13px] sm:text-[14px] font-sans leading-[1.56] whitespace-pre-wrap break-words"
-                                style={{ color: colors.bodyColor }}
-                              >
-                                {msg.text.split(/(@[a-zA-Z0-9_-]+)/g).map((part, pIdx) => {
-                                  if (part.startsWith('@')) {
-                                    const targetName = part.slice(1);
-                                    const targetMsg =
-                                      (msg.replyToMessageId
-                                        ? messages.find((m) => m.id === msg.replyToMessageId)
-                                        : null) ||
-                                      messages.find(
-                                        (m) =>
-                                          m.agentName.toLowerCase() === targetName.toLowerCase() ||
-                                          m.agentId.toLowerCase() === targetName.toLowerCase(),
-                                      );
+                              {/* Complete Message Body: ZENITH uses FormattedText (plain report style), others keep colored @mention text */}
+                              {isZenith ? (
+                                <div className="mt-2 min-w-0 max-w-full overflow-x-hidden text-slate-200 font-sans">
+                                  <FormattedText
+                                    content={msg.text}
+                                    variant="plain"
+                                    enableCopyCode={false}
+                                  />
+                                </div>
+                              ) : (
+                                <div
+                                  className="mt-0.5 text-[13px] sm:text-[14px] font-sans leading-[1.56] whitespace-pre-wrap break-words"
+                                  style={{ color: colors.bodyColor }}
+                                >
+                                  {msg.text.split(/(@[a-zA-Z0-9_-]+)/g).map((part, pIdx) => {
+                                    if (part.startsWith('@')) {
+                                      const targetName = part.slice(1);
+                                      const targetMsg =
+                                        (msg.replyToMessageId
+                                          ? messages.find((m) => m.id === msg.replyToMessageId)
+                                          : null) ||
+                                        messages.find(
+                                          (m) =>
+                                            m.agentName.toLowerCase() === targetName.toLowerCase() ||
+                                            m.agentId.toLowerCase() === targetName.toLowerCase(),
+                                        );
 
-                                    const targetAccent = targetMsg
-                                      ? agentColorLookup.get(targetMsg.agentId.toLowerCase()) ||
-                                        targetMsg.accentColor
-                                      : undefined;
-                                    const targetColors = targetAccent
-                                      ? getAgentLiveChatColors(
-                                          targetAccent,
-                                          targetMsg?.agentId || targetName,
-                                          false,
-                                          false,
-                                        )
-                                      : colors;
+                                      const targetAccent = targetMsg
+                                        ? agentColorLookup.get(targetMsg.agentId.toLowerCase()) ||
+                                          targetMsg.accentColor
+                                        : undefined;
+                                      const targetColors = targetAccent
+                                        ? getAgentLiveChatColors(
+                                            targetAccent,
+                                            targetMsg?.agentId || targetName,
+                                            false,
+                                            false,
+                                          )
+                                        : colors;
 
-                                    return (
-                                      <button
-                                        key={pIdx}
-                                        type="button"
-                                        onClick={() => {
-                                          if (targetMsg) {
-                                            scrollToMessageById(targetMsg.id);
+                                      return (
+                                        <button
+                                          key={pIdx}
+                                          type="button"
+                                          onClick={() => {
+                                            if (targetMsg) {
+                                              scrollToMessageById(targetMsg.id);
+                                            }
+                                          }}
+                                          className="inline-flex items-center px-1.5 py-0 rounded-md font-mono text-[12px] font-bold cursor-pointer hover:underline mx-0.5 align-baseline"
+                                          style={{
+                                            color: targetColors.nameColor,
+                                            backgroundColor: targetColors.chipBg,
+                                            border: `1px solid ${targetColors.chipBorder}`,
+                                          }}
+                                          title={
+                                            targetMsg
+                                              ? `Jump to @${targetName}'s turn in Round ${targetMsg.round}`
+                                              : `Referencing @${targetName}`
                                           }
-                                        }}
-                                        className="inline-flex items-center px-1.5 py-0 rounded-md font-mono text-[12px] font-bold cursor-pointer hover:underline mx-0.5 align-baseline"
-                                        style={{
-                                          color: targetColors.nameColor,
-                                          backgroundColor: targetColors.chipBg,
-                                          border: `1px solid ${targetColors.chipBorder}`,
-                                        }}
-                                        title={
-                                          targetMsg
-                                            ? `Jump to @${targetName}'s turn in Round ${targetMsg.round}`
-                                            : `Referencing @${targetName}`
-                                        }
-                                      >
-                                        {part}
-                                      </button>
-                                    );
-                                  }
-                                  return <span key={pIdx}>{part}</span>;
-                                })}
-                              </div>
+                                        >
+                                          {part}
+                                        </button>
+                                      );
+                                    }
+                                    return <span key={pIdx}>{part}</span>;
+                                  })}
+                                </div>
+                              )}
 
                               {/* Expandable Metadata & Raw JSON Inspection Drawer */}
                               {rawJsonOpenMap[msg.id] && (

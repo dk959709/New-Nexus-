@@ -200,11 +200,15 @@ function renderInline(text: string): React.ReactNode {
 export function FormattedText({
   content,
   enableCopyCode,
+  variant = 'default',
 }: {
   content: string;
   enableCopyCode?: boolean;
+  variant?: 'default' | 'plain';
 }) {
   if (!content) return null;
+
+  const isPlain = variant === 'plain';
 
   const shouldEnableCopy =
     enableCopyCode !== undefined
@@ -244,6 +248,44 @@ export function FormattedText({
       bodyRows = rows.slice(2);
     } else {
       bodyRows = rows;
+    }
+
+    if (isPlain) {
+      elements.push(
+        <div
+          key={`table-${keyPrefix}`}
+          className="my-3 max-w-full overflow-x-auto rounded-xl border border-white/[0.1] bg-white/[0.02]"
+        >
+          <table className="min-w-full divide-y divide-white/[0.1] text-xs sm:text-[13px]">
+            {headerRow && (
+              <thead className="bg-white/[0.04]">
+                <tr>
+                  {headerRow.map((h, i) => (
+                    <th
+                      key={i}
+                      className="px-3 py-2 text-left font-semibold text-slate-200 uppercase tracking-wider font-mono text-[11px] sm:text-xs whitespace-nowrap"
+                    >
+                      {renderInline(h)}
+                    </th>
+                  ))}
+                </tr>
+              </thead>
+            )}
+            <tbody className="divide-y divide-white/[0.08]">
+              {bodyRows.map((row, rIdx) => (
+                <tr key={rIdx} className={rIdx % 2 === 0 ? 'bg-transparent' : 'bg-white/[0.02]'}>
+                  {row.map((cell, cIdx) => (
+                    <td key={cIdx} className="px-3 py-2 text-slate-200 align-top">
+                      {renderInline(cell)}
+                    </td>
+                  ))}
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>,
+      );
+      return;
     }
 
     elements.push(
@@ -337,60 +379,95 @@ export function FormattedText({
     // Headings
     if (trimmed.startsWith('#### ')) {
       elements.push(
-        <div key={idx} className="flex items-center gap-2 mt-3 mb-1.5">
-          <span className="w-1.5 h-1.5 rounded-full bg-teal-400 shadow-[0_0_6px_#2dd4bf]" />
-          <h5
-            className="text-sm font-bold text-teal-300 m-0 tracking-wide"
-            style={{ color: 'var(--assistant-answer-title-color, inherit)' }}
-          >
-            {renderInline(trimmed.slice(5))}
-          </h5>
-        </div>,
+        isPlain ? (
+          <div key={idx} className="mt-3 mb-1">
+            <h5 className="text-xs sm:text-sm font-semibold text-slate-200 m-0 tracking-wide">
+              {renderInline(trimmed.slice(5))}
+            </h5>
+          </div>
+        ) : (
+          <div key={idx} className="flex items-center gap-2 mt-3 mb-1.5">
+            <span className="w-1.5 h-1.5 rounded-full bg-teal-400 shadow-[0_0_6px_#2dd4bf]" />
+            <h5
+              className="text-sm font-bold text-teal-300 m-0 tracking-wide"
+              style={{ color: 'var(--assistant-answer-title-color, inherit)' }}
+            >
+              {renderInline(trimmed.slice(5))}
+            </h5>
+          </div>
+        ),
       );
       continue;
     }
 
     if (trimmed.startsWith('### ')) {
       elements.push(
-        <div key={idx} className="flex items-center gap-2 mt-4 mb-2">
-          <span className="w-2 h-2 rounded-full bg-cyan-400 shadow-[0_0_8px_#61d7c9]" />
-          <h4
-            className="text-base font-bold text-cyan-300 m-0 tracking-wide"
-            style={{ color: 'var(--assistant-answer-title-color, inherit)' }}
-          >
-            {renderInline(trimmed.slice(4))}
-          </h4>
-        </div>,
+        isPlain ? (
+          <div key={idx} className="mt-3.5 mb-1.5">
+            <h4 className="text-sm sm:text-[15px] font-bold text-slate-100 m-0 tracking-tight">
+              {renderInline(trimmed.slice(4))}
+            </h4>
+          </div>
+        ) : (
+          <div key={idx} className="flex items-center gap-2 mt-4 mb-2">
+            <span className="w-2 h-2 rounded-full bg-cyan-400 shadow-[0_0_8px_#61d7c9]" />
+            <h4
+              className="text-base font-bold text-cyan-300 m-0 tracking-wide"
+              style={{ color: 'var(--assistant-answer-title-color, inherit)' }}
+            >
+              {renderInline(trimmed.slice(4))}
+            </h4>
+          </div>
+        ),
       );
       continue;
     }
 
     if (trimmed.startsWith('## ')) {
       elements.push(
-        <div key={idx} className="flex items-center gap-2.5 mt-5 mb-2.5 pt-2 border-t border-white/10">
-          <span className="w-2.5 h-2.5 rounded-full bg-sky-400 shadow-[0_0_10px_#38bdf8]" />
-          <h3
-            className="text-lg font-black text-white m-0 tracking-tight"
-            style={{ color: 'var(--assistant-answer-title-color, inherit)' }}
+        isPlain ? (
+          <div
+            key={idx}
+            className="mt-4 mb-2 pt-2.5 border-t border-white/[0.08] first:mt-1 first:pt-0 first:border-t-0"
           >
-            {renderInline(trimmed.slice(3))}
-          </h3>
-        </div>,
+            <h3 className="text-sm sm:text-base font-bold text-white m-0 tracking-tight">
+              {renderInline(trimmed.slice(3))}
+            </h3>
+          </div>
+        ) : (
+          <div key={idx} className="flex items-center gap-2.5 mt-5 mb-2.5 pt-2 border-t border-white/10">
+            <span className="w-2.5 h-2.5 rounded-full bg-sky-400 shadow-[0_0_10px_#38bdf8]" />
+            <h3
+              className="text-lg font-black text-white m-0 tracking-tight"
+              style={{ color: 'var(--assistant-answer-title-color, inherit)' }}
+            >
+              {renderInline(trimmed.slice(3))}
+            </h3>
+          </div>
+        ),
       );
       continue;
     }
 
     if (trimmed.startsWith('# ')) {
       elements.push(
-        <div key={idx} className="flex items-center gap-3 mt-6 mb-3">
-          <span className="w-3 h-3 rounded-full bg-purple-400 shadow-[0_0_12px_#a855f7]" />
-          <h2
-            className="text-xl font-black text-white m-0 tracking-tight"
-            style={{ color: 'var(--assistant-answer-title-color, inherit)' }}
-          >
-            {renderInline(trimmed.slice(2))}
-          </h2>
-        </div>,
+        isPlain ? (
+          <div key={idx} className="mt-5 mb-2.5">
+            <h2 className="text-base sm:text-lg font-bold text-white m-0 tracking-tight">
+              {renderInline(trimmed.slice(2))}
+            </h2>
+          </div>
+        ) : (
+          <div key={idx} className="flex items-center gap-3 mt-6 mb-3">
+            <span className="w-3 h-3 rounded-full bg-purple-400 shadow-[0_0_12px_#a855f7]" />
+            <h2
+              className="text-xl font-black text-white m-0 tracking-tight"
+              style={{ color: 'var(--assistant-answer-title-color, inherit)' }}
+            >
+              {renderInline(trimmed.slice(2))}
+            </h2>
+          </div>
+        ),
       );
       continue;
     }
@@ -401,8 +478,16 @@ export function FormattedText({
       elements.push(
         <blockquote
           key={idx}
-          className="my-2.5 pl-3.5 py-1.5 border-l-2 border-cyan-400/60 rounded-r-lg text-cyan-100/90 text-sm italic"
-          style={{ backgroundColor: 'var(--assistant-answer-box-bg, rgba(8,47,73,0.2))' }}
+          className={
+            isPlain
+              ? 'my-2 pl-3 py-1 border-l-2 border-white/20 text-slate-300 text-xs sm:text-sm italic'
+              : 'my-2.5 pl-3.5 py-1.5 border-l-2 border-cyan-400/60 rounded-r-lg text-cyan-100/90 text-sm italic'
+          }
+          style={
+            isPlain
+              ? undefined
+              : { backgroundColor: 'var(--assistant-answer-box-bg, rgba(8,47,73,0.2))' }
+          }
         >
           {renderInline(quoteText)}
         </blockquote>,
@@ -425,11 +510,21 @@ export function FormattedText({
 
       if (indentLevel === 0) {
         elements.push(
-          <div key={idx} className="flex items-start gap-2.5 my-2 pl-1">
-            <span className="inline-flex items-center justify-center min-w-[22px] h-[22px] px-1.5 rounded-md bg-cyan-500/20 border border-cyan-400/40 text-cyan-300 font-mono text-xs font-bold shrink-0 mt-0.5 shadow-[0_0_8px_rgba(97,215,201,0.2)]">
+          <div key={idx} className="flex items-start gap-2.5 my-1.5 pl-1">
+            <span
+              className={
+                isPlain
+                  ? 'inline-flex items-center justify-center min-w-[20px] h-[20px] px-1 rounded bg-white/[0.06] border border-white/[0.1] text-slate-200 font-mono text-[11px] font-semibold shrink-0 mt-0.5'
+                  : 'inline-flex items-center justify-center min-w-[22px] h-[22px] px-1.5 rounded-md bg-cyan-500/20 border border-cyan-400/40 text-cyan-300 font-mono text-xs font-bold shrink-0 mt-0.5 shadow-[0_0_8px_rgba(97,215,201,0.2)]'
+              }
+            >
               {num}
             </span>
-            <div className="flex-1 leading-relaxed text-slate-100 text-sm sm:text-[15px]">
+            <div
+              className={`flex-1 leading-relaxed text-slate-100 ${
+                isPlain ? 'text-[13px] sm:text-sm' : 'text-sm sm:text-[15px]'
+              }`}
+            >
               {renderInline(itemText)}
             </div>
           </div>,
@@ -440,10 +535,10 @@ export function FormattedText({
             key={idx}
             className={`flex items-start gap-2 my-1.5 ${indentLevel === 1 ? 'pl-6 sm:pl-8' : 'pl-10 sm:pl-12'}`}
           >
-            <span className="inline-flex items-center justify-center min-w-[18px] h-[18px] px-1 rounded bg-purple-500/20 border border-purple-400/30 text-purple-300 font-mono text-[11px] font-bold shrink-0 mt-0.5">
+            <span className="inline-flex items-center justify-center min-w-[18px] h-[18px] px-1 rounded bg-white/[0.06] border border-white/[0.1] text-slate-300 font-mono text-[11px] font-bold shrink-0 mt-0.5">
               {num}
             </span>
-            <div className="flex-1 leading-relaxed text-slate-200 text-sm">
+            <div className="flex-1 leading-relaxed text-slate-200 text-xs sm:text-sm">
               {renderInline(itemText)}
             </div>
           </div>,
@@ -463,9 +558,19 @@ export function FormattedText({
 
       if (indentLevel === 0) {
         elements.push(
-          <div key={idx} className="flex items-start gap-2.5 my-1.5 pl-2">
-            <span className="w-1.5 h-1.5 rounded-full bg-cyan-400 mt-2 shrink-0 shadow-[0_0_6px_#61d7c9]" />
-            <div className="flex-1 leading-relaxed text-slate-200 text-sm sm:text-[15px]">
+          <div key={idx} className="flex items-start gap-2.5 my-1.5 pl-1.5">
+            <span
+              className={
+                isPlain
+                  ? 'w-1.5 h-1.5 rounded-full bg-slate-400 mt-2 shrink-0'
+                  : 'w-1.5 h-1.5 rounded-full bg-cyan-400 mt-2 shrink-0 shadow-[0_0_6px_#61d7c9]'
+              }
+            />
+            <div
+              className={`flex-1 leading-relaxed text-slate-200 ${
+                isPlain ? 'text-[13px] sm:text-sm' : 'text-sm sm:text-[15px]'
+              }`}
+            >
               {renderInline(itemText)}
             </div>
           </div>,
@@ -473,8 +578,14 @@ export function FormattedText({
       } else if (indentLevel === 1) {
         elements.push(
           <div key={idx} className="flex items-start gap-2.5 my-1.5 pl-6 sm:pl-8">
-            <span className="w-1.5 h-1.5 rounded-full bg-pink-400 mt-2 shrink-0 shadow-[0_0_6px_#f472b6]" />
-            <div className="flex-1 leading-relaxed text-slate-300 text-sm sm:text-[14.5px]">
+            <span
+              className={
+                isPlain
+                  ? 'w-1.5 h-1.5 rounded-full bg-slate-500 mt-2 shrink-0'
+                  : 'w-1.5 h-1.5 rounded-full bg-pink-400 mt-2 shrink-0 shadow-[0_0_6px_#f472b6]'
+              }
+            />
+            <div className="flex-1 leading-relaxed text-slate-300 text-xs sm:text-sm">
               {renderInline(itemText)}
             </div>
           </div>,
@@ -482,7 +593,7 @@ export function FormattedText({
       } else {
         elements.push(
           <div key={idx} className="flex items-start gap-2 my-1 pl-10 sm:pl-12">
-            <span className="w-1 h-1 rounded-full bg-sky-400 mt-2.5 shrink-0 shadow-[0_0_4px_#38bdf8]" />
+            <span className="w-1 h-1 rounded-full bg-slate-400 mt-2.5 shrink-0" />
             <div className="flex-1 leading-relaxed text-slate-300 text-xs sm:text-sm">
               {renderInline(itemText)}
             </div>
@@ -497,7 +608,7 @@ export function FormattedText({
       elements.push(
         <div
           key={idx}
-          className={`my-1 leading-relaxed text-slate-300 text-sm ${
+          className={`my-1 leading-relaxed text-slate-300 text-xs sm:text-sm ${
             indentLevel === 1 ? 'pl-6 sm:pl-8' : 'pl-10 sm:pl-12'
           }`}
         >
@@ -509,7 +620,12 @@ export function FormattedText({
 
     // Default regular paragraph
     elements.push(
-      <p key={idx} className="my-2 leading-relaxed text-slate-200 text-sm sm:text-[15px]">
+      <p
+        key={idx}
+        className={`my-1.5 leading-relaxed text-slate-200 ${
+          isPlain ? 'text-[13px] sm:text-sm' : 'text-sm sm:text-[15px]'
+        }`}
+      >
         {renderInline(line)}
       </p>,
     );
@@ -531,5 +647,9 @@ export function FormattedText({
     flushTable('end');
   }
 
-  return <div className="formatted-text-content">{elements}</div>;
+  return (
+    <div className="formatted-text-content min-w-0 max-w-full overflow-x-hidden">
+      {elements}
+    </div>
+  );
 }

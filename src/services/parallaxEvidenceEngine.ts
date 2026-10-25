@@ -1,4 +1,5 @@
 import { api } from '@/services/api';
+import { parallaxSearch } from '@/lib/parallaxSearch';
 import { storage } from '@/lib/storage';
 import { resolveParallaxProviderConfig, formatSearchSourceLabel } from './parallaxOrchestrator';
 import type {
@@ -338,7 +339,7 @@ export async function collectParallaxEvidencePool(
 
   try {
     if (signal?.aborted) throw new Error('Aborted');
-    const searchRes = await api.search(searchQuery, 'ALL', 1, 10);
+    const searchRes = await parallaxSearch(searchQuery, 'ALL', 1, 10);
 
     if (Array.isArray(searchRes) && searchRes.length > 0) {
       rawResults = searchRes.slice(0, 10);

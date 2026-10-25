@@ -3,6 +3,7 @@ import { isValidSwarmSize } from '@/lib/parallaxSwarmSize';
 import { resolveGenesisSlot } from '@/lib/parallaxModelPool';
 import { DEFAULT_PARALLAX_VOICES } from '@/data/parallaxVoices';
 import { api } from '@/services/api';
+import { parallaxSearch } from '@/lib/parallaxSearch';
 import {
   resolveParallaxProviderConfig,
   countWords,
@@ -525,7 +526,7 @@ async function runSingleSearchWithTimeoutAndRetry(
   const attemptSearch = async (attemptLabel: string): Promise<{ results: ParallaxToolRawResult[]; sourceLabel: string }> => {
     if (signal?.aborted) throw new Error('Swarm aborted');
     const rawRes = await withHardTimeout(
-      () => api.search(query, 'ALL', 1, 5),
+      () => parallaxSearch(query, 'ALL', 1, 5),
       12000,
       signal,
       { step: attemptLabel, agentId, model: 'web_search' },
@@ -643,6 +644,103 @@ function trimToLastCompleteSentence(text: string): string {
     if (cut.length > 0) return cut;
   }
   return trimmed.replace(/\s*\[[^\]]*$/, '').trim();
+}
+
+function trimZenithMarkdown(text: string): string {
+  const raw = (text || '').trim();
+  if (!raw) return '';
+
+  const lines = raw.split('\n');
+  while (lines.length > 0) {
+    const lastLine = lines[lines.length - 1].trim();
+    if (!lastLine) {
+      lines.pop();
+      continue;
+    }
+    // Remove dangling empty heading at the very end
+    if (/^#{1,6}\s+/.test(lastLine)) {
+      lines.pop();
+      continue;
+    }
+    // Table row check
+    if (lastLine.startsWith('|')) {
+      const isSeparator = /^\|[\s:-]+(?:\|[\s:-]+)+\|?\s*$/.test(lastLine);
+      const isCompleteRow = /^\|.+\|\s*$/.test(lastLine) && !isSeparator;
+      if (isCompleteRow) {
+        return lines.join('\n').trim();
+      }
+      // Incomplete table row or trailing separator row: pop it
+      lines.pop();
+      continue;
+    }
+    // Source line check: e.g., "- [1] Title - domain" or "[1] Title - domain"
+    if (/^[-*•]?\s*\[\d+\]\s+\S+/.test(lastLine)) {
+      const hasUnclosedBracket =
+        (lastLine.match(/\[/g) || []).length !== (lastLine.match(/\]/g) || []).length;
+      const endsWithDanglingPunct = /[-—:,]\s*$/.test(lastLine);
+      if (!hasUnclosedBracket && !endsWithDanglingPunct) {
+        return lines.join('\n').trim();
+      }
+      if (lines.length > 1) {
+        lines.pop();
+        continue;
+      }
+      return lastLine.replace(/[-—:,\s]+$/, '').trim();
+    }
+    // Confidence line check (e.g. "High — ...", "Medium - ...", "Low: ...")
+    if (/^(?:\*\*)?(?:High|Medium|Low)(?:\*\*)?\b/i.test(lastLine)) {
+      if (endsWithFinishedSentence(lastLine)) {
+        return lines.join('\n').trim();
+      }
+      const trimmedSent = trimToLastCompleteSentence(lastLine);
+      if (trimmedSent && trimmedSent !== lastLine && countWords(trimmedSent) >= 3) {
+        lines[lines.length - 1] = trimmedSent;
+        return lines.join('\n').trim();
+      }
+      lines[lines.length - 1] = lastLine
+        .replace(/\s*\[[^\]]*$/, '')
+        .replace(/\s+[-—:,]\s*$/, '')
+        .trim();
+      return lines.join('\n').trim();
+    }
+    // Bullet line check
+    if (/^[-*•]\s+/.test(lastLine)) {
+      if (endsWithFinishedSentence(lastLine)) {
+        return lines.join('\n').trim();
+      }
+      const trimmedBullet = trimToLastCompleteSentence(lastLine);
+      if (
+        trimmedBullet &&
+        endsWithFinishedSentence(trimmedBullet) &&
+        countWords(trimmedBullet) >= 4
+      ) {
+        lines[lines.length - 1] = trimmedBullet;
+        return lines.join('\n').trim();
+      }
+      if (lines.length > 1) {
+        lines.pop();
+        continue;
+      }
+      lines[lines.length - 1] = trimmedBullet || lastLine;
+      return lines.join('\n').trim();
+    }
+    // Standard paragraph line
+    if (endsWithFinishedSentence(lastLine)) {
+      return lines.join('\n').trim();
+    }
+    const trimmedPara = trimToLastCompleteSentence(lastLine);
+    if (trimmedPara && endsWithFinishedSentence(trimmedPara)) {
+      lines[lines.length - 1] = trimmedPara;
+      return lines.join('\n').trim();
+    }
+    if (lines.length > 1) {
+      lines.pop();
+      continue;
+    }
+    return trimmedPara || lastLine;
+  }
+
+  return raw;
 }
 
 function extractFirstSentence(text: string): string {
@@ -850,7 +948,7 @@ export async function runGenesisSwarm(options: ParallaxRunOptions): Promise<void
       modelId: zenithSlot.modelId,
       enabled: true,
       systemInstruction: 'You are ZENITH, the final answer synthesizer for Genesis Swarm.',
-      maxTokens: 1000,
+      maxTokens: 1500,
       mood: '🌟',
       voice: DEFAULT_PARALLAX_VOICES.nexus9,
     };
@@ -1469,7 +1567,7 @@ Return the JSON object with "plan" and exactly ${agentCount} "agents".`;
     // =========================================================================
     const { provider: zenithProvider, model: zenithModel } = resolveParallaxProviderConfig(
       zenithConfig,
-      1000,
+      1500,
     );
 
     onStatusUpdate?.(`Genesis: ZENITH writing the final answer (${zenithModel})...`);
@@ -1536,11 +1634,19 @@ Return the JSON object with "plan" and exactly ${agentCount} "agents".`;
     const zenithSystemPrompt = `Today is ${todayDate}. You are ZENITH, the final answer synthesizer of the Genesis Swarm.
 Rules:
 1. Use ONLY the facts and findings provided by the ${agentCount} agents and the verified sources below. Do NOT invent facts.
-2. Write plain text with these exact 4 sections, each starting on a new line:
-FINAL ANSWER: (4-8 clear sentences directly answering the topic)
-KEY FACTS: (3-5 bullet points citing source domains)
-WHERE AGENTS DISAGREE: (1-3 bullet points on key tensions or uncertainties)
-CONFIDENCE: (one line: High, Medium, or Low + why)`;
+2. Write MARKDOWN with this exact structure and these exact headings:
+## Final Answer
+(short intro: 3-6 clear sentences directly answering the topic)
+## Key Facts
+- bullet points with source citations like [1]
+## Comparison Table
+(include ONLY when there are numbers, versions, prices, options or pros/cons to compare; use a markdown table with a header row and | --- | separator, 3-6 rows, columns like Item | Detail | Source)
+## Where Agents Disagree
+- 1-3 bullets
+## Confidence
+High / Medium / Low + one short reason
+## Sources
+- [1] Title - domain`;
 
     const zenithUserPrompt = `Today is ${todayDate}.
 Topic: "${cleanTopic}"
@@ -1551,7 +1657,7 @@ ${agentExcerptsForZenith || '(No agent findings available)'}
 UNIQUE SOURCES:
 ${sourcesForZenith || '(No live web sources available)'}
 
-Write the final synthesis using the 4 required sections: FINAL ANSWER:, KEY FACTS:, WHERE AGENTS DISAGREE:, CONFIDENCE:.`;
+Write the final synthesis in Markdown using the required headings: ## Final Answer, ## Key Facts, ## Comparison Table (only when applicable), ## Where Agents Disagree, ## Confidence, ## Sources.`;
 
     const buildZenithFallbackText = (): string => {
       const nonFallback = agentMessages
@@ -1565,7 +1671,14 @@ Write the final synthesis using the 4 required sections: FINAL ANSWER:, KEY FACT
         sentences.length > 0
           ? sentences.join(' ')
           : `Genesis Swarm completed its single-round investigation on "${cleanTopic}".`;
-      return `FINAL ANSWER:\n${combined}\n\nKEY FACTS:\n• Synthesized from top-conviction Genesis agents.\n\nWHERE AGENTS DISAGREE:\n• Agents emphasized different domain trade-offs across implementation and risk.\n\nCONFIDENCE:\nMedium — Estimated from top agents.`;
+      const fallbackSourcesList =
+        uniqueSources.length > 0
+          ? uniqueSources
+              .slice(0, 5)
+              .map((s, idx) => `- [${idx + 1}] ${s.title} - ${s.domain}`)
+              .join('\n')
+          : '- [1] Synthesized from Genesis Swarm agent findings - local';
+      return `## Final Answer\n${combined}\n\n## Key Facts\n- Synthesized from top-conviction Genesis agents.\n\n## Where Agents Disagree\n- Agents emphasized different domain trade-offs across implementation and risk.\n\n## Confidence\nMedium — Estimated from top agents.\n\n## Sources\n${fallbackSourcesList}`;
     };
 
     const zenithStart = Date.now();
@@ -1585,7 +1698,7 @@ Write the final synthesis using the 4 required sections: FINAL ANSWER:, KEY FACT
             ],
             providerConfig: zenithProvider,
             temperature: 0.4,
-            maxTokens: 1000,
+            maxTokens: 1500,
             timeoutMs: 50000,
             signal: callSignal,
           }),
@@ -1596,9 +1709,7 @@ Write the final synthesis using the 4 required sections: FINAL ANSWER:, KEY FACT
       const rawZ = (zRes.text || zRes.content || '').trim();
       if (countWords(rawZ) >= 15) {
         let cleanedZ = parseGenesisTag(rawZ, '🌟').cleanText.trim();
-        if (!endsWithFinishedSentence(cleanedZ)) {
-          cleanedZ = trimToLastCompleteSentence(cleanedZ);
-        }
+        cleanedZ = trimZenithMarkdown(cleanedZ);
         zenithText = cleanedZ;
         zenithRespModel = zRes.model || zenithModel;
         zenithRespProvider = zRes.providerName || zenithRespProvider;
@@ -1642,8 +1753,8 @@ Write the final synthesis using the 4 required sections: FINAL ANSWER:, KEY FACT
     // STEP 8: Build ParallaxSummary WITHOUT another AI call & Save Session
     // =========================================================================
     const finalAnswerSegment = zenithText
-      .replace(/^[\s\S]*?FINAL ANSWER:\s*/i, '')
-      .split(/\n\s*(?:KEY FACTS|WHERE AGENTS DISAGREE|CONFIDENCE):/i)[0]
+      .replace(/^[\s\S]*?(?:##\s*Final Answer\s*|FINAL ANSWER:\s*)/i, '')
+      .split(/\n\s*(?:##\s+|(?:KEY FACTS|COMPARISON TABLE|WHERE AGENTS DISAGREE|CONFIDENCE|SOURCES):)/i)[0]
       .trim();
     const verdict =
       extractFirstSentence(finalAnswerSegment || zenithText) ||

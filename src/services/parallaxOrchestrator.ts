@@ -6,6 +6,7 @@ import {
   type ParallaxSwarmSize,
 } from '@/lib/parallaxSwarmSize';
 import { api } from '@/services/api';
+import { parallaxSearch } from '@/lib/parallaxSearch';
 import { applyReasoningConfig } from '@/lib/reasoningConfig';
 import { AGENT_QUADRANTS } from '@/data/parallaxQuadrants';
 import { getDebateModeConfig } from '@/data/parallaxDebateModes';
@@ -150,7 +151,10 @@ export function resolveParallaxProviderConfig(
  */
 export function formatSearchSourceLabel(source?: string): string {
   if (!source) return 'Live Web';
-  const lower = source.toLowerCase();
+  const lower = source.toLowerCase().trim();
+  if (lower === 'custom-api' || lower === 'custom api' || lower.includes('custom-api')) {
+    return 'Custom API';
+  }
   if (lower.includes('tavily')) return 'Tavily';
   if (lower.includes('exa')) return 'Exa AI';
   if (lower.includes('duckduckgo') || lower.includes('ddg')) return 'DuckDuckGo';
@@ -194,7 +198,7 @@ export async function fetchVeritasGrounding(
     if (signal?.aborted) throw new Error('Search aborted');
 
     // Call existing internal search function used by Researcher agent (server/routes/search.ts)
-    const searchRes = await api.search(topic, 'ALL', 1, 10);
+    const searchRes = await parallaxSearch(topic, 'ALL', 1, 10);
 
     if (Array.isArray(searchRes) && searchRes.length > 0) {
       rawResults = searchRes.slice(0, 10);

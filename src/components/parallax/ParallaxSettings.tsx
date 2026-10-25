@@ -12,8 +12,16 @@ import {
   ChevronDown,
   ChevronUp,
   Orbit,
+  Globe,
+  Plug,
+  Key,
+  Eye,
+  EyeOff,
+  Loader2,
+  AlertCircle,
 } from 'lucide-react';
 import { storage, DEFAULT_PARALLAX_AGENTS } from '@/lib/storage';
+import { api } from '@/services/api';
 import { getModelPool } from '@/lib/parallaxModelPool';
 import type {
   ParallaxSystemConfig,
@@ -77,6 +85,29 @@ export const ParallaxSettings: React.FC<ParallaxSettingsProps> = ({
   );
   const [isGenesisOpen, setIsGenesisOpen] = useState<boolean>(false);
   const [genesisBulkProviderId, setGenesisBulkProviderId] = useState<string>('existing');
+
+  const [webSearchMode, setWebSearchMode] = useState<'default' | 'custom'>(() =>
+    storage.getParallaxWebSearchMode(),
+  );
+  const [customSearchKey, setCustomSearchKey] = useState<string>(() =>
+    storage.getParallaxWebSearchKey(),
+  );
+  const [customSearchUrl, setCustomSearchUrl] = useState<string>(() =>
+    storage.getParallaxWebSearchUrl(),
+  );
+  const [webApiCustomOpen, setWebApiCustomOpen] = useState<boolean>(() => {
+    const mode = storage.getParallaxWebSearchMode();
+    const key = storage.getParallaxWebSearchKey();
+    const url = storage.getParallaxWebSearchUrl();
+    return mode === 'custom' && (!key.trim() || !url.trim());
+  });
+  const [showSearchKey, setShowSearchKey] = useState<boolean>(false);
+  const [testSearchLoading, setTestSearchLoading] = useState<boolean>(false);
+  const [testSearchResult, setTestSearchResult] = useState<{
+    ok: boolean;
+    message: string;
+  } | null>(null);
+
   const audioRef = useRef<HTMLAudioElement | null>(null);
 
   useEffect(() => {
@@ -225,6 +256,71 @@ export const ParallaxSettings: React.FC<ParallaxSettingsProps> = ({
     const num = parseInt(val, 10);
     const clamped = Number.isNaN(num) ? 0 : Math.max(0, Math.min(18, num));
     updateGenesisSettings({ ...genesisSettings, maxSearches: clamped });
+  };
+
+  const handleSelectWebSearchMode = (mode: 'default' | 'custom') => {
+    setWebSearchMode(mode);
+    storage.setParallaxWebSearchMode(mode);
+    if (mode === 'custom') {
+      setWebApiCustomOpen(true);
+    } else {
+      setTestSearchResult(null);
+    }
+  };
+
+  const handleCustomSearchKeyChange = (val: string) => {
+    setCustomSearchKey(val);
+    storage.setParallaxWebSearchKey(val);
+    setTestSearchResult(null);
+  };
+
+  const handleCustomSearchUrlChange = (val: string) => {
+    setCustomSearchUrl(val);
+    storage.setParallaxWebSearchUrl(val);
+    setTestSearchResult(null);
+  };
+
+  const handleResetSearchToDefault = () => {
+    setWebSearchMode('default');
+    storage.setParallaxWebSearchMode('default');
+    setCustomSearchKey('');
+    storage.setParallaxWebSearchKey('');
+    setCustomSearchUrl('');
+    storage.setParallaxWebSearchUrl('');
+    setTestSearchResult(null);
+    showFeedback('Parallax web search reset to Default.');
+  };
+
+  const handleTestSearchConnection = async () => {
+    if (!customSearchKey.trim() || !customSearchUrl.trim() || testSearchLoading) return;
+    setTestSearchLoading(true);
+    setTestSearchResult(null);
+    try {
+      const res = await api.testCustomSearch({
+        url: customSearchUrl.trim(),
+        key: customSearchKey.trim(),
+      });
+      if (res.ok) {
+        const count = res.count ?? 0;
+        const time = res.timeMs ?? 0;
+        setTestSearchResult({
+          ok: true,
+          message: `Works: ${count} ${count === 1 ? 'result' : 'results'} in ${time} ms`,
+        });
+      } else {
+        setTestSearchResult({
+          ok: false,
+          message: res.error || 'Server returned an error',
+        });
+      }
+    } catch {
+      setTestSearchResult({
+        ok: false,
+        message: 'Server returned an error',
+      });
+    } finally {
+      setTestSearchLoading(false);
+    }
   };
 
   const handleSelectTheme = (newTheme: ParallaxTheme) => {
@@ -587,6 +683,221 @@ export const ParallaxSettings: React.FC<ParallaxSettingsProps> = ({
             >
               Spread my providers across agents
             </button>
+          </div>
+        </div>
+
+        {/* Custom Web Search API Card */}
+        <div
+          id="parallax-custom-web-search-card"
+          className={`p-3 rounded-xl space-y-2.5 ${cardSurfaceClass}`}
+        >
+          <div className="flex items-center justify-between flex-wrap gap-2">
+            <div className="flex items-center gap-2">
+              <Globe size={15} className="text-cyan-400 shrink-0" />
+              <div className="text-xs font-bold text-slate-100">
+                Custom Web Search API
+              </div>
+            </div>
+            {webSearchMode === 'default' ? (
+              <span className="text-[11px] px-2 py-0.5 rounded-full bg-emerald-950/80 text-emerald-300 border border-emerald-500/40 flex items-center gap-1 font-medium">
+                <Check size={11} /> Default
+              </span>
+            ) : (
+              <span className="text-[11px] px-2 py-0.5 rounded-full bg-cyan-950/80 text-cyan-300 border border-cyan-500/40 flex items-center gap-1 font-medium">
+                <Plug size={11} /> Custom API
+              </span>
+            )}
+          </div>
+
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-2.5 items-start">
+            {/* Option 1: Default Card */}
+            <button
+              type="button"
+              onClick={() => handleSelectWebSearchMode('default')}
+              className={`p-3 rounded-xl border text-left transition-all flex flex-col justify-between cursor-pointer ${
+                webSearchMode === 'default'
+                  ? 'border-cyan-500/60 bg-cyan-950/30 text-white shadow-[0_0_15px_rgba(6,182,212,0.15)]'
+                  : 'border-white/[0.08] bg-black/25 hover:bg-white/[0.04] text-slate-300'
+              }`}
+            >
+              <div>
+                <div className="flex items-center justify-between mb-1">
+                  <div className="flex items-center gap-2">
+                    <Globe
+                      size={14}
+                      className={webSearchMode === 'default' ? 'text-cyan-400' : 'text-slate-400'}
+                    />
+                    <span className="text-xs font-semibold text-slate-100">Default</span>
+                  </div>
+                  {webSearchMode === 'default' && (
+                    <span className="text-[10px] px-2 py-0.5 rounded-full bg-emerald-950/80 text-emerald-400 border border-emerald-500/40 font-medium flex items-center gap-0.5">
+                      <Check size={10} /> Active
+                    </span>
+                  )}
+                </div>
+                <p className="text-[11px] text-slate-400 leading-relaxed m-0">
+                  Uses the search API already configured on the server.
+                </p>
+              </div>
+            </button>
+
+            {/* Option 2: Custom Collapsible Card */}
+            <div
+              className={`rounded-xl border transition-all ${
+                webSearchMode === 'custom'
+                  ? 'border-cyan-500/60 bg-cyan-950/20 shadow-[0_0_15px_rgba(6,182,212,0.15)]'
+                  : 'border-white/[0.08] bg-black/25'
+              }`}
+            >
+              <div
+                onClick={() => {
+                  handleSelectWebSearchMode('custom');
+                  setWebApiCustomOpen(true);
+                }}
+                className="p-3 flex items-center justify-between cursor-pointer hover:bg-white/[0.04] transition-colors rounded-xl"
+              >
+                <div className="flex items-center gap-2 min-w-0">
+                  <Plug
+                    size={14}
+                    className={webSearchMode === 'custom' ? 'text-cyan-400' : 'text-slate-400'}
+                  />
+                  <span className="text-xs font-semibold text-slate-100">Custom</span>
+                  {webSearchMode === 'custom' && (
+                    <span className="text-[10px] px-2 py-0.5 rounded-full bg-emerald-950/80 text-emerald-400 border border-emerald-500/40 font-medium flex items-center gap-0.5 ml-1">
+                      <Check size={10} /> Active
+                    </span>
+                  )}
+                </div>
+                <button
+                  type="button"
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    setWebApiCustomOpen((prev) => !prev);
+                  }}
+                  className="p-1 rounded-lg text-slate-400 hover:text-slate-200 hover:bg-white/[0.06] transition-colors cursor-pointer"
+                  title={webApiCustomOpen ? 'Collapse fields' : 'Expand fields'}
+                >
+                  <ChevronDown
+                    size={15}
+                    className={`transition-transform duration-200 ${
+                      webApiCustomOpen ? 'rotate-180 text-slate-200' : ''
+                    }`}
+                  />
+                </button>
+              </div>
+
+              {webApiCustomOpen && (
+                <div className="p-3 pt-2.5 space-y-2.5 border-t border-white/[0.06]">
+                  {webSearchMode === 'custom' &&
+                    (!customSearchKey.trim() || !customSearchUrl.trim()) && (
+                      <div className="p-2.5 rounded-xl border border-amber-500/30 bg-amber-950/40 text-amber-300 text-xs flex items-center gap-2">
+                        <AlertCircle size={14} className="shrink-0 text-amber-400" />
+                        <span>Fill both fields, or the Default search will be used</span>
+                      </div>
+                    )}
+
+                  {/* Search API Key */}
+                  <div className="space-y-1">
+                    <label className="text-[11px] font-medium text-slate-300 flex items-center gap-1.5">
+                      <Key size={12} className="text-cyan-400" />
+                      <span>Search API Key</span>
+                    </label>
+                    <div className="relative">
+                      <input
+                        type={showSearchKey ? 'text' : 'password'}
+                        value={customSearchKey}
+                        onChange={(e) => handleCustomSearchKeyChange(e.target.value)}
+                        placeholder="Enter custom API key..."
+                        className={`w-full rounded-xl pl-3 pr-9 py-2 text-xs placeholder-slate-500 focus:outline-none focus:ring-1 ${inputSurfaceClass}`}
+                      />
+                      <button
+                        type="button"
+                        onClick={() => setShowSearchKey((prev) => !prev)}
+                        className="absolute right-2.5 top-1/2 -translate-y-1/2 text-slate-400 hover:text-slate-200 p-0.5 cursor-pointer"
+                        title={showSearchKey ? 'Hide key' : 'Show key'}
+                      >
+                        {showSearchKey ? <EyeOff size={13} /> : <Eye size={13} />}
+                      </button>
+                    </div>
+                  </div>
+
+                  {/* Search API URL */}
+                  <div className="space-y-1">
+                    <label className="text-[11px] font-medium text-slate-300 flex items-center gap-1.5">
+                      <Globe size={12} className="text-cyan-400" />
+                      <span>Search API URL</span>
+                    </label>
+                    <input
+                      type="text"
+                      value={customSearchUrl}
+                      onChange={(e) => handleCustomSearchUrlChange(e.target.value)}
+                      placeholder="https://api.example.com/search"
+                      className={`w-full rounded-xl px-3 py-2 text-xs placeholder-slate-500 focus:outline-none focus:ring-1 ${inputSurfaceClass}`}
+                    />
+                  </div>
+
+                  {/* Action Buttons */}
+                  <div className="flex flex-wrap items-center gap-2 pt-0.5">
+                    <button
+                      type="button"
+                      onClick={handleTestSearchConnection}
+                      disabled={
+                        !customSearchKey.trim() || !customSearchUrl.trim() || testSearchLoading
+                      }
+                      className={`text-xs px-3 py-1.5 rounded-xl font-medium border flex items-center gap-1.5 transition-all ${
+                        !customSearchKey.trim() || !customSearchUrl.trim() || testSearchLoading
+                          ? 'border-white/[0.06] bg-black/20 text-slate-500 cursor-not-allowed opacity-60'
+                          : 'border-cyan-500/50 bg-cyan-950/70 text-cyan-200 hover:bg-cyan-900/70 hover:text-white cursor-pointer'
+                      }`}
+                    >
+                      {testSearchLoading ? (
+                        <>
+                          <Loader2 size={12} className="animate-spin text-cyan-400" />
+                          <span>Testing...</span>
+                        </>
+                      ) : (
+                        <>
+                          <Plug size={12} />
+                          <span>Test connection</span>
+                        </>
+                      )}
+                    </button>
+
+                    <button
+                      type="button"
+                      onClick={handleResetSearchToDefault}
+                      className="text-xs px-2.5 py-1.5 rounded-xl border border-white/15 bg-white/[0.06] text-slate-300 hover:bg-white/10 hover:text-white transition-all flex items-center gap-1 cursor-pointer"
+                    >
+                      <RotateCcw size={11} />
+                      <span>Reset to Default</span>
+                    </button>
+                  </div>
+
+                  {/* Test connection result display */}
+                  {testSearchResult && (
+                    <div
+                      className={`p-2.5 rounded-xl border text-xs flex items-center gap-2 ${
+                        testSearchResult.ok
+                          ? 'border-emerald-500/40 bg-emerald-950/60 text-emerald-300'
+                          : 'border-red-500/40 bg-red-950/60 text-red-300'
+                      }`}
+                    >
+                      {testSearchResult.ok ? (
+                        <Check size={14} className="shrink-0 text-emerald-400" />
+                      ) : (
+                        <AlertCircle size={14} className="shrink-0 text-red-400" />
+                      )}
+                      <span>{testSearchResult.message}</span>
+                    </div>
+                  )}
+
+                  {/* Help line */}
+                  <p className="text-[11px] text-slate-400 leading-relaxed m-0">
+                    Used for Parallax web search (VERITAS, Evidence Pool, and Genesis Swarm). Saved only on this device.
+                  </p>
+                </div>
+              )}
+            </div>
           </div>
         </div>
 
