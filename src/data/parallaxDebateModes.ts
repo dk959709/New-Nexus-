@@ -13,7 +13,7 @@ export const PARALLAX_DEBATE_MODES: ParallaxDebateModeConfig[] = [
   {
     id: 'genesis',
     label: 'GENESIS SWARM',
-    subtitle: 'Self-Building Swarm · 18 Auto Agents · 1 Round',
+    subtitle: 'Self-Building Swarm · Auto Agents · 1 Round',
     iconName: 'Orbit',
     accentColor: '#a78bfa',
     promptInstruction:

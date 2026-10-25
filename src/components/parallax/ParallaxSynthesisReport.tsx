@@ -236,7 +236,7 @@ export const ParallaxSynthesisReport: React.FC<ParallaxSynthesisReportProps> = (
                 <span className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full bg-violet-500/20 border border-violet-400/40 text-violet-200 font-bold">
                   <Sparkles size={13} className="text-violet-300" />
                   <span>
-                    Genesis Swarm · {(summary.swarmSize ?? 20) - 2} auto agents · 1 round
+                    Self-Building Swarm · {(summary.swarmSize ?? 20) - 2} Auto Agents · 1 Round
                   </span>
                 </span>
               )}

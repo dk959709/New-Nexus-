@@ -609,14 +609,115 @@ function parseGenesisTag(
   };
 }
 
-function extractFirstSentence(text: string): string {
-  const clean = (text || '').replace(/\s+/g, ' ').trim();
-  if (!clean) return '';
-  const match = clean.match(/^[^.!?]+[.!?]/);
-  if (match && match[0].trim().length >= 15) {
-    return match[0].trim();
+function endsWithFinishedSentence(text: string): boolean {
+  const trimmed = (text || '').trim();
+  if (!trimmed) return false;
+  // Ignore trailing citations like [3] or [1, 2]
+  const withoutTrailingCitations = trimmed.replace(/(?:\s*\[[^\]]*\])+\s*$/, '').trim();
+  if (!withoutTrailingCitations) return false;
+  return /[.!?)"'”’]$/.test(withoutTrailingCitations);
+}
+
+function trimToLastCompleteSentence(text: string): string {
+  const trimmed = (text || '').trim();
+  if (!trimmed) return '';
+  if (endsWithFinishedSentence(trimmed)) return trimmed;
+
+  const boundaryRegex =
+    /(?<!\b(?:vs|Vs|VS|Dr|Mr|Mrs|Ms|Prof|Sr|Jr|St|Fig|No|Vol|Inc|Ltd|Co|Corp|etc|al|e\.g|i\.e|U\.S|U\.K))[.!?]['"”’)]*(?:\s*\[[^\]]*\])*(?=\s+[A-Z0-9"'\u201C\u2018•\-*]|\s*$)/g;
+  let lastValidEnd = -1;
+  let match: RegExpExecArray | null;
+
+  while ((match = boundaryRegex.exec(trimmed)) !== null) {
+    const endIdx = match.index + match[0].length;
+    const prefix = trimmed.slice(0, endIdx);
+    const openBrackets = (prefix.match(/\[/g) || []).length;
+    const closeBrackets = (prefix.match(/\]/g) || []).length;
+    if (openBrackets !== closeBrackets) continue;
+    if (/(?:^|\s)\d+\.$/.test(prefix)) continue;
+    lastValidEnd = endIdx;
   }
-  return clean.length > 180 ? clean.slice(0, 177) + '…' : clean;
+
+  if (lastValidEnd > 0) {
+    const cut = trimmed.slice(0, lastValidEnd).replace(/\s*\[[^\]]*$/, '').trim();
+    if (cut.length > 0) return cut;
+  }
+  return trimmed.replace(/\s*\[[^\]]*$/, '').trim();
+}
+
+function extractFirstSentence(text: string): string {
+  let clean = (text || '').replace(/\s+/g, ' ').trim();
+  if (!clean) return '';
+  // Remove citation markers like [1] or [2, 9] and any trailing unfinished bracket
+  clean = clean
+    .replace(/\s*\[\s*\d+(?:\s*[,;/-]\s*\d+)*\s*\]/g, '')
+    .replace(/\s*\[[^\]]*$/, '')
+    .replace(/\s+([.!?])/g, '$1')
+    .trim();
+  if (!clean) return '';
+
+  // Match up to the first sentence-ending . ! or ? followed by space + uppercase/digit/quote or end of text,
+  // without splitting inside numbers (3.1, $1.47, 83.1), brackets ([deepmind.google]), or abbreviations
+  const sentenceRegex =
+    /^(?:[^[\]]|\[[^\]]*\])*?(?<!\b(?:vs|Vs|VS|Dr|Mr|Mrs|Ms|Prof|Sr|Jr|St|Fig|No|Vol|Inc|Ltd|Co|Corp|etc|al|e\.g|i\.e|U\.S|U\.K))[.!?](?=\s+[A-Z0-9"']|\s*$)/;
+  const match = clean.match(sentenceRegex) || clean.match(/^[\s\S]*?[.!?](?=\s+[A-Z0-9"']|\s*$)/);
+  if (match && match[0].trim().length >= 15) {
+    return match[0]
+      .replace(/\s*\[\s*\d+(?:\s*[,;/-]\s*\d+)*\s*\]/g, '')
+      .replace(/\s*\[[^\]]*$/, '')
+      .trim();
+  }
+  if (clean.length > 180) {
+    return clean.slice(0, 177).replace(/\s*\[[^\]]*$/, '').trim() + '…';
+  }
+  return clean;
+}
+
+const TOPIC_STOP_WORDS = new Set([
+  'tell',
+  'latest',
+  'letest',
+  'updates',
+  'update',
+  'about',
+  'what',
+  'with',
+  'from',
+  'that',
+  'this',
+  'they',
+  'them',
+  'then',
+  'than',
+  'have',
+  'will',
+  'would',
+  'could',
+  'should',
+  'into',
+  'more',
+  'most',
+  'some',
+  'such',
+  'only',
+  'other',
+  'which',
+  'when',
+  'where',
+  'there',
+  'their',
+  'these',
+  'those',
+  'give',
+  'show',
+  'explain',
+  'please',
+]);
+
+function extractTopicKeywords(topic: string): string[] {
+  const words = (topic || '').toLowerCase().match(/[a-z]{4,}/g) || [];
+  const filtered = words.filter((w) => !TOPIC_STOP_WORDS.has(w));
+  return Array.from(new Set(filtered));
 }
 
 const MAX_GENESIS_RUN_MS = 8 * 60 * 1000; // 8 minutes total safety cap
@@ -892,7 +993,7 @@ Return the JSON object with "plan" and exactly ${agentCount} "agents".`;
         enabled: true,
         isDynamic: true,
         systemInstruction: `${bp.systemPrompt}\n\n${sharedRules}`,
-        maxTokens: 700,
+        maxTokens: 1000,
         mood: bp.emoji,
         voice: GENESIS_VOICES[idx % GENESIS_VOICES.length] || 'en-US-JennyNeural',
         selectionReason: bp.task,
@@ -1073,7 +1174,7 @@ Return the JSON object with "plan" and exactly ${agentCount} "agents".`;
       searchEntry: GenesisSearchEntry,
     ): Promise<ParallaxMessage> => {
       const turnStart = Date.now();
-      const { provider, model } = resolveParallaxProviderConfig(agent, 700);
+      const { provider, model } = resolveParallaxProviderConfig(agent, 1000);
       const searchBlock = formatSearchResultsBlock(searchEntry.results);
       const userPrompt = `${searchBlock}\n\nTopic: "${cleanTopic}"\nYour assigned task (${bp.role}): ${bp.task}`;
 
@@ -1128,7 +1229,7 @@ Return the JSON object with "plan" and exactly ${agentCount} "agents".`;
                 ],
                 providerConfig: provider,
                 temperature: 0.7,
-                maxTokens: 700,
+                maxTokens: 1000,
                 timeoutMs: 40000,
                 signal: callSignal,
               }),
@@ -1156,7 +1257,7 @@ Return the JSON object with "plan" and exactly ${agentCount} "agents".`;
                     ],
                     providerConfig: provider,
                     temperature: 0.7,
-                    maxTokens: 700,
+                    maxTokens: 1000,
                     timeoutMs: 40000,
                     signal: callSignal,
                   }),
@@ -1180,9 +1281,72 @@ Return the JSON object with "plan" and exactly ${agentCount} "agents".`;
         let parsed = parseGenesisTag(rawText, agent.mood || '💡');
         let fullText = parsed.cleanText.trim();
 
+        // Check if answer ends like a finished sentence; if not:
+        // a) if >= 60 words, cut back to last complete sentence
+        // b) otherwise retry ONCE with maxTokens 1400 and cut-off prompt, then apply (a) if still unfinished
+        if (!endsWithFinishedSentence(fullText)) {
+          if (countWords(fullText) >= 60) {
+            fullText = trimToLastCompleteSentence(fullText);
+          } else if (!retriedOnce && !agentPhaseSignal.aborted) {
+            retriedOnce = true;
+            const { provider: retryProvider } = resolveParallaxProviderConfig(agent, 1400);
+            const cutOffUserPrompt = `${userPrompt}\n\nYour last reply was cut off. Write 90-170 words and finish with a complete sentence.`;
+            try {
+              const retryRes = await withHardTimeout(
+                (callSignal) =>
+                  api.jarvisAgentCall({
+                    agentId: `genesis_turn_${agent.id}_cutoffretry`,
+                    messages: [
+                      { role: 'system', content: agent.systemInstruction },
+                      { role: 'user', content: cutOffUserPrompt },
+                    ],
+                    providerConfig: retryProvider,
+                    temperature: 0.7,
+                    maxTokens: 1400,
+                    timeoutMs: 40000,
+                    signal: callSignal,
+                  }),
+                40000,
+                agentPhaseSignal,
+                { step: 'agent_turn_cutoff_retry', agentId: agent.id, model },
+              );
+              const retryRaw = (retryRes.text || retryRes.content || '').trim();
+              const retryParsed = parseGenesisTag(retryRaw, agent.mood || '💡');
+              let retryClean = retryParsed.cleanText.trim();
+              if (!endsWithFinishedSentence(retryClean)) {
+                retryClean = trimToLastCompleteSentence(retryClean);
+              }
+              if (countWords(retryClean) >= 20) {
+                parsed = retryParsed;
+                fullText = retryClean;
+                response = retryRes;
+              } else {
+                fullText = trimToLastCompleteSentence(fullText);
+              }
+            } catch (retryErr) {
+              if (agentPhaseSignal.aborted) throw retryErr;
+              if (isTimeoutError(retryErr)) {
+                if (countWords(fullText) >= 20) {
+                  fullText = trimToLastCompleteSentence(fullText);
+                } else {
+                  return createAgentFallback('timeout after 40s');
+                }
+              } else if (countWords(fullText) >= 20) {
+                fullText = trimToLastCompleteSentence(fullText);
+              } else {
+                return createAgentFallback(
+                  retryErr instanceof Error ? retryErr.message : String(retryErr),
+                );
+              }
+            }
+          } else {
+            fullText = trimToLastCompleteSentence(fullText);
+          }
+        }
+
         if (countWords(fullText) < 20 && !retriedOnce && !agentPhaseSignal.aborted) {
           retriedOnce = true;
-          const { provider: retryProvider } = resolveParallaxProviderConfig(agent, 1100);
+          const { provider: retryProvider } = resolveParallaxProviderConfig(agent, 1400);
           const retryUserPrompt = `${userPrompt}\n\nYour last reply was too short. Write at least 60 words.`;
           try {
             const retryRes = await withHardTimeout(
@@ -1195,7 +1359,7 @@ Return the JSON object with "plan" and exactly ${agentCount} "agents".`;
                   ],
                   providerConfig: retryProvider,
                   temperature: 0.7,
-                  maxTokens: 1100,
+                  maxTokens: 1400,
                   timeoutMs: 40000,
                   signal: callSignal,
                 }),
@@ -1205,9 +1369,13 @@ Return the JSON object with "plan" and exactly ${agentCount} "agents".`;
             );
             const retryRaw = (retryRes.text || retryRes.content || '').trim();
             const retryParsed = parseGenesisTag(retryRaw, agent.mood || '💡');
-            if (countWords(retryParsed.cleanText) >= 20) {
+            let retryClean = retryParsed.cleanText.trim();
+            if (!endsWithFinishedSentence(retryClean)) {
+              retryClean = trimToLastCompleteSentence(retryClean);
+            }
+            if (countWords(retryClean) >= 20) {
               parsed = retryParsed;
-              fullText = retryParsed.cleanText.trim();
+              fullText = retryClean;
               response = retryRes;
             } else {
               return createAgentFallback('reply under 20 words after retry');
@@ -1306,17 +1474,25 @@ Return the JSON object with "plan" and exactly ${agentCount} "agents".`;
 
     onStatusUpdate?.(`Genesis: ZENITH writing the final answer (${zenithModel})...`);
 
-    // Collect unique sources across all searches (max 10 for prompt, up to 8 for summary)
-    const uniqueSources: Array<{ title: string; url: string; domain: string }> = [];
+    // Collect unique sources across all searches and rank by topic keywords
+    const rawUniqueSources: Array<{
+      title: string;
+      url: string;
+      domain: string;
+      snippet: string;
+      origIdx: number;
+    }> = [];
     const seenUrls = new Set<string>();
     const addSource = (r: ParallaxToolRawResult) => {
       const key = (r.url || r.title || '').toLowerCase().trim();
       if (!key || seenUrls.has(key)) return;
       seenUrls.add(key);
-      uniqueSources.push({
+      rawUniqueSources.push({
         title: r.title || 'Source',
         url: r.url || '',
         domain: r.domain || 'web',
+        snippet: r.snippet || '',
+        origIdx: rawUniqueSources.length,
       });
     };
 
@@ -1328,6 +1504,24 @@ Return the JSON object with "plan" and exactly ${agentCount} "agents".`;
     for (const r of sharedBriefResults) {
       addSource(r);
     }
+
+    const topicKeywords = extractTopicKeywords(cleanTopic);
+    const scoredSources = rawUniqueSources
+      .map((s) => {
+        const haystack = `${s.title} ${s.url} ${s.snippet}`.toLowerCase();
+        let score = 0;
+        for (const kw of topicKeywords) {
+          if (haystack.includes(kw)) {
+            score++;
+          }
+        }
+        return { ...s, score };
+      })
+      .sort((a, b) => b.score - a.score || a.origIdx - b.origIdx);
+
+    const positiveScoredSources = scoredSources.filter((s) => s.score > 0);
+    const uniqueSources =
+      positiveScoredSources.length >= 3 ? positiveScoredSources : scoredSources;
 
     const sourcesForZenith = uniqueSources
       .slice(0, 10)
@@ -1401,7 +1595,11 @@ Write the final synthesis using the 4 required sections: FINAL ANSWER:, KEY FACT
       );
       const rawZ = (zRes.text || zRes.content || '').trim();
       if (countWords(rawZ) >= 15) {
-        zenithText = rawZ;
+        let cleanedZ = parseGenesisTag(rawZ, '🌟').cleanText.trim();
+        if (!endsWithFinishedSentence(cleanedZ)) {
+          cleanedZ = trimToLastCompleteSentence(cleanedZ);
+        }
+        zenithText = cleanedZ;
         zenithRespModel = zRes.model || zenithModel;
         zenithRespProvider = zRes.providerName || zenithRespProvider;
       } else {

@@ -81,11 +81,36 @@ export function formatFullParallaxTranscript(
   summary?: ParallaxSummary | null,
   specialistDeliberation?: ParallaxSpecialistDeliberation | null,
   debateMode?: ParallaxDebateMode,
+  swarmSize?: number,
 ): string {
   const cleanTopic = topic.trim() || 'Untitled Deliberation';
-  const activeModeId = summary?.debateMode || debateMode || 'default';
+  const hasGenesisMarkers =
+    summary?.debateMode === 'genesis' ||
+    debateMode === 'genesis' ||
+    messages.some((m) => m.side === 'genesis' || m.agentId === 'architect' || m.agentId === 'zenith');
+  const activeModeId = hasGenesisMarkers ? 'genesis' : summary?.debateMode || debateMode || 'default';
   const modeConfig = getDebateModeConfig(activeModeId);
-  const modeLine = `MODE        : ${modeConfig.label}${modeConfig.subtitle ? ` (${modeConfig.subtitle})` : ''}\n`;
+
+  const uniqueAgents = new Set(messages.map((m) => m.agentId)).size;
+  const dynamicCount = new Set(messages.filter((m) => m.isDynamic).map((m) => m.agentId)).size;
+  const coreCount = uniqueAgents - dynamicCount;
+  const isGenesis = activeModeId === 'genesis';
+  const isSingleRound =
+    isGenesis ||
+    (Boolean(summary) && messages.length > 0 && messages.every((m) => m.round === 1));
+
+  const genesisSwarmSize =
+    summary?.swarmSize && summary.swarmSize > 2
+      ? summary.swarmSize
+      : swarmSize && swarmSize > 2
+      ? swarmSize
+      : dynamicCount > 0
+      ? dynamicCount + 2
+      : 20;
+  const modeSubtitle = isGenesis
+    ? `Self-Building Swarm · ${genesisSwarmSize - 2} Auto Agents · 1 Round`
+    : modeConfig.subtitle;
+  const modeLine = `MODE        : ${modeConfig.label}${modeSubtitle ? ` (${modeSubtitle})` : ''}\n`;
 
   // Session date & time stamps
   const sessionTs = messages[0]?.timestamp || Date.now();
@@ -106,10 +131,6 @@ export function formatFullParallaxTranscript(
   const divider = '='.repeat(80);
   const subDivider = '-'.repeat(80);
 
-  const uniqueAgents = new Set(messages.map((m) => m.agentId)).size;
-  const dynamicCount = new Set(messages.filter((m) => m.isDynamic).map((m) => m.agentId)).size;
-  const coreCount = uniqueAgents - dynamicCount;
-  const isGenesis = activeModeId === 'genesis';
   const scaleLine = isGenesis
     ? `SCALE       : ${uniqueAgents} Autonomous Personas (${coreCount} Fixed + ${dynamicCount} Auto Agents) • 1 Round • ${messages.length} Total Contributions\n`
     : dynamicCount > 0
@@ -172,8 +193,12 @@ export function formatFullParallaxTranscript(
     output += `\n${divider}\n\n\n`;
   }
 
-  for (let r = 1; r <= 3; r++) {
-    const roundTitle = ROUND_TITLES[r] || `ROUND ${r}`;
+  const maxRoundsToPrint = isSingleRound ? 1 : 3;
+  for (let r = 1; r <= maxRoundsToPrint; r++) {
+    const roundTitle =
+      isSingleRound && r === 1
+        ? 'GENESIS SWARM: ARCHITECT · AUTO AGENTS · ZENITH'
+        : ROUND_TITLES[r] || `ROUND ${r}`;
     output += `${divider}\n`;
     output += `${roundTitle}\n`;
     output += `${divider}\n\n`;
@@ -265,7 +290,7 @@ export function formatFullParallaxTranscript(
     output += `PARALLAX SWARM SYNTHESIS REPORT\n`;
     output += `${divider}\n\n`;
 
-    output += `DEBATE MODE:\n${modeConfig.label}${modeConfig.subtitle ? ` (${modeConfig.subtitle})` : ''}\n\n`;
+    output += `DEBATE MODE:\n${modeConfig.label}${modeSubtitle ? ` (${modeSubtitle})` : ''}\n\n`;
 
     if (summary.modeResult) {
       output += `${(summary.modeResult.title || 'MODE RESULT').toUpperCase()}:\n`;
