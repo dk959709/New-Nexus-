@@ -235,7 +235,9 @@ export const ParallaxSynthesisReport: React.FC<ParallaxSynthesisReportProps> = (
               {summary.debateMode === 'genesis' && (
                 <span className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full bg-violet-500/20 border border-violet-400/40 text-violet-200 font-bold">
                   <Sparkles size={13} className="text-violet-300" />
-                  <span>Genesis Swarm · 18 auto agents · 1 round</span>
+                  <span>
+                    Genesis Swarm · {(summary.swarmSize ?? 20) - 2} auto agents · 1 round
+                  </span>
                 </span>
               )}
 
@@ -424,7 +426,9 @@ export const ParallaxSynthesisReport: React.FC<ParallaxSynthesisReportProps> = (
                 </div>
                 <div className="p-2.5 rounded-xl bg-slate-900/40 backdrop-blur-xl">
                   <span className="text-slate-400">SWARM SIZE:</span>{' '}
-                  {summary.debateMode === 'genesis' ? '2 Fixed + 18 Auto Agents' : '20 Personas + Specialists'}
+                  {summary.debateMode === 'genesis'
+                    ? `2 Fixed + ${(summary.swarmSize ?? 20) - 2} Auto Agents`
+                    : '20 Personas + Specialists'}
                 </div>
                 <div className="p-2.5 rounded-xl bg-slate-900/40 backdrop-blur-xl">
                   <span className="text-slate-400">GROUNDING:</span> VERITAS Live Search

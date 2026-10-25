@@ -109,7 +109,10 @@ export function formatFullParallaxTranscript(
   const uniqueAgents = new Set(messages.map((m) => m.agentId)).size;
   const dynamicCount = new Set(messages.filter((m) => m.isDynamic).map((m) => m.agentId)).size;
   const coreCount = uniqueAgents - dynamicCount;
-  const scaleLine = dynamicCount > 0
+  const isGenesis = activeModeId === 'genesis';
+  const scaleLine = isGenesis
+    ? `SCALE       : ${uniqueAgents} Autonomous Personas (${coreCount} Fixed + ${dynamicCount} Auto Agents) • 1 Round • ${messages.length} Total Contributions\n`
+    : dynamicCount > 0
     ? `SCALE       : ${uniqueAgents} Autonomous Personas (${coreCount} Core + ${dynamicCount} Dynamic Specialists) • 3 Rounds • ${messages.length} Total Contributions\n`
     : `SCALE       : 20 Autonomous Personas • 3 Rounds • ${messages.length} Total Contributions\n`;
 

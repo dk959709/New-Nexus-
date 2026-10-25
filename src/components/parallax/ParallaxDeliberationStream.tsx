@@ -601,8 +601,13 @@ export const ParallaxDeliberationStream: React.FC<ParallaxDeliberationStreamProp
 
               if (roundMsgs.length === 0) return null;
 
+              const genesisAutoCount = messages.filter(
+                (m) => m.side === 'genesis' && m.isDynamic,
+              ).length;
               const roundTitle = isGenesisMode
-                ? 'Round 1 of 1 · Genesis Swarm Deliberation (ARCHITECT · 18 Auto Agents · ZENITH)'
+                ? `Round 1 of 1 · Genesis Swarm Deliberation (ARCHITECT · ${
+                    genesisAutoCount > 0 ? `${genesisAutoCount} ` : ''
+                  }Auto Agents · ZENITH)`
                 : roundNum === 1
                 ? 'Round 01 · Thesis & Initial Grounding'
                 : roundNum === 2

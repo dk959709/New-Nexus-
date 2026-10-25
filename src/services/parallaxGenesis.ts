@@ -313,13 +313,14 @@ function parseArchitectJson(rawText: string): { plan?: string; agents?: Record<s
 function validateAndRepairArchitectAgents(
   parsed: { plan?: string; agents?: Record<string, unknown>[] } | null,
   topic: string,
+  agentCount: number,
 ): { validCount: number; output: ArchitectParsedOutput } {
   const rawList = Array.isArray(parsed?.agents) ? parsed!.agents! : [];
   const usedNames = new Set<string>();
   const usedColors = new Set<string>();
   const validAgents: ArchitectAgentBlueprint[] = [];
 
-  for (let i = 0; i < rawList.length && validAgents.length < 18; i++) {
+  for (let i = 0; i < rawList.length && validAgents.length < agentCount; i++) {
     const item = rawList[i];
     if (!item || typeof item !== 'object') continue;
     const fb = GENERIC_18_ROLES[validAgents.length % GENERIC_18_ROLES.length];
@@ -383,8 +384,8 @@ function validateAndRepairArchitectAgents(
 
   const validCount = validAgents.length;
 
-  // Fill any missing slots up to 18 from GENERIC_18_ROLES
-  for (let i = 0; i < GENERIC_18_ROLES.length && validAgents.length < 18; i++) {
+  // Fill any missing slots up to agentCount from GENERIC_18_ROLES in priority order
+  for (let i = 0; i < GENERIC_18_ROLES.length && validAgents.length < agentCount; i++) {
     const fb = GENERIC_18_ROLES[i];
     if (usedNames.has(fb.name)) continue;
     const idx = validAgents.length;
@@ -409,8 +410,8 @@ function validateAndRepairArchitectAgents(
     });
   }
 
-  // In case still < 18
-  while (validAgents.length < 18) {
+  // In case still < agentCount
+  while (validAgents.length < agentCount) {
     const idx = validAgents.length;
     const fb = GENERIC_18_ROLES[idx % GENERIC_18_ROLES.length];
     const name = sanitizeAgentName(fb.name, fb.name, usedNames);
@@ -426,7 +427,7 @@ function validateAndRepairArchitectAgents(
     });
   }
 
-  const defaultPlan = `ARCHITECT assembled 18 specialized agents to investigate "${topic.slice(0, 90)}" across empirical facts, technical feasibility, economics, risk, and practical execution. Each agent runs targeted search grounding before ZENITH synthesizes the final verdict.`;
+  const defaultPlan = `ARCHITECT assembled ${agentCount} specialized agents to investigate "${topic.slice(0, 90)}" across empirical facts, technical feasibility, economics, risk, and practical execution. Each agent runs targeted search grounding before ZENITH synthesizes the final verdict.`;
   const plan =
     typeof parsed?.plan === 'string' && parsed.plan.trim().length >= 15
       ? parsed.plan.trim().slice(0, 380)
@@ -436,7 +437,7 @@ function validateAndRepairArchitectAgents(
     validCount,
     output: {
       plan,
-      agents: validAgents.slice(0, 18),
+      agents: validAgents.slice(0, agentCount),
     },
   };
 }
@@ -578,6 +579,12 @@ export async function runGenesisSwarm(options: ParallaxRunOptions): Promise<void
     day: 'numeric',
   });
 
+  const size = isValidSwarmSize(options.swarmSize)
+    ? options.swarmSize
+    : storage.getParallaxSwarmSize();
+  const agentCount = size - 2;
+  const architectMaxTokens = Math.max(1000, Math.min(2500, 700 + 100 * agentCount));
+
   const genesisSettings = storage.getParallaxGenesisSettings();
   const maxSearches = Math.max(0, Math.min(18, genesisSettings.maxSearches ?? 10));
   const allMessages: ParallaxMessage[] = [];
@@ -612,7 +619,7 @@ export async function runGenesisSwarm(options: ParallaxRunOptions): Promise<void
         console.warn('[Genesis] Initial topic scan failed, continuing:', scanErr);
       }
     } else {
-      onStatusUpdate?.('Genesis: ARCHITECT designing 18 agents...');
+      onStatusUpdate?.(`Genesis: ARCHITECT designing ${agentCount} agents...`);
     }
 
     if (signal?.aborted) return;
@@ -633,7 +640,7 @@ export async function runGenesisSwarm(options: ParallaxRunOptions): Promise<void
       modelId: architectSlot.modelId,
       enabled: true,
       systemInstruction: 'You are ARCHITECT, the Genesis Swarm team builder. Output strict JSON only.',
-      maxTokens: 2500,
+      maxTokens: architectMaxTokens,
       mood: '🏗️',
       voice: DEFAULT_PARALLAX_VOICES.veritas,
     };
@@ -655,14 +662,15 @@ export async function runGenesisSwarm(options: ParallaxRunOptions): Promise<void
 
     const { provider: architectProvider, model: architectModel } = resolveParallaxProviderConfig(
       architectConfig,
-      2500,
+      architectMaxTokens,
     );
 
+    const article = agentCount === 8 || agentCount === 18 ? 'an' : 'a';
     const architectSystemPrompt = `Today is ${todayDate}. You are ARCHITECT, the master team designer for Genesis Swarm.
-Your job is to design an 18-agent research team tailored specifically to the user's topic.
+Your job is to design ${article} ${agentCount}-agent research team tailored specifically to the user's topic.
 Rules:
-1. Create EXACTLY 18 agents with different roles covering the topic from distinct angles.
-2. You MUST include at least: one skeptic, one practical/implementation expert, one risk expert, and one numbers/data expert.
+1. Create EXACTLY ${agentCount} agents with different roles covering the topic from distinct angles.
+2. You MUST always include, in this order of importance: a skeptic, a practical/implementation expert, a risk expert, a numbers/data expert, then the rest (if the team is small, pick the most useful roles first; never skip the skeptic, the practical expert and the risk expert).
 3. Every agent must have a unique ONE WORD UPPERCASE name (max 9 letters), a short role, one emoji, a unique bright hex color (#rrggbb readable on dark background), a specific task, a 2-3 sentence systemPrompt ("who you are and how you think"), and a specific web searchQuery (max 8 words) different from the other agents.
 4. Output JSON ONLY, with no markdown fences and no extra commentary:
 {"plan":"1-2 sentences about the team","agents":[{"name":"ONE WORD UPPERCASE max 9 letters","role":"short role","emoji":"one emoji","color":"#rrggbb","task":"what this agent must find/decide","systemPrompt":"2-3 sentences: who you are and how you think","searchQuery":"a short web search query (max 8 words)"}]}`;
@@ -670,7 +678,7 @@ Rules:
     const architectUserPrompt = `Today is ${todayDate}.
 Topic: "${cleanTopic}"
 ${sharedBriefText ? `\nInitial Web Scan Brief:\n${sharedBriefText}\n` : ''}
-Return the JSON object with "plan" and exactly 18 "agents".`;
+Return the JSON object with "plan" and exactly ${agentCount} "agents".`;
 
     const callArchitectOnce = async (attempt: number): Promise<string> => {
       const res = await api.jarvisAgentCall({
@@ -681,7 +689,7 @@ Return the JSON object with "plan" and exactly 18 "agents".`;
         ],
         providerConfig: architectProvider,
         temperature: 0.6,
-        maxTokens: 2500,
+        maxTokens: architectMaxTokens,
         timeoutMs: 40000,
         signal,
       });
@@ -698,16 +706,16 @@ Return the JSON object with "plan" and exactly 18 "agents".`;
     }
 
     let parsedArch = parseArchitectJson(archRaw);
-    let validated = validateAndRepairArchitectAgents(parsedArch, cleanTopic);
+    let validated = validateAndRepairArchitectAgents(parsedArch, cleanTopic, agentCount);
 
-    if (validated.validCount < 18 && !signal?.aborted) {
+    if (validated.validCount < agentCount && !signal?.aborted) {
       console.warn(
-        `[Genesis] ARCHITECT produced ${validated.validCount}/18 valid agents on attempt 1. Retrying once...`,
+        `[Genesis] ARCHITECT produced ${validated.validCount}/${agentCount} valid agents on attempt 1. Retrying once...`,
       );
       try {
         const retryRaw = await callArchitectOnce(2);
         const retryParsed = parseArchitectJson(retryRaw);
-        const retryValidated = validateAndRepairArchitectAgents(retryParsed, cleanTopic);
+        const retryValidated = validateAndRepairArchitectAgents(retryParsed, cleanTopic, agentCount);
         if (retryValidated.validCount >= validated.validCount) {
           validated = retryValidated;
         }
@@ -723,7 +731,7 @@ Return the JSON object with "plan" and exactly 18 "agents".`;
     const architectPlan = validated.output.plan;
 
     // =========================================================================
-    // STEP 3: Build 18 ParallaxAgentConfig objects
+    // STEP 3: Build agentCount ParallaxAgentConfig objects
     // =========================================================================
     const genesisAgents: ParallaxAgentConfig[] = blueprints.map((bp, idx) => {
       const slotChoice = resolveGenesisSlot(idx + 2, genesisSettings);
@@ -760,7 +768,7 @@ Return the JSON object with "plan" and exactly 18 "agents".`;
       initials: 'AR',
       accentColor: '#a78bfa',
       round: 1,
-      text: `${architectPlan}\n\nAssembled Team (18): ${roleListLine}`,
+      text: `${architectPlan}\n\nAssembled Team (${agentCount}): ${roleListLine}`,
       conviction: 9,
       mood: '🏗️',
       isDynamic: false,
@@ -778,18 +786,17 @@ Return the JSON object with "plan" and exactly 18 "agents".`;
     onMessage(architectMsg);
     onStatusUpdate?.(
       maxSearches > 0
-        ? 'Genesis: ARCHITECT created 18 agents. Searching...'
-        : 'Genesis: ARCHITECT created 18 agents. Starting deliberation...',
+        ? `Genesis: ARCHITECT created ${agentCount} agents. Searching...`
+        : `Genesis: ARCHITECT created ${agentCount} agents. Starting deliberation...`,
     );
 
     if (signal?.aborted) return;
 
     // =========================================================================
-    // STEP 5: SEARCH Step (shared scan counts inside maxSearches limit)
-    // If maxSearches > 0, number of agent searches is maxSearches - 1 (min 1 if maxSearches >= 1).
-    // If maxSearches is 0, skip agent searches too.
+    // STEP 5: SEARCH Step (shared scan counts inside maxSearches limit, capped at agentCount)
     // =========================================================================
-    const agentSearchCount = maxSearches > 0 ? Math.max(1, maxSearches - 1) : 0;
+    const agentSearchCount =
+      maxSearches > 0 ? Math.min(agentCount, Math.max(1, maxSearches - 1)) : 0;
     const uniqueQueryList: string[] = [];
     const querySeen = new Set<string>();
 
@@ -827,7 +834,7 @@ Return the JSON object with "plan" and exactly 18 "agents".`;
       }
     }
 
-    // Map each of the 18 agents to its search results (own search -> nearest successful agent search -> shared brief)
+    // Map each of the agentCount agents to its search results (own search -> nearest successful agent search -> shared brief)
     const agentSearchEntries: GenesisSearchEntry[] = blueprints.map((bp) => {
       const qKey = bp.searchQuery.toLowerCase().trim();
       const matched = queryResultsMap.get(qKey);
@@ -873,10 +880,10 @@ Return the JSON object with "plan" and exactly 18 "agents".`;
     if (signal?.aborted) return;
 
     // =========================================================================
-    // STEP 6: ANSWER Step (18 agents in batches of 4, streaming as each finishes)
+    // STEP 6: ANSWER Step (agentCount agents in batches of 4, streaming as each finishes)
     // =========================================================================
     let answeredCount = 0;
-    onStatusUpdate?.(`Genesis: agents answering (0/18)...`);
+    onStatusUpdate?.(`Genesis: agents answering (0/${agentCount})...`);
 
     const executeSingleGenesisAgent = async (
       agent: ParallaxAgentConfig,
@@ -1050,7 +1057,7 @@ Return the JSON object with "plan" and exactly 18 "agents".`;
           agentMessages.push(msg);
           allMessages.push(msg);
           onMessage(msg);
-          onStatusUpdate?.(`Genesis: agents answering (${answeredCount}/18)...`);
+          onStatusUpdate?.(`Genesis: agents answering (${answeredCount}/${agentCount})...`);
         }
         return msg;
       });
@@ -1104,7 +1111,7 @@ Return the JSON object with "plan" and exactly 18 "agents".`;
 
     const zenithSystemPrompt = `Today is ${todayDate}. You are ZENITH, the final answer synthesizer of the Genesis Swarm.
 Rules:
-1. Use ONLY the facts and findings provided by the 18 agents and the verified sources below. Do NOT invent facts.
+1. Use ONLY the facts and findings provided by the ${agentCount} agents and the verified sources below. Do NOT invent facts.
 2. Write plain text with these exact 4 sections, each starting on a new line:
 FINAL ANSWER: (4-8 clear sentences directly answering the topic)
 KEY FACTS: (3-5 bullet points citing source domains)
@@ -1206,7 +1213,7 @@ Write the final synthesis using the 4 required sections: FINAL ANSWER:, KEY FACT
       .trim();
     const verdict =
       extractFirstSentence(finalAnswerSegment || zenithText) ||
-      `Genesis Swarm completed its 18-agent investigation into "${cleanTopic}".`;
+      `Genesis Swarm completed its ${agentCount}-agent investigation into "${cleanTopic}".`;
 
     const top4Agents = agentMessages
       .filter((m) => !m.fallbackReason)
@@ -1242,7 +1249,7 @@ Write the final synthesis using the 4 required sections: FINAL ANSWER:, KEY FACT
       groundingLevel,
       evidenceSources,
       debateMode: 'genesis',
-      swarmSize: 20,
+      swarmSize: size,
     };
 
     storage.saveParallaxSession({
@@ -1253,7 +1260,7 @@ Write the final synthesis using the 4 required sections: FINAL ANSWER:, KEY FACT
       messages: allMessages,
       summary,
       debateMode: 'genesis',
-      swarmSize: 20,
+      swarmSize: size,
       genesisAgents,
     });
 

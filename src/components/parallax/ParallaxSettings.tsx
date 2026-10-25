@@ -677,6 +677,10 @@ export const ParallaxSettings: React.FC<ParallaxSettingsProps> = ({
                 </div>
               </div>
 
+              <div className="text-[11px] text-purple-200/85 font-mono">
+                Smaller swarm sizes use only the first slots (ARCHITECT, ZENITH, then Agent 1, 2, 3...)
+              </div>
+
               {/* 20 Slot Rows */}
               <div className="grid grid-cols-1 md:grid-cols-2 gap-2 pt-1">
                 {genesisSettings.slots.map((slot, idx) => {
