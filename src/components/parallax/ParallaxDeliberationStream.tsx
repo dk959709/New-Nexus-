@@ -33,6 +33,7 @@ export interface ParallaxDeliberationStreamProps {
   messages: ParallaxMessage[];
   agents: Record<string, ParallaxAgentConfig>;
   isRunning: boolean;
+  statusText?: string;
   currentRound: 1 | 2 | 3 | null;
   wasStoppedEarly: boolean;
   specialistDeliberation: ParallaxSpecialistDeliberation | null;
@@ -183,6 +184,7 @@ export const ParallaxDeliberationStream: React.FC<ParallaxDeliberationStreamProp
   messages,
   agents,
   isRunning,
+  statusText,
   currentRound,
   wasStoppedEarly,
   specialistDeliberation,
@@ -1122,8 +1124,12 @@ export const ParallaxDeliberationStream: React.FC<ParallaxDeliberationStreamProp
               <div className="py-2 px-3 flex items-center gap-2 text-[11px] font-mono text-cyan-300/90">
                 <Radio size={12} className="animate-pulse text-cyan-400 shrink-0" />
                 <span>
-                  {isGenesisMode
-                    ? 'Streaming Genesis Swarm responses in Round 1 of 1...'
+                  {messages.length === 0 && statusText
+                    ? statusText
+                    : isGenesisMode
+                    ? statusText && statusText !== 'INITIALIZING PARALLAX CORE • CONNECTING AGENTS...'
+                      ? statusText
+                      : 'Streaming Genesis Swarm responses in Round 1 of 1...'
                     : `Streaming live agent responses in Round 0${currentRound || 1}...`}
                 </span>
               </div>

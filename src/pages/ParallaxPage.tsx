@@ -732,12 +732,14 @@ export const ParallaxPage: React.FC = () => {
       signal: controller.signal,
       onRoundStart: (r) => {
         setCurrentRound(r);
-        if (r === 1) {
-          setStatusText('PLANNER ONLINE • RESEARCH SWARM ONLINE • ROUND 01');
-        } else if (r === 2) {
-          setStatusText('DELIBERATION ACTIVE • CROSS-EXAMINATION • ROUND 02');
-        } else if (r === 3) {
-          setStatusText('DELIBERATION ACTIVE • CONVERGENCE RESOLUTION • ROUND 03');
+        if (debateMode !== 'genesis') {
+          if (r === 1) {
+            setStatusText('PLANNER ONLINE • RESEARCH SWARM ONLINE • ROUND 01');
+          } else if (r === 2) {
+            setStatusText('DELIBERATION ACTIVE • CROSS-EXAMINATION • ROUND 02');
+          } else if (r === 3) {
+            setStatusText('DELIBERATION ACTIVE • CONVERGENCE RESOLUTION • ROUND 03');
+          }
         }
       },
       onIntelligenceBriefingReady: (briefing) => {
@@ -3002,6 +3004,7 @@ export const ParallaxPage: React.FC = () => {
                       messages={messages}
                       agents={config.agents}
                       isRunning={isRunning}
+                      statusText={statusText}
                       currentRound={currentRound}
                       wasStoppedEarly={wasStoppedEarly}
                       specialistDeliberation={specialistDeliberation}

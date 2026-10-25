@@ -449,56 +449,120 @@ interface GenesisSearchEntry {
   hadOwnSearch: boolean;
 }
 
+interface TimeoutMeta {
+  step: string;
+  agentId: string;
+  model: string;
+}
+
+function isTimeoutError(err: unknown): boolean {
+  if (!err) return false;
+  const msg = err instanceof Error ? err.message : String(err);
+  return /^timeout after \d+s$/i.test(msg.trim());
+}
+
+export async function withHardTimeout<T>(
+  promiseFactory: (signal: AbortSignal) => Promise<T>,
+  ms: number,
+  parentSignal?: AbortSignal,
+  meta?: TimeoutMeta,
+): Promise<T> {
+  if (parentSignal?.aborted) {
+    throw new Error('Swarm aborted');
+  }
+
+  const callStart = Date.now();
+  const controller = new AbortController();
+  const seconds = Math.round(ms / 1000);
+  let timedOut = false;
+  let timer: ReturnType<typeof setTimeout> | null = null;
+  let onParentAbort: (() => void) | null = null;
+
+  const raceControlPromise = new Promise<never>((_, reject) => {
+    onParentAbort = () => {
+      controller.abort();
+      reject(new Error('Swarm aborted'));
+    };
+    if (parentSignal) {
+      parentSignal.addEventListener('abort', onParentAbort, { once: true });
+    }
+    timer = setTimeout(() => {
+      timedOut = true;
+      const elapsedMs = Date.now() - callStart;
+      console.warn(
+        `[Genesis Timeout] step=${meta?.step || 'genesis_call'} | agentId=${meta?.agentId || 'unknown'} | model=${meta?.model || 'unknown'} | elapsedMs=${elapsedMs}`,
+      );
+      controller.abort();
+      reject(new Error(`timeout after ${seconds}s`));
+    }, ms);
+  });
+
+  try {
+    return await Promise.race([promiseFactory(controller.signal), raceControlPromise]);
+  } catch (err) {
+    if (parentSignal?.aborted) {
+      throw new Error('Swarm aborted');
+    }
+    if (timedOut) {
+      throw new Error(`timeout after ${seconds}s`);
+    }
+    throw err;
+  } finally {
+    if (timer) clearTimeout(timer);
+    if (parentSignal && onParentAbort) {
+      parentSignal.removeEventListener('abort', onParentAbort);
+    }
+  }
+}
+
 async function runSingleSearchWithTimeoutAndRetry(
   query: string,
   signal?: AbortSignal,
+  stepName = 'web_search',
+  agentId = 'search',
 ): Promise<{ results: ParallaxToolRawResult[]; sourceLabel: string; ok: boolean }> {
-  const attemptSearch = async (): Promise<{ results: ParallaxToolRawResult[]; sourceLabel: string }> => {
+  const attemptSearch = async (attemptLabel: string): Promise<{ results: ParallaxToolRawResult[]; sourceLabel: string }> => {
     if (signal?.aborted) throw new Error('Swarm aborted');
-    let timer: ReturnType<typeof setTimeout> | null = null;
-    try {
-      const timeoutPromise = new Promise<never>((_, reject) => {
-        timer = setTimeout(() => reject(new Error('Search timeout (12s)')), 12000);
-      });
-      const searchPromise = api.search(query, 'ALL', 1, 5);
-      const rawRes = await Promise.race([searchPromise, timeoutPromise]);
-      if (!Array.isArray(rawRes) || rawRes.length === 0) {
-        return { results: [], sourceLabel: 'Live Web' };
-      }
-      const resMeta = rawRes as typeof rawRes & { searchSource?: string };
-      const sourceLabel = formatSearchSourceLabel(resMeta.searchSource);
-      const mapped: ParallaxToolRawResult[] = rawRes.slice(0, 4).map((r) => {
-        let domain = r.domain;
-        if (!domain && r.url) {
-          try {
-            domain = new URL(r.url).hostname.replace(/^www\./, '');
-          } catch {
-            domain = 'web';
-          }
-        }
-        const rawSnippet = (r.description || (r as { snippet?: string }).snippet || '').replace(/\s+/g, ' ').trim();
-        return {
-          title: (r.title || 'Source').trim(),
-          url: r.url || '',
-          domain: domain || 'web',
-          snippet: rawSnippet.slice(0, 200),
-        };
-      });
-      return { results: mapped, sourceLabel };
-    } finally {
-      if (timer) clearTimeout(timer);
+    const rawRes = await withHardTimeout(
+      () => api.search(query, 'ALL', 1, 5),
+      12000,
+      signal,
+      { step: attemptLabel, agentId, model: 'web_search' },
+    );
+    if (!Array.isArray(rawRes) || rawRes.length === 0) {
+      return { results: [], sourceLabel: 'Live Web' };
     }
+    const resMeta = rawRes as typeof rawRes & { searchSource?: string };
+    const sourceLabel = formatSearchSourceLabel(resMeta.searchSource);
+    const mapped: ParallaxToolRawResult[] = rawRes.slice(0, 4).map((r) => {
+      let domain = r.domain;
+      if (!domain && r.url) {
+        try {
+          domain = new URL(r.url).hostname.replace(/^www\./, '');
+        } catch {
+          domain = 'web';
+        }
+      }
+      const rawSnippet = (r.description || (r as { snippet?: string }).snippet || '').replace(/\s+/g, ' ').trim();
+      return {
+        title: (r.title || 'Source').trim(),
+        url: r.url || '',
+        domain: domain || 'web',
+        snippet: rawSnippet.slice(0, 200),
+      };
+    });
+    return { results: mapped, sourceLabel };
   };
 
   try {
-    const first = await attemptSearch();
+    const first = await attemptSearch(stepName);
     return { ...first, ok: first.results.length > 0 };
   } catch (err) {
     if (signal?.aborted) throw err;
-    if (isNetworkOrRateLimitError(err)) {
+    if (!isTimeoutError(err) && isNetworkOrRateLimitError(err)) {
       try {
         await abortableSleep(1500, signal);
-        const second = await attemptSearch();
+        const second = await attemptSearch(`${stepName}_retry`);
         return { ...second, ok: second.results.length > 0 };
       } catch (retryErr) {
         if (signal?.aborted) throw retryErr;
@@ -554,6 +618,8 @@ function extractFirstSentence(text: string): string {
   return clean.length > 180 ? clean.slice(0, 177) + '…' : clean;
 }
 
+const MAX_GENESIS_RUN_MS = 8 * 60 * 1000; // 8 minutes total safety cap
+
 export async function runGenesisSwarm(options: ParallaxRunOptions): Promise<void> {
   const {
     topic,
@@ -573,6 +639,7 @@ export async function runGenesisSwarm(options: ParallaxRunOptions): Promise<void
     return;
   }
 
+  const runStart = Date.now();
   const todayDate = new Date().toLocaleDateString('en-US', {
     year: 'numeric',
     month: 'long',
@@ -589,6 +656,26 @@ export async function runGenesisSwarm(options: ParallaxRunOptions): Promise<void
   const maxSearches = Math.max(0, Math.min(18, genesisSettings.maxSearches ?? 10));
   const allMessages: ParallaxMessage[] = [];
 
+  // Controller that aborts either when the user stops the swarm OR when the 8-minute total run cap expires
+  const agentPhaseController = new AbortController();
+  let eightMinLimitReached = false;
+  const onUserAbort = () => {
+    agentPhaseController.abort();
+  };
+  if (signal) {
+    if (signal.aborted) return;
+    signal.addEventListener('abort', onUserAbort, { once: true });
+  }
+  const eightMinTimer = setTimeout(() => {
+    eightMinLimitReached = true;
+    console.warn(
+      `[Genesis Timeout] step=total_run_cap_8m | agentId=genesis_swarm | model=all | elapsedMs=${Date.now() - runStart}`,
+    );
+    agentPhaseController.abort();
+  }, MAX_GENESIS_RUN_MS);
+
+  const agentPhaseSignal = agentPhaseController.signal;
+
   try {
     if (signal?.aborted) return;
     onRoundStart?.(1);
@@ -602,9 +689,14 @@ export async function runGenesisSwarm(options: ParallaxRunOptions): Promise<void
     let sharedBriefSourceLabel = 'Live Web';
 
     if (maxSearches > 0) {
-      onStatusUpdate?.('Genesis: scanning the topic...');
+      onStatusUpdate?.('Genesis: scanning the topic (web search)...');
       try {
-        const scanRes = await runSingleSearchWithTimeoutAndRetry(cleanTopic, signal);
+        const scanRes = await runSingleSearchWithTimeoutAndRetry(
+          cleanTopic,
+          agentPhaseSignal,
+          'topic_scan_search',
+          'architect',
+        );
         if (scanRes.results.length > 0) {
           sharedBriefResults = scanRes.results.slice(0, 4);
           sharedBriefSourceLabel = scanRes.sourceLabel;
@@ -618,8 +710,6 @@ export async function runGenesisSwarm(options: ParallaxRunOptions): Promise<void
         if (signal?.aborted) return;
         console.warn('[Genesis] Initial topic scan failed, continuing:', scanErr);
       }
-    } else {
-      onStatusUpdate?.(`Genesis: ARCHITECT designing ${agentCount} agents...`);
     }
 
     if (signal?.aborted) return;
@@ -665,6 +755,8 @@ export async function runGenesisSwarm(options: ParallaxRunOptions): Promise<void
       architectMaxTokens,
     );
 
+    onStatusUpdate?.(`Genesis: ARCHITECT is designing the team (${architectModel})...`);
+
     const article = agentCount === 8 || agentCount === 18 ? 'an' : 'a';
     const architectSystemPrompt = `Today is ${todayDate}. You are ARCHITECT, the master team designer for Genesis Swarm.
 Your job is to design ${article} ${agentCount}-agent research team tailored specifically to the user's topic.
@@ -681,54 +773,102 @@ ${sharedBriefText ? `\nInitial Web Scan Brief:\n${sharedBriefText}\n` : ''}
 Return the JSON object with "plan" and exactly ${agentCount} "agents".`;
 
     const callArchitectOnce = async (attempt: number): Promise<string> => {
-      const res = await api.jarvisAgentCall({
-        agentId: `genesis_architect_${attempt}`,
-        messages: [
-          { role: 'system', content: architectSystemPrompt },
-          { role: 'user', content: architectUserPrompt },
-        ],
-        providerConfig: architectProvider,
-        temperature: 0.6,
-        maxTokens: architectMaxTokens,
-        timeoutMs: 40000,
-        signal,
-      });
+      const res = await withHardTimeout(
+        (callSignal) =>
+          api.jarvisAgentCall({
+            agentId: `genesis_architect_${attempt}`,
+            messages: [
+              { role: 'system', content: architectSystemPrompt },
+              { role: 'user', content: architectUserPrompt },
+            ],
+            providerConfig: architectProvider,
+            temperature: 0.6,
+            maxTokens: architectMaxTokens,
+            timeoutMs: 45000,
+            signal: callSignal,
+          }),
+        45000,
+        agentPhaseSignal,
+        { step: `architect_attempt_${attempt}`, agentId: 'architect', model: architectModel },
+      );
       return (res.text || res.content || '').trim();
     };
 
     const archStart = Date.now();
     let archRaw = '';
-    try {
-      archRaw = await callArchitectOnce(1);
-    } catch (archErr) {
-      if (signal?.aborted) return;
-      console.warn('[Genesis] ARCHITECT attempt 1 failed:', archErr);
+    let archAttempt1Error: string | null = null;
+    let archAttempt2Error: string | null = null;
+
+    if (!eightMinLimitReached) {
+      try {
+        archRaw = await callArchitectOnce(1);
+        if (!archRaw) {
+          archAttempt1Error = 'empty response';
+        }
+      } catch (archErr) {
+        if (signal?.aborted) return;
+        archAttempt1Error = archErr instanceof Error ? archErr.message : String(archErr);
+        console.warn('[Genesis] ARCHITECT attempt 1 failed:', archErr);
+      }
+    } else {
+      archAttempt1Error = 'timeout after 45s';
     }
 
-    let parsedArch = parseArchitectJson(archRaw);
+    const parsedArch = parseArchitectJson(archRaw);
     let validated = validateAndRepairArchitectAgents(parsedArch, cleanTopic, agentCount);
+    if (!archAttempt1Error && validated.validCount === 0) {
+      archAttempt1Error = 'invalid response format';
+    }
 
-    if (validated.validCount < agentCount && !signal?.aborted) {
+    let architectFailedTwice = false;
+
+    if (validated.validCount < agentCount && !signal?.aborted && !eightMinLimitReached) {
       console.warn(
         `[Genesis] ARCHITECT produced ${validated.validCount}/${agentCount} valid agents on attempt 1. Retrying once...`,
       );
       try {
         const retryRaw = await callArchitectOnce(2);
+        if (!retryRaw) {
+          archAttempt2Error = 'empty response';
+        }
         const retryParsed = parseArchitectJson(retryRaw);
         const retryValidated = validateAndRepairArchitectAgents(retryParsed, cleanTopic, agentCount);
+        if (!archAttempt2Error && retryValidated.validCount === 0) {
+          archAttempt2Error = 'invalid response format';
+        }
         if (retryValidated.validCount >= validated.validCount) {
           validated = retryValidated;
         }
+        if (validated.validCount === 0 || (archAttempt1Error && archAttempt2Error)) {
+          architectFailedTwice = true;
+        }
       } catch (retryErr) {
         if (signal?.aborted) return;
-        console.warn('[Genesis] ARCHITECT retry failed, using repaired fallback list:', retryErr);
+        archAttempt2Error = retryErr instanceof Error ? retryErr.message : String(retryErr);
+        if (validated.validCount === 0 || archAttempt1Error) {
+          architectFailedTwice = true;
+        }
+        console.warn('[Genesis] ARCHITECT retry failed, using built-in fallback team:', retryErr);
       }
+    } else if (validated.validCount === 0) {
+      architectFailedTwice = true;
     }
 
     if (signal?.aborted) return;
 
     const blueprints = validated.output.agents;
-    const architectPlan = validated.output.plan;
+    const archFailureShortReason = (
+      archAttempt2Error ||
+      archAttempt1Error ||
+      'timeout after 45s'
+    )
+      .replace(/\s+/g, ' ')
+      .trim()
+      .slice(0, 80);
+
+    const architectPlan = architectFailedTwice
+      ? `ARCHITECT could not answer in time (${archFailureShortReason}). Using a built-in team of ${agentCount} agents.`
+      : validated.output.plan;
 
     // =========================================================================
     // STEP 3: Build agentCount ParallaxAgentConfig objects
@@ -761,6 +901,10 @@ Return the JSON object with "plan" and exactly ${agentCount} "agents".`;
     // STEP 4: Post ARCHITECT Message (Round 1)
     // =========================================================================
     const roleListLine = blueprints.map((bp) => `${bp.emoji} ${bp.name} (${bp.role})`).join(' · ');
+    const architectMsgText = architectFailedTwice
+      ? `${architectPlan}\n\nAssembled Team (${agentCount}): ${roleListLine}`
+      : `${architectPlan}\n\nAssembled Team (${agentCount}): ${roleListLine}`;
+
     const architectMsg: ParallaxMessage = {
       id: `plx_architect_r1_${Date.now()}`,
       agentId: 'architect',
@@ -768,8 +912,8 @@ Return the JSON object with "plan" and exactly ${agentCount} "agents".`;
       initials: 'AR',
       accentColor: '#a78bfa',
       round: 1,
-      text: `${architectPlan}\n\nAssembled Team (${agentCount}): ${roleListLine}`,
-      conviction: 9,
+      text: architectMsgText,
+      conviction: architectFailedTwice ? 6 : 9,
       mood: '🏗️',
       isDynamic: false,
       role: 'Swarm Team Builder',
@@ -780,15 +924,11 @@ Return the JSON object with "plan" and exactly ${agentCount} "agents".`;
       durationMs: Date.now() - archStart,
       model: architectModel,
       providerName: architectProvider?.name || 'Built-in AI',
+      fallbackReason: architectFailedTwice ? archFailureShortReason : undefined,
     };
 
     allMessages.push(architectMsg);
     onMessage(architectMsg);
-    onStatusUpdate?.(
-      maxSearches > 0
-        ? `Genesis: ARCHITECT created ${agentCount} agents. Searching...`
-        : `Genesis: ARCHITECT created ${agentCount} agents. Starting deliberation...`,
-    );
 
     if (signal?.aborted) return;
 
@@ -809,6 +949,13 @@ Return the JSON object with "plan" and exactly ${agentCount} "agents".`;
     }
 
     const queriesToRun = uniqueQueryList.slice(0, agentSearchCount);
+    const totalSearchesToRun = queriesToRun.length;
+    let completedSearches = 0;
+
+    if (totalSearchesToRun > 0 && !eightMinLimitReached) {
+      onStatusUpdate?.(`Genesis: ARCHITECT done. Searching (0/${totalSearchesToRun})...`);
+    }
+
     const queryResultsMap = new Map<
       string,
       { results: ParallaxToolRawResult[]; sourceLabel: string; ok: boolean }
@@ -817,14 +964,45 @@ Return the JSON object with "plan" and exactly ${agentCount} "agents".`;
     const SEARCH_CONCURRENCY = 3;
     for (let i = 0; i < queriesToRun.length; i += SEARCH_CONCURRENCY) {
       if (signal?.aborted) return;
+      if (eightMinLimitReached) break;
+
       if (i > 0) {
-        await abortableSleep(450, signal);
+        try {
+          await abortableSleep(450, agentPhaseSignal);
+        } catch {
+          if (signal?.aborted) return;
+          if (eightMinLimitReached) break;
+        }
       }
       const batchQueries = queriesToRun.slice(i, i + SEARCH_CONCURRENCY);
       const batchResults = await Promise.all(
-        batchQueries.map(async (q) => {
-          const res = await runSingleSearchWithTimeoutAndRetry(q, signal);
-          return { key: q.toLowerCase().trim(), res };
+        batchQueries.map(async (q, bIdx) => {
+          try {
+            const res = await runSingleSearchWithTimeoutAndRetry(
+              q,
+              agentPhaseSignal,
+              'agent_search',
+              `search_${i + bIdx + 1}`,
+            );
+            if (!signal?.aborted && !eightMinLimitReached) {
+              completedSearches++;
+              onStatusUpdate?.(
+                `Genesis: ARCHITECT done. Searching (${completedSearches}/${totalSearchesToRun})...`,
+              );
+            }
+            return { key: q.toLowerCase().trim(), res };
+          } catch {
+            if (!signal?.aborted && !eightMinLimitReached) {
+              completedSearches++;
+              onStatusUpdate?.(
+                `Genesis: ARCHITECT done. Searching (${completedSearches}/${totalSearchesToRun})...`,
+              );
+            }
+            return {
+              key: q.toLowerCase().trim(),
+              res: { results: [] as ParallaxToolRawResult[], sourceLabel: 'Live Web', ok: false },
+            };
+          }
         }),
       );
       for (const item of batchResults) {
@@ -931,40 +1109,65 @@ Return the JSON object with "plan" and exactly ${agentCount} "agents".`;
 
       let response: { text?: string; content?: string; model?: string; providerName?: string } | null = null;
       let rawText = '';
+      let retriedOnce = false;
 
       try {
-        if (signal?.aborted) throw new Error('Swarm aborted');
+        if (agentPhaseSignal.aborted) throw new Error('Swarm aborted');
         try {
-          response = await api.jarvisAgentCall({
-            agentId: `genesis_turn_${agent.id}`,
-            messages: [
-              { role: 'system', content: agent.systemInstruction },
-              { role: 'user', content: userPrompt },
-            ],
-            providerConfig: provider,
-            temperature: 0.7,
-            maxTokens: 700,
-            timeoutMs: 30000,
-            signal,
-          });
+          response = await withHardTimeout(
+            (callSignal) =>
+              api.jarvisAgentCall({
+                agentId: `genesis_turn_${agent.id}`,
+                messages: [
+                  { role: 'system', content: agent.systemInstruction },
+                  { role: 'user', content: userPrompt },
+                ],
+                providerConfig: provider,
+                temperature: 0.7,
+                maxTokens: 700,
+                timeoutMs: 40000,
+                signal: callSignal,
+              }),
+            40000,
+            agentPhaseSignal,
+            { step: 'agent_turn', agentId: agent.id, model },
+          );
           rawText = (response.text || response.content || '').trim();
         } catch (err1) {
-          if (signal?.aborted) throw err1;
+          if (agentPhaseSignal.aborted) throw err1;
+          if (isTimeoutError(err1)) {
+            return createAgentFallback('timeout after 40s');
+          }
           if (isNetworkOrRateLimitError(err1)) {
-            await abortableSleep(1500, signal);
-            response = await api.jarvisAgentCall({
-              agentId: `genesis_turn_${agent.id}_netretry`,
-              messages: [
-                { role: 'system', content: agent.systemInstruction },
-                { role: 'user', content: userPrompt },
-              ],
-              providerConfig: provider,
-              temperature: 0.7,
-              maxTokens: 700,
-              timeoutMs: 30000,
-              signal,
-            });
-            rawText = (response?.text || response?.content || '').trim();
+            retriedOnce = true;
+            await abortableSleep(1500, agentPhaseSignal);
+            try {
+              response = await withHardTimeout(
+                (callSignal) =>
+                  api.jarvisAgentCall({
+                    agentId: `genesis_turn_${agent.id}_netretry`,
+                    messages: [
+                      { role: 'system', content: agent.systemInstruction },
+                      { role: 'user', content: userPrompt },
+                    ],
+                    providerConfig: provider,
+                    temperature: 0.7,
+                    maxTokens: 700,
+                    timeoutMs: 40000,
+                    signal: callSignal,
+                  }),
+                40000,
+                agentPhaseSignal,
+                { step: 'agent_turn_retry', agentId: agent.id, model },
+              );
+              rawText = (response?.text || response?.content || '').trim();
+            } catch (retryErr) {
+              if (agentPhaseSignal.aborted) throw retryErr;
+              if (isTimeoutError(retryErr)) {
+                return createAgentFallback('timeout after 40s');
+              }
+              return createAgentFallback(retryErr instanceof Error ? retryErr.message : String(retryErr));
+            }
           } else {
             return createAgentFallback(err1 instanceof Error ? err1.message : String(err1));
           }
@@ -973,22 +1176,29 @@ Return the JSON object with "plan" and exactly ${agentCount} "agents".`;
         let parsed = parseGenesisTag(rawText, agent.mood || '💡');
         let fullText = parsed.cleanText.trim();
 
-        if (countWords(fullText) < 20 && !signal?.aborted) {
+        if (countWords(fullText) < 20 && !retriedOnce && !agentPhaseSignal.aborted) {
+          retriedOnce = true;
           const { provider: retryProvider } = resolveParallaxProviderConfig(agent, 1100);
           const retryUserPrompt = `${userPrompt}\n\nYour last reply was too short. Write at least 60 words.`;
           try {
-            const retryRes = await api.jarvisAgentCall({
-              agentId: `genesis_turn_${agent.id}_shortretry`,
-              messages: [
-                { role: 'system', content: agent.systemInstruction },
-                { role: 'user', content: retryUserPrompt },
-              ],
-              providerConfig: retryProvider,
-              temperature: 0.7,
-              maxTokens: 1100,
-              timeoutMs: 30000,
-              signal,
-            });
+            const retryRes = await withHardTimeout(
+              (callSignal) =>
+                api.jarvisAgentCall({
+                  agentId: `genesis_turn_${agent.id}_shortretry`,
+                  messages: [
+                    { role: 'system', content: agent.systemInstruction },
+                    { role: 'user', content: retryUserPrompt },
+                  ],
+                  providerConfig: retryProvider,
+                  temperature: 0.7,
+                  maxTokens: 1100,
+                  timeoutMs: 40000,
+                  signal: callSignal,
+                }),
+              40000,
+              agentPhaseSignal,
+              { step: 'agent_turn_short_retry', agentId: agent.id, model },
+            );
             const retryRaw = (retryRes.text || retryRes.content || '').trim();
             const retryParsed = parseGenesisTag(retryRaw, agent.mood || '💡');
             if (countWords(retryParsed.cleanText) >= 20) {
@@ -999,7 +1209,10 @@ Return the JSON object with "plan" and exactly ${agentCount} "agents".`;
               return createAgentFallback('reply under 20 words after retry');
             }
           } catch (retryErr) {
-            if (signal?.aborted) throw retryErr;
+            if (agentPhaseSignal.aborted) throw retryErr;
+            if (isTimeoutError(retryErr)) {
+              return createAgentFallback('timeout after 40s');
+            }
             return createAgentFallback(retryErr instanceof Error ? retryErr.message : String(retryErr));
           }
         }
@@ -1038,7 +1251,10 @@ Return the JSON object with "plan" and exactly ${agentCount} "agents".`;
             : undefined,
         };
       } catch (err) {
-        if (signal?.aborted) throw err;
+        if (agentPhaseSignal.aborted) throw err;
+        if (isTimeoutError(err)) {
+          return createAgentFallback('timeout after 40s');
+        }
         return createAgentFallback(err instanceof Error ? err.message : String(err));
       }
     };
@@ -1048,20 +1264,30 @@ Return the JSON object with "plan" and exactly ${agentCount} "agents".`;
 
     for (let i = 0; i < genesisAgents.length; i += AGENT_BATCH_SIZE) {
       if (signal?.aborted) return;
+      if (eightMinLimitReached) break;
+
       const batchAgents = genesisAgents.slice(i, i + AGENT_BATCH_SIZE);
       const batchPromises = batchAgents.map(async (ag, bIdx) => {
         const idx = i + bIdx;
-        const msg = await executeSingleGenesisAgent(ag, blueprints[idx], agentSearchEntries[idx]);
-        if (!signal?.aborted) {
-          answeredCount++;
-          agentMessages.push(msg);
-          allMessages.push(msg);
-          onMessage(msg);
-          onStatusUpdate?.(`Genesis: agents answering (${answeredCount}/${agentCount})...`);
+        try {
+          const msg = await executeSingleGenesisAgent(ag, blueprints[idx], agentSearchEntries[idx]);
+          if (!signal?.aborted && !eightMinLimitReached) {
+            answeredCount++;
+            agentMessages.push(msg);
+            allMessages.push(msg);
+            onMessage(msg);
+            onStatusUpdate?.(`Genesis: agents answering (${answeredCount}/${agentCount})...`);
+          }
+          return msg;
+        } catch (batchErr) {
+          if (signal?.aborted || eightMinLimitReached) {
+            return null;
+          }
+          throw batchErr;
         }
-        return msg;
       });
       await Promise.all(batchPromises);
+      if (eightMinLimitReached) break;
     }
 
     if (signal?.aborted) return;
@@ -1069,7 +1295,12 @@ Return the JSON object with "plan" and exactly ${agentCount} "agents".`;
     // =========================================================================
     // STEP 7: ZENITH Final Synthesis (Slot 1)
     // =========================================================================
-    onStatusUpdate?.('Genesis: ZENITH writing final synthesis...');
+    const { provider: zenithProvider, model: zenithModel } = resolveParallaxProviderConfig(
+      zenithConfig,
+      1000,
+    );
+
+    onStatusUpdate?.(`Genesis: ZENITH writing the final answer (${zenithModel})...`);
 
     // Collect unique sources across all searches (max 10 for prompt, up to 8 for summary)
     const uniqueSources: Array<{ title: string; url: string; domain: string }> = [];
@@ -1103,11 +1334,6 @@ Return the JSON object with "plan" and exactly ${agentCount} "agents".`;
       .filter((m) => !m.fallbackReason)
       .map((m) => `${m.agentName} (${m.role || 'Specialist'}): ${m.text.slice(0, 450)}`)
       .join('\n\n');
-
-    const { provider: zenithProvider, model: zenithModel } = resolveParallaxProviderConfig(
-      zenithConfig,
-      1000,
-    );
 
     const zenithSystemPrompt = `Today is ${todayDate}. You are ZENITH, the final answer synthesizer of the Genesis Swarm.
 Rules:
@@ -1151,18 +1377,24 @@ Write the final synthesis using the 4 required sections: FINAL ANSWER:, KEY FACT
     let zenithRespProvider = zenithProvider?.name || 'Built-in AI';
 
     try {
-      const zRes = await api.jarvisAgentCall({
-        agentId: 'genesis_zenith_final',
-        messages: [
-          { role: 'system', content: zenithSystemPrompt },
-          { role: 'user', content: zenithUserPrompt },
-        ],
-        providerConfig: zenithProvider,
-        temperature: 0.4,
-        maxTokens: 1000,
-        timeoutMs: 40000,
+      const zRes = await withHardTimeout(
+        (callSignal) =>
+          api.jarvisAgentCall({
+            agentId: 'genesis_zenith_final',
+            messages: [
+              { role: 'system', content: zenithSystemPrompt },
+              { role: 'user', content: zenithUserPrompt },
+            ],
+            providerConfig: zenithProvider,
+            temperature: 0.4,
+            maxTokens: 1000,
+            timeoutMs: 50000,
+            signal: callSignal,
+          }),
+        50000,
         signal,
-      });
+        { step: 'zenith_synthesis', agentId: 'zenith', model: zenithModel },
+      );
       const rawZ = (zRes.text || zRes.content || '').trim();
       if (countWords(rawZ) >= 15) {
         zenithText = rawZ;
@@ -1273,5 +1505,10 @@ Write the final synthesis using the 4 required sections: FINAL ANSWER:, KEY FACT
     }
     console.error('[Genesis Swarm] Execution error:', err);
     onError?.(err instanceof Error ? err.message : 'Unknown error during Genesis Swarm execution.');
+  } finally {
+    clearTimeout(eightMinTimer);
+    if (signal) {
+      signal.removeEventListener('abort', onUserAbort);
+    }
   }
 }
