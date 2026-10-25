@@ -2142,15 +2142,26 @@
 .jarvis-hud-card {
   position: relative;
   border-radius: 16px;
-  background: #0b0d11;
-  border: 1px solid #26292e;
-  box-shadow: 0 10px 36px rgba(0, 0, 0, 0.65);
   overflow: hidden;
-  transition: border-color 0.25s ease, box-shadow 0.25s ease;
+  transition: background-color 0.25s ease, border-color 0.25s ease, box-shadow 0.25s ease;
 }
 
-.jarvis-hud-card:hover {
-  border-color: #33373e;
+.theme-minimal .jarvis-hud-card {
+  background: #0d0d10;
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  box-shadow: 0 8px 30px rgba(0, 0, 0, 0.45);
+}
+
+.theme-classic .jarvis-hud-card {
+  background: #161922;
+  border: 1px solid rgba(255, 255, 255, 0.12);
+  box-shadow: 0 12px 36px rgba(0, 0, 0, 0.5);
+}
+
+.theme-fulldark .jarvis-hud-card {
+  background: #000000;
+  border: 1px solid #26292e;
+  box-shadow: 0 10px 36px rgba(0, 0, 0, 0.85);
 }
 
 .jarvis-category-card {
@@ -2164,11 +2175,25 @@
   overflow: hidden;
 }
 
+.theme-minimal .jarvis-category-card {
+  background: #111115;
+  border-color: rgba(255, 255, 255, 0.08);
+}
+
+.theme-classic .jarvis-category-card {
+  background: #1c202b;
+  border-color: rgba(255, 255, 255, 0.12);
+}
+
+.theme-fulldark .jarvis-category-card {
+  background: #050507;
+  border-color: #26292e;
+}
+
 .jarvis-category-card:hover {
   transform: translateY(-2px);
-  background: #121418;
-  border-color: rgba(34, 211, 238, 0.45);
-  box-shadow: 0 10px 28px rgba(0, 0, 0, 0.65);
+  border-color: rgba(255, 255, 255, 0.22);
+  box-shadow: 0 10px 28px rgba(0, 0, 0, 0.55);
 }
 
 .jarvis-corner-brackets::before,
@@ -2251,13 +2276,10 @@
   }
 }
 
-/* JARVIS Synthesis Card (Parallax Dark Card Theme) */
+/* JARVIS Synthesis Card (Defers to Parallax theme classes on element) */
 .jarvis-synthesis-glow-card {
   position: relative;
-  background: #0b0d11;
-  border: 1px solid #26292e;
-  box-shadow: 0 12px 36px rgba(0, 0, 0, 0.72);
-  transition: border-color 0.25s ease, box-shadow 0.25s ease;
+  transition: background-color 0.25s ease, border-color 0.25s ease, box-shadow 0.25s ease;
 }
 
 /* JARVIS Synthesis Theme 2: Plain Black (flat black, minimal border) */
@@ -2280,7 +2302,6 @@
   flex-wrap: wrap;
   gap: 8px;
   background: transparent;
-  border-bottom: 1px solid #26292e;
   padding: 0 0 12px 0;
   margin-bottom: 16px;
 }
@@ -2289,8 +2310,6 @@
   display: flex;
   align-items: center;
   gap: 4px;
-  background: #121418;
-  border: 1px solid #26292e;
   border-radius: 9999px;
   padding: 3px 6px;
 }
@@ -2349,16 +2368,14 @@
   .jarvis-hud-ticker {
     font-size: 9.5px !important;
     gap: 6px !important;
-    padding-bottom: 8px !important;
   }
 
   .jarvis-hud-main-row {
-    gap: 10px !important;
-    padding-top: 8px !important;
+    gap: 8px !important;
   }
 
   .jarvis-hud-title-box h2 {
-    font-size: 14px !important;
+    font-size: 13px !important;
   }
 
   .jarvis-hud-title-box p {
@@ -2370,13 +2387,13 @@
     display: grid !important;
     grid-template-columns: repeat(2, minmax(0, 1fr)) !important;
     gap: 4px !important;
-    border-radius: 14px !important;
+    border-radius: 12px !important;
   }
 
   .jarvis-hud-switcher-btn {
     justify-content: center !important;
-    padding: 6px 8px !important;
-    font-size: 11px !important;
+    padding: 5px 8px !important;
+    font-size: 10.5px !important;
     white-space: nowrap !important;
   }
 
@@ -2455,14 +2472,13 @@
      4.4. JARVIS Answer / Synthesis Box Mobile Viewport Containment
      Ensures the answer & synthesis box container fits 100%
      inside the mobile viewport with balanced margins on both sides.
-     Guards against fixed widths, negative margins, and unconstrained
-     elements causing horizontal overflow.
+     Uses overflow-x: clip so sticky bottom composer keeps working.
      -------------------------------------------------- */
   .main-content-flow {
     width: 100% !important;
     max-width: 100vw !important;
     box-sizing: border-box !important;
-    overflow-x: hidden !important;
+    overflow-x: clip !important;
     margin-left: auto !important;
     margin-right: auto !important;
   }
@@ -2547,9 +2563,8 @@
     width: 100% !important;
     max-width: 100% !important;
     box-sizing: border-box !important;
-    padding: 8px 10px !important;
+    padding: 0 0 10px 0 !important;
     margin-bottom: 14px !important;
-    border-radius: 12px !important;
     gap: 6px !important;
   }
 

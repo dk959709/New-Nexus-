@@ -8,6 +8,7 @@ import {
   Clock,
   Sparkles,
 } from 'lucide-react';
+import { getSavedParallaxTheme, type ParallaxTheme } from '@/components/parallax/ParallaxSettings';
 import type { JarvisSystemConfig } from '@/types';
 
 interface JarvisHudHeaderProps {
@@ -16,6 +17,7 @@ interface JarvisHudHeaderProps {
   activeView: 'chat' | 'topology' | 'categories' | 'reactor';
   onSelectView: (view: 'chat' | 'topology' | 'categories' | 'reactor') => void;
   messageCount: number;
+  theme?: ParallaxTheme;
 }
 
 export function JarvisHudHeader({
@@ -24,9 +26,11 @@ export function JarvisHudHeader({
   activeView,
   onSelectView,
   messageCount,
+  theme: propTheme,
 }: JarvisHudHeaderProps) {
   const [timeStr, setTimeStr] = useState('');
   const [fps] = useState('60.0');
+  const activeTheme: ParallaxTheme = propTheme || getSavedParallaxTheme();
 
   useEffect(() => {
     const updateTime = () => {
@@ -49,141 +53,132 @@ export function JarvisHudHeader({
     ? Object.values(config.agents).filter((a) => a?.enabled).length
     : 10;
 
+  const hairlineBarClass =
+    activeTheme === 'classic'
+      ? 'rounded-2xl border border-cyan-500/20 bg-[#0a101d]/90 backdrop-blur-xl'
+      : activeTheme === 'minimal'
+      ? 'rounded-2xl border border-zinc-800/90 bg-[#121318]'
+      : 'rounded-2xl border border-[#22252a] bg-[#07080a]';
+
+  const pillGroupClass =
+    activeTheme === 'classic'
+      ? 'bg-[#0b1220]/90 border border-cyan-500/20'
+      : activeTheme === 'minimal'
+      ? 'bg-[#16171d] border border-zinc-800'
+      : 'bg-[#121418] border border-[#26292e]';
+
   return (
     <div
-      className={`jarvis-hud-card rounded-2xl bg-[#0b0d11] px-4 py-3 mb-4 transition-all ${
-        isRunning
-          ? 'border border-cyan-500/45 shadow-[0_0_24px_rgba(34,211,238,0.12)]'
-          : 'border border-[#26292e]'
+      className={`jarvis-hud-card px-3 py-2 transition-all ${hairlineBarClass} ${
+        isRunning ? 'ring-1 ring-cyan-400/50' : ''
       }`}
     >
-      {/* Top Telemetry Ticker */}
-      <div className="jarvis-hud-ticker flex flex-wrap items-center justify-between gap-2.5 pb-2.5 border-b border-[#26292e] text-[11px] font-mono text-[#71767b]">
-        <div className="flex items-center gap-3.5 flex-wrap">
+      <div className="jarvis-hud-main-row flex flex-wrap items-center justify-between gap-2">
+        {/* Left: Compact Telemetry Strip */}
+        <div className="jarvis-hud-ticker flex items-center gap-2 sm:gap-2.5 flex-wrap text-[10px] sm:text-[11px] font-mono text-[#71767b] min-w-0">
           <div className="flex items-center gap-1.5">
             <span
-              style={{
-                display: 'inline-block',
-                width: '7px',
-                height: '7px',
-                borderRadius: '50%',
-                background: isRunning ? '#38bdf8' : '#22d3ee',
-                boxShadow: isRunning
-                  ? '0 0 12px #38bdf8, 0 0 20px #22d3ee'
-                  : '0 0 6px #22d3ee',
-                animation: isRunning ? 'jarvisCorePulse 1.5s ease-in-out infinite' : 'none',
-              }}
+              className={`w-1.5 h-1.5 rounded-full shrink-0 ${
+                isRunning ? 'bg-cyan-400 animate-ping' : 'bg-emerald-400'
+              }`}
             />
-            <span className="text-cyan-400 font-bold tracking-wider">
+            <span className={isRunning ? 'text-cyan-300 font-semibold' : 'text-[#e7e9ea] font-semibold'}>
               {isRunning ? 'PIPELINE ENGAGED' : 'SYSTEM ONLINE'}
             </span>
           </div>
 
-          <div className="flex items-center gap-1.5">
-            <Radio size={12} className="text-cyan-400" />
+          <span className="text-[#3f444c]" aria-hidden="true">·</span>
+
+          <div className="flex items-center gap-1" title="Active Neural Channels">
+            <Radio size={11} className="text-[#8b9097]" />
             <span>
-              NEURAL CHANNELS: <strong className="text-[#e7e9ea]">{activeAgentsCount}/10</strong>
+              CHANNELS: <strong className="text-[#e7e9ea]">{activeAgentsCount}/10</strong>
             </span>
           </div>
 
-          <div className="flex items-center gap-1.5">
-            <Cpu size={12} className="text-cyan-400" />
+          <span className="hidden md:inline text-[#3f444c]" aria-hidden="true">·</span>
+
+          <div className="hidden md:flex items-center gap-1" title="Orchestrator Version">
+            <Cpu size={11} className="text-[#8b9097]" />
             <span>
               ORCHESTRATOR: <strong className="text-[#e7e9ea]">v5.2.0-PRO</strong>
             </span>
           </div>
 
-          <div className="flex items-center gap-1.5">
-            <Activity size={12} className="text-sky-400" />
+          <span className="hidden lg:inline text-[#3f444c]" aria-hidden="true">·</span>
+
+          <div className="hidden lg:flex items-center gap-1" title="Refresh Rate">
+            <Activity size={11} className="text-[#8b9097]" />
             <span>
               REFRESH: <strong className="text-[#e7e9ea]">{fps} Hz</strong>
             </span>
           </div>
-        </div>
 
-        <div className="flex items-center gap-3">
-          <div className="flex items-center gap-1.5 text-cyan-400">
-            <Clock size={12} />
-            <span>SYS_TIME: {timeStr || '00:00:00.00'}</span>
+          <span className="hidden sm:inline text-[#3f444c]" aria-hidden="true">·</span>
+
+          <div className="hidden sm:flex items-center gap-1 text-[#8b9097] tabular-nums">
+            <Clock size={11} />
+            <span>{timeStr || '00:00:00.00'}</span>
           </div>
-          <span className="bg-[#121418] border border-[#26292e] px-2 py-0.5 rounded-full text-[10px] text-[#e7e9ea] font-semibold">
+
+          <span className="text-[#3f444c]" aria-hidden="true">·</span>
+
+          <span className="text-[10px] text-[#8b9097] font-mono tabular-nums">
             {messageCount} {messageCount === 1 ? 'SESSION' : 'SESSIONS'}
           </span>
         </div>
-      </div>
 
-      {/* Main Control & Visual Switcher Row */}
-      <div className="jarvis-hud-main-row flex flex-wrap items-center justify-between gap-3 pt-2.5">
-        <div className="jarvis-hud-title-box flex items-center gap-2.5">
-          <div className="w-8 h-8 rounded-xl bg-[#121418] border border-[#26292e] flex items-center justify-center shrink-0">
-            <Zap size={16} className="text-cyan-400" />
-          </div>
-          <div>
-            <div className="flex items-center gap-2">
-              <h2 className="m-0 text-sm font-bold text-[#e7e9ea] tracking-tight">
-                JARVIS HUD MATRIX
-              </h2>
-              <span className="text-[10px] font-mono bg-cyan-500/10 border border-cyan-500/30 text-cyan-300 px-1.5 py-0.5 rounded font-bold">
-                MULTI
-              </span>
-            </div>
-            <p className="m-0 mt-0.5 text-[11px] text-[#71767b]">
-              Autonomous 10-Agent Reasoning & Knowledge Synthesis Network
-            </p>
-          </div>
-        </div>
-
-        {/* Visual Mode Navigation */}
-        <div className="jarvis-hud-switcher flex items-center flex-wrap gap-1 bg-[#121418] border border-[#26292e] rounded-full p-1">
+        {/* Right: 4 View Switcher Pills (Parallax Tab Style) */}
+        <div className={`jarvis-hud-switcher flex items-center flex-wrap gap-0.5 rounded-full p-0.5 ${pillGroupClass}`}>
           <button
             type="button"
-            className={`jarvis-hud-switcher-btn flex items-center gap-1.5 px-3 py-1 rounded-full text-[11px] font-semibold transition-all cursor-pointer ${
+            className={`jarvis-hud-switcher-btn flex items-center gap-1 px-2.5 py-1 rounded-full text-[10.5px] sm:text-[11px] font-semibold transition-colors cursor-pointer ${
               activeView === 'chat'
-                ? 'bg-cyan-500/15 text-cyan-300 border border-cyan-500/35'
-                : 'text-[#8b98a5] hover:text-white hover:bg-white/[0.04] border border-transparent'
+                ? 'bg-white text-black'
+                : 'text-[#8b9097] hover:text-white hover:bg-white/[0.06]'
             }`}
             onClick={() => onSelectView('chat')}
           >
-            <Sparkles size={12} />
+            <Sparkles size={11} />
             <span>Chat Console</span>
           </button>
 
           <button
             type="button"
-            className={`jarvis-hud-switcher-btn flex items-center gap-1.5 px-3 py-1 rounded-full text-[11px] font-semibold transition-all cursor-pointer ${
+            className={`jarvis-hud-switcher-btn flex items-center gap-1 px-2.5 py-1 rounded-full text-[10.5px] sm:text-[11px] font-semibold transition-colors cursor-pointer ${
               activeView === 'topology'
-                ? 'bg-cyan-500/15 text-cyan-300 border border-cyan-500/35'
-                : 'text-[#8b98a5] hover:text-white hover:bg-white/[0.04] border border-transparent'
+                ? 'bg-white text-black'
+                : 'text-[#8b9097] hover:text-white hover:bg-white/[0.06]'
             }`}
             onClick={() => onSelectView('topology')}
           >
-            <Cpu size={12} />
+            <Cpu size={11} />
             <span>10-Agent Topology</span>
           </button>
 
           <button
             type="button"
-            className={`jarvis-hud-switcher-btn flex items-center gap-1.5 px-3 py-1 rounded-full text-[11px] font-semibold transition-all cursor-pointer ${
+            className={`jarvis-hud-switcher-btn flex items-center gap-1 px-2.5 py-1 rounded-full text-[10.5px] sm:text-[11px] font-semibold transition-colors cursor-pointer ${
               activeView === 'categories'
-                ? 'bg-cyan-500/15 text-cyan-300 border border-cyan-500/35'
-                : 'text-[#8b98a5] hover:text-white hover:bg-white/[0.04] border border-transparent'
+                ? 'bg-white text-black'
+                : 'text-[#8b9097] hover:text-white hover:bg-white/[0.06]'
             }`}
             onClick={() => onSelectView('categories')}
           >
-            <Shield size={12} />
+            <Shield size={11} />
             <span>Category Matrix</span>
           </button>
 
           <button
             type="button"
-            className={`jarvis-hud-switcher-btn flex items-center gap-1.5 px-3 py-1 rounded-full text-[11px] font-semibold transition-all cursor-pointer ${
+            className={`jarvis-hud-switcher-btn flex items-center gap-1 px-2.5 py-1 rounded-full text-[10.5px] sm:text-[11px] font-semibold transition-colors cursor-pointer ${
               activeView === 'reactor'
-                ? 'bg-cyan-500/15 text-cyan-300 border border-cyan-500/35'
-                : 'text-[#8b98a5] hover:text-white hover:bg-white/[0.04] border border-transparent'
+                ? 'bg-white text-black'
+                : 'text-[#8b9097] hover:text-white hover:bg-white/[0.06]'
             }`}
             onClick={() => onSelectView('reactor')}
           >
-            <Zap size={12} />
+            <Zap size={11} />
             <span>Neural Core</span>
           </button>
         </div>
