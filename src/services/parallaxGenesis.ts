@@ -743,15 +743,25 @@ function trimZenithMarkdown(text: string): string {
   return raw;
 }
 
+function stripCitationBrackets(text: string): string {
+  let result = text || '';
+  const citationRegex = /\s*\[\s*\d+(?:\s*[,;/–-]\s*[^\]]*)?\]/g;
+  let prev = '';
+  while (result !== prev) {
+    prev = result;
+    result = result.replace(citationRegex, '');
+  }
+  return result
+    .replace(/\s*\[[^\]]*$/, '')
+    .replace(/\s+([.,!?;:])/g, '$1')
+    .replace(/\s{2,}/g, ' ')
+    .trim();
+}
+
 function extractFirstSentence(text: string): string {
   let clean = (text || '').replace(/\s+/g, ' ').trim();
   if (!clean) return '';
-  // Remove citation markers like [1] or [2, 9] and any trailing unfinished bracket
-  clean = clean
-    .replace(/\s*\[\s*\d+(?:\s*[,;/-]\s*\d+)*\s*\]/g, '')
-    .replace(/\s*\[[^\]]*$/, '')
-    .replace(/\s+([.!?])/g, '$1')
-    .trim();
+  clean = stripCitationBrackets(clean);
   if (!clean) return '';
 
   // Match up to the first sentence-ending . ! or ? followed by space + uppercase/digit/quote or end of text,
@@ -760,15 +770,136 @@ function extractFirstSentence(text: string): string {
     /^(?:[^[\]]|\[[^\]]*\])*?(?<!\b(?:vs|Vs|VS|Dr|Mr|Mrs|Ms|Prof|Sr|Jr|St|Fig|No|Vol|Inc|Ltd|Co|Corp|etc|al|e\.g|i\.e|U\.S|U\.K))[.!?](?=\s+[A-Z0-9"']|\s*$)/;
   const match = clean.match(sentenceRegex) || clean.match(/^[\s\S]*?[.!?](?=\s+[A-Z0-9"']|\s*$)/);
   if (match && match[0].trim().length >= 15) {
-    return match[0]
-      .replace(/\s*\[\s*\d+(?:\s*[,;/-]\s*\d+)*\s*\]/g, '')
-      .replace(/\s*\[[^\]]*$/, '')
-      .trim();
+    return stripCitationBrackets(match[0]);
   }
   if (clean.length > 180) {
-    return clean.slice(0, 177).replace(/\s*\[[^\]]*$/, '').trim() + '…';
+    return stripCitationBrackets(clean.slice(0, 177)) + '…';
   }
   return clean;
+}
+
+const HIGH_TIER_EXACT_OR_SUBDOMAINS = [
+  'arxiv.org',
+  'nasa.gov',
+  'nature.com',
+  'science.org',
+  'openai.com',
+  'anthropic.com',
+  'deepmind.google',
+  'blog.google',
+  'ai.google.dev',
+  'github.com',
+  'who.int',
+  'un.org',
+];
+
+const LOW_TIER_EXACT_OR_SUBDOMAINS = [
+  'youtube.com',
+  'youtu.be',
+  'reddit.com',
+  'x.com',
+  'twitter.com',
+  'facebook.com',
+  'tiktok.com',
+  'instagram.com',
+  'quora.com',
+  'medium.com',
+  'pinterest.com',
+];
+
+function getGenesisSourceTier(domainOrUrl: string): 'high' | 'medium' | 'low' {
+  let host = (domainOrUrl || '').toLowerCase().trim();
+  if (!host) return 'medium';
+  if (host.includes('://')) {
+    try {
+      host = new URL(host).hostname.toLowerCase();
+    } catch {
+      host = host.split('/')[2] || host;
+    }
+  } else {
+    host = host.split('/')[0];
+  }
+  host = host.replace(/^www\./, '').trim();
+  if (!host) return 'medium';
+
+  if (
+    host.endsWith('.gov') ||
+    host.endsWith('.edu') ||
+    host.startsWith('developers.') ||
+    host.startsWith('docs.') ||
+    host.includes('.developers.') ||
+    host.includes('.docs.') ||
+    HIGH_TIER_EXACT_OR_SUBDOMAINS.some((d) => host === d || host.endsWith(`.${d}`))
+  ) {
+    return 'high';
+  }
+
+  if (LOW_TIER_EXACT_OR_SUBDOMAINS.some((d) => host === d || host.endsWith(`.${d}`))) {
+    return 'low';
+  }
+
+  return 'medium';
+}
+
+function findGlobalSourceNumber(
+  localSource: ParallaxToolRawResult | undefined,
+  globalSources: Array<{ url: string; title: string }>,
+): number | null {
+  if (!localSource) return null;
+  const localUrl = (localSource.url || '').toLowerCase().trim();
+  if (localUrl) {
+    const byUrlIdx = globalSources.findIndex(
+      (g) => (g.url || '').toLowerCase().trim() === localUrl,
+    );
+    if (byUrlIdx !== -1) return byUrlIdx + 1;
+  }
+  const localTitle = (localSource.title || '').toLowerCase().trim();
+  if (localTitle) {
+    const byTitleIdx = globalSources.findIndex(
+      (g) => (g.title || '').toLowerCase().trim() === localTitle,
+    );
+    if (byTitleIdx !== -1) return byTitleIdx + 1;
+  }
+  return null;
+}
+
+function remapAgentCitationsToGlobal(
+  text: string,
+  localResults: ParallaxToolRawResult[],
+  globalSources: Array<{ url: string; title: string }>,
+): string {
+  if (!text) return '';
+  const replaced = text.replace(/\[\s*\d+(?:\s*[,;/]\s*[^\]]*)?\]/g, (fullBracket) => {
+    const inner = fullBracket.slice(1, -1);
+    const parts = inner.split(/[,;/]/);
+    const globalNums: number[] = [];
+
+    for (const rawPart of parts) {
+      const token = rawPart.trim();
+      if (!/^\d+$/.test(token)) {
+        // Ignore non-numeric citation parts like "youtube.com" in "[4, youtube.com]"
+        continue;
+      }
+      const localNum = parseInt(token, 10);
+      if (Number.isNaN(localNum) || localNum < 1 || localNum > localResults.length) {
+        continue;
+      }
+      const globalNum = findGlobalSourceNumber(localResults[localNum - 1], globalSources);
+      if (globalNum !== null && !globalNums.includes(globalNum)) {
+        globalNums.push(globalNum);
+      }
+    }
+
+    if (globalNums.length === 0) {
+      return '';
+    }
+    return `[${globalNums.join(', ')}]`;
+  });
+
+  return replaced
+    .replace(/\s+([.,!?;:])/g, '$1')
+    .replace(/\s{2,}/g, ' ')
+    .trim();
 }
 
 const TOPIC_STOP_WORDS = new Set([
@@ -1604,6 +1735,12 @@ Return the JSON object with "plan" and exactly ${agentCount} "agents".`;
     }
 
     const topicKeywords = extractTopicKeywords(cleanTopic);
+    const tierRankMap: Record<'high' | 'medium' | 'low', number> = {
+      high: 3,
+      medium: 2,
+      low: 1,
+    };
+
     const scoredSources = rawUniqueSources
       .map((s) => {
         const haystack = `${s.title} ${s.url} ${s.snippet}`.toLowerCase();
@@ -1613,28 +1750,60 @@ Return the JSON object with "plan" and exactly ${agentCount} "agents".`;
             score++;
           }
         }
-        return { ...s, score };
+        const tier = getGenesisSourceTier(s.domain || s.url);
+        return { ...s, score, tier, tierRank: tierRankMap[tier] };
       })
-      .sort((a, b) => b.score - a.score || a.origIdx - b.origIdx);
+      .sort(
+        (a, b) =>
+          b.score - a.score || b.tierRank - a.tierRank || a.origIdx - b.origIdx,
+      );
 
     const positiveScoredSources = scoredSources.filter((s) => s.score > 0);
-    const uniqueSources =
+    const baseUniqueSources =
       positiveScoredSources.length >= 3 ? positiveScoredSources : scoredSources;
 
+    // When there are at least 6 sources, put low-tier sources last
+    const uniqueSources =
+      baseUniqueSources.length >= 6
+        ? [
+            ...baseUniqueSources.filter((s) => s.tier !== 'low'),
+            ...baseUniqueSources.filter((s) => s.tier === 'low'),
+          ]
+        : baseUniqueSources;
+
     const sourcesForZenith = uniqueSources
-      .slice(0, 10)
-      .map((s, idx) => `[${idx + 1}] ${s.title} - ${s.domain}`)
+      .map((s, idx) => {
+        const shortSnippet = (s.snippet || '').replace(/\s+/g, ' ').trim().slice(0, 110);
+        return `[${idx + 1}] ${s.title} - ${s.domain} (${s.tier})${
+          shortSnippet ? `: ${shortSnippet}` : ''
+        }`;
+      })
       .join('\n');
 
     const agentExcerptsForZenith = agentMessages
       .filter((m) => !m.fallbackReason)
-      .map((m) => `${m.agentName} (${m.role || 'Specialist'}): ${m.text.slice(0, 450)}`)
+      .map((m) => {
+        const agentIdx = genesisAgents.findIndex((ag) => ag.id === m.agentId);
+        const localResults =
+          agentIdx !== -1 && agentSearchEntries[agentIdx]
+            ? agentSearchEntries[agentIdx].results
+            : [];
+        const remappedText = remapAgentCitationsToGlobal(
+          m.text,
+          localResults,
+          uniqueSources,
+        );
+        const excerpt = remappedText.slice(0, 450).replace(/\s*\[[^\]]*$/, '').trim();
+        return `${m.agentName} (${m.role || 'Specialist'}): ${excerpt}`;
+      })
       .join('\n\n');
 
     const zenithSystemPrompt = `Today is ${todayDate}. You are ZENITH, the final answer synthesizer of the Genesis Swarm.
 Rules:
 1. Use ONLY the facts and findings provided by the ${agentCount} agents and the verified sources below. Do NOT invent facts.
-2. Write MARKDOWN with this exact structure and these exact headings:
+2. Cite ONLY the numbers [n] from the UNIQUE SOURCES list. Every fact in Key Facts must have a citation that supports it.
+3. Prefer high-tier sources; mention if an important claim only comes from low-tier sources (e.g. YouTube).
+4. Write MARKDOWN with this exact structure and these exact headings:
 ## Final Answer
 (short intro: 3-6 clear sentences directly answering the topic)
 ## Key Facts
@@ -1783,7 +1952,7 @@ Write the final synthesis in Markdown using the required headings: ## Final Answ
       title: s.title,
       url: s.url,
       domain: s.domain,
-      tier: 'medium',
+      tier: s.tier,
     }));
 
     const summary: ParallaxSummary = {
