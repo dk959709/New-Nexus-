@@ -642,6 +642,17 @@ export interface ParallaxMessage {
   fallbackReason?: string;
   side?: string;
   sideLabel?: string;
+  genesisTeamSource?: 'ai' | 'repaired' | 'fallback';
+  genesisBlueprint?: Array<{
+    name: string;
+    role: string;
+    emoji: string;
+    color: string;
+    task: string;
+    systemPrompt: string;
+    searchQuery: string;
+    model?: string;
+  }>;
 }
 
 export interface ParallaxIntelligenceBriefing {

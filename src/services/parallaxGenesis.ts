@@ -1412,6 +1412,30 @@ Return the JSON object with "plan" and exactly ${agentCount} "agents".`;
       ? `${architectPlan}\n\nAssembled Team (${agentCount}): ${roleListLine}`
       : `${architectPlan}\n\nAssembled Team (${agentCount}): ${roleListLine}`;
 
+    const genesisTeamSource: 'ai' | 'repaired' | 'fallback' =
+      architectFailedTwice || validated.validCount === 0
+        ? 'fallback'
+        : validated.validCount === agentCount
+        ? 'ai'
+        : 'repaired';
+
+    const genesisBlueprint = blueprints.map((bp, idx) => {
+      const ag = genesisAgents[idx];
+      const resolvedModel = ag
+        ? resolveParallaxProviderConfig(ag, 1000).model || ag.modelId
+        : undefined;
+      return {
+        name: bp.name,
+        role: bp.role,
+        emoji: bp.emoji,
+        color: bp.color,
+        task: bp.task,
+        systemPrompt: bp.systemPrompt,
+        searchQuery: bp.searchQuery,
+        model: resolvedModel || undefined,
+      };
+    });
+
     const architectMsg: ParallaxMessage = {
       id: `plx_architect_r1_${Date.now()}`,
       agentId: 'architect',
@@ -1432,6 +1456,8 @@ Return the JSON object with "plan" and exactly ${agentCount} "agents".`;
       model: architectModel,
       providerName: architectProvider?.name || 'Built-in AI',
       fallbackReason: architectFailedTwice ? archFailureShortReason : undefined,
+      genesisTeamSource,
+      genesisBlueprint,
     };
 
     allMessages.push(architectMsg);

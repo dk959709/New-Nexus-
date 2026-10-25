@@ -276,6 +276,15 @@ export function formatFullParallaxTranscript(
       // Empty gap line before the agent's answer
       output += `\n"${m.text}"\n\n`;
 
+      if (cleanId === 'architect' && m.genesisBlueprint && m.genesisBlueprint.length > 0) {
+        const sourceLabel = m.genesisTeamSource || 'ai';
+        output += `TEAM BLUEPRINT (source: ${sourceLabel})\n`;
+        for (const bp of m.genesisBlueprint) {
+          output += `${bp.name} (${bp.role}) - Task: ${bp.task} | Search: ${bp.searchQuery} | Prompt: ${bp.systemPrompt}\n`;
+        }
+        output += `\n`;
+      }
+
       // Gap & divider between agent answers (only between items)
       if (idx < roundMsgs.length - 1) {
         output += `${subDivider}\n\n`;

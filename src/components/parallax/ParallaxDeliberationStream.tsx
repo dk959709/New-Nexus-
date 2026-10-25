@@ -213,6 +213,7 @@ export const ParallaxDeliberationStream: React.FC<ParallaxDeliberationStreamProp
   feedEndRef,
 }) => {
   const [showSpecialistCompile, setShowSpecialistCompile] = useState(false);
+  const [openBlueprintMap, setOpenBlueprintMap] = useState<Record<string, boolean>>({});
   const [unreadCount, setUnreadCount] = useState(0);
   const [isNearBottom, setIsNearBottom] = useState(true);
   const prevMsgCountRef = useRef(messages.length);
@@ -1088,6 +1089,118 @@ export const ParallaxDeliberationStream: React.FC<ParallaxDeliberationStreamProp
                                   })}
                                 </div>
                               )}
+
+                              {/* ARCHITECT Team Source Badge & Collapsible Team Blueprint */}
+                              {isArchitect &&
+                                (msg.genesisTeamSource ||
+                                  (msg.genesisBlueprint && msg.genesisBlueprint.length > 0)) && (
+                                  <div className="mt-2 space-y-2 min-w-0 max-w-full overflow-x-hidden">
+                                    <div className="flex items-center gap-2 flex-wrap">
+                                      {msg.genesisTeamSource && (
+                                        <span
+                                          className={`inline-flex items-center px-2 py-0.5 rounded-md text-[10px] font-mono font-semibold border ${
+                                            msg.genesisTeamSource === 'ai'
+                                              ? 'bg-emerald-500/15 border-emerald-400/40 text-emerald-300'
+                                              : msg.genesisTeamSource === 'repaired'
+                                              ? 'bg-amber-500/15 border-amber-400/40 text-amber-300'
+                                              : 'bg-rose-500/15 border-rose-400/40 text-rose-300'
+                                          }`}
+                                        >
+                                          {msg.genesisTeamSource === 'ai'
+                                            ? 'AI-designed team'
+                                            : msg.genesisTeamSource === 'repaired'
+                                            ? 'AI team, repaired'
+                                            : 'Built-in fallback team'}
+                                        </span>
+                                      )}
+
+                                      {msg.genesisBlueprint && msg.genesisBlueprint.length > 0 && (
+                                        <button
+                                          type="button"
+                                          onClick={() =>
+                                            setOpenBlueprintMap((prev) => ({
+                                              ...prev,
+                                              [msg.id]: !prev[msg.id],
+                                            }))
+                                          }
+                                          className="inline-flex items-center gap-1 px-2.5 py-1 rounded-lg bg-white/[0.05] hover:bg-white/[0.1] border border-white/10 text-[11px] font-mono font-semibold text-slate-200 hover:text-cyan-300 transition-colors cursor-pointer"
+                                        >
+                                          <span>
+                                            Team blueprint ({msg.genesisBlueprint.length} agents)
+                                          </span>
+                                          {openBlueprintMap[msg.id] ? (
+                                            <ChevronUp size={12} />
+                                          ) : (
+                                            <ChevronDown size={12} />
+                                          )}
+                                        </button>
+                                      )}
+                                    </div>
+
+                                    {msg.genesisBlueprint &&
+                                      msg.genesisBlueprint.length > 0 &&
+                                      openBlueprintMap[msg.id] && (
+                                        <div className="space-y-2 pt-1 min-w-0 max-w-full overflow-x-hidden">
+                                          {msg.genesisBlueprint.map((bp, bpIdx) => {
+                                            const bpColor = bp.color || '#22d3ee';
+                                            return (
+                                              <div
+                                                key={`${msg.id}_bp_${bpIdx}`}
+                                                style={{ borderLeft: `3px solid ${bpColor}` }}
+                                                className="p-2.5 rounded-lg bg-slate-900/60 border border-white/[0.07] text-[11px] sm:text-xs font-sans break-words min-w-0 space-y-1"
+                                              >
+                                                <div className="flex items-center gap-1.5 flex-wrap">
+                                                  <span
+                                                    className="w-2 h-2 rounded-full shrink-0"
+                                                    style={{ backgroundColor: bpColor }}
+                                                  />
+                                                  {bp.emoji && (
+                                                    <span className="text-xs leading-none">
+                                                      {bp.emoji}
+                                                    </span>
+                                                  )}
+                                                  <span
+                                                    className="font-mono font-bold text-xs"
+                                                    style={{ color: bpColor }}
+                                                  >
+                                                    {bp.name}
+                                                  </span>
+                                                  <span className="px-1.5 py-0.5 rounded text-[10px] font-mono bg-white/[0.06] border border-white/10 text-slate-200">
+                                                    {bp.role}
+                                                  </span>
+                                                </div>
+
+                                                <div className="text-slate-300 leading-snug break-words">
+                                                  <span className="font-mono text-slate-400 font-semibold">
+                                                    Task:
+                                                  </span>{' '}
+                                                  {bp.task}
+                                                </div>
+                                                <div className="text-slate-300 leading-snug break-words">
+                                                  <span className="font-mono text-slate-400 font-semibold">
+                                                    System prompt:
+                                                  </span>{' '}
+                                                  {bp.systemPrompt}
+                                                </div>
+                                                <div className="text-slate-300 leading-snug break-words">
+                                                  <span className="font-mono text-slate-400 font-semibold">
+                                                    Search query:
+                                                  </span>{' '}
+                                                  {bp.searchQuery}
+                                                </div>
+                                                <div className="text-slate-300 leading-snug break-words">
+                                                  <span className="font-mono text-slate-400 font-semibold">
+                                                    Model:
+                                                  </span>{' '}
+                                                  {bp.model || 'auto'}
+                                                </div>
+                                              </div>
+                                            );
+                                          })}
+                                        </div>
+                                      )}
+                                  </div>
+                                )}
 
                               {/* Expandable Metadata & Raw JSON Inspection Drawer */}
                               {rawJsonOpenMap[msg.id] && (
