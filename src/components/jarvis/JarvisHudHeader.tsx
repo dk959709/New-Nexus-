@@ -51,243 +51,139 @@ export function JarvisHudHeader({
 
   return (
     <div
-      className="jarvis-hud-card"
-      style={{
-        padding: '16px 20px',
-        marginBottom: '16px',
-        border: isRunning
-          ? '1px solid rgba(97,215,201,0.6)'
-          : '1px solid rgba(165,207,214,0.22)',
-      }}
+      className={`jarvis-hud-card rounded-2xl bg-[#0b0d11] px-4 py-3 mb-4 transition-all ${
+        isRunning
+          ? 'border border-cyan-500/45 shadow-[0_0_24px_rgba(34,211,238,0.12)]'
+          : 'border border-[#26292e]'
+      }`}
     >
       {/* Top Telemetry Ticker */}
-      <div
-        className="jarvis-hud-ticker"
-        style={{
-          display: 'flex',
-          alignItems: 'center',
-          justifyContent: 'space-between',
-          flexWrap: 'wrap',
-          gap: '12px',
-          paddingBottom: '12px',
-          borderBottom: '1px solid rgba(165,207,214,0.12)',
-          fontSize: '11px',
-          fontFamily: 'DM Mono, monospace',
-          color: 'var(--muted)',
-        }}
-      >
-        <div style={{ display: 'flex', alignItems: 'center', gap: '16px', flexWrap: 'wrap' }}>
-          <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
+      <div className="jarvis-hud-ticker flex flex-wrap items-center justify-between gap-2.5 pb-2.5 border-b border-[#26292e] text-[11px] font-mono text-[#71767b]">
+        <div className="flex items-center gap-3.5 flex-wrap">
+          <div className="flex items-center gap-1.5">
             <span
               style={{
                 display: 'inline-block',
-                width: '8px',
-                height: '8px',
+                width: '7px',
+                height: '7px',
                 borderRadius: '50%',
-                background: isRunning ? '#38bdf8' : '#61d7c9',
+                background: isRunning ? '#38bdf8' : '#22d3ee',
                 boxShadow: isRunning
-                  ? '0 0 12px #38bdf8, 0 0 20px #61d7c9'
-                  : '0 0 8px #61d7c9',
+                  ? '0 0 12px #38bdf8, 0 0 20px #22d3ee'
+                  : '0 0 6px #22d3ee',
                 animation: isRunning ? 'jarvisCorePulse 1.5s ease-in-out infinite' : 'none',
               }}
             />
-            <span style={{ color: isRunning ? '#38bdf8' : '#61d7c9', fontWeight: 700 }}>
+            <span className="text-cyan-400 font-bold tracking-wider">
               {isRunning ? 'PIPELINE ENGAGED' : 'SYSTEM ONLINE'}
             </span>
           </div>
 
-          <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
-            <Radio size={12} className="text-accent" />
-            <span>NEURAL CHANNELS: <strong style={{ color: '#fff' }}>{activeAgentsCount}/10</strong></span>
+          <div className="flex items-center gap-1.5">
+            <Radio size={12} className="text-cyan-400" />
+            <span>
+              NEURAL CHANNELS: <strong className="text-[#e7e9ea]">{activeAgentsCount}/10</strong>
+            </span>
           </div>
 
-          <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
-            <Cpu size={12} className="text-accent" />
-            <span>ORCHESTRATOR: <strong style={{ color: '#fff' }}>v5.2.0-PRO</strong></span>
+          <div className="flex items-center gap-1.5">
+            <Cpu size={12} className="text-cyan-400" />
+            <span>
+              ORCHESTRATOR: <strong className="text-[#e7e9ea]">v5.2.0-PRO</strong>
+            </span>
           </div>
 
-          <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
-            <Activity size={12} style={{ color: '#38bdf8' }} />
-            <span>REFRESH: <strong style={{ color: '#fff' }}>{fps} Hz</strong></span>
+          <div className="flex items-center gap-1.5">
+            <Activity size={12} className="text-sky-400" />
+            <span>
+              REFRESH: <strong className="text-[#e7e9ea]">{fps} Hz</strong>
+            </span>
           </div>
         </div>
 
-        <div style={{ display: 'flex', alignItems: 'center', gap: '14px' }}>
-          <div style={{ display: 'flex', alignItems: 'center', gap: '6px', color: 'var(--accent)' }}>
+        <div className="flex items-center gap-3">
+          <div className="flex items-center gap-1.5 text-cyan-400">
             <Clock size={12} />
             <span>SYS_TIME: {timeStr || '00:00:00.00'}</span>
           </div>
-          <span
-            style={{
-              background: 'rgba(97,215,201,0.1)',
-              border: '1px solid rgba(97,215,201,0.25)',
-              padding: '2px 8px',
-              borderRadius: '4px',
-              color: 'var(--accent)',
-              fontWeight: 600,
-            }}
-          >
+          <span className="bg-[#121418] border border-[#26292e] px-2 py-0.5 rounded-full text-[10px] text-[#e7e9ea] font-semibold">
             {messageCount} {messageCount === 1 ? 'SESSION' : 'SESSIONS'}
           </span>
         </div>
       </div>
 
       {/* Main Control & Visual Switcher Row */}
-      <div
-        className="jarvis-hud-main-row"
-        style={{
-          display: 'flex',
-          alignItems: 'center',
-          justifyContent: 'space-between',
-          flexWrap: 'wrap',
-          gap: '14px',
-          paddingTop: '12px',
-        }}
-      >
-        <div className="jarvis-hud-title-box" style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
-          <div
-            style={{
-              width: '38px',
-              height: '38px',
-              borderRadius: '10px',
-              background: 'linear-gradient(135deg, rgba(97,215,201,0.2) 0%, rgba(56,189,248,0.25) 100%)',
-              border: '1px solid rgba(97,215,201,0.4)',
-              display: 'grid',
-              placeItems: 'center',
-              boxShadow: '0 0 16px rgba(97,215,201,0.2)',
-            }}
-          >
-            <Zap size={20} style={{ color: 'var(--accent)' }} />
+      <div className="jarvis-hud-main-row flex flex-wrap items-center justify-between gap-3 pt-2.5">
+        <div className="jarvis-hud-title-box flex items-center gap-2.5">
+          <div className="w-8 h-8 rounded-xl bg-[#121418] border border-[#26292e] flex items-center justify-center shrink-0">
+            <Zap size={16} className="text-cyan-400" />
           </div>
           <div>
-            <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
-              <h2 style={{ margin: 0, fontSize: '17px', fontWeight: 800, color: '#ffffff', letterSpacing: '-0.02em' }}>
+            <div className="flex items-center gap-2">
+              <h2 className="m-0 text-sm font-bold text-[#e7e9ea] tracking-tight">
                 JARVIS HUD MATRIX
               </h2>
-              <span
-                style={{
-                  fontSize: '10px',
-                  fontFamily: 'DM Mono',
-                  background: 'rgba(56,189,248,0.15)',
-                  border: '1px solid rgba(56,189,248,0.3)',
-                  color: '#38bdf8',
-                  padding: '1px 6px',
-                  borderRadius: '4px',
-                  fontWeight: 700,
-                }}
-              >
+              <span className="text-[10px] font-mono bg-cyan-500/10 border border-cyan-500/30 text-cyan-300 px-1.5 py-0.5 rounded font-bold">
                 MULTI
               </span>
             </div>
-            <p style={{ margin: '2px 0 0', fontSize: '12px', color: 'var(--muted)' }}>
+            <p className="m-0 mt-0.5 text-[11px] text-[#71767b]">
               Autonomous 10-Agent Reasoning & Knowledge Synthesis Network
             </p>
           </div>
         </div>
 
         {/* Visual Mode Navigation */}
-        <div
-          className="jarvis-hud-switcher"
-          style={{
-            display: 'flex',
-            alignItems: 'center',
-            background: 'rgba(4,12,18,0.7)',
-            border: '1px solid rgba(165,207,214,0.18)',
-            borderRadius: '10px',
-            padding: '3px',
-            gap: '4px',
-            flexWrap: 'wrap',
-          }}
-        >
+        <div className="jarvis-hud-switcher flex items-center flex-wrap gap-1 bg-[#121418] border border-[#26292e] rounded-full p-1">
           <button
             type="button"
-            className="jarvis-hud-switcher-btn"
+            className={`jarvis-hud-switcher-btn flex items-center gap-1.5 px-3 py-1 rounded-full text-[11px] font-semibold transition-all cursor-pointer ${
+              activeView === 'chat'
+                ? 'bg-cyan-500/15 text-cyan-300 border border-cyan-500/35'
+                : 'text-[#8b98a5] hover:text-white hover:bg-white/[0.04] border border-transparent'
+            }`}
             onClick={() => onSelectView('chat')}
-            style={{
-              padding: '6px 12px',
-              borderRadius: '6px',
-              border: 'none',
-              fontSize: '12px',
-              fontWeight: 600,
-              cursor: 'pointer',
-              display: 'flex',
-              alignItems: 'center',
-              gap: '6px',
-              background: activeView === 'chat' ? 'var(--accent)' : 'transparent',
-              color: activeView === 'chat' ? '#04121a' : 'var(--muted)',
-              transition: 'all 0.2s ease',
-            }}
           >
-            <Sparkles size={13} />
+            <Sparkles size={12} />
             <span>Chat Console</span>
           </button>
 
           <button
             type="button"
-            className="jarvis-hud-switcher-btn"
+            className={`jarvis-hud-switcher-btn flex items-center gap-1.5 px-3 py-1 rounded-full text-[11px] font-semibold transition-all cursor-pointer ${
+              activeView === 'topology'
+                ? 'bg-cyan-500/15 text-cyan-300 border border-cyan-500/35'
+                : 'text-[#8b98a5] hover:text-white hover:bg-white/[0.04] border border-transparent'
+            }`}
             onClick={() => onSelectView('topology')}
-            style={{
-              padding: '6px 12px',
-              borderRadius: '6px',
-              border: 'none',
-              fontSize: '12px',
-              fontWeight: 600,
-              cursor: 'pointer',
-              display: 'flex',
-              alignItems: 'center',
-              gap: '6px',
-              background: activeView === 'topology' ? 'var(--accent)' : 'transparent',
-              color: activeView === 'topology' ? '#04121a' : 'var(--muted)',
-              transition: 'all 0.2s ease',
-            }}
           >
-            <Cpu size={13} />
+            <Cpu size={12} />
             <span>10-Agent Topology</span>
           </button>
 
           <button
             type="button"
-            className="jarvis-hud-switcher-btn"
+            className={`jarvis-hud-switcher-btn flex items-center gap-1.5 px-3 py-1 rounded-full text-[11px] font-semibold transition-all cursor-pointer ${
+              activeView === 'categories'
+                ? 'bg-cyan-500/15 text-cyan-300 border border-cyan-500/35'
+                : 'text-[#8b98a5] hover:text-white hover:bg-white/[0.04] border border-transparent'
+            }`}
             onClick={() => onSelectView('categories')}
-            style={{
-              padding: '6px 12px',
-              borderRadius: '6px',
-              border: 'none',
-              fontSize: '12px',
-              fontWeight: 600,
-              cursor: 'pointer',
-              display: 'flex',
-              alignItems: 'center',
-              gap: '6px',
-              background: activeView === 'categories' ? 'var(--accent)' : 'transparent',
-              color: activeView === 'categories' ? '#04121a' : 'var(--muted)',
-              transition: 'all 0.2s ease',
-            }}
           >
-            <Shield size={13} />
+            <Shield size={12} />
             <span>Category Matrix</span>
           </button>
 
           <button
             type="button"
-            className="jarvis-hud-switcher-btn"
+            className={`jarvis-hud-switcher-btn flex items-center gap-1.5 px-3 py-1 rounded-full text-[11px] font-semibold transition-all cursor-pointer ${
+              activeView === 'reactor'
+                ? 'bg-cyan-500/15 text-cyan-300 border border-cyan-500/35'
+                : 'text-[#8b98a5] hover:text-white hover:bg-white/[0.04] border border-transparent'
+            }`}
             onClick={() => onSelectView('reactor')}
-            style={{
-              padding: '6px 12px',
-              borderRadius: '6px',
-              border: 'none',
-              fontSize: '12px',
-              fontWeight: 600,
-              cursor: 'pointer',
-              display: 'flex',
-              alignItems: 'center',
-              gap: '6px',
-              background: activeView === 'reactor' ? 'var(--accent)' : 'transparent',
-              color: activeView === 'reactor' ? '#04121a' : 'var(--muted)',
-              transition: 'all 0.2s ease',
-            }}
           >
-            <Zap size={13} />
+            <Zap size={12} />
             <span>Neural Core</span>
           </button>
         </div>

@@ -2142,25 +2142,22 @@
 .jarvis-hud-card {
   position: relative;
   border-radius: 16px;
-  background: linear-gradient(135deg, rgba(8, 20, 30, 0.88) 0%, rgba(14, 24, 44, 0.9) 55%, rgba(10, 26, 36, 0.85) 100%);
-  border: 1px solid rgba(97, 215, 201, 0.28);
-  backdrop-filter: blur(20px);
-  -webkit-backdrop-filter: blur(20px);
-  box-shadow: 0 8px 32px rgba(0, 0, 0, 0.45), 0 0 18px rgba(97, 215, 201, 0.08);
+  background: #0b0d11;
+  border: 1px solid #26292e;
+  box-shadow: 0 10px 36px rgba(0, 0, 0, 0.65);
   overflow: hidden;
-  transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+  transition: border-color 0.25s ease, box-shadow 0.25s ease;
 }
 
 .jarvis-hud-card:hover {
-  border-color: rgba(97, 215, 201, 0.55);
-  box-shadow: 0 12px 40px rgba(0, 0, 0, 0.55), 0 0 28px rgba(97, 215, 201, 0.22);
+  border-color: #33373e;
 }
 
 .jarvis-category-card {
   position: relative;
   border-radius: 14px;
-  background: linear-gradient(135deg, rgba(10, 22, 34, 0.75) 0%, rgba(18, 24, 46, 0.78) 100%);
-  border: 1px solid rgba(165, 207, 214, 0.16);
+  background: #0b0d11;
+  border: 1px solid #26292e;
   padding: 16px;
   cursor: pointer;
   transition: all 0.25s cubic-bezier(0.4, 0, 0.2, 1);
@@ -2169,9 +2166,9 @@
 
 .jarvis-category-card:hover {
   transform: translateY(-2px);
-  background: linear-gradient(135deg, rgba(14, 30, 46, 0.9) 0%, rgba(26, 32, 60, 0.92) 100%);
-  border-color: rgba(97, 215, 201, 0.6);
-  box-shadow: 0 10px 28px rgba(0, 0, 0, 0.45), 0 0 22px rgba(97, 215, 201, 0.25);
+  background: #121418;
+  border-color: rgba(34, 211, 238, 0.45);
+  box-shadow: 0 10px 28px rgba(0, 0, 0, 0.65);
 }
 
 .jarvis-corner-brackets::before,
@@ -2254,40 +2251,20 @@
   }
 }
 
-/* JARVIS Unified Synthesis Outer Card Glow & Soft Pulse Animation */
-@keyframes jarvisSynthesisPulse {
-  0%, 100% {
-    border-color: rgba(97, 215, 201, 0.35);
-    box-shadow: 
-      0 14px 40px -8px rgba(0, 0, 0, 0.62),
-      0 0 16px rgba(97, 215, 201, 0.14),
-      inset 0 1px 0 rgba(255, 255, 255, 0.08);
-  }
-  50% {
-    border-color: rgba(97, 215, 201, 0.7);
-    box-shadow: 
-      0 18px 48px -6px rgba(0, 0, 0, 0.68),
-      0 0 30px rgba(97, 215, 201, 0.32),
-      inset 0 1px 0 rgba(255, 255, 255, 0.16);
-  }
-}
-
+/* JARVIS Synthesis Card (Parallax Dark Card Theme) */
 .jarvis-synthesis-glow-card {
   position: relative;
-  background: linear-gradient(145deg, rgba(8, 22, 38, 0.94) 0%, rgba(10, 18, 42, 0.96) 50%, rgba(13, 24, 46, 0.94) 100%);
-  border: 1.5px solid rgba(97, 215, 201, 0.35);
-  box-shadow: 0 14px 40px -8px rgba(0, 0, 0, 0.62), 0 0 16px rgba(97, 215, 201, 0.14), inset 0 1px 0 rgba(255, 255, 255, 0.08);
-  backdrop-filter: blur(20px);
-  -webkit-backdrop-filter: blur(20px);
-  animation: jarvisSynthesisPulse 4s ease-in-out infinite;
-  transition: border-color 0.3s ease, box-shadow 0.3s ease;
+  background: #0b0d11;
+  border: 1px solid #26292e;
+  box-shadow: 0 12px 36px rgba(0, 0, 0, 0.72);
+  transition: border-color 0.25s ease, box-shadow 0.25s ease;
 }
 
-/* JARVIS Synthesis Theme 2: Plain Black (flat black, minimal glow/border) */
+/* JARVIS Synthesis Theme 2: Plain Black (flat black, minimal border) */
 .jarvis-synthesis-black-card {
   position: relative;
   background: #000000 !important;
-  border: 1px solid rgba(255, 255, 255, 0.12) !important;
+  border: 1px solid #26292e !important;
   box-shadow: 0 12px 32px rgba(0, 0, 0, 0.85) !important;
   backdrop-filter: none !important;
   -webkit-backdrop-filter: none !important;
@@ -2295,18 +2272,6 @@
   transition: background-color 0.25s ease, border-color 0.25s ease, box-shadow 0.25s ease;
 }
 
-.jarvis-synthesis-black-card .jarvis-response-header {
-  background: rgba(16, 16, 16, 0.85) !important;
-  border: 1px solid rgba(255, 255, 255, 0.08) !important;
-  box-shadow: none !important;
-}
-
-.jarvis-synthesis-black-card .jarvis-response-header:hover {
-  border-color: rgba(255, 255, 255, 0.16) !important;
-  box-shadow: none !important;
-}
-
-/* Glass-morphic top section behind title and icon row (above nested boxes) */
 .jarvis-response-header {
   position: relative;
   display: flex;
@@ -2314,32 +2279,20 @@
   justify-content: space-between;
   flex-wrap: wrap;
   gap: 8px;
-  background: linear-gradient(135deg, rgba(8, 32, 52, 0.65) 0%, rgba(13, 22, 44, 0.7) 50%, rgba(22, 18, 52, 0.55) 100%);
-  backdrop-filter: blur(14px);
-  -webkit-backdrop-filter: blur(14px);
-  border: 1px solid rgba(97, 215, 201, 0.22);
-  border-radius: 14px;
-  padding: 10px 14px;
-  margin-bottom: 20px;
-  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.08), 0 4px 16px rgba(0, 0, 0, 0.25);
-  transition: all 0.3s ease;
-}
-
-.jarvis-response-header:hover {
-  border-color: rgba(97, 215, 201, 0.35);
-  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.12), 0 6px 20px rgba(0, 0, 0, 0.3), 0 0 14px rgba(97, 215, 201, 0.12);
+  background: transparent;
+  border-bottom: 1px solid #26292e;
+  padding: 0 0 12px 0;
+  margin-bottom: 16px;
 }
 
 .jarvis-response-actions {
   display: flex;
   align-items: center;
-  gap: 6px;
-  background: rgba(3, 10, 20, 0.5);
-  border: 1px solid rgba(255, 255, 255, 0.07);
-  border-radius: 12px;
+  gap: 4px;
+  background: #121418;
+  border: 1px solid #26292e;
+  border-radius: 9999px;
   padding: 3px 6px;
-  backdrop-filter: blur(8px);
-  -webkit-backdrop-filter: blur(8px);
 }
 
 @media (prefers-reduced-motion: reduce) {
@@ -2364,16 +2317,16 @@
   }
 
   .jarvis-page-title {
-    font-size: 20px !important;
+    font-size: 18px !important;
   }
 
   .jarvis-page-badge {
-    font-size: 10px !important;
-    padding: 2px 6px !important;
+    font-size: 9.5px !important;
+    padding: 2px 7px !important;
   }
 
   .jarvis-page-description {
-    font-size: 11.5px !important;
+    font-size: 11px !important;
     line-height: 1.4 !important;
   }
 
@@ -2405,7 +2358,7 @@
   }
 
   .jarvis-hud-title-box h2 {
-    font-size: 15px !important;
+    font-size: 14px !important;
   }
 
   .jarvis-hud-title-box p {
@@ -2417,6 +2370,7 @@
     display: grid !important;
     grid-template-columns: repeat(2, minmax(0, 1fr)) !important;
     gap: 4px !important;
+    border-radius: 14px !important;
   }
 
   .jarvis-hud-switcher-btn {
@@ -2427,33 +2381,20 @@
   }
 
   /* --------------------------------------------------
-     3. JARVIS Console Input Bar & "Ask JARVIS" Button
-     Prevents text clipping (e.g. 'Ask JARVI...')
+     3. JARVIS Parallax-Style 2-Row Composer & Popovers
      -------------------------------------------------- */
   .jarvis-bottom-console-card {
-    padding: 12px 10px !important;
+    padding: 0 !important;
+  }
+
+  .jarvis-composer-box {
+    padding: 10px 12px !important;
     border-radius: 20px !important;
   }
 
-  .jarvis-input-bar-container {
-    padding: 4px 6px 4px 4px !important;
-    gap: 4px !important;
-    border-radius: 9999px !important;
-  }
-
-  .jarvis-input-orb-wrapper {
-    padding-left: 2px !important;
-    padding-right: 0 !important;
-  }
-
-  .jarvis-input-orb-wrapper > div {
-    width: 32px !important;
-    height: 32px !important;
-  }
-
   .jarvis-search-input {
-    font-size: 13px !important;
-    padding: 6px 4px !important;
+    font-size: 14px !important;
+    padding: 4px 2px !important;
     min-width: 0 !important;
   }
 
@@ -2463,70 +2404,24 @@
     flex-shrink: 0 !important;
   }
 
-  .jarvis-mic-btn svg {
-    width: 14px !important;
-    height: 14px !important;
-  }
-
-  /* Crucial: ensure "Ask JARVIS" button fits and doesn't get clipped */
   .jarvis-submit-btn {
-    padding: 6px 12px !important;
-    font-size: 12px !important;
-    gap: 4px !important;
+    width: 32px !important;
+    height: 32px !important;
+    padding: 0 !important;
     flex-shrink: 0 !important;
     border-radius: 9999px !important;
-    white-space: nowrap !important;
-  }
-
-  .jarvis-submit-btn svg {
-    width: 13px !important;
-    height: 13px !important;
-  }
-
-  .jarvis-submit-text {
-    font-size: 12px !important;
-    font-weight: 800 !important;
-    white-space: nowrap !important;
-    letter-spacing: 0 !important;
-  }
-
-  /* --------------------------------------------------
-     4. JARVIS Controls Hub (Mode Toggles & Action Chips)
-     Ensure toggle buttons and cards fit properly without horizontal overflow
-     -------------------------------------------------- */
-  .jarvis-controls-hub {
-    gap: 8px !important;
-    padding-top: 2px !important;
-  }
-
-  .jarvis-toggles-group {
-    width: 100% !important;
-    gap: 6px !important;
-    flex-wrap: wrap !important;
-  }
-
-  .jarvis-mode-toggle {
-    padding: 4px 8px !important;
-    font-size: 10px !important;
-    gap: 6px !important;
-    border-radius: 9999px !important;
-    max-width: 100% !important;
-    box-sizing: border-box !important;
-  }
-
-  .jarvis-mode-toggle span {
-    font-size: 10px !important;
-    letter-spacing: 0 !important;
-  }
-
-  .jarvis-toggle-subtext {
-    display: none !important; /* Hide secondary "(5-AGENT MESH)" on narrow screens so text fits cleanly */
   }
 
   .jarvis-attach-btn {
-    padding: 4px 8px !important;
-    font-size: 10px !important;
+    width: 32px !important;
+    height: 32px !important;
+    padding: 0 !important;
     border-radius: 9999px !important;
+  }
+
+  .jarvis-modes-popover,
+  .jarvis-attach-menu {
+    max-width: calc(100vw - 32px) !important;
   }
 
   .jarvis-aux-buttons-group {
@@ -2537,7 +2432,7 @@
   }
 
   .jarvis-aux-btn {
-    padding: 4px 9px !important;
+    padding: 4px 10px !important;
     font-size: 11px !important;
     border-radius: 9999px !important;
   }
@@ -2576,7 +2471,7 @@
     width: 100% !important;
     max-width: 100vw !important;
     box-sizing: border-box !important;
-    overflow-x: hidden !important;
+    overflow: visible !important;
     margin-left: auto !important;
     margin-right: auto !important;
   }

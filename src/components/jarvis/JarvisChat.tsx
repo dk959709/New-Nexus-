@@ -28,6 +28,7 @@ import {
   FileCode,
   X,
   BookOpen,
+  ChevronUp,
 } from 'lucide-react';
 import { storage, DEFAULT_JARVIS_CONFIG } from '@/lib/storage';
 import { stripConversationalMetaText, cleanMarkdownForSpeech } from '@/lib/format';
@@ -335,6 +336,8 @@ export function JarvisChat({ config, onOpenSettings }: JarvisChatProps) {
   const [attachmentError, setAttachmentError] = useState<string | null>(null);
   const [showAttachMenu, setShowAttachMenu] = useState(false);
   const attachMenuRef = useRef<HTMLDivElement | null>(null);
+  const [showModesMenu, setShowModesMenu] = useState(false);
+  const modesMenuRef = useRef<HTMLDivElement | null>(null);
   const fileInputRef = useRef<HTMLInputElement | null>(null);
 
   const [showClearConfirm, setShowClearConfirm] = useState(false);
@@ -346,20 +349,23 @@ export function JarvisChat({ config, onOpenSettings }: JarvisChatProps) {
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const utteranceRef = useRef<SpeechSynthesisUtterance | null>(null);
 
-  // Close attachment dropdown when clicking outside
+  // Close attachment or modes dropdown when clicking outside
   useEffect(() => {
     function handleClickOutside(event: MouseEvent) {
       if (attachMenuRef.current && !attachMenuRef.current.contains(event.target as Node)) {
         setShowAttachMenu(false);
       }
+      if (modesMenuRef.current && !modesMenuRef.current.contains(event.target as Node)) {
+        setShowModesMenu(false);
+      }
     }
-    if (showAttachMenu) {
+    if (showAttachMenu || showModesMenu) {
       document.addEventListener('mousedown', handleClickOutside);
     }
     return () => {
       document.removeEventListener('mousedown', handleClickOutside);
     };
-  }, [showAttachMenu]);
+  }, [showAttachMenu, showModesMenu]);
 
   const handleAttachFileClick = () => {
     setShowAttachMenu(false);
@@ -935,38 +941,31 @@ export function JarvisChat({ config, onOpenSettings }: JarvisChatProps) {
       </div>
 
       {/* ========================================================= */}
-      {/* ACTIVE 5-AGENT PIPELINE RUNNING VISUALIZER (ROUNDED/COLOR)*/}
+      {/* ACTIVE PIPELINE RUNNING VISUALIZER (PARALLAX DARK CARD)   */}
       {/* ========================================================= */}
       {isRunning && (
-        <div
-          className="jarvis-running-pipeline-card relative overflow-hidden rounded-3xl p-6 backdrop-blur-xl transition-all duration-300 animate-pulse"
-          style={{
-            background: 'linear-gradient(135deg, rgba(8, 26, 42, 0.9) 0%, rgba(18, 16, 52, 0.92) 100%)',
-            border: '1.5px solid rgba(97, 215, 201, 0.5)',
-            boxShadow: '0 12px 40px rgba(0,0,0,0.5), 0 0 28px rgba(97,215,201,0.25)',
-          }}
-        >
-          <JarvisCornerBrackets color="cyan" size={14} thickness={1.5} offset={4} />
-          <div className="flex items-center justify-between flex-wrap gap-2 mb-4">
+        <div className="jarvis-running-pipeline-card relative overflow-hidden rounded-2xl p-4 sm:p-5 bg-[#0b0d11] border border-[#26292e] shadow-[0_10px_36px_rgba(0,0,0,0.65)] transition-all duration-300">
+          <JarvisCornerBrackets color="rgba(255, 255, 255, 0.12)" glow={false} size={12} thickness={1} offset={4} />
+          <div className="flex items-center justify-between flex-wrap gap-2 mb-3.5 pb-2.5 border-b border-[#26292e]">
             <div className="flex items-center gap-2.5">
-              <div className="w-8 h-8 rounded-full bg-cyan-400/20 border border-cyan-400/50 flex items-center justify-center shadow-[0_0_12px_#61d7c9]">
-                <Sparkles size={16} className="text-cyan-300" />
+              <div className="w-7 h-7 rounded-xl bg-[#121418] border border-cyan-500/40 flex items-center justify-center">
+                <Sparkles size={14} className="text-cyan-400" />
               </div>
               <div>
-                <h4 className="text-sm font-extrabold text-white m-0 tracking-wide">
+                <h4 className="text-xs sm:text-sm font-bold text-[#e7e9ea] m-0 tracking-tight">
                   JARVIS Multi-Agent Pipeline In Progress
                 </h4>
-                <p className="text-[11px] text-cyan-300/80 font-mono m-0">
+                <p className="text-[11px] text-[#71767b] font-mono m-0">
                   Live Neural Orchestration & Cross-Verification
                 </p>
               </div>
             </div>
-            <span className="px-3 py-1 rounded-full bg-cyan-500/20 border border-cyan-400/40 text-cyan-300 text-xs font-mono font-bold">
+            <span className="px-2.5 py-0.5 rounded-full bg-cyan-500/10 border border-cyan-500/30 text-cyan-300 text-[10px] font-mono font-bold">
               ENGAGED
             </span>
           </div>
 
-          <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-6 gap-2.5">
+          <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-6 gap-2">
             {activeSteps.map((step) => {
               const colorInfo = getAgentColor(step.agentId);
               const isRunningStep = step.status === 'running';
@@ -976,47 +975,46 @@ export function JarvisChat({ config, onOpenSettings }: JarvisChatProps) {
               return (
                 <div
                   key={step.agentId}
-                  className="p-3 rounded-2xl transition-all duration-300 flex items-center gap-2.5"
+                  className="p-2.5 rounded-xl bg-[#121418] transition-all duration-300 flex items-center gap-2"
                   style={{
-                    background: isRunningStep
-                      ? colorInfo.gradient
-                      : isCompleted
-                        ? colorInfo.bg
-                        : 'rgba(5, 15, 25, 0.65)',
                     border: isRunningStep
-                      ? `1.5px solid ${colorInfo.text}`
+                      ? `1px solid ${colorInfo.text}`
                       : isCompleted
-                        ? `1px solid ${colorInfo.border}`
-                        : isFailed
-                          ? '1.5px solid #f43f5e'
-                          : '1px solid rgba(255,255,255,0.08)',
-                    boxShadow: isRunningStep ? `0 0 16px ${colorInfo.glow}` : isFailed ? '0 0 12px rgba(244,63,94,0.3)' : 'none',
+                      ? `1px solid ${colorInfo.border}`
+                      : isFailed
+                      ? '1px solid #f43f5e'
+                      : '1px solid #26292e',
+                    boxShadow: isRunningStep
+                      ? `0 0 14px ${colorInfo.glow}`
+                      : isFailed
+                      ? '0 0 10px rgba(244,63,94,0.25)'
+                      : 'none',
                   }}
                 >
                   <div
-                    className="w-8 h-8 rounded-full flex items-center justify-center shrink-0"
+                    className="w-7 h-7 rounded-lg flex items-center justify-center shrink-0"
                     style={{
                       background: colorInfo.bg,
                       border: `1px solid ${colorInfo.border}`,
                     }}
                   >
-                    <span className="text-base">{step.icon}</span>
+                    <span className="text-sm">{step.icon}</span>
                   </div>
 
                   <div className="flex-1 min-w-0">
-                    <div className="text-xs font-bold text-white truncate">
+                    <div className="text-xs font-semibold text-[#e7e9ea] truncate">
                       {step.name}
                     </div>
-                    <div className="text-[10px] text-slate-400 font-mono truncate">
+                    <div className="text-[10px] text-[#71767b] font-mono truncate">
                       {step.model}
                     </div>
                   </div>
 
                   <div className="shrink-0">
-                    {isRunningStep && <Loader2 size={15} className="animate-spin text-cyan-300" />}
+                    {isRunningStep && <Loader2 size={14} className="animate-spin text-cyan-400" />}
                     {isCompleted && (
                       <span
-                        className="w-5 h-5 rounded-full flex items-center justify-center text-xs font-bold"
+                        className="w-4 h-4 rounded-full flex items-center justify-center text-[10px] font-bold"
                         style={{ background: colorInfo.bg, color: colorInfo.text }}
                       >
                         ✓
@@ -1034,7 +1032,7 @@ export function JarvisChat({ config, onOpenSettings }: JarvisChatProps) {
       {/* ========================================================= */}
       {/* MESSAGES LIST (CHRONOLOGICAL: OLDEST TOP -> NEWEST BOTTOM) */}
       {/* ========================================================= */}
-      <div className="jarvis-messages-container flex flex-col gap-6 w-full">
+      <div className="jarvis-messages-container flex flex-col gap-5 w-full">
         {messages.map((msg) => {
           const isMsgRunning = msg.id === currentRunningMessageId;
           if (isMsgRunning) return null; // Handled above in live visualizer
@@ -1044,69 +1042,66 @@ export function JarvisChat({ config, onOpenSettings }: JarvisChatProps) {
           return (
             <div key={msg.id} className="jarvis-message-item flex flex-col gap-3 w-full">
               {/* ---------------------------------------------------- */}
-              {/* 1. USER PROMPT BUBBLE (ROUNDED & COLORFUL GRADIENT)  */}
+              {/* 1. USER PROMPT BUBBLE (PARALLAX DARK CARD)           */}
               {/* ---------------------------------------------------- */}
-              <div className="jarvis-user-bubble-row flex items-start justify-end gap-3 self-end max-w-3xl w-full">
-                <div
-                  className="jarvis-user-card relative p-4 sm:p-5 rounded-3xl rounded-tr-md backdrop-blur-md transition-all shadow-xl overflow-hidden"
-                  style={{
-                    background: 'linear-gradient(135deg, rgba(30, 58, 138, 0.6) 0%, rgba(88, 28, 135, 0.5) 100%)',
-                    border: '1.5px solid rgba(147, 197, 253, 0.35)',
-                    boxShadow: '0 8px 32px rgba(0, 0, 0, 0.4), 0 0 20px rgba(99, 102, 241, 0.2)',
-                  }}
-                >
-                  <JarvisCornerBrackets color="indigo" size={10} thickness={1.5} offset={3} />
-                  <div className="flex items-center justify-between gap-4 mb-1">
-                    <span className="text-[10px] font-mono tracking-widest text-indigo-200 uppercase font-bold">
+              <div className="jarvis-user-bubble-row flex items-start justify-end gap-2.5 self-end max-w-3xl w-full">
+                <div className="jarvis-user-card relative p-4 sm:p-5 rounded-2xl rounded-tr-sm bg-[#121418] border border-[#26292e] shadow-[0_8px_28px_rgba(0,0,0,0.6)] transition-all overflow-hidden">
+                  <div className="flex items-center justify-between gap-3 mb-1.5">
+                    <span className="text-[10px] font-mono tracking-widest text-[#71767b] uppercase font-bold">
                       INQUIRY
                     </span>
                     <div className="flex items-center gap-1.5 flex-wrap">
                       {msg.deepResearch && (
-                        <span className="px-2.5 py-0.5 rounded-full bg-cyan-500/20 border border-cyan-400/40 text-cyan-300 text-[10px] font-mono font-bold">
+                        <span className="px-2 py-0.5 rounded-full bg-cyan-500/10 border border-cyan-500/30 text-cyan-300 text-[10px] font-mono font-semibold">
                           ⚡ DEEP RESEARCH
                         </span>
                       )}
+                      {msg.newAgentMode && (
+                        <span className="px-2 py-0.5 rounded-full bg-purple-500/10 border border-purple-500/30 text-purple-300 text-[10px] font-mono font-semibold">
+                          ✨ NEW AGENT
+                        </span>
+                      )}
                       {msg.diagramMode && (
-                        <span className="px-2.5 py-0.5 rounded-full bg-amber-500/20 border border-amber-400/40 text-amber-300 text-[10px] font-mono font-bold">
+                        <span className="px-2 py-0.5 rounded-full bg-amber-500/10 border border-amber-500/30 text-amber-300 text-[10px] font-mono font-semibold">
                           🏗️ DIAGRAM MODE
                         </span>
                       )}
                       {msg.chartMode && (
-                        <span className="px-2.5 py-0.5 rounded-full bg-sky-500/20 border border-sky-400/40 text-sky-300 text-[10px] font-mono font-bold">
+                        <span className="px-2 py-0.5 rounded-full bg-sky-500/10 border border-sky-500/30 text-sky-300 text-[10px] font-mono font-semibold">
                           📊 CHART MODE
                         </span>
                       )}
                       {msg.imageMode && (
-                        <span className="px-2.5 py-0.5 rounded-full bg-pink-500/20 border border-pink-400/40 text-pink-300 text-[10px] font-mono font-bold">
+                        <span className="px-2 py-0.5 rounded-full bg-pink-500/10 border border-pink-500/30 text-pink-300 text-[10px] font-mono font-semibold">
                           🖼️ IMAGE MODE
                         </span>
                       )}
                       {msg.coderMode && (
-                        <span className="px-2.5 py-0.5 rounded-full bg-emerald-500/20 border border-emerald-400/40 text-emerald-300 text-[10px] font-mono font-bold">
+                        <span className="px-2 py-0.5 rounded-full bg-emerald-500/10 border border-emerald-500/30 text-emerald-300 text-[10px] font-mono font-semibold">
                           💻 CODER AGENT
                         </span>
                       )}
                     </div>
                   </div>
-                  <h3 className="text-base sm:text-lg font-bold text-white m-0 leading-relaxed">
+                  <h3 className="text-sm sm:text-base font-semibold text-[#e7e9ea] m-0 leading-relaxed">
                     {msg.query}
                   </h3>
 
                   {/* Attached File Chips on User Message Card */}
                   {msg.attachments && msg.attachments.length > 0 && (
-                    <div className="flex items-center gap-2 flex-wrap mt-2.5">
+                    <div className="flex items-center gap-1.5 flex-wrap mt-2.5">
                       {msg.attachments.map((att) => (
                         <div
                           key={att.id}
-                          className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-lg text-xs font-mono bg-cyan-950/60 border border-cyan-500/30 text-cyan-200"
+                          className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-xs font-mono bg-[#0b0d11] border border-[#26292e] text-[#e7e9ea]"
                         >
                           {att.extension === 'pdf' ? (
                             <FileText size={12} className="text-amber-400 shrink-0" />
                           ) : (
                             <FileCode size={12} className="text-emerald-400 shrink-0" />
                           )}
-                          <span className="font-semibold text-white max-w-[200px] truncate">{att.name}</span>
-                          <span className="text-[10px] text-cyan-400/70 shrink-0">({formatAttachmentSize(att.size)})</span>
+                          <span className="font-medium text-white max-w-[200px] truncate">{att.name}</span>
+                          <span className="text-[10px] text-[#71767b] shrink-0">({formatAttachmentSize(att.size)})</span>
                         </div>
                       ))}
                     </div>
@@ -1114,46 +1109,38 @@ export function JarvisChat({ config, onOpenSettings }: JarvisChatProps) {
                 </div>
 
                 {/* User Avatar Circle */}
-                <div
-                  className="w-10 h-10 rounded-full shrink-0 flex items-center justify-center mt-1 shadow-lg"
-                  style={{
-                    background: 'linear-gradient(135deg, #3b82f6 0%, #8b5cf6 100%)',
-                    border: '2px solid rgba(255, 255, 255, 0.3)',
-                    boxShadow: '0 0 14px rgba(59, 130, 246, 0.5)',
-                  }}
-                >
-                  <span className="text-white text-xs font-black">YOU</span>
+                <div className="w-8 h-8 rounded-full shrink-0 flex items-center justify-center mt-1 bg-[#121418] border border-[#26292e] text-cyan-300">
+                  <span className="text-[10px] font-mono font-bold">YOU</span>
                 </div>
               </div>
 
               {/* ---------------------------------------------------- */}
-              {/* 2. JARVIS AI RESPONSE CARD (ROUNDED & HOLOGRAPHIC)   */}
+              {/* 2. JARVIS AI RESPONSE CARD (PARALLAX DARK CARD)      */}
               {/* ---------------------------------------------------- */}
               <div className="jarvis-response-row flex items-start w-full">
                 {/* Response Container */}
                 <div
-                  className={`jarvis-response-card relative w-full flex-1 min-w-0 p-4 sm:p-6 sm:p-7 rounded-2xl sm:rounded-[22px] transition-all duration-300 overflow-hidden ${
+                  className={`jarvis-response-card relative w-full flex-1 min-w-0 p-4 sm:p-6 rounded-2xl transition-all duration-300 overflow-hidden border border-[#26292e] ${
                     synthesisTheme === 'black'
-                      ? 'jarvis-synthesis-black-card'
-                      : 'jarvis-synthesis-glow-card backdrop-blur-xl'
+                      ? 'jarvis-synthesis-black-card bg-black'
+                      : 'jarvis-synthesis-glow-card bg-[#0b0d11]'
                   }`}
                 >
-                  {/* Subtle Sci-Fi Corner Brackets */}
                   <JarvisCornerBrackets
-                    color={synthesisTheme === 'black' ? 'rgba(255, 255, 255, 0.2)' : 'cyan'}
-                    glow={synthesisTheme !== 'black'}
-                    size={16}
-                    thickness={2}
+                    color="rgba(255, 255, 255, 0.1)"
+                    glow={false}
+                    size={12}
+                    thickness={1}
                     offset={4}
                   />
                   {/* Response Header & Utilities Bar */}
-                  <div className="jarvis-response-header flex items-center justify-between flex-wrap gap-2.5">
+                  <div className="jarvis-response-header flex items-center justify-between flex-wrap gap-2.5 pb-3 mb-4 border-b border-[#26292e]">
                     <div className="flex items-center gap-2 min-w-0">
-                      <div className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full bg-cyan-500/15 border border-cyan-500/35 text-[10px] font-mono tracking-widest text-cyan-300 font-bold uppercase shadow-[0_0_12px_rgba(97,215,201,0.2)]">
-                        <Sparkles size={12} className="text-cyan-400" />
+                      <div className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full bg-[#121418] border border-[#26292e] text-[10px] font-mono tracking-widest text-cyan-300 font-bold uppercase">
+                        <Sparkles size={11} className="text-cyan-400" />
                         <span>JARVIS SYNTHESIS</span>
                       </div>
-                      <span className="text-[11px] text-slate-400 font-mono hidden sm:inline">
+                      <span className="text-[11px] text-[#71767b] font-mono hidden sm:inline">
                         {new Date(msg.timestamp).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
                       </span>
                     </div>
@@ -1167,7 +1154,7 @@ export function JarvisChat({ config, onOpenSettings }: JarvisChatProps) {
                         className={`p-1.5 sm:p-2 rounded-lg transition-all duration-200 flex items-center justify-center ${
                           speakingId === msg.id
                             ? 'bg-cyan-400 text-slate-950 shadow-[0_0_12px_#61d7c9]'
-                            : 'text-slate-300 hover:text-cyan-300 hover:bg-cyan-500/15'
+                            : 'text-[#8b98a5] hover:text-white hover:bg-white/[0.06]'
                         }`}
                         title={speakingId === msg.id ? 'Stop Voice' : 'Read Aloud (Browser Voice)'}
                       >
@@ -1188,10 +1175,10 @@ export function JarvisChat({ config, onOpenSettings }: JarvisChatProps) {
                         disabled={downloadingAudioId === msg.id}
                         className={`p-1.5 sm:p-2 rounded-lg transition-all duration-200 flex items-center justify-center ${
                           downloadSuccessId === msg.id
-                            ? 'bg-emerald-500/25 border border-emerald-400/50 text-emerald-300 shadow-[0_0_12px_rgba(16,185,129,0.4)]'
+                            ? 'bg-emerald-500/20 border border-emerald-500/40 text-emerald-300'
                             : downloadingAudioId === msg.id
-                            ? 'bg-cyan-500/20 text-cyan-300'
-                            : 'text-slate-300 hover:text-cyan-300 hover:bg-cyan-500/15'
+                            ? 'bg-cyan-500/15 text-cyan-300'
+                            : 'text-[#8b98a5] hover:text-white hover:bg-white/[0.06]'
                         }`}
                         title={
                           downloadingAudioId === msg.id
@@ -1219,7 +1206,7 @@ export function JarvisChat({ config, onOpenSettings }: JarvisChatProps) {
                       <button
                         type="button"
                         onClick={() => handleCopy(formatFullPipelineExport(msg), msg.id)}
-                        className="p-1.5 sm:p-2 rounded-lg text-slate-300 hover:text-cyan-300 hover:bg-cyan-500/15 transition-colors flex items-center justify-center"
+                        className="p-1.5 sm:p-2 rounded-lg text-[#8b98a5] hover:text-white hover:bg-white/[0.06] transition-colors flex items-center justify-center"
                         title="Copy complete pipeline report"
                       >
                         {copiedId === msg.id ? <Check size={15} className="text-cyan-400" /> : <Copy size={15} />}
@@ -1230,10 +1217,10 @@ export function JarvisChat({ config, onOpenSettings }: JarvisChatProps) {
                         onClick={() => handleSave(msg)}
                         className={`px-2.5 py-1.5 rounded-lg text-xs font-semibold flex items-center gap-1.5 transition-all duration-200 ${
                           recentlySavedId === msg.id
-                            ? 'bg-emerald-500/25 border border-emerald-400/50 text-emerald-300 shadow-[0_0_14px_rgba(16,185,129,0.4)]'
+                            ? 'bg-emerald-500/20 border border-emerald-500/40 text-emerald-300'
                             : savedIds.has(`jarvis-${msg.id}`)
-                            ? 'bg-cyan-500/20 border border-cyan-400/40 text-cyan-300 hover:bg-cyan-500/30'
-                            : 'text-slate-300 hover:text-cyan-300 hover:bg-cyan-500/15'
+                            ? 'bg-cyan-500/15 border border-cyan-500/35 text-cyan-300 hover:bg-cyan-500/25'
+                            : 'text-[#8b98a5] hover:text-white hover:bg-white/[0.06]'
                         }`}
                         title={savedIds.has(`jarvis-${msg.id}`) ? 'Saved in NEXUS Library' : 'Save to NEXUS Library'}
                       >
@@ -1258,7 +1245,7 @@ export function JarvisChat({ config, onOpenSettings }: JarvisChatProps) {
                       <button
                         type="button"
                         onClick={() => handleDeleteMessage(msg.id)}
-                        className="p-1.5 sm:p-2 rounded-lg text-slate-400 hover:text-rose-400 hover:bg-rose-500/15 transition-colors flex items-center justify-center"
+                        className="p-1.5 sm:p-2 rounded-lg text-[#8b98a5] hover:text-rose-400 hover:bg-rose-500/15 transition-colors flex items-center justify-center"
                         title="Delete inquiry"
                       >
                         <Trash2 size={15} />
@@ -1287,7 +1274,7 @@ export function JarvisChat({ config, onOpenSettings }: JarvisChatProps) {
 
                   {/* Error Notification */}
                   {msg.error && (
-                    <div className="flex items-center gap-2 p-3 mb-4 rounded-2xl bg-rose-950/60 border border-rose-500/40 text-rose-200 text-xs font-semibold">
+                    <div className="flex items-center gap-2 p-3 mb-4 rounded-xl bg-rose-950/60 border border-rose-500/40 text-rose-200 text-xs font-semibold">
                       <AlertCircle size={15} className="text-rose-400 shrink-0" />
                       <span>{msg.error}</span>
                     </div>
@@ -1312,30 +1299,30 @@ export function JarvisChat({ config, onOpenSettings }: JarvisChatProps) {
                     const isImageCmd = isImageSlashCommand(msg.query) || isImageAiSlashCommand(msg.query);
 
                     return (
-                      <div className="jarvis-synthesis-body prose prose-invert max-w-none text-slate-100 leading-relaxed text-sm sm:text-base">
+                      <div className="jarvis-synthesis-body prose prose-invert max-w-none text-[#e7e9ea] leading-relaxed text-sm sm:text-base">
                         {!isImageCmd && (msg.deepResearch || (msg.steps && msg.steps.some((s) => s.status === 'completed' && s.agentId !== 'finalSynthesizer'))) && (
-                          <div className="jarvis-synthesis-header flex items-center justify-between flex-wrap gap-2 mb-3 pt-3 border-t border-purple-500/30">
-                            <div className="jarvis-synthesis-badge inline-flex items-center gap-1.5 px-3 py-1 rounded-full bg-purple-500/20 border border-purple-400/40 text-xs font-mono font-bold text-purple-300 shadow-[0_0_10px_rgba(192,132,252,0.2)]">
-                              <Zap size={13} className="text-purple-400" />
+                          <div className="jarvis-synthesis-header flex items-center justify-between flex-wrap gap-2 mb-3 pt-3 border-t border-[#26292e]">
+                            <div className="jarvis-synthesis-badge inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full bg-[#121418] border border-[#26292e] text-[11px] font-mono font-bold text-purple-300">
+                              <Zap size={12} className="text-purple-400" />
                               <span>JARVIS // UNIFIED FINAL SYNTHESIS</span>
                             </div>
 
-                            {/* Action Buttons: Raw JSON Toggle & Copy (matching agent button style) */}
+                            {/* Action Buttons: Raw JSON Toggle & Copy */}
                             <div className="flex items-center gap-1.5 shrink-0 not-prose">
                               <button
                                 type="button"
                                 onClick={() => toggleSynthRawView(msg.id)}
-                                className="px-2 py-1 rounded text-xs font-mono flex items-center gap-1 bg-black/50 border border-white/15 text-slate-300 hover:text-white hover:border-white/30 transition-all"
+                                className="px-2.5 py-1 rounded-full text-xs font-mono flex items-center gap-1 bg-[#121418] border border-[#26292e] text-[#8b98a5] hover:text-white hover:bg-white/[0.06] transition-all cursor-pointer"
                                 title={isShowingSynthRaw ? 'Switch to Formatted View' : 'Switch to Raw JSON View'}
                               >
                                 {isShowingSynthRaw ? (
                                   <>
-                                    <FileText size={12} className="text-cyan-300" />
+                                    <FileText size={12} className="text-cyan-400" />
                                     <span>Formatted</span>
                                   </>
                                 ) : (
                                   <>
-                                    <Code2 size={12} className="text-cyan-300" />
+                                    <Code2 size={12} className="text-cyan-400" />
                                     <span>Raw JSON</span>
                                   </>
                                 )}
@@ -1344,17 +1331,17 @@ export function JarvisChat({ config, onOpenSettings }: JarvisChatProps) {
                               <button
                                 type="button"
                                 onClick={(e) => handleCopySynth(msg, e)}
-                                className="p-1.5 rounded-lg text-slate-300 hover:text-white hover:bg-white/10 active:scale-95 transition-all flex items-center gap-1 text-xs font-mono bg-black/40 border border-white/10"
+                                className="px-2.5 py-1 rounded-full text-[#8b98a5] hover:text-white hover:bg-white/[0.06] active:scale-95 transition-all flex items-center gap-1 text-xs font-mono bg-[#121418] border border-[#26292e] cursor-pointer"
                                 title="Copy final synthesis"
                               >
                                 {copiedSynthId === msg.id ? (
                                   <>
-                                    <Check size={13} className="text-emerald-400" />
+                                    <Check size={12} className="text-emerald-400" />
                                     <span className="text-emerald-300 text-[10px]">Copied</span>
                                   </>
                                 ) : (
                                   <>
-                                    <Copy size={13} />
+                                    <Copy size={12} />
                                     <span className="text-[10px] hidden sm:inline">Copy</span>
                                   </>
                                 )}
@@ -1363,7 +1350,7 @@ export function JarvisChat({ config, onOpenSettings }: JarvisChatProps) {
                           </div>
                         )}
                         {isShowingSynthRaw ? (
-                          <div className="rounded-xl bg-black/70 border border-white/10 p-3.5 overflow-x-auto max-h-[500px] overflow-y-auto not-prose my-2">
+                          <div className="rounded-xl bg-[#121418] border border-[#26292e] p-3.5 overflow-x-auto max-h-[500px] overflow-y-auto not-prose my-2">
                             <pre className="font-mono text-xs text-cyan-200 leading-relaxed whitespace-pre-wrap break-words m-0">
                               {rawText}
                             </pre>
@@ -1382,7 +1369,7 @@ export function JarvisChat({ config, onOpenSettings }: JarvisChatProps) {
                   {msg.chartData && (
                     <Suspense
                       fallback={
-                        <div className="my-4 p-4 rounded-xl bg-slate-950/60 border border-sky-500/20 flex items-center justify-center gap-2.5 text-xs text-sky-400 font-mono">
+                        <div className="my-4 p-4 rounded-xl bg-[#121418] border border-[#26292e] flex items-center justify-center gap-2.5 text-xs text-sky-400 font-mono">
                           <Loader2 size={15} className="animate-spin text-sky-400" />
                           <span>Rendering quantitative chart...</span>
                         </div>
@@ -1409,7 +1396,7 @@ export function JarvisChat({ config, onOpenSettings }: JarvisChatProps) {
                   {msg.images && msg.images.length > 0 && (
                     <Suspense
                       fallback={
-                        <div className="my-4 p-4 rounded-xl bg-slate-950/60 border border-emerald-500/20 flex items-center justify-center gap-2.5 text-xs text-emerald-400 font-mono">
+                        <div className="my-4 p-4 rounded-xl bg-[#121418] border border-[#26292e] flex items-center justify-center gap-2.5 text-xs text-emerald-400 font-mono">
                           <Loader2 size={15} className="animate-spin text-emerald-400" />
                           <span>Loading image gallery...</span>
                         </div>
@@ -1464,7 +1451,7 @@ export function JarvisChat({ config, onOpenSettings }: JarvisChatProps) {
                   {msg.diagramSvg && (
                     <Suspense
                       fallback={
-                        <div className="my-4 p-4 rounded-xl bg-slate-950/60 border border-amber-500/20 flex items-center justify-center gap-2.5 text-xs text-amber-400 font-mono">
+                        <div className="my-4 p-4 rounded-xl bg-[#121418] border border-[#26292e] flex items-center justify-center gap-2.5 text-xs text-amber-400 font-mono">
                           <Loader2 size={15} className="animate-spin text-amber-400" />
                           <span>Rendering architectural blueprint...</span>
                         </div>
@@ -1489,7 +1476,7 @@ export function JarvisChat({ config, onOpenSettings }: JarvisChatProps) {
 
                   {/* Retrieved Vector Memory Documents (RAG) */}
                   {msg.retrievedDocChunks && msg.retrievedDocChunks.length > 0 && (
-                    <div className="mt-5 pt-3 border-t border-purple-500/20 flex flex-col gap-2">
+                    <div className="mt-5 pt-3 border-t border-[#26292e] flex flex-col gap-2">
                       <div className="text-[11px] font-mono tracking-wider text-purple-300 uppercase font-bold flex items-center gap-1.5">
                         <BookOpen size={12} className="text-purple-400" />
                         <span>RETRIEVED VECTOR MEMORY CHUNKS ({msg.retrievedDocChunks.length}):</span>
@@ -1498,15 +1485,15 @@ export function JarvisChat({ config, onOpenSettings }: JarvisChatProps) {
                         {msg.retrievedDocChunks.map((chunk, i) => (
                           <div
                             key={i}
-                            className="p-2.5 rounded-xl bg-purple-950/30 border border-purple-500/30 text-xs font-mono text-slate-300 flex flex-col gap-1"
+                            className="p-2.5 rounded-xl bg-[#121418] border border-[#26292e] text-xs font-mono text-[#e7e9ea] flex flex-col gap-1"
                           >
                             <div className="flex items-center justify-between text-[11px] font-bold text-purple-300">
                               <span className="truncate">📄 {chunk.docName} (Chunk #{chunk.chunkIndex + 1})</span>
-                              <span className="text-[10px] px-1.5 py-0.5 rounded-full bg-purple-500/20 border border-purple-500/40 text-purple-200">
+                              <span className="text-[10px] px-1.5 py-0.5 rounded-full bg-purple-500/15 border border-purple-500/30 text-purple-200">
                                 {Math.round(chunk.score * 100)}% match
                               </span>
                             </div>
-                            <p className="text-[11px] font-sans text-slate-400 line-clamp-3 leading-relaxed">
+                            <p className="text-[11px] font-sans text-[#8b98a5] line-clamp-3 leading-relaxed">
                               "{chunk.text}"
                             </p>
                           </div>
@@ -1515,21 +1502,21 @@ export function JarvisChat({ config, onOpenSettings }: JarvisChatProps) {
                     </div>
                   )}
 
-                  {/* Cited Sources (Rounded Colorful Tags) */}
+                  {/* Cited Sources (Parallax Dark Pill Tags) */}
                   {msg.sources && msg.sources.length > 0 && (
-                    <div className="mt-6 pt-4 border-t border-white/10 flex flex-col gap-2">
-                      <div className="text-[11px] font-mono tracking-wider text-cyan-300/80 uppercase font-bold flex items-center gap-1.5">
-                        <Search size={12} className="text-cyan-400" />
+                    <div className="mt-5 pt-3.5 border-t border-[#26292e] flex flex-col gap-2">
+                      <div className="text-[10px] font-mono tracking-wider text-[#71767b] uppercase font-bold flex items-center gap-1.5">
+                        <Search size={11} className="text-cyan-400" />
                         <span>GROUNDED SOURCES ({msg.sources.length}):</span>
                       </div>
-                      <div className="flex flex-wrap gap-2">
+                      <div className="flex flex-wrap gap-1.5">
                         {msg.sources.map((src, i) => (
                           <a
                             key={i}
                             href={src.url}
                             target="_blank"
                             rel="noreferrer"
-                            className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-full text-xs font-semibold bg-cyan-950/40 hover:bg-cyan-900/60 border border-cyan-400/30 hover:border-cyan-300 text-cyan-200 hover:text-white transition-all shadow-sm max-w-[280px] truncate"
+                            className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full text-xs font-medium bg-[#121418] hover:bg-white/[0.06] border border-[#26292e] text-[#e7e9ea] hover:text-white transition-all max-w-[280px] truncate"
                           >
                             <ExternalLink size={11} className="text-cyan-400 shrink-0" />
                             <span className="truncate">{src.title || src.domain || 'Source Reference'}</span>
@@ -1548,26 +1535,15 @@ export function JarvisChat({ config, onOpenSettings }: JarvisChatProps) {
       </div>
 
       {/* ========================================================= */}
-      {/* BOTTOM "ASK JARVIS" CONSOLE INPUT BAR (NORMAL PAGE FLOW) */}
+      {/* BOTTOM "ASK JARVIS" CONSOLE INPUT BAR (PARALLAX STYLE)    */}
       {/* ========================================================= */}
-      <div
-        className="jarvis-bottom-console-card relative overflow-hidden rounded-3xl p-5 sm:p-6 backdrop-blur-xl transition-all duration-300"
-        style={{
-          background: 'linear-gradient(145deg, rgba(8, 20, 36, 0.92) 0%, rgba(14, 18, 48, 0.94) 50%, rgba(6, 26, 38, 0.92) 100%)',
-          border: '1px solid rgba(97, 215, 201, 0.38)',
-          boxShadow: '0 16px 48px rgba(0,0,0,0.5), 0 0 32px rgba(97,215,201,0.15), inset 0 1px 0 rgba(255,255,255,0.15)',
-        }}
-      >
-        {/* Ambient Bottom Glow Orbs */}
-        <div className="absolute -top-12 -left-12 w-48 h-48 rounded-full bg-cyan-500/20 blur-3xl pointer-events-none" />
-        <div className="absolute -top-12 -right-12 w-48 h-48 rounded-full bg-purple-500/20 blur-3xl pointer-events-none" />
-
+      <div className="jarvis-bottom-console-card relative w-full max-w-4xl mx-auto">
         <form
           onSubmit={(e) => {
             e.preventDefault();
             handleSend();
           }}
-          className="relative z-10 flex flex-col gap-3"
+          className="relative z-10 flex flex-col gap-2.5"
         >
           {/* Hidden File Input for Attachments */}
           <input
@@ -1583,9 +1559,9 @@ export function JarvisChat({ config, onOpenSettings }: JarvisChatProps) {
 
           {/* Error Banner for Rejected/Unsupported Files */}
           {attachmentError && (
-            <div className="flex items-center justify-between gap-2 px-4 py-2 rounded-2xl bg-rose-950/80 border border-rose-500/50 text-rose-200 text-xs font-mono shadow-lg animate-in fade-in slide-in-from-bottom-2">
+            <div className="flex items-center justify-between gap-2 px-3.5 py-2 rounded-xl bg-rose-950/80 border border-rose-500/40 text-rose-200 text-xs font-mono shadow-lg">
               <div className="flex items-center gap-2 min-w-0">
-                <AlertTriangle size={15} className="text-rose-400 shrink-0" />
+                <AlertTriangle size={14} className="text-rose-400 shrink-0" />
                 <span className="leading-snug">{attachmentError}</span>
               </div>
               <button
@@ -1594,14 +1570,14 @@ export function JarvisChat({ config, onOpenSettings }: JarvisChatProps) {
                 className="p-1 hover:bg-white/10 rounded-md text-rose-300 hover:text-white transition-colors shrink-0 cursor-pointer"
                 title="Dismiss error"
               >
-                <X size={14} />
+                <X size={13} />
               </button>
             </div>
           )}
 
           {/* Loading Extraction Indicator */}
           {isExtractingAttachment && (
-            <div className="flex items-center gap-2 px-3.5 py-1.5 rounded-xl bg-cyan-950/60 border border-cyan-500/30 text-cyan-300 text-xs font-mono animate-pulse">
+            <div className="flex items-center gap-2 px-3.5 py-1.5 rounded-xl bg-[#121418] border border-cyan-500/30 text-cyan-300 text-xs font-mono animate-pulse">
               <Loader2 size={13} className="animate-spin text-cyan-400" />
               <span>Extracting text content from attachment...</span>
             </div>
@@ -1609,7 +1585,7 @@ export function JarvisChat({ config, onOpenSettings }: JarvisChatProps) {
 
           {/* Attached Files Chips Row */}
           {attachedFiles.length > 0 && (
-            <div className="flex items-center gap-2 flex-wrap px-1">
+            <div className="flex items-center gap-1.5 flex-wrap px-1">
               <span className="text-[10px] font-mono text-cyan-400 font-bold uppercase tracking-wider flex items-center gap-1">
                 <Paperclip size={11} />
                 <span>Attached ({attachedFiles.length}):</span>
@@ -1617,540 +1593,578 @@ export function JarvisChat({ config, onOpenSettings }: JarvisChatProps) {
               {attachedFiles.map((file) => (
                 <div
                   key={file.id}
-                  className="inline-flex items-center gap-2 px-3 py-1 rounded-xl text-xs font-mono bg-cyan-950/70 border border-cyan-400/40 text-cyan-200 shadow-md backdrop-blur-md transition-all group"
+                  className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-xs font-mono bg-[#121418] border border-[#26292e] text-[#e7e9ea] shadow-sm transition-all"
                 >
                   {file.extension === 'pdf' ? (
-                    <FileText size={13} className="text-amber-400 shrink-0" />
+                    <FileText size={12} className="text-amber-400 shrink-0" />
                   ) : (
-                    <FileCode size={13} className="text-emerald-400 shrink-0" />
+                    <FileCode size={12} className="text-emerald-400 shrink-0" />
                   )}
-                  <span className="font-semibold text-white max-w-[180px] sm:max-w-[240px] truncate" title={file.name}>
+                  <span className="font-medium text-white max-w-[160px] sm:max-w-[220px] truncate" title={file.name}>
                     {file.name}
                   </span>
-                  <span className="text-[10px] text-cyan-400/70 shrink-0">
+                  <span className="text-[10px] text-[#71767b] shrink-0">
                     ({formatAttachmentSize(file.size)})
                   </span>
                   <button
                     type="button"
                     onClick={() => handleRemoveAttachment(file.id)}
-                    className="p-0.5 rounded-md hover:bg-rose-500/20 text-slate-400 hover:text-rose-300 transition-colors cursor-pointer"
+                    className="p-0.5 rounded-full hover:bg-rose-500/20 text-[#71767b] hover:text-rose-300 transition-colors cursor-pointer"
                     title={`Remove ${file.name}`}
                     aria-label={`Remove ${file.name}`}
                   >
-                    <X size={13} />
+                    <X size={12} />
                   </button>
                 </div>
               ))}
             </div>
           )}
 
-          {/* Main Round Pill Search Input Bar */}
-          <div
-            className="jarvis-input-bar-container group relative flex items-center gap-2 p-2 sm:p-2.5 rounded-full backdrop-blur-md transition-all duration-300"
-            style={{
-              background: 'rgba(5, 15, 28, 0.85)',
-              border: isRunning
-                ? '1.5px solid #38bdf8'
-                : '1.5px solid rgba(97, 215, 201, 0.45)',
-              boxShadow: isRunning
-                ? '0 0 24px rgba(56,189,248,0.4), inset 0 0 12px rgba(56,189,248,0.15)'
-                : '0 8px 28px rgba(0,0,0,0.4), 0 0 16px rgba(97,215,201,0.15), inset 0 1px 0 rgba(255,255,255,0.1)',
-            }}
-          >
-            {/* Glowing Leading Node - JARVIS Round Ball Orb attached seamlessly merged */}
-            <div className="jarvis-input-orb-wrapper pl-2 sm:pl-3 flex items-center justify-center shrink-0">
+          {/* Parallax-Style 2-Row Composer Box */}
+          {(() => {
+            const activePopoverModesCount = [
+              newAgentMode,
+              diagramMode,
+              chartMode,
+              imageMode,
+              coderMode,
+              searchMyDocs,
+            ].filter(Boolean).length;
+
+            return (
               <div
-                className="w-10 h-10 rounded-full flex items-center justify-center transition-all duration-300 relative cursor-pointer group-hover:scale-105"
-                onClick={() => inputRef.current?.focus()}
-                title="JARVIS Quantum Neural Core Active"
-                style={{
-                  background: 'transparent',
-                  border: 'none',
-                  boxShadow: 'none',
-                }}
+                className={`jarvis-composer-box rounded-[20px] sm:rounded-[24px] px-3.5 py-2.5 sm:px-4 sm:py-3 transition-all duration-300 bg-[#121418] border ${
+                  isRunning
+                    ? 'border-cyan-400/80 ring-1 ring-cyan-400/40 shadow-[0_0_24px_rgba(56,189,248,0.3)]'
+                    : 'border-[#26292e] focus-within:border-zinc-700 shadow-[0_10px_40px_rgba(0,0,0,0.85)]'
+                }`}
               >
-                <JarvisQuantumOrb
-                  size="xs"
-                  showBadge={false}
-                  isRunning={isRunning}
-                  isListening={voiceListening}
-                  query={query}
-                  status={isRunning ? 'thinking' : voiceListening ? 'listening' : query ? 'synthesizing' : 'idle'}
-                />
-              </div>
-            </div>
-
-            {/* Input Element */}
-            <input
-              ref={inputRef}
-              type="text"
-              value={query}
-              onChange={(e) => setQuery(e.target.value)}
-              placeholder={
-                attachedFiles.length > 0
-                  ? `Ask JARVIS about ${attachedFiles.length === 1 ? attachedFiles[0].name : `${attachedFiles.length} attached files`}...`
-                  : 'Ask JARVIS anything (multi-agent research, fact check, scientific audit)...'
-              }
-              disabled={isRunning}
-              className="jarvis-search-input flex-1 min-w-0 bg-transparent border-0 outline-none text-white text-sm sm:text-base placeholder:text-slate-400 font-medium px-2 py-2"
-            />
-
-            {/* Mic / Voice Button */}
-            <button
-              type="button"
-              onClick={toggleVoiceInput}
-              aria-label="Voice input"
-              title={voiceListening ? 'Stop Listening' : 'Speak Prompt'}
-              className={`jarvis-mic-btn w-9 h-9 sm:w-10 sm:h-10 rounded-full flex items-center justify-center transition-all duration-200 shrink-0 ${
-                voiceListening
-                  ? 'bg-rose-500 text-white shadow-[0_0_16px_#f43f5e] animate-pulse'
-                  : 'bg-white/5 hover:bg-cyan-500/20 text-slate-300 hover:text-cyan-300 border border-white/10 hover:border-cyan-400/40'
-              }`}
-            >
-              <Mic size={17} className={voiceListening ? 'animate-bounce' : ''} />
-            </button>
-
-            {/* Submit Pill Button */}
-            <button
-              type="submit"
-              disabled={(!query.trim() && attachedFiles.length === 0) || isRunning || isExtractingAttachment}
-              className="jarvis-submit-btn px-5 sm:px-6 py-2.5 sm:py-3 rounded-full font-bold text-xs sm:text-sm tracking-wide transition-all duration-300 flex items-center gap-2 shadow-lg active:scale-95 disabled:opacity-40 disabled:cursor-not-allowed shrink-0"
-              style={{
-                background: isRunning
-                  ? 'linear-gradient(135deg, #38bdf8 0%, #a855f7 100%)'
-                  : 'linear-gradient(135deg, #61d7c9 0%, #38bdf8 100%)',
-                color: '#051218',
-                boxShadow: isRunning
-                  ? '0 0 20px rgba(56,189,248,0.5)'
-                  : '0 0 16px rgba(97,215,201,0.4)',
-              }}
-            >
-              {isRunning ? (
-                <Loader2 size={16} className="animate-spin text-slate-950" />
-              ) : (
-                <Send size={15} className="text-slate-950" />
-              )}
-              <span className="jarvis-submit-text font-extrabold">{isRunning ? 'Orchestrating...' : isExtractingAttachment ? 'Extracting...' : 'Ask JARVIS'}</span>
-            </button>
-          </div>
-
-          {/* Controls Hub: Deep Research & Diagram Mode Switches + Action Chips */}
-          <div className="jarvis-controls-hub flex items-center justify-between flex-wrap gap-3 pt-1">
-            <div className="jarvis-toggles-group flex items-center gap-2.5 flex-wrap">
-              {/* Deep Research Colorful Pill Switch */}
-              <label
-                className="jarvis-mode-toggle inline-flex items-center gap-2 px-3 py-1.5 rounded-full cursor-pointer transition-all duration-200 border"
-                style={{
-                  background: deepResearch
-                    ? 'linear-gradient(135deg, rgba(97,215,201,0.2) 0%, rgba(56,189,248,0.15) 100%)'
-                    : 'rgba(255,255,255,0.03)',
-                  borderColor: deepResearch ? 'rgba(97,215,201,0.5)' : 'rgba(255,255,255,0.1)',
-                  boxShadow: deepResearch ? '0 0 14px rgba(97,215,201,0.25)' : 'none',
-                }}
-              >
-                <input
-                  type="checkbox"
-                  checked={deepResearch}
-                  onChange={(e) => setDeepResearch(e.target.checked)}
-                  className="hidden"
-                />
-                <div
-                  className={`w-7 h-3.5 rounded-full transition-colors relative flex items-center p-0.5 ${
-                    deepResearch ? 'bg-cyan-400' : 'bg-slate-700'
-                  }`}
-                >
+                {/* Row 1: Leading Quantum Orb (xs) + Text Input */}
+                <div className="flex items-center gap-2.5">
                   <div
-                    className={`w-2.5 h-2.5 rounded-full bg-slate-950 transition-transform duration-200 ${
-                      deepResearch ? 'translate-x-3.5' : 'translate-x-0'
-                    }`}
-                  />
-                </div>
-                <span
-                  className={`text-[11px] font-bold font-mono tracking-wide ${
-                    deepResearch ? 'text-cyan-300' : 'text-slate-400'
-                  }`}
-                >
-                  ⚡ DEEP RESEARCH <span className="jarvis-toggle-subtext">(5-AGENT MESH)</span>
-                </span>
-              </label>
-
-              {/* New Agent (Dynamic 5-Node Specialist Mesh) Colorful Pill Switch */}
-              <label
-                className="jarvis-mode-toggle inline-flex items-center gap-2 px-3 py-1.5 rounded-full cursor-pointer transition-all duration-200 border"
-                style={{
-                  background: newAgentMode
-                    ? 'linear-gradient(135deg, rgba(168,85,247,0.24) 0%, rgba(139,92,246,0.2) 100%)'
-                    : 'rgba(255,255,255,0.03)',
-                  borderColor: newAgentMode ? 'rgba(168,85,247,0.6)' : 'rgba(255,255,255,0.1)',
-                  boxShadow: newAgentMode ? '0 0 14px rgba(168,85,247,0.35)' : 'none',
-                }}
-                title={
-                  newAgentMode
-                    ? 'New Agent Mode active: 5-node dynamic pipeline (Planner → 3 Query-Tailored Specialists → Synthesizer)'
-                    : 'Enable New Agent Mode (dynamic 5-node specialist pipeline)'
-                }
-              >
-                <input
-                  type="checkbox"
-                  checked={newAgentMode}
-                  onChange={(e) => setNewAgentMode(e.target.checked)}
-                  className="hidden"
-                />
-                <div
-                  className={`w-7 h-3.5 rounded-full transition-colors relative flex items-center p-0.5 ${
-                    newAgentMode ? 'bg-purple-400' : 'bg-slate-700'
-                  }`}
-                >
-                  <div
-                    className={`w-2.5 h-2.5 rounded-full bg-slate-950 transition-transform duration-200 ${
-                      newAgentMode ? 'translate-x-3.5' : 'translate-x-0'
-                    }`}
-                  />
-                </div>
-                <span
-                  className={`text-[11px] font-bold font-mono tracking-wide flex items-center gap-1.5 ${
-                    newAgentMode ? 'text-purple-300' : 'text-slate-400'
-                  }`}
-                >
-                  <span>✨</span>
-                  <span>NEW AGENT</span>
-                </span>
-              </label>
-
-              {/* Diagram Mode Colorful Pill Switch */}
-              <label
-                className="jarvis-mode-toggle inline-flex items-center gap-2 px-3 py-1.5 rounded-full cursor-pointer transition-all duration-200 border"
-                style={{
-                  background: diagramMode
-                    ? 'linear-gradient(135deg, rgba(245,158,11,0.22) 0%, rgba(217,119,6,0.18) 100%)'
-                    : 'rgba(255,255,255,0.03)',
-                  borderColor: diagramMode ? 'rgba(245,158,11,0.55)' : 'rgba(255,255,255,0.1)',
-                  boxShadow: diagramMode ? '0 0 14px rgba(245,158,11,0.3)' : 'none',
-                }}
-              >
-                <input
-                  type="checkbox"
-                  checked={diagramMode}
-                  onChange={(e) => setDiagramMode(e.target.checked)}
-                  className="hidden"
-                />
-                <div
-                  className={`w-7 h-3.5 rounded-full transition-colors relative flex items-center p-0.5 ${
-                    diagramMode ? 'bg-amber-400' : 'bg-slate-700'
-                  }`}
-                >
-                  <div
-                    className={`w-2.5 h-2.5 rounded-full bg-slate-950 transition-transform duration-200 ${
-                      diagramMode ? 'translate-x-3.5' : 'translate-x-0'
-                    }`}
-                  />
-                </div>
-                <span
-                  className={`text-[11px] font-bold font-mono tracking-wide flex items-center gap-1.5 ${
-                    diagramMode ? 'text-amber-300' : 'text-slate-400'
-                  }`}
-                >
-                  <span>🏗️</span>
-                  <span>DIAGRAM MODE</span>
-                </span>
-              </label>
-
-              {/* Chart Mode Colorful Pill Switch */}
-              <label
-                className="jarvis-mode-toggle inline-flex items-center gap-2 px-3 py-1.5 rounded-full cursor-pointer transition-all duration-200 border"
-                style={{
-                  background: chartMode
-                    ? 'linear-gradient(135deg, rgba(56,189,248,0.22) 0%, rgba(14,165,233,0.18) 100%)'
-                    : 'rgba(255,255,255,0.03)',
-                  borderColor: chartMode ? 'rgba(56,189,248,0.55)' : 'rgba(255,255,255,0.1)',
-                  boxShadow: chartMode ? '0 0 14px rgba(56,189,248,0.3)' : 'none',
-                }}
-              >
-                <input
-                  type="checkbox"
-                  checked={chartMode}
-                  onChange={(e) => setChartMode(e.target.checked)}
-                  className="hidden"
-                />
-                <div
-                  className={`w-7 h-3.5 rounded-full transition-colors relative flex items-center p-0.5 ${
-                    chartMode ? 'bg-sky-400' : 'bg-slate-700'
-                  }`}
-                >
-                  <div
-                    className={`w-2.5 h-2.5 rounded-full bg-slate-950 transition-transform duration-200 ${
-                      chartMode ? 'translate-x-3.5' : 'translate-x-0'
-                    }`}
-                  />
-                </div>
-                <span
-                  className={`text-[11px] font-bold font-mono tracking-wide flex items-center gap-1.5 ${
-                    chartMode ? 'text-sky-300' : 'text-slate-400'
-                  }`}
-                >
-                  <span>📊</span>
-                  <span>CHART MODE</span>
-                </span>
-              </label>
-
-              {/* Image Mode Colorful Pill Switch */}
-              <label
-                className="jarvis-mode-toggle inline-flex items-center gap-2 px-3 py-1.5 rounded-full cursor-pointer transition-all duration-200 border"
-                style={{
-                  background: imageMode
-                    ? 'linear-gradient(135deg, rgba(236,72,153,0.22) 0%, rgba(219,39,119,0.18) 100%)'
-                    : 'rgba(255,255,255,0.03)',
-                  borderColor: imageMode ? 'rgba(236,72,153,0.55)' : 'rgba(255,255,255,0.1)',
-                  boxShadow: imageMode ? '0 0 14px rgba(236,72,153,0.3)' : 'none',
-                }}
-              >
-                <input
-                  type="checkbox"
-                  checked={imageMode}
-                  onChange={(e) => setImageMode(e.target.checked)}
-                  className="hidden"
-                />
-                <div
-                  className={`w-7 h-3.5 rounded-full transition-colors relative flex items-center p-0.5 ${
-                    imageMode ? 'bg-pink-400' : 'bg-slate-700'
-                  }`}
-                >
-                  <div
-                    className={`w-2.5 h-2.5 rounded-full bg-slate-950 transition-transform duration-200 ${
-                      imageMode ? 'translate-x-3.5' : 'translate-x-0'
-                    }`}
-                  />
-                </div>
-                <span
-                  className={`text-[11px] font-bold font-mono tracking-wide flex items-center gap-1.5 ${
-                    imageMode ? 'text-pink-300' : 'text-slate-400'
-                  }`}
-                >
-                  <span>🖼️</span>
-                  <span>IMAGE MODE</span>
-                </span>
-              </label>
-
-              {/* Coder Mode / Coder Agent Colorful Pill Switch */}
-              <label
-                className="jarvis-mode-toggle inline-flex items-center gap-2 px-3 py-1.5 rounded-full cursor-pointer transition-all duration-200 border"
-                style={{
-                  background: coderMode
-                    ? 'linear-gradient(135deg, rgba(16,185,129,0.22) 0%, rgba(5,150,105,0.18) 100%)'
-                    : 'rgba(255,255,255,0.03)',
-                  borderColor: coderMode ? 'rgba(16,185,129,0.55)' : 'rgba(255,255,255,0.1)',
-                  boxShadow: coderMode ? '0 0 14px rgba(16,185,129,0.3)' : 'none',
-                }}
-                title={coderMode ? 'Coder Agent enabled (auto-detection active)' : 'Coder Agent disabled (auto-detection disabled)'}
-              >
-                <input
-                  type="checkbox"
-                  checked={coderMode}
-                  onChange={(e) => handleToggleCoderMode(e.target.checked)}
-                  className="hidden"
-                />
-                <div
-                  className={`w-7 h-3.5 rounded-full transition-colors relative flex items-center p-0.5 ${
-                    coderMode ? 'bg-emerald-400' : 'bg-slate-700'
-                  }`}
-                >
-                  <div
-                    className={`w-2.5 h-2.5 rounded-full bg-slate-950 transition-transform duration-200 ${
-                      coderMode ? 'translate-x-3.5' : 'translate-x-0'
-                    }`}
-                  />
-                </div>
-                <span
-                  className={`text-[11px] font-bold font-mono tracking-wide flex items-center gap-1.5 ${
-                    coderMode ? 'text-emerald-300' : 'text-slate-400'
-                  }`}
-                >
-                  <span>💻</span>
-                  <span>CODER</span>
-                </span>
-              </label>
-
-              {/* Search My Documents (RAG) Colorful Pill Switch */}
-              <div className="relative flex items-center gap-1.5">
-                <label
-                  className="jarvis-mode-toggle inline-flex items-center gap-2 px-3 py-1.5 rounded-full cursor-pointer transition-all duration-200 border"
-                  style={{
-                    background: searchMyDocs
-                      ? 'linear-gradient(135deg, rgba(168,85,247,0.22) 0%, rgba(139,92,246,0.18) 100%)'
-                      : 'rgba(255,255,255,0.03)',
-                    borderColor: searchMyDocs ? 'rgba(168,85,247,0.55)' : 'rgba(255,255,255,0.1)',
-                    boxShadow: searchMyDocs ? '0 0 14px rgba(168,85,247,0.3)' : 'none',
-                  }}
-                  title={
-                    availableDocs.length === 0
-                      ? 'Upload documents in Settings > Document Library to search vector memory'
-                      : searchMyDocs
-                      ? `Searching ${docSearchMode === 'specific' && selectedDocId ? (availableDocs.find(d => d.id === selectedDocId)?.name || 'selected document') : 'all indexed library documents'}`
-                      : 'Enable Document Library (Vector Memory / RAG) search'
-                  }
-                >
-                  <input
-                    type="checkbox"
-                    checked={searchMyDocs}
-                    onChange={(e) => setSearchMyDocs(e.target.checked)}
-                    className="hidden"
-                  />
-                  <div
-                    className={`w-7 h-3.5 rounded-full transition-colors relative flex items-center p-0.5 ${
-                      searchMyDocs ? 'bg-purple-400' : 'bg-slate-700'
-                    }`}
+                    className="jarvis-input-orb-wrapper w-8 h-8 rounded-full flex items-center justify-center shrink-0 cursor-pointer hover:scale-105 transition-transform"
+                    onClick={() => inputRef.current?.focus()}
+                    title="JARVIS Quantum Neural Core Active"
                   >
-                    <div
-                      className={`w-2.5 h-2.5 rounded-full bg-slate-950 transition-transform duration-200 ${
-                        searchMyDocs ? 'translate-x-3.5' : 'translate-x-0'
-                      }`}
+                    <JarvisQuantumOrb
+                      size="xs"
+                      showBadge={false}
+                      isRunning={isRunning}
+                      isListening={voiceListening}
+                      query={query}
+                      status={
+                        isRunning
+                          ? 'thinking'
+                          : voiceListening
+                          ? 'listening'
+                          : query
+                          ? 'synthesizing'
+                          : 'idle'
+                      }
                     />
                   </div>
-                  <span
-                    className={`text-[11px] font-bold font-mono tracking-wide flex items-center gap-1.5 ${
-                      searchMyDocs ? 'text-purple-300' : 'text-slate-400'
-                    }`}
-                  >
-                    <span>📚</span>
-                    <span>SEARCH MY DOCS</span>
-                    {availableDocs.length > 0 && (
-                      <span className="text-[9px] px-1.5 py-0.5 rounded-full bg-purple-500/20 text-purple-300 border border-purple-500/30">
-                        {availableDocs.filter(d => d.enabledForJarvis).length}
-                      </span>
-                    )}
-                  </span>
-                </label>
 
-                {/* Document Selector Dropdown if specific search or multiple docs */}
-                {searchMyDocs && availableDocs.length > 0 && (
-                  <select
-                    value={docSearchMode === 'specific' ? selectedDocId : 'all'}
-                    onChange={(e) => {
-                      if (e.target.value === 'all') {
-                        setDocSearchMode('all');
-                        setSelectedDocId('');
-                      } else {
-                        setDocSearchMode('specific');
-                        setSelectedDocId(e.target.value);
-                      }
-                    }}
-                    className="bg-slate-900/90 text-purple-300 text-[11px] font-mono border border-purple-500/30 rounded-full px-2.5 py-1 focus:outline-none focus:border-purple-400 max-w-[140px] truncate cursor-pointer"
-                  >
-                    <option value="all">All Docs ({availableDocs.filter(d => d.enabledForJarvis).length})</option>
-                    {availableDocs.map((doc) => (
-                      <option key={doc.id} value={doc.id}>
-                        📄 {doc.name.length > 16 ? doc.name.slice(0, 14) + '...' : doc.name}
-                      </option>
-                    ))}
-                  </select>
-                )}
-              </div>
-
-              {/* Attachment & Clipboard Menu Trigger "+" */}
-              <div className="relative" ref={attachMenuRef}>
-                <button
-                  type="button"
-                  onClick={() => {
-                    setShowAttachMenu((prev) => !prev);
-                    setAttachmentError(null);
-                  }}
-                  className="jarvis-attach-btn inline-flex items-center gap-1.5 px-3 py-1.5 rounded-full cursor-pointer transition-all duration-200 border text-[11px] font-mono font-bold select-none active:scale-95"
-                  style={{
-                    background:
-                      showAttachMenu || attachedFiles.length > 0
-                        ? 'linear-gradient(135deg, rgba(97,215,201,0.22) 0%, rgba(56,189,248,0.18) 100%)'
-                        : 'rgba(255,255,255,0.03)',
-                    borderColor:
-                      showAttachMenu || attachedFiles.length > 0
-                        ? 'rgba(97,215,201,0.55)'
-                        : 'rgba(255,255,255,0.1)',
-                    boxShadow:
-                      showAttachMenu || attachedFiles.length > 0
-                        ? '0 0 14px rgba(97,215,201,0.3)'
-                        : 'none',
-                    color:
-                      showAttachMenu || attachedFiles.length > 0 ? '#61d7c9' : '#94a3b8',
-                  }}
-                  title="Attach text/code/PDF file or paste from clipboard"
-                  aria-label="Add attachment or paste from clipboard"
-                >
-                  <Plus
-                    size={14}
-                    className={`transition-transform duration-200 ${
-                      showAttachMenu ? 'rotate-45 text-cyan-300' : 'text-cyan-400'
-                    }`}
+                  <input
+                    ref={inputRef}
+                    type="text"
+                    value={query}
+                    onChange={(e) => setQuery(e.target.value)}
+                    placeholder={
+                      attachedFiles.length > 0
+                        ? `Ask JARVIS about ${
+                            attachedFiles.length === 1
+                              ? attachedFiles[0].name
+                              : `${attachedFiles.length} attached files`
+                          }...`
+                        : 'Ask JARVIS anything (multi-agent research, fact check, scientific audit)...'
+                    }
+                    disabled={isRunning}
+                    className="jarvis-search-input flex-1 min-w-0 w-full bg-transparent border-0 outline-none text-[14px] sm:text-[15px] text-white placeholder-[#71767b] focus:outline-none disabled:opacity-50 py-1"
                   />
-                  <span>ATTACH</span>
-                  {attachedFiles.length > 0 && (
-                    <span className="w-4 h-4 rounded-full bg-cyan-400 text-slate-950 text-[9px] font-black flex items-center justify-center">
-                      {attachedFiles.length}
-                    </span>
-                  )}
-                </button>
+                </div>
 
-                {/* Popup Menu */}
-                {showAttachMenu && (
-                  <div
-                    className="jarvis-attach-menu absolute bottom-full mb-2 left-0 w-64 rounded-2xl p-2 z-50 backdrop-blur-xl border shadow-2xl flex flex-col gap-1.5 animate-in fade-in zoom-in-95 duration-150"
-                    style={{
-                      background:
-                        'linear-gradient(145deg, rgba(8, 20, 36, 0.98) 0%, rgba(14, 18, 48, 0.98) 100%)',
-                      borderColor: 'rgba(97, 215, 201, 0.4)',
-                      boxShadow: '0 12px 32px rgba(0,0,0,0.6), 0 0 20px rgba(97,215,201,0.2)',
-                    }}
-                  >
-                    <div className="px-3 py-1 border-b border-white/10 text-[10px] font-mono text-slate-400 tracking-wider font-semibold flex items-center justify-between">
-                      <span>ATTACHMENT OPTIONS</span>
-                      <span className="text-cyan-400 font-bold">TEXT/CODE</span>
+                {/* Row 2: Left (Paperclip Attach + Deep Research Pill) | Right ('^' Modes Popover + Mic + Round White Send) */}
+                <div className="flex items-center justify-between gap-2 pt-2 mt-1.5 border-t border-white/[0.06]">
+                  {/* Left Controls: Paperclip + Deep Research */}
+                  <div className="flex items-center gap-1.5 flex-wrap">
+                    {/* Attach Paperclip Button + Popover */}
+                    <div className="relative" ref={attachMenuRef}>
+                      <button
+                        type="button"
+                        onClick={() => {
+                          setShowAttachMenu((prev) => !prev);
+                          setShowModesMenu(false);
+                          setAttachmentError(null);
+                        }}
+                        className={`jarvis-attach-btn relative w-8 h-8 rounded-full flex items-center justify-center transition-all cursor-pointer ${
+                          showAttachMenu || attachedFiles.length > 0
+                            ? 'bg-cyan-500/15 text-cyan-300 border border-cyan-500/40'
+                            : 'text-[#8b98a5] hover:text-white hover:bg-white/[0.06] border border-transparent'
+                        }`}
+                        title="Attach text/code/PDF file or paste from clipboard"
+                        aria-label="Add attachment or paste from clipboard"
+                      >
+                        <Paperclip className="w-4 h-4" />
+                        {attachedFiles.length > 0 && (
+                          <span className="absolute -top-1 -right-1 w-4 h-4 rounded-full bg-cyan-400 text-slate-950 text-[9px] font-black flex items-center justify-center">
+                            {attachedFiles.length}
+                          </span>
+                        )}
+                      </button>
+
+                      {/* Attach Popover Menu */}
+                      {showAttachMenu && (
+                        <div className="jarvis-attach-menu absolute bottom-full mb-2.5 left-0 w-64 rounded-2xl p-2 z-50 bg-[#121418] border border-[#26292e] shadow-[0_12px_42px_rgba(0,0,0,0.85)] flex flex-col gap-1">
+                          <div className="px-2.5 py-1.5 border-b border-white/[0.06] text-[10px] font-mono text-[#71767b] uppercase tracking-wider font-semibold flex items-center justify-between">
+                            <span>Attachment Options</span>
+                            <span className="text-cyan-400 font-bold">TEXT / PDF</span>
+                          </div>
+
+                          <button
+                            type="button"
+                            onClick={handleAttachFileClick}
+                            className="w-full flex items-center gap-2.5 px-2.5 py-2 rounded-xl text-left text-xs text-[#e7e9ea] hover:text-white hover:bg-white/[0.05] transition-all cursor-pointer"
+                          >
+                            <div className="w-7 h-7 rounded-lg bg-cyan-500/10 border border-cyan-500/30 flex items-center justify-center shrink-0 text-cyan-300">
+                              <Paperclip size={13} />
+                            </div>
+                            <div className="flex flex-col min-w-0">
+                              <span className="font-semibold text-white">Attach File</span>
+                              <span className="text-[10px] text-[#71767b] truncate">
+                                .txt, .pdf, .py, .html, .js, .ts, .json, .md
+                              </span>
+                            </div>
+                          </button>
+
+                          <button
+                            type="button"
+                            onClick={handlePasteFromClipboard}
+                            className="w-full flex items-center gap-2.5 px-2.5 py-2 rounded-xl text-left text-xs text-[#e7e9ea] hover:text-white hover:bg-white/[0.05] transition-all cursor-pointer"
+                          >
+                            <div className="w-7 h-7 rounded-lg bg-purple-500/10 border border-purple-500/30 flex items-center justify-center shrink-0 text-purple-300">
+                              <Clipboard size={13} />
+                            </div>
+                            <div className="flex flex-col min-w-0">
+                              <span className="font-semibold text-white">Paste from Clipboard</span>
+                              <span className="text-[10px] text-[#71767b]">
+                                Insert copied text or code into input
+                              </span>
+                            </div>
+                          </button>
+                        </div>
+                      )}
                     </div>
 
-                    {/* Option 1: Attach File */}
+                    {/* Deep Research Pill Button */}
                     <button
                       type="button"
-                      onClick={handleAttachFileClick}
-                      className="w-full flex items-center gap-2.5 px-3 py-2 rounded-xl text-left text-xs font-mono text-slate-200 hover:text-white hover:bg-cyan-500/15 transition-all group border border-transparent hover:border-cyan-400/30 cursor-pointer"
+                      onClick={() => setDeepResearch((prev) => !prev)}
+                      className={`inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-[11px] font-semibold border transition-all cursor-pointer select-none ${
+                        deepResearch
+                          ? 'bg-cyan-500/15 border-cyan-400/50 text-cyan-300 shadow-[0_0_14px_rgba(34,211,238,0.2)]'
+                          : 'bg-white/[0.04] hover:bg-white/[0.08] border-white/[0.08] text-[#8b98a5] hover:text-white'
+                      }`}
+                      title="Toggle Deep Research (5-Agent Mesh)"
                     >
-                      <div className="w-7 h-7 rounded-lg bg-cyan-500/10 border border-cyan-400/30 flex items-center justify-center shrink-0 group-hover:bg-cyan-500/20 text-cyan-300">
-                        <Paperclip size={14} />
-                      </div>
-                      <div className="flex flex-col min-w-0">
-                        <span className="font-bold text-white tracking-wide">Attach File</span>
-                        <span className="text-[10px] text-slate-400 truncate">
-                          .txt, .pdf, .py, .html, .js, .ts, .json, .md
-                        </span>
-                      </div>
-                    </button>
-
-                    {/* Option 2: Paste from Clipboard */}
-                    <button
-                      type="button"
-                      onClick={handlePasteFromClipboard}
-                      className="w-full flex items-center gap-2.5 px-3 py-2 rounded-xl text-left text-xs font-mono text-slate-200 hover:text-white hover:bg-purple-500/15 transition-all group border border-transparent hover:border-purple-400/30 cursor-pointer"
-                    >
-                      <div className="w-7 h-7 rounded-lg bg-purple-500/10 border border-purple-400/30 flex items-center justify-center shrink-0 group-hover:bg-purple-500/20 text-purple-300">
-                        <Clipboard size={14} />
-                      </div>
-                      <div className="flex flex-col min-w-0">
-                        <span className="font-bold text-white tracking-wide">Paste from Clipboard</span>
-                        <span className="text-[10px] text-slate-400">
-                          Insert copied text or code into input
-                        </span>
-                      </div>
+                      <span>⚡ Deep Research</span>
+                      <span className="hidden md:inline text-[10px] font-mono opacity-75">
+                        (5-AGENT MESH)
+                      </span>
                     </button>
                   </div>
-                )}
-              </div>
-            </div>
 
-            {/* Round Auxiliary Action Chips */}
-            <div className="jarvis-aux-buttons-group flex items-center gap-2 flex-wrap">
+                  {/* Right Controls: '^' Modes Popover + Mic + Parallax Round White Send */}
+                  <div className="flex items-center gap-1.5">
+                    {/* '^' Modes Popover Trigger + Menu */}
+                    <div className="relative" ref={modesMenuRef}>
+                      <button
+                        type="button"
+                        onClick={() => {
+                          setShowModesMenu((prev) => !prev);
+                          setShowAttachMenu(false);
+                        }}
+                        className={`inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-xs font-medium border transition-all cursor-pointer select-none ${
+                          showModesMenu || activePopoverModesCount > 0
+                            ? 'bg-cyan-500/15 border-cyan-500/40 text-cyan-300'
+                            : 'bg-white/[0.04] hover:bg-white/[0.08] border-white/[0.08] text-[#e7e9ea]'
+                        }`}
+                        title="Open Jarvis Modes"
+                      >
+                        <span>
+                          {activePopoverModesCount > 0
+                            ? `Modes · ${activePopoverModesCount}`
+                            : 'Modes'}
+                        </span>
+                        <ChevronUp
+                          className={`w-3.5 h-3.5 text-[#8b98a5] transition-transform duration-200 ${
+                            showModesMenu ? 'rotate-180 text-cyan-300' : ''
+                          }`}
+                        />
+                      </button>
+
+                      {/* '^' Modes Popover Panel */}
+                      {showModesMenu && (
+                        <div className="jarvis-modes-popover absolute bottom-full right-0 mb-2.5 w-[290px] sm:w-[320px] rounded-2xl p-2.5 z-50 bg-[#121418] border border-[#26292e] shadow-[0_12px_42px_rgba(0,0,0,0.85)]">
+                          <div className="flex items-center justify-between px-2 py-1.5 mb-1 border-b border-white/[0.06]">
+                            <span className="text-[11px] font-mono uppercase tracking-wider text-[#71767b]">
+                              Select Jarvis Modes
+                            </span>
+                            <button
+                              type="button"
+                              onClick={() => setShowModesMenu(false)}
+                              className="text-[#71767b] hover:text-white p-0.5 rounded cursor-pointer"
+                              aria-label="Close modes menu"
+                            >
+                              <X className="w-3.5 h-3.5" />
+                            </button>
+                          </div>
+
+                          <div className="flex flex-col gap-1.5">
+                            {/* 1. New Agent Mode */}
+                            <label
+                              className={`flex items-center justify-between gap-2 px-3 py-2 rounded-xl cursor-pointer transition-all border ${
+                                newAgentMode
+                                  ? 'bg-purple-500/15 border-purple-500/40 text-purple-200'
+                                  : 'bg-white/[0.02] hover:bg-white/[0.05] border-transparent text-[#e7e9ea]'
+                              }`}
+                              title={
+                                newAgentMode
+                                  ? 'New Agent Mode active: 5-node dynamic pipeline (Planner → 3 Query-Tailored Specialists → Synthesizer)'
+                                  : 'Enable New Agent Mode (dynamic 5-node specialist pipeline)'
+                              }
+                            >
+                              <input
+                                type="checkbox"
+                                checked={newAgentMode}
+                                onChange={(e) => setNewAgentMode(e.target.checked)}
+                                className="hidden"
+                              />
+                              <div className="flex items-center gap-2 min-w-0">
+                                <span>✨</span>
+                                <div className="flex flex-col min-w-0">
+                                  <span className="text-xs font-semibold leading-tight">
+                                    New Agent
+                                  </span>
+                                  <span className="text-[10px] text-[#71767b] truncate">
+                                    Dynamic 5-node specialist pipeline
+                                  </span>
+                                </div>
+                              </div>
+                              <div
+                                className={`w-7 h-3.5 rounded-full transition-colors relative flex items-center p-0.5 shrink-0 ${
+                                  newAgentMode ? 'bg-purple-400' : 'bg-slate-700'
+                                }`}
+                              >
+                                <div
+                                  className={`w-2.5 h-2.5 rounded-full bg-slate-950 transition-transform duration-200 ${
+                                    newAgentMode ? 'translate-x-3.5' : 'translate-x-0'
+                                  }`}
+                                />
+                              </div>
+                            </label>
+
+                            {/* 2. Diagram Mode */}
+                            <label
+                              className={`flex items-center justify-between gap-2 px-3 py-2 rounded-xl cursor-pointer transition-all border ${
+                                diagramMode
+                                  ? 'bg-amber-500/15 border-amber-500/40 text-amber-200'
+                                  : 'bg-white/[0.02] hover:bg-white/[0.05] border-transparent text-[#e7e9ea]'
+                              }`}
+                            >
+                              <input
+                                type="checkbox"
+                                checked={diagramMode}
+                                onChange={(e) => setDiagramMode(e.target.checked)}
+                                className="hidden"
+                              />
+                              <div className="flex items-center gap-2 min-w-0">
+                                <span>🏗️</span>
+                                <div className="flex flex-col min-w-0">
+                                  <span className="text-xs font-semibold leading-tight">
+                                    Diagram Mode
+                                  </span>
+                                  <span className="text-[10px] text-[#71767b] truncate">
+                                    SVG architectural blueprint
+                                  </span>
+                                </div>
+                              </div>
+                              <div
+                                className={`w-7 h-3.5 rounded-full transition-colors relative flex items-center p-0.5 shrink-0 ${
+                                  diagramMode ? 'bg-amber-400' : 'bg-slate-700'
+                                }`}
+                              >
+                                <div
+                                  className={`w-2.5 h-2.5 rounded-full bg-slate-950 transition-transform duration-200 ${
+                                    diagramMode ? 'translate-x-3.5' : 'translate-x-0'
+                                  }`}
+                                />
+                              </div>
+                            </label>
+
+                            {/* 3. Chart Mode */}
+                            <label
+                              className={`flex items-center justify-between gap-2 px-3 py-2 rounded-xl cursor-pointer transition-all border ${
+                                chartMode
+                                  ? 'bg-sky-500/15 border-sky-500/40 text-sky-200'
+                                  : 'bg-white/[0.02] hover:bg-white/[0.05] border-transparent text-[#e7e9ea]'
+                              }`}
+                            >
+                              <input
+                                type="checkbox"
+                                checked={chartMode}
+                                onChange={(e) => setChartMode(e.target.checked)}
+                                className="hidden"
+                              />
+                              <div className="flex items-center gap-2 min-w-0">
+                                <span>📊</span>
+                                <div className="flex flex-col min-w-0">
+                                  <span className="text-xs font-semibold leading-tight">
+                                    Chart Mode
+                                  </span>
+                                  <span className="text-[10px] text-[#71767b] truncate">
+                                    Interactive quantitative chart
+                                  </span>
+                                </div>
+                              </div>
+                              <div
+                                className={`w-7 h-3.5 rounded-full transition-colors relative flex items-center p-0.5 shrink-0 ${
+                                  chartMode ? 'bg-sky-400' : 'bg-slate-700'
+                                }`}
+                              >
+                                <div
+                                  className={`w-2.5 h-2.5 rounded-full bg-slate-950 transition-transform duration-200 ${
+                                    chartMode ? 'translate-x-3.5' : 'translate-x-0'
+                                  }`}
+                                />
+                              </div>
+                            </label>
+
+                            {/* 4. Image Mode */}
+                            <label
+                              className={`flex items-center justify-between gap-2 px-3 py-2 rounded-xl cursor-pointer transition-all border ${
+                                imageMode
+                                  ? 'bg-pink-500/15 border-pink-500/40 text-pink-200'
+                                  : 'bg-white/[0.02] hover:bg-white/[0.05] border-transparent text-[#e7e9ea]'
+                              }`}
+                            >
+                              <input
+                                type="checkbox"
+                                checked={imageMode}
+                                onChange={(e) => setImageMode(e.target.checked)}
+                                className="hidden"
+                              />
+                              <div className="flex items-center gap-2 min-w-0">
+                                <span>🖼️</span>
+                                <div className="flex flex-col min-w-0">
+                                  <span className="text-xs font-semibold leading-tight">
+                                    Image Mode
+                                  </span>
+                                  <span className="text-[10px] text-[#71767b] truncate">
+                                    Retrieve visual media gallery
+                                  </span>
+                                </div>
+                              </div>
+                              <div
+                                className={`w-7 h-3.5 rounded-full transition-colors relative flex items-center p-0.5 shrink-0 ${
+                                  imageMode ? 'bg-pink-400' : 'bg-slate-700'
+                                }`}
+                              >
+                                <div
+                                  className={`w-2.5 h-2.5 rounded-full bg-slate-950 transition-transform duration-200 ${
+                                    imageMode ? 'translate-x-3.5' : 'translate-x-0'
+                                  }`}
+                                />
+                              </div>
+                            </label>
+
+                            {/* 5. Coder Mode */}
+                            <label
+                              className={`flex items-center justify-between gap-2 px-3 py-2 rounded-xl cursor-pointer transition-all border ${
+                                coderMode
+                                  ? 'bg-emerald-500/15 border-emerald-500/40 text-emerald-200'
+                                  : 'bg-white/[0.02] hover:bg-white/[0.05] border-transparent text-[#e7e9ea]'
+                              }`}
+                              title={
+                                coderMode
+                                  ? 'Coder Agent enabled (auto-detection active)'
+                                  : 'Coder Agent disabled (auto-detection disabled)'
+                              }
+                            >
+                              <input
+                                type="checkbox"
+                                checked={coderMode}
+                                onChange={(e) => handleToggleCoderMode(e.target.checked)}
+                                className="hidden"
+                              />
+                              <div className="flex items-center gap-2 min-w-0">
+                                <span>💻</span>
+                                <div className="flex flex-col min-w-0">
+                                  <span className="text-xs font-semibold leading-tight">
+                                    Coder
+                                  </span>
+                                  <span className="text-[10px] text-[#71767b] truncate">
+                                    Specialized software engineer agent
+                                  </span>
+                                </div>
+                              </div>
+                              <div
+                                className={`w-7 h-3.5 rounded-full transition-colors relative flex items-center p-0.5 shrink-0 ${
+                                  coderMode ? 'bg-emerald-400' : 'bg-slate-700'
+                                }`}
+                              >
+                                <div
+                                  className={`w-2.5 h-2.5 rounded-full bg-slate-950 transition-transform duration-200 ${
+                                    coderMode ? 'translate-x-3.5' : 'translate-x-0'
+                                  }`}
+                                />
+                              </div>
+                            </label>
+
+                            {/* 6. Search My Docs (RAG) + Document Selector */}
+                            <div
+                              className={`flex flex-col gap-2 px-3 py-2 rounded-xl transition-all border ${
+                                searchMyDocs
+                                  ? 'bg-purple-500/15 border-purple-500/40 text-purple-200'
+                                  : 'bg-white/[0.02] hover:bg-white/[0.05] border-transparent text-[#e7e9ea]'
+                              }`}
+                            >
+                              <label
+                                className="flex items-center justify-between gap-2 cursor-pointer"
+                                title={
+                                  availableDocs.length === 0
+                                    ? 'Upload documents in Settings > Document Library to search vector memory'
+                                    : searchMyDocs
+                                    ? `Searching ${
+                                        docSearchMode === 'specific' && selectedDocId
+                                          ? availableDocs.find((d) => d.id === selectedDocId)?.name ||
+                                            'selected document'
+                                          : 'all indexed library documents'
+                                      }`
+                                    : 'Enable Document Library (Vector Memory / RAG) search'
+                                }
+                              >
+                                <input
+                                  type="checkbox"
+                                  checked={searchMyDocs}
+                                  onChange={(e) => setSearchMyDocs(e.target.checked)}
+                                  className="hidden"
+                                />
+                                <div className="flex items-center gap-2 min-w-0">
+                                  <span>📚</span>
+                                  <div className="flex flex-col min-w-0">
+                                    <div className="flex items-center gap-1.5">
+                                      <span className="text-xs font-semibold leading-tight">
+                                        Search My Docs
+                                      </span>
+                                      {availableDocs.length > 0 && (
+                                        <span className="text-[9px] px-1.5 py-0.2 rounded-full bg-purple-500/20 text-purple-300 border border-purple-500/30 font-mono">
+                                          {availableDocs.filter((d) => d.enabledForJarvis).length}
+                                        </span>
+                                      )}
+                                    </div>
+                                    <span className="text-[10px] text-[#71767b] truncate">
+                                      Vector memory / RAG search
+                                    </span>
+                                  </div>
+                                </div>
+                                <div
+                                  className={`w-7 h-3.5 rounded-full transition-colors relative flex items-center p-0.5 shrink-0 ${
+                                    searchMyDocs ? 'bg-purple-400' : 'bg-slate-700'
+                                  }`}
+                                >
+                                  <div
+                                    className={`w-2.5 h-2.5 rounded-full bg-slate-950 transition-transform duration-200 ${
+                                      searchMyDocs ? 'translate-x-3.5' : 'translate-x-0'
+                                    }`}
+                                  />
+                                </div>
+                              </label>
+
+                              {searchMyDocs && availableDocs.length > 0 && (
+                                <select
+                                  value={docSearchMode === 'specific' ? selectedDocId : 'all'}
+                                  onChange={(e) => {
+                                    if (e.target.value === 'all') {
+                                      setDocSearchMode('all');
+                                      setSelectedDocId('');
+                                    } else {
+                                      setDocSearchMode('specific');
+                                      setSelectedDocId(e.target.value);
+                                    }
+                                  }}
+                                  className="w-full bg-[#0b0d11] text-purple-200 text-[11px] font-mono border border-purple-500/30 rounded-lg px-2.5 py-1.5 focus:outline-none focus:border-purple-400 cursor-pointer"
+                                >
+                                  <option value="all">
+                                    All Docs ({availableDocs.filter((d) => d.enabledForJarvis).length})
+                                  </option>
+                                  {availableDocs.map((doc) => (
+                                    <option key={doc.id} value={doc.id}>
+                                      📄 {doc.name.length > 26 ? doc.name.slice(0, 24) + '...' : doc.name}
+                                    </option>
+                                  ))}
+                                </select>
+                              )}
+                            </div>
+                          </div>
+                        </div>
+                      )}
+                    </div>
+
+                    {/* Mic / Voice Button */}
+                    <button
+                      type="button"
+                      onClick={toggleVoiceInput}
+                      aria-label="Voice input"
+                      title={voiceListening ? 'Stop Listening' : 'Speak Prompt'}
+                      className={`jarvis-mic-btn w-8 h-8 sm:w-9 sm:h-9 rounded-full flex items-center justify-center transition-all duration-200 shrink-0 cursor-pointer ${
+                        voiceListening
+                          ? 'bg-rose-500 text-white shadow-[0_0_16px_#f43f5e] animate-pulse'
+                          : 'bg-white/[0.05] hover:bg-white/[0.1] text-[#8b98a5] hover:text-white border border-white/[0.08]'
+                      }`}
+                    >
+                      <Mic size={15} className={voiceListening ? 'animate-bounce' : ''} />
+                    </button>
+
+                    {/* Parallax Round White Send Button */}
+                    <button
+                      type="submit"
+                      disabled={
+                        (!query.trim() && attachedFiles.length === 0) ||
+                        isRunning ||
+                        isExtractingAttachment
+                      }
+                      title={
+                        isRunning
+                          ? 'Orchestrating...'
+                          : isExtractingAttachment
+                          ? 'Extracting...'
+                          : 'Ask JARVIS'
+                      }
+                      aria-label="Ask JARVIS"
+                      className="jarvis-submit-btn w-8 h-8 sm:w-9 sm:h-9 rounded-full bg-white hover:bg-zinc-200 text-black flex items-center justify-center transition-transform active:scale-95 shrink-0 shadow-sm cursor-pointer disabled:opacity-40 disabled:cursor-not-allowed"
+                    >
+                      {isRunning ? (
+                        <Loader2 className="w-4 h-4 animate-spin text-black" />
+                      ) : (
+                        <Send className="w-4 h-4 text-black" />
+                      )}
+                    </button>
+                  </div>
+                </div>
+              </div>
+            );
+          })()}
+
+          {/* Compact Auxiliary Actions Row Below Composer */}
+          <div className="jarvis-aux-buttons-group flex items-center justify-between flex-wrap gap-2 px-1">
+            <div className="flex items-center gap-1.5 flex-wrap">
               <button
                 type="button"
                 onClick={onOpenSettings}
-                className="jarvis-aux-btn inline-flex items-center gap-1.5 px-3.5 py-1.5 rounded-full text-xs font-bold text-cyan-300 bg-cyan-500/10 hover:bg-cyan-500/20 border border-cyan-500/30 hover:border-cyan-400/60 shadow-sm transition-all duration-200"
+                className="jarvis-aux-btn inline-flex items-center gap-1.5 px-3 py-1 rounded-full text-[11px] font-medium text-[#8b98a5] hover:text-white bg-[#121418] hover:bg-white/[0.06] border border-[#26292e] transition-colors cursor-pointer"
                 title="Configure Agent parameters, providers and models"
               >
-                <Cpu size={13} className="text-cyan-400" />
+                <Cpu size={12} className="text-cyan-400" />
                 <span>Configure Agents</span>
               </button>
 
@@ -2158,10 +2172,10 @@ export function JarvisChat({ config, onOpenSettings }: JarvisChatProps) {
                 <button
                   type="button"
                   onClick={handleNewChat}
-                  className="jarvis-aux-btn inline-flex items-center gap-1.5 px-3.5 py-1.5 rounded-full text-xs font-bold text-sky-200 bg-sky-500/10 hover:bg-sky-500/20 border border-sky-400/30 hover:border-sky-300/60 shadow-sm transition-all duration-200"
+                  className="jarvis-aux-btn inline-flex items-center gap-1.5 px-3 py-1 rounded-full text-[11px] font-medium text-[#8b98a5] hover:text-white bg-[#121418] hover:bg-white/[0.06] border border-[#26292e] transition-colors cursor-pointer"
                   title="Start a fresh chat"
                 >
-                  <Plus size={13} className="text-sky-300" />
+                  <Plus size={12} className="text-sky-400" />
                   <span>New Inquiry</span>
                 </button>
               )}
@@ -2170,12 +2184,12 @@ export function JarvisChat({ config, onOpenSettings }: JarvisChatProps) {
                 <button
                   type="button"
                   onClick={() => setShowClearConfirm(true)}
-                  className="jarvis-aux-btn inline-flex items-center gap-1.5 px-3.5 py-1.5 rounded-full text-xs font-bold text-rose-300 bg-rose-500/10 hover:bg-rose-500/20 border border-rose-500/30 hover:border-rose-400/60 shadow-sm transition-all duration-200"
+                  className="jarvis-aux-btn inline-flex items-center gap-1.5 px-3 py-1 rounded-full text-[11px] font-medium text-rose-300/90 hover:text-rose-200 bg-[#121418] hover:bg-rose-500/10 border border-[#26292e] hover:border-rose-500/30 transition-colors cursor-pointer"
                   title="Clear conversation history"
                 >
-                  <Trash2 size={13} className="text-rose-400" />
+                  <Trash2 size={12} className="text-rose-400" />
                   <span>Clear</span>
-                  <span className="px-1.5 py-0.5 rounded-full bg-rose-500/30 text-[10px] font-mono">
+                  <span className="px-1.5 py-0.2 rounded-full bg-rose-500/20 text-[10px] font-mono text-rose-300">
                     {messages.length}
                   </span>
                 </button>
@@ -2183,20 +2197,20 @@ export function JarvisChat({ config, onOpenSettings }: JarvisChatProps) {
             </div>
           </div>
 
-          {/* Quick Colorful Prompt Pills Carousel */}
+          {/* Suggested Research Tracks (Parallax Chip Style) */}
           {messages.length === 0 && !isRunning && (
-            <div className="pt-2 border-t border-white/10 flex flex-col gap-2">
-              <span className="text-[11px] font-mono tracking-wider text-slate-400 uppercase font-semibold flex items-center gap-1.5">
-                <Sparkles size={12} className="text-cyan-400" />
+            <div className="pt-1 flex flex-col gap-2">
+              <span className="text-[10px] font-mono tracking-wider text-[#71767b] uppercase font-semibold flex items-center gap-1.5 px-1">
+                <Sparkles size={11} className="text-cyan-400" />
                 Suggested Research Tracks:
               </span>
-              <div className="jarvis-prompt-pills-row flex flex-wrap gap-2">
+              <div className="jarvis-prompt-pills-row flex flex-wrap gap-1.5">
                 {QUICK_PROMPT_PILLS.map((p, idx) => (
                   <button
                     key={idx}
                     type="button"
                     onClick={() => handleSend(p.label)}
-                    className={`jarvis-quick-prompt-pill inline-flex items-center gap-1.5 px-3.5 py-1.5 rounded-full text-xs font-semibold bg-gradient-to-r ${p.color} border ${p.border} ${p.text} hover:scale-105 hover:shadow-[0_0_14px_rgba(97,215,201,0.25)] transition-all duration-200`}
+                    className="jarvis-quick-prompt-pill inline-flex items-center gap-1.5 px-3 py-1.5 rounded-full text-xs font-medium bg-[#121418] hover:bg-white/[0.06] border border-[#26292e] text-[#e7e9ea] transition-colors cursor-pointer"
                   >
                     <span>{p.emoji}</span>
                     <span>{p.label}</span>
@@ -2206,33 +2220,24 @@ export function JarvisChat({ config, onOpenSettings }: JarvisChatProps) {
             </div>
           )}
 
-
-
           {/* Cleared Success Feedback Banner */}
           {clearedBanner && (
-            <div className="flex items-center gap-2 p-3 rounded-2xl bg-cyan-500/15 border border-cyan-400/40 text-cyan-300 text-xs font-bold shadow-md">
-              <CheckCircle2 size={16} className="text-cyan-400" />
+            <div className="flex items-center gap-2 px-3.5 py-2.5 rounded-2xl bg-[#121418] border border-cyan-500/40 text-cyan-300 text-xs font-semibold">
+              <CheckCircle2 size={15} className="text-cyan-400" />
               <span>Conversation history cleared. Ready for your next deep inquiry!</span>
             </div>
           )}
 
           {/* Clear Confirmation Rounded Modal */}
           {showClearConfirm && (
-            <div
-              className="p-4 rounded-2xl backdrop-blur-xl flex items-center justify-between flex-wrap gap-3 mt-1"
-              style={{
-                background: 'linear-gradient(135deg, rgba(40, 15, 20, 0.95) 0%, rgba(30, 10, 15, 0.95) 100%)',
-                border: '1px solid rgba(244, 63, 94, 0.45)',
-                boxShadow: '0 8px 30px rgba(0,0,0,0.5), 0 0 16px rgba(244,63,94,0.2)',
-              }}
-            >
+            <div className="p-4 rounded-2xl bg-[#121418] border border-rose-500/40 shadow-[0_8px_30px_rgba(0,0,0,0.75)] flex items-center justify-between flex-wrap gap-3 mt-1">
               <div className="flex items-center gap-2.5">
-                <AlertTriangle size={18} className="text-rose-400 shrink-0" />
+                <AlertTriangle size={16} className="text-rose-400 shrink-0" />
                 <div>
                   <div className="text-white text-xs font-bold">
                     Clear all {messages.length} {messages.length === 1 ? 'message' : 'messages'} from JARVIS history?
                   </div>
-                  <div className="text-rose-200/70 text-[11px]">
+                  <div className="text-[#71767b] text-[11px]">
                     This will reset the current multi-agent session.
                   </div>
                 </div>
@@ -2242,14 +2247,14 @@ export function JarvisChat({ config, onOpenSettings }: JarvisChatProps) {
                 <button
                   type="button"
                   onClick={() => setShowClearConfirm(false)}
-                  className="px-3.5 py-1.5 rounded-full bg-white/10 hover:bg-white/20 text-white text-xs font-bold transition-colors"
+                  className="px-3.5 py-1.5 rounded-full bg-white/[0.06] hover:bg-white/[0.12] text-white text-xs font-semibold transition-colors cursor-pointer"
                 >
                   Cancel
                 </button>
                 <button
                   type="button"
                   onClick={handleConfirmClearChat}
-                  className="px-4 py-1.5 rounded-full bg-rose-600 hover:bg-rose-500 text-white text-xs font-bold flex items-center gap-1.5 shadow-lg transition-colors"
+                  className="px-4 py-1.5 rounded-full bg-rose-600 hover:bg-rose-500 text-white text-xs font-semibold flex items-center gap-1.5 transition-colors cursor-pointer"
                 >
                   <Trash2 size={12} />
                   Yes, Clear All
@@ -2259,8 +2264,6 @@ export function JarvisChat({ config, onOpenSettings }: JarvisChatProps) {
           )}
         </form>
       </div>
-
-
     </div>
   );
 }

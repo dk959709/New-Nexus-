@@ -3,20 +3,24 @@ import { MessageSquare, Sliders, Zap } from 'lucide-react';
 import { storage } from '@/lib/storage';
 import { JarvisChat } from '@/components/jarvis/JarvisChat';
 import { JarvisSettings } from '@/components/jarvis/JarvisSettings';
+import { getSavedParallaxTheme, type ParallaxTheme } from '@/components/parallax/ParallaxSettings';
 import type { JarvisSystemConfig } from '@/types';
 
 export function JarvisPage() {
   const [activeTab, setActiveTab] = useState<'chat' | 'settings'>('chat');
   const [config, setConfig] = useState<JarvisSystemConfig>(() => storage.getJarvisConfig());
+  const [parallaxTheme, setParallaxTheme] = useState<ParallaxTheme>(() => getSavedParallaxTheme());
 
   // Keep state synchronized with storage whenever switching views or when storage updates
   useEffect(() => {
     setConfig(storage.getJarvisConfig());
+    setParallaxTheme(getSavedParallaxTheme());
   }, [activeTab]);
 
   useEffect(() => {
     const handleStorageChange = () => {
       setConfig(storage.getJarvisConfig());
+      setParallaxTheme(getSavedParallaxTheme());
     };
     window.addEventListener('storage', handleStorageChange);
     window.addEventListener('focus', handleStorageChange);
@@ -30,132 +34,75 @@ export function JarvisPage() {
     setConfig(updated);
   };
 
+  const wrapperThemeClass =
+    parallaxTheme === 'classic'
+      ? 'theme-classic bg-[#060911] text-[#f1f5f9] bg-[radial-gradient(ellipse_at_top,_var(--tw-gradient-stops))] from-[#0b192e] via-[#060911] to-[#04060b]'
+      : parallaxTheme === 'minimal'
+      ? 'theme-minimal bg-[#0c0d10] text-[#e7e9ea]'
+      : 'theme-fulldark bg-black text-[#e7e9ea]';
+
   return (
-    <div className="main-content-flow" style={{ maxWidth: '1160px', margin: '0 auto', paddingBottom: '32px' }}>
-      {/* JARVIS Top Header */}
-      <div
-        className="jarvis-page-header"
-        style={{
-          display: 'flex',
-          justifyContent: 'space-between',
-          alignItems: 'center',
-          flexWrap: 'wrap',
-          gap: '16px',
-          paddingBottom: '14px',
-        }}
-      >
-        <div>
-          <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
-            <div
-              style={{
-                width: '36px',
-                height: '36px',
-                borderRadius: '10px',
-                background: 'linear-gradient(135deg, rgba(97,215,201,0.25) 0%, rgba(56,189,248,0.25) 100%)',
-                border: '1px solid rgba(97,215,201,0.4)',
-                display: 'grid',
-                placeItems: 'center',
-                boxShadow: '0 0 16px rgba(97,215,201,0.25)',
-              }}
-            >
-              <Zap size={20} className="text-accent" />
-            </div>
-            <div>
-              <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
-                <h1 className="jarvis-page-title" style={{ margin: 0, fontSize: '26px', fontWeight: 900, letterSpacing: '-0.03em', color: '#fff' }}>
-                  JARVIS
-                </h1>
-                <span
-                  className="jarvis-page-badge"
-                  style={{
-                    fontSize: '11px',
-                    fontFamily: 'DM Mono',
-                    padding: '3px 8px',
-                    borderRadius: '6px',
-                    background: 'rgba(97,215,201,0.15)',
-                    color: 'var(--accent)',
-                    border: '1px solid rgba(97,215,201,0.3)',
-                    fontWeight: 700,
-                  }}
-                >
-                  10-AGENT COGNITIVE MESH
-                </span>
+    <div className={`jarvis-page-wrapper min-h-screen transition-colors duration-300 ${wrapperThemeClass} -mx-4 sm:-mx-8 md:-mx-12 -my-8 px-3 sm:px-6 lg:px-8 py-3`}>
+      <div className="main-content-flow max-w-[1440px] mx-auto pb-8">
+        {/* JARVIS Top Header (Parallax style) */}
+        <div className="jarvis-page-header flex flex-wrap items-center justify-between gap-3 py-2 mb-3 border-b border-[#26292e]">
+          <div className="min-w-0">
+            <div className="flex items-center gap-2.5 flex-wrap">
+              <div className="w-8 h-8 rounded-xl flex items-center justify-center shrink-0 bg-[#121418] border border-[#26292e] shadow-inner">
+                <Zap className="w-4 h-4 text-cyan-400" />
               </div>
+              <h1 className="jarvis-page-title text-base sm:text-lg font-extrabold tracking-tight text-white m-0">
+                JARVIS
+              </h1>
+              <span className="jarvis-page-badge px-2 py-0.5 rounded-full text-[10px] font-mono uppercase tracking-wider bg-cyan-500/10 border border-cyan-500/30 text-cyan-300 font-bold">
+                10-AGENT COGNITIVE MESH
+              </span>
             </div>
+            <p className="jarvis-page-description mt-1 mb-0 text-[11px] sm:text-xs text-[#71767b] leading-relaxed">
+              Multi-Tier Pipeline: 6 Core Consensus (Planner 🧭 → Researcher 🔎 → Fact Checker 🛡️ → Advisor 💡 → Reviewer 🔬 → Synthesizer ✨) + 4 Specialized (Architect 🏗️ · Data Analyst 📊 · Image Finder 🖼️ · Coder 💻)
+            </p>
           </div>
-          <p className="jarvis-page-description" style={{ margin: '6px 0 0', color: 'var(--muted)', fontSize: '13px' }}>
-            Multi-Tier Pipeline: 6 Core Consensus (Planner 🧭 → Researcher 🔎 → Fact Checker 🛡️ → Advisor 💡 → Reviewer 🔬 → Synthesizer ✨) + 4 Specialized (Architect 🏗️ · Data Analyst 📊 · Image Finder 🖼️ · Coder 💻)
-          </p>
+
+          {/* Tab Controls (Parallax pill style) */}
+          <div className="jarvis-page-tabs flex items-center gap-1.5 bg-[#121418] border border-[#26292e] rounded-full p-1">
+            <button
+              type="button"
+              className={`jarvis-tab-btn inline-flex items-center gap-1.5 px-3 py-1.5 rounded-full text-xs font-semibold transition-all cursor-pointer ${
+                activeTab === 'chat'
+                  ? 'bg-cyan-500/15 text-cyan-300 border border-cyan-500/35 shadow-[0_0_12px_rgba(34,211,238,0.12)]'
+                  : 'text-[#8b98a5] hover:text-white hover:bg-white/[0.04] border border-transparent'
+              }`}
+              onClick={() => setActiveTab('chat')}
+            >
+              <MessageSquare className="w-3.5 h-3.5" />
+              <span>JARVIS Console & HUD</span>
+            </button>
+
+            <button
+              type="button"
+              className={`jarvis-tab-btn inline-flex items-center gap-1.5 px-3 py-1.5 rounded-full text-xs font-semibold transition-all cursor-pointer ${
+                activeTab === 'settings'
+                  ? 'bg-cyan-500/15 text-cyan-300 border border-cyan-500/35 shadow-[0_0_12px_rgba(34,211,238,0.12)]'
+                  : 'text-[#8b98a5] hover:text-white hover:bg-white/[0.04] border border-transparent'
+              }`}
+              onClick={() => setActiveTab('settings')}
+            >
+              <Sliders className="w-3.5 h-3.5" />
+              <span>Agent Configurations</span>
+            </button>
+          </div>
         </div>
 
-        {/* Tab Controls */}
-        <div
-          className="jarvis-page-tabs"
-          style={{
-            display: 'flex',
-            padding: '4px',
-            background: 'rgba(6,16,24,0.7)',
-            border: '1px solid rgba(165,207,214,0.18)',
-            borderRadius: '12px',
-            gap: '4px',
-          }}
-        >
-          <button
-            type="button"
-            className="jarvis-tab-btn"
-            onClick={() => setActiveTab('chat')}
-            style={{
-              display: 'inline-flex',
-              alignItems: 'center',
-              gap: '6px',
-              padding: '8px 16px',
-              borderRadius: '8px',
-              fontSize: '13px',
-              fontWeight: 700,
-              border: 'none',
-              cursor: 'pointer',
-              background: activeTab === 'chat' ? 'var(--accent)' : 'transparent',
-              color: activeTab === 'chat' ? '#04121a' : 'var(--muted)',
-              transition: 'all 0.2s ease',
-            }}
-          >
-            <MessageSquare size={14} />
-            JARVIS Console & HUD
-          </button>
-
-          <button
-            type="button"
-            className="jarvis-tab-btn"
-            onClick={() => setActiveTab('settings')}
-            style={{
-              display: 'inline-flex',
-              alignItems: 'center',
-              gap: '6px',
-              padding: '8px 16px',
-              borderRadius: '8px',
-              fontSize: '13px',
-              fontWeight: 700,
-              border: 'none',
-              cursor: 'pointer',
-              background: activeTab === 'settings' ? 'var(--accent)' : 'transparent',
-              color: activeTab === 'settings' ? '#04121a' : 'var(--muted)',
-              transition: 'all 0.2s ease',
-            }}
-          >
-            <Sliders size={14} />
-            Agent Configurations
-          </button>
-        </div>
+        {/* Main Tab Content */}
+        {activeTab === 'chat' ? (
+          <JarvisChat config={config} onOpenSettings={() => setActiveTab('settings')} />
+        ) : (
+          <JarvisSettings onSaved={handleConfigSaved} />
+        )}
       </div>
-
-      {/* Main Tab Content */}
-      {activeTab === 'chat' ? (
-        <JarvisChat config={config} onOpenSettings={() => setActiveTab('settings')} />
-      ) : (
-        <JarvisSettings onSaved={handleConfigSaved} />
-      )}
     </div>
   );
 }
 
 export default JarvisPage;
+
