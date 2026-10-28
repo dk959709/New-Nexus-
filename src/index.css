@@ -2432,7 +2432,8 @@
 
   .jarvis-modes-popover,
   .jarvis-attach-menu {
-    max-width: calc(100vw - 32px) !important;
+    max-width: 100% !important;
+    box-sizing: border-box !important;
   }
 
   /* Quick prompt pills (Stitch horizontal tactical chips) */
