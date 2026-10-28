@@ -1,4 +1,4 @@
-import React from 'react';
+import React, { useState, useEffect } from 'react';
 import {
   Compass,
   Globe2,
@@ -17,31 +17,36 @@ import {
   AlertTriangle,
   RotateCcw,
   Server,
+  ChevronUp,
+  ChevronDown,
 } from 'lucide-react';
-import { JarvisCornerBrackets } from './JarvisCornerBrackets';
+import type { ParallaxTheme } from '@/components/parallax/ParallaxSettings';
 import type { JarvisMessage } from '@/types';
 
 interface JarvisTerminalDiagnosticLogProps {
   message: JarvisMessage;
+  isRunning?: boolean;
+  defaultOpen?: boolean;
+  theme?: ParallaxTheme;
 }
 
 // Icon mapping per role
 const AGENT_ICONS: Record<string, React.ReactNode> = {
-  planner: <Compass size={14} className="text-emerald-400" />,
-  specialist_1: <Sparkles size={14} className="text-sky-400" />,
-  specialist_2: <BarChart3 size={14} className="text-purple-400" />,
-  specialist_3: <Lightbulb size={14} className="text-emerald-400" />,
-  researcher: <Globe2 size={14} className="text-[#d99b64]" />,
-  webFetcher: <Globe2 size={14} className="text-cyan-400" />,
-  customApiRunner: <Server size={14} className="text-sky-400" />,
-  factChecker: <ShieldCheck size={14} className="text-purple-400" />,
-  advisor: <Lightbulb size={14} className="text-amber-400" />,
-  reviewer: <ScanEye size={14} className="text-amber-400" />,
-  finalSynthesizer: <Sparkles size={14} className="text-rose-400" />,
-  synthesizer: <Sparkles size={14} className="text-rose-400" />,
-  architect: <Boxes size={14} className="text-amber-400" />,
-  dataAnalyst: <BarChart3 size={14} className="text-sky-400" />,
-  imageFinder: <ImageIcon size={14} className="text-pink-400" />,
+  planner: <Compass size={13} className="text-emerald-400" />,
+  specialist_1: <Sparkles size={13} className="text-sky-400" />,
+  specialist_2: <BarChart3 size={13} className="text-purple-400" />,
+  specialist_3: <Lightbulb size={13} className="text-emerald-400" />,
+  researcher: <Globe2 size={13} className="text-[#d99b64]" />,
+  webFetcher: <Globe2 size={13} className="text-cyan-400" />,
+  customApiRunner: <Server size={13} className="text-sky-400" />,
+  factChecker: <ShieldCheck size={13} className="text-purple-400" />,
+  advisor: <Lightbulb size={13} className="text-amber-400" />,
+  reviewer: <ScanEye size={13} className="text-amber-400" />,
+  finalSynthesizer: <Sparkles size={13} className="text-rose-400" />,
+  synthesizer: <Sparkles size={13} className="text-rose-400" />,
+  architect: <Boxes size={13} className="text-amber-400" />,
+  dataAnalyst: <BarChart3 size={13} className="text-sky-400" />,
+  imageFinder: <ImageIcon size={13} className="text-pink-400" />,
 };
 
 const AGENT_ROLE_DESCRIPTIONS: Record<string, string> = {
@@ -62,377 +67,260 @@ const AGENT_ROLE_DESCRIPTIONS: Record<string, string> = {
   imageFinder: 'Locates real verified photographic visual references',
 };
 
-const AGENT_THEMES: Record<
-  string,
-  {
-    border: string;
-    bg: string;
-    text: string;
-    glow: string;
-    badgeBg: string;
-  }
-> = {
-  planner: {
-    border: 'rgba(52, 211, 153, 0.4)',
-    bg: 'rgba(52, 211, 153, 0.08)',
-    text: '#34d399',
-    glow: 'rgba(52, 211, 153, 0.25)',
-    badgeBg: 'rgba(52, 211, 153, 0.18)',
-  },
-  specialist_1: {
-    border: 'rgba(56, 189, 248, 0.45)',
-    bg: 'rgba(56, 189, 248, 0.08)',
-    text: '#38bdf8',
-    glow: 'rgba(56, 189, 248, 0.25)',
-    badgeBg: 'rgba(56, 189, 248, 0.18)',
-  },
-  specialist_2: {
-    border: 'rgba(192, 132, 252, 0.45)',
-    bg: 'rgba(192, 132, 252, 0.08)',
-    text: '#c084fc',
-    glow: 'rgba(192, 132, 252, 0.25)',
-    badgeBg: 'rgba(192, 132, 252, 0.18)',
-  },
-  specialist_3: {
-    border: 'rgba(52, 211, 153, 0.45)',
-    bg: 'rgba(52, 211, 153, 0.08)',
-    text: '#34d399',
-    glow: 'rgba(52, 211, 153, 0.25)',
-    badgeBg: 'rgba(52, 211, 153, 0.18)',
-  },
-  researcher: {
-    border: 'rgba(180, 115, 60, 0.4)',
-    bg: 'rgba(180, 115, 60, 0.08)',
-    text: '#d99b64',
-    glow: 'rgba(180, 115, 60, 0.25)',
-    badgeBg: 'rgba(180, 115, 60, 0.18)',
-  },
-  webFetcher: {
-    border: 'rgba(34, 211, 238, 0.4)',
-    bg: 'rgba(34, 211, 238, 0.08)',
-    text: '#22d3ee',
-    glow: 'rgba(34, 211, 238, 0.25)',
-    badgeBg: 'rgba(34, 211, 238, 0.18)',
-  },
-  customApiRunner: {
-    border: 'rgba(56, 189, 248, 0.4)',
-    bg: 'rgba(56, 189, 248, 0.08)',
-    text: '#38bdf8',
-    glow: 'rgba(56, 189, 248, 0.25)',
-    badgeBg: 'rgba(56, 189, 248, 0.18)',
-  },
-  factChecker: {
-    border: 'rgba(192, 132, 252, 0.4)',
-    bg: 'rgba(192, 132, 252, 0.08)',
-    text: '#c084fc',
-    glow: 'rgba(192, 132, 252, 0.25)',
-    badgeBg: 'rgba(192, 132, 252, 0.18)',
-  },
-  advisor: {
-    border: 'rgba(250, 204, 21, 0.4)',
-    bg: 'rgba(250, 204, 21, 0.08)',
-    text: '#facc15',
-    glow: 'rgba(250, 204, 21, 0.25)',
-    badgeBg: 'rgba(250, 204, 21, 0.18)',
-  },
-  reviewer: {
-    border: 'rgba(251, 191, 36, 0.4)',
-    bg: 'rgba(251, 191, 36, 0.08)',
-    text: '#fbbf24',
-    glow: 'rgba(251, 191, 36, 0.25)',
-    badgeBg: 'rgba(251, 191, 36, 0.18)',
-  },
-  finalSynthesizer: {
-    border: 'rgba(251, 113, 133, 0.4)',
-    bg: 'rgba(251, 113, 133, 0.08)',
-    text: '#fb7185',
-    glow: 'rgba(251, 113, 133, 0.25)',
-    badgeBg: 'rgba(251, 113, 133, 0.18)',
-  },
-  synthesizer: {
-    border: 'rgba(251, 113, 133, 0.4)',
-    bg: 'rgba(251, 113, 133, 0.08)',
-    text: '#fb7185',
-    glow: 'rgba(251, 113, 133, 0.25)',
-    badgeBg: 'rgba(251, 113, 133, 0.18)',
-  },
-  architect: {
-    border: 'rgba(245, 158, 11, 0.4)',
-    bg: 'rgba(245, 158, 11, 0.08)',
-    text: '#fbbf24',
-    glow: 'rgba(245, 158, 11, 0.25)',
-    badgeBg: 'rgba(245, 158, 11, 0.18)',
-  },
-  dataAnalyst: {
-    border: 'rgba(56, 189, 248, 0.4)',
-    bg: 'rgba(56, 189, 248, 0.08)',
-    text: '#38bdf8',
-    glow: 'rgba(56, 189, 248, 0.25)',
-    badgeBg: 'rgba(56, 189, 248, 0.18)',
-  },
-  imageFinder: {
-    border: 'rgba(244, 114, 182, 0.4)',
-    bg: 'rgba(244, 114, 182, 0.08)',
-    text: '#f472b6',
-    glow: 'rgba(244, 114, 182, 0.25)',
-    badgeBg: 'rgba(244, 114, 182, 0.18)',
-  },
+const AGENT_THEMES: Record<string, { text: string }> = {
+  planner: { text: '#34d399' },
+  specialist_1: { text: '#38bdf8' },
+  specialist_2: { text: '#c084fc' },
+  specialist_3: { text: '#34d399' },
+  researcher: { text: '#d99b64' },
+  webFetcher: { text: '#22d3ee' },
+  customApiRunner: { text: '#38bdf8' },
+  factChecker: { text: '#c084fc' },
+  advisor: { text: '#facc15' },
+  reviewer: { text: '#fbbf24' },
+  finalSynthesizer: { text: '#fb7185' },
+  synthesizer: { text: '#fb7185' },
+  architect: { text: '#fbbf24' },
+  dataAnalyst: { text: '#38bdf8' },
+  imageFinder: { text: '#f472b6' },
 };
 
 function getAgentTheme(agentId: string) {
-  return (
-    AGENT_THEMES[agentId] || {
-      border: 'rgba(56, 189, 248, 0.35)',
-      bg: 'rgba(56, 189, 248, 0.06)',
-      text: '#38bdf8',
-      glow: 'rgba(56, 189, 248, 0.2)',
-      badgeBg: 'rgba(56, 189, 248, 0.15)',
-    }
-  );
+  return AGENT_THEMES[agentId] || { text: '#38bdf8' };
 }
 
 export const JarvisTerminalDiagnosticLog: React.FC<JarvisTerminalDiagnosticLogProps> = ({
   message,
+  isRunning = false,
+  defaultOpen = true,
 }) => {
+  const [isOpen, setIsOpen] = useState<boolean>(defaultOpen);
   const steps = Array.isArray(message?.steps) ? message.steps : [];
   const isDeepResearch = Boolean(message?.deepResearch);
+  const hasRunningStep = isRunning || steps.some((s) => s?.status === 'running');
+
+  useEffect(() => {
+    if (hasRunningStep) {
+      setIsOpen(true);
+    }
+  }, [hasRunningStep]);
+
+  const baseTime = message?.timestamp ? new Date(message.timestamp) : null;
+  const formatStepTime = (idx: number) => {
+    if (!baseTime) return `0${idx + 1}`;
+    const d = new Date(baseTime.getTime() + idx * 450);
+    return d.toLocaleTimeString('en-US', {
+      hour12: false,
+      hour: '2-digit',
+      minute: '2-digit',
+      second: '2-digit',
+    });
+  };
 
   return (
-    <div
-      className="relative mb-5 rounded-2xl overflow-hidden backdrop-blur-xl border border-cyan-500/30 transition-all duration-300"
-      style={{
-        background: 'linear-gradient(160deg, rgba(4, 12, 24, 0.96) 0%, rgba(8, 14, 34, 0.98) 100%)',
-        boxShadow: '0 12px 36px rgba(0, 0, 0, 0.6), inset 0 1px 0 rgba(255, 255, 255, 0.1)',
-      }}
-    >
-      {/* Sci-Fi Corner Brackets */}
-      <JarvisCornerBrackets color="rgba(56, 189, 248, 0.6)" size={12} />
-
-      {/* Terminal Diagnostic Header Bar */}
-      <div className="px-4 py-2.5 bg-slate-950/80 border-b border-cyan-500/25 flex items-center justify-between flex-wrap gap-2">
-        <div className="flex items-center gap-2">
-          <div className="flex items-center gap-1.5">
-            <span className="w-2.5 h-2.5 rounded-full bg-rose-500/80" />
-            <span className="w-2.5 h-2.5 rounded-full bg-amber-500/80" />
-            <span className="w-2.5 h-2.5 rounded-full bg-emerald-500/80" />
-          </div>
-          <div className="h-3 w-[1px] bg-slate-700 mx-1" />
-          <div className="flex items-center gap-1.5 text-xs font-mono font-bold text-cyan-300 tracking-wider">
-            <Terminal size={13} className="text-cyan-400" />
-            <span>JARVIS // NEURAL PIPELINE DIAGNOSTIC LOG</span>
-          </div>
+    <div className="w-full rounded-lg bg-[var(--j-low)] p-2.5 sm:p-3 flex flex-col gap-1.5 transition-all duration-200">
+      {/* Header Row with Terminal Icon, Title, STREAM LIVE caption when running, and Chevron */}
+      <button
+        type="button"
+        onClick={() => setIsOpen((prev) => !prev)}
+        className="w-full flex items-center justify-between gap-2 text-left cursor-pointer group"
+      >
+        <div className="flex items-center gap-1.5 min-w-0">
+          <Terminal size={13} className="text-[var(--j-accent)] shrink-0" />
+          <span className="font-mono text-[10px] font-semibold uppercase text-[var(--j-text)] tracking-[0.12em] truncate">
+            JARVIS // NEURAL PIPELINE DIAGNOSTIC LOG
+          </span>
         </div>
 
-        <div className="flex items-center gap-2 text-[10px] font-mono text-slate-400">
-          <span className="hidden sm:inline">TARGET:</span>
-          <span className="text-slate-200 font-bold max-w-[200px] truncate">
-            &quot;{message.query}&quot;
-          </span>
-          {isDeepResearch && (
-            <span className="px-1.5 py-0.5 rounded bg-emerald-950/80 border border-emerald-500/40 text-emerald-300 font-bold tracking-wider">
-              DEEP RESEARCH MESH
+        <div className="flex items-center gap-2 shrink-0">
+          {hasRunningStep ? (
+            <span className="font-mono text-[9px] font-medium uppercase tracking-wider text-[var(--j-accent2)] flex items-center gap-1">
+              <span className="w-1.5 h-1.5 rounded-full bg-[var(--j-accent)] animate-pulse" />
+              <span>STREAM LIVE</span>
+            </span>
+          ) : (
+            <span className="font-mono text-[9px] uppercase tracking-wider text-[var(--j-muted)]">
+              {steps.length} {steps.length === 1 ? 'AGENT' : 'AGENTS'}
+              {isDeepResearch ? ' · DEEP MESH' : ''}
             </span>
           )}
-          <span className="px-1.5 py-0.5 rounded bg-cyan-950/80 border border-cyan-500/30 text-cyan-300">
-            {steps.length} AGENTS
+          <span className="text-[var(--j-muted)] group-hover:text-[var(--j-text)] transition-colors">
+            {isOpen ? <ChevronUp size={13} /> : <ChevronDown size={13} />}
           </span>
         </div>
-      </div>
+      </button>
 
-      {/* Terminal Body: Uniform Agent Card List */}
-      <div className="p-3 sm:p-4 flex flex-col gap-2.5 relative z-10">
-        {steps.map((step, idx) => {
-          const theme = getAgentTheme(step.agentId);
-          const icon = AGENT_ICONS[step.agentId] || (
-            step.icon ? (
-              <span className="text-xs">{step.icon}</span>
-            ) : (
-              <Activity size={14} style={{ color: theme.text }} />
-            )
-          );
-          const roleDesc =
-            step.summary || AGENT_ROLE_DESCRIPTIONS[step.agentId] || 'Autonomous execution agent';
-          const isCompleted = step.status === 'completed';
-          const isSkipped = step.status === 'skipped';
-          const isFailed = step.status === 'failed';
-
-          return (
-            <div
-              key={`${step.agentId}-${idx}`}
-              className="relative p-3 rounded-xl border transition-all duration-200"
-              style={{
-                background: isCompleted
-                  ? theme.bg
-                  : isSkipped
-                  ? 'rgba(15, 23, 42, 0.4)'
-                  : isFailed
-                  ? 'rgba(244, 63, 94, 0.1)'
-                  : 'rgba(6, 16, 30, 0.6)',
-                borderColor: isFailed
-                  ? 'rgba(244, 63, 94, 0.45)'
-                  : isCompleted
-                  ? theme.border
-                  : 'rgba(148, 163, 184, 0.15)',
-                boxShadow: isCompleted ? `0 0 14px ${theme.glow}` : 'none',
-              }}
-            >
-              {/* Card Main Line: Icon + Role Name + Monospace Model String + Timer + Status Badge */}
-              <div className="flex items-center justify-between flex-wrap gap-2">
-                {/* Left Role & Model Block */}
-                <div className="flex items-center gap-2.5 min-w-0 flex-wrap">
-                  {/* Clean Tech Icon Container */}
-                  <div
-                    className="w-7 h-7 rounded-lg flex items-center justify-center shrink-0 shadow-inner"
-                    style={{
-                      background: 'rgba(4, 12, 24, 0.8)',
-                      border: `1px solid ${isCompleted ? theme.text : 'rgba(148,163,184,0.3)'}`,
-                    }}
-                  >
-                    {icon}
-                  </div>
-
-                  {/* Agent Role Title */}
-                  <div className="flex items-baseline gap-2 flex-wrap">
-                    <span
-                      className="font-bold text-xs tracking-wide uppercase"
-                      style={{ color: theme.text }}
-                    >
+      {/* Collapsible Content */}
+      {isOpen && (
+        <div className="flex flex-col gap-2 pt-1.5 border-t border-white/[0.04]">
+          {/* Monospace Stream Summary Lines with Cyan Timestamps */}
+          {steps.length > 0 ? (
+            <div className="flex flex-col gap-1 font-mono text-[11px] text-[var(--j-muted)]">
+              {steps.map((step, idx) => {
+                const theme = getAgentTheme(step.agentId);
+                const statusLabel =
+                  step.status === 'completed'
+                    ? step.durationMs
+                      ? `${step.durationMs}ms`
+                      : 'completed'
+                    : step.status;
+                return (
+                  <p key={`line-${step.agentId}-${idx}`} className="truncate m-0 leading-relaxed">
+                    <span className="text-[var(--j-accent2)]">&gt; [{formatStepTime(idx)}]</span>{' '}
+                    <span className="font-semibold" style={{ color: theme.text }}>
                       {step.name}
+                    </span>{' '}
+                    <span className="text-[var(--j-faint)]">({step.providerName}/{step.model})</span>:{' '}
+                    <span className="text-[var(--j-text)]">
+                      {step.summary || AGENT_ROLE_DESCRIPTIONS[step.agentId] || statusLabel}
                     </span>
-
-                    {/* Monospace Provider / Model String */}
-                    <span className="font-mono text-[11px] px-2 py-0.5 rounded bg-black/50 border border-white/10 text-slate-300 tracking-tight">
-                      {step.providerName}/{step.model}
-                    </span>
-                  </div>
-
-                  {/* Failover badge if triggered */}
-                  {step.usedFallback && (
-                    <span className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded-full bg-amber-500/20 border border-amber-400/40 text-amber-300 text-[10px] font-mono">
-                      <RotateCcw size={9} />
-                      <span>FAILOVER</span>
-                    </span>
-                  )}
+                  </p>
+                );
+              })}
+              {hasRunningStep && (
+                <div className="flex items-center gap-1.5 pt-0.5 text-[var(--j-accent)] font-mono text-[11px]">
+                  <span className="inline-block w-1.5 h-1.5 rounded-full bg-[var(--j-accent)] animate-pulse" />
+                  <span>Orchestrating active neural pipeline nodes...</span>
                 </div>
+              )}
+            </div>
+          ) : (
+            <div className="font-mono text-[11px] text-[var(--j-faint)]">
+              <span className="text-[var(--j-accent2)]">&gt; [STANDBY]</span>{' '}
+              <span>Awaiting synthesis directive to initialize agent diagnostic stream.</span>
+            </div>
+          )}
 
-                {/* Right: Sleek Execution Timer Placement & Status Pill */}
-                <div className="flex items-center gap-2 shrink-0">
-                  {/* Execution Timer */}
-                  {step.durationMs !== undefined && step.durationMs !== null && (
-                    <span className="font-mono text-[11px] text-cyan-300/90 px-2 py-0.5 rounded bg-slate-900/80 border border-cyan-500/30 flex items-center gap-1">
-                      <Clock size={10} className="text-cyan-400" />
-                      <span>{step.durationMs}ms</span>
-                    </span>
-                  )}
+          {/* Detailed Agent Step Breakdown Cards (Tonal --j-card) */}
+          {steps.length > 0 && (
+            <div className="flex flex-col gap-1.5 pt-1">
+              {steps.map((step, idx) => {
+                const theme = getAgentTheme(step.agentId);
+                const icon = AGENT_ICONS[step.agentId] || (
+                  step.icon ? (
+                    <span className="text-xs">{step.icon}</span>
+                  ) : (
+                    <Activity size={13} style={{ color: theme.text }} />
+                  )
+                );
+                const roleDesc =
+                  step.summary || AGENT_ROLE_DESCRIPTIONS[step.agentId] || 'Autonomous execution agent';
+                const isCompleted = step.status === 'completed';
+                const isFailed = step.status === 'failed';
 
-                  {/* Status Badge */}
-                  <span
-                    className="px-2.5 py-0.5 rounded-full text-[10px] font-mono font-bold uppercase tracking-wider flex items-center gap-1"
+                return (
+                  <div
+                    key={`${step.agentId}-${idx}`}
+                    className="relative p-2.5 rounded-lg bg-[var(--j-card)] transition-all duration-200"
                     style={{
-                      background: isCompleted
-                        ? 'rgba(52, 211, 153, 0.2)'
-                        : isFailed
-                        ? 'rgba(244, 63, 94, 0.2)'
-                        : 'rgba(148, 163, 184, 0.15)',
-                      color: isCompleted
-                        ? '#34d399'
-                        : isFailed
-                        ? '#fb7185'
-                        : '#94a3b8',
-                      border: `1px solid ${
-                        isCompleted
-                          ? 'rgba(52,211,153,0.4)'
-                          : isFailed
-                          ? 'rgba(244,63,94,0.4)'
-                          : 'rgba(148,163,184,0.2)'
+                      borderLeft: `2px solid ${
+                        isFailed ? 'var(--j-danger)' : isCompleted ? theme.text : 'var(--j-faint)'
                       }`,
                     }}
                   >
-                    {isCompleted ? (
-                      <>
-                        <Check size={10} />
-                        <span>EXECUTED</span>
-                      </>
-                    ) : isFailed ? (
-                      <>
-                        <AlertTriangle size={10} />
-                        <span>ERROR</span>
-                      </>
-                    ) : (
-                      <span>BYPASSED</span>
-                    )}
-                  </span>
-                </div>
-              </div>
-
-              {/* Subtly Indented Sub-Lines (Tree Branches: ├── and └──) */}
-              <div className="mt-2.5 pt-2 border-t border-white/5 flex flex-col gap-1 font-mono text-[11px] pl-1 sm:pl-2">
-                {/* Role Goal Line */}
-                <div className="flex items-start gap-1.5 text-slate-400 leading-relaxed">
-                  <span className="text-slate-600 font-bold shrink-0">├──</span>
-                  <span className="text-slate-500 shrink-0">ROLE:</span>
-                  <span className="text-slate-300 font-sans text-xs">{step.specialistRole || roleDesc}</span>
-                </div>
-
-                {/* Assigned Tools Line (if dynamic specialist or has assignedTools) */}
-                {step.assignedTools && step.assignedTools.length > 0 && (
-                  <div className="flex items-start gap-1.5 text-slate-400 leading-relaxed">
-                    <span className="text-slate-600 font-bold shrink-0">├──</span>
-                    <span className="text-purple-400/90 shrink-0">TOOLS:</span>
-                    <div className="flex items-center gap-1.5 flex-wrap">
-                      {step.assignedTools.map((tool) => (
+                    <div className="flex items-center justify-between flex-wrap gap-2">
+                      <div className="flex items-center gap-2 min-w-0 flex-wrap">
+                        <span className="shrink-0">{icon}</span>
                         <span
-                          key={tool}
-                          className="px-1.5 py-0.2 rounded bg-purple-500/10 border border-purple-400/30 text-purple-300 text-[10px] font-mono capitalize"
+                          className="font-bold text-[11.5px] tracking-wide uppercase"
+                          style={{ color: theme.text }}
                         >
-                          {tool}
+                          {step.name}
                         </span>
-                      ))}
+                        <span className="font-mono text-[10px] px-1.5 py-0.5 rounded bg-[var(--j-lowest)] text-[var(--j-muted)]">
+                          {step.providerName}/{step.model}
+                        </span>
+                        {step.usedFallback && (
+                          <span className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded bg-amber-500/15 text-amber-300 text-[9.5px] font-mono">
+                            <RotateCcw size={9} />
+                            <span>FAILOVER</span>
+                          </span>
+                        )}
+                      </div>
+
+                      <div className="flex items-center gap-1.5 shrink-0 font-mono text-[10px]">
+                        {step.durationMs !== undefined && step.durationMs !== null && (
+                          <span className="text-[var(--j-accent2)] px-1.5 py-0.5 rounded bg-[var(--j-lowest)] flex items-center gap-1">
+                            <Clock size={9} />
+                            <span>{step.durationMs}ms</span>
+                          </span>
+                        )}
+                        <span
+                          className="px-2 py-0.5 rounded uppercase font-semibold flex items-center gap-1"
+                          style={{
+                            background: 'var(--j-lowest)',
+                            color: isCompleted
+                              ? '#34d399'
+                              : isFailed
+                              ? 'var(--j-danger)'
+                              : 'var(--j-muted)',
+                          }}
+                        >
+                          {isCompleted ? (
+                            <>
+                              <Check size={9} />
+                              <span>EXECUTED</span>
+                            </>
+                          ) : isFailed ? (
+                            <>
+                              <AlertTriangle size={9} />
+                              <span>ERROR</span>
+                            </>
+                          ) : (
+                            <span>{step.status === 'running' ? 'ACTIVE' : 'BYPASSED'}</span>
+                          )}
+                        </span>
+                      </div>
+                    </div>
+
+                    <div className="mt-1.5 pt-1.5 border-t border-white/[0.04] flex flex-col gap-0.5 font-mono text-[10.5px] text-[var(--j-muted)]">
+                      <div className="flex items-start gap-1.5">
+                        <span className="text-[var(--j-faint)] shrink-0">ROLE:</span>
+                        <span className="text-[var(--j-text)] font-sans text-[11.5px]">
+                          {step.specialistRole || roleDesc}
+                        </span>
+                      </div>
+
+                      {step.assignedTools && step.assignedTools.length > 0 && (
+                        <div className="flex items-start gap-1.5">
+                          <span className="text-[var(--j-accent2)] shrink-0">TOOLS:</span>
+                          <div className="flex items-center gap-1 flex-wrap">
+                            {step.assignedTools.map((tool) => (
+                              <span
+                                key={tool}
+                                className="px-1.5 py-0.2 rounded bg-[var(--j-lowest)] text-[var(--j-accent2)] text-[9.5px] font-mono capitalize"
+                              >
+                                {tool}
+                              </span>
+                            ))}
+                          </div>
+                        </div>
+                      )}
+
+                      {step.outputPreview && (
+                        <div className="flex items-start gap-1.5">
+                          <span className="text-[var(--j-faint)] shrink-0">DATA:</span>
+                          <span className="text-[var(--j-muted)] font-mono text-[10px] truncate max-w-2xl bg-[var(--j-lowest)] px-1.5 py-0.5 rounded">
+                            {step.outputPreview.replace(/\n+/g, ' ').slice(0, 140)}
+                            {step.outputPreview.length > 140 ? '...' : ''}
+                          </span>
+                        </div>
+                      )}
+
+                      {step.error && (
+                        <div className="flex items-start gap-1.5 text-[var(--j-danger)]">
+                          <AlertCircle size={11} className="shrink-0 mt-0.5" />
+                          <span className="font-sans text-[11px]">{step.error}</span>
+                        </div>
+                      )}
                     </div>
                   </div>
-                )}
-
-                {/* Summary / Task Diagnostic Line */}
-                {step.summary && (
-                  <div className="flex items-start gap-1.5 text-slate-300 leading-relaxed">
-                    <span className="text-cyan-600/80 font-bold shrink-0">
-                      {step.error || step.outputPreview ? '├──' : '└──'}
-                    </span>
-                    <span className="text-cyan-400/80 shrink-0">DIAGNOSTIC:</span>
-                    <span className="text-slate-200 font-sans text-xs">{step.summary}</span>
-                  </div>
-                )}
-
-                {/* Optional Output Preview Line */}
-                {step.outputPreview && (
-                  <div className="flex items-start gap-1.5 text-slate-400 leading-relaxed">
-                    <span className="text-slate-600 font-bold shrink-0">
-                      {step.error ? '├──' : '└──'}
-                    </span>
-                    <span className="text-slate-500 shrink-0">DATA:</span>
-                    <span className="text-slate-400 font-mono text-[10px] truncate max-w-2xl bg-black/40 px-1.5 py-0.5 rounded">
-                      {step.outputPreview.replace(/\n+/g, ' ').slice(0, 140)}
-                      {step.outputPreview.length > 140 ? '...' : ''}
-                    </span>
-                  </div>
-                )}
-
-                {/* Error Diagnostic Line */}
-                {step.error && (
-                  <div className="flex items-start gap-1.5 text-rose-300 leading-relaxed">
-                    <span className="text-rose-600 font-bold shrink-0">└──</span>
-                    <span className="text-rose-400 font-bold shrink-0">NOTICE:</span>
-                    <span className="text-rose-200 font-sans text-xs flex items-center gap-1">
-                      <AlertCircle size={12} className="text-rose-400 shrink-0" />
-                      <span>{step.error}</span>
-                    </span>
-                  </div>
-                )}
-              </div>
+                );
+              })}
             </div>
-          );
-        })}
-      </div>
+          )}
+        </div>
+      )}
     </div>
   );
 };

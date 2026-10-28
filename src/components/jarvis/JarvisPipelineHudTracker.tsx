@@ -13,15 +13,19 @@ import {
   Clock,
   ChevronDown,
   ChevronUp,
-  Layers,
   Code2,
+  RefreshCw,
+  Hourglass,
 } from 'lucide-react';
+import type { ParallaxTheme } from '@/components/parallax/ParallaxSettings';
 import type { JarvisExecutionStep, JarvisMessage } from '@/types';
 
 interface JarvisPipelineHudTrackerProps {
   message: JarvisMessage;
   isExpanded: boolean;
   onToggleExpand: () => void;
+  isRunning?: boolean;
+  theme?: ParallaxTheme;
 }
 
 interface AgentNodeDef {
@@ -41,7 +45,7 @@ const CORE_AGENTS: AgentNodeDef[] = [
     name: 'Planner',
     shortLabel: 'PLAN',
     code: 'PLN-01',
-    icon: <Compass size={13} />,
+    icon: <Compass size={12} />,
     color: '#34d399',
     glowColor: 'rgba(52, 211, 153, 0.5)',
   },
@@ -50,7 +54,7 @@ const CORE_AGENTS: AgentNodeDef[] = [
     name: 'Researcher',
     shortLabel: 'RSRCH',
     code: 'RSC-02',
-    icon: <Globe2 size={13} />,
+    icon: <Globe2 size={12} />,
     color: '#d99b64',
     glowColor: 'rgba(180, 115, 60, 0.5)',
   },
@@ -59,7 +63,7 @@ const CORE_AGENTS: AgentNodeDef[] = [
     name: 'Fact Checker',
     shortLabel: 'FACTS',
     code: 'FCT-03',
-    icon: <ShieldCheck size={13} />,
+    icon: <ShieldCheck size={12} />,
     color: '#c084fc',
     glowColor: 'rgba(192, 132, 252, 0.5)',
   },
@@ -68,7 +72,7 @@ const CORE_AGENTS: AgentNodeDef[] = [
     name: 'Advisor',
     shortLabel: 'ADVISOR',
     code: 'ADV-04',
-    icon: <Lightbulb size={13} />,
+    icon: <Lightbulb size={12} />,
     color: '#facc15',
     glowColor: 'rgba(250, 204, 21, 0.5)',
   },
@@ -77,7 +81,7 @@ const CORE_AGENTS: AgentNodeDef[] = [
     name: 'Reviewer',
     shortLabel: 'REVIEW',
     code: 'REV-05',
-    icon: <ScanEye size={13} />,
+    icon: <ScanEye size={12} />,
     color: '#fbbf24',
     glowColor: 'rgba(251, 191, 36, 0.5)',
   },
@@ -86,7 +90,7 @@ const CORE_AGENTS: AgentNodeDef[] = [
     name: 'Synthesizer',
     shortLabel: 'SYNTH',
     code: 'SYN-06',
-    icon: <Sparkles size={13} />,
+    icon: <Sparkles size={12} />,
     color: '#fb7185',
     glowColor: 'rgba(251, 113, 133, 0.5)',
   },
@@ -98,7 +102,7 @@ const OPTIONAL_AGENTS: Record<string, AgentNodeDef> = {
     name: 'Architect',
     shortLabel: 'DIAGRAM',
     code: 'ARC-07',
-    icon: <Boxes size={13} />,
+    icon: <Boxes size={12} />,
     color: '#fbbf24',
     glowColor: 'rgba(251, 191, 36, 0.5)',
     isOptional: true,
@@ -108,7 +112,7 @@ const OPTIONAL_AGENTS: Record<string, AgentNodeDef> = {
     name: 'Data Analyst',
     shortLabel: 'CHART',
     code: 'DAT-08',
-    icon: <BarChart3 size={13} />,
+    icon: <BarChart3 size={12} />,
     color: '#38bdf8',
     glowColor: 'rgba(56, 189, 248, 0.5)',
     isOptional: true,
@@ -118,7 +122,7 @@ const OPTIONAL_AGENTS: Record<string, AgentNodeDef> = {
     name: 'Image Finder',
     shortLabel: 'IMAGES',
     code: 'IMG-09',
-    icon: <ImageIcon size={13} />,
+    icon: <ImageIcon size={12} />,
     color: '#f472b6',
     glowColor: 'rgba(244, 114, 182, 0.5)',
     isOptional: true,
@@ -128,7 +132,7 @@ const OPTIONAL_AGENTS: Record<string, AgentNodeDef> = {
     name: 'Coder',
     shortLabel: 'CODE',
     code: 'COD-10',
-    icon: <Code2 size={13} />,
+    icon: <Code2 size={12} />,
     color: '#60a5fa',
     glowColor: 'rgba(96, 165, 250, 0.5)',
     isOptional: true,
@@ -139,6 +143,7 @@ export const JarvisPipelineHudTracker: React.FC<JarvisPipelineHudTrackerProps> =
   message,
   isExpanded,
   onToggleExpand,
+  isRunning = false,
 }) => {
   const steps = Array.isArray(message?.steps) ? message.steps : [];
 
@@ -179,16 +184,7 @@ export const JarvisPipelineHudTracker: React.FC<JarvisPipelineHudTrackerProps> =
   const hasResearcher = steps.some((s) => s?.agentId === 'researcher');
 
   if (isDynamicSpecialistPipeline) {
-    // Dynamic 5-node pipeline: Planner → 3 Query-Tailored Specialists → Synthesizer
-    const pNode = CORE_AGENTS.find((a) => a.id === 'planner') || {
-      id: 'planner',
-      name: 'Planner',
-      shortLabel: 'PLAN',
-      code: 'PLN-01',
-      icon: <Compass size={13} />,
-      color: '#34d399',
-      glowColor: 'rgba(52, 211, 153, 0.5)',
-    };
+    const pNode = CORE_AGENTS.find((a) => a.id === 'planner') || CORE_AGENTS[0];
     activeNodes.push(pNode);
 
     const specialistSteps = steps.filter(
@@ -211,7 +207,7 @@ export const JarvisPipelineHudTracker: React.FC<JarvisPipelineHudTrackerProps> =
           name: sp.name || `Specialist ${idx + 1}`,
           shortLabel,
           code: `SPC-0${idx + 1}`,
-          icon: idx === 0 ? <Sparkles size={13} /> : idx === 1 ? <BarChart3 size={13} /> : <Lightbulb size={13} />,
+          icon: idx === 0 ? <Sparkles size={12} /> : idx === 1 ? <BarChart3 size={12} /> : <Lightbulb size={12} />,
           color: colors[idx % colors.length],
           glowColor: glowColors[idx % glowColors.length],
         });
@@ -224,30 +220,20 @@ export const JarvisPipelineHudTracker: React.FC<JarvisPipelineHudTrackerProps> =
           name: defaultSpecNames[i - 1],
           shortLabel: `SPEC-0${i}`,
           code: `SPC-0${i}`,
-          icon: <Sparkles size={13} />,
+          icon: <Sparkles size={12} />,
           color: i === 1 ? '#38bdf8' : i === 2 ? '#c084fc' : '#34d399',
           glowColor: i === 1 ? 'rgba(56, 189, 248, 0.5)' : i === 2 ? 'rgba(192, 132, 252, 0.5)' : 'rgba(52, 211, 153, 0.5)',
         });
       }
     }
 
-    const sNode = CORE_AGENTS.find((a) => a.id === 'finalSynthesizer') || {
-      id: 'finalSynthesizer',
-      name: 'Synthesizer',
-      shortLabel: 'SYNTH',
-      code: 'SYN-05',
-      icon: <Sparkles size={13} />,
-      color: '#fb7185',
-      glowColor: 'rgba(251, 113, 133, 0.5)',
-    };
+    const sNode = CORE_AGENTS.find((a) => a.id === 'finalSynthesizer') || CORE_AGENTS[5];
     activeNodes.push(sNode);
   } else if (isCodeOnlyPipeline) {
-    // 2-agent pipeline: Planner → Coder ONLY
     const plannerNode = CORE_AGENTS.find((a) => a.id === 'planner');
     if (plannerNode) activeNodes.push(plannerNode);
     activeNodes.push(OPTIONAL_AGENTS.coder);
   } else if (isAutoCodePipeline && !hasResearcher) {
-    // 4-agent pipeline: Planner → Coder → Reviewer → Final Synthesizer
     const pNode = CORE_AGENTS.find((a) => a.id === 'planner');
     const revNode = CORE_AGENTS.find((a) => a.id === 'reviewer');
     const sNode = CORE_AGENTS.find((a) => a.id === 'finalSynthesizer');
@@ -256,7 +242,6 @@ export const JarvisPipelineHudTracker: React.FC<JarvisPipelineHudTrackerProps> =
     if (revNode) activeNodes.push(revNode);
     if (sNode) activeNodes.push(sNode);
   } else if (hasCoder) {
-    // Pipeline with Coder: PLAN → CODE → REVIEW → RSRCH → FACTS → ADVISOR → SYNTH
     const pNode = CORE_AGENTS.find((a) => a.id === 'planner');
     const coderNode = OPTIONAL_AGENTS.coder;
     const revNode = CORE_AGENTS.find((a) => a.id === 'reviewer');
@@ -276,7 +261,6 @@ export const JarvisPipelineHudTracker: React.FC<JarvisPipelineHudTrackerProps> =
     activeNodes = [...CORE_AGENTS];
   }
 
-  // 2. Optional agents only added if their respective mode was ON or executed
   if (message?.diagramMode || steps.some((s) => s?.agentId === 'architect')) {
     activeNodes.push(OPTIONAL_AGENTS.architect);
   }
@@ -287,7 +271,6 @@ export const JarvisPipelineHudTracker: React.FC<JarvisPipelineHudTrackerProps> =
     activeNodes.push(OPTIONAL_AGENTS.imageFinder);
   }
 
-  // 3. Custom agents from pipeline execution steps
   steps.forEach((s) => {
     if (
       s &&
@@ -306,7 +289,7 @@ export const JarvisPipelineHudTracker: React.FC<JarvisPipelineHudTrackerProps> =
         name: s.name || 'Custom Agent',
         shortLabel: (s.name || s.agentId).replace(/^custom[_\s-]*/i, '').slice(0, 8) || 'CUSTOM',
         code: 'CST-99',
-        icon: s.icon ? <span>{s.icon}</span> : <Boxes size={13} />,
+        icon: s.icon ? <span>{s.icon}</span> : <Boxes size={12} />,
         color: '#c084fc',
         glowColor: 'rgba(192, 132, 252, 0.4)',
       };
@@ -319,173 +302,180 @@ export const JarvisPipelineHudTracker: React.FC<JarvisPipelineHudTrackerProps> =
     }
   });
 
-  // Calculate statistics safely
+  // Calculate statistics safely from real data
   const totalDuration = steps.reduce((sum, s) => sum + (s?.durationMs || 0), 0);
   const executedCount = steps.filter((s) => s?.status === 'completed').length;
   const skippedCount = steps.filter((s) => s?.status === 'skipped').length;
-  const hasFailed = steps.some((s) => s?.status === 'failed');
+  const hasRunning = isRunning || steps.some((s) => s?.status === 'running');
+
+  // Derive 4 Stitch macro-stages (01 PLAN / 02 SWARM / 03 VALIDATE / 04 CONSENSUS) from real steps
+  const getStageState = (stageAgentIds: string[]): 'completed' | 'running' | 'pending' => {
+    const matched = steps.filter((s) =>
+      stageAgentIds.some(
+        (id) =>
+          s?.agentId === id ||
+          (id === 'specialist_' && typeof s?.agentId === 'string' && s.agentId.startsWith('specialist_')),
+      ),
+    );
+    if (matched.some((s) => s.status === 'running')) return 'running';
+    if (matched.some((s) => s.status === 'completed')) return 'completed';
+    return 'pending';
+  };
+
+  const stages: Array<{ label: string; state: 'completed' | 'running' | 'pending' }> = [
+    {
+      label: '01 PLAN',
+      state: getStageState(['planner']),
+    },
+    {
+      label: '02 SWARM',
+      state: getStageState([
+        'researcher',
+        'specialist_',
+        'coder',
+        'architect',
+        'dataAnalyst',
+        'imageFinder',
+        'webFetcher',
+        'customApiRunner',
+      ]),
+    },
+    {
+      label: '03 VALIDATE',
+      state: getStageState(['factChecker', 'advisor', 'reviewer']),
+    },
+    {
+      label: '04 CONSENSUS',
+      state: getStageState(['finalSynthesizer', 'synthesizer']),
+    },
+  ];
 
   return (
-    <div className="w-full mb-4 group select-none jarvis-pipeline-hud-tracker">
+    <div className="w-full select-none jarvis-pipeline-hud-tracker">
       <div
         onClick={onToggleExpand}
-        className="jarvis-pipeline-hud-card w-full p-2.5 sm:p-3 rounded-2xl cursor-pointer transition-all duration-300 relative overflow-hidden backdrop-blur-md"
-        style={{
-          background: 'linear-gradient(135deg, rgba(6, 18, 36, 0.85) 0%, rgba(10, 16, 44, 0.9) 100%)',
-          border: '1px solid rgba(56, 189, 248, 0.3)',
-          boxShadow: isExpanded
-            ? '0 0 20px rgba(56, 189, 248, 0.25), inset 0 1px 0 rgba(255, 255, 255, 0.1)'
-            : '0 4px 16px rgba(0, 0, 0, 0.4), inset 0 1px 0 rgba(255, 255, 255, 0.05)',
-        }}
+        className="jarvis-pipeline-hud-card w-full p-3 sm:p-3.5 rounded-xl bg-[var(--j-lowest)] cursor-pointer transition-all duration-200 shadow-lg"
       >
-        {/* Subtle high-tech grid background overlay */}
-        <div
-          className="absolute inset-0 opacity-[0.04] pointer-events-none"
-          style={{
-            backgroundImage:
-              'radial-gradient(circle at 1px 1px, rgba(56, 189, 248, 0.8) 1px, transparent 0)',
-            backgroundSize: '12px 12px',
-          }}
-        />
-
-        {/* Top Header Row of the HUD Bar */}
-        <div className="jarvis-pipeline-hud-header flex items-center justify-between flex-wrap gap-2 mb-2.5 relative z-10">
+        {/* Header Row: Pulsing Dot + "PIPELINE EXECUTION STATE" + Real Right Caption */}
+        <div className="jarvis-pipeline-hud-header flex items-center justify-between flex-wrap gap-2 pb-1.5">
           <div className="flex items-center gap-2">
-            <div className="w-5 h-5 rounded-md bg-cyan-500/20 border border-cyan-400/40 flex items-center justify-center text-cyan-300 shadow-[0_0_8px_rgba(56,189,248,0.4)]">
-              <Layers size={11} />
-            </div>
-            <span className="text-[11px] font-mono font-bold tracking-wider text-cyan-300 uppercase flex items-center gap-1.5">
-              <span>PIPELINE HUD TRACKER</span>
-              <span className="text-slate-500 text-[10px]">[{activeNodes.length} NODES]</span>
+            <span
+              className={`inline-block w-1.5 h-1.5 rounded-full bg-[var(--j-accent)] ${
+                hasRunning ? 'animate-ping' : ''
+              }`}
+            />
+            <span className="font-mono text-[10px] font-semibold uppercase text-[var(--j-accent)] tracking-[0.12em]">
+              PIPELINE EXECUTION STATE
             </span>
           </div>
 
-          <div className="flex items-center gap-2">
+          <div className="flex items-center gap-2 font-mono text-[9.5px] text-[var(--j-muted)] uppercase tracking-wider">
+            <span>
+              {executedCount}/{activeNodes.length} NODES
+              {skippedCount > 0 ? ` · ${skippedCount} SKP` : ''}
+            </span>
             {totalDuration > 0 && (
-              <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full bg-slate-900/80 border border-slate-700/60 text-[10px] font-mono text-cyan-300">
-                <Clock size={10} className="text-cyan-400" />
-                <span>{totalDuration}ms</span>
+              <span className="inline-flex items-center gap-1 text-[var(--j-accent2)]">
+                <Clock size={10} />
+                <span>{(totalDuration / 1000).toFixed(1)}s</span>
               </span>
             )}
-            <span
-              className={`px-2 py-0.5 rounded-full text-[10px] font-mono font-bold uppercase transition-colors flex items-center gap-1 ${
-                hasFailed
-                  ? 'bg-rose-500/20 text-rose-300 border border-rose-500/40'
-                  : 'bg-emerald-500/20 text-emerald-300 border border-emerald-500/40'
-              }`}
-            >
-              <CheckCircle2 size={10} />
-              <span>{executedCount} RUN</span>
-              {skippedCount > 0 && (
-                <span className="text-slate-400 font-normal">/ {skippedCount} SKP</span>
-              )}
+            <span className="text-[var(--j-muted)] flex items-center">
+              {isExpanded ? <ChevronUp size={13} /> : <ChevronDown size={13} />}
             </span>
-
-            <div className="w-5 h-5 rounded-full bg-cyan-500/10 hover:bg-cyan-500/20 border border-cyan-400/30 flex items-center justify-center text-cyan-300 transition-transform">
-              {isExpanded ? <ChevronUp size={12} /> : <ChevronDown size={12} />}
-            </div>
           </div>
         </div>
 
-        {/* Horizontal Node Track Display */}
-        <div className="jarvis-pipeline-hud-track relative z-10 pt-1 pb-0.5">
-          {/* Connecting Track Line behind nodes */}
-          <div className="jarvis-pipeline-hud-line absolute top-[18px] left-3 right-3 h-[2px] bg-slate-800/80 pointer-events-none rounded-full" />
-          <div
-            className="jarvis-pipeline-hud-line-glow absolute top-[18px] left-3 right-3 h-[2px] pointer-events-none rounded-full opacity-60"
-            style={{
-              background: 'linear-gradient(90deg, rgba(52,211,153,0.5) 0%, rgba(56,189,248,0.5) 30%, rgba(192,132,252,0.5) 60%, rgba(251,113,133,0.5) 100%)',
-            }}
-          />
+        {/* 4-Step Stitch Stepper Tracker (PLAN / SWARM / VALIDATE / CONSENSUS) */}
+        <div className="grid grid-cols-4 gap-1.5 py-1.5">
+          {stages.map((st, idx) => {
+            const isComp = st.state === 'completed';
+            const isRun = st.state === 'running';
+            return (
+              <div
+                key={st.label}
+                className={`flex flex-col gap-1 ${!isComp && !isRun ? 'opacity-45' : ''}`}
+              >
+                <div
+                  className={`h-1 w-full rounded-full relative overflow-hidden ${
+                    isComp
+                      ? 'bg-[var(--j-accent)] shadow-[0_0_8px_rgba(0,240,255,0.6)]'
+                      : isRun
+                      ? 'bg-[var(--j-accent)] shadow-[0_0_10px_rgba(0,240,255,0.9)]'
+                      : 'bg-[var(--j-high)]'
+                  }`}
+                >
+                  {isRun && <div className="absolute inset-0 bg-white/60 animate-pulse" />}
+                </div>
+                <div className="flex items-center justify-between gap-1">
+                  <span
+                    className={`font-mono text-[9px] uppercase tracking-wider truncate ${
+                      isRun
+                        ? 'text-[var(--j-accent)] font-bold'
+                        : isComp
+                        ? 'text-[var(--j-accent2)] font-medium'
+                        : 'text-[var(--j-muted)]'
+                    }`}
+                  >
+                    {st.label}
+                  </span>
+                  {isComp ? (
+                    <CheckCircle2 size={10} className="text-[var(--j-accent2)] shrink-0" />
+                  ) : isRun ? (
+                    <RefreshCw size={10} className="text-[var(--j-accent)] animate-spin shrink-0" />
+                  ) : idx === 3 ? (
+                    <Hourglass size={10} className="text-[var(--j-muted)] shrink-0" />
+                  ) : (
+                    <Clock size={10} className="text-[var(--j-muted)] shrink-0" />
+                  )}
+                </div>
+              </div>
+            );
+          })}
+        </div>
 
-          {/* Node Grid Layout */}
-          <div className="jarvis-pipeline-hud-nodes flex items-center justify-between gap-1 sm:gap-2 overflow-x-auto no-scrollbar py-1">
+        {/* Compact Real Agent Node Strip */}
+        <div className="jarvis-pipeline-hud-track pt-1.5 mt-1 border-t border-white/[0.04]">
+          <div className="jarvis-pipeline-hud-nodes flex items-center justify-between gap-1 overflow-x-auto no-scrollbar py-0.5">
             {activeNodes.map((node) => {
               const step = findStep(node.id);
               const status = step?.status || 'skipped';
               const isCompleted = status === 'completed';
-              const isRunning = status === 'running';
+              const isNodeRunning = status === 'running';
               const isFailed = status === 'failed';
-              const isSkipped = status === 'skipped';
 
               return (
                 <div
                   key={node.id}
-                  className="jarvis-pipeline-hud-node flex flex-col items-center gap-1.5 shrink-0 sm:min-w-[46px] relative z-10 group/node"
+                  className="jarvis-pipeline-hud-node flex items-center gap-1 px-1.5 py-1 rounded-md bg-[var(--j-low)] shrink-0"
                   title={`${node.name}: ${status.toUpperCase()}${step?.durationMs ? ` (${step.durationMs}ms)` : ''}`}
                 >
-                  {/* Visual Node Orb */}
-                  <div
-                    className="jarvis-pipeline-hud-orb w-7 h-7 sm:w-8 sm:h-8 rounded-full flex items-center justify-center transition-all duration-300 relative"
+                  <span
+                    className={`w-1.5 h-1.5 rounded-full shrink-0 ${isNodeRunning ? 'animate-ping' : ''}`}
                     style={{
-                      background: isCompleted
-                        ? `linear-gradient(135deg, ${node.color}33 0%, rgba(6, 18, 36, 0.95) 100%)`
-                        : isRunning
-                        ? 'rgba(56, 189, 248, 0.25)'
+                      backgroundColor: isCompleted
+                        ? node.color
+                        : isNodeRunning
+                        ? 'var(--j-accent)'
                         : isFailed
-                        ? 'rgba(244, 63, 94, 0.2)'
-                        : 'rgba(15, 23, 42, 0.85)',
-                      border: isCompleted
-                        ? `1.5px solid ${node.color}`
-                        : isRunning
-                        ? '1.5px solid #38bdf8'
-                        : isFailed
-                        ? '1.5px solid #f43f5e'
-                        : '1px dashed rgba(148, 163, 184, 0.3)',
-                      boxShadow: isCompleted
-                        ? `0 0 12px ${node.glowColor}`
-                        : isRunning
-                        ? '0 0 12px rgba(56,189,248,0.5)'
-                        : isFailed
-                        ? '0 0 10px rgba(244,63,94,0.4)'
-                        : 'none',
+                        ? 'var(--j-danger)'
+                        : 'var(--j-faint)',
+                    }}
+                  />
+                  <span
+                    className="jarvis-pipeline-hud-label font-mono text-[8.5px] sm:text-[9px] font-semibold uppercase tracking-wider"
+                    style={{
                       color: isCompleted
                         ? node.color
-                        : isRunning
-                        ? '#38bdf8'
+                        : isNodeRunning
+                        ? 'var(--j-accent)'
                         : isFailed
-                        ? '#f43f5e'
-                        : '#64748b',
+                        ? 'var(--j-danger)'
+                        : 'var(--j-muted)',
                     }}
                   >
-                    {/* Status Pip Dot */}
-                    {isCompleted && (
-                      <span
-                        className="jarvis-pipeline-hud-pip absolute -top-0.5 -right-0.5 w-2 h-2 rounded-full border border-slate-950"
-                        style={{
-                          backgroundColor: node.color,
-                          boxShadow: `0 0 6px ${node.color}`,
-                        }}
-                      />
-                    )}
-                    {isFailed && (
-                      <span className="jarvis-pipeline-hud-pip absolute -top-0.5 -right-0.5 w-2 h-2 rounded-full bg-rose-500 border border-slate-950 shadow-[0_0_6px_#f43f5e]" />
-                    )}
-
-                    {/* Icon */}
-                    <span className="jarvis-pipeline-hud-icon scale-90 sm:scale-100 flex items-center justify-center">{node.icon}</span>
-                  </div>
-
-                  {/* Node Label & Code */}
-                  <div className="jarvis-pipeline-hud-label-wrapper flex flex-col items-center text-center">
-                    <span
-                      className="jarvis-pipeline-hud-label text-[9px] sm:text-[10px] font-mono font-bold tracking-tight uppercase"
-                      style={{
-                        color: isCompleted
-                          ? node.color
-                          : isRunning
-                          ? '#38bdf8'
-                          : isFailed
-                          ? '#fb7185'
-                          : '#64748b',
-                      }}
-                    >
-                      {node.shortLabel}
-                    </span>
-                    <span className="jarvis-pipeline-hud-subtext text-[8px] font-mono text-slate-500 hidden sm:inline">
-                      {isCompleted ? (step?.durationMs ? `${step.durationMs}ms` : '✓') : isSkipped ? 'OFF' : status}
-                    </span>
-                  </div>
+                    {node.shortLabel}
+                  </span>
                 </div>
               );
             })}

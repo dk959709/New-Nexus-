@@ -1,0 +1,324 @@
+<!DOCTYPE html>
+
+<html class="dark" lang="en"><head><meta charset="utf-8"/><meta content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover" name="viewport"/><meta content="mobile_tab" name="shell-type"/><style>@layer base{html,body{width:100vw;margin:0;padding:0;}body{overscroll-behavior:none;}.pb-safe{padding-bottom:env(safe-area-inset-bottom,0px);}.pt-safe{padding-top:env(safe-area-inset-top,0px);}main>:first-child{margin-top:0!important;}main>:last-child{margin-bottom:0!important;}}::-webkit-scrollbar{display:none;}</style><script src="https://cdn.tailwindcss.com"></script><script id="tailwind-config">tailwind.config = { darkMode: "class", theme: { extend: { "colors": { "on-error": "#690005", "tertiary-container": "#78edde", "surface-container-high": "#2a292e", "on-secondary": "#00363b", "on-secondary-container": "#00565c", "tertiary-fixed-dim": "#63d9cb", "on-error-container": "#ffdad6", "surface-variant": "#353439", "surface-dim": "#131317", "surface-bright": "#39393d", "tertiary-fixed": "#82f6e7", "on-surface-variant": "#b9cacb", "error": "#ffb4ab", "on-tertiary-container": "#006b62", "outline-variant": "#3b494b", "surface-container-lowest": "#0e0e12", "primary-container": "#00f0ff", "error-container": "#93000a", "secondary-fixed-dim": "#24dbe9", "on-background": "#e4e1e7", "primary-fixed-dim": "#00dbe9", "surface-container-low": "#1b1b1f", "secondary": "#49effd", "secondary-fixed": "#80f4ff", "primary-fixed": "#7df4ff", "on-tertiary-fixed-variant": "#005049", "primary": "#dbfcff", "outline": "#849495", "on-primary": "#00363a", "surface-container-highest": "#353439", "on-secondary-fixed-variant": "#004f55", "inverse-on-surface": "#303034", "on-tertiary-fixed": "#00201d", "background": "#131317", "inverse-surface": "#e4e1e7", "on-primary-fixed": "#002022", "tertiary": "#d4fff7", "surface-tint": "#00dbe9", "secondary-container": "#01d2e0", "surface-container": "#1f1f23", "on-secondary-fixed": "#002022", "surface": "#131317", "on-primary-container": "#006970", "on-surface": "#e4e1e7", "on-tertiary": "#003732", "inverse-primary": "#006970", "on-primary-fixed-variant": "#004f54" }, "borderRadius": { "DEFAULT": "0.25rem", "lg": "0.5rem", "xl": "0.75rem", "full": "9999px" }, "spacing": { "gutter-lg": "1.5rem", "space-md": "0.875rem", "space-xs": "0.25rem", "space-lg": "1.25rem", "margin-md": "1.5rem", "margin-lg": "2rem", "space-xl": "1.75rem", "space-2xl": "2.5rem", "gutter": "1rem", "margin": "1rem", "space-sm": "0.5rem" }, "fontFamily": { "headline-lg": ["Manrope"], "body-bold": ["Manrope"], "tag-mono-xs": ["JetBrains Mono"], "mono-code": ["JetBrains Mono"], "mono-inline": ["JetBrains Mono"], "micro-caption": ["JetBrains Mono"], "body-base": ["Manrope"], "telemetry-stat": ["JetBrains Mono"], "body-sm": ["Manrope"], "display-hero": ["Manrope"], "display-hero-mobile": ["Manrope"], "headline-md": ["Manrope"], "headline-sm": ["Manrope"] }, "fontSize": { "headline-lg": ["24px", {"lineHeight": "30px", "letterSpacing": "-0.025em", "fontWeight": "700"}], "body-bold": ["14px", {"lineHeight": "22px", "letterSpacing": "-0.01em", "fontWeight": "600"}], "tag-mono-xs": ["10px", {"lineHeight": "12px", "letterSpacing": "0.12em", "fontWeight": "600"}], "mono-code": ["12px", {"lineHeight": "18px", "letterSpacing": "0em", "fontWeight": "400"}], "mono-inline": ["11.5px", {"lineHeight": "14px", "letterSpacing": "0em", "fontWeight": "600"}], "micro-caption": ["9px", {"lineHeight": "12px", "letterSpacing": "0.08em", "fontWeight": "500"}], "body-base": ["14px", {"lineHeight": "23px", "letterSpacing": "-0.01em", "fontWeight": "400"}], "telemetry-stat": ["11px", {"lineHeight": "14px", "letterSpacing": "0.06em", "fontWeight": "500"}], "body-sm": ["13px", {"lineHeight": "19px", "letterSpacing": "-0.005em", "fontWeight": "400"}], "display-hero": ["52px", {"lineHeight": "56px", "letterSpacing": "-0.05em", "fontWeight": "800"}], "display-hero-mobile": ["32px", {"lineHeight": "36px", "letterSpacing": "-0.04em", "fontWeight": "800"}], "headline-md": ["18px", {"lineHeight": "24px", "letterSpacing": "-0.02em", "fontWeight": "700"}], "headline-sm": ["15px", {"lineHeight": "20px", "letterSpacing": "-0.015em", "fontWeight": "700"}] } } } }</script>
+<link href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:wght,FILL@100..700,0..1&display=swap" rel="stylesheet"/>
+<link href="https://fonts.googleapis.com/css2?family=Manrope:wght@100..900&display=swap" rel="stylesheet"/><style>
+    body {
+      min-height: max(884px, 100dvh);
+    }
+  </style>
+  </head><body class="bg-surface font-body-base text-body-base text-on-surface flex flex-col min-h-screen antialiased selection:bg-primary-container selection:text-on-primary-container"><header class="fixed top-0 w-full z-50 pt-safe bg-surface/90 backdrop-blur-xl shadow-[0_1px_8px_rgba(0,0,0,0.3)]"><div class="h-28 px-margin flex flex-col justify-between py-space-xs"><div class="flex items-center justify-between w-full h-11"><div class="flex items-center gap-space-sm"><span class="font-headline-md text-headline-md tracking-wider text-on-surface uppercase">JARVIS</span><div class="inline-flex items-center gap-1.5 px-space-xs py-0.5 rounded-full bg-surface-container-high"><span class="w-1.5 h-1.5 rounded-full bg-primary-container animate-pulse"></span><span class="font-micro-caption text-micro-caption text-secondary uppercase tracking-widest">10-AGENT COGNITIVE MESH</span></div></div><div class="flex items-center gap-space-sm"><div class="w-8 h-8 rounded-full bg-primary flex items-center justify-center"><span class="material-symbols-outlined text-on-primary text-[18px]">person</span></div></div></div><div class="flex items-center justify-start gap-gutter h-11 w-full"><a class="relative h-full flex items-center px-space-xs font-mono-inline text-mono-inline tracking-wider uppercase text-on-surface-variant hover:text-on-surface transition-colors" data-path="console" href="#"><span class="flex items-center gap-1.5"><span class="material-symbols-outlined text-[16px]">terminal</span>Console</span></a><a class="relative h-full flex items-center px-space-xs font-mono-inline text-mono-inline tracking-wider uppercase text-on-surface-variant hover:text-on-surface transition-colors" data-path="agent-configurations" href="#"><span class="flex items-center gap-1.5"><span class="material-symbols-outlined text-[16px]">hub</span>Agent Configurations</span></a></div></div></header><main class="flex flex-col relative w-full pt-28 pb-20 bg-surface min-h-screen px-margin"><div class="flex flex-col w-full pb-36 gap-space-lg select-none">
+<!-- 1. ORCHESTRATION PIPELINE HUD -->
+<section class="flex flex-col gap-space-xs w-full bg-surface-container-lowest p-space-md rounded-xl shadow-xl">
+<div class="flex items-center justify-between pb-space-xs">
+<div class="flex items-center gap-2">
+<span class="inline-block w-1.5 h-1.5 rounded-full bg-primary-container animate-ping"></span>
+<span class="font-tag-mono-xs text-tag-mono-xs uppercase text-primary-container tracking-wider">PIPELINE EXECUTION STATE</span>
+</div>
+<span class="font-micro-caption text-micro-caption text-on-surface-variant uppercase tracking-widest">CYCLE #9482-B</span>
+</div>
+<!-- Stepper Tracker -->
+<div class="grid grid-cols-4 gap-1.5 py-1">
+<div class="flex flex-col gap-1">
+<div class="h-1 w-full bg-primary-container rounded-full shadow-[0_0_8px_rgba(0,240,255,0.6)]"></div>
+<div class="flex items-center justify-between text-on-surface">
+<span class="font-micro-caption text-micro-caption uppercase text-primary-fixed-dim">01 PLAN</span>
+<span class="material-symbols-outlined text-primary-fixed-dim text-[11px]">check_circle</span>
+</div>
+</div>
+<div class="flex flex-col gap-1">
+<div class="h-1 w-full bg-primary-container rounded-full relative overflow-hidden shadow-[0_0_10px_rgba(0,240,255,0.9)]">
+<div class="absolute inset-0 bg-primary animate-pulse"></div>
+</div>
+<div class="flex items-center justify-between">
+<span class="font-micro-caption text-micro-caption uppercase text-primary-container font-bold">02 SWARM</span>
+<span class="material-symbols-outlined text-primary-container text-[11px] animate-spin">sync</span>
+</div>
+</div>
+<div class="flex flex-col gap-1 opacity-40">
+<div class="h-1 w-full bg-surface-container-high rounded-full"></div>
+<div class="flex items-center justify-between text-on-surface-variant">
+<span class="font-micro-caption text-micro-caption uppercase">03 VALIDATE</span>
+<span class="material-symbols-outlined text-[11px]">schedule</span>
+</div>
+</div>
+<div class="flex flex-col gap-1 opacity-40">
+<div class="h-1 w-full bg-surface-container-high rounded-full"></div>
+<div class="flex items-center justify-between text-on-surface-variant">
+<span class="font-micro-caption text-micro-caption uppercase">04 CONSENSUS</span>
+<span class="material-symbols-outlined text-[11px]">hourglass_empty</span>
+</div>
+</div>
+</div>
+<!-- Collapsible Diagnostic Console Panel -->
+<div class="mt-1 bg-surface-container-low rounded-lg p-space-sm flex flex-col gap-1.5 transition-all duration-300">
+<button class="w-full flex items-center justify-between text-left group" id="toggle-log-btn">
+<div class="flex items-center gap-1.5">
+<span class="material-symbols-outlined text-primary-container text-[14px]">terminal</span>
+<span class="font-tag-mono-xs text-tag-mono-xs uppercase text-on-surface tracking-wider">NEURAL PIPELINE DIAGNOSTIC LOG</span>
+</div>
+<div class="flex items-center gap-1">
+<span class="font-micro-caption text-micro-caption text-secondary">STREAM LIVE</span>
+<span class="material-symbols-outlined text-on-surface-variant text-[14px] transition-transform duration-200" id="log-chevron">expand_less</span>
+</div>
+</button>
+<div class="flex flex-col gap-1 font-mono-code text-mono-code pt-1 text-on-surface-variant" id="log-content">
+<p class="truncate"><span class="text-secondary">> [04:18:22.09]</span> <span class="text-on-surface">ORCHESTRATOR::SPAWN_SWARM</span> (10/10 nodes active)</p>
+<p class="truncate"><span class="text-secondary">> [04:18:22.41]</span> <span class="text-primary-fixed-dim">AGENT_03 (Quantum Topology)</span>: arXiv:2403.1189 ingest complete</p>
+<p class="truncate"><span class="text-secondary">> [04:18:22.88]</span> <span class="text-on-surface">AGENT_07 (Cross-Validator)</span>: Zero discrepancies detected [0.998 conf]</p>
+<div class="flex items-center gap-1 pt-0.5 text-primary-container font-mono-inline text-mono-inline">
+<span class="inline-block w-1.5 h-1.5 rounded-full bg-primary-container animate-pulse"></span>
+<span>Awaiting swarm epoch reduction: 4,120 tokens/sec</span>
+</div>
+</div>
+</div>
+</section>
+<!-- 2. GLOWING ORBITAL AI CORE & AMBIENT LOCUS -->
+<section class="flex flex-col items-center justify-center py- space-md w-full relative">
+<div class="relative w-40 h-40 flex items-center justify-center">
+<!-- Outer aura wash -->
+<div class="absolute inset-0 rounded-full bg-primary-container/10 blur-2xl animate-pulse"></div>
+<!-- Outermost SVG orbit rings with dynamic dash offsets -->
+<svg class="absolute inset-0 w-full h-full animate-[spin_24s_linear_infinite]" viewbox="0 0 160 160">
+<circle class="text-surface-container-high" cx="80" cy="80" fill="none" r="74" stroke="currentColor" stroke-dasharray="6 8" stroke-width="1"></circle>
+<circle class="text-primary-container/40" cx="80" cy="80" fill="none" r="62" stroke="currentColor" stroke-dasharray="24 16 8 16" stroke-width="1.2"></circle>
+</svg>
+<!-- Counter-rotating inner instrumentation ring -->
+<svg class="absolute w-28 h-28 animate-[spin_12s_linear_infinite_reverse]" viewbox="0 0 112 112">
+<circle class="text-secondary/50" cx="56" cy="56" fill="none" r="50" stroke="currentColor" stroke-dasharray="14 10 3 10" stroke-width="1"></circle>
+<circle class="text-surface-variant" cx="56" cy="56" fill="none" r="42" stroke="currentColor" stroke-dasharray="2 6" stroke-width="1"></circle>
+</svg>
+<!-- Central Locus Orb Core -->
+<div class="relative w-20 h-20 rounded-full bg-surface-container-lowest flex items-center justify-center shadow-[inset_0_0_24px_rgba(0,240,255,0.4),0_0_28px_rgba(0,240,255,0.25)]">
+<div class="w-12 h-12 rounded-full bg-primary-container/20 flex items-center justify-center backdrop-blur-sm animate-pulse">
+<div class="w-6 h-6 rounded-full bg-primary-container shadow-[0_0_16px_#00f0ff] flex items-center justify-center">
+<span class="w-2 h-2 rounded-full bg-on-primary"></span>
+</div>
+</div>
+</div>
+<!-- Orbital Node Satellites -->
+<div class="absolute top-1 right-8 w-2 h-2 rounded-full bg-primary-container shadow-[0_0_6px_#00f0ff]"></div>
+<div class="absolute bottom-3 left-10 w-1.5 h-1.5 rounded-full bg-secondary shadow-[0_0_5px_#49effd]"></div>
+</div>
+<!-- Status Monospace Caption -->
+<div class="flex flex-col items-center gap-1 mt-2 text-center">
+<div class="flex items-center gap-2">
+<span class="w-1.5 h-1.5 rounded-full bg-primary-container animate-ping"></span>
+<span class="font-tag-mono-xs text-tag-mono-xs tracking-[0.2em] text-primary uppercase">COGNITIVE MESH ONLINE</span>
+</div>
+<span class="font-micro-caption text-micro-caption text-on-surface-variant uppercase tracking-widest">ORCHESTRATING 10 RESEARCH AGENTS // SYNTHESIS READY</span>
+</div>
+</section>
+<!-- 3. SUGGESTED RESEARCH PROMPTS (TACTICAL CHIPS) -->
+<section class="flex flex-col gap-space-xs w-full">
+<div class="flex items-center justify-between px-space-xs">
+<span class="font-tag-mono-xs text-tag-mono-xs uppercase text-on-surface-variant tracking-wider">DEPLOY SYNTHESIS DIRECTIVE</span>
+<span class="font-micro-caption text-micro-caption text-secondary">SWARM READY</span>
+</div>
+<div class="flex gap-2 overflow-x-auto pb-1 no-scrollbar -mx-margin px-margin">
+<button class="prompt-chip flex-shrink-0 bg-surface-container px-3.5 py-2.5 rounded-lg active:scale-95 transition-all text-left flex items-center gap-2 group hover:bg-surface-container-high">
+<span class="material-symbols-outlined text-[15px] text-primary-container group-hover:rotate-45 transition-transform">bolt</span>
+<span class="font-mono-inline text-mono-inline text-on-surface whitespace-nowrap">Room-Temp Superconductors</span>
+</button>
+<button class="prompt-chip flex-shrink-0 bg-surface-container px-3.5 py-2.5 rounded-lg active:scale-95 transition-all text-left flex items-center gap-2 group hover:bg-surface-container-high">
+<span class="material-symbols-outlined text-[15px] text-primary-container group-hover:rotate-45 transition-transform">schema</span>
+<span class="font-mono-inline text-mono-inline text-on-surface whitespace-nowrap">LLM Reasoning Architectures</span>
+</button>
+<button class="prompt-chip flex-shrink-0 bg-surface-container px-3.5 py-2.5 rounded-lg active:scale-95 transition-all text-left flex items-center gap-2 group hover:bg-surface-container-high">
+<span class="material-symbols-outlined text-[15px] text-primary-container group-hover:rotate-45 transition-transform">biotech</span>
+<span class="font-mono-inline text-mono-inline text-on-surface whitespace-nowrap">Bio-Molecular Folding</span>
+</button>
+<button class="prompt-chip flex-shrink-0 bg-surface-container px-3.5 py-2.5 rounded-lg active:scale-95 transition-all text-left flex items-center gap-2 group hover:bg-surface-container-high">
+<span class="material-symbols-outlined text-[15px] text-primary-container group-hover:rotate-45 transition-transform">verified_user</span>
+<span class="font-mono-inline text-mono-inline text-on-surface whitespace-nowrap">Agent Swarm Consensus Proofs</span>
+</button>
+</div>
+</section>
+<!-- 4. MESSAGE STREAM SAMPLE -->
+<section class="flex flex-col gap-space-md w-full">
+<!-- User Input Message -->
+<div class="flex flex-col items-end gap-1 w-full pl-8">
+<div class="flex items-center gap-1.5 pr-1">
+<span class="font-micro-caption text-micro-caption text-on-surface-variant uppercase">DIRECTIVE // USER-01</span>
+<span class="w-1 h-1 rounded-full bg-on-surface-variant"></span>
+<span class="font-micro-caption text-micro-caption text-on-surface-variant">04:17:48</span>
+</div>
+<div class="bg-surface-container-high text-on-surface px-space-md py-space-sm rounded-xl rounded-tr-xs shadow-md">
+<p class="font-body-base text-body-base leading-relaxed">
+          Run an exhaustive synthesis on post-quantum cryptographic lattice migrations.
+        </p>
+</div>
+</div>
+<!-- JARVIS Multi-Agent Synthesis Card -->
+<div class="flex flex-col gap-2 w-full pr-2">
+<!-- Agent Metadata Pill -->
+<div class="flex items-center gap-2 pl-1">
+<div class="w-2 h-2 rounded-full bg-primary-container animate-pulse"></div>
+<span class="font-tag-mono-xs text-tag-mono-xs uppercase text-primary-container font-semibold tracking-wider">JARVIS MESH • 10 AGENTS VERIFIED</span>
+<span class="font-tag-mono-xs text-tag-mono-xs text-on-surface-variant">• 2.4s</span>
+</div>
+<!-- Synthesis Card Body -->
+<div class="bg-surface-container-low rounded-xl p-space-md flex flex-col gap-space-sm shadow-xl relative overflow-hidden">
+<!-- Structural corner accent decoration -->
+<div class="absolute top-0 right-0 w-8 h-8 pointer-events-none">
+<div class="w-full h-full bg-gradient-to-bl from-primary-container/15 to-transparent"></div>
+</div>
+<div class="flex items-center justify-between">
+<div class="flex items-center gap-2">
+<span class="px-2 py-0.5 rounded-full bg-surface-container-highest font-mono-inline text-mono-inline text-secondary uppercase">SYNTHESIS_0941</span>
+<span class="font-micro-caption text-micro-caption text-on-surface-variant uppercase">CRYPTO-LATTICE EVAL</span>
+</div>
+<span class="font-tag-mono-xs text-tag-mono-xs text-tertiary-fixed-dim">CONF: 99.84%</span>
+</div>
+<div class="space-y-2.5 text-on-surface">
+<p class="font-body-bold text-body-bold text-primary">
+            Key breakthroughs across NIST PQC Round 4 candidate transitions & hardware accelerator pipelines:
+          </p>
+<ul class="space-y-2 font-body-sm text-body-sm text-on-surface">
+<li class="flex items-start gap-2">
+<span class="text-primary-container text-headline-sm leading-none">•</span>
+<span><strong class="text-on-surface font-body-bold">Kyber/ML-KEM Key Ring Sizing:</strong> Microcontroller SRAM overhead reduced by 34% through polynomial multiplier streaming, avoiding pipeline stalls in embedded secure elements.</span>
+</li>
+<li class="flex items-start gap-2">
+<span class="text-primary-container text-headline-sm leading-none">•</span>
+<span><strong class="text-on-surface font-body-bold">Dilithium/ML-DSA Verification:</strong> Side-channel resistant NTT (Number Theoretic Transform) cores achieve deterministic constant-time latency across RISC-V nodes.</span>
+</li>
+<li class="flex items-start gap-2">
+<span class="text-primary-container text-headline-sm leading-none">•</span>
+<span><strong class="text-on-surface font-body-bold">Consensus Cross-Validation:</strong> Agent_04 (Quantum Security) & Agent_09 (Hardware Verification) confirmed zero fault-injection attack surface in current reference implementations.</span>
+</li>
+</ul>
+</div>
+<!-- Citation Badges -->
+<div class="pt-2 flex flex-wrap gap-1.5">
+<span class="px-2 py-0.5 rounded bg-surface-container font-micro-caption text-micro-caption text-on-surface-variant flex items-center gap-1">
+<span class="material-symbols-outlined text-[10px] text-primary-container">article</span> NIST.SP.800-208
+          </span>
+<span class="px-2 py-0.5 rounded bg-surface-container font-micro-caption text-micro-caption text-on-surface-variant flex items-center gap-1">
+<span class="material-symbols-outlined text-[10px] text-primary-container">link</span> IACR:2024/119
+          </span>
+<span class="px-2 py-0.5 rounded bg-surface-container font-micro-caption text-micro-caption text-on-surface-variant flex items-center gap-1">
+<span class="material-symbols-outlined text-[10px] text-primary-container">memory</span> IEEE-MICRO.24
+          </span>
+</div>
+<!-- Utility Action Bar Footer -->
+<div class="pt-2 mt-1 flex items-center justify-between">
+<div class="flex items-center gap-1">
+<button class="action-btn p-2 rounded-lg text-on-surface-variant hover:text-on-surface hover:bg-surface-container-high transition-colors active:scale-95" title="Read aloud synthesis">
+<span class="material-symbols-outlined text-[18px]">volume_up</span>
+</button>
+<button class="action-btn p-2 rounded-lg text-on-surface-variant hover:text-on-surface hover:bg-surface-container-high transition-colors active:scale-95" title="Export raw report">
+<span class="material-symbols-outlined text-[18px]">download</span>
+</button>
+<button class="action-btn p-2 rounded-lg text-on-surface-variant hover:text-on-surface hover:bg-surface-container-high transition-colors active:scale-95" title="Copy synthesis output">
+<span class="material-symbols-outlined text-[18px]">content_copy</span>
+</button>
+<button class="action-btn p-2 rounded-lg text-on-surface-variant hover:text-on-surface hover:bg-surface-container-high transition-colors active:scale-95" title="Commit to memory vault">
+<span class="material-symbols-outlined text-[18px]">bookmark</span>
+</button>
+</div>
+<button class="p-2 rounded-lg text-on-surface-variant hover:text-error hover:bg-surface-container-high transition-colors active:scale-95" title="Purge stream node">
+<span class="material-symbols-outlined text-[18px]">delete_sweep</span>
+</button>
+</div>
+</div>
+</div>
+</section>
+<!-- 5. STICKY DOCKED BOTTOM INPUT PROMPT COMPOSER -->
+<div class="fixed bottom-16 left-0 right-0 z-40 px-margin pb-2 bg-gradient-to-t from-surface via-surface/95 to-transparent pt-4">
+<div class="max-w-xl mx-auto w-full bg-surface-container-low rounded-2xl p-space-sm shadow-2xl backdrop-blur-xl flex flex-col gap-2">
+<!-- Input Zone -->
+<div class="relative flex items-center w-full px-space-xs">
+<textarea class="w-full bg-transparent text-on-surface placeholder:text-outline font-body-base text-body-base resize-none focus:outline-none py-1.5 leading-snug" id="composer-input" placeholder="Instruct 10-Agent Cognitive Mesh..." rows="1"></textarea>
+</div>
+<!-- Action Shelf -->
+<div class="flex items-center justify-between pt-1">
+<!-- Left Tools -->
+<div class="flex items-center gap-1.5">
+<button class="w-8 h-8 rounded-full flex items-center justify-center text-on-surface-variant hover:text-on-surface hover:bg-surface-container transition-colors" title="Attach research source">
+<span class="material-symbols-outlined text-[18px]">attach_file</span>
+</button>
+<!-- Deep Research Toggle Pill -->
+<button class="flex items-center gap-1.5 px-2.5 py-1 rounded-full bg-surface-container text-on-surface transition-all active:scale-95" id="deep-research-toggle">
+<span class="w-1.5 h-1.5 rounded-full bg-primary-container shadow-[0_0_6px_#00f0ff]"></span>
+<span class="font-tag-mono-xs text-tag-mono-xs tracking-wide uppercase text-primary">DEEP SWARM</span>
+</button>
+<!-- Modes Dropdown -->
+<button class="flex items-center gap-1 px-2 py-1 rounded-full bg-surface-container text-on-surface-variant hover:text-on-surface text-tag-mono-xs font-tag-mono-xs">
+<span>MODES</span>
+<span class="material-symbols-outlined text-[14px]">expand_more</span>
+</button>
+</div>
+<!-- Right Tools -->
+<div class="flex items-center gap-2">
+<button class="w-8 h-8 rounded-full flex items-center justify-center text-on-surface-variant hover:text-on-surface hover:bg-surface-container transition-colors" title="Voice input mode">
+<span class="material-symbols-outlined text-[18px]">mic</span>
+</button>
+<!-- White Circle Send Trigger -->
+<button class="w-9 h-9 rounded-full bg-on-background text-surface-container-lowest flex items-center justify-center hover:bg-white active:scale-95 shadow-[0_0_12px_rgba(255,255,255,0.3)] transition-all" id="send-trigger">
+<span class="material-symbols-outlined text-[18px] font-bold">arrow_upward</span>
+</button>
+</div>
+</div>
+</div>
+</div>
+</div>
+<script>
+  (function() {
+    // 1. Diagnostic Log Collapse Toggle
+    const toggleLogBtn = document.getElementById('toggle-log-btn');
+    const logContent = document.getElementById('log-content');
+    const logChevron = document.getElementById('log-chevron');
+
+    if (toggleLogBtn && logContent && logChevron) {
+      toggleLogBtn.addEventListener('click', () => {
+        const isHidden = logContent.classList.toggle('hidden');
+        logChevron.style.transform = isHidden ? 'rotate(180deg)' : 'rotate(0deg)';
+      });
+    }
+
+    // 2. Chip Clicks populating prompt input
+    const inputEl = document.getElementById('composer-input');
+    const chips = document.querySelectorAll('.prompt-chip');
+
+    chips.forEach(chip => {
+      chip.addEventListener('click', () => {
+        const text = chip.querySelector('span:last-child')?.textContent || '';
+        if (inputEl) {
+          inputEl.value = 'Run comprehensive analysis on: ' + text.trim();
+          inputEl.focus();
+        }
+      });
+    });
+
+    // 3. Deep Research Switch Toggle
+    const deepToggle = document.getElementById('deep-research-toggle');
+    if (deepToggle) {
+      deepToggle.addEventListener('click', () => {
+        const indicator = deepToggle.querySelector('span:first-child');
+        const isDeep = indicator.classList.toggle('bg-primary-container');
+        if (isDeep) {
+          indicator.classList.remove('bg-surface-variant');
+          indicator.classList.add('shadow-[0_0_6px_#00f0ff]');
+        } else {
+          indicator.classList.add('bg-surface-variant');
+          indicator.classList.remove('shadow-[0_0_6px_#00f0ff]');
+        }
+      });
+    }
+
+    // 4. Send button visual pulse
+    const sendBtn = document.getElementById('send-trigger');
+    if (sendBtn && inputEl) {
+      sendBtn.addEventListener('click', () => {
+        if (inputEl.value.trim() !== '') {
+          sendBtn.classList.add('scale-110');
+          setTimeout(() => {
+            sendBtn.classList.remove('scale-110');
+            inputEl.value = '';
+          }, 150);
+        }
+      });
+    }
+  })();
+</script></main><nav class="fixed bottom-0 w-full z-50 pb-safe bg-surface/90 backdrop-blur-xl shadow-[0_-1px_8px_rgba(0,0,0,0.3)]" data-active-classes="text-primary-container"><div class="flex justify-around items-center h-16 px-gutter"><a aria-current="page" class="flex flex-col items-center justify-center min-w-[44px] min-h-[44px] transition-colors text-primary-container" data-path="console" href="#"><span class="material-symbols-outlined text-[20px]">terminal</span><span class="font-micro-caption text-micro-caption uppercase mt-0.5">Console</span></a><a class="flex flex-col items-center justify-center min-w-[44px] min-h-[44px] text-on-surface-variant hover:text-on-surface transition-colors" data-path="agent-configurations" href="#"><span class="material-symbols-outlined text-[20px]">settings_input_component</span><span class="font-micro-caption text-micro-caption uppercase mt-0.5">Config</span></a><a class="flex flex-col items-center justify-center min-w-[44px] min-h-[44px] text-on-surface-variant hover:text-on-surface transition-colors" data-path="telemetry-hub" href="#"><span class="material-symbols-outlined text-[20px]">monitoring</span><span class="font-micro-caption text-micro-caption uppercase mt-0.5">Telemetry</span></a><a class="flex flex-col items-center justify-center min-w-[44px] min-h-[44px] text-on-surface-variant hover:text-on-surface transition-colors" data-path="memory-vault" href="#"><span class="material-symbols-outlined text-[20px]">database</span><span class="font-micro-caption text-micro-caption uppercase mt-0.5">Memory</span></a></div></nav></body></html>
