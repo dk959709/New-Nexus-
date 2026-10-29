@@ -4653,3 +4653,200 @@ html[data-theme="light"] .settings-category-bar button.selected {
   color: #0d9488 !important;
   border-color: #0d9488 !important;
 }
+
+/* =========================================================
+   IMAGE STUDIO — STITCH VISUAL DESIGN TOKENS & UTILITIES
+   ========================================================= */
+.image-studio-stitch-root {
+  font-family: 'Manrope', -apple-system, BlinkMacSystemFont, sans-serif;
+  background-color: #070709;
+  color: #f3f4f6;
+}
+
+.image-studio-stitch-root .font-mono {
+  font-family: 'JetBrains Mono', ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
+}
+
+.shadow-glow-pink {
+  box-shadow: 0 0 24px -2px rgba(255, 45, 135, 0.45);
+}
+
+.shadow-glow-subtle {
+  box-shadow: 0 0 16px -2px rgba(139, 44, 245, 0.25);
+}
+
+.shadow-glow-chip {
+  box-shadow: 0 0 14px -1px rgba(255, 45, 135, 0.35);
+}
+
+.scrollbar-none::-webkit-scrollbar {
+  display: none;
+}
+
+.scrollbar-none {
+  -ms-overflow-style: none;
+  scrollbar-width: none;
+}
+
+/* =========================================================
+   IMAGE STUDIO — LIGHT CSS ANIMATIONS (150–400ms)
+   ========================================================= */
+@keyframes stitchBtnPulseGlow {
+  0%, 100% {
+    box-shadow: 0 0 20px -2px rgba(255, 45, 135, 0.45);
+  }
+  50% {
+    box-shadow: 0 0 30px 2px rgba(139, 44, 245, 0.65);
+  }
+}
+
+@keyframes stitchBtnShine {
+  0% {
+    transform: translateX(-100%);
+  }
+  100% {
+    transform: translateX(100%);
+  }
+}
+
+.stitch-generate-btn-busy {
+  animation: stitchBtnPulseGlow 1.6s ease-in-out infinite;
+}
+
+.stitch-generate-btn-busy::after {
+  content: '';
+  position: absolute;
+  inset: 0;
+  background: linear-gradient(
+    90deg,
+    transparent 0%,
+    rgba(255, 255, 255, 0.22) 50%,
+    transparent 100%
+  );
+  animation: stitchBtnShine 1.4s ease-in-out infinite;
+  pointer-events: none;
+}
+
+@keyframes stitchLoadingShimmer {
+  0% {
+    transform: translateX(-45%);
+  }
+  50% {
+    transform: translateX(0%);
+  }
+  100% {
+    transform: translateX(45%);
+  }
+}
+
+.stitch-loading-shimmer {
+  animation: stitchLoadingShimmer 1.2s ease-in-out infinite alternate;
+}
+
+@keyframes stitchResultFadeIn {
+  0% {
+    opacity: 0;
+    transform: scale(0.98);
+  }
+  100% {
+    opacity: 1;
+    transform: scale(1);
+  }
+}
+
+.stitch-result-fade-in {
+  animation: stitchResultFadeIn 280ms cubic-bezier(0.22, 1, 0.36, 1) forwards;
+}
+
+@keyframes stitchCardFadeUp {
+  0% {
+    opacity: 0;
+    transform: translateY(6px);
+  }
+  100% {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+.stitch-gallery-card {
+  animation: stitchCardFadeUp 240ms ease-out both;
+  transition: transform 160ms ease, border-color 160ms ease, box-shadow 160ms ease;
+}
+
+.stitch-gallery-card:active {
+  transform: scale(0.98);
+}
+
+@keyframes stitchPopScale {
+  0% {
+    transform: scale(1);
+  }
+  50% {
+    transform: scale(1.25);
+  }
+  100% {
+    transform: scale(1);
+  }
+}
+
+.stitch-heart-pop {
+  animation: stitchPopScale 240ms cubic-bezier(0.34, 1.56, 0.64, 1);
+}
+
+.stitch-check-pop {
+  animation: stitchPopScale 200ms cubic-bezier(0.34, 1.56, 0.64, 1);
+}
+
+@keyframes stitchModalBackdropFade {
+  0% {
+    opacity: 0;
+  }
+  100% {
+    opacity: 1;
+  }
+}
+
+@keyframes stitchModalPanelZoom {
+  0% {
+    opacity: 0;
+    transform: scale(0.98);
+  }
+  100% {
+    opacity: 1;
+    transform: scale(1);
+  }
+}
+
+.stitch-modal-backdrop {
+  animation: stitchModalBackdropFade 200ms ease-out forwards;
+}
+
+.stitch-modal-panel {
+  animation: stitchModalPanelZoom 240ms cubic-bezier(0.22, 1, 0.36, 1) forwards;
+}
+
+button:active .stitch-dice-icon {
+  transform: rotate(180deg);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .stitch-generate-btn-busy,
+  .stitch-generate-btn-busy::after,
+  .stitch-loading-shimmer,
+  .stitch-result-fade-in,
+  .stitch-gallery-card,
+  .stitch-heart-pop,
+  .stitch-check-pop,
+  .stitch-modal-backdrop,
+  .stitch-modal-panel {
+    animation: none !important;
+    transition: none !important;
+  }
+
+  button:active .stitch-dice-icon {
+    transform: none !important;
+  }
+}
+
+

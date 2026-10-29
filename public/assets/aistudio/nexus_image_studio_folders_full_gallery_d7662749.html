@@ -1,0 +1,1203 @@
+<!DOCTYPE html>
+
+<html class="dark" lang="en"><head>
+<meta charset="utf-8"/>
+<meta content="width=device-width, initial-scale=1.0" name="viewport"/>
+<title>NEXUS - Image Studio</title>
+<!-- Fonts -->
+<link href="https://fonts.googleapis.com" rel="preconnect"/>
+<link crossorigin="" href="https://fonts.gstatic.com" rel="preconnect"/>
+<link href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;500;600;700&amp;family=Manrope:wght@300;400;500;600;700;800&amp;display=swap" rel="stylesheet"/>
+<!-- Tailwind CDN -->
+<script src="https://cdn.tailwindcss.com"></script>
+<script>
+    tailwind.config = {
+      darkMode: 'class',
+      theme: {
+        extend: {
+          colors: {
+            bgDark: '#08080a',
+            cardBg: '#121218',
+            cardElevated: '#17171e',
+            subtleBorder: '#1f1f2a',
+            accentPink: '#ff2d87',
+            accentViolet: '#8b2cf5',
+            accentCyan: '#00f0ff',
+          },
+          fontFamily: {
+            sans: ['Manrope', 'sans-serif'],
+            mono: ['"JetBrains Mono"', 'monospace'],
+          },
+          boxShadow: {
+            'glow-pink': '0 0 24px -2px rgba(255, 45, 135, 0.45)',
+            'glow-subtle': '0 0 16px -2px rgba(139, 44, 245, 0.25)',
+            'glow-chip': '0 0 14px -1px rgba(255, 45, 135, 0.35)',
+          }
+        }
+      }
+    }
+  </script>
+<style>
+    /* Custom scrollbars */
+    ::-webkit-scrollbar {
+      display: none;
+    }
+    * {
+      -ms-overflow-style: none;
+      scrollbar-width: none;
+      -webkit-tap-highlight-color: transparent;
+    }
+    .toast-animate {
+      animation: fadeInOut 2.2s ease forwards;
+    }
+    @keyframes fadeInOut {
+      0% { opacity: 0; transform: translateY(8px); }
+      15% { opacity: 1; transform: translateY(0); }
+      85% { opacity: 1; transform: translateY(0); }
+      100% { opacity: 0; transform: translateY(-6px); }
+    }
+  </style>
+</head>
+<body class="bg-[#070709] text-gray-100 font-sans antialiased selection:bg-pink-500/30 selection:text-pink-200 min-h-screen pb-16 relative">
+<!-- Toast Notification Float -->
+<div class="fixed top-5 left-1/2 -translate-x-1/2 z-50 pointer-events-none hidden items-center gap-2 px-3.5 py-2 rounded-xl bg-[#171722]/95 border border-pink-500/40 backdrop-blur-md shadow-2xl text-xs font-mono text-pink-300" id="system-toast">
+<span class="w-2 h-2 rounded-full bg-pink-500 animate-pulse"></span>
+<span id="toast-message">Notification message</span>
+</div>
+<!-- Mobile Container (Max width 425px centered) -->
+<div class="max-w-[425px] mx-auto px-4 py-5 flex flex-col gap-6 relative">
+<!-- 1. SLIM HEADER -->
+<header class="flex items-center justify-between pt-1 pb-1">
+<div class="flex items-center gap-3">
+<!-- Pink Image Studio Icon Mark -->
+<div class="w-10 h-10 rounded-xl bg-gradient-to-br from-[#ff2d87] to-[#8b2cf5] p-[1.5px] flex items-center justify-center shadow-glow-subtle">
+<div class="w-full h-full bg-[#0d0d12] rounded-[10.5px] flex items-center justify-center">
+<svg class="w-5 h-5 text-[#ff2d87]" fill="none" stroke="currentColor" viewbox="0 0 24 24">
+<path d="M4 16l4.586-4.586a2 2 0 012.828 0L16 16m-2-2l1.586-1.586a2 2 0 012.828 0L20 14m-6-6h.01M6 20h12a2 2 0 002-2V6a2 2 0 00-2-2H6a2 2 0 00-2 2v12a2 2 0 002 2z" stroke-linecap="round" stroke-linejoin="round" stroke-width="2"></path>
+</svg>
+</div>
+</div>
+<div>
+<div class="flex items-center gap-2">
+<h1 class="text-lg font-bold text-white tracking-tight">Image Studio</h1>
+<span class="px-2 py-0.5 text-[9px] font-mono font-semibold tracking-wider text-[#ff4f9e] bg-[#ff2d87]/10 border border-[#ff2d87]/25 rounded-full uppercase">
+              AI Vision Engine
+            </span>
+</div>
+<p class="text-xs text-gray-400 font-mono tracking-tight text-[11px]">NEXUS // SYNTHETIC DISPERSION v3.4</p>
+</div>
+</div>
+<!-- Settings Icon Button -->
+<div class="flex items-center gap-2" id="header-right-actions"><button class="px-2.5 py-1.5 rounded-xl bg-[#13131a] hover:bg-[#1b1b24] border border-[#21212d] hover:border-pink-500/40 flex items-center gap-1.5 text-gray-300 hover:text-white transition group relative" id="open-history-btn" onclick="openTimelineDrawer()" title="Open Generation History Timeline"><svg class="w-4 h-4 text-pink-400 group-hover:rotate-[-30deg] transition-transform duration-200" fill="none" stroke="currentColor" viewbox="0 0 24 24"><circle cx="12" cy="12" r="10" stroke-width="1.8"></circle><path d="M12 6v6l4 2" stroke-linecap="round" stroke-linejoin="round" stroke-width="2"></path></svg><span class="text-xs font-mono font-medium hidden sm:inline-block">History</span><span class="px-1.5 py-0.2 rounded-full text-[9px] font-mono font-bold bg-pink-500/20 text-pink-300 border border-pink-500/40">4</span></button><button class="w-9 h-9 rounded-xl bg-[#13131a] hover:bg-[#1b1b24] border border-[#21212d] flex items-center justify-center text-gray-400 hover:text-gray-200 transition-colors" title="Engine Settings"><svg class="w-4 h-4" fill="none" stroke="currentColor" viewbox="0 0 24 24"><path d="M10.325 4.317c.426-1.756 2.924-1.756 3.35 0a1.724 1.724 0 002.573 1.066c1.543-.94 3.31.826 2.37 2.37a1.724 1.724 0 001.065 2.572c1.756.426 1.756 2.924 0 3.35a1.724 1.724 0 00-1.066 2.573c.94 1.543-.826 3.31-2.37 2.37a1.724 1.724 0 00-2.572 1.065c-.426 1.756-2.924 1.756-3.35 0a1.724 1.724 0 00-2.573-1.066c-1.543.94-3.31-.826-2.37-2.37a1.724 1.724 0 00-1.065-2.572c-1.756-.426-1.756-2.924 0-3.35a1.724 1.724 0 001.066-2.573c-.94-1.543.826-3.31 2.37-2.37.996.608 2.296.07 2.572-1.065z" stroke-linecap="round" stroke-linejoin="round" stroke-width="1.8"></path><path d="M15 12a3 3 0 11-6 0 3 3 0 016 0z" stroke-linecap="round" stroke-linejoin="round" stroke-width="1.8"></path></svg></button></div>
+</header>
+<!-- 2. MODEL / PRESET SELECTOR (Horizontal Chip Scroll) -->
+<div class="flex flex-col gap-2">
+<div class="flex items-center justify-between px-0.5">
+<span class="text-[10px] font-mono tracking-wider text-gray-400 uppercase">Architecture &amp; Precision</span>
+<span class="text-[10px] font-mono text-pink-400/90 font-medium">99.8% Latency Score</span>
+</div>
+<div class="flex items-center gap-2 overflow-x-auto pb-1 -mx-4 px-4 scrollbar-none">
+<!-- Active Chip: FLUX.1-schnell -->
+<button class="shrink-0 px-3.5 py-2 rounded-xl text-xs font-mono font-medium flex items-center gap-2 bg-gradient-to-r from-[#ff2d87]/15 to-[#8b2cf5]/15 border border-[#ff2d87]/50 text-white shadow-sm shadow-pink-500/10">
+<span class="w-1.5 h-1.5 rounded-full bg-[#ff2d87] animate-pulse"></span>
+          FLUX.1-schnell
+          <span class="text-[10px] text-pink-300 font-sans font-medium px-1.5 py-0.2 bg-pink-500/20 rounded">Free</span>
+</button>
+<!-- Chip 2: FLUX.1-dev -->
+<button class="shrink-0 px-3.5 py-2 rounded-xl text-xs font-mono font-medium flex items-center gap-2 bg-[#121218] border border-[#20202c] text-gray-400 hover:text-gray-200 hover:border-gray-700 transition">
+          FLUX.1-dev
+          <span class="text-[10px] text-violet-300 font-sans px-1.5 py-0.2 bg-violet-500/15 rounded">HQ</span>
+</button>
+<!-- Chip 3: Pollinations -->
+<button class="shrink-0 px-3.5 py-2 rounded-xl text-xs font-mono font-medium flex items-center gap-1.5 bg-[#121218] border border-[#20202c] text-gray-400 hover:text-gray-200 transition">
+          Pollinations
+        </button>
+<!-- Chip 4: Cloudflare -->
+<button class="shrink-0 px-3.5 py-2 rounded-xl text-xs font-mono font-medium flex items-center gap-1.5 bg-[#121218] border border-[#20202c] text-gray-400 hover:text-gray-200 transition">
+          Cloudflare Edge
+        </button>
+</div>
+</div>
+<!-- 3. BIG PROMPT CARD -->
+<div class="bg-[#121218] border border-[#1e1e29] rounded-2xl p-4 shadow-xl flex flex-col gap-3 relative group" id="prompt-editor-card">
+<!-- Top meta in card -->
+<div class="flex items-center justify-between text-[11px] font-mono text-gray-400">
+<span class="uppercase tracking-wider text-[10px] text-gray-400">Synthesis Prompt</span>
+<span class="text-[10px] text-gray-400">142 / 1,000</span>
+</div>
+<!-- Textarea with real sample prompt -->
+<textarea class="w-full bg-transparent text-sm text-gray-100 placeholder-gray-400 focus:outline-none resize-none leading-relaxed" id="synthesis-prompt-input" placeholder="Describe the image you want to generate..." rows="3">Cyberpunk crystalline holographic portrait of an ethereal cybernetic woman surrounded by iridescent neon magenta and violet particles, ultra detailed cinematic digital art, dark moody background</textarea>
+<!-- 4. THUMBNAIL STRIP (When reference image is attached) -->
+<div class="flex items-center gap-2 pt-1 border-t border-[#1a1a24]">
+<span class="text-[10px] font-mono text-gray-400 uppercase tracking-wider">Reference Active:</span>
+<div class="relative group/thumb inline-flex items-center gap-2 bg-[#171722] border border-[#29293a] pl-1.5 pr-2.5 py-1 rounded-lg" id="reference-active-badge"><img alt="Active reference" class="w-6 h-6 rounded object-cover border border-pink-500/30 cursor-pointer" id="ref-img-thumbnail" onclick="openLightboxAtIndex(currentLbIndex)" src="https://lh3.googleusercontent.com/aida/AEtjO1W19VR92VPYnbTE97mnXEPT-xOZRHN5h1QxzbKq7vY3kg4o680VqDYE-K-JAUmH41CYNlVHLHGFKKx8UyC70w4hE-z2QRHcNHbaxZ9uR4kBLgZ0Ljv1jezdmVUrbhsoh6e4w08QrMZRbtaXrVFeLzCzRZHx1Goi9uib0xXc-_nAY0XtQjwcC9y6MjUc4EA2mjipOmhbE9EtpWb3UcNl2lxoRzWopUZNwjPX3q5DoX8"/><span class="text-[11px] font-mono text-gray-300" id="ref-img-name">mecha_kaizu_v4.png</span><button class="w-4 h-4 rounded-full bg-[#242434] hover:bg-pink-600/30 text-gray-400 hover:text-pink-300 flex items-center justify-center text-[10px] ml-1 transition" id="ref-remove-btn" onclick="removeReferenceImage()" title="Remove reference">✕</button></div>
+</div>
+<!-- Aspect Ratio: 5 Options Chips with Pixel Subtitles -->
+<div class="flex flex-col gap-1.5 pt-2 border-t border-[#1a1a24]">
+<div class="flex items-center justify-between">
+<span class="text-[10px] font-mono text-gray-400 uppercase tracking-wider flex items-center gap-1.5">
+<span class="w-1.5 h-1.5 rounded-full bg-pink-500/80"></span>
+      Aspect Ratio &amp; Resolution
+    </span>
+<span class="text-[10px] font-mono text-pink-400 font-semibold" id="active-ratio-summary">1:1 • 1024×1024</span>
+</div>
+<!-- 5-Option Chips Container (Scrollable horizontally on very small screens, clean cyberpunk badges) -->
+<div class="grid grid-cols-5 gap-1.5" id="aspect-ratio-controls">
+<!-- Option 1: 1:1 Square (Active by default) -->
+<button class="ratio-btn group/rbtn flex flex-col items-center justify-center py-2 px-1 rounded-xl border bg-gradient-to-b from-[#ff2d87]/20 via-[#8b2cf5]/15 to-[#171724] border-[#ff2d87] text-white shadow-glow-chip transition-all duration-200" data-dim="1024×1024" data-label="1:1 Square" data-ratio="1:1" id="ratio-btn-1-1" onclick="setAspectRatio('1:1')" title="1:1 Square • 1024×1024">
+<div class="flex items-center gap-1 mb-0.5">
+<span class="ratio-icon-box w-2.5 h-2.5 border border-pink-400 bg-pink-500/40 rounded-[2px] shrink-0 inline-block"></span>
+<span class="ratio-title text-[10px] font-mono font-bold tracking-tight text-white group-hover/rbtn:text-white truncate">1:1</span>
+</div>
+<span class="ratio-sub text-[9px] font-mono text-pink-300 font-medium tracking-tighter scale-95 origin-center">1024×1024</span>
+</button>
+<!-- Option 2: 16:9 Landscape -->
+<button class="ratio-btn group/rbtn flex flex-col items-center justify-center py-2 px-1 rounded-xl border bg-[#14141d] hover:bg-[#1a1a26] border-[#222232] hover:border-gray-600 text-gray-400 hover:text-gray-200 transition-all duration-200" data-dim="1280×720" data-label="16:9 Landscape" data-ratio="16:9" id="ratio-btn-16-9" onclick="setAspectRatio('16:9')" title="16:9 Landscape • 1280×720">
+<div class="flex items-center gap-1 mb-0.5">
+<span class="ratio-icon-box w-3 h-2 border border-gray-500 rounded-[1.5px] shrink-0 inline-block"></span>
+<span class="ratio-title text-[10px] font-mono font-semibold tracking-tight text-gray-300 group-hover/rbtn:text-white truncate">16:9</span>
+</div>
+<span class="ratio-sub text-[9px] font-mono text-gray-400 tracking-tighter scale-95 origin-center">1280×720</span>
+</button>
+<!-- Option 3: 9:16 Portrait -->
+<button class="ratio-btn group/rbtn flex flex-col items-center justify-center py-2 px-1 rounded-xl border bg-[#14141d] hover:bg-[#1a1a26] border-[#222232] hover:border-gray-600 text-gray-400 hover:text-gray-200 transition-all duration-200" data-dim="720×1280" data-label="9:16 Portrait" data-ratio="9:16" id="ratio-btn-9-16" onclick="setAspectRatio('9:16')" title="9:16 Portrait • 720×1280">
+<div class="flex items-center gap-1 mb-0.5">
+<span class="ratio-icon-box w-2 h-3 border border-gray-500 rounded-[1.5px] shrink-0 inline-block"></span>
+<span class="ratio-title text-[10px] font-mono font-semibold tracking-tight text-gray-300 group-hover/rbtn:text-white truncate">9:16</span>
+</div>
+<span class="ratio-sub text-[9px] font-mono text-gray-400 tracking-tighter scale-95 origin-center">720×1280</span>
+</button>
+<!-- Option 4: 4:3 Standard -->
+<button class="ratio-btn group/rbtn flex flex-col items-center justify-center py-2 px-1 rounded-xl border bg-[#14141d] hover:bg-[#1a1a26] border-[#222232] hover:border-gray-600 text-gray-400 hover:text-gray-200 transition-all duration-200" data-dim="1024×768" data-label="4:3 Standard" data-ratio="4:3" id="ratio-btn-4-3" onclick="setAspectRatio('4:3')" title="4:3 Standard • 1024×768">
+<div class="flex items-center gap-1 mb-0.5">
+<span class="ratio-icon-box w-2.5 h-2 border border-gray-500 rounded-[1.5px] shrink-0 inline-block"></span>
+<span class="ratio-title text-[10px] font-mono font-semibold tracking-tight text-gray-300 group-hover/rbtn:text-white truncate">4:3</span>
+</div>
+<span class="ratio-sub text-[9px] font-mono text-gray-400 tracking-tighter scale-95 origin-center">1024×768</span>
+</button>
+<!-- Option 5: 3:2 Photo -->
+<button class="ratio-btn group/rbtn flex flex-col items-center justify-center py-2 px-1 rounded-xl border bg-[#14141d] hover:bg-[#1a1a26] border-[#222232] hover:border-gray-600 text-gray-400 hover:text-gray-200 transition-all duration-200" data-dim="1280×800" data-label="3:2 Photo" data-ratio="3:2" id="ratio-btn-3-2" onclick="setAspectRatio('3:2')" title="3:2 Photo • 1280×800">
+<div class="flex items-center gap-1 mb-0.5">
+<span class="ratio-icon-box w-3 h-2 border border-gray-500 rounded-[1.5px] shrink-0 inline-block"></span>
+<span class="ratio-title text-[10px] font-mono font-semibold tracking-tight text-gray-300 group-hover/rbtn:text-white truncate">3:2</span>
+</div>
+<span class="ratio-sub text-[9px] font-mono text-gray-400 tracking-tighter scale-95 origin-center">1280×800</span>
+</button>
+</div>
+</div>
+<!-- Bottom Toolbar Row Inside Prompt Card -->
+<div class="flex flex-wrap items-center justify-between gap-2 pt-2 border-t border-[#1a1a24]">
+<div class="flex items-center gap-2">
+<!-- Reference Image Upload Button -->
+<button class="h-8 px-2.5 rounded-lg bg-[#181822] hover:bg-[#20202e] border border-[#262635] text-[11px] font-mono text-gray-300 flex items-center gap-1.5 transition">
+<svg class="w-3.5 h-3.5 text-pink-400" fill="none" stroke="currentColor" viewbox="0 0 24 24">
+<path d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-8l-4-4m0 0L8 8m4-4v12" stroke-linecap="round" stroke-linejoin="round" stroke-width="2"></path>
+</svg>
+            Ref Img
+          </button>
+<!-- Seed input with Dice icon -->
+<div class="inline-flex items-center gap-1 bg-[#151520] border border-[#262636] p-0.5 rounded-lg text-[11px] font-mono shadow-sm" id="seed-control-group"><div class="flex items-center gap-1 px-1.5 py-1 bg-[#191924] rounded-md border border-white/5"><span class="text-pink-400 font-semibold">#</span><input class="w-14 bg-transparent text-gray-200 focus:outline-none focus:text-pink-300 font-mono text-[11px] font-medium tracking-tight" id="seed-number-input" onchange="onManualSeedInput(this.value)" title="Click to customize seed value" type="text" value="849204"/></div><button class="w-7 h-7 rounded-md bg-[#1d1d2b] hover:bg-[#252538] active:scale-90 text-gray-300 hover:text-pink-300 flex items-center justify-center border border-white/5 transition-all group/dice" id="seed-dice-btn" onclick="rollNewSeed()" title="Roll new random seed"><svg class="w-3.5 h-3.5 text-gray-300 group-hover/dice:text-pink-400 group-hover/dice:rotate-45 transition-transform duration-200" fill="none" id="dice-icon-svg" stroke="currentColor" viewbox="0 0 24 24"><rect height="18" rx="3" stroke-linecap="round" stroke-linejoin="round" stroke-width="2" width="18" x="3" y="3"></rect><circle cx="8.5" cy="8.5" fill="currentColor" r="1.2"></circle><circle cx="15.5" cy="8.5" fill="currentColor" r="1.2"></circle><circle cx="12" cy="12" fill="currentColor" r="1.2"></circle><circle cx="8.5" cy="15.5" fill="currentColor" r="1.2"></circle><circle cx="15.5" cy="15.5" fill="currentColor" r="1.2"></circle></svg></button><button class="px-2 py-1 rounded-md text-[10px] font-mono flex items-center gap-1 transition-all bg-gradient-to-r from-pink-500/20 to-violet-600/20 text-pink-300 border border-pink-500/40 shadow-sm active:scale-95" id="seed-mode-toggle-btn" onclick="toggleSeedMode()" title="Toggle Auto Randomize / Fixed Seed"><span class="w-1.5 h-1.5 rounded-full bg-pink-400 animate-pulse" id="seed-mode-indicator"></span><span class="font-medium" id="seed-mode-text">Auto</span></button></div>
+</div>
+<div class="flex items-center gap-2">
+<!-- Quality Boost Toggle -->
+<div class="flex items-center gap-1.5 bg-[#181822] border border-[#262635] px-2 py-1 rounded-lg">
+<span class="text-[10px] font-mono text-gray-300">HQ Boost</span>
+<!-- Toggle Switch ON -->
+<button class="w-7 h-4 bg-gradient-to-r from-pink-500 to-violet-600 rounded-full relative p-0.5 transition" title="Toggle quality boost">
+<span class="block w-3 h-3 bg-white rounded-full translate-x-3 transition"></span>
+</button>
+</div>
+<!-- Smart AI Enhance Sparkle Button -->
+<button class="h-8 px-2.5 rounded-lg bg-gradient-to-r from-pink-500/20 to-violet-600/20 hover:from-pink-500/30 hover:to-violet-600/30 border border-pink-500/40 text-[11px] font-mono font-medium text-pink-300 flex items-center gap-1 shadow-sm transition">
+<svg class="w-3.5 h-3.5 text-pink-400 animate-spin" fill="currentColor" style="animation-duration: 6s;" viewbox="0 0 20 20">
+<path d="M9.049 2.927c.3-.921 1.603-.921 1.902 0l1.07 3.292a1 1 0 00.95.69h3.462c.969 0 1.371 1.24.588 1.81l-2.8 2.034a1 1 0 00-.364 1.118l1.07 3.292c.3.921-.755 1.688-1.54 1.118l-2.8-2.034a1 1 0 00-1.175 0l-2.8 2.034c-.784.57-1.838-.197-1.539-1.118l1.07-3.292a1 1 0 00-.364-1.118L2.98 8.72c-.783-.57-.38-1.81.588-1.81h3.461a1 1 0 00.951-.69l1.07-3.292z"></path>
+</svg>
+            AI Enhance
+          </button>
+</div>
+</div>
+</div>
+<!-- 5. FULL WIDTH GENERATE BUTTON & PROGRESS -->
+<div class="flex flex-col gap-2">
+<!-- Gradient Button with Glow -->
+<div class="flex items-center gap-2 w-full"><button class="flex-1 py-3.5 px-3 rounded-xl font-bold font-mono tracking-wider uppercase text-xs sm:text-sm text-white bg-gradient-to-r from-[#ff2d87] via-[#d42cf5] to-[#8b2cf5] hover:opacity-95 shadow-glow-pink flex items-center justify-center gap-2 active:scale-[0.99] transition" id="generate-action-btn"><svg class="w-4 h-4 text-white shrink-0" fill="none" stroke="currentColor" viewbox="0 0 24 24"><path d="M13 10V3L4 14h7v7l9-11h-7z" stroke-linecap="round" stroke-linejoin="round" stroke-width="2.2"></path></svg><span class="truncate">Generate Latent Frame</span><span class="text-[10px] font-mono opacity-80 bg-black/25 px-2 py-0.5 rounded-md shrink-0" id="generation-time-badge">2.1s</span></button><div class="inline-flex items-center p-1 bg-[#121218] border border-[#262635] rounded-xl shrink-0 gap-1 shadow-lg" id="batch-variation-selector"><button class="batch-btn px-2.5 py-2 rounded-lg text-xs font-mono font-bold bg-gradient-to-r from-pink-500 to-violet-600 text-white shadow-sm shadow-pink-500/10 transition active:scale-95" data-batch="1" onclick="setBatchVariation('1', '2.1s')" title="1 Variation">1x</button><button class="batch-btn px-2.5 py-2 rounded-lg text-xs font-mono font-medium text-gray-400 hover:text-gray-200 hover:bg-[#20202e] transition active:scale-95" data-batch="2" onclick="setBatchVariation('2', '3.8s')" title="2 Variations">2x</button></div></div>
+<!-- Slim Progress Bar (Loading / Completion State) -->
+<div class="flex flex-col gap-1 px-1">
+<div class="flex justify-between text-[10px] font-mono text-gray-400">
+<span class="text-pink-400 flex items-center gap-1.5">
+<span class="w-1.5 h-1.5 rounded-full bg-pink-500 animate-ping"></span>
+            Diffusion Step 24/28 • Sampling Euler-A
+          </span>
+<span class="text-gray-400">86%</span>
+</div>
+<div class="w-full h-1 bg-[#181822] rounded-full overflow-hidden">
+<div class="h-full bg-gradient-to-r from-[#ff2d87] to-[#8b2cf5] rounded-full w-[86%] shadow-[0_0_8px_#ff2d87]"></div>
+</div>
+</div>
+</div>
+<!-- 6. RESULT CARD -->
+<div class="bg-[#121218] border border-[#20202c] rounded-2xl p-3.5 shadow-2xl flex flex-col gap-3"><div class="flex items-center justify-between"><div class="flex items-center gap-2"><span class="w-2 h-2 rounded-full bg-emerald-400"></span><span class="text-xs font-mono font-bold tracking-tight text-white uppercase">Primary Render Output</span></div><span class="text-[10px] font-mono text-gray-300 bg-[#1a1a24] px-2 py-0.5 rounded border border-[#292938] transition-all duration-300 shadow-sm" id="render-dimension-badge">1024 × 1024 • PNG</span></div><div class="w-full flex items-center justify-center overflow-hidden transition-all duration-300" id="render-preview-wrapper"><div class="relative rounded-xl overflow-hidden group/view bg-[#0b0b0e] border border-white/5 w-full aspect-square transition-all duration-300 cursor-pointer" id="render-preview-container" onclick="openLightboxAtIndex(1)"><img alt="Cybernetic portrait" class="w-full h-full object-cover transition-all duration-300" id="render-preview-img" src="https://lh3.googleusercontent.com/aida/AEtjO1W09xiJNB--KTX2uTl7o5VxdjBbL8iCgS7ijAkQ-QJ7L2TYBOTOQv_o1wJNWPbfcxFe_4DxX7UeNPWCWq93i3CktOv0g3lUus1o6OyE0FzXu3vFl7UFektrxSac_2EC0QlcAxObvpcsX_422y_UDpPbapac-iZVoPUD41Fpcy8wALct1q0opXeLlYlrm8U_suviQvehiGJfO3Xj4-_3desYNGBTMCT8boF3d2jH5LtC"/><div class="absolute inset-0 bg-gradient-to-t from-black/70 via-transparent to-black/20 opacity-0 group-hover/view:opacity-100 transition-opacity flex items-end p-3"><p class="text-xs text-gray-200 line-clamp-1 font-mono">Cyberpunk crystalline holographic portrait...</p></div></div></div><div class="grid grid-cols-5 gap-2 pt-1"><button class="py-2 px-1 rounded-xl bg-[#171720] hover:bg-[#22222e] border border-[#262636] flex flex-col items-center justify-center gap-1 text-gray-300 hover:text-white transition group" onclick="openLightboxAtIndex(1)" title="Expand View in Lightbox"><svg class="w-4 h-4 text-gray-400 group-hover:text-pink-400" fill="none" stroke="currentColor" viewbox="0 0 24 24"><path d="M4 8V4m0 0h4M4 4l5 5m11-5h-4m4 0v4m0 0l-5-5M4 16v4m0 0h4m-4 0l5-5m11 5l-5-5m5 5v-4" stroke-linecap="round" stroke-linejoin="round" stroke-width="1.8"></path></svg><span class="text-[9px] font-mono text-gray-400">Expand</span></button><button class="py-2 px-1 rounded-xl bg-[#171720] hover:bg-[#22222e] border border-[#262636] flex flex-col items-center justify-center gap-1 text-gray-300 hover:text-white transition group" onclick="triggerToast('Saved frame to local storage')" title="Download Image"><svg class="w-4 h-4 text-gray-400 group-hover:text-pink-400" fill="none" stroke="currentColor" viewbox="0 0 24 24"><path d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4" stroke-linecap="round" stroke-linejoin="round" stroke-width="1.8"></path></svg><span class="text-[9px] font-mono text-gray-400">Save</span></button><button class="py-2 px-1 rounded-xl bg-[#171720] hover:bg-[#22222e] border border-[#262636] flex flex-col items-center justify-center gap-1 text-gray-300 hover:text-white transition group" onclick="triggerToast('Updated favorites collection')" title="Favorite"><svg class="w-4 h-4 text-[#ff2d87] fill-[#ff2d87]" viewbox="0 0 24 24"><path d="M12 21.35l-1.45-1.32C5.4 15.36 2 12.28 2 8.5 2 5.42 4.42 3 7.5 3c1.74 0 3.41.81 4.5 2.09C13.09 3.81 14.76 3 16.5 3 19.58 3 22 5.42 22 8.5c0 3.78-3.4 6.86-8.55 11.54L12 21.35z"></path></svg><span class="text-[9px] font-mono text-pink-400">Liked</span></button><button class="py-2 px-1 rounded-xl bg-[#171720] hover:bg-[#22222e] border border-[#262636] flex flex-col items-center justify-center gap-1 text-gray-300 hover:text-white transition group" onclick="triggerToast('Transferred frame to Seed mixer')" title="Use as reference"><svg class="w-4 h-4 text-gray-400 group-hover:text-pink-400" fill="none" stroke="currentColor" viewbox="0 0 24 24"><path d="M15.232 5.232l3.536 3.536m-2.036-5.036a2.5 2.5 0 113.536 3.536L6.5 21.036H3v-3.572L16.732 3.732z" stroke-linecap="round" stroke-linejoin="round" stroke-width="1.8"></path></svg><span class="text-[9px] font-mono text-gray-400">Remix</span></button><button class="py-2 px-1 rounded-xl bg-[#171720] hover:bg-[#22222e] border border-[#262636] flex flex-col items-center justify-center gap-1 text-gray-300 hover:text-white transition group" onclick="triggerToast('Primary prompt copied to clipboard')" title="Copy Prompt"><svg class="w-4 h-4 text-gray-400 group-hover:text-pink-400" fill="none" stroke="currentColor" viewbox="0 0 24 24"><path d="M8 16H6a2 2 0 01-2-2V6a2 2 0 012-2h8a2 2 0 012 2v2m-6 12h8a2 2 0 002-2v-8a2 2 0 00-2-2h-8a2 2 0 00-2 2v8a2 2 0 002 2z" stroke-linecap="round" stroke-linejoin="round" stroke-width="1.8"></path></svg><span class="text-[9px] font-mono text-gray-400">Copy</span></button></div></div>
+<!-- 7. GALLERY SECTION "YOUR CREATIONS" -->
+<div class="flex flex-col gap-3 pt-2"><!-- Section Header & Title -->
+<div class="flex items-center justify-between">
+<div class="flex items-center gap-2">
+<h2 class="text-sm font-bold text-white tracking-tight uppercase font-mono">Your Creations</h2>
+<span class="px-2 py-0.5 rounded-full bg-[#171720] border border-[#242434] text-[10px] font-mono text-pink-400 font-semibold" id="gallery-total-badge">28 Artifacts</span>
+</div>
+<button class="text-[10px] font-mono text-pink-400 hover:text-white flex items-center gap-1 transition px-2 py-1 rounded-lg bg-[#14141d] border border-[#262635] hover:border-pink-500/40" onclick="openFolderManager()">
+<svg class="w-3 h-3" fill="none" stroke="currentColor" viewbox="0 0 24 24"><path d="M3 7v10a2 2 0 002 2h14a2 2 0 002-2V9a2 2 0 00-2-2h-6l-2-2H5a2 2 0 00-2 2z" stroke-linecap="round" stroke-linejoin="round" stroke-width="2"></path></svg>
+<span>Full Manager</span>
+</button>
+</div>
+<!-- 1. VIEW SWITCHER TABS -->
+<div class="grid grid-cols-2 p-1 bg-[#121218] border border-[#1e1e29] rounded-xl text-xs font-mono gap-1">
+<button class="gallery-view-tab py-1.5 px-2 rounded-lg flex items-center justify-center gap-1.5 transition-all bg-gradient-to-r from-pink-500/20 to-violet-600/20 text-white border border-pink-500/40 shadow-sm" id="tab-btn-all" onclick="switchGalleryTab('all')">
+<svg class="w-3.5 h-3.5 text-pink-400" fill="none" stroke="currentColor" viewbox="0 0 24 24"><path d="M4 6a2 2 0 012-2h2a2 2 0 012 2v2a2 2 0 01-2 2H6a2 2 0 01-2-2V6zM14 6a2 2 0 012-2h2a2 2 0 012 2v2a2 2 0 01-2 2h-2a2 2 0 01-2-2V6zM4 16a2 2 0 012-2h2a2 2 0 012 2v2a2 2 0 01-2 2H6a2 2 0 01-2-2v-2zM14 16a2 2 0 012-2h2a2 2 0 012 2v2a2 2 0 01-2 2h-2a2 2 0 01-2-2v-2z" stroke-linecap="round" stroke-linejoin="round" stroke-width="2"></path></svg>
+<span class="font-semibold text-[11px]">All Images</span>
+<span class="text-[9px] px-1.5 py-0.2 rounded-full bg-pink-500/30 text-pink-300 font-bold ml-0.5">28</span>
+</button>
+<button class="gallery-view-tab py-1.5 px-2 rounded-lg flex items-center justify-center gap-1.5 transition-all text-gray-400 hover:text-gray-200 hover:bg-[#1a1a24]" id="tab-btn-folders" onclick="switchGalleryTab('folders')">
+<svg class="w-3.5 h-3.5 text-gray-400" fill="none" stroke="currentColor" viewbox="0 0 24 24"><path d="M3 7v10a2 2 0 002 2h14a2 2 0 002-2V9a2 2 0 00-2-2h-6l-2-2H5a2 2 0 00-2 2z" stroke-linecap="round" stroke-linejoin="round" stroke-width="2"></path></svg>
+<span class="font-medium text-[11px]">Folders &amp; Sets</span>
+<span class="text-[9px] px-1.5 py-0.2 rounded-full bg-[#1e1e2c] text-gray-300 font-bold ml-0.5">4</span>
+</button>
+</div>
+<!-- 2. FOLDER FILTER / SELECTOR PILLS -->
+<div class="flex items-center gap-1.5 overflow-x-auto pb-1 -mx-4 px-4 scrollbar-none">
+<button class="folder-pill shrink-0 px-2.5 py-1.5 rounded-lg text-[10px] font-mono font-medium flex items-center gap-1.5 bg-pink-500/20 text-pink-300 border border-pink-500/40 shadow-sm" onclick="filterByFolder('all', this)">
+<span class="w-1.5 h-1.5 rounded-full bg-pink-400"></span> All Folders
+  </button>
+<button class="folder-pill shrink-0 px-2.5 py-1.5 rounded-lg text-[10px] font-mono font-medium flex items-center gap-1.5 bg-[#14141d] text-gray-400 hover:text-gray-200 border border-[#242434] transition" onclick="filterByFolder('cyberpunk', this)">
+    Cyberpunk (8)
+  </button>
+<button class="folder-pill shrink-0 px-2.5 py-1.5 rounded-lg text-[10px] font-mono font-medium flex items-center gap-1.5 bg-[#14141d] text-gray-400 hover:text-gray-200 border border-[#242434] transition" onclick="filterByFolder('cityscapes', this)">
+    Neon Cities (6)
+  </button>
+<button class="folder-pill shrink-0 px-2.5 py-1.5 rounded-lg text-[10px] font-mono font-medium flex items-center gap-1.5 bg-[#14141d] text-gray-400 hover:text-gray-200 border border-[#242434] transition" onclick="filterByFolder('mecha', this)">
+    Mecha Unit (9)
+  </button>
+<button class="folder-pill shrink-0 px-2.5 py-1.5 rounded-lg text-[10px] font-mono font-medium flex items-center gap-1.5 bg-[#14141d] text-gray-400 hover:text-gray-200 border border-[#242434] transition" onclick="filterByFolder('cosmic', this)">
+    Cosmic Art (5)
+  </button>
+<button class="shrink-0 px-2.5 py-1.5 rounded-lg text-[10px] font-mono font-medium flex items-center gap-1 text-pink-300 border border-dashed border-pink-500/50 hover:bg-pink-500/10 transition active:scale-95" onclick="openNewFolderModal()">
+<span class="text-pink-400 font-bold">+</span> New Folder
+  </button>
+</div>
+<!-- 3. FOLDERS SHOWCASE CARDS (Active when Folders Tab selected or toggled) -->
+<div class="hidden grid-cols-2 gap-2.5" id="folder-cards-grid">
+<!-- Folder Card 1 -->
+<div class="p-3 rounded-xl bg-[#121218] border border-[#222232] hover:border-pink-500/50 flex flex-col gap-2 cursor-pointer transition hover:scale-[1.01] group" onclick="openFolderDetail('Cyberpunk &amp; Characters', 8, 'cyberpunk')">
+<div class="flex items-center justify-between">
+<div class="w-7 h-7 rounded-lg bg-pink-500/10 border border-pink-500/30 flex items-center justify-center text-pink-400">
+<svg class="w-4 h-4" fill="none" stroke="currentColor" viewbox="0 0 24 24"><path d="M3 7v10a2 2 0 002 2h14a2 2 0 002-2V9a2 2 0 00-2-2h-6l-2-2H5a2 2 0 00-2 2z" stroke-linecap="round" stroke-linejoin="round" stroke-width="2"></path></svg>
+</div>
+<span class="text-[9px] font-mono text-pink-400 bg-pink-500/10 px-1.5 py-0.5 rounded border border-pink-500/20">8 items</span>
+</div>
+<div>
+<h3 class="text-xs font-mono font-bold text-white group-hover:text-pink-300 transition truncate">Cyberpunk &amp; Characters</h3>
+<p class="text-[9px] font-mono text-gray-400">380 MB • Updated 10m ago</p>
+</div>
+<div class="grid grid-cols-3 gap-1 pt-1">
+<img alt="thumb 1" class="w-full aspect-square rounded object-cover border border-white/5" src="https://lh3.googleusercontent.com/aida/AEtjO1W09xiJNB--KTX2uTl7o5VxdjBbL8iCgS7ijAkQ-QJ7L2TYBOTOQv_o1wJNWPbfcxFe_4DxX7UeNPWCWq93i3CktOv0g3lUus1o6OyE0FzXu3vFl7UFektrxSac_2EC0QlcAxObvpcsX_422y_UDpPbapac-iZVoPUD41Fpcy8wALct1q0opXeLlYlrm8U_suviQvehiGJfO3Xj4-_3desYNGBTMCT8boF3d2jH5LtC"/>
+<img alt="thumb 2" class="w-full aspect-square rounded object-cover border border-white/5" src="https://lh3.googleusercontent.com/aida/AEtjO1W19VR92VPYnbTE97mnXEPT-xOZRHN5h1QxzbKq7vY3kg4o680VqDYE-K-JAUmH41CYNlVHLHGFKKx8UyC70w4hE-z2QRHcNHbaxZ9uR4kBLgZ0Ljv1jezdmVUrbhsoh6e4w08QrMZRbtaXrVFeLzCzRZHx1Goi9uib0xXc-_nAY0XtQjwcC9y6MjUc4EA2mjipOmhbE9EtpWb3UcNl2lxoRzWopUZNwjPX3q5DoX8"/>
+<div class="w-full aspect-square rounded bg-[#1b1b24] border border-white/5 flex items-center justify-center text-[9px] font-mono text-gray-400">+6</div>
+</div>
+</div>
+<!-- Folder Card 2 -->
+<div class="p-3 rounded-xl bg-[#121218] border border-[#222232] hover:border-pink-500/50 flex flex-col gap-2 cursor-pointer transition hover:scale-[1.01] group" onclick="openFolderDetail('Neon Cityscapes', 6, 'cityscapes')">
+<div class="flex items-center justify-between">
+<div class="w-7 h-7 rounded-lg bg-cyan-500/10 border border-cyan-500/30 flex items-center justify-center text-cyan-300">
+<svg class="w-4 h-4" fill="none" stroke="currentColor" viewbox="0 0 24 24"><path d="M3 7v10a2 2 0 002 2h14a2 2 0 002-2V9a2 2 0 00-2-2h-6l-2-2H5a2 2 0 00-2 2z" stroke-linecap="round" stroke-linejoin="round" stroke-width="2"></path></svg>
+</div>
+<span class="text-[9px] font-mono text-cyan-300 bg-cyan-500/15 px-1.5 py-0.5 rounded border border-cyan-500/30">6 items</span>
+</div>
+<div>
+<h3 class="text-xs font-mono font-bold text-white group-hover:text-cyan-300 transition truncate">Neon Cityscapes</h3>
+<p class="text-[9px] font-mono text-gray-400">264 MB • Updated 1h ago</p>
+</div>
+<div class="grid grid-cols-3 gap-1 pt-1">
+<img alt="thumb 1" class="w-full aspect-square rounded object-cover border border-white/5" src="https://lh3.googleusercontent.com/aida/AEtjO1WX0yjyUK4bMRL8TgffCXx1N1TXezzibzjrH1iQgb-3fe4PUNT6HlMWELifSuuCl_WUCsTkEFZ6ZSNaYk0SxKPdQMLP3TlNqIaBWvSo5BpOtszS0FgFOySE2NPTaTXM2lCqmzv5YoJoS_21YzgRyhuTo6aK4fZhwjScYLE-bcDPQ8Vvlg7NzY0GjinlQALOZ7oUYCmM7S06I9uWR1qlG2AXXCLiqPeHwiH5fm-m6Mao"/>
+<img alt="thumb 2" class="w-full aspect-square rounded object-cover border border-white/5" src="https://lh3.googleusercontent.com/aida/AEtjO1U9KcXaINfMy0zKXTlv4vYmKnF22kvBNX6fxF6cuqHaJGwt0Eq1WDM2pUZbvpJw4ShH20tGzzixX2d4py77OXPUzImw782gvNL4SQ_GAOWg5kp6CZA0Rxm0UWhttYw-zkVvBtIhnSlNAj7AQFQW8L8TWMu1zHomPRtnfi2aR4GjedksIWWIyNliMIp7a5PAXb_YJTZ4CFfiQzcJy7jsJpZnpaA8IThqMEnwDRs_NAnG"/>
+<div class="w-full aspect-square rounded bg-[#1b1b24] border border-white/5 flex items-center justify-center text-[9px] font-mono text-gray-400">+4</div>
+</div>
+</div>
+<!-- Folder Card 3 -->
+<div class="p-3 rounded-xl bg-[#121218] border border-[#222232] hover:border-pink-500/50 flex flex-col gap-2 cursor-pointer transition hover:scale-[1.01] group" onclick="openFolderDetail('Mecha &amp; Industrial', 9, 'mecha')">
+<div class="flex items-center justify-between">
+<div class="w-7 h-7 rounded-lg bg-violet-500/15 border border-violet-500/30 flex items-center justify-center text-violet-300">
+<svg class="w-4 h-4" fill="none" stroke="currentColor" viewbox="0 0 24 24"><path d="M3 7v10a2 2 0 002 2h14a2 2 0 002-2V9a2 2 0 00-2-2h-6l-2-2H5a2 2 0 00-2 2z" stroke-linecap="round" stroke-linejoin="round" stroke-width="2"></path></svg>
+</div>
+<span class="text-[9px] font-mono text-violet-300 bg-violet-500/15 px-1.5 py-0.5 rounded border border-violet-500/30">9 items</span>
+</div>
+<div>
+<h3 class="text-xs font-mono font-bold text-white group-hover:text-violet-300 transition truncate">Mecha &amp; Industrial</h3>
+<p class="text-[9px] font-mono text-gray-400">410 MB • Updated yesterday</p>
+</div>
+<div class="grid grid-cols-3 gap-1 pt-1">
+<img alt="thumb 1" class="w-full aspect-square rounded object-cover border border-white/5" src="https://lh3.googleusercontent.com/aida/AEtjO1W19VR92VPYnbTE97mnXEPT-xOZRHN5h1QxzbKq7vY3kg4o680VqDYE-K-JAUmH41CYNlVHLHGFKKx8UyC70w4hE-z2QRHcNHbaxZ9uR4kBLgZ0Ljv1jezdmVUrbhsoh6e4w08QrMZRbtaXrVFeLzCzRZHx1Goi9uib0xXc-_nAY0XtQjwcC9y6MjUc4EA2mjipOmhbE9EtpWb3UcNl2lxoRzWopUZNwjPX3q5DoX8"/>
+<img alt="thumb 2" class="w-full aspect-square rounded object-cover border border-white/5" src="https://lh3.googleusercontent.com/aida/AEtjO1W09xiJNB--KTX2uTl7o5VxdjBbL8iCgS7ijAkQ-QJ7L2TYBOTOQv_o1wJNWPbfcxFe_4DxX7UeNPWCWq93i3CktOv0g3lUus1o6OyE0FzXu3vFl7UFektrxSac_2EC0QlcAxObvpcsX_422y_UDpPbapac-iZVoPUD41Fpcy8wALct1q0opXeLlYlrm8U_suviQvehiGJfO3Xj4-_3desYNGBTMCT8boF3d2jH5LtC"/>
+<div class="w-full aspect-square rounded bg-[#1b1b24] border border-white/5 flex items-center justify-center text-[9px] font-mono text-gray-400">+7</div>
+</div>
+</div>
+<!-- Folder Card 4 -->
+<div class="p-3 rounded-xl bg-[#121218] border border-[#222232] hover:border-pink-500/50 flex flex-col gap-2 cursor-pointer transition hover:scale-[1.01] group" onclick="openFolderDetail('Cosmic &amp; Surreal', 5, 'cosmic')">
+<div class="flex items-center justify-between">
+<div class="w-7 h-7 rounded-lg bg-emerald-500/15 border border-emerald-500/30 flex items-center justify-center text-emerald-300">
+<svg class="w-4 h-4" fill="none" stroke="currentColor" viewbox="0 0 24 24"><path d="M3 7v10a2 2 0 002 2h14a2 2 0 002-2V9a2 2 0 00-2-2h-6l-2-2H5a2 2 0 00-2 2z" stroke-linecap="round" stroke-linejoin="round" stroke-width="2"></path></svg>
+</div>
+<span class="text-[9px] font-mono text-emerald-300 bg-emerald-500/15 px-1.5 py-0.5 rounded border border-emerald-500/30">5 items</span>
+</div>
+<div>
+<h3 class="text-xs font-mono font-bold text-white group-hover:text-emerald-300 transition truncate">Cosmic &amp; Surreal</h3>
+<p class="text-[9px] font-mono text-gray-400">198 MB • Updated 2d ago</p>
+</div>
+<div class="grid grid-cols-3 gap-1 pt-1">
+<img alt="thumb 1" class="w-full aspect-square rounded object-cover border border-white/5" src="https://lh3.googleusercontent.com/aida/AEtjO1U9KcXaINfMy0zKXTlv4vYmKnF22kvBNX6fxF6cuqHaJGwt0Eq1WDM2pUZbvpJw4ShH20tGzzixX2d4py77OXPUzImw782gvNL4SQ_GAOWg5kp6CZA0Rxm0UWhttYw-zkVvBtIhnSlNAj7AQFQW8L8TWMu1zHomPRtnfi2aR4GjedksIWWIyNliMIp7a5PAXb_YJTZ4CFfiQzcJy7jsJpZnpaA8IThqMEnwDRs_NAnG"/>
+<img alt="thumb 2" class="w-full aspect-square rounded object-cover border border-white/5" src="https://lh3.googleusercontent.com/aida/AEtjO1WX0yjyUK4bMRL8TgffCXx1N1TXezzibzjrH1iQgb-3fe4PUNT6HlMWELifSuuCl_WUCsTkEFZ6ZSNaYk0SxKPdQMLP3TlNqIaBWvSo5BpOtszS0FgFOySE2NPTaTXM2lCqmzv5YoJoS_21YzgRyhuTo6aK4fZhwjScYLE-bcDPQ8Vvlg7NzY0GjinlQALOZ7oUYCmM7S06I9uWR1qlG2AXXCLiqPeHwiH5fm-m6Mao"/>
+<div class="w-full aspect-square rounded bg-[#1b1b24] border border-white/5 flex items-center justify-center text-[9px] font-mono text-gray-400">+3</div>
+</div>
+</div>
+</div>
+<!-- 4. ACTION TOOLBAR (Select, Export, Purge) -->
+<div class="flex items-center justify-between bg-[#121218] border border-[#1e1e29] p-2 rounded-xl text-xs font-mono">
+<div class="flex items-center gap-1.5">
+<button class="px-2.5 py-1.5 rounded-lg bg-pink-500/20 text-pink-300 border border-pink-500/40 text-[10px] font-medium flex items-center gap-1">
+<svg class="w-3 h-3 text-pink-400" fill="currentColor" viewbox="0 0 20 20"><path clip-rule="evenodd" d="M16.707 5.293a1 1 0 010 1.414l-8 8a1 1 0 01-1.414 0l-4-4a1 1 0 011.414-1.414L8 12.586l7.293-7.293a1 1 0 011.414 0z" fill-rule="evenodd"></path></svg>
+      Select (2)
+    </button>
+<button class="px-2 py-1.5 rounded-lg bg-[#181822] hover:bg-[#20202d] text-gray-300 border border-[#272737] text-[10px] flex items-center gap-1" onclick="triggerToast('Exporting vault backup archive...')" title="Export vault">
+<svg class="w-3 h-3 text-gray-400" fill="none" stroke="currentColor" viewbox="0 0 24 24"><path d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-8l-4-4m0 0L8 8m4-4v12" stroke-linecap="round" stroke-linejoin="round" stroke-width="2"></path></svg>
+      Export
+    </button>
+<button class="px-2 py-1.5 rounded-lg bg-[#181822] hover:bg-[#20202d] text-gray-300 border border-[#272737] text-[10px] flex items-center gap-1" onclick="triggerToast('Cloud sync restore checking tokens...')" title="Restore vault">
+<svg class="w-3 h-3 text-gray-400" fill="none" stroke="currentColor" viewbox="0 0 24 24"><path d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" stroke-linecap="round" stroke-linejoin="round" stroke-width="2"></path></svg>
+      Restore
+    </button>
+</div>
+<button class="px-2 py-1.5 rounded-lg bg-red-950/30 hover:bg-red-900/40 text-red-400 border border-red-800/40 text-[10px] flex items-center gap-1 transition" onclick="triggerToast('Storage vault protected: Read-only mode')" title="Purge Vault">
+<svg class="w-3 h-3" fill="none" stroke="currentColor" viewbox="0 0 24 24"><path d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" stroke-linecap="round" stroke-linejoin="round" stroke-width="2"></path></svg>
+    Purge
+  </button>
+</div>
+<!-- 5. 2-COLUMN ARTIFACTS GALLERY GRID -->
+<div class="grid grid-cols-2 gap-3" id="creations-image-grid">
+<!-- Item 1: Selected state (Tokyo Rain) -->
+<div class="artifact-item group relative rounded-xl overflow-hidden bg-[#121218] border-2 border-pink-500 shadow-glow-subtle flex flex-col cursor-pointer transition hover:scale-[1.01]" data-folder="cityscapes" onclick="openLightboxAtIndex(0)">
+<div class="relative aspect-square">
+<img alt="Tokyo hypercar" class="w-full h-full object-cover" src="https://lh3.googleusercontent.com/aida/AEtjO1WX0yjyUK4bMRL8TgffCXx1N1TXezzibzjrH1iQgb-3fe4PUNT6HlMWELifSuuCl_WUCsTkEFZ6ZSNaYk0SxKPdQMLP3TlNqIaBWvSo5BpOtszS0FgFOySE2NPTaTXM2lCqmzv5YoJoS_21YzgRyhuTo6aK4fZhwjScYLE-bcDPQ8Vvlg7NzY0GjinlQALOZ7oUYCmM7S06I9uWR1qlG2AXXCLiqPeHwiH5fm-m6Mao"/>
+<div class="absolute top-2 left-2 w-5 h-5 rounded-md bg-gradient-to-r from-pink-500 to-violet-600 flex items-center justify-center text-white shadow">
+<svg class="w-3 h-3" fill="currentColor" viewbox="0 0 20 20"><path clip-rule="evenodd" d="M16.707 5.293a1 1 0 010 1.414l-8 8a1 1 0 01-1.414 0l-4-4a1 1 0 011.414-1.414L8 12.586l7.293-7.293a1 1 0 011.414 0z" fill-rule="evenodd"></path></svg>
+</div>
+<div class="absolute top-2 right-2 w-6 h-6 rounded-full bg-black/60 backdrop-blur-md flex items-center justify-center">
+<svg class="w-3.5 h-3.5 text-pink-400 fill-pink-400" viewbox="0 0 24 24"><path d="M12 21.35l-1.45-1.32C5.4 15.36 2 12.28 2 8.5 2 5.42 4.42 3 7.5 3c1.74 0 3.41.81 4.5 2.09C13.09 3.81 14.76 3 16.5 3 19.58 3 22 5.42 22 8.5c0 3.78-3.4 6.86-8.55 11.54L12 21.35z"></path></svg>
+</div>
+</div>
+<div class="p-2 flex items-center justify-between bg-[#14141d]">
+<span class="text-[10px] font-mono text-gray-300 truncate">neo_tokyo_drift.png</span>
+<span class="text-[9px] font-mono text-cyan-300 bg-cyan-500/15 px-1 rounded">Cities</span>
+</div>
+</div>
+<!-- Item 2: Selected state (Cosmic Bonsai) -->
+<div class="artifact-item group relative rounded-xl overflow-hidden bg-[#121218] border-2 border-pink-500 shadow-glow-subtle flex flex-col cursor-pointer transition hover:scale-[1.01]" data-folder="cosmic" onclick="openLightboxAtIndex(2)">
+<div class="relative aspect-square">
+<img alt="Cosmic terrarium" class="w-full h-full object-cover" src="https://lh3.googleusercontent.com/aida/AEtjO1U9KcXaINfMy0zKXTlv4vYmKnF22kvBNX6fxF6cuqHaJGwt0Eq1WDM2pUZbvpJw4ShH20tGzzixX2d4py77OXPUzImw782gvNL4SQ_GAOWg5kp6CZA0Rxm0UWhttYw-zkVvBtIhnSlNAj7AQFQW8L8TWMu1zHomPRtnfi2aR4GjedksIWWIyNliMIp7a5PAXb_YJTZ4CFfiQzcJy7jsJpZnpaA8IThqMEnwDRs_NAnG"/>
+<div class="absolute top-2 left-2 w-5 h-5 rounded-md bg-gradient-to-r from-pink-500 to-violet-600 flex items-center justify-center text-white shadow">
+<svg class="w-3 h-3" fill="currentColor" viewbox="0 0 20 20"><path clip-rule="evenodd" d="M16.707 5.293a1 1 0 010 1.414l-8 8a1 1 0 01-1.414 0l-4-4a1 1 0 011.414-1.414L8 12.586l7.293-7.293a1 1 0 011.414 0z" fill-rule="evenodd"></path></svg>
+</div>
+<div class="absolute top-2 right-2 w-6 h-6 rounded-full bg-black/60 backdrop-blur-md flex items-center justify-center">
+<svg class="w-3.5 h-3.5 text-pink-400 fill-pink-400" viewbox="0 0 24 24"><path d="M12 21.35l-1.45-1.32C5.4 15.36 2 12.28 2 8.5 2 5.42 4.42 3 7.5 3c1.74 0 3.41.81 4.5 2.09C13.09 3.81 14.76 3 16.5 3 19.58 3 22 5.42 22 8.5c0 3.78-3.4 6.86-8.55 11.54L12 21.35z"></path></svg>
+</div>
+</div>
+<div class="p-2 flex items-center justify-between bg-[#14141d]">
+<span class="text-[10px] font-mono text-gray-300 truncate">astral_bonsai.png</span>
+<span class="text-[9px] font-mono text-emerald-300 bg-emerald-500/15 px-1 rounded">Cosmic</span>
+</div>
+</div>
+<!-- Item 3: Unselected state (Mecha helmet) -->
+<div class="artifact-item group relative rounded-xl overflow-hidden bg-[#121218] border border-[#20202c] hover:border-pink-500/50 transition flex flex-col cursor-pointer hover:scale-[1.01]" data-folder="mecha" onclick="openLightboxAtIndex(3)">
+<div class="relative aspect-square">
+<img alt="Mecha helmet" class="w-full h-full object-cover" src="https://lh3.googleusercontent.com/aida/AEtjO1W19VR92VPYnbTE97mnXEPT-xOZRHN5h1QxzbKq7vY3kg4o680VqDYE-K-JAUmH41CYNlVHLHGFKKx8UyC70w4hE-z2QRHcNHbaxZ9uR4kBLgZ0Ljv1jezdmVUrbhsoh6e4w08QrMZRbtaXrVFeLzCzRZHx1Goi9uib0xXc-_nAY0XtQjwcC9y6MjUc4EA2mjipOmhbE9EtpWb3UcNl2lxoRzWopUZNwjPX3q5DoX8"/>
+<div class="absolute top-2 left-2 w-5 h-5 rounded-md bg-black/50 border border-white/30 flex items-center justify-center"></div>
+</div>
+<div class="p-2 flex items-center justify-between bg-[#14141d]">
+<span class="text-[10px] font-mono text-gray-400 truncate">mecha_kaizu.png</span>
+<span class="text-[9px] font-mono text-violet-300 bg-violet-500/15 px-1 rounded">Mecha</span>
+</div>
+</div>
+<!-- Item 4: Unselected state (Holo portrait) -->
+<div class="artifact-item group relative rounded-xl overflow-hidden bg-[#121218] border border-[#20202c] hover:border-pink-500/50 transition flex flex-col cursor-pointer hover:scale-[1.01]" data-folder="cyberpunk" onclick="openLightboxAtIndex(1)">
+<div class="relative aspect-square">
+<img alt="Cyber portrait" class="w-full h-full object-cover" src="https://lh3.googleusercontent.com/aida/AEtjO1W09xiJNB--KTX2uTl7o5VxdjBbL8iCgS7ijAkQ-QJ7L2TYBOTOQv_o1wJNWPbfcxFe_4DxX7UeNPWCWq93i3CktOv0g3lUus1o6OyE0FzXu3vFl7UFektrxSac_2EC0QlcAxObvpcsX_422y_UDpPbapac-iZVoPUD41Fpcy8wALct1q0opXeLlYlrm8U_suviQvehiGJfO3Xj4-_3desYNGBTMCT8boF3d2jH5LtC"/>
+<div class="absolute top-2 left-2 w-5 h-5 rounded-md bg-black/50 border border-white/30 flex items-center justify-center"></div>
+<div class="absolute top-2 right-2 w-6 h-6 rounded-full bg-black/60 backdrop-blur-md flex items-center justify-center">
+<svg class="w-3.5 h-3.5 text-pink-400 fill-pink-400" viewbox="0 0 24 24"><path d="M12 21.35l-1.45-1.32C5.4 15.36 2 12.28 2 8.5 2 5.42 4.42 3 7.5 3c1.74 0 3.41.81 4.5 2.09C13.09 3.81 14.76 3 16.5 3 19.58 3 22 5.42 22 8.5c0 3.78-3.4 6.86-8.55 11.54L12 21.35z"></path></svg>
+</div>
+</div>
+<div class="p-2 flex items-center justify-between bg-[#14141d]">
+<span class="text-[10px] font-mono text-gray-400 truncate">hologram_core.png</span>
+<span class="text-[9px] font-mono text-pink-400 bg-pink-500/10 px-1 rounded">Cyber</span>
+</div>
+</div>
+</div>
+<!-- 6. SELECTION FLOATING BOTTOM ACTION BAR WITH MOVE TO FOLDER -->
+<div class="bg-[#151520] border border-pink-500/40 rounded-xl p-2.5 flex items-center justify-between shadow-glow-subtle mt-1">
+<div class="flex items-center gap-2">
+<span class="w-2 h-2 rounded-full bg-pink-500 animate-pulse"></span>
+<span class="text-xs font-mono text-gray-200"><strong class="text-white">2 items</strong> selected</span>
+</div>
+<div class="flex items-center gap-1.5">
+<button class="px-2.5 py-1.5 rounded-lg bg-[#1a1a24] hover:bg-[#222232] border border-[#2b2b3a] hover:border-pink-500/40 text-xs font-mono font-medium text-pink-300 flex items-center gap-1 active:scale-95 transition" onclick="openMoveFolderModal()" title="Move selected to folder">
+<svg class="w-3.5 h-3.5 text-pink-400" fill="none" stroke="currentColor" viewbox="0 0 24 24"><path d="M3 7v10a2 2 0 002 2h14a2 2 0 002-2V9a2 2 0 00-2-2h-6l-2-2H5a2 2 0 00-2 2z" stroke-linecap="round" stroke-linejoin="round" stroke-width="2"></path></svg>
+<span>Move</span>
+</button>
+<button class="px-3 py-1.5 rounded-lg bg-gradient-to-r from-pink-500 to-violet-600 text-xs font-mono font-bold text-white shadow-sm flex items-center gap-1.5 active:scale-95 transition" onclick="triggerToast('Preparing ZIP package archive (2 items)...')">
+<svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewbox="0 0 24 24"><path d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4" stroke-linecap="round" stroke-linejoin="round" stroke-width="2"></path></svg>
+<span>.ZIP</span>
+</button>
+</div>
+</div></div>
+<!-- 8. FULLSCREEN IMAGE VIEWER SAMPLE (MODAL / OVERLAY LIGHTBOX) -->
+<div class="flex flex-col gap-2 pt-4" id="lightbox-section">
+<div class="flex items-center justify-between">
+<span class="text-[10px] font-mono text-gray-400 uppercase tracking-wider">Interactive Lightbox Sample</span>
+<div class="flex items-center gap-2">
+<span class="text-[10px] font-mono text-pink-400">Modal Preview Mode</span>
+<span class="text-[9px] font-mono text-gray-500 bg-[#161622] px-1.5 py-0.5 rounded border border-[#232332]" id="keyboard-hint">← / → / Esc</span>
+</div>
+</div>
+<!-- Minimized Lightbox Restorer Bar (hidden by default) -->
+<div class="hidden w-full p-3 rounded-2xl bg-[#121218] border border-[#252536] flex items-center justify-between shadow-lg" id="lightbox-minimized">
+<div class="flex items-center gap-2">
+<div class="w-2 h-2 rounded-full bg-pink-500 animate-ping"></div>
+<span class="text-xs font-mono text-gray-300">Lightbox Minimized</span>
+</div>
+<button class="px-3 py-1.5 rounded-lg bg-gradient-to-r from-pink-500 to-violet-600 hover:opacity-90 text-[11px] font-mono font-bold text-white flex items-center gap-1.5 shadow-glow-subtle transition" onclick="reopenLightbox()">
+<svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewbox="0 0 24 24">
+<path d="M4 8V4m0 0h4M4 4l5 5m11-5h-4m4 0v4m0 0l-5-5M4 16v4m0 0h4m-4 0l5-5m11 5l-5-5m5 5v-4" stroke-linecap="round" stroke-linejoin="round" stroke-width="2"></path>
+</svg>
+    Open Lightbox
+  </button>
+</div>
+<!-- Lightbox Container -->
+<div class="relative w-full rounded-2xl overflow-hidden bg-black/95 border border-[#2b2b3a] shadow-2xl flex flex-col transition-all duration-200" id="lightbox-card">
+<!-- Top Viewer Navigation Bar -->
+<div class="flex items-center justify-between px-3.5 py-3 border-b border-white/10 bg-black/50 backdrop-blur-md z-10">
+<div class="flex items-center gap-2">
+<span class="text-xs font-mono text-gray-300" id="lb-counter">01 / 04</span>
+<span class="text-[10px] font-mono text-pink-400 bg-pink-500/10 px-2 py-0.5 rounded border border-pink-500/20" id="lb-model-tag">FLUX.1-dev</span>
+</div>
+<div class="flex items-center gap-2">
+<!-- Favorite button with toggle state -->
+<button class="w-8 h-8 rounded-lg bg-white/10 hover:bg-white/20 flex items-center justify-center transition active:scale-95" id="lb-fav-btn" onclick="toggleLightboxFavorite()" title="Toggle Favorite">
+<svg class="w-4 h-4 text-pink-500 fill-pink-500 transition-transform duration-150" id="lb-fav-icon" viewbox="0 0 24 24">
+<path d="M12 21.35l-1.45-1.32C5.4 15.36 2 12.28 2 8.5 2 5.42 4.42 3 7.5 3c1.74 0 3.41.81 4.5 2.09C13.09 3.81 14.76 3 16.5 3 19.58 3 22 5.42 22 8.5c0 3.78-3.4 6.86-8.55 11.54L12 21.35z"></path>
+</svg>
+</button>
+<!-- Close button -->
+<button class="w-8 h-8 rounded-lg bg-white/10 hover:bg-white/20 flex items-center justify-center text-gray-300 hover:text-white transition active:scale-95" onclick="closeLightbox()" title="Close Lightbox (Esc)">
+<svg class="w-4 h-4" fill="none" stroke="currentColor" viewbox="0 0 24 24">
+<path d="M6 18L18 6M6 6l12 12" stroke-linecap="round" stroke-linejoin="round" stroke-width="2"></path>
+</svg>
+</button>
+</div>
+</div>
+<!-- Big Centered Image with Carousel Left/Right Arrows -->
+<div class="relative w-full aspect-square bg-[#050508] flex items-center justify-center group/lightbox overflow-hidden">
+<img alt="Artwork visual" class="w-full h-full object-cover transition-opacity duration-200" id="lb-image" src="https://lh3.googleusercontent.com/aida/AEtjO1WX0yjyUK4bMRL8TgffCXx1N1TXezzibzjrH1iQgb-3fe4PUNT6HlMWELifSuuCl_WUCsTkEFZ6ZSNaYk0SxKPdQMLP3TlNqIaBWvSo5BpOtszS0FgFOySE2NPTaTXM2lCqmzv5YoJoS_21YzgRyhuTo6aK4fZhwjScYLE-bcDPQ8Vvlg7NzY0GjinlQALOZ7oUYCmM7S06I9uWR1qlG2AXXCLiqPeHwiH5fm-m6Mao"/>
+<!-- Left Arrow -->
+<button class="absolute left-3 top-1/2 -translate-y-1/2 w-9 h-9 rounded-full bg-black/60 hover:bg-pink-600/80 text-white backdrop-blur-md flex items-center justify-center border border-white/20 transition shadow-lg active:scale-90 z-10" onclick="prevLightboxImage()" title="Previous Image (←)">
+<svg class="w-4 h-4" fill="none" stroke="currentColor" viewbox="0 0 24 24">
+<path d="M15 19l-7-7 7-7" stroke-linecap="round" stroke-linejoin="round" stroke-width="2.5"></path>
+</svg>
+</button>
+<!-- Right Arrow -->
+<button class="absolute right-3 top-1/2 -translate-y-1/2 w-9 h-9 rounded-full bg-black/60 hover:bg-pink-600/80 text-white backdrop-blur-md flex items-center justify-center border border-white/20 transition shadow-lg active:scale-90 z-10" onclick="nextLightboxImage()" title="Next Image (→)">
+<svg class="w-4 h-4" fill="none" stroke="currentColor" viewbox="0 0 24 24">
+<path d="M9 5l7 7-7 7" stroke-linecap="round" stroke-linejoin="round" stroke-width="2.5"></path>
+</svg>
+</button>
+</div>
+<!-- Bottom Prompt & Metadata Area -->
+<div class="p-3.5 bg-black/80 backdrop-blur-md border-t border-white/10 flex flex-col gap-2">
+<div class="flex items-center justify-between text-[10px] font-mono text-gray-400">
+<span class="text-pink-400 uppercase tracking-wider">Prompt Metadata</span>
+<span id="lb-seed-cfg">Seed: 394018284 • CFG 7.5</span>
+</div>
+<p class="text-xs text-gray-200 font-sans leading-relaxed" id="lb-prompt-text">
+  "Futuristic Tokyo rain street at night with glowing magenta neon reflections and sleek hypercar, octane render 8k"
+</p>
+<div class="flex items-center justify-between pt-1 text-[11px] font-mono text-gray-400 border-t border-white/5">
+<span id="lb-sampler">Sampler: DPM++ 2M Karras</span>
+<div class="flex items-center gap-3"><button class="text-pink-400 hover:underline flex items-center gap-1 transition" id="lb-copy-btn" onclick="copyLightboxPrompt()"><svg class="w-3.5 h-3.5" fill="none" id="lb-copy-icon" stroke="currentColor" viewbox="0 0 24 24"><path d="M8 16H6a2 2 0 01-2-2V6a2 2 0 012-2h8a2 2 0 012 2v2m-6 12h8a2 2 0 002-2v-8a2 2 0 00-2-2h-8a2 2 0 00-2 2v8a2 2 0 002 2z" stroke-linecap="round" stroke-linejoin="round" stroke-width="2"></path></svg><span id="lb-copy-label">Copy</span></button><button class="text-gray-300 hover:text-white flex items-center gap-1 active:scale-95 transition" onclick="exportLightboxImage()"><svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewbox="0 0 24 24"><path d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4" stroke-linecap="round" stroke-linejoin="round" stroke-width="2"></path></svg><span>Export</span></button><button class="px-2.5 py-1 rounded-lg bg-gradient-to-r from-pink-500 to-violet-600 hover:opacity-95 text-white font-mono text-[10px] font-bold flex items-center gap-1.5 shadow-sm shadow-pink-500/10 active:scale-95 transition" id="lb-remix-btn" onclick="remixLightboxInEditor()" title="Remix Artwork into Generator"><svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewbox="0 0 24 24"><path d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" stroke-linecap="round" stroke-linejoin="round" stroke-width="2"></path></svg><span>Remix</span></button></div>
+</div>
+</div>
+</div>
+</div>
+<script>
+function remixLightboxInEditor() {
+  const item = lightboxGallery[currentLbIndex];
+  if (!item) return;
+
+  const rawPrompt = item.prompt.replace(/^"|"$/g, '');
+  const promptInput = document.getElementById('synthesis-prompt-input');
+  if (promptInput) {
+    promptInput.value = rawPrompt;
+  }
+
+  const seedMatch = item.seedCfg.match(/Seed:\s*(\d+)/);
+  const seedInput = document.getElementById('seed-number-input');
+  if (seedMatch && seedInput) {
+    seedInput.value = seedMatch[1];
+  }
+
+  const refThumb = document.getElementById('ref-img-thumbnail');
+  const refName = document.getElementById('ref-img-name');
+  const refBadge = document.getElementById('reference-active-badge');
+  if (refThumb && refName) {
+    refThumb.src = item.src;
+    const filename = item.title.toLowerCase().replace(/\s+/g, '_') + '.png';
+    refName.textContent = filename;
+    if (refBadge) refBadge.classList.remove('hidden');
+  }
+
+  closeLightbox();
+  triggerToast('Artwork parameters & prompt remixed into editor!');
+
+  const editorCard = document.getElementById('prompt-editor-card');
+  if (editorCard) {
+    editorCard.scrollIntoView({ behavior: 'smooth', block: 'center' });
+    editorCard.classList.remove('border-[#1e1e29]');
+    editorCard.classList.add('border-pink-500', 'shadow-glow-pink');
+    setTimeout(() => {
+      editorCard.classList.remove('border-pink-500', 'shadow-glow-pink');
+      editorCard.classList.add('border-[#1e1e29]');
+    }, 1800);
+  }
+}
+
+function removeReferenceImage() {
+  const badge = document.getElementById('reference-active-badge');
+  if (badge) {
+    badge.classList.add('hidden');
+    triggerToast('Reference image removed');
+  }
+}
+</script></div>
+<script>
+// Lightbox Dataset
+const lightboxGallery = [
+  {
+    title: "Tokyo Rain Hypercar",
+    src: "https://lh3.googleusercontent.com/aida/AEtjO1WX0yjyUK4bMRL8TgffCXx1N1TXezzibzjrH1iQgb-3fe4PUNT6HlMWELifSuuCl_WUCsTkEFZ6ZSNaYk0SxKPdQMLP3TlNqIaBWvSo5BpOtszS0FgFOySE2NPTaTXM2lCqmzv5YoJoS_21YzgRyhuTo6aK4fZhwjScYLE-bcDPQ8Vvlg7NzY0GjinlQALOZ7oUYCmM7S06I9uWR1qlG2AXXCLiqPeHwiH5fm-m6Mao",
+    model: "FLUX.1-dev",
+    seedCfg: "Seed: 394018284 • CFG 7.5",
+    prompt: "\"Futuristic Tokyo rain street at night with glowing magenta neon reflections and sleek hypercar, octane render 8k\"",
+    sampler: "Sampler: DPM++ 2M Karras",
+    favorite: true,
+  },
+  {
+    title: "Cybernetic Crystalline Portrait",
+    src: "https://lh3.googleusercontent.com/aida/AEtjO1W09xiJNB--KTX2uTl7o5VxdjBbL8iCgS7ijAkQ-QJ7L2TYBOTOQv_o1wJNWPbfcxFe_4DxX7UeNPWCWq93i3CktOv0g3lUus1o6OyE0FzXu3vFl7UFektrxSac_2EC0QlcAxObvpcsX_422y_UDpPbapac-iZVoPUD41Fpcy8wALct1q0opXeLlYlrm8U_suviQvehiGJfO3Xj4-_3desYNGBTMCT8boF3d2jH5LtC",
+    model: "FLUX.1-schnell",
+    seedCfg: "Seed: 849204112 • CFG 8.0",
+    prompt: "\"Cyberpunk crystalline holographic portrait of an ethereal cybernetic woman surrounded by iridescent neon magenta and violet particles, ultra detailed cinematic digital art, dark moody background\"",
+    sampler: "Sampler: Euler-A Latent",
+    favorite: true,
+  },
+  {
+    title: "Astral Bonsai Terrarium",
+    src: "https://lh3.googleusercontent.com/aida/AEtjO1U9KcXaINfMy0zKXTlv4vYmKnF22kvBNX6fxF6cuqHaJGwt0Eq1WDM2pUZbvpJw4ShH20tGzzixX2d4py77OXPUzImw782gvNL4SQ_GAOWg5kp6CZA0Rxm0UWhttYw-zkVvBtIhnSlNAj7AQFQW8L8TWMu1zHomPRtnfi2aR4GjedksIWWIyNliMIp7a5PAXb_YJTZ4CFfiQzcJy7jsJpZnpaA8IThqMEnwDRs_NAnG",
+    model: "FLUX.1-HQ",
+    seedCfg: "Seed: 712039481 • CFG 6.8",
+    prompt: "\"Floating surreal cosmic bonsai tree inside a luminous geometric glass terrarium with violet nebulae stars, digital art, high dynamic range\"",
+    sampler: "Sampler: Heun Karras",
+    favorite: true,
+  },
+  {
+    title: "Mecha Kaizu Unit-04",
+    src: "https://lh3.googleusercontent.com/aida/AEtjO1W19VR92VPYnbTE97mnXEPT-xOZRHN5h1QxzbKq7vY3kg4o680VqDYE-K-JAUmH41CYNlVHLHGFKKx8UyC70w4hE-z2QRHcNHbaxZ9uR4kBLgZ0Ljv1jezdmVUrbhsoh6e4w08QrMZRbtaXrVFeLzCzRZHx1Goi9uib0xXc-_nAY0XtQjwcC9y6MjUc4EA2mjipOmhbE9EtpWb3UcNl2lxoRzWopUZNwjPX3q5DoX8",
+    model: "CF-Edge v2",
+    seedCfg: "Seed: 501928472 • CFG 7.0",
+    prompt: "\"Sleek minimal matte black mecha robot helmet with glowing neon pink visor and optical sensors, product industrial design, studio lighting\"",
+    sampler: "Sampler: DDIM Adaptive",
+    favorite: false,
+  }
+];
+
+let currentLbIndex = 0;
+let toastTimeout = null;
+
+function renderLightbox() {
+  const item = lightboxGallery[currentLbIndex];
+  if (!item) return;
+
+  const counterEl = document.getElementById('lb-counter');
+  const modelTagEl = document.getElementById('lb-model-tag');
+  const imgEl = document.getElementById('lb-image');
+  const seedCfgEl = document.getElementById('lb-seed-cfg');
+  const promptEl = document.getElementById('lb-prompt-text');
+  const samplerEl = document.getElementById('lb-sampler');
+  const favIcon = document.getElementById('lb-fav-icon');
+
+  if (counterEl) counterEl.textContent = `0${currentLbIndex + 1} / 0${lightboxGallery.length}`;
+  if (modelTagEl) modelTagEl.textContent = item.model;
+  
+  if (imgEl) {
+    imgEl.style.opacity = '0.3';
+    setTimeout(() => {
+      imgEl.src = item.src;
+      imgEl.style.opacity = '1';
+    }, 80);
+  }
+
+  if (seedCfgEl) seedCfgEl.textContent = item.seedCfg;
+  if (promptEl) promptEl.textContent = item.prompt;
+  if (samplerEl) samplerEl.textContent = item.sampler;
+
+  updateFavIconState(item.favorite);
+}
+
+function updateFavIconState(isFav) {
+  const favIcon = document.getElementById('lb-fav-icon');
+  if (!favIcon) return;
+  if (isFav) {
+    favIcon.classList.remove('text-gray-400', 'fill-transparent');
+    favIcon.classList.add('text-pink-500', 'fill-pink-500');
+  } else {
+    favIcon.classList.remove('text-pink-500', 'fill-pink-500');
+    favIcon.classList.add('text-gray-400', 'fill-transparent');
+  }
+}
+
+function prevLightboxImage() {
+  currentLbIndex = (currentLbIndex - 1 + lightboxGallery.length) % lightboxGallery.length;
+  renderLightbox();
+}
+
+function nextLightboxImage() {
+  currentLbIndex = (currentLbIndex + 1) % lightboxGallery.length;
+  renderLightbox();
+}
+
+function openLightboxAtIndex(index) {
+  if (index >= 0 && index < lightboxGallery.length) {
+    currentLbIndex = index;
+  }
+  reopenLightbox();
+  renderLightbox();
+
+  // Smooth scroll into viewport for seamless focus
+  const lbCard = document.getElementById('lightbox-card');
+  if (lbCard) {
+    lbCard.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+  }
+}
+
+function closeLightbox() {
+  const card = document.getElementById('lightbox-card');
+  const bar = document.getElementById('lightbox-minimized');
+  if (card && bar) {
+    card.classList.add('hidden');
+    bar.classList.remove('hidden');
+    triggerToast('Lightbox minimized. Click Open to restore.');
+  }
+}
+
+function reopenLightbox() {
+  const card = document.getElementById('lightbox-card');
+  const bar = document.getElementById('lightbox-minimized');
+  if (card && bar) {
+    card.classList.remove('hidden');
+    bar.classList.add('hidden');
+  }
+}
+
+function toggleLightboxFavorite() {
+  const item = lightboxGallery[currentLbIndex];
+  if (!item) return;
+  item.favorite = !item.favorite;
+  updateFavIconState(item.favorite);
+  
+  const icon = document.getElementById('lb-fav-icon');
+  if (icon) {
+    icon.classList.add('scale-125');
+    setTimeout(() => icon.classList.remove('scale-125'), 180);
+  }
+
+  triggerToast(item.favorite ? 'Added to liked artifacts' : 'Removed from liked artifacts');
+}
+
+function copyLightboxPrompt() {
+  const item = lightboxGallery[currentLbIndex];
+  if (!item) return;
+
+  const rawText = item.prompt.replace(/^"|"$/g, '');
+  if (navigator.clipboard && navigator.clipboard.writeText) {
+    navigator.clipboard.writeText(rawText).catch(() => {});
+  }
+
+  const label = document.getElementById('lb-copy-label');
+  const btn = document.getElementById('lb-copy-btn');
+  if (label) {
+    const originalText = label.textContent;
+    label.textContent = 'Copied!';
+    if (btn) btn.classList.add('text-emerald-400');
+    setTimeout(() => {
+      label.textContent = originalText;
+      if (btn) btn.classList.remove('text-emerald-400');
+    }, 1500);
+  }
+  triggerToast('Prompt copied to clipboard');
+}
+
+function exportLightboxImage() {
+  const item = lightboxGallery[currentLbIndex];
+  triggerToast(`Export initiated: ${item.title.toLowerCase().replace(/\s+/g, '_')}.png (PNG 1024px)`);
+}
+
+function triggerToast(message) {
+  const toast = document.getElementById('system-toast');
+  const msgEl = document.getElementById('toast-message');
+  if (!toast || !msgEl) return;
+
+  msgEl.textContent = message;
+  toast.classList.remove('hidden');
+  toast.classList.add('flex');
+  
+  if (toastTimeout) clearTimeout(toastTimeout);
+  toastTimeout = setTimeout(() => {
+    toast.classList.add('hidden');
+    toast.classList.remove('flex');
+  }, 2300);
+}
+
+// Global Keyboard Navigation (Left / Right / Escape)
+window.addEventListener('keydown', (e) => {
+  const card = document.getElementById('lightbox-card');
+  const isLightboxVisible = card && !card.classList.contains('hidden');
+
+  if (e.key === 'ArrowLeft' && isLightboxVisible) {
+    prevLightboxImage();
+  } else if (e.key === 'ArrowRight' && isLightboxVisible) {
+    nextLightboxImage();
+  } else if (e.key === 'Escape' && isLightboxVisible) {
+    closeLightbox();
+  }
+});
+
+// Aspect ratio switcher configuration and handler
+const ratioConfig = {
+  '1:1': {
+    dim: '1024 × 1024 • PNG',
+    label: '1:1 Square',
+    aspectCss: '1 / 1',
+    maxWidth: '100%',
+    summary: '1:1 • 1024×1024'
+  },
+  '16:9': {
+    dim: '1280 × 720 • PNG',
+    label: '16:9 Landscape',
+    aspectCss: '16 / 9',
+    maxWidth: '100%',
+    summary: '16:9 • 1280×720'
+  },
+  '9:16': {
+    dim: '720 × 1280 • PNG',
+    label: '9:16 Portrait',
+    aspectCss: '9 / 16',
+    maxWidth: '290px',
+    summary: '9:16 • 720×1280'
+  },
+  '4:3': {
+    dim: '1024 × 768 • PNG',
+    label: '4:3 Standard',
+    aspectCss: '4 / 3',
+    maxWidth: '100%',
+    summary: '4:3 • 1024×768'
+  },
+  '3:2': {
+    dim: '1280 × 800 • PNG',
+    label: '3:2 Photo',
+    aspectCss: '3 / 2',
+    maxWidth: '100%',
+    summary: '3:2 • 1280×800'
+  }
+};
+
+function setAspectRatio(ratio) {
+  const config = ratioConfig[ratio];
+  if (!config) return;
+
+  const buttons = document.querySelectorAll('.ratio-btn');
+  buttons.forEach(btn => {
+    const isTarget = btn.dataset.ratio === ratio;
+    const iconBox = btn.querySelector('.ratio-icon-box');
+    const title = btn.querySelector('.ratio-title');
+    const sub = btn.querySelector('.ratio-sub');
+
+    if (isTarget) {
+      btn.className = 'ratio-btn group/rbtn flex flex-col items-center justify-center py-2 px-1 rounded-xl border bg-gradient-to-b from-[#ff2d87]/20 via-[#8b2cf5]/15 to-[#171724] border-[#ff2d87] text-white shadow-glow-chip transition-all duration-200';
+      if (iconBox) {
+        iconBox.className = 'ratio-icon-box ' + (ratio === '1:1' ? 'w-2.5 h-2.5' : ratio === '16:9' ? 'w-3 h-2' : ratio === '9:16' ? 'w-2 h-3' : ratio === '4:3' ? 'w-2.5 h-2' : 'w-3 h-2') + ' border border-pink-400 bg-pink-500/40 rounded-[2px] shrink-0 inline-block';
+      }
+      if (title) title.className = 'ratio-title text-[10px] font-mono font-bold tracking-tight text-white group-hover/rbtn:text-white truncate';
+      if (sub) sub.className = 'ratio-sub text-[9px] font-mono text-pink-300 font-medium tracking-tighter scale-95 origin-center';
+    } else {
+      btn.className = 'ratio-btn group/rbtn flex flex-col items-center justify-center py-2 px-1 rounded-xl border bg-[#14141d] hover:bg-[#1a1a26] border-[#222232] hover:border-gray-600 text-gray-400 hover:text-gray-200 transition-all duration-200';
+      if (iconBox) {
+        iconBox.className = 'ratio-icon-box ' + (btn.dataset.ratio === '1:1' ? 'w-2.5 h-2.5' : btn.dataset.ratio === '16:9' ? 'w-3 h-2' : btn.dataset.ratio === '9:16' ? 'w-2 h-3' : btn.dataset.ratio === '4:3' ? 'w-2.5 h-2' : 'w-3 h-2') + ' border border-gray-500 bg-transparent rounded-[1.5px] shrink-0 inline-block';
+      }
+      if (title) title.className = 'ratio-title text-[10px] font-mono font-semibold tracking-tight text-gray-300 group-hover/rbtn:text-white truncate';
+      if (sub) sub.className = 'ratio-sub text-[9px] font-mono text-gray-400 tracking-tighter scale-95 origin-center';
+    }
+  });
+
+  const summary = document.getElementById('active-ratio-summary');
+  if (summary) {
+    summary.textContent = config.summary;
+  }
+
+  const badge = document.getElementById('render-dimension-badge');
+  if (badge) {
+    badge.textContent = config.dim;
+  }
+
+  const container = document.getElementById('render-preview-container');
+  if (container) {
+    container.style.aspectRatio = config.aspectCss;
+    container.style.maxWidth = config.maxWidth;
+  }
+
+  triggerToast(`Ratio updated: ${config.label} (${config.summary.split('• ')[1]})`);
+}
+
+// Initial lightbox render
+renderLightbox();
+</script>
+<script>
+function setBatchVariation(count, timeEst) {
+  const buttons = document.querySelectorAll('.batch-btn');
+  buttons.forEach(btn => {
+    if (btn.dataset.batch === count) {
+      btn.className = 'batch-btn px-2.5 py-2 rounded-lg text-xs font-mono font-bold bg-gradient-to-r from-pink-500 to-violet-600 text-white shadow-sm shadow-pink-500/10 transition active:scale-95';
+    } else {
+      btn.className = 'batch-btn px-2.5 py-2 rounded-lg text-xs font-mono font-medium text-gray-400 hover:text-gray-200 hover:bg-[#20202e] transition active:scale-95';
+    }
+  });
+  const timeBadge = document.getElementById('generation-time-badge');
+  if (timeBadge) {
+    timeBadge.textContent = timeEst;
+  }
+  triggerToast(`Batch set to ${count}x (${timeEst} estimated)`);
+}
+</script><script id="seed-control-script">let isAutoSeedMode = true; function rollNewSeed() { const seedInput = document.getElementById('seed-number-input'); const diceIcon = document.getElementById('dice-icon-svg'); const seedVal = Math.floor(100000 + Math.random() * 900000); if (seedInput) { seedInput.value = seedVal; seedInput.classList.add('text-pink-400'); setTimeout(() => seedInput.classList.remove('text-pink-400'), 400); } if (diceIcon) { diceIcon.classList.add('rotate-180', 'text-pink-400'); setTimeout(() => diceIcon.classList.remove('rotate-180', 'text-pink-400'), 350); } triggerToast('Generated latent seed #' + seedVal); } function toggleSeedMode() { isAutoSeedMode = !isAutoSeedMode; const modeBtn = document.getElementById('seed-mode-toggle-btn'); const modeText = document.getElementById('seed-mode-text'); const indicator = document.getElementById('seed-mode-indicator'); if (!modeBtn || !modeText || !indicator) return; if (isAutoSeedMode) { modeBtn.className = 'px-2 py-1 rounded-md text-[10px] font-mono flex items-center gap-1 transition-all bg-gradient-to-r from-pink-500/20 to-violet-600/20 text-pink-300 border border-pink-500/40 shadow-sm active:scale-95'; modeText.textContent = 'Auto'; indicator.className = 'w-1.5 h-1.5 rounded-full bg-pink-400 animate-pulse'; triggerToast('Seed mode: Auto Random on each generation'); } else { modeBtn.className = 'px-2 py-1 rounded-md text-[10px] font-mono flex items-center gap-1 transition-all bg-[#121218] text-gray-400 border border-[#262635] hover:text-gray-200 active:scale-95'; modeText.textContent = 'Lock'; indicator.className = 'w-1.5 h-1.5 rounded-full bg-gray-500'; triggerToast('Seed mode: Locked (fixed generation seed)'); } } function onManualSeedInput(val) { isAutoSeedMode = false; const modeBtn = document.getElementById('seed-mode-toggle-btn'); const modeText = document.getElementById('seed-mode-text'); const indicator = document.getElementById('seed-mode-indicator'); if (modeBtn && modeText && indicator) { modeBtn.className = 'px-2 py-1 rounded-md text-[10px] font-mono flex items-center gap-1 transition-all bg-[#121218] text-gray-400 border border-[#262635] hover:text-gray-200 active:scale-95'; modeText.textContent = 'Lock'; indicator.className = 'w-1.5 h-1.5 rounded-full bg-gray-500'; } triggerToast('Custom seed #' + val + ' locked'); } const genBtn = document.getElementById('generate-action-btn'); if (genBtn) { genBtn.addEventListener('click', () => { if (isAutoSeedMode) { rollNewSeed(); } else { const curSeed = document.getElementById('seed-number-input')?.value || '849204'; triggerToast('Generating with fixed seed #' + curSeed); } }); }</script><!-- Timeline Drawer Backdrop --><div class="fixed inset-0 bg-black/70 backdrop-blur-sm z-50 transition-opacity duration-300 opacity-0 pointer-events-none" id="timeline-backdrop" onclick="closeTimelineDrawer()"></div><!-- Slide-in Timeline Drawer --><aside class="fixed top-0 right-0 h-full w-full max-w-[420px] bg-[#131317]/95 backdrop-blur-2xl border-l border-pink-500/30 shadow-2xl z-50 transform translate-x-full transition-transform duration-300 ease-out flex flex-col justify-between overflow-hidden" id="timeline-drawer"><!-- Drawer Header --><div class="p-4 border-b border-[#21212d] bg-[#0d0d12]/90 flex flex-col gap-3"><div class="flex items-center justify-between"><div class="flex items-center gap-2"><div class="w-8 h-8 rounded-lg bg-pink-500/10 border border-pink-500/30 flex items-center justify-center text-pink-400"><svg class="w-4 h-4" fill="none" stroke="currentColor" viewbox="0 0 24 24"><circle cx="12" cy="12" r="10" stroke-width="2"></circle><path d="M12 6v6l4 2" stroke-linecap="round" stroke-linejoin="round" stroke-width="2"></path></svg></div><div><h2 class="text-sm font-bold font-mono tracking-tight text-white uppercase">Generation Timeline</h2><p class="text-[10px] font-mono text-gray-400" id="timeline-counter-badge">8 Generations Logged • 1.2 GB</p></div></div><button class="w-8 h-8 rounded-lg bg-[#181822] hover:bg-[#22222e] text-gray-400 hover:text-white border border-[#262635] flex items-center justify-center transition active:scale-95" onclick="closeTimelineDrawer()" title="Close Drawer"><svg class="w-4 h-4" fill="none" stroke="currentColor" viewbox="0 0 24 24"><path d="M6 18L18 6M6 6l12 12" stroke-linecap="round" stroke-linejoin="round" stroke-width="2"></path></svg></button></div><!-- Filter Chips --><div class="flex items-center gap-1.5 pt-1"><button class="timeline-filter-btn px-2.5 py-1 rounded-md text-[10px] font-mono font-semibold bg-pink-500/20 text-pink-300 border border-pink-500/40 shadow-sm" onclick="filterTimeline('all', this)">All (8)</button><button class="timeline-filter-btn px-2.5 py-1 rounded-md text-[10px] font-mono text-gray-400 hover:text-gray-200 bg-[#171722] border border-[#252536] transition" onclick="filterTimeline('today', this)">Today (4)</button><button class="timeline-filter-btn px-2.5 py-1 rounded-md text-[10px] font-mono text-gray-400 hover:text-gray-200 bg-[#171722] border border-[#252536] transition" onclick="filterTimeline('favorites', this)">★ Liked (3)</button></div></div><!-- Chronological Timeline Stream --><div class="flex-1 overflow-y-auto p-4 space-y-4 relative scrollbar-none" id="timeline-feed-container"><!-- Glowing vertical guide line --><div class="absolute left-[27px] top-6 bottom-6 w-[2px] bg-gradient-to-b from-pink-500 via-[#8b2cf5] to-transparent pointer-events-none opacity-40"></div><!-- Entry 1 --><div class="timeline-entry relative pl-8 group" data-category="today favorites"><div class="absolute left-[7px] top-1.5 w-3 h-3 rounded-full bg-pink-500 ring-4 ring-[#131317] shadow-[0_0_8px_#ff2d87]"></div><div class="p-3 rounded-xl bg-[#171722] border border-pink-500/30 hover:border-pink-500 transition shadow-lg flex flex-col gap-2.5"><div class="flex items-start justify-between gap-2"><div class="flex items-center gap-1.5"><span class="text-[10px] font-mono text-pink-400 font-semibold">Just now</span><span class="text-gray-500 text-[10px]">•</span><span class="text-[9px] font-mono px-1.5 py-0.2 rounded bg-pink-500/20 text-pink-300 border border-pink-500/30">FLUX.1-schnell</span></div><span class="text-[9px] font-mono text-gray-400">2.1s • 1024×1024</span></div><div class="flex items-center gap-3"><img alt="Crystalline portrait" class="w-14 h-14 rounded-lg object-cover border border-pink-500/40 shrink-0 cursor-pointer hover:opacity-90 transition" onclick="openLightboxAtIndex(1)" src="https://lh3.googleusercontent.com/aida/AEtjO1W09xiJNB--KTX2uTl7o5VxdjBbL8iCgS7ijAkQ-QJ7L2TYBOTOQv_o1wJNWPbfcxFe_4DxX7UeNPWCWq93i3CktOv0g3lUus1o6OyE0FzXu3vFl7UFektrxSac_2EC0QlcAxObvpcsX_422y_UDpPbapac-iZVoPUD41Fpcy8wALct1q0opXeLlYlrm8U_suviQvehiGJfO3Xj4-_3desYNGBTMCT8boF3d2jH5LtC"/><div class="flex flex-col gap-1 min-w-0 flex-1"><p class="text-xs text-gray-200 font-medium line-clamp-2 leading-tight">Cyberpunk crystalline holographic portrait of an ethereal cybernetic woman...</p><div class="flex items-center gap-1.5 flex-wrap"><span class="text-[9px] font-mono text-gray-400 bg-[#121218] px-1.5 py-0.5 rounded border border-[#242434]">Seed: #849204</span><span class="text-[9px] font-mono text-gray-400 bg-[#121218] px-1.5 py-0.5 rounded border border-[#242434]">1:1</span></div></div></div><div class="flex items-center justify-between pt-2 border-t border-[#222232] text-[10px] font-mono"><div class="flex items-center gap-2"><button class="text-pink-400 hover:text-pink-300 flex items-center gap-1 transition active:scale-95 font-semibold" onclick="loadHistoryToCanvas(0)"><svg class="w-3 h-3" fill="none" stroke="currentColor" viewbox="0 0 24 24"><path d="M15 12a3 3 0 11-6 0 3 3 0 016 0z" stroke-linecap="round" stroke-linejoin="round" stroke-width="2"></path><path d="M2.458 12C3.732 7.943 7.523 5 12 5c4.478 0 8.268 2.943 9.542 7-1.274 4.057-5.064 7-9.542 7-4.477 0-8.268-2.943-9.542-7z" stroke-linecap="round" stroke-linejoin="round" stroke-width="2"></path></svg>Load Canvas</button><button class="text-gray-300 hover:text-white flex items-center gap-1 transition active:scale-95" onclick="remixTimelineEntry(0)"><svg class="w-3 h-3" fill="none" stroke="currentColor" viewbox="0 0 24 24"><path d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" stroke-linecap="round" stroke-linejoin="round" stroke-width="2"></path></svg>Remix</button></div><div class="flex items-center gap-2"><button class="text-pink-400 hover:scale-110 transition" onclick="toggleEntryFavorite(this)" title="Favorite"><svg class="w-3.5 h-3.5 fill-pink-500 text-pink-500" viewbox="0 0 24 24"><path d="M12 21.35l-1.45-1.32C5.4 15.36 2 12.28 2 8.5 2 5.42 4.42 3 7.5 3c1.74 0 3.41.81 4.5 2.09C13.09 3.81 14.76 3 16.5 3 19.58 3 22 5.42 22 8.5c0 3.78-3.4 6.86-8.55 11.54L12 21.35z"></path></svg></button><button class="text-gray-400 hover:text-gray-200 transition" onclick="triggerToast('Exporting latent snapshot...')" title="Export snapshot"><svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewbox="0 0 24 24"><path d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-8l-4-4m0 0L8 8m4-4v12" stroke-linecap="round" stroke-linejoin="round" stroke-width="2"></path></svg></button></div></div></div></div><!-- Entry 2 --><div class="timeline-entry relative pl-8 group" data-category="today favorites"><div class="absolute left-[7px] top-1.5 w-3 h-3 rounded-full bg-[#8b2cf5] ring-4 ring-[#131317]"></div><div class="p-3 rounded-xl bg-[#171722] border border-[#252536] hover:border-pink-500/40 transition shadow-lg flex flex-col gap-2.5"><div class="flex items-start justify-between gap-2"><div class="flex items-center gap-1.5"><span class="text-[10px] font-mono text-gray-300 font-semibold">12m ago</span><span class="text-gray-500 text-[10px]">•</span><span class="text-[9px] font-mono px-1.5 py-0.2 rounded bg-violet-500/15 text-violet-300 border border-violet-500/30">FLUX.1-dev</span></div><span class="text-[9px] font-mono text-gray-400">3.4s • 1280×720</span></div><div class="flex items-center gap-3"><img alt="Tokyo hypercar" class="w-14 h-14 rounded-lg object-cover border border-white/10 shrink-0 cursor-pointer hover:opacity-90 transition" onclick="openLightboxAtIndex(0)" src="https://lh3.googleusercontent.com/aida/AEtjO1WX0yjyUK4bMRL8TgffCXx1N1TXezzibzjrH1iQgb-3fe4PUNT6HlMWELifSuuCl_WUCsTkEFZ6ZSNaYk0SxKPdQMLP3TlNqIaBWvSo5BpOtszS0FgFOySE2NPTaTXM2lCqmzv5YoJoS_21YzgRyhuTo6aK4fZhwjScYLE-bcDPQ8Vvlg7NzY0GjinlQALOZ7oUYCmM7S06I9uWR1qlG2AXXCLiqPeHwiH5fm-m6Mao"/><div class="flex flex-col gap-1 min-w-0 flex-1"><p class="text-xs text-gray-200 font-medium line-clamp-2 leading-tight">Futuristic Tokyo rain street at night with glowing magenta neon reflections...</p><div class="flex items-center gap-1.5 flex-wrap"><span class="text-[9px] font-mono text-gray-400 bg-[#121218] px-1.5 py-0.5 rounded border border-[#242434]">Seed: #394018</span><span class="text-[9px] font-mono text-gray-400 bg-[#121218] px-1.5 py-0.5 rounded border border-[#242434]">16:9</span></div></div></div><div class="flex items-center justify-between pt-2 border-t border-[#222232] text-[10px] font-mono"><div class="flex items-center gap-2"><button class="text-pink-400 hover:text-pink-300 flex items-center gap-1 transition active:scale-95 font-semibold" onclick="loadHistoryToCanvas(1)"><svg class="w-3 h-3" fill="none" stroke="currentColor" viewbox="0 0 24 24"><path d="M15 12a3 3 0 11-6 0 3 3 0 016 0z" stroke-linecap="round" stroke-linejoin="round" stroke-width="2"></path><path d="M2.458 12C3.732 7.943 7.523 5 12 5c4.478 0 8.268 2.943 9.542 7-1.274 4.057-5.064 7-9.542 7-4.477 0-8.268-2.943-9.542-7z" stroke-linecap="round" stroke-linejoin="round" stroke-width="2"></path></svg>Load Canvas</button><button class="text-gray-300 hover:text-white flex items-center gap-1 transition active:scale-95" onclick="remixTimelineEntry(1)"><svg class="w-3 h-3" fill="none" stroke="currentColor" viewbox="0 0 24 24"><path d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" stroke-linecap="round" stroke-linejoin="round" stroke-width="2"></path></svg>Remix</button></div><div class="flex items-center gap-2"><button class="text-pink-400 hover:scale-110 transition" onclick="toggleEntryFavorite(this)" title="Favorite"><svg class="w-3.5 h-3.5 fill-pink-500 text-pink-500" viewbox="0 0 24 24"><path d="M12 21.35l-1.45-1.32C5.4 15.36 2 12.28 2 8.5 2 5.42 4.42 3 7.5 3c1.74 0 3.41.81 4.5 2.09C13.09 3.81 14.76 3 16.5 3 19.58 3 22 5.42 22 8.5c0 3.78-3.4 6.86-8.55 11.54L12 21.35z"></path></svg></button><button class="text-gray-400 hover:text-gray-200 transition" onclick="triggerToast('Exporting latent snapshot...')" title="Export snapshot"><svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewbox="0 0 24 24"><path d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-8l-4-4m0 0L8 8m4-4v12" stroke-linecap="round" stroke-linejoin="round" stroke-width="2"></path></svg></button></div></div></div></div><!-- Entry 3 --><div class="timeline-entry relative pl-8 group" data-category="today"><div class="absolute left-[7px] top-1.5 w-3 h-3 rounded-full bg-cyan-400 ring-4 ring-[#131317]"></div><div class="p-3 rounded-xl bg-[#171722] border border-[#252536] hover:border-pink-500/40 transition shadow-lg flex flex-col gap-2.5"><div class="flex items-start justify-between gap-2"><div class="flex items-center gap-1.5"><span class="text-[10px] font-mono text-gray-300 font-semibold">45m ago</span><span class="text-gray-500 text-[10px]">•</span><span class="text-[9px] font-mono px-1.5 py-0.2 rounded bg-cyan-500/15 text-cyan-300 border border-cyan-500/30">CF-Edge</span></div><span class="text-[9px] font-mono text-gray-400">1.8s • 1024×1024</span></div><div class="flex items-center gap-3"><img alt="Mecha helmet" class="w-14 h-14 rounded-lg object-cover border border-white/10 shrink-0 cursor-pointer hover:opacity-90 transition" onclick="openLightboxAtIndex(3)" src="https://lh3.googleusercontent.com/aida/AEtjO1W19VR92VPYnbTE97mnXEPT-xOZRHN5h1QxzbKq7vY3kg4o680VqDYE-K-JAUmH41CYNlVHLHGFKKx8UyC70w4hE-z2QRHcNHbaxZ9uR4kBLgZ0Ljv1jezdmVUrbhsoh6e4w08QrMZRbtaXrVFeLzCzRZHx1Goi9uib0xXc-_nAY0XtQjwcC9y6MjUc4EA2mjipOmhbE9EtpWb3UcNl2lxoRzWopUZNwjPX3q5DoX8"/><div class="flex flex-col gap-1 min-w-0 flex-1"><p class="text-xs text-gray-200 font-medium line-clamp-2 leading-tight">Sleek minimal matte black mecha robot helmet with glowing neon pink visor...</p><div class="flex items-center gap-1.5 flex-wrap"><span class="text-[9px] font-mono text-gray-400 bg-[#121218] px-1.5 py-0.5 rounded border border-[#242434]">Seed: #501928</span><span class="text-[9px] font-mono text-gray-400 bg-[#121218] px-1.5 py-0.5 rounded border border-[#242434]">1:1</span></div></div></div><div class="flex items-center justify-between pt-2 border-t border-[#222232] text-[10px] font-mono"><div class="flex items-center gap-2"><button class="text-pink-400 hover:text-pink-300 flex items-center gap-1 transition active:scale-95 font-semibold" onclick="loadHistoryToCanvas(2)"><svg class="w-3 h-3" fill="none" stroke="currentColor" viewbox="0 0 24 24"><path d="M15 12a3 3 0 11-6 0 3 3 0 016 0z" stroke-linecap="round" stroke-linejoin="round" stroke-width="2"></path><path d="M2.458 12C3.732 7.943 7.523 5 12 5c4.478 0 8.268 2.943 9.542 7-1.274 4.057-5.064 7-9.542 7-4.477 0-8.268-2.943-9.542-7z" stroke-linecap="round" stroke-linejoin="round" stroke-width="2"></path></svg>Load Canvas</button><button class="text-gray-300 hover:text-white flex items-center gap-1 transition active:scale-95" onclick="remixTimelineEntry(2)"><svg class="w-3 h-3" fill="none" stroke="currentColor" viewbox="0 0 24 24"><path d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" stroke-linecap="round" stroke-linejoin="round" stroke-width="2"></path></svg>Remix</button></div><div class="flex items-center gap-2"><button class="text-gray-500 hover:scale-110 transition" onclick="toggleEntryFavorite(this)" title="Favorite"><svg class="w-3.5 h-3.5 fill-none stroke-currentColor" viewbox="0 0 24 24"><path d="M12 21.35l-1.45-1.32C5.4 15.36 2 12.28 2 8.5 2 5.42 4.42 3 7.5 3c1.74 0 3.41.81 4.5 2.09C13.09 3.81 14.76 3 16.5 3 19.58 3 22 5.42 22 8.5c0 3.78-3.4 6.86-8.55 11.54L12 21.35z" stroke-width="1.8"></path></svg></button><button class="text-gray-400 hover:text-gray-200 transition" onclick="triggerToast('Exporting latent snapshot...')" title="Export snapshot"><svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewbox="0 0 24 24"><path d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-8l-4-4m0 0L8 8m4-4v12" stroke-linecap="round" stroke-linejoin="round" stroke-width="2"></path></svg></button></div></div></div></div><!-- Entry 4 --><div class="timeline-entry relative pl-8 group" data-category="today favorites"><div class="absolute left-[7px] top-1.5 w-3 h-3 rounded-full bg-emerald-400 ring-4 ring-[#131317]"></div><div class="p-3 rounded-xl bg-[#171722] border border-[#252536] hover:border-pink-500/40 transition shadow-lg flex flex-col gap-2.5"><div class="flex items-start justify-between gap-2"><div class="flex items-center gap-1.5"><span class="text-[10px] font-mono text-gray-300 font-semibold">1h ago</span><span class="text-gray-500 text-[10px]">•</span><span class="text-[9px] font-mono px-1.5 py-0.2 rounded bg-emerald-500/15 text-emerald-300 border border-emerald-500/30">FLUX.1-dev</span></div><span class="text-[9px] font-mono text-gray-400">4.1s • 1024×768</span></div><div class="flex items-center gap-3"><img alt="Cosmic terrarium" class="w-14 h-14 rounded-lg object-cover border border-white/10 shrink-0 cursor-pointer hover:opacity-90 transition" onclick="openLightboxAtIndex(2)" src="https://lh3.googleusercontent.com/aida/AEtjO1U9KcXaINfMy0zKXTlv4vYmKnF22kvBNX6fxF6cuqHaJGwt0Eq1WDM2pUZbvpJw4ShH20tGzzixX2d4py77OXPUzImw782gvNL4SQ_GAOWg5kp6CZA0Rxm0UWhttYw-zkVvBtIhnSlNAj7AQFQW8L8TWMu1zHomPRtnfi2aR4GjedksIWWIyNliMIp7a5PAXb_YJTZ4CFfiQzcJy7jsJpZnpaA8IThqMEnwDRs_NAnG"/><div class="flex flex-col gap-1 min-w-0 flex-1"><p class="text-xs text-gray-200 font-medium line-clamp-2 leading-tight">Floating surreal cosmic bonsai tree inside a luminous geometric glass terrarium...</p><div class="flex items-center gap-1.5 flex-wrap"><span class="text-[9px] font-mono text-gray-400 bg-[#121218] px-1.5 py-0.5 rounded border border-[#242434]">Seed: #712039</span><span class="text-[9px] font-mono text-gray-400 bg-[#121218] px-1.5 py-0.5 rounded border border-[#242434]">4:3</span></div></div></div><div class="flex items-center justify-between pt-2 border-t border-[#222232] text-[10px] font-mono"><div class="flex items-center gap-2"><button class="text-pink-400 hover:text-pink-300 flex items-center gap-1 transition active:scale-95 font-semibold" onclick="loadHistoryToCanvas(3)"><svg class="w-3 h-3" fill="none" stroke="currentColor" viewbox="0 0 24 24"><path d="M15 12a3 3 0 11-6 0 3 3 0 016 0z" stroke-linecap="round" stroke-linejoin="round" stroke-width="2"></path><path d="M2.458 12C3.732 7.943 7.523 5 12 5c4.478 0 8.268 2.943 9.542 7-1.274 4.057-5.064 7-9.542 7-4.477 0-8.268-2.943-9.542-7z" stroke-linecap="round" stroke-linejoin="round" stroke-width="2"></path></svg>Load Canvas</button><button class="text-gray-300 hover:text-white flex items-center gap-1 transition active:scale-95" onclick="remixTimelineEntry(3)"><svg class="w-3 h-3" fill="none" stroke="currentColor" viewbox="0 0 24 24"><path d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" stroke-linecap="round" stroke-linejoin="round" stroke-width="2"></path></svg>Remix</button></div><div class="flex items-center gap-2"><button class="text-pink-400 hover:scale-110 transition" onclick="toggleEntryFavorite(this)" title="Favorite"><svg class="w-3.5 h-3.5 fill-pink-500 text-pink-500" viewbox="0 0 24 24"><path d="M12 21.35l-1.45-1.32C5.4 15.36 2 12.28 2 8.5 2 5.42 4.42 3 7.5 3c1.74 0 3.41.81 4.5 2.09C13.09 3.81 14.76 3 16.5 3 19.58 3 22 5.42 22 8.5c0 3.78-3.4 6.86-8.55 11.54L12 21.35z"></path></svg></button><button class="text-gray-400 hover:text-gray-200 transition" onclick="triggerToast('Exporting latent snapshot...')" title="Export snapshot"><svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewbox="0 0 24 24"><path d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-8l-4-4m0 0L8 8m4-4v12" stroke-linecap="round" stroke-linejoin="round" stroke-width="2"></path></svg></button></div></div></div></div></div><!-- Drawer Footer --><div class="p-3.5 bg-[#0d0d12]/95 border-t border-[#21212d] flex items-center justify-between gap-2"><button class="flex-1 py-2 px-3 rounded-xl bg-[#171722] hover:bg-[#20202e] border border-[#272737] text-gray-300 hover:text-white text-xs font-mono font-medium flex items-center justify-center gap-1.5 transition active:scale-95" onclick="exportTimelineArchive()"><svg class="w-3.5 h-3.5 text-pink-400" fill="none" stroke="currentColor" viewbox="0 0 24 24"><path d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-8l-4-4m0 0L8 8m4-4v12" stroke-linecap="round" stroke-linejoin="round" stroke-width="2"></path></svg>Export (.JSON)</button><button class="py-2 px-3 rounded-xl bg-red-950/20 hover:bg-red-900/30 border border-red-800/30 text-red-400 text-xs font-mono font-medium flex items-center gap-1 transition active:scale-95" onclick="clearTimelineHistory()"><svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewbox="0 0 24 24"><path d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" stroke-linecap="round" stroke-linejoin="round" stroke-width="2"></path></svg>Clear</button></div></aside><script id="timeline-drawer-controller">const timelineDataset = [{ prompt: "Cyberpunk crystalline holographic portrait of an ethereal cybernetic woman surrounded by iridescent neon magenta and violet particles, ultra detailed cinematic digital art, dark moody background", seed: "849204", ratio: "1:1", src: "https://lh3.googleusercontent.com/aida/AEtjO1W09xiJNB--KTX2uTl7o5VxdjBbL8iCgS7ijAkQ-QJ7L2TYBOTOQv_o1wJNWPbfcxFe_4DxX7UeNPWCWq93i3CktOv0g3lUus1o6OyE0FzXu3vFl7UFektrxSac_2EC0QlcAxObvpcsX_422y_UDpPbapac-iZVoPUD41Fpcy8wALct1q0opXeLlYlrm8U_suviQvehiGJfO3Xj4-_3desYNGBTMCT8boF3d2jH5LtC", model: "FLUX.1-schnell" }, { prompt: "Futuristic Tokyo rain street at night with glowing magenta neon reflections and sleek hypercar, octane render 8k", seed: "394018", ratio: "16:9", src: "https://lh3.googleusercontent.com/aida/AEtjO1WX0yjyUK4bMRL8TgffCXx1N1TXezzibzjrH1iQgb-3fe4PUNT6HlMWELifSuuCl_WUCsTkEFZ6ZSNaYk0SxKPdQMLP3TlNqIaBWvSo5BpOtszS0FgFOySE2NPTaTXM2lCqmzv5YoJoS_21YzgRyhuTo6aK4fZhwjScYLE-bcDPQ8Vvlg7NzY0GjinlQALOZ7oUYCmM7S06I9uWR1qlG2AXXCLiqPeHwiH5fm-m6Mao", model: "FLUX.1-dev" }, { prompt: "Sleek minimal matte black mecha robot helmet with glowing neon pink visor and optical sensors, product industrial design, studio lighting", seed: "501928", ratio: "1:1", src: "https://lh3.googleusercontent.com/aida/AEtjO1W19VR92VPYnbTE97mnXEPT-xOZRHN5h1QxzbKq7vY3kg4o680VqDYE-K-JAUmH41CYNlVHLHGFKKx8UyC70w4hE-z2QRHcNHbaxZ9uR4kBLgZ0Ljv1jezdmVUrbhsoh6e4w08QrMZRbtaXrVFeLzCzRZHx1Goi9uib0xXc-_nAY0XtQjwcC9y6MjUc4EA2mjipOmhbE9EtpWb3UcNl2lxoRzWopUZNwjPX3q5DoX8", model: "CF-Edge" }, { prompt: "Floating surreal cosmic bonsai tree inside a luminous geometric glass terrarium with violet nebulae stars, digital art, high dynamic range", seed: "712039", ratio: "4:3", src: "https://lh3.googleusercontent.com/aida/AEtjO1U9KcXaINfMy0zKXTlv4vYmKnF22kvBNX6fxF6cuqHaJGwt0Eq1WDM2pUZbvpJw4ShH20tGzzixX2d4py77OXPUzImw782gvNL4SQ_GAOWg5kp6CZA0Rxm0UWhttYw-zkVvBtIhnSlNAj7AQFQW8L8TWMu1zHomPRtnfi2aR4GjedksIWWIyNliMIp7a5PAXb_YJTZ4CFfiQzcJy7jsJpZnpaA8IThqMEnwDRs_NAnG", model: "FLUX.1-HQ" }]; function openTimelineDrawer() { const drawer = document.getElementById('timeline-drawer'); const backdrop = document.getElementById('timeline-backdrop'); if (drawer && backdrop) { backdrop.classList.remove('opacity-0', 'pointer-events-none'); backdrop.classList.add('opacity-100'); drawer.classList.remove('translate-x-full'); drawer.classList.add('translate-x-0'); } } function closeTimelineDrawer() { const drawer = document.getElementById('timeline-drawer'); const backdrop = document.getElementById('timeline-backdrop'); if (drawer && backdrop) { drawer.classList.remove('translate-x-0'); drawer.classList.add('translate-x-full'); backdrop.classList.remove('opacity-100'); backdrop.classList.add('opacity-0', 'pointer-events-none'); } } function filterTimeline(filter, btn) { const buttons = document.querySelectorAll('.timeline-filter-btn'); buttons.forEach(b => { b.className = 'timeline-filter-btn px-2.5 py-1 rounded-md text-[10px] font-mono text-gray-400 hover:text-gray-200 bg-[#171722] border border-[#252536] transition'; }); if (btn) { btn.className = 'timeline-filter-btn px-2.5 py-1 rounded-md text-[10px] font-mono font-semibold bg-pink-500/20 text-pink-300 border border-pink-500/40 shadow-sm'; } const entries = document.querySelectorAll('.timeline-entry'); entries.forEach(e => { const cat = e.dataset.category || ''; if (filter === 'all' || cat.includes(filter)) { e.style.display = 'block'; } else { e.style.display = 'none'; } }); } function loadHistoryToCanvas(index) { const item = timelineDataset[index]; if (!item) return; const previewImg = document.getElementById('render-preview-img'); if (previewImg) { previewImg.src = item.src; } if (typeof setAspectRatio === 'function') { setAspectRatio(item.ratio); } closeTimelineDrawer(); const renderCard = document.getElementById('render-preview-container'); if (renderCard) { renderCard.scrollIntoView({ behavior: 'smooth', block: 'center' }); } triggerToast('Loaded ' + item.model + ' render to Canvas!'); } function remixTimelineEntry(index) { const item = timelineDataset[index]; if (!item) return; const promptInput = document.getElementById('synthesis-prompt-input'); if (promptInput) { promptInput.value = item.prompt; } const seedInput = document.getElementById('seed-number-input'); if (seedInput) { seedInput.value = item.seed; } if (typeof setAspectRatio === 'function') { setAspectRatio(item.ratio); } closeTimelineDrawer(); const editor = document.getElementById('prompt-editor-card'); if (editor) { editor.scrollIntoView({ behavior: 'smooth', block: 'center' }); editor.classList.add('border-pink-500', 'shadow-glow-pink'); setTimeout(() => { editor.classList.remove('border-pink-500', 'shadow-glow-pink'); }, 1800); } triggerToast('Parameters & prompt remixed from Timeline!'); } function toggleEntryFavorite(btn) { const svg = btn.querySelector('svg'); if (!svg) return; if (svg.classList.contains('fill-pink-500')) { svg.classList.remove('fill-pink-500', 'text-pink-500'); svg.classList.add('fill-none', 'stroke-currentColor', 'text-gray-400'); triggerToast('Removed from favorites'); } else { svg.classList.add('fill-pink-500', 'text-pink-500'); svg.classList.remove('fill-none', 'stroke-currentColor', 'text-gray-400'); triggerToast('Saved to favorites collection'); } } function exportTimelineArchive() { triggerToast('Exported generation timeline as nexus_timeline_archive.json'); } function clearTimelineHistory() { triggerToast('Timeline history cache archived & cleaned'); const badge = document.getElementById('timeline-counter-badge'); if (badge) badge.textContent = '0 Generations Logged'; }</script><!-- Folder Action Modal: Move to Folder -->
+<div class="fixed inset-0 z-50 bg-black/80 backdrop-blur-sm hidden items-center justify-center p-4" id="move-folder-modal">
+<div class="w-full max-w-[360px] bg-[#131317] border border-pink-500/40 rounded-2xl p-4 shadow-2xl flex flex-col gap-3 font-mono">
+<div class="flex items-center justify-between border-b border-[#222232] pb-2.5">
+<div class="flex items-center gap-2">
+<svg class="w-4 h-4 text-pink-400" fill="none" stroke="currentColor" viewbox="0 0 24 24"><path d="M3 7v10a2 2 0 002 2h14a2 2 0 002-2V9a2 2 0 00-2-2h-6l-2-2H5a2 2 0 00-2 2z" stroke-linecap="round" stroke-linejoin="round" stroke-width="2"></path></svg>
+<span class="text-xs font-bold text-white uppercase">Move 2 Items to Folder</span>
+</div>
+<button class="text-gray-400 hover:text-white text-xs" onclick="closeMoveFolderModal()">✕</button>
+</div>
+<div class="flex flex-col gap-1.5 text-xs text-gray-300">
+<button class="p-2.5 rounded-lg bg-[#181822] hover:bg-pink-500/15 border border-[#262636] hover:border-pink-500/40 flex items-center justify-between text-left transition" onclick="completeMoveToFolder('Cyberpunk &amp; Characters')">
+<span>Cyberpunk &amp; Characters</span>
+<span class="text-[10px] text-pink-400">8 items</span>
+</button>
+<button class="p-2.5 rounded-lg bg-[#181822] hover:bg-pink-500/15 border border-[#262636] hover:border-pink-500/40 flex items-center justify-between text-left transition" onclick="completeMoveToFolder('Neon Cityscapes')">
+<span>Neon Cityscapes</span>
+<span class="text-[10px] text-cyan-300">6 items</span>
+</button>
+<button class="p-2.5 rounded-lg bg-[#181822] hover:bg-pink-500/15 border border-[#262636] hover:border-pink-500/40 flex items-center justify-between text-left transition" onclick="completeMoveToFolder('Mecha &amp; Industrial')">
+<span>Mecha &amp; Industrial</span>
+<span class="text-[10px] text-violet-300">9 items</span>
+</button>
+<button class="p-2.5 rounded-lg bg-[#181822] hover:bg-pink-500/15 border border-[#262636] hover:border-pink-500/40 flex items-center justify-between text-left transition" onclick="completeMoveToFolder('Cosmic &amp; Surreal')">
+<span>Cosmic &amp; Surreal</span>
+<span class="text-[10px] text-emerald-300">5 items</span>
+</button>
+</div>
+<div class="pt-2 border-t border-[#20202c] flex justify-end gap-2">
+<button class="px-3 py-1.5 rounded-lg bg-[#181822] text-gray-400 hover:text-white text-xs" onclick="closeMoveFolderModal()">Cancel</button>
+<button class="px-3 py-1.5 rounded-lg bg-pink-500/20 text-pink-300 border border-pink-500/40 text-xs font-semibold" onclick="closeMoveFolderModal(); openNewFolderModal()">+ Create Folder</button>
+</div>
+</div>
+</div>
+<!-- Create New Folder Modal -->
+<div class="fixed inset-0 z-50 bg-black/80 backdrop-blur-sm hidden items-center justify-center p-4" id="new-folder-modal">
+<div class="w-full max-w-[360px] bg-[#131317] border border-pink-500/40 rounded-2xl p-4 shadow-2xl flex flex-col gap-3 font-mono">
+<div class="flex items-center justify-between border-b border-[#222232] pb-2">
+<span class="text-xs font-bold text-white uppercase flex items-center gap-1.5">
+<span class="w-2 h-2 rounded-full bg-pink-500"></span> Create Folder / Collection
+      </span>
+<button class="text-gray-400 hover:text-white text-xs" onclick="closeNewFolderModal()">✕</button>
+</div>
+<div class="flex flex-col gap-2">
+<label class="text-[10px] text-gray-400 uppercase tracking-wider">Folder Title</label>
+<input class="w-full bg-[#181822] border border-[#29293a] rounded-lg px-3 py-2 text-xs text-white placeholder-gray-500 focus:outline-none focus:border-pink-500" id="new-folder-input" placeholder="e.g. Anime Synthwave v2" value="Glitch Cyber Aesthetics"/>
+<label class="text-[10px] text-gray-400 uppercase tracking-wider mt-1">Color Accent</label>
+<div class="flex items-center gap-2">
+<span class="w-6 h-6 rounded-full bg-[#ff2d87] border-2 border-white cursor-pointer"></span>
+<span class="w-6 h-6 rounded-full bg-[#00f0ff] border border-white/20 cursor-pointer"></span>
+<span class="w-6 h-6 rounded-full bg-[#8b2cf5] border border-white/20 cursor-pointer"></span>
+<span class="w-6 h-6 rounded-full bg-[#10b981] border border-white/20 cursor-pointer"></span>
+</div>
+</div>
+<div class="pt-2 border-t border-[#20202c] flex justify-end gap-2">
+<button class="px-3 py-1.5 rounded-lg bg-[#181822] text-gray-400 hover:text-white text-xs" onclick="closeNewFolderModal()">Cancel</button>
+<button class="px-3 py-1.5 rounded-lg bg-gradient-to-r from-pink-500 to-violet-600 text-white font-bold text-xs shadow-sm" onclick="createNewFolder()">Create Folder</button>
+</div>
+</div>
+</div>
+<!-- 4. FULL GALLERY & FOLDERS MANAGER BROWSER (SLIDE OVER DRAWER) -->
+<div class="fixed inset-0 bg-black/75 backdrop-blur-sm z-50 transition-opacity duration-300 opacity-0 pointer-events-none" id="folder-manager-backdrop" onclick="closeFolderManager()"></div>
+<aside class="fixed top-0 right-0 h-full w-full max-w-[425px] bg-[#131317]/95 backdrop-blur-2xl border-l border-pink-500/30 shadow-2xl z-50 transform translate-x-full transition-transform duration-300 ease-out flex flex-col justify-between overflow-hidden font-mono" id="folder-manager-drawer">
+<!-- Header -->
+<div class="p-4 border-b border-[#21212d] bg-[#0d0d12]/90 flex flex-col gap-2.5">
+<div class="flex items-center justify-between">
+<div class="flex items-center gap-2">
+<div class="w-8 h-8 rounded-lg bg-pink-500/15 border border-pink-500/30 flex items-center justify-center text-pink-400">
+<svg class="w-4 h-4" fill="none" stroke="currentColor" viewbox="0 0 24 24"><path d="M3 7v10a2 2 0 002 2h14a2 2 0 002-2V9a2 2 0 00-2-2h-6l-2-2H5a2 2 0 00-2 2z" stroke-linecap="round" stroke-linejoin="round" stroke-width="2"></path></svg>
+</div>
+<div>
+<h2 class="text-sm font-bold text-white tracking-tight uppercase">Folders &amp; Collections</h2>
+<p class="text-[10px] text-gray-400">4 Folders • 28 Total Artifacts • 1.2 GB</p>
+</div>
+</div>
+<button class="w-8 h-8 rounded-lg bg-[#181822] hover:bg-[#22222e] text-gray-400 hover:text-white border border-[#262635] flex items-center justify-center transition active:scale-95" onclick="closeFolderManager()">
+<svg class="w-4 h-4" fill="none" stroke="currentColor" viewbox="0 0 24 24"><path d="M6 18L18 6M6 6l12 12" stroke-linecap="round" stroke-linejoin="round" stroke-width="2"></path></svg>
+</button>
+</div>
+<!-- Breadcrumbs -->
+<div class="flex items-center justify-between text-[11px] pt-1 border-t border-[#1e1e28]">
+<div class="flex items-center gap-1.5 text-gray-400">
+<span class="hover:text-pink-300 cursor-pointer" onclick="showAllFoldersList()">Gallery</span>
+<span>&gt;</span>
+<span class="text-pink-400 font-semibold" id="manager-breadcrumb-current">All Collections</span>
+</div>
+<!-- Sort Controls -->
+<div class="flex items-center gap-1">
+<span class="text-[9px] text-gray-500 uppercase">Sort:</span>
+<select class="bg-[#181822] border border-[#262635] text-[10px] text-gray-300 rounded px-1.5 py-0.5 focus:outline-none focus:border-pink-500">
+<option>Recent</option>
+<option>Name (A-Z)</option>
+<option>Artifact Size</option>
+</select>
+</div>
+</div>
+</div>
+<!-- Manager Content List -->
+<div class="flex-1 overflow-y-auto p-4 space-y-3.5 scrollbar-none" id="manager-content-container">
+<!-- Folder 1 Item -->
+<div class="p-3.5 rounded-xl bg-[#171722] border border-[#252536] hover:border-pink-500/40 transition flex flex-col gap-2.5">
+<div class="flex items-center justify-between">
+<div class="flex items-center gap-2">
+<span class="w-2.5 h-2.5 rounded-full bg-pink-500 shadow-[0_0_6px_#ff2d87]"></span>
+<h3 class="text-xs font-bold text-white">Cyberpunk &amp; Characters</h3>
+</div>
+<span class="text-[10px] text-pink-400 bg-pink-500/10 px-2 py-0.5 rounded border border-pink-500/20">8 Artifacts</span>
+</div>
+<div class="grid grid-cols-4 gap-1.5">
+<img alt="thumb" class="w-full aspect-square rounded-lg object-cover border border-white/5" src="https://lh3.googleusercontent.com/aida/AEtjO1W09xiJNB--KTX2uTl7o5VxdjBbL8iCgS7ijAkQ-QJ7L2TYBOTOQv_o1wJNWPbfcxFe_4DxX7UeNPWCWq93i3CktOv0g3lUus1o6OyE0FzXu3vFl7UFektrxSac_2EC0QlcAxObvpcsX_422y_UDpPbapac-iZVoPUD41Fpcy8wALct1q0opXeLlYlrm8U_suviQvehiGJfO3Xj4-_3desYNGBTMCT8boF3d2jH5LtC"/>
+<img alt="thumb" class="w-full aspect-square rounded-lg object-cover border border-white/5" src="https://lh3.googleusercontent.com/aida/AEtjO1W19VR92VPYnbTE97mnXEPT-xOZRHN5h1QxzbKq7vY3kg4o680VqDYE-K-JAUmH41CYNlVHLHGFKKx8UyC70w4hE-z2QRHcNHbaxZ9uR4kBLgZ0Ljv1jezdmVUrbhsoh6e4w08QrMZRbtaXrVFeLzCzRZHx1Goi9uib0xXc-_nAY0XtQjwcC9y6MjUc4EA2mjipOmhbE9EtpWb3UcNl2lxoRzWopUZNwjPX3q5DoX8"/>
+<img alt="thumb" class="w-full aspect-square rounded-lg object-cover border border-white/5" src="https://lh3.googleusercontent.com/aida/AEtjO1WX0yjyUK4bMRL8TgffCXx1N1TXezzibzjrH1iQgb-3fe4PUNT6HlMWELifSuuCl_WUCsTkEFZ6ZSNaYk0SxKPdQMLP3TlNqIaBWvSo5BpOtszS0FgFOySE2NPTaTXM2lCqmzv5YoJoS_21YzgRyhuTo6aK4fZhwjScYLE-bcDPQ8Vvlg7NzY0GjinlQALOZ7oUYCmM7S06I9uWR1qlG2AXXCLiqPeHwiH5fm-m6Mao"/>
+<div class="w-full aspect-square rounded-lg bg-[#14141d] border border-white/10 flex items-center justify-center text-[10px] text-gray-400">+5</div>
+</div>
+<div class="flex items-center justify-between pt-1 border-t border-[#222232] text-[10px] text-gray-400">
+<span>380 MB • 1024×1024</span>
+<button class="text-pink-400 hover:text-white font-semibold flex items-center gap-1" onclick="filterByFolder('cyberpunk'); closeFolderManager();">
+          View in Studio →
+        </button>
+</div>
+</div>
+<!-- Folder 2 Item -->
+<div class="p-3.5 rounded-xl bg-[#171722] border border-[#252536] hover:border-pink-500/40 transition flex flex-col gap-2.5">
+<div class="flex items-center justify-between">
+<div class="flex items-center gap-2">
+<span class="w-2.5 h-2.5 rounded-full bg-cyan-400 shadow-[0_0_6px_#00f0ff]"></span>
+<h3 class="text-xs font-bold text-white">Neon Cityscapes</h3>
+</div>
+<span class="text-[10px] text-cyan-300 bg-cyan-500/15 px-2 py-0.5 rounded border border-cyan-500/30">6 Artifacts</span>
+</div>
+<div class="grid grid-cols-4 gap-1.5">
+<img alt="thumb" class="w-full aspect-square rounded-lg object-cover border border-white/5" src="https://lh3.googleusercontent.com/aida/AEtjO1WX0yjyUK4bMRL8TgffCXx1N1TXezzibzjrH1iQgb-3fe4PUNT6HlMWELifSuuCl_WUCsTkEFZ6ZSNaYk0SxKPdQMLP3TlNqIaBWvSo5BpOtszS0FgFOySE2NPTaTXM2lCqmzv5YoJoS_21YzgRyhuTo6aK4fZhwjScYLE-bcDPQ8Vvlg7NzY0GjinlQALOZ7oUYCmM7S06I9uWR1qlG2AXXCLiqPeHwiH5fm-m6Mao"/>
+<img alt="thumb" class="w-full aspect-square rounded-lg object-cover border border-white/5" src="https://lh3.googleusercontent.com/aida/AEtjO1U9KcXaINfMy0zKXTlv4vYmKnF22kvBNX6fxF6cuqHaJGwt0Eq1WDM2pUZbvpJw4ShH20tGzzixX2d4py77OXPUzImw782gvNL4SQ_GAOWg5kp6CZA0Rxm0UWhttYw-zkVvBtIhnSlNAj7AQFQW8L8TWMu1zHomPRtnfi2aR4GjedksIWWIyNliMIp7a5PAXb_YJTZ4CFfiQzcJy7jsJpZnpaA8IThqMEnwDRs_NAnG"/>
+<div class="w-full aspect-square rounded-lg bg-[#14141d] border border-white/10 flex items-center justify-center text-[10px] text-gray-400">+4</div>
+<div class="w-full aspect-square rounded-lg bg-[#14141d] border border-white/10 flex items-center justify-center text-[10px] text-gray-400">..</div>
+</div>
+<div class="flex items-center justify-between pt-1 border-t border-[#222232] text-[10px] text-gray-400">
+<span>264 MB • 1280×720</span>
+<button class="text-cyan-300 hover:text-white font-semibold flex items-center gap-1" onclick="filterByFolder('cityscapes'); closeFolderManager();">
+          View in Studio →
+        </button>
+</div>
+</div>
+<!-- Folder 3 Item -->
+<div class="p-3.5 rounded-xl bg-[#171722] border border-[#252536] hover:border-pink-500/40 transition flex flex-col gap-2.5">
+<div class="flex items-center justify-between">
+<div class="flex items-center gap-2">
+<span class="w-2.5 h-2.5 rounded-full bg-violet-400 shadow-[0_0_6px_#8b2cf5]"></span>
+<h3 class="text-xs font-bold text-white">Mecha &amp; Industrial</h3>
+</div>
+<span class="text-[10px] text-violet-300 bg-violet-500/15 px-2 py-0.5 rounded border border-violet-500/30">9 Artifacts</span>
+</div>
+<div class="grid grid-cols-4 gap-1.5">
+<img alt="thumb" class="w-full aspect-square rounded-lg object-cover border border-white/5" src="https://lh3.googleusercontent.com/aida/AEtjO1W19VR92VPYnbTE97mnXEPT-xOZRHN5h1QxzbKq7vY3kg4o680VqDYE-K-JAUmH41CYNlVHLHGFKKx8UyC70w4hE-z2QRHcNHbaxZ9uR4kBLgZ0Ljv1jezdmVUrbhsoh6e4w08QrMZRbtaXrVFeLzCzRZHx1Goi9uib0xXc-_nAY0XtQjwcC9y6MjUc4EA2mjipOmhbE9EtpWb3UcNl2lxoRzWopUZNwjPX3q5DoX8"/>
+<img alt="thumb" class="w-full aspect-square rounded-lg object-cover border border-white/5" src="https://lh3.googleusercontent.com/aida/AEtjO1W09xiJNB--KTX2uTl7o5VxdjBbL8iCgS7ijAkQ-QJ7L2TYBOTOQv_o1wJNWPbfcxFe_4DxX7UeNPWCWq93i3CktOv0g3lUus1o6OyE0FzXu3vFl7UFektrxSac_2EC0QlcAxObvpcsX_422y_UDpPbapac-iZVoPUD41Fpcy8wALct1q0opXeLlYlrm8U_suviQvehiGJfO3Xj4-_3desYNGBTMCT8boF3d2jH5LtC"/>
+<div class="w-full aspect-square rounded-lg bg-[#14141d] border border-white/10 flex items-center justify-center text-[10px] text-gray-400">+7</div>
+<div class="w-full aspect-square rounded-lg bg-[#14141d] border border-white/10 flex items-center justify-center text-[10px] text-gray-400">..</div>
+</div>
+<div class="flex items-center justify-between pt-1 border-t border-[#222232] text-[10px] text-gray-400">
+<span>410 MB • CF-Edge</span>
+<button class="text-violet-300 hover:text-white font-semibold flex items-center gap-1" onclick="filterByFolder('mecha'); closeFolderManager();">
+          View in Studio →
+        </button>
+</div>
+</div>
+</div>
+<!-- Footer with Actions -->
+<div class="p-3.5 bg-[#0d0d12]/95 border-t border-[#21212d] flex items-center justify-between gap-2">
+<button class="flex-1 py-2 px-3 rounded-xl bg-gradient-to-r from-pink-500 to-violet-600 text-white font-bold text-xs flex items-center justify-center gap-1.5 shadow-sm active:scale-95 transition" onclick="openNewFolderModal()">
+<span class="text-sm">+</span> New Collection
+    </button>
+<button class="py-2 px-3 rounded-xl bg-[#171722] hover:bg-[#20202e] border border-[#272737] text-gray-300 hover:text-white text-xs flex items-center gap-1 transition" onclick="triggerToast('Exporting entire gallery vault (.ZIP)...')">
+<svg class="w-3.5 h-3.5 text-pink-400" fill="none" stroke="currentColor" viewbox="0 0 24 24"><path d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-8l-4-4m0 0L8 8m4-4v12" stroke-linecap="round" stroke-linejoin="round" stroke-width="2"></path></svg>
+      Export All
+    </button>
+</div>
+</aside>
+<!-- Interactive Folder System Controller Script -->
+<script id="gallery-folders-script">
+let currentGalleryView = 'all';
+
+function switchGalleryTab(mode) {
+  currentGalleryView = mode;
+  const tabAll = document.getElementById('tab-btn-all');
+  const tabFolders = document.getElementById('tab-btn-folders');
+  const folderCards = document.getElementById('folder-cards-grid');
+  const imageGrid = document.getElementById('creations-image-grid');
+  
+  if (mode === 'folders') {
+    if (tabFolders) {
+      tabFolders.className = 'gallery-view-tab py-1.5 px-2 rounded-lg flex items-center justify-center gap-1.5 transition-all bg-gradient-to-r from-pink-500/20 to-violet-600/20 text-white border border-pink-500/40 shadow-sm';
+    }
+    if (tabAll) {
+      tabAll.className = 'gallery-view-tab py-1.5 px-2 rounded-lg flex items-center justify-center gap-1.5 transition-all text-gray-400 hover:text-gray-200 hover:bg-[#1a1a24]';
+    }
+    if (folderCards) folderCards.classList.remove('hidden');
+    if (imageGrid) imageGrid.classList.add('hidden');
+    triggerToast('Switched view to Folders & Collections');
+  } else {
+    if (tabAll) {
+      tabAll.className = 'gallery-view-tab py-1.5 px-2 rounded-lg flex items-center justify-center gap-1.5 transition-all bg-gradient-to-r from-pink-500/20 to-violet-600/20 text-white border border-pink-500/40 shadow-sm';
+    }
+    if (tabFolders) {
+      tabFolders.className = 'gallery-view-tab py-1.5 px-2 rounded-lg flex items-center justify-center gap-1.5 transition-all text-gray-400 hover:text-gray-200 hover:bg-[#1a1a24]';
+    }
+    if (folderCards) folderCards.classList.add('hidden');
+    if (imageGrid) imageGrid.classList.remove('hidden');
+    triggerToast('Switched view to All Images');
+  }
+}
+
+function filterByFolder(folderKey, pillBtn) {
+  // Update pill styles
+  const pills = document.querySelectorAll('.folder-pill');
+  pills.forEach(p => {
+    p.className = 'folder-pill shrink-0 px-2.5 py-1.5 rounded-lg text-[10px] font-mono font-medium flex items-center gap-1.5 bg-[#14141d] text-gray-400 hover:text-gray-200 border border-[#242434] transition';
+  });
+  if (pillBtn) {
+    pillBtn.className = 'folder-pill shrink-0 px-2.5 py-1.5 rounded-lg text-[10px] font-mono font-medium flex items-center gap-1.5 bg-pink-500/20 text-pink-300 border border-pink-500/40 shadow-sm';
+  }
+
+  // Make sure image grid is shown
+  switchGalleryTab('all');
+  
+  const items = document.querySelectorAll('.artifact-item');
+  let count = 0;
+  items.forEach(item => {
+    const itemFolder = item.dataset.folder || '';
+    if (folderKey === 'all' || itemFolder === folderKey) {
+      item.style.display = 'flex';
+      count++;
+    } else {
+      item.style.display = 'none';
+    }
+  });
+  triggerToast(`Filtered: ${folderKey === 'all' ? 'All Images' : folderKey} (${count} shown)`);
+}
+
+function openFolderDetail(title, count, folderKey) {
+  filterByFolder(folderKey);
+  triggerToast(`Viewing folder: ${title} (${count} artifacts)`);
+}
+
+function openFolderManager() {
+  const drawer = document.getElementById('folder-manager-drawer');
+  const backdrop = document.getElementById('folder-manager-backdrop');
+  if (drawer && backdrop) {
+    backdrop.classList.remove('opacity-0', 'pointer-events-none');
+    backdrop.classList.add('opacity-100');
+    drawer.classList.remove('translate-x-full');
+    drawer.classList.add('translate-x-0');
+  }
+}
+
+function closeFolderManager() {
+  const drawer = document.getElementById('folder-manager-drawer');
+  const backdrop = document.getElementById('folder-manager-backdrop');
+  if (drawer && backdrop) {
+    drawer.classList.remove('translate-x-0');
+    drawer.classList.add('translate-x-full');
+    backdrop.classList.remove('opacity-100');
+    backdrop.classList.add('opacity-0', 'pointer-events-none');
+  }
+}
+
+function openMoveFolderModal() {
+  const modal = document.getElementById('move-folder-modal');
+  if (modal) modal.classList.remove('hidden');
+  if (modal) modal.classList.add('flex');
+}
+
+function closeMoveFolderModal() {
+  const modal = document.getElementById('move-folder-modal');
+  if (modal) {
+    modal.classList.add('hidden');
+    modal.classList.remove('flex');
+  }
+}
+
+function completeMoveToFolder(folderName) {
+  closeMoveFolderModal();
+  triggerToast(`Moved 2 selected items into "${folderName}"`);
+}
+
+function openNewFolderModal() {
+  const modal = document.getElementById('new-folder-modal');
+  if (modal) {
+    modal.classList.remove('hidden');
+    modal.classList.add('flex');
+  }
+}
+
+function closeNewFolderModal() {
+  const modal = document.getElementById('new-folder-modal');
+  if (modal) {
+    modal.classList.add('hidden');
+    modal.classList.remove('flex');
+  }
+}
+
+function createNewFolder() {
+  const input = document.getElementById('new-folder-input');
+  const name = input ? input.value : 'New Folder';
+  closeNewFolderModal();
+  triggerToast(`Created folder "${name}"`);
+}
+
+function showAllFoldersList() {
+  triggerToast('Root gallery tree');
+}
+</script></body></html>

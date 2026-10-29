@@ -2014,401 +2014,315 @@ export function ImageStudio() {
   };
 
   return (
-    <div className="page-container" style={{ maxWidth: '1400px', margin: '0 auto', paddingBottom: '40px' }}>
-      {/* Top Page Header */}
-      <header
-        className="page-header"
-        style={{
-          display: 'flex',
-          justifyContent: 'space-between',
-          alignItems: 'flex-start',
-          flexWrap: 'wrap',
-          gap: '16px',
-          marginBottom: '24px',
-        }}
-      >
-        <div>
-          <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
-            <div
-              style={{
-                width: '36px',
-                height: '36px',
-                borderRadius: '10px',
-                background: 'linear-gradient(135deg, rgba(236,72,153,0.2) 0%, rgba(168,85,247,0.2) 100%)',
-                border: '1px solid rgba(236,72,153,0.4)',
-                display: 'grid',
-                placeItems: 'center',
-                color: '#f472b6',
-              }}
-            >
-              <ImageIcon size={20} />
+    <div className="page-container image-studio-stitch-root min-h-screen bg-[#070709] text-gray-100 rounded-2xl px-3.5 sm:px-6 py-4 sm:py-6 max-w-[1160px] mx-auto pb-16 overflow-x-hidden">
+      {/* Hidden Backup File Input (shared across Header and Gallery Toolbar) */}
+      <input
+        ref={backupFileInputRef}
+        type="file"
+        accept=".json,application/json"
+        multiple
+        style={{ display: 'none' }}
+        onChange={handleUploadBackup}
+      />
+
+      {/* 1. HEADER */}
+      <header className="flex flex-col gap-3 pb-4 border-b border-[#191922]/80 mb-5">
+        <div className="flex items-start justify-between gap-3">
+          <div className="flex items-center gap-3 min-w-0">
+            <div className="w-10 h-10 rounded-xl bg-gradient-to-br from-[#ff2d87] to-[#8b2cf5] p-[1px] shadow-glow-subtle shrink-0">
+              <div className="w-full h-full bg-[#121218] rounded-[11px] flex items-center justify-center text-[#ff2d87]">
+                <ImageIcon size={20} />
+              </div>
             </div>
-            <h1 style={{ margin: 0, fontSize: '24px', fontWeight: 700, letterSpacing: '-0.02em' }}>
-              Image Studio
-            </h1>
-            <span
-              style={{
-                fontSize: '11px',
-                padding: '3px 8px',
-                borderRadius: '12px',
-                background: 'rgba(236,72,153,0.15)',
-                color: '#f472b6',
-                fontWeight: 700,
-                letterSpacing: '0.05em',
-                textTransform: 'uppercase',
-              }}
-            >
-              AI Vision Engine
-            </span>
-          </div>
-          <p style={{ margin: '6px 0 0', color: 'var(--muted)', fontSize: '13px' }}>
-            Generate high-fidelity artwork and photorealistic visuals using configured AI image providers.
-          </p>
-        </div>
-
-        {/* Quick link to Settings & Gallery Backup */}
-        <div
-          style={{
-            display: 'flex',
-            flexDirection: 'column',
-            alignItems: 'flex-start',
-            gap: '8px',
-            maxWidth: '100%',
-          }}
-          className="sm:items-end"
-        >
-          <Link
-            to="/settings?category=ai"
-            className="secondary-button"
-            style={{
-              display: 'inline-flex',
-              alignItems: 'center',
-              gap: '6px',
-              padding: '8px 14px',
-              borderRadius: '8px',
-              fontSize: '12px',
-              fontWeight: 600,
-              textDecoration: 'none',
-              color: 'var(--text)',
-            }}
-          >
-            <Settings size={14} /> Configure Image Providers
-          </Link>
-
-          {/* Gallery Backup section */}
-          <div
-            style={{
-              display: 'flex',
-              flexDirection: 'column',
-              gap: '8px',
-              padding: '10px 14px',
-              borderRadius: '12px',
-              background: 'linear-gradient(135deg, rgba(14,31,39,0.85) 0%, rgba(20,28,48,0.85) 100%)',
-              border: '1px solid var(--line)',
-              boxShadow: '0 4px 20px rgba(0,0,0,0.25)',
-              maxWidth: '100%',
-            }}
-          >
-            <div
-              style={{
-                display: 'flex',
-                alignItems: 'center',
-                justifyContent: 'space-between',
-                gap: '8px',
-              }}
-            >
-              <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
-                <Database size={13} style={{ color: '#f472b6' }} />
-                <span
-                  style={{
-                    fontSize: '11px',
-                    fontWeight: 700,
-                    color: 'var(--text)',
-                    letterSpacing: '0.04em',
-                    textTransform: 'uppercase',
-                  }}
-                >
-                  Gallery Backup
+            <div className="min-w-0">
+              <div className="flex items-center gap-2 flex-wrap">
+                <h1 className="text-lg sm:text-xl font-extrabold tracking-tight text-white m-0">
+                  Image Studio
+                </h1>
+                <span className="px-2 py-0.5 text-[10px] font-mono font-bold tracking-wider uppercase rounded-full bg-pink-500/15 text-pink-400 border border-pink-500/30">
+                  AI VISION ENGINE
                 </span>
               </div>
-              <span
-                style={{
-                  fontSize: '10px',
-                  color: 'var(--muted)',
-                  background: 'rgba(255,255,255,0.06)',
-                  padding: '2px 7px',
-                  borderRadius: '5px',
-                  fontFamily: 'DM Mono, monospace',
-                }}
-              >
-                {history.length} {history.length === 1 ? 'image' : 'images'}
+              <p className="text-xs text-gray-400 mt-1 m-0 leading-relaxed">
+                Generate high-fidelity artwork and photorealistic visuals using configured AI image providers.
+              </p>
+            </div>
+          </div>
+
+          {/* Right Header Actions: Export, Restore, Gallery Modal Button & Settings Link */}
+          <div className="flex items-center gap-1.5 sm:gap-2 shrink-0 flex-wrap justify-end">
+            <button
+              type="button"
+              onClick={handleDownloadAllImages}
+              disabled={backupExporting || backupImporting}
+              className="h-9 px-2.5 rounded-xl bg-[#17171e] border border-[#252532] hover:border-pink-500/40 flex items-center justify-center gap-1.5 text-gray-300 hover:text-white transition cursor-pointer disabled:opacity-50"
+              title="Export all saved generations into a JSON backup file"
+            >
+              {backupExporting ? (
+                <RotateCw size={14} className="animate-spin text-pink-400" />
+              ) : (
+                <Download size={14} className="text-gray-300" />
+              )}
+              <span className="hidden md:inline text-xs font-mono font-medium">Export</span>
+            </button>
+
+            <button
+              type="button"
+              onClick={() => backupFileInputRef.current?.click()}
+              disabled={backupExporting || backupImporting}
+              className="h-9 px-2.5 rounded-xl bg-[#17171e] border border-[#252532] hover:border-pink-500/40 flex items-center justify-center gap-1.5 text-gray-300 hover:text-white transition cursor-pointer disabled:opacity-50"
+              title="Restore and merge images from backup files"
+            >
+              {backupImporting ? (
+                <RotateCw size={14} className="animate-spin text-violet-400" />
+              ) : (
+                <Upload size={14} className="text-gray-300" />
+              )}
+              <span className="hidden md:inline text-xs font-mono font-medium">Restore</span>
+            </button>
+
+            <button
+              type="button"
+              onClick={() => {
+                playTapSound();
+                setGalleryModalOpen(true);
+              }}
+              className="h-9 px-2.5 rounded-xl bg-[#17171e] border border-[#252532] hover:border-pink-500/40 flex items-center justify-center gap-1.5 text-gray-300 hover:text-white transition relative cursor-pointer"
+              title="Open Photo Gallery"
+            >
+              <ImageIcon size={15} className="text-pink-400" />
+              <span className="hidden sm:inline text-xs font-mono font-medium">Gallery</span>
+              <span className="px-1.5 py-0.5 text-[9px] font-mono font-bold rounded-full bg-pink-500/20 text-pink-300 border border-pink-500/30">
+                {history.length}
               </span>
-            </div>
+            </button>
 
-            <div style={{ display: 'flex', alignItems: 'center', gap: '8px', flexWrap: 'wrap' }}>
-              <button
-                type="button"
-                onClick={handleDownloadAllImages}
-                disabled={backupExporting || backupImporting}
-                className="secondary-button"
-                style={{
-                  display: 'inline-flex',
-                  alignItems: 'center',
-                  gap: '6px',
-                  padding: '7px 12px',
-                  borderRadius: '8px',
-                  fontSize: '11.5px',
-                  fontWeight: 600,
-                  color: 'var(--text)',
-                  cursor: backupExporting || backupImporting ? 'not-allowed' : 'pointer',
-                  opacity: backupExporting || backupImporting ? 0.6 : 1,
-                  background: 'rgba(56, 189, 248, 0.08)',
-                  borderColor: 'rgba(56, 189, 248, 0.25)',
-                }}
-                title="Export all saved generations into a JSON backup file"
-              >
-                {backupExporting ? (
-                  <RotateCw size={13} className="animate-spin" style={{ color: '#38bdf8' }} />
-                ) : (
-                  <Download size={13} style={{ color: '#38bdf8' }} />
-                )}
-                {backupExporting ? 'Exporting...' : 'Download All Images'}
-              </button>
-
-              <button
-                type="button"
-                onClick={handleOpenSelectionMode}
-                disabled={backupExporting || backupImporting}
-                className="secondary-button"
-                style={{
-                  display: 'inline-flex',
-                  alignItems: 'center',
-                  gap: '6px',
-                  padding: '7px 12px',
-                  borderRadius: '8px',
-                  fontSize: '11.5px',
-                  fontWeight: 600,
-                  color: 'var(--text)',
-                  cursor: backupExporting || backupImporting ? 'not-allowed' : 'pointer',
-                  opacity: backupExporting || backupImporting ? 0.6 : 1,
-                  background: 'rgba(56, 189, 248, 0.08)',
-                  borderColor: 'rgba(56, 189, 248, 0.25)',
-                }}
-                title="Select specific images in the gallery to download"
-              >
-                <CheckSquare size={13} style={{ color: '#38bdf8' }} />
-                Select Images to Download
-              </button>
-
-              <button
-                type="button"
-                onClick={() => backupFileInputRef.current?.click()}
-                disabled={backupExporting || backupImporting}
-                className="secondary-button"
-                style={{
-                  display: 'inline-flex',
-                  alignItems: 'center',
-                  gap: '6px',
-                  padding: '7px 12px',
-                  borderRadius: '8px',
-                  fontSize: '11.5px',
-                  fontWeight: 600,
-                  color: 'var(--text)',
-                  cursor: backupExporting || backupImporting ? 'not-allowed' : 'pointer',
-                  opacity: backupExporting || backupImporting ? 0.6 : 1,
-                  background: 'rgba(168, 85, 247, 0.08)',
-                  borderColor: 'rgba(168, 85, 247, 0.25)',
-                }}
-                title="Restore and merge images from one or more gallery backup files"
-              >
-                {backupImporting ? (
-                  <RotateCw size={13} className="animate-spin" style={{ color: '#a855f7' }} />
-                ) : (
-                  <Upload size={13} style={{ color: '#a855f7' }} />
-                )}
-                {backupImporting ? 'Importing...' : 'Upload Backup'}
-              </button>
-
-              <input
-                ref={backupFileInputRef}
-                type="file"
-                accept=".json,application/json"
-                multiple
-                style={{ display: 'none' }}
-                onChange={handleUploadBackup}
-              />
-            </div>
-
-            {/* Status or Progress banner */}
-            {backupStatus && (
-              <div
-                style={{
-                  display: 'flex',
-                  alignItems: 'center',
-                  justifyContent: 'space-between',
-                  gap: '8px',
-                  padding: '6px 10px',
-                  borderRadius: '7px',
-                  fontSize: '11px',
-                  marginTop: '2px',
-                  background:
-                    backupStatus.type === 'error'
-                      ? 'rgba(239, 68, 68, 0.15)'
-                      : backupStatus.type === 'success'
-                      ? 'rgba(34, 197, 94, 0.15)'
-                      : backupStatus.type === 'info'
-                      ? 'rgba(56, 189, 248, 0.15)'
-                      : 'rgba(168, 85, 247, 0.15)',
-                  border:
-                    backupStatus.type === 'error'
-                      ? '1px solid rgba(239, 68, 68, 0.3)'
-                      : backupStatus.type === 'success'
-                      ? '1px solid rgba(34, 197, 94, 0.3)'
-                      : backupStatus.type === 'info'
-                      ? '1px solid rgba(56, 189, 248, 0.3)'
-                      : '1px solid rgba(168, 85, 247, 0.3)',
-                  color:
-                    backupStatus.type === 'error'
-                      ? '#fca5a5'
-                      : backupStatus.type === 'success'
-                      ? '#86efac'
-                      : backupStatus.type === 'info'
-                      ? '#7dd3fc'
-                      : '#d8b4fe',
-                }}
-              >
-                <div style={{ display: 'flex', alignItems: 'center', gap: '6px', minWidth: 0 }}>
-                  {backupStatus.type === 'progress' && (
-                    <RotateCw size={12} className="animate-spin shrink-0" />
-                  )}
-                  {backupStatus.type === 'success' && <Check size={12} className="shrink-0" />}
-                  {backupStatus.type === 'error' && <AlertCircle size={12} className="shrink-0" />}
-                  <span style={{ wordBreak: 'break-word', lineHeight: 1.3 }}>
-                    {backupStatus.message}
-                  </span>
-                </div>
-                {backupStatus.type !== 'progress' && (
-                  <button
-                    type="button"
-                    onClick={() => setBackupStatus(null)}
-                    style={{
-                      background: 'none',
-                      border: 'none',
-                      padding: 0,
-                      cursor: 'pointer',
-                      color: 'inherit',
-                      opacity: 0.7,
-                      display: 'flex',
-                    }}
-                    title="Dismiss"
-                  >
-                    <X size={12} />
-                  </button>
-                )}
-              </div>
-            )}
+            <Link
+              to="/settings?category=ai"
+              className="h-9 px-2.5 sm:px-3 rounded-xl bg-[#17171e] border border-[#252532] hover:border-pink-500/40 flex items-center justify-center gap-1.5 text-gray-300 hover:text-white transition no-underline"
+              title="Configure Image Providers"
+            >
+              <Settings size={15} className="text-gray-300" />
+              <span className="hidden sm:inline text-xs font-mono font-medium">Providers</span>
+            </Link>
           </div>
         </div>
+
+        {/* Backup / Export / Restore Status Banner */}
+        {backupStatus && (
+          <div
+            className={`flex items-center justify-between gap-2 px-3 py-2 rounded-xl text-xs font-mono border ${
+              backupStatus.type === 'error'
+                ? 'bg-red-950/35 border-red-800/50 text-red-300'
+                : backupStatus.type === 'success'
+                ? 'bg-emerald-950/35 border-emerald-700/40 text-emerald-300'
+                : backupStatus.type === 'info'
+                ? 'bg-[#14141d] border-pink-500/30 text-pink-300'
+                : 'bg-[#14141d] border-violet-500/40 text-violet-300'
+            }`}
+          >
+            <div className="flex items-center gap-2 min-w-0">
+              {backupStatus.type === 'progress' && (
+                <RotateCw size={13} className="animate-spin shrink-0 text-pink-400" />
+              )}
+              {backupStatus.type === 'success' && <Check size={13} className="shrink-0 text-emerald-400" />}
+              {backupStatus.type === 'error' && <AlertCircle size={13} className="shrink-0 text-red-400" />}
+              <span className="break-words leading-snug">{backupStatus.message}</span>
+            </div>
+            {backupStatus.type !== 'progress' && (
+              <button
+                type="button"
+                onClick={() => setBackupStatus(null)}
+                className="text-gray-400 hover:text-white p-0.5 cursor-pointer bg-transparent border-0 flex items-center"
+                title="Dismiss"
+              >
+                <X size={13} />
+              </button>
+            )}
+          </div>
+        )}
       </header>
 
-      {/* Main Studio Grid */}
-      <div
-        style={{
-          display: 'grid',
-          gridTemplateColumns: 'repeat(auto-fit, minmax(340px, 1fr))',
-          gap: '24px',
-          alignItems: 'start',
-        }}
-      >
-        {/* LEFT COLUMN: Controls & Prompt */}
-        <div
-          style={{
-            padding: '24px',
-            borderRadius: '16px',
-            background: 'linear-gradient(135deg, rgba(14,31,39,0.7) 0%, rgba(20,28,48,0.7) 100%)',
-            border: '1px solid var(--line)',
-            boxShadow: '0 8px 32px rgba(0,0,0,0.3)',
-            display: 'grid',
-            gap: '20px',
-          }}
-        >
-          {/* Provider Selector */}
-          <div>
-            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '8px' }}>
-              <label style={{ fontSize: '12px', fontWeight: 600, color: 'var(--text)', display: 'flex', alignItems: 'center', gap: '6px' }}>
-                <Layers size={14} style={{ color: '#f472b6' }} /> Image Provider
-              </label>
-              {activeProvider && (
-                <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
-                  <span
-                    style={{
-                      fontSize: '10px',
-                      padding: '2px 7px',
-                      borderRadius: '4px',
-                      background: activeProvider.keyStrategy === 'failover' ? 'rgba(59,130,246,0.18)' : 'rgba(255,255,255,0.08)',
-                      color: activeProvider.keyStrategy === 'failover' ? '#93c5fd' : 'var(--muted)',
-                      fontWeight: 600,
-                      textTransform: 'capitalize',
-                      fontFamily: 'DM Mono, monospace',
-                      border: activeProvider.keyStrategy === 'failover' ? '1px solid rgba(59,130,246,0.3)' : '1px solid rgba(255,255,255,0.1)',
-                    }}
-                  >
-                    Strategy: {activeProvider.keyStrategy.replace('_', ' ')}
-                  </span>
-                  <span style={{ fontSize: '11px', color: 'var(--muted)', fontFamily: 'DM Mono, monospace' }}>
-                    {activeProvider.keys?.length || 0} API {activeProvider.keys?.length === 1 ? 'Key' : 'Keys'}
-                  </span>
-                </div>
-              )}
+      {/* Main Studio Layout: Mobile single-column stack, Desktop 2-column balanced grid */}
+      <div className="grid grid-cols-1 lg:grid-cols-12 gap-5 items-start">
+        {/* LEFT COLUMN: Controls, Providers, Prompt & Parameters */}
+        <div className="lg:col-span-6 flex flex-col gap-4 min-w-0">
+          {/* 2. PROVIDER / PRESET CHIPS */}
+          <div className="flex flex-col gap-2">
+            <div className="flex items-center justify-between gap-2 flex-wrap">
+              <span className="text-xs font-mono uppercase tracking-wider text-gray-400 flex items-center gap-1.5">
+                <Layers size={13} className="text-[#ff2d87]" />
+                Active Engine Preset
+              </span>
+
+              <div className="flex items-center gap-2 flex-wrap">
+                {activeProvider && (
+                  <>
+                    <span className="text-[10px] font-mono px-2 py-0.5 rounded-md bg-[#161622] border border-[#252534] text-gray-300 capitalize">
+                      Strategy: {activeProvider.keyStrategy.replace('_', ' ')}
+                    </span>
+                    <span className="text-[10px] font-mono px-2 py-0.5 rounded-md bg-[#161622] border border-[#252534] text-gray-400">
+                      {activeProvider.keys?.length || 0} API {activeProvider.keys?.length === 1 ? 'Key' : 'Keys'}
+                    </span>
+                  </>
+                )}
+                <Link
+                  to="/settings?category=ai"
+                  className="text-[11px] font-mono text-[#ff2d87] hover:underline no-underline"
+                >
+                  Configure →
+                </Link>
+              </div>
             </div>
 
+            {/* Keep accessible select with id="image-provider-select" for any DOM/handler reference */}
             <select
               id="image-provider-select"
               value={selectedProviderId}
               onChange={(e) => setSelectedProviderId(e.target.value)}
-              style={{
-                width: '100%',
-                background: 'rgba(10,22,28,0.85)',
-                border: '1px solid var(--line)',
-                borderRadius: '8px',
-                padding: '10px 12px',
-                color: '#fff',
-                fontSize: '13px',
-                fontWeight: 500,
-                outline: 'none',
-              }}
+              className="sr-only"
+              aria-label="Image Provider"
             >
               {imageProvidersState.providers.map((p) => (
                 <option key={p.id} value={p.id}>
-                  🎨 {p.name} — {p.requestType === 'sdk' ? `JS SDK (${p.model || 'Auto'})` : p.requestType === 'post' ? 'POST/JSON' : 'GET/URL'}
+                  {p.name}
                 </option>
               ))}
             </select>
 
+            {/* Horizontal Scroll Provider Chips */}
+            <div className="flex items-center gap-2.5 overflow-x-auto pb-1.5 -mx-1 px-1 scrollbar-none">
+              {imageProvidersState.providers.map((p) => {
+                const isSelected = p.id === selectedProviderId;
+                const badgeText =
+                  p.requestType === 'sdk'
+                    ? 'JS SDK'
+                    : p.requestType === 'post'
+                    ? p.name.toLowerCase().includes('cloudflare')
+                      ? 'EDGE'
+                      : 'POST'
+                    : 'FAST';
+
+                if (isSelected) {
+                  return (
+                    <button
+                      key={p.id}
+                      type="button"
+                      onClick={() => {
+                        setSelectedProviderId(p.id);
+                        playTapSound();
+                      }}
+                      className="shrink-0 p-[1px] rounded-xl bg-gradient-to-r from-[#ff2d87] to-[#8b2cf5] shadow-glow-subtle cursor-pointer border-0 text-left transition active:scale-95"
+                    >
+                      <div className="bg-[#16161f] rounded-[11px] px-3 py-2 flex items-center gap-2">
+                        <span className="w-2 h-2 rounded-full bg-[#ff2d87] animate-pulse shrink-0" />
+                        <span className="font-mono text-xs font-semibold text-white whitespace-nowrap">
+                          {p.name}
+                        </span>
+                        <span className="text-[9px] font-mono bg-pink-500/20 text-pink-300 px-1.5 py-0.5 rounded border border-pink-500/30">
+                          {badgeText}
+                        </span>
+                      </div>
+                    </button>
+                  );
+                }
+
+                return (
+                  <button
+                    key={p.id}
+                    type="button"
+                    onClick={() => {
+                      setSelectedProviderId(p.id);
+                      playTapSound();
+                    }}
+                    className="shrink-0 px-3 py-2 rounded-xl bg-[#121218] border border-[#1f1f2b] hover:border-gray-700 flex items-center gap-2 transition cursor-pointer text-left active:scale-95"
+                  >
+                    <span className="w-2 h-2 rounded-full bg-gray-600 shrink-0" />
+                    <span className="font-mono text-xs font-medium text-gray-300 whitespace-nowrap">
+                      {p.name}
+                    </span>
+                    <span className="text-[9px] font-mono bg-[#1e1e2c] text-gray-400 px-1.5 py-0.5 rounded">
+                      {badgeText}
+                    </span>
+                  </button>
+                );
+              })}
+            </div>
+
+            {/* Active Provider Model Bar */}
+            <div className="bg-[#121218] border border-[#1e1e29] rounded-xl p-2.5 flex flex-col sm:flex-row sm:items-center justify-between gap-2">
+              {activeProvider?.requestType === 'sdk' ? (
+                <>
+                  <label className="text-[11px] font-mono uppercase tracking-wider text-gray-400 shrink-0">
+                    Puter Model {referenceImage ? '(Editing Capable)' : ''}
+                  </label>
+                  <select
+                    value={puterSelectedModel}
+                    onChange={(e) => {
+                      setPuterSelectedModel(e.target.value);
+                      playTapSound();
+                    }}
+                    className="w-full sm:w-auto sm:min-w-[230px] bg-[#181822] border border-[#262635] focus:border-pink-500/60 rounded-lg px-2.5 py-1.5 text-xs font-mono text-gray-100 outline-none cursor-pointer"
+                  >
+                    {PUTER_IMAGE_MODELS.map((m) => (
+                      <option key={m.id} value={m.id}>
+                        {m.name}
+                      </option>
+                    ))}
+                  </select>
+                </>
+              ) : activeProvider?.requestType === 'post' ? (
+                <>
+                  <span className="text-[11px] font-mono uppercase tracking-wider text-gray-400 shrink-0">
+                    Inference Model
+                  </span>
+                  <div
+                    className="px-2.5 py-1 rounded-lg bg-[#181822] border border-[#262635] text-xs font-mono text-pink-300 truncate max-w-full"
+                    title={activeProvider.model || activeProvider.url}
+                  >
+                    {isCloudflare
+                      ? referenceImage
+                        ? 'CF: @cf/runwayml/stable-diffusion-v1-5-img2img (img2img)'
+                        : `CF: ${activeProvider.model || (activeProvider.url.split('/').filter(Boolean).pop()) || '@cf/black-forest-labs/flux-1-schnell'}`
+                      : activeProvider.name.toLowerCase().includes('hugging')
+                      ? `HF: ${activeProvider.model || (activeProvider.url.split('/').filter(Boolean).pop()) || 'Default'}`
+                      : `POST: ${activeProvider.model || (activeProvider.url.split('/').filter(Boolean).pop()) || 'Default'}`}
+                  </div>
+                </>
+              ) : (
+                <>
+                  <label className="text-[11px] font-mono uppercase tracking-wider text-gray-400 shrink-0">
+                    Engine Model
+                  </label>
+                  <select
+                    value={modelType}
+                    onChange={(e) => setModelType(e.target.value)}
+                    className="w-full sm:w-auto sm:min-w-[210px] bg-[#181822] border border-[#262635] focus:border-pink-500/60 rounded-lg px-2.5 py-1.5 text-xs font-mono text-gray-100 outline-none cursor-pointer"
+                  >
+                    {referenceImage && (
+                      <option value="kontext">kontext (Image Edit / img2img)</option>
+                    )}
+                    <option value="flux">Flux (High Detail)</option>
+                    <option value="turbo">Turbo (Ultra Fast)</option>
+                    <option value="default">Default Provider Model</option>
+                  </select>
+                </>
+              )}
+            </div>
+
             {/* Puter.js Guest Mode Welcome Card */}
             {activeProvider?.requestType === 'sdk' && !hasDismissedPuterNotice && (
-              <div
-                style={{
-                  marginTop: '12px',
-                  padding: '14px 16px',
-                  borderRadius: '10px',
-                  background: 'linear-gradient(135deg, rgba(14,165,233,0.18) 0%, rgba(2,132,199,0.08) 100%)',
-                  border: '1px solid rgba(56,189,248,0.35)',
-                  display: 'flex',
-                  justifyContent: 'space-between',
-                  alignItems: 'center',
-                  flexWrap: 'wrap',
-                  gap: '12px',
-                }}
-              >
-                <div style={{ display: 'flex', alignItems: 'center', gap: '10px', minWidth: '220px', flex: 1 }}>
-                  <span style={{ fontSize: '20px' }}>⚡</span>
+              <div className="p-3 rounded-xl bg-[#121218] border border-pink-500/30 flex items-center justify-between flex-wrap gap-3">
+                <div className="flex items-center gap-2.5 min-w-[200px] flex-1">
+                  <span className="w-7 h-7 rounded-lg bg-pink-500/15 border border-pink-500/30 flex items-center justify-center text-pink-400 shrink-0">
+                    <Sparkles size={14} />
+                  </span>
                   <div>
-                    <div style={{ fontSize: '13px', fontWeight: 600, color: '#38bdf8' }}>
+                    <div className="text-xs font-semibold text-gray-100">
                       Image generation is powered by Puter — no signup needed for basic use
                     </div>
-                    <div style={{ fontSize: '11px', color: 'rgba(255,255,255,0.7)', marginTop: '2px' }}>
-                      Active Model: <strong style={{ color: '#fff' }}>{activeProvider.model || DEFAULT_PUTER_MODEL}</strong> (Free Unlimited Guest Session)
+                    <div className="text-[11px] font-mono text-gray-400 mt-0.5">
+                      Active Model: <strong className="text-pink-300">{activeProvider.model || DEFAULT_PUTER_MODEL}</strong> (Free Guest Session)
                     </div>
                   </div>
                 </div>
@@ -2422,19 +2336,7 @@ export function ImageStudio() {
                       // ignore localStorage errors
                     }
                   }}
-                  style={{
-                    padding: '7px 14px',
-                    borderRadius: '7px',
-                    background: '#0284c7',
-                    color: '#fff',
-                    border: 0,
-                    fontSize: '12px',
-                    fontWeight: 600,
-                    cursor: 'pointer',
-                    display: 'inline-flex',
-                    alignItems: 'center',
-                    gap: '4px',
-                  }}
+                  className="px-3 py-1.5 rounded-lg bg-gradient-to-r from-[#ff2d87] to-[#8b2cf5] text-white text-xs font-mono font-bold border-0 cursor-pointer inline-flex items-center gap-1.5 active:scale-95 transition"
                 >
                   <Check size={13} /> Continue with Puter
                 </button>
@@ -2442,287 +2344,147 @@ export function ImageStudio() {
             )}
           </div>
 
-          {/* Reference Image (img2img / Image Editing Dropzone) */}
-          <div>
-            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '8px' }}>
-              <label style={{ fontSize: '12px', fontWeight: 600, color: 'var(--text)', display: 'flex', alignItems: 'center', gap: '6px' }}>
-                <ImagePlus size={14} style={{ color: '#ec4899' }} /> Reference Image (Image Editing / img2img)
+          {/* 3. PROMPT CARD (with Reference Image Strip & Toolbar) */}
+          <div
+            onDragOver={(e) => {
+              e.preventDefault();
+              setIsDraggingImage(true);
+            }}
+            onDragLeave={(e) => {
+              e.preventDefault();
+              setIsDraggingImage(false);
+            }}
+            onDrop={(e) => {
+              e.preventDefault();
+              setIsDraggingImage(false);
+              if (e.dataTransfer.files && e.dataTransfer.files.length > 0) {
+                handleImageFile(e.dataTransfer.files[0]);
+              }
+            }}
+            className={`bg-[#121218] border rounded-2xl p-3.5 flex flex-col gap-3 shadow-lg transition-all duration-300 ${
+              isDraggingImage
+                ? 'border-[#ff2d87] shadow-glow-pink'
+                : 'border-[#1e1e29]'
+            }`}
+          >
+            {/* Hidden Reference Image File Input */}
+            <input
+              ref={fileInputRef}
+              type="file"
+              accept="image/png,image/jpeg,image/webp,image/jpg,image/gif"
+              onChange={(e) => {
+                if (e.target.files && e.target.files[0]) {
+                  handleImageFile(e.target.files[0]);
+                }
+              }}
+              style={{ display: 'none' }}
+            />
+
+            {/* Top Prompt Header Row */}
+            <div className="flex items-center justify-between gap-2">
+              <label
+                htmlFor="image-prompt-textarea"
+                className="text-xs font-mono uppercase tracking-wider text-gray-400 flex items-center gap-1.5 cursor-pointer"
+              >
+                <span className="w-1.5 h-1.5 rounded-full bg-[#ff2d87]" />
+                {referenceImage ? 'Edit Instructions (img2img)' : 'Synthesis Prompt'}
               </label>
-              {referenceImage && (
+
+              <div className="flex items-center gap-2.5">
                 <button
                   type="button"
-                  onClick={handleClearReferenceImage}
-                  style={{
-                    background: 'none',
-                    border: 0,
-                    color: '#f87171',
-                    fontSize: '11px',
-                    fontWeight: 600,
-                    cursor: 'pointer',
-                    display: 'inline-flex',
-                    alignItems: 'center',
-                    gap: '4px',
-                    padding: '2px 6px',
-                  }}
+                  onClick={handleSurpriseMe}
+                  className="text-[11px] font-mono text-pink-400 hover:text-pink-300 inline-flex items-center gap-1 bg-transparent border-0 cursor-pointer p-0 transition"
+                  title="Load a random sample prompt"
                 >
-                  <X size={12} /> Clear Reference
+                  <Dice5 size={12} /> Surprise Me
                 </button>
-              )}
+                <span className="text-[10px] font-mono text-gray-500">
+                  {prompt.length} chars • Ctrl+Enter
+                </span>
+              </div>
             </div>
 
-            {!referenceImage ? (
-              /* Dropzone for Uploading Reference Image */
-              <div
-                onDragOver={(e) => {
-                  e.preventDefault();
-                  setIsDraggingImage(true);
-                }}
-                onDragLeave={(e) => {
-                  e.preventDefault();
-                  setIsDraggingImage(false);
-                }}
-                onDrop={(e) => {
-                  e.preventDefault();
-                  setIsDraggingImage(false);
-                  if (e.dataTransfer.files && e.dataTransfer.files.length > 0) {
-                    handleImageFile(e.dataTransfer.files[0]);
-                  }
-                }}
-                onClick={() => fileInputRef.current?.click()}
-                style={{
-                  position: 'relative',
-                  borderRadius: '12px',
-                  border: `2px dashed ${isDraggingImage ? '#ec4899' : 'rgba(255,255,255,0.15)'}`,
-                  background: isDraggingImage ? 'rgba(236,72,153,0.1)' : 'rgba(10,22,28,0.5)',
-                  padding: '16px 14px',
-                  textAlign: 'center',
-                  cursor: 'pointer',
-                  transition: 'all 0.2s ease',
-                }}
-              >
-                <input
-                  ref={fileInputRef}
-                  type="file"
-                  accept="image/png,image/jpeg,image/webp,image/jpg,image/gif"
-                  onChange={(e) => {
-                    if (e.target.files && e.target.files[0]) {
-                      handleImageFile(e.target.files[0]);
-                    }
-                  }}
-                  style={{ display: 'none' }}
-                />
+            {/* Prompt Textarea */}
+            <textarea
+              id="image-prompt-textarea"
+              rows={3}
+              placeholder={
+                referenceImage
+                  ? "Describe what to edit or change in the reference image (e.g. 'Turn into a futuristic cyberpunk painting with neon lighting', 'Change background to sunset beach')..."
+                  : 'Describe your visual concept in detail...'
+              }
+              value={prompt}
+              onChange={(e) => setPrompt(e.target.value)}
+              onKeyDown={(e) => {
+                if (e.key === 'Enter' && (e.metaKey || e.ctrlKey)) {
+                  handleGenerate();
+                }
+              }}
+              className="w-full bg-[#0c0c11] border border-[#1d1d28] focus:border-pink-500/60 rounded-xl p-3 text-sm text-gray-100 placeholder-gray-600 focus:outline-none resize-y leading-relaxed font-sans"
+            />
 
-                <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: '8px' }}>
-                  <div
-                    style={{
-                      padding: '10px',
-                      borderRadius: '12px',
-                      background: 'rgba(236,72,153,0.15)',
-                      border: '1px solid rgba(236,72,153,0.3)',
-                      color: '#f472b6',
-                      display: 'grid',
-                      placeItems: 'center',
-                    }}
-                  >
-                    <UploadCloud size={20} />
+            {/* Reference Image Indicator Strip (when referenceImage is attached) */}
+            {referenceImage && (
+              <div className="flex items-center justify-between gap-2 px-2.5 py-2 rounded-xl bg-pink-500/10 border border-pink-500/25">
+                <div className="flex items-center gap-2.5 min-w-0">
+                  <div className="w-9 h-9 rounded-lg overflow-hidden border border-pink-500/40 bg-[#070709] shrink-0">
+                    <img
+                      src={referenceImage}
+                      alt="Reference preview"
+                      className="w-full h-full object-cover"
+                    />
                   </div>
-
-                  <div>
-                    <div style={{ fontSize: '13px', fontWeight: 600, color: '#fff' }}>
-                      Upload Reference Image
-                    </div>
-                    <div style={{ fontSize: '11px', color: 'var(--muted)', marginTop: '2px' }}>
-                      Drag & drop an image here or click to browse (PNG, JPG, WebP up to 15 MB)
-                    </div>
-                  </div>
-
-                  <div style={{ display: 'flex', gap: '6px', alignItems: 'center', flexWrap: 'wrap', justifyContent: 'center', marginTop: '2px' }}>
-                    <button
-                      type="button"
-                      onClick={(e) => {
-                        e.stopPropagation();
-                        fileInputRef.current?.click();
-                      }}
-                      style={{
-                        fontSize: '11px',
-                        fontWeight: 600,
-                        padding: '4px 10px',
-                        borderRadius: '6px',
-                        background: 'rgba(236,72,153,0.2)',
-                        border: '1px solid rgba(236,72,153,0.4)',
-                        color: '#f472b6',
-                        cursor: 'pointer',
-                        display: 'inline-flex',
-                        alignItems: 'center',
-                        gap: '4px',
-                      }}
+                  <div className="flex flex-col min-w-0">
+                    <span className="text-[11px] font-mono text-pink-300 font-semibold leading-tight flex items-center gap-1">
+                      <Sparkles size={10} className="shrink-0" /> Reference Image Attached • img2img
+                    </span>
+                    <span
+                      className="text-[10px] font-mono text-gray-400 truncate"
+                      title={referenceImageName || 'Uploaded Reference'}
                     >
-                      <ImagePlus size={12} /> Choose Image
-                    </button>
-                    <span style={{ fontSize: '10px', color: 'var(--muted)' }}>
-                      Optional • Enables before/after edit comparison
+                      {referenceImageName || 'Uploaded Reference'}
+                      {referenceImageSize
+                        ? ` (${(referenceImageSize / (1024 * 1024)).toFixed(2)} MB)`
+                        : ''}
                     </span>
                   </div>
                 </div>
-              </div>
-            ) : (
-              /* Reference Image Loaded Card */
-              <div
-                style={{
-                  position: 'relative',
-                  borderRadius: '12px',
-                  border: '1px solid rgba(236,72,153,0.4)',
-                  background: 'linear-gradient(135deg, rgba(236,72,153,0.08) 0%, rgba(168,85,247,0.08) 100%)',
-                  padding: '12px 14px',
-                  display: 'flex',
-                  alignItems: 'center',
-                  justifyContent: 'space-between',
-                  gap: '12px',
-                  flexWrap: 'wrap',
-                }}
-              >
-                <input
-                  ref={fileInputRef}
-                  type="file"
-                  accept="image/png,image/jpeg,image/webp,image/jpg,image/gif"
-                  onChange={(e) => {
-                    if (e.target.files && e.target.files[0]) {
-                      handleImageFile(e.target.files[0]);
-                    }
-                  }}
-                  style={{ display: 'none' }}
-                />
 
-                <div style={{ display: 'flex', alignItems: 'center', gap: '12px', minWidth: '180px' }}>
-                  <div
-                    style={{
-                      width: '56px',
-                      height: '56px',
-                      borderRadius: '8px',
-                      overflow: 'hidden',
-                      border: '1px solid rgba(236,72,153,0.35)',
-                      background: '#071116',
-                      flexShrink: 0,
-                    }}
-                  >
-                    <img
-                      src={referenceImage}
-                      alt="Reference Preview"
-                      style={{ width: '100%', height: '100%', objectFit: 'cover' }}
-                    />
-                  </div>
-
-                  <div>
-                    <div style={{ display: 'flex', alignItems: 'center', gap: '6px', flexWrap: 'wrap' }}>
-                      <span
-                        style={{
-                          fontSize: '10px',
-                          fontWeight: 700,
-                          background: 'rgba(236,72,153,0.2)',
-                          color: '#f472b6',
-                          padding: '2px 6px',
-                          borderRadius: '4px',
-                          border: '1px solid rgba(236,72,153,0.35)',
-                          display: 'inline-flex',
-                          alignItems: 'center',
-                          gap: '4px',
-                        }}
-                      >
-                        <Sparkles size={10} /> Reference Image Loaded
-                      </span>
-                      <span style={{ fontSize: '10px', color: '#a855f7', fontWeight: 600 }}>
-                        Editing Mode Active
-                      </span>
-                    </div>
-                    <div
-                      style={{
-                        fontSize: '12px',
-                        fontWeight: 600,
-                        color: '#fff',
-                        marginTop: '3px',
-                        maxWidth: '220px',
-                        overflow: 'hidden',
-                        textOverflow: 'ellipsis',
-                        whiteSpace: 'nowrap',
-                      }}
-                      title={referenceImageName || 'Uploaded image'}
-                    >
-                      {referenceImageName || 'Uploaded Reference'}
-                    </div>
-                    {referenceImageSize && (
-                      <div style={{ fontSize: '10px', color: 'var(--muted)', marginTop: '1px' }}>
-                        {(referenceImageSize / (1024 * 1024)).toFixed(2)} MB
-                      </div>
-                    )}
-                  </div>
-                </div>
-
-                <div style={{ display: 'flex', gap: '8px', alignItems: 'center' }}>
+                <div className="flex items-center gap-1.5 shrink-0">
                   <button
                     type="button"
                     onClick={() => fileInputRef.current?.click()}
-                    style={{
-                      padding: '5px 10px',
-                      borderRadius: '6px',
-                      background: 'rgba(255,255,255,0.08)',
-                      border: '1px solid rgba(255,255,255,0.15)',
-                      color: '#fff',
-                      fontSize: '11px',
-                      cursor: 'pointer',
-                    }}
+                    className="px-2 py-1 rounded-lg bg-[#181822] hover:bg-[#222230] border border-[#2a2a3a] text-[10px] font-mono text-gray-200 cursor-pointer transition"
+                    title="Replace reference image"
                   >
                     Replace
                   </button>
                   <button
                     type="button"
                     onClick={handleClearReferenceImage}
-                    style={{
-                      padding: '5px 10px',
-                      borderRadius: '6px',
-                      background: 'rgba(248,113,113,0.15)',
-                      border: '1px solid rgba(248,113,113,0.3)',
-                      color: '#f87171',
-                      fontSize: '11px',
-                      cursor: 'pointer',
-                      display: 'inline-flex',
-                      alignItems: 'center',
-                      gap: '4px',
-                    }}
+                    className="w-7 h-7 rounded-lg bg-red-950/40 hover:bg-red-900/50 border border-red-800/40 text-red-300 flex items-center justify-center cursor-pointer transition"
                     title="Remove reference image"
                   >
-                    <X size={12} /> Remove
+                    <X size={13} />
                   </button>
                 </div>
               </div>
             )}
 
-            {/* Non-img2img Provider (e.g. Hugging Face) Not Supported Warning with Quick-Switch buttons */}
+            {/* Non-img2img Provider Warning with Quick-Switch buttons */}
             {isPost && !isCloudflare && referenceImage && (
-              <div
-                style={{
-                  marginTop: '10px',
-                  padding: '12px 14px',
-                  borderRadius: '10px',
-                  background: 'rgba(245,158,11,0.12)',
-                  border: '1px solid rgba(245,158,11,0.35)',
-                  display: 'grid',
-                  gap: '8px',
-                }}
-              >
-                <div style={{ display: 'flex', alignItems: 'flex-start', gap: '8px' }}>
-                  <AlertCircle size={16} style={{ color: '#fbbf24', flexShrink: 0, marginTop: '2px' }} />
-                  <div>
-                    <div style={{ fontSize: '12px', fontWeight: 700, color: '#fbbf24' }}>
-                      {activeProvider?.name || 'Provider'} Does Not Support Image Editing
-                    </div>
-                    <div style={{ fontSize: '11px', color: '#fde68a', lineHeight: 1.4, marginTop: '2px' }}>
-                      The current {activeProvider?.name || 'selected'} text-to-image model does not support reference image (img2img) editing.
-                      Please switch to <strong>Cloudflare</strong> (using <em>SD 1.5 img2img</em>), <strong>Pollinations</strong> (using the <em>kontext</em> model), or <strong>Puter</strong> (using <em>FLUX Kontext Pro</em> or <em>Gemini 2.5 Flash</em>) instead.
-                    </div>
+              <div className="p-3 rounded-xl bg-amber-950/25 border border-amber-500/35 flex flex-col gap-2">
+                <div className="flex items-start gap-2">
+                  <AlertCircle size={15} className="text-amber-400 shrink-0 mt-0.5" />
+                  <div className="text-xs text-amber-200 leading-relaxed">
+                    <strong className="text-amber-300 font-mono">
+                      {activeProvider?.name || 'Provider'} Does Not Support Image Editing:
+                    </strong>{' '}
+                    Switch to <strong>Cloudflare</strong> (SD 1.5 img2img), <strong>Pollinations</strong> (kontext), or <strong>Puter</strong> (FLUX Kontext Pro).
                   </div>
                 </div>
-
-                <div style={{ display: 'flex', gap: '8px', flexWrap: 'wrap', marginTop: '2px' }}>
+                <div className="flex items-center gap-1.5 flex-wrap">
                   {cloudflareProvider && (
                     <button
                       type="button"
@@ -2731,21 +2493,9 @@ export function ImageStudio() {
                         setError(null);
                         playTapSound();
                       }}
-                      style={{
-                        padding: '6px 12px',
-                        borderRadius: '6px',
-                        background: '#f97316',
-                        color: '#fff',
-                        border: 0,
-                        fontSize: '11px',
-                        fontWeight: 600,
-                        cursor: 'pointer',
-                        display: 'inline-flex',
-                        alignItems: 'center',
-                        gap: '5px',
-                      }}
+                      className="px-2.5 py-1 rounded-lg bg-orange-500/20 hover:bg-orange-500/30 border border-orange-500/40 text-orange-300 text-[10px] font-mono font-semibold cursor-pointer inline-flex items-center gap-1 transition"
                     >
-                      <Sparkles size={12} /> Switch to Cloudflare (SD 1.5 img2img)
+                      <Sparkles size={11} /> Cloudflare img2img
                     </button>
                   )}
                   {pollinationsProvider && (
@@ -2757,21 +2507,9 @@ export function ImageStudio() {
                         setError(null);
                         playTapSound();
                       }}
-                      style={{
-                        padding: '6px 12px',
-                        borderRadius: '6px',
-                        background: '#ec4899',
-                        color: '#fff',
-                        border: 0,
-                        fontSize: '11px',
-                        fontWeight: 600,
-                        cursor: 'pointer',
-                        display: 'inline-flex',
-                        alignItems: 'center',
-                        gap: '5px',
-                      }}
+                      className="px-2.5 py-1 rounded-lg bg-pink-500/20 hover:bg-pink-500/30 border border-pink-500/40 text-pink-300 text-[10px] font-mono font-semibold cursor-pointer inline-flex items-center gap-1 transition"
                     >
-                      <Sparkles size={12} /> Switch to Pollinations (kontext)
+                      <Sparkles size={11} /> Pollinations (kontext)
                     </button>
                   )}
                   {puterProvider && (
@@ -2783,21 +2521,9 @@ export function ImageStudio() {
                         setError(null);
                         playTapSound();
                       }}
-                      style={{
-                        padding: '6px 12px',
-                        borderRadius: '6px',
-                        background: '#0284c7',
-                        color: '#fff',
-                        border: 0,
-                        fontSize: '11px',
-                        fontWeight: 600,
-                        cursor: 'pointer',
-                        display: 'inline-flex',
-                        alignItems: 'center',
-                        gap: '5px',
-                      }}
+                      className="px-2.5 py-1 rounded-lg bg-violet-500/20 hover:bg-violet-500/30 border border-violet-500/40 text-violet-300 text-[10px] font-mono font-semibold cursor-pointer inline-flex items-center gap-1 transition"
                     >
-                      <Check size={12} /> Switch to Puter (FLUX Kontext Pro)
+                      <Check size={11} /> Puter (FLUX Kontext Pro)
                     </button>
                   )}
                 </div>
@@ -2806,138 +2532,29 @@ export function ImageStudio() {
 
             {/* Cloudflare img2img Active Indicator */}
             {isCloudflare && referenceImage && (
-              <div
-                style={{
-                  marginTop: '10px',
-                  padding: '8px 12px',
-                  borderRadius: '8px',
-                  background: 'rgba(249,115,22,0.12)',
-                  border: '1px solid rgba(249,115,22,0.3)',
-                  display: 'flex',
-                  alignItems: 'center',
-                  gap: '8px',
-                  fontSize: '11px',
-                  color: '#fdba74',
-                }}
-              >
-                <Sparkles size={14} style={{ color: '#f97316', flexShrink: 0 }} />
-                <span>
-                  <strong>Cloudflare img2img Mode:</strong> Automatically routing edit instructions to{' '}
-                  <code style={{ fontFamily: 'DM Mono, monospace', background: 'rgba(0,0,0,0.3)', padding: '1px 5px', borderRadius: '4px', color: '#fed7aa' }}>
-                    @cf/runwayml/stable-diffusion-v1-5-img2img
-                  </code>
+              <div className="px-2.5 py-1.5 rounded-xl bg-orange-500/10 border border-orange-500/30 flex items-center gap-2 text-[11px] font-mono text-orange-300">
+                <Sparkles size={13} className="text-orange-400 shrink-0" />
+                <span className="truncate">
+                  Cloudflare img2img: <code className="text-orange-200">@cf/runwayml/stable-diffusion-v1-5-img2img</code>
                 </span>
               </div>
             )}
-          </div>
-
-          {/* Prompt Input Box */}
-          <div>
-            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '8px' }}>
-              <label style={{ fontSize: '12px', fontWeight: 600, color: 'var(--text)', display: 'flex', alignItems: 'center', gap: '6px' }}>
-                {referenceImage ? (
-                  <>
-                    <Wand2 size={14} style={{ color: '#ec4899' }} /> Edit Instructions (img2img Mode)
-                  </>
-                ) : (
-                  <>
-                    <Sparkles size={14} style={{ color: 'var(--accent)' }} /> Image Description / Prompt
-                  </>
-                )}
-              </label>
-              <button
-                type="button"
-                onClick={handleSurpriseMe}
-                style={{
-                  background: 'none',
-                  border: 0,
-                  color: 'var(--accent)',
-                  fontSize: '11px',
-                  fontWeight: 600,
-                  cursor: 'pointer',
-                  display: 'inline-flex',
-                  alignItems: 'center',
-                  gap: '4px',
-                  padding: '2px 6px',
-                }}
-              >
-                <Dice5 size={12} /> Surprise Me
-              </button>
-            </div>
-
-            <textarea
-              id="image-prompt-textarea"
-              rows={4}
-              placeholder={
-                referenceImage
-                  ? "Describe what to edit or change in the reference image (e.g. 'Turn into a futuristic cyberpunk painting with neon lighting', 'Change background to sunset beach', 'Add glowing golden armor and helmet')..."
-                  : "Describe the image you want to generate in detail (e.g. A futuristic cybernetic city floating in the clouds at sunset, volumetric lighting, 8k render)..."
-              }
-              value={prompt}
-              onChange={(e) => setPrompt(e.target.value)}
-              onKeyDown={(e) => {
-                if (e.key === 'Enter' && (e.metaKey || e.ctrlKey)) {
-                  handleGenerate();
-                }
-              }}
-              style={{
-                width: '100%',
-                boxSizing: 'border-box',
-                background: 'rgba(8,18,24,0.85)',
-                border: '1px solid var(--line)',
-                borderRadius: '10px',
-                padding: '12px 14px',
-                color: '#fff',
-                fontSize: '13px',
-                lineHeight: 1.5,
-                resize: 'vertical',
-                outline: 'none',
-                fontFamily: 'inherit',
-              }}
-            />
-
-            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginTop: '6px' }}>
-              <span style={{ fontSize: '11px', color: 'var(--muted)' }}>
-                Tip: Press <kbd style={{ background: 'rgba(255,255,255,0.1)', padding: '2px 4px', borderRadius: '3px' }}>Ctrl+Enter</kbd> to generate
-              </span>
-              <span style={{ fontSize: '11px', color: 'var(--muted)', fontFamily: 'DM Mono, monospace' }}>
-                {prompt.length} chars
-              </span>
-            </div>
 
             {/* Smart AI Enhanced Prompt Banner (if generated with Smart AI) */}
             {lastEnhancedPrompt && (
-              <div
-                style={{
-                  marginTop: '10px',
-                  padding: '10px 12px',
-                  borderRadius: '8px',
-                  background: 'linear-gradient(135deg, rgba(236,72,153,0.12) 0%, rgba(168,85,247,0.12) 100%)',
-                  border: '1px solid rgba(236,72,153,0.3)',
-                  display: 'grid',
-                  gap: '6px',
-                }}
-              >
-                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-                  <span style={{ fontSize: '11px', fontWeight: 700, color: '#f472b6', display: 'inline-flex', alignItems: 'center', gap: '5px' }}>
-                    <Wand2 size={12} /> Enhanced prompt used by AI:
+              <div className="p-2.5 rounded-xl bg-gradient-to-r from-pink-500/10 to-violet-600/10 border border-pink-500/30 flex flex-col gap-1.5">
+                <div className="flex items-center justify-between gap-2 flex-wrap">
+                  <span className="text-[10px] font-mono font-bold uppercase tracking-wider text-pink-400 inline-flex items-center gap-1">
+                    <Wand2 size={11} /> Enhanced prompt used by AI
                   </span>
-                  <div style={{ display: 'flex', gap: '6px' }}>
+                  <div className="flex items-center gap-1.5">
                     <button
                       type="button"
                       onClick={() => {
                         setPrompt(lastEnhancedPrompt);
                         playTapSound();
                       }}
-                      style={{
-                        background: 'rgba(255,255,255,0.08)',
-                        border: '1px solid rgba(255,255,255,0.15)',
-                        borderRadius: '4px',
-                        color: '#fff',
-                        fontSize: '10px',
-                        padding: '2px 6px',
-                        cursor: 'pointer',
-                      }}
+                      className="px-2 py-0.5 rounded bg-[#181822] hover:bg-[#222230] border border-[#2a2a3a] text-[10px] font-mono text-gray-200 cursor-pointer"
                     >
                       Use in editor
                     </button>
@@ -2947,33 +2564,23 @@ export function ImageStudio() {
                         navigator.clipboard.writeText(lastEnhancedPrompt);
                         playTapSound();
                       }}
-                      style={{
-                        background: 'rgba(255,255,255,0.08)',
-                        border: '1px solid rgba(255,255,255,0.15)',
-                        borderRadius: '4px',
-                        color: '#fff',
-                        fontSize: '10px',
-                        padding: '2px 6px',
-                        cursor: 'pointer',
-                      }}
+                      className="px-2 py-0.5 rounded bg-[#181822] hover:bg-[#222230] border border-[#2a2a3a] text-[10px] font-mono text-gray-200 cursor-pointer"
                     >
                       Copy
                     </button>
                   </div>
                 </div>
-                <p style={{ margin: 0, fontSize: '12px', color: 'var(--text)', lineHeight: 1.4, fontStyle: 'italic' }}>
+                <p className="m-0 text-xs text-gray-300 italic leading-relaxed">
                   "{lastEnhancedPrompt}"
                 </p>
               </div>
             )}
-          </div>
 
-          {/* Sample Prompts Pills */}
-          <div>
-            <span style={{ fontSize: '11px', fontWeight: 600, color: 'var(--muted)', display: 'block', marginBottom: '6px' }}>
-              Inspiration Prompts:
-            </span>
-            <div style={{ display: 'flex', flexWrap: 'wrap', gap: '6px' }}>
+            {/* Inspiration Sample Prompts Row */}
+            <div className="flex items-center gap-1.5 overflow-x-auto scrollbar-none pb-0.5">
+              <span className="text-[10px] font-mono text-gray-500 uppercase tracking-wider shrink-0">
+                Ideas:
+              </span>
               {SAMPLE_PROMPTS.slice(0, 4).map((p, idx) => (
                 <button
                   key={idx}
@@ -2982,33 +2589,159 @@ export function ImageStudio() {
                     setPrompt(p);
                     playTapSound();
                   }}
-                  className="secondary-button"
-                  style={{
-                    fontSize: '11px',
-                    padding: '4px 8px',
-                    borderRadius: '6px',
-                    textAlign: 'left',
-                    maxWidth: '100%',
-                    overflow: 'hidden',
-                    textOverflow: 'ellipsis',
-                    whiteSpace: 'nowrap',
-                  }}
+                  className="shrink-0 px-2 py-1 rounded-lg bg-[#161620] hover:bg-[#1e1e2c] border border-[#242434] text-[10px] font-mono text-gray-400 hover:text-gray-200 transition cursor-pointer truncate max-w-[180px]"
                   title={p}
                 >
-                  {p.slice(0, 36)}...
+                  {p.slice(0, 32)}...
                 </button>
               ))}
             </div>
+
+            {/* Prompt Action Toolbar (Ref Img, Seed + Roll, HQ Boost, Smart AI Enhance) */}
+            <div className="pt-2 border-t border-[#1e1e29] flex flex-col gap-2">
+              <div className="flex flex-wrap items-center justify-between gap-2">
+                {/* Left: Upload Reference + Seed Input & Roll */}
+                <div className="flex items-center gap-1.5 flex-wrap">
+                  {/* Ref Img Upload Button */}
+                  <button
+                    type="button"
+                    onClick={() => fileInputRef.current?.click()}
+                    className={`px-2.5 py-1.5 rounded-lg border text-xs font-mono flex items-center gap-1.5 transition cursor-pointer active:scale-95 ${
+                      referenceImage
+                        ? 'bg-pink-500/15 border-pink-500/40 text-pink-300'
+                        : 'bg-[#181822] hover:bg-[#1f1f2e] border-[#262635] text-gray-300'
+                    }`}
+                    title="Upload or replace reference image (img2img)"
+                  >
+                    <UploadCloud size={14} className="text-pink-400" />
+                    <span>Ref Img</span>
+                  </button>
+
+                  {/* Seed Control (Real Seed input + Roll dice button, NO Auto/Lock toggle) */}
+                  <div className="flex items-center bg-[#181822] border border-[#262635] rounded-lg p-0.5 gap-1">
+                    <div className="flex items-center gap-1 pl-2 pr-1 py-1">
+                      <span className="text-[10px] font-mono text-gray-500 uppercase select-none">
+                        Seed
+                      </span>
+                      <input
+                        type="number"
+                        value={seed}
+                        onChange={(e) => setSeed(parseInt(e.target.value, 10) || 0)}
+                        className="w-[74px] bg-transparent text-xs font-mono text-gray-200 focus:outline-none focus:text-pink-400 text-center border-0 p-0"
+                        title="Generation Seed"
+                      />
+                    </div>
+                    <button
+                      type="button"
+                      onClick={handleRollSeed}
+                      className="px-2 py-1 rounded-md bg-[#121218] hover:bg-[#222230] text-gray-300 hover:text-pink-400 border border-[#262635] transition active:scale-90 flex items-center gap-1 text-[10px] font-mono cursor-pointer"
+                      title="Roll New Random Seed"
+                    >
+                      <Dice5 size={12} className="stitch-dice-icon transition-transform duration-300" />
+                      <span>Roll</span>
+                    </button>
+                  </div>
+                </div>
+
+                {/* Right: HQ Boost Switch (quickEnhance) */}
+                <label
+                  className="flex items-center gap-2 cursor-pointer select-none ml-auto"
+                  title="Adds aesthetic and high-detail quality enhancers to the prompt"
+                >
+                  <input
+                    type="checkbox"
+                    checked={quickEnhance}
+                    onChange={(e) => {
+                      const val = e.target.checked;
+                      setQuickEnhance(val);
+                      if (val) setSmartAiEnhance(false);
+                      playTapSound();
+                    }}
+                    className="sr-only"
+                  />
+                  <span className="text-xs font-mono text-gray-300">HQ Boost</span>
+                  <div
+                    className={`w-8 h-4 rounded-full relative flex items-center px-0.5 transition-colors ${
+                      quickEnhance
+                        ? 'bg-gradient-to-r from-[#ff2d87] to-[#8b2cf5]'
+                        : 'bg-[#181822] border border-[#2a2a3a]'
+                    }`}
+                  >
+                    <div
+                      className={`w-3 h-3 bg-white rounded-full shadow transition-transform ${
+                        quickEnhance ? 'translate-x-3.5' : 'translate-x-0 bg-gray-400'
+                      }`}
+                    />
+                  </div>
+                </label>
+              </div>
+
+              {/* Secondary Enhancer & Clean Render Row */}
+              <div className="flex items-center justify-between gap-2 flex-wrap pt-1">
+                {/* Smart AI Enhance Button */}
+                <button
+                  type="button"
+                  onClick={() => {
+                    const next = !smartAiEnhance;
+                    setSmartAiEnhance(next);
+                    if (next) setQuickEnhance(false);
+                    playTapSound();
+                  }}
+                  className={`px-2.5 py-1 rounded-lg text-[11px] font-mono font-medium inline-flex items-center gap-1.5 border transition cursor-pointer active:scale-95 ${
+                    smartAiEnhance
+                      ? 'bg-gradient-to-r from-pink-500/20 to-violet-600/20 border-pink-500/50 text-pink-300 shadow-glow-subtle'
+                      : 'bg-[#181822] hover:bg-[#1f1f2e] border-[#262635] text-gray-400 hover:text-gray-200'
+                  }`}
+                  title="Sends prompt to active NEXUS AI model to rewrite into vivid scene descriptions"
+                >
+                  <Wand2 size={12} className={smartAiEnhance ? 'text-pink-400' : 'text-violet-400'} />
+                  <span>Smart AI Enhance</span>
+                  <span className="text-[9px] px-1.5 py-0.2 rounded bg-violet-500/20 text-violet-300 border border-violet-500/30">
+                    AI Rewrite
+                  </span>
+                </button>
+
+                {/* Clean Render (No Logo) Toggle */}
+                <label className="inline-flex items-center gap-1.5 text-[11px] font-mono text-gray-400 hover:text-gray-200 cursor-pointer select-none">
+                  <input
+                    type="checkbox"
+                    checked={nologo}
+                    onChange={(e) => setNologo(e.target.checked)}
+                    className="accent-[#ff2d87] rounded cursor-pointer"
+                  />
+                  <span>Clean Render</span>
+                </label>
+              </div>
+            </div>
           </div>
 
-          {/* Aspect Ratio Picker */}
-          <div>
-            <label style={{ fontSize: '12px', fontWeight: 600, color: 'var(--text)', display: 'block', marginBottom: '8px' }}>
-              Aspect Ratio & Dimensions
-            </label>
-            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(100px, 1fr))', gap: '8px' }}>
+          {/* 4. ASPECT RATIO PICKER (ALL 5 REAL RATIOS) */}
+          <div className="flex flex-col gap-2">
+            <div className="flex items-center justify-between">
+              <span className="text-xs font-mono uppercase tracking-wider text-gray-400">
+                Aspect Ratio &amp; Dimensions
+              </span>
+              <span className="text-[11px] font-mono text-pink-400 font-semibold">
+                {ASPECT_RATIOS[selectedRatioIndex]?.label.split(' ')[0]} •{' '}
+                {ASPECT_RATIOS[selectedRatioIndex]?.width}×{ASPECT_RATIOS[selectedRatioIndex]?.height}
+              </span>
+            </div>
+
+            <div className="grid grid-cols-5 gap-1.5">
               {ASPECT_RATIOS.map((ratio, idx) => {
                 const isSelected = selectedRatioIndex === idx;
+                const shortRatio = ratio.label.split(' ')[0];
+                const shapeSizeClass =
+                  shortRatio === '1:1'
+                    ? 'w-2.5 h-2.5'
+                    : shortRatio === '16:9'
+                    ? 'w-3 h-2'
+                    : shortRatio === '9:16'
+                    ? 'w-2 h-3'
+                    : shortRatio === '4:3'
+                    ? 'w-2.5 h-2'
+                    : 'w-3 h-2';
+
                 return (
                   <button
                     key={ratio.label}
@@ -3017,24 +2750,36 @@ export function ImageStudio() {
                       setSelectedRatioIndex(idx);
                       playTapSound();
                     }}
-                    style={{
-                      padding: '8px 10px',
-                      borderRadius: '8px',
-                      border: `1px solid ${isSelected ? '#f472b6' : 'var(--line)'}`,
-                      background: isSelected ? 'rgba(236,72,153,0.15)' : 'rgba(10,22,28,0.6)',
-                      color: isSelected ? '#f472b6' : 'var(--muted)',
-                      fontSize: '11px',
-                      fontWeight: isSelected ? 600 : 400,
-                      cursor: 'pointer',
-                      display: 'flex',
-                      flexDirection: 'column',
-                      alignItems: 'center',
-                      gap: '4px',
-                    }}
+                    className={
+                      isSelected
+                        ? 'group/rbtn flex flex-col items-center justify-center py-2 px-1 rounded-xl border bg-gradient-to-b from-[#ff2d87]/20 via-[#8b2cf5]/15 to-[#171724] border-[#ff2d87] text-white shadow-glow-chip transition-all duration-200 cursor-pointer active:scale-95'
+                        : 'group/rbtn flex flex-col items-center justify-center py-2 px-1 rounded-xl border bg-[#14141d] hover:bg-[#1a1a26] border-[#222232] hover:border-gray-600 text-gray-400 hover:text-gray-200 transition-all duration-200 cursor-pointer active:scale-95'
+                    }
+                    title={`${ratio.label} (${ratio.width}×${ratio.height})`}
                   >
-                    <span style={{ fontSize: '13px' }}>{ratio.icon}</span>
-                    <span>{ratio.label}</span>
-                    <span style={{ fontSize: '9px', opacity: 0.8, fontFamily: 'DM Mono, monospace' }}>
+                    <div className="flex items-center gap-1 mb-0.5">
+                      <span
+                        className={`${shapeSizeClass} rounded-[2px] shrink-0 inline-block ${
+                          isSelected
+                            ? 'border border-pink-400 bg-pink-500/40'
+                            : 'border border-gray-500 bg-transparent'
+                        }`}
+                      />
+                      <span
+                        className={`text-[10px] font-mono tracking-tight truncate ${
+                          isSelected
+                            ? 'font-bold text-white'
+                            : 'font-semibold text-gray-300 group-hover/rbtn:text-white'
+                        }`}
+                      >
+                        {shortRatio}
+                      </span>
+                    </div>
+                    <span
+                      className={`text-[9px] font-mono tracking-tighter scale-95 origin-center ${
+                        isSelected ? 'text-pink-300 font-medium' : 'text-gray-400'
+                      }`}
+                    >
                       {ratio.width}×{ratio.height}
                     </span>
                   </button>
@@ -3043,450 +2788,231 @@ export function ImageStudio() {
             </div>
           </div>
 
-          {/* Generation Parameters Row */}
-          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(140px, 1fr))', gap: '12px' }}>
-            {/* Model selector (for Puter SDK, Hugging Face, or Pollinations Engine) */}
-            {activeProvider?.requestType === 'sdk' ? (
-              <div>
-                <label style={{ fontSize: '11px', fontWeight: 600, color: 'var(--muted)', display: 'block', marginBottom: '4px' }}>
-                  Puter Model {referenceImage ? '(Editing Capable)' : ''}
-                </label>
-                <select
-                  value={puterSelectedModel}
-                  onChange={(e) => {
-                    setPuterSelectedModel(e.target.value);
-                    playTapSound();
-                  }}
-                  style={{
-                    width: '100%',
-                    background: 'rgba(10,22,28,0.85)',
-                    border: '1px solid rgba(56,189,248,0.35)',
-                    borderRadius: '6px',
-                    padding: '7px 8px',
-                    color: '#38bdf8',
-                    fontSize: '11px',
-                    fontWeight: 500,
-                    outline: 'none',
-                  }}
-                >
-                  {PUTER_IMAGE_MODELS.map((m) => (
-                    <option key={m.id} value={m.id}>
-                      {m.name}
-                    </option>
-                  ))}
-                </select>
-              </div>
-            ) : activeProvider?.requestType === 'post' ? (
-              <div>
-                <label style={{ fontSize: '11px', fontWeight: 600, color: 'var(--muted)', display: 'block', marginBottom: '4px' }}>
-                  Inference Model
-                </label>
-                <div
-                  style={{
-                    width: '100%',
-                    boxSizing: 'border-box',
-                    background: 'rgba(168,85,247,0.08)',
-                    border: '1px solid rgba(168,85,247,0.25)',
-                    borderRadius: '6px',
-                    padding: '7px 8px',
-                    color: '#c084fc',
-                    fontSize: '11px',
-                    fontWeight: 600,
-                    fontFamily: 'DM Mono, monospace',
-                    overflow: 'hidden',
-                    textOverflow: 'ellipsis',
-                    whiteSpace: 'nowrap',
-                  }}
-                  title={activeProvider.model || activeProvider.url}
-                >
-                  {isCloudflare
-                    ? referenceImage
-                      ? 'CF: @cf/runwayml/stable-diffusion-v1-5-img2img (img2img)'
-                      : `CF: ${activeProvider.model || (activeProvider.url.split('/').filter(Boolean).pop()) || '@cf/black-forest-labs/flux-1-schnell'}`
-                    : activeProvider.name.toLowerCase().includes('hugging')
-                    ? `HF: ${activeProvider.model || (activeProvider.url.split('/').filter(Boolean).pop()) || 'Default'}`
-                    : `POST: ${activeProvider.model || (activeProvider.url.split('/').filter(Boolean).pop()) || 'Default'}`}
-                </div>
-              </div>
-            ) : (
-              <div>
-                <label style={{ fontSize: '11px', fontWeight: 600, color: 'var(--muted)', display: 'block', marginBottom: '4px' }}>
-                  Engine Model
-                </label>
-                <select
-                  value={modelType}
-                  onChange={(e) => setModelType(e.target.value)}
-                  style={{
-                    width: '100%',
-                    background: 'rgba(10,22,28,0.8)',
-                    border: '1px solid var(--line)',
-                    borderRadius: '6px',
-                    padding: '7px 8px',
-                    color: '#fff',
-                    fontSize: '12px',
-                    outline: 'none',
-                  }}
-                >
-                  {referenceImage && (
-                    <option value="kontext">kontext (Image Edit / img2img)</option>
-                  )}
-                  <option value="flux">Flux (High Detail)</option>
-                  <option value="turbo">Turbo (Ultra Fast)</option>
-                  <option value="default">Default Provider Model</option>
-                </select>
-              </div>
-            )}
-
-            {/* Seed control */}
-            <div>
-              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '4px' }}>
-                <label style={{ fontSize: '11px', fontWeight: 600, color: 'var(--muted)' }}>Seed</label>
-                <button
-                  type="button"
-                  onClick={handleRollSeed}
-                  style={{
-                    background: 'none',
-                    border: 0,
-                    color: 'var(--accent)',
-                    fontSize: '10px',
-                    cursor: 'pointer',
-                    padding: 0,
-                  }}
-                >
-                  Roll 🎲
-                </button>
-              </div>
-              <input
-                type="number"
-                value={seed}
-                onChange={(e) => setSeed(parseInt(e.target.value, 10) || 0)}
-                style={{
-                  width: '100%',
-                  boxSizing: 'border-box',
-                  background: 'rgba(10,22,28,0.8)',
-                  border: '1px solid var(--line)',
-                  borderRadius: '6px',
-                  padding: '7px 8px',
-                  color: '#fff',
-                  fontSize: '12px',
-                  fontFamily: 'DM Mono, monospace',
-                  outline: 'none',
-                }}
-              />
-            </div>
-          </div>
-
-          {/* Options Toggles */}
-          <div style={{ display: 'flex', gap: '16px', flexWrap: 'wrap', alignItems: 'center' }}>
-            {/* Quick Enhance Toggle */}
-            <label
-              title="Adds generic aesthetic and quality enhancer keywords to the generator request"
-              style={{ display: 'inline-flex', alignItems: 'center', gap: '6px', fontSize: '12px', color: 'var(--text)', cursor: 'pointer' }}
-            >
-              <input
-                type="checkbox"
-                checked={quickEnhance}
-                onChange={(e) => {
-                  const val = e.target.checked;
-                  setQuickEnhance(val);
-                  if (val) setSmartAiEnhance(false);
-                }}
-                style={{ accentColor: '#f472b6' }}
-              />
-              Quick Enhance
-            </label>
-
-            {/* Smart AI Enhance Toggle (Mutually exclusive with Quick Enhance) */}
-            <label
-              title="Sends prompt to active NEXUS AI model to fix grammar and rewrite into vivid, high-fidelity scene descriptions"
-              style={{ display: 'inline-flex', alignItems: 'center', gap: '6px', fontSize: '12px', color: 'var(--text)', cursor: 'pointer' }}
-            >
-              <input
-                type="checkbox"
-                checked={smartAiEnhance}
-                onChange={(e) => {
-                  const val = e.target.checked;
-                  setSmartAiEnhance(val);
-                  if (val) setQuickEnhance(false);
-                }}
-                style={{ accentColor: '#a855f7' }}
-              />
-              <span style={{ display: 'inline-flex', alignItems: 'center', gap: '5px' }}>
-                <Wand2 size={13} style={{ color: '#c084fc' }} /> Smart AI Enhance
-                <span
-                  style={{
-                    fontSize: '10px',
-                    fontWeight: 600,
-                    background: 'rgba(168,85,247,0.2)',
-                    color: '#c084fc',
-                    padding: '1px 6px',
-                    borderRadius: '4px',
-                    border: '1px solid rgba(168,85,247,0.35)',
-                  }}
-                >
-                  AI Rewrite
-                </span>
-              </span>
-            </label>
-
-            {/* Clean Render */}
-            <label style={{ display: 'inline-flex', alignItems: 'center', gap: '6px', fontSize: '12px', color: 'var(--text)', cursor: 'pointer' }}>
-              <input
-                type="checkbox"
-                checked={nologo}
-                onChange={(e) => setNologo(e.target.checked)}
-                style={{ accentColor: '#f472b6' }}
-              />
-              Clean Render (No Logo)
-            </label>
-          </div>
-
           {/* Puter Session Reset Notice */}
           {sessionResetMessage && (
-            <div
-              style={{
-                padding: '10px 14px',
-                borderRadius: '8px',
-                background: 'rgba(56,189,248,0.15)',
-                border: '1px solid rgba(56,189,248,0.35)',
-                color: '#38bdf8',
-                fontSize: '12px',
-                fontWeight: 600,
-                display: 'flex',
-                alignItems: 'center',
-                gap: '8px',
-              }}
-            >
-              <Check size={15} />
-              <span>{sessionResetMessage}</span>
+            <div className="px-3.5 py-2.5 rounded-xl bg-[#121218] border border-pink-500/35 text-pink-300 text-xs font-mono flex items-center justify-between gap-2">
+              <div className="flex items-center gap-2">
+                <Check size={14} className="text-emerald-400 shrink-0" />
+                <span>{sessionResetMessage}</span>
+              </div>
+              <button
+                type="button"
+                onClick={() => setSessionResetMessage(null)}
+                className="text-gray-400 hover:text-white bg-transparent border-0 cursor-pointer p-0.5 flex items-center"
+                title="Dismiss"
+              >
+                <X size={13} />
+              </button>
             </div>
           )}
 
-          {/* Error Banner */}
+          {/* Soft-Red Error Banner */}
           {error && (
-            <div
-              style={{
-                padding: '10px 14px',
-                borderRadius: '8px',
-                background: 'rgba(237,139,139,0.15)',
-                border: '1px solid rgba(237,139,139,0.4)',
-                color: 'var(--danger)',
-                fontSize: '12px',
-                fontWeight: 600,
-                display: 'flex',
-                justifyContent: 'space-between',
-                alignItems: 'center',
-                flexWrap: 'wrap',
-                gap: '8px',
-              }}
-            >
-              <div style={{ display: 'flex', alignItems: 'center', gap: '8px', flex: 1, minWidth: '200px' }}>
-                <AlertCircle size={15} />
-                <span>{error}</span>
+            <div className="p-3 rounded-xl bg-red-950/35 border border-red-800/50 text-red-300 text-xs font-mono flex items-center justify-between flex-wrap gap-2">
+              <div className="flex items-center gap-2 flex-1 min-w-[180px]">
+                <AlertCircle size={15} className="text-red-400 shrink-0" />
+                <span className="break-words leading-snug">{error}</span>
               </div>
-              {(activeProvider?.requestType === 'sdk' || error.toLowerCase().includes('puter') || error.toLowerCase().includes('session')) && (
+              <div className="flex items-center gap-1.5 shrink-0">
+                {(activeProvider?.requestType === 'sdk' ||
+                  error.toLowerCase().includes('puter') ||
+                  error.toLowerCase().includes('session')) && (
+                  <button
+                    type="button"
+                    onClick={handleResetPuterSession}
+                    disabled={isResettingSession}
+                    className="px-2.5 py-1 rounded-lg bg-[#181822] hover:bg-[#222230] border border-pink-500/40 text-pink-300 text-[11px] font-mono font-semibold cursor-pointer inline-flex items-center gap-1.5 disabled:opacity-50"
+                  >
+                    <RotateCw size={11} className={isResettingSession ? 'animate-spin' : ''} />
+                    {isResettingSession ? 'Resetting...' : 'Reset Session'}
+                  </button>
+                )}
                 <button
                   type="button"
-                  onClick={handleResetPuterSession}
-                  disabled={isResettingSession}
-                  style={{
-                    padding: '5px 12px',
-                    borderRadius: '6px',
-                    background: 'rgba(56,189,248,0.2)',
-                    border: '1px solid rgba(56,189,248,0.4)',
-                    color: '#38bdf8',
-                    fontSize: '11px',
-                    fontWeight: 600,
-                    cursor: isResettingSession ? 'not-allowed' : 'pointer',
-                    display: 'inline-flex',
-                    alignItems: 'center',
-                    gap: '5px',
-                  }}
+                  onClick={() => setError(null)}
+                  className="w-6 h-6 rounded-lg bg-red-950/50 hover:bg-red-900/50 border border-red-800/40 text-red-300 flex items-center justify-center cursor-pointer"
+                  title="Dismiss error"
                 >
-                  <RotateCw size={12} className={isResettingSession ? 'animate-spin' : ''} />
-                  {isResettingSession ? 'Resetting...' : 'Reset Session'}
+                  <X size={12} />
                 </button>
-              )}
+              </div>
             </div>
           )}
 
-          {/* Collapsible Puter Debug Info in Image Studio */}
+          {/* Collapsible Puter Debug Info */}
           {activeProvider?.requestType === 'sdk' && puterDebugInfo && (
-            <div
-              style={{
-                padding: '10px 14px',
-                borderRadius: '8px',
-                background: 'rgba(15,23,42,0.85)',
-                border: '1px solid rgba(56,189,248,0.25)',
-                fontSize: '11px',
-                fontFamily: 'monospace',
-                color: '#94a3b8',
-              }}
-            >
+            <div className="p-3 rounded-xl bg-[#121218] border border-[#252536] text-[11px] font-mono text-gray-400">
               <div
                 onClick={() => setShowPuterDebug(!showPuterDebug)}
-                style={{
-                  display: 'flex',
-                  alignItems: 'center',
-                  justifyContent: 'space-between',
-                  cursor: 'pointer',
-                  userSelect: 'none',
-                  color: '#38bdf8',
-                  fontWeight: 600,
-                }}
+                className="flex items-center justify-between cursor-pointer select-none text-pink-400 font-semibold"
               >
-                <span>🔍 Puter SDK Debug Info</span>
-                <span style={{ fontSize: '10px' }}>{showPuterDebug ? '▲ Hide' : '▼ Show'}</span>
+                <span>Puter SDK Diagnostics</span>
+                <span className="text-[10px]">{showPuterDebug ? '▲ Hide' : '▼ Show'}</span>
               </div>
               {showPuterDebug && (
-                <div style={{ marginTop: '8px', display: 'flex', flexDirection: 'column', gap: '3px' }}>
+                <div className="mt-2 flex flex-col gap-1 text-[10px]">
                   <div>
-                    • Script Appended: <span style={{ color: puterDebugInfo.scriptAppended ? '#34d399' : '#f87171' }}>{String(puterDebugInfo.scriptAppended)}</span>
-                    {puterDebugInfo.scriptAppendedAt && <span style={{ color: '#64748b', marginLeft: '4px' }}>({puterDebugInfo.scriptAppendedAt.split('T')[1]?.slice(0, 8)})</span>}
+                    • Script Appended:{' '}
+                    <span className={puterDebugInfo.scriptAppended ? 'text-emerald-400' : 'text-red-400'}>
+                      {String(puterDebugInfo.scriptAppended)}
+                    </span>
+                    {puterDebugInfo.scriptAppendedAt && (
+                      <span className="text-gray-500 ml-1">
+                        ({puterDebugInfo.scriptAppendedAt.split('T')[1]?.slice(0, 8)})
+                      </span>
+                    )}
                   </div>
                   <div>
-                    • Onload Fired: <span style={{ color: puterDebugInfo.onloadFired ? '#34d399' : '#f87171' }}>{String(puterDebugInfo.onloadFired)}</span>
-                    {puterDebugInfo.onloadFiredAt && <span style={{ color: '#64748b', marginLeft: '4px' }}>({puterDebugInfo.onloadFiredAt.split('T')[1]?.slice(0, 8)})</span>}
+                    • Onload Fired:{' '}
+                    <span className={puterDebugInfo.onloadFired ? 'text-emerald-400' : 'text-red-400'}>
+                      {String(puterDebugInfo.onloadFired)}
+                    </span>
+                    {puterDebugInfo.onloadFiredAt && (
+                      <span className="text-gray-500 ml-1">
+                        ({puterDebugInfo.onloadFiredAt.split('T')[1]?.slice(0, 8)})
+                      </span>
+                    )}
                   </div>
                   <div>
-                    • Onerror Fired: <span style={{ color: puterDebugInfo.onerrorFired ? '#f87171' : '#34d399' }}>{String(puterDebugInfo.onerrorFired)}</span>
-                    {puterDebugInfo.onerrorDetails && <span style={{ color: '#f87171', marginLeft: '4px' }}>({puterDebugInfo.onerrorDetails})</span>}
+                    • Onerror Fired:{' '}
+                    <span className={puterDebugInfo.onerrorFired ? 'text-red-400' : 'text-emerald-400'}>
+                      {String(puterDebugInfo.onerrorFired)}
+                    </span>
+                    {puterDebugInfo.onerrorDetails && (
+                      <span className="text-red-400 ml-1">({puterDebugInfo.onerrorDetails})</span>
+                    )}
                   </div>
                   <div>
-                    • typeof window.puter: <span style={{ color: '#fff' }}>"{puterDebugInfo.typeofWindowPuter}"</span>
+                    • typeof window.puter: <span className="text-white">"{puterDebugInfo.typeofWindowPuter}"</span>
                   </div>
                   <div>
-                    • typeof window.puter?.ai: <span style={{ color: '#fff' }}>"{puterDebugInfo.typeofWindowPuterAi}"</span>
+                    • typeof window.puter?.ai:{' '}
+                    <span className="text-white">"{puterDebugInfo.typeofWindowPuterAi}"</span>
                   </div>
                   <div>
-                    • typeof window.puter?.ai?.txt2img: <span style={{ color: puterDebugInfo.typeofWindowPuterAiTxt2img === 'function' ? '#34d399' : '#f87171' }}>"{puterDebugInfo.typeofWindowPuterAiTxt2img}"</span>
+                    • typeof window.puter?.ai?.txt2img:{' '}
+                    <span
+                      className={
+                        puterDebugInfo.typeofWindowPuterAiTxt2img === 'function'
+                          ? 'text-emerald-400'
+                          : 'text-red-400'
+                      }
+                    >
+                      "{puterDebugInfo.typeofWindowPuterAiTxt2img}"
+                    </span>
                   </div>
                   <div>
-                    • window.puter Keys: <span style={{ color: '#38bdf8', wordBreak: 'break-all' }}>{JSON.stringify(puterDebugInfo.windowPuterTopLevelKeys)}</span>
+                    • window.puter Keys:{' '}
+                    <span className="text-pink-300 break-all">
+                      {JSON.stringify(puterDebugInfo.windowPuterTopLevelKeys)}
+                    </span>
                   </div>
                   {puterDebugInfo.error && (
-                    <div style={{ color: '#f87171', marginTop: '2px' }}>
-                      • Error: {puterDebugInfo.error}
-                    </div>
+                    <div className="text-red-400 mt-0.5">• Error: {puterDebugInfo.error}</div>
                   )}
                 </div>
               )}
             </div>
           )}
 
-          {/* Generate Button */}
-          <button
-            id="generate-image-btn"
-            type="button"
-            onClick={() => handleGenerate()}
-            disabled={loading || !prompt.trim()}
-            style={{
-              padding: '14px 20px',
-              borderRadius: '10px',
-              background: loading || !prompt.trim()
-                ? 'rgba(236,72,153,0.3)'
-                : 'linear-gradient(135deg, #ec4899 0%, #a855f7 100%)',
-              color: '#fff',
-              border: 'none',
-              fontSize: '14px',
-              fontWeight: 700,
-              cursor: loading || !prompt.trim() ? 'not-allowed' : 'pointer',
-              display: 'flex',
-              alignItems: 'center',
-              justifyContent: 'center',
-              gap: '8px',
-              boxShadow: loading || !prompt.trim()
-                ? 'none'
-                : '0 0 24px rgba(236,72,153,0.4), 0 4px 12px rgba(0,0,0,0.3)',
-              transition: 'all 0.2s ease',
-            }}
-          >
-            {loading ? (
-              loadingPhase === 'enhancing' ? (
+          {/* 5. FULL-WIDTH GENERATE BUTTON & SLIM LOADING BAR */}
+          <div className="flex flex-col gap-2.5">
+            <button
+              id="generate-image-btn"
+              type="button"
+              onClick={() => handleGenerate()}
+              disabled={loading || !prompt.trim()}
+              className={`stitch-generate-btn w-full py-3.5 px-4 rounded-xl bg-gradient-to-r from-[#ff2d87] via-[#d42cf5] to-[#8b2cf5] text-white font-mono font-bold text-sm tracking-wide shadow-glow-pink hover:opacity-95 active:scale-[0.98] transition flex items-center justify-center gap-2 relative overflow-hidden group border-0 cursor-pointer disabled:opacity-40 disabled:shadow-none disabled:cursor-not-allowed ${
+                loading ? 'stitch-generate-btn-busy' : ''
+              }`}
+            >
+              <span className="absolute inset-0 w-full h-full bg-white/10 opacity-0 group-hover:opacity-100 transition-opacity pointer-events-none" />
+              {loading ? (
+                loadingPhase === 'enhancing' ? (
+                  <>
+                    <Wand2 size={17} className="animate-spin shrink-0" />
+                    <span>REFINING WITH AI...</span>
+                  </>
+                ) : (
+                  <>
+                    <RotateCw size={17} className="animate-spin shrink-0" />
+                    <span>
+                      {referenceImage ? 'SYNTHESIZING EDITED IMAGE...' : 'SYNTHESIZING IMAGE...'}
+                    </span>
+                  </>
+                )
+              ) : referenceImage ? (
                 <>
-                  <Wand2 size={17} className="animate-spin" /> Refining with AI...
+                  <Wand2 size={17} className="shrink-0" />
+                  <span>EDIT IMAGE (IMG2IMG)</span>
                 </>
               ) : (
                 <>
-                  <RotateCw size={17} className="animate-spin" />{' '}
-                  {referenceImage ? 'Synthesizing Edited Image...' : 'Synthesizing Image...'}
+                  <Sparkles size={17} className="shrink-0" />
+                  <span>GENERATE ARTWORK</span>
                 </>
-              )
-            ) : referenceImage ? (
-              <>
-                <Wand2 size={17} /> Edit Image (img2img)
-              </>
-            ) : (
-              <>
-                <Sparkles size={17} /> Generate Image
-              </>
+              )}
+            </button>
+
+            {/* Slim Indeterminate Loading Bar (shown when loading is active; real state only) */}
+            {loading && (
+              <div className="flex flex-col gap-1.5 px-1">
+                <div className="flex items-center justify-between text-[10px] font-mono gap-2">
+                  <span className="text-pink-400 flex items-center gap-1.5 truncate">
+                    <span className="w-1.5 h-1.5 rounded-full bg-pink-500 animate-ping shrink-0" />
+                    <span className="truncate">
+                      {loadingPhase === 'enhancing'
+                        ? 'Refining prompt with Smart AI...'
+                        : failoverNotice ||
+                          `Synthesizing via ${activeProvider?.name || 'AI Engine'}...`}
+                    </span>
+                  </span>
+                  <span className="text-gray-400 shrink-0 uppercase">
+                    {loadingPhase === 'enhancing' ? 'AI REWRITE' : 'RENDERING'}
+                  </span>
+                </div>
+                <div className="w-full h-1.5 bg-[#161620] rounded-full overflow-hidden p-[1px]">
+                  <div className="h-full w-full rounded-full bg-gradient-to-r from-[#ff2d87] via-[#8b2cf5] to-[#ff2d87] stitch-loading-shimmer" />
+                </div>
+              </div>
             )}
-          </button>
+          </div>
         </div>
 
-        {/* RIGHT COLUMN: Interactive Image Canvas & Gallery */}
-        <div style={{ display: 'grid', gap: '20px' }}>
-          {/* Main Output Box */}
-          <div
-            style={{
-              padding: '24px',
-              borderRadius: '16px',
-              background: 'linear-gradient(135deg, rgba(14,31,39,0.7) 0%, rgba(20,28,48,0.7) 100%)',
-              border: '1px solid var(--line)',
-              boxShadow: '0 8px 32px rgba(0,0,0,0.3)',
-              display: 'grid',
-              gap: '16px',
-            }}
-          >
-            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: '10px' }}>
-              <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
-                <h3 style={{ margin: 0, fontSize: '15px', fontWeight: 600, display: 'flex', alignItems: 'center', gap: '6px' }}>
-                  <ImageIcon size={16} style={{ color: '#f472b6' }} /> Output Canvas
-                </h3>
+        {/* RIGHT COLUMN: Primary Render Output & Your Creations Gallery */}
+        <div className="lg:col-span-6 flex flex-col gap-5 min-w-0">
+          {/* 6. RESULT CARD ("Primary Render Output") */}
+          <div className="flex flex-col gap-2.5">
+            {/* Top Header Row */}
+            <div className="flex items-center justify-between gap-2 flex-wrap">
+              <div className="flex items-center gap-2 flex-wrap">
+                <span className="w-2 h-2 rounded-full bg-emerald-400 animate-pulse shrink-0" />
+                <span className="text-xs font-mono uppercase tracking-wider text-gray-300 font-semibold">
+                  Primary Render Output
+                </span>
                 {currentImage?.referenceImageUrl && (
-                  <span
-                    style={{
-                      fontSize: '10px',
-                      fontWeight: 700,
-                      background: 'rgba(236,72,153,0.18)',
-                      color: '#f472b6',
-                      padding: '2px 7px',
-                      borderRadius: '4px',
-                      border: '1px solid rgba(236,72,153,0.35)',
-                      display: 'inline-flex',
-                      alignItems: 'center',
-                      gap: '4px',
-                    }}
-                  >
-                    <ArrowRightLeft size={10} /> Before & After
+                  <span className="text-[10px] font-mono font-bold bg-pink-500/15 text-pink-300 px-2 py-0.5 rounded-md border border-pink-500/30 inline-flex items-center gap-1">
+                    <ArrowRightLeft size={10} /> Before &amp; After
                   </span>
                 )}
               </div>
 
-              <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+              <div className="flex items-center gap-2 flex-wrap">
                 {currentImage?.referenceImageUrl && (
-                  <div style={{ display: 'flex', background: 'rgba(0,0,0,0.4)', borderRadius: '6px', padding: '2px', border: '1px solid var(--line)' }}>
+                  <div className="flex bg-[#121218] rounded-lg p-0.5 border border-[#252534]">
                     <button
                       type="button"
                       onClick={() => {
                         setComparisonLayout('side-by-side');
                         playTapSound();
                       }}
-                      style={{
-                        background: comparisonLayout === 'side-by-side' ? 'rgba(236,72,153,0.3)' : 'transparent',
-                        color: comparisonLayout === 'side-by-side' ? '#fff' : 'var(--muted)',
-                        border: 0,
-                        borderRadius: '4px',
-                        padding: '3px 8px',
-                        fontSize: '10px',
-                        fontWeight: 600,
-                        cursor: 'pointer',
-                        display: 'inline-flex',
-                        alignItems: 'center',
-                        gap: '4px',
-                      }}
+                      className={`px-2 py-0.5 rounded-md text-[10px] font-mono font-semibold inline-flex items-center gap-1 border-0 cursor-pointer transition ${
+                        comparisonLayout === 'side-by-side'
+                          ? 'bg-pink-500/25 text-pink-300'
+                          : 'bg-transparent text-gray-400 hover:text-gray-200'
+                      }`}
                     >
-                      <Columns size={11} /> Side-by-Side
+                      <Columns size={10} /> Side-by-Side
                     </button>
                     <button
                       type="button"
@@ -3494,772 +3020,680 @@ export function ImageStudio() {
                         setComparisonLayout('result-only');
                         playTapSound();
                       }}
-                      style={{
-                        background: comparisonLayout === 'result-only' ? 'rgba(236,72,153,0.3)' : 'transparent',
-                        color: comparisonLayout === 'result-only' ? '#fff' : 'var(--muted)',
-                        border: 0,
-                        borderRadius: '4px',
-                        padding: '3px 8px',
-                        fontSize: '10px',
-                        fontWeight: 600,
-                        cursor: 'pointer',
-                        display: 'inline-flex',
-                        alignItems: 'center',
-                        gap: '4px',
-                      }}
+                      className={`px-2 py-0.5 rounded-md text-[10px] font-mono font-semibold inline-flex items-center gap-1 border-0 cursor-pointer transition ${
+                        comparisonLayout === 'result-only'
+                          ? 'bg-pink-500/25 text-pink-300'
+                          : 'bg-transparent text-gray-400 hover:text-gray-200'
+                      }`}
                     >
-                      <ImageIcon size={11} /> Result Only
+                      <ImageIcon size={10} /> Result Only
                     </button>
                   </div>
                 )}
-                {currentImage && (
-                  <span style={{ fontSize: '11px', color: 'var(--muted)', fontFamily: 'DM Mono, monospace' }}>
-                    {currentImage.width}×{currentImage.height} · Seed {currentImage.seed}
-                  </span>
-                )}
+
+                <span
+                  id="render-dimension-badge"
+                  className="text-[10px] font-mono text-gray-400 bg-[#16161f] px-2 py-0.5 rounded border border-[#252534]"
+                >
+                  {currentImage
+                    ? `${currentImage.width} × ${currentImage.height} • Seed ${currentImage.seed}`
+                    : `${ASPECT_RATIOS[selectedRatioIndex]?.width} × ${ASPECT_RATIOS[selectedRatioIndex]?.height}`}
+                </span>
               </div>
             </div>
 
-            {/* Display Area: Loading vs Rendered vs Empty */}
-            {loading ? (
-              <div
-                style={{
-                  minHeight: '380px',
-                  borderRadius: '12px',
-                  background: 'rgba(8,16,22,0.8)',
-                  border: '1px dashed rgba(236,72,153,0.4)',
-                  display: 'flex',
-                  flexDirection: 'column',
-                  alignItems: 'center',
-                  justifyContent: 'center',
-                  gap: '16px',
-                  padding: '30px',
-                  position: 'relative',
-                  overflow: 'hidden',
-                }}
-              >
+            {/* Render Card Container */}
+            <div className="relative rounded-2xl overflow-hidden bg-[#121218] border border-[#232332] shadow-2xl flex flex-col">
+              {loading ? (
                 <div
+                  className="w-full min-h-[340px] flex flex-col items-center justify-center gap-4 p-6 text-center bg-[#0c0c12]"
                   style={{
-                    width: '60px',
-                    height: '60px',
-                    borderRadius: '50%',
-                    background: loadingPhase === 'enhancing' ? 'rgba(168,85,247,0.15)' : 'rgba(236,72,153,0.15)',
-                    border: `2px solid ${loadingPhase === 'enhancing' ? '#a855f7' : '#ec4899'}`,
-                    display: 'grid',
-                    placeItems: 'center',
-                    color: loadingPhase === 'enhancing' ? '#c084fc' : '#f472b6',
+                    aspectRatio: `${ASPECT_RATIOS[selectedRatioIndex]?.width || 1024} / ${
+                      ASPECT_RATIOS[selectedRatioIndex]?.height || 1024
+                    }`,
+                    maxHeight: '480px',
                   }}
                 >
-                  {loadingPhase === 'enhancing' ? (
-                    <Wand2 size={28} className="animate-spin" />
-                  ) : (
-                    <RotateCw size={28} className="animate-spin" />
-                  )}
-                </div>
-                <div style={{ textAlign: 'center' }}>
-                  <h4 style={{ margin: 0, fontSize: '15px', fontWeight: 600, color: '#fff' }}>
-                    {loadingPhase === 'enhancing' ? '✨ Refining Prompt with Smart AI...' : 'Generating Neural Visuals...'}
-                  </h4>
-                  <p
-                    style={{
-                      margin: '4px 0 0',
-                      fontSize: '12px',
-                      color: failoverNotice ? '#f59e0b' : 'var(--muted)',
-                      fontWeight: failoverNotice ? 600 : 400,
-                    }}
-                  >
-                    {loadingPhase === 'enhancing'
-                      ? 'NEXUS AI text model is enhancing description depth, lighting, and vocabulary...'
-                      : failoverNotice || `Communicating with ${activeProvider?.name || 'Image Provider'} endpoint.`}
-                  </p>
-                </div>
-              </div>
-            ) : currentImage ? (
-              <div style={{ display: 'grid', gap: '14px' }}>
-                {/* Image Container: Side-by-Side Comparison vs Single View */}
-                {currentImage.referenceImageUrl && comparisonLayout === 'side-by-side' ? (
-                  <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(240px, 1fr))', gap: '14px' }}>
-                    {/* Before: Reference Image */}
-                    <div
-                      style={{
-                        borderRadius: '12px',
-                        overflow: 'hidden',
-                        background: '#071116',
-                        border: '1px solid rgba(255,255,255,0.12)',
-                        boxShadow: '0 4px 20px rgba(0,0,0,0.4)',
-                        display: 'flex',
-                        flexDirection: 'column',
-                      }}
-                    >
-                      <div
-                        style={{
-                          padding: '8px 12px',
-                          background: 'rgba(255,255,255,0.04)',
-                          borderBottom: '1px solid rgba(255,255,255,0.08)',
-                          fontSize: '11px',
-                          fontWeight: 700,
-                          color: 'var(--muted)',
-                          display: 'flex',
-                          alignItems: 'center',
-                          justifyContent: 'space-between',
-                        }}
-                      >
-                        <span style={{ display: 'inline-flex', alignItems: 'center', gap: '5px' }}>
-                          <ImagePlus size={13} style={{ color: '#94a3b8' }} /> BEFORE (Original Reference)
-                        </span>
-                        <span style={{ fontSize: '10px', opacity: 0.7 }}>Input</span>
-                      </div>
-                      <div style={{ position: 'relative', flex: 1, display: 'grid', placeItems: 'center', minHeight: '260px', maxHeight: '480px', overflow: 'hidden', background: '#050c10' }}>
-                        <img
-                          src={currentImage.referenceImageUrl}
-                          alt="Reference Before"
-                          style={{
-                            width: '100%',
-                            height: '100%',
-                            maxHeight: '480px',
-                            objectFit: 'contain',
-                            display: 'block',
-                          }}
-                        />
-                      </div>
-                    </div>
-
-                    {/* After: AI Edited Result */}
-                    <div
-                      style={{
-                        borderRadius: '12px',
-                        overflow: 'hidden',
-                        background: '#071116',
-                        border: '1px solid rgba(236,72,153,0.45)',
-                        boxShadow: '0 8px 30px rgba(236,72,153,0.15)',
-                        display: 'flex',
-                        flexDirection: 'column',
-                        position: 'relative',
-                      }}
-                    >
-                      <div
-                        style={{
-                          padding: '8px 12px',
-                          background: 'rgba(236,72,153,0.12)',
-                          borderBottom: '1px solid rgba(236,72,153,0.3)',
-                          fontSize: '11px',
-                          fontWeight: 700,
-                          color: '#f472b6',
-                          display: 'flex',
-                          alignItems: 'center',
-                          justifyContent: 'space-between',
-                        }}
-                      >
-                        <span style={{ display: 'inline-flex', alignItems: 'center', gap: '5px' }}>
-                          <Sparkles size={13} style={{ color: '#f472b6' }} /> AFTER (AI Edited Result)
-                        </span>
-                        <span style={{ fontSize: '10px', background: 'rgba(236,72,153,0.25)', padding: '1px 5px', borderRadius: '4px' }}>
-                          {currentImage.model || 'kontext'}
-                        </span>
-                      </div>
-                      <div style={{ position: 'relative', flex: 1, display: 'grid', placeItems: 'center', minHeight: '260px', maxHeight: '480px', overflow: 'hidden', background: '#050c10' }}>
-                        <img
-                          src={currentImage.url}
-                          alt={currentImage.prompt}
-                          style={{
-                            width: '100%',
-                            height: '100%',
-                            maxHeight: '480px',
-                            objectFit: 'contain',
-                            display: 'block',
-                          }}
-                        />
-
-                        {/* Expand button overlay */}
-                        <button
-                          type="button"
-                          onClick={() => setFullscreenImage(currentImage)}
-                          style={{
-                            position: 'absolute',
-                            top: '10px',
-                            right: '10px',
-                            background: 'rgba(0,0,0,0.65)',
-                            backdropFilter: 'blur(4px)',
-                            border: '1px solid rgba(255,255,255,0.2)',
-                            borderRadius: '6px',
-                            padding: '6px',
-                            color: '#fff',
-                            cursor: 'pointer',
-                          }}
-                          title="Fullscreen View"
-                        >
-                          <Maximize2 size={16} />
-                        </button>
-                      </div>
-                    </div>
-                  </div>
-                ) : (
-                  /* Single Image View */
-                  <div
-                    style={{
-                      position: 'relative',
-                      borderRadius: '12px',
-                      overflow: 'hidden',
-                      background: '#071116',
-                      border: '1px solid rgba(236,72,153,0.3)',
-                      boxShadow: '0 8px 30px rgba(0,0,0,0.5)',
-                    }}
-                  >
-                    <img
-                      src={currentImage.url}
-                      alt={currentImage.prompt}
-                      style={{
-                        width: '100%',
-                        height: 'auto',
-                        maxHeight: '520px',
-                        objectFit: 'contain',
-                        display: 'block',
-                        margin: '0 auto',
-                      }}
-                    />
-
-                    {/* Expand button overlay */}
-                    <button
-                      type="button"
-                      onClick={() => setFullscreenImage(currentImage)}
-                      style={{
-                        position: 'absolute',
-                        top: '12px',
-                        right: '12px',
-                        background: 'rgba(0,0,0,0.65)',
-                        backdropFilter: 'blur(4px)',
-                        border: '1px solid rgba(255,255,255,0.2)',
-                        borderRadius: '6px',
-                        padding: '6px',
-                        color: '#fff',
-                        cursor: 'pointer',
-                      }}
-                      title="Fullscreen View"
-                    >
-                      <Maximize2 size={16} />
-                    </button>
-                  </div>
-                )}
-
-                {/* Prompt Caption & Meta */}
-                <div
-                  style={{
-                    padding: '12px 14px',
-                    borderRadius: '8px',
-                    background: 'rgba(10,22,28,0.6)',
-                    border: '1px solid var(--line)',
-                    display: 'grid',
-                    gap: '6px',
-                  }}
-                >
-                  <div style={{ display: 'flex', alignItems: 'center', gap: '6px', flexWrap: 'wrap' }}>
-                    {currentImage.isEdit && (
-                      <span
-                        style={{
-                          fontSize: '10px',
-                          fontWeight: 700,
-                          background: 'rgba(236,72,153,0.2)',
-                          color: '#f472b6',
-                          padding: '2px 6px',
-                          borderRadius: '4px',
-                          border: '1px solid rgba(236,72,153,0.35)',
-                          display: 'inline-flex',
-                          alignItems: 'center',
-                          gap: '4px',
-                        }}
-                      >
-                        <Wand2 size={10} /> Image Edit (img2img)
-                      </span>
-                    )}
-                    {currentImage.enhancedPrompt && (
-                      <span
-                        style={{
-                          fontSize: '10px',
-                          fontWeight: 700,
-                          background: 'rgba(168,85,247,0.2)',
-                          color: '#c084fc',
-                          padding: '2px 6px',
-                          borderRadius: '4px',
-                          border: '1px solid rgba(168,85,247,0.35)',
-                          display: 'inline-flex',
-                          alignItems: 'center',
-                          gap: '4px',
-                        }}
-                      >
-                        <Sparkles size={10} /> Smart AI Enhanced
-                      </span>
-                    )}
-                  </div>
-
-                  <p style={{ margin: 0, fontSize: '12px', color: '#fff', lineHeight: 1.5 }}>
-                    "{currentImage.prompt}"
-                  </p>
-
-                  {currentImage.originalPrompt && currentImage.originalPrompt !== currentImage.prompt && (
-                    <p style={{ margin: 0, fontSize: '11px', color: 'var(--muted)', fontStyle: 'italic' }}>
-                      Original: "{currentImage.originalPrompt}"
-                    </p>
-                  )}
-
-                  <div style={{ display: 'flex', gap: '12px', marginTop: '2px', fontSize: '10px', color: 'var(--muted)', flexWrap: 'wrap' }}>
-                    <span>Provider: {currentImage.providerName}</span>
-                    <span>Model: {currentImage.model || 'flux'}</span>
-                    <span>Seed: {currentImage.seed}</span>
-                    {currentImage.isEdit && <span>Mode: img2img Editing</span>}
-                  </div>
-                </div>
-
-                {/* Action Buttons Toolbar */}
-                <div style={{ display: 'flex', gap: '10px', flexWrap: 'wrap' }}>
-                  {/* Download Image Button (Styled similar to Voice AI's Download MP3 button) */}
-                  <button
-                    id="download-image-btn"
-                    type="button"
-                    onClick={() => handleDownload(currentImage)}
-                    disabled={downloading}
-                    style={{
-                      flex: 1,
-                      minWidth: '150px',
-                      padding: '11px 18px',
-                      borderRadius: '8px',
-                      background: 'linear-gradient(135deg, rgba(52,211,153,0.9) 0%, rgba(16,185,129,0.9) 100%)',
-                      color: '#062016',
-                      border: 'none',
-                      fontSize: '13px',
-                      fontWeight: 700,
-                      cursor: downloading ? 'not-allowed' : 'pointer',
-                      display: 'inline-flex',
-                      alignItems: 'center',
-                      justifyContent: 'center',
-                      gap: '6px',
-                      boxShadow: '0 0 16px rgba(52,211,153,0.3)',
-                    }}
-                  >
-                    {downloading ? (
-                      <>
-                        <RotateCw size={15} className="animate-spin" /> Downloading...
-                      </>
+                  <div className="w-14 h-14 rounded-2xl bg-gradient-to-br from-[#ff2d87]/20 to-[#8b2cf5]/20 border border-pink-500/40 flex items-center justify-center text-pink-400 shadow-glow-subtle">
+                    {loadingPhase === 'enhancing' ? (
+                      <Wand2 size={26} className="animate-spin" />
                     ) : (
-                      <>
-                        <Download size={15} /> Download Image
-                      </>
+                      <RotateCw size={26} className="animate-spin" />
                     )}
-                  </button>
-
-                  {/* Use this output as reference for next edit */}
-                  <button
-                    type="button"
-                    onClick={() => handleUseAsReference(currentImage.url)}
-                    className="secondary-button"
-                    style={{
-                      padding: '11px 14px',
-                      borderRadius: '8px',
-                      fontSize: '12px',
-                      fontWeight: 600,
-                      display: 'inline-flex',
-                      alignItems: 'center',
-                      gap: '5px',
-                      cursor: 'pointer',
-                      borderColor: 'rgba(236,72,153,0.35)',
-                      color: '#f472b6',
-                    }}
-                    title="Load this result as the reference image to edit it further"
-                  >
-                    <Wand2 size={14} /> Edit This
-                  </button>
-
-                  <button
-                    type="button"
-                    onClick={() => handleCopyUrl(currentImage.url)}
-                    className="secondary-button"
-                    style={{
-                      padding: '11px 14px',
-                      borderRadius: '8px',
-                      fontSize: '12px',
-                      fontWeight: 600,
-                      display: 'inline-flex',
-                      alignItems: 'center',
-                      gap: '5px',
-                      cursor: 'pointer',
-                    }}
-                  >
-                    {copiedUrl ? <Check size={14} style={{ color: '#34d399' }} /> : <Copy size={14} />}
-                    {copiedUrl ? 'Copied!' : 'Copy URL'}
-                  </button>
-
-                  <a
-                    href={currentImage.url}
-                    target="_blank"
-                    rel="noreferrer"
-                    className="secondary-button"
-                    style={{
-                      padding: '11px 14px',
-                      borderRadius: '8px',
-                      fontSize: '12px',
-                      fontWeight: 600,
-                      display: 'inline-flex',
-                      alignItems: 'center',
-                      gap: '5px',
-                      textDecoration: 'none',
-                      color: 'var(--text)',
-                    }}
-                  >
-                    <ExternalLink size={14} /> Open Tab
-                  </a>
+                  </div>
+                  <div className="max-w-xs">
+                    <h4 className="m-0 text-sm font-mono font-bold text-white uppercase tracking-wide">
+                      {loadingPhase === 'enhancing'
+                        ? 'Refining Prompt with Smart AI...'
+                        : 'Synthesizing Visual Output...'}
+                    </h4>
+                    <p
+                      className={`mt-1.5 mb-0 text-xs font-mono leading-relaxed ${
+                        failoverNotice ? 'text-amber-300 font-semibold' : 'text-gray-400'
+                      }`}
+                    >
+                      {loadingPhase === 'enhancing'
+                        ? 'Rewriting scene description with lighting & detail...'
+                        : failoverNotice ||
+                          `Active Engine: ${activeProvider?.name || 'Image Provider'}`}
+                    </p>
+                  </div>
                 </div>
-              </div>
-            ) : (
-              <div
-                style={{
-                  minHeight: '340px',
-                  borderRadius: '12px',
-                  background: 'rgba(8,16,22,0.5)',
-                  border: '1px dashed var(--line)',
-                  display: 'flex',
-                  flexDirection: 'column',
-                  alignItems: 'center',
-                  justifyContent: 'center',
-                  gap: '12px',
-                  padding: '30px',
-                  textAlign: 'center',
-                }}
-              >
+              ) : currentImage ? (
+                <div className="flex flex-col stitch-result-fade-in">
+                  {/* Image Display: Side-by-Side Comparison vs Single View */}
+                  {currentImage.referenceImageUrl && comparisonLayout === 'side-by-side' ? (
+                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-2.5 p-2.5 bg-[#0a0a0f]">
+                      {/* Before: Reference Image */}
+                      <div className="rounded-xl overflow-hidden bg-[#121218] border border-[#232332] flex flex-col">
+                        <div className="px-2.5 py-1.5 bg-[#161620] border-b border-[#232332] text-[10px] font-mono text-gray-400 flex items-center justify-between">
+                          <span className="inline-flex items-center gap-1 font-semibold">
+                            <ImagePlus size={11} className="text-gray-400" /> BEFORE (Reference)
+                          </span>
+                          <span>Input</span>
+                        </div>
+                        <div className="relative flex-1 flex items-center justify-center min-h-[220px] max-h-[420px] bg-[#070709] overflow-hidden">
+                          <img
+                            src={currentImage.referenceImageUrl}
+                            alt="Reference Before"
+                            className="w-full h-full max-h-[420px] object-contain block"
+                          />
+                        </div>
+                      </div>
+
+                      {/* After: AI Edited Result */}
+                      <div className="rounded-xl overflow-hidden bg-[#121218] border border-pink-500/40 shadow-glow-subtle flex flex-col relative">
+                        <div className="px-2.5 py-1.5 bg-pink-500/10 border-b border-pink-500/25 text-[10px] font-mono text-pink-300 flex items-center justify-between">
+                          <span className="inline-flex items-center gap-1 font-bold">
+                            <Sparkles size={11} className="text-pink-400" /> AFTER (Edited)
+                          </span>
+                          <span className="bg-pink-500/20 px-1.5 py-0.5 rounded text-[9px]">
+                            {currentImage.model || 'kontext'}
+                          </span>
+                        </div>
+                        <div className="relative flex-1 flex items-center justify-center min-h-[220px] max-h-[420px] bg-[#070709] overflow-hidden">
+                          <img
+                            src={currentImage.url}
+                            alt={currentImage.prompt}
+                            className="w-full h-full max-h-[420px] object-contain block cursor-pointer"
+                            onClick={() => setFullscreenImage(currentImage)}
+                          />
+                        </div>
+                      </div>
+                    </div>
+                  ) : (
+                    /* Single Render Preview Container following image/selected aspect ratio */
+                    <div
+                      id="render-preview-container"
+                      className="relative w-full mx-auto bg-[#09090d] overflow-hidden flex items-center justify-center"
+                      style={{
+                        aspectRatio: `${currentImage.width || ASPECT_RATIOS[selectedRatioIndex]?.width || 1024} / ${
+                          currentImage.height || ASPECT_RATIOS[selectedRatioIndex]?.height || 1024
+                        }`,
+                        maxHeight: '520px',
+                      }}
+                    >
+                      <img
+                        src={currentImage.url}
+                        alt={currentImage.prompt}
+                        className="w-full h-full object-contain block cursor-pointer"
+                        onClick={() => setFullscreenImage(currentImage)}
+                      />
+
+                      {/* Top Overlay Badges */}
+                      <div className="absolute top-3 left-3 right-3 flex items-center justify-between pointer-events-none gap-2">
+                        <span className="px-2.5 py-1 rounded-lg bg-black/65 backdrop-blur-md border border-white/10 text-[10px] font-mono text-gray-200 flex items-center gap-1.5 truncate">
+                          <span className="w-1.5 h-1.5 rounded-full bg-pink-500 shrink-0" />
+                          <span className="truncate">
+                            {currentImage.model || currentImage.providerName} • #{currentImage.seed}
+                          </span>
+                        </span>
+
+                        {currentImage.isFavorite && (
+                          <span className="px-2 py-1 rounded-lg bg-pink-500/25 backdrop-blur-md border border-pink-500/40 text-[10px] font-mono text-pink-300 flex items-center gap-1 shrink-0">
+                            <Heart size={10} className="fill-pink-400 text-pink-400" /> Liked
+                          </span>
+                        )}
+                      </div>
+                    </div>
+                  )}
+
+                  {/* Bottom Details & Stitch 5-Button Action Row */}
+                  <div className="p-3.5 bg-[#121218] border-t border-[#1e1e29] flex flex-col gap-3">
+                    {/* Prompt & Real Metadata */}
+                    <div className="flex flex-col gap-1.5">
+                      <div className="flex items-center justify-between gap-2 flex-wrap">
+                        <div className="flex items-center gap-1.5 flex-wrap">
+                          <span className="text-[10px] font-mono uppercase tracking-wider text-pink-400 font-semibold">
+                            {currentImage.providerName}
+                          </span>
+                          {currentImage.isEdit && (
+                            <span className="text-[9px] font-mono font-bold bg-pink-500/20 text-pink-300 px-1.5 py-0.5 rounded border border-pink-500/30 inline-flex items-center gap-1">
+                              <Wand2 size={9} /> img2img
+                            </span>
+                          )}
+                          {currentImage.enhancedPrompt && (
+                            <span className="text-[9px] font-mono font-bold bg-violet-500/20 text-violet-300 px-1.5 py-0.5 rounded border border-violet-500/30 inline-flex items-center gap-1">
+                              <Sparkles size={9} /> Smart AI Enhanced
+                            </span>
+                          )}
+                        </div>
+                        <div className="flex items-center gap-2">
+                          <button
+                            type="button"
+                            onClick={(e) =>
+                              handleCopyGalleryPrompt(e, currentImage.prompt, currentImage.id)
+                            }
+                            className="text-[10px] font-mono text-gray-400 hover:text-pink-300 bg-transparent border-0 cursor-pointer inline-flex items-center gap-1 p-0 transition"
+                            title="Copy prompt text"
+                          >
+                            {copiedPromptId === currentImage.id ? (
+                              <>
+                                <Check size={11} className="text-emerald-400" />
+                                <span className="text-emerald-400">Prompt Copied</span>
+                              </>
+                            ) : (
+                              <>
+                                <Copy size={11} />
+                                <span>Copy Prompt</span>
+                              </>
+                            )}
+                          </button>
+                          <a
+                            href={currentImage.url}
+                            target="_blank"
+                            rel="noreferrer"
+                            className="text-[10px] font-mono text-gray-400 hover:text-white no-underline inline-flex items-center gap-1 transition"
+                            title="Open image in new tab"
+                          >
+                            <ExternalLink size={11} />
+                            <span>Open</span>
+                          </a>
+                        </div>
+                      </div>
+
+                      <p className="m-0 text-xs text-gray-200 leading-relaxed line-clamp-2 font-sans">
+                        "{currentImage.prompt}"
+                      </p>
+
+                      {currentImage.originalPrompt &&
+                        currentImage.originalPrompt !== currentImage.prompt && (
+                          <p className="m-0 text-[11px] text-gray-500 italic line-clamp-1">
+                            Original: "{currentImage.originalPrompt}"
+                          </p>
+                        )}
+                    </div>
+
+                    {/* Stitch 5-Column Quick Action Bar: Expand, Save/Download, Favorite, Remix/Edit, Copy */}
+                    <div className="grid grid-cols-5 gap-1.5">
+                      {/* 1. Expand */}
+                      <button
+                        type="button"
+                        onClick={() => setFullscreenImage(currentImage)}
+                        className="py-2 px-1 rounded-xl bg-[#181822] hover:bg-[#222230] border border-[#262635] text-gray-200 flex flex-col items-center justify-center gap-1 transition active:scale-95 cursor-pointer"
+                        title="Expand Fullscreen"
+                      >
+                        <Maximize2 size={14} className="text-pink-400" />
+                        <span className="text-[9px] font-mono">Expand</span>
+                      </button>
+
+                      {/* 2. Save / Download */}
+                      <button
+                        id="download-image-btn"
+                        type="button"
+                        onClick={() => handleDownload(currentImage)}
+                        disabled={downloading}
+                        className="py-2 px-1 rounded-xl bg-[#181822] hover:bg-[#222230] border border-[#262635] text-gray-200 flex flex-col items-center justify-center gap-1 transition active:scale-95 cursor-pointer disabled:opacity-50"
+                        title="Download Image"
+                      >
+                        {downloading ? (
+                          <RotateCw size={14} className="animate-spin text-emerald-400" />
+                        ) : (
+                          <Download size={14} className="text-emerald-400" />
+                        )}
+                        <span className="text-[9px] font-mono">
+                          {downloading ? 'Saving' : 'Save'}
+                        </span>
+                      </button>
+
+                      {/* 3. Favorite */}
+                      <button
+                        type="button"
+                        onClick={(e) => handleToggleFavorite(e, currentImage.id)}
+                        className={`py-2 px-1 rounded-xl border flex flex-col items-center justify-center gap-1 transition active:scale-95 cursor-pointer ${
+                          currentImage.isFavorite
+                            ? 'bg-pink-500/20 border-pink-500/50 text-pink-300'
+                            : 'bg-[#181822] hover:bg-[#222230] border-[#262635] text-gray-200'
+                        }`}
+                        title={
+                          currentImage.isFavorite ? 'Remove from favorites' : 'Add to favorites'
+                        }
+                      >
+                        <Heart
+                          size={14}
+                          className={`stitch-heart-icon ${
+                            currentImage.isFavorite
+                              ? 'text-pink-400 fill-pink-400'
+                              : 'text-pink-400'
+                          }`}
+                        />
+                        <span className="text-[9px] font-mono">
+                          {currentImage.isFavorite ? 'Liked' : 'Favorite'}
+                        </span>
+                      </button>
+
+                      {/* 4. Remix / Edit (Use as Reference) */}
+                      <button
+                        type="button"
+                        onClick={() => handleUseAsReference(currentImage.url)}
+                        className="py-2 px-1 rounded-xl bg-[#181822] hover:bg-[#222230] border border-[#262635] text-gray-200 flex flex-col items-center justify-center gap-1 transition active:scale-95 cursor-pointer"
+                        title="Load this result as the reference image to edit or remix it"
+                      >
+                        <Wand2 size={14} className="text-violet-400" />
+                        <span className="text-[9px] font-mono">Remix</span>
+                      </button>
+
+                      {/* 5. Copy URL */}
+                      <button
+                        type="button"
+                        onClick={() => handleCopyUrl(currentImage.url)}
+                        className="py-2 px-1 rounded-xl bg-[#181822] hover:bg-[#222230] border border-[#262635] text-gray-200 flex flex-col items-center justify-center gap-1 transition active:scale-95 cursor-pointer"
+                        title="Copy image URL"
+                      >
+                        {copiedUrl ? (
+                          <Check size={14} className="text-emerald-400" />
+                        ) : (
+                          <Copy size={14} className="text-cyan-400" />
+                        )}
+                        <span className="text-[9px] font-mono">
+                          {copiedUrl ? 'Copied' : 'Copy'}
+                        </span>
+                      </button>
+                    </div>
+                  </div>
+                </div>
+              ) : (
+                /* Empty Output State */
                 <div
+                  className="w-full min-h-[320px] flex flex-col items-center justify-center gap-3 p-6 text-center bg-[#0c0c12]"
                   style={{
-                    width: '54px',
-                    height: '54px',
-                    borderRadius: '12px',
-                    background: 'rgba(236,72,153,0.1)',
-                    border: '1px solid rgba(236,72,153,0.2)',
-                    display: 'grid',
-                    placeItems: 'center',
-                    color: '#f472b6',
+                    aspectRatio: `${ASPECT_RATIOS[selectedRatioIndex]?.width || 1024} / ${
+                      ASPECT_RATIOS[selectedRatioIndex]?.height || 1024
+                    }`,
+                    maxHeight: '440px',
                   }}
                 >
-                  <ImageIcon size={26} />
+                  <div className="w-12 h-12 rounded-2xl bg-pink-500/10 border border-pink-500/25 flex items-center justify-center text-pink-400">
+                    <ImageIcon size={24} />
+                  </div>
+                  <div className="max-w-xs">
+                    <h4 className="m-0 text-sm font-mono font-bold text-gray-200">
+                      Ready for Synthesis
+                    </h4>
+                    <p className="mt-1 mb-0 text-xs text-gray-400 leading-relaxed">
+                      Enter a prompt and click Generate Artwork to render high-fidelity visuals.
+                    </p>
+                  </div>
                 </div>
-                <div>
-                  <h4 style={{ margin: 0, fontSize: '15px', fontWeight: 600 }}>Ready for Synthesis</h4>
-                  <p style={{ margin: '4px 0 0', fontSize: '12px', color: 'var(--muted)', maxWidth: '320px' }}>
-                    Type a prompt on the left and click "Generate Image" to render stunning visuals with Pollinations or custom endpoints.
-                  </p>
-                </div>
-              </div>
-            )}
+              )}
+            </div>
           </div>
 
-          {/* Session History Gallery (IndexedDB Persistent) */}
-          {history.length > 0 && (
-            <div
-              style={{
-                padding: '18px 20px',
-                borderRadius: '14px',
-                background: 'rgba(14,31,39,0.5)',
-                border: '1px solid var(--line)',
-                display: 'grid',
-                gap: '12px',
-              }}
-            >
-              {/* Top row: Title on left, "See Full Gallery" on right (exactly in top-right area) */}
-              <div
-                style={{
-                  display: 'flex',
-                  justifyContent: 'space-between',
-                  alignItems: 'center',
-                  gap: '8px',
+          {/* YOUR CREATIONS Gallery Section (IndexedDB Persistent) */}
+          <section className="space-y-3 pt-1">
+            {/* Top Header Row */}
+            <div className="flex items-center justify-between gap-2 flex-wrap">
+              <div className="flex items-center gap-2 flex-wrap">
+                <h3 className="text-xs font-mono uppercase tracking-wider text-gray-300 font-bold m-0">
+                  YOUR CREATIONS
+                </h3>
+                <span className="bg-[#181822] text-gray-300 border border-[#2a2a38] px-2 py-0.5 rounded-full text-[10px] font-mono font-semibold">
+                  {history.length}
+                </span>
+                <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full bg-emerald-500/10 border border-emerald-500/25 text-[10px] font-mono text-emerald-300">
+                  <Database size={10} className="text-emerald-400" /> IndexedDB
+                </span>
+              </div>
+
+              <button
+                type="button"
+                onClick={() => {
+                  playTapSound();
+                  setGalleryModalOpen(true);
                 }}
+                className="flex items-center gap-1.5 text-xs font-mono text-pink-400 hover:text-pink-300 bg-pink-500/10 hover:bg-pink-500/15 border border-pink-500/25 px-2.5 py-1 rounded-lg transition-all cursor-pointer"
+                title="Open full photo gallery grid view"
               >
-                <div style={{ display: 'flex', alignItems: 'center', gap: '8px', flexWrap: 'wrap' }}>
-                  <span style={{ fontSize: '12px', fontWeight: 600, color: 'var(--text)' }}>
-                    Recent Generations ({history.length})
-                  </span>
-                  <span
-                    style={{
-                      fontSize: '10px',
-                      color: 'var(--muted)',
-                      background: 'rgba(255,255,255,0.06)',
-                      padding: '2px 7px',
-                      borderRadius: '10px',
-                      display: 'inline-flex',
-                      alignItems: 'center',
-                      gap: '4px',
-                    }}
-                  >
-                    <Database size={10} style={{ color: '#34d399' }} /> IndexedDB
-                  </span>
-                </div>
+                <ImageIcon size={12} />
+                <span>See Full Gallery</span>
+                <ChevronRight size={13} />
+              </button>
+            </div>
+
+            {/* Gallery Action Toolbar */}
+            <div className="flex items-center justify-between gap-1.5 bg-[#121218] border border-[#1e1e29] p-2 rounded-xl text-xs font-mono flex-wrap">
+              <div className="flex items-center gap-1.5 flex-wrap">
+                <button
+                  type="button"
+                  onClick={() => {
+                    if (gallerySelectionMode) {
+                      handleCancelSelectionMode();
+                    } else {
+                      handleOpenSelectionMode();
+                    }
+                  }}
+                  disabled={history.length === 0}
+                  className={`flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg border transition-all cursor-pointer disabled:opacity-40 disabled:cursor-not-allowed ${
+                    gallerySelectionMode
+                      ? 'bg-pink-500/15 border-pink-500/40 text-pink-300 font-semibold'
+                      : 'bg-[#181822] hover:bg-[#222230] text-gray-200 border-[#262635]'
+                  }`}
+                  title={gallerySelectionMode ? 'Exit selection mode' : 'Select images to export'}
+                >
+                  <CheckSquare size={12} className="text-pink-400" />
+                  <span>{gallerySelectionMode ? 'Selecting' : 'Select'}</span>
+                </button>
+
+                <button
+                  type="button"
+                  onClick={handleDownloadAllImages}
+                  disabled={history.length === 0 || backupExporting}
+                  className="flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg bg-[#181822] hover:bg-[#222230] text-gray-300 border border-[#262635] transition-all cursor-pointer disabled:opacity-40 disabled:cursor-not-allowed"
+                  title="Export all saved images to a JSON backup file"
+                >
+                  {backupExporting ? (
+                    <RotateCw size={12} className="animate-spin text-pink-400" />
+                  ) : (
+                    <Download size={12} />
+                  )}
+                  <span>Export</span>
+                </button>
 
                 <button
                   type="button"
                   onClick={() => {
                     playTapSound();
-                    setGalleryModalOpen(true);
+                    backupFileInputRef.current?.click();
                   }}
-                  className="secondary-button"
-                  style={{
-                    fontSize: '11px',
-                    padding: '3px 9px',
-                    borderRadius: '6px',
-                    display: 'inline-flex',
-                    alignItems: 'center',
-                    gap: '5px',
-                    color: '#38bdf8',
-                    borderColor: 'rgba(56,189,248,0.3)',
-                    background: 'rgba(56,189,248,0.08)',
-                    cursor: 'pointer',
-                    flexShrink: 0,
-                  }}
-                  title="Open full photo gallery grid view"
+                  disabled={backupImporting}
+                  className="flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg bg-[#181822] hover:bg-[#222230] text-gray-300 border border-[#262635] transition-all cursor-pointer disabled:opacity-40 disabled:cursor-not-allowed"
+                  title="Restore images from a JSON backup file"
                 >
-                  <ImageIcon size={12} /> See Full Gallery
+                  {backupImporting ? (
+                    <RotateCw size={12} className="animate-spin text-purple-400" />
+                  ) : (
+                    <Upload size={12} />
+                  )}
+                  <span>Restore</span>
                 </button>
               </div>
 
-              {/* Sub-bar: "Click to view" and "Clear History" */}
-              <div
-                style={{
-                  display: 'flex',
-                  justifyContent: 'space-between',
-                  alignItems: 'center',
-                  gap: '8px',
-                }}
-              >
-                <span style={{ fontSize: '11px', color: 'var(--muted)' }}>Click to view</span>
+              {history.length > 0 && (
                 <button
                   id="clear-image-history-btn"
                   type="button"
                   onClick={handleClearHistory}
-                  className="secondary-button"
-                  style={{
-                    fontSize: '11px',
-                    padding: '3px 8px',
-                    borderRadius: '6px',
-                    display: 'inline-flex',
-                    alignItems: 'center',
-                    gap: '4px',
-                    color: '#f87171',
-                    borderColor: 'rgba(248,113,113,0.3)',
-                    cursor: 'pointer',
-                  }}
+                  className="flex items-center gap-1 px-2.5 py-1.5 rounded-lg bg-red-950/30 hover:bg-red-900/50 text-red-400 border border-red-800/40 transition-all cursor-pointer"
                   title="Delete all saved generations from IndexedDB"
                 >
-                  <Trash2 size={11} /> Clear History
+                  <Trash2 size={12} />
+                  <span>Purge</span>
                 </button>
-              </div>
-
-              <div
-                style={{
-                  display: 'flex',
-                  gap: '10px',
-                  overflowX: 'auto',
-                  paddingBottom: '8px',
-                  paddingTop: '2px',
-                }}
-              >
-                {history.map((item) => (
-                  <div
-                    key={item.id}
-                    onClick={() => {
-                      setCurrentImage(item);
-                      playTapSound();
-                    }}
-                    style={{
-                      position: 'relative',
-                      width: '84px',
-                      height: '84px',
-                      borderRadius: '8px',
-                      overflow: 'hidden',
-                      flexShrink: 0,
-                      cursor: 'pointer',
-                      border: `2px solid ${currentImage?.id === item.id ? '#f472b6' : 'rgba(255,255,255,0.1)'}`,
-                      boxShadow: currentImage?.id === item.id ? '0 0 12px rgba(244,114,182,0.4)' : '0 4px 12px rgba(0,0,0,0.3)',
-                      transition: 'all 0.15s ease',
-                    }}
-                    title={`"${item.prompt}" — ${item.providerName} (Seed: ${item.seed})`}
-                  >
-                    <img
-                      src={item.url}
-                      alt={item.prompt}
-                      style={{ width: '100%', height: '100%', objectFit: 'cover' }}
-                      loading="lazy"
-                    />
-
-                    {/* Image Edit tag */}
-                    {(item.isEdit || item.referenceImageUrl) && (
-                      <div
-                        style={{
-                          position: 'absolute',
-                          bottom: '3px',
-                          left: '3px',
-                          background: 'rgba(236,72,153,0.9)',
-                          borderRadius: '3px',
-                          padding: '1px 4px',
-                          color: '#fff',
-                          fontSize: '8px',
-                          fontWeight: 700,
-                          display: 'inline-flex',
-                          alignItems: 'center',
-                          gap: '2px',
-                        }}
-                        title="Image Edit (img2img)"
-                      >
-                        <Wand2 size={8} /> Edit
-                      </div>
-                    )}
-
-                    {/* AI Enhanced icon tag */}
-                    {item.enhancedPrompt && !(item.isEdit || item.referenceImageUrl) && (
-                      <div
-                        style={{
-                          position: 'absolute',
-                          bottom: '3px',
-                          left: '3px',
-                          background: 'rgba(168,85,247,0.85)',
-                          borderRadius: '3px',
-                          padding: '1px 3px',
-                          color: '#fff',
-                          display: 'grid',
-                          placeItems: 'center',
-                        }}
-                        title="Smart AI Enhanced prompt"
-                      >
-                        <Wand2 size={9} />
-                      </div>
-                    )}
-
-                    {/* Single image delete button */}
-                    <button
-                      type="button"
-                      onClick={(e) => handleDeleteImage(e, item.id)}
-                      style={{
-                        position: 'absolute',
-                        top: '3px',
-                        right: '3px',
-                        width: '18px',
-                        height: '18px',
-                        borderRadius: '4px',
-                        background: 'rgba(0,0,0,0.7)',
-                        border: 'none',
-                        color: 'rgba(255,255,255,0.8)',
-                        display: 'grid',
-                        placeItems: 'center',
-                        cursor: 'pointer',
-                        padding: 0,
-                      }}
-                      title="Delete this image"
-                    >
-                      <X size={11} />
-                    </button>
-                  </div>
-                ))}
-              </div>
+              )}
             </div>
-          )}
+
+            {/* 2-Column Creations Grid */}
+            {history.length === 0 ? (
+              <div className="rounded-2xl bg-[#121218] border border-[#1e1e29] p-6 text-center flex flex-col items-center justify-center gap-2">
+                <div className="w-10 h-10 rounded-xl bg-[#181822] border border-[#262635] flex items-center justify-center text-gray-500">
+                  <ImageIcon size={18} />
+                </div>
+                <p className="m-0 text-xs font-mono text-gray-400">
+                  No saved creations yet. Generated artwork is automatically stored in IndexedDB.
+                </p>
+              </div>
+            ) : (
+              <div className="grid grid-cols-2 gap-3">
+                {history.map((item) => {
+                  const isSelected = selectedImageIds.has(item.id);
+                  const isCurrent = currentImage?.id === item.id;
+                  return (
+                    <div
+                      key={item.id}
+                      onClick={() => {
+                        if (gallerySelectionMode) {
+                          handleToggleSelectImage(item.id);
+                          return;
+                        }
+                        setCurrentImage(item);
+                        playTapSound();
+                      }}
+                      className={`group relative rounded-xl overflow-hidden bg-[#121218] transition-all cursor-pointer stitch-gallery-card ${
+                        gallerySelectionMode && isSelected
+                          ? 'border-2 border-pink-500 shadow-glow-subtle'
+                          : isCurrent
+                          ? 'border-2 border-pink-500/80 shadow-glow-subtle'
+                          : 'border border-[#232331] hover:border-gray-600'
+                      }`}
+                      title={`"${item.prompt}" — ${item.providerName} (Seed: ${item.seed})`}
+                    >
+                      <div className="aspect-square overflow-hidden relative bg-[#0c0c12]">
+                        <img
+                          src={item.url}
+                          alt={item.prompt}
+                          className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-300"
+                          loading="lazy"
+                        />
+                        <div className="absolute inset-0 bg-gradient-to-t from-black/80 via-transparent to-black/25 opacity-90 pointer-events-none" />
+
+                        {/* Top-left: Selection Checkmark OR Active indicator */}
+                        <div className="absolute top-2 left-2 flex items-center gap-1 z-10">
+                          {gallerySelectionMode ? (
+                            <div
+                              className={`w-6 h-6 rounded-md flex items-center justify-center transition-all stitch-check-pop ${
+                                isSelected
+                                  ? 'bg-gradient-to-r from-[#ff2d87] to-[#8b2cf5] text-white shadow-md'
+                                  : 'bg-black/65 backdrop-blur-md border border-white/30 text-transparent'
+                              }`}
+                            >
+                              <Check size={13} strokeWidth={3} />
+                            </div>
+                          ) : isCurrent ? (
+                            <span className="px-1.5 py-0.5 rounded bg-pink-500/85 text-white text-[9px] font-mono font-bold uppercase tracking-wider shadow">
+                              Active
+                            </span>
+                          ) : null}
+
+                          {/* Edit / Enhanced tags */}
+                          {(item.isEdit || item.referenceImageUrl) && (
+                            <span
+                              className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded bg-pink-600/90 text-white text-[9px] font-mono font-bold shadow"
+                              title="Image Edit (img2img)"
+                            >
+                              <Wand2 size={9} /> Edit
+                            </span>
+                          )}
+                          {item.enhancedPrompt && !(item.isEdit || item.referenceImageUrl) && (
+                            <span
+                              className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded bg-purple-600/90 text-white text-[9px] font-mono font-semibold shadow"
+                              title="Smart AI Enhanced prompt"
+                            >
+                              <Wand2 size={9} /> AI
+                            </span>
+                          )}
+                        </div>
+
+                        {/* Top-right: Favorite Heart + Fullscreen + Delete */}
+                        <div className="absolute top-2 right-2 flex items-center gap-1 z-10">
+                          <button
+                            type="button"
+                            onClick={(e) => handleToggleFavorite(e, item.id)}
+                            className={`w-6 h-6 rounded-full backdrop-blur-md border flex items-center justify-center transition-all cursor-pointer stitch-heart-btn ${
+                              item.isFavorite
+                                ? 'bg-pink-500/25 border-pink-500/60 text-pink-400'
+                                : 'bg-black/60 border-white/15 text-gray-300 hover:text-pink-400'
+                            }`}
+                            title={item.isFavorite ? 'Remove from favorites' : 'Add to favorites'}
+                          >
+                            <Heart
+                              size={12}
+                              className={item.isFavorite ? 'fill-current stitch-heart-pop' : ''}
+                            />
+                          </button>
+
+                          <button
+                            type="button"
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              playTapSound();
+                              setFullscreenImage(item);
+                            }}
+                            className="w-6 h-6 rounded-full bg-black/60 backdrop-blur-md border border-white/15 flex items-center justify-center text-gray-300 hover:text-white transition-all cursor-pointer"
+                            title="Open fullscreen viewer"
+                          >
+                            <Maximize2 size={11} />
+                          </button>
+
+                          <button
+                            type="button"
+                            onClick={(e) => handleDeleteImage(e, item.id)}
+                            className="w-6 h-6 rounded-full bg-black/60 backdrop-blur-md border border-white/15 flex items-center justify-center text-gray-300 hover:text-red-400 hover:border-red-500/40 transition-all cursor-pointer"
+                            title="Delete this image"
+                          >
+                            <X size={12} />
+                          </button>
+                        </div>
+                      </div>
+
+                      {/* Card Footer: Real Prompt Snippet + Real Model Tag + Copy Prompt */}
+                      <div className="p-2 flex items-center justify-between gap-1.5 bg-[#14141d] border-t border-[#1e1e29]">
+                        <span className="truncate text-[10px] font-mono text-gray-300 flex-1 min-w-0">
+                          {item.prompt}
+                        </span>
+                        <span className="text-[9px] font-mono text-pink-300 bg-pink-500/15 border border-pink-500/20 px-1.5 py-0.5 rounded shrink-0 max-w-[88px] truncate">
+                          {item.model || item.providerName}
+                        </span>
+                        <button
+                          type="button"
+                          onClick={(e) => handleCopyGalleryPrompt(e, item.prompt, item.id)}
+                          className={`w-5 h-5 rounded flex items-center justify-center shrink-0 transition-colors cursor-pointer ${
+                            copiedPromptId === item.id
+                              ? 'bg-emerald-500/20 text-emerald-300'
+                              : 'bg-[#1e1e2a] text-gray-400 hover:text-white'
+                          }`}
+                          title={copiedPromptId === item.id ? 'Prompt copied!' : 'Copy prompt'}
+                        >
+                          {copiedPromptId === item.id ? <Check size={10} /> : <Copy size={10} />}
+                        </button>
+                      </div>
+                    </div>
+                  );
+                })}
+              </div>
+            )}
+
+            {/* Floating / Inline Selection Mode Bar when selecting on main page */}
+            {gallerySelectionMode && !galleryModalOpen && (
+              <div className="sticky bottom-3 z-30 bg-[#161622]/95 backdrop-blur-xl border border-pink-500/40 rounded-2xl p-3 shadow-2xl flex items-center justify-between gap-2 flex-wrap">
+                <div className="flex items-center gap-2">
+                  <span className="w-2.5 h-2.5 rounded-full bg-pink-500 animate-pulse" />
+                  <span className="text-xs font-mono font-bold text-white">
+                    {selectedImageIds.size} {selectedImageIds.size === 1 ? 'item' : 'items'} selected
+                  </span>
+                </div>
+                <div className="flex items-center gap-1.5 flex-wrap">
+                  <button
+                    type="button"
+                    onClick={handleSelectAllDisplayed}
+                    className="px-2.5 py-1.5 rounded-lg bg-[#222230] hover:bg-[#2c2c3e] text-gray-200 border border-[#343448] text-[11px] font-mono cursor-pointer"
+                  >
+                    Select All
+                  </button>
+                  <button
+                    type="button"
+                    onClick={handleClearSelection}
+                    disabled={selectedImageIds.size === 0}
+                    className="px-2.5 py-1.5 rounded-lg bg-[#222230] hover:bg-[#2c2c3e] text-gray-300 border border-[#343448] text-[11px] font-mono cursor-pointer disabled:opacity-40 disabled:cursor-not-allowed"
+                  >
+                    Clear
+                  </button>
+                  <button
+                    type="button"
+                    onClick={handleDownloadSelected}
+                    disabled={selectedImageIds.size === 0 || backupExporting}
+                    className="px-2.5 py-1.5 rounded-lg bg-pink-500/20 hover:bg-pink-500/30 text-pink-300 border border-pink-500/40 text-[11px] font-mono font-semibold flex items-center gap-1 cursor-pointer disabled:opacity-40 disabled:cursor-not-allowed"
+                  >
+                    {backupExporting ? (
+                      <RotateCw size={12} className="animate-spin" />
+                    ) : (
+                      <Download size={12} />
+                    )}
+                    <span>Download Selected</span>
+                  </button>
+                  <button
+                    type="button"
+                    onClick={handleCancelSelectionMode}
+                    className="px-2.5 py-1.5 rounded-lg bg-[#1c1c28] hover:bg-[#252535] text-gray-300 border border-[#2d2d3d] text-[11px] font-mono cursor-pointer"
+                  >
+                    Done
+                  </button>
+                </div>
+              </div>
+            )}
+          </section>
         </div>
       </div>
 
-      {/* Full Gallery Overlay Modal */}
+      {/* 8a. Full Photo Gallery Overlay Modal (Stitch Dark Theme) */}
       {galleryModalOpen && (
         <div
-          style={{
-            position: 'fixed',
-            inset: 0,
-            background: 'rgba(5, 10, 16, 0.95)',
-            backdropFilter: 'blur(12px)',
-            zIndex: 99990,
-            display: 'flex',
-            flexDirection: 'column',
-            overflow: 'hidden',
-          }}
+          className="fixed inset-0 z-[99990] bg-[#070709]/95 backdrop-blur-xl flex flex-col overflow-hidden stitch-modal-backdrop"
           onClick={() => setGalleryModalOpen(false)}
         >
           <div
-            style={{
-              width: '100%',
-              height: '100%',
-              display: 'flex',
-              flexDirection: 'column',
-              maxWidth: '1440px',
-              margin: '0 auto',
-            }}
+            className="w-full h-full flex flex-col max-w-[1440px] mx-auto stitch-modal-panel"
             onClick={(e) => e.stopPropagation()}
           >
-            {/* Gallery Header Bar with Sort & Filter Toolbar */}
-            <div
-              style={{
-                display: 'flex',
-                flexDirection: 'column',
-                gap: '12px',
-                padding: '16px 20px',
-                borderBottom: '1px solid rgba(255, 255, 255, 0.1)',
-                background: 'rgba(14, 31, 39, 0.85)',
-                backdropFilter: 'blur(10px)',
-                flexShrink: 0,
-              }}
-            >
-              {/* Title & Close Row */}
-              <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', width: '100%' }}>
-                <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
-                  <div
-                    style={{
-                      width: '32px',
-                      height: '32px',
-                      borderRadius: '8px',
-                      background: 'rgba(56, 189, 248, 0.15)',
-                      border: '1px solid rgba(56, 189, 248, 0.3)',
-                      display: 'grid',
-                      placeItems: 'center',
-                      color: '#38bdf8',
-                    }}
-                  >
-                    <ImageIcon size={18} />
+            {/* Compact Sticky Modal Header + Filters */}
+            <div className="bg-[#08080a]/95 backdrop-blur-xl border-b border-[#1c1c26] px-4 py-3.5 flex flex-col gap-3 shrink-0">
+              {/* Row 1: Title + Count + Actions */}
+              <div className="flex items-center justify-between gap-2 flex-wrap">
+                <div className="flex items-center gap-2.5 min-w-0">
+                  <div className="w-8 h-8 rounded-lg bg-gradient-to-br from-[#ff2d87]/20 to-[#8b2cf5]/20 border border-pink-500/35 flex items-center justify-center text-pink-400 shrink-0">
+                    <ImageIcon size={16} />
                   </div>
-                  <div>
-                    <h3 style={{ margin: 0, fontSize: '15px', fontWeight: 600, color: '#fff', display: 'flex', alignItems: 'center', gap: '8px' }}>
-                      Photo Gallery
+                  <div className="min-w-0">
+                    <div className="flex items-center gap-2 flex-wrap">
+                      <h3 className="m-0 text-sm sm:text-base font-bold text-white tracking-tight">
+                        Photo Gallery
+                      </h3>
                       <span
-                        style={{
-                          fontSize: '11px',
-                          color: galleryModelFilter ? '#38bdf8' : 'var(--muted)',
-                          background: galleryModelFilter ? 'rgba(56, 189, 248, 0.15)' : 'rgba(255,255,255,0.08)',
-                          border: galleryModelFilter ? '1px solid rgba(56, 189, 248, 0.3)' : 'none',
-                          padding: '1px 8px',
-                          borderRadius: '10px',
-                          fontWeight: 500,
-                        }}
+                        className={`px-2 py-0.5 rounded-full text-[10px] font-mono border ${
+                          galleryModelFilter || galleryFavoritesOnly
+                            ? 'bg-pink-500/15 border-pink-500/35 text-pink-300 font-semibold'
+                            : 'bg-[#17171f] border-[#262635] text-gray-300'
+                        }`}
                       >
                         {displayedGalleryImages.length} {displayedGalleryImages.length === 1 ? 'image' : 'images'}
                         {galleryModelFilter && ` (filtered from ${history.length})`}
                       </span>
-                    </h3>
-                    <p style={{ margin: '2px 0 0', fontSize: '11px', color: 'var(--muted)' }}>
-                      All saved AI generations in IndexedDB • Click any thumbnail to view full resolution & details
+                    </div>
+                    <p className="m-0 mt-0.5 text-[10px] font-mono text-gray-400 truncate">
+                      All saved AI generations in IndexedDB • Tap any thumbnail for full resolution
                     </p>
                   </div>
                 </div>
 
-                <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                <div className="flex items-center gap-2 shrink-0">
                   {!gallerySelectionMode && (
                     <button
                       type="button"
                       onClick={handleOpenSelectionMode}
-                      style={{
-                        background: 'rgba(56, 189, 248, 0.1)',
-                        border: '1px solid rgba(56, 189, 248, 0.3)',
-                        borderRadius: '8px',
-                        color: '#38bdf8',
-                        padding: '6px 12px',
-                        display: 'inline-flex',
-                        alignItems: 'center',
-                        gap: '6px',
-                        cursor: 'pointer',
-                        fontSize: '12px',
-                        fontWeight: 500,
-                        transition: 'all 0.15s ease',
-                      }}
+                      className="px-2.5 py-1.5 rounded-lg bg-[#17171f] hover:bg-[#22222e] border border-[#2a2a38] text-xs font-mono text-pink-300 flex items-center gap-1.5 transition-all cursor-pointer"
                       title="Select images to download"
                     >
-                      <CheckSquare size={14} /> Select Images
+                      <CheckSquare size={13} className="text-pink-400" />
+                      <span>Select Images</span>
                     </button>
                   )}
 
@@ -4271,161 +3705,72 @@ export function ImageStudio() {
                       setGallerySelectionMode(false);
                       setSelectedImageIds(new Set());
                     }}
-                    style={{
-                      background: 'rgba(255,255,255,0.1)',
-                      border: '1px solid rgba(255,255,255,0.15)',
-                      borderRadius: '8px',
-                      color: '#fff',
-                      padding: '6px 12px',
-                      display: 'inline-flex',
-                      alignItems: 'center',
-                      gap: '6px',
-                      cursor: 'pointer',
-                      fontSize: '12px',
-                      fontWeight: 500,
-                      transition: 'all 0.15s ease',
-                    }}
+                    className="px-2.5 py-1.5 rounded-lg bg-[#17171f] hover:bg-[#232330] border border-[#2a2a38] text-xs font-mono text-gray-300 hover:text-white flex items-center gap-1.5 transition-all cursor-pointer"
                     title="Close gallery"
                   >
-                    <X size={16} /> Close
+                    <X size={14} />
+                    <span>Close</span>
                   </button>
                 </div>
               </div>
 
-              {/* Selection Mode Bar */}
+              {/* Selection Mode Bar inside Gallery Modal */}
               {gallerySelectionMode && (
-                <div
-                  style={{
-                    display: 'flex',
-                    alignItems: 'center',
-                    justifyContent: 'space-between',
-                    flexWrap: 'wrap',
-                    gap: '10px',
-                    padding: '10px 14px',
-                    borderRadius: '8px',
-                    background: 'linear-gradient(90deg, rgba(6, 182, 212, 0.18) 0%, rgba(56, 189, 248, 0.12) 100%)',
-                    border: '1px solid rgba(34, 211, 238, 0.4)',
-                    boxShadow: '0 0 16px rgba(34, 211, 238, 0.15)',
-                  }}
-                >
-                  {/* Left: Count */}
-                  <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
-                    <div
-                      style={{
-                        width: '24px',
-                        height: '24px',
-                        borderRadius: '5px',
-                        background: '#06b6d4',
-                        display: 'grid',
-                        placeItems: 'center',
-                        color: '#fff',
-                        boxShadow: '0 0 8px rgba(34, 211, 238, 0.5)',
-                      }}
-                    >
-                      <Check size={14} strokeWidth={3} />
+                <div className="flex items-center justify-between flex-wrap gap-2 px-3 py-2.5 rounded-xl bg-gradient-to-r from-[#ff2d87]/15 via-[#181824] to-[#8b2cf5]/15 border border-pink-500/40 shadow-glow-subtle">
+                  <div className="flex items-center gap-2">
+                    <div className="w-6 h-6 rounded-md bg-gradient-to-r from-[#ff2d87] to-[#8b2cf5] flex items-center justify-center text-white shadow">
+                      <Check size={13} strokeWidth={3} />
                     </div>
-                    <span style={{ fontSize: '13px', fontWeight: 600, color: '#fff' }}>
+                    <span className="text-xs font-mono font-bold text-white">
                       {selectedImageIds.size} {selectedImageIds.size === 1 ? 'image' : 'images'} selected
                     </span>
-                    <span style={{ fontSize: '11px', color: 'var(--muted)' }} className="hidden sm:inline">
+                    <span className="text-[11px] font-mono text-gray-400 hidden sm:inline">
                       • Tap thumbnails to toggle
                     </span>
                   </div>
 
-                  {/* Right: Actions */}
-                  <div style={{ display: 'flex', alignItems: 'center', gap: '8px', flexWrap: 'wrap' }}>
-                    {/* Select All */}
+                  <div className="flex items-center gap-1.5 flex-wrap">
                     <button
                       type="button"
                       onClick={handleSelectAllDisplayed}
-                      style={{
-                        background: 'rgba(255, 255, 255, 0.08)',
-                        border: '1px solid rgba(255, 255, 255, 0.18)',
-                        borderRadius: '6px',
-                        color: '#e2e8f0',
-                        padding: '5px 10px',
-                        fontSize: '11.5px',
-                        fontWeight: 500,
-                        cursor: 'pointer',
-                        display: 'inline-flex',
-                        alignItems: 'center',
-                        gap: '5px',
-                      }}
+                      className="px-2.5 py-1 rounded-lg bg-[#1c1c28] hover:bg-[#262636] border border-[#2e2e40] text-gray-200 text-[11px] font-mono inline-flex items-center gap-1.5 cursor-pointer"
                       title="Select all images currently displayed"
                     >
-                      <CheckSquare size={13} />
-                      Select All ({displayedGalleryImages.length})
+                      <CheckSquare size={12} className="text-pink-400" />
+                      <span>Select All ({displayedGalleryImages.length})</span>
                     </button>
 
-                    {/* Clear */}
                     <button
                       type="button"
                       onClick={handleClearSelection}
                       disabled={selectedImageIds.size === 0}
-                      style={{
-                        background: 'transparent',
-                        border: '1px solid rgba(255, 255, 255, 0.15)',
-                        borderRadius: '6px',
-                        color: selectedImageIds.size === 0 ? 'rgba(255,255,255,0.3)' : '#e2e8f0',
-                        padding: '5px 10px',
-                        fontSize: '11.5px',
-                        fontWeight: 500,
-                        cursor: selectedImageIds.size === 0 ? 'not-allowed' : 'pointer',
-                        opacity: selectedImageIds.size === 0 ? 0.5 : 1,
-                      }}
+                      className="px-2.5 py-1 rounded-lg bg-[#1c1c28] hover:bg-[#262636] border border-[#2e2e40] text-gray-300 text-[11px] font-mono cursor-pointer disabled:opacity-40 disabled:cursor-not-allowed"
                       title="Clear all selections"
                     >
                       Clear
                     </button>
 
-                    {/* Download Selected */}
                     <button
                       type="button"
                       onClick={handleDownloadSelected}
                       disabled={selectedImageIds.size === 0 || backupExporting}
-                      style={{
-                        background: selectedImageIds.size === 0
-                          ? 'rgba(6, 182, 212, 0.12)'
-                          : 'linear-gradient(135deg, #06b6d4 0%, #0284c7 100%)',
-                        border: selectedImageIds.size === 0
-                          ? '1px solid rgba(34, 211, 238, 0.25)'
-                          : '1px solid rgba(34, 211, 238, 0.65)',
-                        borderRadius: '6px',
-                        color: selectedImageIds.size === 0 ? 'rgba(255,255,255,0.45)' : '#fff',
-                        padding: '5px 12px',
-                        fontSize: '11.5px',
-                        fontWeight: 600,
-                        display: 'inline-flex',
-                        alignItems: 'center',
-                        gap: '6px',
-                        cursor: selectedImageIds.size === 0 || backupExporting ? 'not-allowed' : 'pointer',
-                        opacity: selectedImageIds.size === 0 || backupExporting ? 0.6 : 1,
-                        boxShadow: selectedImageIds.size > 0 ? '0 0 12px rgba(6, 182, 212, 0.45)' : 'none',
-                      }}
+                      className="px-3 py-1 rounded-lg bg-gradient-to-r from-[#ff2d87] to-[#8b2cf5] text-white text-[11px] font-mono font-semibold inline-flex items-center gap-1.5 shadow-glow-subtle cursor-pointer disabled:opacity-40 disabled:cursor-not-allowed"
                       title="Download selected images into a backup JSON file"
                     >
                       {backupExporting ? (
-                        <RotateCw size={13} className="animate-spin" />
+                        <RotateCw size={12} className="animate-spin" />
                       ) : (
-                        <Download size={13} />
+                        <Download size={12} />
                       )}
-                      Download Selected {selectedImageIds.size > 0 && `(${selectedImageIds.size})`}
+                      <span>
+                        Download Selected {selectedImageIds.size > 0 && `(${selectedImageIds.size})`}
+                      </span>
                     </button>
 
-                    {/* Cancel */}
                     <button
                       type="button"
                       onClick={handleCancelSelectionMode}
-                      style={{
-                        background: 'rgba(239, 68, 68, 0.12)',
-                        border: '1px solid rgba(239, 68, 68, 0.3)',
-                        borderRadius: '6px',
-                        color: '#fca5a5',
-                        padding: '5px 10px',
-                        fontSize: '11.5px',
-                        fontWeight: 500,
-                        cursor: 'pointer',
-                      }}
+                      className="px-2.5 py-1 rounded-lg bg-red-950/40 hover:bg-red-900/50 border border-red-800/40 text-red-300 text-[11px] font-mono cursor-pointer"
                       title="Leave selection mode"
                     >
                       Cancel
@@ -4434,22 +3779,12 @@ export function ImageStudio() {
                 </div>
               )}
 
-              {/* Sort & Filter Controls Toolbar */}
-              <div
-                style={{
-                  display: 'flex',
-                  alignItems: 'center',
-                  justifyContent: 'space-between',
-                  flexWrap: 'wrap',
-                  gap: '10px',
-                  paddingTop: '8px',
-                  borderTop: '1px solid rgba(255, 255, 255, 0.08)',
-                }}
-              >
+              {/* Row 2: Sort & Filter Controls Toolbar (Model Dropdown, Favorites Filter, Newest/Oldest Sort) */}
+              <div className="flex items-center justify-between gap-2 flex-wrap pt-2 border-t border-[#1c1c26]">
                 {/* Left: Model Filter Dropdown */}
-                <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
-                  <span style={{ fontSize: '11.5px', color: 'var(--muted)', fontWeight: 500, display: 'inline-flex', alignItems: 'center', gap: '4px' }}>
-                    <Filter size={12} /> Model:
+                <div className="flex items-center gap-2 flex-wrap">
+                  <span className="text-[11px] font-mono text-gray-400 inline-flex items-center gap-1">
+                    <Filter size={11} className="text-pink-400" /> Model:
                   </span>
                   <select
                     value={galleryModelFilter || 'all'}
@@ -4457,16 +3792,7 @@ export function ImageStudio() {
                       playTapSound();
                       setGalleryModelFilter(e.target.value === 'all' ? null : e.target.value);
                     }}
-                    style={{
-                      background: 'rgba(15, 23, 42, 0.85)',
-                      border: '1px solid rgba(255, 255, 255, 0.15)',
-                      borderRadius: '6px',
-                      color: '#e2e8f0',
-                      fontSize: '11.5px',
-                      padding: '4px 10px',
-                      outline: 'none',
-                      cursor: 'pointer',
-                    }}
+                    className="bg-[#121218] border border-[#262635] text-gray-200 text-[11px] font-mono rounded-lg px-2.5 py-1.5 focus:outline-none focus:border-pink-500 cursor-pointer"
                   >
                     <option value="all">All Models ({history.length})</option>
                     {distinctGalleryModels.map((m) => {
@@ -4486,114 +3812,65 @@ export function ImageStudio() {
                         playTapSound();
                         setGalleryModelFilter(null);
                       }}
-                      style={{
-                        background: 'transparent',
-                        border: 'none',
-                        color: '#38bdf8',
-                        fontSize: '11px',
-                        cursor: 'pointer',
-                        padding: '2px 6px',
-                        textDecoration: 'underline',
-                      }}
+                      className="text-[11px] font-mono text-pink-400 hover:text-pink-300 underline cursor-pointer px-1"
                     >
                       Clear filter
                     </button>
                   )}
                 </div>
 
-                {/* Right: Favorites Toggle & Sort Pill Buttons */}
-                <div style={{ display: 'flex', alignItems: 'center', gap: '8px', flexWrap: 'wrap' }}>
-                  {/* Favorites Toggle Button */}
+                {/* Right: Favorites Filter + Sort Newest | Oldest */}
+                <div className="flex items-center gap-2 flex-wrap">
                   <button
                     type="button"
                     onClick={() => {
                       playTapSound();
                       setGalleryFavoritesOnly((prev) => !prev);
                     }}
-                    style={{
-                      background: galleryFavoritesOnly
-                        ? 'rgba(6, 182, 212, 0.22)'
-                        : 'rgba(0, 0, 0, 0.35)',
-                      border: galleryFavoritesOnly
-                        ? '1px solid rgba(34, 211, 238, 0.6)'
-                        : '1px solid rgba(255, 255, 255, 0.1)',
-                      borderRadius: '7px',
-                      color: galleryFavoritesOnly ? '#22d3ee' : 'var(--muted)',
-                      fontSize: '11px',
-                      fontWeight: galleryFavoritesOnly ? 600 : 400,
-                      padding: '3px 10px',
-                      cursor: 'pointer',
-                      transition: 'all 0.15s ease',
-                      display: 'inline-flex',
-                      alignItems: 'center',
-                      gap: '5px',
-                      boxShadow: galleryFavoritesOnly
-                        ? '0 0 10px rgba(34, 211, 238, 0.25)'
-                        : 'none',
-                    }}
+                    className={`px-2.5 py-1.5 rounded-lg border text-[11px] font-mono flex items-center gap-1.5 transition-all cursor-pointer ${
+                      galleryFavoritesOnly
+                        ? 'bg-pink-500/20 border-pink-500/50 text-pink-300 font-semibold shadow-glow-subtle'
+                        : 'bg-[#121218] border-[#262635] text-gray-300 hover:text-white'
+                    }`}
                     title={galleryFavoritesOnly ? 'Show all images' : 'Show only favorites'}
                   >
                     <Heart
                       size={12}
-                      style={{
-                        color: galleryFavoritesOnly ? '#22d3ee' : 'var(--muted)',
-                        fill: galleryFavoritesOnly ? 'currentColor' : 'none',
-                      }}
+                      className={
+                        galleryFavoritesOnly
+                          ? 'text-pink-400 fill-current stitch-heart-pop'
+                          : 'text-pink-400'
+                      }
                     />
-                    Favorites ({favoritesCount})
+                    <span>Favorites ({favoritesCount})</span>
                   </button>
 
-                  <span style={{ fontSize: '11.5px', color: 'var(--muted)', fontWeight: 500 }}>
-                    Sort:
-                  </span>
-                  <div
-                    style={{
-                      display: 'inline-flex',
-                      background: 'rgba(0, 0, 0, 0.35)',
-                      border: '1px solid rgba(255, 255, 255, 0.1)',
-                      borderRadius: '7px',
-                      padding: '2px',
-                      gap: '2px',
-                    }}
-                  >
+                  <div className="flex items-center bg-[#121218] border border-[#262635] rounded-lg p-0.5 text-[11px] font-mono">
                     <button
                       type="button"
                       onClick={() => {
                         playTapSound();
                         setGallerySortOrder('newest');
                       }}
-                      style={{
-                        background: gallerySortOrder === 'newest' ? 'rgba(56, 189, 248, 0.2)' : 'transparent',
-                        border: gallerySortOrder === 'newest' ? '1px solid rgba(56, 189, 248, 0.4)' : '1px solid transparent',
-                        borderRadius: '5px',
-                        color: gallerySortOrder === 'newest' ? '#38bdf8' : 'var(--muted)',
-                        fontSize: '11px',
-                        fontWeight: gallerySortOrder === 'newest' ? 600 : 400,
-                        padding: '3px 10px',
-                        cursor: 'pointer',
-                        transition: 'all 0.15s ease',
-                      }}
+                      className={`px-2.5 py-1 rounded-md transition-all cursor-pointer ${
+                        gallerySortOrder === 'newest'
+                          ? 'bg-[#222230] text-white font-semibold border border-pink-500/30'
+                          : 'text-gray-400 hover:text-gray-200 border border-transparent'
+                      }`}
                     >
                       Newest
                     </button>
-
                     <button
                       type="button"
                       onClick={() => {
                         playTapSound();
                         setGallerySortOrder('oldest');
                       }}
-                      style={{
-                        background: gallerySortOrder === 'oldest' ? 'rgba(56, 189, 248, 0.2)' : 'transparent',
-                        border: gallerySortOrder === 'oldest' ? '1px solid rgba(56, 189, 248, 0.4)' : '1px solid transparent',
-                        borderRadius: '5px',
-                        color: gallerySortOrder === 'oldest' ? '#38bdf8' : 'var(--muted)',
-                        fontSize: '11px',
-                        fontWeight: gallerySortOrder === 'oldest' ? 600 : 400,
-                        padding: '3px 10px',
-                        cursor: 'pointer',
-                        transition: 'all 0.15s ease',
-                      }}
+                      className={`px-2.5 py-1 rounded-md transition-all cursor-pointer ${
+                        gallerySortOrder === 'oldest'
+                          ? 'bg-[#222230] text-white font-semibold border border-pink-500/30'
+                          : 'text-gray-400 hover:text-gray-200 border border-transparent'
+                      }`}
                     >
                       Oldest
                     </button>
@@ -4603,47 +3880,21 @@ export function ImageStudio() {
             </div>
 
             {/* Gallery Grid Body */}
-            <div
-              style={{
-                flex: 1,
-                overflowY: 'auto',
-                padding: '20px',
-              }}
-            >
+            <div className="flex-1 overflow-y-auto p-4 sm:p-5">
               {history.length === 0 ? (
-                <div
-                  style={{
-                    height: '100%',
-                    minHeight: '300px',
-                    display: 'flex',
-                    flexDirection: 'column',
-                    alignItems: 'center',
-                    justifyContent: 'center',
-                    color: 'var(--muted)',
-                    gap: '12px',
-                  }}
-                >
-                  <ImageIcon size={48} style={{ opacity: 0.3 }} />
-                  <p style={{ fontSize: '14px', margin: 0 }}>No saved images found in gallery yet.</p>
+                <div className="h-full min-h-[280px] flex flex-col items-center justify-center text-gray-400 gap-3">
+                  <div className="w-12 h-12 rounded-2xl bg-[#121218] border border-[#262635] flex items-center justify-center text-gray-500">
+                    <ImageIcon size={24} />
+                  </div>
+                  <p className="text-sm font-mono m-0">No saved images found in gallery yet.</p>
                 </div>
               ) : displayedGalleryImages.length === 0 ? (
-                <div
-                  style={{
-                    height: '100%',
-                    minHeight: '300px',
-                    display: 'flex',
-                    flexDirection: 'column',
-                    alignItems: 'center',
-                    justifyContent: 'center',
-                    color: 'var(--muted)',
-                    gap: '12px',
-                  }}
-                >
+                <div className="h-full min-h-[280px] flex flex-col items-center justify-center text-gray-400 gap-3 text-center">
                   {galleryFavoritesOnly ? (
                     <>
-                      <Heart size={44} style={{ color: '#22d3ee', opacity: 0.4 }} />
-                      <p style={{ fontSize: '14px', margin: 0, color: '#e2e8f0', fontWeight: 500 }}>No favorites yet</p>
-                      <p style={{ fontSize: '11.5px', margin: 0, color: 'var(--muted)' }}>
+                      <Heart size={36} className="text-pink-400/50" />
+                      <p className="text-sm font-mono font-bold text-gray-200 m-0">No favorites yet</p>
+                      <p className="text-xs font-mono text-gray-400 m-0 max-w-xs">
                         Tap the heart icon on any image thumbnail to add it to your favorites.
                       </p>
                       <button
@@ -4652,38 +3903,22 @@ export function ImageStudio() {
                           playTapSound();
                           setGalleryFavoritesOnly(false);
                         }}
-                        style={{
-                          fontSize: '12px',
-                          color: '#22d3ee',
-                          background: 'rgba(6,182,212,0.12)',
-                          border: '1px solid rgba(34,211,238,0.3)',
-                          borderRadius: '6px',
-                          padding: '4px 12px',
-                          cursor: 'pointer',
-                        }}
+                        className="px-3 py-1.5 rounded-lg bg-pink-500/15 border border-pink-500/35 text-pink-300 text-xs font-mono cursor-pointer"
                       >
                         Show all images
                       </button>
                     </>
                   ) : (
                     <>
-                      <ImageIcon size={48} style={{ opacity: 0.3 }} />
-                      <p style={{ fontSize: '14px', margin: 0 }}>No images from this model yet.</p>
+                      <ImageIcon size={36} className="text-gray-500" />
+                      <p className="text-sm font-mono text-gray-200 m-0">No images from this model yet.</p>
                       <button
                         type="button"
                         onClick={() => {
                           playTapSound();
                           setGalleryModelFilter(null);
                         }}
-                        style={{
-                          fontSize: '12px',
-                          color: '#38bdf8',
-                          background: 'rgba(56,189,248,0.1)',
-                          border: '1px solid rgba(56,189,248,0.3)',
-                          borderRadius: '6px',
-                          padding: '4px 12px',
-                          cursor: 'pointer',
-                        }}
+                        className="px-3 py-1.5 rounded-lg bg-pink-500/15 border border-pink-500/35 text-pink-300 text-xs font-mono cursor-pointer"
                       >
                         Show all models
                       </button>
@@ -4691,277 +3926,122 @@ export function ImageStudio() {
                   )}
                 </div>
               ) : (
-                <div
-                  className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 xl:grid-cols-6 gap-3 sm:gap-4"
-                >
-                  {displayedGalleryImages.map((item) => (
-                    <div
-                      key={`gallery-grid-${item.id}`}
-                      onClick={() => {
-                        if (gallerySelectionMode) {
-                          handleToggleSelectImage(item.id);
-                          return;
-                        }
-                        playTapSound();
-                        setFullscreenImage(item);
-                      }}
-                      className="group"
-                      style={{
-                        position: 'relative',
-                        aspectRatio: '1 / 1',
-                        borderRadius: '10px',
-                        overflow: 'hidden',
-                        cursor: 'pointer',
-                        background: 'rgba(255,255,255,0.03)',
-                        border: gallerySelectionMode && selectedImageIds.has(item.id)
-                          ? '2px solid #22d3ee'
-                          : '1px solid rgba(255,255,255,0.08)',
-                        boxShadow: gallerySelectionMode && selectedImageIds.has(item.id)
-                          ? '0 0 16px rgba(34, 211, 238, 0.4)'
-                          : '0 4px 16px rgba(0,0,0,0.35)',
-                        transition: 'transform 0.15s ease, border-color 0.15s ease, box-shadow 0.15s ease',
-                      }}
-                      title={gallerySelectionMode
-                        ? (selectedImageIds.has(item.id) ? 'Selected - tap to deselect' : 'Tap to select')
-                        : `"${item.prompt}"\nProvider: ${item.providerName || 'AI Studio'} (Seed: ${item.seed})`}
-                    >
-                      <img
-                        src={item.url}
-                        alt={item.prompt}
-                        style={{
-                          width: '100%',
-                          height: '100%',
-                          objectFit: 'cover',
-                          transition: 'transform 0.25s ease',
-                        }}
-                        className="group-hover:scale-105"
-                        loading="lazy"
-                      />
-
-                      {/* Selection Mode Overlay & Tick Mark */}
-                      {gallerySelectionMode && (
-                        <>
-                          {selectedImageIds.has(item.id) && (
-                            <div
-                              style={{
-                                position: 'absolute',
-                                inset: 0,
-                                background: 'rgba(6, 182, 212, 0.16)',
-                                pointerEvents: 'none',
-                                zIndex: 6,
-                              }}
-                            />
-                          )}
-                          <div
-                            style={{
-                              position: 'absolute',
-                              bottom: '6px',
-                              left: '6px',
-                              width: '28px',
-                              height: '28px',
-                              borderRadius: '6px',
-                              background: selectedImageIds.has(item.id)
-                                ? '#06b6d4'
-                                : 'rgba(0, 0, 0, 0.65)',
-                              border: selectedImageIds.has(item.id)
-                                ? '1px solid #22d3ee'
-                                : '1px solid rgba(255, 255, 255, 0.4)',
-                              boxShadow: selectedImageIds.has(item.id)
-                                ? '0 0 10px rgba(34, 211, 238, 0.7)'
-                                : 'none',
-                              display: 'grid',
-                              placeItems: 'center',
-                              color: '#fff',
-                              zIndex: 15,
-                              backdropFilter: 'blur(4px)',
-                              transition: 'all 0.15s ease',
-                              pointerEvents: 'none',
-                            }}
-                          >
-                            {selectedImageIds.has(item.id) ? (
-                              <Check size={16} strokeWidth={3} style={{ color: '#fff' }} />
-                            ) : (
-                              <div
-                                style={{
-                                  width: '10px',
-                                  height: '10px',
-                                  borderRadius: '2px',
-                                  border: '1.5px solid rgba(255, 255, 255, 0.5)',
-                                }}
-                              />
-                            )}
-                          </div>
-                        </>
-                      )}
-
-                      {/* Subtle hover overlay with prompt snippet */}
+                <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 xl:grid-cols-6 gap-3 sm:gap-4">
+                  {displayedGalleryImages.map((item) => {
+                    const isSelected = selectedImageIds.has(item.id);
+                    return (
                       <div
-                        style={{
-                          position: 'absolute',
-                          inset: 0,
-                          background: 'linear-gradient(to top, rgba(0,0,0,0.85) 0%, rgba(0,0,0,0.2) 50%, rgba(0,0,0,0) 100%)',
-                          opacity: 0,
-                          transition: 'opacity 0.2s ease',
-                          display: 'flex',
-                          flexDirection: 'column',
-                          justifyContent: 'flex-end',
-                          padding: '8px',
-                          pointerEvents: 'none',
-                        }}
-                        className="group-hover:!opacity-100"
-                      >
-                        <p
-                          style={{
-                            margin: 0,
-                            color: '#fff',
-                            fontSize: '10.5px',
-                            lineHeight: 1.3,
-                            display: '-webkit-box',
-                            WebkitLineClamp: 2,
-                            WebkitBoxOrient: 'vertical',
-                            overflow: 'hidden',
-                            textShadow: '0 1px 3px rgba(0,0,0,0.8)',
-                          }}
-                        >
-                          "{item.prompt}"
-                        </p>
-                        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginTop: '4px', fontSize: '9px', color: 'rgba(255,255,255,0.7)' }}>
-                          <span style={{ textTransform: 'capitalize' }}>{item.providerName || 'AI'}</span>
-                          <span>Seed: {item.seed}</span>
-                        </div>
-                      </div>
-
-                      {/* Copy Prompt Button */}
-                      <button
-                        type="button"
-                        onClick={(e) => handleCopyGalleryPrompt(e, item.prompt, item.id)}
-                        style={{
-                          position: 'absolute',
-                          top: '6px',
-                          right: '6px',
-                          background: copiedPromptId === item.id ? 'rgba(16, 185, 129, 0.9)' : 'rgba(0, 0, 0, 0.65)',
-                          border: copiedPromptId === item.id ? '1px solid rgba(16, 185, 129, 0.8)' : '1px solid rgba(255, 255, 255, 0.25)',
-                          borderRadius: '6px',
-                          color: '#fff',
-                          width: '26px',
-                          height: '26px',
-                          display: 'grid',
-                          placeItems: 'center',
-                          cursor: 'pointer',
-                          zIndex: 10,
-                          backdropFilter: 'blur(4px)',
-                          boxShadow: '0 2px 6px rgba(0,0,0,0.4)',
-                          transition: 'all 0.15s ease',
-                        }}
-                        onMouseEnter={(e) => {
-                          if (copiedPromptId !== item.id) {
-                            e.currentTarget.style.background = 'rgba(56, 189, 248, 0.85)';
+                        key={`gallery-grid-${item.id}`}
+                        onClick={() => {
+                          if (gallerySelectionMode) {
+                            handleToggleSelectImage(item.id);
+                            return;
                           }
+                          playTapSound();
+                          setFullscreenImage(item);
                         }}
-                        onMouseLeave={(e) => {
-                          if (copiedPromptId !== item.id) {
-                            e.currentTarget.style.background = 'rgba(0, 0, 0, 0.65)';
-                          }
-                        }}
-                        title={copiedPromptId === item.id ? 'Prompt copied to clipboard!' : 'Copy prompt'}
-                        aria-label="Copy prompt"
+                        className={`group relative aspect-square rounded-xl overflow-hidden cursor-pointer bg-[#121218] transition-all stitch-gallery-card ${
+                          gallerySelectionMode && isSelected
+                            ? 'border-2 border-pink-500 shadow-glow-subtle'
+                            : 'border border-[#232331] hover:border-gray-500'
+                        }`}
+                        title={
+                          gallerySelectionMode
+                            ? isSelected
+                              ? 'Selected - tap to deselect'
+                              : 'Tap to select'
+                            : `"${item.prompt}"\nProvider: ${item.providerName || 'AI Studio'} (Seed: ${item.seed})`
+                        }
                       >
-                        {copiedPromptId === item.id ? (
-                          <Check size={13} style={{ color: '#fff' }} />
-                        ) : (
-                          <Copy size={13} />
-                        )}
-                      </button>
-
-                      {/* Image Edit tag */}
-                      {(item.isEdit || item.referenceImageUrl) && (
-                        <div
-                          style={{
-                            position: 'absolute',
-                            top: '6px',
-                            left: '6px',
-                            background: 'rgba(236,72,153,0.9)',
-                            borderRadius: '4px',
-                            padding: '1px 5px',
-                            color: '#fff',
-                            fontSize: '9px',
-                            fontWeight: 700,
-                            display: 'inline-flex',
-                            alignItems: 'center',
-                            gap: '3px',
-                            boxShadow: '0 2px 6px rgba(0,0,0,0.4)',
-                          }}
-                          title="Image Edit (img2img)"
-                        >
-                          <Wand2 size={9} /> Edit
-                        </div>
-                      )}
-
-                      {/* AI Enhanced icon tag */}
-                      {item.enhancedPrompt && !(item.isEdit || item.referenceImageUrl) && (
-                        <div
-                          style={{
-                            position: 'absolute',
-                            top: '6px',
-                            left: '6px',
-                            background: 'rgba(168,85,247,0.9)',
-                            borderRadius: '4px',
-                            padding: '2px 5px',
-                            color: '#fff',
-                            fontSize: '9px',
-                            fontWeight: 600,
-                            display: 'inline-flex',
-                            alignItems: 'center',
-                            gap: '3px',
-                            boxShadow: '0 2px 6px rgba(0,0,0,0.4)',
-                          }}
-                          title="Smart AI Enhanced prompt"
-                        >
-                          <Wand2 size={9} /> Enhanced
-                        </div>
-                      )}
-
-                      {/* Favorite Heart Button (Bottom Right Corner) */}
-                      <button
-                        type="button"
-                        onClick={(e) => handleToggleFavorite(e, item.id)}
-                        style={{
-                          position: 'absolute',
-                          bottom: '6px',
-                          right: '6px',
-                          width: '30px',
-                          height: '30px',
-                          borderRadius: '6px',
-                          touchAction: 'manipulation',
-                          background: item.isFavorite
-                            ? 'rgba(6, 182, 212, 0.32)'
-                            : 'rgba(0, 0, 0, 0.45)',
-                          border: item.isFavorite
-                            ? '1px solid rgba(34, 211, 238, 0.85)'
-                            : '1px solid rgba(255, 255, 255, 0.25)',
-                          color: item.isFavorite ? '#22d3ee' : 'rgba(255, 255, 255, 0.75)',
-                          boxShadow: item.isFavorite
-                            ? '0 0 10px rgba(34, 211, 238, 0.55), 0 2px 6px rgba(0,0,0,0.5)'
-                            : '0 2px 6px rgba(0,0,0,0.4)',
-                          display: 'grid',
-                          placeItems: 'center',
-                          cursor: 'pointer',
-                          zIndex: 10,
-                          backdropFilter: 'blur(4px)',
-                          transition: 'all 0.15s ease',
-                        }}
-                        title={item.isFavorite ? 'Remove from favorites' : 'Add to favorites'}
-                        aria-label={item.isFavorite ? 'Remove from favorites' : 'Add to favorites'}
-                      >
-                        <Heart
-                          size={15}
-                          style={{
-                            fill: item.isFavorite ? 'currentColor' : 'none',
-                          }}
+                        <img
+                          src={item.url}
+                          alt={item.prompt}
+                          className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-300"
+                          loading="lazy"
                         />
-                      </button>
-                    </div>
-                  ))}
+
+                        {/* Selection Mode Overlay & Checkmark */}
+                        {gallerySelectionMode && (
+                          <>
+                            {isSelected && (
+                              <div className="absolute inset-0 bg-pink-500/15 pointer-events-none z-[6]" />
+                            )}
+                            <div
+                              className={`absolute bottom-2 left-2 w-7 h-7 rounded-lg flex items-center justify-center z-[15] backdrop-blur-md transition-all pointer-events-none stitch-check-pop ${
+                                isSelected
+                                  ? 'bg-gradient-to-r from-[#ff2d87] to-[#8b2cf5] border border-pink-400 text-white shadow-glow-subtle'
+                                  : 'bg-black/65 border border-white/40 text-transparent'
+                              }`}
+                            >
+                              {isSelected ? (
+                                <Check size={15} strokeWidth={3} className="text-white" />
+                              ) : (
+                                <div className="w-2.5 h-2.5 rounded-xs border border-white/50" />
+                              )}
+                            </div>
+                          </>
+                        )}
+
+                        {/* Bottom gradient with real prompt + real model & seed */}
+                        <div className="absolute inset-0 bg-gradient-to-t from-black/90 via-black/20 to-transparent opacity-85 group-hover:opacity-100 transition-opacity flex flex-col justify-end p-2.5 pointer-events-none">
+                          <p className="m-0 text-white text-[10px] font-mono leading-snug line-clamp-2">
+                            {item.prompt}
+                          </p>
+                          <div className="flex items-center justify-between gap-1 mt-1 text-[9px] font-mono text-pink-300">
+                            <span className="truncate">{item.model || item.providerName || 'AI'}</span>
+                            <span className="text-gray-400 shrink-0">#{item.seed}</span>
+                          </div>
+                        </div>
+
+                        {/* Top-left: Edit / Enhanced badge */}
+                        <div className="absolute top-2 left-2 flex items-center gap-1 z-10 pointer-events-none">
+                          {(item.isEdit || item.referenceImageUrl) && (
+                            <span className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded bg-pink-600/90 text-white text-[9px] font-mono font-bold shadow">
+                              <Wand2 size={9} /> Edit
+                            </span>
+                          )}
+                          {item.enhancedPrompt && !(item.isEdit || item.referenceImageUrl) && (
+                            <span className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded bg-purple-600/90 text-white text-[9px] font-mono font-semibold shadow">
+                              <Wand2 size={9} /> Enhanced
+                            </span>
+                          )}
+                        </div>
+
+                        {/* Top-right: Copy Prompt Button */}
+                        <button
+                          type="button"
+                          onClick={(e) => handleCopyGalleryPrompt(e, item.prompt, item.id)}
+                          className={`absolute top-2 right-2 w-7 h-7 rounded-lg backdrop-blur-md border flex items-center justify-center transition-all cursor-pointer z-10 ${
+                            copiedPromptId === item.id
+                              ? 'bg-emerald-500/85 border-emerald-400 text-white'
+                              : 'bg-black/60 border-white/20 text-white hover:bg-pink-500/80 hover:border-pink-400'
+                          }`}
+                          title={copiedPromptId === item.id ? 'Prompt copied to clipboard!' : 'Copy prompt'}
+                          aria-label="Copy prompt"
+                        >
+                          {copiedPromptId === item.id ? <Check size={13} /> : <Copy size={13} />}
+                        </button>
+
+                        {/* Bottom-right: Favorite Heart Button */}
+                        <button
+                          type="button"
+                          onClick={(e) => handleToggleFavorite(e, item.id)}
+                          className={`absolute bottom-2 right-2 w-7 h-7 rounded-lg backdrop-blur-md border flex items-center justify-center transition-all cursor-pointer z-10 stitch-heart-btn ${
+                            item.isFavorite
+                              ? 'bg-pink-500/30 border-pink-400 text-pink-400 shadow-glow-subtle'
+                              : 'bg-black/55 border-white/20 text-white/80 hover:text-pink-400'
+                          }`}
+                          title={item.isFavorite ? 'Remove from favorites' : 'Add to favorites'}
+                          aria-label={item.isFavorite ? 'Remove from favorites' : 'Add to favorites'}
+                        >
+                          <Heart
+                            size={14}
+                            className={item.isFavorite ? 'fill-current stitch-heart-pop' : ''}
+                          />
+                        </button>
+                      </div>
+                    );
+                  })}
                 </div>
               )}
             </div>
@@ -4969,20 +4049,13 @@ export function ImageStudio() {
         </div>
       )}
 
-      {/* Fullscreen Modal View with True Edge-to-Edge, Zoom & Pan, and Swipe Navigation */}
+      {/* 8b. Fullscreen Lightbox Viewer Modal (Stitch Dark Theme) */}
       {fullscreenImage && (
         <div
+          className={`fixed inset-0 z-[99999] flex flex-col justify-between select-none overflow-hidden stitch-modal-backdrop ${
+            isTrueFullscreen ? 'bg-black p-0' : 'bg-black/95 backdrop-blur-2xl'
+          }`}
           style={{
-            position: 'fixed',
-            inset: 0,
-            background: isTrueFullscreen ? '#000000' : 'rgba(0,0,0,0.92)',
-            backdropFilter: isTrueFullscreen ? 'none' : 'blur(8px)',
-            display: 'grid',
-            placeItems: 'center',
-            zIndex: 99999,
-            padding: isTrueFullscreen ? 0 : '24px',
-            overflow: 'hidden',
-            userSelect: 'none',
             touchAction: zoomLevel > 1 ? 'none' : 'pan-y',
           }}
           onClick={() => {
@@ -4999,178 +4072,160 @@ export function ImageStudio() {
           onTouchMove={handleTouchMove}
           onTouchEnd={handleTouchEnd}
         >
-          {/* Previous image arrow button (desktop/mouse) */}
-          {navigationImagesList.length > 1 && (
-            <button
-              type="button"
-              onClick={handlePrevFullscreenImage}
-              className="hidden sm:flex"
-              style={{
-                position: 'fixed',
-                left: '16px',
-                top: '50%',
-                transform: 'translateY(-50%)',
-                background: 'rgba(0,0,0,0.5)',
-                border: '1px solid rgba(255,255,255,0.2)',
-                borderRadius: '50%',
-                color: '#fff',
-                width: '42px',
-                height: '42px',
-                alignItems: 'center',
-                justifyContent: 'center',
-                cursor: 'pointer',
-                opacity: 0.65,
-                transition: 'all 0.15s ease',
-                zIndex: 100000,
-                backdropFilter: 'blur(6px)',
-              }}
-              onMouseEnter={(e) => (e.currentTarget.style.opacity = '1')}
-              onMouseLeave={(e) => (e.currentTarget.style.opacity = '0.65')}
-              title="Previous image (Swipe right or Left Arrow)"
-              aria-label="Previous image"
-            >
-              <ChevronLeft size={22} />
-            </button>
-          )}
-
-          {/* Next image arrow button (desktop/mouse) */}
-          {navigationImagesList.length > 1 && (
-            <button
-              type="button"
-              onClick={handleNextFullscreenImage}
-              className="hidden sm:flex"
-              style={{
-                position: 'fixed',
-                right: '16px',
-                top: '50%',
-                transform: 'translateY(-50%)',
-                background: 'rgba(0,0,0,0.5)',
-                border: '1px solid rgba(255,255,255,0.2)',
-                borderRadius: '50%',
-                color: '#fff',
-                width: '42px',
-                height: '42px',
-                alignItems: 'center',
-                justifyContent: 'center',
-                cursor: 'pointer',
-                opacity: 0.65,
-                transition: 'all 0.15s ease',
-                zIndex: 100000,
-                backdropFilter: 'blur(6px)',
-              }}
-              onMouseEnter={(e) => (e.currentTarget.style.opacity = '1')}
-              onMouseLeave={(e) => (e.currentTarget.style.opacity = '0.65')}
-              title="Next image (Swipe left or Right Arrow)"
-              aria-label="Next image"
-            >
-              <ChevronRight size={22} />
-            </button>
-          )}
-
-          <div
-            style={{
-              position: 'relative',
-              maxWidth: isTrueFullscreen ? '100vw' : '90vw',
-              maxHeight: isTrueFullscreen ? '100vh' : '90vh',
-              width: isTrueFullscreen ? '100vw' : 'auto',
-              height: isTrueFullscreen ? '100vh' : 'auto',
-              display: 'flex',
-              flexDirection: 'column',
-              alignItems: 'center',
-              justifyContent: 'center',
-            }}
-            onClick={(e) => {
-              if (!isTrueFullscreen && zoomLevel <= 1) {
-                e.stopPropagation();
-              }
-            }}
-          >
-            {/* Favorite Heart Button */}
-            <button
-              type="button"
-              onClick={(e) => handleToggleFavorite(e, fullscreenImage.id)}
-              style={{
-                position: isTrueFullscreen ? 'fixed' : 'absolute',
-                top: isTrueFullscreen ? '16px' : '-40px',
-                right: isTrueFullscreen ? '58px' : '42px',
-                background: fullscreenImage.isFavorite
-                  ? 'rgba(6, 182, 212, 0.35)'
-                  : 'rgba(0,0,0,0.55)',
-                border: fullscreenImage.isFavorite
-                  ? '1px solid rgba(34, 211, 238, 0.8)'
-                  : '1px solid rgba(255,255,255,0.2)',
-                borderRadius: '50%',
-                color: fullscreenImage.isFavorite ? '#22d3ee' : '#fff',
-                boxShadow: fullscreenImage.isFavorite
-                  ? '0 0 12px rgba(34, 211, 238, 0.6)'
-                  : 'none',
-                width: '34px',
-                height: '34px',
-                display: 'grid',
-                placeItems: 'center',
-                cursor: 'pointer',
-                zIndex: 100001,
-                backdropFilter: 'blur(6px)',
-                opacity: 1,
-                transition: 'all 0.15s ease',
-              }}
-              title={fullscreenImage.isFavorite ? 'Remove from favorites' : 'Add to favorites'}
-              aria-label={fullscreenImage.isFavorite ? 'Remove from favorites' : 'Add to favorites'}
-            >
-              <Heart
-                size={16}
-                style={{
-                  fill: fullscreenImage.isFavorite ? 'currentColor' : 'none',
-                }}
-              />
-            </button>
-
-            {/* Close ✕ Button */}
-            <button
-              type="button"
-              onClick={(e) => {
-                e.stopPropagation();
-                setFullscreenImage(null);
-                setIsTrueFullscreen(false);
-                setZoomLevel(1);
-                setPanOffset({ x: 0, y: 0 });
-              }}
-              style={{
-                position: isTrueFullscreen ? 'fixed' : 'absolute',
-                top: isTrueFullscreen ? '16px' : '-40px',
-                right: isTrueFullscreen ? '16px' : '0',
-                background: 'rgba(0,0,0,0.55)',
-                border: '1px solid rgba(255,255,255,0.2)',
-                borderRadius: '50%',
-                color: '#fff',
-                width: '34px',
-                height: '34px',
-                display: 'grid',
-                placeItems: 'center',
-                cursor: 'pointer',
-                zIndex: 100001,
-                backdropFilter: 'blur(6px)',
-                opacity: isTrueFullscreen ? 0.75 : 1,
-                transition: 'opacity 0.15s ease',
-              }}
-              onMouseEnter={(e) => (e.currentTarget.style.opacity = '1')}
-              onMouseLeave={(e) => (e.currentTarget.style.opacity = isTrueFullscreen ? '0.75' : '1')}
-              title="Close viewer (Escape)"
-              aria-label="Close viewer"
-            >
-              <X size={18} />
-            </button>
-
-            {/* Pannable / Scrollable & Zoomable Image Viewport Container */}
+          {/* Top Viewer Bar (Hidden in True Edge-to-Edge Fullscreen) */}
+          {!isTrueFullscreen && (
             <div
+              className="flex items-center justify-between px-4 py-3 border-b border-[#1f1f2b] bg-[#0b0b10]/90 backdrop-blur-md z-[100001] shrink-0"
+              onClick={(e) => e.stopPropagation()}
+            >
+              <div className="flex items-center gap-2 min-w-0">
+                {currentFullscreenIndex >= 0 && navigationImagesList.length > 0 && (
+                  <span className="px-2 py-0.5 rounded bg-[#181822] border border-[#2b2b3a] text-[10px] font-mono text-pink-400 font-semibold shrink-0">
+                    {String(currentFullscreenIndex + 1).padStart(2, '0')} /{' '}
+                    {String(navigationImagesList.length).padStart(2, '0')}
+                  </span>
+                )}
+                <span className="text-xs font-mono text-gray-300 truncate">
+                  {fullscreenImage.model || fullscreenImage.providerName}
+                </span>
+                <span className="hidden sm:inline-block px-2 py-0.5 rounded bg-[#15151f] border border-[#252533] text-[10px] font-mono text-gray-400">
+                  {fullscreenImage.width}×{fullscreenImage.height}
+                </span>
+              </div>
+
+              <div className="flex items-center gap-1.5">
+                {/* Zoom Controls */}
+                <div className="hidden sm:flex items-center gap-1 bg-[#15151f] border border-[#2b2b3a] rounded-lg px-1.5 py-0.5 mr-1">
+                  <button
+                    type="button"
+                    onClick={handleZoomOut}
+                    disabled={zoomLevel <= 1}
+                    className="px-1.5 py-0.5 text-xs font-mono text-gray-300 hover:text-white disabled:opacity-35 cursor-pointer"
+                    title="Zoom Out (-)"
+                  >
+                    −
+                  </button>
+                  <button
+                    type="button"
+                    onClick={handleResetZoom}
+                    className="px-1.5 py-0.5 text-[10px] font-mono text-pink-300 hover:text-pink-200 cursor-pointer"
+                    title="Reset Zoom (0)"
+                  >
+                    {Math.round(zoomLevel * 100)}%
+                  </button>
+                  <button
+                    type="button"
+                    onClick={handleZoomIn}
+                    disabled={zoomLevel >= 4}
+                    className="px-1.5 py-0.5 text-xs font-mono text-gray-300 hover:text-white disabled:opacity-35 cursor-pointer"
+                    title="Zoom In (+)"
+                  >
+                    +
+                  </button>
+                </div>
+
+                {/* Favorite Heart Button */}
+                <button
+                  type="button"
+                  onClick={(e) => handleToggleFavorite(e, fullscreenImage.id)}
+                  className={`w-8 h-8 rounded-full border flex items-center justify-center transition-all cursor-pointer stitch-heart-btn ${
+                    fullscreenImage.isFavorite
+                      ? 'bg-pink-500/25 border-pink-500/60 text-pink-400 shadow-glow-subtle'
+                      : 'bg-[#181822] border-[#2b2b3a] text-gray-300 hover:text-pink-400'
+                  }`}
+                  title={fullscreenImage.isFavorite ? 'Remove from favorites' : 'Add to favorites'}
+                  aria-label={fullscreenImage.isFavorite ? 'Remove from favorites' : 'Add to favorites'}
+                >
+                  <Heart
+                    size={15}
+                    className={fullscreenImage.isFavorite ? 'fill-current stitch-heart-pop' : ''}
+                  />
+                </button>
+
+                {/* Close Button */}
+                <button
+                  type="button"
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    setFullscreenImage(null);
+                    setIsTrueFullscreen(false);
+                    setZoomLevel(1);
+                    setPanOffset({ x: 0, y: 0 });
+                  }}
+                  className="w-8 h-8 rounded-full bg-[#181822] hover:bg-[#242432] border border-[#2b2b3a] flex items-center justify-center text-gray-300 hover:text-white transition-all cursor-pointer"
+                  title="Close viewer (Escape)"
+                  aria-label="Close viewer"
+                >
+                  <X size={16} />
+                </button>
+              </div>
+            </div>
+          )}
+
+          {/* Floating Close + Favorite in True Edge-to-Edge Fullscreen */}
+          {isTrueFullscreen && (
+            <div className="fixed top-4 right-4 z-[100001] flex items-center gap-2">
+              <button
+                type="button"
+                onClick={(e) => handleToggleFavorite(e, fullscreenImage.id)}
+                className={`w-9 h-9 rounded-full backdrop-blur-md border flex items-center justify-center transition-all cursor-pointer ${
+                  fullscreenImage.isFavorite
+                    ? 'bg-pink-500/30 border-pink-400 text-pink-400'
+                    : 'bg-black/60 border-white/20 text-white'
+                }`}
+                title={fullscreenImage.isFavorite ? 'Remove from favorites' : 'Add to favorites'}
+              >
+                <Heart size={16} className={fullscreenImage.isFavorite ? 'fill-current' : ''} />
+              </button>
+              <button
+                type="button"
+                onClick={(e) => {
+                  e.stopPropagation();
+                  setFullscreenImage(null);
+                  setIsTrueFullscreen(false);
+                  setZoomLevel(1);
+                  setPanOffset({ x: 0, y: 0 });
+                }}
+                className="w-9 h-9 rounded-full bg-black/60 backdrop-blur-md border border-white/20 flex items-center justify-center text-white hover:bg-black/80 cursor-pointer"
+                title="Close viewer (Escape)"
+              >
+                <X size={18} />
+              </button>
+            </div>
+          )}
+
+          {/* Center Viewport with Left/Right Arrows and Pannable/Zoomable Image */}
+          <div className="relative flex-1 flex items-center justify-center p-3 sm:p-6 overflow-hidden">
+            {/* Previous Image Arrow */}
+            {navigationImagesList.length > 1 && (
+              <button
+                type="button"
+                onClick={handlePrevFullscreenImage}
+                className="absolute left-3 top-1/2 -translate-y-1/2 w-10 h-10 rounded-full bg-black/65 hover:bg-black/85 backdrop-blur-md border border-white/15 flex items-center justify-center text-white z-[100000] transition-all cursor-pointer"
+                title="Previous image (Swipe right or Left Arrow)"
+                aria-label="Previous image"
+              >
+                <ChevronLeft size={20} />
+              </button>
+            )}
+
+            {/* Next Image Arrow */}
+            {navigationImagesList.length > 1 && (
+              <button
+                type="button"
+                onClick={handleNextFullscreenImage}
+                className="absolute right-3 top-1/2 -translate-y-1/2 w-10 h-10 rounded-full bg-black/65 hover:bg-black/85 backdrop-blur-md border border-white/15 flex items-center justify-center text-white z-[100000] transition-all cursor-pointer"
+                title="Next image (Swipe left or Right Arrow)"
+                aria-label="Next image"
+              >
+                <ChevronRight size={20} />
+              </button>
+            )}
+
+            <div
+              className="relative flex items-center justify-center overflow-visible select-none stitch-modal-panel"
               style={{
-                position: 'relative',
-                display: 'flex',
-                alignItems: 'center',
-                justifyContent: 'center',
-                overflow: 'visible',
                 cursor: zoomLevel > 1 ? (isPanning ? 'grabbing' : 'grab') : 'zoom-in',
-                userSelect: 'none',
               }}
               onMouseDown={handleMouseDown}
               onMouseMove={handleMouseMove}
@@ -5195,10 +4250,9 @@ export function ImageStudio() {
                   width: isTrueFullscreen ? '100vw' : 'auto',
                   height: isTrueFullscreen ? '100vh' : 'auto',
                   maxWidth: isTrueFullscreen ? '100vw' : '90vw',
-                  maxHeight: isTrueFullscreen ? '100vh' : '76vh',
-                  borderRadius: isTrueFullscreen ? '0px' : '12px',
+                  maxHeight: isTrueFullscreen ? '100vh' : '68vh',
+                  borderRadius: isTrueFullscreen ? '0px' : '16px',
                   objectFit: 'contain',
-                  boxShadow: isTrueFullscreen ? 'none' : '0 16px 48px rgba(0,0,0,0.8)',
                   transform: `translate(${panOffset.x}px, ${panOffset.y}px) scale(${zoomLevel})`,
                   transformOrigin: 'center center',
                   transition: isPanning ? 'none' : 'transform 0.15s ease-out',
@@ -5206,6 +4260,7 @@ export function ImageStudio() {
                   pointerEvents: 'auto',
                   touchAction: zoomLevel > 1 ? 'none' : 'pan-y',
                 }}
+                className={isTrueFullscreen ? '' : 'border border-[#2b2b3a] shadow-2xl'}
                 draggable={false}
                 title={
                   zoomLevel > 1
@@ -5216,110 +4271,126 @@ export function ImageStudio() {
                 }
               />
             </div>
+          </div>
 
-            {/* Prompt & Details Caption (Hidden in True Fullscreen or when Zoomed) */}
-            {!isTrueFullscreen && zoomLevel <= 1 && (
-              <div style={{ marginTop: '14px', textAlign: 'center', maxWidth: '680px', display: 'grid', gap: '4px' }}>
-                {fullscreenImage.enhancedPrompt && (
-                  <div>
-                    <span
-                      style={{
-                        fontSize: '10px',
-                        fontWeight: 700,
-                        background: 'rgba(168,85,247,0.25)',
-                        color: '#c084fc',
-                        padding: '2px 7px',
-                        borderRadius: '4px',
-                        border: '1px solid rgba(168,85,247,0.4)',
-                        display: 'inline-flex',
-                        alignItems: 'center',
-                        gap: '4px',
-                      }}
-                    >
-                      <Wand2 size={10} /> Smart AI Enhanced Prompt
-                    </span>
+          {/* Bottom Details & Action Drawer (Hidden in True Edge-to-Edge Fullscreen or when Zoomed) */}
+          {!isTrueFullscreen && zoomLevel <= 1 && (
+            <div
+              className="bg-[#0e0e14]/95 border-t border-[#1f1f2b] p-4 space-y-3 z-[100001] shrink-0"
+              onClick={(e) => e.stopPropagation()}
+            >
+              <div className="max-w-3xl mx-auto space-y-2.5">
+                {/* Real Prompt + Copy Prompt */}
+                <div className="flex items-start justify-between gap-3">
+                  <div className="space-y-1 flex-1 min-w-0">
+                    {fullscreenImage.enhancedPrompt && (
+                      <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded bg-purple-500/20 border border-purple-500/40 text-purple-300 text-[10px] font-mono font-semibold">
+                        <Wand2 size={10} /> Smart AI Enhanced Prompt
+                      </span>
+                    )}
+                    <p className="m-0 text-xs font-mono text-gray-200 leading-relaxed break-words">
+                      "{fullscreenImage.prompt}"
+                    </p>
+                    {fullscreenImage.originalPrompt &&
+                      fullscreenImage.originalPrompt !== fullscreenImage.prompt && (
+                        <p className="m-0 text-[11px] font-mono text-gray-400 italic">
+                          Original: "{fullscreenImage.originalPrompt}"
+                        </p>
+                      )}
                   </div>
-                )}
-                <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '8px', flexWrap: 'wrap' }}>
-                  <p style={{ margin: 0, color: '#fff', fontSize: '13px', lineHeight: 1.5, display: 'inline' }}>
-                    "{fullscreenImage.prompt}"
-                  </p>
-                  <button
-                    type="button"
-                    onClick={(e) => handleToggleFavorite(e, fullscreenImage.id)}
-                    style={{
-                      background: fullscreenImage.isFavorite
-                        ? 'rgba(6, 182, 212, 0.25)'
-                        : 'rgba(255, 255, 255, 0.1)',
-                      border: fullscreenImage.isFavorite
-                        ? '1px solid rgba(34, 211, 238, 0.6)'
-                        : '1px solid rgba(255, 255, 255, 0.2)',
-                      borderRadius: '6px',
-                      color: fullscreenImage.isFavorite ? '#22d3ee' : '#fff',
-                      boxShadow: fullscreenImage.isFavorite
-                        ? '0 0 10px rgba(34, 211, 238, 0.4)'
-                        : 'none',
-                      padding: '3px 8px',
-                      display: 'inline-flex',
-                      alignItems: 'center',
-                      gap: '4px',
-                      cursor: 'pointer',
-                      fontSize: '11px',
-                      fontWeight: 500,
-                      transition: 'all 0.15s ease',
-                      flexShrink: 0,
-                    }}
-                    title={fullscreenImage.isFavorite ? 'Remove from favorites' : 'Add to favorites'}
-                  >
-                    <Heart
-                      size={12}
-                      style={{
-                        color: fullscreenImage.isFavorite ? '#22d3ee' : '#fff',
-                        fill: fullscreenImage.isFavorite ? 'currentColor' : 'none',
-                      }}
-                    />
-                    {fullscreenImage.isFavorite ? 'Favorited' : 'Favorite'}
-                  </button>
 
                   <button
                     type="button"
-                    onClick={(e) => handleCopyGalleryPrompt(e, fullscreenImage.prompt, fullscreenImage.id)}
-                    style={{
-                      background: copiedPromptId === fullscreenImage.id ? 'rgba(16, 185, 129, 0.25)' : 'rgba(255, 255, 255, 0.1)',
-                      border: copiedPromptId === fullscreenImage.id ? '1px solid rgba(16, 185, 129, 0.5)' : '1px solid rgba(255, 255, 255, 0.2)',
-                      borderRadius: '6px',
-                      color: copiedPromptId === fullscreenImage.id ? '#34d399' : '#fff',
-                      padding: '3px 8px',
-                      display: 'inline-flex',
-                      alignItems: 'center',
-                      gap: '4px',
-                      cursor: 'pointer',
-                      fontSize: '11px',
-                      fontWeight: 500,
-                      transition: 'all 0.15s ease',
-                      flexShrink: 0,
-                    }}
-                    title={copiedPromptId === fullscreenImage.id ? 'Prompt copied!' : 'Copy prompt to clipboard'}
+                    onClick={(e) =>
+                      handleCopyGalleryPrompt(e, fullscreenImage.prompt, fullscreenImage.id)
+                    }
+                    className={`px-2.5 py-1.5 rounded-lg border text-[11px] font-mono flex items-center gap-1 shrink-0 transition-all cursor-pointer ${
+                      copiedPromptId === fullscreenImage.id
+                        ? 'bg-emerald-500/20 border-emerald-500/40 text-emerald-300'
+                        : 'bg-[#181822] hover:bg-[#222230] border-[#2b2b3a] text-gray-300'
+                    }`}
                   >
                     {copiedPromptId === fullscreenImage.id ? (
                       <>
-                        <Check size={12} style={{ color: '#34d399' }} /> Copied
+                        <Check size={12} className="text-emerald-400" />
+                        <span>Copied</span>
                       </>
                     ) : (
                       <>
-                        <Copy size={12} /> Copy Prompt
+                        <Copy size={12} />
+                        <span>Copy Prompt</span>
                       </>
                     )}
                   </button>
                 </div>
-                {fullscreenImage.originalPrompt && fullscreenImage.originalPrompt !== fullscreenImage.prompt && (
-                  <p style={{ margin: 0, color: 'var(--muted)', fontSize: '11px', fontStyle: 'italic' }}>
-                    Original: "{fullscreenImage.originalPrompt}"
-                  </p>
-                )}
+
+                {/* Real Metadata Pills (Model, Seed, Dimensions — NO fake CFG/Sampler) */}
+                <div className="flex items-center gap-2 flex-wrap text-[10px] font-mono text-gray-400">
+                  <span className="px-2 py-0.5 rounded bg-[#161620] border border-[#252533] text-pink-300">
+                    Model: {fullscreenImage.model || fullscreenImage.providerName}
+                  </span>
+                  <span className="px-2 py-0.5 rounded bg-[#161620] border border-[#252533]">
+                    Seed: {fullscreenImage.seed}
+                  </span>
+                  <span className="px-2 py-0.5 rounded bg-[#161620] border border-[#252533]">
+                    {fullscreenImage.width}×{fullscreenImage.height}
+                  </span>
+                </div>
+
+                {/* Bottom Action Buttons: Remix / Edit, Download, Favorite, Delete */}
+                <div className="grid grid-cols-4 gap-2 pt-1">
+                  <button
+                    type="button"
+                    onClick={() => {
+                      handleUseAsReference(fullscreenImage);
+                      setFullscreenImage(null);
+                      setGalleryModalOpen(false);
+                    }}
+                    className="py-2 rounded-xl bg-[#181822] hover:bg-[#232332] border border-[#2b2b3a] text-xs font-mono text-gray-200 flex items-center justify-center gap-1.5 transition-all cursor-pointer"
+                  >
+                    <Wand2 size={13} className="text-pink-400" />
+                    <span>Edit / Remix</span>
+                  </button>
+
+                  <button
+                    type="button"
+                    onClick={() => handleDownload(fullscreenImage)}
+                    className="py-2 rounded-xl bg-gradient-to-r from-[#ff2d87] to-[#8b2cf5] text-xs font-mono font-bold text-white flex items-center justify-center gap-1.5 shadow-glow-pink transition-all cursor-pointer"
+                  >
+                    <Download size={13} />
+                    <span>Download</span>
+                  </button>
+
+                  <button
+                    type="button"
+                    onClick={(e) => handleToggleFavorite(e, fullscreenImage.id)}
+                    className={`py-2 rounded-xl border text-xs font-mono flex items-center justify-center gap-1.5 transition-all cursor-pointer ${
+                      fullscreenImage.isFavorite
+                        ? 'bg-pink-500/20 border-pink-500/50 text-pink-300 font-semibold'
+                        : 'bg-[#181822] hover:bg-[#232332] border-[#2b2b3a] text-gray-200'
+                    }`}
+                  >
+                    <Heart
+                      size={13}
+                      className={
+                        fullscreenImage.isFavorite ? 'text-pink-400 fill-current' : 'text-pink-400'
+                      }
+                    />
+                    <span>{fullscreenImage.isFavorite ? 'Favorited' : 'Favorite'}</span>
+                  </button>
+
+                  <button
+                    type="button"
+                    onClick={(e) => handleDeleteImage(e, fullscreenImage.id)}
+                    className="py-2 rounded-xl bg-red-950/30 hover:bg-red-900/50 border border-red-800/40 text-xs font-mono text-red-400 flex items-center justify-center gap-1.5 transition-all cursor-pointer"
+                  >
+                    <Trash2 size={13} />
+                    <span>Delete</span>
+                  </button>
+                </div>
               </div>
-            )}
-          </div>
+            </div>
+          )}
         </div>
       )}
     </div>
