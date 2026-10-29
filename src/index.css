@@ -4849,4 +4849,316 @@ button:active .stitch-dice-icon {
   }
 }
 
+/* ==========================================================================
+   NEXUS WORKFLOW STUDIO — CYBER THEME VARIABLES & SURFACE RULES
+   ========================================================================== */
 
+[data-wf-theme="cyber"] {
+  --wf-bg: #131317;
+  --wf-card: rgba(27, 27, 31, 0.95);
+  --wf-card-elevated: #2a292e;
+  --wf-surface-low: #0e0e12;
+  --wf-border: #2a292e;
+  --wf-border-active: rgba(73, 239, 253, 0.35);
+  --wf-accent: #49effd;
+  --wf-accent-bright: #00f0ff;
+  --wf-text: #e4e1e7;
+  --wf-muted: #b9cacb;
+  --wf-outline: #3b494b;
+  --wf-error: #ffb4ab;
+  font-family: 'Manrope', -apple-system, BlinkMacSystemFont, sans-serif;
+  color: var(--wf-text);
+}
+
+[data-wf-theme="cyber"] .font-mono {
+  font-family: 'JetBrains Mono', ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
+}
+
+.wf-cyber-matrix-grid {
+  background-size: 32px 32px;
+  background-image:
+    linear-gradient(to right, rgba(73, 239, 253, 0.04) 1px, transparent 1px),
+    linear-gradient(to bottom, rgba(73, 239, 253, 0.04) 1px, transparent 1px);
+}
+
+.wf-cyber-card {
+  position: relative;
+  background: var(--wf-card);
+  border: 1px solid var(--wf-border);
+  box-shadow: 0 12px 32px rgba(0, 0, 0, 0.45);
+  transition: border-color 180ms ease, box-shadow 180ms ease, transform 180ms ease;
+}
+
+.wf-cyber-card::before,
+.wf-cyber-card::after {
+  content: '';
+  position: absolute;
+  width: 8px;
+  height: 8px;
+  border-color: var(--wf-accent);
+  pointer-events: none;
+  opacity: 0.45;
+  transition: width 220ms ease, height 220ms ease, opacity 220ms ease, border-color 220ms ease;
+  z-index: 2;
+}
+
+.wf-cyber-card::before {
+  top: 0;
+  left: 0;
+  border-top: 1.5px solid var(--wf-accent);
+  border-left: 1.5px solid var(--wf-accent);
+}
+
+.wf-cyber-card::after {
+  bottom: 0;
+  right: 0;
+  border-bottom: 1.5px solid var(--wf-accent);
+  border-right: 1.5px solid var(--wf-accent);
+}
+
+.wf-cyber-card:hover::before,
+.wf-cyber-card:hover::after,
+.wf-cyber-card-active::before,
+.wf-cyber-card-active::after {
+  width: 12px;
+  height: 12px;
+  opacity: 1;
+}
+
+.wf-cyber-card-active {
+  border-color: var(--wf-border-active);
+  box-shadow: 0 0 22px rgba(73, 239, 253, 0.14), 0 12px 32px rgba(0, 0, 0, 0.5);
+}
+
+/* ==========================================================================
+   NEXUS WORKFLOW STUDIO — PHASE 5 LIGHT ANIMATIONS (TIED TO REAL STATE)
+   ========================================================================== */
+
+@keyframes wfStepEnter {
+  0% {
+    opacity: 0;
+    transform: translateY(6px);
+  }
+  100% {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+.wf-step-card-enter {
+  animation: wfStepEnter 200ms cubic-bezier(0.22, 1, 0.36, 1) both;
+}
+
+@keyframes wfRunningPulse {
+  0%, 100% {
+    box-shadow: 0 0 18px rgba(73, 239, 253, 0.16), 0 12px 32px rgba(0, 0, 0, 0.5);
+  }
+  50% {
+    box-shadow: 0 0 28px rgba(73, 239, 253, 0.34), 0 12px 32px rgba(0, 0, 0, 0.55);
+  }
+}
+
+.wf-step-running {
+  animation: wfRunningPulse 1.8s ease-in-out infinite;
+}
+
+@keyframes wfDoneFlash {
+  0% {
+    box-shadow: 0 0 26px rgba(16, 185, 129, 0.32), 0 12px 32px rgba(0, 0, 0, 0.45);
+  }
+  100% {
+    box-shadow: 0 12px 32px rgba(0, 0, 0, 0.45);
+  }
+}
+
+.wf-step-done {
+  animation: wfDoneFlash 380ms ease-out forwards;
+}
+
+@keyframes wfCheckPop {
+  0% {
+    transform: scale(0.75);
+  }
+  60% {
+    transform: scale(1.22);
+  }
+  100% {
+    transform: scale(1);
+  }
+}
+
+.wf-check-pop {
+  animation: wfCheckPop 260ms cubic-bezier(0.34, 1.56, 0.64, 1);
+}
+
+@keyframes wfErrorShake {
+  0%, 100% {
+    transform: translateX(0);
+  }
+  25% {
+    transform: translateX(-3px);
+  }
+  75% {
+    transform: translateX(3px);
+  }
+}
+
+.wf-step-error {
+  animation: wfErrorShake 260ms ease-in-out 1;
+  box-shadow: 0 0 20px rgba(255, 180, 171, 0.18), 0 12px 32px rgba(0, 0, 0, 0.45);
+}
+
+.wf-step-skipped {
+  transition: opacity 220ms ease;
+}
+
+@keyframes wfConnectorDotFlow {
+  0% {
+    transform: translateY(-10px) scale(0.85);
+    opacity: 0.35;
+  }
+  50% {
+    transform: translateY(0px) scale(1.15);
+    opacity: 1;
+  }
+  100% {
+    transform: translateY(10px) scale(0.85);
+    opacity: 0.35;
+  }
+}
+
+.wf-connector-dot-flowing {
+  animation: wfConnectorDotFlow 900ms ease-in-out infinite;
+}
+
+.wf-connector-line-flowing {
+  opacity: 1;
+}
+
+@keyframes wfRunBtnIdlePulse {
+  0%, 100% {
+    box-shadow: 0 0 20px rgba(73, 239, 253, 0.32);
+  }
+  50% {
+    box-shadow: 0 0 28px rgba(73, 239, 253, 0.52);
+  }
+}
+
+.wf-run-btn-idle {
+  animation: wfRunBtnIdlePulse 2.4s ease-in-out infinite;
+}
+
+@keyframes wfBtnShine {
+  0% {
+    transform: translateX(-100%);
+  }
+  100% {
+    transform: translateX(100%);
+  }
+}
+
+.wf-run-btn-busy::after {
+  content: '';
+  position: absolute;
+  inset: 0;
+  background: linear-gradient(
+    90deg,
+    transparent 0%,
+    rgba(255, 180, 171, 0.22) 50%,
+    transparent 100%
+  );
+  animation: wfBtnShine 1.35s ease-in-out infinite;
+  pointer-events: none;
+}
+
+@keyframes wfFinalOutputFade {
+  0% {
+    opacity: 0;
+    transform: translateY(6px);
+  }
+  100% {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+.wf-final-output-enter {
+  animation: wfFinalOutputFade 260ms cubic-bezier(0.22, 1, 0.36, 1) both;
+}
+
+@keyframes wfPopoverEnter {
+  0% {
+    opacity: 0;
+    transform: translateY(4px) scale(0.98);
+  }
+  100% {
+    opacity: 1;
+    transform: translateY(0) scale(1);
+  }
+}
+
+.wf-popover-enter {
+  animation: wfPopoverEnter 180ms cubic-bezier(0.22, 1, 0.36, 1) both;
+}
+
+@keyframes wfDrawerEnter {
+  0% {
+    opacity: 0;
+    transform: translateX(14px);
+  }
+  100% {
+    opacity: 1;
+    transform: translateX(0);
+  }
+}
+
+.wf-drawer-enter {
+  animation: wfDrawerEnter 220ms cubic-bezier(0.22, 1, 0.36, 1) both;
+}
+
+@keyframes wfModalBackdrop {
+  0% {
+    opacity: 0;
+  }
+  100% {
+    opacity: 1;
+  }
+}
+
+@keyframes wfModalPanel {
+  0% {
+    opacity: 0;
+    transform: translateY(6px) scale(0.98);
+  }
+  100% {
+    opacity: 1;
+    transform: translateY(0) scale(1);
+  }
+}
+
+.wf-modal-backdrop {
+  animation: wfModalBackdrop 180ms ease-out both;
+}
+
+.wf-modal-panel {
+  animation: wfModalPanel 220ms cubic-bezier(0.22, 1, 0.36, 1) both;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .wf-step-card-enter,
+  .wf-step-running,
+  .wf-step-done,
+  .wf-check-pop,
+  .wf-step-error,
+  .wf-connector-dot-flowing,
+  .wf-run-btn-idle,
+  .wf-run-btn-busy::after,
+  .wf-final-output-enter,
+  .wf-popover-enter,
+  .wf-drawer-enter,
+  .wf-modal-backdrop,
+  .wf-modal-panel {
+    animation: none !important;
+    transition: none !important;
+  }
+}

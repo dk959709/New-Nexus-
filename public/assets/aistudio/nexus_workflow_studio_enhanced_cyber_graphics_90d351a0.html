@@ -1,0 +1,1197 @@
+<!DOCTYPE html>
+
+<html class="dark" lang="en"><head><meta charset="utf-8"/><meta content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover" name="viewport"/><meta content="mobile_tab" name="shell-type"/><link href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:opsz,wght,FILL,GRAD@20..48,100..700,0..1,-50..200" rel="stylesheet"/><link href="https://fonts.googleapis.com" rel="preconnect"/><link crossorigin="" href="https://fonts.gstatic.com" rel="preconnect"/><link href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;500;600;700&amp;family=Manrope:wght@400;600;700;800&amp;display=swap" rel="stylesheet"/>
+<link href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:wght,FILL@100..700,0..1&amp;display=swap" rel="stylesheet"/><script src="https://cdn.tailwindcss.com?plugins=forms,container-queries"></script><script id="tailwind-config">tailwind.config = { darkMode: "class", theme: { extend: { "colors": { "on-background": "#e4e1e7", "primary-container": "#00f0ff", "surface-container": "#1f1f23", "on-secondary-fixed-variant": "#004f55", "secondary-container": "#01d2e0", "tertiary": "#d4fff7", "inverse-primary": "#006970", "surface-container-high": "#2a292e", "on-surface-variant": "#b9cacb", "surface-variant": "#353439", "on-primary-fixed": "#002022", "surface-tint": "#00dbe9", "on-tertiary-fixed-variant": "#005049", "on-tertiary-fixed": "#00201d", "on-tertiary-container": "#006b62", "on-secondary": "#00363b", "error": "#ffb4ab", "on-tertiary": "#003732", "inverse-on-surface": "#303034", "surface-bright": "#39393d", "on-secondary-container": "#00565c", "primary-fixed-dim": "#00dbe9", "secondary-fixed": "#80f4ff", "surface-dim": "#131317", "on-secondary-fixed": "#002022", "background": "#131317", "on-error": "#690005", "secondary": "#49effd", "surface": "#131317", "on-primary": "#00363a", "tertiary-container": "#78edde", "primary": "#dbfcff", "inverse-surface": "#e4e1e7", "outline-variant": "#3b494b", "on-primary-container": "#006970", "tertiary-fixed-dim": "#63d9cb", "outline": "#849495", "surface-container-low": "#1b1b1f", "surface-container-lowest": "#0e0e12", "on-error-container": "#ffdad6", "error-container": "#93000a", "on-primary-fixed-variant": "#004f54", "primary-fixed": "#7df4ff", "tertiary-fixed": "#82f6e7", "surface-container-highest": "#353439", "secondary-fixed-dim": "#24dbe9", "on-surface": "#e4e1e7" }, "borderRadius": { "DEFAULT": "0.25rem", "lg": "0.5rem", "xl": "0.75rem", "full": "9999px" }, "spacing": { "space-lg": "1.25rem", "margin-md": "1.5rem", "space-xs": "0.25rem", "margin-lg": "2rem", "space-sm": "0.5rem", "space-2xl": "2.5rem", "space-xl": "1.75rem", "gutter": "1rem", "gutter-lg": "1.5rem", "margin": "1rem", "space-md": "0.875rem" }, "fontFamily": { "body-sm": ["Manrope"], "micro-caption": ["JetBrains Mono"], "display-hero": ["Manrope"], "display-hero-mobile": ["Manrope"], "tag-mono-xs": ["JetBrains Mono"], "headline-lg": ["Manrope"], "body-base": ["Manrope"], "headline-sm": ["Manrope"], "mono-code": ["JetBrains Mono"], "body-bold": ["Manrope"], "telemetry-stat": ["JetBrains Mono"], "mono-inline": ["JetBrains Mono"], "headline-md": ["Manrope"] }, "fontSize": { "body-sm": ["13px", { "lineHeight": "19px", "letterSpacing": "-0.005em", "fontWeight": "400" }], "micro-caption": ["9px", { "lineHeight": "12px", "letterSpacing": "0.08em", "fontWeight": "500" }], "display-hero": ["52px", { "lineHeight": "56px", "letterSpacing": "-0.05em", "fontWeight": "800" }], "display-hero-mobile": ["32px", { "lineHeight": "36px", "letterSpacing": "-0.04em", "fontWeight": "800" }], "tag-mono-xs": ["10px", { "lineHeight": "12px", "letterSpacing": "0.12em", "fontWeight": "600" }], "headline-lg": ["24px", { "lineHeight": "30px", "letterSpacing": "-0.025em", "fontWeight": "700" }], "body-base": ["14px", { "lineHeight": "23px", "letterSpacing": "-0.01em", "fontWeight": "400" }], "headline-sm": ["15px", { "lineHeight": "20px", "letterSpacing": "-0.015em", "fontWeight": "700" }], "mono-code": ["12px", { "lineHeight": "18px", "letterSpacing": "0em", "fontWeight": "400" }], "body-bold": ["14px", { "lineHeight": "22px", "letterSpacing": "-0.01em", "fontWeight": "600" }], "telemetry-stat": ["11px", { "lineHeight": "14px", "letterSpacing": "0.06em", "fontWeight": "500" }], "mono-inline": ["11.5px", { "lineHeight": "14px", "letterSpacing": "0em", "fontWeight": "600" }], "headline-md": ["18px", { "lineHeight": "24px", "letterSpacing": "-0.02em", "fontWeight": "700" }] } } } };</script><style>@layer base{html,body{width:100vw;margin:0;padding:0;}body{overscroll-behavior:none;}.pb-safe{padding-bottom:env(safe-area-inset-bottom,0px);}.pt-safe{padding-top:env(safe-area-inset-top,0px);}main>:first-child{margin-top:0!important;}main>:last-child{margin-bottom:0!important;}}::-webkit-scrollbar{display:none;}
+    body {
+      min-height: max(884px, 100dvh);
+    }
+    @keyframes beamFlow {
+      0% { transform: translateY(-100%); opacity: 0; }
+      20% { opacity: 1; }
+      80% { opacity: 1; }
+      100% { transform: translateY(240%); opacity: 0; }
+    }
+    @keyframes beamFlowCont {
+      0% { transform: translateY(-100%); }
+      100% { transform: translateY(250%); }
+    }
+    @keyframes beamHFlowContL {
+      0% { transform: translateX(-100%); }
+      100% { transform: translateX(200%); }
+    }
+    @keyframes beamHFlowContR {
+      0% { transform: translateX(100%); }
+      100% { transform: translateX(-200%); }
+    }
+    @keyframes beamHFlow {
+      0% { transform: translateX(-100%); opacity: 0; }
+      50% { opacity: 1; }
+      100% { transform: translateX(100%); opacity: 0; }
+    }
+    @keyframes pulseGlow {
+      0%, 100% { box-shadow: 0 0 0 0 rgba(73, 239, 253, 0); }
+      50% { box-shadow: 0 0 24px 3px rgba(73, 239, 253, 0.5); }
+    }
+    @keyframes scanlineAnim {
+      0% { transform: translateY(-100%); }
+      100% { transform: translateY(100%); }
+    }
+    @keyframes radarPing {
+      0% { transform: scale(0.8); opacity: 0.9; }
+      100% { transform: scale(2.8); opacity: 0; }
+    }
+    @keyframes particleFloat {
+      0% { transform: translateY(0px) translateX(0px); opacity: 0.1; }
+      50% { opacity: 0.45; transform: translateY(-30px) translateX(10px); }
+      100% { transform: translateY(-60px) translateX(-5px); opacity: 0; }
+    }
+    @keyframes oscilloscope {
+      0%, 100% { stroke-dashoffset: 0; }
+      50% { stroke-dashoffset: 40; }
+    }
+    @keyframes coreSpinAnim {
+      from { transform: rotate(0deg); }
+      to { transform: rotate(360deg); }
+    }
+    @keyframes coreSpinReverse {
+      from { transform: rotate(360deg); }
+      to { transform: rotate(0deg); }
+    }
+    .node-glow-active {
+      animation: pulseGlow 1.2s infinite ease-in-out;
+      border-color: #49effd !important;
+    }
+    .beam-stream {
+      animation: beamFlow 0.8s infinite linear;
+    }
+    .beam-stream-h {
+      animation: beamHFlow 0.8s infinite linear;
+    }
+    .scanline-sweep {
+      animation: scanlineAnim 1.4s infinite linear;
+    }
+    .radar-pulse {
+      animation: radarPing 2.2s cubic-bezier(0, 0.2, 0.8, 1) infinite;
+    }
+    .particle-dust-1 { animation: particleFloat 7s infinite ease-in-out; }
+    .particle-dust-2 { animation: particleFloat 9s 2s infinite ease-in-out; }
+    .particle-dust-3 { animation: particleFloat 6s 4s infinite ease-in-out; }
+    .oscilloscope-path {
+      stroke-dasharray: 20 6;
+      animation: oscilloscope 2.8s linear infinite;
+    }
+    .core-spin {
+      animation: coreSpinAnim 12s linear infinite;
+    }
+    .core-spin-rev {
+      animation: coreSpinReverse 8s linear infinite;
+    }
+
+    /* Cybernetic Corner Bracket Utilities */
+    .cyber-card {
+      position: relative;
+    }
+    .cyber-card::before, .cyber-card::after {
+      content: '';
+      position: absolute;
+      width: 7px;
+      height: 7px;
+      pointer-events: none;
+      transition: all 0.3s ease;
+      opacity: 0.6;
+    }
+    .cyber-card::before {
+      top: 0; left: 0;
+      border-top: 1.5px solid #49effd;
+      border-left: 1.5px solid #49effd;
+      border-top-left-radius: 4px;
+    }
+    .cyber-card::after {
+      bottom: 0; right: 0;
+      border-bottom: 1.5px solid #49effd;
+      border-right: 1.5px solid #49effd;
+      border-bottom-right-radius: 4px;
+    }
+    .cyber-card:hover::before, .cyber-card:hover::after,
+    .cyber-card.node-glow-active::before, .cyber-card.node-glow-active::after {
+      opacity: 1;
+      width: 12px;
+      height: 12px;
+      filter: drop-shadow(0 0 4px #00f0ff);
+    }
+    
+    /* Background Cyber Grid Matrix Pattern */
+    .cyber-matrix-grid {
+      background-image: 
+        radial-gradient(rgba(0, 240, 255, 0.08) 1px, transparent 1px),
+        linear-gradient(to right, rgba(255, 255, 255, 0.015) 1px, transparent 1px),
+        linear-gradient(to bottom, rgba(255, 255, 255, 0.015) 1px, transparent 1px);
+      background-size: 24px 24px, 48px 48px, 48px 48px;
+    }
+
+    @media (prefers-reduced-motion: reduce) {
+      .beam-stream, .beam-stream-h, .scanline-sweep, .radar-pulse, .particle-dust-1, .particle-dust-2, .particle-dust-3, .oscilloscope-path, .animate-spin, .animate-ping, .node-glow-active, .core-spin, .core-spin-rev {
+        animation: none !important;
+      }
+    }
+  </style>
+</head><body class="bg-surface text-on-surface antialiased flex flex-col min-h-screen relative overflow-x-hidden">
+<!-- Ambient Cybernetic Glow & Floating Matrix Grid -->
+<div class="fixed inset-0 pointer-events-none z-0 overflow-hidden" id="cyberAmbientBackdrop">
+<div class="absolute inset-0 cyber-matrix-grid opacity-70"></div>
+<!-- Neon Atmospheric Radial Glows -->
+<div class="absolute -top-32 -left-20 w-96 h-96 bg-primary-container/10 rounded-full blur-[110px]"></div>
+<div class="absolute top-[48%] -right-28 w-[420px] h-[420px] bg-secondary/10 rounded-full blur-[130px]" id="ambientCenterGlow"></div>
+<div class="absolute bottom-10 -left-20 w-80 h-80 bg-fuchsia-500/5 rounded-full blur-[100px]"></div>
+<!-- Floating Micro Bokeh / Cybernetic Dust Particles -->
+<div class="particle-dust-1 absolute top-[28%] left-[12%] w-1.5 h-1.5 rounded-full bg-secondary/60 shadow-[0_0_8px_#00f0ff]"></div>
+<div class="particle-dust-2 absolute top-[62%] right-[18%] w-1 h-1 rounded-full bg-primary/70 shadow-[0_0_6px_#00f0ff]"></div>
+<div class="particle-dust-3 absolute top-[44%] left-[78%] w-1.5 h-1.5 rounded-full bg-secondary-container/50 shadow-[0_0_8px_#00f0ff]"></div>
+<div class="particle-dust-1 absolute top-[80%] left-[30%] w-1 h-1 rounded-full bg-secondary/50"></div>
+</div>
+<header class="fixed top-0 w-full z-50 pt-safe bg-surface/85 backdrop-blur-xl border-b border-surface-container-high/50 shadow-[0_1px_12px_rgba(0,0,0,0.5)]"><div class="h-16 px-gutter flex items-center justify-between"><div class="flex items-center gap-space-sm"><div class="w-9 h-9 rounded-lg bg-surface-container-high border border-surface-variant flex items-center justify-center relative overflow-hidden group"><div class="absolute inset-0 bg-secondary/10 opacity-0 group-hover:opacity-100 transition-opacity"></div><span class="material-symbols-outlined text-secondary text-[20px]" id="headerHubIcon">hub</span><span class="absolute top-0 right-0 w-1 h-1 bg-secondary rounded-full"></span></div><div class="flex flex-col"><div class="flex items-center gap-space-xs"><span class="font-headline-sm text-headline-sm uppercase text-on-surface tracking-wider font-bold">NEXUS // Workflow</span><svg class="w-2.5 h-2.5 text-secondary/70 opacity-80" fill="none" viewbox="0 0 10 10"><path d="M0 0L10 0L10 10" stroke="currentColor" stroke-width="1.5"></path></svg></div><div class="flex items-center gap-space-xs"><span class="relative flex h-2 w-2 items-center justify-center"><span class="radar-pulse absolute inline-flex h-4 w-4 rounded-full bg-secondary/40"></span><span class="animate-ping absolute inline-flex h-full w-full rounded-full bg-secondary opacity-75"></span><span class="relative inline-flex rounded-full h-1.5 w-1.5 bg-secondary-container shadow-[0_0_6px_#00f0ff]"></span></span><span class="font-micro-caption text-micro-caption text-secondary uppercase font-medium tracking-wider" id="headerMeshStatus">CLUSTER ONLINE • 10-NODE MESH</span></div></div></div><div class="flex items-center gap-space-sm"><div class="hidden sm:flex flex-col items-end pr-space-xs"><span class="font-telemetry-stat text-telemetry-stat text-on-surface-variant" id="topLatencyPill">LATENCY 14ms</span><span class="font-micro-caption text-micro-caption text-secondary flex items-center gap-1"><span class="w-1 h-1 rounded-full bg-secondary"></span>SYNC 99.8%</span></div><div class="w-8 h-8 rounded-full bg-primary flex items-center justify-center shadow-[0_0_10px_rgba(0,240,255,0.35)] ring-1 ring-secondary/40"><span class="material-symbols-outlined text-on-primary text-[18px]">person</span></div></div></div></header><main class="flex flex-col relative w-full pt-16 pb-20 bg-transparent flex-1 z-10"><div class="flex flex-col w-full px-gutter pb-space-2xl space-y-space-md">
+<!-- Toast Notification Pill for Execution Status -->
+<div class="fixed top-18 left-1/2 -translate-x-1/2 z-50 pointer-events-none transition-all duration-300 opacity-0 -translate-y-2 flex items-center gap-2 bg-surface-container-highest/95 border border-secondary/50 backdrop-blur-xl px-4 py-2 rounded-full shadow-[0_0_24px_rgba(0,240,255,0.35)]" id="executionToast">
+<span class="material-symbols-outlined text-secondary text-[16px]" id="toastIcon">check_circle</span>
+<span class="font-tag-mono-xs text-tag-mono-xs uppercase text-primary font-bold tracking-wider" id="toastMessage">GRAPH EXECUTED • 28/28 STEPS CONVERGED</span>
+</div>
+<!-- Pipeline HUD Metrics Bar with Cyber Vector Accents & Compute Arc Gauge -->
+<div class="w-full bg-surface-container-low/90 backdrop-blur-md rounded-xl p-space-md shadow-lg border border-surface-container-high/60 space-y-space-sm relative overflow-hidden group">
+<div class="absolute -right-6 -bottom-6 w-24 h-24 bg-secondary/5 rounded-full blur-xl pointer-events-none"></div>
+<div class="flex items-center justify-between gap-space-xs">
+<div class="flex items-center gap-space-xs min-w-0">
+<span class="inline-flex items-center gap-1.5 px-2 py-0.5 rounded-full bg-surface-container-high border border-secondary/20 text-primary font-tag-mono-xs text-tag-mono-xs uppercase tracking-wider shadow-sm">
+<span class="relative flex h-1.5 w-1.5">
+<span class="animate-ping absolute inline-flex h-full w-full rounded-full bg-secondary opacity-75"></span>
+<span class="relative inline-flex rounded-full h-1.5 w-1.5 bg-secondary shadow-[0_0_5px_#00f0ff]"></span>
+</span>
+          FLUX Txt2Img Ultra
+        </span>
+<span class="text-on-surface-variant font-micro-caption text-micro-caption truncate" id="syncStatus">SYNCHRONIZED</span>
+</div>
+<!-- Circular Radar Arc Gauge & Compute Dial -->
+<div class="flex items-center gap-1.5 bg-surface-container border border-surface-container-highest px-2 py-1 rounded-lg shrink-0">
+<div class="relative w-6 h-6 flex items-center justify-center shrink-0">
+<svg class="w-6 h-6 -rotate-90" viewbox="0 0 32 32">
+<circle cx="16" cy="16" fill="none" r="13" stroke="#2a292e" stroke-dasharray="2 1" stroke-width="2.5"></circle>
+<circle class="filter drop-shadow-[0_0_3px_#00f0ff]" cx="16" cy="16" fill="none" id="gaugeCircle" r="13" stroke="#49effd" stroke-dasharray="81.68" stroke-dashoffset="11.4" stroke-linecap="round" stroke-width="2.5"></circle>
+<line stroke="#49effd" stroke-width="1.5" x1="16" x2="16" y1="2" y2="4"></line>
+<line stroke="#49effd" stroke-width="1.5" x1="30" x2="28" y1="16" y2="16"></line>
+</svg>
+<span class="absolute text-[8px] font-mono-code font-bold text-secondary leading-none">86</span>
+</div>
+<div class="flex flex-col items-start leading-tight">
+<div class="flex items-center gap-0.5">
+<span class="font-telemetry-stat text-telemetry-stat text-secondary font-bold" id="hudStepCount">24/28</span>
+<span class="font-micro-caption text-[8.5px] text-on-surface-variant" id="hudStepPercent">(86%)</span>
+</div>
+<span class="text-[7.5px] font-mono-code text-on-surface-variant/80 uppercase tracking-tighter">GPU LOAD 86%</span>
+</div>
+</div>
+</div>
+<!-- Telemetry Strip with Mini Oscillating Waveform Sparkline -->
+<div class="grid grid-cols-3 gap-space-xs pt-1">
+<div class="bg-surface-container/80 border border-surface-container-highest/60 px-2 py-1.5 rounded-lg flex flex-col relative overflow-hidden">
+<div class="flex items-center justify-between">
+<span class="font-micro-caption text-micro-caption text-on-surface-variant uppercase">VRAM Alloc</span>
+<span class="w-1 h-1 rounded-full bg-secondary/60"></span>
+</div>
+<span class="font-mono-inline text-mono-inline text-on-surface font-semibold" id="telemetryVram">18.2 / 24 GB</span>
+</div>
+<div class="bg-surface-container/80 border border-surface-container-highest/60 px-2 py-1.5 rounded-lg flex flex-col relative overflow-hidden">
+<div class="flex items-center justify-between">
+<span class="font-micro-caption text-micro-caption text-on-surface-variant uppercase">Latency</span>
+<span class="w-1 h-1 rounded-full bg-secondary animate-pulse shadow-[0_0_4px_#00f0ff]"></span>
+</div>
+<div class="flex items-baseline justify-between gap-1">
+<span class="font-mono-inline text-mono-inline text-secondary font-semibold" id="telemetryLatency">142 ms</span>
+<!-- 10-Cycle Mini Waveform Sparkline -->
+<svg class="w-10 h-3 text-secondary/70 shrink-0" fill="none" viewbox="0 0 40 12">
+<path class="filter drop-shadow-[0_0_2px_#00f0ff]" d="M0 6 L4 8 L8 3 L12 9 L16 5 L20 7 L24 2 L28 8 L32 4 L36 6 L40 5" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" stroke-width="1.2"></path>
+<circle class="animate-ping" cx="40" cy="5" fill="#49effd" r="1.5"></circle>
+</svg>
+</div>
+</div>
+<div class="bg-surface-container/80 border border-surface-container-highest/60 px-2 py-1.5 rounded-lg flex flex-col relative overflow-hidden">
+<div class="flex items-center justify-between">
+<span class="font-micro-caption text-micro-caption text-on-surface-variant uppercase">FPS Stream</span>
+<span class="w-1 h-1 rounded-full bg-secondary/60"></span>
+</div>
+<span class="font-mono-inline text-mono-inline text-on-surface font-semibold" id="telemetryFps">58.4 it/s</span>
+</div>
+</div>
+<!-- Horizontal Workflow Presets -->
+<div class="flex items-center gap-space-xs overflow-x-auto pt-1 no-scrollbar -mx-space-xs px-space-xs">
+<button class="shrink-0 h-7 px-3 rounded-full bg-secondary-container text-on-secondary-container font-tag-mono-xs text-tag-mono-xs uppercase flex items-center gap-1 shadow-sm border border-secondary/30">
+<span class="material-symbols-outlined text-[13px]">bolt</span>
+        Txt2Img Ultra
+      </button>
+<button class="shrink-0 h-7 px-3 rounded-full bg-surface-container border border-surface-container-high text-on-surface-variant hover:text-on-surface hover:border-secondary/40 font-tag-mono-xs text-tag-mono-xs uppercase flex items-center gap-1 transition-all">
+        Style + LoRA
+      </button>
+<button class="shrink-0 h-7 px-3 rounded-full bg-surface-container border border-surface-container-high text-on-surface-variant hover:text-on-surface hover:border-secondary/40 font-tag-mono-xs text-tag-mono-xs uppercase flex items-center gap-1 transition-all">
+        4K Upscaler
+      </button>
+<button class="shrink-0 h-7 px-3 rounded-full bg-surface-container border border-surface-container-high text-on-surface-variant hover:text-on-surface hover:border-secondary/40 font-tag-mono-xs text-tag-mono-xs uppercase flex items-center gap-1 transition-all">
+        Iterative Inpaint
+      </button>
+<button class="shrink-0 h-7 px-2.5 rounded-full bg-surface-container-high text-primary hover:bg-surface-bright font-tag-mono-xs text-tag-mono-xs flex items-center justify-center transition-colors">
+<span class="material-symbols-outlined text-[15px]">add</span>
+</button>
+</div>
+</div>
+<!-- Graph Navigation & View Mode Controller -->
+<div class="flex items-center justify-between gap-space-xs"><!-- View Switcher Toggle -->
+<div class="flex items-center bg-surface-container-lowest p-1 rounded-xl shadow-inner border border-surface-container-high/40">
+<button class="flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-surface-container text-secondary font-headline-sm text-headline-sm transition-all shadow-sm" id="viewVisualBtn">
+<span class="material-symbols-outlined text-[16px]">account_tree</span>
+<span>Flow</span>
+</button>
+<button class="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-on-surface-variant hover:text-on-surface font-body-sm text-body-sm transition-all" id="viewListBtn">
+<span class="material-symbols-outlined text-[16px]">format_list_bulleted</span>
+<span>Stages</span>
+</button>
+</div>
+<!-- Interactive Theme Mode Selector -->
+<div class="flex items-center bg-surface-container-lowest p-1 rounded-xl border border-surface-container-high/40 gap-1" id="themeSwitcherContainer">
+<button class="theme-tab-btn flex items-center gap-1 px-2.5 py-1 rounded-lg bg-secondary/15 text-secondary border border-secondary/40 font-tag-mono-xs text-tag-mono-xs font-semibold uppercase tracking-wider transition-all duration-200" data-theme="cyberpunk" id="themeBtnCyberpunk" type="button">
+<span class="material-symbols-outlined text-[14px]">bolt</span>
+<span>Cyber</span>
+</button>
+<button class="theme-tab-btn flex items-center gap-1 px-2.5 py-1 rounded-lg text-on-surface-variant hover:text-on-surface border border-transparent font-tag-mono-xs text-tag-mono-xs uppercase tracking-wider transition-all duration-200" data-theme="minimal" id="themeBtnMinimal" type="button">
+<span class="material-symbols-outlined text-[14px]">grid_view</span>
+<span>Minimal</span>
+</button>
+<button class="theme-tab-btn flex items-center gap-1 px-2.5 py-1 rounded-lg text-on-surface-variant hover:text-on-surface border border-transparent font-tag-mono-xs text-tag-mono-xs uppercase tracking-wider transition-all duration-200" data-theme="fulldark" id="themeBtnFullDark" type="button">
+<span class="material-symbols-outlined text-[14px]">contrast</span>
+<span>OLED</span>
+</button>
+</div>
+<!-- Canvas Geometry Micro Controls -->
+<div class="hidden sm:flex items-center gap-1 bg-surface-container-lowest p-1 rounded-xl border border-surface-container-high/40">
+<button class="w-8 h-8 rounded-lg bg-surface-container flex items-center justify-center text-on-surface-variant hover:text-primary transition-colors" title="Zoom Fit">
+<span class="material-symbols-outlined text-[16px]">fit_screen</span>
+</button>
+<button class="w-8 h-8 rounded-lg bg-surface-container flex items-center justify-center text-on-surface-variant hover:text-primary transition-colors" title="Reorder">
+<span class="material-symbols-outlined text-[16px]">auto_fix_high</span>
+</button>
+<span class="font-tag-mono-xs text-tag-mono-xs text-on-surface-variant px-1.5">100%</span>
+</div></div>
+<!-- Visual Node Graph Container -->
+<div class="flex flex-col w-full space-y-space-md relative">
+<!-- NODE 1: NLP Prompt Synthesizer -->
+<div class="cyber-card relative w-full bg-surface-container-low/95 rounded-xl p-space-md shadow-md space-y-space-sm group transition-all duration-300 border border-surface-container-high/50 hover:border-secondary/40 overflow-hidden" id="node1">
+<!-- Technical Circuit Trace Lines along Node Border -->
+<svg class="absolute top-0 right-0 w-32 h-14 text-secondary/15 pointer-events-none" fill="none" viewbox="0 0 128 56">
+<path d="M128 4 L80 4 L64 20 L20 20 L10 32 L0 32" stroke="currentColor" stroke-linecap="round" stroke-width="1.2"></path>
+<circle cx="80" cy="4" fill="currentColor" r="2"></circle>
+<circle cx="20" cy="20" fill="currentColor" r="1.5"></circle>
+</svg>
+<div class="flex items-center justify-between">
+<div class="flex items-center gap-space-xs">
+<div class="w-7 h-7 rounded-lg bg-surface-container border border-surface-variant flex items-center justify-center text-secondary transition-transform duration-300 relative group-hover:scale-105" id="node1Icon">
+<span class="material-symbols-outlined text-[16px]">psychology</span>
+</div>
+<div>
+<div class="font-headline-sm text-headline-sm text-on-surface flex items-center gap-1.5">
+  Prompt Synthesizer
+  <span class="text-[9px] px-1 py-0.2 rounded bg-secondary/10 text-secondary font-mono-code font-normal">v2.4</span>
+</div>
+<div class="font-micro-caption text-micro-caption text-on-surface-variant">NLP-01 // LATENT CONDITIONER</div>
+</div>
+</div>
+<div class="flex items-center gap-1.5">
+<!-- 2D Neural Attention Matrix Dot-Grid Heat Map Badge -->
+<div class="flex items-center gap-1 bg-surface-container border border-surface-container-highest px-1.5 py-1 rounded" title="Attention Tensor Heat Map">
+<svg class="w-3.5 h-3.5 text-secondary" viewbox="0 0 16 16">
+<circle cx="2" cy="2" fill="#49effd" fill-opacity="0.9" r="1.5"></circle>
+<circle cx="7" cy="2" fill="#49effd" fill-opacity="0.3" r="1.5"></circle>
+<circle cx="12" cy="2" fill="#49effd" fill-opacity="0.7" r="1.5"></circle>
+<circle cx="2" cy="7" fill="#49effd" fill-opacity="0.4" r="1.5"></circle>
+<circle cx="7" cy="7" fill="#49effd" fill-opacity="1" r="1.5"></circle>
+<circle cx="12" cy="7" fill="#49effd" fill-opacity="0.5" r="1.5"></circle>
+<circle cx="2" cy="12" fill="#49effd" fill-opacity="0.8" r="1.5"></circle>
+<circle cx="7" cy="12" fill="#49effd" fill-opacity="0.6" r="1.5"></circle>
+<circle cx="12" cy="12" fill="#49effd" fill-opacity="0.2" r="1.5"></circle>
+</svg>
+<span class="text-[8px] font-mono-code text-secondary font-semibold">ATTN</span>
+</div>
+<!-- Oscilloscope Micro Waveform Graphic -->
+<svg class="w-11 h-4 text-secondary/60 hidden xs:block" fill="none" viewbox="0 0 44 16">
+<path class="oscilloscope-path" d="M0 8 Q5 2 10 8 T20 8 T30 14 T40 8 L44 8" stroke="currentColor" stroke-linecap="round" stroke-width="1.5"></path>
+</svg>
+<span class="px-2 py-0.5 rounded-full bg-surface-container-high border border-surface-variant/50 text-secondary font-tag-mono-xs text-tag-mono-xs uppercase transition-all duration-200" id="node1Tokens">
+    142/1000 Tok
+  </span>
+</div>
+</div>
+<!-- Positive Conditioning Preview -->
+<div class="bg-surface-container-lowest/90 border border-surface-container-high/40 p-space-sm rounded-lg space-y-1 relative overflow-hidden">
+<div class="flex justify-between items-center text-on-surface-variant font-micro-caption text-micro-caption uppercase">
+<span class="flex items-center gap-1"><span class="w-1 h-1 rounded-full bg-secondary"></span>Positive Embedding Stream</span>
+<span class="text-secondary font-mono-code" id="node1Subtext">Clip G + T5-XXL</span>
+</div>
+<p class="font-mono-code text-mono-code text-on-surface line-clamp-2 leading-relaxed" id="node1PromptText">
+          Cyberpunk crystalline holographic portrait, bioluminescent neural lattice, refraction chromatic aberration, volumetric neon cyan mist, hyper-detailed ocular circuits, 8k render.
+        </p>
+</div>
+<!-- Seed & Controls -->
+<div class="flex items-center justify-between pt-1">
+<div class="flex items-center gap-space-xs">
+<span class="font-micro-caption text-micro-caption text-on-surface-variant uppercase">Seed:</span>
+<span class="font-mono-code text-mono-code text-primary bg-surface-container px-2 py-0.5 rounded border border-surface-variant/50" id="seedVal">#849204</span>
+<button class="w-7 h-7 rounded bg-surface-container hover:bg-surface-bright border border-surface-variant/50 flex items-center justify-center text-on-surface-variant hover:text-primary transition-all active:scale-90" id="randomSeedBtn" title="Randomize Seed">
+<span class="material-symbols-outlined text-[15px]">casino</span>
+</button>
+</div>
+<!-- Output Port -->
+<div class="flex items-center gap-1.5 bg-surface-container-high border border-surface-variant/50 px-2.5 py-1 rounded-full shadow-sm transition-all duration-300" id="node1PortBadge">
+<span class="font-tag-mono-xs text-tag-mono-xs text-secondary font-semibold uppercase">Conditioning</span>
+<span class="relative flex h-2 w-2 items-center justify-center">
+<span class="radar-pulse absolute inline-flex h-3 w-3 rounded-full bg-secondary/50"></span>
+<span class="w-2 h-2 rounded-full bg-secondary shadow-[0_0_8px_#00f0ff]" id="node1PortDot"></span>
+</span>
+</div>
+</div>
+</div>
+<!-- CONNECTOR 1 -> Converging Pathway with Circuit Junction & Data Diamond Glyphs -->
+<div class="flex flex-col items-center justify-center -my-2 relative z-10 py-1" id="connector1">
+<div class="w-0.5 h-6 bg-surface-container-high relative overflow-hidden">
+<!-- Continuous subtle laser stream -->
+<div class="w-full h-3 bg-secondary/80 absolute top-0 left-0" style="animation: beamFlowCont 1.6s linear infinite;"></div>
+<!-- High intensity surge on execute -->
+<div class="w-full h-full bg-white opacity-0 absolute top-0 left-0" id="beam1A"></div>
+</div>
+<!-- Data Packet Diamond Junction Glyph -->
+<div class="flex items-center gap-1.5 -my-1">
+<svg class="w-3.5 h-3.5 text-secondary/60 shrink-0" fill="none" viewbox="0 0 16 16">
+<path d="M8 1 L15 8 L8 15 L1 8 Z" fill="#1b1b1f" stroke="currentColor" stroke-width="1.2"></path>
+<circle class="animate-pulse" cx="8" cy="8" fill="#49effd" r="2"></circle>
+</svg>
+<div class="w-3.5 h-3.5 rounded-full bg-surface-container-lowest border border-secondary/40 flex items-center justify-center shadow-[0_0_8px_rgba(0,240,255,0.3)] relative">
+<span class="radar-pulse absolute inset-0 rounded-full bg-secondary/30"></span>
+<div class="w-1.5 h-1.5 rounded-full bg-secondary animate-pulse" id="connector1Dot"></div>
+</div>
+<svg class="w-2.5 h-2.5 text-secondary/40 rotate-90" fill="currentColor" viewbox="0 0 10 10">
+<polygon points="5,0 10,10 0,10"></polygon>
+</svg>
+</div>
+<div class="w-0.5 h-6 bg-surface-container-high relative overflow-hidden">
+<div class="w-full h-3 bg-secondary-container/80 absolute top-0 left-0" style="animation: beamFlowCont 1.6s 0.8s linear infinite;"></div>
+<div class="w-full h-full bg-white opacity-0 absolute top-0 left-0" id="beam1B"></div>
+</div>
+</div>
+<!-- NODE 2: Architecture Loader (CORE-CKPT) with FP8 Transformer Stack Diagram & Chip Pinout -->
+<div class="cyber-card relative w-full bg-surface-container-low/95 rounded-xl p-space-md shadow-md space-y-space-sm border border-surface-container-high/50 hover:border-secondary/40 transition-all duration-300 overflow-hidden" id="node2">
+<!-- Microprocessor Die & Pinout Watermark Accent -->
+<svg class="absolute -left-6 -bottom-6 w-28 h-28 text-secondary/10 pointer-events-none" fill="none" viewbox="0 0 64 64">
+<rect height="32" rx="4" stroke="currentColor" stroke-width="1.2" width="32" x="16" y="16"></rect>
+<line stroke="currentColor" stroke-width="1.5" x1="8" x2="16" y1="24" y2="24"></line>
+<line stroke="currentColor" stroke-width="1.5" x1="8" x2="16" y1="32" y2="32"></line>
+<line stroke="currentColor" stroke-width="1.5" x1="8" x2="16" y1="40" y2="40"></line>
+<line stroke="currentColor" stroke-width="1.5" x1="48" x2="56" y1="24" y2="24"></line>
+<line stroke="currentColor" stroke-width="1.5" x1="48" x2="56" y1="32" y2="32"></line>
+<line stroke="currentColor" stroke-width="1.5" x1="48" x2="56" y1="40" y2="40"></line>
+<line stroke="currentColor" stroke-width="1.5" x1="24" x2="24" y1="8" y2="16"></line>
+<line stroke="currentColor" stroke-width="1.5" x1="32" x2="32" y1="8" y2="16"></line>
+<line stroke="currentColor" stroke-width="1.5" x1="40" x2="40" y1="8" y2="16"></line>
+<line stroke="currentColor" stroke-width="1.5" x1="24" x2="24" y1="48" y2="56"></line>
+<line stroke="currentColor" stroke-width="1.5" x1="32" x2="32" y1="48" y2="56"></line>
+<line stroke="currentColor" stroke-width="1.5" x1="40" x2="40" y1="48" y2="56"></line>
+</svg>
+<div class="flex items-center justify-between">
+<div class="flex items-center gap-space-xs">
+<div class="w-7 h-7 rounded-lg bg-surface-container border border-surface-variant flex items-center justify-center text-primary-fixed-dim" id="node2Icon">
+<span class="material-symbols-outlined text-[16px]">memory</span>
+</div>
+<div>
+<div class="font-headline-sm text-headline-sm text-on-surface">Architecture Loader</div>
+<div class="font-micro-caption text-micro-caption text-on-surface-variant">CORE-CKPT // FP8 TRANSFORMER</div>
+</div>
+</div>
+<!-- Holographic Chip Pinout Schematic Badge -->
+<div class="flex items-center gap-1.5">
+<div class="hidden xs:flex items-center gap-1 px-1.5 py-0.5 rounded bg-surface-container border border-surface-container-highest text-[8px] font-mono-code text-secondary">
+<span class="w-1 h-1 rounded-full bg-secondary"></span>
+    BUS: 512-BIT
+  </div>
+<span class="px-2 py-0.5 rounded-full bg-surface-container-high border border-surface-variant/40 text-primary-fixed-dim font-tag-mono-xs text-tag-mono-xs uppercase transition-all duration-300" id="node2Badge">
+    FLUX.1-schnell
+  </span>
+</div>
+</div>
+<!-- FP8 Transformer Architecture Micro-Diagram -->
+<div class="bg-surface-container-lowest/80 border border-surface-container-high/40 p-2 rounded-lg flex items-center justify-between gap-2 overflow-x-auto">
+<div class="flex items-center gap-2">
+<!-- Mini transformer stack schematic -->
+<svg class="w-24 h-9 shrink-0 text-secondary" fill="none" viewbox="0 0 96 36">
+<!-- Input vectors -->
+<rect fill="#2a292e" height="14" rx="2" stroke="#49effd" stroke-width="1" width="14" x="2" y="11"></rect>
+<text fill="#49effd" font-family="JetBrains Mono" font-size="7" x="5" y="21">EMB</text>
+<!-- Arrow 1 -->
+<path d="M17 18 L25 18" marker-end="url(#arr)" stroke="#49effd" stroke-width="1"></path>
+<!-- Multi-Head Attention block -->
+<rect fill="#1b1b1f" height="24" rx="2" stroke="#00f0ff" stroke-width="1.2" width="30" x="26" y="6"></rect>
+<text fill="#e4e1e7" font-family="JetBrains Mono" font-size="6.5" font-weight="bold" x="29" y="16">MHA-16</text>
+<text fill="#49effd" font-family="JetBrains Mono" font-size="5.5" x="31" y="25">QKV×FP8</text>
+<!-- Arrow 2 -->
+<path d="M57 18 L65 18" stroke="#49effd" stroke-width="1"></path>
+<!-- Feedforward Block -->
+<rect fill="#2a292e" height="20" rx="2" stroke="#63d9cb" stroke-width="1" width="26" x="66" y="8"></rect>
+<text fill="#63d9cb" font-family="JetBrains Mono" font-size="6.5" x="70" y="20">FFN-4x</text>
+</svg>
+<div class="flex flex-col text-[8.5px] font-mono-code text-on-surface-variant border-l border-surface-container-highest pl-2">
+<span class="text-secondary font-bold">19B PARAMS</span>
+<span>RoPE FREQ: 10K</span>
+</div>
+</div>
+<div class="flex items-center gap-1 shrink-0 bg-surface-container px-2 py-1 rounded border border-surface-variant/30">
+<span class="text-[8px] font-mono-code text-on-surface-variant uppercase">PRECISION</span>
+<span class="text-[9px] font-mono-code text-primary font-bold">FP8-E4M3</span>
+</div>
+</div>
+<div class="grid grid-cols-3 gap-space-xs">
+<div class="bg-surface-container-lowest/80 border border-surface-container-high/40 p-2 rounded-lg flex flex-col">
+<span class="font-micro-caption text-micro-caption text-on-surface-variant uppercase">Sampler</span>
+<span class="font-mono-inline text-mono-inline text-on-surface">Euler-A</span>
+</div>
+<div class="bg-surface-container-lowest/80 border border-surface-container-high/40 p-2 rounded-lg flex flex-col">
+<span class="font-micro-caption text-micro-caption text-on-surface-variant uppercase">CFG Scale</span>
+<span class="font-mono-inline text-mono-inline text-secondary">7.5</span>
+</div>
+<div class="bg-surface-container-lowest/80 border border-surface-container-high/40 p-2 rounded-lg flex flex-col">
+<span class="font-micro-caption text-micro-caption text-on-surface-variant uppercase">Scheduler</span>
+<span class="font-mono-inline text-mono-inline text-on-surface">Karras</span>
+</div>
+</div>
+<!-- Out Port -->
+<div class="flex items-center justify-end pt-1">
+<div class="flex items-center gap-1.5 bg-surface-container-high border border-surface-variant/40 px-2.5 py-1 rounded-full transition-all duration-300" id="node2PortBadge">
+<span class="font-tag-mono-xs text-tag-mono-xs text-primary-fixed-dim font-semibold uppercase">Model / Latent</span>
+<span class="relative flex h-2 w-2 items-center justify-center">
+<span class="radar-pulse absolute inline-flex h-3 w-3 rounded-full bg-secondary/40"></span>
+<span class="w-2 h-2 rounded-full bg-primary-fixed-dim shadow-[0_0_8px_#00f0ff]" id="node2PortDot"></span>
+</span>
+</div>
+</div>
+</div>
+<!-- NODE 3: Image Ingestion Ref (IN-03) with Sensor HUD Reticle & Sigmoid Denoise Vector Flow -->
+<div class="cyber-card relative w-full bg-surface-container-low/95 rounded-xl p-space-md shadow-md space-y-space-sm border border-surface-container-high/50 hover:border-secondary/40 transition-all duration-300 overflow-hidden" id="node3">
+<div class="flex items-center justify-between">
+<div class="flex items-center gap-space-xs">
+<div class="w-7 h-7 rounded-lg bg-surface-container border border-surface-variant flex items-center justify-center text-on-surface-variant" id="node3Icon">
+<span class="material-symbols-outlined text-[16px]">image_search</span>
+</div>
+<div>
+<div class="font-headline-sm text-headline-sm text-on-surface">Image Ingestion Ref</div>
+<div class="font-micro-caption text-micro-caption text-on-surface-variant">IN-03 // DUAL ADAPTER</div>
+</div>
+</div>
+<span class="px-2 py-0.5 rounded-full bg-surface-container-high border border-surface-variant/40 text-on-surface-variant font-tag-mono-xs text-tag-mono-xs" id="node3Badge">
+          1024 × 1024
+        </span>
+</div>
+<!-- Split Layout: Ref Preview + Sensor Reticle + Dual-Adapter Sigmoid Curve -->
+<div class="flex items-center gap-space-md bg-surface-container-lowest/80 border border-surface-container-high/40 p-2 rounded-lg">
+<div class="w-20 h-20 rounded-md overflow-hidden bg-surface-container relative shrink-0 border border-surface-variant/40 group">
+<img class="w-full h-full object-cover transition-transform duration-500 group-hover:scale-105" data-alt="High contrast cyberpunk mechanical android skull prototype with neon wiring and intricate mechanical textures under dark studio spotlight." id="refImg" src="https://lh3.googleusercontent.com/aida-public/AB6AXuCC7UqUVMlNAdYpdMDFwQ20fD78LcvlyXwP6NncGcl87mL3Gulkmlxou8M_0EkEZ_bVbMg-S8zPgyGjRhfnarrbN1bLcS5_RaOJOzeTtq6WbdshodwUkAUYi2aPTo1EEuAKx5D-HdmVwNuLkBggj4il7S8LfzqTF6aRgoF04dLA1HvoBqR2nNuoHmoR7q74T9XByWgBRqqWmeIKr63yIwZ1BajqfGfqSudn7xJNOeE"/>
+<!-- Detailed Camera/Sensor HUD Reticle Overlay Graphic -->
+<div class="absolute inset-0 pointer-events-none p-1 flex flex-col justify-between">
+<div class="flex justify-between items-start">
+<svg class="w-3 h-3 text-secondary" fill="none" viewbox="0 0 12 12">
+<path d="M0 6 L0 0 L6 0" stroke="currentColor" stroke-width="1.5"></path>
+</svg>
+<span class="text-[7px] font-mono-code text-secondary bg-surface-container-lowest/80 px-0.5 rounded">1:1</span>
+<svg class="w-3 h-3 text-secondary" fill="none" viewbox="0 0 12 12">
+<path d="M12 6 L12 0 L6 0" stroke="currentColor" stroke-width="1.5"></path>
+</svg>
+</div>
+<!-- Focal Crosshair Ring -->
+<div class="absolute inset-0 flex items-center justify-center pointer-events-none">
+<div class="w-6 h-6 border border-secondary/60 rounded-full flex items-center justify-center">
+<div class="w-1 h-1 bg-secondary rounded-full"></div>
+</div>
+</div>
+<!-- Bottom Histogram Preview Curve Graphic -->
+<div class="flex justify-between items-end">
+<svg class="w-3 h-3 text-secondary" fill="none" viewbox="0 0 12 12">
+<path d="M0 6 L0 12 L6 12" stroke="currentColor" stroke-width="1.5"></path>
+</svg>
+<svg class="w-10 h-3 text-secondary/80" fill="none" viewbox="0 0 40 12">
+<path d="M0 12 L4 10 L8 11 L14 7 L18 8 L22 4 L26 5 L30 2 L36 6 L40 12 Z" fill="#49effd" fill-opacity="0.3"></path>
+<path d="M0 12 L4 10 L8 11 L14 7 L18 8 L22 4 L26 5 L30 2 L36 6 L40 12" stroke="currentColor" stroke-width="1"></path>
+</svg>
+<svg class="w-3 h-3 text-secondary" fill="none" viewbox="0 0 12 12">
+<path d="M12 6 L12 12 L6 12" stroke="currentColor" stroke-width="1.5"></path>
+</svg>
+</div>
+</div>
+<div class="absolute bottom-0.5 left-1 z-10">
+<span class="font-micro-caption text-[7.5px] text-secondary font-bold">REF-A</span>
+</div>
+</div>
+<div class="flex flex-col flex-1 space-y-1.5 min-w-0">
+<div class="flex justify-between items-center font-micro-caption text-micro-caption">
+<span class="text-on-surface-variant uppercase">Denoise Weight</span>
+<span class="text-secondary font-mono-code font-bold" id="denoiseVal">0.65</span>
+</div>
+<div class="w-full bg-surface-container h-1.5 rounded-full overflow-hidden border border-surface-container-highest/60">
+<div class="bg-gradient-to-r from-secondary-container to-secondary h-full rounded-full transition-all duration-300 shadow-[0_0_6px_#00f0ff]" id="denoiseBar" style="width: 65%;"></div>
+</div>
+<!-- Dual-Adapter Signal Flow & Sigmoid Curve Diagram -->
+<div class="flex items-center justify-between text-micro-caption text-on-surface-variant pt-0.5">
+<div class="flex items-center gap-1">
+<svg class="w-10 h-3 text-secondary shrink-0" fill="none" viewbox="0 0 40 12">
+<!-- Sigmoid curve math function -->
+<path d="M0 10 C15 10 18 2 40 2" stroke="currentColor" stroke-linecap="round" stroke-width="1.5"></path>
+<circle cx="26" cy="4.5" fill="#00f0ff" r="2"></circle>
+</svg>
+<span class="text-[8px] font-mono-code text-secondary font-semibold">SIGMOID-σ</span>
+</div>
+<div class="flex items-center gap-1">
+<span class="text-[8px] font-mono-code">Fidelity:</span>
+<span class="text-primary font-mono-code font-bold" id="fidelityVal">High</span>
+</div>
+</div>
+</div>
+</div>
+<!-- Out Port -->
+<div class="flex items-center justify-end pt-1">
+<div class="flex items-center gap-1.5 bg-surface-container-high border border-surface-variant/40 px-2.5 py-1 rounded-full transition-all duration-300" id="node3PortBadge">
+<span class="font-tag-mono-xs text-tag-mono-xs text-on-surface font-semibold uppercase">Latent Ref</span>
+<span class="relative flex h-2 w-2 items-center justify-center">
+<span class="radar-pulse absolute inline-flex h-3 w-3 rounded-full bg-secondary/40"></span>
+<span class="w-2 h-2 rounded-full bg-secondary shadow-[0_0_8px_#00f0ff]" id="node3PortDot"></span>
+</span>
+</div>
+</div>
+</div>
+<!-- Converging Neon Vectors Path to Core with Traveling Laser Packets & Data Bus Lines -->
+<div class="flex items-center justify-center -my-2 relative z-10 py-1" id="convergingPath">
+<div class="flex items-center gap-2 relative">
+<div class="flex items-center gap-1">
+<svg class="w-3 h-3 text-secondary/60 -rotate-90" fill="currentColor" viewbox="0 0 12 12">
+<polygon points="6,0 12,12 0,12"></polygon>
+</svg>
+<div class="w-10 h-0.5 bg-surface-container-high relative overflow-hidden rounded-full">
+<div class="w-6 h-full bg-secondary/80 absolute top-0 left-0" style="animation: beamHFlowContL 1.4s linear infinite;"></div>
+<div class="w-full h-full bg-white opacity-0 absolute top-0 left-0" id="beamConvergeL"></div>
+</div>
+</div>
+<div class="px-2.5 py-1 rounded-full bg-surface-container-lowest/90 backdrop-blur-md flex items-center gap-1.5 shadow-md border border-secondary/30 transition-all duration-300 relative group" id="convergingBadge">
+<span class="material-symbols-outlined text-secondary text-[14px] animate-spin" id="convergeSpinIcon">hub</span>
+<span class="font-micro-caption text-micro-caption text-secondary uppercase font-bold tracking-wider" id="convergeLabel">CONVERGING TENSORS</span>
+<span class="w-1.5 h-1.5 rounded-full bg-secondary animate-ping"></span>
+</div>
+<div class="flex items-center gap-1">
+<div class="w-10 h-0.5 bg-surface-container-high relative overflow-hidden rounded-full">
+<div class="w-6 h-full bg-secondary/80 absolute top-0 right-0" style="animation: beamHFlowContR 1.4s linear infinite;"></div>
+<div class="w-full h-full bg-white opacity-0 absolute top-0 right-0" id="beamConvergeR"></div>
+</div>
+<svg class="w-3 h-3 text-secondary/60 rotate-90" fill="currentColor" viewbox="0 0 12 12">
+<polygon points="6,0 12,12 0,12"></polygon>
+</svg>
+</div>
+</div>
+</div>
+<!-- NODE 4: Latent Diffusion Core (SYNTH-CORE) - ACTIVE EXECUTION with Gyro Reactor & Frequency Wave -->
+<div class="cyber-card relative w-full bg-surface-container-high/95 rounded-xl p-space-md shadow-xl space-y-space-md overflow-hidden border border-secondary/30 transition-all duration-300" id="node4">
+<!-- Subtle Cyber Circuit Watermark SVG in background -->
+<svg class="absolute -right-8 -top-8 w-44 h-44 text-secondary/5 pointer-events-none" fill="none" viewbox="0 0 100 100">
+<circle cx="50" cy="50" r="42" stroke="currentColor" stroke-dasharray="4 2" stroke-width="1"></circle>
+<circle cx="50" cy="50" r="28" stroke="currentColor" stroke-width="1"></circle>
+<path d="M50 8 L50 92 M8 50 L92 50" stroke="currentColor" stroke-width="0.75"></path>
+</svg>
+<!-- Glow wash overlay -->
+<div class="absolute inset-0 bg-gradient-to-br from-secondary/10 via-transparent to-primary-container/10 pointer-events-none transition-opacity duration-300" id="node4Glow"></div>
+<!-- Header with Pulsing Active Chip & Circular Gyro Reactor Badge -->
+<div class="flex items-center justify-between relative z-10">
+<div class="flex items-center gap-space-xs">
+<div class="w-8 h-8 rounded-lg bg-surface-container-highest border border-secondary/40 flex items-center justify-center text-secondary shadow-[0_0_14px_rgba(0,240,255,0.45)] relative" id="node4Icon">
+<!-- Rotating Gyro Reticle Rings -->
+<svg class="absolute inset-0 w-full h-full p-0.5 text-secondary pointer-events-none core-spin" viewbox="0 0 32 32">
+<circle cx="16" cy="16" fill="none" r="14" stroke="currentColor" stroke-dasharray="6 3" stroke-width="1"></circle>
+</svg>
+<span class="material-symbols-outlined text-[18px]">stream</span>
+</div>
+<div>
+<div class="font-headline-sm text-headline-sm text-on-surface flex items-center gap-2">
+              Latent Diffusion Core
+              <!-- Circular Reactor Gyro Reticle Vector Badge -->
+<div class="relative w-4 h-4 flex items-center justify-center">
+<svg class="w-4 h-4 text-secondary core-spin" viewbox="0 0 20 20">
+<circle cx="10" cy="10" fill="none" r="8" stroke="currentColor" stroke-dasharray="4 2" stroke-width="1.2"></circle>
+<circle cx="10" cy="10" fill="none" r="4" stroke="#00f0ff" stroke-width="1.2"></circle>
+</svg>
+<span class="absolute w-1 h-1 rounded-full bg-secondary shadow-[0_0_4px_#00f0ff]"></span>
+</div>
+</div>
+<div class="font-micro-caption text-micro-caption text-on-surface-variant flex items-center gap-1">
+<span>SYNTH-CORE // ACCELERATED ODE SOLVER</span>
+<span class="text-secondary/70 font-mono-code">• 2.4 TFLOPS</span>
+</div>
+</div>
+</div>
+<span class="px-2.5 py-1 rounded-full bg-surface-container-lowest border border-secondary/30 text-secondary font-tag-mono-xs text-tag-mono-xs font-bold uppercase tracking-wider transition-all duration-200 shadow-[0_0_10px_rgba(0,240,255,0.2)]" id="node4StepBadge">
+          ACTIVE STEP 24/28
+        </span>
+</div>
+<!-- Spectral Tensor Equalizer with Overlaid Sine-Wave Curve & Frequency Calibration Rulers -->
+<div class="bg-surface-container-lowest/90 border border-surface-container-highest/60 p-space-sm rounded-lg space-y-2 relative z-10">
+<div class="flex items-center justify-between text-on-surface-variant font-micro-caption text-micro-caption">
+<span class="uppercase flex items-center gap-1">
+<span class="w-1 h-1 rounded-full bg-secondary animate-ping"></span>
+  Latent Tensor Spectrum
+</span>
+<span class="text-secondary font-mono-inline" id="node4Eta">ETA 0.4s • DRIFT 0.02%</span>
+</div>
+<!-- Equalizer Bars Container with Overlaid Mathematical Frequency Sine-Wave Curve -->
+<div class="relative h-12 flex flex-col justify-end">
+<!-- Overlaid Frequency Sine-Wave Vector Curve -->
+<svg class="absolute inset-0 w-full h-full pointer-events-none z-20" fill="none" preserveaspectratio="none" viewbox="0 0 240 48">
+<path class="filter drop-shadow-[0_0_3px_#00f0ff] opacity-80" d="M0 34 C20 10 40 42 60 18 C80 38 100 8 120 28 C140 44 160 14 180 32 C200 4 220 30 240 20" stroke="#00f0ff" stroke-dasharray="3 1.5" stroke-width="1.5"></path>
+<!-- Calibration target point -->
+<circle class="animate-pulse" cx="120" cy="28" fill="#49effd" r="2.5"></circle>
+</svg>
+<div class="flex items-end justify-between h-10 gap-1 px-1 relative z-10" id="eqContainer">
+<div class="w-full bg-surface-container-high rounded-t transition-all duration-150 h-[40%]" style="height: 40%;"></div>
+<div class="w-full bg-surface-container-highest rounded-t transition-all duration-150 h-[65%]" style="height: 65%;"></div>
+<div class="w-full bg-gradient-to-t from-secondary-container to-secondary rounded-t transition-all duration-150 h-[90%] shadow-[0_0_8px_#00f0ff]" style="height: 90%;"></div>
+<div class="w-full bg-gradient-to-t from-secondary-container to-secondary rounded-t transition-all duration-150 h-[75%] shadow-[0_0_6px_#00f0ff]" style="height: 75%;"></div>
+<div class="w-full bg-gradient-to-t from-secondary-container to-secondary rounded-t transition-all duration-150 h-[95%] shadow-[0_0_10px_#00f0ff]" style="height: 95%;"></div>
+<div class="w-full bg-surface-container-highest rounded-t transition-all duration-150 h-[60%]" style="height: 60%;"></div>
+<div class="w-full bg-surface-container-high rounded-t transition-all duration-150 h-[45%]" style="height: 45%;"></div>
+<div class="w-full bg-gradient-to-t from-secondary-container to-secondary rounded-t transition-all duration-150 h-[80%] shadow-[0_0_8px_#00f0ff]" style="height: 80%;"></div>
+<div class="w-full bg-gradient-to-t from-secondary-container to-secondary rounded-t transition-all duration-150 h-[55%] shadow-[0_0_6px_#00f0ff]" style="height: 55%;"></div>
+<div class="w-full bg-surface-container-high rounded-t transition-all duration-150 h-[30%]" style="height: 30%;"></div>
+<div class="w-full bg-gradient-to-t from-secondary-container to-secondary rounded-t transition-all duration-150 h-[85%] shadow-[0_0_8px_#00f0ff]" style="height: 85%;"></div>
+<div class="w-full bg-surface-container-highest rounded-t transition-all duration-150 h-[50%]" style="height: 50%;"></div>
+</div>
+</div>
+<!-- Frequency Hertz Calibration Ruler -->
+<div class="flex items-center justify-between text-[7.5px] font-mono-code text-on-surface-variant/80 px-1 border-t border-surface-container-highest/40 pt-0.5">
+<span>0 Hz</span>
+<span class="text-secondary/60">3.2 kHz</span>
+<span class="text-secondary font-bold">12 kHz</span>
+<span class="text-secondary/60">24 kHz</span>
+<span>48 kHz</span>
+</div>
+<!-- Denoise Progress Strip -->
+<div class="w-full bg-surface-container h-2 rounded-full overflow-hidden border border-surface-container-highest/60">
+<div class="bg-gradient-to-r from-secondary-container via-secondary to-primary-container h-full rounded-full transition-all duration-200 shadow-[0_0_10px_#00f0ff]" id="node4ProgressBar" style="width: 86%;"></div>
+</div>
+</div>
+<!-- Real-time Live Render Preview Card with Holographic Reticles, Hex-Grid & Telemetry Coordinates -->
+<div class="relative rounded-lg overflow-hidden bg-surface-container-lowest aspect-video flex items-center justify-center z-10 group border border-secondary/30 shadow-[0_0_20px_rgba(0,240,255,0.15)]" id="previewContainer">
+<!-- Holographic Hexagonal Pattern Overlay Vector -->
+<svg class="absolute inset-0 w-full h-full pointer-events-none opacity-15 z-15" fill="none">
+<defs>
+<pattern height="48" id="hexGrid" patternunits="userSpaceOnUse" width="28">
+<path d="M 14,0 L 28,8 L 28,24 L 14,32 L 0,24 L 0,8 Z M 14,48 L 28,40 L 28,24 L 14,16 L 0,24 L 0,40 Z" fill="none" stroke="#49effd" stroke-width="0.8"></path>
+</pattern>
+</defs>
+<rect fill="url(#hexGrid)" height="100%" width="100%"></rect>
+</svg>
+<!-- Targeting Reticle with Azimuth Degree Markings & Rangefinder -->
+<div class="absolute inset-0 pointer-events-none z-30 p-2 flex flex-col justify-between">
+<!-- Top Telemetry Row -->
+<div class="flex justify-between items-center text-[8.5px] font-mono-code text-secondary">
+<div class="flex items-center gap-1.5 bg-surface-container-lowest/80 px-1.5 py-0.5 rounded border border-secondary/30">
+<span class="w-1.5 h-1.5 bg-secondary rounded-full animate-ping"></span>
+<span>342° AZ</span>
+<span class="text-on-surface-variant">|</span>
+<span>+14.2° EL</span>
+</div>
+<div class="flex items-center gap-1.5 bg-surface-container-lowest/80 px-1.5 py-0.5 rounded border border-secondary/30">
+<span class="text-primary font-bold">SPECTRAL LOCK</span>
+<span class="text-on-surface-variant">|</span>
+<span>1.4x OPT</span>
+</div>
+</div>
+<!-- Bottom Coordinate Telemetry Row -->
+<div class="flex justify-between items-center text-[8px] font-mono-code text-on-surface-variant bg-surface-container-lowest/70 px-2 py-0.5 rounded border border-surface-container-highest/60 backdrop-blur-sm">
+<span>LAT: 45.1920° N</span>
+<span class="text-secondary font-bold">FRAME // 0948</span>
+<span>LONG: 12.8422° E</span>
+</div>
+</div>
+<!-- Futuristic Cyber Reticle Corner Brackets on Target Image -->
+<div class="absolute top-2 left-2 w-3.5 h-3.5 border-t-2 border-l-2 border-secondary z-30 pointer-events-none"></div>
+<div class="absolute top-2 right-2 w-3.5 h-3.5 border-t-2 border-r-2 border-secondary z-30 pointer-events-none"></div>
+<div class="absolute bottom-2 left-2 w-3.5 h-3.5 border-b-2 border-l-2 border-secondary z-30 pointer-events-none"></div>
+<div class="absolute bottom-2 right-2 w-3.5 h-3.5 border-b-2 border-r-2 border-secondary z-30 pointer-events-none"></div>
+<!-- Central Circular Targeting Crosshairs with Scale Ticks -->
+<div class="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 w-14 h-14 pointer-events-none z-20 opacity-40 flex items-center justify-center">
+<svg class="w-full h-full text-secondary" fill="none" viewbox="0 0 56 56">
+<circle cx="28" cy="28" r="24" stroke="currentColor" stroke-dasharray="4 2" stroke-width="0.8"></circle>
+<circle cx="28" cy="28" r="12" stroke="currentColor" stroke-width="1"></circle>
+<line stroke="currentColor" stroke-width="0.8" x1="28" x2="28" y1="0" y2="56"></line>
+<line stroke="currentColor" stroke-width="0.8" x1="0" x2="56" y1="28" y2="28"></line>
+</svg>
+</div>
+<!-- Holographic scanline overlay -->
+<div class="absolute inset-0 bg-gradient-to-b from-transparent via-secondary/20 to-transparent pointer-events-none opacity-0 z-20" id="scanlineEffect"></div>
+<!-- Subtle persistent ambient scanline raster -->
+<div class="absolute inset-0 bg-[linear-gradient(rgba(18,16,16,0)_50%,rgba(0,0,0,0.25)_50%)] bg-[length:100%_4px] pointer-events-none z-20 opacity-40"></div>
+<!-- Noise / Flash Overlay -->
+<div class="absolute inset-0 bg-secondary/35 pointer-events-none opacity-0 z-25 transition-opacity duration-300" id="renderFlash"></div>
+<img class="w-full h-full object-cover transition-all duration-500" data-alt="Cyberpunk woman portrait bathed in glowing turquoise and cyan rim lighting with holographic retinal implants, dark ambient atmosphere with delicate digital rain particles." id="mainRenderImg" src="https://lh3.googleusercontent.com/aida-public/AB6AXuD-aqfAcfw14KPH7QuJwred1WjWfBOpr4TOI7XL6Y5Yg5VhHBbYDJSQflQmZVq-zsIpk7Zibg3GMNga-rGtO7jqwQrBIffKnIw8U42YuyIm_Yr_1BH5M0sFtTQ28Gb8RsG6mGWZ8shEhtwYOxdZUvdqO-H6MxFjT8VDm2aXDgxKRfANzrxXC9uv2gOFAe0WRjKajAxJXxhAfLgiSvzZFziVGYX1__mR69bc_peuhts"/>
+<!-- Live HUD Overlays on Preview -->
+<div class="absolute top-8 left-3 px-2 py-0.5 rounded bg-surface-container-lowest/85 backdrop-blur-md font-tag-mono-xs text-tag-mono-xs text-secondary flex items-center gap-1 z-30 transition-all duration-300 border border-secondary/30 shadow-sm" id="previewStatusBadge">
+<span class="w-1.5 h-1.5 rounded-full bg-secondary animate-pulse shadow-[0_0_6px_#00f0ff]" id="previewStatusDot"></span>
+<span id="previewStatusText">STREAM INTERPOLATING</span>
+</div>
+<div class="absolute bottom-8 right-3 px-2 py-0.5 rounded bg-surface-container-lowest/85 backdrop-blur-md font-tag-mono-xs text-tag-mono-xs text-on-surface z-30 border border-surface-variant/40" id="previewResBadge">
+          1024 × 1024 • 32bpc
+        </div>
+</div>
+<!-- Output Endpoint Bar -->
+<div class="flex items-center justify-between pt-1 relative z-10">
+<div class="flex items-center gap-1 text-on-surface-variant font-micro-caption text-micro-caption uppercase">
+<span class="material-symbols-outlined text-[14px]">save_alt</span>
+<span id="diskWriteStatus">Auto-write to disk</span>
+</div>
+<div class="flex items-center gap-1.5 bg-surface-container-lowest/90 border border-secondary/30 px-3 py-1.5 rounded-full shadow-sm transition-all duration-300" id="outputBadgeContainer">
+<span class="font-tag-mono-xs text-tag-mono-xs text-secondary font-bold uppercase tracking-wider" id="outputStatusLabel">PNG Render Ready</span>
+<span class="material-symbols-outlined text-secondary text-[16px]" id="outputStatusIcon">check_circle</span>
+</div>
+</div>
+</div>
+</div>
+<!-- Docked Floating Mobile Action Bar (Tactile & High Impact) -->
+<div class="sticky bottom-2 w-full pt-space-xs z-30">
+<div class="bg-surface-container-lowest/95 backdrop-blur-xl p-2 rounded-2xl shadow-2xl flex items-center gap-2 border border-surface-container-high/80 shadow-[0_10px_30px_rgba(0,0,0,0.6)]">
+<!-- Quick Node Adder Button -->
+<button class="w-12 h-12 rounded-xl bg-surface-container hover:bg-surface-container-high active:scale-95 border border-surface-variant/40 flex flex-col items-center justify-center text-on-surface-variant hover:text-primary transition-all shrink-0 group relative overflow-hidden" title="Add Node">
+<div class="absolute inset-0 bg-secondary/5 opacity-0 group-hover:opacity-100 transition-opacity"></div>
+<span class="material-symbols-outlined text-[20px]">add_box</span>
+<span class="font-micro-caption text-micro-caption text-[8px] mt-0.5 font-bold">NODE</span>
+</button>
+<!-- Inspector / Matrix Config Button -->
+<button class="w-12 h-12 rounded-xl bg-surface-container hover:bg-surface-container-high active:scale-95 border border-surface-variant/40 flex flex-col items-center justify-center text-on-surface-variant hover:text-primary transition-all shrink-0 group relative overflow-hidden" title="Inspector">
+<div class="absolute inset-0 bg-secondary/5 opacity-0 group-hover:opacity-100 transition-opacity"></div>
+<span class="material-symbols-outlined text-[20px]">tune</span>
+<span class="font-micro-caption text-micro-caption text-[8px] mt-0.5 font-bold">PARAMS</span>
+</button>
+<!-- Primary Graph Execution Trigger CTA -->
+<button class="flex-1 h-12 rounded-xl bg-primary text-on-primary hover:bg-primary-fixed-dim font-headline-sm text-headline-sm font-bold flex items-center justify-center gap-2 shadow-[0_0_25px_rgba(0,240,255,0.45)] hover:shadow-[0_0_35px_rgba(0,240,255,0.6)] active:scale-[0.98] transition-all relative overflow-hidden select-none border border-primary-fixed" id="executeBtn">
+<!-- Shimmer highlight line -->
+<div class="absolute inset-0 bg-gradient-to-r from-transparent via-white/20 to-transparent -translate-x-full hover:translate-x-full transition-transform duration-1000"></div>
+<span class="material-symbols-outlined text-[20px] text-on-primary" id="executeIcon">bolt</span>
+<span class="tracking-wide" id="executeLabel">EXECUTE GRAPH</span>
+</button>
+</div>
+</div><style id="themeDynamicStyles">
+  body[data-applied-theme="minimal"] {
+    background-color: #0c0d10 !important;
+  }
+  body[data-applied-theme="minimal"] #cyberAmbientBackdrop {
+    opacity: 0 !important;
+    visibility: hidden !important;
+  }
+  body[data-applied-theme="minimal"] .cyber-card::before,
+  body[data-applied-theme="minimal"] .cyber-card::after {
+    display: none !important;
+  }
+  body[data-applied-theme="minimal"] .cyber-card {
+    background-color: #121318 !important;
+    border-color: #27272a !important;
+    box-shadow: none !important;
+  }
+  body[data-applied-theme="minimal"] header {
+    background-color: rgba(18, 19, 24, 0.95) !important;
+    border-color: #27272a !important;
+    box-shadow: none !important;
+  }
+  body[data-applied-theme="minimal"] nav {
+    background-color: rgba(14, 15, 19, 0.96) !important;
+    border-color: #27272a !important;
+  }
+  body[data-applied-theme="minimal"] #node4 {
+    background-color: #16171e !important;
+    border-color: #3f3f46 !important;
+  }
+
+  body[data-applied-theme="fulldark"] {
+    background-color: #000000 !important;
+  }
+  body[data-applied-theme="fulldark"] #cyberAmbientBackdrop {
+    opacity: 0 !important;
+    visibility: hidden !important;
+  }
+  body[data-applied-theme="fulldark"] .cyber-card::before,
+  body[data-applied-theme="fulldark"] .cyber-card::after {
+    display: none !important;
+  }
+  body[data-applied-theme="fulldark"] .cyber-card {
+    background-color: #07080a !important;
+    border-color: #22252a !important;
+    box-shadow: none !important;
+  }
+  body[data-applied-theme="fulldark"] header {
+    background-color: rgba(0, 0, 0, 0.98) !important;
+    border-color: #22252a !important;
+    box-shadow: none !important;
+  }
+  body[data-applied-theme="fulldark"] nav {
+    background-color: rgba(0, 0, 0, 0.98) !important;
+    border-color: #22252a !important;
+  }
+  body[data-applied-theme="fulldark"] #node4 {
+    background-color: #0b0c10 !important;
+    border-color: #2e333d !important;
+  }
+</style>
+<script id="themeSwitcherScript">
+  (function() {
+    const themeButtons = document.querySelectorAll('.theme-tab-btn');
+    function applyTheme(theme) {
+      document.body.setAttribute('data-applied-theme', theme);
+      themeButtons.forEach(btn => {
+        const isCurrent = btn.getAttribute('data-theme') === theme;
+        if (isCurrent) {
+          btn.className = 'theme-tab-btn flex items-center gap-1 px-2.5 py-1 rounded-lg bg-secondary/15 text-secondary border border-secondary/40 font-tag-mono-xs text-tag-mono-xs font-semibold uppercase tracking-wider transition-all duration-200';
+        } else {
+          btn.className = 'theme-tab-btn flex items-center gap-1 px-2.5 py-1 rounded-lg text-on-surface-variant hover:text-on-surface border border-transparent font-tag-mono-xs text-tag-mono-xs uppercase tracking-wider transition-all duration-200';
+        }
+      });
+      const toast = document.getElementById('executionToast');
+      const toastMsg = document.getElementById('toastMessage');
+      if (toast && toastMsg) {
+        const names = { cyberpunk: 'CYBERPUNK MATRIX GLOW', minimal: 'MINIMAL CHARCOAL (FLAT)', fulldark: 'OLED FULL DARK (PURE BLACK)' };
+        toastMsg.textContent = 'THEME SWITCHED: ' + (names[theme] || theme.toUpperCase());
+        toast.classList.remove('opacity-0', '-translate-y-2');
+        toast.classList.add('opacity-100', 'translate-y-0');
+        setTimeout(() => {
+          toast.classList.remove('opacity-100', 'translate-y-0');
+          toast.classList.add('opacity-0', '-translate-y-2');
+        }, 1800);
+      }
+    }
+    themeButtons.forEach(btn => {
+      btn.addEventListener('click', function() {
+        const t = this.getAttribute('data-theme');
+        applyTheme(t);
+      });
+    });
+    applyTheme('cyberpunk');
+  })();
+</script>
+</div>
+<!-- Client-side Interactive Behaviors -->
+<script>
+  (function() {
+    const viewVisualBtn = document.getElementById('viewVisualBtn');
+    const viewListBtn = document.getElementById('viewListBtn');
+    const executeBtn = document.getElementById('executeBtn');
+    const executeLabel = document.getElementById('executeLabel');
+    const executeIcon = document.getElementById('executeIcon');
+
+    // Telemetry and HUD targets
+    const hudStepCount = document.getElementById('hudStepCount');
+    const hudStepPercent = document.getElementById('hudStepPercent');
+    const telemetryLatency = document.getElementById('telemetryLatency');
+    const telemetryFps = document.getElementById('telemetryFps');
+    const topLatencyPill = document.getElementById('topLatencyPill');
+    const syncStatus = document.getElementById('syncStatus');
+    const executionToast = document.getElementById('executionToast');
+    const toastMessage = document.getElementById('toastMessage');
+    const gaugeCircle = document.getElementById('gaugeCircle');
+
+    // Pipeline Nodes
+    const node1 = document.getElementById('node1');
+    const node1Tokens = document.getElementById('node1Tokens');
+    const node1PortBadge = document.getElementById('node1PortBadge');
+    const beam1A = document.getElementById('beam1A');
+    const beam1B = document.getElementById('beam1B');
+
+    const node2 = document.getElementById('node2');
+    const node2Badge = document.getElementById('node2Badge');
+    const node2PortBadge = document.getElementById('node2PortBadge');
+
+    const node3 = document.getElementById('node3');
+    const denoiseBar = document.getElementById('denoiseBar');
+    const denoiseVal = document.getElementById('denoiseVal');
+    const beamConvergeL = document.getElementById('beamConvergeL');
+    const beamConvergeR = document.getElementById('beamConvergeR');
+    const convergingBadge = document.getElementById('convergingBadge');
+    const convergeSpinIcon = document.getElementById('convergeSpinIcon');
+
+    const node4 = document.getElementById('node4');
+    const node4StepBadge = document.getElementById('node4StepBadge');
+    const node4Eta = document.getElementById('node4Eta');
+    const node4ProgressBar = document.getElementById('node4ProgressBar');
+    const eqBars = document.querySelectorAll('#eqContainer > div');
+    const mainRenderImg = document.getElementById('mainRenderImg');
+    const scanlineEffect = document.getElementById('scanlineEffect');
+    const renderFlash = document.getElementById('renderFlash');
+    const previewStatusBadge = document.getElementById('previewStatusBadge');
+    const previewStatusText = document.getElementById('previewStatusText');
+    const outputStatusLabel = document.getElementById('outputStatusLabel');
+    const outputStatusIcon = document.getElementById('outputStatusIcon');
+    const randomSeedBtn = document.getElementById('randomSeedBtn');
+    const seedVal = document.getElementById('seedVal');
+    const ambientCenterGlow = document.getElementById('ambientCenterGlow');
+
+    if (viewVisualBtn && viewListBtn) {
+      viewVisualBtn.addEventListener('click', () => {
+        viewVisualBtn.className = "flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-surface-container text-secondary font-headline-sm text-headline-sm transition-all shadow-sm";
+        viewListBtn.className = "flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-on-surface-variant hover:text-on-surface font-body-sm text-body-sm transition-all";
+      });
+
+      viewListBtn.addEventListener('click', () => {
+        viewListBtn.className = "flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-surface-container text-secondary font-headline-sm text-headline-sm transition-all shadow-sm";
+        viewVisualBtn.className = "flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-on-surface-variant hover:text-on-surface font-body-sm text-body-sm transition-all";
+      });
+    }
+
+    if (randomSeedBtn && seedVal) {
+      randomSeedBtn.addEventListener('click', () => {
+        const rnd = Math.floor(100000 + Math.random() * 900000);
+        seedVal.textContent = '#' + rnd;
+        randomSeedBtn.classList.add('rotate-180');
+        setTimeout(() => randomSeedBtn.classList.remove('rotate-180'), 300);
+      });
+    }
+
+    // Default gentle equalizer idle animation
+    let idleEqInterval = setInterval(() => {
+      if (isExecuting) return;
+      eqBars.forEach((bar, idx) => {
+        const base = [40, 65, 90, 75, 95, 60, 45, 80, 55, 30, 85, 50][idx] || 50;
+        const delta = Math.sin(Date.now() / 400 + idx) * 15;
+        bar.style.height = `${Math.min(100, Math.max(20, base + delta))}%`;
+      });
+    }, 150);
+
+    let isExecuting = false;
+    let eqInterval = null;
+    let telemetryInterval = null;
+
+    function showToast(msg, duration = 3000) {
+      if (!executionToast) return;
+      toastMessage.textContent = msg;
+      executionToast.classList.remove('opacity-0', '-translate-y-2');
+      executionToast.classList.add('opacity-100', 'translate-y-0');
+      setTimeout(() => {
+        executionToast.classList.remove('opacity-100', 'translate-y-0');
+        executionToast.classList.add('opacity-0', '-translate-y-2');
+      }, duration);
+    }
+
+    function runLiveExecution() {
+      if (isExecuting) return;
+      isExecuting = true;
+
+      // 1. Initial State Setup
+      executeBtn.disabled = true;
+      executeBtn.classList.add('bg-secondary-container', 'text-on-secondary-container');
+      executeBtn.classList.remove('bg-primary', 'text-on-primary');
+      executeIcon.className = "material-symbols-outlined text-[20px] animate-spin";
+      executeIcon.textContent = "progress_activity";
+      executeLabel.textContent = "COMPUTING GRAPH...";
+      syncStatus.textContent = "EXECUTING PIPELINE";
+      syncStatus.classList.add('text-secondary');
+
+      if (ambientCenterGlow) {
+        ambientCenterGlow.classList.remove('bg-secondary/10');
+        ambientCenterGlow.classList.add('bg-secondary/25');
+      }
+
+      // Reset Telemetry & Nodes for Fresh Run
+      hudStepCount.textContent = "0/28";
+      hudStepPercent.textContent = "(0%)";
+      if (gaugeCircle) gaugeCircle.style.strokeDashoffset = "81.68";
+      node4StepBadge.textContent = "INITIALIZING...";
+      node4ProgressBar.style.width = "0%";
+      node4Eta.textContent = "ESTIMATING...";
+      outputStatusLabel.textContent = "SYNTHESIZING...";
+      outputStatusIcon.textContent = "hourglass_top";
+
+      // Render image noise/blur entry & holographic glitch
+      mainRenderImg.style.filter = "blur(14px) brightness(0.65) saturate(1.8) contrast(1.2)";
+      mainRenderImg.style.transform = "scale(1.05)";
+      scanlineEffect.classList.remove('opacity-0');
+      scanlineEffect.classList.add('opacity-80', 'scanline-sweep');
+      previewStatusBadge.classList.remove('text-secondary');
+      previewStatusBadge.classList.add('text-primary');
+      previewStatusText.textContent = "DIFFUSION SAMPLING";
+
+      // Start randomized telemetry jitter
+      telemetryInterval = setInterval(() => {
+        const lat = Math.floor(128 + Math.random() * 28);
+        telemetryLatency.textContent = `${lat} ms`;
+        if (topLatencyPill) topLatencyPill.textContent = `LATENCY ${lat}ms`;
+        const fps = (58.0 + Math.random() * 5.2).toFixed(1);
+        telemetryFps.textContent = `${fps} it/s`;
+      }, 180);
+
+      // Start high-energy EQ bar jitter
+      eqInterval = setInterval(() => {
+        eqBars.forEach((bar, idx) => {
+          const h = Math.floor(25 + Math.random() * 75);
+          bar.style.height = `${h}%`;
+          if (h > 65) {
+            bar.classList.add('bg-gradient-to-t', 'from-secondary-container', 'to-secondary', 'shadow-[0_0_10px_#00f0ff]');
+            bar.classList.remove('bg-surface-container-high', 'bg-surface-container-highest');
+          } else {
+            bar.classList.remove('bg-gradient-to-t', 'from-secondary-container', 'to-secondary', 'shadow-[0_0_10px_#00f0ff]');
+            bar.classList.add('bg-surface-container-highest');
+          }
+        });
+      }, 85);
+
+      // STEP 1 (0ms - 700ms): NODE 1 Prompt Synthesizer Fires
+      node1.classList.add('node-glow-active');
+      node1PortBadge.classList.add('bg-secondary/20', 'border', 'border-secondary', 'shadow-[0_0_12px_#00f0ff]');
+      let tok = 100;
+      const tokTimer = setInterval(() => {
+        tok = Math.min(142, tok + 6);
+        node1Tokens.textContent = `${tok}/1000 Tok`;
+        if (tok >= 142) clearInterval(tokTimer);
+      }, 40);
+
+      // STEP 1->2 (600ms): Connecting beam travels downwards with bright photon surge
+      setTimeout(() => {
+        beam1A.classList.remove('opacity-0');
+        beam1A.classList.add('beam-stream');
+        beam1B.classList.remove('opacity-0');
+        beam1B.classList.add('beam-stream');
+      }, 500);
+
+      // STEP 2 (900ms - 1700ms): NODE 2 Architecture Loader Compiles Weights
+      setTimeout(() => {
+        node1.classList.remove('node-glow-active');
+        node2.classList.add('node-glow-active');
+        node2Badge.textContent = "COMPILING WEIGHTS -> FLUX.1";
+        node2Badge.classList.remove('bg-surface-container-high');
+        node2Badge.classList.add('bg-primary-container', 'text-on-primary', 'shadow-[0_0_10px_#00f0ff]');
+      }, 900);
+
+      // STEP 3 (1500ms - 2300ms): NODE 3 Image Ingestion & Converging Tensors
+      setTimeout(() => {
+        node2.classList.remove('node-glow-active');
+        node2Badge.textContent = "FLUX.1-SCHNELL";
+        node2Badge.classList.remove('bg-primary-container', 'text-on-primary', 'shadow-[0_0_10px_#00f0ff]');
+        node2Badge.classList.add('bg-surface-container-high', 'text-primary-fixed-dim');
+
+        node3.classList.add('node-glow-active');
+        denoiseBar.style.width = '78%';
+        denoiseVal.textContent = '0.78';
+        setTimeout(() => {
+          denoiseBar.style.width = '65%';
+          denoiseVal.textContent = '0.65';
+        }, 500);
+
+        // Converging line beams light up with photon pulse
+        beamConvergeL.classList.remove('opacity-0');
+        beamConvergeL.classList.add('beam-stream-h');
+        beamConvergeR.classList.remove('opacity-0');
+        beamConvergeR.classList.add('beam-stream-h');
+        convergingBadge.classList.add('border-secondary', 'shadow-[0_0_16px_rgba(0,240,255,0.6)]');
+      }, 1500);
+
+      // STEP 4 (2100ms - 3600ms): NODE 4 Latent Diffusion Core steps up 1->28
+      setTimeout(() => {
+        node3.classList.remove('node-glow-active');
+        node4.classList.add('node-glow-active');
+        
+        let currentStep = 1;
+        const totalSteps = 28;
+        const stepInterval = setInterval(() => {
+          currentStep += 1;
+          const pct = Math.round((currentStep / totalSteps) * 100);
+          hudStepCount.textContent = `${currentStep}/${totalSteps}`;
+          hudStepPercent.textContent = `(${pct}%)`;
+          if (gaugeCircle) {
+            const offset = 81.68 - (81.68 * (pct / 100));
+            gaugeCircle.style.strokeDashoffset = offset.toFixed(1);
+          }
+          node4StepBadge.textContent = `ACTIVE STEP ${currentStep}/${totalSteps}`;
+          node4ProgressBar.style.width = `${pct}%`;
+          
+          const remEta = Math.max(0, ((totalSteps - currentStep) * 0.05)).toFixed(2);
+          node4Eta.textContent = `ETA ${remEta}s • DRIFT 0.01%`;
+
+          // Incrementally resolve blur with subtle chromatic dispersion
+          const blurAmt = Math.max(0, 14 * (1 - currentStep / totalSteps));
+          mainRenderImg.style.filter = `blur(${blurAmt.toFixed(1)}px) brightness(${0.75 + (currentStep / totalSteps) * 0.25})`;
+
+          if (currentStep >= totalSteps) {
+            clearInterval(stepInterval);
+            finishExecution();
+          }
+        }, 55);
+
+      }, 2100);
+
+      // STEP 5: Final Resolution, Flash, and Reset to Idle
+      function finishExecution() {
+        clearInterval(telemetryInterval);
+        clearInterval(eqInterval);
+
+        // Flash of radiant cyan tensor resolution
+        renderFlash.classList.remove('opacity-0');
+        renderFlash.classList.add('opacity-100');
+        setTimeout(() => {
+          renderFlash.classList.remove('opacity-100');
+          renderFlash.classList.add('opacity-0');
+        }, 340);
+
+        // Crisp image state
+        scanlineEffect.classList.remove('scanline-sweep', 'opacity-80');
+        scanlineEffect.classList.add('opacity-0');
+        mainRenderImg.style.filter = "none";
+        mainRenderImg.style.transform = "scale(1)";
+
+        // Status endpoints
+        node4.classList.remove('node-glow-active');
+        convergingBadge.classList.remove('border-secondary', 'shadow-[0_0_16px_rgba(0,240,255,0.6)]');
+        beam1A.classList.remove('beam-stream');
+        beam1B.classList.remove('beam-stream');
+        beamConvergeL.classList.remove('beam-stream-h');
+        beamConvergeR.classList.remove('beam-stream-h');
+        beam1A.classList.add('opacity-0');
+        beam1B.classList.add('opacity-0');
+        beamConvergeL.classList.add('opacity-0');
+        beamConvergeR.classList.add('opacity-0');
+
+        if (ambientCenterGlow) {
+          ambientCenterGlow.classList.remove('bg-secondary/25');
+          ambientCenterGlow.classList.add('bg-secondary/10');
+        }
+
+        syncStatus.textContent = "SYNCHRONIZED";
+        syncStatus.classList.remove('text-secondary');
+        node4StepBadge.textContent = "ACTIVE STEP 28/28";
+        node4Eta.textContent = "TENSOR CONVERGED • 0.0s";
+        previewStatusText.textContent = "PNG RENDER READY";
+        outputStatusLabel.textContent = "PNG Render Ready";
+        outputStatusIcon.textContent = "check_circle";
+
+        // Button success state
+        executeBtn.classList.remove('bg-secondary-container', 'text-on-secondary-container');
+        executeBtn.classList.add('bg-tertiary-container', 'text-on-tertiary-container');
+        executeIcon.className = "material-symbols-outlined text-[20px]";
+        executeIcon.textContent = "task_alt";
+        executeLabel.textContent = "EXECUTION COMPLETE";
+
+        showToast("GRAPH EXECUTED • 28/28 STEPS CONVERGED", 3200);
+
+        // Reset CTA ready for replay after brief hold
+        setTimeout(() => {
+          executeBtn.classList.remove('bg-tertiary-container', 'text-on-tertiary-container');
+          executeBtn.classList.add('bg-primary', 'text-on-primary');
+          executeIcon.textContent = "bolt";
+          executeLabel.textContent = "EXECUTE GRAPH";
+          executeBtn.disabled = false;
+          isExecuting = false;
+        }, 1600);
+      }
+    }
+
+    if (executeBtn) {
+      executeBtn.addEventListener('click', runLiveExecution);
+    }
+  })();
+</script></main><nav class="fixed bottom-0 w-full z-50 pb-safe bg-surface-container-lowest/92 backdrop-blur-xl border-t border-surface-container-high/60 shadow-[0_-2px_16px_rgba(0,0,0,0.5)]" data-active-classes="text-secondary"><div class="flex justify-around items-center h-16 px-gutter"><a class="flex flex-col items-center justify-center min-w-[44px] min-h-[44px] px-space-xs text-on-surface-variant hover:text-on-surface transition-colors" data-path="console" href="#"><span class="material-symbols-outlined text-[22px]">terminal</span><span class="font-tag-mono-xs text-tag-mono-xs uppercase mt-0.5">Console</span></a><a aria-current="page" class="flex flex-col items-center justify-center min-w-[44px] min-h-[44px] px-space-xs transition-colors text-secondary relative" data-path="workflow" href="#"><span class="material-symbols-outlined text-[22px] drop-shadow-[0_0_8px_#00f0ff]">account_tree</span><span class="font-tag-mono-xs text-tag-mono-xs uppercase mt-0.5">Workflow</span><span class="absolute top-1 right-2 w-1.5 h-1.5 rounded-full bg-secondary shadow-[0_0_6px_#00f0ff]"></span></a><a class="flex flex-col items-center justify-center min-w-[44px] min-h-[44px] px-space-xs text-on-surface-variant hover:text-on-surface transition-colors" data-path="studio" href="#"><span class="material-symbols-outlined text-[22px]">auto_awesome</span><span class="font-tag-mono-xs text-tag-mono-xs uppercase mt-0.5">Studio</span></a><a class="flex flex-col items-center justify-center min-w-[44px] min-h-[44px] px-space-xs text-on-surface-variant hover:text-on-surface transition-colors" data-path="telemetry-config" href="#"><span class="material-symbols-outlined text-[22px]">tune</span><span class="font-tag-mono-xs text-tag-mono-xs uppercase mt-0.5">Telemetry</span></a></div></nav></body></html>
