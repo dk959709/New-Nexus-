@@ -91,10 +91,19 @@ async function call<T>(path: string, init?: RequestInit): Promise<T> {
       ...init,
     });
     console.log(`[API] Response status: ${res.status} for ${url}`);
-    const body = (await res.json().catch(() => ({}))) as Record<string, unknown>;
+    const raw = await res.text();
+    let body: Record<string, unknown> = {};
+    let isValidJson = false;
+    try {
+      const parsed = JSON.parse(raw);
+      isValidJson = true;
+      body = (parsed && typeof parsed === 'object' ? parsed : {}) as Record<string, unknown>;
+    } catch {
+      body = {};
+    }
     if (!res.ok) {
-      console.warn(`[API] Error response:`, body);
-      let errorMsg = 'Request failed. Please try again.';
+      console.warn(`[API] Error response (HTTP ${res.status}):`, body);
+      let errorMsg = '';
       if (typeof body.error === 'string') {
         errorMsg = body.error;
       } else if (typeof body.error === 'object' && body.error !== null) {
@@ -102,6 +111,14 @@ async function call<T>(path: string, init?: RequestInit): Promise<T> {
         errorMsg = nestedErr.message || JSON.stringify(body.error);
       } else if (typeof body.message === 'string') {
         errorMsg = body.message;
+      }
+      if (!errorMsg) {
+        const preview = raw.slice(0, 100).replace(/\s+/g, ' ').replace(/[<>]/g, '').trim();
+        errorMsg =
+          'Request failed. Please try again. (HTTP ' +
+          res.status +
+          ')' +
+          (!isValidJson ? ' [' + preview + ']' : '');
       }
       throw new Error(errorMsg);
     }

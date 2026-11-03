@@ -5083,6 +5083,7 @@ async function startServer() {
 
   // JARVIS Multi-Agent Execution Endpoint
   app.post('/api/jarvis/agent-call', async (req, res) => {
+    console.log(`[JARVIS] agent-call received contentLength=${req.headers['content-length']}`);
     const parsed = z
       .object({
         agentId: z.string().min(1),
@@ -5105,6 +5106,7 @@ async function startServer() {
       .safeParse(req.body);
 
     if (!parsed.success) {
+      console.log('[JARVIS] agent-call invalid params');
       console.warn('[JARVIS] Invalid agent execution parameters:', parsed.error.format());
       return errorResponse(res, 400, 'Invalid agent execution parameters.');
     }
@@ -5119,6 +5121,9 @@ async function startServer() {
       maxTokens,
       timeoutMs,
     } = parsed.data;
+
+    const totalChars = messages.reduce((sum, m) => sum + m.content.length, 0);
+    console.log(`[JARVIS] agent-call agent=${agentId} messages=${messages.length} totalChars=${totalChars}`);
 
     // For intensive diagram/code generation (Architect) or deep synthesis, allow extended execution window
     const defaultTimeout = agentId === 'architect' ? 65000 : 35000;
