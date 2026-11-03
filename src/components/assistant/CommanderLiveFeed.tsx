@@ -18,6 +18,7 @@ import { storage } from '@/lib/storage';
 import { copyToClipboard } from '@/lib/clipboard';
 import { FormattedText } from '@/components/jarvis/FormattedText';
 import { runCommanderPipeline } from '@/services/commanderOrchestrator';
+import { buildActiveSkillsText } from '@/lib/skills';
 import type {
   CommanderConfig,
   CommanderExecutionStep,
@@ -212,6 +213,7 @@ export const CommanderLiveFeed: React.FC<CommanderLiveFeedProps> = ({
       query: topic,
       config: configRef.current,
       signal: controller.signal,
+      skillsText: buildActiveSkillsText(),
       onStepUpdate: (updatedStep) => {
         setSteps((prev) => {
           const next = [...prev];

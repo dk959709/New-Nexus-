@@ -52,7 +52,8 @@ import {
 import { Haptics, ImpactStyle } from '@capacitor/haptics';
 import { Link } from 'react-router-dom';
 import { api } from '@/services/api';
-import { storage, DEFAULT_COMMANDER_CONFIG, getAssistantThinkingEffort, setAssistantThinkingEffort } from '@/lib/storage';
+import { storage, DEFAULT_COMMANDER_CONFIG, getAssistantThinkingEffort, setAssistantThinkingEffort, MAX_ENABLED_SKILLS } from '@/lib/storage';
+import { buildActiveSkillsText, estimateTokens } from '@/lib/skills';
 import { copyToClipboard, formatMarkdownToRichHtml } from '@/lib/clipboard';
 import { playTapSound } from '@/lib/audio';
 import { ErrorMessage } from '@/components';
@@ -106,6 +107,7 @@ import type {
   ParallaxEvidenceItem,
   CommanderConfig,
   AIProviderConfig,
+  Skill,
 } from '@/types';
 
 export interface AssistantGeneratedImage {
@@ -1349,7 +1351,46 @@ export function AssistantPage() {
   const [imageEnhanceEnabled, setImageEnhanceEnabled] = useState<boolean>(() => storage.getAssistantImageEnhanceEnabled());
   const [showImageEnhanceTip, setShowImageEnhanceTip] = useState<boolean>(() => !storage.getAssistantImageEnhanceTipDismissed());
   const [webSearchExtendedEnabled, setWebSearchExtendedEnabled] = useState<boolean>(() => storage.getAssistantWebSearchExtendedEnabled());
+  const [savedSkills, setSavedSkills] = useState<Skill[]>(() => storage.getSkills());
+  const [skillsPanelOpen, setSkillsPanelOpen] = useState<boolean>(false);
+  const [skillsLimitWarning, setSkillsLimitWarning] = useState<string | null>(null);
   const longPressTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  useEffect(() => {
+    const refreshSkills = () => {
+      setSavedSkills(storage.getSkills());
+    };
+    window.addEventListener('nexus-skills-changed', refreshSkills);
+    window.addEventListener('storage', refreshSkills);
+    return () => {
+      window.removeEventListener('nexus-skills-changed', refreshSkills);
+      window.removeEventListener('storage', refreshSkills);
+    };
+  }, []);
+
+  const enabledSkills = savedSkills.filter((s) => s.enabled).slice(0, MAX_ENABLED_SKILLS);
+  const enabledSkillsCount = enabledSkills.length;
+  const totalEnabledSkillChars = enabledSkills.reduce((acc, s) => acc + (s.chars || s.text.length), 0);
+  const approxSkillTokensK = Math.max(0.1, Math.round((estimateTokens(totalEnabledSkillChars) / 1000) * 10) / 10);
+
+  const formatSkillChars = (chars: number): string => {
+    if (chars >= 1000) {
+      return `${(chars / 1000).toFixed(1)}k chars`;
+    }
+    return `${chars} chars`;
+  };
+
+  const handleToggleSkillInAssistant = (e: React.MouseEvent, skill: Skill) => {
+    e.stopPropagation();
+    playTapSound();
+    setSkillsLimitWarning(null);
+    try {
+      storage.setSkillEnabled(skill.id, !skill.enabled);
+      setSavedSkills(storage.getSkills());
+    } catch {
+      setSkillsLimitWarning('Max 3 skills can be ON at the same time. Turn one off first.');
+    }
+  };
   const longPressTriggeredRef = useRef<boolean>(false);
   const webSearchLongPressTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const webSearchLongPressTriggeredRef = useRef<boolean>(false);
@@ -4563,6 +4604,10 @@ ${commanderConfig.systemPrompts.synthesizer?.trim() || '(Default system prompt)'
             setDeepResearchPhase(label);
           },
           userTz,
+          undefined,
+          undefined,
+          undefined,
+          buildActiveSkillsText(),
         );
 
         const assistantMessage: Message = {
@@ -4972,7 +5017,7 @@ DIRECTIVES:
                   '',
                   undefined,
                   false,
-                  { language: currentLanguage, permanentMemories: currentPermanentMemories }
+                  { language: currentLanguage, permanentMemories: currentPermanentMemories, skillsText: buildActiveSkillsText() }
                 ),
                 new Promise<never>((_, reject) =>
                   setTimeout(() => reject(new Error('aiChat timeout')), 40000)
@@ -5126,7 +5171,7 @@ DIRECTIVES:
                   '',
                   undefined,
                   false,
-                  { language: currentLanguage, permanentMemories: currentPermanentMemories }
+                  { language: currentLanguage, permanentMemories: currentPermanentMemories, skillsText: buildActiveSkillsText() }
                 ),
                 new Promise<never>((_, reject) =>
                   setTimeout(() => reject(new Error('aiChat timeout')), 40000)
@@ -5512,6 +5557,7 @@ DIRECTIVES:
             permanentMemories: currentPermanentMemories,
             image: fileToSend?.type === 'image' ? fileToSend.dataUrl : undefined,
             scholarMode: true,
+            skillsText: buildActiveSkillsText(),
           },
         );
 
@@ -5630,6 +5676,10 @@ DIRECTIVES:
             setSpecialistPhase(label);
           },
           userTz,
+          undefined,
+          undefined,
+          undefined,
+          buildActiveSkillsText(),
         );
 
         const assistantMessage: Message = {
@@ -5720,6 +5770,7 @@ DIRECTIVES:
           extendedSearch: webSearchExtendedEnabled,
           searchMaxResults: webSearchExtendedEnabled ? 20 : 10,
           image: fileToSend?.type === 'image' ? fileToSend.dataUrl : undefined,
+          skillsText: buildActiveSkillsText(),
         },
       );
 
@@ -8946,7 +8997,7 @@ DIRECTIVES:
                 rows={1}
                 disabled={loading}
                 className={`w-full bg-transparent text-[14.5px] leading-relaxed resize-none outline-none px-2 pt-1 pb-1 ${
-                  activeSpecialistMode ? 'pr-36 sm:pr-40' : 'pr-11'
+                  activeSpecialistMode || enabledSkillsCount > 0 ? 'pr-36 sm:pr-44' : 'pr-11'
                 } min-h-[44px] max-h-[180px] ${
                   theme === 'classic'
                     ? 'text-white placeholder-cyan-300/40'
@@ -8958,6 +9009,36 @@ DIRECTIVES:
 
               {/* Expandable More Options (▲) Button & Popup in Top-Right with Active Mode Chip */}
               <div ref={moreOptionsRef} className="absolute right-1 top-1 z-20 flex items-center gap-1.5">
+                {/* Active Skills Status Chip (hidden on mobile when a specialist mode chip is also shown to prevent crowding at 360px) */}
+                {enabledSkillsCount > 0 && (
+                  <button
+                    type="button"
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      playTapSound();
+                      setSkillsLimitWarning(null);
+                      setSkillsPanelOpen(true);
+                      setMoreOptionsOpen(true);
+                    }}
+                    title={`${enabledSkillsCount} active skill${enabledSkillsCount === 1 ? '' : 's'} (~${approxSkillTokensK}k tokens). Tap to manage.`}
+                    aria-label={`Active skills: ${enabledSkillsCount}`}
+                    className={`${
+                      activeSpecialistMode ? 'hidden sm:inline-flex' : 'inline-flex'
+                    } items-center gap-1 px-2 py-0.5 rounded-lg text-[11px] font-medium border transition-all cursor-pointer active:scale-95 ${
+                      theme === 'classic'
+                        ? 'bg-cyan-950/80 text-cyan-200 border-cyan-500/40 hover:bg-cyan-900/80'
+                        : theme === 'fulldark'
+                        ? 'bg-[#262626] text-[#e4e4e7] border-[#3f3f46] hover:bg-[#303030]'
+                        : 'bg-cyan-950/60 text-cyan-200 border-cyan-500/40 hover:bg-cyan-900/60'
+                    }`}
+                  >
+                    <Sparkles size={10} className="text-cyan-400 shrink-0" />
+                    <span className="leading-none whitespace-nowrap select-none">
+                      Skills · {enabledSkillsCount}
+                    </span>
+                  </button>
+                )}
+
                 {/* Active Mode Indicator Chip (shows currently active mode; one-tap to dismiss) */}
                 {activeSpecialistMode && (
                   <button
@@ -9078,6 +9159,162 @@ DIRECTIVES:
                           Pick
                         </div>
                       </button>
+
+                      {/* 0b. Skills Add-On Row & Inline Accordion */}
+                      <div className="flex flex-col gap-1">
+                        <button
+                          type="button"
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            playTapSound();
+                            setSkillsLimitWarning(null);
+                            setSkillsPanelOpen((prev) => !prev);
+                          }}
+                          className={`w-full p-2 rounded-xl border text-left flex items-center justify-between transition-all cursor-pointer ${
+                            enabledSkillsCount > 0
+                              ? theme === 'classic'
+                                ? 'border-cyan-500/40 bg-cyan-950/30 text-cyan-200 shadow-[0_0_10px_rgba(6,182,212,0.1)]'
+                                : theme === 'fulldark'
+                                ? 'border-[#3a3a3a] bg-[#242424] text-[#ececec]'
+                                : 'border-cyan-500/40 bg-cyan-950/25 text-cyan-200'
+                              : theme === 'classic'
+                              ? 'border-transparent hover:bg-slate-800/70 text-slate-200'
+                              : theme === 'fulldark'
+                              ? 'border-transparent hover:bg-[#242424] text-[#d4d4d8]'
+                              : 'border-transparent hover:bg-zinc-800/60 text-zinc-300'
+                          }`}
+                        >
+                          <div className="flex items-center gap-2.5 min-w-0">
+                            <div
+                              className={`w-7 h-7 rounded-lg grid place-items-center shrink-0 ${
+                                enabledSkillsCount > 0
+                                  ? theme === 'fulldark'
+                                    ? 'bg-[#333] text-cyan-300 border border-[#4a4a4a]'
+                                    : 'bg-cyan-500/20 text-cyan-300 border border-cyan-500/30'
+                                  : theme === 'fulldark'
+                                  ? 'bg-[#262626] text-[#a1a1aa]'
+                                  : 'bg-zinc-800 text-zinc-400'
+                              }`}
+                            >
+                              <Sparkles size={13} />
+                            </div>
+                            <div className="min-w-0">
+                              <div className="text-xs font-semibold text-zinc-100 flex items-center gap-1.5">
+                                <span>Skills</span>
+                                {enabledSkillsCount > 0 && (
+                                  <span className="text-[9px] font-mono font-semibold px-1.5 py-0.2 rounded bg-cyan-950 text-cyan-300 border border-cyan-500/40">
+                                    ON
+                                  </span>
+                                )}
+                              </div>
+                              <div className="text-[10.5px] text-zinc-400 truncate">
+                                {enabledSkillsCount === 0
+                                  ? 'Add repo skills in Settings'
+                                  : `${enabledSkillsCount} ON · ~${approxSkillTokensK}k tokens`}
+                              </div>
+                            </div>
+                          </div>
+                          <div className="flex items-center gap-1.5 shrink-0 ml-1">
+                            <span
+                              className={`text-[10px] font-mono px-1.5 py-0.5 rounded border ${
+                                enabledSkillsCount > 0
+                                  ? 'bg-cyan-950/70 text-cyan-300 border-cyan-500/40'
+                                  : theme === 'fulldark'
+                                  ? 'bg-[#262626] text-[#a1a1aa] border-[#383838]'
+                                  : 'bg-zinc-800/80 text-zinc-400 border-zinc-700/60'
+                              }`}
+                            >
+                              {enabledSkillsCount} / {MAX_ENABLED_SKILLS}
+                            </span>
+                            <ChevronDown
+                              size={13}
+                              className={`text-zinc-400 transition-transform duration-150 ${
+                                skillsPanelOpen ? 'rotate-180 text-cyan-300' : ''
+                              }`}
+                            />
+                          </div>
+                        </button>
+
+                        {skillsPanelOpen && (
+                          <div
+                            onClick={(e) => e.stopPropagation()}
+                            className={`p-2 rounded-xl border space-y-1.5 text-xs ${
+                              theme === 'classic'
+                                ? 'bg-slate-950/90 border-cyan-500/30 text-slate-200'
+                                : theme === 'fulldark'
+                                ? 'bg-[#141414] border-[#2e2e2e] text-[#e4e4e7]'
+                                : 'bg-zinc-950/80 border-zinc-800 text-zinc-200'
+                            }`}
+                          >
+                            {savedSkills.length === 0 ? (
+                              <div className="py-1.5 px-1 text-[11px] text-zinc-400 text-center">
+                                No skills yet.
+                              </div>
+                            ) : (
+                              <div className="space-y-1">
+                                {savedSkills.map((skill) => (
+                                  <div
+                                    key={skill.id}
+                                    onClick={(e) => handleToggleSkillInAssistant(e, skill)}
+                                    className={`px-2 py-1.5 rounded-lg border flex items-center justify-between gap-2 cursor-pointer transition-colors ${
+                                      skill.enabled
+                                        ? theme === 'classic'
+                                          ? 'border-cyan-500/40 bg-cyan-950/30 text-cyan-100'
+                                          : theme === 'fulldark'
+                                          ? 'border-[#3f3f46] bg-[#222] text-white'
+                                          : 'border-cyan-500/35 bg-cyan-950/20 text-zinc-100'
+                                        : theme === 'fulldark'
+                                        ? 'border-transparent hover:bg-[#1f1f1f] text-[#a1a1aa]'
+                                        : 'border-transparent hover:bg-zinc-900 text-zinc-300'
+                                    }`}
+                                  >
+                                    <div className="min-w-0 flex-1">
+                                      <div className="text-[11px] font-medium truncate text-zinc-100">
+                                        {skill.name}
+                                      </div>
+                                      <div className="text-[9.5px] font-mono text-zinc-400">
+                                        {formatSkillChars(skill.chars || skill.text.length)}
+                                      </div>
+                                    </div>
+                                    <button
+                                      type="button"
+                                      role="switch"
+                                      aria-checked={skill.enabled}
+                                      aria-label={`Toggle skill ${skill.name}`}
+                                      onClick={(e) => handleToggleSkillInAssistant(e, skill)}
+                                      className={`w-8 h-4 rounded-full transition-colors relative flex items-center p-0.5 shrink-0 ${
+                                        skill.enabled ? 'bg-cyan-500' : 'bg-zinc-700'
+                                      }`}
+                                    >
+                                      <div
+                                        className={`w-3 h-3 rounded-full bg-white shadow-sm transition-transform duration-150 ${
+                                          skill.enabled ? 'translate-x-4' : 'translate-x-0'
+                                        }`}
+                                      />
+                                    </button>
+                                  </div>
+                                ))}
+                              </div>
+                            )}
+
+                            {skillsLimitWarning && (
+                              <div className="px-2 py-1 rounded-lg bg-amber-950/70 border border-amber-500/40 text-[10.5px] text-amber-200 leading-snug">
+                                {skillsLimitWarning}
+                              </div>
+                            )}
+
+                            <div className="pt-1 border-t border-zinc-800/80 flex items-center justify-end">
+                              <Link
+                                to="/settings?tab=skills"
+                                onClick={() => setMoreOptionsOpen(false)}
+                                className="text-[10.5px] font-medium text-cyan-400 hover:text-cyan-300 hover:underline flex items-center gap-1"
+                              >
+                                <span>Manage skills in Settings →</span>
+                              </Link>
+                            </div>
+                          </div>
+                        )}
+                      </div>
 
                       {/* 1. Architect Toggle */}
                     <button
@@ -11052,6 +11289,144 @@ DIRECTIVES:
                         Only 1 specialist mode can be active at a time (like radio buttons). Turning on any one mode automatically turns off whichever mode was previously active.
                       </div>
                     </div>
+
+                    {/* 0. Skills Add-On Row & Inline Accordion (Independent of Specialist Modes) */}
+                    <div className="space-y-2">
+                      <button
+                        type="button"
+                        onClick={() => {
+                          playTapSound();
+                          setSkillsLimitWarning(null);
+                          setSkillsPanelOpen((prev) => !prev);
+                        }}
+                        className={`w-full p-3.5 rounded-xl border text-left flex items-center justify-between transition-all cursor-pointer ${
+                          enabledSkillsCount > 0
+                            ? theme === 'classic'
+                              ? 'border-cyan-500/40 bg-cyan-950/25 text-cyan-100 shadow-[0_0_15px_rgba(6,182,212,0.12)]'
+                              : theme === 'fulldark'
+                              ? 'border-[#3a3a3a] bg-[#222] text-[#ececec]'
+                              : 'border-cyan-500/40 bg-cyan-950/20 text-zinc-100'
+                            : 'border-zinc-800 bg-zinc-900/60 hover:bg-zinc-850 hover:border-zinc-700 text-zinc-200'
+                        }`}
+                      >
+                        <div className="flex items-center gap-3 min-w-0">
+                          <div
+                            className={`w-9 h-9 rounded-xl grid place-items-center shrink-0 transition-colors ${
+                              enabledSkillsCount > 0
+                                ? 'bg-cyan-500/20 border border-cyan-500/40 text-cyan-300'
+                                : 'bg-zinc-800 border border-zinc-700 text-zinc-400'
+                            }`}
+                          >
+                            <Sparkles size={18} />
+                          </div>
+                          <div className="min-w-0">
+                            <div className="text-xs font-semibold text-zinc-100 flex items-center gap-2">
+                              <span>Skills</span>
+                              <span className="text-[10px] font-mono text-zinc-400 bg-zinc-800/90 px-1.5 py-0.2 rounded border border-zinc-700/60">
+                                Add-On
+                              </span>
+                            </div>
+                            <p className="text-[11px] text-zinc-400 mt-0.5 truncate">
+                              {enabledSkillsCount === 0
+                                ? 'Add repo skills in Settings'
+                                : `${enabledSkillsCount} ON · ~${approxSkillTokensK}k tokens`}
+                            </p>
+                          </div>
+                        </div>
+                        <div className="flex items-center gap-2 shrink-0 ml-2">
+                          <span
+                            className={`text-[10.5px] font-mono px-2 py-0.5 rounded-full border ${
+                              enabledSkillsCount > 0
+                                ? 'bg-cyan-950/80 text-cyan-300 border-cyan-500/40'
+                                : 'bg-zinc-800 text-zinc-400 border-zinc-700/60'
+                            }`}
+                          >
+                            {enabledSkillsCount} / {MAX_ENABLED_SKILLS}
+                          </span>
+                          <ChevronDown
+                            size={15}
+                            className={`text-zinc-400 transition-transform duration-150 ${
+                              skillsPanelOpen ? 'rotate-180 text-cyan-300' : ''
+                            }`}
+                          />
+                        </div>
+                      </button>
+
+                      {skillsPanelOpen && (
+                        <div
+                          className={`p-3 rounded-xl border space-y-2 text-xs ${
+                            theme === 'classic'
+                              ? 'bg-slate-950/90 border-cyan-500/30'
+                              : theme === 'fulldark'
+                              ? 'bg-[#141414] border-[#2e2e2e]'
+                              : 'bg-zinc-950/80 border-zinc-800'
+                          }`}
+                        >
+                          {savedSkills.length === 0 ? (
+                            <div className="py-2 text-center text-zinc-400 text-xs">
+                              No skills yet.
+                            </div>
+                          ) : (
+                            <div className="space-y-1.5">
+                              {savedSkills.map((skill) => (
+                                <div
+                                  key={skill.id}
+                                  onClick={(e) => handleToggleSkillInAssistant(e, skill)}
+                                  className={`px-3 py-2 rounded-lg border flex items-center justify-between gap-3 cursor-pointer transition-colors ${
+                                    skill.enabled
+                                      ? 'border-cyan-500/40 bg-cyan-950/25 text-zinc-100'
+                                      : 'border-zinc-800/80 bg-zinc-900/50 hover:bg-zinc-900 text-zinc-300'
+                                  }`}
+                                >
+                                  <div className="min-w-0 flex-1">
+                                    <div className="text-xs font-medium truncate text-zinc-100">
+                                      {skill.name}
+                                    </div>
+                                    <div className="text-[10px] font-mono text-zinc-400">
+                                      {formatSkillChars(skill.chars || skill.text.length)}
+                                    </div>
+                                  </div>
+                                  <button
+                                    type="button"
+                                    role="switch"
+                                    aria-checked={skill.enabled}
+                                    aria-label={`Toggle skill ${skill.name}`}
+                                    onClick={(e) => handleToggleSkillInAssistant(e, skill)}
+                                    className={`w-10 h-5 rounded-full transition-colors relative flex items-center p-0.5 shrink-0 ${
+                                      skill.enabled ? 'bg-cyan-500' : 'bg-zinc-700'
+                                    }`}
+                                  >
+                                    <div
+                                      className={`w-4 h-4 rounded-full bg-white shadow-sm transition-transform duration-150 ${
+                                        skill.enabled ? 'translate-x-5' : 'translate-x-0'
+                                      }`}
+                                    />
+                                  </button>
+                                </div>
+                              ))}
+                            </div>
+                          )}
+
+                          {skillsLimitWarning && (
+                            <div className="px-2.5 py-1.5 rounded-lg bg-amber-950/70 border border-amber-500/40 text-[11px] text-amber-200">
+                              {skillsLimitWarning}
+                            </div>
+                          )}
+
+                          <div className="pt-1.5 border-t border-zinc-800/80 flex items-center justify-end">
+                            <Link
+                              to="/settings?tab=skills"
+                              onClick={() => setSettingsOpen(false)}
+                              className="text-xs font-medium text-cyan-400 hover:text-cyan-300 hover:underline flex items-center gap-1"
+                            >
+                              <span>Manage skills in Settings →</span>
+                            </Link>
+                          </div>
+                        </div>
+                      )}
+                    </div>
+
+                    <div className="h-px bg-zinc-800/80" />
 
                     {/* 1. Multi Chat Mode Toggle */}
                     <div className="space-y-3">

@@ -7,8 +7,10 @@ import type {
   WorkflowStepStatus,
   WorkflowOutput,
   AIProviderConfig,
+  Skill,
 } from '@/types';
 import { storage } from '@/lib/storage';
+import { estimateTokens } from '@/lib/skills';
 import {
   runWorkflow,
   hasWorkflowCycle,
@@ -2581,6 +2583,30 @@ export function StepSettingsForm({
     };
   }, []);
 
+  const [savedSkills, setSavedSkills] = useState<Skill[]>(() => {
+    try {
+      return storage.getSkills();
+    } catch {
+      return [];
+    }
+  });
+
+  useEffect(() => {
+    const syncSkills = () => {
+      try {
+        setSavedSkills(storage.getSkills());
+      } catch {
+        setSavedSkills([]);
+      }
+    };
+    window.addEventListener('nexus-skills-changed', syncSkills);
+    window.addEventListener('storage', syncSkills);
+    return () => {
+      window.removeEventListener('nexus-skills-changed', syncSkills);
+      window.removeEventListener('storage', syncSkills);
+    };
+  }, []);
+
   const selectedProvider = useMemo(() => {
     if (!settings.providerId || settings.providerId === 'existing') return null;
     return configuredProviders.find((p) => p.id === settings.providerId) || null;
@@ -2771,6 +2797,56 @@ export function StepSettingsForm({
                 <option value="architect" className="bg-[#0e0e12]">Architect (System structure & trade-offs)</option>
                 <option value="dataAnalyst" className="bg-[#0e0e12]">Data Analyst (Steps & quantitative analysis)</option>
               </select>
+            </div>
+
+            <div>
+              <label className="text-[10px] font-mono font-bold uppercase tracking-wider text-[#b9cacb] block mb-1.5">
+                Skill (optional)
+              </label>
+              {(() => {
+                const rawSkillId = (settings.skillId || '').trim();
+                const matchedSkill = rawSkillId
+                  ? savedSkills.find((s) => s.id === rawSkillId) || null
+                  : null;
+                const isSkillMissing = Boolean(rawSkillId && !matchedSkill);
+                const formatSkillSize = (chars: number) =>
+                  chars >= 1000 ? `${(chars / 1000).toFixed(1)}k chars` : `${chars} chars`;
+
+                return (
+                  <>
+                    <select
+                      value={rawSkillId}
+                      onChange={(e) => handleChange('skillId', e.target.value)}
+                      className="w-full bg-[#0e0e12] hover:bg-[#131317] focus:bg-[#0e0e12] border border-[#3b494b]/60 focus:border-[#49effd] rounded-lg px-3 py-2 text-[#e4e1e7] text-xs font-mono focus:outline-none focus:ring-1 focus:ring-[#49effd]/50 transition-colors"
+                    >
+                      <option value="" className="bg-[#0e0e12]">None</option>
+                      {savedSkills.map((skill) => (
+                        <option key={skill.id} value={skill.id} className="bg-[#0e0e12]">
+                          {skill.name} ({formatSkillSize(skill.sizeChars || skill.text.length)})
+                        </option>
+                      ))}
+                      {isSkillMissing && (
+                        <option value={rawSkillId} className="bg-[#0e0e12]">
+                          Skill not found (will run without a skill)
+                        </option>
+                      )}
+                    </select>
+                    {isSkillMissing ? (
+                      <p className="text-[10px] font-mono text-amber-300 mt-1">
+                        Skill not found (will run without a skill)
+                      </p>
+                    ) : matchedSkill ? (
+                      <p className="text-[10px] font-mono text-[#b9cacb] mt-1">
+                        ~{Math.max(0.1, Number((estimateTokens(matchedSkill.text.length) / 1000).toFixed(1)))}k tokens added to this step
+                      </p>
+                    ) : savedSkills.length === 0 ? (
+                      <p className="text-[10px] font-mono text-[#b9cacb] mt-1">
+                        No skills yet. Add one in Settings → Skills.
+                      </p>
+                    ) : null}
+                  </>
+                );
+              })()}
             </div>
 
             <div>

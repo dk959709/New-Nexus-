@@ -1374,5 +1374,6 @@ export interface Skill {
   license: string | null;
   enabled: boolean;
   addedAt: number;
+  kind?: 'github' | 'pasted';
 }
 

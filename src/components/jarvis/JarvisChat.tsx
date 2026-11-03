@@ -30,6 +30,8 @@ import {
   Palette,
 } from 'lucide-react';
 import { storage, DEFAULT_JARVIS_CONFIG } from '@/lib/storage';
+import { buildActiveSkillsText } from '@/lib/skills';
+import { SkillsQuickPanel } from '@/components/skills/SkillsQuickPanel';
 import {
   getSavedParallaxTheme,
   saveParallaxTheme,
@@ -606,6 +608,7 @@ export function JarvisChat({
             selectedDocName: docSearchMode === 'specific' ? selectedDocObj?.name : undefined,
           },
           effectiveNewAgentModeForThisQuery,
+          buildActiveSkillsText(),
         );
 
         const completedMessage: JarvisMessage = {
@@ -2357,6 +2360,9 @@ export function JarvisChat({
                                 </select>
                               )}
                             </div>
+
+                            {/* 7. Skills Add-On Row */}
+                            <SkillsQuickPanel onNavigateToSettings={() => setShowModesMenu(false)} />
                           </div>
 
                           {/* 3. Footer Row inside Popover: Configure Agents, New Inquiry, Clear */}

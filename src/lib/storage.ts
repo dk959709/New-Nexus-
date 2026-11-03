@@ -45,30 +45,56 @@ function dispatchSkillsChanged(): void {
   }
 }
 
+function cleanSkillTextInput(rawText: string): string {
+  return rawText.replace(/\0/g, '').replace(/\r\n/g, '\n').replace(/\r/g, '\n');
+}
+
 function sanitizeSkillItem(item: unknown): Skill | null {
   if (!item || typeof item !== 'object') return null;
   const raw = item as Partial<Skill>;
   if (typeof raw.id !== 'string' || !raw.id.trim()) return null;
   if (typeof raw.name !== 'string' || !raw.name.trim()) return null;
-  if (typeof raw.sourceUrl !== 'string' || !raw.sourceUrl.trim()) return null;
-  if (typeof raw.repo !== 'string' || !raw.repo.trim()) return null;
   if (typeof raw.text !== 'string') return null;
 
-  const cleanText = raw.text.replace(/\0/g, '').slice(0, MAX_SKILL_CHARS);
+  const kind: 'github' | 'pasted' = raw.kind === 'pasted' ? 'pasted' : 'github';
+
+  if (kind === 'github') {
+    if (typeof raw.sourceUrl !== 'string' || !raw.sourceUrl.trim()) return null;
+    if (typeof raw.repo !== 'string' || !raw.repo.trim()) return null;
+  }
+
+  const normalizedText = cleanSkillTextInput(raw.text);
+  const cleanText =
+    kind === 'pasted'
+      ? normalizedText.trim().slice(0, MAX_SKILL_CHARS)
+      : normalizedText.slice(0, MAX_SKILL_CHARS);
+  if (kind === 'pasted' && !cleanText) return null;
+
   const cleanName = raw.name.trim().slice(0, 60);
   if (!cleanName) return null;
 
   return {
     id: raw.id.trim(),
     name: cleanName,
-    sourceUrl: raw.sourceUrl.trim(),
-    repo: raw.repo.trim(),
+    sourceUrl: kind === 'pasted' ? '' : (raw.sourceUrl || '').trim(),
+    repo: kind === 'pasted' ? '' : (raw.repo || '').trim(),
     text: cleanText,
-    chars: typeof raw.chars === 'number' && !Number.isNaN(raw.chars) ? Math.min(raw.chars, cleanText.length) : cleanText.length,
-    truncated: Boolean(raw.truncated) || raw.text.length > MAX_SKILL_CHARS,
-    license: typeof raw.license === 'string' && raw.license.trim() ? raw.license.trim() : null,
+    chars:
+      kind === 'pasted'
+        ? cleanText.length
+        : typeof raw.chars === 'number' && !Number.isNaN(raw.chars)
+          ? Math.min(raw.chars, cleanText.length)
+          : cleanText.length,
+    truncated: kind === 'pasted' ? false : Boolean(raw.truncated) || normalizedText.length > MAX_SKILL_CHARS,
+    license:
+      kind === 'pasted'
+        ? null
+        : typeof raw.license === 'string' && raw.license.trim()
+          ? raw.license.trim()
+          : null,
     enabled: Boolean(raw.enabled),
     addedAt: typeof raw.addedAt === 'number' && !Number.isNaN(raw.addedAt) ? raw.addedAt : Date.now(),
+    kind,
   };
 }
 
@@ -2777,6 +2803,19 @@ export const storage = {
       if (current.length >= MAX_SKILLS) {
         throw new Error(`Maximum of ${MAX_SKILLS} skills reached. Delete one skill to add a new one.`);
       }
+      if (skill && skill.kind === 'pasted') {
+        const trimmedName = typeof skill.name === 'string' ? skill.name.trim().slice(0, 60) : '';
+        if (!trimmedName) {
+          throw new Error('Skill name cannot be empty.');
+        }
+        const cleanedText = typeof skill.text === 'string' ? cleanSkillTextInput(skill.text).trim() : '';
+        if (!cleanedText) {
+          throw new Error('Skill text cannot be empty.');
+        }
+        if (cleanedText.length > MAX_SKILL_CHARS) {
+          throw new Error('Too long. Shorten the text.');
+        }
+      }
       const sanitized = sanitizeSkillItem(skill);
       if (!sanitized) {
         throw new Error('Invalid skill data.');
@@ -2792,6 +2831,58 @@ export const storage = {
     } catch (err) {
       if (err instanceof Error) throw err;
       return this.getSkills();
+    }
+  },
+
+  updateSkill(id: string, changes: { name?: string; text?: string }): Skill | null {
+    try {
+      const current = this.getSkills();
+      const index = current.findIndex((s) => s.id === id);
+      if (index === -1) return null;
+
+      const existing = current[index];
+      const isPasted = existing.kind === 'pasted';
+
+      let nextName = existing.name;
+      if (changes.name !== undefined) {
+        const trimmedName = changes.name.trim().slice(0, 60);
+        if (!trimmedName) {
+          throw new Error('Skill name cannot be empty.');
+        }
+        nextName = trimmedName;
+      }
+
+      let nextText = existing.text;
+      let nextChars = existing.chars;
+      if (changes.text !== undefined && isPasted) {
+        const cleanedText = cleanSkillTextInput(changes.text).trim();
+        if (!cleanedText) {
+          throw new Error('Skill text cannot be empty.');
+        }
+        if (cleanedText.length > MAX_SKILL_CHARS) {
+          throw new Error('Too long. Shorten the text.');
+        }
+        nextText = cleanedText;
+        nextChars = cleanedText.length;
+      }
+
+      const updatedSkill: Skill = {
+        ...existing,
+        name: nextName,
+        text: nextText,
+        chars: nextChars,
+        enabled: existing.enabled,
+        addedAt: existing.addedAt,
+        kind: isPasted ? 'pasted' : existing.kind || 'github',
+      };
+
+      const nextList = current.map((s, idx) => (idx === index ? updatedSkill : s));
+      write(SKILLS_STORAGE_KEY, nextList);
+      dispatchSkillsChanged();
+      return updatedSkill;
+    } catch (err) {
+      if (err instanceof Error) throw err;
+      return null;
     }
   },
 

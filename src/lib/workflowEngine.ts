@@ -9,6 +9,7 @@ import type {
 } from '@/types';
 import { api, BASE } from '@/services/api';
 import { storage } from '@/lib/storage';
+import { getSkillTextById } from '@/lib/skills';
 import { generateStudioImage } from '@/services/imageGenerationService';
 
 export interface WorkflowRunCallbacks {
@@ -290,9 +291,13 @@ async function executeStep(
         ? { ...provider, maxTokens: parsedTokens }
         : null;
 
+      const skillId = (resolvedSettings.skillId ?? '').trim();
+      const matchedSkill = skillId ? getSkillTextById(skillId) : null;
+
       const res = await withRetry(async () => {
         return await api.aiChat(fullPrompt, [], '', providerCopy, false, {
           maxTokens: parsedTokens,
+          ...(matchedSkill ? { skillsText: matchedSkill.text } : {}),
         });
       });
       return { output: { type: 'text', value: res.answer || '' } };

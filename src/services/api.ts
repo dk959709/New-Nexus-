@@ -334,6 +334,7 @@ export const api = {
       image?: string;
       scholarMode?: boolean;
       maxTokens?: number;
+      skillsText?: string;
     },
   ): Promise<{
     answer: string;
@@ -396,6 +397,7 @@ export const api = {
         image: options?.image,
         scholarMode: options?.scholarMode,
         maxTokens: options?.maxTokens,
+        skillsText: options?.skillsText,
         timezone: (() => {
           try {
             return Intl.DateTimeFormat().resolvedOptions().timeZone;

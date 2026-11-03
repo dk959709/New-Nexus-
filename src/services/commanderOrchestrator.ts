@@ -2,6 +2,7 @@ import { api } from '@/services/api';
 import { storage } from '@/lib/storage';
 import { stripTierLabels } from '@/lib/format';
 import { applyTopicalRelevanceFilter } from '@/lib/searchFilter';
+import { wrapSkillsForPrompt } from '@/lib/skills';
 import type {
   CommanderConfig,
   CommanderEffortLevel,
@@ -246,6 +247,7 @@ interface RunCommanderParams {
   config?: CommanderConfig;
   onStepUpdate?: (step: CommanderExecutionStep) => void;
   signal?: AbortSignal;
+  skillsText?: string;
 }
 
 export async function runCommanderPipeline({
@@ -253,6 +255,7 @@ export async function runCommanderPipeline({
   config: incomingConfig,
   onStepUpdate,
   signal,
+  skillsText,
 }: RunCommanderParams): Promise<CommanderResult> {
   const config = incomingConfig || storage.getCommanderConfig();
   const isAlphaEnabled = config.alphaEnabled !== false;
@@ -981,6 +984,9 @@ CRITICAL GROUNDING & KNOWLEDGE CUTOFF RULE:
 ${HARD_SYNTH_GROUNDING_RULE}`;
     if (effortInstruction) {
       finalSynthSystemPrompt = `${finalSynthSystemPrompt}${effortInstruction}`;
+    }
+    if (skillsText && skillsText.trim()) {
+      finalSynthSystemPrompt = `${finalSynthSystemPrompt}\n\n${wrapSkillsForPrompt(skillsText)}`;
     }
 
     const synthMaxTokens =

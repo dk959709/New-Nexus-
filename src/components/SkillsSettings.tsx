@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useCallback } from 'react';
+import React, { useState, useEffect, useCallback, useRef } from 'react';
 import {
   Sparkles,
   GitBranch,
@@ -16,6 +16,8 @@ import {
   FileText,
   ShieldCheck,
   HelpCircle,
+  Copy,
+  ClipboardPaste,
 } from 'lucide-react';
 import {
   storage,
@@ -23,6 +25,8 @@ import {
   MAX_ENABLED_SKILLS,
   MAX_SKILL_CHARS,
 } from '@/lib/storage';
+import { estimateTokens } from '@/lib/skills';
+import { SkillEnhancer } from '@/components/skills/SkillEnhancer';
 import type { Skill } from '@/types';
 
 interface GithubSkillPreview {
@@ -39,6 +43,19 @@ interface GithubSkillPreview {
 
 const PREVIEW_COLLAPSED_CHARS = 3000;
 
+const AI_SKILL_PROMPT_TEMPLATE = `Write a "skill" for an AI assistant. A skill is a short set of text instructions that the assistant follows.
+
+Skill goal: [write here, for example: "write the best image prompts for FLUX and Stable Diffusion"]
+
+Write it in plain text or Markdown with these parts:
+1. Purpose (1-2 lines)
+2. When to use it
+3. Rules (a clear step-by-step list)
+4. Output format (exactly how the answer should look)
+5. Two short examples
+
+Keep it between 300 and 1,200 words. Do not include code that runs, links, secrets, or instructions to send data anywhere.`;
+
 function formatCharCount(chars: number): string {
   if (chars >= 1000) {
     return `${(chars / 1000).toFixed(1)}k chars`;
@@ -46,8 +63,14 @@ function formatCharCount(chars: number): string {
   return `${chars} chars`;
 }
 
+function formatTokenCountK(chars: number): string {
+  const tokens = estimateTokens(chars);
+  return (tokens / 1000).toFixed(1);
+}
+
 export const SkillsSettings: React.FC = () => {
   const [skills, setSkills] = useState<Skill[]>(() => storage.getSkills());
+  const [addMode, setAddMode] = useState<'github' | 'paste'>('github');
   const [githubUrl, setGithubUrl] = useState('');
   const [fetching, setFetching] = useState(false);
   const [errorMsg, setErrorMsg] = useState<string | null>(null);
@@ -58,9 +81,22 @@ export const SkillsSettings: React.FC = () => {
   const [previewName, setPreviewName] = useState('');
   const [showFullPreview, setShowFullPreview] = useState(false);
 
-  // Inline rename state
+  // Paste skill tab state
+  const [pasteName, setPasteName] = useState('');
+  const [pasteText, setPasteText] = useState('');
+  const [isPromptHelperOpen, setIsPromptHelperOpen] = useState(false);
+  const [copiedPrompt, setCopiedPrompt] = useState(false);
+  const promptFallbackRef = useRef<HTMLTextAreaElement | null>(null);
+
+  // Inline rename state (GitHub skills)
   const [editingSkillId, setEditingSkillId] = useState<string | null>(null);
   const [editingNameValue, setEditingNameValue] = useState('');
+
+  // Inline full editor state (Pasted skills)
+  const [editingPastedId, setEditingPastedId] = useState<string | null>(null);
+  const [editingPastedName, setEditingPastedName] = useState('');
+  const [editingPastedText, setEditingPastedText] = useState('');
+  const [editingPastedError, setEditingPastedError] = useState<string | null>(null);
 
   // Inline delete confirmation ("Tap again to confirm")
   const [confirmDeleteId, setConfirmDeleteId] = useState<string | null>(null);
@@ -93,6 +129,19 @@ export const SkillsSettings: React.FC = () => {
 
   const isMaxSkillsReached = skills.length >= MAX_SKILLS;
   const enabledCount = skills.filter((s) => s.enabled).length;
+
+  const normalizedPasteText = pasteText.replace(/\0/g, '').replace(/\r\n/g, '\n').replace(/\r/g, '\n');
+  const pasteCharCount = normalizedPasteText.length;
+  const isPasteTooLong = pasteCharCount > MAX_SKILL_CHARS;
+  const isPasteEmpty = !pasteName.trim() || !normalizedPasteText.trim();
+
+  const normalizedEditPastedText = editingPastedText
+    .replace(/\0/g, '')
+    .replace(/\r\n/g, '\n')
+    .replace(/\r/g, '\n');
+  const editPastedCharCount = normalizedEditPastedText.length;
+  const isEditPastedTooLong = editPastedCharCount > MAX_SKILL_CHARS;
+  const isEditPastedEmpty = !editingPastedName.trim() || !normalizedEditPastedText.trim();
 
   const handleFetchPreview = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -169,6 +218,7 @@ export const SkillsSettings: React.FC = () => {
       license: preview.license || null,
       enabled: canAutoEnable,
       addedAt: Date.now(),
+      kind: 'github',
     };
 
     try {
@@ -186,6 +236,92 @@ export const SkillsSettings: React.FC = () => {
     } catch (err: unknown) {
       const msg = err instanceof Error ? err.message : 'Could not save skill.';
       setErrorMsg(msg);
+    }
+  };
+
+  const handleSavePastedSkill = (e: React.FormEvent) => {
+    e.preventDefault();
+    setErrorMsg(null);
+    setSuccessMsg(null);
+
+    if (isMaxSkillsReached) {
+      setErrorMsg('Delete one skill to add a new one.');
+      return;
+    }
+
+    const cleanName = pasteName.trim().slice(0, 60);
+    const cleanText = normalizedPasteText.trim();
+
+    if (!cleanName || !cleanText) {
+      setErrorMsg('Please enter both a skill name and skill text.');
+      return;
+    }
+
+    if (cleanText.length > MAX_SKILL_CHARS) {
+      setErrorMsg('Too long. Shorten the text.');
+      return;
+    }
+
+    const canAutoEnable = enabledCount < MAX_ENABLED_SKILLS;
+
+    const newSkill: Skill = {
+      id: `skill-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`,
+      name: cleanName,
+      sourceUrl: '',
+      repo: '',
+      text: cleanText,
+      chars: cleanText.length,
+      truncated: false,
+      license: null,
+      enabled: canAutoEnable,
+      addedAt: Date.now(),
+      kind: 'pasted',
+    };
+
+    try {
+      const updated = storage.addSkill(newSkill);
+      setSkills(updated);
+      setPasteName('');
+      setPasteText('');
+      setSuccessMsg(
+        canAutoEnable
+          ? `Saved "${cleanName}" and turned it ON.`
+          : `Saved "${cleanName}" (OFF because 3 skills are already ON).`,
+      );
+    } catch (err: unknown) {
+      const msg = err instanceof Error ? err.message : 'Could not save skill.';
+      setErrorMsg(msg);
+    }
+  };
+
+  const handleClearPasteForm = () => {
+    setPasteName('');
+    setPasteText('');
+    setErrorMsg(null);
+  };
+
+  const handleCopyPromptTemplate = async () => {
+    try {
+      if (navigator.clipboard && typeof navigator.clipboard.writeText === 'function') {
+        await navigator.clipboard.writeText(AI_SKILL_PROMPT_TEMPLATE);
+        setCopiedPrompt(true);
+        window.setTimeout(() => setCopiedPrompt(false), 2000);
+        return;
+      }
+    } catch {
+      // Fallback below
+    }
+
+    try {
+      if (promptFallbackRef.current) {
+        promptFallbackRef.current.focus();
+        promptFallbackRef.current.select();
+        document.execCommand('copy');
+        setCopiedPrompt(true);
+        window.setTimeout(() => setCopiedPrompt(false), 2000);
+      }
+    } catch {
+      // Ignore copy errors if unsupported
     }
   };
 
@@ -214,6 +350,8 @@ export const SkillsSettings: React.FC = () => {
   const handleStartRename = (skill: Skill) => {
     setEditingSkillId(skill.id);
     setEditingNameValue(skill.name);
+    setEditingPastedId(null);
+    setEditingPastedError(null);
     setConfirmDeleteId(null);
   };
 
@@ -232,6 +370,59 @@ export const SkillsSettings: React.FC = () => {
     setEditingNameValue('');
   };
 
+  const handleStartEditPasted = (skill: Skill) => {
+    setEditingPastedId(skill.id);
+    setEditingPastedName(skill.name);
+    setEditingPastedText(skill.text);
+    setEditingPastedError(null);
+    setEditingSkillId(null);
+    setConfirmDeleteId(null);
+  };
+
+  const handleCancelEditPasted = () => {
+    setEditingPastedId(null);
+    setEditingPastedName('');
+    setEditingPastedText('');
+    setEditingPastedError(null);
+  };
+
+  const handleSaveEditPasted = (skillId: string) => {
+    setEditingPastedError(null);
+    setErrorMsg(null);
+    setSuccessMsg(null);
+
+    const cleanName = editingPastedName.trim().slice(0, 60);
+    const cleanText = normalizedEditPastedText.trim();
+
+    if (!cleanName || !cleanText) {
+      setEditingPastedError('Name and text cannot be empty.');
+      return;
+    }
+
+    if (cleanText.length > MAX_SKILL_CHARS) {
+      setEditingPastedError('Too long. Shorten the text.');
+      return;
+    }
+
+    try {
+      const updatedSkill = storage.updateSkill(skillId, {
+        name: cleanName,
+        text: cleanText,
+      });
+      if (updatedSkill) {
+        setSkills(storage.getSkills());
+        setEditingPastedId(null);
+        setEditingPastedName('');
+        setEditingPastedText('');
+        setEditingPastedError(null);
+        setSuccessMsg(`Updated "${updatedSkill.name}".`);
+      }
+    } catch (err: unknown) {
+      const msg = err instanceof Error ? err.message : 'Could not update skill.';
+      setEditingPastedError(msg);
+    }
+  };
+
   const handleDeleteClick = (skillId: string) => {
     setErrorMsg(null);
     setSuccessMsg(null);
@@ -241,6 +432,9 @@ export const SkillsSettings: React.FC = () => {
       setConfirmDeleteId(null);
       if (editingSkillId === skillId) {
         setEditingSkillId(null);
+      }
+      if (editingPastedId === skillId) {
+        setEditingPastedId(null);
       }
     } else {
       setConfirmDeleteId(skillId);
@@ -276,7 +470,7 @@ export const SkillsSettings: React.FC = () => {
                 </span>
               </div>
               <p className="text-xs sm:text-sm text-slate-400 mt-1.5 leading-relaxed">
-                Add instructions from a GitHub repo to give your AI a new skill.
+                Add instructions from a GitHub repo or paste text to give your AI a new skill.
               </p>
             </div>
           </div>
@@ -315,58 +509,244 @@ export const SkillsSettings: React.FC = () => {
       )}
 
       {/* 2. Add Skill Card */}
-      <div className="rounded-2xl border border-white/10 bg-slate-900/50 p-4 sm:p-6 backdrop-blur-md shadow-lg shadow-black/20">
-        <label
-          htmlFor="github-skill-url-input"
-          className="block text-xs font-semibold uppercase tracking-wider text-slate-300 mb-2"
-        >
-          Import from GitHub
-        </label>
-        <form onSubmit={handleFetchPreview} className="flex flex-col sm:flex-row gap-2.5">
-          <input
-            id="github-skill-url-input"
-            type="url"
-            value={githubUrl}
-            onChange={(e) => setGithubUrl(e.target.value)}
-            disabled={isMaxSkillsReached || fetching}
-            placeholder="Paste GitHub link (e.g. https://github.com/owner/repo)"
-            maxLength={300}
-            className="flex-1 min-w-0 px-3.5 py-2.5 rounded-xl bg-slate-950/70 border border-white/10 text-sm text-white placeholder-slate-500 focus:outline-none focus:border-cyan-400/60 disabled:opacity-50 disabled:cursor-not-allowed"
-          />
+      <div className="rounded-2xl border border-white/10 bg-slate-900/50 p-4 sm:p-6 backdrop-blur-md shadow-lg shadow-black/20 space-y-4">
+        {/* Segmented 2-Tab Switch */}
+        <div className="inline-flex w-full sm:w-auto p-1 rounded-xl bg-slate-950/80 border border-white/10">
           <button
-            type="submit"
-            disabled={isMaxSkillsReached || fetching || !githubUrl.trim()}
-            className="inline-flex items-center justify-center gap-2 px-4 py-2.5 rounded-xl font-semibold text-xs sm:text-sm bg-cyan-500/20 hover:bg-cyan-500/30 text-cyan-300 border border-cyan-500/40 transition-all disabled:opacity-50 disabled:cursor-not-allowed whitespace-nowrap"
+            type="button"
+            onClick={() => setAddMode('github')}
+            className={`flex-1 sm:flex-initial inline-flex items-center justify-center gap-1.5 px-3.5 py-1.5 rounded-lg text-xs font-semibold transition-all ${
+              addMode === 'github'
+                ? 'bg-cyan-500/20 text-cyan-300 border border-cyan-500/40 shadow-sm'
+                : 'text-slate-400 hover:text-slate-200 border border-transparent'
+            }`}
           >
-            {fetching ? (
-              <>
-                <Loader2 className="w-4 h-4 animate-spin" />
-                Fetching...
-              </>
-            ) : (
-              <>
-                <GitBranch className="w-4 h-4" />
-                Fetch preview
-              </>
-            )}
+            <GitBranch className="w-3.5 h-3.5 flex-shrink-0" />
+            <span>From GitHub</span>
           </button>
-        </form>
+          <button
+            type="button"
+            onClick={() => setAddMode('paste')}
+            className={`flex-1 sm:flex-initial inline-flex items-center justify-center gap-1.5 px-3.5 py-1.5 rounded-lg text-xs font-semibold transition-all ${
+              addMode === 'paste'
+                ? 'bg-cyan-500/20 text-cyan-300 border border-cyan-500/40 shadow-sm'
+                : 'text-slate-400 hover:text-slate-200 border border-transparent'
+            }`}
+          >
+            <ClipboardPaste className="w-3.5 h-3.5 flex-shrink-0" />
+            <span>Paste text</span>
+          </button>
+        </div>
 
-        {isMaxSkillsReached ? (
-          <p className="mt-2.5 text-xs text-amber-300 flex items-center gap-1.5">
-            <AlertTriangle className="w-3.5 h-3.5 flex-shrink-0 text-amber-400" />
-            <span>Delete one skill to add a new one.</span>
-          </p>
+        {addMode === 'github' ? (
+          <div>
+            <label
+              htmlFor="github-skill-url-input"
+              className="block text-xs font-semibold uppercase tracking-wider text-slate-300 mb-2"
+            >
+              Import from GitHub
+            </label>
+            <form onSubmit={handleFetchPreview} className="flex flex-col sm:flex-row gap-2.5">
+              <input
+                id="github-skill-url-input"
+                type="url"
+                value={githubUrl}
+                onChange={(e) => setGithubUrl(e.target.value)}
+                disabled={isMaxSkillsReached || fetching}
+                placeholder="Paste GitHub link (e.g. https://github.com/owner/repo)"
+                maxLength={300}
+                className="flex-1 min-w-0 px-3.5 py-2.5 rounded-xl bg-slate-950/70 border border-white/10 text-sm text-white placeholder-slate-500 focus:outline-none focus:border-cyan-400/60 disabled:opacity-50 disabled:cursor-not-allowed"
+              />
+              <button
+                type="submit"
+                disabled={isMaxSkillsReached || fetching || !githubUrl.trim()}
+                className="inline-flex items-center justify-center gap-2 px-4 py-2.5 rounded-xl font-semibold text-xs sm:text-sm bg-cyan-500/20 hover:bg-cyan-500/30 text-cyan-300 border border-cyan-500/40 transition-all disabled:opacity-50 disabled:cursor-not-allowed whitespace-nowrap"
+              >
+                {fetching ? (
+                  <>
+                    <Loader2 className="w-4 h-4 animate-spin" />
+                    Fetching...
+                  </>
+                ) : (
+                  <>
+                    <GitBranch className="w-4 h-4" />
+                    Fetch preview
+                  </>
+                )}
+              </button>
+            </form>
+
+            {isMaxSkillsReached ? (
+              <p className="mt-2.5 text-xs text-amber-300 flex items-center gap-1.5">
+                <AlertTriangle className="w-3.5 h-3.5 flex-shrink-0 text-amber-400" />
+                <span>Delete one skill to add a new one.</span>
+              </p>
+            ) : (
+              <p className="mt-2 text-[11px] text-slate-400 leading-relaxed break-words">
+                Supports repo root, <code className="text-slate-300">/tree/branch/folder</code>, or{' '}
+                <code className="text-slate-300">/blob/branch/SKILL.md</code> links (.md, .mdx, .txt).
+              </p>
+            )}
+          </div>
         ) : (
-          <p className="mt-2 text-[11px] text-slate-400 leading-relaxed break-words">
-            Supports repo root, <code className="text-slate-300">/tree/branch/folder</code>, or{' '}
-            <code className="text-slate-300">/blob/branch/SKILL.md</code> links (.md, .mdx, .txt).
-          </p>
+          <form onSubmit={handleSavePastedSkill} className="space-y-4">
+            <SkillEnhancer
+              currentName={pasteName}
+              currentText={pasteText}
+              onChangeName={(name) => setPasteName(name.slice(0, 60))}
+              onChangeText={setPasteText}
+              isMaxSkillsReached={isMaxSkillsReached}
+            />
+
+            <div>
+              <label
+                htmlFor="paste-skill-name-input"
+                className="block text-xs font-medium text-slate-300 mb-1.5"
+              >
+                Skill Name (max 60 chars)
+              </label>
+              <input
+                id="paste-skill-name-input"
+                type="text"
+                value={pasteName}
+                maxLength={60}
+                disabled={isMaxSkillsReached}
+                onChange={(e) => setPasteName(e.target.value.slice(0, 60))}
+                placeholder="e.g. Concise Python Reviewer"
+                className="w-full px-3.5 py-2.5 rounded-xl bg-slate-950/70 border border-white/10 text-sm text-white placeholder-slate-500 focus:outline-none focus:border-cyan-400/60 disabled:opacity-50 disabled:cursor-not-allowed"
+              />
+            </div>
+
+            <div>
+              <div className="flex flex-wrap items-center justify-between gap-1.5 mb-1.5">
+                <label
+                  htmlFor="paste-skill-text-input"
+                  className="text-xs font-medium text-slate-300"
+                >
+                  Skill Instructions (Plain Text)
+                </label>
+                <span
+                  className={`text-xs font-mono ${
+                    isPasteTooLong ? 'text-rose-400 font-semibold' : 'text-slate-400'
+                  }`}
+                >
+                  {pasteCharCount.toLocaleString()} / 24,000 chars · ~
+                  {formatTokenCountK(pasteCharCount)}k tokens
+                </span>
+              </div>
+              <textarea
+                id="paste-skill-text-input"
+                value={pasteText}
+                disabled={isMaxSkillsReached}
+                onChange={(e) => setPasteText(e.target.value)}
+                placeholder="Paste or write the instructions your AI should follow..."
+                className={`w-full min-h-[180px] max-h-96 overflow-y-auto p-3.5 rounded-xl bg-slate-950/80 border text-xs sm:text-sm text-slate-200 font-mono leading-relaxed placeholder-slate-500 focus:outline-none disabled:opacity-50 disabled:cursor-not-allowed ${
+                  isPasteTooLong
+                    ? 'border-rose-500/60 focus:border-rose-400'
+                    : 'border-white/10 focus:border-cyan-400/60'
+                }`}
+              />
+              {isPasteTooLong && (
+                <p className="mt-1.5 text-xs text-rose-400 flex items-center gap-1.5 font-medium">
+                  <AlertCircle className="w-3.5 h-3.5 flex-shrink-0" />
+                  <span>Too long. Shorten the text.</span>
+                </p>
+              )}
+              {isMaxSkillsReached && (
+                <p className="mt-1.5 text-xs text-amber-300 flex items-center gap-1.5">
+                  <AlertTriangle className="w-3.5 h-3.5 flex-shrink-0 text-amber-400" />
+                  <span>Delete one skill to add a new one.</span>
+                </p>
+              )}
+            </div>
+
+            {/* Security / Trust Note */}
+            <div className="p-3 rounded-xl bg-amber-500/10 border border-amber-500/30 flex items-start gap-2.5 text-xs text-amber-200 leading-relaxed">
+              <ShieldCheck className="w-4 h-4 text-amber-400 flex-shrink-0 mt-0.5" />
+              <span>
+                Only paste text you trust. Skills only add text instructions; they cannot run code
+                or see your API keys.
+              </span>
+            </div>
+
+            {/* Collapsible "Ask an AI to write a skill" helper */}
+            <div className="rounded-xl border border-white/10 bg-slate-950/60 overflow-hidden">
+              <button
+                type="button"
+                onClick={() => setIsPromptHelperOpen((prev) => !prev)}
+                className="w-full flex items-center justify-between px-3.5 py-2.5 text-left text-xs font-medium text-slate-300 hover:text-white transition-colors"
+              >
+                <span className="inline-flex items-center gap-2">
+                  <Sparkles className="w-3.5 h-3.5 text-cyan-400 flex-shrink-0" />
+                  <span>Ask an AI to write a skill</span>
+                </span>
+                {isPromptHelperOpen ? (
+                  <ChevronUp className="w-4 h-4 text-slate-400 flex-shrink-0" />
+                ) : (
+                  <ChevronDown className="w-4 h-4 text-slate-400 flex-shrink-0" />
+                )}
+              </button>
+
+              {isPromptHelperOpen && (
+                <div className="px-3.5 pb-3.5 pt-2 border-t border-white/5 space-y-2.5">
+                  <div className="flex flex-wrap items-center justify-between gap-2">
+                    <p className="text-[11px] text-slate-400">
+                      Short skills (300 to 1,500 words) work best and use fewer tokens.
+                    </p>
+                    <button
+                      type="button"
+                      onClick={handleCopyPromptTemplate}
+                      className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-lg bg-cyan-500/15 hover:bg-cyan-500/25 text-cyan-300 border border-cyan-500/30 text-xs font-medium transition-all"
+                    >
+                      {copiedPrompt ? (
+                        <>
+                          <Check className="w-3.5 h-3.5 text-emerald-400" />
+                          <span>Copied</span>
+                        </>
+                      ) : (
+                        <>
+                          <Copy className="w-3.5 h-3.5" />
+                          <span>Copy prompt</span>
+                        </>
+                      )}
+                    </button>
+                  </div>
+                  <textarea
+                    ref={promptFallbackRef}
+                    readOnly
+                    value={AI_SKILL_PROMPT_TEMPLATE}
+                    rows={8}
+                    className="w-full p-2.5 rounded-lg bg-slate-900/90 border border-white/10 text-[11px] text-slate-300 font-mono whitespace-pre-wrap leading-relaxed focus:outline-none"
+                  />
+                </div>
+              )}
+            </div>
+
+            {/* Paste Actions */}
+            <div className="flex flex-wrap items-center justify-end gap-2.5">
+              <button
+                type="button"
+                onClick={handleClearPasteForm}
+                disabled={!pasteName && !pasteText}
+                className="px-4 py-2 rounded-xl border border-white/10 bg-slate-800/80 hover:bg-slate-700/80 text-xs sm:text-sm font-medium text-slate-300 hover:text-white transition-all disabled:opacity-50 disabled:cursor-not-allowed"
+              >
+                Clear
+              </button>
+              <button
+                type="submit"
+                disabled={isMaxSkillsReached || isPasteEmpty || isPasteTooLong}
+                className="inline-flex items-center gap-2 px-4 py-2 rounded-xl border border-cyan-500/40 bg-cyan-500/20 hover:bg-cyan-500/30 text-xs sm:text-sm font-semibold text-cyan-300 transition-all disabled:opacity-50 disabled:cursor-not-allowed"
+              >
+                <CheckCircle2 className="w-4 h-4" />
+                Save skill
+              </button>
+            </div>
+          </form>
         )}
       </div>
 
       {/* 3. Preview Card (shown after fetch) */}
-      {preview && (
+      {addMode === 'github' && preview && (
         <div className="rounded-2xl border border-cyan-500/40 bg-slate-900/80 p-4 sm:p-6 backdrop-blur-md shadow-xl shadow-black/30 space-y-4">
           <div className="flex flex-wrap items-center justify-between gap-2 border-b border-white/10 pb-3">
             <div className="flex items-center gap-2 flex-wrap min-w-0">
@@ -506,13 +886,16 @@ export const SkillsSettings: React.FC = () => {
             <Sparkles className="w-8 h-8 text-slate-500 mx-auto mb-2.5 opacity-70" />
             <p className="text-sm font-medium text-slate-300">No skills saved yet</p>
             <p className="text-xs text-slate-500 mt-1 max-w-md mx-auto">
-              Paste a public GitHub link above to preview and save up to 5 reusable text skills.
+              Import from a public GitHub link or paste text above to save up to 5 reusable text
+              skills.
             </p>
           </div>
         ) : (
           <div className="space-y-2.5">
             {skills.map((skill) => {
+              const isPasted = skill.kind === 'pasted';
               const isEditing = editingSkillId === skill.id;
+              const isEditingPasted = editingPastedId === skill.id;
               const isConfirmingDelete = confirmDeleteId === skill.id;
 
               return (
@@ -525,9 +908,9 @@ export const SkillsSettings: React.FC = () => {
                   }`}
                 >
                   <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
-                    {/* Left: Name + Repo metadata */}
+                    {/* Left: Name + Repo/Pasted metadata */}
                     <div className="min-w-0 flex-1 space-y-1.5">
-                      {isEditing ? (
+                      {!isPasted && isEditing ? (
                         <div className="flex items-center gap-1.5 max-w-md">
                           <input
                             type="text"
@@ -560,28 +943,40 @@ export const SkillsSettings: React.FC = () => {
                         </div>
                       ) : (
                         <div className="flex items-center gap-2 min-w-0">
-                          <button
-                            type="button"
-                            onClick={() => handleStartRename(skill)}
-                            className="group inline-flex items-center gap-1.5 text-left font-semibold text-sm sm:text-base text-white hover:text-cyan-300 transition-colors min-w-0"
-                            title="Tap to rename skill"
-                          >
-                            <span className="truncate">{skill.name}</span>
-                            <Pencil className="w-3.5 h-3.5 text-slate-500 group-hover:text-cyan-400 flex-shrink-0" />
-                          </button>
+                          {isPasted ? (
+                            <span className="font-semibold text-sm sm:text-base text-white truncate">
+                              {skill.name}
+                            </span>
+                          ) : (
+                            <button
+                              type="button"
+                              onClick={() => handleStartRename(skill)}
+                              className="group inline-flex items-center gap-1.5 text-left font-semibold text-sm sm:text-base text-white hover:text-cyan-300 transition-colors min-w-0"
+                              title="Tap to rename skill"
+                            >
+                              <span className="truncate">{skill.name}</span>
+                              <Pencil className="w-3.5 h-3.5 text-slate-500 group-hover:text-cyan-400 flex-shrink-0" />
+                            </button>
+                          )}
                         </div>
                       )}
 
                       <div className="flex flex-wrap items-center gap-2 text-xs text-slate-400">
-                        <a
-                          href={skill.sourceUrl}
-                          target="_blank"
-                          rel="noopener noreferrer"
-                          className="inline-flex items-center gap-1 text-cyan-400 hover:text-cyan-300 hover:underline font-mono break-all"
-                        >
-                          <span>{skill.repo}</span>
-                          <ExternalLink className="w-3 h-3 flex-shrink-0" />
-                        </a>
+                        {isPasted ? (
+                          <span className="px-2 py-0.5 rounded-md bg-cyan-500/15 text-cyan-300 border border-cyan-500/30 text-[11px] font-mono">
+                            Pasted
+                          </span>
+                        ) : (
+                          <a
+                            href={skill.sourceUrl}
+                            target="_blank"
+                            rel="noopener noreferrer"
+                            className="inline-flex items-center gap-1 text-cyan-400 hover:text-cyan-300 hover:underline font-mono break-all"
+                          >
+                            <span>{skill.repo}</span>
+                            <ExternalLink className="w-3 h-3 flex-shrink-0" />
+                          </a>
+                        )}
                         <span>•</span>
                         <span className="font-mono text-slate-300">
                           {formatCharCount(skill.chars)}
@@ -599,8 +994,19 @@ export const SkillsSettings: React.FC = () => {
                       </div>
                     </div>
 
-                    {/* Right: ON/OFF Switch + Delete button */}
-                    <div className="flex items-center justify-between sm:justify-end gap-2.5 pt-2 sm:pt-0 border-t sm:border-t-0 border-white/5 flex-shrink-0">
+                    {/* Right: Edit (if pasted) + ON/OFF Switch + Delete button */}
+                    <div className="flex items-center justify-between sm:justify-end gap-2 pt-2 sm:pt-0 border-t sm:border-t-0 border-white/5 flex-shrink-0 flex-wrap">
+                      {isPasted && !isEditingPasted && (
+                        <button
+                          type="button"
+                          onClick={() => handleStartEditPasted(skill)}
+                          className="inline-flex items-center gap-1.5 px-2.5 py-1.5 rounded-xl border border-white/10 bg-slate-800/70 hover:bg-slate-700/80 text-xs font-medium text-slate-300 hover:text-white transition-all"
+                        >
+                          <Pencil className="w-3.5 h-3.5" />
+                          <span>Edit</span>
+                        </button>
+                      )}
+
                       <button
                         type="button"
                         role="switch"
@@ -651,6 +1057,80 @@ export const SkillsSettings: React.FC = () => {
                       )}
                     </div>
                   </div>
+
+                  {/* Inline Editor for Pasted Skill */}
+                  {isPasted && isEditingPasted && (
+                    <div className="mt-4 pt-4 border-t border-white/10 space-y-3">
+                      <div>
+                        <label className="block text-xs font-medium text-slate-300 mb-1">
+                          Skill Name (max 60 chars)
+                        </label>
+                        <input
+                          type="text"
+                          value={editingPastedName}
+                          maxLength={60}
+                          onChange={(e) => setEditingPastedName(e.target.value.slice(0, 60))}
+                          className="w-full px-3 py-2 rounded-xl bg-slate-950/80 border border-white/15 text-sm text-white focus:outline-none focus:border-cyan-400"
+                        />
+                      </div>
+
+                      <div>
+                        <div className="flex flex-wrap items-center justify-between gap-1.5 mb-1">
+                          <label className="text-xs font-medium text-slate-300">
+                            Skill Instructions (Plain Text)
+                          </label>
+                          <span
+                            className={`text-xs font-mono ${
+                              isEditPastedTooLong ? 'text-rose-400 font-semibold' : 'text-slate-400'
+                            }`}
+                          >
+                            {editPastedCharCount.toLocaleString()} / 24,000 chars · ~
+                            {formatTokenCountK(editPastedCharCount)}k tokens
+                          </span>
+                        </div>
+                        <textarea
+                          value={editingPastedText}
+                          onChange={(e) => setEditingPastedText(e.target.value)}
+                          className={`w-full min-h-[180px] max-h-96 overflow-y-auto p-3 rounded-xl bg-slate-950/90 border text-xs sm:text-sm text-slate-200 font-mono leading-relaxed focus:outline-none ${
+                            isEditPastedTooLong
+                              ? 'border-rose-500/60 focus:border-rose-400'
+                              : 'border-white/15 focus:border-cyan-400'
+                          }`}
+                        />
+                        {isEditPastedTooLong && (
+                          <p className="mt-1 text-xs text-rose-400 flex items-center gap-1.5 font-medium">
+                            <AlertCircle className="w-3.5 h-3.5 flex-shrink-0" />
+                            <span>Too long. Shorten the text.</span>
+                          </p>
+                        )}
+                        {editingPastedError && !isEditPastedTooLong && (
+                          <p className="mt-1 text-xs text-rose-400 flex items-center gap-1.5">
+                            <AlertCircle className="w-3.5 h-3.5 flex-shrink-0" />
+                            <span>{editingPastedError}</span>
+                          </p>
+                        )}
+                      </div>
+
+                      <div className="flex flex-wrap items-center justify-end gap-2">
+                        <button
+                          type="button"
+                          onClick={handleCancelEditPasted}
+                          className="px-3.5 py-1.5 rounded-xl border border-white/10 bg-slate-800/80 hover:bg-slate-700/80 text-xs font-medium text-slate-300 hover:text-white transition-all"
+                        >
+                          Cancel
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => handleSaveEditPasted(skill.id)}
+                          disabled={isEditPastedEmpty || isEditPastedTooLong}
+                          className="inline-flex items-center gap-1.5 px-3.5 py-1.5 rounded-xl border border-cyan-500/40 bg-cyan-500/20 hover:bg-cyan-500/30 text-xs font-semibold text-cyan-300 transition-all disabled:opacity-50 disabled:cursor-not-allowed"
+                        >
+                          <Check className="w-3.5 h-3.5" />
+                          <span>Save</span>
+                        </button>
+                      </div>
+                    </div>
+                  )}
                 </div>
               );
             })}

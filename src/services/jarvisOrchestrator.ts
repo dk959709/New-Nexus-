@@ -30,6 +30,7 @@ import {
   extractImageUrlFromJson,
 } from '@/lib/imageProviderUtils';
 import { applyReasoningConfig } from '@/lib/reasoningConfig';
+import { appendSkillsToMessages } from '@/lib/skills';
 import type {
   AIProviderConfig,
   AISource,
@@ -2522,6 +2523,7 @@ export async function runJarvisPipeline(
     selectedDocName?: string;
   },
   newAgentMode = false,
+  skillsText?: string,
 ): Promise<JarvisExecutionResult> {
   // Safely resolve and validate user's local timezone with fallback to Europe/London
   let effectiveTimeZone = 'Europe/London';
@@ -2767,10 +2769,21 @@ export async function runJarvisPipeline(
       }
     }
 
+    const shouldInjectSkills =
+      Boolean(skillsText && skillsText.trim()) &&
+      (agentId === 'coder' ||
+        agentId === 'architect' ||
+        agentId === 'dataAnalyst' ||
+        agentId === 'finalSynthesizer');
+
+    const effectiveMessages = shouldInjectSkills
+      ? appendSkillsToMessages(messages, skillsText)
+      : messages;
+
     try {
       const res = await api.jarvisAgentCall({
         agentId,
-        messages,
+        messages: effectiveMessages,
         providerConfig: primary.provider,
         fallbackConfig,
         enableFailover: cfg.enableFailover,
