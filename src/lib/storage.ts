@@ -24,9 +24,53 @@ import type {
   ParallaxGenesisSlot,
   CommanderConfig,
   Workflow,
+  Skill,
 } from '@/types';
 import { DEFAULT_PARALLAX_VOICES } from '@/data/parallaxVoices';
 import { isValidSwarmSize, type ParallaxSwarmSize } from '@/lib/parallaxSwarmSize';
+
+export const MAX_SKILLS = 5;
+export const MAX_ENABLED_SKILLS = 3;
+export const MAX_SKILL_CHARS = 24000;
+
+const SKILLS_STORAGE_KEY = 'nexus-skills-v1';
+
+function dispatchSkillsChanged(): void {
+  try {
+    if (typeof window !== 'undefined' && typeof window.dispatchEvent === 'function') {
+      window.dispatchEvent(new CustomEvent('nexus-skills-changed'));
+    }
+  } catch {
+    // ignore event errors
+  }
+}
+
+function sanitizeSkillItem(item: unknown): Skill | null {
+  if (!item || typeof item !== 'object') return null;
+  const raw = item as Partial<Skill>;
+  if (typeof raw.id !== 'string' || !raw.id.trim()) return null;
+  if (typeof raw.name !== 'string' || !raw.name.trim()) return null;
+  if (typeof raw.sourceUrl !== 'string' || !raw.sourceUrl.trim()) return null;
+  if (typeof raw.repo !== 'string' || !raw.repo.trim()) return null;
+  if (typeof raw.text !== 'string') return null;
+
+  const cleanText = raw.text.replace(/\0/g, '').slice(0, MAX_SKILL_CHARS);
+  const cleanName = raw.name.trim().slice(0, 60);
+  if (!cleanName) return null;
+
+  return {
+    id: raw.id.trim(),
+    name: cleanName,
+    sourceUrl: raw.sourceUrl.trim(),
+    repo: raw.repo.trim(),
+    text: cleanText,
+    chars: typeof raw.chars === 'number' && !Number.isNaN(raw.chars) ? Math.min(raw.chars, cleanText.length) : cleanText.length,
+    truncated: Boolean(raw.truncated) || raw.text.length > MAX_SKILL_CHARS,
+    license: typeof raw.license === 'string' && raw.license.trim() ? raw.license.trim() : null,
+    enabled: Boolean(raw.enabled),
+    addedAt: typeof raw.addedAt === 'number' && !Number.isNaN(raw.addedAt) ? raw.addedAt : Date.now(),
+  };
+}
 
 const KEYS = {
   searches: 'nexus-searches',
@@ -2672,7 +2716,133 @@ export const storage = {
     this.saveCommanderConfig(cfg);
     return cfg;
   },
+
+  // ==========================================
+  // SKILLS MANAGER (PART A)
+  // ==========================================
+
+  getSkills(): Skill[] {
+    try {
+      const raw = read<unknown>(SKILLS_STORAGE_KEY, []);
+      if (!Array.isArray(raw)) return [];
+      const valid: Skill[] = [];
+      let enabledCount = 0;
+      for (const item of raw) {
+        if (valid.length >= MAX_SKILLS) break;
+        const sanitized = sanitizeSkillItem(item);
+        if (!sanitized) continue;
+        if (sanitized.enabled) {
+          if (enabledCount >= MAX_ENABLED_SKILLS) {
+            sanitized.enabled = false;
+          } else {
+            enabledCount++;
+          }
+        }
+        valid.push(sanitized);
+      }
+      return valid;
+    } catch {
+      return [];
+    }
+  },
+
+  saveSkills(list: Skill[]): void {
+    try {
+      if (!Array.isArray(list)) return;
+      const sanitizedList: Skill[] = [];
+      let enabledCount = 0;
+      for (const item of list) {
+        if (sanitizedList.length >= MAX_SKILLS) break;
+        const sanitized = sanitizeSkillItem(item);
+        if (!sanitized) continue;
+        if (sanitized.enabled) {
+          if (enabledCount >= MAX_ENABLED_SKILLS) {
+            sanitized.enabled = false;
+          } else {
+            enabledCount++;
+          }
+        }
+        sanitizedList.push(sanitized);
+      }
+      write(SKILLS_STORAGE_KEY, sanitizedList);
+      dispatchSkillsChanged();
+    } catch {
+      // ignore storage write errors
+    }
+  },
+
+  addSkill(skill: Skill): Skill[] {
+    try {
+      const current = this.getSkills();
+      if (current.length >= MAX_SKILLS) {
+        throw new Error(`Maximum of ${MAX_SKILLS} skills reached. Delete one skill to add a new one.`);
+      }
+      const sanitized = sanitizeSkillItem(skill);
+      if (!sanitized) {
+        throw new Error('Invalid skill data.');
+      }
+      const enabledCount = current.filter((s) => s.enabled).length;
+      if (sanitized.enabled && enabledCount >= MAX_ENABLED_SKILLS) {
+        sanitized.enabled = false;
+      }
+      const updated = [sanitized, ...current.filter((s) => s.id !== sanitized.id)].slice(0, MAX_SKILLS);
+      write(SKILLS_STORAGE_KEY, updated);
+      dispatchSkillsChanged();
+      return updated;
+    } catch (err) {
+      if (err instanceof Error) throw err;
+      return this.getSkills();
+    }
+  },
+
+  deleteSkill(id: string): Skill[] {
+    try {
+      const current = this.getSkills();
+      const updated = current.filter((s) => s.id !== id);
+      write(SKILLS_STORAGE_KEY, updated);
+      dispatchSkillsChanged();
+      return updated;
+    } catch {
+      return this.getSkills();
+    }
+  },
+
+  setSkillEnabled(id: string, enabled: boolean): Skill[] {
+    try {
+      const current = this.getSkills();
+      const target = current.find((s) => s.id === id);
+      if (!target) return current;
+      if (enabled && !target.enabled) {
+        const enabledCount = current.filter((s) => s.enabled && s.id !== id).length;
+        if (enabledCount >= MAX_ENABLED_SKILLS) {
+          throw new Error('Max 3 skills can be ON at the same time. Turn one off first.');
+        }
+      }
+      const updated = current.map((s) => (s.id === id ? { ...s, enabled: Boolean(enabled) } : s));
+      write(SKILLS_STORAGE_KEY, updated);
+      dispatchSkillsChanged();
+      return updated;
+    } catch (err) {
+      if (err instanceof Error) throw err;
+      return this.getSkills();
+    }
+  },
+
+  renameSkill(id: string, name: string): Skill[] {
+    try {
+      const cleanName = (name || '').trim().slice(0, 60);
+      if (!cleanName) return this.getSkills();
+      const current = this.getSkills();
+      const updated = current.map((s) => (s.id === id ? { ...s, name: cleanName } : s));
+      write(SKILLS_STORAGE_KEY, updated);
+      dispatchSkillsChanged();
+      return updated;
+    } catch {
+      return this.getSkills();
+    }
+  },
 };
 
 export const getWorkflows = (): Workflow[] => storage.getWorkflows();
 export const saveWorkflows = (list: Workflow[]): void => storage.saveWorkflows(list);
+

@@ -1362,3 +1362,17 @@ export interface WorkflowRunOptions {
   startFromNodeId?: string;
   previousOutputs?: Record<string, WorkflowOutput>;
 }
+
+export interface Skill {
+  id: string;
+  name: string;
+  sourceUrl: string;
+  repo: string;
+  text: string;
+  chars: number;
+  truncated: boolean;
+  license: string | null;
+  enabled: boolean;
+  addedAt: number;
+}
+

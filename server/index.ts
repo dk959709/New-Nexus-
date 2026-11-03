@@ -25,6 +25,7 @@ import { devicesRouter } from './routes/devices.js';
 import { telegramRouter, setTelegramAiHandler } from './routes/telegram.js';
 import { apiCatalogRouter, getBackendApiKey, getScholarApiConfig, getAllScholarApiConfigs, isNoAuthPlaceholder } from './apiCatalog.js';
 import { documentsRouter } from './routes/documents.js';
+import { skillsRouter } from './routes/skills.js';
 import { fluxSchnellRouter } from './routes/fluxSchnell.js';
 import { fluxDevRouter } from './routes/fluxDev.js';
 
@@ -3595,6 +3596,7 @@ async function startServer() {
 
   // Mount Document Library & RAG Router
   app.use(documentsRouter);
+  app.use(skillsRouter);
 
   // Mount extracted feature routers
   app.use(mediaRouter);

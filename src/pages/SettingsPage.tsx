@@ -11,12 +11,14 @@ import {
   Send,
   Server,
   Shield,
+  Sparkles,
   User,
 } from 'lucide-react';
 import { Link, useSearchParams } from 'react-router-dom';
 import { AIProvidersSettings } from '@/components/AIProvidersSettings';
 import { ApiCatalogSettings } from '@/components/ApiCatalogSettings';
 import { DocumentLibrarySettings } from '@/components/DocumentLibrarySettings';
+import { SkillsSettings } from '@/components/SkillsSettings';
 import { HelpSettings } from '@/components/HelpSettings';
 import { WallpaperSelector } from '@/components/WallpaperSelector';
 import { api } from '@/services/api';
@@ -36,6 +38,7 @@ type SettingsCategory =
   | 'ai'
   | 'api-catalog'
   | 'documents'
+  | 'skills'
   | 'help'
   | 'media-backend'
   | 'privacy'
@@ -355,6 +358,37 @@ export function SettingsPage() {
         </button>
 
         <button
+          onClick={() => switchCategory('skills')}
+          className={activeCategory === 'skills' ? 'selected' : ''}
+          style={{
+            display: 'inline-flex',
+            alignItems: 'center',
+            gap: '8px',
+            padding: '9px 16px',
+            borderRadius: '8px',
+            border: `1px solid ${
+              activeCategory === 'skills'
+                ? 'var(--accent)'
+                : 'rgba(165,207,214,0.18)'
+            }`,
+            background:
+              activeCategory === 'skills'
+                ? 'rgba(97,215,201,0.15)'
+                : 'rgba(14,31,39,0.6)',
+            color:
+              activeCategory === 'skills' ? 'var(--accent)' : 'var(--muted)',
+            fontWeight: 600,
+            fontSize: '13px',
+            cursor: 'pointer',
+            whiteSpace: 'nowrap',
+            boxShadow:
+              activeCategory === 'skills' ? '0 0 12px rgba(97,215,201,0.2)' : 'none',
+          }}
+        >
+          <Sparkles size={16} /> 🧩 Skills
+        </button>
+
+        <button
           onClick={() => switchCategory('appearance')}
           className={activeCategory === 'appearance' ? 'selected' : ''}
           style={{
@@ -564,6 +598,9 @@ export function SettingsPage() {
 
         {/* 📚 Document Library Category */}
         {activeCategory === 'documents' && <DocumentLibrarySettings />}
+
+        {/* 🧩 Skills Category */}
+        {activeCategory === 'skills' && <SkillsSettings />}
 
         {/* 📚 Help & Documentation Category */}
         {activeCategory === 'help' && <HelpSettings />}
