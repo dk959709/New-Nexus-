@@ -114,11 +114,25 @@ async function call<T>(path: string, init?: RequestInit): Promise<T> {
       }
       if (!errorMsg) {
         const preview = raw.slice(0, 100).replace(/\s+/g, ' ').replace(/[<>]/g, '').trim();
+        let titleSuffix = '';
+        if (!isValidJson) {
+          const titleMatch = raw.match(/<title[^>]*>([\s\S]*?)<\/title>/i);
+          if (titleMatch && titleMatch[1]) {
+            const titleText = titleMatch[1]
+              .replace(/\s+/g, ' ')
+              .replace(/[<>]/g, '')
+              .trim()
+              .slice(0, 80);
+            if (titleText) {
+              titleSuffix = ' title: ' + titleText;
+            }
+          }
+        }
         errorMsg =
           'Request failed. Please try again. (HTTP ' +
           res.status +
           ')' +
-          (!isValidJson ? ' [' + preview + ']' : '');
+          (!isValidJson ? ' [' + preview + ']' + titleSuffix : '');
       }
       throw new Error(errorMsg);
     }
@@ -474,6 +488,14 @@ export const api = {
     error?: string;
   }> {
     const { signal, ...bodyPayload } = payload;
+    const jsonBytes = new TextEncoder().encode(JSON.stringify(bodyPayload));
+    const chunkSize = 0x8000;
+    let binary = '';
+    for (let i = 0; i < jsonBytes.length; i += chunkSize) {
+      const chunk = jsonBytes.subarray(i, i + chunkSize);
+      binary += String.fromCharCode.apply(null, Array.from(chunk));
+    }
+    const encodedData = btoa(binary);
     const res = await call<{
       ok: boolean;
       text?: string;
@@ -485,7 +507,7 @@ export const api = {
       error?: string;
     }>('/api/jarvis/agent-call', {
       method: 'POST',
-      body: JSON.stringify(bodyPayload),
+      body: JSON.stringify({ encoded: 'b64', data: encodedData }),
       signal,
     });
 

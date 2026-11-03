@@ -5084,6 +5084,24 @@ async function startServer() {
   // JARVIS Multi-Agent Execution Endpoint
   app.post('/api/jarvis/agent-call', async (req, res) => {
     console.log(`[JARVIS] agent-call received contentLength=${req.headers['content-length']}`);
+    let rawPayload: unknown = req.body;
+    if (
+      req.body &&
+      typeof req.body === 'object' &&
+      (req.body as Record<string, unknown>).encoded === 'b64' &&
+      typeof (req.body as Record<string, unknown>).data === 'string'
+    ) {
+      try {
+        const decodedJson = Buffer.from(
+          (req.body as { data: string }).data,
+          'base64',
+        ).toString('utf8');
+        rawPayload = JSON.parse(decodedJson);
+      } catch {
+        console.log('[JARVIS] agent-call invalid encoded payload');
+        return errorResponse(res, 400, 'Invalid encoded payload.');
+      }
+    }
     const parsed = z
       .object({
         agentId: z.string().min(1),
@@ -5103,7 +5121,7 @@ async function startServer() {
         maxTokens: z.number().optional().nullable(),
         timeoutMs: z.number().optional().nullable(),
       })
-      .safeParse(req.body);
+      .safeParse(rawPayload);
 
     if (!parsed.success) {
       console.log('[JARVIS] agent-call invalid params');
