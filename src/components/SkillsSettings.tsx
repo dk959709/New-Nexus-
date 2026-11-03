@@ -27,6 +27,7 @@ import {
 } from '@/lib/storage';
 import { estimateTokens } from '@/lib/skills';
 import { SkillEnhancer } from '@/components/skills/SkillEnhancer';
+import { SkillsGuideCard } from '@/components/skills/SkillsGuideCard';
 import type { Skill } from '@/types';
 
 interface GithubSkillPreview {
@@ -721,6 +722,8 @@ export const SkillsSettings: React.FC = () => {
                 </div>
               )}
             </div>
+
+            <SkillsGuideCard />
 
             {/* Paste Actions */}
             <div className="flex flex-wrap items-center justify-end gap-2.5">
